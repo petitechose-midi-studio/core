@@ -45,8 +45,18 @@
     ]
   },
   "build": {
+    "includeDir": "src",
     "flags": [
-      "-I src"
+      "-I src/config/ui",
+      "-D USB_MIDI_SERIAL",
+      "-D TEENSY_OPT_SMALLEST_CODE",
+      "-D LV_CONF_INCLUDE_SIMPLE",
+      "-D LV_LVGL_H_INCLUDE_SIMPLE"
+    ],
+    "srcFilter": [
+      "+<*>",
+      "+<**/*.c>",
+      "+<**/*.cpp>"
     ]
   }
 }

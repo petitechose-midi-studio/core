@@ -17,7 +17,7 @@ Core provides the foundation for building MIDI Studio plugins:
 - **Protocol Tools** - Python code generator for C++/Java protocol classes
 - **Resource Management** - Font rendering, assets, UI components
 
-**Core is NOT a standalone firmware** - plugins provide the main entry point and register themselves via callback.
+**Core is NOT a standalone firmware** - plugins provide the main entry point and register themselves via callback.c
 
 ---
 
