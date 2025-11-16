@@ -54,7 +54,8 @@
       "-D LV_LVGL_H_INCLUDE_SIMPLE"
     ],
     "srcFilter": [
-      "+<*>",
+      "+<*.c>",
+      "+<*.cpp>",
       "+<**/*.c>",
       "+<**/*.cpp>"
     ]
