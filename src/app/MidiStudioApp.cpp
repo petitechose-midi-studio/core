@@ -4,15 +4,15 @@
 #include "core/factory/MidiFactory.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/UnifiedEventTypes.hpp"
-#include "config/PluginRegistry.hpp"
 #include "log/Macros.hpp"
 
 /*
  * Constructor - Full stack allocation following dependency levels
  */
-MidiStudioApp::MidiStudioApp()
+MidiStudioApp::MidiStudioApp(PluginSetupFn setupPlugins)
 
-    : eventBus_(),
+    : setupPlugins_(setupPlugins),
+      eventBus_(),
       displayDriver_(),
       multiplexer_(),
 
@@ -70,7 +70,11 @@ void MidiStudioApp::initializePlugins() {
     if (pluginsInitialized_) return;
 
     LOGLN("[MidiStudioApp] Boot complete - Initializing plugins...");
-    PluginRegistry::setup(plugins_);
+
+    if (setupPlugins_) {
+        setupPlugins_(plugins_);
+    }
+
     pluginsInitialized_ = true;
     LOGLN("[MidiStudioApp] Plugins initialized");
 }

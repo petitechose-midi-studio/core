@@ -2,8 +2,8 @@
 
 #include <cstring>
 
-#include "common/ui/font/binary_font_buffer.hpp"
-#include "common/ui/theme/BaseTheme.hpp"
+#include "resource/common/ui/font/binary_font_buffer.hpp"
+#include "resource/common/ui/theme/BaseTheme.hpp"
 
 using namespace BaseTheme;
 

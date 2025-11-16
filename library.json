@@ -1,0 +1,52 @@
+{
+  "name": "petitechose-midi-studio-core",
+  "version": "1.0.0-beta.1",
+  "description": "MIDI Studio Core Framework - Event-driven MIDI controller framework for Teensy 4.1 with LVGL UI",
+  "keywords": [
+    "midi",
+    "teensy",
+    "framework",
+    "lvgl",
+    "controller",
+    "audio",
+    "music-production"
+  ],
+  "authors": [
+    {
+      "name": "petitechose.audio",
+      "url": "https://github.com/petitechose-midi-studio"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/petitechose-midi-studio/core.git"
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "homepage": "https://github.com/petitechose-midi-studio/core",
+  "frameworks": ["arduino"],
+  "platforms": ["teensy"],
+  "dependencies": {
+    "vindar/ILI9341_T4": "^1.6.0",
+    "lvgl/lvgl": "^9.4.0",
+    "etlcpp/Embedded Template Library": "^20.39.4",
+    "waspinator/CD74HC4067": "^1.0.2",
+    "thomasfredericks/Bounce2": "^2.72",
+    "luni64/EncoderTool": "*"
+  },
+  "export": {
+    "include": [
+      "src",
+      "resource"
+    ],
+    "exclude": [
+      "examples",
+      ".git",
+      ".gitignore"
+    ]
+  },
+  "build": {
+    "flags": [
+      "-I src"
+    ]
+  }
+}

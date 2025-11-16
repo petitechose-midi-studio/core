@@ -1,8 +1,8 @@
 #include "ParameterButtonWidget.hpp"
 
-#include "common/ui/font/binary_font_buffer.hpp"
-#include "common/ui/theme/BaseTheme.hpp"
-#include "common/ui/util/TextUtils.hpp"
+#include "resource/common/ui/font/binary_font_buffer.hpp"
+#include "resource/common/ui/theme/BaseTheme.hpp"
+#include "resource/common/ui/util/TextUtils.hpp"
 #include "log/Macros.hpp"
 
 ParameterButtonWidget::ParameterButtonWidget(lv_obj_t* parent, uint16_t width, uint16_t height,
