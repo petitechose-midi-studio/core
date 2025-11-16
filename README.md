@@ -1,22 +1,23 @@
-# MIDI Studio - Core Firmware
+# MIDI Studio - Core Library
 
-**Teensy 4.1 firmware for MIDI Studio controller - Core framework with UI components and plugin API**
+**PlatformIO library for building MIDI controllers on Teensy 4.1**
 
-This repository contains the standalone core firmware that provides the foundation for MIDI Studio plugins.
+Core is a **library**, not standalone firmware. Plugins reference it via `lib_deps` and provide their own `main.cpp`.
 
 ---
 
-## Overview
+## What is Core?
 
-The core firmware provides:
+Core provides the foundation for building MIDI Studio plugins:
 
 - **Hardware Abstraction** - Display, encoders, buttons, multiplexer drivers
 - **UI Framework** - LVGL-based components (ViewContainer, ViewManager, Registry)
-- **Plugin API** - Clean interface for DAW integration plugins
-- **Protocol Generator** - Python tools for generating C++ protocol code
+- **Plugin System** - Callback-based plugin registration
+- **Event Bus** - Unified event system for component communication
+- **Protocol Tools** - Python code generator for C++/Java protocol classes
 - **Resource Management** - Font rendering, assets, UI components
 
-Plugins (like Bitwig Studio integration) are **separate repositories** that depend on this core via git submodules.
+**Core is NOT a standalone firmware** - plugins provide the main entry point and register themselves via callback.
 
 ---
 
@@ -54,37 +55,57 @@ See [hardware repo](https://github.com/petitechose-midi-studio/hardware) for PCB
 
 ## Quick Start
 
-### 1. Clone the Repository
+### Testing Core (without plugins)
+
+Core includes a minimal example for testing:
 
 ```bash
 git clone https://github.com/petitechose-midi-studio/core.git
-cd core
-```
+cd core/examples/minimal
 
-### 2. Build the Firmware
-
-```bash
-# Production build (smallest code size)
-pio run -e prod
-
-# Debug build (with serial logging)
-pio run -e debug
-```
-
-### 3. Upload to Teensy 4.1
-
-```bash
-# Production
+# Build and upload
 pio run -e prod -t upload
 
-# Debug
-pio run -e debug -t upload
+# Monitor serial output
+pio device monitor
 ```
 
-### 4. Monitor Serial Output (Debug Only)
+This builds core with an empty plugin callback (no plugins loaded).
 
-```bash
-pio device monitor
+### Using Core in Your Plugin
+
+**1. Reference core in your platformio.ini:**
+
+```ini
+[env]
+platform = teensy
+board = teensy41
+framework = arduino
+
+lib_deps =
+    https://github.com/petitechose-midi-studio/core.git#v1.0.0
+
+build_flags =
+    -D USB_MIDI_SERIAL
+    -D LV_CONF_INCLUDE_SIMPLE
+    -D LV_LVGL_H_INCLUDE_SIMPLE
+```
+
+**2. Create src/main.cpp with callback:**
+
+```cpp
+#include <Arduino.h>
+#include "app/MidiStudioApp.hpp"
+#include "plugin/myplugin/Plugin.hpp"
+
+void setupPlugins(PluginManager& manager) {
+    manager.registerPlugin<Plugin::MyPlugin::Plugin>("myplugin");
+}
+
+MidiStudioApp app(setupPlugins);
+
+void setup() {}
+void loop() { app.update(); }
 ```
 
 ---
@@ -93,50 +114,56 @@ pio device monitor
 
 ```
 core/
-   src/                    # Core firmware source code
-      adapter/            # Hardware drivers
-         display/        # ILI9341 display driver
-         input/          # Encoder and button drivers
-         midi/           # USB MIDI communication
-         multiplexer/    # CD74HC4067 multiplexer driver
-      app/                # Application entry point
-      config/             # Configuration and registry
-      core/               # Core systems (plugin manager, etc.)
-      main.cpp            # Firmware entry point
-   api/                    # Plugin API
-      cpp/
-          ControllerAPI.hpp  # Public API for plugins
-   resources/              # Assets and tools
-      code/
-         cpp/common/     # Shared UI components
-         py/protocol/    # Protocol generator (Python)
-      font/               # Font files (Inter, JetBrains Mono)
-      script/             # Build scripts
-   platformio.ini          # PlatformIO configuration
-   README.md               # This file
-   LICENSE                 # CC-BY-NC-SA 4.0
+├── src/                     # Library source code (all compilable code)
+│   ├── adapter/            # Hardware drivers (display, input, MIDI)
+│   ├── api/                # Plugin API (ControllerAPI)
+│   ├── app/                # MidiStudioApp main class
+│   ├── config/             # Configuration (Version, System)
+│   ├── core/               # Core systems (events, factories)
+│   ├── manager/            # Managers (Plugin, View, Input)
+│   ├── resource/           # UI resources (fonts, widgets, themes)
+│   └── ui/                 # UI controllers and views
+├── resource/               # Non-compiled resources
+│   ├── code/py/protocol/  # Python protocol generator
+│   ├── font/              # Source fonts (TTF)
+│   ├── img/               # Source images
+│   └── script/            # Build scripts
+├── examples/
+│   └── minimal/           # Test core without plugins
+│       ├── platformio.ini
+│       └── src/main.cpp
+├── library.json            # PlatformIO library metadata
+├── library.properties      # Arduino library metadata
+├── LICENSE                 # CC-BY-NC-SA 4.0
+└── README.md
 ```
 
 ---
 
-## Building with Plugins
+## Local Development
 
-**Core firmware alone does NOT include any DAW plugins.** To build with a plugin:
+For developing both core and a plugin simultaneously:
 
-1. **Clone a plugin repository** (e.g., plugin-bitwig)
-2. **The plugin repo will include core as a submodule**
-3. **Build from the plugin repo** (it will compile core + plugin together)
+**Option 1: File path reference**
 
-Example:
-
-```bash
-# Clone plugin repo (includes core as submodule)
-git clone --recursive https://github.com/petitechose-midi-studio/plugin-bitwig.git
-cd plugin-bitwig
-
-# Build (compiles core + plugin)
-pio run -e prod -t upload
+```ini
+# plugin/platformio.ini
+lib_deps =
+    file://../core
 ```
+
+**Option 2: lib_extra_dirs (recommended)**
+
+```ini
+# plugin/platformio.ini
+lib_extra_dirs = ../../..
+lib_ldf_mode = deep+
+
+lib_deps =
+    petitechose-midi-studio-core
+```
+
+See `examples/minimal/platformio.ini` for a complete working example.
 
 ---
 
@@ -171,35 +198,50 @@ public:
 
 See [plugin-bitwig](https://github.com/petitechose-midi-studio/plugin-bitwig) for a complete example.
 
-**Minimal Plugin:**
+**1. Implement IPlugin interface:**
 
 ```cpp
-#include "common/interface/IPlugin.hpp"
-#include "ControllerAPI.hpp"
+#include "resource/common/interface/IPlugin.hpp"
+#include "api/ControllerAPI.hpp"
 
-class MyPlugin : public IPlugin {
+namespace Plugin::MyPlugin {
+
+class Plugin : public IPlugin {
 public:
-    explicit MyPlugin(ControllerAPI& api) : api_(api) {}
+    explicit Plugin(ControllerAPI& api) : api_(api), enabled_(true) {}
 
     bool initialize() override {
         // Setup your UI and handlers
         return true;
     }
 
+    void cleanup() override {}
     const char* getName() const override { return "My Plugin"; }
+    bool isEnabled() const override { return enabled_; }
+    void setEnabled(bool enabled) override { enabled_ = enabled; }
+    void update() override {}
 
 private:
     ControllerAPI& api_;
+    bool enabled_;
 };
+
+} // namespace Plugin::MyPlugin
 ```
 
-**Register in PluginRegistry:**
+**2. Register in main.cpp:**
 
 ```cpp
-// In plugin repo's PluginRegistry.cpp
-void PluginRegistry::setup(PluginManager& manager) {
-    manager.registerPlugin<MyPlugin>("myplugin");
+#include "app/MidiStudioApp.hpp"
+#include "plugin/myplugin/Plugin.hpp"
+
+void setupPlugins(PluginManager& manager) {
+    manager.registerPlugin<Plugin::MyPlugin::Plugin>("myplugin");
 }
+
+MidiStudioApp app(setupPlugins);
+void setup() {}
+void loop() { app.update(); }
 ```
 
 ---
@@ -219,37 +261,50 @@ This generates type-safe message classes for communication between firmware and 
 
 ---
 
-## Configuration
+## Build Configuration
+
+Required build flags for plugins using core:
+
+```ini
+build_flags =
+    -D USB_MIDI_SERIAL              # USB MIDI + Serial
+    -D TEENSY_OPT_SMALLEST_CODE     # Size optimization
+    -D LV_CONF_INCLUDE_SIMPLE       # LVGL config
+    -D LV_LVGL_H_INCLUDE_SIMPLE     # LVGL header
+
+board_build.f_cpu = 520000000       # CPU: 520 MHz
+```
 
 ### Display Pinout (ILI9341)
 
-- CS = Pin 28
-- DC = Pin 29
-- RST = Pin 30
-- MOSI = Pin 26
-- SCK = Pin 27
-- MISO = Pin 1
-- Speed: 70 MHz
-
-### Build Options
-
-Edit `platformio.ini` to customize:
-
-- **CPU Speed:** `board_build.f_cpu = 520000000` (520 MHz)
-- **USB Mode:** `-D USB_MIDI_SERIAL` (USB MIDI + Serial)
-- **Optimization:** `-D TEENSY_OPT_SMALLEST_CODE`
+- CS = Pin 28, DC = Pin 29, RST = Pin 30
+- MOSI = Pin 26, SCK = Pin 27, MISO = Pin 1
+- Speed: 70 MHz SPI
 
 ---
 
 ## Versioning
 
-Core firmware follows **Semantic Versioning** (SemVer):
+Core follows **Semantic Versioning** (SemVer):
 
-- **MAJOR:** Breaking changes to ControllerAPI
-- **MINOR:** New features (backward-compatible)
-- **PATCH:** Bug fixes
+- **Core Version** (MAJOR.MINOR.PATCH): Framework implementation
+  - MAJOR: Breaking structural changes
+  - MINOR: New features (backward-compatible)
+  - PATCH: Bug fixes
 
-**Current Version:** See `src/config/System.hpp`
+- **API Version** (MAJOR.MINOR.PATCH): Plugin compatibility
+  - MAJOR: Breaking API changes (plugins must update)
+  - MINOR: New API features (backward-compatible)
+  - PATCH: API bug fixes
+
+Lock to specific versions in production:
+
+```ini
+lib_deps =
+    https://github.com/petitechose-midi-studio/core.git#v1.0.0
+```
+
+**Current Version:** See `src/config/Version.hpp`
 
 ---
 
