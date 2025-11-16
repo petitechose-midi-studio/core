@@ -73,10 +73,9 @@ void MidiStudioApp::initializePlugins() {
 
     if (setupPlugins_) {
         setupPlugins_(plugins_);
+        LOGLN("[MidiStudioApp] Plugins initialized");
+        pluginsInitialized_ = true;
     }
-
-    pluginsInitialized_ = true;
-    LOGLN("[MidiStudioApp] Plugins initialized");
 }
 
 void MidiStudioApp::onBootComplete(const Event& event) {
