@@ -1,7 +1,7 @@
 ﻿#include "SplashScreenView.hpp"
 
-#include "common/ui/font/binary_font_buffer.hpp"
-#include "common/ui/theme/BaseTheme.hpp"
+#include "resource/common/ui/font/binary_font_buffer.hpp"
+#include "resource/common/ui/theme/BaseTheme.hpp"
 #include "config/System.hpp"
 
 SplashScreenView::Config::Config()

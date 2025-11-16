@@ -1,4 +1,4 @@
-#include "ControllerAPI.hpp"
+#include "api/ControllerAPI.hpp"
 #include "adapter/input/encoder/EncoderController.hpp"
 #include "adapter/midi/TeensyUsbMidiOut.hpp"
 #include "core/event/IEventBus.hpp"

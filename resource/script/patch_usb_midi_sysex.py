@@ -10,10 +10,23 @@ Import("env")
 
 def read_sysex_size_from_config():
     """Read USB_SYSEX_MAX_SIZE from System.hpp"""
-    config_file = os.path.join(env.subst("$PROJECT_DIR"), "src", "config", "System.hpp")
+    project_dir = env.subst("$PROJECT_DIR")
 
-    if not os.path.exists(config_file):
-        print(f"[WARNING] System.hpp not found at {config_file}")
+    # Try multiple locations (for both direct builds and examples)
+    possible_paths = [
+        os.path.join(project_dir, "src", "config", "System.hpp"),           # Direct build
+        os.path.join(project_dir, "..", "..", "src", "config", "System.hpp"), # Examples
+    ]
+
+    config_file = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            config_file = path
+            break
+
+    if config_file is None:
+        print(f"[WARNING] System.hpp not found in any expected location")
+        print(f"[WARNING] Searched: {possible_paths}")
         return None
 
     try:

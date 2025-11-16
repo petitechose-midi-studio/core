@@ -29,13 +29,17 @@
 
 class MidiStudioApp {
 public:
-    MidiStudioApp();
+    using PluginSetupFn = void (*)(PluginManager&);
+
+    explicit MidiStudioApp(PluginSetupFn setupPlugins = nullptr);
     ~MidiStudioApp();
 
     bool setup();
     void update();
 
 private:
+    PluginSetupFn setupPlugins_;
+
     EventBus eventBus_;
 
     Ili9341Driver displayDriver_;

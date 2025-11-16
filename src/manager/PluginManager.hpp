@@ -12,9 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ControllerAPI.hpp"
+#include "api/ControllerAPI.hpp"
 #include "adapter/midi/TeensyUsbMidiOut.hpp"
-#include "common/interface/IPlugin.hpp"
+#include "resource/common/interface/IPlugin.hpp"
 #include "core/event/IEventBus.hpp"
 #include "core/input/InputBinding.hpp"
 
