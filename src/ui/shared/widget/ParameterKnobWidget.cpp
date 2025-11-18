@@ -4,9 +4,9 @@
 
 #include <cmath>
 
-#include "resource/common/ui/font/binary_font_buffer.hpp"
-#include "resource/common/ui/theme/BaseTheme.hpp"
-#include "resource/common/ui/util/TextUtils.hpp"
+#include "font/binary_font_buffer.hpp"
+#include "theme/BaseTheme.hpp"
+#include "util/TextUtils.hpp"
 
 ParameterKnobWidget::ParameterKnobWidget(lv_obj_t* parent, uint16_t width, uint16_t height,
                                          uint8_t color_index, bool centered)

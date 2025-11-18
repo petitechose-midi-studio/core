@@ -1,6 +1,6 @@
 #include "ButtonIndicator.hpp"
 
-#include "resource/common/ui/theme/BaseTheme.hpp"
+#include "../theme/BaseTheme.hpp"
 
 ButtonIndicator::ButtonIndicator(lv_obj_t* parent, lv_coord_t size)
     : led_(nullptr),

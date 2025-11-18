@@ -28,10 +28,6 @@ namespace UI {
 class IView;
 }
 
-namespace Plugins {
-class MidiOut;
-}  // namespace Plugins
-
 /**
  * @brief Controller API - Facade for plugin-to-controller communication
  *
