@@ -344,7 +344,7 @@
 #define LV_USE_SNAPSHOT 0
 
 #ifdef DEBUG_LOGS
-#define LV_USE_SYSMON 0
+#define LV_USE_SYSMON 1
 #if LV_USE_SYSMON
 #define LV_SYSMON_GET_IDLE lv_os_get_idle_percent
 #define LV_USE_PERF_MONITOR 1

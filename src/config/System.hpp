@@ -60,7 +60,7 @@ constexpr uint8_t DISPLAY_RST_PIN = 29;
 constexpr uint8_t DISPLAY_MOSI_PIN = 26;
 constexpr uint8_t DISPLAY_SCK_PIN = 27;
 constexpr uint8_t DISPLAY_MISO_PIN = 1;
-constexpr uint32_t DISPLAY_SPI_SPEED = 70000000; /* 70 MHz */
+constexpr uint32_t DISPLAY_SPI_SPEED = 55000000; /* 55 MHz */
 
 /* Multiplexer pins (CD74HC4067) */
 constexpr uint8_t MUX_S0_PIN = 3;
