@@ -5,8 +5,8 @@
 #include "adapter/display/ui/LVGLBridge.hpp"
 #include "config/System.hpp"
 #include "log/Macros.hpp"
-#include "resource/common/ui/interface/IView.hpp"
-#include "resource/common/ui/font/binary_font_buffer.hpp"
+#include "interface/IView.hpp"
+#include "font/binary_font_buffer.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/IEventBus.hpp"
 

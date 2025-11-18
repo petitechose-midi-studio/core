@@ -2,7 +2,7 @@
 
 **PlatformIO library for building MIDI controllers on Teensy 4.1**
 
-Core is a **library**, not standalone firmware. Plugins reference it via `lib_deps` and provide their own `main.cpp`.
+Core is designed as a **library** for plugin development. Plugins reference it via `lib_deps` and provide their own `main.cpp`. Core can also be built standalone for testing and development purposes.
 
 ---
 
@@ -14,10 +14,26 @@ Core provides the foundation for building MIDI Studio plugins:
 - **UI Framework** - LVGL-based components (ViewContainer, ViewManager, Registry)
 - **Plugin System** - Callback-based plugin registration
 - **Event Bus** - Unified event system for component communication
-- **Protocol Tools** - Python code generator for C++/Java protocol classes
 - **Resource Management** - Font rendering, assets, UI components
 
-**Core is NOT a standalone firmware** - plugins provide the main entry point and register themselves via callback.c
+---
+
+## Core Architecture: Standalone & Library
+
+Core has a dual nature:
+
+**1. Library Mode (Production)**
+- Plugins reference core via PlatformIO `lib_deps` pointing to GitHub releases
+- `library.json` exports only library code (`srcFilter` excludes `main.cpp`)
+- Plugins provide their own `main.cpp` with plugin registration
+- **Recommended approach** for plugin development
+
+**2. Standalone Mode (Development/Testing)**
+- Build directly from root using `platformio.ini`
+- `src/main.cpp` provides entry point with no plugins loaded
+- Useful for testing core features and hardware during development
+
+This design allows core development independently while being consumed as a clean library.
 
 ---
 
@@ -39,8 +55,8 @@ See [hardware repo](https://github.com/petitechose-midi-studio/hardware) for PCB
 ### Development Tools
 
 - **PlatformIO CLI or IDE** (latest)
-- **Python 3.8+** (for protocol generator)
-- **Git** (for submodules)
+- **Python 3.8+** (for build scripts)
+- **Git** (for dependencies)
 
 ### Dependencies (auto-installed by PlatformIO)
 
@@ -55,26 +71,9 @@ See [hardware repo](https://github.com/petitechose-midi-studio/hardware) for PCB
 
 ## Quick Start
 
-### Testing Core (without plugins)
+### Using Core in Your Plugin (Recommended)
 
-Core includes a minimal example for testing:
-
-```bash
-git clone https://github.com/petitechose-midi-studio/core.git
-cd core/examples/minimal
-
-# Build and upload
-pio run -e prod -t upload
-
-# Monitor serial output
-pio device monitor
-```
-
-This builds core with an empty plugin callback (no plugins loaded).
-
-### Using Core in Your Plugin
-
-**1. Reference core in your platformio.ini:**
+**1. Reference core release in your platformio.ini:**
 
 ```ini
 [env]
@@ -90,6 +89,8 @@ build_flags =
     -D LV_CONF_INCLUDE_SIMPLE
     -D LV_LVGL_H_INCLUDE_SIMPLE
 ```
+
+> Always pin to a specific release tag (e.g., `#v1.0.0`) for production stability.
 
 **2. Create src/main.cpp with callback:**
 
@@ -108,33 +109,46 @@ void setup() {}
 void loop() { app.update(); }
 ```
 
+### Testing Core in Standalone Mode
+
+For testing core features without creating a plugin:
+
+```bash
+git clone https://github.com/petitechose-midi-studio/core.git
+cd core
+
+# Build and upload (standalone mode with no plugins)
+pio run -e prod -t upload
+
+# Monitor serial output
+pio device monitor
+```
+
+This uses the root [platformio.ini](platformio.ini) and [src/main.cpp](src/main.cpp) to run core with an empty plugin callback.
+
 ---
 
 ## Repository Structure
 
 ```
 core/
-├── src/                     # Library source code (all compilable code)
-│   ├── adapter/            # Hardware drivers (display, input, MIDI)
-│   ├── api/                # Plugin API (ControllerAPI)
-│   ├── app/                # MidiStudioApp main class
-│   ├── config/             # Configuration (Version, System)
-│   ├── core/               # Core systems (events, factories)
-│   ├── manager/            # Managers (Plugin, View, Input)
-│   ├── resource/           # UI resources (fonts, widgets, themes)
-│   └── ui/                 # UI controllers and views
-├── resource/               # Non-compiled resources
-│   ├── code/py/protocol/  # Python protocol generator
-│   ├── font/              # Source fonts (TTF)
-│   ├── img/               # Source images
-│   └── script/            # Build scripts
-├── examples/
-│   └── minimal/           # Test core without plugins
-│       ├── platformio.ini
-│       └── src/main.cpp
-├── library.json            # PlatformIO library metadata
-├── library.properties      # Arduino library metadata
-├── LICENSE                 # CC-BY-NC-SA 4.0
+├── platformio.ini          # Standalone build configuration
+├── library.json            # PlatformIO library metadata & export config
+├── src/                    # Library source code (all compilable code)
+│   ├── main.cpp           # Standalone entry point (excluded from library export)
+│   ├── adapter/           # Hardware drivers (display, input, MIDI)
+│   ├── api/               # Plugin API (ControllerAPI)
+│   ├── app/               # MidiStudioApp main class
+│   ├── config/            # Configuration (Version, System)
+│   ├── core/              # Core systems (events, factories)
+│   ├── log/               # Logging utilities
+│   ├── manager/           # Managers (Plugin, View, Input)
+│   ├── resource/          # UI resources (fonts, widgets, themes)
+│   └── ui/                # UI controllers and views
+├── script/                # Build scripts (Python)
+├── resource/              # Non-compiled resources
+│   └── font/              # Source fonts (TTF)
+├── LICENSE                # CC-BY-NC-SA 4.0
 └── README.md
 ```
 
@@ -142,28 +156,44 @@ core/
 
 ## Local Development
 
-For developing both core and a plugin simultaneously:
+### Developing Core in Standalone Mode
+
+```bash
+cd core
+
+# Build with debug logs enabled
+pio run -e debug
+
+# Upload to hardware
+pio run -e debug -t upload
+```
+
+### Temporary Local Core Usage in Plugins
+
+**For temporary testing only** - when developing both core and a plugin simultaneously:
 
 **Option 1: File path reference**
 
 ```ini
 # plugin/platformio.ini
 lib_deps =
-    file://../core
+    file://../core  # Temporary: use for local testing only
 ```
 
-**Option 2: lib_extra_dirs (recommended)**
+**Option 2: lib_extra_dirs**
 
 ```ini
 # plugin/platformio.ini
 lib_extra_dirs = ../../..
-lib_ldf_mode = deep+
-
 lib_deps =
-    petitechose-midi-studio-core
+    petitechose-midi-studio-core  # Local resolution
 ```
 
-See `examples/minimal/platformio.ini` for a complete working example.
+> **Important:** Always replace local references with GitHub release tags before committing:
+> ```ini
+> lib_deps =
+>     https://github.com/petitechose-midi-studio/core.git#v1.0.0
+> ```
 
 ---
 
@@ -246,21 +276,6 @@ void loop() { app.update(); }
 
 ---
 
-## Protocol Generator
-
-The `resource/code/py/protocol/` directory contains a Python code generator that creates C++ and Java protocol classes from message definitions.
-
-**Usage:**
-
-```bash
-cd resources/code/py/protocol
-python generate.py
-```
-
-This generates type-safe message classes for communication between firmware and DAW extensions.
-
----
-
 ## Build Configuration
 
 Required build flags for plugins using core:
@@ -297,14 +312,18 @@ Core follows **Semantic Versioning** (SemVer):
   - MINOR: New API features (backward-compatible)
   - PATCH: API bug fixes
 
-Lock to specific versions in production:
+**Always pin to specific release tags in production:**
 
 ```ini
 lib_deps =
     https://github.com/petitechose-midi-studio/core.git#v1.0.0
 ```
 
-**Current Version:** See `src/config/Version.hpp`
+**Never use:**
+- Branch references like `#main` or `#develop` (unstable)
+- Local file paths like `file://../core` (not portable)
+
+**Current Version:** See [src/config/Version.hpp](src/config/Version.hpp)
 
 ---
 

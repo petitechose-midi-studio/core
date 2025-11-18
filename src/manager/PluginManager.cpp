@@ -6,8 +6,6 @@
 #include "adapter/midi/TeensyUsbMidiIn.hpp"
 #include "core/input/InputBinding.hpp"
 
-using namespace Plugins;
-
 PluginManager::PluginManager(IEventBus& eventBus, TeensyUsbMidiIn& midiIn,
                              TeensyUsbMidiOut& midiOut, EncoderController& encoders,
                              ViewManager& viewManager)
