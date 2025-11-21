@@ -18,6 +18,7 @@ ParameterKnobWidget::ParameterKnobWidget(lv_obj_t* parent, uint16_t width, uint1
       name_("PARAM") {
     createUI();
     setName(name_);
+    updateValue();  // Initial render with constructor values
 }
 
 ParameterKnobWidget::~ParameterKnobWidget() {
@@ -121,16 +122,11 @@ void ParameterKnobWidget::createValueIndicator() {
     lv_obj_set_style_line_color(value_indicator_, lv_color_hex(BaseTheme::Color::KNOB_VALUE), 0);
     lv_obj_set_style_line_rounded(value_indicator_, true, 0);
 
-    // Line from center to current value position
+    // Line from center (position will be set by updateValue() in constructor)
     line_points_[0].x = arc_center_x_;
     line_points_[0].y = arc_center_y_;
-
-    // Initial position at origin
-    float initial_angle = normalizedToAngle(origin_);
-    float angle_rad = angleToRadians(initial_angle);
-    // LVGL coordinate system: Y increases downward, so we negate sin
-    line_points_[1].x = arc_center_x_ + static_cast<lv_coord_t>(ARC_RADIUS * cosf(angle_rad));
-    line_points_[1].y = arc_center_y_ - static_cast<lv_coord_t>(ARC_RADIUS * sinf(angle_rad));
+    line_points_[1].x = arc_center_x_;
+    line_points_[1].y = arc_center_y_;
 
     lv_line_set_points(value_indicator_, line_points_, 2);
 }
@@ -194,10 +190,10 @@ void ParameterKnobWidget::updateValue() {
 
         last_origin_angle_ = origin_angle;
         last_value_angle_ = value_angle;
-    }
 
-    // Indicator line uses the same calculated angle (no duplication)
-    updateIndicatorLine(value_angle);
+        // Indicator line uses the same calculated angle (no duplication)
+        updateIndicatorLine(value_angle);
+    }
 }
 
 void ParameterKnobWidget::updateIndicatorLine(float value_angle) {
