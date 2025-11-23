@@ -24,6 +24,10 @@ public:
     void setDiscreteSteps(EncoderID encoderId, uint16_t steps);
     void setContinuous(EncoderID encoderId);
 
+    void setMode(EncoderID encoderId, Hardware::EncoderMode mode);
+    void setBounds(EncoderID encoderId, float min, float max);
+    void setDelta(EncoderID encoderId, float delta);
+
     Encoder* getEncoder(EncoderID id);
     const Encoder* getEncoder(EncoderID id) const;
 

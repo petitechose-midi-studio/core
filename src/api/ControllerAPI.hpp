@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "config/InputID.hpp"
+#include "core/struct/Encoder.hpp"
 #include "log/Macros.hpp"
 
 typedef struct _lv_obj_t lv_obj_t;
@@ -241,6 +242,36 @@ public:
      * Encoder will emit events for all value changes (default mode for knobs)
      */
     void setEncoderContinuous(EncoderID encoderId);
+
+    /**
+     * @brief Change encoder mode dynamically
+     * @param encoderId Encoder identifier
+     * @param mode Absolute or Relative
+     *
+     * Absolute: Normalized/bounded values with software stops
+     * Relative: Infinite rotation with cumulative position
+     */
+    void setEncoderMode(EncoderID encoderId, Hardware::EncoderMode mode);
+
+    /**
+     * @brief Set value bounds for encoder
+     * @param encoderId Encoder identifier
+     * @param min Minimum value
+     * @param max Maximum value
+     *
+     * Absolute mode: Maps normalized position to [min, max] range
+     * Relative mode: Clamps position to [min, max] bounds
+     */
+    void setEncoderBounds(EncoderID encoderId, float min, float max);
+
+    /**
+     * @brief Set delta per detent for Relative mode
+     * @param encoderId Encoder identifier
+     * @param delta Value increment/decrement per detent
+     *
+     * Only effective for encoders in Relative mode (default: ±1.0)
+     */
+    void setEncoderDelta(EncoderID encoderId, float delta);
 
     // ===== SEND API - MIDI output =====
 

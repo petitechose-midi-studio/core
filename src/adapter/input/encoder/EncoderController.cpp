@@ -37,6 +37,27 @@ void EncoderController::setContinuous(EncoderID encoderId) {
     }
 }
 
+void EncoderController::setMode(EncoderID encoderId, Hardware::EncoderMode mode) {
+    Encoder* encoder = getEncoder(encoderId);
+    if (encoder) {
+        encoder->setMode(mode);
+    }
+}
+
+void EncoderController::setBounds(EncoderID encoderId, float min, float max) {
+    Encoder* encoder = getEncoder(encoderId);
+    if (encoder) {
+        encoder->setBounds(min, max);
+    }
+}
+
+void EncoderController::setDelta(EncoderID encoderId, float delta) {
+    Encoder* encoder = getEncoder(encoderId);
+    if (encoder) {
+        encoder->setDelta(delta);
+    }
+}
+
 Encoder* EncoderController::getEncoder(EncoderID id) {
     auto it = idToIndex_.find(id);
     return (it != idToIndex_.end()) ? &encoders_[it->second] : nullptr;

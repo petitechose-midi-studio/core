@@ -25,7 +25,11 @@ Encoder::Encoder(const Hardware::Encoder& setup, IEventBus& eventBus)
       hasPendingEvent_(false),
       pendingValue_(0.0f),
       discreteSteps_(0),
-      lastQuantizedValue_(-1.0f) {
+      lastQuantizedValue_(-1.0f),
+      minBound_(0.0f),
+      maxBound_(1.0f),
+      hasBounds_(false),
+      deltaPerDetent_(1.0f) {
     virtualRange_ = calculateDefaultVirtualRange();
     virtualPosition_ = virtualRange_ / 2;
 
@@ -76,6 +80,32 @@ void Encoder::setContinuous() {
     setDiscreteSteps(0);
 }
 
+void Encoder::setMode(Hardware::EncoderMode mode) {
+    mode_ = mode;
+    // Reset state when switching modes
+    if (mode_ == Hardware::EncoderMode::Relative) {
+        accumulatedDelta_ = 0;
+    } else {
+        virtualPosition_ = virtualRange_ / 2;
+        lastNormalizedValue_ = 0.5f;
+    }
+}
+
+void Encoder::setBounds(float min, float max) {
+    minBound_ = min;
+    maxBound_ = max;
+    hasBounds_ = true;
+
+    // Clamp current position if in Relative mode
+    if (mode_ == Hardware::EncoderMode::Relative && hasBounds_) {
+        relativePosition_ = constrain(relativePosition_, minBound_, maxBound_);
+    }
+}
+
+void Encoder::setDelta(float delta) {
+    deltaPerDetent_ = delta;
+}
+
 void Encoder::processEncoderChange(int32_t delta) {
     if (delta == 0) return;
 
@@ -92,11 +122,11 @@ void Encoder::handleRelativeMode(int32_t delta) {
     bool shouldEmit = abs(accumulatedDelta_) >= stepsPerDetent_;
     if (!shouldEmit) return;
 
-    float step = (accumulatedDelta_ > 0) ? 1.0f : -1.0f;
-    relativePosition_ += step;
-    accumulatedDelta_ = 0;
+    float step = (accumulatedDelta_ > 0) ? deltaPerDetent_ : -deltaPerDetent_;
 
-    emitPendingEvent(relativePosition_);
+    // In Relative mode, emit the delta (step), not cumulative position
+    accumulatedDelta_ = 0;
+    emitPendingEvent(step);
 }
 
 void Encoder::handleAbsoluteMode(int32_t delta) {
@@ -108,8 +138,12 @@ void Encoder::handleAbsoluteMode(int32_t delta) {
     if (normalizedValue == lastNormalizedValue_) return;
     lastNormalizedValue_ = normalizedValue;
 
-    float valueToEmit = normalizedValue;
-    if (applyQuantization(normalizedValue, valueToEmit)) {
+    // Map to bounds if configured, otherwise use normalized [0.0-1.0]
+    float valueToEmit = hasBounds_
+        ? minBound_ + (normalizedValue * (maxBound_ - minBound_))
+        : normalizedValue;
+
+    if (applyQuantization(valueToEmit, valueToEmit)) {
         emitPendingEvent(valueToEmit);
     }
 }

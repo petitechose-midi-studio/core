@@ -117,13 +117,11 @@ void ListOverlay::createOverlay() {
     lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_SCROLLABLE);  // No scrollbar on overlay
 
     container_ = lv_obj_create(overlay_);
-    lv_obj_set_size(container_, LV_PCT(80), LV_PCT(70));
+    lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
     lv_obj_align(container_, LV_ALIGN_CENTER, 0, 0);  // Explicit center alignment
     lv_obj_set_style_bg_color(container_, lv_color_hex(0x1A1A1A), 0);
-    lv_obj_set_style_border_color(container_, lv_color_hex(0x444444), 0);
-    lv_obj_set_style_border_width(container_, 2, 0);
-    lv_obj_set_style_radius(container_, 8, 0);
-    lv_obj_set_style_pad_all(container_, 12, 0);  // Inner padding for border spacing
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(container_, 8, 0);  // Inner padding for border spacing
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);  // No scrollbar on container
 
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
@@ -131,7 +129,7 @@ void ListOverlay::createOverlay() {
                           LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(container_, 8, 0);  // Gap between title and list
+    lv_obj_set_style_pad_row(container_, 4, 0);  // Gap between title and list
 
     createTitleLabel();
     createList();
@@ -161,8 +159,13 @@ void ListOverlay::createList() {
     lv_obj_set_flex_grow(list_, 1);  // Take remaining space
     lv_obj_set_style_bg_opa(list_, LV_OPA_TRANSP, 0);  // Transparent background
     lv_obj_set_style_border_width(list_, 0, 0);
-    lv_obj_set_style_pad_all(list_, 5, 0);
-    lv_obj_set_style_pad_row(list_, 6, 0);  // Gap between items
+    lv_obj_set_style_pad_all(list_, 4, 0);
+    lv_obj_set_style_pad_row(list_, 2, 0);  // Gap between items
+
+    // Discrete scrollbar styling
+    lv_obj_set_style_width(list_, 3, LV_PART_SCROLLBAR);  // Thin scrollbar
+    lv_obj_set_style_bg_color(list_, lv_color_hex(Color::INACTIVE_LIGHTER), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(list_, LV_OPA_30, LV_PART_SCROLLBAR);  // Very transparent
 
     lv_obj_add_event_cb(
         list_,
@@ -170,7 +173,7 @@ void ListOverlay::createList() {
             if (lv_event_get_code(e) == LV_EVENT_SCROLL_BEGIN) {
                 lv_anim_t* anim = lv_event_get_scroll_anim(e);
                 if (anim) {
-                    anim->duration = 100;  // 100ms for responsive scroll
+                    anim->duration = 50;  // 100ms for responsive scroll
                 }
             }
         },

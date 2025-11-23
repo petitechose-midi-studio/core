@@ -100,6 +100,18 @@ void ControllerAPI::setEncoderContinuous(EncoderID encoderId) {
     encoders_.setContinuous(encoderId);
 }
 
+void ControllerAPI::setEncoderMode(EncoderID encoderId, Hardware::EncoderMode mode) {
+    encoders_.setMode(encoderId, mode);
+}
+
+void ControllerAPI::setEncoderBounds(EncoderID encoderId, float min, float max) {
+    encoders_.setBounds(encoderId, min, max);
+}
+
+void ControllerAPI::setEncoderDelta(EncoderID encoderId, float delta) {
+    encoders_.setDelta(encoderId, delta);
+}
+
 /*
  * SEND API - MIDI output
  */

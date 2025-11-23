@@ -24,6 +24,10 @@ public:
     void setDiscreteSteps(uint8_t steps);
     void setContinuous();
 
+    void setMode(Hardware::EncoderMode mode);
+    void setBounds(float min, float max);
+    void setDelta(float delta);
+
     EncoderID getId() const {
         return id_;
     }
@@ -53,6 +57,11 @@ private:
 
     uint8_t discreteSteps_;
     float lastQuantizedValue_;
+
+    float minBound_;
+    float maxBound_;
+    bool hasBounds_;
+    float deltaPerDetent_;
 
     void processEncoderChange(int32_t delta);
     void handleRelativeMode(int32_t delta);
