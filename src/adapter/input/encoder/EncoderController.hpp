@@ -21,7 +21,7 @@ public:
 
     void resetEncoderPosition(EncoderID encoderId, float normalizedValue);
 
-    void setDiscreteSteps(EncoderID encoderId, uint8_t steps);
+    void setDiscreteSteps(EncoderID encoderId, uint16_t steps);
     void setContinuous(EncoderID encoderId);
 
     Encoder* getEncoder(EncoderID id);

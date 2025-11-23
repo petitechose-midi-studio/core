@@ -206,7 +206,19 @@ void ListOverlay::populateList() {
 
         lv_obj_t* label = lv_label_create(btn);
         lv_label_set_text(label, item.c_str());
-        lv_obj_set_style_text_color(label, lv_color_hex(Color::INACTIVE_LIGHTER), 0);
+
+        // Configure text styles for different states
+        lv_obj_set_style_text_color(label, lv_color_hex(Color::INACTIVE_LIGHTER), LV_STATE_DEFAULT);
+        lv_obj_set_style_text_opa(label, LV_OPA_COVER, LV_STATE_DEFAULT);
+
+        lv_obj_set_style_text_color(label, lv_color_hex(Color::TEXT_PRIMARY), LV_STATE_FOCUSED);
+        lv_obj_set_style_text_opa(label, LV_OPA_COVER, LV_STATE_FOCUSED);
+
+        lv_obj_set_style_text_color(label, lv_color_white(), LV_STATE_PRESSED);
+        lv_obj_set_style_text_opa(label, LV_OPA_COVER, LV_STATE_PRESSED);
+
+        lv_obj_set_style_text_color(label, lv_color_hex(Color::INACTIVE_LIGHTER), LV_STATE_DISABLED);
+        lv_obj_set_style_text_opa(label, LV_OPA_50, LV_STATE_DISABLED);
 
         if (fonts.list_item_label) {
             lv_obj_set_style_text_font(label, fonts.list_item_label, 0);
@@ -219,27 +231,37 @@ void ListOverlay::populateList() {
     updateHighlight();
 }
 
+// Helper: recursively apply/clear state on an object and all descendants
+static void applyStateRecursive(lv_obj_t* obj, lv_state_t state, bool apply) {
+    if (!obj) return;
+
+    if (apply) {
+        lv_obj_add_state(obj, state);
+    } else {
+        lv_obj_clear_state(obj, state);
+    }
+
+    // Apply to all children recursively
+    uint32_t child_count = lv_obj_get_child_cnt(obj);
+    for (uint32_t i = 0; i < child_count; i++) {
+        lv_obj_t* child = lv_obj_get_child(obj, i);
+        applyStateRecursive(child, state, apply);
+    }
+}
+
 void ListOverlay::updateHighlight() {
     if (buttons_.empty() || selected_index_ < 0 ||
         selected_index_ >= static_cast<int>(buttons_.size())) {
         return;
     }
 
+    // Clear focused state on all buttons and their descendants
     for (size_t i = 0; i < buttons_.size(); i++) {
-        lv_obj_clear_state(buttons_[i], LV_STATE_CHECKED);
-
-        lv_obj_t* label = lv_obj_get_child(buttons_[i], 0);  // Label is now first child (no bullet)
-        if (label) {
-            lv_obj_set_style_text_color(label, lv_color_hex(Color::INACTIVE_LIGHTER), 0);
-        }
+        applyStateRecursive(buttons_[i], LV_STATE_FOCUSED, false);
     }
 
-    lv_obj_add_state(buttons_[selected_index_], LV_STATE_CHECKED);
-
-    lv_obj_t* selected_label = lv_obj_get_child(buttons_[selected_index_], 0);  // Label is now first child (no bullet)
-    if (selected_label) {
-        lv_obj_set_style_text_color(selected_label, lv_color_hex(Color::TEXT_PRIMARY), 0);
-    }
+    // Set focused state on selected button and all its descendants
+    applyStateRecursive(buttons_[selected_index_], LV_STATE_FOCUSED, true);
 }
 
 void ListOverlay::scrollToSelected() {

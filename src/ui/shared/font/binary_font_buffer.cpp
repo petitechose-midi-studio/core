@@ -42,6 +42,9 @@ void load_fonts() {
             *(desc.buffer_len)
         );
     }
+
+    // Initialize LVGL default font with symbols (Montserrat 12)
+    fonts.lvgl_symbols = &lv_font_montserrat_12;
 }
 
 void free_fonts() {
