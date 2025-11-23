@@ -11,6 +11,7 @@ struct FontRegistry {
     lv_font_t* list_item_label = nullptr;
     lv_font_t* splash_title = nullptr;
     lv_font_t* splash_version = nullptr;
+    const lv_font_t* lvgl_symbols = nullptr;  // LVGL default font with symbols
 };
 
 extern FontRegistry fonts;

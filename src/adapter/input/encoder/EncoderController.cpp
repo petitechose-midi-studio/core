@@ -23,7 +23,7 @@ void EncoderController::resetEncoderPosition(EncoderID encoderId, float normaliz
     }
 }
 
-void EncoderController::setDiscreteSteps(EncoderID encoderId, uint8_t steps) {
+void EncoderController::setDiscreteSteps(EncoderID encoderId, uint16_t steps) {
     Encoder* encoder = getEncoder(encoderId);
     if (encoder) {
         encoder->setDiscreteSteps(steps);
