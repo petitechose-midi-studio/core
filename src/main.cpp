@@ -1,12 +1,11 @@
 #include <Arduino.h>
+#include "log/Macros.hpp"
 
 #include "app/MidiStudioApp.hpp"
-#include "log/Macros.hpp"
 
 MidiStudioApp app(nullptr);
 
 void setup() {
-    delay(1000);
     LOGLN("=======================================");
     LOGLN("======== MIDI Studio - Core Dev =======");
     LOGLN("=======================================");

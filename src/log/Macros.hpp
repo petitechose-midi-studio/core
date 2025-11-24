@@ -3,6 +3,20 @@
 #include <Arduino.h>
 
 #ifdef DEBUG_LOGS
+
+// Initialiser Serial avant les constructeurs globaux
+// S'exécute automatiquement dès que ce header est inclus
+namespace {
+    __attribute__((constructor(101)))
+    void initSerialForLogging() {
+        // Attendre que Serial soit prêt (timeout 3 secondes)
+        unsigned long startMillis = millis();
+        while (!Serial && (millis() - startMillis < 3000)) {
+            // Attendre la connexion du moniteur série
+        }
+    }
+}
+
 #define LOG(msg)           \
     do {                   \
         Serial.print(msg); \
