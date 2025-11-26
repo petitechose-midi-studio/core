@@ -1,0 +1,16 @@
+[project]
+name = "petitechose-midi-studio-core"
+version = "0.1.0"
+description = "Core library for PetiteChose MIDI Studio"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+    "pillow>=10.0.0",  # For LVGL image conversion
+]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"

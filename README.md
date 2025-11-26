@@ -366,3 +366,34 @@ See [LICENSE](LICENSE) for full terms.
 ---
 
 **Built by petitechose.audio**
+
+---
+
+## LVGL Asset Scripts
+
+Core provides shared scripts for converting assets to LVGL format.
+
+### Font Converter
+
+Converts TTF/OTF fonts to LVGL binary format.
+
+```bash
+bash script/lvgl/font/convert_font.sh
+```
+
+**Configuration** (in your plugin's `script/lvgl/font/font_converter.conf`):
+
+```bash
+FONT_SOURCE_DIR="asset/font"
+FONT_OUTPUT_DIR="src/ui/font"
+CHAR_RANGE="UTF8"  # or: ASCII, LATIN1, PUA, custom hex
+```
+
+**Presets:**
+| Preset | Range | Use |
+|--------|-------|-----|
+| `ASCII` | 0x20-0x7F | Basic text |
+| `UTF8` | ASCII+LATIN1+LATIN_EXT | Full text |
+| `PUA` | 0xE000-0xF8FF | Icon fonts |
+
+See [script/lvgl/font/README.md](script/lvgl/font/README.md) for details.

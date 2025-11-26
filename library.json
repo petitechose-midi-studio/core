@@ -37,7 +37,8 @@
     "include": [
       "src",
       "src/ui/shared",
-      "resource"
+      "asset",
+      "script"
     ],
     "exclude": [
       "examples",
@@ -46,6 +47,7 @@
     ]
   },
   "build": {
+    "extraScript": "script/midi/sysex/patch_usb_midi_sysex.py",
     "includeDir": "src",
     "flags": [
       "-I src/config/ui",
