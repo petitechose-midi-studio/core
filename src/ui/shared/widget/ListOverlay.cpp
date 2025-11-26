@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-#include "font/binary_font_buffer.hpp"
+#include "font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
 
 using namespace BaseTheme;

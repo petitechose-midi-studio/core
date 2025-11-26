@@ -1,13 +1,11 @@
-#include "binary_font_buffer.hpp"
+#include "FontLoader.hpp"
 
 #include <Arduino.h>
 
 #include "data/interdisplay_bold_13_bold_4bpp.c.inc"
 #include "data/interdisplay_bold_14_bold_4bpp.c.inc"
-#include "data/interdisplay_light_14_light_4bpp.c.inc"
-#include "data/interdisplay_medium_13_4bpp.c.inc"
-#include "data/interdisplay_medium_14_4bpp.c.inc"
 #include "data/interdisplay_bold_20_bold_4bpp.c.inc"
+#include "data/interdisplay_medium_13_4bpp.c.inc"
 #include "data/jetbrainsmono_medium_13_4bpp.c.inc"
 
 struct FontDescriptor {
@@ -22,8 +20,6 @@ struct FontDescriptor {
 static const FontDescriptor font_descriptors[] = {
     FONT_ENTRY(parameter_label, interdisplay_bold_13_bold_4bpp),
     FONT_ENTRY(parameter_value_label, interdisplay_medium_13_4bpp),
-    FONT_ENTRY(device_label, interdisplay_medium_14_4bpp),
-    FONT_ENTRY(page_label, interdisplay_light_14_light_4bpp),
     FONT_ENTRY(tempo_label, interdisplay_bold_14_bold_4bpp),
     FONT_ENTRY(list_item_label, interdisplay_medium_13_4bpp),
     FONT_ENTRY(splash_title, interdisplay_bold_20_bold_4bpp),
@@ -42,9 +38,6 @@ void load_fonts() {
             *(desc.buffer_len)
         );
     }
-
-    // Initialize LVGL default font with symbols (Montserrat 12)
-    fonts.lvgl_symbols = &lv_font_montserrat_12;
 }
 
 void free_fonts() {

@@ -1,6 +1,6 @@
 ﻿#include "SplashScreenView.hpp"
 
-#include "ui/shared/font/binary_font_buffer.hpp"
+#include "ui/shared/font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
 #include "config/System.hpp"
 

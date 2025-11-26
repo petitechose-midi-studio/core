@@ -1,6 +1,6 @@
 #include "ParameterButtonWidget.hpp"
 
-#include "font/binary_font_buffer.hpp"
+#include "font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
 #include "util/TextUtils.hpp"
 #include "log/Macros.hpp"

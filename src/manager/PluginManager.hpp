@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -21,6 +22,13 @@
 class TeensyUsbMidiIn;
 class EncoderController;
 class LVGLBridge;
+
+// SFINAE helper: detect if T::loadResources() exists
+template <typename T, typename = void>
+struct has_load_resources : std::false_type {};
+
+template <typename T>
+struct has_load_resources<T, std::void_t<decltype(T::loadResources())>> : std::true_type {};
 
 class PluginManager {
 private:
@@ -46,6 +54,11 @@ public:
 
         if (plugins_.find(name) != plugins_.end()) {
             return false;
+        }
+
+        // Load plugin resources before construction (if loadResources() exists)
+        if constexpr (has_load_resources<PluginType>::value) {
+            PluginType::loadResources();
         }
 
         auto plugin = std::make_unique<PluginType>(api_);

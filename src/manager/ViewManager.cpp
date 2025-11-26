@@ -6,7 +6,7 @@
 #include "config/System.hpp"
 #include "log/Macros.hpp"
 #include "interface/IView.hpp"
-#include "font/binary_font_buffer.hpp"
+#include "font/FontLoader.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/IEventBus.hpp"
 
