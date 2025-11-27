@@ -1,21 +1,17 @@
 #pragma once
 
 #include <lvgl.h>
+#include <cstdint>
 
-/**
- * @brief Core font registry
- * Contains generic fonts that plugins can reference by name.
- * Also contains semantic aliases for core UI components.
- */
 struct FontRegistry {
-    // Generic Inter Display 14px fonts (plugins reference these)
+    // Generic fonts
     lv_font_t* inter_14_light = nullptr;
     lv_font_t* inter_14_regular = nullptr;
     lv_font_t* inter_14_medium = nullptr;
     lv_font_t* inter_14_semibold = nullptr;
     lv_font_t* inter_14_bold = nullptr;
 
-    // Semantic aliases for core UI components
+    // Semantic aliases
     lv_font_t* parameter_label = nullptr;
     lv_font_t* parameter_value_label = nullptr;
     lv_font_t* tempo_label = nullptr;
@@ -26,23 +22,13 @@ struct FontRegistry {
 
 extern FontRegistry fonts;
 
-/**
- * @brief Register a plugin font to be loaded from buffer
- * Call this in Plugin::loadResources()
- */
+// Plugin API
 void register_font(lv_font_t** font_ptr, const uint8_t* buffer, uint32_t len);
-
-/**
- * @brief Load core fonts (called by ViewManager at startup)
- */
-void load_fonts();
-
-/**
- * @brief Load plugin fonts (called by PluginManager after loadResources)
- */
 void load_plugin_fonts();
-
-/**
- * @brief Free all loaded fonts
- */
 void free_fonts();
+
+// Incremental loading API
+void fonts_register_core();
+bool fonts_load_essential();
+uint8_t fonts_get_pending_count();
+bool fonts_load_next(const char** outFontName = nullptr);

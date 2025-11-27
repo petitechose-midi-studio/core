@@ -1,13 +1,7 @@
-/*
- * MidiStudioApp - Application entry point
- *
- * Owns all subsystems (stack-allocated for zero overhead):
- * Display, Input, MIDI, UI, Plugins
- */
-
 #pragma once
 
 #include <etl/vector.h>
+#include <etl/optional.h>
 
 #include "adapter/display/driver/Ili9341Driver.hpp"
 #include "adapter/display/ui/LVGLBridge.hpp"
@@ -16,6 +10,7 @@
 #include "adapter/midi/TeensyUsbMidiIn.hpp"
 #include "adapter/midi/TeensyUsbMidiOut.hpp"
 #include "adapter/multiplexer/MultiplexerController.hpp"
+#include "boot/BootManager.hpp"
 #include "config/System.hpp"
 #include "core/event/EventBus.hpp"
 #include "core/event/IEventBus.hpp"
@@ -37,39 +32,45 @@ public:
     bool setup();
     void update();
 
+    bool isBootComplete() const { return bootComplete_; }
+
 private:
-    // 1. Display (first - needed by everything)
+    // Display
     Ili9341Driver displayDriver_;
 
-    // 6. Plugins (last - depends on everything)
-    // 2. Core + Hardware config
+    // Core
     PluginSetupFn setupPlugins_;
-
     EventBus eventBus_;
     Multiplexer multiplexer_;
     etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT> encoders_config_;
     etl::vector<Hardware::Button, System::Hardware::BUTTONS_COUNT> buttons_config_;
 
-    // 3. Bridge (after display, before views)
+    // Bridge
     LVGLBridge displayBridge_;
 
-    // 4. MIDI + Input controllers
+    // MIDI + Input
     TeensyUsbMidiOut midiOut_;
     TeensyUsbMidiIn midiIn_;
     EncoderController encoders_;
     ButtonController buttons_;
     MidiMapper midiMapper_;
 
-    // 5. Views
+    // Views
     ViewManager ui_;
     InputManager inputManager_;
     ViewController uiController_;
+
+    // Plugins
     PluginManager plugins_;
 
-    bool ready_ = false;
+    // Boot
+    etl::optional<Boot::BootManager> bootManager_;
+    bool bootComplete_ = false;
     bool pluginsInitialized_ = false;
     SubscriptionId bootCompleteSub_ = 0;
 
     void initializePlugins();
     void onBootComplete(const Event& event);
+    void runBootSequence();
+    void runMainLoop();
 };

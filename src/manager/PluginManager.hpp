@@ -61,7 +61,6 @@ public:
         if constexpr (has_load_resources<PluginType>::value) {
             PluginType::loadResources();
             load_plugin_fonts();
-            delay(100);
         }
 
         auto plugin = std::make_unique<PluginType>(api_);

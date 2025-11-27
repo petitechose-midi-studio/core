@@ -1,4 +1,4 @@
-﻿#include "ViewManager.hpp"
+#include "ViewManager.hpp"
 
 #include <lvgl.h>
 
@@ -6,16 +6,17 @@
 #include "config/System.hpp"
 #include "log/Macros.hpp"
 #include "interface/IView.hpp"
-#include "font/FontLoader.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/IEventBus.hpp"
 
 ViewManager::ViewManager(LVGLBridge& displayBridge, IEventBus& eventBus)
-    : displayBridge_(displayBridge), eventBus_(eventBus) {
+    : displayBridge_(displayBridge), eventBus_(eventBus) {}
 
-    load_fonts();
+void ViewManager::initScreens() {
+    if (screensInitialized_) return;
 
-    // Create 2 screens managed by Core
+    LOGLN("[ViewManager] Creating screens...");
+
     coreScreen_ = lv_obj_create(nullptr);
     lv_obj_set_style_bg_color(coreScreen_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_pad_all(coreScreen_, 0, 0);
@@ -24,51 +25,48 @@ ViewManager::ViewManager(LVGLBridge& displayBridge, IEventBus& eventBus)
     lv_obj_set_style_bg_color(pluginScreen_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_pad_all(pluginScreen_, 0, 0);
 
-    // Create and show splash view on coreScreen_
-    splashView_.emplace(coreScreen_);
-    if (splashView_) {
-        splashView_->init();
-        showCoreSplash();
-    }
-
-    // Load coreScreen at boot
     lv_scr_load(coreScreen_);
+    screensInitialized_ = true;
+}
+
+void ViewManager::initSplash() {
+    if (!screensInitialized_ || splashView_.has_value()) return;
+
+    LOGLN("[ViewManager] Creating splash...");
+    splashView_.emplace(coreScreen_);
+    splashView_->init();
+    showCoreSplash();
+}
+
+void ViewManager::emitBootComplete() {
+    if (bootCompleteEmitted_) return;
+    LOGLN("[ViewManager] BootComplete");
+    eventBus_.emit(SystemBootCompleteEvent());
+    bootCompleteEmitted_ = true;
 }
 
 void ViewManager::update() {
-    if (!System::UI::ENABLE_FULL_UI) {
-        return;
-    }
+    if (!System::UI::ENABLE_FULL_UI || !screensInitialized_) return;
 
     if (currentPluginView_) {
-        // Plugin view is active
         displayBridge_.refresh();
     } else if (splashView_ && splashView_->isActive()) {
-        // Core splash is active
         splashView_->update();
-
-        // Emit BootComplete once when splash is complete
         if (!bootCompleteEmitted_ && splashView_->isSplashScreenCompleted()) {
-            LOGLN("[ViewManager] Splash complete - Emitting BootComplete event");
-            eventBus_.emit(SystemBootCompleteEvent());
-            bootCompleteEmitted_ = true;
+            emitBootComplete();
         }
-
         displayBridge_.refresh();
     }
 }
 
 void ViewManager::showCoreSplash() {
-    splashView_->setActive(true);
+    if (splashView_) splashView_->setActive(true);
 }
 
 void ViewManager::hideCoreSplash() {
-    splashView_->setActive(false);
+    if (splashView_) splashView_->setActive(false);
 }
 
-/*
- * Plugin View Management
- */
 lv_obj_t* ViewManager::getPluginContainer() {
     return pluginScreen_;
 }
@@ -81,13 +79,10 @@ void ViewManager::showPluginView(UI::IView& view) {
 }
 
 void ViewManager::hidePluginView() {
-    // Deactivate current plugin view if any
     if (currentPluginView_) {
         currentPluginView_->onDeactivate();
         currentPluginView_ = nullptr;
     }
-
-    // Return to Core screen and show splash
     showCoreSplash();
     lv_scr_load(coreScreen_);
 }

@@ -9,6 +9,8 @@ public:
     Ili9341Driver();
     ~Ili9341Driver() = default;
 
+    bool init();
+    bool isInitialized() const { return initialized_; }
     void refresh(bool redraw_now, uint16_t* pixels);
 
 private:
@@ -16,4 +18,5 @@ private:
     uint16_t* framebuffer_;
     ILI9341_T4::DiffBuff diff1_;
     ILI9341_T4::DiffBuff diff2_;
+    bool initialized_ = false;
 };
