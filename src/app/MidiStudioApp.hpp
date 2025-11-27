@@ -38,28 +38,31 @@ public:
     void update();
 
 private:
+    // 1. Display (first - needed by everything)
+    Ili9341Driver displayDriver_;
+
+    // 6. Plugins (last - depends on everything)
+    // 2. Core + Hardware config
     PluginSetupFn setupPlugins_;
 
     EventBus eventBus_;
-
-    Ili9341Driver displayDriver_;
     Multiplexer multiplexer_;
-
     etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT> encoders_config_;
     etl::vector<Hardware::Button, System::Hardware::BUTTONS_COUNT> buttons_config_;
 
+    // 3. Bridge (after display, before views)
     LVGLBridge displayBridge_;
 
+    // 4. MIDI + Input controllers
     TeensyUsbMidiOut midiOut_;
     TeensyUsbMidiIn midiIn_;
-
     EncoderController encoders_;
     ButtonController buttons_;
-
     MidiMapper midiMapper_;
+
+    // 5. Views
     ViewManager ui_;
     InputManager inputManager_;
-
     ViewController uiController_;
     PluginManager plugins_;
 

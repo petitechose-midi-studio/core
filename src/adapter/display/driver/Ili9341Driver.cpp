@@ -15,7 +15,7 @@ Ili9341Driver::Ili9341Driver()
       framebuffer_(main_framebuffer),
       diff1_(diffbuffer1, sizeof(diffbuffer1)),
       diff2_(diffbuffer2, sizeof(diffbuffer2)) {
-    delay(100);  // Allow display to power up
+    delay(100); // Allow display to power up
     tft_.begin(System::Hardware::DISPLAY_SPI_SPEED);
     tft_.setRotation(System::Display::ROTATION);
     tft_.invertDisplay(true);

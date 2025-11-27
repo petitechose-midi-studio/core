@@ -18,6 +18,7 @@
 #include "resource/common/interface/IPlugin.hpp"
 #include "core/event/IEventBus.hpp"
 #include "core/input/InputBinding.hpp"
+#include "font/FontLoader.hpp"
 
 class TeensyUsbMidiIn;
 class EncoderController;
@@ -56,9 +57,11 @@ public:
             return false;
         }
 
-        // Load plugin resources before construction (if loadResources() exists)
+        // Load plugin resources and fonts (if loadResources() exists)
         if constexpr (has_load_resources<PluginType>::value) {
             PluginType::loadResources();
+            load_plugin_fonts();
+            delay(100);
         }
 
         auto plugin = std::make_unique<PluginType>(api_);

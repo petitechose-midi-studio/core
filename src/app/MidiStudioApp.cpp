@@ -10,28 +10,31 @@
  * Constructor - Full stack allocation following dependency levels
  */
 MidiStudioApp::MidiStudioApp(PluginSetupFn setupPlugins)
-
-    : setupPlugins_(setupPlugins),
+    // 1. Display (first)
+    : displayDriver_(),
+      // 2. Core + Hardware config
+      setupPlugins_(setupPlugins),
       eventBus_(),
-      displayDriver_(),
       multiplexer_(),
-
       encoders_config_(InputFactory::createEncoders()),
       buttons_config_(InputFactory::createButtons()),
-
+      // 3. Bridge
       displayBridge_(displayDriver_),
+      // 4. MIDI + Input controllers
       midiOut_(eventBus_),
       midiIn_(eventBus_),
       encoders_(encoders_config_, eventBus_),
       buttons_(buttons_config_, multiplexer_, eventBus_),
-
       midiMapper_(midiOut_, eventBus_, MidiFactory::createDefault()),
+      // 5. Views
       ui_(displayBridge_, eventBus_),
       inputManager_(encoders_, buttons_),
-
       uiController_(ui_, eventBus_),
-      plugins_(eventBus_, midiIn_, midiOut_, encoders_, ui_) {
+      // 6. Plugins (last)
+      plugins_(eventBus_, midiIn_, midiOut_, encoders_, ui_)
+{
 
+    delay(100);
     // S'abonner à l'événement BootComplete pour initialiser les plugins après le splash
     bootCompleteSub_ = eventBus_.on(EventCategory::System, SystemEvent::BootComplete,
         [this](const Event& e) {
