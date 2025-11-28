@@ -7,13 +7,21 @@
 
 TeensyUsbMidiIn* TeensyUsbMidiIn::instance_ = nullptr;
 
-TeensyUsbMidiIn::TeensyUsbMidiIn(IEventBus& eventBus) : eventBus_(eventBus) {
+TeensyUsbMidiIn::TeensyUsbMidiIn(IEventBus& eventBus)
+    : eventBus_(eventBus), initialized_(false) {
     instance_ = this;
+    // NOTE: Do NOT configure MIDI callbacks here - defer to init()
+}
+
+void TeensyUsbMidiIn::init() {
+    if (initialized_) return;
 
     usbMIDI.setHandleSystemExclusive(handleSysExStatic);
     usbMIDI.setHandleControlChange(handleControlChangeStatic);
     usbMIDI.setHandleNoteOn(handleNoteOnStatic);
     usbMIDI.setHandleNoteOff(handleNoteOffStatic);
+
+    initialized_ = true;
 }
 
 TeensyUsbMidiIn::~TeensyUsbMidiIn() {

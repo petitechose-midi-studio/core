@@ -132,14 +132,18 @@ void SplashScreenView::setupLabels() {
     title_label_ = lv_label_create(container_);
     lv_label_set_text(title_label_, config_.title.c_str());
     lv_obj_set_style_text_color(title_label_, config_.text_color, 0);
-    lv_obj_set_style_text_font(title_label_, fonts.splash_title, 0);
+    if (fonts.splash_title) {
+        lv_obj_set_style_text_font(title_label_, fonts.splash_title, 0);
+    }
     lv_obj_align(title_label_, LV_ALIGN_CENTER, 0, 47);
 
     // Version
     version_label_ = lv_label_create(container_);
     lv_label_set_text(version_label_, config_.version.c_str());
     lv_obj_set_style_text_color(version_label_, config_.text_color, 0);
-    lv_obj_set_style_text_font(version_label_, fonts.splash_version, 0);
+    if (fonts.splash_version) {
+        lv_obj_set_style_text_font(version_label_, fonts.splash_version, 0);
+    }
     lv_obj_align(version_label_, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
 }
 

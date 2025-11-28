@@ -4,10 +4,21 @@
 
 class IEventBus;
 
+/**
+ * USB MIDI input handler with lazy initialization.
+ *
+ * IMPORTANT: Call init() after Arduino setup() to register MIDI callbacks.
+ */
 class TeensyUsbMidiIn : public MidiInput {
 public:
     explicit TeensyUsbMidiIn(IEventBus& eventBus);
     ~TeensyUsbMidiIn();
+
+    /**
+     * Initialize MIDI callbacks. Must be called after Arduino setup().
+     * Safe to call multiple times.
+     */
+    void init();
 
     void processPendingMessages() override;
 
@@ -23,5 +34,6 @@ private:
     void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity);
 
     IEventBus& eventBus_;
+    bool initialized_ = false;
     static TeensyUsbMidiIn* instance_;
 };

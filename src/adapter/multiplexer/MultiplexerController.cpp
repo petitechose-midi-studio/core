@@ -1,21 +1,34 @@
 #include "MultiplexerController.hpp"
 
+#include <Arduino.h>
+
 #include "log/Macros.hpp"
 
-Multiplexer::Multiplexer()
-    : mux_(System::Hardware::MUX_S0_PIN, System::Hardware::MUX_S1_PIN, System::Hardware::MUX_S2_PIN,
-           System::Hardware::MUX_S3_PIN) {
+void Multiplexer::init() {
+    if (mux_.has_value()) return;  // Already initialized
+
+    // Create the CD74HC4067 instance - this calls pinMode() for s0-s3
+    mux_.emplace(
+        System::Hardware::MUX_S0_PIN,
+        System::Hardware::MUX_S1_PIN,
+        System::Hardware::MUX_S2_PIN,
+        System::Hardware::MUX_S3_PIN
+    );
+
+    // Configure signal pin
     pinMode(System::Hardware::MUX_SIGNAL_PIN, INPUT_PULLUP);
     selectChannel(0);
+
+    LOGLN("[Mux] Init OK");
 }
 
 void Multiplexer::selectChannel(uint8_t channel) {
-    if (channel >= System::Hardware::MUX_MAX_CHANNELS) {
+    if (!mux_.has_value() || channel >= System::Hardware::MUX_MAX_CHANNELS) {
         return;
     }
 
     if (channel != currentChannel_) {
-        mux_.channel(channel);
+        mux_->channel(channel);
         currentChannel_ = channel;
 
         lastSwitchTimestamp_ = micros();

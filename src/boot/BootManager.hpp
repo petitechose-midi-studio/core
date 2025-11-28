@@ -11,6 +11,7 @@ class TeensyUsbMidiIn;
 class TeensyUsbMidiOut;
 class InputManager;
 class IEventBus;
+class Multiplexer;
 
 namespace Boot {
 
@@ -20,6 +21,7 @@ public:
         Ili9341Driver& displayDriver;
         LVGLBridge& lvglBridge;
         ViewManager& viewManager;
+        Multiplexer& multiplexer;
         EncoderController& encoders;
         ButtonController& buttons;
         TeensyUsbMidiIn& midiIn;

@@ -8,6 +8,13 @@
 #include "core/event/IEventBus.hpp"
 #include "core/struct/Encoder.hpp"
 
+/**
+ * Encoder with lazy hardware initialization.
+ *
+ * IMPORTANT: Hardware init (attachInterrupt, pinMode) is deferred to init()
+ * to avoid calling Arduino functions before the framework is ready.
+ * This is critical when the object is instantiated as a global variable.
+ */
 class Encoder {
 public:
     explicit Encoder(const Hardware::Encoder& setup, IEventBus& eventBus);
@@ -17,6 +24,13 @@ public:
     Encoder& operator=(const Encoder&) = delete;
     Encoder(Encoder&&) = delete;
     Encoder& operator=(Encoder&&) = delete;
+
+    /**
+     * Initialize hardware (interrupts, pins). Must be called after Arduino setup().
+     * Safe to call multiple times - subsequent calls are no-ops.
+     */
+    void init();
+    bool isInitialized() const { return initialized_; }
 
     void flushEvents();
     void resetPosition(float normalizedValue);
@@ -42,6 +56,11 @@ private:
     Hardware::EncoderMode mode_;
     uint16_t ppr_;
     uint8_t stepsPerDetent_;
+
+    // Pins stored for deferred init
+    uint8_t pinA_;
+    uint8_t pinB_;
+    bool initialized_ = false;
 
     int32_t virtualRange_;
     int32_t virtualPosition_;

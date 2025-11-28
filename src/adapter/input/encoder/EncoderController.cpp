@@ -8,6 +8,13 @@ EncoderController::EncoderController(
         encoders_.emplace_back(setup, eventBus);  // Construct in-place on stack
         idToIndex_[setup.id] = index;             // Map InputId -> array index
     }
+    // NOTE: Do NOT call init() here - hardware init is deferred
+}
+
+void EncoderController::init() {
+    for (auto& encoder : encoders_) {
+        encoder.init();
+    }
 }
 
 void EncoderController::flushAllEvents() {

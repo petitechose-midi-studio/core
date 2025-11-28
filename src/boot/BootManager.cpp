@@ -4,6 +4,7 @@
 
 #include "adapter/display/driver/Ili9341Driver.hpp"
 #include "adapter/display/ui/LVGLBridge.hpp"
+#include "adapter/multiplexer/MultiplexerController.hpp"
 #include "adapter/input/encoder/EncoderController.hpp"
 #include "adapter/input/button/ButtonController.hpp"
 #include "adapter/midi/TeensyUsbMidiIn.hpp"
@@ -62,15 +63,16 @@ bool BootManager::tick() {
 
 void BootManager::executeHardwareInit() {
     LOGLN("[Boot] Hardware init");
+    components_.multiplexer.init();
+    components_.encoders.init();
     components_.displayDriver.init();
-    yield();
 }
 
 void BootManager::executeDisplayInit() {
     LOGLN("[Boot] Display init");
     components_.lvglBridge.init();
+    components_.lvglBridge.refresh();  // Process LVGL init before loading fonts
     components_.viewManager.initScreens();
-    yield();
 }
 
 void BootManager::executeMinimalUI() {
@@ -88,7 +90,6 @@ void BootManager::executeMinimalUI() {
     components_.lvglBridge.refresh();
     totalFonts_ = fonts_get_pending_count();
     loadedFonts_ = 0;
-    yield();
 }
 
 bool BootManager::executeLoadingFonts() {
@@ -99,7 +100,6 @@ bool BootManager::executeLoadingFonts() {
         uint8_t progress = totalFonts_ > 0 ? (loadedFonts_ * 100) / totalFonts_ : 100;
         updateSplash(progress, fontName);
         components_.lvglBridge.refresh();
-        yield();
         return false;
     }
 
@@ -112,15 +112,14 @@ void BootManager::executeInputInit() {
     components_.encoders.flushAllEvents();
     updateSplash(100, "Input");
     components_.lvglBridge.refresh();
-    yield();
 }
 
 void BootManager::executeMidiInit() {
     LOGLN("[Boot] MIDI init");
+    components_.midiIn.init();
     components_.midiIn.processPendingMessages();
     updateSplash(100, "MIDI");
     components_.lvglBridge.refresh();
-    yield();
 }
 
 void BootManager::executeReady() {

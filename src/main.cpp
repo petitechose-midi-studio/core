@@ -6,12 +6,11 @@
 MidiStudioApp app(nullptr);
 
 void setup() {
+    app.setup();
     LOGLN("=== MIDI Studio ===");
     LOGLN("===   Core Dev  ===");
     LOG("Version: ");
     LOGLN(Core::VERSION);
-
-    app.setup();
 }
 
 void loop() {

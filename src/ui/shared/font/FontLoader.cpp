@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <vector>
 
+#include "log/Macros.hpp"
+
 #include "data/interdisplay_light_14.c.inc"
 #include "data/interdisplay_regular_14.c.inc"
 #include "data/interdisplay_medium_13.c.inc"
@@ -26,6 +28,55 @@ static size_t next_index = 0;
 static bool core_registered = false;
 
 FontRegistry fonts;
+
+// Load font with retry on failure
+static lv_font_t *load_font_safe(const uint8_t *buffer, uint32_t len, const char *name = "unknown")
+{
+    constexpr int MAX_RETRIES = 5;
+    constexpr int BASE_DELAY_MS = 10;
+
+    uint32_t start_time = millis();
+
+    for (int attempt = 0; attempt < MAX_RETRIES; attempt++)
+    {
+        lv_font_t *font = lv_binfont_create_from_buffer((void *)buffer, len);
+        if (font != nullptr)
+        {
+            uint32_t elapsed = millis() - start_time;
+            LOG("[Font] ");
+            LOG(name);
+            LOG(" ");
+            LOG(len / 1024);
+            LOG("KB ");
+            LOG(elapsed);
+            LOG("ms");
+            if (attempt > 0)
+            {
+                LOG(" (");
+                LOG(attempt + 1);
+                LOG(" attempts)");
+            }
+            LOGLN("");
+            return font;
+        }
+        // Log retry
+        int delay_ms = BASE_DELAY_MS << attempt;
+        LOG("[Font] ");
+        LOG(name);
+        LOG(" RETRY #");
+        LOG(attempt + 1);
+        LOG(" (");
+        LOG(delay_ms);
+        LOGLN("ms)");
+        delay(delay_ms);
+    }
+
+    // Total failure
+    LOG("[Font] ");
+    LOG(name);
+    LOGLN(" FAILED!");
+    return nullptr;
+}
 
 void register_font(lv_font_t** font_ptr, const uint8_t* buffer, uint32_t len) {
     registered_fonts.push_back({font_ptr, buffer, len, "plugin", false});
@@ -62,11 +113,27 @@ void fonts_register_core() {
 bool fonts_load_essential() {
     if (!core_registered) fonts_register_core();
 
+    LOGLN("[Font] Loading essential fonts...");
+    uint8_t loaded = 0;
+    uint8_t failed = 0;
+
     for (auto& f : registered_fonts) {
         if (f.essential && *f.font_ptr == nullptr) {
-            *f.font_ptr = lv_binfont_create_from_buffer((void*)f.buffer, f.len);
+            *f.font_ptr = load_font_safe(f.buffer, f.len, f.name);
+            if (*f.font_ptr) {
+                loaded++;
+            } else {
+                failed++;
+            }
+            delayMicroseconds(500);  // Brief stabilization (0.5ms)
         }
     }
+
+    LOG("[Font] Essential: ");
+    LOG(loaded);
+    LOG(" loaded, ");
+    LOG(failed);
+    LOGLN(" failed");
 
     // Skip essential fonts
     next_index = 0;
@@ -74,7 +141,7 @@ bool fonts_load_essential() {
         next_index++;
     }
 
-    return true;
+    return failed == 0;
 }
 
 uint8_t fonts_get_pending_count() {
@@ -90,7 +157,7 @@ bool fonts_load_next(const char** outFontName) {
         auto& f = registered_fonts[next_index++];
         if (*f.font_ptr != nullptr) continue;
 
-        *f.font_ptr = lv_binfont_create_from_buffer((void*)f.buffer, f.len);
+        *f.font_ptr = load_font_safe(f.buffer, f.len, f.name);
         if (outFontName) *outFontName = f.name;
         return true;
     }
@@ -100,7 +167,7 @@ bool fonts_load_next(const char** outFontName) {
 void load_plugin_fonts() {
     for (auto& f : registered_fonts) {
         if (*f.font_ptr == nullptr) {
-            *f.font_ptr = lv_binfont_create_from_buffer((void*)f.buffer, f.len);
+            *f.font_ptr = load_font_safe(f.buffer, f.len, f.name);
         }
     }
 }

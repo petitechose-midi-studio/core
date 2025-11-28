@@ -29,10 +29,8 @@ MidiStudioApp::MidiStudioApp(PluginSetupFn setupPlugins)
 
 MidiStudioApp::~MidiStudioApp() = default;
 
-bool MidiStudioApp::setup() {
-    delay(System::Application::INIT_BOOT_DELAY);
-    LOGLN("[App] Starting boot...");
-
+bool MidiStudioApp::setup()
+{
     bootCompleteSub_ = eventBus_.on(EventCategory::System, SystemEvent::BootComplete,
                                     [this](const Event &e)
                                     { onBootComplete(e); });
@@ -41,6 +39,7 @@ bool MidiStudioApp::setup() {
         .displayDriver = displayDriver_,
         .lvglBridge = displayBridge_,
         .viewManager = ui_,
+        .multiplexer = multiplexer_,
         .encoders = encoders_,
         .buttons = buttons_,
         .midiIn = midiIn_,

@@ -35,12 +35,11 @@ namespace Application {
 constexpr const char* NAME = "Midi Studio";
 
 // Import version from Core namespace
+using Core::IS_PRERELEASE;
 using Core::VERSION;
 using Core::VERSION_MAJOR;
 using Core::VERSION_MINOR;
 using Core::VERSION_PATCH;
-using Core::IS_PRERELEASE;
-constexpr size_t INIT_BOOT_DELAY = 10;
 }  // namespace Application
 
 /*

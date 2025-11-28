@@ -16,6 +16,9 @@ Encoder::Encoder(const Hardware::Encoder& setup, IEventBus& eventBus)
       mode_(setup.mode),
       ppr_(setup.ppr),
       stepsPerDetent_(setup.stepsPerDetent),
+      pinA_(setup.pinA.pin),
+      pinB_(setup.pinB.pin),
+      initialized_(false),
       virtualRange_(0),
       virtualPosition_(0),
       lastNormalizedValue_(0.5f),
@@ -30,11 +33,19 @@ Encoder::Encoder(const Hardware::Encoder& setup, IEventBus& eventBus)
       maxBound_(1.0f),
       hasBounds_(false),
       deltaPerDetent_(1.0f) {
+    // NOTE: Do NOT call encoder_.begin() here!
+    // Hardware init is deferred to init() to support global object instantiation
     virtualRange_ = calculateDefaultVirtualRange();
     virtualPosition_ = virtualRange_ / 2;
+}
 
-    encoder_.begin(setup.pinA.pin, setup.pinB.pin, EncoderTool::CountMode::full);
+void Encoder::init() {
+    if (initialized_) return;
+
+    encoder_.begin(pinA_, pinB_, EncoderTool::CountMode::full);
     encoder_.attachCallback([this](int, int delta) { this->processEncoderChange(delta); });
+
+    initialized_ = true;
 }
 
 Encoder::~Encoder() = default;

@@ -11,11 +11,22 @@
 
 class IEventBus;
 
+/**
+ * Controller for multiple encoders with lazy hardware initialization.
+ *
+ * IMPORTANT: Call init() after Arduino setup() before using encoders.
+ */
 class EncoderController {
 public:
     explicit EncoderController(
         const etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT>& encoderSetups,
         IEventBus& eventBus);
+
+    /**
+     * Initialize all encoder hardware. Must be called after Arduino setup().
+     * Safe to call multiple times.
+     */
+    void init();
 
     void flushAllEvents();
 
