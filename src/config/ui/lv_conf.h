@@ -124,7 +124,7 @@
 #endif
 
 #define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE  /* Pas d'ASM (Cortex-M7 n'a ni NEON ni Helium) */
-#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 0
+#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 1  /* Needed for opacity gradients in Label fade effect */
 #endif
 
 /*=======================

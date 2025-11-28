@@ -4,8 +4,10 @@
 #include <lvgl.h>
 #include <etl/array.h>
 #include <etl/string.h>
+#include <memory>
 
 #include "IParameterWidget.hpp"
+#include "Label.hpp"
 
 /**
  * @brief Button/Toggle widget for binary on/off parameters
@@ -62,5 +64,5 @@ private:
     lv_obj_t* container_ = nullptr;
     lv_obj_t* button_box_ = nullptr;
     lv_obj_t* state_label_ = nullptr;
-    lv_obj_t* name_label_ = nullptr;
+    std::unique_ptr<Label> name_label_;
 };

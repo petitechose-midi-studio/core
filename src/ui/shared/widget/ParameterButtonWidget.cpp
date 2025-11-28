@@ -1,5 +1,6 @@
 #include "ParameterButtonWidget.hpp"
 
+#include "Label.hpp"
 #include "font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
 #include "util/TextUtils.hpp"
@@ -13,7 +14,6 @@ ParameterButtonWidget::ParameterButtonWidget(lv_obj_t* parent, uint16_t width, u
       color_index_(color_index),
       name_("BUTTON") {
     createUI();
-    setName(name_);
     setValue(0.0f);  // Start OFF
 }
 
@@ -26,8 +26,7 @@ ParameterButtonWidget::~ParameterButtonWidget() {
 void ParameterButtonWidget::setName(const String& name) {
     name_ = name;
     if (name_label_) {
-        String formatted = TextUtils::formatTextForTwoLines(name, width_ - 20, fonts.parameter_label);
-        lv_label_set_text(name_label_, formatted.c_str());
+        name_label_->setText(name.c_str());
     }
 }
 
@@ -107,21 +106,17 @@ void ParameterButtonWidget::createStateLabel() {
 }
 
 void ParameterButtonWidget::createNameLabel() {
-    name_label_ = lv_label_create(container_);
-
-    lv_obj_set_style_text_font(name_label_, fonts.parameter_label, 0);
-    lv_obj_set_style_text_color(name_label_, lv_color_hex(0xd9d9d9), 0);
-    lv_obj_set_style_text_align(name_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_line_space(name_label_, -2, 0);
-
-    lv_obj_set_width(name_label_, width_ - 20);
-    lv_obj_set_height(name_label_, 36);
-
-    lv_label_set_long_mode(name_label_, LV_LABEL_LONG_WRAP);
+    name_label_ = std::make_unique<Label>(container_);
+    name_label_->setFlexGrow(false);
+    name_label_->setAlignment(LV_TEXT_ALIGN_CENTER);
+    name_label_->setFont(fonts.parameter_label);
+    name_label_->setColor(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY));
 
     // Position name label at same Y as other widgets (after 62x62 container area)
+    lv_obj_t* label_container = name_label_->getContainer();
+    lv_obj_set_width(label_container, width_ - 20);
     lv_coord_t container_bottom = BUTTON_Y_OFFSET + CONTAINER_SIZE;
-    lv_obj_align(name_label_, LV_ALIGN_TOP_MID, 0, container_bottom - 4);
+    lv_obj_align(label_container, LV_ALIGN_TOP_MID, 0, container_bottom - 4);
 }
 
 void ParameterButtonWidget::updateButtonState(bool isOn) {

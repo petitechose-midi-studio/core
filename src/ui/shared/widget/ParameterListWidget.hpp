@@ -4,8 +4,10 @@
 #include <lvgl.h>
 #include <etl/array.h>
 #include <etl/string.h>
+#include <memory>
 
 #include "IParameterWidget.hpp"
+#include "Label.hpp"
 
 /**
  * @brief List/Enum widget for discrete selection parameters
@@ -67,7 +69,7 @@ private:
     lv_obj_t* container_ = nullptr;
     lv_obj_t* value_box_ = nullptr;
     lv_obj_t* value_label_ = nullptr;
-    lv_obj_t* name_label_ = nullptr;
+    std::unique_ptr<Label> name_label_;
     lv_obj_t* top_line_ = nullptr;
 
     lv_timer_t* flash_timer_ = nullptr;

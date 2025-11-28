@@ -17,7 +17,6 @@ ParameterKnobWidget::ParameterKnobWidget(lv_obj_t* parent, uint16_t width, uint1
       height_(height),
       name_("PARAM") {
     createUI();
-    setName(name_);
     updateValue();  // Initial render with constructor values
 }
 
@@ -38,10 +37,7 @@ void ParameterKnobWidget::setName(const String& name) {
     if (!name_label_) return;
 
     name_ = name;
-    String formatted = TextUtils::formatTextForTwoLines(name,
-                                                        width_ - LABEL_HORIZONTAL_PADDING,
-                                                        fonts.parameter_label);
-    lv_label_set_text(name_label_, formatted.c_str());
+    name_label_->setText(name.c_str());
 }
 
 void ParameterKnobWidget::setValue(float value) {
@@ -132,18 +128,16 @@ void ParameterKnobWidget::createValueIndicator() {
 }
 
 void ParameterKnobWidget::createNameLabel() {
-    name_label_ = lv_label_create(container_);
+    name_label_ = std::make_unique<Label>(container_);
+    name_label_->setFlexGrow(false);
+    name_label_->setAlignment(LV_TEXT_ALIGN_CENTER);
+    name_label_->setFont(fonts.parameter_label);
+    name_label_->setColor(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY));
 
-    lv_obj_set_style_text_font(name_label_, fonts.parameter_label, 0);
-    lv_obj_set_style_text_color(name_label_, lv_color_hex(BaseTheme::Color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_align(name_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_line_space(name_label_, LABEL_LINE_SPACING, 0);
-
-    lv_obj_set_width(name_label_, width_ - LABEL_HORIZONTAL_PADDING);
-    lv_obj_set_height(name_label_, LABEL_HEIGHT);
-    lv_label_set_long_mode(name_label_, LV_LABEL_LONG_WRAP);
-
-    lv_obj_align(name_label_, LV_ALIGN_TOP_MID, 0, getArcBottom() - ARC_LABEL_GAP);
+    // Position the label container
+    lv_obj_t* label_container = name_label_->getContainer();
+    lv_obj_set_width(label_container, width_ - LABEL_HORIZONTAL_PADDING);
+    lv_obj_align(label_container, LV_ALIGN_TOP_MID, 0, getArcBottom() - ARC_LABEL_GAP);
 }
 
 void ParameterKnobWidget::createCenterCircles() {

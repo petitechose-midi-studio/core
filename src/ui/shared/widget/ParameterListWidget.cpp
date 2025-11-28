@@ -15,7 +15,6 @@ ParameterListWidget::ParameterListWidget(lv_obj_t* parent, uint16_t width, uint1
       name_("LIST"),
       display_value_("---") {
     createUI();
-    setName(name_);
 }
 
 ParameterListWidget::~ParameterListWidget() {
@@ -31,8 +30,7 @@ ParameterListWidget::~ParameterListWidget() {
 void ParameterListWidget::setName(const String& name) {
     name_ = name;
     if (name_label_) {
-        String formatted = TextUtils::formatTextForTwoLines(name, width_ - 20, fonts.parameter_label);
-        lv_label_set_text(name_label_, formatted.c_str());
+        name_label_->setText(name.c_str());
     }
 }
 
@@ -156,20 +154,17 @@ void ParameterListWidget::createTopLine() {
 }
 
 void ParameterListWidget::createNameLabel() {
-    name_label_ = lv_label_create(container_);
+    name_label_ = std::make_unique<Label>(container_);
+    name_label_->setFlexGrow(false);
+    name_label_->setAlignment(LV_TEXT_ALIGN_CENTER);
+    name_label_->setFont(fonts.parameter_label);
+    name_label_->setColor(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY));
 
-    lv_obj_set_style_text_font(name_label_, fonts.parameter_label, 0);
-    lv_obj_set_style_text_color(name_label_, lv_color_hex(BaseTheme::Color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_align(name_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_line_space(name_label_, -2, 0);
-
-    lv_obj_set_width(name_label_, width_ - 20);
-    lv_obj_set_height(name_label_, 36);
-
-    lv_label_set_long_mode(name_label_, LV_LABEL_LONG_WRAP);
-
+    // Position the label container
+    lv_obj_t* label_container = name_label_->getContainer();
+    lv_obj_set_width(label_container, width_ - 20);
     lv_coord_t box_bottom = VALUE_BOX_Y_OFFSET + VALUE_BOX_SIZE;
-    lv_obj_align(name_label_, LV_ALIGN_TOP_MID, 0, box_bottom - 4);
+    lv_obj_align(label_container, LV_ALIGN_TOP_MID, 0, box_bottom - 4);
 }
 
 void ParameterListWidget::triggerValueChangeFlash() {

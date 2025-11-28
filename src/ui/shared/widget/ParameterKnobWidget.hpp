@@ -2,8 +2,10 @@
 
 #include <Arduino.h>
 #include <lvgl.h>
+#include <memory>
 
 #include "IParameterWidget.hpp"
+#include "Label.hpp"
 
 /**
  * @brief Knob widget for continuous parameters (normal and centered)
@@ -106,7 +108,7 @@ private:
     lv_obj_t* parent_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* arc_ = nullptr;
-    lv_obj_t* name_label_ = nullptr;
+    std::unique_ptr<Label> name_label_;
     lv_obj_t* value_indicator_ = nullptr;
     lv_obj_t* center_circle_ = nullptr;
     lv_obj_t* inner_circle_ = nullptr;
