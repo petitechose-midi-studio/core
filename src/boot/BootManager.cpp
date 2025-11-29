@@ -31,7 +31,6 @@ bool BootManager::tick() {
             break;
         case Phase::HardwareInit:
             executeHardwareInit();
-            LOGLN("[Boot] Hardware done");
             setPhase(Phase::DisplayInit);
             break;
         case Phase::DisplayInit:
@@ -62,28 +61,11 @@ bool BootManager::tick() {
     return status_.isComplete();
 }
 
-namespace {
-    constexpr uint8_t DELAY_POST_MUX = 5;
-    constexpr uint8_t DELAY_POST_DISPLAY = 5;
-}
-
 void BootManager::executeHardwareInit() {
     LOGLN("[Boot] Hardware init");
-
-    // Mux first (controls encoder reading) + wait
-    LOG("[Boot] Mux +"); LOG(DELAY_POST_MUX); LOGLN("ms");
     components_.multiplexer.init();
-    delay(DELAY_POST_MUX);
-
-    // Display BEFORE encoders (avoids interrupt conflicts) + wait
-    LOG("[Boot] Display +"); LOG(DELAY_POST_DISPLAY); LOGLN("ms");
     components_.displayDriver.init();
-    delay(DELAY_POST_DISPLAY);
-
-    // Encoders last (their interrupts won't interfere)
-    LOGLN("[Boot] Encoders");
     components_.encoders.init();
-    LOGLN("[Boot] HW OK");
 }
 
 void BootManager::executeDisplayInit() {

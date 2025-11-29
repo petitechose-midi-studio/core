@@ -24,9 +24,9 @@ MidiStudioApp::MidiStudioApp(PluginSetupFn setupPlugins)
       uiController_(ui_, eventBus_),
       plugins_(eventBus_, midiIn_, midiOut_, encoders_, ui_)
 {
-    delay(500);
-    waitForSerial(2000);
-    LOGLN("[App] Created");
+#ifdef DEBUG_LOGS
+    waitForSerial();
+#endif
 }
 
 MidiStudioApp::~MidiStudioApp() = default;

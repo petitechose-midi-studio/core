@@ -60,7 +60,7 @@ constexpr uint8_t DISPLAY_RST_PIN = 29;
 constexpr uint8_t DISPLAY_MOSI_PIN = 26;
 constexpr uint8_t DISPLAY_SCK_PIN = 27;
 constexpr uint8_t DISPLAY_MISO_PIN = 1;
-constexpr uint32_t DISPLAY_SPI_SPEED = 40000000;
+constexpr uint32_t DISPLAY_SPI_SPEED = 20000000;
 
 /* Multiplexer pins (CD74HC4067) */
 constexpr uint8_t MUX_S0_PIN = 3;
@@ -94,7 +94,7 @@ constexpr size_t LVGL_BUFFER_LINES = SCREEN_HEIGHT;
 constexpr size_t LVGL_BUFFER_SIZE = SCREEN_WIDTH * LVGL_BUFFER_LINES;
 
 /* Refresh timing */
-constexpr int REFRESH_RATE_HZ = 240;
+constexpr int REFRESH_RATE_HZ = 60;
 constexpr uint32_t REFRESH_PERIOD_MS = (1000 / REFRESH_RATE_HZ);
 
 /* VSync timing */
