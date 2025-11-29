@@ -142,6 +142,7 @@ constexpr size_t USB_SYSEX_MAX_SIZE = 16000;
 namespace Input {
 constexpr uint32_t LONG_PRESS_DEFAULT_MS = 500;  /* milliseconds */
 constexpr uint32_t DOUBLE_TAP_WINDOW_MS = 300;   /* milliseconds */
+constexpr uint32_t LATCH_THRESHOLD_MS = 300;     /* milliseconds - tap shorter = latch, longer = momentary */
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;      /* milliseconds - software debounce for state changes */
 }  // namespace Input
 

@@ -114,8 +114,9 @@ public:
      * @param buttonId Button identifier
      * @param callback Action to execute on press
      * @param scope LVGL object (binding active only if visible)
+     * @param latch If true, enable latch/momentary behavior (tap=toggle, hold=momentary)
      */
-    void onPressed(ButtonID buttonId, ActionCallback callback, lv_obj_t* scope);
+    void onPressed(ButtonID buttonId, ActionCallback callback, lv_obj_t* scope, bool latch = false);
 
     /**
      * @brief Register scoped callback for button release event
@@ -174,6 +175,20 @@ public:
      * @param scope LVGL object
      */
     void clearScope(lv_obj_t* scope);
+
+    /**
+     * @brief Check if a button is currently latched
+     * @param btn Button to check
+     * @return true if latched (ON), false otherwise
+     */
+    bool isLatched(ButtonID btn) const;
+
+    /**
+     * @brief Set latch state for a button (use to sync with UI state)
+     * @param btn Button to set
+     * @param latched true = latched ON, false = OFF
+     */
+    void setLatch(ButtonID btn, bool latched);
 
     // ===== MIDI INPUT API - React to incoming MIDI messages =====
 

@@ -52,8 +52,8 @@ void ControllerAPI::onTurnedWhilePressed(EncoderID encoderId, ButtonID buttonId,
 /*
  * SCOPED INPUT BINDING API - Delegate to InputBinding service with scope
  */
-void ControllerAPI::onPressed(ButtonID buttonId, ActionCallback callback, lv_obj_t* scope) {
-    bindingService_.onPressed(buttonId, std::move(callback), scope);
+void ControllerAPI::onPressed(ButtonID buttonId, ActionCallback callback, lv_obj_t* scope, bool latch) {
+    bindingService_.onPressed(buttonId, std::move(callback), scope, latch);
 }
 
 void ControllerAPI::onReleased(ButtonID buttonId, ActionCallback callback, lv_obj_t* scope) {
@@ -83,6 +83,14 @@ void ControllerAPI::onTurnedWhilePressed(EncoderID encoderId, ButtonID buttonId,
 
 void ControllerAPI::clearScope(lv_obj_t* scope) {
     bindingService_.clearScope(scope);
+}
+
+bool ControllerAPI::isLatched(ButtonID btn) const {
+    return bindingService_.isLatched(btn);
+}
+
+void ControllerAPI::setLatch(ButtonID btn, bool latched) {
+    bindingService_.setLatch(btn, latched);
 }
 
 /*

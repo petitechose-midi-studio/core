@@ -29,6 +29,7 @@ struct ButtonBinding {
     uint32_t longPressMs = 0;                 // For LONG_PRESS
     std::function<void()> action;
     bool enabled = true;
+    bool latch = false;                       // If true, enable latch/momentary behavior
     lv_obj_t* scope = nullptr;                // nullptr = global, otherwise scoped to LVGL object
 };
 

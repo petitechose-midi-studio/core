@@ -44,7 +44,7 @@ public:
     void onTurned(EncoderID id, EncoderActionCallback cb);
     void onTurnedWhilePressed(EncoderID encoderId, ButtonID buttonId, EncoderActionCallback cb);
 
-    void onPressed(ButtonID id, ActionCallback cb, lv_obj_t* scope);
+    void onPressed(ButtonID id, ActionCallback cb, lv_obj_t* scope, bool latch = false);
     void onReleased(ButtonID id, ActionCallback cb, lv_obj_t* scope);
     void onLongPress(ButtonID id, ActionCallback cb, uint32_t ms, lv_obj_t* scope);
     void onDoubleTap(ButtonID id, ActionCallback cb, lv_obj_t* scope);
@@ -54,6 +54,10 @@ public:
     void onTurnedWhilePressed(EncoderID encoderId, ButtonID buttonId, EncoderActionCallback cb, lv_obj_t* scope);
 
     void clearScope(lv_obj_t* scope);
+
+    // Latch state management
+    bool isLatched(ButtonID btn) const;
+    void setLatch(ButtonID btn, bool latched);
 
     void processTick(uint32_t currentTimeMs);
     void clearBindings();
@@ -89,6 +93,7 @@ private:
     std::unordered_map<ButtonID, uint32_t> buttonReleaseTime_;
     std::unordered_map<ButtonID, uint8_t> buttonTapCount_;
     std::unordered_map<ButtonID, bool> longPressTriggered_;
+    std::unordered_map<ButtonID, bool> latchStates_;  // Latch/momentary state
 
     IEventBus& eventBus_;
     SubscriptionId encoderSub_;
