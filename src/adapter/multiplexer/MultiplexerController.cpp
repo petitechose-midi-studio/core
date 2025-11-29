@@ -4,22 +4,26 @@
 
 #include "log/Macros.hpp"
 
-void Multiplexer::init() {
-    if (mux_.has_value()) return;  // Already initialized
+namespace {
+    constexpr uint16_t DELAY_PIN_SETTLE_US = 100;
+}
 
-    // Create the CD74HC4067 instance - this calls pinMode() for s0-s3
+void Multiplexer::init() {
+    if (mux_.has_value()) return;
+
+    // Create mux instance + configure pins + wait
+    LOG("[Mux] Pins +"); LOG(DELAY_PIN_SETTLE_US); LOGLN("us");
     mux_.emplace(
         System::Hardware::MUX_S0_PIN,
         System::Hardware::MUX_S1_PIN,
         System::Hardware::MUX_S2_PIN,
         System::Hardware::MUX_S3_PIN
     );
-
-    // Configure signal pin
     pinMode(System::Hardware::MUX_SIGNAL_PIN, INPUT_PULLUP);
-    selectChannel(0);
+    delayMicroseconds(DELAY_PIN_SETTLE_US);
 
-    LOGLN("[Mux] Init OK");
+    selectChannel(0);
+    LOGLN("[Mux] OK");
 }
 
 void Multiplexer::selectChannel(uint8_t channel) {

@@ -27,7 +27,7 @@
  * 🔧 FREQUENTLY ADJUSTED SETTINGS
  *===========================================*/
 
-#define LVGL_REFRESH_PERIOD_MS 10
+#define LVGL_REFRESH_PERIOD_MS 8
 
 #define LVGL_USE_DMA_MEMORY 1
 #define LVGL_MEMORY_POOL_SIZE_KB 2000

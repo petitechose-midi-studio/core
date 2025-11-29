@@ -1,5 +1,6 @@
 #include "SplashScreenView.hpp"
 
+#include "log/Macros.hpp"
 #include "ui/shared/font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
 #include "config/System.hpp"
@@ -21,11 +22,16 @@ SplashScreenView::~SplashScreenView() {
 bool SplashScreenView::init() {
     if (initialized_) return true;
 
+    LOGLN("[Splash] Container...");
     setupContainer();
+    LOGLN("[Splash] Labels...");
     setupLabels();
+    LOGLN("[Splash] Progress...");
     setupProgressBar();
+    LOGLN("[Splash] Status...");
     setupStatusLabel();
 
+    LOGLN("[Splash] Init OK");
     initialized_ = true;
     return true;
 }
