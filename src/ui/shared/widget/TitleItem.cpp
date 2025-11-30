@@ -26,17 +26,8 @@ void TitleItem::ensureCreated()
 
 void TitleItem::render(const TitleItemProps &props)
 {
-    if (!firstRender_ && props == lastProps_)
-        return;
-    forceRender(props);
-}
-
-void TitleItem::forceRender(const TitleItemProps &props)
-{
     ensureCreated();
     applyProps(props);
-    lastProps_ = props;
-    firstRender_ = false;
 }
 
 void TitleItem::applyProps(const TitleItemProps &props)

@@ -113,7 +113,7 @@ private:
     void populateList();
 
     void updateHighlight();
-    void scrollToSelected();
+    void scrollToSelected(bool animate = true);
 
     void destroyList();
     void cleanup();

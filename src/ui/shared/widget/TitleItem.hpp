@@ -1,7 +1,6 @@
 #pragma once
 
 #include <lvgl.h>
-#include <cstring>
 
 namespace UI
 {
@@ -20,27 +19,6 @@ struct TitleItemProps
     const char *indicator = nullptr;
     uint32_t indicatorColor = 0x888888;
     bool visible = true;
-
-    bool operator==(const TitleItemProps &other) const
-    {
-        return std::strcmp(text, other.text) == 0 &&
-               icon == other.icon &&
-               iconFont == other.iconFont &&
-               textFont == other.textFont &&
-               iconColor == other.iconColor &&
-               textColor == other.textColor &&
-               textOpacity == other.textOpacity &&
-               iconOpacity == other.iconOpacity &&
-               showIndicator == other.showIndicator &&
-               indicator == other.indicator &&
-               indicatorColor == other.indicatorColor &&
-               visible == other.visible;
-    }
-
-    bool operator!=(const TitleItemProps &other) const
-    {
-        return !(*this == other);
-    }
 };
 
 /**
@@ -54,7 +32,6 @@ public:
     ~TitleItem();
 
     void render(const TitleItemProps &props);
-    void forceRender(const TitleItemProps &props);
     lv_coord_t getContentWidth() const;
     bool isCreated() const { return label_ != nullptr; }
 
@@ -66,9 +43,6 @@ private:
     lv_obj_t *icon_ = nullptr;
     lv_obj_t *label_ = nullptr;
     lv_obj_t *indicator_ = nullptr;
-
-    TitleItemProps lastProps_{};
-    bool firstRender_ = true;
 };
 
 } // namespace UI

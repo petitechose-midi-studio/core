@@ -33,6 +33,11 @@ void ListOverlay::setTitle(const std::string& title) {
 }
 
 void ListOverlay::setItems(const std::vector<std::string>& items) {
+    // Skip if items are the same (avoid unnecessary list recreation)
+    if (items_ == items) {
+        return;
+    }
+
     items_ = items;
 
     if (selected_index_ >= static_cast<int>(items_.size())) {
@@ -58,6 +63,7 @@ void ListOverlay::setSelectedIndex(int index) {
     }
 
     int size = static_cast<int>(items_.size());
+    int prev_index = selected_index_;
     index = ((index % size) + size) % size;  // Handle negative wrapping too
 
     if (selected_index_ != index) {
@@ -65,7 +71,11 @@ void ListOverlay::setSelectedIndex(int index) {
 
         if (ui_created_ && visible_) {
             updateHighlight();
-            scrollToSelected();
+
+            // Detect wrap-around: if we jumped more than 1 item, it's a wrap
+            int delta = index - prev_index;
+            bool isWrap = (delta > 1) || (delta < -1);
+            scrollToSelected(!isWrap);  // No animation for wrap
         }
     }
 }
@@ -267,13 +277,13 @@ void ListOverlay::updateHighlight() {
     applyStateRecursive(buttons_[selected_index_], LV_STATE_FOCUSED, true);
 }
 
-void ListOverlay::scrollToSelected() {
+void ListOverlay::scrollToSelected(bool animate) {
     if (buttons_.empty() || selected_index_ < 0 ||
         selected_index_ >= static_cast<int>(buttons_.size()) || !list_) {
         return;
     }
 
-    lv_obj_scroll_to_view(buttons_[selected_index_], LV_ANIM_ON);
+    lv_obj_scroll_to_view(buttons_[selected_index_], animate ? LV_ANIM_ON : LV_ANIM_OFF);
 }
 
 void ListOverlay::destroyList() {
