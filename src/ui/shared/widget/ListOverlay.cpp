@@ -48,11 +48,10 @@ void ListOverlay::setItems(const std::vector<std::string>& items) {
     }
 
     if (ui_created_ && list_) {
-        destroyList();
-        createList();
-        populateList();
+        destroyList();       // Clear children only
+        populateList();      // Repopulate with new items
         updateHighlight();
-        scrollToSelected();  // Restore scroll position after list recreation
+        scrollToSelected();
     }
 }
 
@@ -131,7 +130,7 @@ void ListOverlay::createOverlay() {
     lv_obj_align(container_, LV_ALIGN_CENTER, 0, 0);  // Explicit center alignment
     lv_obj_set_style_bg_color(container_, lv_color_hex(0x1A1A1A), 0);
     lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(container_, 8, 0);  // Inner padding for border spacing
+    lv_obj_set_style_pad_all(container_, 0, 0);  // No padding - children manage their own spacing
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);  // No scrollbar on container
 
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
@@ -139,7 +138,7 @@ void ListOverlay::createOverlay() {
                           LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(container_, 4, 0);  // Gap between title and list
+    lv_obj_set_style_pad_row(container_, 4, 0);  // Gap between elements (no padding)
 
     createTitleLabel();
     createList();
@@ -148,9 +147,13 @@ void ListOverlay::createOverlay() {
 
 void ListOverlay::createTitleLabel() {
     title_label_ = lv_label_create(container_);
-    lv_obj_set_width(title_label_, LV_PCT(100));
+    lv_obj_set_width(title_label_, lv_pct(100) - 16);  // Account for 8px margin on each side
     lv_obj_set_style_text_align(title_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(title_label_, lv_color_white(), 0);
+    // Spacing managed by child: 8px margin on sides, 8px top (gap handles bottom)
+    lv_obj_set_style_margin_left(title_label_, 8, 0);
+    lv_obj_set_style_margin_right(title_label_, 8, 0);
+    lv_obj_set_style_margin_top(title_label_, 8, 0);
 
     if (fonts.tempo_label) {
         lv_obj_set_style_text_font(title_label_, fonts.tempo_label, 0);
@@ -171,6 +174,9 @@ void ListOverlay::createList() {
     lv_obj_set_style_border_width(list_, 0, 0);
     lv_obj_set_style_pad_all(list_, 4, 0);
     lv_obj_set_style_pad_row(list_, 2, 0);  // Gap between items
+    // Spacing managed by child: 8px margin on sides
+    lv_obj_set_style_margin_left(list_, 8, 0);
+    lv_obj_set_style_margin_right(list_, 8, 0);
 
     // Discrete scrollbar styling
     lv_obj_set_style_width(list_, 3, LV_PART_SCROLLBAR);  // Thin scrollbar
@@ -287,9 +293,9 @@ void ListOverlay::scrollToSelected(bool animate) {
 }
 
 void ListOverlay::destroyList() {
+    // Only clear children, don't destroy list_ to preserve flex order
     if (list_) {
-        lv_obj_del(list_);
-        list_ = nullptr;
+        lv_obj_clean(list_);  // Remove all children but keep list_
     }
     buttons_.clear();
     bullets_.clear();

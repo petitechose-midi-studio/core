@@ -106,6 +106,12 @@ public:
      */
     lv_obj_t* getElement() const override { return overlay_; }
 
+    /**
+     * @brief Get the flex container for adding footer elements
+     * @return Container object (flex column with title, list, and footer slot)
+     */
+    lv_obj_t* getContainer() const { return container_; }
+
 private:
     void createOverlay();
     void createTitleLabel();
