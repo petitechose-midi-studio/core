@@ -98,6 +98,16 @@ public:
     lv_obj_t* getButton(size_t index) const;
 
     /**
+     * @brief Set font for an item's label
+     *
+     * Useful for items that display icons instead of text.
+     *
+     * @param index Item index (0-based)
+     * @param font Font to apply to the label
+     */
+    void setItemFont(size_t index, lv_font_t* font);
+
+    /**
      * @brief Get underlying LVGL element (from IElement)
      * @return Overlay object (nullptr if not created)
      *

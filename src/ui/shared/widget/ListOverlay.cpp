@@ -113,6 +113,21 @@ lv_obj_t* ListOverlay::getButton(size_t index) const {
     return (index < buttons_.size()) ? buttons_[index] : nullptr;
 }
 
+void ListOverlay::setItemFont(size_t index, lv_font_t* font) {
+    lv_obj_t* btn = getButton(index);
+    if (!btn || !font) return;
+
+    // Find the label child (first label in the button)
+    uint32_t childCount = lv_obj_get_child_cnt(btn);
+    for (uint32_t i = 0; i < childCount; i++) {
+        lv_obj_t* child = lv_obj_get_child(btn, i);
+        if (child && lv_obj_check_type(child, &lv_label_class)) {
+            lv_obj_set_style_text_font(child, font, 0);
+            break;
+        }
+    }
+}
+
 void ListOverlay::createOverlay() {
     overlay_ = lv_obj_create(parent_);
     lv_obj_add_flag(overlay_,
