@@ -64,8 +64,8 @@ public:
     void setBindingsEnabled(bool enabled);
 
 private:
-    std::vector<ButtonBinding> buttonBindings_;
-    std::vector<EncoderBinding> encoderBindings_;
+    std::vector<ButtonBinding> button_bindings_;
+    std::vector<EncoderBinding> encoder_bindings_;
 
     void onEncoderChanged(const Event& event);
     void onButtonPress(const Event& event);
@@ -88,19 +88,19 @@ private:
     void checkAndTriggerCombosOnRelease(ButtonID releasedButtonID);
     bool isButtonComboActive(ButtonID btn1, ButtonID btn2) const;
 
-    std::unordered_map<ButtonID, bool> buttonStates_;
-    std::unordered_map<ButtonID, uint32_t> buttonPressTime_;
-    std::unordered_map<ButtonID, uint32_t> buttonReleaseTime_;
-    std::unordered_map<ButtonID, uint8_t> buttonTapCount_;
-    std::unordered_map<ButtonID, bool> longPressTriggered_;
-    std::unordered_map<ButtonID, bool> latchStates_;  // Latch/momentary state
+    std::unordered_map<ButtonID, bool> button_states_;
+    std::unordered_map<ButtonID, uint32_t> button_press_time_;
+    std::unordered_map<ButtonID, uint32_t> button_release_time_;
+    std::unordered_map<ButtonID, uint8_t> button_tap_count_;
+    std::unordered_map<ButtonID, bool> long_press_triggered_;
+    std::unordered_map<ButtonID, bool> latch_states_;  // Latch/momentary state
 
-    IEventBus& eventBus_;
-    SubscriptionId encoderSub_;
-    SubscriptionId buttonPressSub_;
-    SubscriptionId buttonReleaseSub_;
+    IEventBus& event_bus_;
+    SubscriptionId encoder_sub_;
+    SubscriptionId button_press_sub_;
+    SubscriptionId button_release_sub_;
 
-    bool bindingsEnabled_ = true;
-    uint32_t currentTime_ = 0;
+    bool bindings_enabled_ = true;
+    uint32_t current_time_ = 0;
 
 };

@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 
-TeensyUsbMidiOut::TeensyUsbMidiOut(IEventBus& eventBus) : eventBus_(eventBus) {
+TeensyUsbMidiOut::TeensyUsbMidiOut(IEventBus& eventBus) : event_bus_(eventBus) {
     for (size_t i = 0; i < MAX_ACTIVE_NOTES; i++) {
-        activeNotes_[i].active = false;
+        active_notes_[i].active = false;
     }
 }
 
@@ -45,24 +45,24 @@ void TeensyUsbMidiOut::flush() {
 
 void TeensyUsbMidiOut::markNoteActive(MidiChannelValue ch, MidiNoteValue note) {
     for (size_t i = 0; i < MAX_ACTIVE_NOTES; i++) {
-        if (!activeNotes_[i].active) {
-            activeNotes_[i].channel = ch;
-            activeNotes_[i].note = note;
-            activeNotes_[i].active = true;
+        if (!active_notes_[i].active) {
+            active_notes_[i].channel = ch;
+            active_notes_[i].note = note;
+            active_notes_[i].active = true;
             return;
         }
     }
 
-    activeNotes_[0].channel = ch;
-    activeNotes_[0].note = note;
-    activeNotes_[0].active = true;
+    active_notes_[0].channel = ch;
+    active_notes_[0].note = note;
+    active_notes_[0].active = true;
 }
 
 void TeensyUsbMidiOut::markNoteInactive(MidiChannelValue ch, MidiNoteValue note) {
     for (size_t i = 0; i < MAX_ACTIVE_NOTES; i++) {
-        if (activeNotes_[i].active && activeNotes_[i].channel == ch &&
-            activeNotes_[i].note == note) {
-            activeNotes_[i].active = false;
+        if (active_notes_[i].active && active_notes_[i].channel == ch &&
+            active_notes_[i].note == note) {
+            active_notes_[i].active = false;
             return;
         }
     }

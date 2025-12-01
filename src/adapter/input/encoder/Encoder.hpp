@@ -55,32 +55,32 @@ private:
     EncoderTool::Encoder encoder_;
     Hardware::EncoderMode mode_;
     uint16_t ppr_;
-    uint8_t stepsPerDetent_;
+    uint8_t steps_per_detent_;
 
     // Pins stored for deferred init
-    uint8_t pinA_;
-    uint8_t pinB_;
+    uint8_t pin_a_;
+    uint8_t pin_b_;
     bool initialized_ = false;
 
-    int32_t virtualRange_;
-    int32_t virtualPosition_;
-    float lastNormalizedValue_;
+    int32_t virtual_range_;
+    int32_t virtual_position_;
+    float last_normalized_value_;
 
-    int32_t accumulatedDelta_;
-    float relativePosition_;
+    int32_t accumulated_delta_;
+    float relative_position_;
 
-    IEventBus& eventBus_;
+    IEventBus& event_bus_;
 
-    volatile bool hasPendingEvent_;
-    float pendingValue_;
+    volatile bool has_pending_event_;
+    float pending_value_;
 
-    uint8_t discreteSteps_;
-    float lastQuantizedValue_;
+    uint8_t discrete_steps_;
+    float last_quantized_value_;
 
-    float minBound_;
-    float maxBound_;
-    bool hasBounds_;
-    float deltaPerDetent_;
+    float min_bound_;
+    float max_bound_;
+    bool has_bounds_;
+    float delta_per_detent_;
 
     void processEncoderChange(int32_t delta);
     void handleRelativeMode(int32_t delta);

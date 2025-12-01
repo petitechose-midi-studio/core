@@ -15,10 +15,10 @@ public:
 
 private:
     Hardware::Button button_;
-    std::unique_ptr<IPinReader> pinReader_;
+    std::unique_ptr<IPinReader> pin_reader_;
 
     bool pressed_;
-    bool lastState_;
+    bool last_state_;
 
     bool readCurrentState();
 };

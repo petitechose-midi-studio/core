@@ -30,8 +30,8 @@ private:
         bool active;
     };
 
-    ActiveNote activeNotes_[MAX_ACTIVE_NOTES];
-    IEventBus& eventBus_;
+    ActiveNote active_notes_[MAX_ACTIVE_NOTES];
+    IEventBus& event_bus_;
 
     void markNoteActive(MidiChannelValue ch, MidiNoteValue note);
 

@@ -17,15 +17,15 @@ public:
     void initSplash();
     void update();
 
-    bool isInitialized() const { return screensInitialized_; }
-    bool isSplashInitialized() const { return splashView_.has_value(); }
+    bool isInitialized() const { return screens_initialized_; }
+    bool isSplashInitialized() const { return splash_view_.has_value(); }
 
     lv_obj_t* getPluginContainer();
     void showPluginView(UI::IView& view);
     void hidePluginView();
 
     SplashScreenView* getSplashView() {
-        return splashView_.has_value() ? &splashView_.value() : nullptr;
+        return splash_view_.has_value() ? &splash_view_.value() : nullptr;
     }
 
     void emitBootComplete();
@@ -34,15 +34,15 @@ private:
     void showCoreSplash();
     void hideCoreSplash();
 
-    bool screensInitialized_ = false;
-    bool bootCompleteEmitted_ = false;
+    bool screens_initialized_ = false;
+    bool boot_complete_emitted_ = false;
 
-    LVGLBridge& displayBridge_;
-    IEventBus& eventBus_;
+    LVGLBridge& display_bridge_;
+    IEventBus& event_bus_;
 
-    lv_obj_t* coreScreen_ = nullptr;
-    lv_obj_t* pluginScreen_ = nullptr;
+    lv_obj_t* core_screen_ = nullptr;
+    lv_obj_t* plugin_screen_ = nullptr;
 
-    std::optional<SplashScreenView> splashView_;
-    UI::IView* currentPluginView_ = nullptr;
+    std::optional<SplashScreenView> splash_view_;
+    UI::IView* current_plugin_view_ = nullptr;
 };

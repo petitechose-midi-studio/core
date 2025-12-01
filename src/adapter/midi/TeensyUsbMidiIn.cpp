@@ -9,7 +9,7 @@
 TeensyUsbMidiIn* TeensyUsbMidiIn::instance_ = nullptr;
 
 TeensyUsbMidiIn::TeensyUsbMidiIn(IEventBus& eventBus)
-    : eventBus_(eventBus), initialized_(false) {
+    : event_bus_(eventBus), initialized_(false) {
     instance_ = this;
     // NOTE: Do NOT configure MIDI callbacks here - defer to init()
 }
@@ -65,7 +65,7 @@ void TeensyUsbMidiIn::handleNoteOffStatic(uint8_t channel, uint8_t note, uint8_t
 void TeensyUsbMidiIn::handleSysEx(const uint8_t* data, uint16_t length, bool complete) {
     MIDI_LOGF("[MIDI IN] SysEx len=%u complete=%d\n", length, complete);
     if (complete) {
-        eventBus_.emit(SysExEvent(data, length));
+        event_bus_.emit(SysExEvent(data, length));
     }
 }
 
@@ -74,7 +74,7 @@ void TeensyUsbMidiIn::handleControlChange(uint8_t channel, uint8_t control, uint
     MidiChannelValue ch = static_cast<MidiChannelValue>(channel - 1);
     MidiCCValue cc = static_cast<MidiCCValue>(control);
 
-    eventBus_.emit(MidiCCEvent(ch, cc, value));
+    event_bus_.emit(MidiCCEvent(ch, cc, value));
 }
 
 void TeensyUsbMidiIn::handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -82,7 +82,7 @@ void TeensyUsbMidiIn::handleNoteOn(uint8_t channel, uint8_t note, uint8_t veloci
     MidiChannelValue ch = static_cast<MidiChannelValue>(channel - 1);
     MidiNoteValue n = static_cast<MidiNoteValue>(note);
 
-    eventBus_.emit(MidiNoteOnEvent(ch, n, velocity));
+    event_bus_.emit(MidiNoteOnEvent(ch, n, velocity));
 }
 
 void TeensyUsbMidiIn::handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -90,5 +90,5 @@ void TeensyUsbMidiIn::handleNoteOff(uint8_t channel, uint8_t note, uint8_t veloc
     MidiChannelValue ch = static_cast<MidiChannelValue>(channel - 1);
     MidiNoteValue n = static_cast<MidiNoteValue>(note);
 
-    eventBus_.emit(MidiNoteOffEvent(ch, n, velocity));
+    event_bus_.emit(MidiNoteOffEvent(ch, n, velocity));
 }

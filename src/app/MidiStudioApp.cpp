@@ -7,22 +7,22 @@
 #include "log/Macros.hpp"
 
 MidiStudioApp::MidiStudioApp(PluginSetupFn setupPlugins)
-    : displayDriver_(),
-      setupPlugins_(setupPlugins),
-      eventBus_(),
+    : display_driver_(),
+      setup_plugins_(setupPlugins),
+      event_bus_(),
       multiplexer_(),
       encoders_config_(InputFactory::createEncoders()),
       buttons_config_(InputFactory::createButtons()),
-      displayBridge_(displayDriver_),
-      midiOut_(eventBus_),
-      midiIn_(eventBus_),
-      encoders_(encoders_config_, eventBus_),
-      buttons_(buttons_config_, multiplexer_, eventBus_),
-      midiMapper_(midiOut_, eventBus_, MidiFactory::createDefault()),
-      ui_(displayBridge_, eventBus_),
-      inputManager_(encoders_, buttons_),
-      uiController_(ui_, eventBus_),
-      plugins_(eventBus_, midiIn_, midiOut_, encoders_, ui_)
+      display_bridge_(display_driver_),
+      midi_out_(event_bus_),
+      midi_in_(event_bus_),
+      encoders_(encoders_config_, event_bus_),
+      buttons_(buttons_config_, multiplexer_, event_bus_),
+      midi_mapper_(midi_out_, event_bus_, MidiFactory::createDefault()),
+      ui_(display_bridge_, event_bus_),
+      input_manager_(encoders_, buttons_),
+      ui_controller_(ui_, event_bus_),
+      plugins_(event_bus_, midi_in_, midi_out_, encoders_, ui_)
 {
 #ifdef DEBUG_LOGS
     waitForSerial();
@@ -33,28 +33,28 @@ MidiStudioApp::~MidiStudioApp() = default;
 
 bool MidiStudioApp::setup()
 {
-    bootCompleteSub_ = eventBus_.on(EventCategory::System, SystemEvent::BootComplete,
+    boot_complete_sub_ = event_bus_.on(EventCategory::System, SystemEvent::BootComplete,
                                     [this](const Event &e)
                                     { onBootComplete(e); });
 
     Boot::BootManager::Components components{
-        .displayDriver = displayDriver_,
-        .lvglBridge = displayBridge_,
+        .displayDriver = display_driver_,
+        .lvglBridge = display_bridge_,
         .viewManager = ui_,
         .multiplexer = multiplexer_,
         .encoders = encoders_,
         .buttons = buttons_,
-        .midiIn = midiIn_,
-        .midiOut = midiOut_,
-        .inputManager = inputManager_,
-        .eventBus = eventBus_};
+        .midiIn = midi_in_,
+        .midiOut = midi_out_,
+        .inputManager = input_manager_,
+        .eventBus = event_bus_};
 
-    bootManager_.emplace(components);
+    boot_manager_.emplace(components);
     return true;
 }
 
 void MidiStudioApp::update() {
-    if (!bootComplete_)
+    if (!boot_complete_)
     {
         runBootSequence();
     }
@@ -66,23 +66,23 @@ void MidiStudioApp::update() {
 
 void MidiStudioApp::runBootSequence()
 {
-    if (!bootManager_.has_value())
+    if (!boot_manager_.has_value())
         return;
 
-    if (bootManager_->tick())
+    if (boot_manager_->tick())
     {
-        bootComplete_ = true;
+        boot_complete_ = true;
         LOGLN("[App] Boot complete");
-        bootManager_.reset();
+        boot_manager_.reset();
     }
 }
 
 void MidiStudioApp::runMainLoop()
 {
-    midiIn_.processPendingMessages();
-    inputManager_.update();
+    midi_in_.processPendingMessages();
+    input_manager_.update();
 
-    if (pluginsInitialized_) {
+    if (plugins_initialized_) {
         plugins_.update();
     }
 
@@ -90,12 +90,12 @@ void MidiStudioApp::runMainLoop()
 }
 
 void MidiStudioApp::initializePlugins() {
-    if (pluginsInitialized_) return;
+    if (plugins_initialized_) return;
 
     LOGLN("[App] Initializing plugins...");
-    if (setupPlugins_) {
-        setupPlugins_(plugins_);
-        pluginsInitialized_ = true;
+    if (setup_plugins_) {
+        setup_plugins_(plugins_);
+        plugins_initialized_ = true;
     }
 }
 

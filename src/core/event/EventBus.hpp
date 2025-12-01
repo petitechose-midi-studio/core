@@ -10,7 +10,7 @@
 
 class EventBus : public IEventBus {
 public:
-    EventBus() : nextId_(1) {}
+    EventBus() : next_id_(1) {}
 
     SubscriptionId on(EventCategoryType category, EventType type, EventCallback callback) override {
         if (!callback) {
@@ -18,17 +18,17 @@ public:
         }
 
         uint32_t key = makeKey(category, type);
-        SubscriptionId id = nextId_++;
+        SubscriptionId id = next_id_++;
 
-        callbackSubscriptions_[key].push_back({id, callback});
+        callback_subscriptions_[key].push_back({id, callback});
 
         return id;
     }
 
     void emit(const Event& event) override {
         uint32_t key = makeKey(event.getCategory(), event.getType());
-        auto it = callbackSubscriptions_.find(key);
-        if (it != callbackSubscriptions_.end()) {
+        auto it = callback_subscriptions_.find(key);
+        if (it != callback_subscriptions_.end()) {
             for (const auto& sub : it->second) {
                 sub.callback(event);
             }
@@ -36,7 +36,7 @@ public:
     }
 
     void off(SubscriptionId id) override {
-        for (auto& pair : callbackSubscriptions_) {
+        for (auto& pair : callback_subscriptions_) {
             auto& list = pair.second;
             for (auto it = list.begin(); it != list.end(); ++it) {
                 if (it->id == id) {
@@ -48,13 +48,13 @@ public:
     }
 
     void clear() {
-        callbackSubscriptions_.clear();
-        nextId_ = 1;
+        callback_subscriptions_.clear();
+        next_id_ = 1;
     }
 
     size_t getSubscriberCount() const {
         size_t count = 0;
-        for (const auto& pair : callbackSubscriptions_) {
+        for (const auto& pair : callback_subscriptions_) {
             count += pair.second.size();
         }
         return count;
@@ -73,6 +73,6 @@ private:
         return (static_cast<uint32_t>(category) << 16) | type;
     }
 
-    SubscriptionMap callbackSubscriptions_;
-    SubscriptionId nextId_;
+    SubscriptionMap callback_subscriptions_;
+    SubscriptionId next_id_;
 };

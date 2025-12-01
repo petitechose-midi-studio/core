@@ -31,22 +31,22 @@ void Multiplexer::selectChannel(uint8_t channel) {
         return;
     }
 
-    if (channel != currentChannel_) {
+    if (channel != current_channel_) {
         mux_->channel(channel);
-        currentChannel_ = channel;
+        current_channel_ = channel;
 
-        lastSwitchTimestamp_ = micros();
-        channelReady_ = false;
+        last_switch_timestamp_ = micros();
+        channel_ready_ = false;
     }
 }
 
 bool Multiplexer::readDigital() {
-    if (!channelReady_) {
-        uint32_t elapsed = micros() - lastSwitchTimestamp_;
+    if (!channel_ready_) {
+        uint32_t elapsed = micros() - last_switch_timestamp_;
         if (elapsed < System::Hardware::MUX_DEBOUNCE_US) {
             delayMicroseconds(System::Hardware::MUX_DEBOUNCE_US - elapsed);
         }
-        channelReady_ = true;
+        channel_ready_ = true;
     }
 
     return digitalRead(System::Hardware::MUX_SIGNAL_PIN);

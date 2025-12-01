@@ -11,7 +11,7 @@ using InputEvent::EncoderChanged;
 MidiMapper::MidiMapper(
     MidiOutput& midiOut, IEventBus& eventBus,
     const std::vector<MidiCCMapping>& mappings)
-    : midiOut_(midiOut), eventBus_(eventBus), encoderSub_(0), buttonSub_(0) {
+    : midi_out_(midiOut), event_bus_(eventBus), encoder_sub_(0), button_sub_(0) {
     for (const auto& mapping : mappings) {
         MidiConfig config{mapping.channel, mapping.cc};
 
@@ -22,21 +22,21 @@ MidiMapper::MidiMapper(
         }
     }
 
-    encoderSub_ = eventBus_.on(EventCategory::Input, EncoderChanged, [this](const Event& e) {
+    encoder_sub_ = event_bus_.on(EventCategory::Input, EncoderChanged, [this](const Event& e) {
         onEncoderChangedEvent(static_cast<const EncoderChangedEvent&>(e));
     });
 
-    buttonSub_ = eventBus_.on(EventCategory::Input, ButtonPress, [this](const Event& e) {
+    button_sub_ = event_bus_.on(EventCategory::Input, ButtonPress, [this](const Event& e) {
         onButtonPressEvent(static_cast<const ButtonPressEvent&>(e));
     });
 }
 
 MidiMapper::~MidiMapper() {
-    if (encoderSub_ != 0) {
-        eventBus_.off(encoderSub_);
+    if (encoder_sub_ != 0) {
+        event_bus_.off(encoder_sub_);
     }
-    if (buttonSub_ != 0) {
-        eventBus_.off(buttonSub_);
+    if (button_sub_ != 0) {
+        event_bus_.off(button_sub_);
     }
 }
 
@@ -58,10 +58,10 @@ void MidiMapper::onEncoderChangedEvent(const EncoderChangedEvent& event) {
 
     uint8_t value = static_cast<uint8_t>(event.normalizedValue * 127.0f);
 
-    midiOut_.sendControlChange(config->channel, config->control, value);
+    midi_out_.sendControlChange(config->channel, config->control, value);
 
     MidiCCEvent midiEvent(config->channel, config->control, value, static_cast<uint8_t>(event.encoderId));
-    eventBus_.emit(midiEvent);
+    event_bus_.emit(midiEvent);
 }
 
 void MidiMapper::onButtonPressEvent(const ButtonPressEvent& event) {
@@ -72,8 +72,8 @@ void MidiMapper::onButtonPressEvent(const ButtonPressEvent& event) {
 
     uint8_t value = event.pressed ? 127 : 0;
 
-    midiOut_.sendControlChange(config->channel, config->control, value);
+    midi_out_.sendControlChange(config->channel, config->control, value);
 
     MidiCCEvent midiEvent(config->channel, config->control, value, static_cast<uint8_t>(event.buttonId));
-    eventBus_.emit(midiEvent);
+    event_bus_.emit(midiEvent);
 }

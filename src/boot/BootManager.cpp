@@ -88,16 +88,16 @@ void BootManager::executeMinimalUI() {
     }
 
     components_.lvglBridge.refresh();
-    totalFonts_ = fonts_get_pending_count();
-    loadedFonts_ = 0;
+    total_fonts_ = fonts_get_pending_count();
+    loaded_fonts_ = 0;
 }
 
 bool BootManager::executeLoadingFonts() {
     const char* fontName = nullptr;
 
     if (fonts_load_next(&fontName)) {
-        loadedFonts_++;
-        uint8_t progress = totalFonts_ > 0 ? (loadedFonts_ * 100) / totalFonts_ : 100;
+        loaded_fonts_++;
+        uint8_t progress = total_fonts_ > 0 ? (loaded_fonts_ * 100) / total_fonts_ : 100;
         updateSplash(progress, fontName);
         components_.lvglBridge.refresh();
         return false;

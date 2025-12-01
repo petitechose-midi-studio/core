@@ -15,34 +15,34 @@ Encoder::Encoder(const Hardware::Encoder& setup, IEventBus& eventBus)
       encoder_(),
       mode_(setup.mode),
       ppr_(setup.ppr),
-      stepsPerDetent_(setup.stepsPerDetent),
-      pinA_(setup.pinA.pin),
-      pinB_(setup.pinB.pin),
+      steps_per_detent_(setup.stepsPerDetent),
+      pin_a_(setup.pinA.pin),
+      pin_b_(setup.pinB.pin),
       initialized_(false),
-      virtualRange_(0),
-      virtualPosition_(0),
-      lastNormalizedValue_(0.5f),
-      accumulatedDelta_(0),
-      relativePosition_(0.0f),
-      eventBus_(eventBus),
-      hasPendingEvent_(false),
-      pendingValue_(0.0f),
-      discreteSteps_(0),
-      lastQuantizedValue_(-1.0f),
-      minBound_(0.0f),
-      maxBound_(1.0f),
-      hasBounds_(false),
-      deltaPerDetent_(1.0f) {
+      virtual_range_(0),
+      virtual_position_(0),
+      last_normalized_value_(0.5f),
+      accumulated_delta_(0),
+      relative_position_(0.0f),
+      event_bus_(eventBus),
+      has_pending_event_(false),
+      pending_value_(0.0f),
+      discrete_steps_(0),
+      last_quantized_value_(-1.0f),
+      min_bound_(0.0f),
+      max_bound_(1.0f),
+      has_bounds_(false),
+      delta_per_detent_(1.0f) {
     // NOTE: Do NOT call encoder_.begin() here!
     // Hardware init is deferred to init() to support global object instantiation
-    virtualRange_ = calculateDefaultVirtualRange();
-    virtualPosition_ = virtualRange_ / 2;
+    virtual_range_ = calculateDefaultVirtualRange();
+    virtual_position_ = virtual_range_ / 2;
 }
 
 void Encoder::init() {
     if (initialized_) return;
 
-    encoder_.begin(pinA_, pinB_, EncoderTool::CountMode::full);
+    encoder_.begin(pin_a_, pin_b_, EncoderTool::CountMode::full);
     encoder_.attachCallback([this](int, int delta) { this->processEncoderChange(delta); });
 
     initialized_ = true;
@@ -51,40 +51,40 @@ void Encoder::init() {
 Encoder::~Encoder() = default;
 
 void Encoder::flushEvents() {
-    if (!hasPendingEvent_) return;
+    if (!has_pending_event_) return;
 
-    hasPendingEvent_ = false;
-    eventBus_.emit(EncoderChangedEvent(id_, pendingValue_));
+    has_pending_event_ = false;
+    event_bus_.emit(EncoderChangedEvent(id_, pending_value_));
 }
 
 void Encoder::resetPosition(float normalizedValue) {
     if (mode_ == Hardware::EncoderMode::Relative) {
-        relativePosition_ = normalizedValue;
-        accumulatedDelta_ = 0;
-        hasPendingEvent_ = false;
+        relative_position_ = normalizedValue;
+        accumulated_delta_ = 0;
+        has_pending_event_ = false;
         return;
     }
 
     normalizedValue = constrain(normalizedValue, 0.0f, 1.0f);
-    virtualPosition_ = static_cast<int32_t>(normalizedValue * (virtualRange_ - 1));
-    lastNormalizedValue_ = normalizedValue;
-    hasPendingEvent_ = false;
+    virtual_position_ = static_cast<int32_t>(normalizedValue * (virtual_range_ - 1));
+    last_normalized_value_ = normalizedValue;
+    has_pending_event_ = false;
 }
 
 void Encoder::setDiscreteSteps(uint8_t steps) {
     if (mode_ != Hardware::EncoderMode::Absolute) return;
 
-    discreteSteps_ = steps;
-    lastQuantizedValue_ = -1.0f;
+    discrete_steps_ = steps;
+    last_quantized_value_ = -1.0f;
 
     int32_t defaultRange = calculateDefaultVirtualRange();
     int32_t minRangeForSteps = steps * (1.0 / DISCRETE_VALUES_SENSITIVITY);
 
-    virtualRange_ = (steps > 0 && minRangeForSteps > defaultRange)
+    virtual_range_ = (steps > 0 && minRangeForSteps > defaultRange)
         ? minRangeForSteps
         : defaultRange;
 
-    virtualPosition_ = static_cast<int32_t>(lastNormalizedValue_ * (virtualRange_ - 1));
+    virtual_position_ = static_cast<int32_t>(last_normalized_value_ * (virtual_range_ - 1));
 }
 
 void Encoder::setContinuous() {
@@ -95,26 +95,26 @@ void Encoder::setMode(Hardware::EncoderMode mode) {
     mode_ = mode;
     // Reset state when switching modes
     if (mode_ == Hardware::EncoderMode::Relative) {
-        accumulatedDelta_ = 0;
+        accumulated_delta_ = 0;
     } else {
-        virtualPosition_ = virtualRange_ / 2;
-        lastNormalizedValue_ = 0.5f;
+        virtual_position_ = virtual_range_ / 2;
+        last_normalized_value_ = 0.5f;
     }
 }
 
 void Encoder::setBounds(float min, float max) {
-    minBound_ = min;
-    maxBound_ = max;
-    hasBounds_ = true;
+    min_bound_ = min;
+    max_bound_ = max;
+    has_bounds_ = true;
 
     // Clamp current position if in Relative mode
-    if (mode_ == Hardware::EncoderMode::Relative && hasBounds_) {
-        relativePosition_ = constrain(relativePosition_, minBound_, maxBound_);
+    if (mode_ == Hardware::EncoderMode::Relative && has_bounds_) {
+        relative_position_ = constrain(relative_position_, min_bound_, max_bound_);
     }
 }
 
 void Encoder::setDelta(float delta) {
-    deltaPerDetent_ = delta;
+    delta_per_detent_ = delta;
 }
 
 void Encoder::processEncoderChange(int32_t delta) {
@@ -128,30 +128,30 @@ void Encoder::processEncoderChange(int32_t delta) {
 }
 
 void Encoder::handleRelativeMode(int32_t delta) {
-    accumulatedDelta_ += delta;
+    accumulated_delta_ += delta;
 
-    bool shouldEmit = abs(accumulatedDelta_) >= stepsPerDetent_;
+    bool shouldEmit = abs(accumulated_delta_) >= steps_per_detent_;
     if (!shouldEmit) return;
 
-    float step = (accumulatedDelta_ > 0) ? deltaPerDetent_ : -deltaPerDetent_;
+    float step = (accumulated_delta_ > 0) ? delta_per_detent_ : -delta_per_detent_;
 
     // In Relative mode, emit the delta (step), not cumulative position
-    accumulatedDelta_ = 0;
+    accumulated_delta_ = 0;
     emitPendingEvent(step);
 }
 
 void Encoder::handleAbsoluteMode(int32_t delta) {
     int32_t movement = (delta > 0) ? -1 : 1;
-    virtualPosition_ = constrain(virtualPosition_ + movement, 0, virtualRange_ - 1);
+    virtual_position_ = constrain(virtual_position_ + movement, 0, virtual_range_ - 1);
 
-    float normalizedValue = virtualPosition_ / static_cast<float>(virtualRange_ - 1);
+    float normalizedValue = virtual_position_ / static_cast<float>(virtual_range_ - 1);
 
-    if (normalizedValue == lastNormalizedValue_) return;
-    lastNormalizedValue_ = normalizedValue;
+    if (normalizedValue == last_normalized_value_) return;
+    last_normalized_value_ = normalizedValue;
 
     // Map to bounds if configured, otherwise use normalized [0.0-1.0]
-    float valueToEmit = hasBounds_
-        ? minBound_ + (normalizedValue * (maxBound_ - minBound_))
+    float valueToEmit = has_bounds_
+        ? min_bound_ + (normalizedValue * (max_bound_ - min_bound_))
         : normalizedValue;
 
     if (applyQuantization(valueToEmit, valueToEmit)) {
@@ -160,25 +160,25 @@ void Encoder::handleAbsoluteMode(int32_t delta) {
 }
 
 bool Encoder::applyQuantization(float normalizedValue, float& outValue) {
-    if (discreteSteps_ == 0) {
+    if (discrete_steps_ == 0) {
         outValue = normalizedValue;
         return true;
     }
 
-    float quantized = round(normalizedValue * (discreteSteps_ - 1)) / (discreteSteps_ - 1);
+    float quantized = round(normalizedValue * (discrete_steps_ - 1)) / (discrete_steps_ - 1);
 
-    if (quantized == lastQuantizedValue_) {
+    if (quantized == last_quantized_value_) {
         return false;
     }
 
-    lastQuantizedValue_ = quantized;
+    last_quantized_value_ = quantized;
     outValue = quantized;
     return true;
 }
 
 void Encoder::emitPendingEvent(float value) {
-    pendingValue_ = value;
-    hasPendingEvent_ = true;
+    pending_value_ = value;
+    has_pending_event_ = true;
 }
 
 int32_t Encoder::calculateDefaultVirtualRange() const {

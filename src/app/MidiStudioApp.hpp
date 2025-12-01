@@ -32,42 +32,42 @@ public:
     bool setup();
     void update();
 
-    bool isBootComplete() const { return bootComplete_; }
+    bool isBootComplete() const { return boot_complete_; }
 
 private:
     // Display
-    Ili9341Driver displayDriver_;
+    Ili9341Driver display_driver_;
 
     // Core
-    PluginSetupFn setupPlugins_;
-    EventBus eventBus_;
+    PluginSetupFn setup_plugins_;
+    EventBus event_bus_;
     Multiplexer multiplexer_;
     std::vector<Hardware::Encoder> encoders_config_;
     std::vector<Hardware::Button> buttons_config_;
 
     // Bridge
-    LVGLBridge displayBridge_;
+    LVGLBridge display_bridge_;
 
     // MIDI + Input
-    TeensyUsbMidiOut midiOut_;
-    TeensyUsbMidiIn midiIn_;
+    TeensyUsbMidiOut midi_out_;
+    TeensyUsbMidiIn midi_in_;
     EncoderController encoders_;
     ButtonController buttons_;
-    MidiMapper midiMapper_;
+    MidiMapper midi_mapper_;
 
     // Views
     ViewManager ui_;
-    InputManager inputManager_;
-    ViewController uiController_;
+    InputManager input_manager_;
+    ViewController ui_controller_;
 
     // Plugins
     PluginManager plugins_;
 
     // Boot
-    std::optional<Boot::BootManager> bootManager_;
-    bool bootComplete_ = false;
-    bool pluginsInitialized_ = false;
-    SubscriptionId bootCompleteSub_ = 0;
+    std::optional<Boot::BootManager> boot_manager_;
+    bool boot_complete_ = false;
+    bool plugins_initialized_ = false;
+    SubscriptionId boot_complete_sub_ = 0;
 
     void initializePlugins();
     void onBootComplete(const Event& event);

@@ -13,7 +13,7 @@ SplashScreenView::Config::Config()
       progress_color(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY)) {}
 
 SplashScreenView::SplashScreenView(lv_obj_t* parentScreen, const Config& config)
-    : config_(config), parentScreen_(parentScreen) {}
+    : config_(config), parent_screen_(parentScreen) {}
 
 SplashScreenView::~SplashScreenView() {
     cleanupLvglObjects();
@@ -54,8 +54,8 @@ void SplashScreenView::setActive(bool active) {
 }
 
 void SplashScreenView::setBootMode(bool enabled) {
-    bootMode_ = enabled;
-    bootComplete_ = false;
+    boot_mode_ = enabled;
+    boot_complete_ = false;
 
     if (status_label_) {
         if (enabled) {
@@ -68,23 +68,23 @@ void SplashScreenView::setBootMode(bool enabled) {
 }
 
 void SplashScreenView::setBootProgress(uint8_t progress) {
-    if (!bootMode_ || !progress_bar_) return;
+    if (!boot_mode_ || !progress_bar_) return;
     lv_bar_set_value(progress_bar_, progress > 100 ? 100 : progress, LV_ANIM_OFF);
 }
 
 void SplashScreenView::setBootStatus(const char* status) {
-    if (!bootMode_ || !status_label_) return;
+    if (!boot_mode_ || !status_label_) return;
     lv_label_set_text(status_label_, status ? status : "");
 }
 
 void SplashScreenView::markBootComplete() {
-    bootComplete_ = true;
+    boot_complete_ = true;
     if (progress_bar_) lv_bar_set_value(progress_bar_, 100, LV_ANIM_OFF);
     if (status_label_) lv_label_set_text(status_label_, "Ready");
 }
 
 void SplashScreenView::setupContainer() {
-    container_ = lv_obj_create(parentScreen_);
+    container_ = lv_obj_create(parent_screen_);
     lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
     lv_obj_set_style_bg_color(container_, config_.bg_color, 0);
     lv_obj_set_style_bg_opa(container_, LV_OPA_COVER, 0);

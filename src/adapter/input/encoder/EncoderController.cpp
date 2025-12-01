@@ -7,7 +7,7 @@ EncoderController::EncoderController(
     for (const auto& setup : encoderSetups) {
         size_t index = encoders_.size();
         encoders_.push_back(std::make_unique<Encoder>(setup, eventBus));
-        idToIndex_[setup.id] = index;
+        id_to_index_[setup.id] = index;
     }
 }
 
@@ -66,11 +66,11 @@ void EncoderController::setDelta(EncoderID encoderId, float delta) {
 }
 
 Encoder* EncoderController::getEncoder(EncoderID id) {
-    auto it = idToIndex_.find(id);
-    return (it != idToIndex_.end()) ? encoders_[it->second].get() : nullptr;
+    auto it = id_to_index_.find(id);
+    return (it != id_to_index_.end()) ? encoders_[it->second].get() : nullptr;
 }
 
 const Encoder* EncoderController::getEncoder(EncoderID id) const {
-    auto it = idToIndex_.find(id);
-    return (it != idToIndex_.end()) ? encoders_[it->second].get() : nullptr;
+    auto it = id_to_index_.find(id);
+    return (it != id_to_index_.end()) ? encoders_[it->second].get() : nullptr;
 }

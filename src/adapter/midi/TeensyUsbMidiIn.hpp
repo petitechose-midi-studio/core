@@ -33,7 +33,7 @@ private:
     void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity);
     void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity);
 
-    IEventBus& eventBus_;
+    IEventBus& event_bus_;
     bool initialized_ = false;
     static TeensyUsbMidiIn* instance_;
 };

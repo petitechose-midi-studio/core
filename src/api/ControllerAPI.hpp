@@ -362,11 +362,11 @@ public:
     }
 
 private:
-    InputBinding& bindingService_;
-    IEventBus& eventBus_;
-    TeensyUsbMidiOut& midiOut_;
+    InputBinding& binding_service_;
+    IEventBus& event_bus_;
+    TeensyUsbMidiOut& midi_out_;
     EncoderController& encoders_;
-    ViewManager& viewManager_;
+    ViewManager& view_manager_;
 };
 
 // ===== TEMPLATE IMPLEMENTATIONS =====
@@ -377,7 +377,7 @@ private:
 
 template <typename Callback>
 void ControllerAPI::onSysEx(Callback callback) {
-    eventBus_.on(EventCategory::MIDI, MidiEvent::SysEx, [callback](const Event& e) {
+    event_bus_.on(EventCategory::MIDI, MidiEvent::SysEx, [callback](const Event& e) {
         auto& sysex = static_cast<const SysExEvent&>(e);
         callback(sysex.data, sysex.length);
     });
@@ -385,7 +385,7 @@ void ControllerAPI::onSysEx(Callback callback) {
 
 template <typename Callback>
 void ControllerAPI::onCC(Callback callback) {
-    eventBus_.on(EventCategory::MIDI, MidiEvent::CC, [callback](const Event& e) {
+    event_bus_.on(EventCategory::MIDI, MidiEvent::CC, [callback](const Event& e) {
         auto& cc = static_cast<const MidiCCEvent&>(e);
         callback(cc.channel, cc.controller, cc.value);
     });
@@ -393,7 +393,7 @@ void ControllerAPI::onCC(Callback callback) {
 
 template <typename Callback>
 void ControllerAPI::onNoteOn(Callback callback) {
-    eventBus_.on(EventCategory::MIDI, MidiEvent::NoteOn, [callback](const Event& e) {
+    event_bus_.on(EventCategory::MIDI, MidiEvent::NoteOn, [callback](const Event& e) {
         auto& note = static_cast<const MidiNoteOnEvent&>(e);
         callback(note.channel, note.note, note.velocity);
     });
@@ -401,7 +401,7 @@ void ControllerAPI::onNoteOn(Callback callback) {
 
 template <typename Callback>
 void ControllerAPI::onNoteOff(Callback callback) {
-    eventBus_.on(EventCategory::MIDI, MidiEvent::NoteOff, [callback](const Event& e) {
+    event_bus_.on(EventCategory::MIDI, MidiEvent::NoteOff, [callback](const Event& e) {
         auto& note = static_cast<const MidiNoteOffEvent&>(e);
         callback(note.channel, note.note, note.velocity);
     });

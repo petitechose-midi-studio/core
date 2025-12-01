@@ -30,12 +30,12 @@ private:
     const MidiConfig* findEncoder(EncoderID id) const;
     const MidiConfig* findButton(ButtonID id) const;
 
-    MidiOutput& midiOut_;
-    IEventBus& eventBus_;
+    MidiOutput& midi_out_;
+    IEventBus& event_bus_;
 
     std::map<uint16_t, MidiConfig> encoders_;
     std::map<uint16_t, MidiConfig> buttons_;
 
-    SubscriptionId encoderSub_;
-    SubscriptionId buttonSub_;
+    SubscriptionId encoder_sub_;
+    SubscriptionId button_sub_;
 };

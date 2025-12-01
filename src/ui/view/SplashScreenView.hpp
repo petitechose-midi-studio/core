@@ -23,7 +23,7 @@ public:
 
     bool isActive() const { return active_; }
     void setActive(bool active);
-    bool isSplashScreenCompleted() const { return bootComplete_; }
+    bool isSplashScreenCompleted() const { return boot_complete_; }
 
     void setBootMode(bool enabled);
     void setBootProgress(uint8_t progress);
@@ -34,10 +34,10 @@ private:
     Config config_;
     bool initialized_ = false;
     bool active_ = false;
-    bool bootMode_ = false;
-    bool bootComplete_ = false;
+    bool boot_mode_ = false;
+    bool boot_complete_ = false;
 
-    lv_obj_t* parentScreen_;
+    lv_obj_t* parent_screen_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* title_label_ = nullptr;
     lv_obj_t* version_label_ = nullptr;

@@ -12,20 +12,20 @@
 ButtonController::ButtonController(
     const std::vector<Hardware::Button>& buttonSetups,
     Multiplexer& mux, IEventBus& eventBus)
-    : eventBus_(eventBus) {
-    ownedButtons_.reserve(buttonSetups.size());
-    lastStates_.reserve(buttonSetups.size());
-    lastChangeTime_.reserve(buttonSetups.size());
+    : event_bus_(eventBus) {
+    owned_buttons_.reserve(buttonSetups.size());
+    last_states_.reserve(buttonSetups.size());
+    last_change_time_.reserve(buttonSetups.size());
 
     for (const auto& setup : buttonSetups) {
         auto button = ButtonFactory::createButton(setup, mux);
 
         if (button) {
-            size_t index = ownedButtons_.size();
-            ownedButtons_.push_back(std::move(button));
-            lastStates_.push_back(false);
-            lastChangeTime_.push_back(0);
-            idToIndex_[setup.id] = index;
+            size_t index = owned_buttons_.size();
+            owned_buttons_.push_back(std::move(button));
+            last_states_.push_back(false);
+            last_change_time_.push_back(0);
+            id_to_index_[setup.id] = index;
         } else {
             LOGLN("[ButtonController] ERROR: Failed to create button");
         }
@@ -37,37 +37,37 @@ ButtonController::~ButtonController() = default;
 void ButtonController::updateAll() {
     uint32_t now = millis();
 
-    for (size_t i = 0; i < ownedButtons_.size(); ++i) {
-        auto& btn = ownedButtons_[i];
+    for (size_t i = 0; i < owned_buttons_.size(); ++i) {
+        auto& btn = owned_buttons_[i];
         btn->update();
 
         bool currentState = btn->isPressed();
-        if (currentState == lastStates_[i]) {
+        if (currentState == last_states_[i]) {
             continue;
         }
 
-        uint32_t elapsed = now - lastChangeTime_[i];
+        uint32_t elapsed = now - last_change_time_[i];
         if (elapsed < System::Input::BUTTON_DEBOUNCE_MS) {
             continue;  // Too soon - ignore this change
         }
 
-        lastStates_[i] = currentState;
-        lastChangeTime_[i] = now;
+        last_states_[i] = currentState;
+        last_change_time_[i] = now;
 
         if (currentState) {
-            eventBus_.emit(ButtonPressEvent(btn->getId(), true));
+            event_bus_.emit(ButtonPressEvent(btn->getId(), true));
         } else {
-            eventBus_.emit(ButtonReleaseEvent(btn->getId()));
+            event_bus_.emit(ButtonReleaseEvent(btn->getId()));
         }
     }
 }
 
 UnifiedButton* ButtonController::getButton(ButtonID id) {
-    auto it = idToIndex_.find(id);
-    return (it != idToIndex_.end()) ? ownedButtons_[it->second].get() : nullptr;
+    auto it = id_to_index_.find(id);
+    return (it != id_to_index_.end()) ? owned_buttons_[it->second].get() : nullptr;
 }
 
 const UnifiedButton* ButtonController::getButton(ButtonID id) const {
-    auto it = idToIndex_.find(id);
-    return (it != idToIndex_.end()) ? ownedButtons_[it->second].get() : nullptr;
+    auto it = id_to_index_.find(id);
+    return (it != id_to_index_.end()) ? owned_buttons_[it->second].get() : nullptr;
 }

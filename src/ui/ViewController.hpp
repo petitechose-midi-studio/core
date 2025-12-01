@@ -19,10 +19,10 @@ public:
     ~ViewController() = default;
 
 private:
-    ViewManager& viewManager_;
-    IEventBus& eventBus_;
+    ViewManager& view_manager_;
+    IEventBus& event_bus_;
 
-    SubscriptionId bootCompleteSub_ = 0;
+    SubscriptionId boot_complete_sub_ = 0;
 
     void onSystemBootComplete(const Event& event);
 };

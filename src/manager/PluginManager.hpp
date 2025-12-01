@@ -33,8 +33,8 @@ struct has_load_resources<T, std::void_t<decltype(T::loadResources())>> : std::t
 
 class PluginManager {
 private:
-    InputBinding bindingService_;
-    TeensyUsbMidiOut& midiOut_;
+    InputBinding binding_service_;
+    TeensyUsbMidiOut& midi_out_;
     ControllerAPI api_;
     std::unordered_map<std::string, std::unique_ptr<IPlugin>> plugins_;
 

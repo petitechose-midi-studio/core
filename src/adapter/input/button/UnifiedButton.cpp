@@ -3,25 +3,25 @@
 #include "log/Macros.hpp"
 
 UnifiedButton::UnifiedButton(const Hardware::Button& setup, std::unique_ptr<IPinReader> pinReader)
-    : button_(setup), pinReader_(std::move(pinReader)), pressed_(false), lastState_(false) {
-    if (!pinReader_) {
+    : button_(setup), pin_reader_(std::move(pinReader)), pressed_(false), last_state_(false) {
+    if (!pin_reader_) {
         LOGLN("[UnifiedButton] ERROR: Null pinReader for button");
         return;
     }
 
-    pinReader_->initialize();
+    pin_reader_->initialize();
     bool initialState = readCurrentState();
-    lastState_ = initialState;
+    last_state_ = initialState;
 }
 
 void UnifiedButton::update() {
-    if (!pinReader_) {
+    if (!pin_reader_) {
         return;
     }
 
-    pinReader_->update();
+    pin_reader_->update();
     bool currentState = readCurrentState();
-    lastState_ = currentState;
+    last_state_ = currentState;
     pressed_ = currentState;
 }
 
@@ -34,6 +34,6 @@ ButtonID UnifiedButton::getId() const {
 }
 
 bool UnifiedButton::readCurrentState() {
-    bool rawValue = pinReader_->read();
+    bool rawValue = pin_reader_->read();
     return !rawValue;
 }

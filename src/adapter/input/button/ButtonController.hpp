@@ -30,10 +30,10 @@ public:
     const UnifiedButton* getButton(ButtonID id) const;
 
 private:
-    std::vector<std::unique_ptr<UnifiedButton>> ownedButtons_;
-    std::vector<bool> lastStates_;
-    std::vector<uint32_t> lastChangeTime_;
-    std::map<ButtonID, size_t> idToIndex_;
+    std::vector<std::unique_ptr<UnifiedButton>> owned_buttons_;
+    std::vector<bool> last_states_;
+    std::vector<uint32_t> last_change_time_;
+    std::map<ButtonID, size_t> id_to_index_;
 
-    IEventBus& eventBus_;
+    IEventBus& event_bus_;
 };

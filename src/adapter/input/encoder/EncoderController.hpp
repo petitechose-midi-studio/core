@@ -43,5 +43,5 @@ public:
 
 private:
     std::vector<std::unique_ptr<Encoder>> encoders_;
-    std::map<EncoderID, size_t> idToIndex_;
+    std::map<EncoderID, size_t> id_to_index_;
 };

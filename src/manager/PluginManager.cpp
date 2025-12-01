@@ -9,9 +9,9 @@
 PluginManager::PluginManager(IEventBus& eventBus, TeensyUsbMidiIn& midiIn,
                              TeensyUsbMidiOut& midiOut, EncoderController& encoders,
                              ViewManager& viewManager)
-    : bindingService_(eventBus),
-      midiOut_(midiOut),
-      api_(bindingService_, eventBus, midiOut_, encoders, viewManager) {}
+    : binding_service_(eventBus),
+      midi_out_(midiOut),
+      api_(binding_service_, eventBus, midi_out_, encoders, viewManager) {}
 
 PluginManager::~PluginManager() {
     for (auto& [name, plugin] : plugins_) {
@@ -23,7 +23,7 @@ PluginManager::~PluginManager() {
 }
 
 void PluginManager::update() {
-    bindingService_.processTick(millis());
+    binding_service_.processTick(millis());
 
     for (const auto& [name, plugin] : plugins_) {
         if (plugin && plugin->isEnabled()) {

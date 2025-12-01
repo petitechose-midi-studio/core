@@ -35,7 +35,7 @@ private:
     bool readDigital();
 
     std::optional<CD74HC4067> mux_;
-    uint8_t currentChannel_ = 0;
-    uint32_t lastSwitchTimestamp_ = 0;
-    bool channelReady_ = true;
+    uint8_t current_channel_ = 0;
+    uint32_t last_switch_timestamp_ = 0;
+    bool channel_ready_ = true;
 };

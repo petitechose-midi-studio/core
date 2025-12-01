@@ -42,8 +42,8 @@ public:
 private:
     Components components_;
     Status status_;
-    uint8_t totalFonts_ = 0;
-    uint8_t loadedFonts_ = 0;
+    uint8_t total_fonts_ = 0;
+    uint8_t loaded_fonts_ = 0;
 
     void executeHardwareInit();
     void executeDisplayInit();
