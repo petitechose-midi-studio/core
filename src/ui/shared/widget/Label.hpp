@@ -49,7 +49,6 @@ private:
     void stopScrollAnimation();
 
     static void scrollAnimCallback(void *var, int32_t value);
-    static void scrollBackAnimCallback(void *var, int32_t value);
     static void pauseTimerCallback(lv_timer_t *timer);
 
     lv_obj_t *container_ = nullptr;

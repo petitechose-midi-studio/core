@@ -142,9 +142,6 @@ private:
     lv_obj_t* list_ = nullptr;         // LVGL list widget
 
     std::vector<lv_obj_t*> buttons_;
-
-    std::vector<lv_obj_t*> bullets_;
-
     std::vector<std::string> items_;
     std::string title_;
     int selected_index_ = 0;

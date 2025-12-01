@@ -152,7 +152,7 @@ void ListOverlay::createOverlay() {
                           LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(container_, 4, LV_STATE_DEFAULT);  // Gap between elements (no padding)
+    lv_obj_set_style_pad_row(container_, Layout::ROW_GAP_MD, LV_STATE_DEFAULT);
 
     createTitleLabel();
     createList();
@@ -161,13 +161,12 @@ void ListOverlay::createOverlay() {
 
 void ListOverlay::createTitleLabel() {
     title_label_ = lv_label_create(container_);
-    lv_obj_set_width(title_label_, lv_pct(100) - 16);  // Account for 8px margin on each side
+    lv_obj_set_width(title_label_, lv_pct(100) - Layout::MARGIN_LG);
     lv_obj_set_style_text_align(title_label_, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(title_label_, lv_color_hex(Color::TEXT_PRIMARY), LV_STATE_DEFAULT);
-    // Spacing managed by child: 8px margin on sides, 8px top (gap handles bottom)
-    lv_obj_set_style_margin_left(title_label_, 8, LV_STATE_DEFAULT);
-    lv_obj_set_style_margin_right(title_label_, 8, LV_STATE_DEFAULT);
-    lv_obj_set_style_margin_top(title_label_, 8, LV_STATE_DEFAULT);
+    lv_obj_set_style_margin_left(title_label_, Layout::MARGIN_MD, LV_STATE_DEFAULT);
+    lv_obj_set_style_margin_right(title_label_, Layout::MARGIN_MD, LV_STATE_DEFAULT);
+    lv_obj_set_style_margin_top(title_label_, Layout::MARGIN_MD, LV_STATE_DEFAULT);
 
     if (fonts.tempo_label) {
         lv_obj_set_style_text_font(title_label_, fonts.tempo_label, LV_STATE_DEFAULT);
@@ -184,16 +183,15 @@ void ListOverlay::createList() {
     list_ = lv_list_create(container_);
     lv_obj_set_size(list_, LV_PCT(100), LV_PCT(100));
     lv_obj_set_flex_grow(list_, 1);  // Take remaining space
-    lv_obj_set_style_bg_opa(list_, LV_OPA_TRANSP, LV_STATE_DEFAULT);  // Transparent background
+    lv_obj_set_style_bg_opa(list_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(list_, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(list_, 4, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_row(list_, 2, LV_STATE_DEFAULT);  // Gap between items
-    // Spacing managed by child: 8px margin on sides
-    lv_obj_set_style_margin_left(list_, 8, LV_STATE_DEFAULT);
-    lv_obj_set_style_margin_right(list_, 8, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(list_, Layout::LIST_PAD, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(list_, Layout::LIST_ITEM_GAP, LV_STATE_DEFAULT);
+    lv_obj_set_style_margin_left(list_, Layout::MARGIN_MD, LV_STATE_DEFAULT);
+    lv_obj_set_style_margin_right(list_, Layout::MARGIN_MD, LV_STATE_DEFAULT);
 
-    // Discrete scrollbar styling
-    lv_obj_set_style_width(list_, 3, LV_PART_SCROLLBAR);  // Thin scrollbar
+    // Scrollbar styling
+    lv_obj_set_style_width(list_, Layout::SCROLLBAR_WIDTH, LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_color(list_, lv_color_hex(Color::INACTIVE_LIGHTER), LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_opa(list_, LV_OPA_30, LV_PART_SCROLLBAR);  // Very transparent
 
@@ -203,7 +201,7 @@ void ListOverlay::createList() {
             if (lv_event_get_code(e) == LV_EVENT_SCROLL_BEGIN) {
                 lv_anim_t* anim = lv_event_get_scroll_anim(e);
                 if (anim) {
-                    anim->duration = 50;  // 100ms for responsive scroll
+                    anim->duration = Animation::SCROLL_ANIM_MS;
                 }
             }
         },
@@ -215,7 +213,6 @@ void ListOverlay::populateList() {
     if (!list_) return;
 
     buttons_.clear();
-    bullets_.clear();
 
     for (const auto& item : items_) {
         lv_obj_t* btn = lv_obj_create(list_);
@@ -225,11 +222,11 @@ void ListOverlay::populateList() {
         lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, LV_STATE_DEFAULT);
         lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, LV_STATE_CHECKED);
 
-        lv_obj_set_style_pad_left(btn, 8, LV_STATE_DEFAULT);
-        lv_obj_set_style_pad_right(btn, 16, LV_STATE_DEFAULT);
-        lv_obj_set_style_pad_top(btn, 6, LV_STATE_DEFAULT);
-        lv_obj_set_style_pad_bottom(btn, 6, LV_STATE_DEFAULT);
-        lv_obj_set_style_pad_column(btn, 8, LV_STATE_DEFAULT);  // Gap between bullet and label
+        lv_obj_set_style_pad_left(btn, Layout::PAD_BUTTON_H, LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_right(btn, Layout::MARGIN_LG, LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_top(btn, Layout::PAD_BUTTON_V, LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_bottom(btn, Layout::PAD_BUTTON_V, LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_column(btn, Layout::MARGIN_MD, LV_STATE_DEFAULT);
 
         lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(btn, 0, LV_STATE_DEFAULT);
@@ -258,7 +255,6 @@ void ListOverlay::populateList() {
         }
 
         buttons_.push_back(btn);
-        bullets_.push_back(nullptr);  // No bullet anymore, but keep array size consistent
     }
 
     updateHighlight();
@@ -312,7 +308,6 @@ void ListOverlay::destroyList() {
         lv_obj_clean(list_);  // Remove all children but keep list_
     }
     buttons_.clear();
-    bullets_.clear();
 }
 
 void ListOverlay::cleanup() {
@@ -324,7 +319,6 @@ void ListOverlay::cleanup() {
         list_ = nullptr;
     }
     buttons_.clear();
-    bullets_.clear();
     ui_created_ = false;
     visible_ = false;
 }

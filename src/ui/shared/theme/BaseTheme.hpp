@@ -57,4 +57,42 @@ inline uint32_t getMacroColor(uint8_t index) {
 }
 
 }  // namespace Color
+
+// =============================================================================
+// Layout constants - Common spacing and sizing
+// =============================================================================
+namespace Layout {
+
+// Margins and padding (base unit: 2px)
+constexpr int16_t MARGIN_XS = 2;
+constexpr int16_t MARGIN_SM = 4;
+constexpr int16_t MARGIN_MD = 8;
+constexpr int16_t MARGIN_LG = 16;
+
+// Common paddings
+constexpr int16_t PAD_BUTTON_H = 8;   // Horizontal button padding
+constexpr int16_t PAD_BUTTON_V = 6;   // Vertical button padding
+
+// List/overlay specific
+constexpr int16_t LIST_ITEM_GAP = 2;
+constexpr int16_t LIST_PAD = 4;
+constexpr int16_t SCROLLBAR_WIDTH = 3;
+
+// Element row gap
+constexpr int16_t ROW_GAP_SM = 2;
+constexpr int16_t ROW_GAP_MD = 4;
+
+}  // namespace Layout
+
+// =============================================================================
+// Animation timing constants
+// =============================================================================
+namespace Animation {
+
+constexpr uint32_t SCROLL_ANIM_MS = 50;       // Fast scroll animation
+constexpr uint32_t SCROLL_START_DELAY_MS = 500;  // Delay before auto-scroll starts
+constexpr uint32_t OVERFLOW_CHECK_DELAY_MS = 50; // Delay for layout measurement
+
+}  // namespace Animation
+
 }  // namespace BaseTheme

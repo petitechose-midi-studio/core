@@ -1,5 +1,9 @@
 #include "Label.hpp"
 
+#include "theme/BaseTheme.hpp"
+
+using namespace BaseTheme;
+
 Label::Label(lv_obj_t *parent)
 {
     createWidgets(parent);
@@ -105,7 +109,7 @@ void Label::setText(const char *text)
                     self->checkOverflowAndScroll();
                 }
             },
-            50, this);
+            Animation::OVERFLOW_CHECK_DELAY_MS, this);
         lv_timer_set_repeat_count(timer, 1);
     }
 }
@@ -199,7 +203,7 @@ void Label::startScrollAnimation()
     lv_anim_set_exec_cb(&scroll_anim_, scrollAnimCallback);
     lv_anim_set_values(&scroll_anim_, 0, -overflow_amount_);
     lv_anim_set_duration(&scroll_anim_, scroll_duration_ms_);
-    lv_anim_set_delay(&scroll_anim_, 500);
+    lv_anim_set_delay(&scroll_anim_, Animation::SCROLL_START_DELAY_MS);
     lv_anim_set_path_cb(&scroll_anim_, lv_anim_path_ease_in_out);
     lv_anim_set_completed_cb(&scroll_anim_, [](lv_anim_t *a)
                              {
@@ -229,15 +233,6 @@ void Label::scrollAnimCallback(void *var, int32_t value)
     }
 }
 
-void Label::scrollBackAnimCallback(void *var, int32_t value)
-{
-    auto *self = static_cast<Label *>(var);
-    if (self->label_)
-    {
-        lv_obj_set_x(self->label_, value);
-    }
-}
-
 void Label::pauseTimerCallback(lv_timer_t *timer)
 {
     auto *self = static_cast<Label *>(lv_timer_get_user_data(timer));
@@ -247,7 +242,7 @@ void Label::pauseTimerCallback(lv_timer_t *timer)
     lv_anim_t anim;
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, self);
-    lv_anim_set_exec_cb(&anim, scrollBackAnimCallback);
+    lv_anim_set_exec_cb(&anim, scrollAnimCallback);
     lv_anim_set_values(&anim, -self->overflow_amount_, 0);
     lv_anim_set_duration(&anim, self->scroll_duration_ms_);
     lv_anim_set_path_cb(&anim, lv_anim_path_ease_in_out);
