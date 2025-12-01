@@ -18,12 +18,12 @@ void ViewManager::initScreens() {
     LOGLN("[ViewManager] Creating screens...");
 
     core_screen_ = lv_obj_create(nullptr);
-    lv_obj_set_style_bg_color(core_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), 0);
-    lv_obj_set_style_pad_all(core_screen_, 0, 0);
+    lv_obj_set_style_bg_color(core_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(core_screen_, 0, LV_STATE_DEFAULT);
 
     plugin_screen_ = lv_obj_create(nullptr);
-    lv_obj_set_style_bg_color(plugin_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), 0);
-    lv_obj_set_style_pad_all(plugin_screen_, 0, 0);
+    lv_obj_set_style_bg_color(plugin_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(plugin_screen_, 0, LV_STATE_DEFAULT);
 
     lv_scr_load(core_screen_);
     screens_initialized_ = true;

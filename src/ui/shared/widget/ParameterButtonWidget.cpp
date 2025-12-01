@@ -70,9 +70,9 @@ void ParameterButtonWidget::setVisible(bool visible) {
 void ParameterButtonWidget::createUI() {
     container_ = lv_obj_create(parent_);
     lv_obj_set_size(container_, width_, height_);
-    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_opa(container_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(container_, 0, 0);
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(container_, 0, LV_STATE_DEFAULT);
 
     createButtonBox();
     createStateLabel();
@@ -89,20 +89,20 @@ void ParameterButtonWidget::createButtonBox() {
                  0,
                  BUTTON_Y_OFFSET + (CONTAINER_SIZE - BUTTON_SIZE) / 2);
 
-    lv_obj_set_style_radius(button_box_, 8, 0);
-    lv_obj_set_style_border_width(button_box_, 0, 0);  // No border
+    lv_obj_set_style_radius(button_box_, 8, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(button_box_, 0, LV_STATE_DEFAULT);  // No border
 
     // Initial state: OFF (knob inactive color)
-    lv_obj_set_style_bg_color(button_box_, lv_color_hex(BaseTheme::Color::INACTIVE), 0);
-    lv_obj_set_style_bg_opa(button_box_, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(button_box_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(button_box_, LV_OPA_COVER, LV_STATE_DEFAULT);
 }
 
 void ParameterButtonWidget::createStateLabel() {
     state_label_ = lv_label_create(button_box_);
 
-    lv_obj_set_style_text_font(state_label_, fonts.parameter_label, 0);
-    lv_obj_set_style_text_color(state_label_, lv_color_hex(BaseTheme::Color::TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_align(state_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(state_label_, fonts.parameter_label, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(state_label_, lv_color_hex(BaseTheme::Color::TEXT_SECONDARY), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(state_label_, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
 
     lv_obj_center(state_label_);
     lv_label_set_text(state_label_, "OFF");
@@ -127,13 +127,13 @@ void ParameterButtonWidget::updateButtonState(bool isOn) {
 
     if (isOn) {
         // Active: theme ACTIVE color (orange/gold) + dark text
-        lv_obj_set_style_bg_color(button_box_, lv_color_hex(BaseTheme::Color::ACTIVE), 0);
-        lv_obj_set_style_bg_opa(button_box_, LV_OPA_COVER, 0);
-        lv_obj_set_style_text_color(state_label_, lv_color_hex(BaseTheme::Color::INACTIVE), 0);
+        lv_obj_set_style_bg_color(button_box_, lv_color_hex(BaseTheme::Color::ACTIVE), LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(button_box_, LV_OPA_COVER, LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(state_label_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
     } else {
         // Inactive: knob inactive color (dark gray) + light text
-        lv_obj_set_style_bg_color(button_box_, lv_color_hex(BaseTheme::Color::INACTIVE), 0);
-        lv_obj_set_style_bg_opa(button_box_, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(button_box_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(button_box_, LV_OPA_COVER, LV_STATE_DEFAULT);
         lv_obj_set_style_text_color(state_label_,
                                     lv_color_hex(BaseTheme::Color::TEXT_PRIMARY),
                                     0);  // Light gray text

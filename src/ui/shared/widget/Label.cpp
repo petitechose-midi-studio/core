@@ -56,16 +56,16 @@ void Label::createWidgets(lv_obj_t *parent)
     lv_obj_set_height(container_, LV_SIZE_CONTENT);
     lv_obj_set_width(container_, 0);
     lv_obj_set_flex_grow(container_, 1);
-    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(container_, 0, 0);
-    lv_obj_set_style_pad_all(container_, 0, 0);
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(container_, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(container_, 0, LV_STATE_DEFAULT);
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(container_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
     // The actual label
     label_ = lv_label_create(container_);
     lv_label_set_text(label_, "");
-    lv_obj_set_style_pad_all(label_, 0, 0);
+    lv_obj_set_style_pad_all(label_, 0, LV_STATE_DEFAULT);
     lv_label_set_long_mode(label_, LV_LABEL_LONG_CLIP);
 }
 
@@ -114,7 +114,7 @@ void Label::setColor(lv_color_t color)
 {
     if (label_)
     {
-        lv_obj_set_style_text_color(label_, color, 0);
+        lv_obj_set_style_text_color(label_, color, LV_STATE_DEFAULT);
     }
 }
 
@@ -122,7 +122,7 @@ void Label::setFont(const lv_font_t *font)
 {
     if (label_)
     {
-        lv_obj_set_style_text_font(label_, font, 0);
+        lv_obj_set_style_text_font(label_, font, LV_STATE_DEFAULT);
     }
 }
 

@@ -15,12 +15,12 @@ ButtonIndicator::ButtonIndicator(lv_obj_t* parent, lv_coord_t size)
     }
 
     lv_obj_set_size(led_, size, size);
-    lv_obj_set_style_radius(led_, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(led_, 0, 0);
+    lv_obj_set_style_radius(led_, LV_RADIUS_CIRCLE, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(led_, 0, LV_STATE_DEFAULT);
     lv_obj_clear_flag(led_, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_set_style_bg_color(led_, lv_color_hex(BaseTheme::Color::STATUS_INACTIVE), 0);
-    lv_obj_set_style_bg_opa(led_, LV_OPA_60, 0);
+    lv_obj_set_style_bg_color(led_, lv_color_hex(BaseTheme::Color::STATUS_INACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(led_, LV_OPA_60, LV_STATE_DEFAULT);
 }
 
 ButtonIndicator::~ButtonIndicator() {
@@ -89,6 +89,6 @@ void ButtonIndicator::updateVisualState() {
     lv_color_t color = getColorForState(current_state_);
     lv_opa_t opacity = getOpacityForState(current_state_);
 
-    lv_obj_set_style_bg_color(led_, color, 0);
-    lv_obj_set_style_bg_opa(led_, opacity, 0);
+    lv_obj_set_style_bg_color(led_, color, LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(led_, opacity, LV_STATE_DEFAULT);
 }

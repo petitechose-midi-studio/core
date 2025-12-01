@@ -97,9 +97,9 @@ void ParameterListWidget::setVisible(bool visible) {
 void ParameterListWidget::createUI() {
     container_ = lv_obj_create(parent_);
     lv_obj_set_size(container_, width_, height_);
-    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_opa(container_, LV_OBJ_FLAG_HIDDEN, 0);
-    lv_obj_set_style_pad_all(container_, 0, 0);
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_opa(container_, LV_OBJ_FLAG_HIDDEN, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(container_, 0, LV_STATE_DEFAULT);
 
     createValueBox();
     createValueLabel();
@@ -113,18 +113,18 @@ void ParameterListWidget::createValueBox() {
     lv_obj_set_size(value_box_, VALUE_BOX_SIZE, VALUE_BOX_SIZE);
     lv_obj_align(value_box_, LV_ALIGN_TOP_MID, 0, VALUE_BOX_Y_OFFSET);
 
-    lv_obj_set_style_radius(value_box_, 8, 0);
-    lv_obj_set_style_border_width(value_box_, 0, 0);  // No border
-    lv_obj_set_style_bg_color(value_box_, lv_color_hex(BaseTheme::Color::KNOB_BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(value_box_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(value_box_, 8, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(value_box_, 0, LV_STATE_DEFAULT);  // No border
+    lv_obj_set_style_bg_color(value_box_, lv_color_hex(BaseTheme::Color::KNOB_BACKGROUND), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(value_box_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
 }
 
 void ParameterListWidget::createValueLabel() {
     value_label_ = lv_label_create(value_box_);
 
-    lv_obj_set_style_text_font(value_label_, fonts.parameter_value_label, 0);
-    lv_obj_set_style_text_color(value_label_, lv_color_hex(BaseTheme::Color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_align(value_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(value_label_, fonts.parameter_value_label, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(value_label_, lv_color_hex(BaseTheme::Color::TEXT_PRIMARY), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(value_label_, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
 
     lv_obj_set_width(value_label_, VALUE_BOX_SIZE - 8);
     lv_label_set_long_mode(value_label_, LV_LABEL_LONG_WRAP);
@@ -145,10 +145,10 @@ void ParameterListWidget::createTopLine() {
     lv_obj_set_size(top_line_, LINE_WIDTH, LINE_HEIGHT);
     lv_obj_align(top_line_, LV_ALIGN_TOP_MID, 0, LINE_Y);
 
-    lv_obj_set_style_bg_color(top_line_, lv_color_hex(BaseTheme::Color::INACTIVE), 0);
-    lv_obj_set_style_bg_opa(top_line_, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(top_line_, 0, 0);
-    lv_obj_set_style_radius(top_line_, 0, 0);
+    lv_obj_set_style_bg_color(top_line_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(top_line_, LV_OPA_COVER, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(top_line_, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(top_line_, 0, LV_STATE_DEFAULT);
 }
 
 void ParameterListWidget::createNameLabel() {
@@ -175,7 +175,7 @@ void ParameterListWidget::triggerValueChangeFlash() {
     }
 
     // Apply active color to top line
-    lv_obj_set_style_bg_color(top_line_, lv_color_hex(BaseTheme::Color::ACTIVE), 0);
+    lv_obj_set_style_bg_color(top_line_, lv_color_hex(BaseTheme::Color::ACTIVE), LV_STATE_DEFAULT);
 
     // Create one-shot timer to restore color after 100ms
     flash_timer_ = lv_timer_create(flashTimerCallback, FLASH_DURATION_MS, this);
@@ -187,7 +187,7 @@ void ParameterListWidget::flashTimerCallback(lv_timer_t* timer) {
     if (!widget || !widget->top_line_) return;
 
     // Restore top line color to INACTIVE
-    lv_obj_set_style_bg_color(widget->top_line_, lv_color_hex(BaseTheme::Color::INACTIVE), 0);
+    lv_obj_set_style_bg_color(widget->top_line_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
 
     // Clear timer reference
     widget->flash_timer_ = nullptr;
