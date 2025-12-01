@@ -2,6 +2,7 @@
 
 #include <lvgl.h>
 #include <string>
+#include "interface/IWidget.hpp"
 
 /**
  * @brief Smart label widget with overflow handling and auto-scroll
@@ -14,8 +15,7 @@
  *   Label label(parent);
  *   label.setText("My long text that might overflow");
  */
-class Label
-{
+class Label : public IWidget {
 public:
     explicit Label(lv_obj_t *parent);
     ~Label();
@@ -35,6 +35,7 @@ public:
 
     lv_obj_t *getContainer() const { return container_; }
     lv_obj_t *getLabel() const { return label_; }
+    lv_obj_t *getElement() const override { return container_; }
 
     void setAutoScroll(bool enabled) { auto_scroll_enabled_ = enabled; }
     void setFlexGrow(bool enabled);

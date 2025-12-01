@@ -1,14 +1,14 @@
-﻿#pragma once
+#pragma once
 
-#include <Arduino.h>
 #include <lvgl.h>
+#include <string>
 
 namespace TextUtils {
 
-String formatTextForTwoLines(const String& text, lv_coord_t max_width, const lv_font_t* font);
+std::string formatTextForTwoLines(const std::string& text, lv_coord_t max_width, const lv_font_t* font);
 
-String truncateWithEllipsis(const String& text, lv_coord_t max_width, const lv_font_t* font);
+std::string truncateWithEllipsis(const std::string& text, lv_coord_t max_width, const lv_font_t* font);
 
-String sanitizeText(const String& text);
+std::string sanitizeText(const std::string& text);
 
 }  // namespace TextUtils

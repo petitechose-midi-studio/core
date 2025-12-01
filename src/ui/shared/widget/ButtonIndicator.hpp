@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvgl.h>
+#include "interface/IWidget.hpp"
 
 /**
  * @brief Simple circular indicator for button states
@@ -12,7 +13,7 @@
  *   indicator->setCustomOpacity(ButtonIndicator::OFF, LV_OPA_30);
  *   indicator->setState(ButtonIndicator::OFF);
  */
-class ButtonIndicator {
+class ButtonIndicator : public IWidget {
 public:
     enum class State { OFF = 0, ACTIVE = 1, PRESSED = 2 };
 
@@ -28,9 +29,8 @@ public:
     void setCustomColor(State state, lv_color_t color);
     void setCustomOpacity(State state, lv_opa_t opacity);
 
-    lv_obj_t* getLed() const {
-        return led_;
-    }
+    lv_obj_t* getLed() const { return led_; }
+    lv_obj_t* getElement() const override { return led_; }
 
 private:
     lv_obj_t* led_;

@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
 #include <lvgl.h>
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,7 +28,7 @@ public:
     ~ParameterButtonWidget() override;
 
     // IParameterWidget interface
-    void setName(const String& name) override;
+    void setName(const std::string& name) override;
     void setValue(float value) override;
     void setValueWithDisplay(float value, const char* displayValue) override;
     void setDiscreteMetadata(int16_t discreteCount,
@@ -54,8 +52,8 @@ private:
     uint16_t width_;
     uint16_t height_;
     uint8_t color_index_;
-    String name_;
-    String display_value_;
+    std::string name_;
+    std::string display_value_;
     bool is_on_ = false;
 
     // Optimistic display metadata (from Bitwig)

@@ -1,12 +1,11 @@
 #include "ParameterKnobWidget.hpp"
 
 #include <arm_math.h>
-
+#include <algorithm>
 #include <cmath>
 
 #include "font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
-#include "util/TextUtils.hpp"
 
 ParameterKnobWidget::ParameterKnobWidget(lv_obj_t* parent, uint16_t width, uint16_t height,
                                          uint8_t color_index, bool centered)
@@ -33,16 +32,16 @@ ParameterKnobWidget::~ParameterKnobWidget() {
 
 // ===== PUBLIC INTERFACE =====
 
-void ParameterKnobWidget::setName(const String& name) {
+void ParameterKnobWidget::setName(const std::string& name) {
     if (name_ == name) return;
     if (!name_label_) return;
 
     name_ = name;
-    name_label_->setText(name.c_str());
+    name_label_->setText(name);
 }
 
 void ParameterKnobWidget::setValue(float value) {
-    float clamped = constrain(value, 0.0f, 1.0f);
+    float clamped = std::clamp(value, 0.0f, 1.0f);
 
     // Only update if difference is significant (avoid micro-updates)
     if (fabsf(value_ - clamped) <= VALUE_CHANGE_THRESHOLD) return;
@@ -53,7 +52,7 @@ void ParameterKnobWidget::setValue(float value) {
 }
 
 void ParameterKnobWidget::setOrigin(float origin) {
-    float clamped = constrain(origin, 0.0f, 1.0f);
+    float clamped = std::clamp(origin, 0.0f, 1.0f);
     if (origin_ == clamped) return;
 
     origin_ = clamped;

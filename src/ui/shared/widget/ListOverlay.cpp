@@ -143,7 +143,6 @@ void ListOverlay::createOverlay() {
     container_ = lv_obj_create(overlay_);
     lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
     lv_obj_align(container_, LV_ALIGN_CENTER, 0, 0);  // Explicit center alignment
-    lv_obj_set_style_bg_color(container_, lv_color_hex(0x1A1A1A), 0);
     lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(container_, 0, 0);  // No padding - children manage their own spacing
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);  // No scrollbar on container

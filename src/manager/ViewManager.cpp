@@ -8,6 +8,7 @@
 #include "interface/IView.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/IEventBus.hpp"
+#include "theme/BaseTheme.hpp"
 
 ViewManager::ViewManager(LVGLBridge& displayBridge, IEventBus& eventBus)
     : display_bridge_(displayBridge), event_bus_(eventBus) {}
@@ -18,11 +19,11 @@ void ViewManager::initScreens() {
     LOGLN("[ViewManager] Creating screens...");
 
     core_screen_ = lv_obj_create(nullptr);
-    lv_obj_set_style_bg_color(core_screen_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(core_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), 0);
     lv_obj_set_style_pad_all(core_screen_, 0, 0);
 
     plugin_screen_ = lv_obj_create(nullptr);
-    lv_obj_set_style_bg_color(plugin_screen_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(plugin_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), 0);
     lv_obj_set_style_pad_all(plugin_screen_, 0, 0);
 
     lv_scr_load(core_screen_);

@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Arduino.h>
 #include <lvgl.h>
 #include <memory>
+#include <string>
+#include <cmath>
 
 #include "IParameterWidget.hpp"
 #include "Label.hpp"
@@ -30,7 +31,7 @@ public:
     ~ParameterKnobWidget() override;
 
     // IParameterWidget interface
-    void setName(const String& name) override;
+    void setName(const std::string& name) override;
     void setValue(float value) override;
     void setValueWithDisplay(float value, const char* displayValue) override;
     void setVisible(bool visible) override;
@@ -93,7 +94,7 @@ private:
     }
 
     inline float angleToRadians(float angle) const {
-        return angle * DEG_TO_RAD;  // Uses Arduino's DEG_TO_RAD macro
+        return angle * static_cast<float>(M_PI / 180.0);
     }
 
     constexpr lv_coord_t getArcBottom() const {
@@ -130,5 +131,5 @@ private:
     uint16_t height_;
 
     // Name (variable size, last)
-    String name_;
+    std::string name_;
 };

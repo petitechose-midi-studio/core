@@ -15,10 +15,6 @@ typedef struct _lv_obj_t lv_obj_t;
 using ::ButtonID;
 using ::EncoderID;
 
-namespace Theme {
-namespace Color {}
-}  // namespace Theme
-
 class EncoderController;
 class IEventBus;
 class InputBinding;

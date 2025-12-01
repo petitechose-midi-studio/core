@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
 #include <lvgl.h>
-
 #include <string>
 #include <vector>
 
@@ -22,7 +20,7 @@ public:
      * @brief Set parameter name
      * @param name Parameter name (e.g., "Cutoff", "Waveform")
      */
-    virtual void setName(const String& name) = 0;
+    virtual void setName(const std::string& name) = 0;
 
     /**
      * @brief Set normalized value (0.0-1.0)

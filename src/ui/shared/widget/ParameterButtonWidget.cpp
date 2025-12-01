@@ -3,8 +3,6 @@
 #include "Label.hpp"
 #include "font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
-#include "util/TextUtils.hpp"
-#include "log/Macros.hpp"
 
 ParameterButtonWidget::ParameterButtonWidget(lv_obj_t* parent, uint16_t width, uint16_t height,
                                              uint8_t color_index)
@@ -24,12 +22,12 @@ ParameterButtonWidget::~ParameterButtonWidget() {
     }
 }
 
-void ParameterButtonWidget::setName(const String& name) {
+void ParameterButtonWidget::setName(const std::string& name) {
     if (name_ == name) return;
 
     name_ = name;
     if (name_label_) {
-        name_label_->setText(name.c_str());
+        name_label_->setText(name);
     }
 }
 
@@ -103,7 +101,7 @@ void ParameterButtonWidget::createStateLabel() {
     state_label_ = lv_label_create(button_box_);
 
     lv_obj_set_style_text_font(state_label_, fonts.parameter_label, 0);
-    lv_obj_set_style_text_color(state_label_, lv_color_hex(0xd9d9d9), 0);
+    lv_obj_set_style_text_color(state_label_, lv_color_hex(BaseTheme::Color::TEXT_SECONDARY), 0);
     lv_obj_set_style_text_align(state_label_, LV_TEXT_ALIGN_CENTER, 0);
 
     lv_obj_center(state_label_);

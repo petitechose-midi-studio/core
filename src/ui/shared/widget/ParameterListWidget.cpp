@@ -1,9 +1,10 @@
 #include "ParameterListWidget.hpp"
 
+#include <string>
+
 #include "font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
 #include "util/TextUtils.hpp"
-#include "log/Macros.hpp"
 
 ParameterListWidget::ParameterListWidget(lv_obj_t* parent, uint16_t width, uint16_t height,
                                          uint8_t color_index, int16_t discreteCount)
@@ -28,12 +29,12 @@ ParameterListWidget::~ParameterListWidget() {
     }
 }
 
-void ParameterListWidget::setName(const String& name) {
+void ParameterListWidget::setName(const std::string& name) {
     if (name_ == name) return;
 
     name_ = name;
     if (name_label_) {
-        name_label_->setText(name.c_str());
+        name_label_->setText(name);
     }
 }
 
@@ -44,8 +45,8 @@ void ParameterListWidget::setValue(float value) {
     int16_t index = static_cast<int16_t>(value_ * (discrete_count_ - 1) + 0.5f);
 
     // If no displayValue provided, show index
-    if (display_value_.length() == 0) {
-        display_value_ = String(index);
+    if (display_value_.empty()) {
+        display_value_ = std::to_string(index);
         if (value_label_) {
             lv_label_set_text(value_label_, display_value_.c_str());
         }
@@ -64,9 +65,9 @@ void ParameterListWidget::setValueWithDisplay(float value, const char* displayVa
     display_value_ = newDisplay;
 
     if (value_label_) {
-        String formatted = TextUtils::formatTextForTwoLines(display_value_,
-                                                            VALUE_BOX_SIZE - 8,
-                                                            fonts.parameter_label);
+        std::string formatted = TextUtils::formatTextForTwoLines(display_value_,
+                                                                  VALUE_BOX_SIZE - 8,
+                                                                  fonts.parameter_label);
         lv_label_set_text(value_label_, formatted.c_str());
         // Note: top_line_ uses fixed width set at creation, no repositioning needed
     }

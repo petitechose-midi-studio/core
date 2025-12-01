@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvgl.h>
+#include "interface/IWidget.hpp"
 
 struct TitleItemProps {
     const char *text = "";
@@ -19,22 +20,24 @@ struct TitleItemProps {
 
 /**
  * Pure UI: [icon?] [label] [indicator?]
- * Creates children directly in parent. Uses render(Props) pattern.
+ * Has a container for proper IWidget support. Uses render(Props) pattern.
  */
-class TitleItem
-{
+class TitleItem : public IWidget {
 public:
     explicit TitleItem(lv_obj_t *parent);
-    ~TitleItem();
+    ~TitleItem() override;
 
     void render(const TitleItemProps &props);
     lv_coord_t getContentWidth() const;
-    bool isCreated() const { return label_ != nullptr; }
+    bool isCreated() const { return container_ != nullptr; }
+
+    // IWidget interface
+    lv_obj_t *getElement() const override { return container_; }
 
 private:
     void applyProps(const TitleItemProps &props);
 
-    lv_obj_t *parent_ = nullptr;
+    lv_obj_t *container_ = nullptr;
     lv_obj_t *icon_ = nullptr;
     lv_obj_t *label_ = nullptr;
     lv_obj_t *indicator_ = nullptr;
