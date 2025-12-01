@@ -4,16 +4,12 @@
 #include "ListOverlay.hpp"
 #include <memory>
 
-namespace UI
-{
-
 /**
  * Base implementation for list selectors.
  * Handles ListOverlay, navigation, and optional footer.
  * Subclasses implement item-specific rendering.
  */
-class BaseSelector : public ISelector
-{
+class BaseSelector : public ISelector {
 public:
     explicit BaseSelector(lv_obj_t *parent);
     ~BaseSelector() override;
@@ -35,5 +31,3 @@ protected:
     lv_obj_t *parent_ = nullptr;
     ListOverlay overlay_;
 };
-
-} // namespace UI

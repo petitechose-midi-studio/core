@@ -146,7 +146,7 @@ lv_obj_t* ControllerAPI::getParentContainer() {
     return view_manager_.getPluginContainer();
 }
 
-void ControllerAPI::showPluginView(UI::IView& view) {
+void ControllerAPI::showPluginView(IView& view) {
     view_manager_.showPluginView(view);
 }
 

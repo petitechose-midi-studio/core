@@ -25,9 +25,7 @@ class InputBinding;
 class TeensyUsbMidiOut;
 class ViewManager;
 
-namespace UI {
 class IView;
-}
 
 /**
  * @brief Controller API - Facade for plugin-to-controller communication
@@ -336,7 +334,7 @@ public:
      * @brief Show a plugin view (switches to pluginScreen_)
      * @param view Reference to IView implementation (plugin keeps ownership)
      */
-    void showPluginView(UI::IView& view);
+    void showPluginView(IView& view);
 
     /**
      * @brief Hide current plugin view and return to Core (switches to coreScreen_)

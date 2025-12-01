@@ -3,15 +3,11 @@
 #include "IComponent.hpp"
 #include <string>
 
-namespace UI
-{
-
 /**
  * Interface for list selector components.
  * Provides navigation, selection and visibility control.
  */
-class ISelector : public IComponent
-{
+class ISelector : public IComponent {
 public:
     virtual ~ISelector() = default;
 
@@ -20,5 +16,3 @@ public:
     virtual int getSelectedIndex() const = 0;
     virtual int getItemCount() const = 0;
 };
-
-} // namespace UI

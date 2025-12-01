@@ -2,8 +2,6 @@
 
 #include "lvgl.h"
 
-namespace UI {
-
 /**
  * @brief Base interface for all UI elements backed by LVGL objects
  *
@@ -29,5 +27,3 @@ public:
      */
     virtual lv_obj_t* getElement() const = 0;
 };
-
-}  // namespace UI

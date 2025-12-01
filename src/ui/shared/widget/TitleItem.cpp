@@ -1,9 +1,19 @@
 #include "TitleItem.hpp"
 
-namespace UI
-{
+TitleItem::TitleItem(lv_obj_t *parent) : parent_(parent) {
+    if (!parent_) return;
 
-TitleItem::TitleItem(lv_obj_t *parent) : parent_(parent) {}
+    icon_ = lv_label_create(parent_);
+    lv_obj_add_flag(icon_, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(icon_, "");
+
+    label_ = lv_label_create(parent_);
+    lv_label_set_text(label_, "");
+
+    indicator_ = lv_label_create(parent_);
+    lv_obj_add_flag(indicator_, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(indicator_, "");
+}
 
 TitleItem::~TitleItem() {
     if (icon_) {
@@ -20,26 +30,7 @@ TitleItem::~TitleItem() {
     }
 }
 
-void TitleItem::ensureCreated()
-{
-    if (label_ || !parent_)
-        return;
-
-    icon_ = lv_label_create(parent_);
-    lv_obj_add_flag(icon_, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(icon_, "");
-
-    label_ = lv_label_create(parent_);
-    lv_label_set_text(label_, "");
-
-    indicator_ = lv_label_create(parent_);
-    lv_obj_add_flag(indicator_, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(indicator_, "");
-}
-
-void TitleItem::render(const TitleItemProps &props)
-{
-    ensureCreated();
+void TitleItem::render(const TitleItemProps &props) {
     applyProps(props);
 }
 
@@ -122,5 +113,3 @@ lv_coord_t TitleItem::getContentWidth() const
 
     return width;
 }
-
-} // namespace UI

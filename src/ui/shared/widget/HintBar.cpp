@@ -1,24 +1,11 @@
 #include "HintBar.hpp"
 
-namespace UI {
-
 HintBar::HintBar(lv_obj_t* parent, HintBarPosition position)
-    : position_(position), parent_(parent) {}
-
-HintBar::~HintBar() {
-    if (container_) {
-        lv_obj_delete(container_);
-        container_ = nullptr;
-    }
-}
-
-void HintBar::ensureCreated() {
-    if (container_ || !parent_)
-        return;
+    : position_(position), parent_(parent) {
+    if (!parent_) return;
 
     container_ = lv_obj_create(parent_);
-    if (!container_)
-        return;
+    if (!container_) return;
 
     // Transparent background
     lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
@@ -27,6 +14,13 @@ void HintBar::ensureCreated() {
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);
 
     applyGridLayout();
+}
+
+HintBar::~HintBar() {
+    if (container_) {
+        lv_obj_delete(container_);
+        container_ = nullptr;
+    }
 }
 
 void HintBar::applyGridLayout() {
@@ -68,8 +62,7 @@ void HintBar::setSize(lv_coord_t size) {
 }
 
 void HintBar::setCell(int index, lv_obj_t* element) {
-    ensureCreated();
-    if (!element || index < 0 || index >= 3)
+    if (!container_ || !element || index < 0 || index >= 3)
         return;
 
     if (position_ == HintBarPosition::Bottom) {
@@ -99,7 +92,6 @@ void HintBar::setCell(int index, lv_obj_t* element) {
 }
 
 void HintBar::show() {
-    ensureCreated();
     if (container_)
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
@@ -112,5 +104,3 @@ void HintBar::hide() {
 bool HintBar::isVisible() const {
     return container_ && !lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
-
-}  // namespace UI

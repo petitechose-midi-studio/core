@@ -2,11 +2,7 @@
 
 #include <lvgl.h>
 
-namespace UI
-{
-
-struct TitleItemProps
-{
+struct TitleItemProps {
     const char *text = "";
     const char *icon = nullptr;
     const lv_font_t *iconFont = nullptr;
@@ -36,7 +32,6 @@ public:
     bool isCreated() const { return label_ != nullptr; }
 
 private:
-    void ensureCreated();
     void applyProps(const TitleItemProps &props);
 
     lv_obj_t *parent_ = nullptr;
@@ -44,5 +39,3 @@ private:
     lv_obj_t *label_ = nullptr;
     lv_obj_t *indicator_ = nullptr;
 };
-
-} // namespace UI

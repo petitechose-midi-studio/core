@@ -24,7 +24,7 @@
  *   int newIndex = overlay.getSelectedIndex() + 1;
  *   overlay.setSelectedIndex(newIndex);
  */
-class ListOverlay : public UI::IComponent {
+class ListOverlay : public IComponent {
 public:
     /**
      * @brief Construct list overlay

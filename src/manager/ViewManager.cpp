@@ -71,7 +71,7 @@ lv_obj_t* ViewManager::getPluginContainer() {
     return plugin_screen_;
 }
 
-void ViewManager::showPluginView(UI::IView& view) {
+void ViewManager::showPluginView(IView& view) {
     hideCoreSplash();
     current_plugin_view_ = &view;
     view.onActivate();

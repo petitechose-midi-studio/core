@@ -2,8 +2,6 @@
 
 #include "IElement.hpp"
 
-namespace UI {
-
 /**
  * @brief Interface for full-screen views with system-managed lifecycle
  *
@@ -66,5 +64,3 @@ public:
      */
     // Inherited from IElement: virtual lv_obj_t* getElement() const = 0;
 };
-
-}  // namespace UI

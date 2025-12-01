@@ -2,8 +2,6 @@
 
 #include "IElement.hpp"
 
-namespace UI {
-
 /**
  * @brief Interface for atomic UI widgets
  *
@@ -23,5 +21,3 @@ public:
     // Inherits only getElement() from IElement
     // No additional methods - widgets are simple, always-visible elements
 };
-
-}  // namespace UI

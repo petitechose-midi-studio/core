@@ -7,7 +7,7 @@
 class LVGLBridge;
 class IEventBus;
 
-namespace UI { class IView; }
+class IView;
 
 class ViewManager {
 public:
@@ -21,7 +21,7 @@ public:
     bool isSplashInitialized() const { return splash_view_.has_value(); }
 
     lv_obj_t* getPluginContainer();
-    void showPluginView(UI::IView& view);
+    void showPluginView(IView& view);
     void hidePluginView();
 
     SplashScreenView* getSplashView() {
@@ -44,5 +44,5 @@ private:
     lv_obj_t* plugin_screen_ = nullptr;
 
     std::optional<SplashScreenView> splash_view_;
-    UI::IView* current_plugin_view_ = nullptr;
+    IView* current_plugin_view_ = nullptr;
 };

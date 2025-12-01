@@ -2,8 +2,6 @@
 
 #include "IWidget.hpp"
 
-namespace UI {
-
 /**
  * @brief Interface for UI components with explicit visibility control
  *
@@ -51,5 +49,3 @@ public:
      */
     virtual bool isVisible() const = 0;
 };
-
-}  // namespace UI

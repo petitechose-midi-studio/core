@@ -2,8 +2,6 @@
 
 #include <lvgl.h>
 
-namespace UI {
-
 enum class HintBarPosition { Left, Bottom, Right };
 
 /**
@@ -50,15 +48,11 @@ public:
     void hide();
     bool isVisible() const;
 
-    lv_obj_t* getElement() {
-        ensureCreated();
-        return container_;
-    }
+    lv_obj_t* getElement() { return container_; }
 
 private:
     static constexpr lv_coord_t DEFAULT_SIZE = 20;
 
-    void ensureCreated();
     void applyGridLayout();
 
     HintBarPosition position_;
@@ -66,5 +60,3 @@ private:
     lv_obj_t* container_ = nullptr;
     lv_coord_t size_ = DEFAULT_SIZE;
 };
-
-}  // namespace UI
