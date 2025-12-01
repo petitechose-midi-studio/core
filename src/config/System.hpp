@@ -5,11 +5,11 @@
  *
  * This file defines all compile-time constants for:
  * - Application metadata (name, version)
- * - Hardware specifications (pins, component counts, timing)
+ * - Hardware specifications (pins, timing)
  * - Display settings (resolution, refresh rate, memory)
  * - MIDI parameters (channels, CC ranges, rate limiting)
+ * - Input timing (debounce, gestures)
  * - UI behavior (debug mode, colors)
- * - Memory limits (event system, MIDI queues, UI components)
  *
  * All values are constexpr - they cannot be changed at runtime.
  * Modify these values to adapt the system to your hardware configuration.
@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include <climits>
 #include <cstddef>
 #include <cstdint>
 
@@ -45,14 +44,10 @@ using Core::VERSION_PATCH;
 /*
  * Hardware
  *
- * Physical hardware configuration: pin assignments, component counts, timing.
+ * Physical hardware configuration: pin assignments and timing.
  * Defines the electrical interface between the microcontroller and peripherals.
  */
 namespace Hardware {
-/* Input device counts */
-constexpr size_t ENCODERS_COUNT = 10;
-constexpr size_t BUTTONS_COUNT = 15;
-
 /* Display pins (ILI9341 SPI interface) */
 constexpr uint8_t DISPLAY_CS_PIN = 28;
 constexpr uint8_t DISPLAY_DC_PIN = 0;
@@ -159,37 +154,5 @@ constexpr bool ENABLE_FULL_UI = true;
 constexpr uint32_t COLOR_BLACK = 0x000000;
 constexpr uint32_t COLOR_WHITE = 0xFFFFFF;
 }  // namespace UI
-
-/*
- * Memory
- *
- * Static memory allocation limits for embedded containers.
- * These define maximum capacities for etl::vector, etl::map, etc.
- *
- * Increase these values if you encounter container overflow errors.
- * Decreasing these values reduces RAM usage.
- */
-namespace Memory {
-/* Input system */
-constexpr size_t MAX_CONTROL_DEFINITIONS = Hardware::ENCODERS_COUNT + Hardware::BUTTONS_COUNT;
-constexpr size_t MAX_MIDI_MAPPINGS = MAX_CONTROL_DEFINITIONS;
-
-/* Event system */
-constexpr size_t MAX_EVENT_SUBSCRIBERS = 32;
-constexpr size_t MAX_EVENT_TYPES = 96;
-constexpr size_t MAX_CALLBACKS_PER_EVENT = 16;
-
-/* MIDI system */
-constexpr size_t MAX_MIDI_CALLBACKS = MAX_CONTROL_DEFINITIONS;
-constexpr size_t MAX_MIDI_PENDING_PARAMS = MAX_CONTROL_DEFINITIONS;
-constexpr size_t MAX_MIDI_MESSAGES_QUEUE = 32;
-
-/* UI system */
-constexpr size_t MAX_NAVIGATION_ACTIONS = 32;
-constexpr size_t MAX_UI_COMPONENTS = 16;
-
-/* Task scheduler */
-constexpr size_t MAX_SCHEDULED_TASKS = 8;
-}  // namespace Memory
 
 }  // namespace System

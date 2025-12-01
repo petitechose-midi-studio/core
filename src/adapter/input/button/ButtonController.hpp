@@ -1,7 +1,8 @@
 #pragma once
 
-#include <etl/flat_map.h>
-#include <etl/vector.h>
+#include <map>
+#include <memory>
+#include <vector>
 
 #include "UnifiedButton.hpp"
 #include "config/System.hpp"
@@ -14,7 +15,7 @@ class Multiplexer;
 class ButtonController {
 public:
     explicit ButtonController(
-        const etl::vector<Hardware::Button, System::Hardware::BUTTONS_COUNT>& buttonSetups,
+        const std::vector<Hardware::Button>& buttonSetups,
         Multiplexer& mux, IEventBus& eventBus);
     ~ButtonController();
 
@@ -29,12 +30,10 @@ public:
     const UnifiedButton* getButton(ButtonID id) const;
 
 private:
-    etl::vector<std::unique_ptr<UnifiedButton>, System::Hardware::BUTTONS_COUNT> ownedButtons_;
-
-    etl::vector<bool, System::Hardware::BUTTONS_COUNT> lastStates_;
-    etl::vector<uint32_t, System::Hardware::BUTTONS_COUNT> lastChangeTime_;  // Software debounce
-
-    etl::flat_map<ButtonID, size_t, System::Hardware::BUTTONS_COUNT> idToIndex_;
+    std::vector<std::unique_ptr<UnifiedButton>> ownedButtons_;
+    std::vector<bool> lastStates_;
+    std::vector<uint32_t> lastChangeTime_;
+    std::map<ButtonID, size_t> idToIndex_;
 
     IEventBus& eventBus_;
 };

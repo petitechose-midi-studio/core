@@ -10,9 +10,13 @@
 #include "log/Macros.hpp"
 
 ButtonController::ButtonController(
-    const etl::vector<Hardware::Button, System::Hardware::BUTTONS_COUNT>& buttonSetups,
+    const std::vector<Hardware::Button>& buttonSetups,
     Multiplexer& mux, IEventBus& eventBus)
     : eventBus_(eventBus) {
+    ownedButtons_.reserve(buttonSetups.size());
+    lastStates_.reserve(buttonSetups.size());
+    lastChangeTime_.reserve(buttonSetups.size());
+
     for (const auto& setup : buttonSetups) {
         auto button = ButtonFactory::createButton(setup, mux);
 
@@ -20,8 +24,8 @@ ButtonController::ButtonController(
             size_t index = ownedButtons_.size();
             ownedButtons_.push_back(std::move(button));
             lastStates_.push_back(false);
-            lastChangeTime_.push_back(0);  // Initialize debounce timer
-            idToIndex_[setup.id] = index;  // Map InputId -> array index
+            lastChangeTime_.push_back(0);
+            idToIndex_[setup.id] = index;
         } else {
             LOGLN("[ButtonController] ERROR: Failed to create button");
         }

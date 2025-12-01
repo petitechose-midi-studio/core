@@ -75,7 +75,7 @@ void ParameterListWidget::setValueWithDisplay(float value, const char* displayVa
 }
 
 void ParameterListWidget::setDiscreteMetadata(int16_t discreteCount,
-                                               const etl::vector<etl::string<16>, 32>& valueNames,
+                                               const std::vector<std::string>& valueNames,
                                                uint8_t currentIndex) {
     discrete_count_ = discreteCount;
     discrete_value_names_ = valueNames;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <etl/optional.h>
+#include <optional>
 
 #include "ui/view/SplashScreenView.hpp"
 
@@ -43,6 +43,6 @@ private:
     lv_obj_t* coreScreen_ = nullptr;
     lv_obj_t* pluginScreen_ = nullptr;
 
-    etl::optional<SplashScreenView> splashView_;
+    std::optional<SplashScreenView> splashView_;
     UI::IView* currentPluginView_ = nullptr;
 };

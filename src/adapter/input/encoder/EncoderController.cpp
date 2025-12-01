@@ -1,25 +1,25 @@
 #include "EncoderController.hpp"
 
 EncoderController::EncoderController(
-    const etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT>& encoderSetups,
+    const std::vector<Hardware::Encoder>& encoderSetups,
     IEventBus& eventBus) {
-    for (auto& setup : encoderSetups) {
+    encoders_.reserve(encoderSetups.size());
+    for (const auto& setup : encoderSetups) {
         size_t index = encoders_.size();
-        encoders_.emplace_back(setup, eventBus);  // Construct in-place on stack
-        idToIndex_[setup.id] = index;             // Map InputId -> array index
+        encoders_.push_back(std::make_unique<Encoder>(setup, eventBus));
+        idToIndex_[setup.id] = index;
     }
-    // NOTE: Do NOT call init() here - hardware init is deferred
 }
 
 void EncoderController::init() {
     for (auto& encoder : encoders_) {
-        encoder.init();
+        encoder->init();
     }
 }
 
 void EncoderController::flushAllEvents() {
     for (auto& encoder : encoders_) {
-        encoder.flushEvents();
+        encoder->flushEvents();
     }
 }
 
@@ -67,10 +67,10 @@ void EncoderController::setDelta(EncoderID encoderId, float delta) {
 
 Encoder* EncoderController::getEncoder(EncoderID id) {
     auto it = idToIndex_.find(id);
-    return (it != idToIndex_.end()) ? &encoders_[it->second] : nullptr;
+    return (it != idToIndex_.end()) ? encoders_[it->second].get() : nullptr;
 }
 
 const Encoder* EncoderController::getEncoder(EncoderID id) const {
     auto it = idToIndex_.find(id);
-    return (it != idToIndex_.end()) ? &encoders_[it->second] : nullptr;
+    return (it != idToIndex_.end()) ? encoders_[it->second].get() : nullptr;
 }

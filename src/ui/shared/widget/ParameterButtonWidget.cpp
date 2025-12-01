@@ -51,8 +51,9 @@ void ParameterButtonWidget::setValueWithDisplay(float value, const char* display
 }
 
 void ParameterButtonWidget::setDiscreteMetadata(int16_t discreteCount,
-                                                 const etl::vector<etl::string<16>, 32>& valueNames,
+                                                 const std::vector<std::string>& valueNames,
                                                  uint8_t currentIndex) {
+    (void)discreteCount;
     discrete_value_names_ = valueNames;
     current_value_index_ = currentIndex;
     has_discrete_metadata_ = true;

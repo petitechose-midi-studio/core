@@ -1,7 +1,7 @@
 #pragma once
 
-#include <etl/vector.h>
-#include <etl/optional.h>
+#include <optional>
+#include <vector>
 
 #include "adapter/display/driver/Ili9341Driver.hpp"
 #include "adapter/display/ui/LVGLBridge.hpp"
@@ -42,8 +42,8 @@ private:
     PluginSetupFn setupPlugins_;
     EventBus eventBus_;
     Multiplexer multiplexer_;
-    etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT> encoders_config_;
-    etl::vector<Hardware::Button, System::Hardware::BUTTONS_COUNT> buttons_config_;
+    std::vector<Hardware::Encoder> encoders_config_;
+    std::vector<Hardware::Button> buttons_config_;
 
     // Bridge
     LVGLBridge displayBridge_;
@@ -64,7 +64,7 @@ private:
     PluginManager plugins_;
 
     // Boot
-    etl::optional<Boot::BootManager> bootManager_;
+    std::optional<Boot::BootManager> bootManager_;
     bool bootComplete_ = false;
     bool pluginsInitialized_ = false;
     SubscriptionId bootCompleteSub_ = 0;

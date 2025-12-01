@@ -1,7 +1,8 @@
 #pragma once
 
 #include <ILI9341_T4.h>
-#include <etl/optional.h>
+
+#include <optional>
 
 #include "config/System.hpp"
 
@@ -22,9 +23,9 @@ public:
     void waitAsyncComplete();
 
 private:
-    etl::optional<ILI9341_T4::ILI9341Driver> tft_;
-    etl::optional<ILI9341_T4::DiffBuff> diff1_;
-    etl::optional<ILI9341_T4::DiffBuff> diff2_;
+    std::optional<ILI9341_T4::ILI9341Driver> tft_;
+    std::optional<ILI9341_T4::DiffBuff> diff1_;
+    std::optional<ILI9341_T4::DiffBuff> diff2_;
     uint16_t* framebuffer_ = nullptr;
     bool initialized_ = false;
 };

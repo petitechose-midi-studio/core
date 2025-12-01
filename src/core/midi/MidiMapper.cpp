@@ -10,7 +10,7 @@ using InputEvent::EncoderChanged;
 
 MidiMapper::MidiMapper(
     MidiOutput& midiOut, IEventBus& eventBus,
-    const etl::vector<MidiCCMapping, System::Memory::MAX_MIDI_MAPPINGS>& mappings)
+    const std::vector<MidiCCMapping>& mappings)
     : midiOut_(midiOut), eventBus_(eventBus), encoderSub_(0), buttonSub_(0) {
     for (const auto& mapping : mappings) {
         MidiConfig config{mapping.channel, mapping.cc};

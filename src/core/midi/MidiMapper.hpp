@@ -1,13 +1,12 @@
 #pragma once
 
-#include <etl/flat_map.h>
-#include <etl/vector.h>
+#include <map>
+#include <vector>
 
 #include "../Type.hpp"
 #include "../event/IEventBus.hpp"
 #include "../struct/MidiCCMapping.hpp"
 #include "config/InputID.hpp"
-#include "config/System.hpp"
 
 class MidiOutput;
 class EncoderChangedEvent;
@@ -16,7 +15,7 @@ class ButtonPressEvent;
 class MidiMapper {
 public:
     MidiMapper(MidiOutput& midiOut, IEventBus& eventBus,
-               const etl::vector<MidiCCMapping, System::Memory::MAX_MIDI_MAPPINGS>& mappings);
+               const std::vector<MidiCCMapping>& mappings);
     ~MidiMapper();
 
 private:
@@ -34,8 +33,8 @@ private:
     MidiOutput& midiOut_;
     IEventBus& eventBus_;
 
-    etl::flat_map<uint16_t, MidiConfig, System::Memory::MAX_MIDI_MAPPINGS> encoders_;
-    etl::flat_map<uint16_t, MidiConfig, System::Memory::MAX_MIDI_MAPPINGS> buttons_;
+    std::map<uint16_t, MidiConfig> encoders_;
+    std::map<uint16_t, MidiConfig> buttons_;
 
     SubscriptionId encoderSub_;
     SubscriptionId buttonSub_;

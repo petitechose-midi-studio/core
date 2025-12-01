@@ -1,14 +1,12 @@
 #pragma once
 
-#include <etl/map.h>
-#include <etl/vector.h>
-
+#include <map>
 #include <memory>
+#include <vector>
 
 #include "Event.hpp"
 #include "IEventBus.hpp"
 #include "UnifiedEventTypes.hpp"
-#include "config/System.hpp"
 
 class EventBus : public IEventBus {
 public:
@@ -22,17 +20,7 @@ public:
         uint32_t key = makeKey(category, type);
         SubscriptionId id = nextId_++;
 
-        auto it = callbackSubscriptions_.find(key);
-        if (it == callbackSubscriptions_.end()) {
-            CallbackList list;
-            list.push_back({id, callback});
-            callbackSubscriptions_[key] = list;
-        } else {
-            if (it->second.size() >= System::Memory::MAX_CALLBACKS_PER_EVENT) {
-                return 0;
-            }
-            it->second.push_back({id, callback});
-        }
+        callbackSubscriptions_[key].push_back({id, callback});
 
         return id;
     }
@@ -78,8 +66,8 @@ private:
         EventCallback callback;
     };
 
-    using CallbackList = etl::vector<CallbackSubscription, System::Memory::MAX_CALLBACKS_PER_EVENT>;
-    using SubscriptionMap = etl::map<uint32_t, CallbackList, System::Memory::MAX_EVENT_TYPES>;
+    using CallbackList = std::vector<CallbackSubscription>;
+    using SubscriptionMap = std::map<uint32_t, CallbackList>;
 
     uint32_t makeKey(EventCategoryType category, EventType type) const {
         return (static_cast<uint32_t>(category) << 16) | type;

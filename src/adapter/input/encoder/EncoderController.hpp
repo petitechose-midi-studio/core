@@ -1,11 +1,10 @@
 #pragma once
-#include <etl/flat_map.h>
-#include <etl/vector.h>
 
+#include <map>
 #include <memory>
+#include <vector>
 
 #include "Encoder.hpp"
-#include "config/System.hpp"
 #include "core/Type.hpp"
 #include "core/struct/Encoder.hpp"
 
@@ -19,7 +18,7 @@ class IEventBus;
 class EncoderController {
 public:
     explicit EncoderController(
-        const etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT>& encoderSetups,
+        const std::vector<Hardware::Encoder>& encoderSetups,
         IEventBus& eventBus);
 
     /**
@@ -43,7 +42,6 @@ public:
     const Encoder* getEncoder(EncoderID id) const;
 
 private:
-    etl::vector<Encoder, System::Hardware::ENCODERS_COUNT> encoders_;
-
-    etl::flat_map<EncoderID, size_t, System::Hardware::ENCODERS_COUNT> idToIndex_;
+    std::vector<std::unique_ptr<Encoder>> encoders_;
+    std::map<EncoderID, size_t> idToIndex_;
 };

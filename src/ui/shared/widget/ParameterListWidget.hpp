@@ -2,9 +2,10 @@
 
 #include <Arduino.h>
 #include <lvgl.h>
-#include <etl/array.h>
-#include <etl/string.h>
+
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "IParameterWidget.hpp"
 #include "Label.hpp"
@@ -34,7 +35,7 @@ public:
     void setValue(float value) override;
     void setValueWithDisplay(float value, const char* displayValue) override;
     void setDiscreteMetadata(int16_t discreteCount,
-                            const etl::vector<etl::string<16>, 32>& valueNames,
+                            const std::vector<std::string>& valueNames,
                             uint8_t currentIndex) override;
     void setVisible(bool visible) override;
     lv_obj_t* getContainer() const override { return container_; }
@@ -62,7 +63,7 @@ private:
     float value_ = 0.0f;
 
     // Optimistic display metadata (from Bitwig)
-    etl::vector<etl::string<16>, 32> discrete_value_names_;
+    std::vector<std::string> discrete_value_names_;
     uint8_t current_value_index_ = 0;
     bool has_discrete_metadata_ = false;
 

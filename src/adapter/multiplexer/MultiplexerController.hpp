@@ -1,7 +1,8 @@
 #pragma once
 
 #include <CD74HC4067.h>
-#include <etl/optional.h>
+
+#include <optional>
 
 #include "config/System.hpp"
 
@@ -33,7 +34,7 @@ private:
     void selectChannel(uint8_t channel);
     bool readDigital();
 
-    etl::optional<CD74HC4067> mux_;
+    std::optional<CD74HC4067> mux_;
     uint8_t currentChannel_ = 0;
     uint32_t lastSwitchTimestamp_ = 0;
     bool channelReady_ = true;

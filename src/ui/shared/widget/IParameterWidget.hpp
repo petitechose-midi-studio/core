@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 #include <lvgl.h>
-#include <etl/array.h>
-#include <etl/string.h>
-#include <etl/vector.h>
+
+#include <string>
+#include <vector>
 
 /**
  * @brief Interface for parameter widgets (polymorphism)
@@ -47,7 +47,7 @@ public:
      * new index locally and display valueNames[newIndex] immediately without waiting for host.
      */
     virtual void setDiscreteMetadata(int16_t discreteCount,
-                                     const etl::vector<etl::string<16>, 32>& valueNames,
+                                     const std::vector<std::string>& valueNames,
                                      uint8_t currentIndex) {
         // Default implementation does nothing (for Knob widgets)
         (void)discreteCount;

@@ -1,9 +1,8 @@
 #pragma once
 
-#include <etl/vector.h>
+#include <vector>
 
 #include "config/MidiMapping.hpp"
-#include "config/System.hpp"
 #include "core/struct/MidiCCMapping.hpp"
 
 /**
@@ -17,8 +16,9 @@ public:
     /**
      * @brief Load MIDI mappings from Config::MIDI_MAPPINGS
      */
-    static etl::vector<MidiCCMapping, System::Memory::MAX_MIDI_MAPPINGS> createDefault() {
-        etl::vector<MidiCCMapping, System::Memory::MAX_MIDI_MAPPINGS> mappings;
+    static std::vector<MidiCCMapping> createDefault() {
+        std::vector<MidiCCMapping> mappings;
+        mappings.reserve(std::size(Config::MIDI_MAPPINGS));
 
         for (const auto& mapping : Config::MIDI_MAPPINGS) {
             mappings.push_back(mapping);

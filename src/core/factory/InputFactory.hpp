@@ -2,25 +2,25 @@
  * InputFactory.hpp
  *
  * Factory to load input configurations from config/ into runtime containers.
- * Converts compile-time constexpr arrays into etl::vector for use by controllers.
+ * Converts compile-time constexpr arrays into std::vector for use by controllers.
  */
 
 #pragma once
 
-#include <etl/vector.h>
+#include <vector>
 
 #include "../struct/Button.hpp"
 #include "../struct/Encoder.hpp"
 #include "config/InputDefinition.hpp"
-#include "config/System.hpp"
 
 class InputFactory {
 public:
     /*
      * Load encoder configurations
      */
-    static etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT> createEncoders() {
-        etl::vector<Hardware::Encoder, System::Hardware::ENCODERS_COUNT> encoders;
+    static std::vector<Hardware::Encoder> createEncoders() {
+        std::vector<Hardware::Encoder> encoders;
+        encoders.reserve(std::size(Config::ENCODERS));
         for (const auto& enc : Config::ENCODERS) {
             encoders.push_back(enc);
         }
@@ -30,8 +30,9 @@ public:
     /*
      * Load button configurations
      */
-    static etl::vector<Hardware::Button, System::Hardware::BUTTONS_COUNT> createButtons() {
-        etl::vector<Hardware::Button, System::Hardware::BUTTONS_COUNT> buttons;
+    static std::vector<Hardware::Button> createButtons() {
+        std::vector<Hardware::Button> buttons;
+        buttons.reserve(std::size(Config::BUTTONS));
         for (const auto& btn : Config::BUTTONS) {
             buttons.push_back(btn);
         }
