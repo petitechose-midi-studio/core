@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Arduino.h>
+#include <cstdint>
+#include <string>
 
 #include "Event.hpp"
 #include "UnifiedEventTypes.hpp"
@@ -140,13 +141,13 @@ public:
 
 class SystemErrorEvent : public Event {
 public:
-    SystemErrorEvent(uint16_t errorCode, const String& message = "")
+    SystemErrorEvent(uint16_t errorCode, const std::string& message = "")
         : Event(EventCategory::System, SystemEvent::Error),
           errorCode(errorCode),
           message(message) {}
 
     uint16_t errorCode;
-    String message;
+    std::string message;
 };
 
 class SystemBootCompleteEvent : public Event {
@@ -156,42 +157,42 @@ public:
 
 class IntegrationRegisteredEvent : public Event {
 public:
-    IntegrationRegisteredEvent(const String& name, uint8_t integrationId)
+    IntegrationRegisteredEvent(const std::string& name, uint8_t integrationId)
         : Event(EventCategory::System, SystemEvent::PluginRegistered),
           name(name),
           integrationId(integrationId) {}
 
-    const String name;
+    const std::string name;
     const uint8_t integrationId;
 };
 
 class IntegrationActivatedEvent : public Event {
 public:
-    IntegrationActivatedEvent(const String& name, uint8_t integrationId)
+    IntegrationActivatedEvent(const std::string& name, uint8_t integrationId)
         : Event(EventCategory::System, SystemEvent::PluginActivated),
           name(name),
           integrationId(integrationId) {}
 
-    const String name;
+    const std::string name;
     const uint8_t integrationId;
 };
 
 class IntegrationDeactivatedEvent : public Event {
 public:
-    IntegrationDeactivatedEvent(const String& name, uint8_t integrationId)
+    IntegrationDeactivatedEvent(const std::string& name, uint8_t integrationId)
         : Event(EventCategory::System, SystemEvent::PluginDeactivated),
           name(name),
           integrationId(integrationId) {}
 
-    const String name;
+    const std::string name;
     const uint8_t integrationId;
 };
 
 class IntegrationErrorEvent : public Event {
 public:
-    IntegrationErrorEvent(const String& name, const String& error)
+    IntegrationErrorEvent(const std::string& name, const std::string& error)
         : Event(EventCategory::System, SystemEvent::PluginError), name(name), error(error) {}
 
-    const String name;
-    const String error;
+    const std::string name;
+    const std::string error;
 };
