@@ -24,6 +24,8 @@ ParameterButtonWidget::~ParameterButtonWidget() {
 }
 
 void ParameterButtonWidget::setName(const String& name) {
+    if (name_ == name) return;
+
     name_ = name;
     if (name_label_) {
         name_label_->setText(name.c_str());
@@ -41,7 +43,8 @@ void ParameterButtonWidget::setValue(float value) {
 void ParameterButtonWidget::setValueWithDisplay(float value, const char* displayValue) {
     setValue(value);
 
-    if (state_label_ && displayValue) {
+    if (state_label_ && displayValue && display_value_ != displayValue) {
+        display_value_ = displayValue;
         lv_label_set_text(state_label_, displayValue);
     }
 }

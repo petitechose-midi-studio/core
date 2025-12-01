@@ -54,6 +54,7 @@ private:
     uint16_t height_;
     uint8_t color_index_;
     String name_;
+    String display_value_;
     bool is_on_ = false;
 
     // Optimistic display metadata (from Bitwig)

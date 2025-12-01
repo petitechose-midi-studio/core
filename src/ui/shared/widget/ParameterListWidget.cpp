@@ -28,6 +28,8 @@ ParameterListWidget::~ParameterListWidget() {
 }
 
 void ParameterListWidget::setName(const String& name) {
+    if (name_ == name) return;
+
     name_ = name;
     if (name_label_) {
         name_label_->setText(name.c_str());
@@ -52,24 +54,20 @@ void ParameterListWidget::setValue(float value) {
 }
 
 void ParameterListWidget::setValueWithDisplay(float value, const char* displayValue) {
+    const char* newDisplay = displayValue ? displayValue : "---";
+
+    // Skip update if nothing changed
+    if (value_ == value && display_value_ == newDisplay) return;
+
     value_ = value;
-    display_value_ = displayValue ? displayValue : "---";
+    display_value_ = newDisplay;
 
     if (value_label_) {
         String formatted = TextUtils::formatTextForTwoLines(display_value_,
                                                             VALUE_BOX_SIZE - 8,
                                                             fonts.parameter_label);
         lv_label_set_text(value_label_, formatted.c_str());
-
-        if (top_line_) {
-            lv_obj_update_layout(value_label_);
-            lv_coord_t label_width = lv_obj_get_width(value_label_);
-            lv_coord_t label_x = lv_obj_get_x(value_label_);
-            lv_coord_t label_y = lv_obj_get_y(value_label_);
-
-            lv_obj_set_width(top_line_, label_width);
-            lv_obj_set_pos(top_line_, label_x, label_y - 4);
-        }
+        // Note: top_line_ uses fixed width set at creation, no repositioning needed
     }
 
     triggerValueChangeFlash();
@@ -134,18 +132,16 @@ void ParameterListWidget::createValueLabel() {
 }
 
 void ParameterListWidget::createTopLine() {
-    if (!value_label_) return;
+    if (!value_box_) return;
 
-    // Get label size to adjust line width
-    lv_obj_update_layout(value_label_);
-    lv_coord_t label_width = lv_obj_get_width(value_label_);
-    lv_coord_t label_x = lv_obj_get_x(value_label_);
-    lv_coord_t label_y = lv_obj_get_y(value_label_);
+    // Fixed width line centered above text area
+    static constexpr lv_coord_t LINE_WIDTH = VALUE_BOX_SIZE - 8;  // Same as label width
+    static constexpr lv_coord_t LINE_HEIGHT = 2;
+    static constexpr lv_coord_t LINE_Y = 8;  // Fixed position near top of value_box
 
-    // Create line just above the text with same width as text (thicker: 2px)
     top_line_ = lv_obj_create(value_box_);
-    lv_obj_set_size(top_line_, label_width, 2);       // 2px thickness
-    lv_obj_set_pos(top_line_, label_x, label_y - 4);  // 4px above text
+    lv_obj_set_size(top_line_, LINE_WIDTH, LINE_HEIGHT);
+    lv_obj_align(top_line_, LV_ALIGN_TOP_MID, 0, LINE_Y);
 
     lv_obj_set_style_bg_color(top_line_, lv_color_hex(BaseTheme::Color::INACTIVE), 0);
     lv_obj_set_style_bg_opa(top_line_, LV_OPA_COVER, 0);
