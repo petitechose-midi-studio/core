@@ -2,6 +2,9 @@
 
 This document defines the code conventions for MIDI Studio Core.
 
+> **Auto-formatting**: Use the [`.clang-format`](../.clang-format) file at the project root.
+> Run `clang-format -i <file>` or configure your IDE to format on save.
+
 ---
 
 ## Naming
