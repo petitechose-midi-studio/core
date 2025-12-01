@@ -12,9 +12,9 @@
  * Implementations should handle the actual MIDI reception and notify
  * registered callbacks when messages are received.
  */
-class MidiInput {
+class IMidiInput {
 protected:
-    ~MidiInput() = default;
+    ~IMidiInput() = default;
 
 public:
     /**

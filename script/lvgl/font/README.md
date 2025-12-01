@@ -19,9 +19,9 @@ Interactive prompts guide you through:
 Create `script/lvgl/font/font_converter.conf` in your project:
 
 ```bash
-FONT_SOURCE_DIR="asset/font"      # TTF/OTF source directory
-FONT_OUTPUT_DIR="src/ui/font"     # Output directory (data/ subfolder auto-created)
-CHAR_RANGE="UTF8"                 # Character range (see presets below)
+FONT_SOURCE_DIR="asset/font"           # TTF/OTF source directory
+FONT_OUTPUT_DIR="src/ui/shared/font"   # Output directory (data/ subfolder auto-created)
+CHAR_RANGE="ASCII,LATIN1"              # Character range (see presets below)
 ```
 
 ## Character Range Presets

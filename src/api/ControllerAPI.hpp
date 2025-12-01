@@ -371,7 +371,7 @@ private:
 
 template <typename Callback>
 void ControllerAPI::onSysEx(Callback callback) {
-    event_bus_.on(EventCategory::MIDI, MidiEvent::SysEx, [callback](const Event& e) {
+    event_bus_.on(EventCategory::MIDI, MidiEvent::SYSEX, [callback](const Event& e) {
         auto& sysex = static_cast<const SysExEvent&>(e);
         callback(sysex.data, sysex.length);
     });
@@ -387,7 +387,7 @@ void ControllerAPI::onCC(Callback callback) {
 
 template <typename Callback>
 void ControllerAPI::onNoteOn(Callback callback) {
-    event_bus_.on(EventCategory::MIDI, MidiEvent::NoteOn, [callback](const Event& e) {
+    event_bus_.on(EventCategory::MIDI, MidiEvent::NOTE_ON, [callback](const Event& e) {
         auto& note = static_cast<const MidiNoteOnEvent&>(e);
         callback(note.channel, note.note, note.velocity);
     });
@@ -395,7 +395,7 @@ void ControllerAPI::onNoteOn(Callback callback) {
 
 template <typename Callback>
 void ControllerAPI::onNoteOff(Callback callback) {
-    event_bus_.on(EventCategory::MIDI, MidiEvent::NoteOff, [callback](const Event& e) {
+    event_bus_.on(EventCategory::MIDI, MidiEvent::NOTE_OFF, [callback](const Event& e) {
         auto& note = static_cast<const MidiNoteOffEvent&>(e);
         callback(note.channel, note.note, note.velocity);
     });

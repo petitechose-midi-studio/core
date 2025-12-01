@@ -5,11 +5,11 @@
 #include "../event/UnifiedEventTypes.hpp"
 #include "../interface/midi/MidiOutput.hpp"
 
-using InputEvent::ButtonPress;
-using InputEvent::EncoderChanged;
+using InputEvent::BUTTON_PRESS;
+using InputEvent::ENCODER_CHANGED;
 
 MidiMapper::MidiMapper(
-    MidiOutput& midiOut, IEventBus& eventBus,
+    IMidiOutput& midiOut, IEventBus& eventBus,
     const std::vector<MidiCCMapping>& mappings)
     : midi_out_(midiOut), event_bus_(eventBus), encoder_sub_(0), button_sub_(0) {
     for (const auto& mapping : mappings) {
@@ -22,11 +22,11 @@ MidiMapper::MidiMapper(
         }
     }
 
-    encoder_sub_ = event_bus_.on(EventCategory::Input, EncoderChanged, [this](const Event& e) {
+    encoder_sub_ = event_bus_.on(EventCategory::USER_INPUT, ENCODER_CHANGED, [this](const Event& e) {
         onEncoderChangedEvent(static_cast<const EncoderChangedEvent&>(e));
     });
 
-    button_sub_ = event_bus_.on(EventCategory::Input, ButtonPress, [this](const Event& e) {
+    button_sub_ = event_bus_.on(EventCategory::USER_INPUT, BUTTON_PRESS, [this](const Event& e) {
         onButtonPressEvent(static_cast<const ButtonPressEvent&>(e));
     });
 }

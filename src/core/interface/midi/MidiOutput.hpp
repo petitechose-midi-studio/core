@@ -2,9 +2,9 @@
 
 #include "../../Type.hpp"
 
-class MidiOutput {
+class IMidiOutput {
 protected:
-    ~MidiOutput() = default;
+    ~IMidiOutput() = default;
 
 public:
     virtual bool supportsEvents() const {

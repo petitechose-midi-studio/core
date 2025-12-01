@@ -51,19 +51,16 @@ void MyClass::doSomething() {
 ### Braces
 
 ```cpp
-// Classes and structs: Allman (brace on new line)
-class MyClass
-{
+// Classes, structs, functions: K&R (brace on same line)
+class MyClass {
 public:
     void method();
 };
 
-struct MyData
-{
+struct MyData {
     int value;
 };
 
-// Functions: K&R (brace on same line)
 void shortFunction() {
     doWork();
 }
@@ -488,11 +485,7 @@ Recommended `.clang-format` configuration:
 BasedOnStyle: Google
 IndentWidth: 4
 ColumnLimit: 100
-BreakBeforeBraces: Custom
-BraceWrapping:
-  AfterClass: true
-  AfterStruct: true
-  AfterFunction: false
+BreakBeforeBraces: Attach
 ```
 
 ### Verification

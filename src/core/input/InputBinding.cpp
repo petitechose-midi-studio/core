@@ -7,16 +7,16 @@
 #include "config/System.hpp"
 
 InputBinding::InputBinding(IEventBus& eventBus) : event_bus_(eventBus) {
-    encoder_sub_ = event_bus_.on(EventCategory::Input,
-                               InputEvent::EncoderChanged,
+    encoder_sub_ = event_bus_.on(EventCategory::USER_INPUT,
+                               InputEvent::ENCODER_CHANGED,
                                [this](const Event& e) { onEncoderChanged(e); });
 
-    button_press_sub_ = event_bus_.on(EventCategory::Input,
-                                   InputEvent::ButtonPress,
+    button_press_sub_ = event_bus_.on(EventCategory::USER_INPUT,
+                                   InputEvent::BUTTON_PRESS,
                                    [this](const Event& e) { onButtonPress(e); });
 
-    button_release_sub_ = event_bus_.on(EventCategory::Input,
-                                     InputEvent::ButtonRelease,
+    button_release_sub_ = event_bus_.on(EventCategory::USER_INPUT,
+                                     InputEvent::BUTTON_RELEASE,
                                      [this](const Event& e) { onButtonRelease(e); });
 
     LOGLN("[InputBinding] Initialized with direct type-safe API");

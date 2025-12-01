@@ -212,7 +212,7 @@ Hardware abstraction via interfaces.
 
 ```cpp
 // Interface
-class MidiOutput {
+class IMidiOutput {
 public:
     virtual void sendControlChange(uint8_t ch, uint8_t cc, uint8_t val) = 0;
     virtual void sendNoteOn(uint8_t ch, uint8_t note, uint8_t vel) = 0;
@@ -220,7 +220,7 @@ public:
 };
 
 // Teensy implementation
-class TeensyUsbMidiOut : public MidiOutput {
+class TeensyUsbMidiOut : public IMidiOutput {
     void sendControlChange(...) override {
         usbMIDI.sendControlChange(...);
     }
@@ -425,7 +425,7 @@ lib_deps = file://../core
 
 The architecture facilitates testing via:
 
-1. **Interfaces** (`IEventBus`, `IView`, `MidiOutput`...) → Mockable
+1. **Interfaces** (`IEventBus`, `IView`, `IMidiOutput`...) → Mockable
 2. **Dependency Injection** → No global state
 3. **Layer separation** → Unit tests per component
 4. **External configuration** → Tests with different configs

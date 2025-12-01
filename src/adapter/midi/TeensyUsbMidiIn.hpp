@@ -9,7 +9,7 @@ class IEventBus;
  *
  * IMPORTANT: Call init() after Arduino setup() to register MIDI callbacks.
  */
-class TeensyUsbMidiIn : public MidiInput {
+class TeensyUsbMidiIn : public IMidiInput {
 public:
     explicit TeensyUsbMidiIn(IEventBus& eventBus);
     ~TeensyUsbMidiIn();

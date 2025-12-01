@@ -33,7 +33,7 @@ MidiStudioApp::~MidiStudioApp() = default;
 
 bool MidiStudioApp::setup()
 {
-    boot_complete_sub_ = event_bus_.on(EventCategory::System, SystemEvent::BootComplete,
+    boot_complete_sub_ = event_bus_.on(EventCategory::SYSTEM, SystemEvent::BOOT_COMPLETE,
                                     [this](const Event &e)
                                     { onBootComplete(e); });
 

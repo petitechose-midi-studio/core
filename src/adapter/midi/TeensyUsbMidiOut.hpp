@@ -6,7 +6,7 @@
 
 class IEventBus;
 
-class TeensyUsbMidiOut : public MidiOutput {
+class TeensyUsbMidiOut : public IMidiOutput {
 public:
     explicit TeensyUsbMidiOut(IEventBus& eventBus);
 

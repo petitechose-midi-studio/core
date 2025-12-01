@@ -3,7 +3,7 @@
 #include <lvgl.h>
 #include "interface/IComponent.hpp"
 
-enum class HintBarPosition { Left, Bottom, Right };
+enum class HintBarPosition { LEFT, BOTTOM, RIGHT };
 
 /**
  * @brief Container with 3 cells for positioning hint elements

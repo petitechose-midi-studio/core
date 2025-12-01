@@ -93,7 +93,7 @@ constexpr Hardware::Encoder ENCODERS[] = {
     {EncoderID::MACRO_8, mcuPin(38), mcuPin(39)},
 
     /* Navigation encoder - Relative mode (infinite rotation, ±1.0 per detent) */
-    {EncoderID::NAV, mcuPin(31), mcuPin(30), 24, 4, Hardware::EncoderMode::Relative},
+    {EncoderID::NAV, mcuPin(31), mcuPin(30), 24, 4, Hardware::EncoderMode::RELATIVE},
 
     /* Optional encoder - Absolute mode (high precision parameter control) */
     {EncoderID::OPT, mcuPin(34), mcuPin(33), 600, 1}};

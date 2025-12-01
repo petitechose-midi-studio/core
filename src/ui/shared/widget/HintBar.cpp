@@ -27,7 +27,7 @@ void HintBar::applyGridLayout() {
     if (!container_)
         return;
 
-    if (position_ == HintBarPosition::Bottom) {
+    if (position_ == HintBarPosition::BOTTOM) {
         // Horizontal: 3 equal columns, 1 row taking full height
         // LV_GRID_FR(1) ensures the row takes full container height for proper vertical centering
         static const lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
@@ -45,7 +45,7 @@ void HintBar::applyGridLayout() {
         lv_obj_set_layout(container_, LV_LAYOUT_GRID);
         lv_obj_set_grid_dsc_array(container_, col_dsc, row_dsc);
         // Align column based on position
-        lv_grid_align_t col_align = (position_ == HintBarPosition::Left) ? LV_GRID_ALIGN_START : LV_GRID_ALIGN_END;
+        lv_grid_align_t col_align = (position_ == HintBarPosition::LEFT) ? LV_GRID_ALIGN_START : LV_GRID_ALIGN_END;
         lv_obj_set_style_grid_column_align(container_, col_align, LV_STATE_DEFAULT);
     }
 }
@@ -53,7 +53,7 @@ void HintBar::applyGridLayout() {
 void HintBar::setSize(lv_coord_t size) {
     size_ = size;
     if (container_) {
-        if (position_ == HintBarPosition::Bottom) {
+        if (position_ == HintBarPosition::BOTTOM) {
             lv_obj_set_height(container_, size_);
         } else {
             lv_obj_set_width(container_, size_);
@@ -65,7 +65,7 @@ void HintBar::setCell(int index, lv_obj_t* element) {
     if (!container_ || !element || index < 0 || index >= 3)
         return;
 
-    if (position_ == HintBarPosition::Bottom) {
+    if (position_ == HintBarPosition::BOTTOM) {
         // Horizontal: columns 0,1,2
         // col_align: START/CENTER/END for horizontal positioning within cell
         // row_align: CENTER for vertical centering
@@ -81,7 +81,7 @@ void HintBar::setCell(int index, lv_obj_t* element) {
         // row_align: START/CENTER/END for vertical positioning within cell
         // col_align: START (Left) or END (Right) for horizontal alignment
         static const lv_grid_align_t v_aligns[] = {LV_GRID_ALIGN_START, LV_GRID_ALIGN_CENTER, LV_GRID_ALIGN_END};
-        lv_grid_align_t h_align = (position_ == HintBarPosition::Left) ? LV_GRID_ALIGN_START : LV_GRID_ALIGN_END;
+        lv_grid_align_t h_align = (position_ == HintBarPosition::LEFT) ? LV_GRID_ALIGN_START : LV_GRID_ALIGN_END;
         lv_obj_set_grid_cell(element, h_align, 0, 1, v_aligns[index], index, 1);
         // Edge padding: 12px on outer edges
         if (index == 0)

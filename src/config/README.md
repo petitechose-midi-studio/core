@@ -199,7 +199,7 @@ constexpr Hardware::Button BUTTONS[] = {
 constexpr Hardware::Encoder ENCODERS[] = {
     // {EncoderID, pinA, pinB, ppr, stepsPerDetent, mode}
     {EncoderID::MACRO_1, mcuPin(22), mcuPin(23)},  // Defaults: 24 PPR, 1 step, Absolute
-    {EncoderID::NAV, mcuPin(31), mcuPin(30), 24, 4, Hardware::EncoderMode::Relative},
+    {EncoderID::NAV, mcuPin(31), mcuPin(30), 24, 4, Hardware::EncoderMode::RELATIVE},
     {EncoderID::OPT, mcuPin(34), mcuPin(33), 600, 1},  // High resolution
 };
 ```

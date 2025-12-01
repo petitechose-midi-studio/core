@@ -11,8 +11,8 @@ namespace Hardware {
  * Relative: Infinite rotation, emits cumulative position (menu navigation)
  */
 enum class EncoderMode : uint8_t {
-    Absolute,  // Butées logicielles, valeur normalisée
-    Relative   // Infini, position cumulative (±1.0 par cran)
+    ABSOLUTE,  // Software stops, normalized value [0.0 → 1.0]
+    RELATIVE   // Infinite rotation, cumulative position (±1.0 per detent)
 };
 
 /*
@@ -34,7 +34,7 @@ struct Encoder {
     GpioPin pinB;
     uint16_t ppr = 24;
     uint8_t stepsPerDetent = 1;
-    EncoderMode mode = EncoderMode::Absolute;
+    EncoderMode mode = EncoderMode::ABSOLUTE;
 };
 
 }  // namespace Hardware

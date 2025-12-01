@@ -191,7 +191,7 @@ public:
 USB MIDI output using Teensy's native USB MIDI.
 
 ```cpp
-class TeensyUsbMidiOut : public MidiOutput {
+class TeensyUsbMidiOut : public IMidiOutput {
 public:
     explicit TeensyUsbMidiOut(IEventBus& eventBus);
 
@@ -202,7 +202,7 @@ public:
     void sendPitchBend(MidiChannelValue ch, uint16_t value) override;
     void sendChannelPressure(MidiChannelValue ch, uint8_t pressure) override;
     void sendSysEx(const uint8_t* data, uint16_t length) override;
-    void flush() override;
+    void flush();  // Additional method (not from interface)
 };
 ```
 
@@ -215,7 +215,7 @@ public:
 USB MIDI input with event bus integration.
 
 ```cpp
-class TeensyUsbMidiIn : public MidiInput {
+class TeensyUsbMidiIn : public IMidiInput {
 public:
     explicit TeensyUsbMidiIn(IEventBus& eventBus);
 

@@ -30,8 +30,8 @@ core/
 │   └── InputBinding.cpp
 ├── interface/      # Core interfaces
 │   └── midi/
-│       ├── MidiInput.hpp   # MIDI input interface
-│       └── MidiOutput.hpp  # MIDI output interface
+│       ├── MidiInput.hpp   # IMidiInput interface
+│       └── MidiOutput.hpp  # IMidiOutput interface
 ├── midi/           # MIDI processing
 │   ├── MidiMapper.hpp      # Input-to-MIDI mapping
 │   └── MidiMapper.cpp
@@ -188,7 +188,7 @@ Maps hardware inputs directly to MIDI messages.
 ```cpp
 class MidiMapper {
 public:
-    MidiMapper(MidiOutput& midiOut, IEventBus& eventBus,
+    MidiMapper(IMidiOutput& midiOut, IEventBus& eventBus,
                const MidiConfig& config);
 
 private:

@@ -58,7 +58,7 @@ void Encoder::flushEvents() {
 }
 
 void Encoder::resetPosition(float normalizedValue) {
-    if (mode_ == Hardware::EncoderMode::Relative) {
+    if (mode_ == Hardware::EncoderMode::RELATIVE) {
         relative_position_ = normalizedValue;
         accumulated_delta_ = 0;
         has_pending_event_ = false;
@@ -72,7 +72,7 @@ void Encoder::resetPosition(float normalizedValue) {
 }
 
 void Encoder::setDiscreteSteps(uint8_t steps) {
-    if (mode_ != Hardware::EncoderMode::Absolute) return;
+    if (mode_ != Hardware::EncoderMode::ABSOLUTE) return;
 
     discrete_steps_ = steps;
     last_quantized_value_ = -1.0f;
@@ -94,7 +94,7 @@ void Encoder::setContinuous() {
 void Encoder::setMode(Hardware::EncoderMode mode) {
     mode_ = mode;
     // Reset state when switching modes
-    if (mode_ == Hardware::EncoderMode::Relative) {
+    if (mode_ == Hardware::EncoderMode::RELATIVE) {
         accumulated_delta_ = 0;
     } else {
         virtual_position_ = virtual_range_ / 2;
@@ -108,7 +108,7 @@ void Encoder::setBounds(float min, float max) {
     has_bounds_ = true;
 
     // Clamp current position if in Relative mode
-    if (mode_ == Hardware::EncoderMode::Relative && has_bounds_) {
+    if (mode_ == Hardware::EncoderMode::RELATIVE && has_bounds_) {
         relative_position_ = constrain(relative_position_, min_bound_, max_bound_);
     }
 }
@@ -120,7 +120,7 @@ void Encoder::setDelta(float delta) {
 void Encoder::processEncoderChange(int32_t delta) {
     if (delta == 0) return;
 
-    if (mode_ == Hardware::EncoderMode::Relative) {
+    if (mode_ == Hardware::EncoderMode::RELATIVE) {
         handleRelativeMode(delta);
     } else {
         handleAbsoluteMode(delta);

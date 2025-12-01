@@ -8,13 +8,13 @@
 #include "../struct/MidiCCMapping.hpp"
 #include "config/InputID.hpp"
 
-class MidiOutput;
+class IMidiOutput;
 class EncoderChangedEvent;
 class ButtonPressEvent;
 
 class MidiMapper {
 public:
-    MidiMapper(MidiOutput& midiOut, IEventBus& eventBus,
+    MidiMapper(IMidiOutput& midiOut, IEventBus& eventBus,
                const std::vector<MidiCCMapping>& mappings);
     ~MidiMapper();
 
@@ -30,7 +30,7 @@ private:
     const MidiConfig* findEncoder(EncoderID id) const;
     const MidiConfig* findButton(ButtonID id) const;
 
-    MidiOutput& midi_out_;
+    IMidiOutput& midi_out_;
     IEventBus& event_bus_;
 
     std::map<uint16_t, MidiConfig> encoders_;

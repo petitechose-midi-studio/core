@@ -10,7 +10,7 @@
 class EncoderChangedEvent : public Event {
 public:
     EncoderChangedEvent(EncoderID encoderId, float normalizedValue)
-        : Event(EventCategory::Input, InputEvent::EncoderChanged),
+        : Event(EventCategory::USER_INPUT, InputEvent::ENCODER_CHANGED),
           encoderId(encoderId),
           normalizedValue(normalizedValue) {}
 
@@ -21,7 +21,7 @@ public:
 class ButtonPressEvent : public Event {
 public:
     ButtonPressEvent(ButtonID buttonId, bool pressed)
-        : Event(EventCategory::Input, InputEvent::ButtonPress),
+        : Event(EventCategory::USER_INPUT, InputEvent::BUTTON_PRESS),
           buttonId(buttonId),
           pressed(pressed) {}
 
@@ -32,7 +32,7 @@ public:
 class ButtonReleaseEvent : public Event {
 public:
     explicit ButtonReleaseEvent(ButtonID buttonId)
-        : Event(EventCategory::Input, InputEvent::ButtonRelease), buttonId(buttonId) {}
+        : Event(EventCategory::USER_INPUT, InputEvent::BUTTON_RELEASE), buttonId(buttonId) {}
 
     ButtonID buttonId;
 };
@@ -55,7 +55,7 @@ public:
 class MidiNoteOnEvent : public Event {
 public:
     MidiNoteOnEvent(uint8_t channel, uint8_t note, uint8_t velocity, uint8_t source = 0)
-        : Event(EventCategory::MIDI, MidiEvent::NoteOn),
+        : Event(EventCategory::MIDI, MidiEvent::NOTE_ON),
           channel(channel),
           note(note),
           velocity(velocity),
@@ -70,7 +70,7 @@ public:
 class MidiNoteOffEvent : public Event {
 public:
     MidiNoteOffEvent(uint8_t channel, uint8_t note, uint8_t velocity, uint8_t source = 0)
-        : Event(EventCategory::MIDI, MidiEvent::NoteOff),
+        : Event(EventCategory::MIDI, MidiEvent::NOTE_OFF),
           channel(channel),
           note(note),
           velocity(velocity),
@@ -86,7 +86,7 @@ class MidiMappingEvent : public Event {
 public:
     MidiMappingEvent(uint8_t inputId, uint8_t midiType, uint8_t midiChannel, uint8_t midiNumber,
                      uint8_t midiValue)
-        : Event(EventCategory::MIDI, MidiEvent::Mapping),
+        : Event(EventCategory::MIDI, MidiEvent::MAPPING),
           inputId(inputId),
           midiType(midiType),
           midiChannel(midiChannel),
@@ -103,7 +103,7 @@ public:
 class SysExEvent : public Event {
 public:
     SysExEvent(const uint8_t* data, uint16_t length)
-        : Event(EventCategory::MIDI, MidiEvent::SysEx),
+        : Event(EventCategory::MIDI, MidiEvent::SYSEX),
           data(data),
           length(length) {}
 
@@ -111,30 +111,12 @@ public:
     uint16_t length;      // Length of data
 };
 
-enum class ViewType : uint8_t;
-
-class SystemViewChangeEvent : public Event {
-public:
-    explicit SystemViewChangeEvent(ViewType targetView)
-        : Event(EventCategory::System, SystemEvent::ViewChange),
-          targetView(targetView),
-          hasTarget(true) {}
-
-    SystemViewChangeEvent()
-        : Event(EventCategory::System, SystemEvent::ViewChange),
-          targetView(static_cast<ViewType>(0)),
-          hasTarget(false) {}
-
-    ViewType targetView;
-    bool hasTarget;
-};
-
-enum class SystemMode : uint8_t { Performance, Configuration, MidiLearn, Bootloader };
+enum class SystemMode : uint8_t { PERFORMANCE, CONFIGURATION, MIDI_LEARN, BOOTLOADER };
 
 class SystemModeChangedEvent : public Event {
 public:
     explicit SystemModeChangedEvent(SystemMode mode)
-        : Event(EventCategory::System, SystemEvent::ModeChange), mode(mode) {}
+        : Event(EventCategory::SYSTEM, SystemEvent::MODE_CHANGE), mode(mode) {}
 
     SystemMode mode;
 };
@@ -142,7 +124,7 @@ public:
 class SystemErrorEvent : public Event {
 public:
     SystemErrorEvent(uint16_t errorCode, const std::string& message = "")
-        : Event(EventCategory::System, SystemEvent::Error),
+        : Event(EventCategory::SYSTEM, SystemEvent::ERROR),
           errorCode(errorCode),
           message(message) {}
 
@@ -152,13 +134,13 @@ public:
 
 class SystemBootCompleteEvent : public Event {
 public:
-    SystemBootCompleteEvent() : Event(EventCategory::System, SystemEvent::BootComplete) {}
+    SystemBootCompleteEvent() : Event(EventCategory::SYSTEM, SystemEvent::BOOT_COMPLETE) {}
 };
 
 class IntegrationRegisteredEvent : public Event {
 public:
     IntegrationRegisteredEvent(const std::string& name, uint8_t integrationId)
-        : Event(EventCategory::System, SystemEvent::PluginRegistered),
+        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_REGISTERED),
           name(name),
           integrationId(integrationId) {}
 
@@ -169,7 +151,7 @@ public:
 class IntegrationActivatedEvent : public Event {
 public:
     IntegrationActivatedEvent(const std::string& name, uint8_t integrationId)
-        : Event(EventCategory::System, SystemEvent::PluginActivated),
+        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_ACTIVATED),
           name(name),
           integrationId(integrationId) {}
 
@@ -180,7 +162,7 @@ public:
 class IntegrationDeactivatedEvent : public Event {
 public:
     IntegrationDeactivatedEvent(const std::string& name, uint8_t integrationId)
-        : Event(EventCategory::System, SystemEvent::PluginDeactivated),
+        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_DEACTIVATED),
           name(name),
           integrationId(integrationId) {}
 
@@ -191,7 +173,7 @@ public:
 class IntegrationErrorEvent : public Event {
 public:
     IntegrationErrorEvent(const std::string& name, const std::string& error)
-        : Event(EventCategory::System, SystemEvent::PluginError), name(name), error(error) {}
+        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_ERROR), name(name), error(error) {}
 
     const std::string name;
     const std::string error;

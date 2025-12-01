@@ -24,31 +24,31 @@ bool BootManager::tick() {
     if (status_.isComplete()) return true;
 
     switch (status_.currentPhase) {
-        case Phase::NotStarted:
-            setPhase(Phase::HardwareInit);
+        case Phase::NOT_STARTED:
+            setPhase(Phase::HARDWARE_INIT);
             break;
-        case Phase::HardwareInit:
+        case Phase::HARDWARE_INIT:
             executeHardwareInit();
-            setPhase(Phase::DisplayInit);
+            setPhase(Phase::DISPLAY_INIT);
             break;
-        case Phase::DisplayInit:
+        case Phase::DISPLAY_INIT:
             executeDisplayInit();
-            setPhase(Phase::MinimalUI);
+            setPhase(Phase::MINIMAL_UI);
             break;
-        case Phase::MinimalUI:
+        case Phase::MINIMAL_UI:
             executeMinimalUI();
-            setPhase(Phase::LoadingFonts);
+            setPhase(Phase::LOADING_FONTS);
             break;
-        case Phase::LoadingFonts:
+        case Phase::LOADING_FONTS:
             if (executeLoadingFonts()) {
-                setPhase(Phase::InputInit);
+                setPhase(Phase::INPUT_INIT);
             }
             break;
-        case Phase::InputInit:
+        case Phase::INPUT_INIT:
             executeInputInit();
-            setPhase(Phase::MidiInit);
+            setPhase(Phase::MIDI_INIT);
             break;
-        case Phase::MidiInit:
+        case Phase::MIDI_INIT:
             executeMidiInit();
             executeReady();
             break;
@@ -122,7 +122,7 @@ void BootManager::executeMidiInit() {
 
 void BootManager::executeReady() {
     LOGLN("[Boot] Ready");
-    setPhase(Phase::Ready);
+    setPhase(Phase::READY);
 
     SplashScreenView* splash = components_.viewManager.getSplashView();
     if (splash) {

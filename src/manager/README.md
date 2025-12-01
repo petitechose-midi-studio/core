@@ -30,14 +30,14 @@ Manages the boot sequence in distinct phases with visual progress.
 
 ```cpp
 enum class Phase {
-    NotStarted,
-    HardwareInit,    // Multiplexer, display driver, encoders
-    DisplayInit,     // LVGL initialization
-    MinimalUI,       // Splash screen with essential fonts
-    LoadingFonts,    // Progressive font loading
-    InputInit,       // Flush encoder events
-    MidiInit,        // USB MIDI initialization
-    Ready            // Boot complete → main loop
+    NOT_STARTED,
+    HARDWARE_INIT,   // Multiplexer, display driver, encoders
+    DISPLAY_INIT,    // LVGL initialization
+    MINIMAL_UI,      // Splash screen with essential fonts
+    LOADING_FONTS,   // Progressive font loading
+    INPUT_INIT,      // Flush encoder events
+    MIDI_INIT,       // USB MIDI initialization
+    READY            // Boot complete → main loop
 };
 ```
 
