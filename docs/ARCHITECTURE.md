@@ -131,8 +131,8 @@ event_bus_.emit(EncoderChangedEvent(encoderId, value));
 
 // Subscribing
 subscription_id_ = event_bus_.on(
-    EventCategory::Input,
-    InputEvent::EncoderChanged,
+    EventCategory::USER_INPUT,
+    InputEvent::ENCODER_CHANGED,
     [this](const Event& e) { handleEncoder(e); }
 );
 
@@ -141,9 +141,9 @@ event_bus_.off(subscription_id_);
 ```
 
 **Event Categories**:
-- `EventCategory::Input` — Buttons, encoders
-- `EventCategory::Midi` — CC, Note, SysEx
-- `EventCategory::System` — Boot, mode changes
+- `EventCategory::USER_INPUT` — Buttons, encoders
+- `EventCategory::MIDI` — CC, Note, SysEx
+- `EventCategory::SYSTEM` — Boot, mode changes
 
 **Benefits**:
 - Complete emitter/receiver decoupling
@@ -192,15 +192,15 @@ encoders_config_(InputFactory::createEncoders())
 Boot sequence in distinct phases with visual progress.
 
 ```cpp
-enum class Phase {
-    NotStarted,
-    HardwareInit,    // Multiplexer, display, encoders
-    DisplayInit,     // LVGL init
-    MinimalUI,       // Splash screen
-    LoadingFonts,    // Progressive font loading
-    InputInit,       // Flush encoder events
-    MidiInit,        // USB MIDI
-    Ready            // → Main loop
+enum class Phase : uint8_t {
+    NOT_STARTED = 0,
+    HARDWARE_INIT,   // Multiplexer, display, encoders
+    DISPLAY_INIT,    // LVGL init
+    MINIMAL_UI,      // Splash screen
+    LOADING_FONTS,   // Progressive font loading
+    INPUT_INIT,      // Flush encoder events
+    MIDI_INIT,       // USB MIDI
+    READY            // → Main loop
 };
 ```
 
@@ -437,7 +437,7 @@ EncoderController controller(config, mockBus);
 
 controller.simulateRotation(EncoderID::MACRO_1, 10);
 
-EXPECT_TRUE(mockBus.wasEmitted(InputEvent::EncoderChanged));
+EXPECT_TRUE(mockBus.wasEmitted(InputEvent::ENCODER_CHANGED));
 ```
 
 ---

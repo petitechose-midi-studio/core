@@ -411,8 +411,8 @@ LOG("Partial ");                          // Without newline
 // In constructor
 MyClass::MyClass(IEventBus& bus) : event_bus_(bus) {
     subscription_id_ = event_bus_.on(
-        EventCategory::Input,
-        InputEvent::ButtonPress,
+        EventCategory::USER_INPUT,
+        InputEvent::BUTTON_PRESS,
         [this](const Event& e) { onButtonPress(e); }
     );
 }

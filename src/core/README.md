@@ -61,27 +61,28 @@ public:
 ### Event Categories
 
 ```cpp
-enum class EventCategory : uint8_t {
-    Input,      // Button, encoder events
-    Midi,       // CC, Note, SysEx events
-    System,     // Boot, mode changes
-    Integration // Plugin events
-};
+namespace EventCategory {
+constexpr EventCategoryType SYSTEM = 0;
+constexpr EventCategoryType USER_INPUT = 1;  // Button, encoder events
+constexpr EventCategoryType MIDI = 2;        // CC, Note, SysEx events
+constexpr EventCategoryType UI = 3;
+constexpr EventCategoryType INTEGRATION = 4; // Plugin events
+}
 ```
 
 ### Concrete Events
 
 | Event | Category | Data |
 |-------|----------|------|
-| `EncoderChangedEvent` | Input | encoderId, normalizedValue |
-| `ButtonPressEvent` | Input | buttonId |
-| `ButtonReleaseEvent` | Input | buttonId |
-| `MidiCCEvent` | Midi | channel, controller, value |
-| `MidiNoteOnEvent` | Midi | channel, note, velocity |
-| `MidiNoteOffEvent` | Midi | channel, note, velocity |
-| `SysExEvent` | Midi | data, length |
-| `SystemBootCompleteEvent` | System | — |
-| `SystemModeChangedEvent` | System | mode |
+| `EncoderChangedEvent` | USER_INPUT | encoderId, normalizedValue |
+| `ButtonPressEvent` | USER_INPUT | buttonId |
+| `ButtonReleaseEvent` | USER_INPUT | buttonId |
+| `MidiCCEvent` | MIDI | channel, controller, value |
+| `MidiNoteOnEvent` | MIDI | channel, note, velocity |
+| `MidiNoteOffEvent` | MIDI | channel, note, velocity |
+| `SysExEvent` | MIDI | data, length |
+| `SystemBootCompleteEvent` | SYSTEM | — |
+| `SystemModeChangedEvent` | SYSTEM | mode |
 
 ### EventBus
 
@@ -107,7 +108,7 @@ public:
 
 ```cpp
 // Subscribe
-auto id = eventBus.on(EventCategory::Input, InputEvent::ButtonPress,
+auto id = eventBus.on(EventCategory::USER_INPUT, InputEvent::BUTTON_PRESS,
     [this](const Event& e) {
         auto& evt = static_cast<const ButtonPressEvent&>(e);
         handleButton(evt.buttonId);

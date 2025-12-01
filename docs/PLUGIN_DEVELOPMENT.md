@@ -355,7 +355,7 @@ api.setEncoderDiscreteSteps(EncoderID::MACRO_1, 4);
 api.setEncoderContinuous(EncoderID::MACRO_1);
 
 // Change mode dynamically
-api.setEncoderMode(EncoderID::NAV, Hardware::EncoderMode::Relative);
+api.setEncoderMode(EncoderID::NAV, Hardware::EncoderMode::RELATIVE);
 
 // Set bounds for Relative mode
 api.setEncoderBounds(EncoderID::NAV, 0.0f, 100.0f);
