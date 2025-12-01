@@ -318,7 +318,7 @@ void ListOverlay::destroyList() {
 
 void ListOverlay::cleanup() {
     if (overlay_) {
-        lv_obj_del(overlay_);
+        lv_obj_delete(overlay_);
         overlay_ = nullptr;
         container_ = nullptr;
         title_label_ = nullptr;

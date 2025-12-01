@@ -20,6 +20,7 @@ ParameterButtonWidget::ParameterButtonWidget(lv_obj_t* parent, uint16_t width, u
 ParameterButtonWidget::~ParameterButtonWidget() {
     if (container_) {
         lv_obj_delete(container_);
+        container_ = nullptr;
     }
 }
 

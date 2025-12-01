@@ -194,7 +194,7 @@ void SplashScreenView::setupStatusLabel() {
 
 void SplashScreenView::cleanupLvglObjects() {
     if (container_) {
-        lv_obj_del(container_);
+        lv_obj_delete(container_);
         container_ = nullptr;
         title_label_ = nullptr;
         version_label_ = nullptr;

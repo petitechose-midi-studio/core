@@ -5,7 +5,20 @@ namespace UI
 
 TitleItem::TitleItem(lv_obj_t *parent) : parent_(parent) {}
 
-TitleItem::~TitleItem() {}
+TitleItem::~TitleItem() {
+    if (icon_) {
+        lv_obj_delete(icon_);
+        icon_ = nullptr;
+    }
+    if (label_) {
+        lv_obj_delete(label_);
+        label_ = nullptr;
+    }
+    if (indicator_) {
+        lv_obj_delete(indicator_);
+        indicator_ = nullptr;
+    }
+}
 
 void TitleItem::ensureCreated()
 {
