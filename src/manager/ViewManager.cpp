@@ -61,11 +61,11 @@ void ViewManager::update() {
 }
 
 void ViewManager::showCoreSplash() {
-    if (splash_view_) splash_view_->setActive(true);
+    if (splash_view_) splash_view_->onActivate();
 }
 
 void ViewManager::hideCoreSplash() {
-    if (splash_view_) splash_view_->setActive(false);
+    if (splash_view_) splash_view_->onDeactivate();
 }
 
 lv_obj_t* ViewManager::getPluginContainer() {

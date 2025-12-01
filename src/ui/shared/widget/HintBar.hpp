@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvgl.h>
+#include "interface/IComponent.hpp"
 
 enum class HintBarPosition { Left, Bottom, Right };
 
@@ -21,10 +22,10 @@ enum class HintBarPosition { Left, Bottom, Right };
  * - Left/Right: cell 0=top, 1=middle, 2=bottom
  * - Bottom: cell 0=left, 1=center, 2=right
  */
-class HintBar {
+class HintBar : public IComponent {
 public:
     HintBar(lv_obj_t* parent, HintBarPosition position);
-    ~HintBar();
+    ~HintBar() override;
 
     /**
      * @brief Position an element in a cell
@@ -44,11 +45,11 @@ public:
      */
     void setSize(lv_coord_t size);
 
-    void show();
-    void hide();
-    bool isVisible() const;
-
-    lv_obj_t* getElement() { return container_; }
+    // IComponent interface
+    void show() override;
+    void hide() override;
+    bool isVisible() const override;
+    lv_obj_t* getElement() const override { return container_; }
 
 private:
     static constexpr lv_coord_t DEFAULT_SIZE = 20;

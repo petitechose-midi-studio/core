@@ -16,20 +16,20 @@ SplashScreenView::SplashScreenView(lv_obj_t* parentScreen, const Config& config)
     : config_(config), parent_screen_(parentScreen) {}
 
 SplashScreenView::~SplashScreenView() {
-    cleanupLvglObjects();
+    cleanup();
 }
 
 bool SplashScreenView::init() {
     if (initialized_) return true;
 
     LOGLN("[Splash] Container...");
-    setupContainer();
+    createContainer();
     LOGLN("[Splash] Labels...");
-    setupLabels();
+    createLabels();
     LOGLN("[Splash] Progress...");
-    setupProgressBar();
+    createProgressBar();
     LOGLN("[Splash] Status...");
-    setupStatusLabel();
+    createStatusLabel();
 
     LOGLN("[Splash] Init OK");
     initialized_ = true;
@@ -40,16 +40,21 @@ void SplashScreenView::update() {
     // Nothing to do - progress is updated via setBootProgress
 }
 
-void SplashScreenView::setActive(bool active) {
-    if (active == active_) return;
-    active_ = active;
+void SplashScreenView::onActivate() {
+    if (active_) return;
+    active_ = true;
 
     if (container_) {
-        if (active) {
-            lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-        }
+        lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void SplashScreenView::onDeactivate() {
+    if (!active_) return;
+    active_ = false;
+
+    if (container_) {
+        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -83,7 +88,7 @@ void SplashScreenView::markBootComplete() {
     if (status_label_) lv_label_set_text(status_label_, "Ready");
 }
 
-void SplashScreenView::setupContainer() {
+void SplashScreenView::createContainer() {
     container_ = lv_obj_create(parent_screen_);
     lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
     lv_obj_set_style_bg_color(container_, config_.bg_color, 0);
@@ -92,7 +97,7 @@ void SplashScreenView::setupContainer() {
     lv_obj_set_style_pad_all(container_, 0, 0);
 }
 
-void SplashScreenView::setupLabels() {
+void SplashScreenView::createLabels() {
     // Logo container
     lv_obj_t* logo_container = lv_obj_create(container_);
     lv_obj_set_size(logo_container, 159, 159);
@@ -153,7 +158,7 @@ void SplashScreenView::setupLabels() {
     lv_obj_align(version_label_, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
 }
 
-void SplashScreenView::setupProgressBar() {
+void SplashScreenView::createProgressBar() {
     lv_obj_t* progress_container = lv_obj_create(container_);
     lv_obj_set_size(progress_container, 200, 12);
     lv_obj_set_pos(progress_container, (320 - 200) / 2, 195);
@@ -181,7 +186,7 @@ void SplashScreenView::setupProgressBar() {
     lv_bar_set_value(progress_bar_, 0, LV_ANIM_OFF);
 }
 
-void SplashScreenView::setupStatusLabel() {
+void SplashScreenView::createStatusLabel() {
     status_label_ = lv_label_create(container_);
     lv_label_set_text(status_label_, "");
     lv_obj_set_style_text_color(status_label_, config_.text_color, 0);
@@ -192,7 +197,7 @@ void SplashScreenView::setupStatusLabel() {
     lv_obj_add_flag(status_label_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void SplashScreenView::cleanupLvglObjects() {
+void SplashScreenView::cleanup() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;

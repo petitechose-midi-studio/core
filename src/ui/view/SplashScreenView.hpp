@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Arduino.h>
 #include <lvgl.h>
+#include <string>
+#include "interface/IView.hpp"
 
-class SplashScreenView {
+class SplashScreenView : public IView {
 public:
     struct Config {
-        String title;
-        String version;
+        std::string title;
+        std::string version;
         lv_color_t bg_color;
         lv_color_t text_color;
         lv_color_t progress_color;
@@ -16,13 +17,18 @@ public:
     };
 
     explicit SplashScreenView(lv_obj_t* parentScreen, const Config& config = Config());
-    ~SplashScreenView();
+    ~SplashScreenView() override;
 
     bool init();
     void update();
 
+    // IView interface
+    void onActivate() override;
+    void onDeactivate() override;
+    const char* getViewId() const override { return "core.splash"; }
+    lv_obj_t* getElement() const override { return container_; }
+
     bool isActive() const { return active_; }
-    void setActive(bool active);
     bool isSplashScreenCompleted() const { return boot_complete_; }
 
     void setBootMode(bool enabled);
@@ -44,9 +50,9 @@ private:
     lv_obj_t* progress_bar_ = nullptr;
     lv_obj_t* status_label_ = nullptr;
 
-    void setupContainer();
-    void setupLabels();
-    void setupProgressBar();
-    void setupStatusLabel();
-    void cleanupLvglObjects();
+    void createContainer();
+    void createLabels();
+    void createProgressBar();
+    void createStatusLabel();
+    void cleanup();
 };
