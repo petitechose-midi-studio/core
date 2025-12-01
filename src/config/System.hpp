@@ -5,11 +5,10 @@
  *
  * This file defines all compile-time constants for:
  * - Application metadata (name, version)
- * - Hardware specifications (pins, timing)
+ * - Hardware specifications (pins, timing, debounce)
  * - Display settings (resolution, refresh rate, memory)
- * - MIDI parameters (channels, CC ranges, rate limiting)
- * - Input timing (debounce, gestures)
- * - UI behavior (debug mode, colors)
+ * - MIDI parameters (SysEx buffer size)
+ * - Input timing (gestures, debounce)
  *
  * All values are constexpr - they cannot be changed at runtime.
  * Modify these values to adapt the system to your hardware configuration.
@@ -66,8 +65,8 @@ constexpr uint8_t MUX_SIGNAL_PIN = 4;
 constexpr uint8_t MUX_MAX_CHANNELS = 16;
 
 /* Input timing (debouncing) */
-constexpr uint16_t BUTTON_DEBOUNCE_US = 20; /* microseconds */
-constexpr uint16_t MUX_DEBOUNCE_US = BUTTON_DEBOUNCE_US;
+constexpr uint16_t MUX_DEBOUNCE_US = 20;    /* microseconds - mux channel switching settle time */
+constexpr uint32_t PIN_DEBOUNCE_MS = 5;     /* milliseconds - direct pin debounce */
 }  // namespace Hardware
 
 /*
@@ -106,23 +105,14 @@ constexpr float LATE_START_RATIO = 0.3f;
 /*
  * Midi
  *
- * MIDI protocol parameters and rate limiting.
- * Defines MIDI channel defaults, value ranges, and timing constraints.
+ * MIDI protocol parameters.
  */
 namespace Midi {
-constexpr uint8_t DEFAULT_CHANNEL = 0;
-constexpr uint8_t CC_VALUE_MIN = 0;
-constexpr uint8_t CC_VALUE_MAX = 127;
 constexpr size_t MAX_ACTIVE_NOTES = 16;
-
-/* Rate limiting (prevent MIDI flooding) */
-constexpr unsigned long DUPLICATE_CHECK_MS = 1.5; /* milliseconds */
-constexpr unsigned long ENCODER_RATE_LIMIT_MS = 5;
 
 /* USB MIDI SysEx buffer size
  * Maximum size of SysEx messages that can be received/sent via USB MIDI.
  * Default Teensy value is 290 bytes.
- * Increase this if you need to handle larger SysEx messages.
  * NOTE: This value is automatically injected into the Teensy framework at build time.
  */
 constexpr size_t USB_SYSEX_MAX_SIZE = 16000;
@@ -140,19 +130,5 @@ constexpr uint32_t DOUBLE_TAP_WINDOW_MS = 300;   /* milliseconds */
 constexpr uint32_t LATCH_THRESHOLD_MS = 300;     /* milliseconds - tap shorter = latch, longer = momentary */
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;      /* milliseconds - software debounce for state changes */
 }  // namespace Input
-
-/*
- * UI
- *
- * User interface behavior and appearance.
- */
-namespace UI {
-constexpr bool SHOW_DEBUG_INFO = false;
-constexpr bool ENABLE_FULL_UI = true;
-
-/* Basic colors */
-constexpr uint32_t COLOR_BLACK = 0x000000;
-constexpr uint32_t COLOR_WHITE = 0xFFFFFF;
-}  // namespace UI
 
 }  // namespace System

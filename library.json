@@ -28,8 +28,6 @@
   "dependencies": {
     "vindar/ILI9341_T4": "^1.6.0",
     "lvgl/lvgl": "^9.4.0",
-    "waspinator/CD74HC4067": "^1.0.2",
-    "thomasfredericks/Bounce2": "^2.72",
     "luni64/EncoderTool": "*"
   },
   "export": {

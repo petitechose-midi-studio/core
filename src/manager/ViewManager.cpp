@@ -3,7 +3,6 @@
 #include <lvgl.h>
 
 #include "adapter/display/ui/LVGLBridge.hpp"
-#include "config/System.hpp"
 #include "log/Macros.hpp"
 #include "interface/IView.hpp"
 #include "core/event/Events.hpp"
@@ -47,7 +46,7 @@ void ViewManager::emitBootComplete() {
 }
 
 void ViewManager::update() {
-    if (!System::UI::ENABLE_FULL_UI || !screens_initialized_) return;
+    if (!screens_initialized_) return;
 
     if (current_plugin_view_) {
         display_bridge_.refresh();

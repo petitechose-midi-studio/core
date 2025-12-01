@@ -1,6 +1,5 @@
 #include "InputBinding.hpp"
 
-#include <Arduino.h>
 #include <lvgl.h>
 
 #include "core/event/Events.hpp"
@@ -205,7 +204,7 @@ void InputBinding::onEncoderChanged(const Event& event) {
 void InputBinding::onButtonPress(const Event& event) {
     auto& evt = static_cast<const ButtonPressEvent&>(event);
     ButtonID buttonId = evt.buttonId;
-    const uint32_t now = millis();
+    const uint32_t now = current_time_;
 
     button_states_[buttonId] = true;
     button_press_time_[buttonId] = now;
@@ -225,7 +224,7 @@ void InputBinding::onButtonPress(const Event& event) {
 void InputBinding::onButtonRelease(const Event& event) {
     auto& evt = static_cast<const ButtonReleaseEvent&>(event);
     ButtonID buttonId = evt.buttonId;
-    const uint32_t now = millis();
+    const uint32_t now = current_time_;
 
     // Latch/momentary logic - determine state first
     const uint32_t pressDuration = now - button_press_time_[buttonId];

@@ -1,13 +1,11 @@
 #pragma once
 
-#include <CD74HC4067.h>
-
-#include <optional>
+#include <cstdint>
 
 #include "config/System.hpp"
 
 /**
- * Multiplexer controller with lazy initialization.
+ * Multiplexer controller for CD74HC4067 (16-channel analog mux).
  *
  * IMPORTANT: Hardware init (pinMode, digitalWrite) is deferred to init()
  * to avoid calling Arduino functions before the framework is ready.
@@ -26,7 +24,7 @@ public:
      * Safe to call multiple times - subsequent calls are no-ops.
      */
     void init();
-    bool isInitialized() const { return mux_.has_value(); }
+    bool isInitialized() const { return initialized_; }
 
     bool readDigitalFromChannel(uint8_t channel);
 
@@ -34,7 +32,7 @@ private:
     void selectChannel(uint8_t channel);
     bool readDigital();
 
-    std::optional<CD74HC4067> mux_;
+    bool initialized_ = false;
     uint8_t current_channel_ = 0;
     uint32_t last_switch_timestamp_ = 0;
     bool channel_ready_ = true;

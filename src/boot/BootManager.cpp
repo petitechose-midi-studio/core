@@ -1,7 +1,5 @@
 #include "BootManager.hpp"
 
-#include <Arduino.h>
-
 #include "adapter/display/driver/Ili9341Driver.hpp"
 #include "adapter/display/ui/LVGLBridge.hpp"
 #include "adapter/multiplexer/MultiplexerController.hpp"

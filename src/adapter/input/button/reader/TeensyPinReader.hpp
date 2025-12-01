@@ -1,10 +1,15 @@
 #pragma once
 
-#include <Bounce2.h>
+#include <cstdint>
 
 #include "IPinReader.hpp"
+#include "config/System.hpp"
 #include "core/Type.hpp"
 
+/**
+ * Pin reader with software debouncing for Teensy.
+ * Uses simple time-based debouncing without external libraries.
+ */
 class TeensyPinReader : public IPinReader {
 public:
     explicit TeensyPinReader(uint8_t pin, PinMode mode = PinMode::PULLUP);
@@ -17,5 +22,9 @@ private:
     uint8_t pin_;
     PinMode mode_;
     bool initialized_ = false;
-    Bounce bounce_;
+
+    // Debounce state
+    bool debounced_state_ = false;
+    bool last_raw_state_ = false;
+    uint32_t last_change_time_ = 0;
 };
