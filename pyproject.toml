@@ -1,7 +1,7 @@
 [project]
 name = "petitechose-midi-studio-core"
 version = "0.1.0"
-description = "Core library for PetiteChose MIDI Studio"
+description = "Core library for MIDI Studio"
 requires-python = ">=3.11"
 
 [dependency-groups]
