@@ -252,16 +252,16 @@ Manages font registration and progressive loading.
 
 ```cpp
 // Register all fonts (call early in boot)
-void fonts_register_core();
+void fontsRegisterCore();
 
 // Load essential fonts for splash screen
-void fonts_load_essential();
+void fontsLoadEssential();
 
 // Get pending font count for progress display
-size_t fonts_get_pending_count();
+uint8_t fontsGetPendingCount();
 
 // Load next pending font (returns true if more to load)
-bool fonts_load_next(const char** fontName);
+bool fontsLoadNext(const char** fontName);
 ```
 
 ### Available Fonts

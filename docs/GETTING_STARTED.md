@@ -186,34 +186,44 @@ See [Plugin Development Guide](PLUGIN_DEVELOPMENT.md) for complete instructions.
 
 ### Recommended Extensions
 
+When you open the project, VS Code will prompt to install recommended extensions (`.vscode/extensions.json`):
+
 | Extension | Purpose |
 |-----------|---------|
-| PlatformIO IDE | Build, upload, monitor |
-| C/C++ | IntelliSense, debugging |
-| clangd | Better C++ completion (optional) |
+| **PlatformIO IDE** | Build, upload, monitor |
+| **clangd** | IntelliSense, diagnostics, navigation |
+| C/C++ (ms-vscode.cpptools) | Formatting only (IntelliSense disabled) |
+
+> **Important**: We use **clangd** instead of Microsoft C/C++ IntelliSense for better performance and accuracy with embedded projects.
+
+### First-Time Setup
+
+After cloning and opening the project:
+
+1. **Install recommended extensions** when prompted
+2. **Build once** to generate the compilation database:
+   ```bash
+   pio run -e debug
+   ```
+3. **Restart VS Code** — clangd will index the project
 
 ### Workspace Settings
 
-Create `.vscode/settings.json`:
+The project includes pre-configured `.vscode/settings.json`:
 
-```json
-{
-    "editor.tabSize": 4,
-    "editor.insertSpaces": true,
-    "editor.formatOnSave": true,
-    "files.trimTrailingWhitespace": true,
-    "files.insertFinalNewline": true,
-    "C_Cpp.default.configurationProvider": "platformio.platformio-ide"
-}
-```
+- **clangd** for IntelliSense (MS IntelliSense disabled)
+- **Format on save** — only modified lines are formatted
+- **clang-format** — uses `.clang-format` at project root
 
-### IntelliSense Configuration
+### Troubleshooting IntelliSense
 
-PlatformIO generates `c_cpp_properties.json` automatically. If IntelliSense doesn't work:
+| Issue | Solution |
+|-------|----------|
+| Red squiggles everywhere | Run `pio run -e debug` to generate `compile_commands.json` |
+| Arduino.h not found | Restart clangd: `Ctrl+Shift+P` → "clangd: Restart" |
+| No autocomplete | Ensure clangd extension is installed and enabled |
 
-1. Build the project once (`pio run`)
-2. Restart VS Code
-3. PlatformIO will configure IntelliSense paths
+→ See [Code Style](CODE_STYLE.md#tools) for detailed clangd/clang-format configuration
 
 ---
 

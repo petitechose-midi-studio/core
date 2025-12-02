@@ -167,8 +167,7 @@ Always use `#pragma once` (no traditional guards):
 ### Declaration Structure
 
 ```cpp
-class MyClass
-{
+class MyClass {
 public:
     // 1. Types and aliases
     using Callback = std::function<void()>;
@@ -480,23 +479,150 @@ std::make_unique<Object>();
 
 ## Tools
 
-### Automatic Formatting
+### VS Code Setup
 
-Recommended `.clang-format` configuration:
+This project uses **clangd** for IntelliSense and **clang-format** for automatic formatting.
+
+#### Required Extensions
+
+Install the recommended extensions (`.vscode/extensions.json`):
+
+```json
+{
+    "recommendations": [
+        "platformio.platformio-ide",
+        "llvm-vs-code-extensions.vscode-clangd"
+    ],
+    "unwantedRecommendations": [
+        "ms-vscode.cpptools-extension-pack"
+    ]
+}
+```
+
+> **Important**: Use clangd instead of Microsoft C/C++ IntelliSense for better performance and accuracy with embedded projects.
+
+#### Workspace Settings
+
+The project includes `.vscode/settings.json` with:
+
+```json
+{
+    // Disable MS IntelliSense (use clangd)
+    "C_Cpp.intelliSenseEngine": "disabled",
+
+    // Clangd for Teensy toolchain
+    "clangd.arguments": [
+        "--query-driver=**/arm-none-eabi-*"
+    ],
+
+    // Format on save (modified lines only)
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools",
+        "editor.formatOnSave": true,
+        "editor.formatOnSaveMode": "modifications"
+    },
+
+    // Use .clang-format file
+    "C_Cpp.formatting": "clangFormat",
+    "C_Cpp.clang_format_style": "file"
+}
+```
+
+---
+
+### clang-format
+
+Automatic code formatting via `.clang-format` at project root.
+
+#### Configuration
 
 ```yaml
 BasedOnStyle: Google
+Standard: c++20
 IndentWidth: 4
 ColumnLimit: 100
-BreakBeforeBraces: Attach
+
+# Compact code
+AllowShortBlocksOnASingleLine: Always
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+
+# Include ordering (automatic)
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"[^/]*\.hpp"'      # Paired header
+    Priority: 1
+  - Regex: '^<c(stdint|string)>' # C headers
+    Priority: 2
+  - Regex: '^<(vector|map)>'     # C++ STL
+    Priority: 3
+  - Regex: '^<'                  # External libs
+    Priority: 4
+  - Regex: '^"'                  # Project headers
+    Priority: 5
 ```
+
+#### Usage
+
+```bash
+# Format single file
+clang-format -i src/path/to/File.cpp
+
+# Format all source files
+find src -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
+```
+
+With VS Code, formatting happens automatically on save (modified lines only).
+
+---
+
+### clangd
+
+Language server for IntelliSense, diagnostics, and navigation.
+
+#### Configuration
+
+The `.clangd` file configures clangd for the project:
+
+```yaml
+CompileFlags:
+  CompilationDatabase: .
+
+Diagnostics:
+  Suppress:
+    - ovl_diff_return_type  # GCC/Clang incompatibility (Teensy/Arduino)
+```
+
+#### Compilation Database
+
+PlatformIO generates `compile_commands.json` automatically during build.
+
+```bash
+# Generate/update compilation database
+pio run -e debug
+```
+
+> **Note**: Run a build after cloning to generate the compilation database. clangd won't work properly without it.
+
+#### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Red squiggles everywhere | Run `pio run -e debug` to generate `compile_commands.json` |
+| Arduino.h not found | Check `--query-driver` setting in clangd arguments |
+| Wrong includes suggested | Restart clangd: `Ctrl+Shift+P` → "clangd: Restart" |
+
+---
 
 ### Verification
 
 ```bash
-# Linting (if configured)
-pio check
-
 # Build with warnings
 pio run -e debug
+
+# Format check (dry run)
+clang-format --dry-run --Werror src/**/*.cpp
+
+# Linting (if configured)
+pio check
 ```
