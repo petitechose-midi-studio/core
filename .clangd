@@ -1,0 +1,6 @@
+CompileFlags:
+  CompilationDatabase: .
+
+Diagnostics:
+  Suppress:
+    - ovl_diff_return_type  # GCC/Clang incompatibility in external libs (Teensy/Arduino)

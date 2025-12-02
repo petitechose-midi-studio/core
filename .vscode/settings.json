@@ -4,7 +4,6 @@
         "fstream": "cpp",
         "sstream": "cpp"
     },
-    "python.analysis.typeCheckingMode": "strict",
     "claudeCode.allowDangerouslySkipPermissions": true,
     "claudeCode.initialPermissionMode": "bypassPermissions",
     "claudeCode.preferredLocation": "sidebar",
@@ -21,6 +20,12 @@
         "editor.formatOnSaveMode": "modifications"
     },
 
+    // Disable C/C++ IntelliSense (use clangd instead)
+    "C_Cpp.intelliSenseEngine": "disabled",
+    // Clangd settings
+    "clangd.arguments": [
+        "--query-driver=**/arm-none-eabi-*"
+    ],
     // Clang-format settings
     "C_Cpp.formatting": "clangFormat",
     "C_Cpp.clang_format_style": "file",
