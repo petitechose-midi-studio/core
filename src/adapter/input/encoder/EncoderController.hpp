@@ -1,10 +1,11 @@
 #pragma once
 
+#include "Encoder.hpp"
+
 #include <map>
 #include <memory>
 #include <vector>
 
-#include "Encoder.hpp"
 #include "core/Type.hpp"
 #include "core/struct/Encoder.hpp"
 
@@ -17,9 +18,8 @@ class IEventBus;
  */
 class EncoderController {
 public:
-    explicit EncoderController(
-        const std::vector<Hardware::Encoder>& encoderSetups,
-        IEventBus& eventBus);
+    explicit EncoderController(const std::vector<Hardware::Encoder>& encoderSetups,
+                               IEventBus& eventBus);
 
     /**
      * Initialize all encoder hardware. Must be called after Arduino setup().
@@ -40,7 +40,6 @@ public:
 
     Encoder* getEncoder(EncoderID id);
     const Encoder* getEncoder(EncoderID id) const;
-
 private:
     std::vector<std::unique_ptr<Encoder>> encoders_;
     std::map<EncoderID, size_t> id_to_index_;

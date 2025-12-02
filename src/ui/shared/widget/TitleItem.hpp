@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvgl.h>
+
 #include "interface/IWidget.hpp"
 
 struct TitleItemProps {
@@ -33,7 +34,6 @@ public:
 
     // IWidget interface
     lv_obj_t *getElement() const override { return container_; }
-
 private:
     void applyProps(const TitleItemProps &props);
 

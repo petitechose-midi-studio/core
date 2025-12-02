@@ -1,10 +1,5 @@
 #pragma once
 
-#include <cstdint>
-#include <functional>
-
-#include "../../Type.hpp"
-
 /**
  * @brief Interface for MIDI input ports
  *
@@ -15,7 +10,6 @@
 class IMidiInput {
 protected:
     ~IMidiInput() = default;
-
 public:
     /**
      * @brief Process any pending MIDI messages

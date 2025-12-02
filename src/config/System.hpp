@@ -16,10 +16,10 @@
 
 #pragma once
 
+#include "Version.hpp"
+
 #include <cstddef>
 #include <cstdint>
-
-#include "Version.hpp"
 
 namespace System {
 
@@ -65,8 +65,8 @@ constexpr uint8_t MUX_SIGNAL_PIN = 4;
 constexpr uint8_t MUX_MAX_CHANNELS = 16;
 
 /* Input timing (debouncing) */
-constexpr uint16_t MUX_DEBOUNCE_US = 20;    /* microseconds - mux channel switching settle time */
-constexpr uint32_t PIN_DEBOUNCE_MS = 5;     /* milliseconds - direct pin debounce */
+constexpr uint16_t MUX_DEBOUNCE_US = 20; /* microseconds - mux channel switching settle time */
+constexpr uint32_t PIN_DEBOUNCE_MS = 5;  /* milliseconds - direct pin debounce */
 }  // namespace Hardware
 
 /*
@@ -125,10 +125,11 @@ constexpr size_t USB_SYSEX_MAX_SIZE = 16000;
  * Defines timing thresholds for button gestures.
  */
 namespace Input {
-constexpr uint32_t LONG_PRESS_DEFAULT_MS = 500;  /* milliseconds */
-constexpr uint32_t DOUBLE_TAP_WINDOW_MS = 300;   /* milliseconds */
-constexpr uint32_t LATCH_THRESHOLD_MS = 300;     /* milliseconds - tap shorter = latch, longer = momentary */
-constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;      /* milliseconds - software debounce for state changes */
+constexpr uint32_t LONG_PRESS_DEFAULT_MS = 500; /* milliseconds */
+constexpr uint32_t DOUBLE_TAP_WINDOW_MS = 300;  /* milliseconds */
+constexpr uint32_t LATCH_THRESHOLD_MS =
+    300; /* milliseconds - tap shorter = latch, longer = momentary */
+constexpr uint32_t BUTTON_DEBOUNCE_MS = 50; /* milliseconds - software debounce for state changes */
 }  // namespace Input
 
 }  // namespace System

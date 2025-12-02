@@ -12,7 +12,6 @@ public:
     bool init();
     bool isInitialized() const { return initialized_; }
     void refresh();
-
 private:
     Ili9341Driver& driver_;
     lv_display_t* display_;

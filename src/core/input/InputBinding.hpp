@@ -1,13 +1,15 @@
 #pragma once
 
 #include <cstdint>
+
 #include <functional>
-#include <unordered_map>
 #include <vector>
 
+#include <unordered_map>
+
 #include "config/InputID.hpp"
-#include "core/event/IEventBus.hpp"
-#include "core/struct/Binding.hpp"
+#include "event/IEventBus.hpp"
+#include "struct/Binding.hpp"
 
 /**
  * @brief Centralized input state management and binding system
@@ -51,7 +53,8 @@ public:
     void onCombo(ButtonID btn1, ButtonID btn2, ActionCallback cb, lv_obj_t* scope);
 
     void onTurned(EncoderID id, EncoderActionCallback cb, lv_obj_t* scope);
-    void onTurnedWhilePressed(EncoderID encoderId, ButtonID buttonId, EncoderActionCallback cb, lv_obj_t* scope);
+    void onTurnedWhilePressed(EncoderID encoderId, ButtonID buttonId, EncoderActionCallback cb,
+                              lv_obj_t* scope);
 
     void clearScope(lv_obj_t* scope);
 
@@ -62,7 +65,6 @@ public:
     void processTick(uint32_t currentTimeMs);
     void clearBindings();
     void setBindingsEnabled(bool enabled);
-
 private:
     std::vector<ButtonBinding> button_bindings_;
     std::vector<EncoderBinding> encoder_bindings_;
@@ -102,5 +104,4 @@ private:
 
     bool bindings_enabled_ = true;
     uint32_t current_time_ = 0;
-
 };

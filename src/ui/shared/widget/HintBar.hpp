@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvgl.h>
+
 #include "interface/IComponent.hpp"
 
 enum class HintBarPosition { LEFT, BOTTOM, RIGHT };
@@ -50,7 +51,6 @@ public:
     void hide() override;
     bool isVisible() const override;
     lv_obj_t* getElement() const override { return container_; }
-
 private:
     static constexpr lv_coord_t DEFAULT_SIZE = 20;
 

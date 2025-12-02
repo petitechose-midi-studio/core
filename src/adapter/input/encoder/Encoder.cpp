@@ -5,33 +5,18 @@
 #include "core/event/Events.hpp"
 
 namespace {
-constexpr uint8_t TICK_COUNT_METHOD = 4; // Full Quadrature Mode
+constexpr uint8_t TICK_COUNT_METHOD = 4;  // Full Quadrature Mode
 constexpr uint16_t FULL_RANGE_ANGLE = 270;
 constexpr float DISCRETE_VALUES_SENSITIVITY = 0.5;
-}
+}  // namespace
 
 Encoder::Encoder(const Hardware::Encoder& setup, IEventBus& eventBus)
-    : id_(setup.id),
-      encoder_(),
-      mode_(setup.mode),
-      ppr_(setup.ppr),
-      steps_per_detent_(setup.stepsPerDetent),
-      pin_a_(setup.pinA.pin),
-      pin_b_(setup.pinB.pin),
-      initialized_(false),
-      virtual_range_(0),
-      virtual_position_(0),
-      last_normalized_value_(0.5f),
-      accumulated_delta_(0),
-      relative_position_(0.0f),
-      event_bus_(eventBus),
-      has_pending_event_(false),
-      pending_value_(0.0f),
-      discrete_steps_(0),
-      last_quantized_value_(-1.0f),
-      min_bound_(0.0f),
-      max_bound_(1.0f),
-      has_bounds_(false),
+    : id_(setup.id), encoder_(), mode_(setup.mode), ppr_(setup.ppr),
+      steps_per_detent_(setup.stepsPerDetent), pin_a_(setup.pinA.pin), pin_b_(setup.pinB.pin),
+      initialized_(false), virtual_range_(0), virtual_position_(0), last_normalized_value_(0.5f),
+      accumulated_delta_(0), relative_position_(0.0f), event_bus_(eventBus),
+      has_pending_event_(false), pending_value_(0.0f), discrete_steps_(0),
+      last_quantized_value_(-1.0f), min_bound_(0.0f), max_bound_(1.0f), has_bounds_(false),
       delta_per_detent_(1.0f) {
     // NOTE: Do NOT call encoder_.begin() here!
     // Hardware init is deferred to init() to support global object instantiation
@@ -80,16 +65,13 @@ void Encoder::setDiscreteSteps(uint8_t steps) {
     int32_t defaultRange = calculateDefaultVirtualRange();
     int32_t minRangeForSteps = steps * (1.0 / DISCRETE_VALUES_SENSITIVITY);
 
-    virtual_range_ = (steps > 0 && minRangeForSteps > defaultRange)
-        ? minRangeForSteps
-        : defaultRange;
+    virtual_range_ =
+        (steps > 0 && minRangeForSteps > defaultRange) ? minRangeForSteps : defaultRange;
 
     virtual_position_ = static_cast<int32_t>(last_normalized_value_ * (virtual_range_ - 1));
 }
 
-void Encoder::setContinuous() {
-    setDiscreteSteps(0);
-}
+void Encoder::setContinuous() { setDiscreteSteps(0); }
 
 void Encoder::setMode(Hardware::EncoderMode mode) {
     mode_ = mode;
@@ -113,9 +95,7 @@ void Encoder::setBounds(float min, float max) {
     }
 }
 
-void Encoder::setDelta(float delta) {
-    delta_per_detent_ = delta;
-}
+void Encoder::setDelta(float delta) { delta_per_detent_ = delta; }
 
 void Encoder::processEncoderChange(int32_t delta) {
     if (delta == 0) return;
@@ -150,13 +130,10 @@ void Encoder::handleAbsoluteMode(int32_t delta) {
     last_normalized_value_ = normalizedValue;
 
     // Map to bounds if configured, otherwise use normalized [0.0-1.0]
-    float valueToEmit = has_bounds_
-        ? min_bound_ + (normalizedValue * (max_bound_ - min_bound_))
-        : normalizedValue;
+    float valueToEmit =
+        has_bounds_ ? min_bound_ + (normalizedValue * (max_bound_ - min_bound_)) : normalizedValue;
 
-    if (applyQuantization(valueToEmit, valueToEmit)) {
-        emitPendingEvent(valueToEmit);
-    }
+    if (applyQuantization(valueToEmit, valueToEmit)) { emitPendingEvent(valueToEmit); }
 }
 
 bool Encoder::applyQuantization(float normalizedValue, float& outValue) {
@@ -167,9 +144,7 @@ bool Encoder::applyQuantization(float normalizedValue, float& outValue) {
 
     float quantized = round(normalizedValue * (discrete_steps_ - 1)) / (discrete_steps_ - 1);
 
-    if (quantized == last_quantized_value_) {
-        return false;
-    }
+    if (quantized == last_quantized_value_) { return false; }
 
     last_quantized_value_ = quantized;
     outValue = quantized;

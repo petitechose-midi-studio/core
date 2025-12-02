@@ -4,36 +4,25 @@
 
 using namespace BaseTheme;
 
-Label::Label(lv_obj_t *parent)
-{
-    createWidgets(parent);
-}
+Label::Label(lv_obj_t *parent) { createWidgets(parent); }
 
-Label::~Label()
-{
+Label::~Label() {
     stopScrollAnimation();
     destroyWidgets();
 }
 
 Label::Label(Label &&other) noexcept
-    : container_(other.container_)
-    , label_(other.label_)
-    , auto_scroll_enabled_(other.auto_scroll_enabled_)
-    , anim_running_(other.anim_running_)
-    , overflow_amount_(other.overflow_amount_)
-    , alignment_(other.alignment_)
-    , scroll_duration_ms_(other.scroll_duration_ms_)
-    , pause_duration_ms_(other.pause_duration_ms_)
-{
+    : container_(other.container_), label_(other.label_),
+      auto_scroll_enabled_(other.auto_scroll_enabled_), anim_running_(other.anim_running_),
+      overflow_amount_(other.overflow_amount_), alignment_(other.alignment_),
+      scroll_duration_ms_(other.scroll_duration_ms_), pause_duration_ms_(other.pause_duration_ms_) {
     other.container_ = nullptr;
     other.label_ = nullptr;
     other.anim_running_ = false;
 }
 
-Label &Label::operator=(Label &&other) noexcept
-{
-    if (this != &other)
-    {
+Label &Label::operator=(Label &&other) noexcept {
+    if (this != &other) {
         stopScrollAnimation();
         destroyWidgets();
 
@@ -53,8 +42,7 @@ Label &Label::operator=(Label &&other) noexcept
     return *this;
 }
 
-void Label::createWidgets(lv_obj_t *parent)
-{
+void Label::createWidgets(lv_obj_t *parent) {
     // Container that clips overflow - uses flex-grow to fill available space
     container_ = lv_obj_create(parent);
     lv_obj_set_height(container_, LV_SIZE_CONTENT);
@@ -73,84 +61,57 @@ void Label::createWidgets(lv_obj_t *parent)
     lv_label_set_long_mode(label_, LV_LABEL_LONG_CLIP);
 }
 
-void Label::destroyWidgets()
-{
-    if (container_)
-    {
+void Label::destroyWidgets() {
+    if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
         label_ = nullptr;
     }
 }
 
-void Label::setText(const std::string &text)
-{
-    setText(text.c_str());
-}
+void Label::setText(const std::string &text) { setText(text.c_str()); }
 
-void Label::setText(const char *text)
-{
-    if (!label_)
-        return;
+void Label::setText(const char *text) {
+    if (!label_) return;
 
     stopScrollAnimation();
     lv_obj_set_pos(label_, 0, 0);
     lv_label_set_text(label_, text);
 
     // Defer overflow check to next frame when layout is ready
-    if (auto_scroll_enabled_)
-    {
+    if (auto_scroll_enabled_) {
         lv_timer_t *timer = lv_timer_create(
-            [](lv_timer_t *t)
-            {
+            [](lv_timer_t *t) {
                 auto *self = static_cast<Label *>(lv_timer_get_user_data(t));
-                if (self)
-                {
-                    self->checkOverflowAndScroll();
-                }
+                if (self) { self->checkOverflowAndScroll(); }
             },
             Animation::OVERFLOW_CHECK_DELAY_MS, this);
         lv_timer_set_repeat_count(timer, 1);
     }
 }
 
-void Label::setColor(lv_color_t color)
-{
-    if (label_)
-    {
-        lv_obj_set_style_text_color(label_, color, LV_STATE_DEFAULT);
-    }
+void Label::setColor(lv_color_t color) {
+    if (label_) { lv_obj_set_style_text_color(label_, color, LV_STATE_DEFAULT); }
 }
 
-void Label::setFont(const lv_font_t *font)
-{
-    if (label_)
-    {
-        lv_obj_set_style_text_font(label_, font, LV_STATE_DEFAULT);
-    }
+void Label::setFont(const lv_font_t *font) {
+    if (label_) { lv_obj_set_style_text_font(label_, font, LV_STATE_DEFAULT); }
 }
 
-void Label::setFlexGrow(bool enabled)
-{
-    if (container_)
-    {
-        if (enabled)
-        {
+void Label::setFlexGrow(bool enabled) {
+    if (container_) {
+        if (enabled) {
             lv_obj_set_width(container_, 0);
             lv_obj_set_flex_grow(container_, 1);
-        }
-        else
-        {
+        } else {
             lv_obj_set_flex_grow(container_, 0);
             lv_obj_set_width(container_, LV_SIZE_CONTENT);
         }
     }
 }
 
-void Label::checkOverflowAndScroll()
-{
-    if (!label_ || !container_)
-        return;
+void Label::checkOverflowAndScroll() {
+    if (!label_ || !container_) return;
 
     // Measure text width
     lv_label_set_long_mode(label_, LV_LABEL_LONG_WRAP);
@@ -164,39 +125,24 @@ void Label::checkOverflowAndScroll()
     lv_coord_t container_width = lv_obj_get_width(container_);
     overflow_amount_ = text_width - container_width;
 
-    if (overflow_amount_ > 0)
-    {
+    if (overflow_amount_ > 0) {
         // Text overflows: align left and scroll
         lv_obj_set_x(label_, 0);
-        if (auto_scroll_enabled_)
-        {
-            startScrollAnimation();
-        }
-    }
-    else
-    {
+        if (auto_scroll_enabled_) { startScrollAnimation(); }
+    } else {
         // Text fits: apply alignment
         lv_coord_t offset = 0;
-        switch (alignment_)
-        {
-        case LV_TEXT_ALIGN_CENTER:
-            offset = (container_width - text_width) / 2;
-            break;
-        case LV_TEXT_ALIGN_RIGHT:
-            offset = container_width - text_width;
-            break;
-        default:
-            offset = 0;
-            break;
+        switch (alignment_) {
+            case LV_TEXT_ALIGN_CENTER: offset = (container_width - text_width) / 2; break;
+            case LV_TEXT_ALIGN_RIGHT: offset = container_width - text_width; break;
+            default: offset = 0; break;
         }
         lv_obj_set_x(label_, offset);
     }
 }
 
-void Label::startScrollAnimation()
-{
-    if (!label_ || anim_running_ || overflow_amount_ <= 0)
-        return;
+void Label::startScrollAnimation() {
+    if (!label_ || anim_running_ || overflow_amount_ <= 0) return;
 
     lv_anim_init(&scroll_anim_);
     lv_anim_set_var(&scroll_anim_, this);
@@ -205,39 +151,31 @@ void Label::startScrollAnimation()
     lv_anim_set_duration(&scroll_anim_, scroll_duration_ms_);
     lv_anim_set_delay(&scroll_anim_, Animation::SCROLL_START_DELAY_MS);
     lv_anim_set_path_cb(&scroll_anim_, lv_anim_path_ease_in_out);
-    lv_anim_set_completed_cb(&scroll_anim_, [](lv_anim_t *a)
-                             {
-        auto* self = static_cast<Label*>(a->var);
-        lv_timer_t* timer = lv_timer_create(pauseTimerCallback, self->pause_duration_ms_, self);
-        lv_timer_set_repeat_count(timer, 1); });
+    lv_anim_set_completed_cb(&scroll_anim_, [](lv_anim_t *a) {
+        auto *self = static_cast<Label *>(a->var);
+        lv_timer_t *timer = lv_timer_create(pauseTimerCallback, self->pause_duration_ms_, self);
+        lv_timer_set_repeat_count(timer, 1);
+    });
 
     lv_anim_start(&scroll_anim_);
     anim_running_ = true;
 }
 
-void Label::stopScrollAnimation()
-{
-    if (anim_running_)
-    {
+void Label::stopScrollAnimation() {
+    if (anim_running_) {
         lv_anim_delete(this, nullptr);
         anim_running_ = false;
     }
 }
 
-void Label::scrollAnimCallback(void *var, int32_t value)
-{
+void Label::scrollAnimCallback(void *var, int32_t value) {
     auto *self = static_cast<Label *>(var);
-    if (self->label_)
-    {
-        lv_obj_set_x(self->label_, value);
-    }
+    if (self->label_) { lv_obj_set_x(self->label_, value); }
 }
 
-void Label::pauseTimerCallback(lv_timer_t *timer)
-{
+void Label::pauseTimerCallback(lv_timer_t *timer) {
     auto *self = static_cast<Label *>(lv_timer_get_user_data(timer));
-    if (!self || !self->label_)
-        return;
+    if (!self || !self->label_) return;
 
     lv_anim_t anim;
     lv_anim_init(&anim);
@@ -246,10 +184,10 @@ void Label::pauseTimerCallback(lv_timer_t *timer)
     lv_anim_set_values(&anim, -self->overflow_amount_, 0);
     lv_anim_set_duration(&anim, self->scroll_duration_ms_);
     lv_anim_set_path_cb(&anim, lv_anim_path_ease_in_out);
-    lv_anim_set_completed_cb(&anim, [](lv_anim_t *a)
-                             {
-        auto* self = static_cast<Label*>(a->var);
-        self->anim_running_ = false; });
+    lv_anim_set_completed_cb(&anim, [](lv_anim_t *a) {
+        auto *self = static_cast<Label *>(a->var);
+        self->anim_running_ = false;
+    });
 
     lv_anim_start(&anim);
 }

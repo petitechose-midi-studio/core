@@ -8,12 +8,8 @@
 
 ParameterListWidget::ParameterListWidget(lv_obj_t* parent, uint16_t width, uint16_t height,
                                          uint8_t color_index, int16_t discreteCount)
-    : parent_(parent ? parent : lv_screen_active()),
-      width_(width),
-      height_(height),
-      color_index_(color_index),
-      discrete_count_(discreteCount),
-      name_("LIST"),
+    : parent_(parent ? parent : lv_screen_active()), width_(width), height_(height),
+      color_index_(color_index), discrete_count_(discreteCount), name_("LIST"),
       display_value_("---") {
     createUI();
 }
@@ -33,9 +29,7 @@ void ParameterListWidget::setName(const std::string& name) {
     if (name_ == name) return;
 
     name_ = name;
-    if (name_label_) {
-        name_label_->setText(name);
-    }
+    if (name_label_) { name_label_->setText(name); }
 }
 
 void ParameterListWidget::setValue(float value) {
@@ -47,9 +41,7 @@ void ParameterListWidget::setValue(float value) {
     // If no displayValue provided, show index
     if (display_value_.empty()) {
         display_value_ = std::to_string(index);
-        if (value_label_) {
-            lv_label_set_text(value_label_, display_value_.c_str());
-        }
+        if (value_label_) { lv_label_set_text(value_label_, display_value_.c_str()); }
     }
 
     triggerValueChangeFlash();
@@ -65,9 +57,8 @@ void ParameterListWidget::setValueWithDisplay(float value, const char* displayVa
     display_value_ = newDisplay;
 
     if (value_label_) {
-        std::string formatted = TextUtils::formatTextForTwoLines(display_value_,
-                                                                  VALUE_BOX_SIZE - 8,
-                                                                  fonts.parameter_label);
+        std::string formatted = TextUtils::formatTextForTwoLines(display_value_, VALUE_BOX_SIZE - 8,
+                                                                 fonts.parameter_label);
         lv_label_set_text(value_label_, formatted.c_str());
         // Note: top_line_ uses fixed width set at creation, no repositioning needed
     }
@@ -76,8 +67,8 @@ void ParameterListWidget::setValueWithDisplay(float value, const char* displayVa
 }
 
 void ParameterListWidget::setDiscreteMetadata(int16_t discreteCount,
-                                               const std::vector<std::string>& valueNames,
-                                               uint8_t currentIndex) {
+                                              const std::vector<std::string>& valueNames,
+                                              uint8_t currentIndex) {
     discrete_count_ = discreteCount;
     discrete_value_names_ = valueNames;
     current_value_index_ = currentIndex;
@@ -115,7 +106,8 @@ void ParameterListWidget::createValueBox() {
 
     lv_obj_set_style_radius(value_box_, 8, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(value_box_, 0, LV_STATE_DEFAULT);  // No border
-    lv_obj_set_style_bg_color(value_box_, lv_color_hex(BaseTheme::Color::KNOB_BACKGROUND), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(value_box_, lv_color_hex(BaseTheme::Color::KNOB_BACKGROUND),
+                              LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(value_box_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
 }
 
@@ -123,7 +115,8 @@ void ParameterListWidget::createValueLabel() {
     value_label_ = lv_label_create(value_box_);
 
     lv_obj_set_style_text_font(value_label_, fonts.parameter_value_label, LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(value_label_, lv_color_hex(BaseTheme::Color::TEXT_PRIMARY), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(value_label_, lv_color_hex(BaseTheme::Color::TEXT_PRIMARY),
+                                LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(value_label_, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
 
     lv_obj_set_width(value_label_, VALUE_BOX_SIZE - 8);
@@ -145,7 +138,8 @@ void ParameterListWidget::createTopLine() {
     lv_obj_set_size(top_line_, LINE_WIDTH, LINE_HEIGHT);
     lv_obj_align(top_line_, LV_ALIGN_TOP_MID, 0, LINE_Y);
 
-    lv_obj_set_style_bg_color(top_line_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(top_line_, lv_color_hex(BaseTheme::Color::INACTIVE),
+                              LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(top_line_, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(top_line_, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_radius(top_line_, 0, LV_STATE_DEFAULT);
@@ -187,7 +181,8 @@ void ParameterListWidget::flashTimerCallback(lv_timer_t* timer) {
     if (!widget || !widget->top_line_) return;
 
     // Restore top line color to INACTIVE
-    lv_obj_set_style_bg_color(widget->top_line_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(widget->top_line_, lv_color_hex(BaseTheme::Color::INACTIVE),
+                              LV_STATE_DEFAULT);
 
     // Clear timer reference
     widget->flash_timer_ = nullptr;

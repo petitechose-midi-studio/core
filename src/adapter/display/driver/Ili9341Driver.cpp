@@ -15,14 +15,9 @@ bool Ili9341Driver::init() {
     framebuffer_ = main_framebuffer;
     diff1_.emplace(diffbuffer1, sizeof(diffbuffer1));
     diff2_.emplace(diffbuffer2, sizeof(diffbuffer2));
-    tft_.emplace(
-        System::Hardware::DISPLAY_CS_PIN,
-        System::Hardware::DISPLAY_DC_PIN,
-        System::Hardware::DISPLAY_SCK_PIN,
-        System::Hardware::DISPLAY_MOSI_PIN,
-        System::Hardware::DISPLAY_MISO_PIN,
-        System::Hardware::DISPLAY_RST_PIN
-    );
+    tft_.emplace(System::Hardware::DISPLAY_CS_PIN, System::Hardware::DISPLAY_DC_PIN,
+                 System::Hardware::DISPLAY_SCK_PIN, System::Hardware::DISPLAY_MOSI_PIN,
+                 System::Hardware::DISPLAY_MISO_PIN, System::Hardware::DISPLAY_RST_PIN);
 
     if (!tft_->begin(System::Hardware::DISPLAY_SPI_SPEED)) {
         LOGLN("[Display] FAILED");
@@ -44,13 +39,9 @@ bool Ili9341Driver::init() {
 }
 
 void Ili9341Driver::refresh(bool redraw_now, uint16_t* pixels) {
-    if (tft_) {
-        tft_->update(pixels, redraw_now);
-    }
+    if (tft_) { tft_->update(pixels, redraw_now); }
 }
 
 void Ili9341Driver::waitAsyncComplete() {
-    if (tft_) {
-        tft_->waitUpdateAsyncComplete();
-    }
+    if (tft_) { tft_->waitUpdateAsyncComplete(); }
 }

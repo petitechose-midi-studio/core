@@ -15,9 +15,7 @@ UnifiedButton::UnifiedButton(const Hardware::Button& setup, std::unique_ptr<IPin
 }
 
 void UnifiedButton::update() {
-    if (!pin_reader_) {
-        return;
-    }
+    if (!pin_reader_) { return; }
 
     pin_reader_->update();
     bool currentState = readCurrentState();
@@ -25,13 +23,9 @@ void UnifiedButton::update() {
     pressed_ = currentState;
 }
 
-bool UnifiedButton::isPressed() const {
-    return pressed_;
-}
+bool UnifiedButton::isPressed() const { return pressed_; }
 
-ButtonID UnifiedButton::getId() const {
-    return button_.id;
-}
+ButtonID UnifiedButton::getId() const { return button_.id; }
 
 bool UnifiedButton::readCurrentState() {
     bool rawValue = pin_reader_->read();

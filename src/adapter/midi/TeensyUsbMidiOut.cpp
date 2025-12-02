@@ -3,9 +3,7 @@
 #include <Arduino.h>
 
 TeensyUsbMidiOut::TeensyUsbMidiOut(IEventBus& eventBus) : event_bus_(eventBus) {
-    for (size_t i = 0; i < MAX_ACTIVE_NOTES; i++) {
-        active_notes_[i].active = false;
-    }
+    for (size_t i = 0; i < MAX_ACTIVE_NOTES; i++) { active_notes_[i].active = false; }
 }
 
 void TeensyUsbMidiOut::sendControlChange(MidiChannelValue ch, MidiCCValue cc, uint8_t value) {
@@ -39,8 +37,7 @@ void TeensyUsbMidiOut::sendSysEx(const uint8_t* data, uint16_t length) {
 }
 
 void TeensyUsbMidiOut::flush() {
-    while (usbMIDI.read()) {
-    }
+    while (usbMIDI.read()) {}
 }
 
 void TeensyUsbMidiOut::markNoteActive(MidiChannelValue ch, MidiNoteValue note) {

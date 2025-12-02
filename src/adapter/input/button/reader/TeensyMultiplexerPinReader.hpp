@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstdint>
-
 #include "IPinReader.hpp"
+
+#include <cstdint>
 
 class Multiplexer;
 
@@ -12,7 +12,6 @@ public:
 
     void initialize() override;
     bool read() override;
-
 private:
     uint8_t channel_;
     Multiplexer& mux_;

@@ -1,12 +1,13 @@
 #pragma once
 
+#include "Type.hpp"
+
 #include <map>
 #include <vector>
 
-#include "../Type.hpp"
-#include "../event/IEventBus.hpp"
-#include "../struct/MidiCCMapping.hpp"
 #include "config/InputID.hpp"
+#include "event/IEventBus.hpp"
+#include "struct/MidiCCMapping.hpp"
 
 class IMidiOutput;
 class EncoderChangedEvent;
@@ -17,7 +18,6 @@ public:
     MidiMapper(IMidiOutput& midiOut, IEventBus& eventBus,
                const std::vector<MidiCCMapping>& mappings);
     ~MidiMapper();
-
 private:
     struct MidiConfig {
         uint8_t channel;

@@ -9,16 +9,16 @@
 
 #include <memory>
 #include <string>
+
 #include <type_traits>
 #include <unordered_map>
-#include <vector>
 
-#include "api/ControllerAPI.hpp"
 #include "adapter/midi/TeensyUsbMidiOut.hpp"
-#include "resource/common/interface/IPlugin.hpp"
+#include "api/ControllerAPI.hpp"
 #include "core/event/IEventBus.hpp"
 #include "core/input/InputBinding.hpp"
 #include "font/FontLoader.hpp"
+#include "resource/common/interface/IPlugin.hpp"
 
 class TeensyUsbMidiIn;
 class EncoderController;
@@ -37,36 +37,29 @@ private:
     TeensyUsbMidiOut& midi_out_;
     ControllerAPI api_;
     std::unordered_map<std::string, std::unique_ptr<IPlugin>> plugins_;
-
 public:
     PluginManager(IEventBus& eventBus, TeensyUsbMidiIn& midiIn, TeensyUsbMidiOut& midiOut,
                   EncoderController& encoders, ViewManager& viewManager);
 
     ~PluginManager();
 
-    ControllerAPI& getServices() {
-        return api_;
-    }
+    ControllerAPI& getServices() { return api_; }
 
     template <typename PluginType>
     bool registerPlugin(const std::string& name) {
         static_assert(std::is_base_of_v<IPlugin, PluginType>,
                       "PluginType must inherit from IIntegrationPlugin");
 
-        if (plugins_.find(name) != plugins_.end()) {
-            return false;
-        }
+        if (plugins_.find(name) != plugins_.end()) { return false; }
 
         // Load plugin resources and fonts (if loadResources() exists)
         if constexpr (has_load_resources<PluginType>::value) {
             PluginType::loadResources();
-            load_plugin_fonts();
+            loadPluginFonts();
         }
 
         auto plugin = std::make_unique<PluginType>(api_);
-        if (!plugin->initialize()) {
-            return false;
-        }
+        if (!plugin->initialize()) { return false; }
 
         plugins_[name] = std::move(plugin);
         return true;

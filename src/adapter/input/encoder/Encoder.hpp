@@ -3,8 +3,6 @@
 #include <Arduino.h>
 #include <EncoderTool.h>
 
-#include <memory>
-
 #include "core/event/IEventBus.hpp"
 #include "core/struct/Encoder.hpp"
 
@@ -42,14 +40,9 @@ public:
     void setBounds(float min, float max);
     void setDelta(float delta);
 
-    EncoderID getId() const {
-        return id_;
-    }
+    EncoderID getId() const { return id_; }
 
-    Hardware::EncoderMode getMode() const {
-        return mode_;
-    }
-
+    Hardware::EncoderMode getMode() const { return mode_; }
 private:
     EncoderID id_;
     EncoderTool::Encoder encoder_;

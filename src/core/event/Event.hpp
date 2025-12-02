@@ -8,14 +8,9 @@ public:
 
     ~Event() = default;
 
-    EventCategoryType getCategory() const {
-        return category_;
-    }
+    EventCategoryType getCategory() const { return category_; }
 
-    EventType getType() const {
-        return type_;
-    }
-
+    EventType getType() const { return type_; }
 protected:
     EventCategoryType category_;
     EventType type_;

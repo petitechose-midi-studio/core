@@ -1,10 +1,8 @@
 #pragma once
 
-#include <ILI9341_T4.h>
-
 #include <optional>
 
-#include "config/System.hpp"
+#include <ILI9341_T4.h>
 
 /**
  * @brief ILI9341 display driver with lazy initialization
@@ -21,7 +19,6 @@ public:
     bool isInitialized() const { return initialized_; }
     void refresh(bool redraw_now, uint16_t* pixels);
     void waitAsyncComplete();
-
 private:
     std::optional<ILI9341_T4::ILI9341Driver> tft_;
     std::optional<ILI9341_T4::DiffBuff> diff1_;

@@ -1,7 +1,9 @@
 #pragma once
 
-#include <lvgl.h>
 #include <string>
+
+#include <lvgl.h>
+
 #include "interface/IView.hpp"
 
 class SplashScreenView : public IView {
@@ -35,7 +37,6 @@ public:
     void setBootProgress(uint8_t progress);
     void setBootStatus(const char* status);
     void markBootComplete();
-
 private:
     Config config_;
     bool initialized_ = false;

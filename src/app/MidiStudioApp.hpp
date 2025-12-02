@@ -11,14 +11,13 @@
 #include "adapter/midi/TeensyUsbMidiOut.hpp"
 #include "adapter/multiplexer/MultiplexerController.hpp"
 #include "boot/BootManager.hpp"
-#include "config/System.hpp"
 #include "core/event/EventBus.hpp"
 #include "core/event/IEventBus.hpp"
 #include "core/midi/MidiMapper.hpp"
 #include "core/struct/Button.hpp"
 #include "core/struct/Encoder.hpp"
-#include "manager/PluginManager.hpp"
 #include "manager/InputManager.hpp"
+#include "manager/PluginManager.hpp"
 #include "manager/ViewManager.hpp"
 #include "ui/ViewController.hpp"
 
@@ -33,7 +32,6 @@ public:
     void update();
 
     bool isBootComplete() const { return boot_complete_; }
-
 private:
     // Display
     Ili9341Driver display_driver_;

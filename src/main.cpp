@@ -1,12 +1,11 @@
 #include <Arduino.h>
-#include "log/Macros.hpp"
 
 #include "app/MidiStudioApp.hpp"
+#include "log/Macros.hpp"
 
 MidiStudioApp app(nullptr);
 
-void setup()
-{
+void setup() {
     LOGLN("=== MIDI Studio ===");
     LOGLN("===   Core Dev  ===");
     LOG("Version: ");
@@ -14,6 +13,4 @@ void setup()
     app.setup();
 }
 
-void loop() {
-    app.update();
-}
+void loop() { app.update(); }

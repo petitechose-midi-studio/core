@@ -2,21 +2,17 @@
 
 #include "adapter/display/driver/Ili9341Driver.hpp"
 #include "adapter/display/ui/LVGLBridge.hpp"
-#include "adapter/multiplexer/MultiplexerController.hpp"
-#include "adapter/input/encoder/EncoderController.hpp"
 #include "adapter/input/button/ButtonController.hpp"
+#include "adapter/input/encoder/EncoderController.hpp"
 #include "adapter/midi/TeensyUsbMidiIn.hpp"
-#include "adapter/midi/TeensyUsbMidiOut.hpp"
-#include "manager/ViewManager.hpp"
-#include "manager/InputManager.hpp"
-#include "core/event/IEventBus.hpp"
-#include "ui/shared/font/FontLoader.hpp"
+#include "adapter/multiplexer/MultiplexerController.hpp"
 #include "log/Macros.hpp"
+#include "manager/ViewManager.hpp"
+#include "ui/shared/font/FontLoader.hpp"
 
 namespace Boot {
 
-BootManager::BootManager(Components components)
-    : components_(components) {
+BootManager::BootManager(Components components) : components_(components) {
     LOGLN("[Boot] Starting...");
 }
 
@@ -24,9 +20,7 @@ bool BootManager::tick() {
     if (status_.isComplete()) return true;
 
     switch (status_.currentPhase) {
-        case Phase::NOT_STARTED:
-            setPhase(Phase::HARDWARE_INIT);
-            break;
+        case Phase::NOT_STARTED: setPhase(Phase::HARDWARE_INIT); break;
         case Phase::HARDWARE_INIT:
             executeHardwareInit();
             setPhase(Phase::DISPLAY_INIT);
@@ -40,9 +34,7 @@ bool BootManager::tick() {
             setPhase(Phase::LOADING_FONTS);
             break;
         case Phase::LOADING_FONTS:
-            if (executeLoadingFonts()) {
-                setPhase(Phase::INPUT_INIT);
-            }
+            if (executeLoadingFonts()) { setPhase(Phase::INPUT_INIT); }
             break;
         case Phase::INPUT_INIT:
             executeInputInit();
@@ -52,8 +44,7 @@ bool BootManager::tick() {
             executeMidiInit();
             executeReady();
             break;
-        default:
-            break;
+        default: break;
     }
 
     return status_.isComplete();
@@ -76,24 +67,22 @@ void BootManager::executeDisplayInit() {
 void BootManager::executeMinimalUI() {
     LOGLN("[Boot] Minimal UI");
 
-    fonts_register_core();
-    fonts_load_essential();
+    fontsRegisterCore();
+    fontsLoadEssential();
     components_.viewManager.initSplash();
 
     SplashScreenView* splash = components_.viewManager.getSplashView();
-    if (splash) {
-        splash->setBootMode(true);
-    }
+    if (splash) { splash->setBootMode(true); }
 
     components_.lvglBridge.refresh();
-    total_fonts_ = fonts_get_pending_count();
+    total_fonts_ = fontsGetPendingCount();
     loaded_fonts_ = 0;
 }
 
 bool BootManager::executeLoadingFonts() {
     const char* fontName = nullptr;
 
-    if (fonts_load_next(&fontName)) {
+    if (fontsLoadNext(&fontName)) {
         loaded_fonts_++;
         uint8_t progress = total_fonts_ > 0 ? (loaded_fonts_ * 100) / total_fonts_ : 100;
         updateSplash(progress, fontName);
@@ -125,9 +114,7 @@ void BootManager::executeReady() {
     setPhase(Phase::READY);
 
     SplashScreenView* splash = components_.viewManager.getSplashView();
-    if (splash) {
-        splash->markBootComplete();
-    }
+    if (splash) { splash->markBootComplete(); }
 
     components_.lvglBridge.refresh();
     components_.viewManager.emitBootComplete();
@@ -147,4 +134,4 @@ void BootManager::updateSplash(uint8_t progress, const char* text) {
     }
 }
 
-} // namespace Boot
+}  // namespace Boot

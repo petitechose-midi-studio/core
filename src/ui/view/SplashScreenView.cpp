@@ -1,13 +1,12 @@
 #include "SplashScreenView.hpp"
 
-#include "log/Macros.hpp"
-#include "ui/shared/font/FontLoader.hpp"
-#include "theme/BaseTheme.hpp"
 #include "config/System.hpp"
+#include "font/FontLoader.hpp"
+#include "log/Macros.hpp"
+#include "theme/BaseTheme.hpp"
 
 SplashScreenView::Config::Config()
-    : title(System::Application::NAME),
-      version(System::Application::VERSION),
+    : title(System::Application::NAME), version(System::Application::VERSION),
       bg_color(lv_color_hex(BaseTheme::Color::BACKGROUND)),
       text_color(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY)),
       progress_color(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY)) {}
@@ -15,9 +14,7 @@ SplashScreenView::Config::Config()
 SplashScreenView::SplashScreenView(lv_obj_t* parentScreen, const Config& config)
     : config_(config), parent_screen_(parentScreen) {}
 
-SplashScreenView::~SplashScreenView() {
-    cleanup();
-}
+SplashScreenView::~SplashScreenView() { cleanup(); }
 
 bool SplashScreenView::init() {
     if (initialized_) return true;
@@ -44,18 +41,14 @@ void SplashScreenView::onActivate() {
     if (active_) return;
     active_ = true;
 
-    if (container_) {
-        lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (container_) { lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN); }
 }
 
 void SplashScreenView::onDeactivate() {
     if (!active_) return;
     active_ = false;
 
-    if (container_) {
-        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (container_) { lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN); }
 }
 
 void SplashScreenView::setBootMode(bool enabled) {

@@ -1,6 +1,6 @@
 #include "ButtonFactory.hpp"
 
-#include "../../multiplexer/MultiplexerController.hpp"
+#include "adapter/multiplexer/MultiplexerController.hpp"
 #include "log/Macros.hpp"
 #include "reader/TeensyMultiplexerPinReader.hpp"
 #include "reader/TeensyPinReader.hpp"
@@ -19,22 +19,20 @@ std::unique_ptr<UnifiedButton> ButtonFactory::createButton(const Hardware::Butto
 
 std::unique_ptr<IPinReader> ButtonFactory::createPinReader(const GpioPin& gpio, Multiplexer& mux) {
     switch (gpio.source) {
-    case GpioPin::Source::MCU:
-        if (gpio.pin > 41) {
-            LOGLN("[ButtonFactory] ERROR: Invalid MCU pin");
-            return nullptr;
-        }
-        return std::make_unique<TeensyPinReader>(gpio.pin, gpio.mode);
+        case GpioPin::Source::MCU:
+            if (gpio.pin > 41) {
+                LOGLN("[ButtonFactory] ERROR: Invalid MCU pin");
+                return nullptr;
+            }
+            return std::make_unique<TeensyPinReader>(gpio.pin, gpio.mode);
 
-    case GpioPin::Source::MUX:
-        if (gpio.pin > 15) {
-            LOGLN("[ButtonFactory] ERROR: Invalid MUX channel");
-            return nullptr;
-        }
-        return std::make_unique<TeensyMultiplexerPinReader>(gpio.pin, mux);
+        case GpioPin::Source::MUX:
+            if (gpio.pin > 15) {
+                LOGLN("[ButtonFactory] ERROR: Invalid MUX channel");
+                return nullptr;
+            }
+            return std::make_unique<TeensyMultiplexerPinReader>(gpio.pin, mux);
 
-    default:
-        LOGLN("[ButtonFactory] ERROR: Unsupported GPIO source");
-        return nullptr;
+        default: LOGLN("[ButtonFactory] ERROR: Unsupported GPIO source"); return nullptr;
     }
 }

@@ -21,14 +21,8 @@ constexpr uint32_t MACRO_6_BLUE = 0x5CA6EE;
 constexpr uint32_t MACRO_7_PURPLE = 0xC36EFF;
 constexpr uint32_t MACRO_8_PINK = 0xFF54B0;
 
-constexpr uint32_t MACROS[8] = {MACRO_1_RED,
-                                MACRO_2_ORANGE,
-                                MACRO_3_YELLOW,
-                                MACRO_4_GREEN,
-                                MACRO_5_CYAN,
-                                MACRO_6_BLUE,
-                                MACRO_7_PURPLE,
-                                MACRO_8_PINK};
+constexpr uint32_t MACROS[8] = {MACRO_1_RED,  MACRO_2_ORANGE, MACRO_3_YELLOW, MACRO_4_GREEN,
+                                MACRO_5_CYAN, MACRO_6_BLUE,   MACRO_7_PURPLE, MACRO_8_PINK};
 
 constexpr uint32_t BACKGROUND = 0x000000;
 constexpr uint32_t INACTIVE = 0x333333;
@@ -52,9 +46,7 @@ constexpr uint32_t KNOB_TRACK = 0x606060;
  * @param index Macro index (0-7)
  * @return Color value or default if index out of range
  */
-inline uint32_t getMacroColor(uint8_t index) {
-    return (index < 8) ? MACROS[index] : INACTIVE;
-}
+inline uint32_t getMacroColor(uint8_t index) { return (index < 8) ? MACROS[index] : INACTIVE; }
 
 }  // namespace Color
 
@@ -70,8 +62,8 @@ constexpr int16_t MARGIN_MD = 8;
 constexpr int16_t MARGIN_LG = 16;
 
 // Common paddings
-constexpr int16_t PAD_BUTTON_H = 8;   // Horizontal button padding
-constexpr int16_t PAD_BUTTON_V = 6;   // Vertical button padding
+constexpr int16_t PAD_BUTTON_H = 8;  // Horizontal button padding
+constexpr int16_t PAD_BUTTON_V = 6;  // Vertical button padding
 
 // List/overlay specific
 constexpr int16_t LIST_ITEM_GAP = 2;
@@ -89,9 +81,9 @@ constexpr int16_t ROW_GAP_MD = 4;
 // =============================================================================
 namespace Animation {
 
-constexpr uint32_t SCROLL_ANIM_MS = 50;       // Fast scroll animation
-constexpr uint32_t SCROLL_START_DELAY_MS = 500;  // Delay before auto-scroll starts
-constexpr uint32_t OVERFLOW_CHECK_DELAY_MS = 50; // Delay for layout measurement
+constexpr uint32_t SCROLL_ANIM_MS = 50;           // Fast scroll animation
+constexpr uint32_t SCROLL_START_DELAY_MS = 500;   // Delay before auto-scroll starts
+constexpr uint32_t OVERFLOW_CHECK_DELAY_MS = 50;  // Delay for layout measurement
 
 }  // namespace Animation
 

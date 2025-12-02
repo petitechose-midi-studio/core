@@ -16,7 +16,6 @@ public:
         : encoders_(encoders), buttons_(buttons) {}
 
     void update();
-
 private:
     EncoderController& encoders_;
     ButtonController& buttons_;

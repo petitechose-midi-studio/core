@@ -38,7 +38,6 @@ public:
 
     bool tick();
     bool isComplete() const { return status_.isComplete(); }
-
 private:
     Components components_;
     Status status_;
@@ -57,4 +56,4 @@ private:
     void updateSplash(uint8_t progress, const char* text);
 };
 
-} // namespace Boot
+}  // namespace Boot

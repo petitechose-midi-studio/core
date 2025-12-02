@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../interface/ISelector.hpp"
 #include "ListOverlay.hpp"
-#include <memory>
+
+#include "interface/ISelector.hpp"
 
 /**
  * Base implementation for list selectors.
@@ -23,7 +23,6 @@ public:
     void hide() override;
     bool isVisible() const override;
     lv_obj_t *getElement() const override;
-
 protected:
     ListOverlay &overlay() { return overlay_; }
     const ListOverlay &overlay() const { return overlay_; }

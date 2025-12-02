@@ -1,42 +1,39 @@
 #include "TextUtils.hpp"
 
+#include <vector>
+
 #include <lvgl.h>
 #include <misc/lv_text_private.h>
-#include <vector>
 
 namespace TextUtils {
 
-std::string formatTextForTwoLines(const std::string& text, lv_coord_t max_width, const lv_font_t* font) {
+std::string formatTextForTwoLines(const std::string& text, lv_coord_t max_width,
+                                  const lv_font_t* font) {
     if (!font) return text;
 
     lv_text_attributes_t attrs;
     lv_text_attributes_init(&attrs);
     lv_coord_t text_width = lv_text_get_width(text.c_str(), text.size(), font, &attrs);
 
-    if (text_width <= max_width) {
-        return text;
-    }
+    if (text_width <= max_width) { return text; }
 
     std::vector<std::string> words;
     size_t start = 0;
 
     for (size_t i = 0; i < text.size() && words.size() < 20; i++) {
         if (text[i] == ' ') {
-            if (i > start) {
-                words.push_back(text.substr(start, i - start));
-            }
+            if (i > start) { words.push_back(text.substr(start, i - start)); }
             start = i + 1;
         }
     }
 
     // Capture the last word (not followed by a space)
-    if (start < text.size() && words.size() < 20) {
-        words.push_back(text.substr(start));
-    }
+    if (start < text.size() && words.size() < 20) { words.push_back(text.substr(start)); }
 
     if (words.empty()) return text;
 
-    lv_coord_t first_word_width = lv_text_get_width(words[0].c_str(), words[0].size(), font, &attrs);
+    lv_coord_t first_word_width =
+        lv_text_get_width(words[0].c_str(), words[0].size(), font, &attrs);
     if (first_word_width > max_width) {
         std::string line1 = truncateWithEllipsis(words[0], max_width, font);
 
@@ -100,20 +97,17 @@ std::string formatTextForTwoLines(const std::string& text, lv_coord_t max_width,
     }
 }
 
-std::string truncateWithEllipsis(const std::string& text, lv_coord_t max_width, const lv_font_t* font) {
+std::string truncateWithEllipsis(const std::string& text, lv_coord_t max_width,
+                                 const lv_font_t* font) {
     if (!font) return text;
 
     lv_text_attributes_t attrs;
     lv_text_attributes_init(&attrs);
     lv_coord_t full_width = lv_text_get_width(text.c_str(), text.size(), font, &attrs);
-    if (full_width <= max_width) {
-        return text;
-    }
+    if (full_width <= max_width) { return text; }
 
     lv_coord_t ellipsis_width = lv_text_get_width("...", 3, font, &attrs);
-    if (max_width <= ellipsis_width) {
-        return "...";
-    }
+    if (max_width <= ellipsis_width) { return "..."; }
 
     size_t left = 1;
     size_t right = text.size() - 1;
@@ -132,9 +126,7 @@ std::string truncateWithEllipsis(const std::string& text, lv_coord_t max_width, 
         }
     }
 
-    if (best_length > 0) {
-        return text.substr(0, best_length) + "...";
-    }
+    if (best_length > 0) { return text.substr(0, best_length) + "..."; }
 
     return "...";
 }

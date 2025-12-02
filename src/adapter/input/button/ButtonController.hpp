@@ -1,11 +1,11 @@
 #pragma once
 
+#include "UnifiedButton.hpp"
+
 #include <map>
 #include <memory>
 #include <vector>
 
-#include "UnifiedButton.hpp"
-#include "config/System.hpp"
 #include "core/Type.hpp"
 #include "core/struct/Button.hpp"
 
@@ -14,21 +14,19 @@ class Multiplexer;
 
 class ButtonController {
 public:
-    explicit ButtonController(
-        const std::vector<Hardware::Button>& buttonSetups,
-        Multiplexer& mux, IEventBus& eventBus);
+    explicit ButtonController(const std::vector<Hardware::Button>& buttonSetups, Multiplexer& mux,
+                              IEventBus& eventBus);
     ~ButtonController();
 
     ButtonController(const ButtonController&) = delete;
     ButtonController& operator=(const ButtonController&) = delete;
-    ButtonController(ButtonController&&) = default;
-    ButtonController& operator=(ButtonController&&) = default;
+    ButtonController(ButtonController&&) = delete;
+    ButtonController& operator=(ButtonController&&) = delete;
 
     void updateAll();
 
     UnifiedButton* getButton(ButtonID id);
     const UnifiedButton* getButton(ButtonID id) const;
-
 private:
     std::vector<std::unique_ptr<UnifiedButton>> owned_buttons_;
     std::vector<bool> last_states_;

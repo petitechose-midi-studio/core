@@ -1,8 +1,9 @@
 #pragma once
 
-#include <lvgl.h>
 #include <string>
 #include <vector>
+
+#include <lvgl.h>
 
 /**
  * @brief Interface for parameter widgets (polymorphism)
@@ -38,7 +39,8 @@ public:
     /**
      * @brief Set discrete value metadata for optimistic display (List/Button widgets only)
      * @param discreteCount Total number of discrete values
-     * @param valueNames Array of discrete value names (e.g., ["Off", "On"] or ["Sine", "Saw", "Square"])
+     * @param valueNames Array of discrete value names (e.g., ["Off", "On"] or ["Sine", "Saw",
+     * "Square"])
      * @param currentIndex Current index in valueNames array
      *
      * This enables optimistic UI updates: when user changes value, widget can calculate

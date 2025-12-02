@@ -12,7 +12,6 @@ public:
     void update();
     bool isPressed() const;
     ButtonID getId() const;
-
 private:
     Hardware::Button button_;
     std::unique_ptr<IPinReader> pin_reader_;

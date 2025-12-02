@@ -2,14 +2,14 @@
 
 #include <Arduino.h>
 
+#include "core/Type.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/IEventBus.hpp"
 #include "log/Macros.hpp"
 
 TeensyUsbMidiIn* TeensyUsbMidiIn::instance_ = nullptr;
 
-TeensyUsbMidiIn::TeensyUsbMidiIn(IEventBus& eventBus)
-    : event_bus_(eventBus), initialized_(false) {
+TeensyUsbMidiIn::TeensyUsbMidiIn(IEventBus& eventBus) : event_bus_(eventBus), initialized_(false) {
     instance_ = this;
     // NOTE: Do NOT configure MIDI callbacks here - defer to init()
 }
@@ -27,9 +27,7 @@ void TeensyUsbMidiIn::init() {
 }
 
 TeensyUsbMidiIn::~TeensyUsbMidiIn() {
-    if (instance_ == this) {
-        instance_ = nullptr;
-    }
+    if (instance_ == this) { instance_ = nullptr; }
 }
 
 void TeensyUsbMidiIn::processPendingMessages() {
@@ -39,34 +37,24 @@ void TeensyUsbMidiIn::processPendingMessages() {
 }
 
 void TeensyUsbMidiIn::handleSysExStatic(const uint8_t* data, uint16_t length, bool complete) {
-    if (instance_) {
-        instance_->handleSysEx(data, length, complete);
-    }
+    if (instance_) { instance_->handleSysEx(data, length, complete); }
 }
 
 void TeensyUsbMidiIn::handleControlChangeStatic(uint8_t channel, uint8_t control, uint8_t value) {
-    if (instance_) {
-        instance_->handleControlChange(channel, control, value);
-    }
+    if (instance_) { instance_->handleControlChange(channel, control, value); }
 }
 
 void TeensyUsbMidiIn::handleNoteOnStatic(uint8_t channel, uint8_t note, uint8_t velocity) {
-    if (instance_) {
-        instance_->handleNoteOn(channel, note, velocity);
-    }
+    if (instance_) { instance_->handleNoteOn(channel, note, velocity); }
 }
 
 void TeensyUsbMidiIn::handleNoteOffStatic(uint8_t channel, uint8_t note, uint8_t velocity) {
-    if (instance_) {
-        instance_->handleNoteOff(channel, note, velocity);
-    }
+    if (instance_) { instance_->handleNoteOff(channel, note, velocity); }
 }
 
 void TeensyUsbMidiIn::handleSysEx(const uint8_t* data, uint16_t length, bool complete) {
     MIDI_LOGF("[MIDI IN] SysEx len=%u complete=%d\n", length, complete);
-    if (complete) {
-        event_bus_.emit(SysExEvent(data, length));
-    }
+    if (complete) { event_bus_.emit(SysExEvent(data, length)); }
 }
 
 void TeensyUsbMidiIn::handleControlChange(uint8_t channel, uint8_t control, uint8_t value) {

@@ -42,9 +42,12 @@
 
 // Build VERSION string at compile-time based on prerelease status
 #ifdef CORE_IS_PRERELEASE
-    #define CORE_VERSION_STRING TOSTRING(CORE_VERSION_MAJOR) "." TOSTRING(CORE_VERSION_MINOR) "." TOSTRING(CORE_VERSION_PATCH) "-" CORE_VERSION_PRERELEASE
+#define CORE_VERSION_STRING      \
+    TOSTRING(CORE_VERSION_MAJOR) \
+    "." TOSTRING(CORE_VERSION_MINOR) "." TOSTRING(CORE_VERSION_PATCH) "-" CORE_VERSION_PRERELEASE
 #else
-    #define CORE_VERSION_STRING TOSTRING(CORE_VERSION_MAJOR) "." TOSTRING(CORE_VERSION_MINOR) "." TOSTRING(CORE_VERSION_PATCH)
+#define CORE_VERSION_STRING \
+    TOSTRING(CORE_VERSION_MAJOR) "." TOSTRING(CORE_VERSION_MINOR) "." TOSTRING(CORE_VERSION_PATCH)
 #endif
 
 /**
@@ -57,18 +60,18 @@
  * - PRERELEASE: beta.1, rc.1, etc. (optional)
  */
 namespace Core {
-    constexpr uint8_t VERSION_MAJOR = CORE_VERSION_MAJOR;
-    constexpr uint8_t VERSION_MINOR = CORE_VERSION_MINOR;
-    constexpr uint8_t VERSION_PATCH = CORE_VERSION_PATCH;
-    constexpr const char* VERSION = CORE_VERSION_STRING;
+constexpr uint8_t VERSION_MAJOR = CORE_VERSION_MAJOR;
+constexpr uint8_t VERSION_MINOR = CORE_VERSION_MINOR;
+constexpr uint8_t VERSION_PATCH = CORE_VERSION_PATCH;
+constexpr const char* VERSION = CORE_VERSION_STRING;
 
-    #ifdef CORE_IS_PRERELEASE
-    constexpr bool IS_PRERELEASE = true;
-    constexpr const char* VERSION_PRERELEASE = CORE_VERSION_PRERELEASE;
-    #else
-    constexpr bool IS_PRERELEASE = false;
-    #endif
-}
+#ifdef CORE_IS_PRERELEASE
+constexpr bool IS_PRERELEASE = true;
+constexpr const char* VERSION_PRERELEASE = CORE_VERSION_PRERELEASE;
+#else
+constexpr bool IS_PRERELEASE = false;
+#endif
+}  // namespace Core
 
 /**
  * @brief API version information
@@ -80,7 +83,7 @@ namespace Core {
  * Breaking changes to ControllerAPI require MAJOR version bump.
  */
 namespace API {
-    constexpr uint8_t VERSION_MAJOR = API_VERSION_MAJOR;
-    constexpr uint8_t VERSION_MINOR = API_VERSION_MINOR;
-    constexpr uint8_t VERSION_PATCH = API_VERSION_PATCH;
-}
+constexpr uint8_t VERSION_MAJOR = API_VERSION_MAJOR;
+constexpr uint8_t VERSION_MINOR = API_VERSION_MINOR;
+constexpr uint8_t VERSION_PATCH = API_VERSION_PATCH;
+}  // namespace API

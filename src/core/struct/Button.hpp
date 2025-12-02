@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Type.hpp"
+#include "Type.hpp"
 
 namespace Hardware {
 

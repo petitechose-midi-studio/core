@@ -1,7 +1,8 @@
 #pragma once
 
-#include <lvgl.h>
 #include <cstdint>
+
+#include <lvgl.h>
 
 struct FontRegistry {
     // Generic fonts
@@ -23,12 +24,12 @@ struct FontRegistry {
 extern FontRegistry fonts;
 
 // Plugin API
-void register_font(lv_font_t** font_ptr, const uint8_t* buffer, uint32_t len);
-void load_plugin_fonts();
-void free_fonts();
+void registerFont(lv_font_t** fontPtr, const uint8_t* buffer, uint32_t len);
+void loadPluginFonts();
+void freeFonts();
 
 // Incremental loading API
-void fonts_register_core();
-bool fonts_load_essential();
-uint8_t fonts_get_pending_count();
-bool fonts_load_next(const char** outFontName = nullptr);
+void fontsRegisterCore();
+bool fontsLoadEssential();
+uint8_t fontsGetPendingCount();
+bool fontsLoadNext(const char** outFontName = nullptr);

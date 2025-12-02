@@ -1,15 +1,12 @@
 #pragma once
 
-#include "../../Type.hpp"
+#include "Type.hpp"
 
 class IMidiOutput {
 protected:
     ~IMidiOutput() = default;
-
 public:
-    virtual bool supportsEvents() const {
-        return false;
-    }
+    virtual bool supportsEvents() const { return false; }
 
     virtual void sendCc(MidiChannelValue ch, MidiCCValue cc, uint8_t value, uint8_t source) {
         sendControlChange(ch, cc, value);

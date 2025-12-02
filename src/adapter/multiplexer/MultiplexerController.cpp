@@ -2,18 +2,15 @@
 
 #include <Arduino.h>
 
+#include "config/System.hpp"
 #include "log/Macros.hpp"
 
 namespace {
 constexpr uint16_t DELAY_PIN_SETTLE_US = 100;
 
 // Select pins for CD74HC4067
-constexpr uint8_t MUX_PINS[4] = {
-    System::Hardware::MUX_S0_PIN,
-    System::Hardware::MUX_S1_PIN,
-    System::Hardware::MUX_S2_PIN,
-    System::Hardware::MUX_S3_PIN
-};
+constexpr uint8_t MUX_PINS[4] = {System::Hardware::MUX_S0_PIN, System::Hardware::MUX_S1_PIN,
+                                 System::Hardware::MUX_S2_PIN, System::Hardware::MUX_S3_PIN};
 
 inline void setMuxChannel(uint8_t channel) {
     // Set 4 select pins using bit operations (channel 0-15 = 4 bits)
@@ -32,9 +29,7 @@ void Multiplexer::init() {
     LOGLN("us");
 
     // Configure select pins as outputs
-    for (uint8_t pin : MUX_PINS) {
-        pinMode(pin, OUTPUT);
-    }
+    for (uint8_t pin : MUX_PINS) { pinMode(pin, OUTPUT); }
     pinMode(System::Hardware::MUX_SIGNAL_PIN, INPUT_PULLUP);
     delayMicroseconds(DELAY_PIN_SETTLE_US);
 
@@ -44,9 +39,7 @@ void Multiplexer::init() {
 }
 
 void Multiplexer::selectChannel(uint8_t channel) {
-    if (!initialized_ || channel >= System::Hardware::MUX_MAX_CHANNELS) {
-        return;
-    }
+    if (!initialized_ || channel >= System::Hardware::MUX_MAX_CHANNELS) { return; }
 
     if (channel != current_channel_) {
         setMuxChannel(channel);

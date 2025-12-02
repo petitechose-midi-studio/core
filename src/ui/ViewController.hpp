@@ -17,7 +17,6 @@ class ViewController {
 public:
     ViewController(ViewManager& viewManager, IEventBus& eventBus);
     ~ViewController() = default;
-
 private:
     ViewManager& view_manager_;
     IEventBus& event_bus_;

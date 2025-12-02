@@ -1,12 +1,13 @@
 #pragma once
 
-#include <lvgl.h>
+#include "IParameterWidget.hpp"
+#include "Label.hpp"
+
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "IParameterWidget.hpp"
-#include "Label.hpp"
+#include <lvgl.h>
 
 /**
  * @brief Button/Toggle widget for binary on/off parameters
@@ -31,16 +32,14 @@ public:
     void setName(const std::string& name) override;
     void setValue(float value) override;
     void setValueWithDisplay(float value, const char* displayValue) override;
-    void setDiscreteMetadata(int16_t discreteCount,
-                            const std::vector<std::string>& valueNames,
-                            uint8_t currentIndex) override;
+    void setDiscreteMetadata(int16_t discreteCount, const std::vector<std::string>& valueNames,
+                             uint8_t currentIndex) override;
     void setVisible(bool visible) override;
     lv_obj_t* getContainer() const override { return container_; }
-
 private:
-    static constexpr uint16_t CONTAINER_SIZE = 62;     // Container size (matches other widgets)
-    static constexpr uint16_t BUTTON_SIZE = 40;        // Inner button size (smaller, centered)
-    static constexpr lv_coord_t BUTTON_Y_OFFSET = 4;   // Same as other widgets for alignment
+    static constexpr uint16_t CONTAINER_SIZE = 62;    // Container size (matches other widgets)
+    static constexpr uint16_t BUTTON_SIZE = 40;       // Inner button size (smaller, centered)
+    static constexpr lv_coord_t BUTTON_Y_OFFSET = 4;  // Same as other widgets for alignment
 
     void createUI();
     void createButtonBox();

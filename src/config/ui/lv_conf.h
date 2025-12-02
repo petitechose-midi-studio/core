@@ -93,7 +93,7 @@
 
 #define LV_DRAW_BUF_STRIDE_ALIGN 1
 #define LV_DRAW_BUF_ALIGN 4
-#define LV_DRAW_TRANSFORM_USE_MATRIX 1  /* Activer matrices hardware (plus rapide) */
+#define LV_DRAW_TRANSFORM_USE_MATRIX 1 /* Activer matrices hardware (plus rapide) */
 
 #define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (128 * 1024)
 #define LV_DRAW_LAYER_MAX_MEMORY (512 * 1024)
@@ -123,8 +123,8 @@
 
 #endif
 
-#define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE  /* Pas d'ASM (Cortex-M7 n'a ni NEON ni Helium) */
-#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 1  /* Needed for opacity gradients in Label fade effect */
+#define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE /* Pas d'ASM (Cortex-M7 n'a ni NEON ni Helium) */
+#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 1 /* Needed for opacity gradients in Label fade effect */
 #endif
 
 /*=======================
@@ -152,7 +152,7 @@
 
 #define LV_GRADIENT_MAX_STOPS 2
 #define LV_COLOR_MIX_ROUND_OFS 0
-#define LV_OBJ_STYLE_CACHE 1  /* Déjà activé - garde le cache de styles */
+#define LV_OBJ_STYLE_CACHE 1 /* Déjà activé - garde le cache de styles */
 
 #define LV_USE_OBJ_ID 0
 #define LV_USE_OBJ_NAME 0

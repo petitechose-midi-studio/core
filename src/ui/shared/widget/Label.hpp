@@ -1,7 +1,9 @@
 #pragma once
 
-#include <lvgl.h>
 #include <string>
+
+#include <lvgl.h>
+
 #include "interface/IWidget.hpp"
 
 /**
@@ -40,7 +42,6 @@ public:
     void setAutoScroll(bool enabled) { auto_scroll_enabled_ = enabled; }
     void setFlexGrow(bool enabled);
     void setAlignment(lv_text_align_t align) { alignment_ = align; }
-
 private:
     void createWidgets(lv_obj_t *parent);
     void destroyWidgets();

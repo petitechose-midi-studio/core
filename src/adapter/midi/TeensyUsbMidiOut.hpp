@@ -20,7 +20,6 @@ public:
     void sendSysEx(const uint8_t* data, uint16_t length) override;
 
     void flush();
-
 private:
     static constexpr size_t MAX_ACTIVE_NOTES = System::Midi::MAX_ACTIVE_NOTES;
 

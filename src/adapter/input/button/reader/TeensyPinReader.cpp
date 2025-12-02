@@ -2,8 +2,9 @@
 
 #include <Arduino.h>
 
-TeensyPinReader::TeensyPinReader(uint8_t pin, PinMode mode)
-    : pin_(pin), mode_(mode) {}
+#include "config/System.hpp"
+
+TeensyPinReader::TeensyPinReader(uint8_t pin, PinMode mode) : pin_(pin), mode_(mode) {}
 
 void TeensyPinReader::initialize() {
     if (initialized_) return;
@@ -21,9 +22,7 @@ void TeensyPinReader::initialize() {
 }
 
 bool TeensyPinReader::read() {
-    if (!initialized_) {
-        initialize();
-    }
+    if (!initialized_) { initialize(); }
     return debounced_state_;
 }
 

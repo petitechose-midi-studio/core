@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "config/MidiMapping.hpp"
-#include "core/struct/MidiCCMapping.hpp"
+#include "struct/MidiCCMapping.hpp"
 
 /**
  * @brief Factory to create MIDI mappings from config data
@@ -20,9 +20,7 @@ public:
         std::vector<MidiCCMapping> mappings;
         mappings.reserve(std::size(Config::MIDI_MAPPINGS));
 
-        for (const auto& mapping : Config::MIDI_MAPPINGS) {
-            mappings.push_back(mapping);
-        }
+        for (const auto& mapping : Config::MIDI_MAPPINGS) { mappings.push_back(mapping); }
 
         return mappings;
     }

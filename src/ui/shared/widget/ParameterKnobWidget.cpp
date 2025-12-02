@@ -1,20 +1,18 @@
 #include "ParameterKnobWidget.hpp"
 
-#include <arm_math.h>
-#include <algorithm>
 #include <cmath>
+
+#include <algorithm>
+
+#include <arm_math.h>
 
 #include "font/FontLoader.hpp"
 #include "theme/BaseTheme.hpp"
 
 ParameterKnobWidget::ParameterKnobWidget(lv_obj_t* parent, uint16_t width, uint16_t height,
                                          uint8_t color_index, bool centered)
-    : parent_(parent ? parent : lv_screen_active()),
-      value_(centered ? 0.5f : 0.0f),
-      origin_(centered ? 0.5f : 0.0f),
-      width_(width),
-      height_(height),
-      name_("PARAM") {
+    : parent_(parent ? parent : lv_screen_active()), value_(centered ? 0.5f : 0.0f),
+      origin_(centered ? 0.5f : 0.0f), width_(width), height_(height), name_("PARAM") {
     createUI();
     updateValue();  // Initial render with constructor values
 }
@@ -115,7 +113,8 @@ void ParameterKnobWidget::createArc() {
 void ParameterKnobWidget::createValueIndicator() {
     value_indicator_ = lv_line_create(container_);
     lv_obj_set_style_line_width(value_indicator_, INDICATOR_THICKNESS, LV_STATE_DEFAULT);
-    lv_obj_set_style_line_color(value_indicator_, lv_color_hex(BaseTheme::Color::KNOB_VALUE), LV_STATE_DEFAULT);
+    lv_obj_set_style_line_color(value_indicator_, lv_color_hex(BaseTheme::Color::KNOB_VALUE),
+                                LV_STATE_DEFAULT);
     lv_obj_set_style_line_rounded(value_indicator_, true, LV_STATE_DEFAULT);
 
     // Line from center (position will be set by updateValue() in constructor)
@@ -150,7 +149,8 @@ void ParameterKnobWidget::createCenterCircles() {
     lv_obj_align(center_circle_, LV_ALIGN_TOP_MID, 0, center_y);
     lv_obj_set_style_radius(center_circle_, LV_RADIUS_CIRCLE, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(center_circle_, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(center_circle_, lv_color_hex(BaseTheme::Color::KNOB_VALUE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(center_circle_, lv_color_hex(BaseTheme::Color::KNOB_VALUE),
+                              LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(center_circle_, LV_OPA_COVER, LV_STATE_DEFAULT);
 
     // Inner circle (inactive background, flashes on value change)
@@ -159,7 +159,8 @@ void ParameterKnobWidget::createCenterCircles() {
     lv_obj_align(inner_circle_, LV_ALIGN_TOP_MID, 0, inner_y);
     lv_obj_set_style_radius(inner_circle_, LV_RADIUS_CIRCLE, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(inner_circle_, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(inner_circle_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(inner_circle_, lv_color_hex(BaseTheme::Color::INACTIVE),
+                              LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(inner_circle_, LV_OPA_COVER, LV_STATE_DEFAULT);
 }
 
@@ -213,7 +214,8 @@ void ParameterKnobWidget::triggerValueChangeFlash() {
     }
 
     // Flash inner circle
-    lv_obj_set_style_bg_color(inner_circle_, lv_color_hex(BaseTheme::Color::ACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(inner_circle_, lv_color_hex(BaseTheme::Color::ACTIVE),
+                              LV_STATE_DEFAULT);
     flash_timer_ = lv_timer_create(flashTimerCallback, FLASH_DURATION_MS, this);
     lv_timer_set_repeat_count(flash_timer_, 1);
 }
@@ -222,7 +224,8 @@ void ParameterKnobWidget::flashTimerCallback(lv_timer_t* timer) {
     auto* widget = static_cast<ParameterKnobWidget*>(lv_timer_get_user_data(timer));
     if (!widget || !widget->inner_circle_) return;
 
-    lv_obj_set_style_bg_color(widget->inner_circle_, lv_color_hex(BaseTheme::Color::INACTIVE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(widget->inner_circle_, lv_color_hex(BaseTheme::Color::INACTIVE),
+                              LV_STATE_DEFAULT);
     widget->flash_timer_ = nullptr;
 }
 

@@ -29,9 +29,10 @@
 
 #pragma once
 
+#include "InputID.hpp"
+
 #include <cstddef>
 
-#include "InputID.hpp"
 #include "core/struct/MidiCCMapping.hpp"
 
 namespace Config {

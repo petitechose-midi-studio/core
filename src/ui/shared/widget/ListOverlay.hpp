@@ -1,9 +1,11 @@
 #pragma once
 
-#include <lvgl.h>
 #include <string>
 #include <vector>
-#include "../interface/IComponent.hpp"
+
+#include <lvgl.h>
+
+#include "interface/IComponent.hpp"
 
 /**
  * @brief Pure UI widget for modal list overlay with selection
@@ -62,18 +64,18 @@ public:
     /**
      * @brief Show overlay (creates UI if not exists)
      */
-    void show();
+    void show() override;
 
     /**
      * @brief Hide overlay (keeps objects, just hidden)
      */
-    void hide();
+    void hide() override;
 
     /**
      * @brief Check if overlay is currently visible
      * @return true if visible, false if hidden
      */
-    bool isVisible() const;
+    bool isVisible() const override;
 
     /**
      * @brief Get currently selected index
@@ -121,7 +123,6 @@ public:
      * @return Container object (flex column with title, list, and footer slot)
      */
     lv_obj_t* getContainer() const { return container_; }
-
 private:
     void createOverlay();
     void createTitleLabel();

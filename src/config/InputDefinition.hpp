@@ -31,9 +31,10 @@
 
 #pragma once
 
+#include "InputID.hpp"
+
 #include <cstddef>
 
-#include "InputID.hpp"
 #include "core/Type.hpp"
 #include "core/struct/Button.hpp"
 #include "core/struct/Encoder.hpp"

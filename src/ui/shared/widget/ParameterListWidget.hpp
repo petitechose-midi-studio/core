@@ -1,12 +1,13 @@
 #pragma once
 
-#include <lvgl.h>
+#include "IParameterWidget.hpp"
+#include "Label.hpp"
+
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "IParameterWidget.hpp"
-#include "Label.hpp"
+#include <lvgl.h>
 
 /**
  * @brief List/Enum widget for discrete selection parameters
@@ -32,12 +33,10 @@ public:
     void setName(const std::string& name) override;
     void setValue(float value) override;
     void setValueWithDisplay(float value, const char* displayValue) override;
-    void setDiscreteMetadata(int16_t discreteCount,
-                            const std::vector<std::string>& valueNames,
-                            uint8_t currentIndex) override;
+    void setDiscreteMetadata(int16_t discreteCount, const std::vector<std::string>& valueNames,
+                             uint8_t currentIndex) override;
     void setVisible(bool visible) override;
     lv_obj_t* getContainer() const override { return container_; }
-
 private:
     static constexpr uint16_t VALUE_BOX_SIZE = 62;
     static constexpr lv_coord_t VALUE_BOX_Y_OFFSET = 4;

@@ -1,6 +1,5 @@
 #include "ui/ViewController.hpp"
 
-#include "core/event/Events.hpp"
 #include "core/event/UnifiedEventTypes.hpp"
 #include "manager/ViewManager.hpp"
 
@@ -9,9 +8,8 @@ ViewController::ViewController(ViewManager& viewManager, IEventBus& eventBus)
     // ViewController is kept for future Core view navigation
     // Currently, Core only has splash screen, plugins manage their own views
 
-    boot_complete_sub_ = event_bus_.on(EventCategory::SYSTEM, SystemEvent::BOOT_COMPLETE, [this](const Event& e) {
-        onSystemBootComplete(e);
-    });
+    boot_complete_sub_ = event_bus_.on(EventCategory::SYSTEM, SystemEvent::BOOT_COMPLETE,
+                                       [this](const Event& e) { onSystemBootComplete(e); });
 }
 
 void ViewController::onSystemBootComplete(const Event& event) {

@@ -12,7 +12,8 @@ TitleItem::TitleItem(lv_obj_t *parent) {
 
     // Flex row with gap
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(container_, 6, LV_STATE_DEFAULT);  // Gap between elements
 
     // Create children inside container
@@ -39,9 +40,7 @@ TitleItem::~TitleItem() {
     }
 }
 
-void TitleItem::render(const TitleItemProps &props) {
-    applyProps(props);
-}
+void TitleItem::render(const TitleItemProps &props) { applyProps(props); }
 
 void TitleItem::applyProps(const TitleItemProps &props) {
     if (!container_) return;
@@ -59,8 +58,7 @@ void TitleItem::applyProps(const TitleItemProps &props) {
             lv_label_set_text(icon_, props.icon);
             lv_obj_set_style_text_color(icon_, lv_color_hex(props.iconColor), LV_STATE_DEFAULT);
             lv_obj_set_style_text_opa(icon_, props.iconOpacity, LV_STATE_DEFAULT);
-            if (props.iconFont)
-                lv_obj_set_style_text_font(icon_, props.iconFont, LV_STATE_DEFAULT);
+            if (props.iconFont) lv_obj_set_style_text_font(icon_, props.iconFont, LV_STATE_DEFAULT);
             lv_obj_clear_flag(icon_, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(icon_, LV_OBJ_FLAG_HIDDEN);
@@ -72,8 +70,7 @@ void TitleItem::applyProps(const TitleItemProps &props) {
         lv_label_set_text(label_, props.text ? props.text : "");
         lv_obj_set_style_text_color(label_, lv_color_hex(props.textColor), LV_STATE_DEFAULT);
         lv_obj_set_style_text_opa(label_, props.textOpacity, LV_STATE_DEFAULT);
-        if (props.textFont)
-            lv_obj_set_style_text_font(label_, props.textFont, LV_STATE_DEFAULT);
+        if (props.textFont) lv_obj_set_style_text_font(label_, props.textFont, LV_STATE_DEFAULT);
         lv_obj_clear_flag(label_, LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -81,7 +78,8 @@ void TitleItem::applyProps(const TitleItemProps &props) {
     if (indicator_) {
         if (props.showIndicator && props.indicator && props.indicator[0] != '\0') {
             lv_label_set_text(indicator_, props.indicator);
-            lv_obj_set_style_text_color(indicator_, lv_color_hex(props.indicatorColor), LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(indicator_, lv_color_hex(props.indicatorColor),
+                                        LV_STATE_DEFAULT);
             if (props.iconFont)
                 lv_obj_set_style_text_font(indicator_, props.iconFont, LV_STATE_DEFAULT);
             lv_obj_clear_flag(indicator_, LV_OBJ_FLAG_HIDDEN);

@@ -8,18 +8,9 @@ using MidiChannelValue = uint8_t;
 using MidiCCValue = uint8_t;
 using MidiNoteValue = uint8_t;
 
-enum class ButtonBindingType : uint8_t {
-    PRESS,
-    RELEASE,
-    LONG_PRESS,
-    DOUBLE_TAP,
-    COMBO
-};
+enum class ButtonBindingType : uint8_t { PRESS, RELEASE, LONG_PRESS, DOUBLE_TAP, COMBO };
 
-enum class EncoderBindingType : uint8_t {
-    TURN,
-    TURN_WHILE_PRESSED
-};
+enum class EncoderBindingType : uint8_t { TURN, TURN_WHILE_PRESSED };
 
 enum class PinMode { PULLUP, PULLDOWN, RAW };
 
@@ -38,18 +29,12 @@ struct GpioPin {
     constexpr GpioPin(Source src, uint8_t pinNum, PinMode pinMode = PinMode::PULLUP)
         : source(src), pin(pinNum), mode(pinMode) {}
 
-    constexpr bool isMultiplexed() const {
-        return source == Source::MUX;
-    }
+    constexpr bool isMultiplexed() const { return source == Source::MUX; }
 
-    constexpr uint8_t getMuxChannel() const {
-        return isMultiplexed() ? pin : 0xFF;
-    }
+    constexpr uint8_t getMuxChannel() const { return isMultiplexed() ? pin : 0xFF; }
 
     constexpr bool isValid() const {
-        if (source == Source::MUX) {
-            return pin <= 15;
-        }
+        if (source == Source::MUX) { return pin <= 15; }
         return pin <= 99;
     }
 };

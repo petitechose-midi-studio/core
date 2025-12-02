@@ -29,7 +29,6 @@ public:
     }
 
     void emitBootComplete();
-
 private:
     void showCoreSplash();
     void hideCoreSplash();

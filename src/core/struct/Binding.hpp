@@ -1,10 +1,11 @@
 #pragma once
 
+#include "Type.hpp"
+
 #include <cstdint>
+
 #include <functional>
 #include <optional>
-
-#include "core/Type.hpp"
 
 typedef struct _lv_obj_t lv_obj_t;
 
@@ -29,8 +30,8 @@ struct ButtonBinding {
     uint32_t longPressMs = 0;                 // For LONG_PRESS
     std::function<void()> action;
     bool enabled = true;
-    bool latch = false;                       // If true, enable latch/momentary behavior
-    lv_obj_t* scope = nullptr;                // nullptr = global, otherwise scoped to LVGL object
+    bool latch = false;         // If true, enable latch/momentary behavior
+    lv_obj_t* scope = nullptr;  // nullptr = global, otherwise scoped to LVGL object
 };
 
 /**
@@ -49,5 +50,5 @@ struct EncoderBinding {
     std::optional<ButtonID> requiredButton;  // For TURN_WHILE_PRESSED
     std::function<void(float)> action;       // Receives normalized value (0.0-1.0)
     bool enabled = true;
-    lv_obj_t* scope = nullptr;                // nullptr = global, otherwise scoped to LVGL object
+    lv_obj_t* scope = nullptr;  // nullptr = global, otherwise scoped to LVGL object
 };

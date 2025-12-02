@@ -23,4 +23,4 @@ struct Status {
     bool isComplete() const { return currentPhase == Phase::READY; }
 };
 
-} // namespace Boot
+}  // namespace Boot

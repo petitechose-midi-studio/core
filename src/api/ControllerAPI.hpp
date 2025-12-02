@@ -1,10 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
 
 #include "config/InputID.hpp"
 #include "core/struct/Encoder.hpp"
@@ -354,7 +350,6 @@ public:
     void logf(const char* format, Args... args) {
         LOGF(format, args...);
     }
-
 private:
     InputBinding& binding_service_;
     IEventBus& event_bus_;

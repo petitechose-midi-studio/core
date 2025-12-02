@@ -2,8 +2,6 @@
 
 #include <cstdint>
 
-#include "config/System.hpp"
-
 /**
  * Multiplexer controller for CD74HC4067 (16-channel analog mux).
  *
@@ -27,7 +25,6 @@ public:
     bool isInitialized() const { return initialized_; }
 
     bool readDigitalFromChannel(uint8_t channel);
-
 private:
     void selectChannel(uint8_t channel);
     bool readDigital();

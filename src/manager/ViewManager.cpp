@@ -3,10 +3,10 @@
 #include <lvgl.h>
 
 #include "adapter/display/ui/LVGLBridge.hpp"
-#include "log/Macros.hpp"
-#include "interface/IView.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/IEventBus.hpp"
+#include "interface/IView.hpp"
+#include "log/Macros.hpp"
 #include "theme/BaseTheme.hpp"
 
 ViewManager::ViewManager(LVGLBridge& displayBridge, IEventBus& eventBus)
@@ -18,11 +18,13 @@ void ViewManager::initScreens() {
     LOGLN("[ViewManager] Creating screens...");
 
     core_screen_ = lv_obj_create(nullptr);
-    lv_obj_set_style_bg_color(core_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(core_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND),
+                              LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(core_screen_, 0, LV_STATE_DEFAULT);
 
     plugin_screen_ = lv_obj_create(nullptr);
-    lv_obj_set_style_bg_color(plugin_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(plugin_screen_, lv_color_hex(BaseTheme::Color::BACKGROUND),
+                              LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(plugin_screen_, 0, LV_STATE_DEFAULT);
 
     lv_scr_load(core_screen_);
@@ -67,9 +69,7 @@ void ViewManager::hideCoreSplash() {
     if (splash_view_) splash_view_->onDeactivate();
 }
 
-lv_obj_t* ViewManager::getPluginContainer() {
-    return plugin_screen_;
-}
+lv_obj_t* ViewManager::getPluginContainer() { return plugin_screen_; }
 
 void ViewManager::showPluginView(IView& view) {
     hideCoreSplash();

@@ -15,9 +15,7 @@ ListOverlay::ListOverlay(lv_obj_t* parent) : parent_(parent) {
     visible_ = false;
 }
 
-ListOverlay::~ListOverlay() {
-    cleanup();
-}
+ListOverlay::~ListOverlay() { cleanup(); }
 
 void ListOverlay::setTitle(const std::string& title) {
     title_ = title;
@@ -34,22 +32,18 @@ void ListOverlay::setTitle(const std::string& title) {
 
 void ListOverlay::setItems(const std::vector<std::string>& items) {
     // Skip if items are the same (avoid unnecessary list recreation)
-    if (items_ == items) {
-        return;
-    }
+    if (items_ == items) { return; }
 
     items_ = items;
 
     if (selected_index_ >= static_cast<int>(items_.size())) {
         selected_index_ = items_.empty() ? 0 : items_.size() - 1;
     }
-    if (selected_index_ < 0) {
-        selected_index_ = 0;
-    }
+    if (selected_index_ < 0) { selected_index_ = 0; }
 
     if (ui_created_ && list_) {
-        destroyList();       // Clear children only
-        populateList();      // Repopulate with new items
+        destroyList();   // Clear children only
+        populateList();  // Repopulate with new items
         updateHighlight();
         scrollToSelected();
     }
@@ -97,17 +91,11 @@ void ListOverlay::hide() {
     }
 }
 
-bool ListOverlay::isVisible() const {
-    return visible_ && ui_created_;
-}
+bool ListOverlay::isVisible() const { return visible_ && ui_created_; }
 
-int ListOverlay::getSelectedIndex() const {
-    return items_.empty() ? -1 : selected_index_;
-}
+int ListOverlay::getSelectedIndex() const { return items_.empty() ? -1 : selected_index_; }
 
-int ListOverlay::getItemCount() const {
-    return items_.size();
-}
+int ListOverlay::getItemCount() const { return items_.size(); }
 
 lv_obj_t* ListOverlay::getButton(size_t index) const {
     return (index < buttons_.size()) ? buttons_[index] : nullptr;
@@ -135,7 +123,8 @@ void ListOverlay::createOverlay() {
     lv_obj_set_size(overlay_, LV_PCT(100), LV_PCT(100));
     lv_obj_align(overlay_, LV_ALIGN_CENTER, 0, 0);  // Center in parent
     lv_obj_set_style_bg_color(overlay_, lv_color_hex(Color::BACKGROUND), LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(overlay_, LV_OPA_90, LV_STATE_DEFAULT);  // 90% opaque for better text contrast
+    lv_obj_set_style_bg_opa(overlay_, LV_OPA_90,
+                            LV_STATE_DEFAULT);  // 90% opaque for better text contrast
     lv_obj_set_style_border_width(overlay_, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(overlay_, 0, LV_STATE_DEFAULT);
     lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_SCROLLABLE);  // No scrollbar on overlay
@@ -144,13 +133,12 @@ void ListOverlay::createOverlay() {
     lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
     lv_obj_align(container_, LV_ALIGN_CENTER, 0, 0);  // Explicit center alignment
     lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(container_, 0, LV_STATE_DEFAULT);  // No padding - children manage their own spacing
+    lv_obj_set_style_pad_all(container_, 0,
+                             LV_STATE_DEFAULT);  // No padding - children manage their own spacing
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);  // No scrollbar on container
 
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(container_,
-                          LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_CENTER,
+    lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(container_, Layout::ROW_GAP_MD, LV_STATE_DEFAULT);
 
@@ -200,13 +188,10 @@ void ListOverlay::createList() {
         [](lv_event_t* e) {
             if (lv_event_get_code(e) == LV_EVENT_SCROLL_BEGIN) {
                 lv_anim_t* anim = lv_event_get_scroll_anim(e);
-                if (anim) {
-                    anim->duration = Animation::SCROLL_ANIM_MS;
-                }
+                if (anim) { anim->duration = Animation::SCROLL_ANIM_MS; }
             }
         },
-        LV_EVENT_SCROLL_BEGIN,
-        nullptr);
+        LV_EVENT_SCROLL_BEGIN, nullptr);
 }
 
 void ListOverlay::populateList() {
@@ -247,7 +232,8 @@ void ListOverlay::populateList() {
         lv_obj_set_style_text_color(label, lv_color_hex(Color::TEXT_PRIMARY), LV_STATE_PRESSED);
         lv_obj_set_style_text_opa(label, LV_OPA_COVER, LV_STATE_PRESSED);
 
-        lv_obj_set_style_text_color(label, lv_color_hex(Color::INACTIVE_LIGHTER), LV_STATE_DISABLED);
+        lv_obj_set_style_text_color(label, lv_color_hex(Color::INACTIVE_LIGHTER),
+                                    LV_STATE_DISABLED);
         lv_obj_set_style_text_opa(label, LV_OPA_50, LV_STATE_DISABLED);
 
         if (fonts.list_item_label) {

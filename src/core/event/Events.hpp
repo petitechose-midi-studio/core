@@ -1,17 +1,18 @@
 #pragma once
 
-#include <cstdint>
-#include <string>
-
 #include "Event.hpp"
 #include "UnifiedEventTypes.hpp"
+
+#include <cstdint>
+
+#include <string>
+
 #include "config/InputID.hpp"
 
 class EncoderChangedEvent : public Event {
 public:
     EncoderChangedEvent(EncoderID encoderId, float normalizedValue)
-        : Event(EventCategory::USER_INPUT, InputEvent::ENCODER_CHANGED),
-          encoderId(encoderId),
+        : Event(EventCategory::USER_INPUT, InputEvent::ENCODER_CHANGED), encoderId(encoderId),
           normalizedValue(normalizedValue) {}
 
     EncoderID encoderId;
@@ -21,8 +22,7 @@ public:
 class ButtonPressEvent : public Event {
 public:
     ButtonPressEvent(ButtonID buttonId, bool pressed)
-        : Event(EventCategory::USER_INPUT, InputEvent::BUTTON_PRESS),
-          buttonId(buttonId),
+        : Event(EventCategory::USER_INPUT, InputEvent::BUTTON_PRESS), buttonId(buttonId),
           pressed(pressed) {}
 
     ButtonID buttonId;
@@ -40,11 +40,8 @@ public:
 class MidiCCEvent : public Event {
 public:
     MidiCCEvent(uint8_t channel, uint8_t controller, uint8_t value, uint8_t source = 0)
-        : Event(EventCategory::MIDI, MidiEvent::CC),
-          channel(channel),
-          controller(controller),
-          value(value),
-          source(source) {}
+        : Event(EventCategory::MIDI, MidiEvent::CC), channel(channel), controller(controller),
+          value(value), source(source) {}
 
     uint8_t channel;
     uint8_t controller;
@@ -55,11 +52,8 @@ public:
 class MidiNoteOnEvent : public Event {
 public:
     MidiNoteOnEvent(uint8_t channel, uint8_t note, uint8_t velocity, uint8_t source = 0)
-        : Event(EventCategory::MIDI, MidiEvent::NOTE_ON),
-          channel(channel),
-          note(note),
-          velocity(velocity),
-          source(source) {}
+        : Event(EventCategory::MIDI, MidiEvent::NOTE_ON), channel(channel), note(note),
+          velocity(velocity), source(source) {}
 
     uint8_t channel;
     uint8_t note;
@@ -70,11 +64,8 @@ public:
 class MidiNoteOffEvent : public Event {
 public:
     MidiNoteOffEvent(uint8_t channel, uint8_t note, uint8_t velocity, uint8_t source = 0)
-        : Event(EventCategory::MIDI, MidiEvent::NOTE_OFF),
-          channel(channel),
-          note(note),
-          velocity(velocity),
-          source(source) {}
+        : Event(EventCategory::MIDI, MidiEvent::NOTE_OFF), channel(channel), note(note),
+          velocity(velocity), source(source) {}
 
     uint8_t channel;
     uint8_t note;
@@ -86,12 +77,8 @@ class MidiMappingEvent : public Event {
 public:
     MidiMappingEvent(uint8_t inputId, uint8_t midiType, uint8_t midiChannel, uint8_t midiNumber,
                      uint8_t midiValue)
-        : Event(EventCategory::MIDI, MidiEvent::MAPPING),
-          inputId(inputId),
-          midiType(midiType),
-          midiChannel(midiChannel),
-          midiNumber(midiNumber),
-          midiValue(midiValue) {}
+        : Event(EventCategory::MIDI, MidiEvent::MAPPING), inputId(inputId), midiType(midiType),
+          midiChannel(midiChannel), midiNumber(midiNumber), midiValue(midiValue) {}
 
     uint8_t inputId;
     uint8_t midiType;
@@ -103,9 +90,7 @@ public:
 class SysExEvent : public Event {
 public:
     SysExEvent(const uint8_t* data, uint16_t length)
-        : Event(EventCategory::MIDI, MidiEvent::SYSEX),
-          data(data),
-          length(length) {}
+        : Event(EventCategory::MIDI, MidiEvent::SYSEX), data(data), length(length) {}
 
     const uint8_t* data;  // Pointer to SysEx data (no copy)
     uint16_t length;      // Length of data
@@ -124,9 +109,8 @@ public:
 class SystemErrorEvent : public Event {
 public:
     SystemErrorEvent(uint16_t errorCode, const std::string& message = "")
-        : Event(EventCategory::SYSTEM, SystemEvent::ERROR),
-          errorCode(errorCode),
-          message(message) {}
+        : Event(EventCategory::SYSTEM, SystemEvent::ERROR), errorCode(errorCode), message(message) {
+    }
 
     uint16_t errorCode;
     std::string message;
@@ -140,8 +124,7 @@ public:
 class IntegrationRegisteredEvent : public Event {
 public:
     IntegrationRegisteredEvent(const std::string& name, uint8_t integrationId)
-        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_REGISTERED),
-          name(name),
+        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_REGISTERED), name(name),
           integrationId(integrationId) {}
 
     const std::string name;
@@ -151,8 +134,7 @@ public:
 class IntegrationActivatedEvent : public Event {
 public:
     IntegrationActivatedEvent(const std::string& name, uint8_t integrationId)
-        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_ACTIVATED),
-          name(name),
+        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_ACTIVATED), name(name),
           integrationId(integrationId) {}
 
     const std::string name;
@@ -162,8 +144,7 @@ public:
 class IntegrationDeactivatedEvent : public Event {
 public:
     IntegrationDeactivatedEvent(const std::string& name, uint8_t integrationId)
-        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_DEACTIVATED),
-          name(name),
+        : Event(EventCategory::SYSTEM, SystemEvent::PLUGIN_DEACTIVATED), name(name),
           integrationId(integrationId) {}
 
     const std::string name;

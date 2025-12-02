@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lvgl.h"
+#include <lvgl.h>
 
 /**
  * @brief Base interface for all UI elements backed by LVGL objects

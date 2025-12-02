@@ -1,17 +1,17 @@
 #include "ButtonController.hpp"
 
+#include "ButtonFactory.hpp"
+
 #include <Arduino.h>
 
-#include "../../multiplexer/MultiplexerController.hpp"
-#include "ButtonFactory.hpp"
+#include "adapter/multiplexer/MultiplexerController.hpp"
 #include "config/System.hpp"
 #include "core/event/Events.hpp"
 #include "core/event/IEventBus.hpp"
 #include "log/Macros.hpp"
 
-ButtonController::ButtonController(
-    const std::vector<Hardware::Button>& buttonSetups,
-    Multiplexer& mux, IEventBus& eventBus)
+ButtonController::ButtonController(const std::vector<Hardware::Button>& buttonSetups,
+                                   Multiplexer& mux, IEventBus& eventBus)
     : event_bus_(eventBus) {
     owned_buttons_.reserve(buttonSetups.size());
     last_states_.reserve(buttonSetups.size());
@@ -42,9 +42,7 @@ void ButtonController::updateAll() {
         btn->update();
 
         bool currentState = btn->isPressed();
-        if (currentState == last_states_[i]) {
-            continue;
-        }
+        if (currentState == last_states_[i]) { continue; }
 
         uint32_t elapsed = now - last_change_time_[i];
         if (elapsed < System::Input::BUTTON_DEBOUNCE_MS) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvgl.h>
+
 #include "interface/IWidget.hpp"
 
 /**
@@ -31,7 +32,6 @@ public:
 
     lv_obj_t* getLed() const { return led_; }
     lv_obj_t* getElement() const override { return led_; }
-
 private:
     lv_obj_t* led_;
     State current_state_;

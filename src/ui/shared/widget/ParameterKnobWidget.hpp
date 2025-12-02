@@ -1,12 +1,14 @@
 #pragma once
 
-#include <lvgl.h>
-#include <memory>
-#include <string>
-#include <cmath>
-
 #include "IParameterWidget.hpp"
 #include "Label.hpp"
+
+#include <cmath>
+
+#include <memory>
+#include <string>
+
+#include <lvgl.h>
 
 /**
  * @brief Knob widget for continuous parameters (normal and centered)
@@ -45,7 +47,6 @@ public:
      * The arc track will extend from origin to value (can go both directions).
      */
     void setOrigin(float origin);
-
 private:
     // Arc geometry
     static constexpr uint16_t ARC_SIZE = 62;
@@ -55,7 +56,8 @@ private:
     static constexpr lv_coord_t ARC_Y_OFFSET = INDICATOR_THICKNESS / 2;
     static constexpr int16_t START_ANGLE = 135;
     static constexpr int16_t END_ANGLE = 45;
-    static constexpr float ARC_SWEEP_DEGREES = 270.0f;  // Total arc sweep (END - START in circular space)
+    static constexpr float ARC_SWEEP_DEGREES =
+        270.0f;  // Total arc sweep (END - START in circular space)
 
     // Center circles
     static constexpr uint8_t CENTER_CIRCLE_SIZE = 14;
@@ -97,9 +99,7 @@ private:
         return angle * static_cast<float>(M_PI / 180.0);
     }
 
-    constexpr lv_coord_t getArcBottom() const {
-        return ARC_Y_OFFSET + ARC_SIZE;
-    }
+    constexpr lv_coord_t getArcBottom() const { return ARC_Y_OFFSET + ARC_SIZE; }
 
     constexpr lv_coord_t getCenterY(lv_coord_t elementSize) const {
         return ARC_Y_OFFSET + ARC_RADIUS - (elementSize / 2);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "core/interface/midi/MidiInput.hpp"
 
 class IEventBus;
@@ -21,7 +23,6 @@ public:
     void init();
 
     void processPendingMessages() override;
-
 private:
     static void handleSysExStatic(const uint8_t* data, uint16_t length, bool complete);
     static void handleControlChangeStatic(uint8_t channel, uint8_t control, uint8_t value);
