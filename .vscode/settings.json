@@ -1,8 +1,7 @@
 {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "files.associations": {
         "*.inc": "cpp",
-        "fstream": "cpp",
-        "sstream": "cpp"
     },
     "claudeCode.allowDangerouslySkipPermissions": true,
     "claudeCode.initialPermissionMode": "bypassPermissions",
@@ -34,5 +33,20 @@
     // Editor settings for C++
     "editor.detectIndentation": false,
     "editor.tabSize": 4,
-    "editor.insertSpaces": true
+    "editor.insertSpaces": true,
+    "taskexplorer.exclude": [
+        "**/.*/**"
+    ],
+    "taskexplorer.enabledTasks": {
+        "python": false,
+        "batch": false,
+        "eslint": false,
+        "npm": false,
+        "powershell": false,
+        "tsc": false,
+        "workspace": false
+    },
+    "taskexplorer.taskButtons.clickAction": "Execute",
+    "taskexplorer.usage.enabled": false,
+    "workbench.editor.enablePreview": false
 }
