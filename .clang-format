@@ -1,152 +1,42 @@
-# Clang-Format Configuration for MIDI Studio Core
-# See: https://clang.llvm.org/docs/ClangFormatStyleOptions.html
-
+# MIDI Studio Core - Minimal & Readable
+BasedOnStyle: Google
 Language: Cpp
-BasedOnStyle: LLVM
+Standard: c++20
 
 # Indentation
 IndentWidth: 4
-TabWidth: 4
-UseTab: Never
-IndentCaseLabels: true
-IndentPPDirectives: None
-NamespaceIndentation: None
-
-# Braces - K&R style (opening brace on same line)
-BreakBeforeBraces: Attach
-BraceWrapping:
-  AfterClass: false
-  AfterControlStatement: Never
-  AfterEnum: false
-  AfterFunction: false
-  AfterNamespace: false
-  AfterStruct: false
-  AfterUnion: false
-  AfterExternBlock: false
-  BeforeCatch: false
-  BeforeElse: false
-  BeforeLambdaBody: false
-  BeforeWhile: false
-  SplitEmptyFunction: false
-  SplitEmptyRecord: false
-  SplitEmptyNamespace: false
+AccessModifierOffset: -4
 
 # Line length
 ColumnLimit: 100
 
-# Alignment
-AlignAfterOpenBracket: Align
-AlignConsecutiveAssignments: false
-AlignConsecutiveDeclarations: false
-AlignConsecutiveMacros: false
-AlignEscapedNewlines: Left
-AlignOperands: Align
-AlignTrailingComments: true
+# Compact code - allow short forms
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: true
+CompactNamespaces: true
+PackConstructorInitializers: BinPack
 
-# Arguments and parameters
-AllowAllArgumentsOnNextLine: true
-AllowAllParametersOfDeclarationOnNextLine: true
-BinPackArguments: true
-BinPackParameters: true
+# Minimal empty lines
+EmptyLineBeforeAccessModifier: Never
+EmptyLineAfterAccessModifier: Never
+MaxEmptyLinesToKeep: 1
 
-# Short forms
-AllowShortBlocksOnASingleLine: Empty
-AllowShortCaseLabelsOnASingleLine: false
-AllowShortEnumsOnASingleLine: true
-AllowShortFunctionsOnASingleLine: Inline
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLambdasOnASingleLine: All
-AllowShortLoopsOnASingleLine: false
+# Pointers/refs left-aligned
+PointerAlignment: Left
 
-# Breaking
-AlwaysBreakAfterReturnType: None
-AlwaysBreakBeforeMultilineStrings: false
-AlwaysBreakTemplateDeclarations: Yes
-BreakBeforeBinaryOperators: None
-BreakBeforeTernaryOperators: true
-BreakConstructorInitializers: BeforeColon
-BreakInheritanceList: BeforeColon
-BreakStringLiterals: true
-
-# Constructor initializers
-ConstructorInitializerIndentWidth: 4
-PackConstructorInitializers: NextLine
-
-# Includes
+# Includes order: paired, C std, C++ STL, external libs, project
 IncludeBlocks: Regroup
 IncludeCategories:
-  # Main header (same name as .cpp file)
   - Regex: '^"[^/]*\.hpp"'
     Priority: 1
-  # Project headers
-  - Regex: '^"'
+  - Regex: '^<c(assert|ctype|errno|float|limits|math|stdarg|stddef|stdint|stdio|stdlib|string|time)>'
     Priority: 2
-  # System/library headers
-  - Regex: '^<'
+  - Regex: '^<(algorithm|array|atomic|chrono|functional|map|memory|optional|string|string_view|vector|variant)>'
     Priority: 3
-SortIncludes: CaseSensitive
-
-# Spaces
-SpaceAfterCStyleCast: false
-SpaceAfterLogicalNot: false
-SpaceAfterTemplateKeyword: true
-SpaceAroundPointerQualifiers: Default
-SpaceBeforeAssignmentOperators: true
-SpaceBeforeCaseColon: false
-SpaceBeforeCpp11BracedList: false
-SpaceBeforeCtorInitializerColon: true
-SpaceBeforeInheritanceColon: true
-SpaceBeforeParens: ControlStatements
-SpaceBeforeRangeBasedForLoopColon: true
-SpaceBeforeSquareBrackets: false
-SpaceInEmptyBlock: false
-SpaceInEmptyParentheses: false
-SpacesBeforeTrailingComments: 2
-SpacesInAngles: Never
-SpacesInCStyleCastParentheses: false
-SpacesInConditionalStatement: false
-SpacesInContainerLiterals: false
-SpacesInParentheses: false
-SpacesInSquareBrackets: false
-
-# Pointers and references
-DerivePointerAlignment: false
-PointerAlignment: Left
-ReferenceAlignment: Left
-
-# Lambda
-LambdaBodyIndentation: Signature
-
-# Other
-AccessModifierOffset: -4
-CompactNamespaces: false
-Cpp11BracedListStyle: true
-EmptyLineAfterAccessModifier: Never
-EmptyLineBeforeAccessModifier: LogicalBlock
-FixNamespaceComments: true
-IndentAccessModifiers: false
-IndentExternBlock: NoIndent
-IndentGotoLabels: false
-IndentWrappedFunctionNames: false
-InsertBraces: false
-InsertTrailingCommas: None
-KeepEmptyLinesAtTheStartOfBlocks: false
-MaxEmptyLinesToKeep: 1
-ReflowComments: true
-SeparateDefinitionBlocks: Leave
-SortUsingDeclarations: true
-
-# Penalties (for line breaking decisions)
-PenaltyBreakAssignment: 2
-PenaltyBreakBeforeFirstCallParameter: 19
-PenaltyBreakComment: 300
-PenaltyBreakFirstLessLess: 120
-PenaltyBreakOpenParenthesis: 0
-PenaltyBreakString: 1000
-PenaltyBreakTemplateDeclaration: 10
-PenaltyExcessCharacter: 1000000
-PenaltyIndentedWhitespace: 0
-PenaltyReturnTypeOnItsOwnLine: 60
-
-# C++ standard
-Standard: c++20
+  - Regex: '^<'
+    Priority: 4
+  - Regex: '^"'
+    Priority: 5
