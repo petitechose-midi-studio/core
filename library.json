@@ -44,9 +44,10 @@
     ]
   },
   "build": {
-    "extraScript": "script/midi/sysex/patch_usb_midi_sysex.py",
+    "extraScript": "script/build/lib_pre_build.py",
     "includeDir": "src",
     "flags": [
+      "-I src/core",
       "-I src/config/ui",
       "-I src/ui/shared",
       "-D USB_MIDI_SERIAL",
