@@ -2,6 +2,7 @@
     // See http://go.microsoft.com/fwlink/?LinkId=827846
     // for the documentation about the extensions.json format
     "recommendations": [
+        "anthropic.claude-code",
         "github.github-vscode-theme",
         "llvm-vs-code-extensions.vscode-clangd",
         "ms-python.python",
@@ -10,6 +11,7 @@
         "spmeesseman.vscode-taskexplorer"
     ],
     "unwantedRecommendations": [
-        "ms-vscode.cpptools-extension-pack"
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cpptools"
     ]
 }
