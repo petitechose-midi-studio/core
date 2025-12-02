@@ -17,9 +17,9 @@ Import("env")
 # Find script directory (in library context, we need to locate it via libdeps or symlink)
 project_dir = env.subst("$PROJECT_DIR")
 candidates = [
-    os.path.join(project_dir, "../core/script/build"),  # Symlink: ../core
+    os.path.join(project_dir, "../core/script/pio"),  # Symlink: ../core
     *glob.glob(os.path.join(
-        project_dir, ".pio/libdeps/*/petitechose-midi-studio-core/script/build"
+        project_dir, ".pio/libdeps/*/petitechose-midi-studio-core/script/pio"
     )),
 ]
 script_dir = next((p for p in candidates if os.path.exists(p)), None)

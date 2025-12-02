@@ -44,7 +44,7 @@
     ]
   },
   "build": {
-    "extraScript": "script/build/lib_pre_build.py",
+    "extraScript": "script/pio/lib_pre_build.py",
     "includeDir": "src",
     "flags": [
       "-I src/core",
