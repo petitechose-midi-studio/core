@@ -2,7 +2,7 @@
 
 **Framework for MIDI controllers on Teensy 4.1 with LVGL display**
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.1-blue)]()
+[![Version](https://img.shields.io/badge/version-1.0.0--beta.2-blue)]()
 [![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-green)]()
 [![Platform](https://img.shields.io/badge/platform-Teensy%204.1-orange)]()
 
@@ -136,7 +136,7 @@ core/
 
 | Component | Version |
 |-----------|---------|
-| Core | 1.0.0-beta.1 |
+| Core | 1.0.0-beta.2 |
 | API | 1.0.0 |
 
 → [Versioning policy](docs/ARCHITECTURE.md#versioning)

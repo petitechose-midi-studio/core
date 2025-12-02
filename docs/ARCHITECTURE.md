@@ -377,7 +377,7 @@ namespace Core {
     constexpr uint8_t VERSION_MAJOR = 1;
     constexpr uint8_t VERSION_MINOR = 0;
     constexpr uint8_t VERSION_PATCH = 0;
-    constexpr const char* VERSION = "1.0.0-beta.1";
+    constexpr const char* VERSION = "1.0.0-beta.2";
 }
 
 namespace API {

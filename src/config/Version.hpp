@@ -10,7 +10,7 @@
  * For PRERELEASE builds (beta, rc, etc.):
  *   - Keep CORE_IS_PRERELEASE defined
  *   - Set CORE_VERSION_PRERELEASE to "beta.1", "rc.1", etc.
- *   - Result: VERSION = "1.0.0-beta.1"
+ *   - Result: VERSION = "1.0.0-beta.2"
  *
  * For RELEASE builds:
  *   - Comment out or remove #define CORE_IS_PRERELEASE
@@ -24,7 +24,7 @@
 
 // Prerelease flag: comment this line for release builds
 #define CORE_IS_PRERELEASE
-#define CORE_VERSION_PRERELEASE "beta.1"
+#define CORE_VERSION_PRERELEASE "beta.2"
 
 // API version components (evolves independently from core)
 #define API_VERSION_MAJOR 1

@@ -229,7 +229,7 @@ namespace Core {
     constexpr uint8_t VERSION_MAJOR = 1;
     constexpr uint8_t VERSION_MINOR = 0;
     constexpr uint8_t VERSION_PATCH = 0;
-    constexpr const char* VERSION = "1.0.0-beta.1";
+    constexpr const char* VERSION = "1.0.0-beta.2";
     constexpr bool IS_PRERELEASE = true;
 }
 
@@ -245,8 +245,8 @@ namespace API {
 ```cpp
 // For prerelease (beta, rc):
 #define CORE_IS_PRERELEASE
-#define CORE_VERSION_PRERELEASE "beta.1"
-// Result: "1.0.0-beta.1"
+#define CORE_VERSION_PRERELEASE "beta.2"
+// Result: "1.0.0-beta.2"
 
 // For release: comment out CORE_IS_PRERELEASE
 // Result: "1.0.0"

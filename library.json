@@ -1,6 +1,6 @@
 {
   "name": "petitechose-midi-studio-core",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "MIDI Studio Core Framework - Event-driven MIDI controller framework for Teensy 4.1 with LVGL UI",
   "keywords": [
     "midi",
