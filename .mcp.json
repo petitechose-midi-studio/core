@@ -9,9 +9,17 @@
         "serena",
         "start-mcp-server",
         "--context",
-        "ide-assistant",
+        "claude-code",
         "--project",
-        "."
+        ".",
+        "--project",
+        "../plugin-bitwig",
+        "--project",
+        "../../open-control",
+        "--project",
+        "../../protocol-codegen",
+        "--project",
+        "../../lvgl-cli-tools"
       ],
       "env": {}
     }
