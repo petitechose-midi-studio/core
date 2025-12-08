@@ -1,9 +1,9 @@
 # midi-studio/core - Migration Plan & Tracking
 
 ## État Global
-- **Phase actuelle:** Phase 1 ✅ → Phase 2
+- **Phase actuelle:** Phase 2 ✅ → Phase 3
 - **Dernière màj:** 2025-12-08
-- **Validation hardware:** Phase 1 OK (écran noir, logs OK)
+- **Validation hardware:** Phase 2 OK (Boot → Standalone transition)
 
 ---
 
@@ -323,7 +323,7 @@ Logs: "[MIDI Studio] Phase 1 - LVGL 60Hz" + "[OK] Display ready"
 ---
 
 ## 2.1 config/App.hpp (+ ContextID)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/config/App.hpp`
 
 **Ajouts:**
@@ -347,7 +347,7 @@ enum class ContextID : uint8_t {
 ---
 
 ## 2.2 context/BootContext.hpp
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/context/BootContext.hpp`
 
 **Contenu attendu:**
@@ -395,7 +395,7 @@ Animation minimaliste pour test
 ---
 
 ## 2.3 context/StandaloneContext.hpp (minimal)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/context/StandaloneContext.hpp`
 
 **Contenu attendu:**
@@ -433,7 +433,7 @@ Requirements vide pour l'instant
 ---
 
 ## 2.4 main.cpp (+ AppBuilder minimal)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/main.cpp`
 
 **Ajouts:**
@@ -470,16 +470,25 @@ AppBuilder sans .buttons() ni .encoders() pour l'instant
 ---
 
 ## ✅ Validation Phase 2
-- [ ] **TEST HARDWARE:** Boot animation → Standalone screen
+- [x] **TEST HARDWARE:** Boot animation → Standalone screen
 
 **Résultat:**
 ```
-
+[MIDI Studio] Phase 2 - App 1000Hz, LVGL 60Hz
+[Boot] Starting...
+[OK] Ready
+[Boot] Complete, switching to Standalone
+[Boot] Cleanup
+[Standalone] Active
 ```
 
 **Synthèse Phase 2:**
 ```
-
+- App.hpp: Ajout ContextID enum (BOOT, STANDALONE) + APP_HZ 1000
+- BootContext: Switch vers Standalone après 60 frames (~1s)
+- StandaloneContext: Version minimale sans requirements
+- main.cpp: AppBuilder sans inputs, loop dual-rate (1000Hz app, 60Hz LVGL)
+- Lifecycle contextes validé: initialize → update → cleanup → switch
 ```
 
 ---
