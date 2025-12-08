@@ -2,7 +2,7 @@
  * @file main.cpp
  * @brief MIDI Studio Core - Open Control Migration
  *
- * Phase 2: Display + Contexts (Boot -> Standalone)
+ * Phase 3: Display + Contexts + Inputs (MUX, Buttons, Encoders)
  */
 
 #include "config/App.hpp"
@@ -11,11 +11,14 @@
 #include "context/BootContext.hpp"
 #include "context/StandaloneContext.hpp"
 
+#include <memory>
 #include <optional>
 
 #include <Arduino.h>
 #include <oc/teensy/Ili9341.hpp>
 #include <oc/teensy/AppBuilder.hpp>
+#include <oc/teensy/GenericMux.hpp>
+#include <oc/teensy/TeensyGpio.hpp>
 #include <oc/ui/lvgl/Bridge.hpp>
 
 // =============================================================================
@@ -24,6 +27,7 @@
 
 static std::optional<oc::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
+static std::optional<oc::teensy::CD74HC4067> mux;
 static std::optional<oc::app::OpenControlApp> app;
 
 // =============================================================================
@@ -48,9 +52,20 @@ static bool initLVGL() {
     return lvgl->init();
 }
 
+static bool initMux() {
+    using oc::teensy::CD74HC4067;
+    using oc::teensy::gpio;
+
+    mux = CD74HC4067(Hardware::Mux::CONFIG, gpio());
+
+    return mux->init();
+}
+
 static bool initApp() {
-    // Phase 2: AppBuilder sans inputs (pas de .buttons() ni .encoders())
-    app = oc::teensy::AppBuilder();
+    // Phase 3: AppBuilder with inputs
+    app = oc::teensy::AppBuilder()
+              .encoders(Hardware::Encoder::ENCODERS)
+              .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS);
 
     // Register contexts
     app->registerContext<context::BootContext>(Config::ContextID::BOOT, "Boot");
@@ -66,7 +81,7 @@ static bool initApp() {
 void setup() {
     while (!Serial && millis() < 3000) {}
 
-    Serial.printf("\n[MIDI Studio] Phase 2 - App %luHz, LVGL %luHz\n\n",
+    Serial.printf("\n[MIDI Studio] Phase 3 - App %luHz, LVGL %luHz\n\n",
                   Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
 
     if (!initDisplay()) {
@@ -75,6 +90,10 @@ void setup() {
     }
     if (!initLVGL()) {
         Serial.println("[ERROR] LVGL init failed");
+        while (true);
+    }
+    if (!initMux()) {
+        Serial.println("[ERROR] MUX init failed");
         while (true);
     }
     if (!initApp()) {

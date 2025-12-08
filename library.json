@@ -26,9 +26,8 @@
   "frameworks": ["arduino"],
   "platforms": ["teensy"],
   "dependencies": {
-    "vindar/ILI9341_T4": "^1.6.0",
-    "lvgl/lvgl": "^9.4.0",
-    "luni64/EncoderTool": "*"
+    "open-control-hal-teensy": "https://github.com/open-control/hal-teensy.git",
+    "open-control-ui-lvgl": "https://github.com/open-control/ui-lvgl.git"
   },
   "export": {
     "include": [
