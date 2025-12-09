@@ -204,7 +204,9 @@
 
 // Others
 #define LV_USE_SNAPSHOT 0
-#define LV_USE_SYSMON 0
+#define LV_USE_SYSMON 1
+#define LV_USE_PERF_MONITOR 1
+#define LV_USE_MEM_MONITOR 1
 #define LV_USE_PROFILER 0
 #define LV_USE_MONKEY 0
 #define LV_USE_GRIDNAV 0

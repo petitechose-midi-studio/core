@@ -1,8 +1,21 @@
 #pragma once
 
+#include "Version.hpp"
+
 #include <cstdint>
 
+#include <oc/core/input/InputConfig.hpp>
+
 namespace Config {
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Application Info
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace App {
+constexpr const char* NAME = "Midi Studio";
+using Core::VERSION;
+}  // namespace App
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Context IDs
@@ -67,10 +80,24 @@ enum class EncoderID : uint16_t {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Timing {
-constexpr uint32_t APP_HZ = 1000;      // App polling rate (encoders, buttons)
-constexpr uint32_t LVGL_HZ = 60;       // Display refresh rate
-constexpr uint32_t LVGL_PERIOD_MS = 1000 / LVGL_HZ;
-constexpr uint8_t DEBOUNCE_MS = 5;     // Button debounce
+constexpr uint32_t APP_HZ = 400;            // App polling rate (encoders, buttons)
+constexpr uint32_t LVGL_HZ = 200;           // Display refresh rate
+
+constexpr uint8_t DEBOUNCE_MS = 5;          // Button debounce
+constexpr uint32_t LONG_PRESS_MS = 500;
+constexpr uint32_t LATCH_THRESHOLD_MS = 500;
+constexpr uint32_t DOUBLE_TAP_MS = 300;     // Double tap window
+}  // namespace Timing
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Input Configuration
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace Input {
+constexpr oc::core::InputConfig CONFIG = {.longPressMs = Timing::LONG_PRESS_MS,
+                                          .doubleTapWindowMs = Timing::DOUBLE_TAP_MS,
+                                          .latchThresholdMs = Timing::LATCH_THRESHOLD_MS,
+                                          .debounceMs = Timing::DEBOUNCE_MS};
 }
 
 }  // namespace Config

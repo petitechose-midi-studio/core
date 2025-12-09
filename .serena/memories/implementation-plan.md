@@ -1,9 +1,9 @@
 # midi-studio/core - Migration Plan & Tracking
 
 ## État Global
-- **Phase actuelle:** Phase 2 ✅ → Phase 3
+- **Phase actuelle:** Phase 3 ✅ → Phase 4
 - **Dernière màj:** 2025-12-08
-- **Validation hardware:** Phase 2 OK (Boot → Standalone transition)
+- **Validation hardware:** Phase 3 OK (Buttons + Encoders → Serial output)
 
 ---
 
@@ -502,7 +502,7 @@ AppBuilder sans .buttons() ni .encoders() pour l'instant
 ---
 
 ## 3.1 config/Hardware.hpp (+ inputs)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/config/Hardware.hpp`
 
 **Ajouts:**
@@ -560,7 +560,7 @@ GenericMux<4> = 4 select pins → 16 channels
 ---
 
 ## 3.2 config/App.hpp (+ IDs)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/config/App.hpp`
 
 **Ajouts:**
@@ -597,7 +597,7 @@ Reprendre IDs existants pour compatibilité
 ---
 
 ## 3.3 main.cpp (+ inputs)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/main.cpp`
 
 **Ajouts:**
@@ -635,7 +635,7 @@ gpio() singleton de oc::teensy
 ---
 
 ## 3.4 StandaloneContext (+ input handling)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/context/StandaloneContext.hpp`
 
 **Ajouts:**
@@ -692,7 +692,7 @@ Juste debug Serial pour valider
 ---
 
 ## 4.1 main.cpp (+ MIDI)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/main.cpp`
 
 **Ajouts:**
@@ -717,7 +717,7 @@ USB MIDI via UsbMidi
 ---
 
 ## 4.2 config/App.hpp (+ InputConfig)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/config/App.hpp`
 
 **Ajouts:**
@@ -750,7 +750,7 @@ Reprendre valeurs timing actuelles
 ---
 
 ## 4.3 StandaloneContext (UI réelle)
-- [ ] Complété
+- [x] Complété
 - **Fichier:** `src/context/StandaloneContext.hpp`
 
 **Contenu attendu:**

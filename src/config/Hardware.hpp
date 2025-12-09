@@ -13,7 +13,7 @@
 namespace Hardware {
 
 namespace Display {
-constexpr uint8_t VSYNC_SPACING = 2;
+constexpr uint8_t VSYNC_SPACING = 1;
 
 constexpr oc::teensy::Ili9341Config CONFIG = {
     .width = 320,
@@ -24,11 +24,11 @@ constexpr oc::teensy::Ili9341Config CONFIG = {
     .mosiPin = 26,
     .sckPin = 27,
     .misoPin = 1,
-    .spiSpeed = 20'000'000,
+    .spiSpeed = 40'000'000,
     .rotation = 3,
-    .invertDisplay = false,
+    .invertDisplay = true,
     .vsyncSpacing = VSYNC_SPACING,
-    .diffGap = 4,
+    .diffGap = 8,
     .irqPriority = 128,
     .lateStartRatio = 0.3f,
     .refreshRate = Config::Timing::LVGL_HZ * VSYNC_SPACING
@@ -71,7 +71,7 @@ using ID = Config::EncoderID;
 constexpr uint16_t PPR = 24;
 constexpr uint16_t RANGE = 270;
 constexpr uint8_t TICKS = 1;
-constexpr bool INVERT = false;
+constexpr bool INVERT = true;
 
 constexpr std::array ENCODERS = {
     //         id           pinA pinB  ppr   range  ticks  invert
@@ -84,9 +84,9 @@ constexpr std::array ENCODERS = {
     EncoderDef(ID::MACRO_7, 14,  15,   PPR,  RANGE, TICKS, INVERT),
     EncoderDef(ID::MACRO_8, 38,  39,   PPR,  RANGE, TICKS, INVERT),
     // NAV: 4 ticks per detent for coarser control
-    EncoderDef(ID::NAV,     31,  30,   24,   270,   4,     false),
+    EncoderDef(ID::NAV,     31,  30,   24,   270,   4,     !INVERT),
     // OPT: High resolution encoder (600 PPR)
-    EncoderDef(ID::OPT,     34,  33,   600,  270,   1,     false),
+    EncoderDef(ID::OPT,     34,  33,   600,  270,   1,     !INVERT),
 };
 }
 
@@ -100,21 +100,25 @@ using ID = Config::ButtonID;
 using Source = oc::hal::GpioPin::Source;
 
 constexpr std::array BUTTONS = {
-    //        id               pin  source       activeLow
+
     // Navigation buttons (left side) - MUX
+    //        id               pin  source        activeLow
     ButtonDef(ID::LEFT_TOP,    {9,  Source::MUX}, true),
     ButtonDef(ID::LEFT_CENTER, {10, Source::MUX}, true),
     ButtonDef(ID::LEFT_BOTTOM, {11, Source::MUX}, true),
 
     // Navigation buttons (bottom) - MUX
+    //        id                 pin  source        activeLow
     ButtonDef(ID::BOTTOM_LEFT,   {14, Source::MUX}, true),
     ButtonDef(ID::BOTTOM_CENTER, {13, Source::MUX}, true),
     ButtonDef(ID::BOTTOM_RIGHT,  {12, Source::MUX}, true),
 
     // NAV encoder button - MCU direct
+    //        id        pin  source        activeLow
     ButtonDef(ID::NAV, {32, Source::MCU}, true),
 
     // Macro encoder buttons - MUX
+    //        id           pin source        activeLow
     ButtonDef(ID::MACRO_1, {7, Source::MUX}, true),
     ButtonDef(ID::MACRO_2, {4, Source::MUX}, true),
     ButtonDef(ID::MACRO_3, {2, Source::MUX}, true),
@@ -124,6 +128,7 @@ constexpr std::array BUTTONS = {
     ButtonDef(ID::MACRO_7, {3, Source::MUX}, true),
     ButtonDef(ID::MACRO_8, {1, Source::MUX}, true),
 };
+
 }
 
 }  // namespace Hardware

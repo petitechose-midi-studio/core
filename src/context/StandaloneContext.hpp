@@ -3,16 +3,18 @@
 /**
  * @file StandaloneContext.hpp
  * @brief Main application context for standalone operation
- *
- * Phase 2: Minimal version - no inputs, no UI.
- * Phase 3: Add input handling
- * Phase 4: Add full UI
  */
 
-#include "config/App.hpp"
+#include <memory>
+
+#include <lvgl.h>
 
 #include <oc/context/IContext.hpp>
 #include <oc/context/Requirements.hpp>
+#include <oc/log/Log.hpp>
+
+#include "config/App.hpp"
+#include "ui/view/EmptyView.hpp"
 
 namespace context {
 
@@ -20,29 +22,47 @@ namespace context {
  * @brief Standalone mode context
  *
  * Main application mode when not connected to a DAW.
- * Currently minimal - will be extended with UI and input handling.
  */
 class StandaloneContext : public oc::context::IContext {
 public:
-    /// Phase 2: No requirements (will add button/encoder in Phase 3)
-    static constexpr oc::context::Requirements REQUIRES{};
+    static constexpr oc::context::Requirements REQUIRES{
+        .button = true,
+        .encoder = true,
+        .midi = true
+    };
 
     bool initialize() override {
-        Serial.println("[Standalone] Active");
+        // Default empty view (black background)
+        view_ = std::make_unique<EmptyView>(lv_screen_active());
+        view_->onActivate();
+
+        setupInputBindings();
         return true;
     }
 
-    void update() override {
-        // Phase 2: Nothing to do yet
-        // Phase 3: Input handling will be done via bindings
-        // Phase 4: UI updates will be handled by LVGL refresh
-    }
+    void update() override {}
 
     void cleanup() override {
-        Serial.println("[Standalone] Cleanup");
+        if (view_) {
+            view_->onDeactivate();
+            view_.reset();
+        }
     }
 
     const char* getName() const override { return "Standalone"; }
+
+private:
+    std::unique_ptr<EmptyView> view_;
+
+    void setupInputBindings() {
+        using EncID = Config::EncoderID;
+
+        onEncoder(EncID::MACRO_1).turn().then([this](float value) {
+            uint8_t cc_value = static_cast<uint8_t>(value * 127);
+            midi().sendCC(1, 1, cc_value);
+            OC_LOG_DEBUG("MIDI CC1: {}", cc_value);
+        });
+    }
 };
 
 }  // namespace context

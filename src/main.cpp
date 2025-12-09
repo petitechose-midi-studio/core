@@ -2,24 +2,22 @@
  * @file main.cpp
  * @brief MIDI Studio Core - Open Control Migration
  *
- * Phase 3: Display + Contexts + Inputs (MUX, Buttons, Encoders)
+ * Phase 4: Display + Contexts + Inputs + MIDI
  */
-
-#include "config/App.hpp"
-#include "config/Hardware.hpp"
-#include "config/Buffer.hpp"
-#include "context/BootContext.hpp"
-#include "context/StandaloneContext.hpp"
 
 #include <memory>
 #include <optional>
 
 #include <Arduino.h>
 #include <oc/teensy/Ili9341.hpp>
-#include <oc/teensy/AppBuilder.hpp>
-#include <oc/teensy/GenericMux.hpp>
-#include <oc/teensy/TeensyGpio.hpp>
+#include <oc/teensy/Teensy.hpp>
 #include <oc/ui/lvgl/Bridge.hpp>
+
+#include "config/App.hpp"
+#include "config/Buffer.hpp"
+#include "config/Hardware.hpp"
+#include "context/BootContext.hpp"
+#include "context/StandaloneContext.hpp"
 
 // =============================================================================
 // Static Objects
@@ -62,10 +60,12 @@ static bool initMux() {
 }
 
 static bool initApp() {
-    // Phase 3: AppBuilder with inputs
+    // Phase 4: AppBuilder with inputs + MIDI
     app = oc::teensy::AppBuilder()
+              .midi()
               .encoders(Hardware::Encoder::ENCODERS)
-              .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS);
+              .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
+              .inputConfig(Config::Input::CONFIG);
 
     // Register contexts
     app->registerContext<context::BootContext>(Config::ContextID::BOOT, "Boot");
@@ -79,29 +79,34 @@ static bool initApp() {
 // =============================================================================
 
 void setup() {
-    while (!Serial && millis() < 3000) {}
+#ifdef DEV_MODE
+    while (!Serial && millis() < 5000) {}
+#endif
 
-    Serial.printf("\n[MIDI Studio] Phase 3 - App %luHz, LVGL %luHz\n\n",
-                  Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
+    // Init log time provider early (before AppBuilder)
+    oc::log::setTimeProvider(millis);
+
+    OC_LOG_INFO("MIDI Studio - App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ,
+                Config::Timing::LVGL_HZ);
 
     if (!initDisplay()) {
-        Serial.println("[ERROR] Display init failed");
+        OC_LOG_ERROR("Display init failed");
         while (true);
     }
     if (!initLVGL()) {
-        Serial.println("[ERROR] LVGL init failed");
+        OC_LOG_ERROR("LVGL init failed");
         while (true);
     }
     if (!initMux()) {
-        Serial.println("[ERROR] MUX init failed");
+        OC_LOG_ERROR("MUX init failed");
         while (true);
     }
     if (!initApp()) {
-        Serial.println("[ERROR] App init failed");
+        OC_LOG_ERROR("App init failed");
         while (true);
     }
 
-    Serial.println("[OK] Ready\n");
+    OC_LOG_INFO("Ready");
 }
 
 // Timing constants for main loop
