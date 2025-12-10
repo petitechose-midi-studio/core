@@ -4,14 +4,13 @@
     "recommendations": [
         "anthropic.claude-code",
         "github.github-vscode-theme",
-        "llvm-vs-code-extensions.vscode-clangd",
         "ms-python.python",
+        "ms-vscode.cpptools",
         "naumovs.color-highlight",
         "platformio.platformio-ide",
         "spmeesseman.vscode-taskexplorer"
     ],
     "unwantedRecommendations": [
-        "ms-vscode.cpptools",
         "ms-vscode.cpptools-extension-pack"
     ]
 }

@@ -11,15 +11,7 @@
         "--context",
         "claude-code",
         "--project",
-        ".",
-        "--project",
-        "../plugin-bitwig",
-        "--project",
-        "../../open-control",
-        "--project",
-        "../../protocol-codegen",
-        "--project",
-        "../../lvgl-cli-tools"
+        "../.."
       ],
       "env": {}
     }
