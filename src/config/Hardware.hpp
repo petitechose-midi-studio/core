@@ -65,7 +65,7 @@ constexpr oc::teensy::CD74HC4067::Config CONFIG = {
 
 namespace Encoder {
 using namespace oc::common;
-using ID = Config::EncoderID;
+using Config::EncoderID;
 
 // Shared parameters for macro encoders
 constexpr uint16_t PPR = 24;
@@ -74,19 +74,19 @@ constexpr uint8_t TICKS = 1;
 constexpr bool INVERT = true;
 
 constexpr std::array ENCODERS = {
-    //         id           pinA pinB  ppr   range  ticks  invert
-    EncoderDef(ID::MACRO_1, 22,  23,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(ID::MACRO_2, 18,  19,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(ID::MACRO_3, 40,  41,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(ID::MACRO_4, 36,  37,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(ID::MACRO_5, 20,  21,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(ID::MACRO_6, 16,  17,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(ID::MACRO_7, 14,  15,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(ID::MACRO_8, 38,  39,   PPR,  RANGE, TICKS, INVERT),
+    //         id                   pinA pinB  ppr   range  ticks  invert
+    EncoderDef(EncoderID::MACRO_1,  22,  23,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_2,  18,  19,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_3,  40,  41,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_4,  36,  37,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_5,  20,  21,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_6,  16,  17,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_7,  14,  15,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_8,  38,  39,   PPR,  RANGE, TICKS, INVERT),
     // NAV: 4 ticks per detent for coarser control
-    EncoderDef(ID::NAV,     31,  30,   24,   270,   4,     !INVERT),
+    EncoderDef(EncoderID::NAV,      31,  30,   24,   270,   4,     !INVERT),
     // OPT: High resolution encoder (600 PPR)
-    EncoderDef(ID::OPT,     34,  33,   600,  270,   1,     !INVERT),
+    EncoderDef(EncoderID::OPT,      34,  33,   600,  270,   1,     !INVERT),
 };
 }
 
@@ -96,37 +96,37 @@ constexpr std::array ENCODERS = {
 
 namespace Button {
 using namespace oc::common;
-using ID = Config::ButtonID;
+using Config::ButtonID;
 using Source = oc::hal::GpioPin::Source;
 
 constexpr std::array BUTTONS = {
 
     // Navigation buttons (left side) - MUX
-    //        id               pin  source        activeLow
-    ButtonDef(ID::LEFT_TOP,    {9,  Source::MUX}, true),
-    ButtonDef(ID::LEFT_CENTER, {10, Source::MUX}, true),
-    ButtonDef(ID::LEFT_BOTTOM, {11, Source::MUX}, true),
+    //        id                    pin  source        activeLow
+    ButtonDef(ButtonID::LEFT_TOP,    {9,  Source::MUX}, true),
+    ButtonDef(ButtonID::LEFT_CENTER, {10, Source::MUX}, true),
+    ButtonDef(ButtonID::LEFT_BOTTOM, {11, Source::MUX}, true),
 
     // Navigation buttons (bottom) - MUX
-    //        id                 pin  source        activeLow
-    ButtonDef(ID::BOTTOM_LEFT,   {14, Source::MUX}, true),
-    ButtonDef(ID::BOTTOM_CENTER, {13, Source::MUX}, true),
-    ButtonDef(ID::BOTTOM_RIGHT,  {12, Source::MUX}, true),
+    //        id                      pin  source        activeLow
+    ButtonDef(ButtonID::BOTTOM_LEFT,   {14, Source::MUX}, true),
+    ButtonDef(ButtonID::BOTTOM_CENTER, {13, Source::MUX}, true),
+    ButtonDef(ButtonID::BOTTOM_RIGHT,  {12, Source::MUX}, true),
 
     // NAV encoder button - MCU direct
-    //        id        pin  source        activeLow
-    ButtonDef(ID::NAV, {32, Source::MCU}, true),
+    //        id          pin  source        activeLow
+    ButtonDef(ButtonID::NAV, {32, Source::MCU}, true),
 
     // Macro encoder buttons - MUX
-    //        id           pin source        activeLow
-    ButtonDef(ID::MACRO_1, {7, Source::MUX}, true),
-    ButtonDef(ID::MACRO_2, {4, Source::MUX}, true),
-    ButtonDef(ID::MACRO_3, {2, Source::MUX}, true),
-    ButtonDef(ID::MACRO_4, {0, Source::MUX}, true),
-    ButtonDef(ID::MACRO_5, {6, Source::MUX}, true),
-    ButtonDef(ID::MACRO_6, {5, Source::MUX}, true),
-    ButtonDef(ID::MACRO_7, {3, Source::MUX}, true),
-    ButtonDef(ID::MACRO_8, {1, Source::MUX}, true),
+    //        id              pin source        activeLow
+    ButtonDef(ButtonID::MACRO_1, {7, Source::MUX}, true),
+    ButtonDef(ButtonID::MACRO_2, {4, Source::MUX}, true),
+    ButtonDef(ButtonID::MACRO_3, {2, Source::MUX}, true),
+    ButtonDef(ButtonID::MACRO_4, {0, Source::MUX}, true),
+    ButtonDef(ButtonID::MACRO_5, {6, Source::MUX}, true),
+    ButtonDef(ButtonID::MACRO_6, {5, Source::MUX}, true),
+    ButtonDef(ButtonID::MACRO_7, {3, Source::MUX}, true),
+    ButtonDef(ButtonID::MACRO_8, {1, Source::MUX}, true),
 };
 
 }

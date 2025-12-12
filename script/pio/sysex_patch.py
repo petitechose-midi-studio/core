@@ -10,14 +10,14 @@ import glob
 
 
 def find_config(env):
-    """Find System.hpp in core (direct build, sibling, or libdeps)."""
+    """Find App.hpp in core (direct build, sibling, or libdeps)."""
     root = env.subst("$PROJECT_DIR")
     candidates = [
-        os.path.join(root, "src/config/System.hpp"),
-        os.path.join(root, "../core/src/config/System.hpp"),
-        os.path.join(root, "../../src/config/System.hpp"),
+        os.path.join(root, "src/config/App.hpp"),
+        os.path.join(root, "../core/src/config/App.hpp"),
+        os.path.join(root, "../../src/config/App.hpp"),
         *glob.glob(os.path.join(
-            root, ".pio/libdeps/*/petitechose-midi-studio-core/src/config/System.hpp"
+            root, ".pio/libdeps/*/petitechose-midi-studio-core/src/config/App.hpp"
         )),
     ]
     return next((p for p in candidates if os.path.exists(p)), None)

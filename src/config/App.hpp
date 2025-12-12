@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include <oc/core/input/InputConfig.hpp>
+#include <oc/hal/Types.hpp>
 
 namespace Config {
 
@@ -30,6 +31,12 @@ enum class ContextID : uint8_t {
 // Button IDs
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * @brief Button identifiers for midi-studio hardware
+ *
+ * Using enum class provides type safety and IDE autocompletion.
+ * The uint16_t underlying type is compatible with framework APIs.
+ */
 enum class ButtonID : uint16_t {
     // Left side navigation (10-19)
     LEFT_TOP = 10,
@@ -59,6 +66,12 @@ enum class ButtonID : uint16_t {
 // Encoder IDs
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * @brief Encoder identifiers for midi-studio hardware
+ *
+ * Using enum class provides type safety and IDE autocompletion.
+ * The uint16_t underlying type is compatible with framework APIs.
+ */
 enum class EncoderID : uint16_t {
     // Main encoder matrix (301-308)
     MACRO_1 = 301,
@@ -99,5 +112,14 @@ constexpr oc::core::InputConfig CONFIG = {.longPressMs = Timing::LONG_PRESS_MS,
                                           .latchThresholdMs = Timing::LATCH_THRESHOLD_MS,
                                           .debounceMs = Timing::DEBOUNCE_MS};
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MIDI / SysEx
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace Midi {
+/// USB MIDI SysEx buffer size (used by sysex_patch.py to patch Teensyduino)
+constexpr uint16_t USB_SYSEX_MAX_SIZE = 16000;
+}  // namespace Midi
 
 }  // namespace Config
