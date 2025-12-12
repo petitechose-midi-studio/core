@@ -80,8 +80,8 @@ enum class EncoderID : uint16_t {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Timing {
-constexpr uint32_t APP_HZ = 400;            // App polling rate (encoders, buttons)
-constexpr uint32_t LVGL_HZ = 200;           // Display refresh rate
+constexpr uint32_t APP_HZ = 1000;  // App polling rate (encoders, buttons)
+constexpr uint32_t LVGL_HZ = 200;  // Display refresh rate
 
 constexpr uint8_t DEBOUNCE_MS = 5;          // Button debounce
 constexpr uint32_t LONG_PRESS_MS = 500;

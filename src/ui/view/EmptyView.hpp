@@ -3,8 +3,7 @@
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IView.hpp>
-
-#include "ui/theme/BaseTheme.hpp"
+#include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 /**
  * @brief Empty view with solid background color
@@ -16,7 +15,7 @@
  */
 class EmptyView : public oc::ui::lvgl::IView {
 public:
-    explicit EmptyView(lv_obj_t* parent, uint32_t color = BaseTheme::Color::BACKGROUND)
+    explicit EmptyView(lv_obj_t* parent, uint32_t color = oc::ui::lvgl::BaseTheme::Color::BACKGROUND)
         : color_(color) {
         container_ = lv_obj_create(parent);
         lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));

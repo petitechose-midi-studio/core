@@ -2,16 +2,13 @@
  * @file main.cpp
  * @brief MIDI Studio Core - Open Control Migration
  *
- * Phase 4: Display + Contexts + Inputs + MIDI
+ * Uses oc::teensy::AppBuilder for simplified Teensy 4.1 setup.
+ * Pattern follows open-control/example-teensy41-lvgl.
  */
 
-#include <memory>
 #include <optional>
 
-#include <Arduino.h>
-#include <oc/teensy/Ili9341.hpp>
 #include <oc/teensy/Teensy.hpp>
-#include <oc/ui/lvgl/Bridge.hpp>
 
 #include "config/App.hpp"
 #include "config/Buffer.hpp"
@@ -29,49 +26,47 @@ static std::optional<oc::teensy::CD74HC4067> mux;
 static std::optional<oc::app::OpenControlApp> app;
 
 // =============================================================================
-// Initialization
+// Initialization Helpers
 // =============================================================================
 
-static bool initDisplay() {
-    using oc::teensy::Ili9341;
+/// Check result and halt on error (embedded systems have no recovery)
+static void checkOrHalt(const oc::core::Result<void>& result, const char* component) {
+    if (!result) {
+        OC_LOG_ERROR("{} init failed: {}", component,
+                     oc::core::errorCodeToString(result.error().code));
+        while (true) {}
+    }
+}
 
-    display = Ili9341(
+static void initDisplay() {
+    display = oc::teensy::Ili9341(
         Hardware::Display::CONFIG,
         {.framebuffer = Buffer::framebuffer, .diff1 = Buffer::diff1, .diff2 = Buffer::diff2});
-
-    return display->init();
+    checkOrHalt(display->init(), "Display");
 }
 
-static bool initLVGL() {
-    using oc::ui::lvgl::Bridge;
-
-    lvgl = Bridge(*display, Buffer::lvgl, millis, Hardware::LVGL::CONFIG);
-
-    return lvgl->init();
+static void initLVGL() {
+    lvgl = oc::ui::lvgl::Bridge(*display, Buffer::lvgl, oc::teensy::defaultTimeProvider,
+                                 Hardware::LVGL::CONFIG);
+    checkOrHalt(lvgl->init(), "LVGL");
 }
 
-static bool initMux() {
-    using oc::teensy::CD74HC4067;
-    using oc::teensy::gpio;
-
-    mux = CD74HC4067(Hardware::Mux::CONFIG, gpio());
-
-    return mux->init();
+static void initMux() {
+    mux = oc::teensy::CD74HC4067(Hardware::Mux::CONFIG, oc::teensy::gpio());
+    checkOrHalt(mux->init(), "MUX");
 }
 
-static bool initApp() {
-    // Phase 4: AppBuilder with inputs + MIDI
+static void initApp() {
     app = oc::teensy::AppBuilder()
               .midi()
               .encoders(Hardware::Encoder::ENCODERS)
               .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
               .inputConfig(Config::Input::CONFIG);
 
-    // Register contexts
     app->registerContext<context::BootContext>(Config::ContextID::BOOT, "Boot");
     app->registerContext<context::StandaloneContext>(Config::ContextID::STANDALONE, "Standalone");
 
-    return app->begin();
+    app->begin();
 }
 
 // =============================================================================
@@ -79,32 +74,13 @@ static bool initApp() {
 // =============================================================================
 
 void setup() {
-#ifdef DEV_MODE
-    while (!Serial && millis() < 5000) {}
-#endif
-
-    // Init log time provider early (before AppBuilder)
-    oc::log::setTimeProvider(millis);
-
     OC_LOG_INFO("MIDI Studio - App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ,
                 Config::Timing::LVGL_HZ);
 
-    if (!initDisplay()) {
-        OC_LOG_ERROR("Display init failed");
-        while (true);
-    }
-    if (!initLVGL()) {
-        OC_LOG_ERROR("LVGL init failed");
-        while (true);
-    }
-    if (!initMux()) {
-        OC_LOG_ERROR("MUX init failed");
-        while (true);
-    }
-    if (!initApp()) {
-        OC_LOG_ERROR("App init failed");
-        while (true);
-    }
+    initDisplay();
+    initLVGL();
+    initMux();
+    initApp();
 
     OC_LOG_INFO("Ready");
 }

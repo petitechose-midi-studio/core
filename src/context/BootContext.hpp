@@ -60,7 +60,7 @@ public:
     const char* getName() const override { return "Boot"; }
 
 private:
-    static constexpr uint32_t DURATION_MS = 3000;
+    static constexpr uint32_t DURATION_MS = 1000;
     static constexpr uint32_t FADE_MS = DURATION_MS / 10;  // 300ms
     static constexpr uint32_t FADE_START_MS = DURATION_MS - FADE_MS;
 

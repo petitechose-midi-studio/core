@@ -1,16 +1,18 @@
 #include "SplashScreenView.hpp"
 
+#include <oc/ui/lvgl/theme/BaseTheme.hpp>
+
 #include "config/App.hpp"
 #include "ui/font/FontLoader.hpp"
-#include "ui/theme/BaseTheme.hpp"
 
 namespace App = Config::App;
+namespace Theme = oc::ui::lvgl::BaseTheme;
 
 SplashScreenView::Config::Config()
     : title(App::NAME), version(App::VERSION),
-      bg_color(lv_color_hex(BaseTheme::Color::BACKGROUND)),
-      text_color(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY)),
-      progress_color(lv_color_hex(BaseTheme::Color::TEXT_PRIMARY)) {}
+      bg_color(lv_color_hex(Theme::Color::BACKGROUND)),
+      text_color(lv_color_hex(Theme::Color::TEXT_PRIMARY)),
+      progress_color(lv_color_hex(Theme::Color::TEXT_PRIMARY)) {}
 
 SplashScreenView::SplashScreenView(lv_obj_t* parent, const Config& config)
     : config_(config) {

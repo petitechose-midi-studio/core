@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <Arduino.h>
+#include <oc/ui/lvgl/FontUtils.hpp>
 
 #include "data/interdisplay_bold_13.c.inc"
 #include "data/interdisplay_bold_14.c.inc"
@@ -13,6 +14,8 @@
 #include "data/interdisplay_regular_14.c.inc"
 #include "data/interdisplay_semibold_14.c.inc"
 #include "data/jetbrainsmononl_medium_13.c.inc"
+
+using oc::ui::lvgl::loadBinaryFont;
 
 struct FontDescriptor {
     lv_font_t** font_ptr;
@@ -27,21 +30,6 @@ static size_t next_index = 0;
 static bool core_registered = false;
 
 FontRegistry fonts;
-
-static lv_font_t* loadFontSafe(const uint8_t* buffer, uint32_t len) {
-    constexpr int MAX_RETRIES = 5;
-    constexpr int BASE_DELAY_MS = 10;
-
-    for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        lv_font_t* font = lv_binfont_create_from_buffer((void*)buffer, len);
-        if (font != nullptr) {
-            return font;
-        }
-        int delay_ms = BASE_DELAY_MS << attempt;
-        delay(delay_ms);
-    }
-    return nullptr;
-}
 
 void registerFont(lv_font_t** fontPtr, const uint8_t* buffer, uint32_t len) {
     registered_fonts.push_back({fontPtr, buffer, len, "plugin", false});
@@ -94,7 +82,7 @@ bool fontsLoadEssential() {
 
     for (auto& f : registered_fonts) {
         if (f.essential && *f.font_ptr == nullptr) {
-            *f.font_ptr = loadFontSafe(f.buffer, f.len);
+            *f.font_ptr = loadBinaryFont(f.buffer, f.len);
             if (!*f.font_ptr) {
                 failed++;
             }
@@ -124,7 +112,7 @@ bool fontsLoadNext(const char** outFontName) {
         auto& f = registered_fonts[next_index++];
         if (*f.font_ptr != nullptr) continue;
 
-        *f.font_ptr = loadFontSafe(f.buffer, f.len);
+        *f.font_ptr = loadBinaryFont(f.buffer, f.len);
         if (outFontName) *outFontName = f.name;
         return true;
     }
@@ -133,16 +121,15 @@ bool fontsLoadNext(const char** outFontName) {
 
 void loadPluginFonts() {
     for (auto& f : registered_fonts) {
-        if (*f.font_ptr == nullptr) { *f.font_ptr = loadFontSafe(f.buffer, f.len); }
+        if (*f.font_ptr == nullptr) {
+            *f.font_ptr = loadBinaryFont(f.buffer, f.len);
+        }
     }
 }
 
 void freeFonts() {
     for (auto& f : registered_fonts) {
-        if (*f.font_ptr) {
-            lv_binfont_destroy(*f.font_ptr);
-            *f.font_ptr = nullptr;
-        }
+        oc::ui::lvgl::freeFont(*f.font_ptr);
     }
     registered_fonts.clear();
     next_index = 0;
