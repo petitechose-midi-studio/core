@@ -1,6 +1,6 @@
 {
   "name": "petitechose-midi-studio-core",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "description": "MIDI Studio Core Framework - Event-driven MIDI controller framework for Teensy 4.1 with LVGL UI",
   "keywords": [
     "midi",
@@ -26,9 +26,9 @@
   "frameworks": ["arduino"],
   "platforms": ["teensy"],
   "dependencies": {
-    "open-control-hal-teensy": "https://github.com/open-control/hal-teensy.git",
-    "open-control-ui-lvgl": "https://github.com/open-control/ui-lvgl.git",
-    "open-control-ui-lvgl-components": "https://github.com/open-control/ui-lvgl-components.git"
+    "open-control-hal-teensy": "https://github.com/open-control/hal-teensy.git#0.1.3",
+    "open-control-ui-lvgl": "https://github.com/open-control/ui-lvgl.git#0.1.3",
+    "open-control-ui-lvgl-components": "https://github.com/open-control/ui-lvgl-components.git#0.1.3"
   },
   "export": {
     "include": [
