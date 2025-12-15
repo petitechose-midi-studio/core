@@ -5,46 +5,11 @@
 #include <oc/common/ButtonDef.hpp>
 #include <oc/common/EncoderDef.hpp>
 #include <oc/teensy/GenericMux.hpp>
-#include <oc/teensy/Ili9341.hpp>
-#include <oc/ui/lvgl/Bridge.hpp>
 
-#include "App.hpp"
+#include "HardwareDisplay.hpp"
+#include "InputIDs.hpp"
 
 namespace Hardware {
-
-namespace Display {
-constexpr uint8_t VSYNC_SPACING = 1;
-
-constexpr oc::teensy::Ili9341Config CONFIG = {
-    .width = 320,
-    .height = 240,
-    .csPin = 28,
-    .dcPin = 0,
-    .rstPin = 29,
-    .mosiPin = 26,
-    .sckPin = 27,
-    .misoPin = 1,
-    .spiSpeed = 40'000'000,
-    .rotation = 3,
-    .invertDisplay = true,
-    .vsyncSpacing = VSYNC_SPACING,
-    .diffGap = 8,
-    .irqPriority = 128,
-    .lateStartRatio = 0.3f,
-    .refreshRate = Config::Timing::LVGL_HZ * VSYNC_SPACING
-};
-
-constexpr size_t BUFFER_SIZE = CONFIG.framebufferSize();  // 320*240 = 76800
-constexpr size_t DIFF_SIZE = 16384;  // 16KB
-}
-
-namespace LVGL {
-constexpr oc::ui::lvgl::BridgeConfig CONFIG = {
-    .renderMode = LV_DISPLAY_RENDER_MODE_FULL,
-    .buffer2 = nullptr,
-    .refreshHz = Config::Timing::LVGL_HZ
-};
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Multiplexer (CD74HC4067 - 16 channels)
@@ -65,7 +30,7 @@ constexpr oc::teensy::CD74HC4067::Config CONFIG = {
 
 namespace Encoder {
 using namespace oc::common;
-using Config::EncoderID;
+using EncoderID = Config::EncoderID;
 
 // Shared parameters for macro encoders
 constexpr uint16_t PPR = 24;
@@ -74,7 +39,7 @@ constexpr uint8_t TICKS = 1;
 constexpr bool INVERT = true;
 
 constexpr std::array ENCODERS = {
-    //         id                   pinA pinB  ppr   range  ticks  invert
+    //         id                  pinA pinB  ppr   range  ticks  invert
     EncoderDef(EncoderID::MACRO_1,  22,  23,   PPR,  RANGE, TICKS, INVERT),
     EncoderDef(EncoderID::MACRO_2,  18,  19,   PPR,  RANGE, TICKS, INVERT),
     EncoderDef(EncoderID::MACRO_3,  40,  41,   PPR,  RANGE, TICKS, INVERT),
@@ -96,7 +61,7 @@ constexpr std::array ENCODERS = {
 
 namespace Button {
 using namespace oc::common;
-using Config::ButtonID;
+using ButtonID = Config::ButtonID;
 using Source = oc::hal::GpioPin::Source;
 
 constexpr std::array BUTTONS = {
@@ -114,11 +79,11 @@ constexpr std::array BUTTONS = {
     ButtonDef(ButtonID::BOTTOM_RIGHT,  {12, Source::MUX}, true),
 
     // NAV encoder button - MCU direct
-    //        id          pin  source        activeLow
+    //        id            pin  source        activeLow
     ButtonDef(ButtonID::NAV, {32, Source::MCU}, true),
 
     // Macro encoder buttons - MUX
-    //        id              pin source        activeLow
+    //        id                pin source        activeLow
     ButtonDef(ButtonID::MACRO_1, {7, Source::MUX}, true),
     ButtonDef(ButtonID::MACRO_2, {4, Source::MUX}, true),
     ButtonDef(ButtonID::MACRO_3, {2, Source::MUX}, true),

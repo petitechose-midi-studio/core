@@ -28,7 +28,7 @@ def read_sysex_max(env):
     path = find_config(env)
     if not path:
         return None
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         match = re.search(r'USB_SYSEX_MAX_SIZE\s*=\s*(\d+)', f.read())
     return int(match.group(1)) if match else None
 
@@ -51,7 +51,7 @@ def patch_usb_midi_sysex(env, exit_func):
     if not os.path.exists(header):
         return
 
-    with open(header) as f:
+    with open(header, encoding='utf-8') as f:
         content = f.read()
 
     match = re.search(r'#define\s+USB_MIDI_SYSEX_MAX\s+(\d+)', content)
@@ -65,7 +65,7 @@ def patch_usb_midi_sysex(env, exit_func):
 
     print(f"[PATCH] USB_MIDI_SYSEX_MAX: {current} -> {size}")
     patched = re.sub(r'(#define\s+USB_MIDI_SYSEX_MAX\s+)\d+', rf'\g<1>{size}', content)
-    with open(header, 'w') as f:
+    with open(header, 'w', encoding='utf-8') as f:
         f.write(patched)
 
     # Force rebuild of Arduino framework

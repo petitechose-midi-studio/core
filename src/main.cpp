@@ -48,7 +48,10 @@ static void initDisplay() {
 static void initLVGL() {
     lvgl = oc::ui::lvgl::Bridge(*display, Buffer::lvgl, oc::teensy::defaultTimeProvider,
                                  Hardware::LVGL::CONFIG);
-    checkOrHalt(lvgl->init(), "LVGL");
+    if (!lvgl->init()) {
+        OC_LOG_ERROR("LVGL init failed");
+        while (true) {}
+    }
 }
 
 static void initMux() {

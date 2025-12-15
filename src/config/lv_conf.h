@@ -204,9 +204,24 @@
 
 // Others
 #define LV_USE_SNAPSHOT 0
-#define LV_USE_SYSMON 1
-#define LV_USE_PERF_MONITOR 1
-#define LV_USE_MEM_MONITOR 1
+
+// System Monitor - usage: -D PERF_MON (CPU/FPS) and/or -D MEM_MON (memory)
+#if defined(PERF_MON) || defined(MEM_MON)
+    #define LV_USE_SYSMON 1
+    #ifdef PERF_MON
+        #define LV_USE_PERF_MONITOR 1
+    #else
+        #define LV_USE_PERF_MONITOR 0
+    #endif
+    #ifdef MEM_MON
+        #define LV_USE_MEM_MONITOR 1
+    #else
+        #define LV_USE_MEM_MONITOR 0
+    #endif
+#else
+    #define LV_USE_SYSMON 0
+#endif
+
 #define LV_USE_PROFILER 0
 #define LV_USE_MONKEY 0
 #define LV_USE_GRIDNAV 0

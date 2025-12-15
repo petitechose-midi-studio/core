@@ -25,7 +25,7 @@ def patch_compiler_paths(cdb_path, env):
     cxx_path = os.path.join(bin_dir, "arm-none-eabi-g++.exe")
     cc_path = os.path.join(bin_dir, "arm-none-eabi-gcc.exe")
 
-    with open(cdb_path, "r") as f:
+    with open(cdb_path, "r", encoding='utf-8') as f:
         data = json.load(f)
 
     for entry in data:
@@ -37,7 +37,7 @@ def patch_compiler_paths(cdb_path, env):
             cmd = cc_path + cmd[len("arm-none-eabi-gcc"):]
         entry["command"] = cmd
 
-    with open(cdb_path, "w") as f:
+    with open(cdb_path, "w", encoding='utf-8') as f:
         json.dump(data, f, indent=4)
 
 

@@ -66,12 +66,12 @@ private:
     std::unique_ptr<MacroView> view_;
 
     void setupInputBindings() {
-        using EncID = Config::EncoderID;
+        using EncoderID = Config::EncoderID;
 
         // Encoder IDs for macros 1-8
-        static constexpr std::array<EncID, 8> MACRO_ENCODERS = {
-            EncID::MACRO_1, EncID::MACRO_2, EncID::MACRO_3, EncID::MACRO_4,
-            EncID::MACRO_5, EncID::MACRO_6, EncID::MACRO_7, EncID::MACRO_8
+        static constexpr std::array<EncoderID, 8> MACRO_ENCODERS = {
+            EncoderID::MACRO_1, EncoderID::MACRO_2, EncoderID::MACRO_3, EncoderID::MACRO_4,
+            EncoderID::MACRO_5, EncoderID::MACRO_6, EncoderID::MACRO_7, EncoderID::MACRO_8
         };
 
         // MIDI CC numbers for each macro (CC 1-8)
