@@ -40,18 +40,18 @@ constexpr bool INVERT = true;
 
 constexpr std::array ENCODERS = {
     //         id                  pinA pinB  ppr   range  ticks  invert
-    EncoderDef(EncoderID::MACRO_1,  22,  23,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(EncoderID::MACRO_2,  18,  19,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(EncoderID::MACRO_3,  40,  41,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(EncoderID::MACRO_4,  36,  37,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(EncoderID::MACRO_5,  20,  21,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(EncoderID::MACRO_6,  16,  17,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(EncoderID::MACRO_7,  14,  15,   PPR,  RANGE, TICKS, INVERT),
-    EncoderDef(EncoderID::MACRO_8,  38,  39,   PPR,  RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_1, 22, 23, PPR, RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_2, 18, 19, PPR, RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_3, 40, 41, PPR, RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_4, 36, 37, PPR, RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_5, 20, 21, PPR, RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_6, 16, 17, PPR, RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_7, 14, 15, PPR, RANGE, TICKS, INVERT),
+    EncoderDef(EncoderID::MACRO_8, 38, 39, PPR, RANGE, TICKS, INVERT),
     // NAV: 4 ticks per detent for coarser control
-    EncoderDef(EncoderID::NAV,      31,  30,   24,   270,   4,     !INVERT),
+    EncoderDef(EncoderID::NAV, 31, 30, 24, 270, 4, !INVERT),
     // OPT: High resolution encoder (600 PPR)
-    EncoderDef(EncoderID::OPT,      34,  33,   600,  270,   1,     !INVERT),
+    EncoderDef(EncoderID::OPT, 34, 33, 600, 270, 1, INVERT),
 };
 }
 

@@ -25,11 +25,7 @@
   "homepage": "https://github.com/petitechose-midi-studio/core",
   "frameworks": ["arduino"],
   "platforms": ["teensy"],
-  "dependencies": {
-    "open-control-hal-teensy": "https://github.com/open-control/hal-teensy.git#0.1.3",
-    "open-control-ui-lvgl": "https://github.com/open-control/ui-lvgl.git#0.1.3",
-    "open-control-ui-lvgl-components": "https://github.com/open-control/ui-lvgl-components.git#0.1.3"
-  },
+  "dependencies": {},
   "export": {
     "include": [
       "src",
