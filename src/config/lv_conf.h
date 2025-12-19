@@ -3,17 +3,19 @@
  * @brief LVGL v9.x configuration for Teensy 4.1 + ILI9341
  *
  * Key settings:
- * - 2MB EXTMEM pool (PSRAM)
+ * - 4MB EXTMEM pool (PSRAM) - 8MB available
  * - RGB565 color (16-bit)
  * - NO LV_DEF_REFR_PERIOD (set at runtime by Bridge)
+ * - ARGB8888 enabled for transparency animations
+ * - Image cache for splash screen
  */
 
 #if 1
 #ifndef LV_CONF_H
 #define LV_CONF_H
 
-// Memory: 2MB EXTMEM (PSRAM)
-#define LVGL_MEMORY_POOL_SIZE_KB 2000
+// Memory: 4MB EXTMEM (PSRAM) - 8MB available on Teensy 4.1
+#define LVGL_MEMORY_POOL_SIZE_KB 4000
 #define LVGL_MEMORY_POOL_SIZE (LVGL_MEMORY_POOL_SIZE_KB * 1024)
 
 #define LV_COLOR_DEPTH 16
@@ -40,8 +42,9 @@
 
 #define LV_USE_OS LV_OS_NONE
 
-#define LV_DRAW_BUF_STRIDE_ALIGN 1
-#define LV_DRAW_BUF_ALIGN 4
+// Cortex-M7 cache line alignment for optimal DMA/memory performance
+#define LV_DRAW_BUF_STRIDE_ALIGN 4
+#define LV_DRAW_BUF_ALIGN 32
 #define LV_DRAW_TRANSFORM_USE_MATRIX 1
 #define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (128 * 1024)
 #define LV_DRAW_LAYER_MAX_MEMORY (512 * 1024)
@@ -53,15 +56,17 @@
 #define LV_DRAW_SW_SUPPORT_RGB565A8 1
 #define LV_DRAW_SW_SUPPORT_RGB888 0
 #define LV_DRAW_SW_SUPPORT_XRGB8888 0
-#define LV_DRAW_SW_SUPPORT_ARGB8888 0
+#define LV_DRAW_SW_SUPPORT_ARGB8888 1          // Required for transparency animations
+#define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0
 #define LV_DRAW_SW_SUPPORT_L8 0
 #define LV_DRAW_SW_SUPPORT_AL88 0
-#define LV_DRAW_SW_SUPPORT_A8 0
+#define LV_DRAW_SW_SUPPORT_A8 1                // Alpha channel for transparency
 #define LV_DRAW_SW_SUPPORT_I1 0
 #define LV_DRAW_SW_DRAW_UNIT_CNT 0
 #define LV_DRAW_SW_COMPLEX 1
+#define LV_DRAW_SW_SHADOW_CACHE_SIZE 32        // Cache shadows (32² = 1KB RAM)
 #define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE
-#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 1
+#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 1     // Keep for future use
 #endif
 
 #define LV_USE_LOG 0
@@ -76,7 +81,11 @@
 #define LV_USE_LAYER_DEBUG 0
 #define LV_USE_PARALLEL_DRAW_DEBUG 0
 #define LV_ENABLE_GLOBAL_CUSTOM 0
+
+// Image caching (for splash screen and decoded images)
+#define LV_CACHE_DEF_SIZE (512 * 1024)         // 512KB cache for decoded images
 #define LV_IMAGE_HEADER_CACHE_DEF_CNT 32
+
 #define LV_GRADIENT_MAX_STOPS 2
 #define LV_OBJ_STYLE_CACHE 1
 #define LV_USE_OBJ_ID 0
