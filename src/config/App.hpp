@@ -37,9 +37,9 @@ namespace Timing {
 constexpr uint32_t APP_HZ = 1000;  // App polling rate (encoders, buttons)
 constexpr uint32_t LVGL_HZ = Hardware::Display::REFRESH_HZ;  // Display refresh rate
 
-constexpr uint8_t DEBOUNCE_MS = 5;          // Button debounce
+constexpr uint8_t DEBOUNCE_MS = 12;  // Button debounce
 constexpr uint32_t LONG_PRESS_MS = 500;
-constexpr uint32_t LATCH_THRESHOLD_MS = 500;
+constexpr uint32_t LATCH_THRESHOLD_MS = 200;
 constexpr uint32_t DOUBLE_TAP_MS = 300;     // Double tap window
 }  // namespace Timing
 
