@@ -8,8 +8,8 @@ namespace Display {
 
 // Display settings optimized for performance
 constexpr uint8_t VSYNC_SPACING = 1;
-constexpr uint32_t SPI_SPEED = 40'000'000;  // 40MHz
-constexpr uint8_t REFRESH_HZ = 200;  // 200Hz display rate
+constexpr uint32_t SPI_SPEED = 40'000'000;  // 20MHz
+constexpr uint16_t REFRESH_HZ = 240;  // 200Hz display rate
 
 constexpr oc::teensy::Ili9341Config CONFIG = {
     .width = 320,
@@ -26,12 +26,12 @@ constexpr oc::teensy::Ili9341Config CONFIG = {
     .vsyncSpacing = VSYNC_SPACING,
     .diffGap = 4,
     .irqPriority = 128,
-    .lateStartRatio = 0.3f,
+    .lateStartRatio = 0.2f,
     .refreshRate = REFRESH_HZ
 };
 
 constexpr size_t BUFFER_SIZE = CONFIG.framebufferSize();  // 320*240 = 76800
-constexpr size_t DIFF_SIZE = 16384;  // 16KB
+constexpr size_t DIFF_SIZE = 16384;  // 8KB
 
 }  // namespace Display
 

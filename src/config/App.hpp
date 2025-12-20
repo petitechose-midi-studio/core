@@ -34,7 +34,7 @@ enum class ContextID : uint8_t {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Timing {
-constexpr uint32_t APP_HZ = 1000;  // App polling rate (encoders, buttons)
+constexpr uint32_t APP_HZ = Hardware::Display::REFRESH_HZ*2; // App polling rate (encoders, buttons)
 constexpr uint32_t LVGL_HZ = Hardware::Display::REFRESH_HZ;  // Display refresh rate
 
 constexpr uint8_t DEBOUNCE_MS = 12;  // Button debounce
