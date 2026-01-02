@@ -27,10 +27,13 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
     // Convert CC value to normalized float
     float normalized = static_cast<float>(value) / 127.0f;
 
-    // Update state
+    // Update runtime state
     auto& slot = coreState_.macros.slots[index];
     slot.value.set(normalized);
     slot.updateDisplayValue();
+
+    // Sync to page data for persistence
+    coreState_.pages.activePageData().values[index] = normalized;
 
     // Sync encoder position
     encoders_.setPosition(ENCODERS[index], normalized);

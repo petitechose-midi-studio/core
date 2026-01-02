@@ -31,9 +31,12 @@ void MacroInputHandler::setupBindings() {
 void MacroInputHandler::handleValueChange(uint8_t index, float value) {
     auto& slot = coreState_.macros.slots[index];
 
-    // Update state (triggers UI update via signal subscription)
+    // Update runtime state (triggers UI update via signal subscription)
     slot.value.set(value);
     slot.updateDisplayValue();
+
+    // Sync to page data for persistence
+    coreState_.pages.activePageData().values[index] = value;
 
     // Get CC/channel from active page config
     const auto& config = coreState_.pages.activeConfigs[index];
