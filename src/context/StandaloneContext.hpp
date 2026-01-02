@@ -84,16 +84,9 @@ public:
     }
 
     void syncEncodersFromState() {
-        static constexpr std::array<Config::EncoderID, state::MACRO_COUNT> ENCODERS = {
-            Config::EncoderID::MACRO_1, Config::EncoderID::MACRO_2,
-            Config::EncoderID::MACRO_3, Config::EncoderID::MACRO_4,
-            Config::EncoderID::MACRO_5, Config::EncoderID::MACRO_6,
-            Config::EncoderID::MACRO_7, Config::EncoderID::MACRO_8
-        };
-
         for (uint8_t i = 0; i < state::MACRO_COUNT; ++i) {
             float value = coreState_.macros.slots[i].value.get();
-            encoders().setPosition(ENCODERS[i], value);
+            encoders().setPosition(Config::MACRO_ENCODERS[i], value);
         }
         OC_LOG_DEBUG("Synced encoder positions from restored state");
     }

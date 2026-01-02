@@ -13,12 +13,6 @@ using oc::state::SignalTiny;
 
 static constexpr uint8_t MACRO_COUNT = 8;
 
-/// Default MIDI CC numbers for each macro (CC 1-8)
-static constexpr uint8_t MACRO_CC[MACRO_COUNT] = {1, 2, 3, 4, 5, 6, 7, 8};
-
-/// Default MIDI channel (0 = channel 1)
-static constexpr uint8_t MACRO_CHANNEL = 0;
-
 /**
  * @brief Single macro slot state
  */

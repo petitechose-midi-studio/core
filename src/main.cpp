@@ -117,7 +117,7 @@ void loop() {
     app->update();
 
     // Update persistence (handles delayed value saves)
-    coreState->update(millis());
+    coreState->update();
 
     // Refresh LVGL at lower frequency to reduce CPU load
     lvglAccumulator += APP_PERIOD_US;

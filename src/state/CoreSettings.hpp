@@ -205,37 +205,10 @@ public:
     }
 
     /**
-     * @brief Mark values as dirty (will be saved after timeout)
+     * @brief Commit pending writes to storage
      */
-    void markValuesDirty(uint32_t currentTime) {
-        if (!valuesDirty_) {
-            valuesDirty_ = true;
-            dirtyTimestamp_ = currentTime;
-        }
-    }
-
-    /**
-     * @brief Check and save dirty values if timeout elapsed
-     * @param currentTime Current time in milliseconds
-     * @param pages State to save from
-     */
-    void update(uint32_t currentTime, const macro::MacroPagesState& pages) {
-        if (valuesDirty_ && (currentTime - dirtyTimestamp_) >= VALUE_SAVE_DELAY_MS) {
-            savePage(pages.activePage, pages.pages[pages.activePage]);
-            backend_.commit();
-            valuesDirty_ = false;
-        }
-    }
-
-    /**
-     * @brief Force save any pending dirty values
-     */
-    void flush(const macro::MacroPagesState& pages) {
-        if (valuesDirty_) {
-            savePage(pages.activePage, pages.pages[pages.activePage]);
-            backend_.commit();
-            valuesDirty_ = false;
-        }
+    void commit() {
+        backend_.commit();
     }
 
     /**
@@ -248,8 +221,6 @@ public:
 
 private:
     oc::hal::IStorageBackend& backend_;
-    bool valuesDirty_ = false;
-    uint32_t dirtyTimestamp_ = 0;
 };
 
 }  // namespace state

@@ -36,13 +36,6 @@ public:
     MacroMidiHandler& operator=(const MacroMidiHandler&) = delete;
 
 private:
-    static constexpr std::array<Config::EncoderID, state::MACRO_COUNT> ENCODERS = {
-        Config::EncoderID::MACRO_1, Config::EncoderID::MACRO_2,
-        Config::EncoderID::MACRO_3, Config::EncoderID::MACRO_4,
-        Config::EncoderID::MACRO_5, Config::EncoderID::MACRO_6,
-        Config::EncoderID::MACRO_7, Config::EncoderID::MACRO_8
-    };
-
     void setupCallbacks();
     void handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t value);
 

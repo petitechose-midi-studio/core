@@ -17,6 +17,7 @@
 
 #include <oc/hal/IStorageBackend.hpp>
 #include <oc/state/OverlayManager.hpp>
+#include <oc/time/Time.hpp>
 
 #include "CoreSettings.hpp"
 #include "MacroState.hpp"
@@ -112,23 +113,91 @@ struct CoreState {
         syncMacrosFromActivePage();
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Macro Accessors (encapsulated access for handlers)
+    // ═══════════════════════════════════════════════════════════════════════════
+
     /**
-     * @brief Update persistence (call from main loop)
+     * @brief Set macro value (user-initiated change)
+     *
+     * Updates runtime state, display value, and marks for persistence.
+     * Use this for encoder/MIDI input, NOT for page load.
+     *
+     * @param index Macro index (0-7)
+     * @param value Normalized value [0.0, 1.0]
      */
-    void update(uint32_t currentTimeMs) {
-        settings.update(currentTimeMs, pages);
+    void setMacroValue(uint8_t index, float value) {
+        if (index >= MACRO_COUNT) return;
+        macros.slots[index].value.set(value);
+        macros.slots[index].updateDisplayValue();
+        markDirty(index);
     }
 
     /**
-     * @brief Mark values as changed (triggers delayed save)
+     * @brief Get current macro value
+     * @param index Macro index (0-7)
+     * @return Normalized value [0.0, 1.0]
      */
-    void onValueChanged(uint32_t currentTimeMs) {
-        // Update stored value in page
+    float getMacroValue(uint8_t index) const {
+        if (index >= MACRO_COUNT) return 0.0f;
+        return macros.slots[index].value.get();
+    }
+
+    /**
+     * @brief Get macro MIDI configuration (CC, channel)
+     * @param index Macro index (0-7)
+     * @return Config for active page
+     */
+    const macro::MacroConfig& getMacroConfig(uint8_t index) const {
+        static const macro::MacroConfig defaultConfig{};
+        if (index >= MACRO_COUNT) return defaultConfig;
+        return pages.activeConfigs[index];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Dirty Tracking
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * @brief Mark a specific macro index as dirty (needs persistence)
+     *
+     * Called automatically by setMacroValue().
+     * Only call directly if you modify state without using setMacroValue().
+     *
+     * @param index Macro index (0-7)
+     */
+    void markDirty(uint8_t index) {
+        if (index >= MACRO_COUNT) return;
+        dirtyMask_ |= (1 << index);
+        if (dirtyTimestamp_ == 0) {
+            dirtyTimestamp_ = oc::time::millis();
+        }
+    }
+
+    /**
+     * @brief Update persistence (call from main loop)
+     *
+     * Saves dirty values incrementally after timeout.
+     */
+    void update() {
+        if (dirtyMask_ == 0) return;
+
+        uint32_t now = oc::time::millis();
+        if ((now - dirtyTimestamp_) < CoreSettings::VALUE_SAVE_DELAY_MS) return;
+
+        // Sync dirty values to page data and save
         auto& pageData = pages.activePageData();
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            pageData.values[i] = macros.slots[i].value.get();
+            if (dirtyMask_ & (1 << i)) {
+                float value = macros.slots[i].value.get();
+                pageData.values[i] = value;
+                settings.saveValue(pages.activePage, i, value);
+            }
         }
-        settings.markValuesDirty(currentTimeMs);
+        settings.commit();
+
+        dirtyMask_ = 0;
+        dirtyTimestamp_ = 0;
     }
 
     /**
@@ -141,6 +210,30 @@ struct CoreState {
         settings.saveAll(pages);
         overlays.hideAll();
     }
+
+    /**
+     * @brief Flush any pending dirty values immediately
+     */
+    void flush() {
+        if (dirtyMask_ == 0) return;
+
+        auto& pageData = pages.activePageData();
+        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+            if (dirtyMask_ & (1 << i)) {
+                float value = macros.slots[i].value.get();
+                pageData.values[i] = value;
+                settings.saveValue(pages.activePage, i, value);
+            }
+        }
+        settings.commit();
+
+        dirtyMask_ = 0;
+        dirtyTimestamp_ = 0;
+    }
+
+private:
+    uint8_t dirtyMask_ = 0;       ///< Bitfield: which macro indices need saving
+    uint32_t dirtyTimestamp_ = 0; ///< When first change occurred (for timeout)
 };
 
 }  // namespace state

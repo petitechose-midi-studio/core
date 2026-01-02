@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <oc/hal/Types.hpp>
 
@@ -58,6 +59,21 @@ enum class EncoderID : oc::hal::EncoderID {
     // Special encoders (400-499)
     NAV = 400,
     OPT = 410,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Macro Encoder Mapping
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Number of macro encoders
+inline constexpr uint8_t MACRO_COUNT = 8;
+
+/// Mapping from macro index (0-7) to encoder ID
+inline constexpr std::array<EncoderID, MACRO_COUNT> MACRO_ENCODERS = {
+    EncoderID::MACRO_1, EncoderID::MACRO_2,
+    EncoderID::MACRO_3, EncoderID::MACRO_4,
+    EncoderID::MACRO_5, EncoderID::MACRO_6,
+    EncoderID::MACRO_7, EncoderID::MACRO_8
 };
 
 }  // namespace Config

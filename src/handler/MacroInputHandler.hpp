@@ -41,13 +41,6 @@ public:
     MacroInputHandler& operator=(const MacroInputHandler&) = delete;
 
 private:
-    static constexpr std::array<Config::EncoderID, state::MACRO_COUNT> ENCODERS = {
-        Config::EncoderID::MACRO_1, Config::EncoderID::MACRO_2,
-        Config::EncoderID::MACRO_3, Config::EncoderID::MACRO_4,
-        Config::EncoderID::MACRO_5, Config::EncoderID::MACRO_6,
-        Config::EncoderID::MACRO_7, Config::EncoderID::MACRO_8
-    };
-
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
 
