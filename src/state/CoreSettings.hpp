@@ -94,6 +94,8 @@ public:
         uint32_t magic = 0;
         backend_.read(StorageLayout::ADDR_MAGIC, reinterpret_cast<uint8_t*>(&magic), sizeof(magic));
 
+        OC_LOG_INFO("[CoreSettings] Magic read: {} (expected {})", magic, StorageLayout::MAGIC);
+
         if (magic != StorageLayout::MAGIC) {
             OC_LOG_INFO("[CoreSettings] No valid data, using defaults");
             pages.initDefaults();
