@@ -131,7 +131,7 @@ public:
 
         // Log loaded values for debugging
         const auto& vals = pages.pages[activePage].values;
-        OC_LOG_INFO("[CoreSettings] Loaded page {}: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]",
+        OC_LOG_INFO("[CoreSettings] Loaded page {}: [{}, {}, {}, {}, {}, {}, {}, {}]",
                     activePage, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
         return true;
     }
@@ -226,7 +226,7 @@ public:
         if (valuesDirty_ && (currentTime - dirtyTimestamp_) >= VALUE_SAVE_DELAY_MS) {
             // Log values being saved
             const auto& vals = pages.pages[pages.activePage].values;
-            OC_LOG_INFO("[CoreSettings] Saving page {}: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]",
+            OC_LOG_INFO("[CoreSettings] Saving page {}: [{}, {}, {}, {}, {}, {}, {}, {}]",
                         pages.activePage, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
 
             // Save entire active page (simpler and more reliable than individual values)
