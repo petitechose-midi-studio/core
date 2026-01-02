@@ -75,7 +75,7 @@ namespace StorageLayout {
  */
 class CoreSettings {
 public:
-    static constexpr uint32_t VALUE_SAVE_DELAY_MS = 3000;  ///< Delay before saving values
+    static constexpr uint32_t VALUE_SAVE_DELAY_MS = 300;  ///< Delay before saving values
 
     explicit CoreSettings(oc::hal::IStorageBackend& backend)
         : backend_(backend) {}
@@ -129,7 +129,10 @@ public:
         pages.activePage = activePage;
         pages.updateActiveConfigs();
 
-        OC_LOG_INFO("[CoreSettings] Loaded, active page: {}", activePage);
+        // Log loaded values for debugging
+        const auto& vals = pages.pages[activePage].values;
+        OC_LOG_INFO("[CoreSettings] Loaded page {}: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]",
+                    activePage, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
         return true;
     }
 
@@ -221,13 +224,15 @@ public:
      */
     void update(uint32_t currentTime, const macro::MacroPagesState& pages) {
         if (valuesDirty_ && (currentTime - dirtyTimestamp_) >= VALUE_SAVE_DELAY_MS) {
-            // Save all values from active page
-            for (uint8_t i = 0; i < macro::MACRO_COUNT; ++i) {
-                saveValue(pages.activePage, i, pages.pages[pages.activePage].values[i]);
-            }
+            // Log values being saved
+            const auto& vals = pages.pages[pages.activePage].values;
+            OC_LOG_INFO("[CoreSettings] Saving page {}: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]",
+                        pages.activePage, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
+
+            // Save entire active page (simpler and more reliable than individual values)
+            savePage(pages.activePage, pages.pages[pages.activePage]);
             backend_.commit();
             valuesDirty_ = false;
-            OC_LOG_DEBUG("[CoreSettings] Auto-saved values after timeout");
         }
     }
 
@@ -236,9 +241,7 @@ public:
      */
     void flush(const macro::MacroPagesState& pages) {
         if (valuesDirty_) {
-            for (uint8_t i = 0; i < macro::MACRO_COUNT; ++i) {
-                saveValue(pages.activePage, i, pages.pages[pages.activePage].values[i]);
-            }
+            savePage(pages.activePage, pages.pages[pages.activePage]);
             backend_.commit();
             valuesDirty_ = false;
         }
