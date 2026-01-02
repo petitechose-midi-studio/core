@@ -9,33 +9,59 @@ namespace state {
 
 using oc::state::Signal;
 using oc::state::SignalLabel;
+using oc::state::SignalTiny;
 
 static constexpr uint8_t MACRO_COUNT = 8;
+
+/// Default MIDI CC numbers for each macro (CC 1-8)
+static constexpr uint8_t MACRO_CC[MACRO_COUNT] = {1, 2, 3, 4, 5, 6, 7, 8};
+
+/// Default MIDI channel (0 = channel 1)
+static constexpr uint8_t MACRO_CHANNEL = 0;
+
+/**
+ * @brief Single macro slot state
+ */
+struct MacroSlot {
+    Signal<float> value{0.5f};     ///< Normalized value [0.0, 1.0]
+    SignalLabel label;              ///< Display label ("Macro 1")
+    SignalTiny displayValue;        ///< CC value as string ("64")
+
+    /// Update displayValue from current value (CC 0-127)
+    void updateDisplayValue() {
+        uint8_t cc = static_cast<uint8_t>(value.get() * 127.0f);
+        char buf[4];
+        snprintf(buf, sizeof(buf), "%d", cc);
+        displayValue.set(buf);
+    }
+
+    /// Reset to center position
+    void reset() {
+        value.set(0.5f);
+        updateDisplayValue();
+    }
+};
 
 /**
  * @brief Reactive state for 8 macro parameters
  *
- * Each macro has a normalized value [0.0, 1.0] and a label.
+ * Each macro has a normalized value [0.0, 1.0], label, and display value.
  * UI components subscribe to these signals for automatic updates.
  */
 struct MacroState {
-    Signal<float> values[MACRO_COUNT] = {
-        Signal<float>{0.5f}, Signal<float>{0.5f},
-        Signal<float>{0.5f}, Signal<float>{0.5f},
-        Signal<float>{0.5f}, Signal<float>{0.5f},
-        Signal<float>{0.5f}, Signal<float>{0.5f}
-    };
-
-    SignalLabel labels[MACRO_COUNT];
+    MacroSlot slots[MACRO_COUNT];
 
     MacroState() {
-        // Initialize default labels
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
             char buf[16];
             snprintf(buf, sizeof(buf), "Macro %d", i + 1);
-            labels[i].set(buf);
+            slots[i].label.set(buf);
+            slots[i].updateDisplayValue();
         }
     }
+
+    MacroSlot& operator[](uint8_t index) { return slots[index]; }
+    const MacroSlot& operator[](uint8_t index) const { return slots[index]; }
 };
 
 }  // namespace state

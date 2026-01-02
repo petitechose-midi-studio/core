@@ -35,23 +35,25 @@ void MacroView::bindToState() {
     subscriptions_.reserve(MACRO_COUNT * 2);
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        auto& slot = state_.slots[i];
+
         // Subscribe to value changes
         subscriptions_.push_back(
-            state_.values[i].subscribe([this, i](float value) {
+            slot.value.subscribe([this, i](float value) {
                 macros_[i]->knob().setValue(value);
             })
         );
 
         // Subscribe to label changes
         subscriptions_.push_back(
-            state_.labels[i].subscribe([this, i](const char* text) {
+            slot.label.subscribe([this, i](const char* text) {
                 macros_[i]->label().setText(text);
             })
         );
 
         // Initialize UI with current state values
-        macros_[i]->knob().setValue(state_.values[i].get());
-        macros_[i]->label().setText(state_.labels[i].get());
+        macros_[i]->knob().setValue(slot.value.get());
+        macros_[i]->label().setText(slot.label.get());
     }
 }
 
