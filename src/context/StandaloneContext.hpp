@@ -8,6 +8,7 @@
  * Receives CoreState reference from main.cpp (state survives context switches).
  */
 
+#include <array>
 #include <memory>
 
 #include <lvgl.h>
@@ -55,6 +56,9 @@ public:
         fontsRegisterCore();
         loadPluginFonts();
 
+        // Sync encoder positions with restored values BEFORE creating handlers
+        syncEncodersFromState();
+
         // Create UI container with zones
         viewContainer_ = std::make_unique<ui::ViewContainer>(lv_screen_active());
 
@@ -77,6 +81,21 @@ public:
 
         OC_LOG_INFO("StandaloneContext ready");
         return true;
+    }
+
+    void syncEncodersFromState() {
+        static constexpr std::array<Config::EncoderID, state::MACRO_COUNT> ENCODERS = {
+            Config::EncoderID::MACRO_1, Config::EncoderID::MACRO_2,
+            Config::EncoderID::MACRO_3, Config::EncoderID::MACRO_4,
+            Config::EncoderID::MACRO_5, Config::EncoderID::MACRO_6,
+            Config::EncoderID::MACRO_7, Config::EncoderID::MACRO_8
+        };
+
+        for (uint8_t i = 0; i < state::MACRO_COUNT; ++i) {
+            float value = coreState_.macros.slots[i].value.get();
+            encoders().setPosition(ENCODERS[i], value);
+        }
+        OC_LOG_DEBUG("Synced encoder positions from restored state");
     }
 
     void update() override {}
