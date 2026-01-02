@@ -15,6 +15,7 @@
 #include "config/Hardware.hpp"
 #include "context/BootContext.hpp"
 #include "context/StandaloneContext.hpp"
+#include "state/CoreState.hpp"
 
 // =============================================================================
 // Static Objects
@@ -23,6 +24,7 @@
 static std::optional<oc::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::teensy::CD74HC4067> mux;
+static std::optional<state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 
 // =============================================================================
@@ -48,10 +50,7 @@ static void initDisplay() {
 static void initLVGL() {
     lvgl = oc::ui::lvgl::Bridge(*display, Buffer::lvgl, oc::teensy::defaultTimeProvider,
                                  Hardware::LVGL::CONFIG);
-    if (!lvgl->init()) {
-        OC_LOG_ERROR("LVGL init failed");
-        while (true) {}
-    }
+    checkOrHalt(lvgl->init(), "LVGL");
 }
 
 static void initMux() {
@@ -60,14 +59,24 @@ static void initMux() {
 }
 
 static void initApp() {
+    // Create global state first (survives context switches)
+    coreState.emplace();
+
     app = oc::teensy::AppBuilder()
               .midi()
+              .serial()
               .encoders(Hardware::Encoder::ENCODERS)
               .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
               .inputConfig(Config::Input::CONFIG);
 
-    app->registerContext<context::BootContext>(Config::ContextID::BOOT, "Boot");
-    app->registerContext<context::StandaloneContext>(Config::ContextID::STANDALONE, "Standalone");
+    // Skip BootContext for now - debug crash
+    // app->registerContext<context::BootContext>(Config::ContextID::BOOT, "Boot");
+
+    // Register context with factory that captures CoreState reference
+    app->registerContextWithFactory(
+        Config::ContextID::STANDALONE,
+        "Standalone",
+        [&]() { return std::make_unique<context::StandaloneContext>(*coreState); });
 
     app->begin();
 }
@@ -77,8 +86,10 @@ static void initApp() {
 // =============================================================================
 
 void setup() {
-    OC_LOG_INFO("MIDI Studio - App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ,
-                Config::Timing::LVGL_HZ);
+    oc::teensy::initLogging();
+
+    OC_LOG_INFO("=== MIDI Studio Core Boot ===");
+    OC_LOG_INFO("App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
 
     initDisplay();
     initLVGL();

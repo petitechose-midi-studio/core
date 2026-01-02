@@ -4,11 +4,10 @@
  * @file StandaloneContext.hpp
  * @brief Main application context for standalone operation
  *
- * Displays 8 macro knobs that send MIDI CC when turned.
- * Uses reactive state for UI updates.
+ * Provides 8 macro knobs with MIDI CC output and bidirectional sync.
+ * Receives CoreState reference from main.cpp (state survives context switches).
  */
 
-#include <array>
 #include <memory>
 
 #include <lvgl.h>
@@ -18,7 +17,10 @@
 #include <oc/log/Log.hpp>
 
 #include "config/App.hpp"
-#include "state/MacroState.hpp"
+#include "handler/MacroInputHandler.hpp"
+#include "handler/MacroMidiHandler.hpp"
+#include "state/CoreState.hpp"
+#include "ui/ViewContainer.hpp"
 #include "ui/font/FontLoader.hpp"
 #include "ui/view/MacroView.hpp"
 
@@ -27,8 +29,11 @@ namespace context {
 /**
  * @brief Standalone mode context
  *
- * Main application mode when not connected to a DAW.
- * Displays 8 macro knobs bound to encoders, sending MIDI CC.
+ * 8 macro knobs with:
+ * - Encoder → MIDI CC out
+ * - MIDI CC in → state + encoder sync
+ *
+ * Receives CoreState reference (state survives context switches).
  */
 class StandaloneContext : public oc::context::IContext {
 public:
@@ -38,57 +43,65 @@ public:
         .midi = true
     };
 
+    /**
+     * @brief Construct with external CoreState reference
+     * @param state Reference to global CoreState (owned by main.cpp)
+     */
+    explicit StandaloneContext(state::CoreState& state) : coreState_(state) {}
+
     bool initialize() override {
-        // Load remaining fonts (non-essential ones)
+        OC_LOG_INFO("StandaloneContext::initialize()");
+
+        fontsRegisterCore();
         loadPluginFonts();
 
-        // Create macro view bound to state
-        view_ = std::make_unique<MacroView>(lv_screen_active(), state_);
+        // Create UI container with zones
+        viewContainer_ = std::make_unique<ui::ViewContainer>(lv_screen_active());
+
+        // Create MacroView in main zone (not directly on screen)
+        view_ = std::make_unique<MacroView>(
+            viewContainer_->getMainZone(),
+            coreState_.macros
+        );
         view_->onActivate();
 
-        setupInputBindings();
+        // Create handlers (bindings scoped to view element)
+        inputHandler_ = std::make_unique<handler::MacroInputHandler>(
+            coreState_.macros, encoders(), midi(), view_->getElement()
+        );
+        midiHandler_ = std::make_unique<handler::MacroMidiHandler>(
+            coreState_.macros, midi(), encoders()
+        );
+
+        viewContainer_->show();
+
+        OC_LOG_INFO("StandaloneContext ready");
         return true;
     }
 
     void update() override {}
 
     void cleanup() override {
+        // Handlers first (they reference state/APIs)
+        inputHandler_.reset();
+        midiHandler_.reset();
+
         if (view_) {
             view_->onDeactivate();
             view_.reset();
         }
+
+        viewContainer_.reset();
     }
 
     const char* getName() const override { return "Standalone"; }
 
 private:
-    state::MacroState state_;
+    state::CoreState& coreState_;  // External reference (survives context switches)
+    std::unique_ptr<ui::ViewContainer> viewContainer_;
     std::unique_ptr<MacroView> view_;
-
-    void setupInputBindings() {
-        using EncoderID = Config::EncoderID;
-
-        // Encoder IDs for macros 1-8
-        static constexpr std::array<EncoderID, 8> MACRO_ENCODERS = {
-            EncoderID::MACRO_1, EncoderID::MACRO_2, EncoderID::MACRO_3, EncoderID::MACRO_4,
-            EncoderID::MACRO_5, EncoderID::MACRO_6, EncoderID::MACRO_7, EncoderID::MACRO_8
-        };
-
-        // MIDI CC numbers for each macro (CC 1-8)
-        static constexpr std::array<uint8_t, 8> MIDI_CC = {1, 2, 3, 4, 5, 6, 7, 8};
-
-        // Bind each encoder to state (UI updates automatically via subscription)
-        for (uint8_t i = 0; i < 8; ++i) {
-            onEncoder(MACRO_ENCODERS[i]).turn().then([this, i](float value) {
-                // Update state (triggers UI update via signal)
-                state_.values[i].set(value);
-
-                // Send MIDI CC
-                uint8_t cc_value = static_cast<uint8_t>(value * 127);
-                midi().sendCC(0, MIDI_CC[i], cc_value);
-            });
-        }
-    }
+    std::unique_ptr<handler::MacroInputHandler> inputHandler_;
+    std::unique_ptr<handler::MacroMidiHandler> midiHandler_;
 };
 
 }  // namespace context
