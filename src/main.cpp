@@ -8,6 +8,7 @@
 
 #include <optional>
 
+#include <oc/teensy/EEPROMBackend.hpp>
 #include <oc/teensy/Teensy.hpp>
 
 #include "config/App.hpp"
@@ -24,6 +25,7 @@
 static std::optional<oc::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::teensy::CD74HC4067> mux;
+static oc::teensy::EEPROMBackend storage;  // EEPROM backend for persistence
 static std::optional<state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 
@@ -59,8 +61,8 @@ static void initMux() {
 }
 
 static void initApp() {
-    // Create global state first (survives context switches)
-    coreState.emplace();
+    // Create global state with EEPROM storage (survives context switches)
+    coreState.emplace(storage);
 
     app = oc::teensy::AppBuilder()
               .midi()
@@ -113,6 +115,9 @@ void loop() {
 
     // Poll hardware and update active context
     app->update();
+
+    // Update persistence (handles delayed value saves)
+    coreState->update(millis());
 
     // Refresh LVGL at lower frequency to reduce CPU load
     lvglAccumulator += APP_PERIOD_US;

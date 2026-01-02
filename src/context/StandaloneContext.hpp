@@ -67,10 +67,10 @@ public:
 
         // Create handlers (bindings scoped to view element)
         inputHandler_ = std::make_unique<handler::MacroInputHandler>(
-            coreState_.macros, encoders(), midi(), view_->getElement()
+            coreState_, encoders(), midi(), view_->getElement()
         );
         midiHandler_ = std::make_unique<handler::MacroMidiHandler>(
-            coreState_.macros, midi(), encoders()
+            coreState_, midi(), encoders()
         );
 
         viewContainer_->show();

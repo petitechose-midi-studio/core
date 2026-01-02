@@ -1,16 +1,18 @@
 #include "MacroInputHandler.hpp"
 
+#include <Arduino.h>  // For millis()
+
 #include <oc/ui/lvgl/Scope.hpp>
 
 namespace handler {
 
 using namespace oc::ui::lvgl;
 
-MacroInputHandler::MacroInputHandler(state::MacroState& state,
+MacroInputHandler::MacroInputHandler(state::CoreState& coreState,
                                      oc::api::EncoderAPI& encoders,
                                      oc::api::MidiAPI& midi,
                                      lv_obj_t* scopeElement)
-    : state_(state)
+    : coreState_(coreState)
     , encoders_(encoders)
     , midi_(midi)
     , scopeElement_(scopeElement) {
@@ -27,15 +29,21 @@ void MacroInputHandler::setupBindings() {
 }
 
 void MacroInputHandler::handleValueChange(uint8_t index, float value) {
-    auto& slot = state_.slots[index];
+    auto& slot = coreState_.macros.slots[index];
 
     // Update state (triggers UI update via signal subscription)
     slot.value.set(value);
     slot.updateDisplayValue();
 
+    // Get CC/channel from active page config
+    const auto& config = coreState_.pages.activeConfigs[index];
+
     // Send MIDI CC
     uint8_t cc_value = static_cast<uint8_t>(value * 127.0f);
-    midi_.sendCC(state::MACRO_CHANNEL, state::MACRO_CC[index], cc_value);
+    midi_.sendCC(config.channel, config.cc, cc_value);
+
+    // Mark values dirty for delayed persistence
+    coreState_.onValueChanged(millis());
 }
 
 }  // namespace handler
