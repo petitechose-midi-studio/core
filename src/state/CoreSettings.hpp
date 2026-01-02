@@ -94,8 +94,6 @@ public:
         uint32_t magic = 0;
         backend_.read(StorageLayout::ADDR_MAGIC, reinterpret_cast<uint8_t*>(&magic), sizeof(magic));
 
-        OC_LOG_INFO("[CoreSettings] Magic read: {} (expected {})", magic, StorageLayout::MAGIC);
-
         if (magic != StorageLayout::MAGIC) {
             OC_LOG_INFO("[CoreSettings] No valid data, using defaults");
             pages.initDefaults();
@@ -131,10 +129,7 @@ public:
         pages.activePage = activePage;
         pages.updateActiveConfigs();
 
-        // Log loaded values for debugging
-        const auto& vals = pages.pages[activePage].values;
-        OC_LOG_INFO("[CoreSettings] Loaded page {}: [{}, {}, {}, {}, {}, {}, {}, {}]",
-                    activePage, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
+        OC_LOG_INFO("[CoreSettings] Loaded page {}", activePage);
         return true;
     }
 
@@ -226,12 +221,6 @@ public:
      */
     void update(uint32_t currentTime, const macro::MacroPagesState& pages) {
         if (valuesDirty_ && (currentTime - dirtyTimestamp_) >= VALUE_SAVE_DELAY_MS) {
-            // Log values being saved
-            const auto& vals = pages.pages[pages.activePage].values;
-            OC_LOG_INFO("[CoreSettings] Saving page {}: [{}, {}, {}, {}, {}, {}, {}, {}]",
-                        pages.activePage, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
-
-            // Save entire active page (simpler and more reliable than individual values)
             savePage(pages.activePage, pages.pages[pages.activePage]);
             backend_.commit();
             valuesDirty_ = false;
