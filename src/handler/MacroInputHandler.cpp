@@ -35,9 +35,6 @@ void MacroInputHandler::handleValueChange(uint8_t index, float value) {
     slot.value.set(value);
     slot.updateDisplayValue();
 
-    // Sync to page data for persistence
-    coreState_.pages.activePageData().values[index] = value;
-
     // Get CC/channel from active page config
     const auto& config = coreState_.pages.activeConfigs[index];
 
@@ -45,7 +42,7 @@ void MacroInputHandler::handleValueChange(uint8_t index, float value) {
     uint8_t cc_value = static_cast<uint8_t>(value * 127.0f);
     midi_.sendCC(config.channel, config.cc, cc_value);
 
-    // Mark values dirty for delayed persistence
+    // Mark values dirty for delayed persistence (syncs to page data)
     coreState_.onValueChanged(millis());
 }
 

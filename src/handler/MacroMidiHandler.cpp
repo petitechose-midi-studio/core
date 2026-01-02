@@ -32,13 +32,10 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
     slot.value.set(normalized);
     slot.updateDisplayValue();
 
-    // Sync to page data for persistence
-    coreState_.pages.activePageData().values[index] = normalized;
-
     // Sync encoder position
     encoders_.setPosition(ENCODERS[index], normalized);
 
-    // Mark values dirty for delayed persistence
+    // Mark values dirty for delayed persistence (syncs to page data)
     coreState_.onValueChanged(millis());
 }
 

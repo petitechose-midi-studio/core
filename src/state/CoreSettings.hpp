@@ -225,6 +225,7 @@ public:
             for (uint8_t i = 0; i < macro::MACRO_COUNT; ++i) {
                 saveValue(pages.activePage, i, pages.pages[pages.activePage].values[i]);
             }
+            backend_.commit();
             valuesDirty_ = false;
             OC_LOG_DEBUG("[CoreSettings] Auto-saved values after timeout");
         }
@@ -238,6 +239,7 @@ public:
             for (uint8_t i = 0; i < macro::MACRO_COUNT; ++i) {
                 saveValue(pages.activePage, i, pages.pages[pages.activePage].values[i]);
             }
+            backend_.commit();
             valuesDirty_ = false;
         }
     }
