@@ -38,12 +38,18 @@ constexpr uint32_t KNOB_TRACK = BaseTheme::Color::KNOB_TRACK;
 
 // MIDI indicators
 constexpr uint32_t MIDI_INACTIVE = 0x404040;
-constexpr uint32_t MIDI_ACTIVE = 0x00FF88;
+constexpr uint32_t MIDI_IN_ACTIVE = 0xFFCC00;   // Yellow
+constexpr uint32_t MIDI_OUT_ACTIVE = 0xFF8800;  // Orange
 
 // Transport
-constexpr uint32_t PLAY_ACTIVE = MACRO_5;
+constexpr uint32_t PLAY_ACTIVE = MACRO_5;       // Cyan
 constexpr uint32_t PLAY_INACTIVE = INACTIVE;
-constexpr uint32_t BEAT_PULSE = 0xFFFFFF;
+constexpr uint32_t BEAT_PULSE = 0x0088FF;       // Blue
+
+// Macro config labels (2 base colors, use opacity for prefix)
+constexpr uint32_t MACRO_CH_COLOR = 0xCC7777;    // Muted red
+constexpr uint32_t MACRO_CC_COLOR = 0x77CC77;    // Muted green
+constexpr lv_opa_t MACRO_PREFIX_OPA = LV_OPA_60; // Prefix opacity (dim)
 
 using BaseTheme::Color::getMacroColor;
 
@@ -63,7 +69,7 @@ constexpr int16_t TRANSPORT_BAR_HEIGHT = 20;
 constexpr int16_t PARAMETER_GRID_COLS = 4;
 constexpr int16_t PARAMETER_GRID_ROWS = 2;
 
-constexpr int16_t INDICATOR_SIZE = 10;
+constexpr int16_t INDICATOR_SIZE = 12;  // Same as plugin-bitwig
 
 constexpr int16_t PAD_SM = 4;
 constexpr int16_t PAD_MD = 6;

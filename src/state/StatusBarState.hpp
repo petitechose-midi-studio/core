@@ -15,9 +15,13 @@ struct StatusBarState {
     // TopBar
     SignalLabel pageName;
 
-    // TransportBar - MIDI
-    Signal<bool> midiInActive{false};
-    Signal<bool> midiOutActive{false};
+    // TransportBar - MIDI Note indicators
+    Signal<bool> noteInActive{false};
+    Signal<bool> noteOutActive{false};
+
+    // TransportBar - MIDI CC indicators
+    Signal<bool> ccInActive{false};
+    Signal<bool> ccOutActive{false};
 
     // TransportBar - Transport
     Signal<bool> playing{false};

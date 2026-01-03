@@ -12,14 +12,23 @@ MacroMidiHandler::MacroMidiHandler(state::CoreState& coreState,
 }
 
 void MacroMidiHandler::setupCallbacks() {
+    // CC messages
     midi_.onCC([this](uint8_t channel, uint8_t cc, uint8_t value) {
         handleIncomingCC(channel, cc, value);
+    });
+
+    // Note messages (for activity indicator only)
+    midi_.onNoteOn([this](uint8_t, uint8_t, uint8_t) {
+        coreState_.statusBar.noteInActive.set(true);
+    });
+    midi_.onNoteOff([this](uint8_t, uint8_t, uint8_t) {
+        coreState_.statusBar.noteInActive.set(true);
     });
 }
 
 void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t value) {
-    // Signal MIDI IN activity
-    coreState_.statusBar.midiInActive.set(true);
+    // Signal CC MIDI IN activity
+    coreState_.statusBar.ccInActive.set(true);
 
     // Find which macro this CC/channel belongs to
     int8_t index = findMacroForCC(channel, cc);

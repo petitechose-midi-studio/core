@@ -26,7 +26,13 @@ const oc::ui::lvgl::font::Entry CORE_FONT_ENTRIES[] = {
     {&fonts.splash_version, jetbrainsmononl_medium_13_bin,
      jetbrainsmononl_medium_13_bin_len, "SplashVersion", true},
 
-    // Generic fonts
+    // Generic fonts - 13px
+    {&fonts.inter_13_medium, interdisplay_medium_13_bin,
+     interdisplay_medium_13_bin_len, "Medium13", false},
+    {&fonts.inter_13_bold, interdisplay_bold_13_bin,
+     interdisplay_bold_13_bin_len, "Bold13", false},
+
+    // Generic fonts - 14px
     {&fonts.inter_14_light, interdisplay_light_14_bin,
      interdisplay_light_14_bin_len, "Light", false},
     {&fonts.inter_14_regular, interdisplay_regular_14_bin,

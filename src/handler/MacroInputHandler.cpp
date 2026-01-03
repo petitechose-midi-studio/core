@@ -35,8 +35,8 @@ void MacroInputHandler::handleValueChange(uint8_t index, float value) {
     uint8_t cc_value = static_cast<uint8_t>(value * 127.0f);
     midi_.sendCC(config.channel, config.cc, cc_value);
 
-    // Signal MIDI OUT activity
-    coreState_.statusBar.midiOutActive.set(true);
+    // Signal CC MIDI OUT activity
+    coreState_.statusBar.ccOutActive.set(true);
 }
 
 }  // namespace handler

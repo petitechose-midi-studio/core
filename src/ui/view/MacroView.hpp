@@ -4,8 +4,8 @@
  * @file MacroView.hpp
  * @brief 8-macro parameter view for standalone mode
  *
- * Displays 8 ParameterKnobs in a 4x2 grid layout.
- * Each knob has its own macro color from BaseTheme.
+ * Displays 8 MacroWidgets in a 4x2 grid layout.
+ * Each widget shows channel + CC labels below.
  * Subscribes to MacroState for reactive updates.
  */
 
@@ -17,14 +17,12 @@
 
 #include <oc/state/Signal.hpp>
 #include <oc/ui/lvgl/IView.hpp>
-#include <oc/ui/lvgl/component/ParameterKnob.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include "config/InputIDs.hpp"
-#include "state/MacroState.hpp"
-#include "ui/font/CoreFonts.hpp"
-
-namespace Theme = oc::ui::lvgl::BaseTheme;
+#include "state/CoreState.hpp"
+#include "ui/widget/IMacroWidget.hpp"
+#include "ui/widget/MacroKnobWidget.hpp"
 
 class MacroView : public oc::ui::lvgl::IView {
 public:
@@ -32,7 +30,7 @@ public:
     static constexpr uint8_t COLS = 4;
     static constexpr uint8_t ROWS = 2;
 
-    MacroView(lv_obj_t* parent, state::MacroState& state);
+    MacroView(lv_obj_t* parent, state::CoreState& coreState);
     ~MacroView() override;
 
     // IView interface
@@ -42,19 +40,19 @@ public:
     lv_obj_t* getElement() const override { return container_; }
 
     // Widget access
-    oc::ui::lvgl::ParameterKnob& macro(uint8_t index) { return *macros_[index]; }
-    const oc::ui::lvgl::ParameterKnob& macro(uint8_t index) const { return *macros_[index]; }
+    ui::IMacroWidget& macro(uint8_t index) { return *macros_[index]; }
+    const ui::IMacroWidget& macro(uint8_t index) const { return *macros_[index]; }
 
 private:
     void createLayout(lv_obj_t* parent);
     void createMacros();
-    void configureMacro(uint8_t index);
     void bindToState();
+    void updateConfigLabel(uint8_t index);
 
-    state::MacroState& state_;
+    state::CoreState& coreState_;
     std::vector<oc::state::Subscription> subscriptions_;
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* grid_ = nullptr;
-    std::array<std::unique_ptr<oc::ui::lvgl::ParameterKnob>, MACRO_COUNT> macros_;
+    std::array<std::unique_ptr<ui::IMacroWidget>, MACRO_COUNT> macros_;
 };

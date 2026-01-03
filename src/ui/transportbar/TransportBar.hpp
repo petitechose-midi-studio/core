@@ -14,10 +14,11 @@ namespace ui {
 /**
  * @brief Transport bar at bottom of screen
  *
- * Layout (3 columns):
- * - Left: MIDI IN/OUT indicators
- * - Center: Play icon + Tempo
- * - Right: Beat pulse indicator
+ * Layout (4 columns):
+ * - Cell 1 (Left): MIDI indicators (Note IN/OUT, CC IN/OUT)
+ * - Cell 2 (Center): Play icon
+ * - Cell 3: Tempo (right-aligned)
+ * - Cell 4 (Right): Beat pulse indicator
  */
 class TransportBar {
 public:
@@ -34,20 +35,26 @@ private:
 
     lv_obj_t* container_ = nullptr;
 
-    // Left: MIDI indicators
-    std::unique_ptr<StateIndicator> midiInIndicator_;
-    std::unique_ptr<StateIndicator> midiOutIndicator_;
+    // Cell 1: MIDI indicators (Note + CC)
+    lv_obj_t* noteInIcon_ = nullptr;
+    lv_obj_t* noteOutIcon_ = nullptr;
+    lv_obj_t* ccInIcon_ = nullptr;
+    lv_obj_t* ccOutIcon_ = nullptr;
 
-    // Center: Transport
+    // Cell 2: Transport
     lv_obj_t* playIcon_ = nullptr;
+
+    // Cell 3: Tempo
     lv_obj_t* tempoLabel_ = nullptr;
 
-    // Right: Beat indicator
+    // Cell 4: Beat indicator
     std::unique_ptr<StateIndicator> beatIndicator_;
 
     // Pulse timers (for auto-reset after blink)
-    lv_timer_t* midiInTimer_ = nullptr;
-    lv_timer_t* midiOutTimer_ = nullptr;
+    lv_timer_t* noteInTimer_ = nullptr;
+    lv_timer_t* noteOutTimer_ = nullptr;
+    lv_timer_t* ccInTimer_ = nullptr;
+    lv_timer_t* ccOutTimer_ = nullptr;
     lv_timer_t* beatTimer_ = nullptr;
 
     std::vector<oc::state::Subscription> subs_;
@@ -55,21 +62,25 @@ private:
     void createLayout(lv_obj_t* parent);
     void createMidiIndicators(lv_obj_t* parent);
     void createTransportCenter(lv_obj_t* parent);
-    void createBeatIndicator(lv_obj_t* parent);
+    void createTempoWithBeat(lv_obj_t* parent);
     void setupBindings();
 
-    void setMidiIn(bool active);
-    void setMidiOut(bool active);
+    void setNoteIn(bool active);
+    void setNoteOut(bool active);
+    void setCcIn(bool active);
+    void setCcOut(bool active);
     void setPlaying(bool playing);
     void setTempo(float bpm);
     void setBeatPulse(bool pulse);
 
-    // Pulse helper: activate indicator and schedule auto-reset
-    void pulseIndicator(StateIndicator* indicator, lv_timer_t*& timer,
-                        uint32_t duration, lv_timer_cb_t callback);
+    // Pulse helper for icon-based indicators
+    void pulseIcon(lv_obj_t* icon, lv_timer_t*& timer, lv_color_t activeColor,
+                   uint32_t duration, lv_timer_cb_t callback);
 
-    static void onMidiInTimeout(lv_timer_t* timer);
-    static void onMidiOutTimeout(lv_timer_t* timer);
+    static void onNoteInTimeout(lv_timer_t* timer);
+    static void onNoteOutTimeout(lv_timer_t* timer);
+    static void onCcInTimeout(lv_timer_t* timer);
+    static void onCcOutTimeout(lv_timer_t* timer);
     static void onBeatTimeout(lv_timer_t* timer);
 };
 
