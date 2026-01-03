@@ -1,4 +1,4 @@
-#include "MacroInputHandler.hpp"
+#include "HandlerInputMacro.hpp"
 
 #include <oc/ui/lvgl/Scope.hpp>
 
@@ -6,7 +6,7 @@ namespace handler {
 
 using namespace oc::ui::lvgl;
 
-MacroInputHandler::MacroInputHandler(state::CoreState& coreState,
+HandlerInputMacro::HandlerInputMacro(state::CoreState& coreState,
                                      oc::api::EncoderAPI& encoders,
                                      oc::api::MidiAPI& midi,
                                      lv_obj_t* scopeElement)
@@ -17,7 +17,7 @@ MacroInputHandler::MacroInputHandler(state::CoreState& coreState,
     setupBindings();
 }
 
-void MacroInputHandler::setupBindings() {
+void HandlerInputMacro::setupBindings() {
     for (uint8_t i = 0; i < state::MACRO_COUNT; ++i) {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
@@ -26,7 +26,7 @@ void MacroInputHandler::setupBindings() {
     }
 }
 
-void MacroInputHandler::handleValueChange(uint8_t index, float value) {
+void HandlerInputMacro::handleValueChange(uint8_t index, float value) {
     // Update state (triggers UI update, marks dirty for persistence)
     coreState_.setMacroValue(index, value);
 

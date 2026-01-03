@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file TransportInputHandler.hpp
+ * @file HandlerInputTransport.hpp
  * @brief Handles transport controls (tempo, play/stop)
  *
  * - NAV encoder: tempo +/- 1 BPM
@@ -18,17 +18,17 @@
 
 namespace handler {
 
-class TransportInputHandler {
+class HandlerInputTransport {
 public:
-    TransportInputHandler(state::CoreState& coreState,
+    HandlerInputTransport(state::CoreState& coreState,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,
                           lv_obj_t* scopeElement);
 
-    ~TransportInputHandler() = default;
+    ~HandlerInputTransport() = default;
 
-    TransportInputHandler(const TransportInputHandler&) = delete;
-    TransportInputHandler& operator=(const TransportInputHandler&) = delete;
+    HandlerInputTransport(const HandlerInputTransport&) = delete;
+    HandlerInputTransport& operator=(const HandlerInputTransport&) = delete;
 
 private:
     void setupBindings();

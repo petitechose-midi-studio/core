@@ -1,6 +1,6 @@
 #include "TopBar.hpp"
 
-#include <oc/state/Bind.hpp>
+#include <cstring>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include "ui/font/CoreFonts.hpp"
@@ -10,10 +10,8 @@ namespace ui {
 
 namespace Theme = standalone::theme;
 
-TopBar::TopBar(lv_obj_t* parent, state::StatusBarState& state)
-    : state_(state) {
+TopBar::TopBar(lv_obj_t* parent) {
     createLayout(parent);
-    setupBindings();
 }
 
 TopBar::~TopBar() {
@@ -33,16 +31,20 @@ void TopBar::createLayout(lv_obj_t* parent) {
     lv_obj_set_style_text_font(label_, fonts.inter_14_medium, 0);
     lv_obj_set_style_text_color(label_, lv_color_hex(Theme::Color::TEXT_SECONDARY), 0);
     lv_obj_center(label_);
-    lv_label_set_text(label_, state_.pageName.get());
+    lv_label_set_text(label_, "");
 }
 
-void TopBar::setupBindings() {
-    using oc::state::bind;
-    bind(subs_).on(state_.pageName, [this](const char* name) {
-        if (label_) {
-            lv_label_set_text(label_, name);
-        }
-    });
+void TopBar::render(const TopBarProps& props) {
+    // Skip if no change
+    if (std::strcmp(currentProps_.pageName, props.pageName) == 0) {
+        return;
+    }
+
+    currentProps_ = props;
+
+    if (label_) {
+        lv_label_set_text(label_, props.pageName);
+    }
 }
 
 }  // namespace ui

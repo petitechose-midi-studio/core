@@ -21,10 +21,10 @@
 #include <oc/ui/lvgl/FontLoader.hpp>
 
 #include "config/App.hpp"
+#include "handler/input/HandlerInputMacro.hpp"
 #include "handler/input/HandlerInputMacroEdit.hpp"
-#include "handler/MacroInputHandler.hpp"
-#include "handler/MacroMidiHandler.hpp"
-#include "handler/TransportInputHandler.hpp"
+#include "handler/input/HandlerInputMacroMidi.hpp"
+#include "handler/input/HandlerInputTransport.hpp"
 #include "state/CoreState.hpp"
 #include "state/OverlayController.hpp"
 #include "ui/ViewContainer.hpp"
@@ -73,11 +73,10 @@ public:
         // Create UI container with zones
         viewContainer_ = std::make_unique<ui::ViewContainer>(lv_screen_active());
 
-        // Create TopBar in top zone
-        topBar_ = std::make_unique<ui::TopBar>(
-            viewContainer_->getTopZone(),
-            coreState_.statusBar
-        );
+        // Create TopBar in top zone (Props pattern)
+        topBar_ = std::make_unique<ui::TopBar>(viewContainer_->getTopZone());
+        setupTopBarRendering();
+        renderTopBar();  // Initial render
 
         // Create MacroView in main zone
         view_ = std::make_unique<MacroView>(
@@ -86,11 +85,10 @@ public:
         );
         view_->onActivate();
 
-        // Create TransportBar in bottom zone
-        transportBar_ = std::make_unique<ui::TransportBar>(
-            viewContainer_->getBottomZone(),
-            coreState_.statusBar
-        );
+        // Create TransportBar in bottom zone (Props pattern)
+        transportBar_ = std::make_unique<ui::TransportBar>(viewContainer_->getBottomZone());
+        setupTransportBarRendering();
+        renderTransportBar();  // Initial render
 
         // Create overlay controller with AuthorityResolver
         overlayController_ = std::make_unique<state::OverlayController>(
@@ -112,13 +110,13 @@ public:
         setupMacroEditRendering();
 
         // Create handlers (bindings scoped to view element)
-        inputHandler_ = std::make_unique<handler::MacroInputHandler>(
+        inputHandler_ = std::make_unique<handler::HandlerInputMacro>(
             coreState_, encoders(), midi(), view_->getElement()
         );
-        midiHandler_ = std::make_unique<handler::MacroMidiHandler>(
+        midiHandler_ = std::make_unique<handler::HandlerInputMacroMidi>(
             coreState_, midi(), encoders()
         );
-        transportHandler_ = std::make_unique<handler::TransportInputHandler>(
+        transportHandler_ = std::make_unique<handler::HandlerInputTransport>(
             coreState_, encoders(), buttons(), view_->getElement()
         );
 
@@ -185,6 +183,84 @@ public:
         });
     }
 
+    /**
+     * @brief Setup subscriptions to render TopBar from state
+     */
+    void setupTopBarRendering() {
+        topBarSubs_.push_back(coreState_.statusBar.pageName.subscribe(
+            [this](const char*) { renderTopBar(); }
+        ));
+    }
+
+    /**
+     * @brief Render TopBar with current state
+     */
+    void renderTopBar() {
+        topBar_->render({
+            .pageName = coreState_.statusBar.pageName.get()
+        });
+    }
+
+    /**
+     * @brief Setup subscriptions to render TransportBar from state
+     */
+    void setupTransportBarRendering() {
+        auto render = [this]() { renderTransportBar(); };
+
+        transportBarSubs_.push_back(coreState_.statusBar.noteInActive.subscribe(
+            [render](bool) { render(); }
+        ));
+        transportBarSubs_.push_back(coreState_.statusBar.noteOutActive.subscribe(
+            [render](bool) { render(); }
+        ));
+        transportBarSubs_.push_back(coreState_.statusBar.ccInActive.subscribe(
+            [render](bool) { render(); }
+        ));
+        transportBarSubs_.push_back(coreState_.statusBar.ccOutActive.subscribe(
+            [render](bool) { render(); }
+        ));
+        transportBarSubs_.push_back(coreState_.statusBar.playing.subscribe(
+            [render](bool) { render(); }
+        ));
+        transportBarSubs_.push_back(coreState_.statusBar.tempo.subscribe(
+            [render](float) { render(); }
+        ));
+        transportBarSubs_.push_back(coreState_.statusBar.beatPulse.subscribe(
+            [render](bool) { render(); }
+        ));
+    }
+
+    /**
+     * @brief Render TransportBar with current state
+     */
+    void renderTransportBar() {
+        transportBar_->render({
+            .noteInActive = coreState_.statusBar.noteInActive.get(),
+            .noteOutActive = coreState_.statusBar.noteOutActive.get(),
+            .ccInActive = coreState_.statusBar.ccInActive.get(),
+            .ccOutActive = coreState_.statusBar.ccOutActive.get(),
+            .playing = coreState_.statusBar.playing.get(),
+            .tempo = coreState_.statusBar.tempo.get(),
+            .beatPulse = coreState_.statusBar.beatPulse.get(),
+            // Pulse completion callbacks - reset state signals
+            .onNoteInPulseComplete = [this]() {
+                coreState_.statusBar.noteInActive.set(false);
+            },
+            .onNoteOutPulseComplete = [this]() {
+                coreState_.statusBar.noteOutActive.set(false);
+            },
+            .onCcInPulseComplete = [this]() {
+                coreState_.statusBar.ccInActive.set(false);
+            },
+            .onCcOutPulseComplete = [this]() {
+                coreState_.statusBar.ccOutActive.set(false);
+            },
+            .onBeatPulseComplete = [this]() {
+                coreState_.statusBar.beatPulse.set(false);
+            }
+        });
+    }
+
     void update() override {}
 
     void cleanup() override {
@@ -194,8 +270,10 @@ public:
         inputHandler_.reset();
         midiHandler_.reset();
 
-        // Clear rendering subscriptions
+        // Clear all rendering subscriptions
         macroEditSubs_.clear();
+        topBarSubs_.clear();
+        transportBarSubs_.clear();
 
         // Overlay UI
         macroEditOverlay_.reset();
@@ -229,12 +307,16 @@ private:
     // Overlay system
     std::unique_ptr<state::OverlayController> overlayController_;
     std::unique_ptr<ui::MacroEditOverlay> macroEditOverlay_;
-    std::vector<oc::state::Subscription> macroEditSubs_;  ///< Rendering subscriptions
+
+    // Rendering subscriptions (orchestrator pattern)
+    std::vector<oc::state::Subscription> macroEditSubs_;
+    std::vector<oc::state::Subscription> topBarSubs_;
+    std::vector<oc::state::Subscription> transportBarSubs_;
 
     // Handlers
-    std::unique_ptr<handler::MacroInputHandler> inputHandler_;
-    std::unique_ptr<handler::MacroMidiHandler> midiHandler_;
-    std::unique_ptr<handler::TransportInputHandler> transportHandler_;
+    std::unique_ptr<handler::HandlerInputMacro> inputHandler_;
+    std::unique_ptr<handler::HandlerInputMacroMidi> midiHandler_;
+    std::unique_ptr<handler::HandlerInputTransport> transportHandler_;
     std::unique_ptr<handler::HandlerInputMacroEdit> macroEditHandler_;
 };
 
