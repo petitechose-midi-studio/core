@@ -20,6 +20,7 @@
 #include <oc/time/Time.hpp>
 
 #include "CoreSettings.hpp"
+#include "MacroEditState.hpp"
 #include "MacroState.hpp"
 #include "OverlayTypes.hpp"
 #include "StatusBarState.hpp"
@@ -50,6 +51,9 @@ struct CoreState {
     /// Status bar state (TopBar + TransportBar)
     StatusBarState statusBar;
 
+    /// Macro edit overlay state
+    MacroEditState macroEdit;
+
     /**
      * @brief Construct with storage backend
      * @param storage EEPROM or other storage backend
@@ -64,6 +68,7 @@ struct CoreState {
 
         // Register overlay signals
         overlays.registerOverlay(CoreOverlayType::PAGE_SELECTOR, pages.selector.visible);
+        overlays.registerOverlay(CoreOverlayType::MACRO_EDIT, macroEdit.visible);
     }
 
     // Non-copyable, non-movable
@@ -197,6 +202,7 @@ struct CoreState {
         pages.initDefaults();
         syncMacrosFromActivePage();
         settings.saveAll(pages);
+        macroEdit.reset();
         overlays.hideAll();
     }
 
