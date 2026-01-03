@@ -76,4 +76,12 @@ inline constexpr std::array<EncoderID, MACRO_COUNT> MACRO_ENCODERS = {
     EncoderID::MACRO_7, EncoderID::MACRO_8
 };
 
+/// Mapping from macro index (0-7) to button ID
+inline constexpr std::array<ButtonID, MACRO_COUNT> MACRO_BUTTONS = {
+    ButtonID::MACRO_1, ButtonID::MACRO_2,
+    ButtonID::MACRO_3, ButtonID::MACRO_4,
+    ButtonID::MACRO_5, ButtonID::MACRO_6,
+    ButtonID::MACRO_7, ButtonID::MACRO_8
+};
+
 }  // namespace Config
