@@ -21,6 +21,7 @@
 
 #include "CoreSettings.hpp"
 #include "MacroState.hpp"
+#include "StatusBarState.hpp"
 #include "macro/MacroPagesState.hpp"
 
 namespace state {
@@ -53,6 +54,9 @@ struct CoreState {
 
     /// Overlay visibility manager
     oc::state::OverlayManager<CoreOverlayType> overlays;
+
+    /// Status bar state (TopBar + TransportBar)
+    StatusBarState statusBar;
 
     /**
      * @brief Construct with storage backend
@@ -108,6 +112,11 @@ struct CoreState {
         // Switch page
         pages.setActivePage(pageIndex);
         settings.saveActivePage(pageIndex);
+
+        // Update status bar
+        char pageName[16];
+        snprintf(pageName, sizeof(pageName), "Page %d", pageIndex + 1);
+        statusBar.pageName.set(pageName);
 
         // Load new page values
         syncMacrosFromActivePage();
@@ -185,19 +194,7 @@ struct CoreState {
         uint32_t now = oc::time::millis();
         if ((now - dirtyTimestamp_) < CoreSettings::VALUE_SAVE_DELAY_MS) return;
 
-        // Sync dirty values to page data and save
-        auto& pageData = pages.activePageData();
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            if (dirtyMask_ & (1 << i)) {
-                float value = macros.slots[i].value.get();
-                pageData.values[i] = value;
-                settings.saveValue(pages.activePage, i, value);
-            }
-        }
-        settings.commit();
-
-        dirtyMask_ = 0;
-        dirtyTimestamp_ = 0;
+        saveDirtyValues();
     }
 
     /**
@@ -216,7 +213,17 @@ struct CoreState {
      */
     void flush() {
         if (dirtyMask_ == 0) return;
+        saveDirtyValues();
+    }
 
+private:
+    uint8_t dirtyMask_ = 0;       ///< Bitfield: which macro indices need saving
+    uint32_t dirtyTimestamp_ = 0; ///< When first change occurred (for timeout)
+
+    /**
+     * @brief Save all dirty values to storage and reset dirty state
+     */
+    void saveDirtyValues() {
         auto& pageData = pages.activePageData();
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
             if (dirtyMask_ & (1 << i)) {
@@ -226,14 +233,9 @@ struct CoreState {
             }
         }
         settings.commit();
-
         dirtyMask_ = 0;
         dirtyTimestamp_ = 0;
     }
-
-private:
-    uint8_t dirtyMask_ = 0;       ///< Bitfield: which macro indices need saving
-    uint32_t dirtyTimestamp_ = 0; ///< When first change occurred (for timeout)
 };
 
 }  // namespace state

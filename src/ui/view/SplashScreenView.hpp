@@ -1,19 +1,23 @@
 #pragma once
 
-#include <string>
-
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IView.hpp>
 
 class SplashScreenView : public oc::ui::lvgl::IView {
 public:
+    /**
+     * @brief Configuration for splash screen appearance
+     *
+     * Uses const char* instead of std::string to avoid heap allocation
+     * in embedded context.
+     */
     struct Config {
-        std::string title;
-        std::string version;
-        lv_color_t bg_color;
-        lv_color_t text_color;
-        lv_color_t progress_color;
+        const char* title = nullptr;
+        const char* version = nullptr;
+        lv_color_t bg_color{};
+        lv_color_t text_color{};
+        lv_color_t progress_color{};
 
         Config();
     };

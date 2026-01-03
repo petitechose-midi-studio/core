@@ -20,10 +20,12 @@
 
 #include <oc/state/Signal.hpp>
 
+#include "config/InputIDs.hpp"
+
 namespace state::macro {
 
 static constexpr uint8_t PAGE_COUNT = 8;
-static constexpr uint8_t MACRO_COUNT = 8;
+static constexpr uint8_t MACRO_COUNT = Config::MACRO_COUNT;
 static constexpr uint8_t PAGE_NAME_SIZE = 16;
 
 /**

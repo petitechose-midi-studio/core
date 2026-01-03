@@ -17,12 +17,17 @@
 #include <oc/context/Requirements.hpp>
 #include <oc/log/Log.hpp>
 
+#include <oc/ui/lvgl/FontLoader.hpp>
+
 #include "config/App.hpp"
 #include "handler/MacroInputHandler.hpp"
 #include "handler/MacroMidiHandler.hpp"
 #include "state/CoreState.hpp"
 #include "ui/ViewContainer.hpp"
-#include "ui/font/FontLoader.hpp"
+#include "ui/font/CoreFonts.hpp"
+#include "ui/font/StandaloneFonts.hpp"
+#include "ui/topbar/TopBar.hpp"
+#include "ui/transportbar/TransportBar.hpp"
 #include "ui/view/MacroView.hpp"
 
 namespace context {
@@ -53,8 +58,9 @@ public:
     bool initialize() override {
         OC_LOG_INFO("StandaloneContext::initialize()");
 
-        fontsRegisterCore();
-        loadPluginFonts();
+        oc::ui::lvgl::font::load(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
+        oc::ui::lvgl::font::load(STANDALONE_FONT_ENTRIES, STANDALONE_FONT_COUNT);
+        linkCoreFontAliases();
 
         // Sync encoder positions with restored values BEFORE creating handlers
         syncEncodersFromState();
@@ -62,12 +68,24 @@ public:
         // Create UI container with zones
         viewContainer_ = std::make_unique<ui::ViewContainer>(lv_screen_active());
 
-        // Create MacroView in main zone (not directly on screen)
+        // Create TopBar in top zone
+        topBar_ = std::make_unique<ui::TopBar>(
+            viewContainer_->getTopZone(),
+            coreState_.statusBar
+        );
+
+        // Create MacroView in main zone
         view_ = std::make_unique<MacroView>(
             viewContainer_->getMainZone(),
             coreState_.macros
         );
         view_->onActivate();
+
+        // Create TransportBar in bottom zone
+        transportBar_ = std::make_unique<ui::TransportBar>(
+            viewContainer_->getBottomZone(),
+            coreState_.statusBar
+        );
 
         // Create handlers (bindings scoped to view element)
         inputHandler_ = std::make_unique<handler::MacroInputHandler>(
@@ -98,6 +116,10 @@ public:
         inputHandler_.reset();
         midiHandler_.reset();
 
+        // Bars
+        topBar_.reset();
+        transportBar_.reset();
+
         if (view_) {
             view_->onDeactivate();
             view_.reset();
@@ -111,7 +133,9 @@ public:
 private:
     state::CoreState& coreState_;  // External reference (survives context switches)
     std::unique_ptr<ui::ViewContainer> viewContainer_;
+    std::unique_ptr<ui::TopBar> topBar_;
     std::unique_ptr<MacroView> view_;
+    std::unique_ptr<ui::TransportBar> transportBar_;
     std::unique_ptr<handler::MacroInputHandler> inputHandler_;
     std::unique_ptr<handler::MacroMidiHandler> midiHandler_;
 };

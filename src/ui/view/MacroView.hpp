@@ -20,14 +20,15 @@
 #include <oc/ui/lvgl/component/ParameterKnob.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
+#include "config/InputIDs.hpp"
 #include "state/MacroState.hpp"
-#include "ui/font/FontLoader.hpp"
+#include "ui/font/CoreFonts.hpp"
 
 namespace Theme = oc::ui::lvgl::BaseTheme;
 
 class MacroView : public oc::ui::lvgl::IView {
 public:
-    static constexpr uint8_t MACRO_COUNT = 8;
+    static constexpr uint8_t MACRO_COUNT = Config::MACRO_COUNT;
     static constexpr uint8_t COLS = 4;
     static constexpr uint8_t ROWS = 2;
 

@@ -18,6 +18,9 @@ void MacroMidiHandler::setupCallbacks() {
 }
 
 void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t value) {
+    // Signal MIDI IN activity
+    coreState_.statusBar.midiInActive.set(true);
+
     // Find which macro this CC/channel belongs to
     int8_t index = findMacroForCC(channel, cc);
     if (index < 0) return;

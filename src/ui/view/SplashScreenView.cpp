@@ -3,13 +3,14 @@
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include "config/App.hpp"
-#include "ui/font/FontLoader.hpp"
+#include "ui/font/CoreFonts.hpp"
 
 namespace App = Config::App;
 namespace Theme = oc::ui::lvgl::BaseTheme;
 
 SplashScreenView::Config::Config()
-    : title(App::NAME), version(App::VERSION),
+    : title(App::NAME),
+      version(App::VERSION),
       bg_color(lv_color_hex(Theme::Color::BACKGROUND)),
       text_color(lv_color_hex(Theme::Color::TEXT_PRIMARY)),
       progress_color(lv_color_hex(Theme::Color::TEXT_PRIMARY)) {}
@@ -104,7 +105,7 @@ void SplashScreenView::createLogo() {
 
 void SplashScreenView::createLabels() {
     title_label_ = lv_label_create(container_);
-    lv_label_set_text(title_label_, config_.title.c_str());
+    lv_label_set_text(title_label_, config_.title);
     lv_obj_set_style_text_color(title_label_, config_.text_color, 0);
     if (fonts.splash_title) {
         lv_obj_set_style_text_font(title_label_, fonts.splash_title, 0);
@@ -112,7 +113,7 @@ void SplashScreenView::createLabels() {
     lv_obj_align(title_label_, LV_ALIGN_CENTER, 0, 47);
 
     version_label_ = lv_label_create(container_);
-    lv_label_set_text(version_label_, config_.version.c_str());
+    lv_label_set_text(version_label_, config_.version);
     lv_obj_set_style_text_color(version_label_, config_.text_color, 0);
     if (fonts.splash_version) {
         lv_obj_set_style_text_font(version_label_, fonts.splash_version, 0);

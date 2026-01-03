@@ -5,13 +5,16 @@
 #include <oc/state/Signal.hpp>
 #include <oc/state/SignalString.hpp>
 
+#include "config/InputIDs.hpp"
+
 namespace state {
 
 using oc::state::Signal;
 using oc::state::SignalLabel;
 using oc::state::SignalTiny;
 
-static constexpr uint8_t MACRO_COUNT = 8;
+/// Re-export from Config for convenience within state namespace
+static constexpr uint8_t MACRO_COUNT = Config::MACRO_COUNT;
 
 /**
  * @brief Single macro slot state

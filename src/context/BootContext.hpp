@@ -13,8 +13,10 @@
 #include <oc/context/IContext.hpp>
 #include <oc/context/Requirements.hpp>
 
+#include <oc/ui/lvgl/FontLoader.hpp>
+
 #include "config/App.hpp"
-#include "ui/font/FontLoader.hpp"
+#include "ui/font/CoreFonts.hpp"
 #include "ui/view/SplashScreenView.hpp"
 
 namespace context {
@@ -24,8 +26,7 @@ public:
     static constexpr oc::context::Requirements REQUIRES{};
 
     bool initialize() override {
-        fontsRegisterCore();
-        fontsLoadEssential();
+        oc::ui::lvgl::font::loadEssential(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
 
         splash_ = std::make_unique<SplashScreenView>(lv_screen_active());
         splash_->onActivate();
@@ -61,8 +62,8 @@ public:
 
 private:
     static constexpr uint32_t DURATION_MS = 1000;
-    static constexpr uint32_t FADE_MS = DURATION_MS / 10;  // 300ms
-    static constexpr uint32_t FADE_START_MS = DURATION_MS - FADE_MS;
+    static constexpr uint32_t FADE_MS = DURATION_MS / 10;  // 100ms fade out
+    static constexpr uint32_t FADE_START_MS = DURATION_MS - FADE_MS;  // Start fade at 900ms
 
     uint32_t startMs_ = 0;
     bool fading_ = false;
