@@ -21,19 +21,11 @@
 
 #include "CoreSettings.hpp"
 #include "MacroState.hpp"
+#include "OverlayTypes.hpp"
 #include "StatusBarState.hpp"
 #include "macro/MacroPagesState.hpp"
 
 namespace state {
-
-/**
- * @brief Overlay types for standalone mode
- */
-enum class CoreOverlayType : uint8_t {
-    NONE = 0,
-    PAGE_SELECTOR,
-    COUNT  // Must be last
-};
 
 /**
  * @brief Global state container for standalone mode
