@@ -1,41 +1,15 @@
 #pragma once
 
-#include <functional>
 #include <memory>
+#include <vector>
 
 #include <lvgl.h>
+#include <oc/state/Signal.hpp>
 #include <oc/ui/lvgl/widget/StateIndicator.hpp>
 
+#include "state/StatusBarState.hpp"
+
 namespace ui {
-
-/**
- * @brief Props for TransportBar component
- *
- * Pulse signals (noteInActive, etc.) trigger visual blink when transitioning
- * false→true. Callbacks are invoked when pulse timer completes, allowing
- * the orchestrator to reset state signals.
- */
-struct TransportBarProps {
-    // MIDI activity indicators (pulse on true)
-    bool noteInActive = false;
-    bool noteOutActive = false;
-    bool ccInActive = false;
-    bool ccOutActive = false;
-
-    // Transport state
-    bool playing = false;
-    float tempo = 120.0f;
-
-    // Beat indicator (pulse on true)
-    bool beatPulse = false;
-
-    // Pulse completion callbacks (called when visual timer expires)
-    std::function<void()> onNoteInPulseComplete;
-    std::function<void()> onNoteOutPulseComplete;
-    std::function<void()> onCcInPulseComplete;
-    std::function<void()> onCcOutPulseComplete;
-    std::function<void()> onBeatPulseComplete;
-};
 
 /**
  * @brief Transport bar at bottom of screen
@@ -44,26 +18,19 @@ struct TransportBarProps {
  * - Cell 1 (Left): MIDI indicators (Note IN/OUT, CC IN/OUT)
  * - Cell 2 (Center): Play icon
  * - Cell 3 (Right): Beat indicator + Tempo
- *
- * Stateless component following Props pattern.
- * Rendered by orchestrator (StandaloneContext) when state changes.
  */
 class TransportBar {
 public:
-    explicit TransportBar(lv_obj_t* parent);
+    TransportBar(lv_obj_t* parent, state::StatusBarState& state);
     ~TransportBar();
 
     TransportBar(const TransportBar&) = delete;
     TransportBar& operator=(const TransportBar&) = delete;
 
-    /**
-     * @brief Render with given props
-     * @param props Display properties and callbacks
-     */
-    void render(const TransportBarProps& props);
-
 private:
     using StateIndicator = oc::ui::lvgl::StateIndicator;
+
+    state::StatusBarState& state_;
 
     lv_obj_t* container_ = nullptr;
 
@@ -89,16 +56,21 @@ private:
     lv_timer_t* ccOutTimer_ = nullptr;
     lv_timer_t* beatTimer_ = nullptr;
 
-    // Cached props for change detection
-    TransportBarProps currentProps_;
+    std::vector<oc::state::Subscription> subs_;
 
     void createLayout(lv_obj_t* parent);
     void createMidiIndicators(lv_obj_t* parent);
     void createTransportCenter(lv_obj_t* parent);
     void createTempoWithBeat(lv_obj_t* parent);
+    void setupBindings();
 
+    void setNoteIn(bool active);
+    void setNoteOut(bool active);
+    void setCcIn(bool active);
+    void setCcOut(bool active);
     void setPlaying(bool playing);
     void setTempo(float bpm);
+    void setBeatPulse(bool pulse);
 
     // Pulse helper for icon-based indicators
     void pulseIcon(lv_obj_t* icon, lv_timer_t*& timer, lv_color_t activeColor,

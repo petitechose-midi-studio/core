@@ -73,10 +73,11 @@ public:
         // Create UI container with zones
         viewContainer_ = std::make_unique<ui::ViewContainer>(lv_screen_active());
 
-        // Create TopBar in top zone (Props pattern)
-        topBar_ = std::make_unique<ui::TopBar>(viewContainer_->getTopZone());
-        setupTopBarRendering();
-        renderTopBar();  // Initial render
+        // Create TopBar in top zone
+        topBar_ = std::make_unique<ui::TopBar>(
+            viewContainer_->getTopZone(),
+            coreState_.statusBar
+        );
 
         // Create MacroView in main zone
         view_ = std::make_unique<MacroView>(
@@ -85,10 +86,11 @@ public:
         );
         view_->onActivate();
 
-        // Create TransportBar in bottom zone (Props pattern)
-        transportBar_ = std::make_unique<ui::TransportBar>(viewContainer_->getBottomZone());
-        setupTransportBarRendering();
-        renderTransportBar();  // Initial render
+        // Create TransportBar in bottom zone
+        transportBar_ = std::make_unique<ui::TransportBar>(
+            viewContainer_->getBottomZone(),
+            coreState_.statusBar
+        );
 
         // Create overlay controller with AuthorityResolver
         overlayController_ = std::make_unique<state::OverlayController>(
@@ -106,7 +108,7 @@ public:
             static_cast<oc::hal::ButtonID>(0)  // No latch button
         );
 
-        // Setup rendering subscriptions (orchestrator pattern)
+        // Setup rendering subscriptions for MacroEditOverlay (orchestrator pattern)
         setupMacroEditRendering();
 
         // Create handlers (bindings scoped to view element)
@@ -183,84 +185,6 @@ public:
         });
     }
 
-    /**
-     * @brief Setup subscriptions to render TopBar from state
-     */
-    void setupTopBarRendering() {
-        topBarSubs_.push_back(coreState_.statusBar.pageName.subscribe(
-            [this](const char*) { renderTopBar(); }
-        ));
-    }
-
-    /**
-     * @brief Render TopBar with current state
-     */
-    void renderTopBar() {
-        topBar_->render({
-            .pageName = coreState_.statusBar.pageName.get()
-        });
-    }
-
-    /**
-     * @brief Setup subscriptions to render TransportBar from state
-     */
-    void setupTransportBarRendering() {
-        auto render = [this]() { renderTransportBar(); };
-
-        transportBarSubs_.push_back(coreState_.statusBar.noteInActive.subscribe(
-            [render](bool) { render(); }
-        ));
-        transportBarSubs_.push_back(coreState_.statusBar.noteOutActive.subscribe(
-            [render](bool) { render(); }
-        ));
-        transportBarSubs_.push_back(coreState_.statusBar.ccInActive.subscribe(
-            [render](bool) { render(); }
-        ));
-        transportBarSubs_.push_back(coreState_.statusBar.ccOutActive.subscribe(
-            [render](bool) { render(); }
-        ));
-        transportBarSubs_.push_back(coreState_.statusBar.playing.subscribe(
-            [render](bool) { render(); }
-        ));
-        transportBarSubs_.push_back(coreState_.statusBar.tempo.subscribe(
-            [render](float) { render(); }
-        ));
-        transportBarSubs_.push_back(coreState_.statusBar.beatPulse.subscribe(
-            [render](bool) { render(); }
-        ));
-    }
-
-    /**
-     * @brief Render TransportBar with current state
-     */
-    void renderTransportBar() {
-        transportBar_->render({
-            .noteInActive = coreState_.statusBar.noteInActive.get(),
-            .noteOutActive = coreState_.statusBar.noteOutActive.get(),
-            .ccInActive = coreState_.statusBar.ccInActive.get(),
-            .ccOutActive = coreState_.statusBar.ccOutActive.get(),
-            .playing = coreState_.statusBar.playing.get(),
-            .tempo = coreState_.statusBar.tempo.get(),
-            .beatPulse = coreState_.statusBar.beatPulse.get(),
-            // Pulse completion callbacks - reset state signals
-            .onNoteInPulseComplete = [this]() {
-                coreState_.statusBar.noteInActive.set(false);
-            },
-            .onNoteOutPulseComplete = [this]() {
-                coreState_.statusBar.noteOutActive.set(false);
-            },
-            .onCcInPulseComplete = [this]() {
-                coreState_.statusBar.ccInActive.set(false);
-            },
-            .onCcOutPulseComplete = [this]() {
-                coreState_.statusBar.ccOutActive.set(false);
-            },
-            .onBeatPulseComplete = [this]() {
-                coreState_.statusBar.beatPulse.set(false);
-            }
-        });
-    }
-
     void update() override {}
 
     void cleanup() override {
@@ -270,10 +194,8 @@ public:
         inputHandler_.reset();
         midiHandler_.reset();
 
-        // Clear all rendering subscriptions
+        // Clear MacroEdit rendering subscriptions
         macroEditSubs_.clear();
-        topBarSubs_.clear();
-        transportBarSubs_.clear();
 
         // Overlay UI
         macroEditOverlay_.reset();
@@ -307,11 +229,7 @@ private:
     // Overlay system
     std::unique_ptr<state::OverlayController> overlayController_;
     std::unique_ptr<ui::MacroEditOverlay> macroEditOverlay_;
-
-    // Rendering subscriptions (orchestrator pattern)
-    std::vector<oc::state::Subscription> macroEditSubs_;
-    std::vector<oc::state::Subscription> topBarSubs_;
-    std::vector<oc::state::Subscription> transportBarSubs_;
+    std::vector<oc::state::Subscription> macroEditSubs_;  ///< MacroEdit rendering subscriptions
 
     // Handlers
     std::unique_ptr<handler::HandlerInputMacro> inputHandler_;
