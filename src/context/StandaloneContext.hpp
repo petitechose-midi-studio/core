@@ -10,6 +10,7 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 #include <lvgl.h>
 
@@ -20,14 +21,14 @@
 #include <oc/ui/lvgl/FontLoader.hpp>
 
 #include "config/App.hpp"
-#include "handler/MacroEditInputHandler.hpp"
+#include "handler/input/HandlerInputMacroEdit.hpp"
 #include "handler/MacroInputHandler.hpp"
 #include "handler/MacroMidiHandler.hpp"
 #include "handler/TransportInputHandler.hpp"
 #include "state/CoreState.hpp"
 #include "state/OverlayController.hpp"
 #include "ui/ViewContainer.hpp"
-#include "ui/overlay/MacroEditOverlay.hpp"
+#include "ui/macro/MacroEditOverlay.hpp"
 #include "ui/font/CoreFonts.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/topbar/TopBar.hpp"
@@ -97,10 +98,8 @@ public:
         );
         buttons().setAuthorityResolver(&overlayController_->authority());
 
-        // Create MacroEdit overlay
-        macroEditOverlay_ = std::make_unique<ui::MacroEditOverlay>(
-            lv_screen_active(), coreState_.macroEdit
-        );
+        // Create MacroEdit overlay (stateless - no state reference)
+        macroEditOverlay_ = std::make_unique<ui::MacroEditOverlay>(lv_screen_active());
 
         // Register overlay cleanup
         overlayController_->registerCleanup(
@@ -109,14 +108,8 @@ public:
             static_cast<oc::hal::ButtonID>(0)  // No latch button
         );
 
-        // Subscribe to overlay visibility
-        overlayVisibilitySub_ = coreState_.macroEdit.visible.subscribe([this](bool visible) {
-            if (visible) {
-                macroEditOverlay_->show();
-            } else {
-                macroEditOverlay_->hide();
-            }
-        });
+        // Setup rendering subscriptions (orchestrator pattern)
+        setupMacroEditRendering();
 
         // Create handlers (bindings scoped to view element)
         inputHandler_ = std::make_unique<handler::MacroInputHandler>(
@@ -130,10 +123,9 @@ public:
         );
 
         // Create MacroEdit input handler (two-level scoping)
-        macroEditHandler_ = std::make_unique<handler::MacroEditInputHandler>(
+        macroEditHandler_ = std::make_unique<handler::HandlerInputMacroEdit>(
             coreState_,
             *overlayController_,
-            *macroEditOverlay_,
             encoders(),
             buttons(),
             view_->getElement(),              // MacroView scope (open trigger)
@@ -154,6 +146,45 @@ public:
         OC_LOG_DEBUG("Synced encoder positions from restored state");
     }
 
+    /**
+     * @brief Setup subscriptions to render MacroEditOverlay from state
+     *
+     * Orchestrator pattern: Context subscribes to state signals and
+     * calls overlay->render(props) when state changes.
+     */
+    void setupMacroEditRendering() {
+        auto render = [this]() { renderMacroEdit(); };
+
+        macroEditSubs_.push_back(coreState_.macroEdit.visible.subscribe(
+            [render](bool) { render(); }
+        ));
+        macroEditSubs_.push_back(coreState_.macroEdit.editingIndex.subscribe(
+            [render](uint8_t) { render(); }
+        ));
+        macroEditSubs_.push_back(coreState_.macroEdit.tempChannel.subscribe(
+            [render](uint8_t) { render(); }
+        ));
+        macroEditSubs_.push_back(coreState_.macroEdit.tempCC.subscribe(
+            [render](uint8_t) { render(); }
+        ));
+        macroEditSubs_.push_back(coreState_.macroEdit.focusedRow.subscribe(
+            [render](uint8_t) { render(); }
+        ));
+    }
+
+    /**
+     * @brief Render MacroEditOverlay with current state
+     */
+    void renderMacroEdit() {
+        macroEditOverlay_->render({
+            .editingIndex = coreState_.macroEdit.editingIndex.get(),
+            .channel = coreState_.macroEdit.tempChannel.get(),
+            .cc = coreState_.macroEdit.tempCC.get(),
+            .focusedRow = coreState_.macroEdit.focusedRow.get(),
+            .visible = coreState_.macroEdit.visible.get()
+        });
+    }
+
     void update() override {}
 
     void cleanup() override {
@@ -163,8 +194,8 @@ public:
         inputHandler_.reset();
         midiHandler_.reset();
 
-        // Clear visibility subscription
-        overlayVisibilitySub_.reset();
+        // Clear rendering subscriptions
+        macroEditSubs_.clear();
 
         // Overlay UI
         macroEditOverlay_.reset();
@@ -198,13 +229,13 @@ private:
     // Overlay system
     std::unique_ptr<state::OverlayController> overlayController_;
     std::unique_ptr<ui::MacroEditOverlay> macroEditOverlay_;
-    oc::state::Subscription overlayVisibilitySub_;
+    std::vector<oc::state::Subscription> macroEditSubs_;  ///< Rendering subscriptions
 
     // Handlers
     std::unique_ptr<handler::MacroInputHandler> inputHandler_;
     std::unique_ptr<handler::MacroMidiHandler> midiHandler_;
     std::unique_ptr<handler::TransportInputHandler> transportHandler_;
-    std::unique_ptr<handler::MacroEditInputHandler> macroEditHandler_;
+    std::unique_ptr<handler::HandlerInputMacroEdit> macroEditHandler_;
 };
 
 }  // namespace context

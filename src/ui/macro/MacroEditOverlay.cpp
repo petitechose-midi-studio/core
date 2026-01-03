@@ -8,14 +8,11 @@ namespace ui {
 
 namespace Theme = oc::ui::lvgl::BaseTheme;
 
-MacroEditOverlay::MacroEditOverlay(lv_obj_t* parent, state::MacroEditState& state)
-    : state_(state) {
+MacroEditOverlay::MacroEditOverlay(lv_obj_t* parent) {
     createLayout(parent);
-    bindToState();
 }
 
 MacroEditOverlay::~MacroEditOverlay() {
-    subs_.clear();
     if (overlay_) {
         lv_obj_delete(overlay_);
     }
@@ -80,61 +77,67 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
     lv_obj_set_style_text_color(ccValueLabel_->getElement(), lv_color_hex(Theme::Color::TEXT_PRIMARY), 0);
 
     // Initial focus indicator
-    updateFocusIndicator();
+    updateFocusIndicator(0);
 }
 
-void MacroEditOverlay::bindToState() {
+void MacroEditOverlay::render(const MacroEditOverlayProps& props) {
+    // Early exit if no change
+    if (props == currentProps_) {
+        return;
+    }
+
+    // Handle visibility changes
+    if (props.visible && !currentProps_.visible) {
+        lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
+    } else if (!props.visible && currentProps_.visible) {
+        lv_obj_add_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Skip content updates if not visible
+    if (!props.visible) {
+        currentProps_ = props;
+        return;
+    }
+
     // Update title when editing index changes
-    subs_.push_back(state_.editingIndex.subscribe([this](uint8_t idx) {
+    if (props.editingIndex != currentProps_.editingIndex) {
         char buf[16];
-        snprintf(buf, sizeof(buf), "Edit Macro %d", idx + 1);
+        snprintf(buf, sizeof(buf), "Edit Macro %d", props.editingIndex + 1);
         titleLabel_->setText(buf);
-    }));
+    }
 
-    // Update channel value display
-    subs_.push_back(state_.tempChannel.subscribe([this](uint8_t ch) {
+    // Update channel value
+    if (props.channel != currentProps_.channel) {
         char buf[8];
-        snprintf(buf, sizeof(buf), "%d", ch);
+        snprintf(buf, sizeof(buf), "%d", props.channel);
         channelValueLabel_->setText(buf);
-    }));
+    }
 
-    // Update CC value display
-    subs_.push_back(state_.tempCC.subscribe([this](uint8_t cc) {
+    // Update CC value
+    if (props.cc != currentProps_.cc) {
         char buf[8];
-        snprintf(buf, sizeof(buf), "%d", cc);
+        snprintf(buf, sizeof(buf), "%d", props.cc);
         ccValueLabel_->setText(buf);
-    }));
+    }
+
+    // Update focus indicator
+    if (props.focusedRow != currentProps_.focusedRow) {
+        updateFocusIndicator(props.focusedRow);
+    }
+
+    currentProps_ = props;
 }
 
-void MacroEditOverlay::show() {
-    lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
-    focusedRow_ = 0;  // Start on channel
-    updateFocusIndicator();
-}
-
-void MacroEditOverlay::hide() {
-    lv_obj_add_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
-}
-
-bool MacroEditOverlay::isVisible() const {
-    return overlay_ && !lv_obj_has_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
-}
-
-void MacroEditOverlay::setFocusedRow(uint8_t row) {
-    focusedRow_ = row % 2;
-    updateFocusIndicator();
-}
-
-void MacroEditOverlay::updateFocusIndicator() {
+void MacroEditOverlay::updateFocusIndicator(uint8_t focusedRow) {
     // Highlight focused row with accent color
     lv_color_t focusColor = lv_color_hex(Theme::Color::ACTIVE);
     lv_color_t normalColor = lv_color_hex(Theme::Color::TEXT_PRIMARY);
 
     if (channelValueLabel_ && ccValueLabel_) {
         lv_obj_set_style_text_color(channelValueLabel_->getElement(),
-            focusedRow_ == 0 ? focusColor : normalColor, 0);
+            focusedRow == 0 ? focusColor : normalColor, 0);
         lv_obj_set_style_text_color(ccValueLabel_->getElement(),
-            focusedRow_ == 1 ? focusColor : normalColor, 0);
+            focusedRow == 1 ? focusColor : normalColor, 0);
     }
 }
 

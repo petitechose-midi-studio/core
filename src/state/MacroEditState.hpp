@@ -30,6 +30,9 @@ struct MacroEditState {
     /// Temporary CC value (0-127), not yet saved
     oc::state::Signal<uint8_t> tempCC{0};
 
+    /// Focused row in overlay (0 = channel, 1 = CC)
+    oc::state::Signal<uint8_t> focusedRow{0};
+
     /**
      * @brief Reset to defaults
      */
@@ -38,6 +41,7 @@ struct MacroEditState {
         editingIndex.set(0);
         tempChannel.set(1);
         tempCC.set(0);
+        focusedRow.set(0);
     }
 
     /**
@@ -53,6 +57,7 @@ struct MacroEditState {
         editingIndex.set(index);
         tempChannel.set(channel);
         tempCC.set(cc);
+        focusedRow.set(0);  // Start on channel
         visible.set(true);
     }
 };
