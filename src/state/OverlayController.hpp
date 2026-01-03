@@ -4,7 +4,7 @@
  * @file OverlayController.hpp
  * @brief Simplified overlay management with authority resolution
  *
- * Configures OverlayManager's cleanup callback and provides
+ * Configures ExclusiveVisibilityStack's cleanup callback and provides
  * AuthorityResolver for input priority.
  */
 
@@ -14,7 +14,7 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/core/input/AuthorityResolver.hpp>
 #include <oc/log/Log.hpp>
-#include <oc/state/OverlayManager.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "OverlayTypes.hpp"
 
@@ -35,7 +35,7 @@ struct OverlayCleanupInfo {
 /**
  * @brief Simplified overlay controller
  *
- * Configures OverlayManager's cleanup callback and provides
+ * Configures ExclusiveVisibilityStack's cleanup callback and provides
  * AuthorityResolver for input routing.
  *
  * Usage:
@@ -49,7 +49,7 @@ class OverlayController {
     static constexpr size_t COUNT = static_cast<size_t>(CoreOverlayType::COUNT);
 
 public:
-    OverlayController(oc::state::OverlayManager<CoreOverlayType>& manager, oc::api::ButtonAPI& buttons)
+    OverlayController(oc::state::ExclusiveVisibilityStack<CoreOverlayType>& manager, oc::api::ButtonAPI& buttons)
         : manager_(manager)
         , buttons_(&buttons) {
         // Configure cleanup callback on the manager
@@ -88,7 +88,7 @@ public:
     }
 
     // =========================================================================
-    // Delegation to OverlayManager
+    // Delegation to ExclusiveVisibilityStack
     // =========================================================================
 
     void show(CoreOverlayType type, bool stack = false) { manager_.show(type, stack); }
@@ -96,7 +96,7 @@ public:
     void hideAll() { manager_.hideAll(); }
 
     CoreOverlayType current() const { return manager_.current(); }
-    bool hasVisibleOverlay() const { return manager_.hasVisibleOverlay(); }
+    bool hasVisible() const { return manager_.hasVisible(); }
     bool isCurrent(CoreOverlayType type) const { return manager_.current() == type; }
 
     // =========================================================================
@@ -134,7 +134,7 @@ private:
         }
     }
 
-    oc::state::OverlayManager<CoreOverlayType>& manager_;
+    oc::state::ExclusiveVisibilityStack<CoreOverlayType>& manager_;
     oc::api::ButtonAPI* buttons_;
     AuthorityResolver authority_;
     std::array<OverlayCleanupInfo, COUNT> cleanup_{};

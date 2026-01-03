@@ -18,7 +18,7 @@ namespace state {
  * before they are saved to persistent storage.
  */
 struct MacroEditState {
-    /// Overlay visibility (connected to OverlayManager)
+    /// Overlay visibility (connected to ExclusiveVisibilityStack)
     oc::state::Signal<bool> visible{false};
 
     /// Which macro is being edited (0-7)

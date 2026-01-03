@@ -12,11 +12,11 @@
  * - MacroState: Runtime values and labels for 8 macro slots
  * - MacroPagesState: 8 pages of macro configurations (CC, channel, values)
  * - CoreSettings: Persistence manager for EEPROM storage
- * - OverlayManager: Overlay visibility management
+ * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
 #include <oc/hal/IStorageBackend.hpp>
-#include <oc/state/OverlayManager.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/time/Time.hpp>
 
 #include "CoreSettings.hpp"
@@ -46,7 +46,7 @@ struct CoreState {
     CoreSettings settings;
 
     /// Overlay visibility manager
-    oc::state::OverlayManager<CoreOverlayType> overlays;
+    oc::state::ExclusiveVisibilityStack<CoreOverlayType> overlays;
 
     /// Status bar state (TopBar + TransportBar)
     StatusBarState statusBar;
@@ -67,8 +67,8 @@ struct CoreState {
         syncMacrosFromActivePage();
 
         // Register overlay signals
-        overlays.registerOverlay(CoreOverlayType::PAGE_SELECTOR, pages.selector.visible);
-        overlays.registerOverlay(CoreOverlayType::MACRO_EDIT, macroEdit.visible);
+        overlays.registerItem(CoreOverlayType::PAGE_SELECTOR, pages.selector.visible);
+        overlays.registerItem(CoreOverlayType::MACRO_EDIT, macroEdit.visible);
     }
 
     // Non-copyable, non-movable
