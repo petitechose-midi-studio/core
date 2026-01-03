@@ -20,10 +20,14 @@
 #include <oc/ui/lvgl/FontLoader.hpp>
 
 #include "config/App.hpp"
+#include "handler/MacroEditInputHandler.hpp"
 #include "handler/MacroInputHandler.hpp"
 #include "handler/MacroMidiHandler.hpp"
+#include "handler/TransportInputHandler.hpp"
 #include "state/CoreState.hpp"
+#include "state/OverlayController.hpp"
 #include "ui/ViewContainer.hpp"
+#include "ui/overlay/MacroEditOverlay.hpp"
 #include "ui/font/CoreFonts.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/topbar/TopBar.hpp"
@@ -77,7 +81,7 @@ public:
         // Create MacroView in main zone
         view_ = std::make_unique<MacroView>(
             viewContainer_->getMainZone(),
-            coreState_.macros
+            coreState_
         );
         view_->onActivate();
 
@@ -87,12 +91,53 @@ public:
             coreState_.statusBar
         );
 
+        // Create overlay controller with AuthorityResolver
+        overlayController_ = std::make_unique<state::OverlayController>(
+            coreState_.overlays, buttons()
+        );
+        buttons().setAuthorityResolver(&overlayController_->authority());
+
+        // Create MacroEdit overlay
+        macroEditOverlay_ = std::make_unique<ui::MacroEditOverlay>(
+            lv_screen_active(), coreState_.macroEdit
+        );
+
+        // Register overlay cleanup
+        overlayController_->registerCleanup(
+            state::CoreOverlayType::MACRO_EDIT,
+            reinterpret_cast<oc::core::ScopeID>(macroEditOverlay_->getElement()),
+            static_cast<oc::hal::ButtonID>(0)  // No latch button
+        );
+
+        // Subscribe to overlay visibility
+        overlayVisibilitySub_ = coreState_.macroEdit.visible.subscribe([this](bool visible) {
+            if (visible) {
+                macroEditOverlay_->show();
+            } else {
+                macroEditOverlay_->hide();
+            }
+        });
+
         // Create handlers (bindings scoped to view element)
         inputHandler_ = std::make_unique<handler::MacroInputHandler>(
             coreState_, encoders(), midi(), view_->getElement()
         );
         midiHandler_ = std::make_unique<handler::MacroMidiHandler>(
             coreState_, midi(), encoders()
+        );
+        transportHandler_ = std::make_unique<handler::TransportInputHandler>(
+            coreState_, encoders(), buttons(), view_->getElement()
+        );
+
+        // Create MacroEdit input handler (two-level scoping)
+        macroEditHandler_ = std::make_unique<handler::MacroEditInputHandler>(
+            coreState_,
+            *overlayController_,
+            *macroEditOverlay_,
+            encoders(),
+            buttons(),
+            view_->getElement(),              // MacroView scope (open trigger)
+            macroEditOverlay_->getElement()   // Overlay scope (edit/close)
         );
 
         viewContainer_->show();
@@ -113,8 +158,19 @@ public:
 
     void cleanup() override {
         // Handlers first (they reference state/APIs)
+        macroEditHandler_.reset();
+        transportHandler_.reset();
         inputHandler_.reset();
         midiHandler_.reset();
+
+        // Clear visibility subscription
+        overlayVisibilitySub_.reset();
+
+        // Overlay UI
+        macroEditOverlay_.reset();
+
+        // Overlay controller (clears authority resolver)
+        overlayController_.reset();
 
         // Bars
         topBar_.reset();
@@ -132,12 +188,23 @@ public:
 
 private:
     state::CoreState& coreState_;  // External reference (survives context switches)
+
+    // UI containers
     std::unique_ptr<ui::ViewContainer> viewContainer_;
     std::unique_ptr<ui::TopBar> topBar_;
     std::unique_ptr<MacroView> view_;
     std::unique_ptr<ui::TransportBar> transportBar_;
+
+    // Overlay system
+    std::unique_ptr<state::OverlayController> overlayController_;
+    std::unique_ptr<ui::MacroEditOverlay> macroEditOverlay_;
+    oc::state::Subscription overlayVisibilitySub_;
+
+    // Handlers
     std::unique_ptr<handler::MacroInputHandler> inputHandler_;
     std::unique_ptr<handler::MacroMidiHandler> midiHandler_;
+    std::unique_ptr<handler::TransportInputHandler> transportHandler_;
+    std::unique_ptr<handler::MacroEditInputHandler> macroEditHandler_;
 };
 
 }  // namespace context
