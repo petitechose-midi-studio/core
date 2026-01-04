@@ -2,10 +2,33 @@
 
 /**
  * @file StandaloneContext.hpp
- * @brief Main application context for standalone operation
+ * @brief Main context for standalone operation mode
  *
- * Provides 8 macro knobs with MIDI CC output and bidirectional sync.
- * Receives CoreState reference from main.cpp (state survives context switches).
+ * StandaloneContext manages the lifecycle and wires together:
+ * - CoreState: reactive state for all application data
+ * - Handlers: input bindings for encoders/buttons
+ * - Views: UI components that subscribe to state
+ *
+ * ## Architecture
+ *
+ * ```
+ * StandaloneContext
+ *     ├── CoreState (reactive state - single source of truth, external)
+ *     ├── ViewContainer (2-zone layout: main + bottom)
+ *     ├── InputHandlers
+ *     │   ├── HandlerInputMacro (encoder → MIDI CC out)
+ *     │   ├── HandlerInputMacroMidi (MIDI CC in → state)
+ *     │   ├── HandlerInputMacroEdit (overlay editing)
+ *     │   └── HandlerInputTransport (transport controls)
+ *     ├── Views
+ *     │   ├── MacroView (main zone, owns TopBar)
+ *     │   └── TransportBar (bottom zone)
+ *     └── Overlays (managed by OverlayController)
+ *         └── MacroEditOverlay (edit CH/CC for a macro)
+ * ```
+ *
+ * The context itself is thin - handlers and views do the work.
+ * CoreState is received from main.cpp (survives context switches).
  */
 
 #include <array>

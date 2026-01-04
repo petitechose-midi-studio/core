@@ -5,6 +5,7 @@
 
 #include <lvgl.h>
 #include <oc/state/Signal.hpp>
+#include <oc/ui/lvgl/IComponent.hpp>
 #include <oc/ui/lvgl/widget/StateIndicator.hpp>
 
 #include "state/StatusBarState.hpp"
@@ -12,20 +13,28 @@
 namespace ui {
 
 /**
- * @brief Transport bar at bottom of screen
+ * @brief Transport bar component at bottom of screen
  *
  * Layout (3 columns):
  * - Cell 1 (Left): MIDI indicators (Note IN/OUT, CC IN/OUT)
  * - Cell 2 (Center): Play icon
  * - Cell 3 (Right): Beat indicator + Tempo
+ *
+ * Subscribes to StatusBarState signals and auto-updates on changes.
  */
-class TransportBar {
+class TransportBar : public oc::ui::lvgl::IComponent {
 public:
     TransportBar(lv_obj_t* parent, state::StatusBarState& state);
-    ~TransportBar();
+    ~TransportBar() override;
 
     TransportBar(const TransportBar&) = delete;
     TransportBar& operator=(const TransportBar&) = delete;
+
+    // IComponent interface
+    void show() override;
+    void hide() override;
+    bool isVisible() const override;
+    lv_obj_t* getElement() const override { return container_; }
 
 private:
     using StateIndicator = oc::ui::lvgl::StateIndicator;
@@ -63,6 +72,7 @@ private:
     void createTransportCenter(lv_obj_t* parent);
     void createTempoWithBeat(lv_obj_t* parent);
     void setupBindings();
+    void render();
 
     void setNoteIn(bool active);
     void setNoteOut(bool active);

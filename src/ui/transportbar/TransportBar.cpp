@@ -25,8 +25,7 @@ TransportBar::TransportBar(lv_obj_t* parent, state::StatusBarState& state)
     : state_(state) {
     createLayout(parent);
     setupBindings();
-    setPlaying(state_.playing.get());
-    setTempo(state_.tempo.get());
+    render();
 }
 
 TransportBar::~TransportBar() {
@@ -240,6 +239,23 @@ void TransportBar::onBeatTimeout(lv_timer_t* timer) {
     self->beatIndicator_->setState(StateIndicator::State::OFF);
     self->state_.beatPulse.set(false);
     self->beatTimer_ = nullptr;
+}
+
+void TransportBar::render() {
+    setPlaying(state_.playing.get());
+    setTempo(state_.tempo.get());
+}
+
+void TransportBar::show() {
+    if (container_) { lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN); }
+}
+
+void TransportBar::hide() {
+    if (container_) { lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN); }
+}
+
+bool TransportBar::isVisible() const {
+    return container_ && !lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
 
 }  // namespace ui

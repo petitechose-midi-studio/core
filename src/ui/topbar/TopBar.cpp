@@ -14,6 +14,7 @@ TopBar::TopBar(lv_obj_t* parent, state::StatusBarState& state)
     : state_(state) {
     createLayout(parent);
     setupBindings();
+    render();
 }
 
 TopBar::~TopBar() {
@@ -43,6 +44,24 @@ void TopBar::setupBindings() {
             lv_label_set_text(label_, name);
         }
     });
+}
+
+void TopBar::render() {
+    if (label_) {
+        lv_label_set_text(label_, state_.pageName.get());
+    }
+}
+
+void TopBar::show() {
+    if (container_) { lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN); }
+}
+
+void TopBar::hide() {
+    if (container_) { lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN); }
+}
+
+bool TopBar::isVisible() const {
+    return container_ && !lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
 
 }  // namespace ui

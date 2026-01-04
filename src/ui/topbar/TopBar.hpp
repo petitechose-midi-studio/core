@@ -3,21 +3,30 @@
 #include <lvgl.h>
 #include <vector>
 #include <oc/state/Signal.hpp>
+#include <oc/ui/lvgl/IComponent.hpp>
 
 #include "state/StatusBarState.hpp"
 
 namespace ui {
 
 /**
- * @brief Top bar displaying current page name (centered)
+ * @brief Top bar component displaying current page name (centered)
+ *
+ * Subscribes to StatusBarState signals and auto-updates on changes.
  */
-class TopBar {
+class TopBar : public oc::ui::lvgl::IComponent {
 public:
     TopBar(lv_obj_t* parent, state::StatusBarState& state);
-    ~TopBar();
+    ~TopBar() override;
 
     TopBar(const TopBar&) = delete;
     TopBar& operator=(const TopBar&) = delete;
+
+    // IComponent interface
+    void show() override;
+    void hide() override;
+    bool isVisible() const override;
+    lv_obj_t* getElement() const override { return container_; }
 
 private:
     state::StatusBarState& state_;
@@ -27,6 +36,7 @@ private:
 
     void createLayout(lv_obj_t* parent);
     void setupBindings();
+    void render();
 };
 
 }  // namespace ui
