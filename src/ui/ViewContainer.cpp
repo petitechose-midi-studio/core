@@ -17,10 +17,13 @@ ViewContainer::ViewContainer(lv_obj_t* parent) {
     lv_obj_set_style_pad_gap(container_, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(container_, 0, LV_STATE_DEFAULT);
 
-    // Main zone (takes remaining space)
+    // Main zone (takes remaining space, with flex column for multi-view pattern)
     mainZone_ = lv_obj_create(container_);
     lv_obj_set_size(mainZone_, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_grow(mainZone_, 1);
+    lv_obj_set_layout(mainZone_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(mainZone_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(mainZone_, 0, LV_STATE_DEFAULT);
     style::apply(mainZone_).transparent();
     lv_obj_set_style_pad_all(mainZone_, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(mainZone_, 0, LV_STATE_DEFAULT);
