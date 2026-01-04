@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace state {
+namespace ui {
 
 /**
  * @brief Overlay types managed by ExclusiveVisibilityStack
@@ -21,4 +21,4 @@ enum class CoreOverlayType : uint8_t {
     COUNT             // Sentinel - must be last
 };
 
-}  // namespace state
+}  // namespace ui

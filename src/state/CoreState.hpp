@@ -22,7 +22,7 @@
 #include "CoreSettings.hpp"
 #include "MacroEditState.hpp"
 #include "MacroState.hpp"
-#include "OverlayTypes.hpp"
+#include "../ui/OverlayTypes.hpp"
 #include "StatusBarState.hpp"
 #include "macro/MacroPagesState.hpp"
 
@@ -46,7 +46,7 @@ struct CoreState {
     CoreSettings settings;
 
     /// Overlay visibility manager
-    oc::state::ExclusiveVisibilityStack<CoreOverlayType> overlays;
+    oc::state::ExclusiveVisibilityStack<ui::CoreOverlayType> overlays;
 
     /// Status bar state (TopBar + TransportBar)
     StatusBarState statusBar;
@@ -67,8 +67,8 @@ struct CoreState {
         syncMacrosFromActivePage();
 
         // Register overlay signals
-        overlays.registerItem(CoreOverlayType::PAGE_SELECTOR, pages.selector.visible);
-        overlays.registerItem(CoreOverlayType::MACRO_EDIT, macroEdit.visible);
+        overlays.registerItem(ui::CoreOverlayType::PAGE_SELECTOR, pages.selector.visible);
+        overlays.registerItem(ui::CoreOverlayType::MACRO_EDIT, macroEdit.visible);
     }
 
     // Non-copyable, non-movable

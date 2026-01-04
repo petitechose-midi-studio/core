@@ -49,7 +49,7 @@
 #include "handler/input/HandlerInputMacroMidi.hpp"
 #include "handler/input/HandlerInputTransport.hpp"
 #include "state/CoreState.hpp"
-#include "state/OverlayController.hpp"
+#include "ui/OverlayController.hpp"
 #include "ui/ViewContainer.hpp"
 #include "ui/macro/MacroEditOverlay.hpp"
 #include "ui/font/CoreFonts.hpp"
@@ -109,7 +109,7 @@ public:
         );
 
         // Create overlay controller with AuthorityResolver
-        overlayController_ = std::make_unique<state::OverlayController<state::CoreOverlayType>>(
+        overlayController_ = std::make_unique<ui::OverlayController<ui::CoreOverlayType>>(
             coreState_.overlays, buttons()
         );
         buttons().setAuthorityResolver(&overlayController_->authority());
@@ -119,7 +119,7 @@ public:
 
         // Register overlay cleanup
         overlayController_->registerCleanup(
-            state::CoreOverlayType::MACRO_EDIT,
+            ui::CoreOverlayType::MACRO_EDIT,
             reinterpret_cast<oc::core::ScopeID>(macroEditOverlay_->getElement()),
             static_cast<oc::hal::ButtonID>(0)  // No latch button
         );
@@ -241,7 +241,7 @@ private:
     std::unique_ptr<ui::TransportBar> transportBar_;
 
     // Overlay system
-    std::unique_ptr<state::OverlayController<state::CoreOverlayType>> overlayController_;
+    std::unique_ptr<ui::OverlayController<ui::CoreOverlayType>> overlayController_;
     std::unique_ptr<ui::MacroEditOverlay> macroEditOverlay_;
     std::vector<oc::state::Subscription> macroEditSubs_;  ///< MacroEdit rendering subscriptions
 

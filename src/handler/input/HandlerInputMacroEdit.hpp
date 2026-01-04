@@ -15,8 +15,8 @@
 #include <oc/api/EncoderAPI.hpp>
 
 #include "state/CoreState.hpp"
-#include "state/OverlayController.hpp"
-#include "state/OverlayTypes.hpp"
+#include "ui/OverlayController.hpp"
+#include "ui/OverlayTypes.hpp"
 
 namespace handler {
 
@@ -40,7 +40,7 @@ public:
      */
     HandlerInputMacroEdit(
         state::CoreState& state,
-        state::OverlayController<state::CoreOverlayType>& overlays,
+        ui::OverlayController<ui::CoreOverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         lv_obj_t* macroViewScope,
@@ -57,7 +57,7 @@ private:
     void toggleFocus();
 
     state::CoreState& state_;
-    state::OverlayController<state::CoreOverlayType>& overlays_;
+    ui::OverlayController<ui::CoreOverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
 

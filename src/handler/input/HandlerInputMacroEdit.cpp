@@ -13,7 +13,7 @@ namespace handler {
 
 HandlerInputMacroEdit::HandlerInputMacroEdit(
     state::CoreState& state,
-    state::OverlayController<state::CoreOverlayType>& overlays,
+    ui::OverlayController<ui::CoreOverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* macroViewScope,
@@ -71,7 +71,7 @@ void HandlerInputMacroEdit::setupBindings() {
 void HandlerInputMacroEdit::openEdit(uint8_t macroIndex) {
     const auto& config = state_.getMacroConfig(macroIndex);
     state_.macroEdit.startEditing(macroIndex, config.channel, config.cc);
-    overlays_.show(state::CoreOverlayType::MACRO_EDIT);
+    overlays_.show(ui::CoreOverlayType::MACRO_EDIT);
     OC_LOG_DEBUG("[HandlerInputMacroEdit] Opening edit for macro {}", macroIndex);
 }
 

@@ -19,7 +19,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
-namespace state {
+namespace ui {
 
 using oc::core::ScopeID;
 using oc::core::input::AuthorityResolver;
@@ -145,4 +145,4 @@ private:
     std::array<OverlayCleanupInfo, COUNT> cleanup_{};
 };
 
-}  // namespace state
+}  // namespace ui
