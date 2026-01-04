@@ -4,9 +4,11 @@
  * @file MacroView.hpp
  * @brief 8-macro parameter view for standalone mode
  *
- * Displays 8 MacroWidgets in a 4x2 grid layout.
+ * Displays 8 MacroWidgets in a 4x2 grid layout with integrated TopBar.
  * Each widget shows channel + CC labels below.
  * Subscribes to MacroState for reactive updates.
+ *
+ * Pattern: View owns its TopBar internally (like RemoteControlsView in plugin-bitwig).
  */
 
 #include <array>
@@ -21,6 +23,7 @@
 
 #include "config/InputIDs.hpp"
 #include "state/CoreState.hpp"
+#include "ui/topbar/TopBar.hpp"
 #include "ui/widget/IMacroWidget.hpp"
 #include "ui/widget/MacroKnobWidget.hpp"
 
@@ -45,6 +48,7 @@ public:
 
 private:
     void createLayout(lv_obj_t* parent);
+    void createTopBar();
     void createMacros();
     void bindToState();
     void updateConfigLabel(uint8_t index);
@@ -52,7 +56,10 @@ private:
     state::CoreState& coreState_;
     std::vector<oc::state::Subscription> subscriptions_;
 
+    // UI structure: container_ (flex col) → topBarContainer_ + bodyContainer_ (grid)
     lv_obj_t* container_ = nullptr;
-    lv_obj_t* grid_ = nullptr;
+    lv_obj_t* topBarContainer_ = nullptr;
+    lv_obj_t* bodyContainer_ = nullptr;
+    std::unique_ptr<ui::TopBar> topBar_;
     std::array<std::unique_ptr<ui::IMacroWidget>, MACRO_COUNT> macros_;
 };

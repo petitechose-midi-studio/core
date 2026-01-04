@@ -1,16 +1,21 @@
 #include "MacroView.hpp"
 
+#include <oc/ui/lvgl/style/StyleBuilder.hpp>
+
 namespace Theme = oc::ui::lvgl::BaseTheme;
+namespace style = oc::ui::lvgl::style;
 
 MacroView::MacroView(lv_obj_t* parent, state::CoreState& coreState)
     : coreState_(coreState) {
     createLayout(parent);
+    createTopBar();
     createMacros();
     bindToState();
 }
 
 MacroView::~MacroView() {
     subscriptions_.clear();
+    topBar_.reset();
     for (auto& macro : macros_) {
         macro.reset();
     }
@@ -52,29 +57,37 @@ void MacroView::updateConfigLabel(uint8_t index) {
 }
 
 void MacroView::createLayout(lv_obj_t* parent) {
-    // Main container (full screen, no padding for maximum widget space)
+    // Main container (full size, flex column layout)
     container_ = lv_obj_create(parent);
-    lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(container_, lv_color_hex(Theme::Color::BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(container_, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(container_, 0, 0);
-    lv_obj_set_style_pad_all(container_, 0, 0);
+    style::apply(container_).fullSize().pad(0).bgColor(Theme::Color::BACKGROUND);
+    lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(container_, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(container_, 0, LV_STATE_DEFAULT);
 
-    // Grid container for 4x2 layout
-    grid_ = lv_obj_create(container_);
-    lv_obj_set_size(grid_, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_opa(grid_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(grid_, 0, 0);
-    lv_obj_set_style_pad_all(grid_, 0, 0);
+    // TopBar container (content height, for TopBar component)
+    topBarContainer_ = lv_obj_create(container_);
+    lv_obj_set_size(topBarContainer_, LV_PCT(100), LV_SIZE_CONTENT);
+    style::apply(topBarContainer_).transparent();
+
+    // Body container (takes remaining space, grid layout)
+    bodyContainer_ = lv_obj_create(container_);
+    lv_obj_set_size(bodyContainer_, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(bodyContainer_, 1);
+    style::apply(bodyContainer_).transparent();
 
     // Configure grid layout: 4 columns, 2 rows (no gaps for maximum widget size)
     static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     static lv_coord_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
-    lv_obj_set_grid_dsc_array(grid_, col_dsc, row_dsc);
-    lv_obj_set_layout(grid_, LV_LAYOUT_GRID);
-    lv_obj_set_style_pad_column(grid_, 0, 0);  // No column gap
-    lv_obj_set_style_pad_row(grid_, 0, 0);     // No row gap
+    lv_obj_set_grid_dsc_array(bodyContainer_, col_dsc, row_dsc);
+    lv_obj_set_layout(bodyContainer_, LV_LAYOUT_GRID);
+    lv_obj_set_style_pad_column(bodyContainer_, 0, 0);
+    lv_obj_set_style_pad_row(bodyContainer_, 0, 0);
+}
+
+void MacroView::createTopBar() {
+    topBar_ = std::make_unique<ui::TopBar>(topBarContainer_, coreState_.statusBar);
 }
 
 void MacroView::createMacros() {
@@ -82,8 +95,8 @@ void MacroView::createMacros() {
         uint8_t col = i % COLS;
         uint8_t row = i / COLS;
 
-        // Create macro widget directly in grid
-        macros_[i] = std::make_unique<ui::MacroKnobWidget>(grid_, i);
+        // Create macro widget directly in body grid
+        macros_[i] = std::make_unique<ui::MacroKnobWidget>(bodyContainer_, i);
 
         // Position in grid (widget container handles internal layout)
         lv_obj_set_grid_cell(macros_[i]->getElement(),

@@ -31,7 +31,6 @@
 #include "ui/macro/MacroEditOverlay.hpp"
 #include "ui/font/CoreFonts.hpp"
 #include "ui/font/StandaloneFonts.hpp"
-#include "ui/topbar/TopBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
 #include "ui/view/MacroView.hpp"
 
@@ -73,13 +72,7 @@ public:
         // Create UI container with zones
         viewContainer_ = std::make_unique<ui::ViewContainer>(lv_screen_active());
 
-        // Create TopBar in top zone
-        topBar_ = std::make_unique<ui::TopBar>(
-            viewContainer_->getTopZone(),
-            coreState_.statusBar
-        );
-
-        // Create MacroView in main zone
+        // Create MacroView in main zone (TopBar is now internal to MacroView)
         view_ = std::make_unique<MacroView>(
             viewContainer_->getMainZone(),
             coreState_
@@ -203,8 +196,7 @@ public:
         // Overlay controller (clears authority resolver)
         overlayController_.reset();
 
-        // Bars
-        topBar_.reset();
+        // TransportBar (TopBar is now managed by MacroView)
         transportBar_.reset();
 
         if (view_) {
@@ -222,8 +214,7 @@ private:
 
     // UI containers
     std::unique_ptr<ui::ViewContainer> viewContainer_;
-    std::unique_ptr<ui::TopBar> topBar_;
-    std::unique_ptr<MacroView> view_;
+    std::unique_ptr<MacroView> view_;  // MacroView owns its TopBar internally
     std::unique_ptr<ui::TransportBar> transportBar_;
 
     // Overlay system
