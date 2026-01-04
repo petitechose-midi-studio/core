@@ -2,10 +2,13 @@
 
 /**
  * @file OverlayController.hpp
- * @brief Simplified overlay management with authority resolution
+ * @brief Template overlay management with authority resolution
  *
  * Configures ExclusiveVisibilityStack's cleanup callback and provides
  * AuthorityResolver for input priority.
+ *
+ * Template class allows reuse between core (CoreOverlayType) and
+ * plugin-bitwig (OverlayType) with their respective enum types.
  */
 
 #include <array>
@@ -15,8 +18,6 @@
 #include <oc/core/input/AuthorityResolver.hpp>
 #include <oc/log/Log.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
-
-#include "OverlayTypes.hpp"
 
 namespace state {
 
@@ -33,27 +34,31 @@ struct OverlayCleanupInfo {
 };
 
 /**
- * @brief Simplified overlay controller
+ * @brief Template overlay controller
  *
  * Configures ExclusiveVisibilityStack's cleanup callback and provides
  * AuthorityResolver for input routing.
  *
+ * @tparam EnumT Overlay enum type (must have NONE=0 and COUNT members)
+ *
  * Usage:
  * @code
  * // In StandaloneContext::initialize()
- * overlayController_ = std::make_unique<OverlayController>(state_.overlays, buttons());
+ * overlayController_ = std::make_unique<OverlayController<CoreOverlayType>>(state_.overlays, buttons());
  * overlayController_->registerCleanup(CoreOverlayType::MACRO_EDIT, scope, ButtonID::MACRO_1);
  * @endcode
  */
+template <typename EnumT>
 class OverlayController {
-    static constexpr size_t COUNT = static_cast<size_t>(CoreOverlayType::COUNT);
+    static_assert(static_cast<int>(EnumT::NONE) == 0, "EnumT::NONE must be 0");
+    static constexpr size_t COUNT = static_cast<size_t>(EnumT::COUNT);
 
 public:
-    OverlayController(oc::state::ExclusiveVisibilityStack<CoreOverlayType>& manager, oc::api::ButtonAPI& buttons)
+    OverlayController(oc::state::ExclusiveVisibilityStack<EnumT>& manager, oc::api::ButtonAPI& buttons)
         : manager_(manager)
         , buttons_(&buttons) {
         // Configure cleanup callback on the manager
-        manager_.setCleanupCallback([this](CoreOverlayType type) {
+        manager_.setCleanupCallback([this](EnumT type) {
             doCleanup(type);
         });
 
@@ -78,7 +83,7 @@ public:
     /**
      * @brief Register cleanup info for an overlay
      */
-    void registerCleanup(CoreOverlayType type, ScopeID scopeId, ButtonID latchButton = 0) {
+    void registerCleanup(EnumT type, ScopeID scopeId, ButtonID latchButton = 0) {
         auto idx = static_cast<size_t>(type);
         if (idx < COUNT) {
             cleanup_[idx] = {scopeId, latchButton};
@@ -91,13 +96,13 @@ public:
     // Delegation to ExclusiveVisibilityStack
     // =========================================================================
 
-    void show(CoreOverlayType type, bool stack = false) { manager_.show(type, stack); }
+    void show(EnumT type, bool stack = false) { manager_.show(type, stack); }
     void hide() { manager_.hide(); }
     void hideAll() { manager_.hideAll(); }
 
-    CoreOverlayType current() const { return manager_.current(); }
+    EnumT current() const { return manager_.current(); }
     bool hasVisible() const { return manager_.hasVisible(); }
-    bool isCurrent(CoreOverlayType type) const { return manager_.current() == type; }
+    bool isCurrent(EnumT type) const { return manager_.current() == type; }
 
     // =========================================================================
     // Authority
@@ -105,7 +110,7 @@ public:
 
     ScopeID currentScope() const {
         auto type = manager_.current();
-        if (type == CoreOverlayType::NONE) return 0;
+        if (type == EnumT::NONE) return 0;
         return cleanup_[static_cast<size_t>(type)].scopeId;
     }
 
@@ -114,15 +119,15 @@ public:
 
     bool hasAuthority(ScopeID scope) const { return authority_.hasAuthority(scope); }
 
-    ScopeID getScopeFor(CoreOverlayType type) const {
+    ScopeID getScopeFor(EnumT type) const {
         auto idx = static_cast<size_t>(type);
         if (idx < COUNT) return cleanup_[idx].scopeId;
         return 0;
     }
 
 private:
-    void doCleanup(CoreOverlayType type) {
-        if (type == CoreOverlayType::NONE || type == CoreOverlayType::COUNT) return;
+    void doCleanup(EnumT type) {
+        if (type == EnumT::NONE || type == EnumT::COUNT) return;
 
         auto idx = static_cast<size_t>(type);
         const auto& info = cleanup_[idx];
@@ -134,7 +139,7 @@ private:
         }
     }
 
-    oc::state::ExclusiveVisibilityStack<CoreOverlayType>& manager_;
+    oc::state::ExclusiveVisibilityStack<EnumT>& manager_;
     oc::api::ButtonAPI* buttons_;
     AuthorityResolver authority_;
     std::array<OverlayCleanupInfo, COUNT> cleanup_{};

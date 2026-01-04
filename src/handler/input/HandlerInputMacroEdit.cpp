@@ -13,7 +13,7 @@ namespace handler {
 
 HandlerInputMacroEdit::HandlerInputMacroEdit(
     state::CoreState& state,
-    state::OverlayController& overlays,
+    state::OverlayController<state::CoreOverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* macroViewScope,

@@ -86,7 +86,7 @@ public:
         );
 
         // Create overlay controller with AuthorityResolver
-        overlayController_ = std::make_unique<state::OverlayController>(
+        overlayController_ = std::make_unique<state::OverlayController<state::CoreOverlayType>>(
             coreState_.overlays, buttons()
         );
         buttons().setAuthorityResolver(&overlayController_->authority());
@@ -218,7 +218,7 @@ private:
     std::unique_ptr<ui::TransportBar> transportBar_;
 
     // Overlay system
-    std::unique_ptr<state::OverlayController> overlayController_;
+    std::unique_ptr<state::OverlayController<state::CoreOverlayType>> overlayController_;
     std::unique_ptr<ui::MacroEditOverlay> macroEditOverlay_;
     std::vector<oc::state::Subscription> macroEditSubs_;  ///< MacroEdit rendering subscriptions
 
