@@ -72,7 +72,7 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
               .color(STheme::Color::MACRO_CH_COLOR)
               .autoScroll(false)
               .ownsLvglObjects(false);
-    lv_obj_set_style_text_opa(chPrefix_->getElement(), STheme::Color::MACRO_PREFIX_OPA, 0);
+    style::apply(chPrefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
     if (standalone_fonts.icons_12) {
         chPrefix_->font(standalone_fonts.icons_12);
     }
@@ -109,7 +109,7 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
               .color(STheme::Color::MACRO_CC_COLOR)
               .autoScroll(false)
               .ownsLvglObjects(false);
-    lv_obj_set_style_text_opa(ccPrefix_->getElement(), STheme::Color::MACRO_PREFIX_OPA, 0);
+    style::apply(ccPrefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
     if (standalone_fonts.icons_12) {
         ccPrefix_->font(standalone_fonts.icons_12);
     }

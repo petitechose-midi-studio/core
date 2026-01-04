@@ -19,9 +19,9 @@ LayoutOverlay::LayoutOverlay(lv_obj_t* parent) : parent_(parent) {
     style::apply(overlay_)
         .fullSize()
         .bgColor(BaseTheme::Color::BACKGROUND, OVERLAY_BG_OPACITY)
-        .noScroll();
+        .noScroll()
+        .noBorder();
     lv_obj_align(overlay_, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_border_width(overlay_, 0, LV_STATE_DEFAULT);
     lv_obj_add_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
 
     // Container with flex column layout
@@ -35,21 +35,18 @@ LayoutOverlay::LayoutOverlay(lv_obj_t* parent) : parent_(parent) {
     // Header slot (auto-height, collapses when empty)
     header_ = lv_obj_create(container_);
     lv_obj_set_size(header_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(header_).transparent().noScroll();
-    lv_obj_set_style_pad_all(header_, 0, LV_STATE_DEFAULT);
+    style::apply(header_).transparent().noScroll().pad(0);
 
     // Content slot (flex-grow to fill available space)
     content_ = lv_obj_create(container_);
     lv_obj_set_width(content_, LV_PCT(100));
     lv_obj_set_flex_grow(content_, 1);
-    style::apply(content_).transparent().noScroll();
-    lv_obj_set_style_pad_all(content_, 0, LV_STATE_DEFAULT);
+    style::apply(content_).transparent().noScroll().pad(0);
 
     // Footer slot (auto-height, collapses when empty)
     footer_ = lv_obj_create(container_);
     lv_obj_set_size(footer_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(footer_).transparent().noScroll();
-    lv_obj_set_style_pad_all(footer_, 0, LV_STATE_DEFAULT);
+    style::apply(footer_).transparent().noScroll().pad(0);
 }
 
 LayoutOverlay::~LayoutOverlay() {

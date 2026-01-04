@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <oc/state/Bind.hpp>
+#include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/CoreFonts.hpp"
 #include "ui/font/Icon.hpp"
@@ -10,6 +11,7 @@
 namespace ui {
 
 namespace Theme = standalone::theme;
+namespace style = oc::ui::lvgl::style;
 
 namespace {
 const lv_color_t COLOR_INACTIVE = lv_color_hex(Theme::Color::MIDI_INACTIVE);
@@ -49,8 +51,7 @@ void TransportBar::createLayout(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_remove_style_all(container_);
     lv_obj_set_size(container_, LV_PCT(100), Theme::Layout::TRANSPORT_BAR_HEIGHT);
-    lv_obj_set_style_bg_color(container_, lv_color_hex(Theme::Color::BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(container_, LV_OPA_COVER, 0);
+    style::apply(container_).bgColor(Theme::Color::BACKGROUND);
 
     // 3 columns: MIDI indicators | Play (center) | Beat + Tempo (right)
     static const int32_t col_dsc[] = {
@@ -75,11 +76,7 @@ void TransportBar::createMidiIndicators(lv_obj_t* parent) {
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1,
                          LV_GRID_ALIGN_CENTER, 0, 1);
     lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(cell, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(cell, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_left(cell, Theme::Layout::PAD_MD, 0);
-    lv_obj_set_style_pad_gap(cell, Theme::Layout::GAP_SM, 0);
+    style::apply(cell).flexRow(LV_FLEX_ALIGN_START, Theme::Layout::GAP_SM).padLeft(Theme::Layout::PAD_MD);
 
     // Note IN icon
     noteInIcon_ = lv_label_create(cell);
@@ -122,11 +119,7 @@ void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_END, 2, 1,
                          LV_GRID_ALIGN_CENTER, 0, 1);
     lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(cell, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(cell, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_gap(cell, Theme::Layout::GAP_SM, 0);
-    lv_obj_set_style_pad_right(cell, Theme::Layout::PAD_MD, 0);
+    style::apply(cell).flexRow(LV_FLEX_ALIGN_END, Theme::Layout::GAP_SM).padRight(Theme::Layout::PAD_MD);
 
     // Beat indicator (left of tempo)
     beatIndicator_ = std::make_unique<StateIndicator>(cell, Theme::Layout::INDICATOR_SIZE);

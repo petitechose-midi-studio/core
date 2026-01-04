@@ -3,6 +3,7 @@
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IView.hpp>
+#include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 /**
@@ -18,11 +19,7 @@ public:
     explicit EmptyView(lv_obj_t* parent, uint32_t color = oc::ui::lvgl::BaseTheme::Color::BACKGROUND)
         : color_(color) {
         container_ = lv_obj_create(parent);
-        lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
-        lv_obj_set_style_bg_color(container_, lv_color_hex(color_), 0);
-        lv_obj_set_style_bg_opa(container_, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(container_, 0, 0);
-        lv_obj_set_style_pad_all(container_, 0, 0);
+        oc::ui::lvgl::style::apply(container_).fullSize().bgColor(color_).noBorder().pad(0);
     }
 
     ~EmptyView() override {

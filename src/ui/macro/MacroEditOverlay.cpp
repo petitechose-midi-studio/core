@@ -2,11 +2,14 @@
 
 #include <cstdio>
 
+#include <oc/ui/lvgl/style/StyleBuilder.hpp>
+
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace ui {
 
 namespace Theme = oc::ui::lvgl::BaseTheme;
+namespace style = oc::ui::lvgl::style;
 
 MacroEditOverlay::MacroEditOverlay(lv_obj_t* parent) {
     createLayout(parent);
@@ -22,9 +25,7 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
     // Fullscreen overlay background (semi-transparent)
     overlay_ = lv_obj_create(parent);
     lv_obj_remove_style_all(overlay_);
-    lv_obj_set_size(overlay_, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(overlay_, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(overlay_, LV_OPA_70, 0);
+    style::apply(overlay_).fullSize().bgColor(0x000000, LV_OPA_70);
     lv_obj_add_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
 
     // Center container (dialog box)
@@ -32,49 +33,46 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
     lv_obj_remove_style_all(container_);
     lv_obj_set_size(container_, 160, 80);
     lv_obj_center(container_);
-    lv_obj_set_style_bg_color(container_, lv_color_hex(Theme::Color::BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(container_, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(container_, 6, 0);
-    lv_obj_set_style_border_width(container_, 1, 0);
-    lv_obj_set_style_border_color(container_, lv_color_hex(Theme::Color::INACTIVE), 0);
+    style::apply(container_)
+        .bgColor(Theme::Color::BACKGROUND)
+        .radius(6)
+        .border(1, Theme::Color::INACTIVE)
+        .pad(8);
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_all(container_, 8, 0);
     lv_obj_set_style_pad_row(container_, 4, 0);
 
     // Title
     titleLabel_ = std::make_unique<oc::ui::lvgl::Label>(container_);
     titleLabel_->setText("Edit Macro 1");
-    lv_obj_set_style_text_color(titleLabel_->getElement(), lv_color_hex(Theme::Color::TEXT_PRIMARY), 0);
+    style::apply(titleLabel_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
 
     // Channel row
     chRow_ = lv_obj_create(container_);
     lv_obj_remove_style_all(chRow_);
     lv_obj_set_size(chRow_, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(chRow_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(chRow_, 8, 0);
+    style::apply(chRow_).flexRow(LV_FLEX_ALIGN_START, 8);
 
     channelPrefixLabel_ = std::make_unique<oc::ui::lvgl::Label>(chRow_);
     channelPrefixLabel_->setText("CH:");
-    lv_obj_set_style_text_color(channelPrefixLabel_->getElement(), lv_color_hex(Theme::Color::TEXT_SECONDARY), 0);
+    style::apply(channelPrefixLabel_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
 
     channelValueLabel_ = std::make_unique<oc::ui::lvgl::Label>(chRow_);
     channelValueLabel_->setText("1");
-    lv_obj_set_style_text_color(channelValueLabel_->getElement(), lv_color_hex(Theme::Color::TEXT_PRIMARY), 0);
+    style::apply(channelValueLabel_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
 
     // CC row
     ccRow_ = lv_obj_create(container_);
     lv_obj_remove_style_all(ccRow_);
     lv_obj_set_size(ccRow_, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(ccRow_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(ccRow_, 8, 0);
+    style::apply(ccRow_).flexRow(LV_FLEX_ALIGN_START, 8);
 
     ccPrefixLabel_ = std::make_unique<oc::ui::lvgl::Label>(ccRow_);
     ccPrefixLabel_->setText("CC:");
-    lv_obj_set_style_text_color(ccPrefixLabel_->getElement(), lv_color_hex(Theme::Color::TEXT_SECONDARY), 0);
+    style::apply(ccPrefixLabel_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
 
     ccValueLabel_ = std::make_unique<oc::ui::lvgl::Label>(ccRow_);
     ccValueLabel_->setText("0");
-    lv_obj_set_style_text_color(ccValueLabel_->getElement(), lv_color_hex(Theme::Color::TEXT_PRIMARY), 0);
+    style::apply(ccValueLabel_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
 
     // Initial focus indicator
     updateFocusIndicator(0);
