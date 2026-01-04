@@ -5,9 +5,11 @@
  * @brief Main UI container with zones for views and persistent elements
  *
  * ViewContainer divides the screen into:
- * - topZone: Persistent header (TopBar - page name)
  * - mainZone: Primary content area (views, flex grow)
  * - bottomZone: Persistent footer (TransportBar)
+ *
+ * Pattern: Matches plugin-bitwig's ViewContainer (2-zone layout).
+ * Views manage their own internal structure (e.g., MacroView has TopBar inside).
  */
 
 #include <lvgl.h>
@@ -17,7 +19,6 @@ namespace ui {
 /**
  * @brief Container managing main view and bottom zones
  *
- * Mirrors the layout pattern from plugin-bitwig's ViewContainer.
  * Uses flex column layout with mainZone taking remaining space.
  */
 class ViewContainer {
@@ -34,9 +35,6 @@ public:
     ViewContainer& operator=(const ViewContainer&) = delete;
     ViewContainer(ViewContainer&&) = delete;
     ViewContainer& operator=(ViewContainer&&) = delete;
-
-    /// Get the top zone (for TopBar)
-    lv_obj_t* getTopZone() const { return topZone_; }
 
     /// Get the main content zone (for views)
     lv_obj_t* getMainZone() const { return mainZone_; }
@@ -55,7 +53,6 @@ public:
 
 private:
     lv_obj_t* container_{nullptr};
-    lv_obj_t* topZone_{nullptr};
     lv_obj_t* mainZone_{nullptr};
     lv_obj_t* bottomZone_{nullptr};
 };
