@@ -26,7 +26,7 @@ static std::optional<oc::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::teensy::CD74HC4067> mux;
 static oc::teensy::EEPROMBackend storage;  // EEPROM backend for persistence
-static std::optional<state::CoreState> coreState;
+static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 
 // =============================================================================
@@ -72,13 +72,13 @@ static void initApp() {
               .inputConfig(Config::Input::CONFIG);
 
     // Skip BootContext for now - debug crash
-    // app->registerContext<context::BootContext>(Config::ContextID::BOOT, "Boot");
+    // app->registerContext<core::context::BootContext>(Config::ContextID::BOOT, "Boot");
 
     // Register context with factory that captures CoreState reference
     app->registerContextWithFactory(
         Config::ContextID::STANDALONE,
         "Standalone",
-        [&]() { return std::make_unique<context::StandaloneContext>(*coreState); });
+        [&]() { return std::make_unique<core::context::StandaloneContext>(*coreState); });
 
     app->begin();
 }

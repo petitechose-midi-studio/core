@@ -4,11 +4,11 @@
 #include <oc/hal/IEncoderController.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
-namespace handler {
+namespace core::handler {
 
 using namespace oc::ui::lvgl;
 
-HandlerInputTransport::HandlerInputTransport(state::CoreState& coreState,
+HandlerInputTransport::HandlerInputTransport(core::state::CoreState& coreState,
                                              oc::api::EncoderAPI& encoders,
                                              oc::api::ButtonAPI& buttons,
                                              lv_obj_t* scopeElement)
@@ -47,4 +47,4 @@ void HandlerInputTransport::handlePlayToggle() {
     coreState_.statusBar.playing.set(!playing);
 }
 
-}  // namespace handler
+}  // namespace core::handler

@@ -3,7 +3,7 @@
 #include <oc/state/Signal.hpp>
 #include <oc/state/SignalString.hpp>
 
-namespace state {
+namespace core::state {
 
 using oc::state::Signal;
 using oc::state::SignalLabel;
@@ -35,4 +35,4 @@ struct StatusBarState {
     }
 };
 
-}  // namespace state
+}  // namespace core::state

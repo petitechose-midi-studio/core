@@ -5,6 +5,8 @@
 #include "config/App.hpp"
 #include "ui/font/CoreFonts.hpp"
 
+namespace core::ui {
+
 namespace App = Config::App;
 namespace Theme = oc::ui::lvgl::BaseTheme;
 
@@ -144,3 +146,5 @@ void SplashScreenView::createProgressBar() {
     lv_bar_set_range(progress_bar_, 0, 100);
     lv_bar_set_value(progress_bar_, 0, LV_ANIM_OFF);
 }
+
+}  // namespace core::ui

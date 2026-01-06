@@ -1,8 +1,8 @@
 #include "HandlerInputMacroMidi.hpp"
 
-namespace handler {
+namespace core::handler {
 
-HandlerInputMacroMidi::HandlerInputMacroMidi(state::CoreState& coreState,
+HandlerInputMacroMidi::HandlerInputMacroMidi(core::state::CoreState& coreState,
                                              oc::api::MidiAPI& midi,
                                              oc::api::EncoderAPI& encoders)
     : coreState_(coreState)
@@ -45,7 +45,7 @@ void HandlerInputMacroMidi::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_
 }
 
 int8_t HandlerInputMacroMidi::findMacroForCC(uint8_t channel, uint8_t cc) const {
-    for (uint8_t i = 0; i < state::MACRO_COUNT; ++i) {
+    for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         const auto& config = coreState_.getMacroConfig(i);
         if (config.cc == cc && config.channel == channel) {
             return static_cast<int8_t>(i);
@@ -54,4 +54,4 @@ int8_t HandlerInputMacroMidi::findMacroForCC(uint8_t channel, uint8_t cc) const 
     return -1;
 }
 
-}  // namespace handler
+}  // namespace core::handler

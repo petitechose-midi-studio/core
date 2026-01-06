@@ -7,7 +7,7 @@
 
 #include <oc/ui/lvgl/IView.hpp>
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Type-safe container for overlays
@@ -140,4 +140,4 @@ private:
     }
 };
 
-}  // namespace ui
+}  // namespace core::ui

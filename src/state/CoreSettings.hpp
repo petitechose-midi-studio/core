@@ -25,7 +25,7 @@
 
 #include "macro/MacroPagesState.hpp"
 
-namespace state {
+namespace core::state {
 
 /// Storage layout constants
 namespace StorageLayout {
@@ -223,4 +223,4 @@ private:
     oc::hal::IStorageBackend& backend_;
 };
 
-}  // namespace state
+}  // namespace core::state

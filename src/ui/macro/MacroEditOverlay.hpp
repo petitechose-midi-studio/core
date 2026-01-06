@@ -24,7 +24,7 @@
 #include <lvgl.h>
 #include <oc/ui/lvgl/widget/Label.hpp>
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Props for MacroEditOverlay rendering
@@ -106,4 +106,4 @@ private:
     MacroEditOverlayProps currentProps_;
 };
 
-}  // namespace ui
+}  // namespace core::ui

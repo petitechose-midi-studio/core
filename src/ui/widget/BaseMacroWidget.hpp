@@ -5,7 +5,7 @@
 #include <oc/ui/lvgl/widget/Label.hpp>
 #include "IMacroWidget.hpp"
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Base class for macro widgets with common grid layout and config labels
@@ -47,4 +47,4 @@ protected:
     uint8_t index_ = 0;
 };
 
-}  // namespace ui
+}  // namespace core::ui

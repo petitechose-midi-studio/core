@@ -3,7 +3,7 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
-namespace ui {
+namespace core::ui {
 
 namespace Theme = oc::ui::lvgl::BaseTheme;
 namespace style = oc::ui::lvgl::style;
@@ -45,4 +45,4 @@ ViewContainer::~ViewContainer() {
     }
 }
 
-}  // namespace ui
+}  // namespace core::ui

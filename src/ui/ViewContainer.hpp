@@ -14,7 +14,7 @@
 
 #include <lvgl.h>
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Container managing main view and bottom zones
@@ -57,4 +57,4 @@ private:
     lv_obj_t* bottomZone_{nullptr};
 };
 
-}  // namespace ui
+}  // namespace core::ui

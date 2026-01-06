@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <oc/ui/lvgl/IWidget.hpp>
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Interface for macro widgets (knob or button)
@@ -19,4 +19,4 @@ public:
     virtual void setConfig(uint8_t channel, uint8_t cc) = 0;
 };
 
-}  // namespace ui
+}  // namespace core::ui

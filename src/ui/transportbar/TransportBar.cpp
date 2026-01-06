@@ -8,7 +8,7 @@
 #include "ui/font/Icon.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
-namespace ui {
+namespace core::ui {
 
 namespace Theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
@@ -23,7 +23,7 @@ const lv_color_t COLOR_TEXT = lv_color_hex(Theme::Color::TEXT_SECONDARY);
 const lv_color_t COLOR_BEAT = lv_color_hex(Theme::Color::BEAT_PULSE);
 }  // namespace
 
-TransportBar::TransportBar(lv_obj_t* parent, state::StatusBarState& state)
+TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
     : state_(state) {
     createLayout(parent);
     setupBindings();
@@ -251,4 +251,4 @@ bool TransportBar::isVisible() const {
     return container_ && !lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
 
-}  // namespace ui
+}  // namespace core::ui

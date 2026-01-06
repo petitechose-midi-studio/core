@@ -22,7 +22,7 @@
 
 #include "config/InputIDs.hpp"
 
-namespace state::macro {
+namespace core::state::macro {
 
 static constexpr uint8_t PAGE_COUNT = 8;
 static constexpr uint8_t MACRO_COUNT = Config::MACRO_COUNT;
@@ -140,4 +140,4 @@ struct MacroPagesState {
     }
 };
 
-}  // namespace state::macro
+}  // namespace core::state::macro

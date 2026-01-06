@@ -10,7 +10,7 @@
 
 #include "state/StatusBarState.hpp"
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Transport bar component at bottom of screen
@@ -24,7 +24,7 @@ namespace ui {
  */
 class TransportBar : public oc::ui::lvgl::IComponent {
 public:
-    TransportBar(lv_obj_t* parent, state::StatusBarState& state);
+    TransportBar(lv_obj_t* parent, core::state::StatusBarState& state);
     ~TransportBar() override;
 
     TransportBar(const TransportBar&) = delete;
@@ -39,7 +39,7 @@ public:
 private:
     using StateIndicator = oc::ui::lvgl::StateIndicator;
 
-    state::StatusBarState& state_;
+    core::state::StatusBarState& state_;
 
     lv_obj_t* container_ = nullptr;
 
@@ -93,4 +93,4 @@ private:
     static void onBeatTimeout(lv_timer_t* timer);
 };
 
-}  // namespace ui
+}  // namespace core::ui

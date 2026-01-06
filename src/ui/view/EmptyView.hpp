@@ -14,6 +14,8 @@
  *
  * Note: Must be created after LVGL is initialized.
  */
+namespace core::ui {
+
 class EmptyView : public oc::ui::lvgl::IView {
 public:
     explicit EmptyView(lv_obj_t* parent, uint32_t color = oc::ui::lvgl::BaseTheme::Color::BACKGROUND)
@@ -43,3 +45,5 @@ private:
     lv_obj_t* container_;
     uint32_t color_;
 };
+
+}  // namespace core::ui

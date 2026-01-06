@@ -19,7 +19,7 @@
 #include "ui/font/CoreFonts.hpp"
 #include "ui/view/SplashScreenView.hpp"
 
-namespace context {
+namespace core::context {
 
 class BootContext : public oc::context::IContext {
 public:
@@ -28,7 +28,7 @@ public:
     bool initialize() override {
         oc::ui::lvgl::font::loadEssential(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
 
-        splash_ = std::make_unique<SplashScreenView>(lv_screen_active());
+        splash_ = std::make_unique<core::ui::SplashScreenView>(lv_screen_active());
         splash_->onActivate();
 
         startMs_ = millis();
@@ -67,7 +67,7 @@ private:
 
     uint32_t startMs_ = 0;
     bool fading_ = false;
-    std::unique_ptr<SplashScreenView> splash_;
+    std::unique_ptr<core::ui::SplashScreenView> splash_;
 };
 
-}  // namespace context
+}  // namespace core::context

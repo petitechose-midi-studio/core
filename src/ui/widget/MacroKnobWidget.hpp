@@ -4,7 +4,7 @@
 #include <oc/ui/lvgl/widget/KnobWidget.hpp>
 #include "BaseMacroWidget.hpp"
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Macro widget with rotary knob visualization
@@ -26,4 +26,4 @@ private:
     std::unique_ptr<oc::ui::lvgl::KnobWidget> knob_;
 };
 
-}  // namespace ui
+}  // namespace core::ui

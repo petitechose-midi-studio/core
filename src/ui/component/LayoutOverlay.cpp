@@ -3,7 +3,7 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
-namespace ui {
+namespace core::ui {
 
 using namespace oc::ui::lvgl;
 namespace style = oc::ui::lvgl::style;
@@ -90,4 +90,4 @@ void LayoutOverlay::hide() {
     }
 }
 
-}  // namespace ui
+}  // namespace core::ui

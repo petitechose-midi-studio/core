@@ -13,7 +13,7 @@
 
 #include "MacroState.hpp"
 
-namespace state {
+namespace core::state {
 
 /**
  * @brief Persistent data for macro settings
@@ -54,4 +54,4 @@ inline void copyStateToSettings(const MacroState& state, MacroSettingsData& data
     }
 }
 
-}  // namespace state
+}  // namespace core::state

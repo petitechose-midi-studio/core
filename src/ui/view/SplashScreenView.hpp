@@ -4,6 +4,8 @@
 
 #include <oc/ui/lvgl/IView.hpp>
 
+namespace core::ui {
+
 class SplashScreenView : public oc::ui::lvgl::IView {
 public:
     /**
@@ -46,3 +48,5 @@ private:
     void createLabels();
     void createProgressBar();
 };
+
+}  // namespace core::ui

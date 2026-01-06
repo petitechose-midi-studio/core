@@ -18,7 +18,7 @@
 #include "ui/OverlayController.hpp"
 #include "ui/OverlayTypes.hpp"
 
-namespace handler {
+namespace core::handler {
 
 /**
  * @brief Handles input for MacroEdit overlay
@@ -39,8 +39,8 @@ public:
      * @param overlayScope Scope element for overlay (edit/close)
      */
     HandlerInputMacroEdit(
-        state::CoreState& state,
-        ui::OverlayController<ui::CoreOverlayType>& overlays,
+        core::state::CoreState& state,
+        core::ui::OverlayController<core::ui::CoreOverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         lv_obj_t* macroViewScope,
@@ -56,8 +56,8 @@ private:
     void adjustValue(float delta);
     void toggleFocus();
 
-    state::CoreState& state_;
-    ui::OverlayController<ui::CoreOverlayType>& overlays_;
+    core::state::CoreState& state_;
+    core::ui::OverlayController<core::ui::CoreOverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
 
@@ -65,4 +65,4 @@ private:
     lv_obj_t* overlayScope_;
 };
 
-}  // namespace handler
+}  // namespace core::handler

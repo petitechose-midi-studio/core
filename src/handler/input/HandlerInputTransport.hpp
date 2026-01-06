@@ -16,11 +16,11 @@
 #include "config/InputIDs.hpp"
 #include "state/CoreState.hpp"
 
-namespace handler {
+namespace core::handler {
 
 class HandlerInputTransport {
 public:
-    HandlerInputTransport(state::CoreState& coreState,
+    HandlerInputTransport(core::state::CoreState& coreState,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,
                           lv_obj_t* scopeElement);
@@ -35,7 +35,7 @@ private:
     void handleTempoChange(float delta);
     void handlePlayToggle();
 
-    state::CoreState& coreState_;
+    core::state::CoreState& coreState_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     lv_obj_t* scopeElement_;
@@ -44,4 +44,4 @@ private:
     static constexpr float TEMPO_MAX = 300.0f;
 };
 
-}  // namespace handler
+}  // namespace core::handler

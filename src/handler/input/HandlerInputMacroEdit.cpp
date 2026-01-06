@@ -9,11 +9,11 @@
 
 using oc::ui::lvgl::scope;
 
-namespace handler {
+namespace core::handler {
 
 HandlerInputMacroEdit::HandlerInputMacroEdit(
-    state::CoreState& state,
-    ui::OverlayController<ui::CoreOverlayType>& overlays,
+    core::state::CoreState& state,
+    core::ui::OverlayController<core::ui::CoreOverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* macroViewScope,
@@ -71,7 +71,7 @@ void HandlerInputMacroEdit::setupBindings() {
 void HandlerInputMacroEdit::openEdit(uint8_t macroIndex) {
     const auto& config = state_.getMacroConfig(macroIndex);
     state_.macroEdit.startEditing(macroIndex, config.channel, config.cc);
-    overlays_.show(ui::CoreOverlayType::MACRO_EDIT);
+    overlays_.show(core::ui::CoreOverlayType::MACRO_EDIT);
     OC_LOG_DEBUG("[HandlerInputMacroEdit] Opening edit for macro {}", macroIndex);
 }
 
@@ -121,4 +121,4 @@ void HandlerInputMacroEdit::toggleFocus() {
     OC_LOG_DEBUG("[HandlerInputMacroEdit] Focus row: {}", next == 0 ? "CH" : "CC");
 }
 
-}  // namespace handler
+}  // namespace core::handler

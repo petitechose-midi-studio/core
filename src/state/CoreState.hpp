@@ -26,7 +26,7 @@
 #include "StatusBarState.hpp"
 #include "macro/MacroPagesState.hpp"
 
-namespace state {
+namespace core::state {
 
 /**
  * @brief Global state container for standalone mode
@@ -46,7 +46,7 @@ struct CoreState {
     CoreSettings settings;
 
     /// Overlay visibility manager
-    oc::state::ExclusiveVisibilityStack<ui::CoreOverlayType> overlays;
+    oc::state::ExclusiveVisibilityStack<core::ui::CoreOverlayType> overlays;
 
     /// Status bar state (TopBar + TransportBar)
     StatusBarState statusBar;
@@ -67,8 +67,8 @@ struct CoreState {
         syncMacrosFromActivePage();
 
         // Register overlay signals
-        overlays.registerItem(ui::CoreOverlayType::PAGE_SELECTOR, pages.selector.visible);
-        overlays.registerItem(ui::CoreOverlayType::MACRO_EDIT, macroEdit.visible);
+        overlays.registerItem(core::ui::CoreOverlayType::PAGE_SELECTOR, pages.selector.visible);
+        overlays.registerItem(core::ui::CoreOverlayType::MACRO_EDIT, macroEdit.visible);
     }
 
     // Non-copyable, non-movable
@@ -236,4 +236,4 @@ private:
     }
 };
 
-}  // namespace state
+}  // namespace core::state

@@ -7,7 +7,7 @@
 
 #include "config/InputIDs.hpp"
 
-namespace state {
+namespace core::state {
 
 using oc::state::Signal;
 using oc::state::SignalLabel;
@@ -61,4 +61,4 @@ struct MacroState {
     const MacroSlot& operator[](uint8_t index) const { return slots[index]; }
 };
 
-}  // namespace state
+}  // namespace core::state

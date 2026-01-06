@@ -6,7 +6,7 @@
 
 #include "ui/theme/StandaloneTheme.hpp"
 
-namespace ui {
+namespace core::ui {
 
 namespace Theme = oc::ui::lvgl::BaseTheme;
 namespace style = oc::ui::lvgl::style;
@@ -139,4 +139,4 @@ void MacroEditOverlay::updateFocusIndicator(uint8_t focusedRow) {
     }
 }
 
-}  // namespace ui
+}  // namespace core::ui

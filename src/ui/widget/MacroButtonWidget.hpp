@@ -4,7 +4,7 @@
 #include <oc/ui/lvgl/widget/ButtonWidget.hpp>
 #include "BaseMacroWidget.hpp"
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Macro widget with toggle button visualization
@@ -26,4 +26,4 @@ private:
     std::unique_ptr<oc::ui::lvgl::ButtonWidget> button_;
 };
 
-}  // namespace ui
+}  // namespace core::ui

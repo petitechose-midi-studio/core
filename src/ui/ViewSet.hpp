@@ -7,7 +7,7 @@
 
 #include <oc/ui/lvgl/IView.hpp>
 
-namespace ui {
+namespace core::ui {
 
 /**
  * @brief Type-safe container for mutually exclusive views
@@ -125,4 +125,4 @@ private:
     oc::ui::lvgl::IView* current_ = nullptr;
 };
 
-}  // namespace ui
+}  // namespace core::ui

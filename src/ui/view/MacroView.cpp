@@ -5,7 +5,9 @@
 namespace Theme = oc::ui::lvgl::BaseTheme;
 namespace style = oc::ui::lvgl::style;
 
-MacroView::MacroView(lv_obj_t* parent, state::CoreState& coreState)
+namespace core::ui {
+
+MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     : coreState_(coreState) {
     createLayout(parent);
     createTopBar();
@@ -87,7 +89,7 @@ void MacroView::createLayout(lv_obj_t* parent) {
 }
 
 void MacroView::createTopBar() {
-    topBar_ = std::make_unique<ui::TopBar>(topBarContainer_, coreState_.statusBar);
+    topBar_ = std::make_unique<TopBar>(topBarContainer_, coreState_.statusBar);
 }
 
 void MacroView::createMacros() {
@@ -96,7 +98,7 @@ void MacroView::createMacros() {
         uint8_t row = i / COLS;
 
         // Create macro widget directly in body grid
-        macros_[i] = std::make_unique<ui::MacroKnobWidget>(bodyContainer_, i);
+        macros_[i] = std::make_unique<MacroKnobWidget>(bodyContainer_, i);
 
         // Position in grid (widget container handles internal layout)
         lv_obj_set_grid_cell(macros_[i]->getElement(),
@@ -104,3 +106,5 @@ void MacroView::createMacros() {
             LV_GRID_ALIGN_STRETCH, row, 1);
     }
 }
+
+}  // namespace core::ui

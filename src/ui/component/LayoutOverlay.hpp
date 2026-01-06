@@ -3,7 +3,7 @@
 #include <lvgl.h>
 #include <oc/ui/lvgl/IComponent.hpp>
 
-namespace ui {
+namespace core::ui {
 
 /**
  * Base layout shell for modal overlays.
@@ -56,4 +56,4 @@ private:
     bool visible_ = false;
 };
 
-}  // namespace ui
+}  // namespace core::ui

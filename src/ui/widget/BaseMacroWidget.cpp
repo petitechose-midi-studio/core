@@ -8,7 +8,7 @@
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
-namespace ui {
+namespace core::ui {
 
 namespace Theme = oc::ui::lvgl::BaseTheme;
 namespace style = oc::ui::lvgl::style;
@@ -142,4 +142,4 @@ void BaseMacroWidget::setConfig(uint8_t channel, uint8_t cc) {
     }
 }
 
-}  // namespace ui
+}  // namespace core::ui

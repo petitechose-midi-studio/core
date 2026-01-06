@@ -9,7 +9,7 @@
 
 #include <oc/state/Signal.hpp>
 
-namespace state {
+namespace core::state {
 
 /**
  * @brief State for macro edit overlay
@@ -62,4 +62,4 @@ struct MacroEditState {
     }
 };
 
-}  // namespace state
+}  // namespace core::state

@@ -19,7 +19,7 @@
 #include "config/InputIDs.hpp"
 #include "state/CoreState.hpp"
 
-namespace handler {
+namespace core::handler {
 
 /**
  * @brief Encoder input handler for standalone macros
@@ -30,7 +30,7 @@ namespace handler {
  */
 class HandlerInputMacro {
 public:
-    HandlerInputMacro(state::CoreState& coreState,
+    HandlerInputMacro(core::state::CoreState& coreState,
                       oc::api::EncoderAPI& encoders,
                       oc::api::MidiAPI& midi,
                       lv_obj_t* scopeElement);
@@ -44,10 +44,10 @@ private:
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
 
-    state::CoreState& coreState_;
+    core::state::CoreState& coreState_;
     oc::api::EncoderAPI& encoders_;
     oc::api::MidiAPI& midi_;
     lv_obj_t* scopeElement_;
 };
 
-}  // namespace handler
+}  // namespace core::handler

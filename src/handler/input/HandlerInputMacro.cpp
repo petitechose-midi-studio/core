@@ -2,11 +2,11 @@
 
 #include <oc/ui/lvgl/Scope.hpp>
 
-namespace handler {
+namespace core::handler {
 
 using namespace oc::ui::lvgl;
 
-HandlerInputMacro::HandlerInputMacro(state::CoreState& coreState,
+HandlerInputMacro::HandlerInputMacro(core::state::CoreState& coreState,
                                      oc::api::EncoderAPI& encoders,
                                      oc::api::MidiAPI& midi,
                                      lv_obj_t* scopeElement)
@@ -18,7 +18,7 @@ HandlerInputMacro::HandlerInputMacro(state::CoreState& coreState,
 }
 
 void HandlerInputMacro::setupBindings() {
-    for (uint8_t i = 0; i < state::MACRO_COUNT; ++i) {
+    for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope(scopeElement_))
@@ -39,4 +39,4 @@ void HandlerInputMacro::handleValueChange(uint8_t index, float value) {
     coreState_.statusBar.ccOutActive.set(true);
 }
 
-}  // namespace handler
+}  // namespace core::handler

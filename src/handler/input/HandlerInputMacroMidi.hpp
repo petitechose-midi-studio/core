@@ -16,7 +16,7 @@
 #include "config/InputIDs.hpp"
 #include "state/CoreState.hpp"
 
-namespace handler {
+namespace core::handler {
 
 /**
  * @brief MIDI input handler for standalone macros
@@ -26,7 +26,7 @@ namespace handler {
  */
 class HandlerInputMacroMidi {
 public:
-    HandlerInputMacroMidi(state::CoreState& coreState,
+    HandlerInputMacroMidi(core::state::CoreState& coreState,
                           oc::api::MidiAPI& midi,
                           oc::api::EncoderAPI& encoders);
 
@@ -42,9 +42,9 @@ private:
     /// Find macro index for given CC/channel (-1 if not found)
     int8_t findMacroForCC(uint8_t channel, uint8_t cc) const;
 
-    state::CoreState& coreState_;
+    core::state::CoreState& coreState_;
     oc::api::MidiAPI& midi_;
     oc::api::EncoderAPI& encoders_;
 };
 
-}  // namespace handler
+}  // namespace core::handler
