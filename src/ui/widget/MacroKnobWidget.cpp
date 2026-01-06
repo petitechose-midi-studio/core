@@ -26,7 +26,7 @@ void MacroKnobWidget::createUI(lv_obj_t* parent) {
     // KnobWidget - stretch horizontally, CONTENT row sizes to knob height
     knob_ = std::make_unique<oc::ui::lvgl::KnobWidget>(container_);
     knob_->sizeMode(oc::ui::lvgl::SizeMode::SquareFromWidth)  // Explicit: height = width
-          .centered(true)
+          .centered(false)
           .bgColor(Theme::Color::KNOB_BACKGROUND)
           .trackColor(Theme::Color::getMacroColor(index_))
           .valueColor(Theme::Color::KNOB_VALUE)

@@ -55,8 +55,15 @@ private:
     void bindToState();
     void updateConfigLabel(uint8_t index);
 
+    // Debounced update system
+    void markDirty(uint8_t index);
+    void processDirtyFlags();
+    static void onUpdateTimer(lv_timer_t* timer);
+
     core::state::CoreState& core_state_;
     std::vector<oc::state::Subscription> subscriptions_;
+    std::array<bool, MACRO_COUNT> dirty_flags_{};
+    lv_timer_t* update_timer_ = nullptr;
 
     // UI structure: container_ (flex col) → top_bar_container_ + body_container_ (grid)
     lv_obj_t* container_ = nullptr;

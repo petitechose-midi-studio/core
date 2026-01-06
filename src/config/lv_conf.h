@@ -46,8 +46,8 @@
 #define LV_DRAW_BUF_STRIDE_ALIGN 4
 #define LV_DRAW_BUF_ALIGN 32
 #define LV_DRAW_TRANSFORM_USE_MATRIX 1
-#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (128 * 1024)
-#define LV_DRAW_LAYER_MAX_MEMORY (512 * 1024)
+#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (32 * 1024)
+#define LV_DRAW_LAYER_MAX_MEMORY (64 * 1024)
 
 #define LV_USE_DRAW_SW 1
 #if LV_USE_DRAW_SW == 1
@@ -82,9 +82,9 @@
 #define LV_USE_PARALLEL_DRAW_DEBUG 0
 #define LV_ENABLE_GLOBAL_CUSTOM 0
 
-// Image caching (for splash screen and decoded images)
-#define LV_CACHE_DEF_SIZE (512 * 1024)         // 512KB cache for decoded images
-#define LV_IMAGE_HEADER_CACHE_DEF_CNT 32
+// Image caching (minimal - splash uses raw PNG, not decoded cache)
+#define LV_CACHE_DEF_SIZE (64 * 1024)          // 64KB cache
+#define LV_IMAGE_HEADER_CACHE_DEF_CNT 8
 
 #define LV_GRADIENT_MAX_STOPS 2
 #define LV_OBJ_STYLE_CACHE 1
@@ -146,14 +146,14 @@
 #define LV_USE_BAR 1
 #define LV_USE_BUTTON 1
 #define LV_USE_BUTTONMATRIX 1
-#define LV_USE_CANVAS 1
+#define LV_USE_CANVAS 0
 #define LV_USE_CHECKBOX 0
 #define LV_USE_DROPDOWN 1
 #define LV_USE_IMAGE 1
 #define LV_USE_LABEL 1
 #if LV_USE_LABEL
-#define LV_LABEL_TEXT_SELECTION 1
-#define LV_LABEL_LONG_TXT_HINT 1
+#define LV_LABEL_TEXT_SELECTION 0
+#define LV_LABEL_LONG_TXT_HINT 0
 #define LV_LABEL_WAIT_CHAR_COUNT 3
 #endif
 #define LV_USE_LED 0
@@ -162,7 +162,7 @@
 #define LV_USE_MENU 0
 #define LV_USE_MSGBOX 1
 #define LV_USE_SLIDER 1
-#define LV_USE_SWITCH 1
+#define LV_USE_SWITCH 0
 #define LV_USE_TABVIEW 0
 #define LV_USE_ANIMIMG 0
 #define LV_USE_CALENDAR 0

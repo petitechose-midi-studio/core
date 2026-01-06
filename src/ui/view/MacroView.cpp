@@ -2,6 +2,8 @@
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include "config/App.hpp"
+
 namespace Theme = oc::ui::lvgl::BaseTheme;
 namespace style = oc::ui::lvgl::style;
 
@@ -12,10 +14,19 @@ MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     createLayout(parent);
     createTopBar();
     createMacros();
+
+    // Create debounce timer (synced with display refresh)
+    constexpr uint32_t periodMs = 1000 / Config::Timing::LVGL_HZ;
+    update_timer_ = lv_timer_create(onUpdateTimer, periodMs, this);
+
     bindToState();
 }
 
 MacroView::~MacroView() {
+    if (update_timer_) {
+        lv_timer_delete(update_timer_);
+        update_timer_ = nullptr;
+    }
     subscriptions_.clear();
     top_bar_.reset();
     for (auto& macro : macros_) {
@@ -40,10 +51,10 @@ void MacroView::bindToState() {
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         auto& slot = core_state_.macros.slots[i];
 
-        // Subscribe to value changes
+        // Subscribe to value changes (debounced via dirty flags)
         subscriptions_.push_back(
-            slot.value.subscribe([this, i](float value) {
-                macros_[i]->setValue(value);
+            slot.value.subscribe([this, i](float) {
+                markDirty(i);
             })
         );
 
@@ -104,6 +115,32 @@ void MacroView::createMacros() {
         lv_obj_set_grid_cell(macros_[i]->getElement(),
             LV_GRID_ALIGN_STRETCH, col, 1,
             LV_GRID_ALIGN_STRETCH, row, 1);
+    }
+}
+
+// =============================================================================
+// Debounced Update System
+// =============================================================================
+
+void MacroView::markDirty(uint8_t index) {
+    if (index < MACRO_COUNT) {
+        dirty_flags_[index] = true;
+    }
+}
+
+void MacroView::processDirtyFlags() {
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        if (dirty_flags_[i]) {
+            dirty_flags_[i] = false;
+            macros_[i]->setValue(core_state_.macros.slots[i].value.get());
+        }
+    }
+}
+
+void MacroView::onUpdateTimer(lv_timer_t* timer) {
+    auto* self = static_cast<MacroView*>(lv_timer_get_user_data(timer));
+    if (self) {
+        self->processDirtyFlags();
     }
 }
 
