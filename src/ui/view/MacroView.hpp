@@ -55,14 +55,14 @@ private:
     void bindToState();
     void updateConfigLabel(uint8_t index);
 
-    core::state::CoreState& coreState_;
+    core::state::CoreState& core_state_;
     std::vector<oc::state::Subscription> subscriptions_;
 
-    // UI structure: container_ (flex col) → topBarContainer_ + bodyContainer_ (grid)
+    // UI structure: container_ (flex col) → top_bar_container_ + body_container_ (grid)
     lv_obj_t* container_ = nullptr;
-    lv_obj_t* topBarContainer_ = nullptr;
-    lv_obj_t* bodyContainer_ = nullptr;
-    std::unique_ptr<core::ui::TopBar> topBar_;
+    lv_obj_t* top_bar_container_ = nullptr;
+    lv_obj_t* body_container_ = nullptr;
+    std::unique_ptr<core::ui::TopBar> top_bar_;
     std::array<std::unique_ptr<core::ui::IMacroWidget>, MACRO_COUNT> macros_;
 };
 }  // namespace core::ui

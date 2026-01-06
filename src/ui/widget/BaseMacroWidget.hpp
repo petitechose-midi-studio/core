@@ -39,10 +39,10 @@ protected:
     lv_obj_t* container_ = nullptr;
 
     // Config labels (framework Labels)
-    std::unique_ptr<oc::ui::lvgl::Label> chPrefix_;   // "CH" (small, dim)
-    std::unique_ptr<oc::ui::lvgl::Label> chValue_;    // channel number
-    std::unique_ptr<oc::ui::lvgl::Label> ccPrefix_;   // "CC" (small, dim)
-    std::unique_ptr<oc::ui::lvgl::Label> ccValue_;    // CC number
+    std::unique_ptr<oc::ui::lvgl::Label> ch_prefix_;   // "CH" (small, dim)
+    std::unique_ptr<oc::ui::lvgl::Label> ch_value_;    // channel number
+    std::unique_ptr<oc::ui::lvgl::Label> cc_prefix_;   // "CC" (small, dim)
+    std::unique_ptr<oc::ui::lvgl::Label> cc_value_;    // CC number
 
     uint8_t index_ = 0;
 };

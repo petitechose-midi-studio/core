@@ -174,9 +174,9 @@ struct CoreState {
      */
     void markDirty(uint8_t index) {
         if (index >= MACRO_COUNT) return;
-        dirtyMask_ |= (1 << index);
-        if (dirtyTimestamp_ == 0) {
-            dirtyTimestamp_ = oc::time::millis();
+        dirty_mask_ |= (1 << index);
+        if (dirty_timestamp_ == 0) {
+            dirty_timestamp_ = oc::time::millis();
         }
     }
 
@@ -186,10 +186,10 @@ struct CoreState {
      * Saves dirty values incrementally after timeout.
      */
     void update() {
-        if (dirtyMask_ == 0) return;
+        if (dirty_mask_ == 0) return;
 
         uint32_t now = oc::time::millis();
-        if ((now - dirtyTimestamp_) < CoreSettings::VALUE_SAVE_DELAY_MS) return;
+        if ((now - dirty_timestamp_) < CoreSettings::VALUE_SAVE_DELAY_MS) return;
 
         saveDirtyValues();
     }
@@ -210,13 +210,13 @@ struct CoreState {
      * @brief Flush any pending dirty values immediately
      */
     void flush() {
-        if (dirtyMask_ == 0) return;
+        if (dirty_mask_ == 0) return;
         saveDirtyValues();
     }
 
 private:
-    uint8_t dirtyMask_ = 0;       ///< Bitfield: which macro indices need saving
-    uint32_t dirtyTimestamp_ = 0; ///< When first change occurred (for timeout)
+    uint8_t dirty_mask_ = 0;       ///< Bitfield: which macro indices need saving
+    uint32_t dirty_timestamp_ = 0; ///< When first change occurred (for timeout)
 
     /**
      * @brief Save all dirty values to storage and reset dirty state
@@ -224,15 +224,15 @@ private:
     void saveDirtyValues() {
         auto& pageData = pages.activePageData();
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            if (dirtyMask_ & (1 << i)) {
+            if (dirty_mask_ & (1 << i)) {
                 float value = macros.slots[i].value.get();
                 pageData.values[i] = value;
                 settings.saveValue(pages.activePage, i, value);
             }
         }
         settings.commit();
-        dirtyMask_ = 0;
-        dirtyTimestamp_ = 0;
+        dirty_mask_ = 0;
+        dirty_timestamp_ = 0;
     }
 };
 

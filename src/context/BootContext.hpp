@@ -31,12 +31,12 @@ public:
         splash_ = std::make_unique<core::ui::SplashScreenView>(lv_screen_active());
         splash_->onActivate();
 
-        startMs_ = millis();
+        start_ms_ = millis();
         return true;
     }
 
     void update() override {
-        uint32_t elapsed = millis() - startMs_;
+        uint32_t elapsed = millis() - start_ms_;
 
         // Update progress
         uint8_t progress = (elapsed * 100) / DURATION_MS;
@@ -65,7 +65,7 @@ private:
     static constexpr uint32_t FADE_MS = DURATION_MS / 10;  // 100ms fade out
     static constexpr uint32_t FADE_START_MS = DURATION_MS - FADE_MS;  // Start fade at 900ms
 
-    uint32_t startMs_ = 0;
+    uint32_t start_ms_ = 0;
     bool fading_ = false;
     std::unique_ptr<core::ui::SplashScreenView> splash_;
 };

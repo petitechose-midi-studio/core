@@ -92,18 +92,18 @@ private:
     // LVGL objects
     lv_obj_t* overlay_ = nullptr;       ///< Fullscreen semi-transparent background
     lv_obj_t* container_ = nullptr;     ///< Center dialog box
-    lv_obj_t* chRow_ = nullptr;         ///< Channel row container
-    lv_obj_t* ccRow_ = nullptr;         ///< CC row container
+    lv_obj_t* ch_row_ = nullptr;         ///< Channel row container
+    lv_obj_t* cc_row_ = nullptr;         ///< CC row container
 
     // Labels
-    std::unique_ptr<oc::ui::lvgl::Label> titleLabel_;
-    std::unique_ptr<oc::ui::lvgl::Label> channelPrefixLabel_;
-    std::unique_ptr<oc::ui::lvgl::Label> channelValueLabel_;
-    std::unique_ptr<oc::ui::lvgl::Label> ccPrefixLabel_;
-    std::unique_ptr<oc::ui::lvgl::Label> ccValueLabel_;
+    std::unique_ptr<oc::ui::lvgl::Label> title_label_;
+    std::unique_ptr<oc::ui::lvgl::Label> channel_prefix_label_;
+    std::unique_ptr<oc::ui::lvgl::Label> channel_value_label_;
+    std::unique_ptr<oc::ui::lvgl::Label> cc_prefix_label_;
+    std::unique_ptr<oc::ui::lvgl::Label> cc_value_label_;
 
     // Cache for optimization
-    MacroEditOverlayProps currentProps_;
+    MacroEditOverlayProps current_props_;
 };
 
 }  // namespace core::ui

@@ -80,7 +80,7 @@ public:
      * @brief Construct with external CoreState reference
      * @param state Reference to global CoreState (owned by main.cpp)
      */
-    explicit StandaloneContext(core::state::CoreState& state) : coreState_(state) {}
+    explicit StandaloneContext(core::state::CoreState& state) : core_state_(state) {}
 
     bool initialize() override {
         OC_LOG_INFO("StandaloneContext::initialize()");
@@ -93,34 +93,34 @@ public:
         syncEncodersFromState();
 
         // Create UI container with zones
-        viewContainer_ = std::make_unique<core::ui::ViewContainer>(lv_screen_active());
+        view_container_ = std::make_unique<core::ui::ViewContainer>(lv_screen_active());
 
         // Create MacroView in main zone (TopBar is now internal to MacroView)
         view_ = std::make_unique<core::ui::MacroView>(
-            viewContainer_->getMainZone(),
-            coreState_
+            view_container_->getMainZone(),
+            core_state_
         );
         view_->onActivate();
 
         // Create TransportBar in bottom zone
-        transportBar_ = std::make_unique<core::ui::TransportBar>(
-            viewContainer_->getBottomZone(),
-            coreState_.statusBar
+        transport_bar_ = std::make_unique<core::ui::TransportBar>(
+            view_container_->getBottomZone(),
+            core_state_.statusBar
         );
 
         // Create overlay controller with AuthorityResolver
-        overlayController_ = std::make_unique<core::ui::OverlayController<core::ui::OverlayType>>(
-            coreState_.overlays, buttons()
+        overlay_controller_ = std::make_unique<core::ui::OverlayController<core::ui::OverlayType>>(
+            core_state_.overlays, buttons()
         );
-        buttons().setAuthorityResolver(&overlayController_->authority());
+        buttons().setAuthorityResolver(&overlay_controller_->authority());
 
         // Create MacroEdit overlay (stateless - no state reference)
-        macroEditOverlay_ = std::make_unique<core::ui::MacroEditOverlay>(lv_screen_active());
+        macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(lv_screen_active());
 
         // Register overlay cleanup
-        overlayController_->registerCleanup(
+        overlay_controller_->registerCleanup(
             core::ui::OverlayType::MACRO_EDIT,
-            reinterpret_cast<oc::core::ScopeID>(macroEditOverlay_->getElement()),
+            reinterpret_cast<oc::core::ScopeID>(macro_edit_overlay_->getElement()),
             static_cast<oc::hal::ButtonID>(0)  // No latch button
         );
 
@@ -128,27 +128,27 @@ public:
         setupMacroEditRendering();
 
         // Create handlers (bindings scoped to view element)
-        inputHandler_ = std::make_unique<core::handler::HandlerInputMacro>(
-            coreState_, encoders(), midi(), view_->getElement()
+        input_handler_ = std::make_unique<core::handler::HandlerInputMacro>(
+            core_state_, encoders(), midi(), view_->getElement()
         );
-        midiHandler_ = std::make_unique<core::handler::HandlerInputMacroMidi>(
-            coreState_, midi(), encoders()
+        midi_handler_ = std::make_unique<core::handler::HandlerInputMacroMidi>(
+            core_state_, midi(), encoders()
         );
-        transportHandler_ = std::make_unique<core::handler::HandlerInputTransport>(
-            coreState_, encoders(), buttons(), view_->getElement()
+        transport_handler_ = std::make_unique<core::handler::HandlerInputTransport>(
+            core_state_, encoders(), buttons(), view_->getElement()
         );
 
         // Create MacroEdit input handler (two-level scoping)
-        macroEditHandler_ = std::make_unique<core::handler::HandlerInputMacroEdit>(
-            coreState_,
-            *overlayController_,
+        macro_edit_handler_ = std::make_unique<core::handler::HandlerInputMacroEdit>(
+            core_state_,
+            *overlay_controller_,
             encoders(),
             buttons(),
             view_->getElement(),              // MacroView scope (open trigger)
-            macroEditOverlay_->getElement()   // Overlay scope (edit/close)
+            macro_edit_overlay_->getElement()   // Overlay scope (edit/close)
         );
 
-        viewContainer_->show();
+        view_container_->show();
 
         OC_LOG_INFO("StandaloneContext ready");
         return true;
@@ -156,7 +156,7 @@ public:
 
     void syncEncodersFromState() {
         for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
-            float value = coreState_.macros.slots[i].value.get();
+            float value = core_state_.macros.slots[i].value.get();
             encoders().setPosition(Config::MACRO_ENCODERS[i], value);
         }
         OC_LOG_DEBUG("Synced encoder positions from restored state");
@@ -171,19 +171,19 @@ public:
     void setupMacroEditRendering() {
         auto render = [this]() { renderMacroEdit(); };
 
-        macroEditSubs_.push_back(coreState_.macroEdit.visible.subscribe(
+        macro_edit_subs_.push_back(core_state_.macroEdit.visible.subscribe(
             [render](bool) { render(); }
         ));
-        macroEditSubs_.push_back(coreState_.macroEdit.editingIndex.subscribe(
+        macro_edit_subs_.push_back(core_state_.macroEdit.editingIndex.subscribe(
             [render](uint8_t) { render(); }
         ));
-        macroEditSubs_.push_back(coreState_.macroEdit.tempChannel.subscribe(
+        macro_edit_subs_.push_back(core_state_.macroEdit.tempChannel.subscribe(
             [render](uint8_t) { render(); }
         ));
-        macroEditSubs_.push_back(coreState_.macroEdit.tempCC.subscribe(
+        macro_edit_subs_.push_back(core_state_.macroEdit.tempCC.subscribe(
             [render](uint8_t) { render(); }
         ));
-        macroEditSubs_.push_back(coreState_.macroEdit.focusedRow.subscribe(
+        macro_edit_subs_.push_back(core_state_.macroEdit.focusedRow.subscribe(
             [render](uint8_t) { render(); }
         ));
     }
@@ -192,12 +192,12 @@ public:
      * @brief Render MacroEditOverlay with current state
      */
     void renderMacroEdit() {
-        macroEditOverlay_->render({
-            .editingIndex = coreState_.macroEdit.editingIndex.get(),
-            .channel = coreState_.macroEdit.tempChannel.get(),
-            .cc = coreState_.macroEdit.tempCC.get(),
-            .focusedRow = coreState_.macroEdit.focusedRow.get(),
-            .visible = coreState_.macroEdit.visible.get()
+        macro_edit_overlay_->render({
+            .editingIndex = core_state_.macroEdit.editingIndex.get(),
+            .channel = core_state_.macroEdit.tempChannel.get(),
+            .cc = core_state_.macroEdit.tempCC.get(),
+            .focusedRow = core_state_.macroEdit.focusedRow.get(),
+            .visible = core_state_.macroEdit.visible.get()
         });
     }
 
@@ -205,51 +205,51 @@ public:
 
     void cleanup() override {
         // Handlers first (they reference state/APIs)
-        macroEditHandler_.reset();
-        transportHandler_.reset();
-        inputHandler_.reset();
-        midiHandler_.reset();
+        macro_edit_handler_.reset();
+        transport_handler_.reset();
+        input_handler_.reset();
+        midi_handler_.reset();
 
         // Clear MacroEdit rendering subscriptions
-        macroEditSubs_.clear();
+        macro_edit_subs_.clear();
 
         // Overlay UI
-        macroEditOverlay_.reset();
+        macro_edit_overlay_.reset();
 
         // Overlay controller (clears authority resolver)
-        overlayController_.reset();
+        overlay_controller_.reset();
 
         // TransportBar (TopBar is now managed by MacroView)
-        transportBar_.reset();
+        transport_bar_.reset();
 
         if (view_) {
             view_->onDeactivate();
             view_.reset();
         }
 
-        viewContainer_.reset();
+        view_container_.reset();
     }
 
     const char* getName() const override { return "Standalone"; }
 
 private:
-    core::state::CoreState& coreState_;  // External reference (survives context switches)
+    core::state::CoreState& core_state_;  // External reference (survives context switches)
 
     // UI containers
-    std::unique_ptr<core::ui::ViewContainer> viewContainer_;
+    std::unique_ptr<core::ui::ViewContainer> view_container_;
     std::unique_ptr<core::ui::MacroView> view_;  // MacroView owns its TopBar internally
-    std::unique_ptr<core::ui::TransportBar> transportBar_;
+    std::unique_ptr<core::ui::TransportBar> transport_bar_;
 
     // Overlay system
-    std::unique_ptr<core::ui::OverlayController<core::ui::OverlayType>> overlayController_;
-    std::unique_ptr<core::ui::MacroEditOverlay> macroEditOverlay_;
-    std::vector<oc::state::Subscription> macroEditSubs_;  ///< MacroEdit rendering subscriptions
+    std::unique_ptr<core::ui::OverlayController<core::ui::OverlayType>> overlay_controller_;
+    std::unique_ptr<core::ui::MacroEditOverlay> macro_edit_overlay_;
+    std::vector<oc::state::Subscription> macro_edit_subs_;  ///< MacroEdit rendering subscriptions
 
     // Handlers
-    std::unique_ptr<core::handler::HandlerInputMacro> inputHandler_;
-    std::unique_ptr<core::handler::HandlerInputMacroMidi> midiHandler_;
-    std::unique_ptr<core::handler::HandlerInputTransport> transportHandler_;
-    std::unique_ptr<core::handler::HandlerInputMacroEdit> macroEditHandler_;
+    std::unique_ptr<core::handler::HandlerInputMacro> input_handler_;
+    std::unique_ptr<core::handler::HandlerInputMacroMidi> midi_handler_;
+    std::unique_ptr<core::handler::HandlerInputTransport> transport_handler_;
+    std::unique_ptr<core::handler::HandlerInputMacroEdit> macro_edit_handler_;
 };
 
 }  // namespace core::context

@@ -42,7 +42,7 @@ private:
     /// Find macro index for given CC/channel (-1 if not found)
     int8_t findMacroForCC(uint8_t channel, uint8_t cc) const;
 
-    core::state::CoreState& coreState_;
+    core::state::CoreState& core_state_;
     oc::api::MidiAPI& midi_;
     oc::api::EncoderAPI& encoders_;
 };

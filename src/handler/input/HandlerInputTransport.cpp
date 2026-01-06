@@ -12,10 +12,10 @@ HandlerInputTransport::HandlerInputTransport(core::state::CoreState& coreState,
                                              oc::api::EncoderAPI& encoders,
                                              oc::api::ButtonAPI& buttons,
                                              lv_obj_t* scopeElement)
-    : coreState_(coreState)
+    : core_state_(coreState)
     , encoders_(encoders)
     , buttons_(buttons)
-    , scopeElement_(scopeElement) {
+    , scope_element_(scopeElement) {
     setupBindings();
 }
 
@@ -26,25 +26,25 @@ void HandlerInputTransport::setupBindings() {
     // NAV encoder: tempo +/- 1 BPM per tick (delta from relative mode)
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
-        .scope(scope(scopeElement_))
+        .scope(scope(scope_element_))
         .then([this](float delta) { handleTempoChange(delta); });
 
     // BOTTOM_CENTER button: toggle play
     buttons_.button(Config::ButtonID::BOTTOM_CENTER)
         .press()
-        .scope(scope(scopeElement_))
+        .scope(scope(scope_element_))
         .then([this]() { handlePlayToggle(); });
 }
 
 void HandlerInputTransport::handleTempoChange(float delta) {
-    float currentTempo = coreState_.statusBar.tempo.get();
+    float currentTempo = core_state_.statusBar.tempo.get();
     float newTempo = std::clamp(currentTempo + delta, TEMPO_MIN, TEMPO_MAX);
-    coreState_.statusBar.tempo.set(newTempo);
+    core_state_.statusBar.tempo.set(newTempo);
 }
 
 void HandlerInputTransport::handlePlayToggle() {
-    bool playing = coreState_.statusBar.playing.get();
-    coreState_.statusBar.playing.set(!playing);
+    bool playing = core_state_.statusBar.playing.get();
+    core_state_.statusBar.playing.set(!playing);
 }
 
 }  // namespace core::handler

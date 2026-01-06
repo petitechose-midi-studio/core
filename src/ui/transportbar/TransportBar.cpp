@@ -32,11 +32,11 @@ TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
 
 TransportBar::~TransportBar() {
     // Cleanup timers first (they reference indicators)
-    if (noteInTimer_) lv_timer_delete(noteInTimer_);
-    if (noteOutTimer_) lv_timer_delete(noteOutTimer_);
-    if (ccInTimer_) lv_timer_delete(ccInTimer_);
-    if (ccOutTimer_) lv_timer_delete(ccOutTimer_);
-    if (beatTimer_) lv_timer_delete(beatTimer_);
+    if (note_in_timer_) lv_timer_delete(note_in_timer_);
+    if (note_out_timer_) lv_timer_delete(note_out_timer_);
+    if (cc_in_timer_) lv_timer_delete(cc_in_timer_);
+    if (cc_out_timer_) lv_timer_delete(cc_out_timer_);
+    if (beat_timer_) lv_timer_delete(beat_timer_);
 
     // Clear subscriptions before destroying UI
     subs_.clear();
@@ -79,24 +79,24 @@ void TransportBar::createMidiIndicators(lv_obj_t* parent) {
     style::apply(cell).flexRow(LV_FLEX_ALIGN_START, Theme::Layout::GAP_SM).padLeft(Theme::Layout::PAD_MD);
 
     // Note IN icon
-    noteInIcon_ = lv_label_create(cell);
-    Icon::set(noteInIcon_, Icon::NOTE, Icon::Size::M);
-    lv_obj_set_style_text_color(noteInIcon_, COLOR_INACTIVE, 0);
+    note_in_icon_ = lv_label_create(cell);
+    Icon::set(note_in_icon_, Icon::NOTE, Icon::Size::M);
+    lv_obj_set_style_text_color(note_in_icon_, COLOR_INACTIVE, 0);
 
     // Note OUT icon
-    noteOutIcon_ = lv_label_create(cell);
-    Icon::set(noteOutIcon_, Icon::NOTE, Icon::Size::M);
-    lv_obj_set_style_text_color(noteOutIcon_, COLOR_INACTIVE, 0);
+    note_out_icon_ = lv_label_create(cell);
+    Icon::set(note_out_icon_, Icon::NOTE, Icon::Size::M);
+    lv_obj_set_style_text_color(note_out_icon_, COLOR_INACTIVE, 0);
 
     // CC IN icon
-    ccInIcon_ = lv_label_create(cell);
-    Icon::set(ccInIcon_, Icon::KNOB, Icon::Size::M);
-    lv_obj_set_style_text_color(ccInIcon_, COLOR_INACTIVE, 0);
+    cc_in_icon_ = lv_label_create(cell);
+    Icon::set(cc_in_icon_, Icon::KNOB, Icon::Size::M);
+    lv_obj_set_style_text_color(cc_in_icon_, COLOR_INACTIVE, 0);
 
     // CC OUT icon
-    ccOutIcon_ = lv_label_create(cell);
-    Icon::set(ccOutIcon_, Icon::KNOB, Icon::Size::M);
-    lv_obj_set_style_text_color(ccOutIcon_, COLOR_INACTIVE, 0);
+    cc_out_icon_ = lv_label_create(cell);
+    Icon::set(cc_out_icon_, Icon::KNOB, Icon::Size::M);
+    lv_obj_set_style_text_color(cc_out_icon_, COLOR_INACTIVE, 0);
 }
 
 void TransportBar::createTransportCenter(lv_obj_t* parent) {
@@ -106,10 +106,10 @@ void TransportBar::createTransportCenter(lv_obj_t* parent) {
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_STRETCH, 1, 1,
                          LV_GRID_ALIGN_STRETCH, 0, 1);
 
-    playIcon_ = lv_label_create(cell);
-    Icon::set(playIcon_, Icon::TRANSPORT_PLAY, Icon::Size::L);
-    lv_obj_set_style_text_color(playIcon_, COLOR_PLAY_INACTIVE, 0);
-    lv_obj_center(playIcon_);
+    play_icon_ = lv_label_create(cell);
+    Icon::set(play_icon_, Icon::TRANSPORT_PLAY, Icon::Size::L);
+    lv_obj_set_style_text_color(play_icon_, COLOR_PLAY_INACTIVE, 0);
+    lv_obj_center(play_icon_);
 }
 
 void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
@@ -122,18 +122,18 @@ void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
     style::apply(cell).flexRow(LV_FLEX_ALIGN_END, Theme::Layout::GAP_SM).padRight(Theme::Layout::PAD_MD);
 
     // Beat indicator (left of tempo)
-    beatIndicator_ = std::make_unique<StateIndicator>(cell, Theme::Layout::INDICATOR_SIZE);
-    beatIndicator_->color(StateIndicator::State::OFF, Theme::Color::INACTIVE)
+    beat_indicator_ = std::make_unique<StateIndicator>(cell, Theme::Layout::INDICATOR_SIZE);
+    beat_indicator_->color(StateIndicator::State::OFF, Theme::Color::INACTIVE)
                   .color(StateIndicator::State::ACTIVE, Theme::Color::BEAT_PULSE)
                   .opacity(StateIndicator::State::OFF, LV_OPA_COVER)
                   .opacity(StateIndicator::State::ACTIVE, LV_OPA_COVER);
-    beatIndicator_->setState(StateIndicator::State::OFF);
+    beat_indicator_->setState(StateIndicator::State::OFF);
 
     // Tempo label (no BPM unit)
-    tempoLabel_ = lv_label_create(cell);
-    lv_label_set_text(tempoLabel_, "120.00");
-    lv_obj_set_style_text_font(tempoLabel_, fonts.tempo_label, 0);
-    lv_obj_set_style_text_color(tempoLabel_, COLOR_TEXT, 0);
+    tempo_label_ = lv_label_create(cell);
+    lv_label_set_text(tempo_label_, "120.00");
+    lv_obj_set_style_text_font(tempo_label_, fonts.tempo_label, 0);
+    lv_obj_set_style_text_color(tempo_label_, COLOR_TEXT, 0);
 }
 
 void TransportBar::setupBindings() {
@@ -158,80 +158,80 @@ void TransportBar::pulseIcon(lv_obj_t* icon, lv_timer_t*& timer, lv_color_t acti
 
 void TransportBar::setNoteIn(bool active) {
     if (!active) return;
-    pulseIcon(noteInIcon_, noteInTimer_, COLOR_IN_ACTIVE,
+    pulseIcon(note_in_icon_, note_in_timer_, COLOR_IN_ACTIVE,
               Theme::Timing::MIDI_BLINK_MS, onNoteInTimeout);
 }
 
 void TransportBar::setNoteOut(bool active) {
     if (!active) return;
-    pulseIcon(noteOutIcon_, noteOutTimer_, COLOR_OUT_ACTIVE,
+    pulseIcon(note_out_icon_, note_out_timer_, COLOR_OUT_ACTIVE,
               Theme::Timing::MIDI_BLINK_MS, onNoteOutTimeout);
 }
 
 void TransportBar::setCcIn(bool active) {
     if (!active) return;
-    pulseIcon(ccInIcon_, ccInTimer_, COLOR_IN_ACTIVE,
+    pulseIcon(cc_in_icon_, cc_in_timer_, COLOR_IN_ACTIVE,
               Theme::Timing::MIDI_BLINK_MS, onCcInTimeout);
 }
 
 void TransportBar::setCcOut(bool active) {
     if (!active) return;
-    pulseIcon(ccOutIcon_, ccOutTimer_, COLOR_OUT_ACTIVE,
+    pulseIcon(cc_out_icon_, cc_out_timer_, COLOR_OUT_ACTIVE,
               Theme::Timing::MIDI_BLINK_MS, onCcOutTimeout);
 }
 
 void TransportBar::setPlaying(bool playing) {
-    lv_obj_set_style_text_color(playIcon_,
+    lv_obj_set_style_text_color(play_icon_,
         playing ? COLOR_PLAY_ACTIVE : COLOR_PLAY_INACTIVE, 0);
 }
 
 void TransportBar::setTempo(float bpm) {
     char buf[16];
     snprintf(buf, sizeof(buf), "%.2f", bpm);
-    lv_label_set_text(tempoLabel_, buf);
+    lv_label_set_text(tempo_label_, buf);
 }
 
 void TransportBar::setBeatPulse(bool pulse) {
     if (!pulse) return;
-    beatIndicator_->setState(StateIndicator::State::ACTIVE);
-    if (beatTimer_) lv_timer_delete(beatTimer_);
-    beatTimer_ = lv_timer_create(onBeatTimeout, Theme::Timing::BEAT_PULSE_MS, this);
-    lv_timer_set_repeat_count(beatTimer_, 1);
+    beat_indicator_->setState(StateIndicator::State::ACTIVE);
+    if (beat_timer_) lv_timer_delete(beat_timer_);
+    beat_timer_ = lv_timer_create(onBeatTimeout, Theme::Timing::BEAT_PULSE_MS, this);
+    lv_timer_set_repeat_count(beat_timer_, 1);
 }
 
 void TransportBar::onNoteInTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
-    lv_obj_set_style_text_color(self->noteInIcon_, COLOR_INACTIVE, 0);
+    lv_obj_set_style_text_color(self->note_in_icon_, COLOR_INACTIVE, 0);
     self->state_.noteInActive.set(false);  // Reset for next pulse
-    self->noteInTimer_ = nullptr;
+    self->note_in_timer_ = nullptr;
 }
 
 void TransportBar::onNoteOutTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
-    lv_obj_set_style_text_color(self->noteOutIcon_, COLOR_INACTIVE, 0);
+    lv_obj_set_style_text_color(self->note_out_icon_, COLOR_INACTIVE, 0);
     self->state_.noteOutActive.set(false);
-    self->noteOutTimer_ = nullptr;
+    self->note_out_timer_ = nullptr;
 }
 
 void TransportBar::onCcInTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
-    lv_obj_set_style_text_color(self->ccInIcon_, COLOR_INACTIVE, 0);
+    lv_obj_set_style_text_color(self->cc_in_icon_, COLOR_INACTIVE, 0);
     self->state_.ccInActive.set(false);
-    self->ccInTimer_ = nullptr;
+    self->cc_in_timer_ = nullptr;
 }
 
 void TransportBar::onCcOutTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
-    lv_obj_set_style_text_color(self->ccOutIcon_, COLOR_INACTIVE, 0);
+    lv_obj_set_style_text_color(self->cc_out_icon_, COLOR_INACTIVE, 0);
     self->state_.ccOutActive.set(false);
-    self->ccOutTimer_ = nullptr;
+    self->cc_out_timer_ = nullptr;
 }
 
 void TransportBar::onBeatTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
-    self->beatIndicator_->setState(StateIndicator::State::OFF);
+    self->beat_indicator_->setState(StateIndicator::State::OFF);
     self->state_.beatPulse.set(false);
-    self->beatTimer_ = nullptr;
+    self->beat_timer_ = nullptr;
 }
 
 void TransportBar::render() {

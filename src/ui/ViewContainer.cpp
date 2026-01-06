@@ -18,30 +18,30 @@ ViewContainer::ViewContainer(lv_obj_t* parent) {
     lv_obj_set_style_border_width(container_, 0, LV_STATE_DEFAULT);
 
     // Main zone (takes remaining space, with flex column for multi-view pattern)
-    mainZone_ = lv_obj_create(container_);
-    lv_obj_set_size(mainZone_, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_grow(mainZone_, 1);
-    lv_obj_set_layout(mainZone_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(mainZone_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_gap(mainZone_, 0, LV_STATE_DEFAULT);
-    style::apply(mainZone_).transparent();
-    lv_obj_set_style_pad_all(mainZone_, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(mainZone_, 0, LV_STATE_DEFAULT);
+    main_zone_ = lv_obj_create(container_);
+    lv_obj_set_size(main_zone_, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(main_zone_, 1);
+    lv_obj_set_layout(main_zone_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(main_zone_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(main_zone_, 0, LV_STATE_DEFAULT);
+    style::apply(main_zone_).transparent();
+    lv_obj_set_style_pad_all(main_zone_, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(main_zone_, 0, LV_STATE_DEFAULT);
 
     // Bottom zone (content height, for TransportBar)
-    bottomZone_ = lv_obj_create(container_);
-    lv_obj_set_size(bottomZone_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(bottomZone_).transparent();
-    lv_obj_set_style_pad_all(bottomZone_, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(bottomZone_, 0, LV_STATE_DEFAULT);
+    bottom_zone_ = lv_obj_create(container_);
+    lv_obj_set_size(bottom_zone_, LV_PCT(100), LV_SIZE_CONTENT);
+    style::apply(bottom_zone_).transparent();
+    lv_obj_set_style_pad_all(bottom_zone_, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(bottom_zone_, 0, LV_STATE_DEFAULT);
 }
 
 ViewContainer::~ViewContainer() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
-        mainZone_ = nullptr;
-        bottomZone_ = nullptr;
+        main_zone_ = nullptr;
+        bottom_zone_ = nullptr;
     }
 }
 

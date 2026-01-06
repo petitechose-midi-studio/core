@@ -5,8 +5,8 @@
  * @brief Handles input for MacroEdit overlay
  *
  * Two-level scoping:
- * - macroViewScope_: Press macro button to open overlay
- * - overlayScope_: All other bindings when overlay is visible
+ * - macro_view_scope_: Press macro button to open overlay
+ * - overlay_scope_: All other bindings when overlay is visible
  */
 
 #include <lvgl.h>
@@ -61,8 +61,8 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
 
-    lv_obj_t* macroViewScope_;
-    lv_obj_t* overlayScope_;
+    lv_obj_t* macro_view_scope_;
+    lv_obj_t* overlay_scope_;
 };
 
 }  // namespace core::handler

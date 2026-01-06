@@ -44,8 +44,8 @@ struct OverlayCleanupInfo {
  * Usage:
  * @code
  * // In StandaloneContext::initialize()
- * overlayController_ = std::make_unique<OverlayController<OverlayType>>(state_.overlays, buttons());
- * overlayController_->registerCleanup(OverlayType::MACRO_EDIT, scope, ButtonID::MACRO_1);
+ * overlay_controller_ = std::make_unique<OverlayController<OverlayType>>(state_.overlays, buttons());
+ * overlay_controller_->registerCleanup(OverlayType::MACRO_EDIT, scope, ButtonID::MACRO_1);
  * @endcode
  */
 template <typename EnumT>

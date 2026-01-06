@@ -44,10 +44,10 @@ private:
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
 
-    core::state::CoreState& coreState_;
+    core::state::CoreState& core_state_;
     oc::api::EncoderAPI& encoders_;
     oc::api::MidiAPI& midi_;
-    lv_obj_t* scopeElement_;
+    lv_obj_t* scope_element_;
 };
 
 }  // namespace core::handler

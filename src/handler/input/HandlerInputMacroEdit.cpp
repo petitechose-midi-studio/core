@@ -23,8 +23,8 @@ HandlerInputMacroEdit::HandlerInputMacroEdit(
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
-    , macroViewScope_(macroViewScope)
-    , overlayScope_(overlayScope)
+    , macro_view_scope_(macroViewScope)
+    , overlay_scope_(overlayScope)
 {
     setupBindings();
 }
@@ -36,7 +36,7 @@ void HandlerInputMacroEdit::setupBindings() {
         auto btnId = static_cast<oc::hal::ButtonID>(Config::MACRO_BUTTONS[i]);
         buttons_.button(btnId)
             .press()
-            .scope(scope(macroViewScope_))
+            .scope(scope(macro_view_scope_))
             .then([this, i]() { openEdit(i); });
     }
 
@@ -44,25 +44,25 @@ void HandlerInputMacroEdit::setupBindings() {
     // NAV encoder: adjust focused value
     encoders_.encoder(static_cast<oc::hal::EncoderID>(Config::EncoderID::NAV))
         .turn()
-        .scope(scope(overlayScope_))
+        .scope(scope(overlay_scope_))
         .then([this](float delta) { adjustValue(delta); });
 
     // NAV button: toggle focus between CH and CC
     buttons_.button(static_cast<oc::hal::ButtonID>(Config::ButtonID::NAV))
         .press()
-        .scope(scope(overlayScope_))
+        .scope(scope(overlay_scope_))
         .then([this]() { toggleFocus(); });
 
     // Confirm: save and close (BOTTOM_CENTER)
     buttons_.button(static_cast<oc::hal::ButtonID>(Config::ButtonID::BOTTOM_CENTER))
         .release()
-        .scope(scope(overlayScope_))
+        .scope(scope(overlay_scope_))
         .then([this]() { saveAndClose(); });
 
     // Cancel: close without saving (LEFT_TOP)
     buttons_.button(static_cast<oc::hal::ButtonID>(Config::ButtonID::LEFT_TOP))
         .release()
-        .scope(scope(overlayScope_))
+        .scope(scope(overlay_scope_))
         .then([this]() { closeWithoutSave(); });
 
     OC_LOG_DEBUG("[HandlerInputMacroEdit] Bindings setup complete");

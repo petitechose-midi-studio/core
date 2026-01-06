@@ -42,37 +42,37 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(container_, 4, 0);
 
     // Title
-    titleLabel_ = std::make_unique<oc::ui::lvgl::Label>(container_);
-    titleLabel_->setText("Edit Macro 1");
-    style::apply(titleLabel_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
+    title_label_ = std::make_unique<oc::ui::lvgl::Label>(container_);
+    title_label_->setText("Edit Macro 1");
+    style::apply(title_label_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
 
     // Channel row
-    chRow_ = lv_obj_create(container_);
-    lv_obj_remove_style_all(chRow_);
-    lv_obj_set_size(chRow_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(chRow_).flexRow(LV_FLEX_ALIGN_START, 8);
+    ch_row_ = lv_obj_create(container_);
+    lv_obj_remove_style_all(ch_row_);
+    lv_obj_set_size(ch_row_, LV_PCT(100), LV_SIZE_CONTENT);
+    style::apply(ch_row_).flexRow(LV_FLEX_ALIGN_START, 8);
 
-    channelPrefixLabel_ = std::make_unique<oc::ui::lvgl::Label>(chRow_);
-    channelPrefixLabel_->setText("CH:");
-    style::apply(channelPrefixLabel_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
+    channel_prefix_label_ = std::make_unique<oc::ui::lvgl::Label>(ch_row_);
+    channel_prefix_label_->setText("CH:");
+    style::apply(channel_prefix_label_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
 
-    channelValueLabel_ = std::make_unique<oc::ui::lvgl::Label>(chRow_);
-    channelValueLabel_->setText("1");
-    style::apply(channelValueLabel_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
+    channel_value_label_ = std::make_unique<oc::ui::lvgl::Label>(ch_row_);
+    channel_value_label_->setText("1");
+    style::apply(channel_value_label_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
 
     // CC row
-    ccRow_ = lv_obj_create(container_);
-    lv_obj_remove_style_all(ccRow_);
-    lv_obj_set_size(ccRow_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(ccRow_).flexRow(LV_FLEX_ALIGN_START, 8);
+    cc_row_ = lv_obj_create(container_);
+    lv_obj_remove_style_all(cc_row_);
+    lv_obj_set_size(cc_row_, LV_PCT(100), LV_SIZE_CONTENT);
+    style::apply(cc_row_).flexRow(LV_FLEX_ALIGN_START, 8);
 
-    ccPrefixLabel_ = std::make_unique<oc::ui::lvgl::Label>(ccRow_);
-    ccPrefixLabel_->setText("CC:");
-    style::apply(ccPrefixLabel_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
+    cc_prefix_label_ = std::make_unique<oc::ui::lvgl::Label>(cc_row_);
+    cc_prefix_label_->setText("CC:");
+    style::apply(cc_prefix_label_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
 
-    ccValueLabel_ = std::make_unique<oc::ui::lvgl::Label>(ccRow_);
-    ccValueLabel_->setText("0");
-    style::apply(ccValueLabel_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
+    cc_value_label_ = std::make_unique<oc::ui::lvgl::Label>(cc_row_);
+    cc_value_label_->setText("0");
+    style::apply(cc_value_label_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
 
     // Initial focus indicator
     updateFocusIndicator(0);
@@ -80,50 +80,50 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
 
 void MacroEditOverlay::render(const MacroEditOverlayProps& props) {
     // Early exit if no change
-    if (props == currentProps_) {
+    if (props == current_props_) {
         return;
     }
 
     // Handle visibility changes
-    if (props.visible && !currentProps_.visible) {
+    if (props.visible && !current_props_.visible) {
         lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
-    } else if (!props.visible && currentProps_.visible) {
+    } else if (!props.visible && current_props_.visible) {
         lv_obj_add_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
     }
 
     // Skip content updates if not visible
     if (!props.visible) {
-        currentProps_ = props;
+        current_props_ = props;
         return;
     }
 
     // Update title when editing index changes
-    if (props.editingIndex != currentProps_.editingIndex) {
+    if (props.editingIndex != current_props_.editingIndex) {
         char buf[16];
         snprintf(buf, sizeof(buf), "Edit Macro %d", props.editingIndex + 1);
-        titleLabel_->setText(buf);
+        title_label_->setText(buf);
     }
 
     // Update channel value
-    if (props.channel != currentProps_.channel) {
+    if (props.channel != current_props_.channel) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", props.channel);
-        channelValueLabel_->setText(buf);
+        channel_value_label_->setText(buf);
     }
 
     // Update CC value
-    if (props.cc != currentProps_.cc) {
+    if (props.cc != current_props_.cc) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", props.cc);
-        ccValueLabel_->setText(buf);
+        cc_value_label_->setText(buf);
     }
 
     // Update focus indicator
-    if (props.focusedRow != currentProps_.focusedRow) {
+    if (props.focusedRow != current_props_.focusedRow) {
         updateFocusIndicator(props.focusedRow);
     }
 
-    currentProps_ = props;
+    current_props_ = props;
 }
 
 void MacroEditOverlay::updateFocusIndicator(uint8_t focusedRow) {
@@ -131,10 +131,10 @@ void MacroEditOverlay::updateFocusIndicator(uint8_t focusedRow) {
     lv_color_t focusColor = lv_color_hex(Theme::Color::ACTIVE);
     lv_color_t normalColor = lv_color_hex(Theme::Color::TEXT_PRIMARY);
 
-    if (channelValueLabel_ && ccValueLabel_) {
-        lv_obj_set_style_text_color(channelValueLabel_->getElement(),
+    if (channel_value_label_ && cc_value_label_) {
+        lv_obj_set_style_text_color(channel_value_label_->getElement(),
             focusedRow == 0 ? focusColor : normalColor, 0);
-        lv_obj_set_style_text_color(ccValueLabel_->getElement(),
+        lv_obj_set_style_text_color(cc_value_label_->getElement(),
             focusedRow == 1 ? focusColor : normalColor, 0);
     }
 }

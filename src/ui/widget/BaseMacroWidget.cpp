@@ -18,10 +18,10 @@ BaseMacroWidget::BaseMacroWidget(uint8_t index)
     : index_(index) {}
 
 BaseMacroWidget::~BaseMacroWidget() {
-    ccValue_.reset();
-    ccPrefix_.reset();
-    chValue_.reset();
-    chPrefix_.reset();
+    cc_value_.reset();
+    cc_prefix_.reset();
+    ch_value_.reset();
+    ch_prefix_.reset();
 
     if (container_) {
         lv_obj_delete(container_);
@@ -67,31 +67,31 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     lv_obj_set_style_pad_column(chRow, 2, 0);
 
     // Channel icon - right aligned in left column
-    chPrefix_ = std::make_unique<oc::ui::lvgl::Label>(chRow);
-    chPrefix_->alignment(LV_TEXT_ALIGN_RIGHT)
+    ch_prefix_ = std::make_unique<oc::ui::lvgl::Label>(chRow);
+    ch_prefix_->alignment(LV_TEXT_ALIGN_RIGHT)
               .color(STheme::Color::MACRO_CH_COLOR)
               .autoScroll(false)
               .ownsLvglObjects(false);
-    style::apply(chPrefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
+    style::apply(ch_prefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
     if (standalone_fonts.icons_12) {
-        chPrefix_->font(standalone_fonts.icons_12);
+        ch_prefix_->font(standalone_fonts.icons_12);
     }
-    chPrefix_->setText(Icon::MIDI_CHANNEL);
-    lv_obj_set_grid_cell(chPrefix_->getElement(),
+    ch_prefix_->setText(Icon::MIDI_CHANNEL);
+    lv_obj_set_grid_cell(ch_prefix_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);
 
     // Channel value - left aligned in right column
-    chValue_ = std::make_unique<oc::ui::lvgl::Label>(chRow);
-    chValue_->alignment(LV_TEXT_ALIGN_LEFT)
+    ch_value_ = std::make_unique<oc::ui::lvgl::Label>(chRow);
+    ch_value_->alignment(LV_TEXT_ALIGN_LEFT)
              .color(STheme::Color::MACRO_CH_COLOR)
              .autoScroll(false)
              .ownsLvglObjects(false);
     if (fonts.inter_13_bold) {
-        chValue_->font(fonts.inter_13_bold);
+        ch_value_->font(fonts.inter_13_bold);
     }
-    chValue_->setText("-");
-    lv_obj_set_grid_cell(chValue_->getElement(),
+    ch_value_->setText("-");
+    lv_obj_set_grid_cell(ch_value_->getElement(),
         LV_GRID_ALIGN_STRETCH, 1, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);
 
@@ -104,41 +104,41 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     lv_obj_set_style_pad_column(ccRow, 2, 0);
 
     // CC icon - right aligned in left column
-    ccPrefix_ = std::make_unique<oc::ui::lvgl::Label>(ccRow);
-    ccPrefix_->alignment(LV_TEXT_ALIGN_RIGHT)
+    cc_prefix_ = std::make_unique<oc::ui::lvgl::Label>(ccRow);
+    cc_prefix_->alignment(LV_TEXT_ALIGN_RIGHT)
               .color(STheme::Color::MACRO_CC_COLOR)
               .autoScroll(false)
               .ownsLvglObjects(false);
-    style::apply(ccPrefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
+    style::apply(cc_prefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
     if (standalone_fonts.icons_12) {
-        ccPrefix_->font(standalone_fonts.icons_12);
+        cc_prefix_->font(standalone_fonts.icons_12);
     }
-    ccPrefix_->setText(Icon::MIDI_CC);
-    lv_obj_set_grid_cell(ccPrefix_->getElement(),
+    cc_prefix_->setText(Icon::MIDI_CC);
+    lv_obj_set_grid_cell(cc_prefix_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);
 
     // CC value - left aligned in right column
-    ccValue_ = std::make_unique<oc::ui::lvgl::Label>(ccRow);
-    ccValue_->alignment(LV_TEXT_ALIGN_LEFT)
+    cc_value_ = std::make_unique<oc::ui::lvgl::Label>(ccRow);
+    cc_value_->alignment(LV_TEXT_ALIGN_LEFT)
              .color(STheme::Color::MACRO_CC_COLOR)
              .autoScroll(false)
              .ownsLvglObjects(false);
     if (fonts.inter_13_bold) {
-        ccValue_->font(fonts.inter_13_bold);
+        cc_value_->font(fonts.inter_13_bold);
     }
-    ccValue_->setText("-");
-    lv_obj_set_grid_cell(ccValue_->getElement(),
+    cc_value_->setText("-");
+    lv_obj_set_grid_cell(cc_value_->getElement(),
         LV_GRID_ALIGN_STRETCH, 1, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);
 }
 
 void BaseMacroWidget::setConfig(uint8_t channel, uint8_t cc) {
-    if (chValue_) {
-        chValue_->setText(static_cast<int>(channel + 1));  // 1-indexed
+    if (ch_value_) {
+        ch_value_->setText(static_cast<int>(channel + 1));  // 1-indexed
     }
-    if (ccValue_) {
-        ccValue_->setText(static_cast<int>(cc));
+    if (cc_value_) {
+        cc_value_->setText(static_cast<int>(cc));
     }
 }
 

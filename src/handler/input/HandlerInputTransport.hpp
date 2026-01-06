@@ -35,10 +35,10 @@ private:
     void handleTempoChange(float delta);
     void handlePlayToggle();
 
-    core::state::CoreState& coreState_;
+    core::state::CoreState& core_state_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    lv_obj_t* scopeElement_;
+    lv_obj_t* scope_element_;
 
     static constexpr float TEMPO_MIN = 20.0f;
     static constexpr float TEMPO_MAX = 300.0f;

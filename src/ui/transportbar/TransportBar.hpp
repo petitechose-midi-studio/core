@@ -44,26 +44,26 @@ private:
     lv_obj_t* container_ = nullptr;
 
     // Cell 1: MIDI indicators (Note + CC)
-    lv_obj_t* noteInIcon_ = nullptr;
-    lv_obj_t* noteOutIcon_ = nullptr;
-    lv_obj_t* ccInIcon_ = nullptr;
-    lv_obj_t* ccOutIcon_ = nullptr;
+    lv_obj_t* note_in_icon_ = nullptr;
+    lv_obj_t* note_out_icon_ = nullptr;
+    lv_obj_t* cc_in_icon_ = nullptr;
+    lv_obj_t* cc_out_icon_ = nullptr;
 
     // Cell 2: Transport
-    lv_obj_t* playIcon_ = nullptr;
+    lv_obj_t* play_icon_ = nullptr;
 
     // Cell 3: Tempo
-    lv_obj_t* tempoLabel_ = nullptr;
+    lv_obj_t* tempo_label_ = nullptr;
 
     // Cell 4: Beat indicator
-    std::unique_ptr<StateIndicator> beatIndicator_;
+    std::unique_ptr<StateIndicator> beat_indicator_;
 
     // Pulse timers (for auto-reset after blink)
-    lv_timer_t* noteInTimer_ = nullptr;
-    lv_timer_t* noteOutTimer_ = nullptr;
-    lv_timer_t* ccInTimer_ = nullptr;
-    lv_timer_t* ccOutTimer_ = nullptr;
-    lv_timer_t* beatTimer_ = nullptr;
+    lv_timer_t* note_in_timer_ = nullptr;
+    lv_timer_t* note_out_timer_ = nullptr;
+    lv_timer_t* cc_in_timer_ = nullptr;
+    lv_timer_t* cc_out_timer_ = nullptr;
+    lv_timer_t* beat_timer_ = nullptr;
 
     std::vector<oc::state::Subscription> subs_;
 
