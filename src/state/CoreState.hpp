@@ -15,9 +15,11 @@
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
+#include <memory>
+
 #include <oc/hal/IStorageBackend.hpp>
+#include <oc/state/AutoPersistIncremental.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
-#include <oc/time/Time.hpp>
 
 #include "CoreSettings.hpp"
 #include "MacroEditState.hpp"
@@ -69,6 +71,22 @@ struct CoreState {
         // Register overlay signals
         overlays.registerItem(core::ui::OverlayType::PAGE_SELECTOR, pages.selector.visible);
         overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, macroEdit.visible);
+
+        // Setup auto-persistence for macro values
+        auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
+            [this](uint8_t i) {
+                float value = macros.slots[i].value.get();
+                pages.activePageData().values[i] = value;
+                settings.saveValue(pages.activePage, i, value);
+            },
+            [this]() { settings.commit(); },
+            CoreSettings::VALUE_SAVE_DELAY_MS
+        );
+
+        // Watch each macro value signal
+        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+            auto_persist_->watchAt(i, macros.slots[i].value);
+        }
     }
 
     // Non-copyable, non-movable
@@ -125,8 +143,7 @@ struct CoreState {
     /**
      * @brief Set macro value (user-initiated change)
      *
-     * Updates runtime state and marks for persistence.
-     * displayValue updates automatically via DerivedStringSignal.
+     * Updates runtime state. Persistence and displayValue update automatically.
      *
      * @param index Macro index (0-7)
      * @param value Normalized value [0.0, 1.0]
@@ -134,7 +151,7 @@ struct CoreState {
     void setMacroValue(uint8_t index, float value) {
         if (index >= MACRO_COUNT) return;
         macros.slots[index].value.set(value);
-        markDirty(index);
+        // AutoPersistIncremental handles dirty tracking via signal subscription
     }
 
     /**
@@ -159,37 +176,16 @@ struct CoreState {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Dirty Tracking
+    // Persistence
     // ═══════════════════════════════════════════════════════════════════════════
-
-    /**
-     * @brief Mark a specific macro index as dirty (needs persistence)
-     *
-     * Called automatically by setMacroValue().
-     * Only call directly if you modify state without using setMacroValue().
-     *
-     * @param index Macro index (0-7)
-     */
-    void markDirty(uint8_t index) {
-        if (index >= MACRO_COUNT) return;
-        dirty_mask_ |= (1 << index);
-        if (dirty_timestamp_ == 0) {
-            dirty_timestamp_ = oc::time::millis();
-        }
-    }
 
     /**
      * @brief Update persistence (call from main loop)
      *
-     * Saves dirty values incrementally after timeout.
+     * Saves dirty values incrementally after debounce timeout.
      */
     void update() {
-        if (dirty_mask_ == 0) return;
-
-        uint32_t now = oc::time::millis();
-        if ((now - dirty_timestamp_) < CoreSettings::VALUE_SAVE_DELAY_MS) return;
-
-        saveDirtyValues();
+        auto_persist_->update();
     }
 
     /**
@@ -208,30 +204,12 @@ struct CoreState {
      * @brief Flush any pending dirty values immediately
      */
     void flush() {
-        if (dirty_mask_ == 0) return;
-        saveDirtyValues();
+        auto_persist_->flush();
     }
 
 private:
-    uint8_t dirty_mask_ = 0;       ///< Bitfield: which macro indices need saving
-    uint32_t dirty_timestamp_ = 0; ///< When first change occurred (for timeout)
-
-    /**
-     * @brief Save all dirty values to storage and reset dirty state
-     */
-    void saveDirtyValues() {
-        auto& pageData = pages.activePageData();
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            if (dirty_mask_ & (1 << i)) {
-                float value = macros.slots[i].value.get();
-                pageData.values[i] = value;
-                settings.saveValue(pages.activePage, i, value);
-            }
-        }
-        settings.commit();
-        dirty_mask_ = 0;
-        dirty_timestamp_ = 0;
-    }
+    /// Auto-persistence for macro values (watches signals, saves on debounce)
+    std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> auto_persist_;
 };
 
 }  // namespace core::state
