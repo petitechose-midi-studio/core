@@ -1,4 +1,4 @@
-#include "HandlerInputTransport.hpp"
+#include "TransportHandler.hpp"
 
 #include <algorithm>
 #include <oc/hal/IEncoderController.hpp>
@@ -8,7 +8,7 @@ namespace core::handler {
 
 using namespace oc::ui::lvgl;
 
-HandlerInputTransport::HandlerInputTransport(core::state::CoreState& coreState,
+TransportHandler::TransportHandler(core::state::CoreState& coreState,
                                              oc::api::EncoderAPI& encoders,
                                              oc::api::ButtonAPI& buttons,
                                              lv_obj_t* scopeElement)
@@ -19,7 +19,7 @@ HandlerInputTransport::HandlerInputTransport(core::state::CoreState& coreState,
     setupBindings();
 }
 
-void HandlerInputTransport::setupBindings() {
+void TransportHandler::setupBindings() {
     // Set NAV encoder to relative mode (gives delta values)
     encoders_.setMode(Config::EncoderID::NAV, oc::hal::EncoderMode::RELATIVE);
 
@@ -36,13 +36,13 @@ void HandlerInputTransport::setupBindings() {
         .then([this]() { handlePlayToggle(); });
 }
 
-void HandlerInputTransport::handleTempoChange(float delta) {
+void TransportHandler::handleTempoChange(float delta) {
     float currentTempo = core_state_.statusBar.tempo.get();
     float newTempo = std::clamp(currentTempo + delta, TEMPO_MIN, TEMPO_MAX);
     core_state_.statusBar.tempo.set(newTempo);
 }
 
-void HandlerInputTransport::handlePlayToggle() {
+void TransportHandler::handlePlayToggle() {
     bool playing = core_state_.statusBar.playing.get();
     core_state_.statusBar.playing.set(!playing);
 }

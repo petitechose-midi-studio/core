@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file HandlerInputMacroEdit.hpp
+ * @file MacroEditHandler.hpp
  * @brief Handles input for MacroEdit overlay
  *
  * Two-level scoping:
@@ -27,7 +27,7 @@ namespace core::handler {
  * When overlay is visible, NAV encoder adjusts CH/CC values.
  * Updates state signals (focusedRow, tempChannel, tempCC) - overlay renders from state.
  */
-class HandlerInputMacroEdit {
+class MacroEditHandler {
 public:
     /**
      * @brief Construct handler
@@ -38,7 +38,7 @@ public:
      * @param macroViewScope Scope element for macro view (open trigger)
      * @param overlayScope Scope element for overlay (edit/close)
      */
-    HandlerInputMacroEdit(
+    MacroEditHandler(
         core::state::CoreState& state,
         core::ui::OverlayController<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,

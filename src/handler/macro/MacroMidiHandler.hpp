@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file HandlerInputMacroMidi.hpp
+ * @file MacroMidiHandler.hpp
  * @brief Handles incoming MIDI CC for macro controls
  *
  * Receives MIDI CC and updates macro state + encoder positions.
@@ -24,16 +24,16 @@ namespace core::handler {
  * Handles incoming MIDI CC → updates state → syncs encoder position.
  * Uses page configuration for CC/channel matching.
  */
-class HandlerInputMacroMidi {
+class MacroMidiHandler {
 public:
-    HandlerInputMacroMidi(core::state::CoreState& coreState,
+    MacroMidiHandler(core::state::CoreState& coreState,
                           oc::api::MidiAPI& midi,
                           oc::api::EncoderAPI& encoders);
 
-    ~HandlerInputMacroMidi() = default;
+    ~MacroMidiHandler() = default;
 
-    HandlerInputMacroMidi(const HandlerInputMacroMidi&) = delete;
-    HandlerInputMacroMidi& operator=(const HandlerInputMacroMidi&) = delete;
+    MacroMidiHandler(const MacroMidiHandler&) = delete;
+    MacroMidiHandler& operator=(const MacroMidiHandler&) = delete;
 
 private:
     void setupCallbacks();

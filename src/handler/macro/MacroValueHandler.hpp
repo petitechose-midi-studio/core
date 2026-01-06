@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file HandlerInputMacro.hpp
+ * @file MacroValueHandler.hpp
  * @brief Handles encoder input for macro controls
  *
  * Binds encoders to macro state and sends MIDI CC output.
@@ -28,17 +28,17 @@ namespace core::handler {
  * Uses page configuration for CC/channel mapping.
  * Bindings are scoped to the provided LVGL element.
  */
-class HandlerInputMacro {
+class MacroValueHandler {
 public:
-    HandlerInputMacro(core::state::CoreState& coreState,
+    MacroValueHandler(core::state::CoreState& coreState,
                       oc::api::EncoderAPI& encoders,
                       oc::api::MidiAPI& midi,
                       lv_obj_t* scopeElement);
 
-    ~HandlerInputMacro() = default;
+    ~MacroValueHandler() = default;
 
-    HandlerInputMacro(const HandlerInputMacro&) = delete;
-    HandlerInputMacro& operator=(const HandlerInputMacro&) = delete;
+    MacroValueHandler(const MacroValueHandler&) = delete;
+    MacroValueHandler& operator=(const MacroValueHandler&) = delete;
 
 private:
     void setupBindings();

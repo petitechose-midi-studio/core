@@ -1,8 +1,8 @@
-#include "HandlerInputMacroMidi.hpp"
+#include "MacroMidiHandler.hpp"
 
 namespace core::handler {
 
-HandlerInputMacroMidi::HandlerInputMacroMidi(core::state::CoreState& coreState,
+MacroMidiHandler::MacroMidiHandler(core::state::CoreState& coreState,
                                              oc::api::MidiAPI& midi,
                                              oc::api::EncoderAPI& encoders)
     : core_state_(coreState)
@@ -11,7 +11,7 @@ HandlerInputMacroMidi::HandlerInputMacroMidi(core::state::CoreState& coreState,
     setupCallbacks();
 }
 
-void HandlerInputMacroMidi::setupCallbacks() {
+void MacroMidiHandler::setupCallbacks() {
     // CC messages
     midi_.onCC([this](uint8_t channel, uint8_t cc, uint8_t value) {
         handleIncomingCC(channel, cc, value);
@@ -26,7 +26,7 @@ void HandlerInputMacroMidi::setupCallbacks() {
     });
 }
 
-void HandlerInputMacroMidi::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t value) {
+void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t value) {
     // Signal CC MIDI IN activity
     core_state_.statusBar.ccInActive.set(true);
 
@@ -44,7 +44,7 @@ void HandlerInputMacroMidi::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_
     encoders_.setPosition(Config::MACRO_ENCODERS[index], normalized);
 }
 
-int8_t HandlerInputMacroMidi::findMacroForCC(uint8_t channel, uint8_t cc) const {
+int8_t MacroMidiHandler::findMacroForCC(uint8_t channel, uint8_t cc) const {
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         const auto& config = core_state_.getMacroConfig(i);
         if (config.cc == cc && config.channel == channel) {

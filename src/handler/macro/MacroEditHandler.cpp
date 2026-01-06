@@ -1,4 +1,4 @@
-#include "HandlerInputMacroEdit.hpp"
+#include "MacroEditHandler.hpp"
 
 #include <algorithm>
 
@@ -11,7 +11,7 @@ using oc::ui::lvgl::scope;
 
 namespace core::handler {
 
-HandlerInputMacroEdit::HandlerInputMacroEdit(
+MacroEditHandler::MacroEditHandler(
     core::state::CoreState& state,
     core::ui::OverlayController<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
@@ -29,7 +29,7 @@ HandlerInputMacroEdit::HandlerInputMacroEdit(
     setupBindings();
 }
 
-void HandlerInputMacroEdit::setupBindings() {
+void MacroEditHandler::setupBindings() {
     // ===== MACRO VIEW SCOPE =====
     // Press macro button to open edit overlay
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
@@ -65,22 +65,22 @@ void HandlerInputMacroEdit::setupBindings() {
         .scope(scope(overlay_scope_))
         .then([this]() { closeWithoutSave(); });
 
-    OC_LOG_DEBUG("[HandlerInputMacroEdit] Bindings setup complete");
+    OC_LOG_DEBUG("[MacroEditHandler] Bindings setup complete");
 }
 
-void HandlerInputMacroEdit::openEdit(uint8_t macroIndex) {
+void MacroEditHandler::openEdit(uint8_t macroIndex) {
     const auto& config = state_.getMacroConfig(macroIndex);
     state_.macroEdit.startEditing(macroIndex, config.channel, config.cc);
     overlays_.show(core::ui::OverlayType::MACRO_EDIT);
-    OC_LOG_DEBUG("[HandlerInputMacroEdit] Opening edit for macro {}", macroIndex);
+    OC_LOG_DEBUG("[MacroEditHandler] Opening edit for macro {}", macroIndex);
 }
 
-void HandlerInputMacroEdit::closeWithoutSave() {
+void MacroEditHandler::closeWithoutSave() {
     overlays_.hide();
-    OC_LOG_DEBUG("[HandlerInputMacroEdit] Cancelled edit");
+    OC_LOG_DEBUG("[MacroEditHandler] Cancelled edit");
 }
 
-void HandlerInputMacroEdit::saveAndClose() {
+void MacroEditHandler::saveAndClose() {
     uint8_t idx = state_.macroEdit.editingIndex.get();
     uint8_t ch = state_.macroEdit.tempChannel.get();
     uint8_t cc = state_.macroEdit.tempCC.get();
@@ -94,10 +94,10 @@ void HandlerInputMacroEdit::saveAndClose() {
     state_.settings.saveCC(state_.pages.activePage, idx, cc);
 
     overlays_.hide();
-    OC_LOG_INFO("[HandlerInputMacroEdit] Saved macro {} config: CH={}, CC={}", idx, ch, cc);
+    OC_LOG_INFO("[MacroEditHandler] Saved macro {} config: CH={}, CC={}", idx, ch, cc);
 }
 
-void HandlerInputMacroEdit::adjustValue(float delta) {
+void MacroEditHandler::adjustValue(float delta) {
     int step = (delta > 0) ? 1 : -1;
     uint8_t focusedRow = state_.macroEdit.focusedRow.get();
 
@@ -114,11 +114,11 @@ void HandlerInputMacroEdit::adjustValue(float delta) {
     }
 }
 
-void HandlerInputMacroEdit::toggleFocus() {
+void MacroEditHandler::toggleFocus() {
     uint8_t current = state_.macroEdit.focusedRow.get();
     uint8_t next = (current + 1) % 2;
     state_.macroEdit.focusedRow.set(next);
-    OC_LOG_DEBUG("[HandlerInputMacroEdit] Focus row: {}", next == 0 ? "CH" : "CC");
+    OC_LOG_DEBUG("[MacroEditHandler] Focus row: {}", next == 0 ? "CH" : "CC");
 }
 
 }  // namespace core::handler

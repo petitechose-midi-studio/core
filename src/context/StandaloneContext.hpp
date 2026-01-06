@@ -15,11 +15,11 @@
  * StandaloneContext
  *     ├── CoreState (reactive state - single source of truth, external)
  *     ├── ViewContainer (2-zone layout: main + bottom)
- *     ├── InputHandlers
- *     │   ├── HandlerInputMacro (encoder → MIDI CC out)
- *     │   ├── HandlerInputMacroMidi (MIDI CC in → state)
- *     │   ├── HandlerInputMacroEdit (overlay editing)
- *     │   └── HandlerInputTransport (transport controls)
+ *     ├── Handlers
+ *     │   ├── MacroValueHandler (encoder → MIDI CC out)
+ *     │   ├── MacroMidiHandler (MIDI CC in → state)
+ *     │   ├── MacroEditHandler (overlay editing)
+ *     │   └── TransportHandler (transport controls)
  *     ├── Views
  *     │   ├── MacroView (main zone, owns TopBar)
  *     │   └── TransportBar (bottom zone)
@@ -45,10 +45,10 @@
 #include <oc/ui/lvgl/FontLoader.hpp>
 
 #include "config/App.hpp"
-#include "handler/input/HandlerInputMacro.hpp"
-#include "handler/input/HandlerInputMacroEdit.hpp"
-#include "handler/input/HandlerInputMacroMidi.hpp"
-#include "handler/input/HandlerInputTransport.hpp"
+#include "handler/macro/MacroValueHandler.hpp"
+#include "handler/macro/MacroEditHandler.hpp"
+#include "handler/macro/MacroMidiHandler.hpp"
+#include "handler/transport/TransportHandler.hpp"
 #include "state/CoreState.hpp"
 #include "ui/OverlayController.hpp"
 #include "ui/ViewContainer.hpp"
@@ -129,18 +129,18 @@ public:
         setupMacroEditRendering();
 
         // Create handlers (bindings scoped to view element)
-        input_handler_ = std::make_unique<core::handler::HandlerInputMacro>(
+        input_handler_ = std::make_unique<core::handler::MacroValueHandler>(
             core_state_, encoders(), midi(), view_->getElement()
         );
-        midi_handler_ = std::make_unique<core::handler::HandlerInputMacroMidi>(
+        midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(
             core_state_, midi(), encoders()
         );
-        transport_handler_ = std::make_unique<core::handler::HandlerInputTransport>(
+        transport_handler_ = std::make_unique<core::handler::TransportHandler>(
             core_state_, encoders(), buttons(), view_->getElement()
         );
 
         // Create MacroEdit input handler (two-level scoping)
-        macro_edit_handler_ = std::make_unique<core::handler::HandlerInputMacroEdit>(
+        macro_edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
             core_state_,
             *overlay_controller_,
             encoders(),
@@ -238,10 +238,10 @@ private:
     oc::state::SignalWatcher macro_edit_watcher_;  ///< MacroEdit rendering (coalesced)
 
     // Handlers
-    std::unique_ptr<core::handler::HandlerInputMacro> input_handler_;
-    std::unique_ptr<core::handler::HandlerInputMacroMidi> midi_handler_;
-    std::unique_ptr<core::handler::HandlerInputTransport> transport_handler_;
-    std::unique_ptr<core::handler::HandlerInputMacroEdit> macro_edit_handler_;
+    std::unique_ptr<core::handler::MacroValueHandler> input_handler_;
+    std::unique_ptr<core::handler::MacroMidiHandler> midi_handler_;
+    std::unique_ptr<core::handler::TransportHandler> transport_handler_;
+    std::unique_ptr<core::handler::MacroEditHandler> macro_edit_handler_;
 };
 
 }  // namespace core::context
