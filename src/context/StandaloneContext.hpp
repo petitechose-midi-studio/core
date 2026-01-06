@@ -40,6 +40,7 @@
 #include <oc/context/IContext.hpp>
 #include <oc/context/Requirements.hpp>
 #include <oc/log/Log.hpp>
+#include <oc/state/SignalWatcher.hpp>
 
 #include <oc/ui/lvgl/FontLoader.hpp>
 
@@ -167,25 +168,17 @@ public:
      *
      * Orchestrator pattern: Context subscribes to state signals and
      * calls overlay->render(props) when state changes.
+     * Uses SignalWatcher for coalesced notifications (one render per tick).
      */
     void setupMacroEditRendering() {
-        auto render = [this]() { renderMacroEdit(); };
-
-        macro_edit_subs_.push_back(core_state_.macroEdit.visible.subscribe(
-            [render](bool) { render(); }
-        ));
-        macro_edit_subs_.push_back(core_state_.macroEdit.editingIndex.subscribe(
-            [render](uint8_t) { render(); }
-        ));
-        macro_edit_subs_.push_back(core_state_.macroEdit.tempChannel.subscribe(
-            [render](uint8_t) { render(); }
-        ));
-        macro_edit_subs_.push_back(core_state_.macroEdit.tempCC.subscribe(
-            [render](uint8_t) { render(); }
-        ));
-        macro_edit_subs_.push_back(core_state_.macroEdit.focusedRow.subscribe(
-            [render](uint8_t) { render(); }
-        ));
+        macro_edit_watcher_.watchAll(
+            [this]() { renderMacroEdit(); },
+            core_state_.macroEdit.visible,
+            core_state_.macroEdit.editingIndex,
+            core_state_.macroEdit.tempChannel,
+            core_state_.macroEdit.tempCC,
+            core_state_.macroEdit.focusedRow
+        );
     }
 
     /**
@@ -210,8 +203,7 @@ public:
         input_handler_.reset();
         midi_handler_.reset();
 
-        // Clear MacroEdit rendering subscriptions
-        macro_edit_subs_.clear();
+        // SignalWatcher cleanup is automatic (RAII)
 
         // Overlay UI
         macro_edit_overlay_.reset();
@@ -243,7 +235,7 @@ private:
     // Overlay system
     std::unique_ptr<core::ui::OverlayController<core::ui::OverlayType>> overlay_controller_;
     std::unique_ptr<core::ui::MacroEditOverlay> macro_edit_overlay_;
-    std::vector<oc::state::Subscription> macro_edit_subs_;  ///< MacroEdit rendering subscriptions
+    oc::state::SignalWatcher macro_edit_watcher_;  ///< MacroEdit rendering (coalesced)
 
     // Handlers
     std::unique_ptr<core::handler::HandlerInputMacro> input_handler_;
