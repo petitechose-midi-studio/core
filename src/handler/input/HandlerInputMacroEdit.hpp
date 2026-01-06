@@ -40,7 +40,7 @@ public:
      */
     HandlerInputMacroEdit(
         core::state::CoreState& state,
-        core::ui::OverlayController<core::ui::CoreOverlayType>& overlays,
+        core::ui::OverlayController<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         lv_obj_t* macroViewScope,
@@ -57,7 +57,7 @@ private:
     void toggleFocus();
 
     core::state::CoreState& state_;
-    core::ui::OverlayController<core::ui::CoreOverlayType>& overlays_;
+    core::ui::OverlayController<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
 

@@ -14,7 +14,7 @@ namespace core::ui {
 /**
  * @brief Overlay types managed by ExclusiveVisibilityStack
  */
-enum class CoreOverlayType : uint8_t {
+enum class OverlayType : uint8_t {
     NONE = 0,
     PAGE_SELECTOR,    // Sélection de page macro
     MACRO_EDIT,       // Édition d'une macro (CH/CC)

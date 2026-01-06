@@ -7,7 +7,7 @@
  * Configures ExclusiveVisibilityStack's cleanup callback and provides
  * AuthorityResolver for input priority.
  *
- * Template class allows reuse between core (CoreOverlayType) and
+ * Template class allows reuse between core (OverlayType) and
  * plugin-bitwig (OverlayType) with their respective enum types.
  */
 
@@ -44,8 +44,8 @@ struct OverlayCleanupInfo {
  * Usage:
  * @code
  * // In StandaloneContext::initialize()
- * overlayController_ = std::make_unique<OverlayController<CoreOverlayType>>(state_.overlays, buttons());
- * overlayController_->registerCleanup(CoreOverlayType::MACRO_EDIT, scope, ButtonID::MACRO_1);
+ * overlayController_ = std::make_unique<OverlayController<OverlayType>>(state_.overlays, buttons());
+ * overlayController_->registerCleanup(OverlayType::MACRO_EDIT, scope, ButtonID::MACRO_1);
  * @endcode
  */
 template <typename EnumT>
