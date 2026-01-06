@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file StandaloneTheme.hpp
+ * @brief Standalone mode theme configuration
+ */
+
 #include <cstdint>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 

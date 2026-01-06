@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file Hardware.hpp
+ * @brief Hardware pin and peripheral configuration
+ */
+
 #include <array>
 
 #include <oc/common/ButtonDef.hpp>

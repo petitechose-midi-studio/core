@@ -1,5 +1,10 @@
 // Auto-generated | 5 icons | 2026-01-03
 #pragma once
+
+/**
+ * @file Icon.hpp
+ * @brief Icon font character definitions
+ */
 #include "StandaloneFonts.hpp"
 
 #include <lvgl.h>

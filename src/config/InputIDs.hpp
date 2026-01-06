@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file InputIDs.hpp
+ * @brief Input device ID definitions
+ */
+
 #include <array>
 #include <cstdint>
 #include <oc/hal/Types.hpp>

@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file TransportBar.hpp
+ * @brief Transport controls bar component
+ */
+
 #include <memory>
 #include <vector>
 

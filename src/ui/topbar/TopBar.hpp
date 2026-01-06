@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file TopBar.hpp
+ * @brief Top status bar component
+ */
+
 #include <lvgl.h>
 #include <vector>
 #include <oc/state/Signal.hpp>

@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file MacroButtonWidget.hpp
+ * @brief Button-style macro widget
+ */
+
 #include <memory>
 #include <oc/ui/lvgl/widget/ButtonWidget.hpp>
 #include "BaseMacroWidget.hpp"

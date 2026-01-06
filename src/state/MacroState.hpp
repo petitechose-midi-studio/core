@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file MacroState.hpp
+ * @brief Macro parameter state management
+ */
+
 #include <cstdint>
 
 #include <oc/state/Signal.hpp>

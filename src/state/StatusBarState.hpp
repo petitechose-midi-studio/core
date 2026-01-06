@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file StatusBarState.hpp
+ * @brief Status bar reactive state
+ */
+
 #include <oc/state/Signal.hpp>
 #include <oc/state/SignalString.hpp>
 

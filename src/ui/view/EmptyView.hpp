@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file EmptyView.hpp
+ * @brief Empty placeholder view
+ */
+
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IView.hpp>

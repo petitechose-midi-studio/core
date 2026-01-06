@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file LayoutOverlay.hpp
+ * @brief Base layout overlay component
+ */
+
 #include <lvgl.h>
 #include <oc/ui/lvgl/IComponent.hpp>
 

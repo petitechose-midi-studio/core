@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file HardwareDisplay.hpp
+ * @brief Display hardware configuration
+ */
+
 #include <oc/teensy/Ili9341.hpp>
 #include <oc/ui/lvgl/Bridge.hpp>
 

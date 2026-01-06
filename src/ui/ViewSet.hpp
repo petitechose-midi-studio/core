@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file ViewSet.hpp
+ * @brief View set type definition
+ */
+
 #include <memory>
 #include <tuple>
 

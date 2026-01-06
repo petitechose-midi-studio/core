@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file MacroKnobWidget.hpp
+ * @brief Knob-style macro widget
+ */
+
 #include <memory>
 #include <oc/ui/lvgl/widget/KnobWidget.hpp>
 #include "BaseMacroWidget.hpp"

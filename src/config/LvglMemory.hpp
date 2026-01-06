@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file LvglMemory.hpp
+ * @brief LVGL memory allocation configuration
+ */
+
 #include <stddef.h>
 #include <stdint.h>
 

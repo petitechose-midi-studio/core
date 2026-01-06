@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file Version.hpp
+ * @brief Version information
+ */
+
 #include <cstdint>
 
 /*

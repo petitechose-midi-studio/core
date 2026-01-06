@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file OverlaySet.hpp
+ * @brief Overlay set type definition
+ */
+
 #include <memory>
 #include <tuple>
 

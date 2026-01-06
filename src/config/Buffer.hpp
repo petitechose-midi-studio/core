@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file Buffer.hpp
+ * @brief Buffer size configuration
+ */
+
 #include <Arduino.h>
 #include <lvgl.h>
 

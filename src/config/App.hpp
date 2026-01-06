@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file App.hpp
+ * @brief Application configuration constants
+ */
+
 #include "Version.hpp"
 
 #include <cstdint>

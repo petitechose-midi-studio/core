@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file BaseMacroWidget.hpp
+ * @brief Base class for macro widget implementations
+ */
+
 #include <memory>
 #include <lvgl.h>
 #include <oc/ui/lvgl/widget/Label.hpp>

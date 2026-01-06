@@ -1,6 +1,11 @@
 #pragma once
 
 /**
+ * @file StandaloneFonts.hpp
+ * @brief Standalone mode font configuration
+ */
+
+/**
  * @brief Standalone icon font registry
  *
  * Icon fonts specific to standalone mode.

@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file IMacroWidget.hpp
+ * @brief Macro widget interface
+ */
+
 #include <cstdint>
 #include <oc/ui/lvgl/IWidget.hpp>
 

@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file SplashScreenView.hpp
+ * @brief Boot splash screen view
+ */
+
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IView.hpp>
