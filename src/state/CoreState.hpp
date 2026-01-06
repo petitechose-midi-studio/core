@@ -88,9 +88,8 @@ struct CoreState {
             snprintf(label, sizeof(label), "Macro %d", i + 1);
             macros.slots[i].label.set(label);
 
-            // Restore value from page
+            // Restore value from page (displayValue updates automatically)
             macros.slots[i].value.set(pageData.values[i]);
-            macros.slots[i].updateDisplayValue();
         }
     }
 
@@ -126,8 +125,8 @@ struct CoreState {
     /**
      * @brief Set macro value (user-initiated change)
      *
-     * Updates runtime state, display value, and marks for persistence.
-     * Use this for encoder/MIDI input, NOT for page load.
+     * Updates runtime state and marks for persistence.
+     * displayValue updates automatically via DerivedStringSignal.
      *
      * @param index Macro index (0-7)
      * @param value Normalized value [0.0, 1.0]
@@ -135,7 +134,6 @@ struct CoreState {
     void setMacroValue(uint8_t index, float value) {
         if (index >= MACRO_COUNT) return;
         macros.slots[index].value.set(value);
-        macros.slots[index].updateDisplayValue();
         markDirty(index);
     }
 

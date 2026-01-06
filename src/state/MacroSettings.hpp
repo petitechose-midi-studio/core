@@ -37,11 +37,12 @@ using MacroSettings = oc::state::Settings<MacroSettingsData>;
 
 /**
  * @brief Apply saved settings to state
+ *
+ * displayValue updates automatically via DerivedStringSignal.
  */
 inline void applySettingsToState(const MacroSettingsData& data, MacroState& state) {
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         state.slots[i].value.set(data.values[i]);
-        state.slots[i].updateDisplayValue();
     }
 }
 
