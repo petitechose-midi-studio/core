@@ -8,7 +8,7 @@
 
 namespace core::ui {
 
-namespace Theme = standalone::theme;
+namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
 
 TopBar::TopBar(lv_obj_t* parent, core::state::StatusBarState& state)
@@ -27,11 +27,11 @@ TopBar::~TopBar() {
 void TopBar::createLayout(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_remove_style_all(container_);
-    lv_obj_set_size(container_, LV_PCT(100), Theme::Layout::TOP_BAR_HEIGHT);
-    style::apply(container_).bgColor(Theme::Color::BACKGROUND);
+    lv_obj_set_size(container_, LV_PCT(100), theme::layout::TOP_BAR_HEIGHT);
+    style::apply(container_).bgColor(theme::color::BACKGROUND);
 
     label_ = lv_label_create(container_);
-    style::apply(label_).textFont(fonts.inter_14_medium).textColor(Theme::Color::TEXT_SECONDARY);
+    style::apply(label_).textFont(fonts.inter_14_medium).textColor(theme::color::TEXT_SECONDARY);
     lv_obj_center(label_);
     lv_label_set_text(label_, state_.pageName.get());
 }

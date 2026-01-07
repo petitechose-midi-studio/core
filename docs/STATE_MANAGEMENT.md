@@ -325,16 +325,16 @@ private:
 Handlers translate user input into state changes:
 
 ```cpp
-// File: handler/input/HandlerInputMacro.cpp
+// File: handler/macro/MacroValueHandler.cpp
 
-#include "HandlerInputMacro.hpp"
+#include "MacroValueHandler.hpp"
 #include <oc/ui/lvgl/Scope.hpp>
 
 namespace core::handler {
 
 using namespace oc::ui::lvgl;
 
-HandlerInputMacro::HandlerInputMacro(
+MacroValueHandler::MacroHandler(
     CoreState& state,
     EncoderAPI& encoders,
     MidiAPI& midi,
@@ -347,7 +347,7 @@ HandlerInputMacro::HandlerInputMacro(
     setupBindings();
 }
 
-void HandlerInputMacro::setupBindings() {
+void MacroValueHandler::setupBindings() {
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
@@ -358,7 +358,7 @@ void HandlerInputMacro::setupBindings() {
     }
 }
 
-void HandlerInputMacro::handleValueChange(uint8_t index, float value) {
+void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     // 1. Update state (triggers UI via subscriptions)
     state_.setMacroValue(index, value);
 
@@ -427,7 +427,7 @@ void MyView::init() {
 }
 
 // Call lv_* in handler (WRONG - violates invariant)
-void HandlerInput::onTurn(float v) {
+void Handler::onTurn(float v) {
     state_.value.set(v);
     lv_label_set_text(label_, "...");  // WRONG!
 }
@@ -480,8 +480,8 @@ struct CoreState {
 **Step 3: Create handler**
 
 ```cpp
-// File: handler/input/HandlerInputVolume.cpp
-void HandlerInputVolume::setupBindings() {
+// File: handler/volume/VolumeHandler.cpp
+void VolumeHandler::setupBindings() {
     buttons_.button(ButtonID::MUTE)
         .press()
         .scope(scope(scope_element_))

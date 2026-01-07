@@ -22,7 +22,7 @@ This document defines the code conventions for MIDI Studio Core.
 | Private members | `snake_case_` (trailing `_`) | `event_bus_`, `boot_complete_` |
 | Local variables | `snake_case` | `normalized_value`, `press_time` |
 | Constants | `SCREAMING_SNAKE_CASE` | `MAX_ACTIVE_NOTES`, `REFRESH_RATE_HZ` |
-| Namespaces | `PascalCase` | `BaseTheme::Color`, `System::Display` |
+| Namespaces | `lowercase` | `base_theme::color`, `system::display` |
 | Type aliases | `PascalCase` | `EventCallback`, `MidiChannelValue` |
 | Template params | `T` or `PascalCase` | `template<typename Callback>` |
 
@@ -272,18 +272,18 @@ enum class ButtonID : uint16_t {
 
 ```cpp
 // Multi-level with ::
-namespace System::Display {
+namespace system::display {
     constexpr uint16_t SCREEN_WIDTH = 320;
     constexpr uint16_t SCREEN_HEIGHT = 240;
 }
 
 // Nested namespaces for logical organization
-namespace BaseTheme {
-namespace Color {
+namespace base_theme {
+namespace color {
     constexpr uint32_t BACKGROUND = 0x000000;
     constexpr uint32_t TEXT_PRIMARY = 0xFFFFFF;
 }
-namespace Layout {
+namespace layout {
     constexpr int16_t MARGIN_SM = 4;
 }
 }
@@ -293,12 +293,12 @@ namespace Layout {
 
 ```cpp
 // Explicit usage (preferred)
-auto width = System::Display::SCREEN_WIDTH;
-auto color = BaseTheme::Color::BACKGROUND;
+auto width = system::display::SCREEN_WIDTH;
+auto color = base_theme::color::BACKGROUND;
 
 // No "using namespace" in headers
 // ❌ using namespace std;
-// ❌ using namespace BaseTheme;
+// ❌ using namespace base_theme;
 ```
 
 ---

@@ -23,7 +23,8 @@ namespace core::ui {
 
 class EmptyView : public oc::ui::lvgl::IView {
 public:
-    explicit EmptyView(lv_obj_t* parent, uint32_t color = oc::ui::lvgl::BaseTheme::Color::BACKGROUND)
+    explicit EmptyView(lv_obj_t* parent,
+                       uint32_t color = oc::ui::lvgl::base_theme::color::BACKGROUND)
         : color_(color) {
         container_ = lv_obj_create(parent);
         oc::ui::lvgl::style::apply(container_).fullSize().bgColor(color_).noBorder().pad(0);

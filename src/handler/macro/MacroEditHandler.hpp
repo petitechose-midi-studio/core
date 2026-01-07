@@ -47,6 +47,14 @@ public:
         lv_obj_t* overlayScope
     );
 
+    ~MacroEditHandler() = default;
+
+    // Non-copyable, non-movable
+    MacroEditHandler(const MacroEditHandler&) = delete;
+    MacroEditHandler& operator=(const MacroEditHandler&) = delete;
+    MacroEditHandler(MacroEditHandler&&) = delete;
+    MacroEditHandler& operator=(MacroEditHandler&&) = delete;
+
 private:
     void setupBindings();
 

@@ -10,9 +10,9 @@
 
 namespace core::ui {
 
-namespace Theme = oc::ui::lvgl::BaseTheme;
+namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
-namespace STheme = standalone::theme;
+namespace stheme = standalone::theme;
 
 BaseMacroWidget::BaseMacroWidget(uint8_t index)
     : index_(index) {}
@@ -69,14 +69,14 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     // Channel icon - right aligned in left column
     ch_prefix_ = std::make_unique<oc::ui::lvgl::Label>(chRow);
     ch_prefix_->alignment(LV_TEXT_ALIGN_RIGHT)
-              .color(STheme::Color::MACRO_CH_COLOR)
+              .color(stheme::color::MACRO_CH_COLOR)
               .autoScroll(false)
               .ownsLvglObjects(false);
-    style::apply(ch_prefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
+    style::apply(ch_prefix_->getElement()).textOpa(stheme::color::MACRO_PREFIX_OPA);
     if (standalone_fonts.icons_12) {
         ch_prefix_->font(standalone_fonts.icons_12);
     }
-    ch_prefix_->setText(Icon::MIDI_CHANNEL);
+    ch_prefix_->setText(icon::MIDI_CHANNEL);
     lv_obj_set_grid_cell(ch_prefix_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);
@@ -84,7 +84,7 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     // Channel value - left aligned in right column
     ch_value_ = std::make_unique<oc::ui::lvgl::Label>(chRow);
     ch_value_->alignment(LV_TEXT_ALIGN_LEFT)
-             .color(STheme::Color::MACRO_CH_COLOR)
+             .color(stheme::color::MACRO_CH_COLOR)
              .autoScroll(false)
              .ownsLvglObjects(false);
     if (fonts.inter_13_bold) {
@@ -106,14 +106,14 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     // CC icon - right aligned in left column
     cc_prefix_ = std::make_unique<oc::ui::lvgl::Label>(ccRow);
     cc_prefix_->alignment(LV_TEXT_ALIGN_RIGHT)
-              .color(STheme::Color::MACRO_CC_COLOR)
+              .color(stheme::color::MACRO_CC_COLOR)
               .autoScroll(false)
               .ownsLvglObjects(false);
-    style::apply(cc_prefix_->getElement()).textOpa(STheme::Color::MACRO_PREFIX_OPA);
+    style::apply(cc_prefix_->getElement()).textOpa(stheme::color::MACRO_PREFIX_OPA);
     if (standalone_fonts.icons_12) {
         cc_prefix_->font(standalone_fonts.icons_12);
     }
-    cc_prefix_->setText(Icon::MIDI_CC);
+    cc_prefix_->setText(icon::MIDI_CC);
     lv_obj_set_grid_cell(cc_prefix_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);
@@ -121,7 +121,7 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     // CC value - left aligned in right column
     cc_value_ = std::make_unique<oc::ui::lvgl::Label>(ccRow);
     cc_value_->alignment(LV_TEXT_ALIGN_LEFT)
-             .color(STheme::Color::MACRO_CC_COLOR)
+             .color(stheme::color::MACRO_CC_COLOR)
              .autoScroll(false)
              .ownsLvglObjects(false);
     if (fonts.inter_13_bold) {

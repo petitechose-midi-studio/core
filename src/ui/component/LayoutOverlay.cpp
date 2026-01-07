@@ -18,7 +18,7 @@ LayoutOverlay::LayoutOverlay(lv_obj_t* parent) : parent_(parent) {
     lv_obj_add_flag(overlay_, LV_OBJ_FLAG_FLOATING);
     style::apply(overlay_)
         .fullSize()
-        .bgColor(BaseTheme::Color::BACKGROUND, OVERLAY_BG_OPACITY)
+        .bgColor(base_theme::color::BACKGROUND, OVERLAY_BG_OPACITY)
         .noScroll()
         .noBorder();
     lv_obj_align(overlay_, LV_ALIGN_CENTER, 0, 0);
@@ -30,7 +30,7 @@ LayoutOverlay::LayoutOverlay(lv_obj_t* parent) : parent_(parent) {
     lv_obj_align(container_, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(container_, BaseTheme::Layout::ROW_GAP_MD, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(container_, base_theme::layout::ROW_GAP_MD, LV_STATE_DEFAULT);
 
     // Header slot (auto-height, collapses when empty)
     header_ = lv_obj_create(container_);

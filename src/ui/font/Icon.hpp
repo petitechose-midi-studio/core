@@ -9,7 +9,7 @@
 
 #include <lvgl.h>
 
-namespace Icon {
+namespace icon {
 enum class Size : uint8_t { S = 12, M = 14, L = 16 };
 
     constexpr const char* KNOB = "\xEE\x80\x80";
@@ -25,4 +25,4 @@ inline void set(lv_obj_t* label, const char* icon, Size size = Size::M) {
     lv_obj_set_style_text_font(label, font, 0);
     lv_label_set_text(label, icon);
 }
-}  // namespace Icon
+}  // namespace icon

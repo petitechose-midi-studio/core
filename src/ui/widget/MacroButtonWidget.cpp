@@ -7,7 +7,7 @@
 
 namespace core::ui {
 
-namespace Theme = oc::ui::lvgl::BaseTheme;
+namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 
 MacroButtonWidget::MacroButtonWidget(lv_obj_t* parent, uint8_t index)
@@ -25,8 +25,8 @@ void MacroButtonWidget::createUI(lv_obj_t* parent) {
     // ButtonWidget - stretch horizontally, CONTENT row sizes to button height
     button_ = std::make_unique<oc::ui::lvgl::ButtonWidget>(container_);
     button_->sizeMode(oc::ui::lvgl::SizeMode::SquareFromWidth)  // Explicit: height = width
-            .offColor(Theme::Color::KNOB_BACKGROUND)
-            .onColor(Theme::Color::getMacroColor(index_));
+            .offColor(theme::color::KNOB_BACKGROUND)
+            .onColor(theme::color::getMacroColor(index_));
     lv_obj_set_grid_cell(button_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,  // Horizontal: stretch to get width
         LV_GRID_ALIGN_START, 0, 1);   // Vertical: start in CONTENT row

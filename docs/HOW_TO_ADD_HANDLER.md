@@ -27,8 +27,8 @@ This guide explains how to create InputHandlers that respond to buttons, encoder
 
 | Type | Direction | Purpose | Example |
 |------|-----------|---------|---------|
-| **InputHandler** | User → State | Translates user input to state changes | `HandlerInputMacro` |
-| **HostHandler** | Protocol → State | Translates host messages to state | `HandlerHostDevice` |
+| **InputHandler** | User → State | Translates user input to state changes | `MacroHandler` |
+| **HostHandler** | Protocol → State | Translates host messages to state | `DeviceHostHandler` |
 
 This guide focuses on **InputHandlers**.
 
@@ -61,11 +61,11 @@ Button/Encoder      Handler           State            View
 ## Step 1: Define the Handler Class
 
 ```cpp
-// File: src/handler/input/HandlerInputVolume.hpp
+// File: src/handler/volume/VolumeHandler.hpp
 #pragma once
 
 /**
- * @file HandlerInputVolume.hpp
+ * @file VolumeHandler.hpp
  * @brief Handles volume controls (level, mute)
  *
  * - MAIN encoder: volume +/-
@@ -82,19 +82,19 @@ Button/Encoder      Handler           State            View
 
 namespace core::handler {
 
-class HandlerInputVolume {
+class VolumeHandler {
 public:
-    HandlerInputVolume(
+    VolumeHandler(
         core::state::CoreState& coreState,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         lv_obj_t* scopeElement);
 
-    ~HandlerInputVolume() = default;
+    ~VolumeHandler() = default;
 
     // Non-copyable
-    HandlerInputVolume(const HandlerInputVolume&) = delete;
-    HandlerInputVolume& operator=(const HandlerInputVolume&) = delete;
+    VolumeHandler(const VolumeHandler&) = delete;
+    VolumeHandler& operator=(const VolumeHandler&) = delete;
 
 private:
     void setupBindings();
@@ -126,8 +126,8 @@ private:
 ## Step 2: Setup Input Bindings
 
 ```cpp
-// File: src/handler/input/HandlerInputVolume.cpp
-#include "HandlerInputVolume.hpp"
+// File: src/handler/volume/VolumeHandler.cpp
+#include "VolumeHandler.hpp"
 
 #include <algorithm>
 #include <oc/ui/lvgl/Scope.hpp>
@@ -136,7 +136,7 @@ namespace core::handler {
 
 using namespace oc::ui::lvgl;
 
-HandlerInputVolume::HandlerInputVolume(
+VolumeHandler::VolumeHandler(
     core::state::CoreState& coreState,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -149,7 +149,7 @@ HandlerInputVolume::HandlerInputVolume(
     setupBindings();
 }
 
-void HandlerInputVolume::setupBindings() {
+void VolumeHandler::setupBindings() {
     // Encoder binding
     encoders_.encoder(Config::EncoderID::MAIN)
         .turn()
@@ -201,7 +201,7 @@ buttons_.button(ButtonID)
 ## Step 3: Implement Action Methods
 
 ```cpp
-void HandlerInputVolume::handleVolumeChange(float delta) {
+void VolumeHandler::handleVolumeChange(float delta) {
     // 1. Read current state
     float current = core_state_.volume.level.get();
 
@@ -213,7 +213,7 @@ void HandlerInputVolume::handleVolumeChange(float delta) {
     core_state_.volume.level.set(newLevel);
 }
 
-void HandlerInputVolume::handleMuteToggle() {
+void VolumeHandler::handleMuteToggle() {
     // Toggle state
     bool muted = core_state_.volume.muted.get();
     core_state_.volume.muted.set(!muted);
@@ -223,7 +223,7 @@ void HandlerInputVolume::handleMuteToggle() {
 ### With Protocol Messages
 
 ```cpp
-void HandlerInputMacro::handleValueChange(uint8_t index, float value) {
+void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     // 1. Update state
     core_state_.setMacroValue(index, value);
 
@@ -240,7 +240,7 @@ void HandlerInputMacro::handleValueChange(uint8_t index, float value) {
 ### With Serial Protocol (Plugin)
 
 ```cpp
-void HandlerInputParameter::handleValueChange(int index, float value) {
+void ParameterHandler::handleValueChange(int index, float value) {
     // 1. Optimistic UI update
     state_.parameters[index].value.set(value);
 
@@ -265,14 +265,14 @@ void StandaloneContext::createInputHandlers() {
     view_ = std::make_unique<MacroView>(view_container_->getMainZone(), core_state_);
 
     // Create handlers with view's scope
-    input_handler_ = std::make_unique<HandlerInputMacro>(
+    input_handler_ = std::make_unique<MacroValueHandler>(
         core_state_,
         encoders(),
         midi(),
         view_->getElement()  // Scope element
     );
 
-    transport_handler_ = std::make_unique<HandlerInputTransport>(
+    transport_handler_ = std::make_unique<TransportHandler>(
         core_state_,
         encoders(),
         buttons(),
@@ -303,7 +303,7 @@ buttons_.button(ButtonID::POWER)
 ### Multiple Encoders with Index
 
 ```cpp
-void HandlerInputMacro::setupBindings() {
+void MacroValueHandler::setupBindings() {
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
@@ -358,14 +358,14 @@ buttons_.button(ButtonID::SELECT)
 
 ## Complete Example
 
-### HandlerInputTransport
+### TransportHandler
 
 ```cpp
-// File: src/handler/input/HandlerInputTransport.hpp
+// File: src/handler/transport/TransportHandler.hpp
 #pragma once
 
 /**
- * @file HandlerInputTransport.hpp
+ * @file TransportHandler.hpp
  * @brief Handles transport controls (tempo, play/stop)
  *
  * - NAV encoder: tempo +/- 1 BPM
@@ -382,17 +382,17 @@ buttons_.button(ButtonID::SELECT)
 
 namespace core::handler {
 
-class HandlerInputTransport {
+class TransportHandler {
 public:
-    HandlerInputTransport(core::state::CoreState& coreState,
+    TransportHandler(core::state::CoreState& coreState,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,
                           lv_obj_t* scopeElement);
 
-    ~HandlerInputTransport() = default;
+    ~TransportHandler() = default;
 
-    HandlerInputTransport(const HandlerInputTransport&) = delete;
-    HandlerInputTransport& operator=(const HandlerInputTransport&) = delete;
+    TransportHandler(const TransportHandler&) = delete;
+    TransportHandler& operator=(const TransportHandler&) = delete;
 
 private:
     void setupBindings();
@@ -412,8 +412,8 @@ private:
 ```
 
 ```cpp
-// File: src/handler/input/HandlerInputTransport.cpp
-#include "HandlerInputTransport.hpp"
+// File: src/handler/transport/TransportHandler.cpp
+#include "TransportHandler.hpp"
 
 #include <algorithm>
 #include <oc/hal/IEncoderController.hpp>
@@ -423,7 +423,7 @@ namespace core::handler {
 
 using namespace oc::ui::lvgl;
 
-HandlerInputTransport::HandlerInputTransport(
+TransportHandler::TransportHandler(
     core::state::CoreState& coreState,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -436,7 +436,7 @@ HandlerInputTransport::HandlerInputTransport(
     setupBindings();
 }
 
-void HandlerInputTransport::setupBindings() {
+void TransportHandler::setupBindings() {
     // Set NAV encoder to relative mode
     encoders_.setMode(Config::EncoderID::NAV, oc::hal::EncoderMode::RELATIVE);
 
@@ -453,13 +453,13 @@ void HandlerInputTransport::setupBindings() {
         .then([this]() { handlePlayToggle(); });
 }
 
-void HandlerInputTransport::handleTempoChange(float delta) {
+void TransportHandler::handleTempoChange(float delta) {
     float currentTempo = core_state_.statusBar.tempo.get();
     float newTempo = std::clamp(currentTempo + delta, TEMPO_MIN, TEMPO_MAX);
     core_state_.statusBar.tempo.set(newTempo);
 }
 
-void HandlerInputTransport::handlePlayToggle() {
+void TransportHandler::handlePlayToggle() {
     bool playing = core_state_.statusBar.playing.get();
     core_state_.statusBar.playing.set(!playing);
 }

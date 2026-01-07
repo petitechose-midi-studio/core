@@ -241,8 +241,8 @@ void VolumeSliderWidget::createUI(lv_obj_t* parent) {
 
     // Create slider
     slider_ = std::make_unique<oc::ui::lvgl::SliderWidget>(container_);
-    slider_->bgColor(Theme::Color::KNOB_BACKGROUND)
-           .trackColor(Theme::Color::ACCENT);
+    slider_->bgColor(Theme::color::KNOB_BACKGROUND)
+           .trackColor(Theme::color::ACCENT);
     lv_obj_set_size(slider_->getElement(), LV_PCT(80), 20);
     lv_obj_align(slider_->getElement(), LV_ALIGN_CENTER, 0, 0);
 

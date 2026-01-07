@@ -15,31 +15,31 @@ using namespace oc::ui::lvgl;
 // =============================================================================
 // Colors
 // =============================================================================
-namespace Color {
+namespace color {
 
 // Macro colors (from BaseTheme)
-constexpr uint32_t MACRO_1 = BaseTheme::Color::MACRO_1_RED;
-constexpr uint32_t MACRO_2 = BaseTheme::Color::MACRO_2_ORANGE;
-constexpr uint32_t MACRO_3 = BaseTheme::Color::MACRO_3_YELLOW;
-constexpr uint32_t MACRO_4 = BaseTheme::Color::MACRO_4_GREEN;
-constexpr uint32_t MACRO_5 = BaseTheme::Color::MACRO_5_CYAN;
-constexpr uint32_t MACRO_6 = BaseTheme::Color::MACRO_6_BLUE;
-constexpr uint32_t MACRO_7 = BaseTheme::Color::MACRO_7_PURPLE;
-constexpr uint32_t MACRO_8 = BaseTheme::Color::MACRO_8_PINK;
+constexpr uint32_t MACRO_1 = base_theme::color::MACRO_1_RED;
+constexpr uint32_t MACRO_2 = base_theme::color::MACRO_2_ORANGE;
+constexpr uint32_t MACRO_3 = base_theme::color::MACRO_3_YELLOW;
+constexpr uint32_t MACRO_4 = base_theme::color::MACRO_4_GREEN;
+constexpr uint32_t MACRO_5 = base_theme::color::MACRO_5_CYAN;
+constexpr uint32_t MACRO_6 = base_theme::color::MACRO_6_BLUE;
+constexpr uint32_t MACRO_7 = base_theme::color::MACRO_7_PURPLE;
+constexpr uint32_t MACRO_8 = base_theme::color::MACRO_8_PINK;
 
 // Base colors
-constexpr uint32_t BACKGROUND = BaseTheme::Color::BACKGROUND;
-constexpr uint32_t INACTIVE = BaseTheme::Color::INACTIVE;
-constexpr uint32_t ACTIVE = BaseTheme::Color::ACTIVE;
+constexpr uint32_t BACKGROUND = base_theme::color::BACKGROUND;
+constexpr uint32_t INACTIVE = base_theme::color::INACTIVE;
+constexpr uint32_t ACTIVE = base_theme::color::ACTIVE;
 
 // Text
-constexpr uint32_t TEXT_PRIMARY = BaseTheme::Color::TEXT_PRIMARY;
-constexpr uint32_t TEXT_SECONDARY = BaseTheme::Color::TEXT_SECONDARY;
+constexpr uint32_t TEXT_PRIMARY = base_theme::color::TEXT_PRIMARY;
+constexpr uint32_t TEXT_SECONDARY = base_theme::color::TEXT_SECONDARY;
 
 // Knob
-constexpr uint32_t KNOB_BACKGROUND = BaseTheme::Color::KNOB_BACKGROUND;
-constexpr uint32_t KNOB_VALUE = BaseTheme::Color::KNOB_VALUE;
-constexpr uint32_t KNOB_TRACK = BaseTheme::Color::KNOB_TRACK;
+constexpr uint32_t KNOB_BACKGROUND = base_theme::color::KNOB_BACKGROUND;
+constexpr uint32_t KNOB_VALUE = base_theme::color::KNOB_VALUE;
+constexpr uint32_t KNOB_TRACK = base_theme::color::KNOB_TRACK;
 
 // MIDI indicators
 constexpr uint32_t MIDI_INACTIVE = 0x404040;
@@ -56,14 +56,14 @@ constexpr uint32_t MACRO_CH_COLOR = 0xCC7777;    // Muted red
 constexpr uint32_t MACRO_CC_COLOR = 0x77CC77;    // Muted green
 constexpr lv_opa_t MACRO_PREFIX_OPA = LV_OPA_60; // Prefix opacity (dim)
 
-using BaseTheme::Color::getMacroColor;
+using base_theme::color::getMacroColor;
 
-}  // namespace Color
+}  // namespace color
 
 // =============================================================================
 // Layout
 // =============================================================================
-namespace Layout {
+namespace layout {
 
 constexpr int16_t SCREEN_WIDTH = 320;
 constexpr int16_t SCREEN_HEIGHT = 240;
@@ -81,16 +81,16 @@ constexpr int16_t PAD_MD = 6;
 constexpr int16_t GAP_SM = 4;
 constexpr int16_t GAP_MD = 6;
 
-}  // namespace Layout
+}  // namespace layout
 
 // =============================================================================
 // Timing
 // =============================================================================
-namespace Timing {
+namespace timing {
 
 constexpr uint32_t MIDI_BLINK_MS = 80;
 constexpr uint32_t BEAT_PULSE_MS = 100;
 
-}  // namespace Timing
+}  // namespace timing
 
 }  // namespace standalone::theme

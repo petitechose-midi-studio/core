@@ -182,7 +182,7 @@ void VolumeView::createLayout(lv_obj_t* parent) {
     style::apply(container_)
         .fullSize()
         .pad(0)
-        .bgColor(Theme::Color::BACKGROUND);
+        .bgColor(Theme::color::BACKGROUND);
 
     // Flex column layout
     lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
@@ -197,7 +197,7 @@ void VolumeView::createLayout(lv_obj_t* parent) {
 ```cpp
 void MacroView::createLayout(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
-    style::apply(container_).fullSize().pad(0).bgColor(Theme::Color::BACKGROUND);
+    style::apply(container_).fullSize().pad(0).bgColor(Theme::color::BACKGROUND);
 
     // Grid: 4 columns x 2 rows
     static lv_coord_t col_dsc[] = {
@@ -222,7 +222,7 @@ void MacroView::createLayout(lv_obj_t* parent) {
 void MacroView::createLayout(lv_obj_t* parent) {
     // Main container (flex column)
     container_ = lv_obj_create(parent);
-    style::apply(container_).fullSize().pad(0).bgColor(Theme::Color::BACKGROUND);
+    style::apply(container_).fullSize().pad(0).bgColor(Theme::color::BACKGROUND);
     lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
 
@@ -380,7 +380,7 @@ bool StandaloneContext::initialize() {
     );
 
     // 3. Create handlers (with view's scope element)
-    input_handler_ = std::make_unique<HandlerInputMacro>(
+    input_handler_ = std::make_unique<MacroValueHandler>(
         core_state_,
         encoders(),
         midi(),

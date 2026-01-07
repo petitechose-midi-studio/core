@@ -7,7 +7,7 @@
 
 namespace core::ui {
 
-namespace Theme = oc::ui::lvgl::BaseTheme;
+namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 
 MacroKnobWidget::MacroKnobWidget(lv_obj_t* parent, uint8_t index)
@@ -25,12 +25,13 @@ void MacroKnobWidget::createUI(lv_obj_t* parent) {
 
     // KnobWidget - stretch horizontally, CONTENT row sizes to knob height
     knob_ = std::make_unique<oc::ui::lvgl::KnobWidget>(container_);
-    knob_->sizeMode(oc::ui::lvgl::SizeMode::SquareFromWidth)  // Explicit: height = width
-          .centered(false)
-          .bgColor(Theme::Color::KNOB_BACKGROUND)
-          .trackColor(Theme::Color::getMacroColor(index_))
-          .valueColor(Theme::Color::KNOB_VALUE)
-          .flashColor(Theme::Color::getMacroColor(index_));
+    knob_
+        ->sizeMode(oc::ui::lvgl::SizeMode::SquareFromWidth)  // Explicit: height = width
+        .centered(false)
+        .bgColor(theme::color::KNOB_BACKGROUND)
+        .trackColor(theme::color::getMacroColor(index_))
+        .valueColor(theme::color::KNOB_VALUE)
+        .flashColor(theme::color::getMacroColor(index_));
     lv_obj_set_grid_cell(knob_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,  // Horizontal: stretch to get width
         LV_GRID_ALIGN_START, 0, 1);   // Vertical: start in CONTENT row

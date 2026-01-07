@@ -16,6 +16,10 @@ namespace core::ui {
  */
 class MacroButtonWidget : public BaseMacroWidget {
 public:
+    /**
+     * @param parent LVGL parent object
+     * @param index Macro index (0-7)
+     */
     MacroButtonWidget(lv_obj_t* parent, uint8_t index);
     ~MacroButtonWidget() override;
 

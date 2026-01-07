@@ -8,14 +8,12 @@
 namespace core::ui {
 
 namespace App = Config::App;
-namespace Theme = oc::ui::lvgl::BaseTheme;
+namespace theme = oc::ui::lvgl::base_theme;
 
 SplashScreenView::Config::Config()
-    : title(App::NAME),
-      version(App::VERSION),
-      bg_color(lv_color_hex(Theme::Color::BACKGROUND)),
-      text_color(lv_color_hex(Theme::Color::TEXT_PRIMARY)),
-      progress_color(lv_color_hex(Theme::Color::TEXT_PRIMARY)) {}
+    : title(App::NAME), version(App::VERSION), bg_color(lv_color_hex(theme::color::BACKGROUND)),
+      text_color(lv_color_hex(theme::color::TEXT_PRIMARY)),
+      progress_color(lv_color_hex(theme::color::TEXT_PRIMARY)) {}
 
 SplashScreenView::SplashScreenView(lv_obj_t* parent, const Config& config)
     : config_(config) {

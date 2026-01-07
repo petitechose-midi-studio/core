@@ -23,14 +23,14 @@ These rules are **non-negotiable**. Any feature that violates them must be redes
 ### Verification
 ```cpp
 // CORRECT: Handler updates state
-void HandlerInputTransport::togglePlay() {
+void TransportHandler::togglePlay() {
     bool newState = !state_.transport.playing.get();
     state_.transport.playing.set(newState);        // State change
     protocol_.send(TransportPlayMessage{newState}); // Protocol message
 }
 
 // WRONG: Handler touches UI
-void HandlerInputTransport::togglePlay() {
+void TransportHandler::togglePlay() {
     lv_label_set_text(playBtn_, "STOP");  // VIOLATION
 }
 ```
@@ -206,7 +206,7 @@ Controller receives, checks: (now - lastChangeTime) < 80ms?
 ### Pattern
 ```cpp
 // Optimistic update for responsiveness
-void HandlerInputRemoteControl::onEncoderTurn(int index, float delta) {
+void RemoteControlHandler::onEncoderTurn(int index, float delta) {
     float newValue = std::clamp(current + delta, 0.0f, 1.0f);
 
     // Optimistic: update UI immediately
@@ -217,7 +217,7 @@ void HandlerInputRemoteControl::onEncoderTurn(int index, float delta) {
 }
 
 // Host confirmation (may differ from optimistic value)
-void HandlerHostRemoteControl::onValueChange(const Message& msg) {
+void RemoteControlHostHandler::onValueChange(const Message& msg) {
     if (!msg.fromHost) return;  // Skip echoes
 
     // Host's value is authoritative

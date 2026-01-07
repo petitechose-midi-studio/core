@@ -10,17 +10,17 @@
 
 namespace core::ui {
 
-namespace Theme = standalone::theme;
+namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
 
 namespace {
-const lv_color_t COLOR_INACTIVE = lv_color_hex(Theme::Color::MIDI_INACTIVE);
-const lv_color_t COLOR_IN_ACTIVE = lv_color_hex(Theme::Color::MIDI_IN_ACTIVE);
-const lv_color_t COLOR_OUT_ACTIVE = lv_color_hex(Theme::Color::MIDI_OUT_ACTIVE);
-const lv_color_t COLOR_PLAY_INACTIVE = lv_color_hex(Theme::Color::PLAY_INACTIVE);
-const lv_color_t COLOR_PLAY_ACTIVE = lv_color_hex(Theme::Color::PLAY_ACTIVE);
-const lv_color_t COLOR_TEXT = lv_color_hex(Theme::Color::TEXT_SECONDARY);
-const lv_color_t COLOR_BEAT = lv_color_hex(Theme::Color::BEAT_PULSE);
+const lv_color_t COLOR_INACTIVE = lv_color_hex(theme::color::MIDI_INACTIVE);
+const lv_color_t COLOR_IN_ACTIVE = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
+const lv_color_t COLOR_OUT_ACTIVE = lv_color_hex(theme::color::MIDI_OUT_ACTIVE);
+const lv_color_t COLOR_PLAY_INACTIVE = lv_color_hex(theme::color::PLAY_INACTIVE);
+const lv_color_t COLOR_PLAY_ACTIVE = lv_color_hex(theme::color::PLAY_ACTIVE);
+const lv_color_t COLOR_TEXT = lv_color_hex(theme::color::TEXT_SECONDARY);
+const lv_color_t COLOR_BEAT = lv_color_hex(theme::color::BEAT_PULSE);
 }  // namespace
 
 TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
@@ -50,8 +50,8 @@ TransportBar::~TransportBar() {
 void TransportBar::createLayout(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_remove_style_all(container_);
-    lv_obj_set_size(container_, LV_PCT(100), Theme::Layout::TRANSPORT_BAR_HEIGHT);
-    style::apply(container_).bgColor(Theme::Color::BACKGROUND);
+    lv_obj_set_size(container_, LV_PCT(100), theme::layout::TRANSPORT_BAR_HEIGHT);
+    style::apply(container_).bgColor(theme::color::BACKGROUND);
 
     // 3 columns: MIDI indicators | Play (center) | Beat + Tempo (right)
     static const int32_t col_dsc[] = {
@@ -76,26 +76,26 @@ void TransportBar::createMidiIndicators(lv_obj_t* parent) {
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1,
                          LV_GRID_ALIGN_CENTER, 0, 1);
     lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    style::apply(cell).flexRow(LV_FLEX_ALIGN_START, Theme::Layout::GAP_SM).padLeft(Theme::Layout::PAD_MD);
+    style::apply(cell).flexRow(LV_FLEX_ALIGN_START, theme::layout::GAP_SM).padLeft(theme::layout::PAD_MD);
 
     // Note IN icon
     note_in_icon_ = lv_label_create(cell);
-    Icon::set(note_in_icon_, Icon::NOTE, Icon::Size::M);
+    icon::set(note_in_icon_, icon::NOTE, icon::Size::M);
     lv_obj_set_style_text_color(note_in_icon_, COLOR_INACTIVE, 0);
 
     // Note OUT icon
     note_out_icon_ = lv_label_create(cell);
-    Icon::set(note_out_icon_, Icon::NOTE, Icon::Size::M);
+    icon::set(note_out_icon_, icon::NOTE, icon::Size::M);
     lv_obj_set_style_text_color(note_out_icon_, COLOR_INACTIVE, 0);
 
     // CC IN icon
     cc_in_icon_ = lv_label_create(cell);
-    Icon::set(cc_in_icon_, Icon::KNOB, Icon::Size::M);
+    icon::set(cc_in_icon_, icon::KNOB, icon::Size::M);
     lv_obj_set_style_text_color(cc_in_icon_, COLOR_INACTIVE, 0);
 
     // CC OUT icon
     cc_out_icon_ = lv_label_create(cell);
-    Icon::set(cc_out_icon_, Icon::KNOB, Icon::Size::M);
+    icon::set(cc_out_icon_, icon::KNOB, icon::Size::M);
     lv_obj_set_style_text_color(cc_out_icon_, COLOR_INACTIVE, 0);
 }
 
@@ -107,7 +107,7 @@ void TransportBar::createTransportCenter(lv_obj_t* parent) {
                          LV_GRID_ALIGN_STRETCH, 0, 1);
 
     play_icon_ = lv_label_create(cell);
-    Icon::set(play_icon_, Icon::TRANSPORT_PLAY, Icon::Size::L);
+    icon::set(play_icon_, icon::TRANSPORT_PLAY, icon::Size::L);
     lv_obj_set_style_text_color(play_icon_, COLOR_PLAY_INACTIVE, 0);
     lv_obj_center(play_icon_);
 }
@@ -119,12 +119,12 @@ void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_END, 2, 1,
                          LV_GRID_ALIGN_CENTER, 0, 1);
     lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    style::apply(cell).flexRow(LV_FLEX_ALIGN_END, Theme::Layout::GAP_SM).padRight(Theme::Layout::PAD_MD);
+    style::apply(cell).flexRow(LV_FLEX_ALIGN_END, theme::layout::GAP_SM).padRight(theme::layout::PAD_MD);
 
     // Beat indicator (left of tempo)
-    beat_indicator_ = std::make_unique<StateIndicator>(cell, Theme::Layout::INDICATOR_SIZE);
-    beat_indicator_->color(StateIndicator::State::OFF, Theme::Color::INACTIVE)
-                  .color(StateIndicator::State::ACTIVE, Theme::Color::BEAT_PULSE)
+    beat_indicator_ = std::make_unique<StateIndicator>(cell, theme::layout::INDICATOR_SIZE);
+    beat_indicator_->color(StateIndicator::State::OFF, theme::color::INACTIVE)
+                  .color(StateIndicator::State::ACTIVE, theme::color::BEAT_PULSE)
                   .opacity(StateIndicator::State::OFF, LV_OPA_COVER)
                   .opacity(StateIndicator::State::ACTIVE, LV_OPA_COVER);
     beat_indicator_->setState(StateIndicator::State::OFF);
@@ -159,25 +159,25 @@ void TransportBar::pulseIcon(lv_obj_t* icon, lv_timer_t*& timer, lv_color_t acti
 void TransportBar::setNoteIn(bool active) {
     if (!active) return;
     pulseIcon(note_in_icon_, note_in_timer_, COLOR_IN_ACTIVE,
-              Theme::Timing::MIDI_BLINK_MS, onNoteInTimeout);
+              theme::timing::MIDI_BLINK_MS, onNoteInTimeout);
 }
 
 void TransportBar::setNoteOut(bool active) {
     if (!active) return;
     pulseIcon(note_out_icon_, note_out_timer_, COLOR_OUT_ACTIVE,
-              Theme::Timing::MIDI_BLINK_MS, onNoteOutTimeout);
+              theme::timing::MIDI_BLINK_MS, onNoteOutTimeout);
 }
 
 void TransportBar::setCcIn(bool active) {
     if (!active) return;
     pulseIcon(cc_in_icon_, cc_in_timer_, COLOR_IN_ACTIVE,
-              Theme::Timing::MIDI_BLINK_MS, onCcInTimeout);
+              theme::timing::MIDI_BLINK_MS, onCcInTimeout);
 }
 
 void TransportBar::setCcOut(bool active) {
     if (!active) return;
     pulseIcon(cc_out_icon_, cc_out_timer_, COLOR_OUT_ACTIVE,
-              Theme::Timing::MIDI_BLINK_MS, onCcOutTimeout);
+              theme::timing::MIDI_BLINK_MS, onCcOutTimeout);
 }
 
 void TransportBar::setPlaying(bool playing) {
@@ -195,7 +195,7 @@ void TransportBar::setBeatPulse(bool pulse) {
     if (!pulse) return;
     beat_indicator_->setState(StateIndicator::State::ACTIVE);
     if (beat_timer_) lv_timer_delete(beat_timer_);
-    beat_timer_ = lv_timer_create(onBeatTimeout, Theme::Timing::BEAT_PULSE_MS, this);
+    beat_timer_ = lv_timer_create(onBeatTimeout, theme::timing::BEAT_PULSE_MS, this);
     lv_timer_set_repeat_count(beat_timer_, 1);
 }
 

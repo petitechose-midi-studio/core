@@ -36,6 +36,9 @@ public:
     void setConfig(uint8_t channel, uint8_t cc) override;
 
 protected:
+    /**
+     * @param index Macro index (0-7)
+     */
     explicit BaseMacroWidget(uint8_t index);
 
     void createContainerWithGrid(lv_obj_t* parent);

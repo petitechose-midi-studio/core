@@ -8,7 +8,7 @@
 
 namespace core::ui {
 
-namespace Theme = oc::ui::lvgl::BaseTheme;
+namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 
 MacroEditOverlay::MacroEditOverlay(lv_obj_t* parent) {
@@ -34,9 +34,9 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
     lv_obj_set_size(container_, 160, 80);
     lv_obj_center(container_);
     style::apply(container_)
-        .bgColor(Theme::Color::BACKGROUND)
+        .bgColor(theme::color::BACKGROUND)
         .radius(6)
-        .border(1, Theme::Color::INACTIVE)
+        .border(1, theme::color::INACTIVE)
         .pad(8);
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(container_, 4, 0);
@@ -44,7 +44,7 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
     // Title
     title_label_ = std::make_unique<oc::ui::lvgl::Label>(container_);
     title_label_->setText("Edit Macro 1");
-    style::apply(title_label_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
+    style::apply(title_label_->getElement()).textColor(theme::color::TEXT_PRIMARY);
 
     // Channel row
     ch_row_ = lv_obj_create(container_);
@@ -54,11 +54,11 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
 
     channel_prefix_label_ = std::make_unique<oc::ui::lvgl::Label>(ch_row_);
     channel_prefix_label_->setText("CH:");
-    style::apply(channel_prefix_label_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
+    style::apply(channel_prefix_label_->getElement()).textColor(theme::color::TEXT_SECONDARY);
 
     channel_value_label_ = std::make_unique<oc::ui::lvgl::Label>(ch_row_);
     channel_value_label_->setText("1");
-    style::apply(channel_value_label_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
+    style::apply(channel_value_label_->getElement()).textColor(theme::color::TEXT_PRIMARY);
 
     // CC row
     cc_row_ = lv_obj_create(container_);
@@ -68,11 +68,11 @@ void MacroEditOverlay::createLayout(lv_obj_t* parent) {
 
     cc_prefix_label_ = std::make_unique<oc::ui::lvgl::Label>(cc_row_);
     cc_prefix_label_->setText("CC:");
-    style::apply(cc_prefix_label_->getElement()).textColor(Theme::Color::TEXT_SECONDARY);
+    style::apply(cc_prefix_label_->getElement()).textColor(theme::color::TEXT_SECONDARY);
 
     cc_value_label_ = std::make_unique<oc::ui::lvgl::Label>(cc_row_);
     cc_value_label_->setText("0");
-    style::apply(cc_value_label_->getElement()).textColor(Theme::Color::TEXT_PRIMARY);
+    style::apply(cc_value_label_->getElement()).textColor(theme::color::TEXT_PRIMARY);
 
     // Initial focus indicator
     updateFocusIndicator(0);
@@ -128,8 +128,8 @@ void MacroEditOverlay::render(const MacroEditOverlayProps& props) {
 
 void MacroEditOverlay::updateFocusIndicator(uint8_t focusedRow) {
     // Highlight focused row with accent color
-    lv_color_t focusColor = lv_color_hex(Theme::Color::ACTIVE);
-    lv_color_t normalColor = lv_color_hex(Theme::Color::TEXT_PRIMARY);
+    lv_color_t focusColor = lv_color_hex(theme::color::ACTIVE);
+    lv_color_t normalColor = lv_color_hex(theme::color::TEXT_PRIMARY);
 
     if (channel_value_label_ && cc_value_label_) {
         lv_obj_set_style_text_color(channel_value_label_->getElement(),

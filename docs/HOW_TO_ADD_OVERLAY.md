@@ -266,7 +266,7 @@ void VolumeEditOverlay::createLayout(lv_obj_t* parent) {
     lv_obj_set_size(container_, 200, 100);
     lv_obj_align(container_, LV_ALIGN_CENTER, 0, 0);
     style::apply(container_)
-        .bgColor(Theme::Color::SURFACE)
+        .bgColor(Theme::color::SURFACE)
         .radius(8)
         .pad(16);
 
@@ -315,7 +315,7 @@ Overlays typically need two scopes:
 2. **Overlay scope**: Actions when overlay is visible
 
 ```cpp
-// File: src/handler/input/HandlerInputVolumeEdit.hpp
+// File: src/handler/volume/VolumeEditHandler.hpp
 #pragma once
 
 #include <lvgl.h>
@@ -328,9 +328,9 @@ Overlays typically need two scopes:
 
 namespace core::handler {
 
-class HandlerInputVolumeEdit {
+class VolumeEditHandler {
 public:
-    HandlerInputVolumeEdit(
+    VolumeEditHandler(
         core::state::CoreState& state,
         core::ui::OverlayController<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
@@ -359,15 +359,15 @@ private:
 ```
 
 ```cpp
-// File: src/handler/input/HandlerInputVolumeEdit.cpp
-#include "HandlerInputVolumeEdit.hpp"
+// File: src/handler/volume/VolumeEditHandler.cpp
+#include "VolumeEditHandler.hpp"
 #include <oc/ui/lvgl/Scope.hpp>
 
 using oc::ui::lvgl::scope;
 
 namespace core::handler {
 
-HandlerInputVolumeEdit::HandlerInputVolumeEdit(
+VolumeEditHandler::VolumeEditHandler(
     core::state::CoreState& state,
     core::ui::OverlayController<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
@@ -384,7 +384,7 @@ HandlerInputVolumeEdit::HandlerInputVolumeEdit(
     setupBindings();
 }
 
-void HandlerInputVolumeEdit::setupBindings() {
+void VolumeEditHandler::setupBindings() {
     // ===== VIEW SCOPE: Open trigger =====
     buttons_.button(Config::ButtonID::VOLUME)
         .longPress()
@@ -409,23 +409,23 @@ void HandlerInputVolumeEdit::setupBindings() {
         .then([this]() { cancel(); });
 }
 
-void HandlerInputVolumeEdit::openEdit() {
+void VolumeEditHandler::openEdit() {
     state_.volumeEdit.startEditing(state_.volume.level.get());
     overlays_.show(core::ui::OverlayType::VOLUME_EDIT);
 }
 
-void HandlerInputVolumeEdit::adjustValue(float delta) {
+void VolumeEditHandler::adjustValue(float delta) {
     float current = state_.volumeEdit.tempLevel.get();
     float newLevel = std::clamp(current + delta * 0.01f, 0.0f, 1.0f);
     state_.volumeEdit.tempLevel.set(newLevel);
 }
 
-void HandlerInputVolumeEdit::saveAndClose() {
+void VolumeEditHandler::saveAndClose() {
     state_.volume.level.set(state_.volumeEdit.tempLevel.get());
     overlays_.hide();
 }
 
-void HandlerInputVolumeEdit::cancel() {
+void VolumeEditHandler::cancel() {
     overlays_.hide();
 }
 
@@ -455,7 +455,7 @@ void MyContext::createOverlays() {
 
 void MyContext::createHandlers() {
     // Handler with two scopes
-    volume_edit_handler_ = std::make_unique<HandlerInputVolumeEdit>(
+    volume_edit_handler_ = std::make_unique<VolumeEditHandler>(
         core_state_,
         overlays_,
         encoders(),
@@ -518,13 +518,13 @@ void MyContext::renderVolumeEdit() {
 
 ## Complete Example
 
-See [MacroEditOverlay.hpp](../src/ui/macro/MacroEditOverlay.hpp) and [HandlerInputMacroEdit.cpp](../src/handler/input/HandlerInputMacroEdit.cpp) for a full implementation.
+See [MacroEditOverlay.hpp](../src/ui/macro/MacroEditOverlay.hpp) and [MacroEditHandler.cpp](../src/handler/macro/MacroEditHandler.cpp) for a full implementation.
 
 **Key files:**
 - `src/ui/OverlayTypes.hpp` - Overlay enum
 - `src/state/MacroEditState.hpp` - Overlay state
 - `src/ui/macro/MacroEditOverlay.hpp/.cpp` - Overlay component
-- `src/handler/input/HandlerInputMacroEdit.hpp/.cpp` - Handler
+- `src/handler/macro/MacroEditHandler.hpp/.cpp` - Handler
 
 ---
 
