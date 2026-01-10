@@ -1,5 +1,5 @@
-// Auto-generated | InterDisplay-Medium.ttf | 14px | 4bpp | 2025-11-28 00:29
+// Auto-generated | InterDisplay-Medium.ttf | 14px | 4bpp | 2026-01-10 12:03
 #pragma once
-#include <Arduino.h>
+#include "PlatformCompat.hpp"
 extern const uint8_t interdisplay_medium_14_bin[] PROGMEM;
 extern const uint32_t interdisplay_medium_14_bin_len;

@@ -34,7 +34,7 @@
 #define LV_MEM_SIZE LVGL_MEMORY_POOL_SIZE
 #define LV_MEM_POOL_EXPAND_SIZE 0
 #define LV_MEM_ADR 0
-#define LV_MEM_POOL_INCLUDE "config/LvglMemory.hpp"
+#define LV_MEM_POOL_INCLUDE "LvglMemory.hpp"
 #define LV_MEM_POOL_ALLOC getLvglMemoryPool
 
 // NO LV_DEF_REFR_PERIOD - set at runtime by Bridge via Config::Timing::LVGL_HZ

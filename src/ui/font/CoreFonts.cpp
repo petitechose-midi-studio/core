@@ -1,6 +1,6 @@
 #include "CoreFonts.hpp"
 
-#include <Arduino.h>
+#include "PlatformCompat.hpp"
 
 // Font binary data (stored in flash via PROGMEM)
 #include "data/interdisplay_bold_13.c.inc"

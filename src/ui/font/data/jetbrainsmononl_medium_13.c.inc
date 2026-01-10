@@ -1,4 +1,4 @@
-// Auto-generated | JetBrainsMonoNL-Medium.ttf | 13px | 4bpp | 2025-11-28 00:29
+// Auto-generated | JetBrainsMonoNL-Medium.ttf | 13px | 4bpp | 2026-01-10 12:03
 
 const uint8_t jetbrainsmononl_medium_13_bin[] PROGMEM = {
   0x30, 0x00, 0x00, 0x00, 0x68, 0x65, 0x61, 0x64, 0x01, 0x00, 0x00, 0x00,

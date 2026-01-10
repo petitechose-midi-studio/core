@@ -11,9 +11,9 @@
 #include <oc/teensy/EEPROMBackend.hpp>
 #include <oc/teensy/Teensy.hpp>
 
-#include "config/App.hpp"
-#include "config/Buffer.hpp"
-#include "config/Hardware.hpp"
+#include "App.hpp"
+#include "Buffer.hpp"
+#include "Hardware.hpp"
 #include "context/BootContext.hpp"
 #include "context/StandaloneContext.hpp"
 #include "state/CoreState.hpp"

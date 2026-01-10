@@ -1,4 +1,4 @@
-// Auto-generated | InterDisplay-Regular.ttf | 14px | 4bpp | 2025-11-28 00:29
+// Auto-generated | InterDisplay-Regular.ttf | 14px | 4bpp | 2026-01-10 12:03
 
 const uint8_t interdisplay_regular_14_bin[] PROGMEM = {
   0x30, 0x00, 0x00, 0x00, 0x68, 0x65, 0x61, 0x64, 0x01, 0x00, 0x00, 0x00,

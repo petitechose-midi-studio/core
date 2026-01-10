@@ -3,16 +3,16 @@
 /**
  * @file App.hpp
  * @brief Application configuration constants
+ *
+ * Platform-agnostic configuration. Does not depend on hardware-specific headers.
  */
 
 #include "Version.hpp"
+#include "InputIDs.hpp"
 
 #include <cstdint>
 
 #include <oc/core/input/InputConfig.hpp>
-
-#include "config/HardwareDisplay.hpp"
-#include "config/InputIDs.hpp"
 
 namespace Config {
 
@@ -39,8 +39,9 @@ enum class ContextID : uint8_t {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Timing {
-constexpr uint32_t APP_HZ = Hardware::Display::REFRESH_HZ*2; // App polling rate (encoders, buttons)
-constexpr uint32_t LVGL_HZ = Hardware::Display::REFRESH_HZ;  // Display refresh rate
+constexpr uint16_t REFRESH_HZ = 240;  // Display refresh rate (shared default)
+constexpr uint32_t APP_HZ = REFRESH_HZ * 2;   // App polling rate (encoders, buttons)
+constexpr uint32_t LVGL_HZ = REFRESH_HZ;      // Display refresh rate
 
 constexpr uint8_t DEBOUNCE_MS = 12;  // Button debounce
 constexpr uint32_t LONG_PRESS_MS = 500;

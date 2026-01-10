@@ -1,6 +1,6 @@
 #include "StandaloneFonts.hpp"
 
-#include <Arduino.h>
+#include "PlatformCompat.hpp"
 
 #include "data/standalone_icons_12.c.inc"
 #include "data/standalone_icons_14.c.inc"

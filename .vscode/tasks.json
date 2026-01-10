@@ -1,0 +1,66 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Desktop Debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "desktop/build",
+                "--target",
+                "midi_studio_desktop"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Build desktop simulator with debug symbols"
+        },
+        {
+            "label": "Configure Desktop Debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B",
+                "desktop/build",
+                "-G",
+                "MinGW Makefiles",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "desktop"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Configure CMake for desktop debug build"
+        },
+        {
+            "label": "Clean Desktop",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "desktop/build",
+                "--target",
+                "clean"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Clean desktop build"
+        },
+        {
+            "label": "Full Rebuild Desktop",
+            "dependsOn": ["Configure Desktop Debug", "Build Desktop Debug"],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "detail": "Clean configure and build desktop"
+        }
+    ]
+}

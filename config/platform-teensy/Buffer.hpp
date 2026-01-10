@@ -5,7 +5,7 @@
  * @brief Buffer size configuration
  */
 
-#include <Arduino.h>
+#include "PlatformCompat.hpp"
 #include <lvgl.h>
 
 #include "Hardware.hpp"

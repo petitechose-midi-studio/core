@@ -7,15 +7,15 @@
 
 #include <memory>
 
-#include <Arduino.h>
 #include <lvgl.h>
+#include <oc/time/Time.hpp>
 
 #include <oc/context/IContext.hpp>
 #include <oc/context/Requirements.hpp>
 
 #include <oc/ui/lvgl/FontLoader.hpp>
 
-#include "config/App.hpp"
+#include "App.hpp"
 #include "ui/font/CoreFonts.hpp"
 #include "ui/view/SplashScreenView.hpp"
 
@@ -31,12 +31,12 @@ public:
         splash_ = std::make_unique<core::ui::SplashScreenView>(lv_screen_active());
         splash_->onActivate();
 
-        start_ms_ = millis();
+        start_ms_ = oc::time::millis();
         return true;
     }
 
     void update() override {
-        uint32_t elapsed = millis() - start_ms_;
+        uint32_t elapsed = oc::time::millis() - start_ms_;
 
         // Update progress
         uint8_t progress = (elapsed * 100) / DURATION_MS;

@@ -38,3 +38,11 @@ Thumbs.db
 
 # GCC ARM Compiler
 compile_commands.json
+
+# Desktop build artifacts
+desktop/build/
+desktop/bin/
+desktop/deps/
+
+# Serena
+.serena/

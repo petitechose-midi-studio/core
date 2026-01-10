@@ -20,7 +20,7 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "config/InputIDs.hpp"
+#include "InputIDs.hpp"
 
 namespace core::state::macro {
 

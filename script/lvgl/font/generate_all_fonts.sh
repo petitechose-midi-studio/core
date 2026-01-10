@@ -4,15 +4,31 @@
 
 set -e
 
+# --- Find project root (directory containing platformio.ini) ---
+find_project_root() {
+    local dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -f "$dir/platformio.ini" ]]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    echo "Error: platformio.ini not found" >&2
+    exit 1
+}
+
 # --- Config ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(find_project_root)"
 
 FONT_SOURCE_DIR="$PROJECT_ROOT/asset/font"
-FONT_OUTPUT_DIR="$PROJECT_ROOT/src/ui/shared/font/data"
+FONT_OUTPUT_DIR="$PROJECT_ROOT/src/ui/font/data"
 
 CHAR_RANGE="0x20-0x7F,0x80-0xFF"  # ASCII + Latin1
 BPP=4
+
+# Platform compatibility header (for cross-platform builds)
+PLATFORM_INCLUDE="${PLATFORM_INCLUDE:-\"config/PlatformCompat.hpp\"}"
 
 # --- Colors ---
 GREEN='\033[0;32m'
@@ -75,7 +91,7 @@ for entry in "${FONTS[@]}"; do
     cat > "$hpp_file" << EOF
 $header
 #pragma once
-#include <Arduino.h>
+#include $PLATFORM_INCLUDE
 extern const uint8_t ${arr_name}[] PROGMEM;
 extern const uint32_t ${arr_name}_len;
 EOF

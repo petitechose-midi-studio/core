@@ -5,7 +5,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/FontLoader.hpp>
 
-#include "config/App.hpp"
+#include "App.hpp"
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
 #include "handler/macro/MacroValueHandler.hpp"
@@ -61,8 +61,8 @@ bool StandaloneContext::initialize() {
     );
     buttons().setAuthorityResolver(&overlay_controller_->authority());
 
-    // Create MacroEdit overlay (stateless - no state reference)
-    macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(lv_screen_active());
+    // Create MacroEdit overlay (parented to MacroView)
+    macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(view_->getElement());
 
     // Register overlay cleanup
     overlay_controller_->registerCleanup(

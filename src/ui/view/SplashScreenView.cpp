@@ -2,7 +2,7 @@
 
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
-#include "config/App.hpp"
+#include "App.hpp"
 #include "ui/font/CoreFonts.hpp"
 
 namespace core::ui {

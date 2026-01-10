@@ -5,7 +5,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
-#include "config/InputIDs.hpp"
+#include "InputIDs.hpp"
 
 using oc::ui::lvgl::scope;
 
