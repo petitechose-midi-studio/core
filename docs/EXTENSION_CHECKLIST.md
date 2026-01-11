@@ -29,18 +29,18 @@
 - [ ] No "floating" bindings without scope (except truly global ones)
 
 ### Authority Resolution
-- [ ] If adding overlays, register with `OverlayController`
+- [ ] If adding overlays, register with `OverlayManager`
 - [ ] Verify overlay scopes are returned by `AuthorityResolver`
 - [ ] Test that global bindings are blocked when overlay is open
 
 ### Latch Handling
-- [ ] If using latch buttons, register with `OverlayController::registerOverlay()`
+- [ ] If using latch buttons, register with `OverlayManager::registerOverlay()`
 - [ ] Verify latches are released on overlay close
 - [ ] Test the hold → release → toggle behavior
 
 ### Input Cleanup
 - [ ] `clearScope()` called when view deactivates
-- [ ] Overlay uses `OverlayController::hide()` (not manual hide)
+- [ ] Overlay uses `OverlayManager::hide()` (not manual hide)
 - [ ] No orphan bindings after view closes
 
 ---
@@ -88,14 +88,14 @@
 ## Overlays
 
 ### Registration
-- [ ] Registered with `OverlayController::registerOverlay()`
+- [ ] Registered with `OverlayManager::registerOverlay()`
 - [ ] Visibility signal, scopeId, and latchButton all provided
 - [ ] Overlay starts hidden (`LV_OBJ_FLAG_HIDDEN`)
 
 ### Lifecycle
-- [ ] Uses `OverlayController::show()` to open
-- [ ] Uses `OverlayController::hide()` to close (automatic cleanup)
-- [ ] If self-closing, calls `OverlayController::cleanupFor()` first
+- [ ] Uses `OverlayManager::show()` to open
+- [ ] Uses `OverlayManager::hide()` to close (automatic cleanup)
+- [ ] If self-closing, calls `OverlayManager::cleanupFor()` first
 
 ### Stacking
 - [ ] Tested with another overlay stacked on top
@@ -176,6 +176,6 @@ A feature is ready for merge when:
 | Handler calls `lv_*()` | Handler cpp files | Move to View subscription |
 | View calls `protocol_.send()` | View cpp files | Create InputHandler |
 | Missing `clearScope()` | View `onDeactivate()` | Add call |
-| Orphan latches | `OverlayController` | Use `registerOverlay()` |
+| Orphan latches | `OverlayManager` | Use `registerOverlay()` |
 | Full-screen invalidate | Search for `lv_obj_invalidate` | Invalidate specific widget |
 | Scope-less binding | Search `.then()` without `.scope()` | Add `.scope()` |

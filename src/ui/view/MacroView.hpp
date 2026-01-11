@@ -21,7 +21,7 @@
 #include <oc/ui/lvgl/IView.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
-#include "InputIDs.hpp"
+#include <config/InputIDs.hpp>
 #include "state/CoreState.hpp"
 #include "ui/topbar/TopBar.hpp"
 #include "ui/widget/IMacroWidget.hpp"

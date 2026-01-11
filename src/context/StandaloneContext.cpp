@@ -5,7 +5,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/FontLoader.hpp>
 
-#include "App.hpp"
+#include <config/App.hpp>
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
 #include "handler/macro/MacroValueHandler.hpp"
@@ -13,7 +13,7 @@
 #include "ui/font/CoreFonts.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/macro/MacroEditOverlay.hpp"
-#include "ui/OverlayController.hpp"
+#include "state/OverlayManager.hpp"
 #include "ui/transportbar/TransportBar.hpp"
 #include "ui/view/MacroView.hpp"
 #include "ui/ViewContainer.hpp"
@@ -55,8 +55,8 @@ bool StandaloneContext::initialize() {
         core_state_.statusBar
     );
 
-    // Create overlay controller with AuthorityResolver
-    overlay_controller_ = std::make_unique<core::ui::OverlayController<core::ui::OverlayType>>(
+    // Create overlay manager with AuthorityResolver
+    overlay_controller_ = std::make_unique<core::state::OverlayManager<core::ui::OverlayType>>(
         core_state_.overlays, buttons()
     );
     buttons().setAuthorityResolver(&overlay_controller_->authority());

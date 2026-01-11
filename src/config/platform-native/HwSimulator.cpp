@@ -1,5 +1,5 @@
 #include "HwSimulator.hpp"
-#include <oc/sdl/InputMapper.hpp>
+#include <oc/hal/desktop/InputMapper.hpp>
 #include <cmath>
 
 namespace desktop {

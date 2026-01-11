@@ -7,12 +7,12 @@
 
 #include <array>
 
-#include <oc/common/ButtonDef.hpp>
-#include <oc/common/EncoderDef.hpp>
-#include <oc/teensy/GenericMux.hpp>
+#include <oc/hal/common/ButtonDef.hpp>
+#include <oc/hal/common/EncoderDef.hpp>
+#include <oc/hal/teensy/GenericMux.hpp>
 
 #include "HardwareDisplay.hpp"
-#include "InputIDs.hpp"
+#include <config/InputIDs.hpp>
 
 namespace Hardware {
 
@@ -21,7 +21,7 @@ namespace Hardware {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Mux {
-constexpr oc::teensy::CD74HC4067::Config CONFIG = {
+constexpr oc::hal::teensy::CD74HC4067::Config CONFIG = {
     .selectPins = {3, 2, 5, 6},  // S0, S1, S2, S3
     .signalPin = 4,
     .settleTimeUs = 20,
@@ -34,7 +34,7 @@ constexpr oc::teensy::CD74HC4067::Config CONFIG = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Encoder {
-using namespace oc::common;
+using namespace oc::hal::common;
 using EncoderID = Config::EncoderID;
 
 // Shared parameters for macro encoders
@@ -65,7 +65,7 @@ constexpr std::array ENCODERS = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Button {
-using namespace oc::common;
+using namespace oc::hal::common;
 using ButtonID = Config::ButtonID;
 using Source = oc::hal::GpioPin::Source;
 

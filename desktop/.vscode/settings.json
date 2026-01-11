@@ -1,0 +1,9 @@
+{
+    "files.exclude": {
+        "**/deps/**": true
+    },
+    "java.server.launchMode": "off",
+    "cmake.configureOnOpen": false,
+    "cmake.automaticReconfigure": false,
+    "cmake.configureOnEdit": false
+}

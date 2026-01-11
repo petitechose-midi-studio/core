@@ -15,7 +15,7 @@
 
 #include <oc/ui/lvgl/FontLoader.hpp>
 
-#include "App.hpp"
+#include <config/App.hpp>
 #include "ui/font/CoreFonts.hpp"
 #include "ui/view/SplashScreenView.hpp"
 

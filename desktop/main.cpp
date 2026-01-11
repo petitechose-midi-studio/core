@@ -9,12 +9,12 @@ extern "C" {
     void lv_sdl_mouse_handler(SDL_Event* event);
 }
 
-#include <oc/sdl/Sdl.hpp>
+#include <oc/hal/desktop/Sdl.hpp>
 #include <oc/ui/lvgl/SdlBridge.hpp>
 
 #include "app/AppLogic.hpp"
-#include "App.hpp"
-#include "InputIDs.hpp"
+#include <config/App.hpp>
+#include <config/InputIDs.hpp>
 #include "state/CoreState.hpp"
 #include "MemoryStorage.hpp"
 #include "HwLayout.hpp"
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
 
     oc::ui::lvgl::SdlBridge bridge(
         LVGL_SIZE, LVGL_SIZE,  // Fixed LVGL size (~1053)
-        oc::sdl::defaultTimeProvider,
+        oc::hal::desktop::defaultTimeProvider,
         {.windowTitle = "MIDI Studio", .createInputDevices = true}
     );
     bridge.init();
@@ -97,7 +97,7 @@ int main(int argc, char* argv[]) {
     // InputMapper - Configuration
     // ══════════════════════════════════════════════════════════════
 
-    oc::sdl::InputMapper input;
+    oc::hal::desktop::InputMapper input;
 
     // Connect HwSimulator to InputMapper (LVGL widgets → App)
     hwSim.setInputMapper(&input);
@@ -138,7 +138,7 @@ int main(int argc, char* argv[]) {
     core::state::CoreState coreState(storage);
 
     // Build the app
-    oc::app::OpenControlApp app = oc::sdl::AppBuilder(input)
+    oc::app::OpenControlApp app = oc::hal::desktop::AppBuilder(input)
                                       .controllers()
                                       .midi()
                                       .inputConfig(Config::Input::CONFIG);

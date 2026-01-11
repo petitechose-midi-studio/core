@@ -1,6 +1,6 @@
 #include "StandaloneFonts.hpp"
 
-#include "PlatformCompat.hpp"
+#include <config/PlatformCompat.hpp>
 
 #include "data/standalone_icons_12.c.inc"
 #include "data/standalone_icons_14.c.inc"

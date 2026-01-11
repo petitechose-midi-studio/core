@@ -197,27 +197,19 @@ The top-level state aggregates all domain states:
 
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
-#include "state/MacroSettings.hpp"
+#include "state/CoreSettings.hpp"
+#include "state/macro/MacroPagesState.hpp"
 
 namespace core::state {
 
 /**
- * @brief Complete application state
+ * @brief Global state container
  */
 struct CoreState {
-    MacroState macros;
-    StatusBarState statusBar;
-    MacroSettings macroSettings;
-
-    // Convenience methods for common operations
-    void setMacroValue(uint8_t index, float value) {
-        macros[index].value.set(value);
-        macros[index].updateDisplayValue();
-    }
-
-    const MacroConfig& getMacroConfig(uint8_t index) const {
-        return macroSettings.configs[index];
-    }
+    MacroState macros;              // Runtime values and labels
+    macro::MacroPagesState pages;   // Multi-page configuration
+    CoreSettings settings;          // Persistence manager
+    StatusBarState statusBar;       // UI status
 };
 
 }  // namespace core::state

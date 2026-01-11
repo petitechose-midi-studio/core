@@ -13,7 +13,7 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 
-#include "InputIDs.hpp"
+#include <config/InputIDs.hpp>
 #include "state/CoreState.hpp"
 
 namespace core::handler {

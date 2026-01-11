@@ -4,9 +4,9 @@
 #include <vector>
 #include <functional>
 #include "HwLayout.hpp"
-#include "InputIDs.hpp"
+#include <config/InputIDs.hpp>
 
-namespace oc::sdl { class InputMapper; }
+namespace oc::hal::desktop { class InputMapper; }
 
 namespace desktop {
 
@@ -79,7 +79,7 @@ public:
      * @brief Connect to InputMapper for event injection
      * When LVGL widgets are clicked, events are sent to the app via InputMapper::post()
      */
-    void setInputMapper(oc::sdl::InputMapper* input) { inputMapper_ = input; }
+    void setInputMapper(oc::hal::desktop::InputMapper* input) { inputMapper_ = input; }
 
     // ════════════════════════════════════════════════════════════
     // Visual feedback (from InputMapper)
@@ -126,7 +126,7 @@ private:
     };
     std::vector<EncoderWidget> encoders_;
 
-    oc::sdl::InputMapper* inputMapper_ = nullptr;
+    oc::hal::desktop::InputMapper* inputMapper_ = nullptr;
 
     // Creation helpers
     void createPanel();

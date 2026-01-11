@@ -2,7 +2,7 @@
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
-#include "App.hpp"
+#include <config/App.hpp>
 
 namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;

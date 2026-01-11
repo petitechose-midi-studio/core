@@ -13,7 +13,7 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/api/MidiAPI.hpp>
 
-#include "InputIDs.hpp"
+#include <config/InputIDs.hpp>
 #include "state/CoreState.hpp"
 
 namespace core::handler {

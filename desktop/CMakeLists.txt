@@ -29,8 +29,8 @@ set(MIDI_STUDIO_ROOT "${CMAKE_SOURCE_DIR}/..")
 set(OPEN_CONTROL_ROOT "${MIDI_STUDIO_ROOT}/../../open-control")
 
 # midi-studio config structure
-set(CONFIG_COMMON "${MIDI_STUDIO_ROOT}/config/common")
-set(CONFIG_NATIVE "${MIDI_STUDIO_ROOT}/config/platform-native")
+set(CONFIG_DIR "${MIDI_STUDIO_ROOT}/src/config")
+set(CONFIG_NATIVE "${MIDI_STUDIO_ROOT}/src/config/platform-native")
 set(CORE_SRC "${MIDI_STUDIO_ROOT}/src")
 
 # PlatformIO deps (from midi-studio/core build)
@@ -75,15 +75,15 @@ resolve_pio_dep("lvgl" LVGL_DIR)
 
 set(FRAMEWORK_DIR "${OPEN_CONTROL_ROOT}/framework")
 set(UI_LVGL_DIR "${OPEN_CONTROL_ROOT}/ui-lvgl")
-set(HAL_SDL_DIR "${OPEN_CONTROL_ROOT}/hal-sdl")
+set(HAL_DESKTOP_DIR "${OPEN_CONTROL_ROOT}/hal-desktop")
 set(UI_LVGL_COMPONENTS_DIR "${OPEN_CONTROL_ROOT}/ui-lvgl-components")
 
 message(STATUS "LVGL: ${LVGL_DIR}")
 message(STATUS "Framework: ${FRAMEWORK_DIR}")
 message(STATUS "UI-LVGL: ${UI_LVGL_DIR}")
-message(STATUS "HAL-SDL: ${HAL_SDL_DIR}")
+message(STATUS "HAL-Desktop: ${HAL_DESKTOP_DIR}")
 message(STATUS "UI-LVGL-Components: ${UI_LVGL_COMPONENTS_DIR}")
-message(STATUS "Config Common: ${CONFIG_COMMON}")
+message(STATUS "Config Common: ${CONFIG_DIR}")
 message(STATUS "Config Native: ${CONFIG_NATIVE}")
 
 # ==============================================================================
@@ -139,7 +139,7 @@ target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
 # ==============================================================================
 file(GLOB_RECURSE FRAMEWORK_SOURCES "${FRAMEWORK_DIR}/src/*.cpp")
 file(GLOB_RECURSE UI_LVGL_SOURCES "${UI_LVGL_DIR}/src/*.cpp")
-file(GLOB_RECURSE HAL_SDL_SOURCES "${HAL_SDL_DIR}/src/*.cpp")
+file(GLOB_RECURSE HAL_DESKTOP_SOURCES "${HAL_DESKTOP_DIR}/src/*.cpp")
 file(GLOB_RECURSE UI_LVGL_COMPONENTS_SOURCES "${UI_LVGL_COMPONENTS_DIR}/src/*.cpp")
 
 # Exclude Teensy-specific main.cpp files from framework sources
@@ -153,6 +153,7 @@ file(GLOB_RECURSE NATIVE_PLATFORM_SOURCES "${CONFIG_NATIVE}/*.cpp")
 
 # Core business logic
 file(GLOB_RECURSE CORE_SOURCES "${CORE_SRC}/*.cpp")
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/config/platform-teensy/.*")
 
 # ==============================================================================
 # Desktop entry point
@@ -170,18 +171,18 @@ add_executable(midi_studio_desktop
     ${CORE_SOURCES}
     ${FRAMEWORK_SOURCES}
     ${UI_LVGL_SOURCES}
-    ${HAL_SDL_SOURCES}
+    ${HAL_DESKTOP_SOURCES}
     ${UI_LVGL_COMPONENTS_SOURCES}
 )
 
 target_include_directories(midi_studio_desktop PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CONFIG_COMMON}
+    ${CONFIG_DIR}
     ${CONFIG_NATIVE}
     ${CORE_SRC}
     ${FRAMEWORK_DIR}/src
     ${UI_LVGL_DIR}/src
-    ${HAL_SDL_DIR}/src
+    ${HAL_DESKTOP_DIR}/src
     ${UI_LVGL_COMPONENTS_DIR}/include
     ${SDL2_INCLUDE_DIR}
 )

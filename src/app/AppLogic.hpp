@@ -1,7 +1,7 @@
 #pragma once
 
 #include <oc/app/OpenControlApp.hpp>
-#include "App.hpp"
+#include <config/App.hpp>
 #include "context/StandaloneContext.hpp"
 #include "state/CoreState.hpp"
 

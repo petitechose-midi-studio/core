@@ -39,6 +39,9 @@ Thumbs.db
 # GCC ARM Compiler
 compile_commands.json
 
+# Build artifacts (CMake)
+build/
+
 # Desktop build artifacts
 desktop/build/
 desktop/bin/

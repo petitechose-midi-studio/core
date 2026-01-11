@@ -5,7 +5,7 @@
  * @brief Buffer size configuration
  */
 
-#include "PlatformCompat.hpp"
+#include <config/PlatformCompat.hpp>
 #include <lvgl.h>
 
 #include "Hardware.hpp"

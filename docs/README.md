@@ -57,7 +57,7 @@ Context
 ├── Handlers (InputHandler)
 ├── Views (IView)
 │   └── Widgets (IWidget)
-└── Overlays (via OverlayController)
+└── Overlays (via OverlayManager)
 ```
 
 ### Golden Rules

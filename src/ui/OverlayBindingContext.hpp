@@ -10,7 +10,7 @@
 
 #include <lvgl.h>
 
-#include "OverlayController.hpp"
+#include "../state/OverlayManager.hpp"
 
 namespace core::ui {
 
@@ -18,7 +18,7 @@ namespace core::ui {
  * @brief Context for handlers that manage overlay-based selection UI
  *
  * Groups overlay-related dependencies that always travel together:
- * - OverlayController for show/hide management
+ * - OverlayManager for show/hide management
  * - scopeElement for scoped input bindings (nullptr = global scope)
  * - overlayElement for positioning/rendering the overlay
  *
@@ -39,7 +39,7 @@ namespace core::ui {
  */
 template <typename OverlayEnumT>
 struct OverlayBindingContext {
-    OverlayController<OverlayEnumT>& controller;
+    core::state::OverlayManager<OverlayEnumT>& controller;
     lv_obj_t* scopeElement;    ///< Element for scoped input bindings (nullptr = global)
     lv_obj_t* overlayElement;  ///< Element for overlay UI positioning
 };

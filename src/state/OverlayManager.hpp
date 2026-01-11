@@ -1,11 +1,13 @@
 #pragma once
 
 /**
- * @file OverlayController.hpp
+ * @file OverlayManager.hpp
  * @brief Template overlay management with authority resolution
  *
  * Configures ExclusiveVisibilityStack's cleanup callback and provides
  * AuthorityResolver for input priority.
+ *
+ * Lives in state/ because it manages reactive state (ExclusiveVisibilityStack).
  *
  * Template class allows reuse between core (OverlayType) and
  * plugin-bitwig (OverlayType) with their respective enum types.
@@ -19,7 +21,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
-namespace core::ui {
+namespace core::state {
 
 using oc::core::ScopeID;
 using oc::core::input::AuthorityResolver;
@@ -34,7 +36,7 @@ struct OverlayCleanupInfo {
 };
 
 /**
- * @brief Template overlay controller
+ * @brief Template overlay manager
  *
  * Configures ExclusiveVisibilityStack's cleanup callback and provides
  * AuthorityResolver for input routing.
@@ -44,17 +46,17 @@ struct OverlayCleanupInfo {
  * Usage:
  * @code
  * // In StandaloneContext::initialize()
- * overlay_controller_ = std::make_unique<OverlayController<OverlayType>>(state_.overlays, buttons());
- * overlay_controller_->registerCleanup(OverlayType::MACRO_EDIT, scope, ButtonID::MACRO_1);
+ * overlay_manager_ = std::make_unique<OverlayManager<OverlayType>>(state_.overlays, buttons());
+ * overlay_manager_->registerCleanup(OverlayType::MACRO_EDIT, scope, ButtonID::MACRO_1);
  * @endcode
  */
 template <typename EnumT>
-class OverlayController {
+class OverlayManager {
     static_assert(static_cast<int>(EnumT::NONE) == 0, "EnumT::NONE must be 0");
     static constexpr size_t COUNT = static_cast<size_t>(EnumT::COUNT);
 
 public:
-    OverlayController(oc::state::ExclusiveVisibilityStack<EnumT>& manager, oc::api::ButtonAPI& buttons)
+    OverlayManager(oc::state::ExclusiveVisibilityStack<EnumT>& manager, oc::api::ButtonAPI& buttons)
         : manager_(manager)
         , buttons_(&buttons) {
         // Configure cleanup callback on the manager
@@ -68,13 +70,13 @@ public:
         });
     }
 
-    ~OverlayController() = default;
+    ~OverlayManager() = default;
 
     // Non-copyable, non-movable
-    OverlayController(const OverlayController&) = delete;
-    OverlayController& operator=(const OverlayController&) = delete;
-    OverlayController(OverlayController&&) = delete;
-    OverlayController& operator=(OverlayController&&) = delete;
+    OverlayManager(const OverlayManager&) = delete;
+    OverlayManager& operator=(const OverlayManager&) = delete;
+    OverlayManager(OverlayManager&&) = delete;
+    OverlayManager& operator=(OverlayManager&&) = delete;
 
     // =========================================================================
     // Registration
@@ -87,7 +89,7 @@ public:
         auto idx = static_cast<size_t>(type);
         if (idx < COUNT) {
             cleanup_[idx] = {scopeId, latchButton};
-            OC_LOG_DEBUG("[OverlayController] Registered cleanup for overlay {} (scope={}, latch={})",
+            OC_LOG_DEBUG("[OverlayManager] Registered cleanup for overlay {} (scope={}, latch={})",
                          idx, scopeId, static_cast<int>(latchButton));
         }
     }
@@ -134,7 +136,7 @@ private:
 
         if (info.latchButton != 0 && buttons_) {
             buttons_->clearLatch(info.latchButton);
-            OC_LOG_DEBUG("[OverlayController] Cleared latch for button {}",
+            OC_LOG_DEBUG("[OverlayManager] Cleared latch for button {}",
                          static_cast<int>(info.latchButton));
         }
     }
@@ -145,4 +147,4 @@ private:
     std::array<OverlayCleanupInfo, COUNT> cleanup_{};
 };
 
-}  // namespace core::ui
+}  // namespace core::state

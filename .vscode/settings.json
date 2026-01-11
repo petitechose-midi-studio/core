@@ -6,6 +6,9 @@
     "claudeCode.allowDangerouslySkipPermissions": true,
     "claudeCode.initialPermissionMode": "bypassPermissions",
     "claudeCode.preferredLocation": "sidebar",
+    "files.exclude": {
+        "**/desktop/deps/**": true
+    },
 
     // C/C++ Formatting with clang-format
     "[cpp]": {
@@ -48,5 +51,6 @@
     },
     "taskexplorer.taskButtons.clickAction": "Execute",
     "taskexplorer.usage.enabled": false,
-    "workbench.editor.enablePreview": false
+    "workbench.editor.enablePreview": false,
+    "cmake.sourceDirectory": "C:/Users/miu-lab/petitechose-audio/midi-studio/core/desktop"
 }

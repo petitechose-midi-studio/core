@@ -23,7 +23,7 @@
  *     ├── Views
  *     │   ├── MacroView (main zone, owns TopBar)
  *     │   └── TransportBar (bottom zone)
- *     └── Overlays (managed by OverlayController)
+ *     └── Overlays (managed by OverlayManager)
  *         └── MacroEditOverlay (edit CH/CC for a macro)
  * ```
  *
@@ -53,8 +53,11 @@ class ViewContainer;
 class MacroView;
 class TransportBar;
 class MacroEditOverlay;
-template<typename T> class OverlayController;
 }  // namespace core::ui
+
+namespace core::state {
+template<typename T> class OverlayManager;
+}  // namespace core::state
 
 namespace core::context {
 
@@ -108,7 +111,7 @@ private:
     std::unique_ptr<core::ui::TransportBar> transport_bar_;
 
     // Overlay system
-    std::unique_ptr<core::ui::OverlayController<core::ui::OverlayType>> overlay_controller_;
+    std::unique_ptr<core::state::OverlayManager<core::ui::OverlayType>> overlay_controller_;
     std::unique_ptr<core::ui::MacroEditOverlay> macro_edit_overlay_;
     oc::state::SignalWatcher macro_edit_watcher_;
 

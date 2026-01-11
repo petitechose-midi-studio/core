@@ -12,7 +12,7 @@
 #include <oc/state/Signal.hpp>
 #include <oc/state/SignalString.hpp>
 
-#include "InputIDs.hpp"
+#include <config/InputIDs.hpp>
 
 namespace core::state {
 

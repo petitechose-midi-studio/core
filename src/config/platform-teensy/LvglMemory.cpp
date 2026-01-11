@@ -1,6 +1,6 @@
 #include "LvglMemory.hpp"
 
-#include "PlatformCompat.hpp"
+#include <config/PlatformCompat.hpp>
 #include <lvgl.h>
 
 EXTMEM static uint8_t lvgl_memory_pool[LVGL_MEMORY_POOL_SIZE];

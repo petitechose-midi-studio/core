@@ -1,0 +1,39 @@
+{
+	"folders": [
+		{
+			"name": "Teensy (PlatformIO)",
+			"path": "."
+		},
+		{
+			"name": "Desktop (CMake)",
+			"path": "desktop"
+		}
+	],
+    "settings": {
+        "java.server.launchMode": "off",
+        "files.exclude": {
+            "**/desktop/deps/**": true
+        },
+        "files.associations": {
+            "*.inc": "cpp"
+        },
+        "claudeCode.allowDangerouslySkipPermissions": true,
+        "claudeCode.initialPermissionMode": "bypassPermissions",
+        "claudeCode.preferredLocation": "sidebar",
+        "taskexplorer.exclude": [
+            "**/.*/**"
+        ],
+        "taskexplorer.enabledTasks": {
+            "python": false,
+            "batch": false,
+            "eslint": false,
+            "npm": false,
+            "powershell": false,
+            "tsc": false,
+            "workspace": false
+        },
+        "taskexplorer.taskButtons.clickAction": "Execute",
+        "taskexplorer.usage.enabled": false,
+        "workbench.editor.enablePreview": false
+    }
+}

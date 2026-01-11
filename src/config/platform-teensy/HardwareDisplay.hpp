@@ -11,7 +11,7 @@
 
 // Only include Teensy headers when building for Teensy (not SDL desktop)
 #ifndef OC_DESKTOP
-#include <oc/teensy/Ili9341.hpp>
+#include <oc/hal/teensy/Ili9341.hpp>
 #include <oc/ui/lvgl/Bridge.hpp>
 #endif
 
@@ -32,7 +32,7 @@ constexpr uint16_t REFRESH_HZ = 240;         // Target refresh rate
 
 #ifndef OC_DESKTOP
 
-constexpr oc::teensy::Ili9341Config CONFIG = {
+constexpr oc::hal::teensy::Ili9341Config CONFIG = {
     .width = 320,
     .height = 240,
     .csPin = 28,

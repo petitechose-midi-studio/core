@@ -5,7 +5,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
-#include "InputIDs.hpp"
+#include <config/InputIDs.hpp>
 
 using oc::ui::lvgl::scope;
 
@@ -13,7 +13,7 @@ namespace core::handler {
 
 MacroEditHandler::MacroEditHandler(
     core::state::CoreState& state,
-    core::ui::OverlayController<core::ui::OverlayType>& overlays,
+    core::state::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* macroViewScope,

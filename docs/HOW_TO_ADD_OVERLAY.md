@@ -34,7 +34,7 @@ An overlay is a modal UI element that:
 ### Key Components
 
 ```
-OverlayController ─────► Manages visibility of overlay types
+OverlayManager ────────► Manages visibility of overlay types
        │
        ▼
 OverlayType ───────────► Enum of all overlay types
@@ -323,7 +323,7 @@ Overlays typically need two scopes:
 #include <oc/api/EncoderAPI.hpp>
 
 #include "state/CoreState.hpp"
-#include "ui/OverlayController.hpp"
+#include "state/OverlayManager.hpp"
 #include "ui/OverlayTypes.hpp"
 
 namespace core::handler {
@@ -332,7 +332,7 @@ class VolumeEditHandler {
 public:
     VolumeEditHandler(
         core::state::CoreState& state,
-        core::ui::OverlayController<core::ui::OverlayType>& overlays,
+        core::state::OverlayManager<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         lv_obj_t* viewScope,      // Parent view scope
@@ -347,7 +347,7 @@ private:
     void cancel();
 
     core::state::CoreState& state_;
-    core::ui::OverlayController<core::ui::OverlayType>& overlays_;
+    core::state::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
 
@@ -369,7 +369,7 @@ namespace core::handler {
 
 VolumeEditHandler::VolumeEditHandler(
     core::state::CoreState& state,
-    core::ui::OverlayController<core::ui::OverlayType>& overlays,
+    core::state::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* viewScope,
@@ -445,7 +445,7 @@ void MyContext::createOverlays() {
         lv_screen_active()  // Parent is screen
     );
 
-    // Register with OverlayController
+    // Register with OverlayManager
     overlays_.registerCleanup(
         OverlayType::VOLUME_EDIT,
         overlays_.getScopeFor(OverlayType::VOLUME_EDIT),
@@ -540,7 +540,7 @@ Before committing a new overlay:
 - [ ] Overlay starts hidden (`LV_OBJ_FLAG_HIDDEN`)
 - [ ] Handler has two scopes (view + overlay)
 - [ ] Handler uses `overlays_.show()` and `overlays_.hide()`
-- [ ] Registered cleanup with `OverlayController`
+- [ ] Registered cleanup with `OverlayManager`
 - [ ] Context subscribes to state and calls `render()`
 - [ ] Destructor cleans up LVGL objects
 
