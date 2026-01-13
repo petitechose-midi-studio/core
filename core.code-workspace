@@ -34,6 +34,7 @@
         },
         "taskexplorer.taskButtons.clickAction": "Execute",
         "taskexplorer.usage.enabled": false,
-        "workbench.editor.enablePreview": false
+        "workbench.editor.enablePreview": false,
+        "java.configuration.updateBuildConfiguration": "automatic"
     }
 }

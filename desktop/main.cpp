@@ -137,10 +137,15 @@ int main(int argc, char* argv[]) {
     desktop::MemoryStorage storage;
     core::state::CoreState coreState(storage);
 
-    // Build the app
+    // Build the app with real MIDI transport
+    oc::hal::desktop::RtMidiConfig midiConfig;
+    midiConfig.appName = "MIDI Studio";
+    midiConfig.inputPortPattern = "core-desktop";
+    midiConfig.outputPortPattern = "core-desktop";
+
     oc::app::OpenControlApp app = oc::hal::desktop::AppBuilder(input)
                                       .controllers()
-                                      .midi()
+                                      .midi(midiConfig)
                                       .inputConfig(Config::Input::CONFIG);
 
     core::app::registerContexts(app, coreState);

@@ -36,27 +36,41 @@ stop_spinner() {
 trap 'printf "${SHOW_CURSOR}"; stop_spinner' EXIT
 
 # =============================================================================
-# Paths
+# Paths & Platform detection
 # =============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Detect current platform
+case "$OSTYPE" in
+    linux*)   PLATFORM="linux"; EXE_EXT="" ;;
+    darwin*)  PLATFORM="macos"; EXE_EXT="" ;;
+    msys*|mingw*|cygwin*) PLATFORM="windows"; EXE_EXT=".exe" ;;
+    *)
+        echo -e "${RED}Unsupported platform: $OSTYPE${NC}"
+        exit 1
+        ;;
+esac
+
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64|amd64) ARCH="x86_64" ;;
+    aarch64|arm64) ARCH="aarch64" ;;
+esac
+
+PLATFORM_ID="${PLATFORM}-${ARCH}"
+ENV_FILE=".env.${PLATFORM_ID}"
+
 # =============================================================================
 # Initialize tools if needed
 # =============================================================================
-if [[ ! -f ".env" ]]; then
-    echo -e "${YELLOW}First run - initializing tools...${NC}"
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo -e "${YELLOW}First run for ${PLATFORM_ID} - initializing tools...${NC}"
     ./init_tools.sh
     echo ""
 fi
 
-source ".env"
-
-# Platform detection
-case "$OSTYPE" in
-    msys*|mingw*|cygwin*) EXE_EXT=".exe" ;;
-    *) EXE_EXT="" ;;
-esac
+source "$ENV_FILE"
 
 # Tool paths
 CMAKE="$CMAKE_DIR/bin/cmake${EXE_EXT}"
@@ -66,7 +80,7 @@ export ZIG_DIR
 
 # Verify tools exist
 if [[ ! -x "$CMAKE" ]]; then
-    echo -e "${RED}CMake not found. Run: ./init_tools.sh${NC}"
+    echo -e "${RED}CMake not found for ${PLATFORM_ID}. Run: ./init_tools.sh${NC}"
     exit 1
 fi
 
@@ -74,11 +88,13 @@ fi
 # Configuration
 # =============================================================================
 BUILD_TYPE="${1:-Debug}"
-BUILD_DIR="$SCRIPT_DIR/build"
+BUILD_DIR="$SCRIPT_DIR/build/${PLATFORM_ID}"
+BIN_DIR="$SCRIPT_DIR/bin/${PLATFORM_ID}"
 
 echo ""
 echo -e "${BOLD}Building Desktop Simulator${NC}"
 echo -e "${GRAY}─────────────────────────────────────────${NC}"
+echo -e "  ${ARROW} Platform: ${CYAN}${PLATFORM_ID}${NC}"
 echo -e "  ${ARROW} Type: ${CYAN}${BUILD_TYPE}${NC}"
 echo -e "  ${ARROW} Compiler: ${CYAN}Zig${NC}"
 echo -e "  ${ARROW} Generator: ${CYAN}Ninja${NC}"
@@ -97,6 +113,7 @@ if $NEED_CONFIGURE; then
     "$CMAKE" -S "$SCRIPT_DIR" -B "$BUILD_DIR" \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+        -DPLATFORM_ID="$PLATFORM_ID" \
         -G "Ninja" \
         -Wno-dev \
         > "$BUILD_DIR/cmake_configure.log" 2>&1 || {
@@ -132,12 +149,12 @@ echo -e "  ${CHECKMARK} Build complete ${GRAY}(${ELAPSED}s)${NC}"
 # =============================================================================
 # Output
 # =============================================================================
-DEMO_EXE="$SCRIPT_DIR/bin/midi_studio_desktop${EXE_EXT}"
+DEMO_EXE="$BIN_DIR/midi_studio_desktop${EXE_EXT}"
 
 if [[ -f "$DEMO_EXE" ]]; then
     SIZE=$(du -h "$DEMO_EXE" | cut -f1)
     echo ""
-    echo -e "${GREEN}Output:${NC} bin/midi_studio_desktop${EXE_EXT} ${GRAY}(${SIZE})${NC}"
+    echo -e "${GREEN}Output:${NC} bin/${PLATFORM_ID}/midi_studio_desktop${EXE_EXT} ${GRAY}(${SIZE})${NC}"
 fi
 
 echo ""

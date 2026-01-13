@@ -35,6 +35,7 @@ Thumbs.db
 
 # Claude
 .claude
+tmpclaude-*
 
 # GCC ARM Compiler
 compile_commands.json

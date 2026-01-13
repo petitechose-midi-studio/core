@@ -5,7 +5,7 @@ project(midi_studio_desktop C CXX)
 # C/C++ Standards
 # ==============================================================================
 set(CMAKE_C_STANDARD 99)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Default to Debug build if not specified
@@ -90,7 +90,7 @@ message(STATUS "Config Native: ${CONFIG_NATIVE}")
 # SDL2 (FetchContent)
 # ==============================================================================
 include(FetchContent)
-set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/deps")
+set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/deps")
 
 message(STATUS "Fetching SDL2...")
 FetchContent_Declare(
@@ -114,6 +114,27 @@ endif()
 FetchContent_MakeAvailable(SDL2)
 FetchContent_GetProperties(SDL2 SOURCE_DIR SDL2_SOURCE_DIR)
 set(SDL2_INCLUDE_DIR "${SDL2_SOURCE_DIR}/include")
+
+# ==============================================================================
+# libremidi (FetchContent) - Real MIDI support
+# ==============================================================================
+message(STATUS "Fetching libremidi...")
+FetchContent_Declare(
+    libremidi
+    GIT_REPOSITORY https://github.com/celtera/libremidi.git
+    GIT_TAG        v5.4.1
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
+)
+
+set(LIBREMIDI_HEADER_ONLY ON CACHE BOOL "" FORCE)
+set(LIBREMIDI_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LIBREMIDI_TESTS OFF CACHE BOOL "" FORCE)
+set(LIBREMIDI_NO_WINMIDI ON CACHE BOOL "" FORCE)
+set(LIBREMIDI_NO_WINUWP ON CACHE BOOL "" FORCE)
+set(LIBREMIDI_DOWNLOAD_CPPWINRT OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(libremidi)
 
 # ==============================================================================
 # LVGL Configuration
@@ -190,10 +211,13 @@ target_include_directories(midi_studio_desktop PRIVATE
 target_link_libraries(midi_studio_desktop PRIVATE
     lvgl
     SDL2::SDL2-static
+    libremidi
 )
 
 # Define OC_DESKTOP for platform-conditional code (if needed)
-target_compile_definitions(midi_studio_desktop PRIVATE OC_DESKTOP=1)
+target_compile_definitions(midi_studio_desktop PRIVATE OC_DESKTOP=1
+    OC_LOG=1
+)
 
 # ==============================================================================
 # Platform-specific
@@ -212,12 +236,18 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # ==============================================================================
-# Output
+# Output (platform-specific subdirectory)
 # ==============================================================================
+if(NOT DEFINED PLATFORM_ID)
+    set(PLATFORM_ID "default")
+endif()
+
+set(BIN_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/${PLATFORM_ID}")
+
 set_target_properties(midi_studio_desktop PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/bin"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${BIN_OUTPUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${BIN_OUTPUT_DIR}"
 )
 
 # ==============================================================================
