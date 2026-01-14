@@ -1,5 +1,7 @@
 CompileFlags:
   CompilationDatabase: .
+  Add:
+    - --query-driver=**/arm-none-eabi-*
 
 Diagnostics:
   Suppress:
