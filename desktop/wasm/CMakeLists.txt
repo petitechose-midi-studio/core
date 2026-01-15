@@ -213,10 +213,13 @@ set(EMSCRIPTEN_LINK_FLAGS
     "-s SINGLE_FILE=0"                # Separate .wasm file (better caching)
     "-s MODULARIZE=0"
     "-s EXPORT_ES6=0"
-    "-s INVOKE_RUN=1"                 # Auto-run main()
+    "-s INVOKE_RUN=0"                 # Don't auto-run, shell.html calls callMain after WebMIDI init
     "-s EXIT_RUNTIME=0"
     "-s ASYNCIFY=1"
     "-s ASYNCIFY_STACK_SIZE=65536"
+    # Exports for manual main() call and libremidi
+    "-s EXPORTED_RUNTIME_METHODS=['callMain']"
+    "-s EXPORTED_FUNCTIONS=['_main','_free','_libremidi_devices_poll','_libremidi_devices_input']"
     "--shell-file ${CMAKE_SOURCE_DIR}/shell.html"
 )
 

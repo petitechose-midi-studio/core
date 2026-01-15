@@ -192,9 +192,15 @@ int main(int argc, char* argv[]) {
     static desktop::MemoryStorage storage;
     static core::state::CoreState coreState(storage);
 
-    // Build app with NullMidi (no real MIDI I/O, but MidiAPI available for contexts)
+    // Build app with real MIDI (WebMIDI in browser, native on desktop)
+    // Port naming convention: "MIDI Studio IN" = DAW receives, "MIDI Studio OUT" = DAW sends
+    // So our app: reads from "OUT" (DAW sends to us), writes to "IN" (we send to DAW)
     static oc::app::OpenControlApp app = oc::hal::desktop::AppBuilder()
-                                             .midi()  // NullMidiTransport
+                                             .midi({
+                                                 .appName = "MIDI Studio",
+                                                 .inputPortPattern = "IN [core-desktop]",   // Read from DAW's output
+                                                 .outputPortPattern = "OUT [core-desktop]"  // Write to DAW's input
+                                             })
                                              .controllers(input)
                                              .inputConfig(Config::Input::CONFIG);
 
