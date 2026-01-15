@@ -1,126 +1,73 @@
-# Desktop Simulator
+# Desktop Simulator (WebAssembly)
 
-Simulateur desktop de midi-studio avec LVGL + SDL2.
+Simulateur desktop de midi-studio avec LVGL + SDL2, compilé en WebAssembly.
 
 ## Quick Start
 
 ```bash
-# Premier lancement (télécharge les outils automatiquement)
+# Premier lancement (installe Emscripten automatiquement)
 ./build.sh
 
-# Lancer l'app
-./bin/midi_studio_desktop.exe
+# Tester dans le navigateur
+./build.sh serve
+# Ouvrir http://localhost:8080/midi_studio_wasm.html
 ```
 
-## Prérequis
+## Prerequis
 
-### Obligatoires
 - **Git Bash** (Windows) ou terminal Unix
 - **PlatformIO CLI** : `pip install platformio`
+- **Python 3** : pour le serveur local
 
-### Installés automatiquement
-Le script `build.sh` utilise les outils de `open-control/ui-lvgl-components/tools/` :
-- **Zig 0.15.2** - Compilateur C/C++ (rapide, cache intelligent)
-- **Ninja 1.13.2** - Build system parallèle
-- **CMake 4.2.1** - Configuration du build
-
-Si les outils ne sont pas présents, lancer :
-```bash
-cd ../../../open-control/ui-lvgl-components
-./init_env.sh
-```
-
-## Structure
-
-```
-desktop/
-├── build.sh          # Script de build principal
-├── run.sh            # Lancer l'app (avec auto-rebuild)
-├── CMakeLists.txt    # Configuration CMake
-├── main.cpp          # Point d'entrée desktop
-├── .vscode/          # Config VSCode (debug, IntelliSense)
-├── build/            # (généré) Fichiers de build
-├── bin/              # (généré) Exécutable
-└── deps/             # (généré) SDL2, SDL2_gfx
-```
+Emscripten SDK est installe automatiquement dans `tools/emsdk/`.
 
 ## Commandes
 
 | Commande | Description |
 |----------|-------------|
-| `./build.sh` | Build Debug (par défaut) |
-| `./build.sh Release` | Build optimisé |
-| `./run.sh` | Build + lance l'app |
-| `./watch.sh` | **Watch mode** - rebuild auto sur modif |
-| `rm -rf build deps` | Clean complet |
+| `./build.sh` | Build WASM |
+| `./build.sh clean` | Clean + rebuild |
+| `./build.sh serve` | Build + serveur local |
+| `./build.sh watch` | **Hot reload** - rebuild auto + refresh navigateur |
+| `./build.sh setup` | Installe Emscripten sans build |
 
-## Watch Mode (Hot Reload)
-
-Le script `watch.sh` surveille les fichiers sources et rebuild+relance automatiquement :
+## Developpement (Hot Reload)
 
 ```bash
-./watch.sh          # Watch en mode Debug
-./watch.sh Release  # Watch en mode Release
+./build.sh watch
 ```
 
-**Dossiers surveillés :**
-- `src/` - Code applicatif
-- `config/` - Configuration
-- `desktop/` - Code spécifique desktop
-- `open-control/` - Framework
+Ouvre http://localhost:8080/midi_studio_wasm.html - le navigateur se rafraichit automatiquement quand tu modifies un fichier `.cpp`/`.hpp` dans `src/`.
 
-**Performance :**
-- Avec `watchexec` : détection instantanée (~300ms debounce)
-- Sans : polling toutes les 2s
+## Structure
 
-**Installer watchexec (recommandé) :**
-```bash
-# Windows
-winget install watchexec
-
-# Linux/macOS
-cargo install watchexec-cli
+```
+desktop/
+├── build.sh          # Script de build unique
+├── main_wasm.cpp     # Point d'entree Emscripten
+├── wasm/
+│   ├── CMakeLists.txt    # Config CMake WASM
+│   └── shell.html        # Template HTML
+├── build/wasm/       # (genere) Fichiers de build
+├── bin/wasm/         # (genere) Output WASM
+└── tools/emsdk/      # (genere) Emscripten SDK
 ```
 
-## VSCode
+## Output
 
-Ouvrir le dossier `desktop/` dans VSCode pour :
-- **IntelliSense** via `compile_commands.json`
-- **Debug GDB** avec breakpoints
-- **Build** : Ctrl+Shift+B
+Apres build, les fichiers sont dans `bin/wasm/`:
 
-### Configurations disponibles
-- `Build (Zig+Ninja)` - Build rapide (défaut)
-- `Desktop Debug (GDB)` - Debug avec breakpoints
-- `Desktop Debug (no build)` - Debug sans rebuild
-
-## Performance
-
-| Type de build | Temps |
-|--------------|-------|
-| Premier build (from scratch) | ~2-3 min |
-| Build incrémental (1 fichier modifié) | ~3 sec |
-| Build incrémental (no-op) | <1 sec |
-
-### Pourquoi c'est rapide ?
-- **Zig** : Cache de compilation intelligent, pas de preprocessing lourd
-- **Ninja** : Build system minimal, parallélisation optimale
-- **CMake** : Configuration une seule fois, rebuilds incrémentaux
-
-## Dépendances téléchargées
-
-Au premier build, CMake télécharge automatiquement :
-- **SDL2 2.30.10** - Fenêtrage, input, rendu
-- **SDL2_gfx** - Primitives graphiques (cercles, arcs)
-
-Ces dépendances sont stockées dans `deps/` et ne sont pas re-téléchargées.
+| Fichier | Description |
+|---------|-------------|
+| `midi_studio_wasm.html` | Page HTML a ouvrir |
+| `midi_studio_wasm.wasm` | Module WebAssembly (~1.2 MB) |
+| `midi_studio_wasm.js` | Glue code JavaScript |
 
 ## Troubleshooting
 
-### "Tools not initialized"
+### "emcc not found"
 ```bash
-cd ../../../open-control/ui-lvgl-components
-./init_env.sh
+./build.sh setup
 ```
 
 ### "PlatformIO not found"
@@ -128,18 +75,21 @@ cd ../../../open-control/ui-lvgl-components
 pip install platformio
 ```
 
-### Build lent ?
-Vérifier que Ninja est bien utilisé :
+### "lvgl not found"
 ```bash
-head -1 build/CMakeCache.txt | grep Ninja
+cd ..  # midi-studio/core
+pio pkg install
 ```
-
-### Erreurs IntelliSense ?
-1. Rebuild pour générer `compile_commands.json`
-2. Recharger VSCode (Ctrl+Shift+P → "Reload Window")
 
 ### Clean complet
 ```bash
-rm -rf build deps bin
+rm -rf build bin tools
 ./build.sh
 ```
+
+## Notes techniques
+
+- **SDL2** fourni par Emscripten (`-s USE_SDL=2`)
+- **MIDI** desactive (NullMidiTransport)
+- **Main loop** via `emscripten_set_main_loop_arg()`
+- **Resolution** 480x320 (configurable dans CMakeLists.txt)

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MIDI Studio</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a1a;
+            overflow: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #header {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #888;
+            font-size: 14px;
+            z-index: 100;
+        }
+
+        #header a {
+            color: #aaa;
+            text-decoration: none;
+        }
+
+        #header a:hover {
+            color: #fff;
+        }
+
+        #canvas-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+        }
+
+        #canvas {
+            background-color: #202020;
+            /* CSS will scale, WASM renders at fixed resolution */
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #888;
+            font-size: 18px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        #loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #333;
+            border-top-color: #888;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #loading.hidden {
+            display: none;
+        }
+
+        #footer {
+            position: absolute;
+            bottom: 10px;
+            color: #555;
+            font-size: 12px;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        #controls button {
+            background: #333;
+            color: #aaa;
+            border: 1px solid #444;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #controls button:hover {
+            background: #444;
+            color: #fff;
+        }
+
+        /* Keyboard hints */
+        #hints {
+            position: absolute;
+            bottom: 40px;
+            color: #555;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        #hints kbd {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #444;
+            margin: 0 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <span>MIDI Studio</span> &mdash;
+        <a href="https://github.com/miu-lab/midi-studio" target="_blank">GitHub</a>
+    </div>
+
+    <div id="controls">
+        <button onclick="toggleFullscreen()">Fullscreen</button>
+    </div>
+
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>Loading MIDI Studio...</div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+
+    <div id="hints">
+        <kbd>1</kbd>-<kbd>8</kbd> Macros &nbsp;|&nbsp;
+        <kbd>Space</kbd> NAV &nbsp;|&nbsp;
+        <kbd>&uarr;</kbd><kbd>&darr;</kbd> NAV Encoder &nbsp;|&nbsp;
+        <kbd>&larr;</kbd><kbd>&rarr;</kbd> OPT Encoder &nbsp;|&nbsp;
+        <kbd>Esc</kbd> Back
+    </div>
+
+    <div id="footer">
+        LVGL + SDL2 + Emscripten
+    </div>
+
+    <script>
+        // =================================================================
+        // Configuration
+        // =================================================================
+        const DEFAULT_SIZE = 800;  // Default canvas size
+
+        // Parse URL parameters
+        function getUrlParam(name, defaultValue) {
+            const params = new URLSearchParams(window.location.search);
+            const value = params.get(name);
+            return value ? parseInt(value, 10) : defaultValue;
+        }
+
+        const canvasSize = getUrlParam('size', DEFAULT_SIZE);
+
+        // =================================================================
+        // Canvas setup
+        // =================================================================
+        const canvas = document.getElementById('canvas');
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
+
+        // =================================================================
+        // Emscripten Module configuration
+        // =================================================================
+        var Module = {
+            print: function(text) {
+                console.log('[WASM]', text);
+            },
+            printErr: function(text) {
+                console.error('[WASM]', text);
+            },
+            canvas: canvas,
+            arguments: [canvasSize.toString()],
+            onRuntimeInitialized: function() {
+                console.log('WASM runtime ready');
+                document.getElementById('loading').classList.add('hidden');
+            },
+            setStatus: function(text) {
+                if (text) {
+                    console.log('[Status]', text);
+                }
+            }
+        };
+
+        // =================================================================
+        // Fullscreen toggle
+        // =================================================================
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log('Fullscreen error:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // =================================================================
+        // Focus handling (ensure keyboard events reach the canvas)
+        // =================================================================
+        window.addEventListener('click', () => {
+            window.focus();
+        });
+
+        // Prevent default browser shortcuts that might interfere
+        window.addEventListener('keydown', (e) => {
+            // Prevent space from scrolling
+            if (e.code === 'Space') {
+                e.preventDefault();
+            }
+            // Prevent arrow keys from scrolling
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                e.preventDefault();
+            }
+        });
+    </script>
+
+    {{{ SCRIPT }}}
+</body>
+</html>

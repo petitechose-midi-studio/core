@@ -38,12 +38,13 @@ namespace StorageLayout {
     constexpr uint32_t ADDR_RESERVED = 0x0006;
     constexpr uint32_t ADDR_PAGES = 0x0010;
 
-    constexpr size_t PAGE_SIZE = sizeof(macro::MacroPageData);  // 64 bytes
-    static_assert(PAGE_SIZE == 64, "Page size must be 64 bytes");
+    // Note: Named MACRO_PAGE_SIZE to avoid conflict with system PAGE_SIZE macro (Emscripten)
+    constexpr size_t MACRO_PAGE_SIZE = sizeof(macro::MacroPageData);  // 64 bytes
+    static_assert(MACRO_PAGE_SIZE == 64, "Page size must be 64 bytes");
 
     /// Get offset for a specific page
     inline constexpr uint32_t pageOffset(uint8_t pageIndex) {
-        return ADDR_PAGES + pageIndex * PAGE_SIZE;
+        return ADDR_PAGES + pageIndex * MACRO_PAGE_SIZE;
     }
 
     /// Get offset for a specific value within a page
@@ -122,7 +123,7 @@ public:
             backend_.read(
                 StorageLayout::pageOffset(i),
                 reinterpret_cast<uint8_t*>(&pages.pages[i]),
-                StorageLayout::PAGE_SIZE
+                StorageLayout::MACRO_PAGE_SIZE
             );
         }
 
@@ -149,7 +150,7 @@ public:
             backend_.write(
                 StorageLayout::pageOffset(i),
                 reinterpret_cast<const uint8_t*>(&pages.pages[i]),
-                StorageLayout::PAGE_SIZE
+                StorageLayout::MACRO_PAGE_SIZE
             );
         }
 
@@ -172,7 +173,7 @@ public:
         backend_.write(
             StorageLayout::pageOffset(pageIndex),
             reinterpret_cast<const uint8_t*>(&page),
-            StorageLayout::PAGE_SIZE
+            StorageLayout::MACRO_PAGE_SIZE
         );
         OC_LOG_DEBUG("[CoreSettings] Saved page {}", pageIndex);
     }
@@ -215,7 +216,7 @@ public:
      * @brief Erase all settings (factory reset)
      */
     void factoryReset() {
-        backend_.erase(0, StorageLayout::ADDR_PAGES + macro::PAGE_COUNT * StorageLayout::PAGE_SIZE);
+        backend_.erase(0, StorageLayout::ADDR_PAGES + macro::PAGE_COUNT * StorageLayout::MACRO_PAGE_SIZE);
         OC_LOG_INFO("[CoreSettings] Factory reset");
     }
 

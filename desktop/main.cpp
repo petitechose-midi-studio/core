@@ -1,6 +1,16 @@
+/**
+ * @file main.cpp
+ * @brief Desktop/WASM entry point for MIDI Studio
+ *
+ * Uses SDL2 for display and input.
+ * Browser builds use emscripten_set_main_loop_arg().
+ */
+
 #define SDL_MAIN_HANDLED
-#include <SDL.h>
+#include <SDL2/SDL.h>
+#include <emscripten.h>
 #include <optional>
+#include <cstdlib>
 
 #include <lvgl.h>
 
@@ -20,97 +30,143 @@ extern "C" {
 #include "HwLayout.hpp"
 #include "HwSimulator.hpp"
 
+// =============================================================================
+// Application Context (passed to main loop callback)
+// =============================================================================
+struct AppContext {
+    oc::ui::lvgl::SdlBridge* bridge;
+    oc::hal::desktop::InputMapper* input;
+    oc::app::OpenControlApp* app;
+    core::state::CoreState* coreState;
+    desktop::HwSimulator* hwSim;
+    SDL_Renderer* renderer;
+    bool running;
+};
+
+static AppContext g_ctx;
+
+// =============================================================================
+// Main Loop Iteration (called by Emscripten)
+// =============================================================================
+void main_loop_iteration(void* arg) {
+    AppContext* ctx = static_cast<AppContext*>(arg);
+
+    // --- Events ---
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        // Forward to LVGL for widget interaction
+        lv_sdl_mouse_handler(&event);
+
+        if (event.type == SDL_QUIT) {
+            ctx->running = false;
+            // In browser, we don't actually quit, but we can stop the loop
+            emscripten_cancel_main_loop();
+            return;
+        }
+        else if (event.type == SDL_WINDOWEVENT &&
+                 event.window.event == SDL_WINDOWEVENT_RESIZED) {
+            lv_obj_invalidate(lv_screen_active());
+        }
+        else if (event.type == SDL_MOUSEWHEEL) {
+            int sdlX, sdlY;
+            SDL_GetMouseState(&sdlX, &sdlY);
+            float lvglX, lvglY;
+            SDL_RenderWindowToLogical(ctx->renderer, sdlX, sdlY, &lvglX, &lvglY);
+            ctx->hwSim->handleMouseWheel(static_cast<int>(lvglX), static_cast<int>(lvglY), event.wheel.y);
+        }
+
+        ctx->input->handleEvent(event);
+    }
+
+    // --- Update ---
+    ctx->app->update();
+    ctx->coreState->update();
+
+    // --- Render ---
+    ctx->bridge->refresh();
+}
+
+// =============================================================================
+// Main Entry Point
+// =============================================================================
 int main(int argc, char* argv[]) {
-    (void)argc; (void)argv;
     using namespace Config;
 
     // ══════════════════════════════════════════════════════════════
-    // Get display DPI for real-size rendering
+    // Parse resolution from command line (set by HTML/JS)
+    // Default: 1053x1053 (same as native desktop)
     // ══════════════════════════════════════════════════════════════
+    int windowSize = 1053;
+    if (argc > 1) {
+        windowSize = atoi(argv[1]);
+        if (windowSize < 400) windowSize = 1053;
+    }
 
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+    printf("MIDI Studio WASM starting with window size: %d\n", windowSize);
 
-    // Enable linear filtering for better scaling quality (vs pixelated "nearest")
+    // ══════════════════════════════════════════════════════════════
+    // SDL Initialization
+    // ══════════════════════════════════════════════════════════════
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+        printf("SDL_Init failed: %s\n", SDL_GetError());
+        return 1;
+    }
+
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-    // Enable VSync to avoid tearing and unnecessary frames
-    SDL_SetHint(SDL_HINT_RENDER_VSYNC, "1");
-
-    // Real DPI for 27" UHD (3840x2160) = 163 DPI
-    // Note: SDL_GetDisplayDPI returns 96 on Windows (logical DPI, not physical)
-    constexpr float hdpi = 163.0f;
 
     // ══════════════════════════════════════════════════════════════
-    // Layout configuration - Screen is ALWAYS 320x240 pixels
+    // Layout configuration
     // ══════════════════════════════════════════════════════════════
-
-    // Calculate panel size from fixed screen size (320x240)
-    // Screen = 60mm wide, Panel = 190mm → ratio = 190/60 ≈ 3.167
     constexpr int SCREEN_W = 320;
-    constexpr float PANEL_TO_SCREEN_RATIO = 190.0f / 60.0f;  // ~3.167
-    constexpr int PANEL_SIZE = static_cast<int>(SCREEN_W * PANEL_TO_SCREEN_RATIO);  // ~1013
+    constexpr float PANEL_TO_SCREEN_RATIO = 190.0f / 60.0f;
+    constexpr int PANEL_SIZE = static_cast<int>(SCREEN_W * PANEL_TO_SCREEN_RATIO);
     constexpr int MARGIN = 40;
-    constexpr int LVGL_SIZE = PANEL_SIZE + MARGIN;  // ~1053
+    const int LVGL_SIZE = PANEL_SIZE + MARGIN;
 
     auto layout = desktop::HwLayout::fit(LVGL_SIZE, MARGIN / 2);
 
-    // Initial window = LVGL size (1:1), SDL can scale up
-    int initialWindowSize = LVGL_SIZE;
-
     // ══════════════════════════════════════════════════════════════
-    // SDL + LVGL (fixed render size, zoom for window scaling)
+    // LVGL + SDL Bridge
     // ══════════════════════════════════════════════════════════════
-
-    oc::ui::lvgl::SdlBridge bridge(
-        LVGL_SIZE, LVGL_SIZE,  // Fixed LVGL size (~1053)
+    static oc::ui::lvgl::SdlBridge bridge(
+        LVGL_SIZE, LVGL_SIZE,
         oc::hal::desktop::defaultTimeProvider,
         {.windowTitle = "MIDI Studio", .createInputDevices = true}
     );
     bridge.init();
 
-    // Make window resizable with minimum size = LVGL size (1:1)
-    // This ensures mouse coordinates are always valid (>= LVGL resolution)
     SDL_Window* window = bridge.getWindow();
     SDL_Renderer* renderer = bridge.getRenderer();
-    if (window) {
-        SDL_SetWindowResizable(window, SDL_TRUE);
-        SDL_SetWindowMinimumSize(window, LVGL_SIZE, LVGL_SIZE);
-    }
 
-    // Set logical size for SDL scaling (GPU handles upscaling, LVGL stays at fixed size)
     if (renderer) {
         SDL_RenderSetLogicalSize(renderer, LVGL_SIZE, LVGL_SIZE);
     }
 
-    // Dark background for the window
+    // Dark background
     lv_obj_t* screen = lv_screen_active();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x202020), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
 
     // ══════════════════════════════════════════════════════════════
-    // HwSimulator (LVGL-based)
+    // HwSimulator
     // ══════════════════════════════════════════════════════════════
-
-    desktop::HwSimulator hwSim(screen);
+    static desktop::HwSimulator hwSim(screen);
     hwSim.init(layout);
 
     // ══════════════════════════════════════════════════════════════
-    // InputMapper - Configuration
+    // InputMapper
     // ══════════════════════════════════════════════════════════════
-
-    oc::hal::desktop::InputMapper input;
-
-    // Connect HwSimulator to InputMapper (LVGL widgets → App)
+    static oc::hal::desktop::InputMapper input;
     hwSim.setInputMapper(&input);
 
-    // Visual feedback (App → HwSimulator)
-    input.setButtonFeedback([&hwSim](oc::hal::ButtonID id, bool pressed) {
+    input.setButtonFeedback([](oc::hal::ButtonID id, bool pressed) {
         hwSim.setButtonPressed(id, pressed);
     });
-    input.setEncoderFeedback([&hwSim](oc::hal::EncoderID id, float value) {
+    input.setEncoderFeedback([](oc::hal::EncoderID id, float value) {
         hwSim.setEncoderValue(id, value);
     });
 
-    // Keyboard shortcuts only (mouse is handled by LVGL widgets)
+    // Keyboard shortcuts
     input
         .button(SDLK_ESCAPE, static_cast<oc::hal::ButtonID>(ButtonID::LEFT_TOP))
         .button(SDLK_q, static_cast<oc::hal::ButtonID>(ButtonID::LEFT_CENTER))
@@ -133,27 +189,21 @@ int main(int argc, char* argv[]) {
     // ══════════════════════════════════════════════════════════════
     // Application
     // ══════════════════════════════════════════════════════════════
+    static desktop::MemoryStorage storage;
+    static core::state::CoreState coreState(storage);
 
-    desktop::MemoryStorage storage;
-    core::state::CoreState coreState(storage);
-
-    // Build the app with real MIDI transport
-    oc::hal::desktop::RtMidiConfig midiConfig;
-    midiConfig.appName = "MIDI Studio";
-    midiConfig.inputPortPattern = "core-desktop";
-    midiConfig.outputPortPattern = "core-desktop";
-
-    oc::app::OpenControlApp app = oc::hal::desktop::AppBuilder(input)
-                                      .controllers()
-                                      .midi(midiConfig)
-                                      .inputConfig(Config::Input::CONFIG);
+    // Build app with NullMidi (no real MIDI I/O, but MidiAPI available for contexts)
+    static oc::app::OpenControlApp app = oc::hal::desktop::AppBuilder()
+                                             .midi()  // NullMidiTransport
+                                             .controllers(input)
+                                             .inputConfig(Config::Input::CONFIG);
 
     core::app::registerContexts(app, coreState);
     app.begin();
 
     // Reparent app UI into the screen area
     lv_obj_t* screenArea = hwSim.getScreenArea();
-    lv_obj_t* appUI = lv_obj_get_child(screen, 1);  // First child after panel
+    lv_obj_t* appUI = lv_obj_get_child(screen, 1);
     if (appUI && appUI != hwSim.getPanel()) {
         lv_obj_set_parent(appUI, screenArea);
         lv_obj_set_pos(appUI, 0, 0);
@@ -161,50 +211,22 @@ int main(int argc, char* argv[]) {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // Main loop
+    // Setup context and start Emscripten main loop
     // ══════════════════════════════════════════════════════════════
+    g_ctx.bridge = &bridge;
+    g_ctx.input = &input;
+    g_ctx.app = &app;
+    g_ctx.coreState = &coreState;
+    g_ctx.hwSim = &hwSim;
+    g_ctx.renderer = renderer;
+    g_ctx.running = true;
 
-    bool running = true;
+    printf("Starting Emscripten main loop...\n");
 
-    while (running) {
-        // --- Events ---
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            // Forward to LVGL for widget interaction
-            lv_sdl_mouse_handler(&event);
+    // -1 = use requestAnimationFrame (synced to display refresh)
+    // true = simulate infinite loop (don't return from main)
+    emscripten_set_main_loop_arg(main_loop_iteration, &g_ctx, -1, true);
 
-            if (event.type == SDL_QUIT) {
-                running = false;
-            }
-            else if (event.type == SDL_WINDOWEVENT &&
-                     event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                // Force LVGL to redraw on window resize
-                // SDL_RenderSetLogicalSize handles the scaling, but we need to trigger a refresh
-                lv_obj_invalidate(lv_screen_active());
-            }
-            else if (event.type == SDL_MOUSEWHEEL) {
-                // Mouse wheel over encoders
-                // Convert SDL window coords to LVGL logical coords
-                int sdlX, sdlY;
-                SDL_GetMouseState(&sdlX, &sdlY);
-                float lvglX, lvglY;
-                SDL_RenderWindowToLogical(renderer, sdlX, sdlY, &lvglX, &lvglY);
-                hwSim.handleMouseWheel(static_cast<int>(lvglX), static_cast<int>(lvglY), event.wheel.y);
-            }
-
-            input.handleEvent(event);
-        }
-
-        // --- Update ---
-        app.update();
-        coreState.update();
-
-        // --- Render ---
-        bridge.refresh();
-        SDL_Delay(1);
-    }
-
-    // --- Cleanup ---
-    SDL_Quit();
+    // This line is never reached (emscripten_set_main_loop doesn't return)
     return 0;
 }

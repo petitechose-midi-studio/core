@@ -23,6 +23,68 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ==============================================================================
+# Cross-compilation: Linux target needs special handling
+# This must be set BEFORE any add_subdirectory() calls
+# ==============================================================================
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_compile_definitions(_GNU_SOURCE)
+    # Zig is stricter than native GCC - allow implicit function declarations
+    # (LVGL has some missing #include <string.h> for memset)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=implicit-function-declaration")
+    message(STATUS "Linux target: added _GNU_SOURCE and relaxed implicit-function-declaration")
+    
+    # Cross-compile from Windows: setup pkg-config for sysroot
+    if(CMAKE_HOST_WIN32)
+        set(LINUX_SYSROOT "${CMAKE_SOURCE_DIR}/tools/linux-sysroot")
+        if(EXISTS "${LINUX_SYSROOT}/usr/include")
+            message(STATUS "Configuring pkg-config for Linux sysroot")
+            set(ENV{PKG_CONFIG_SYSROOT_DIR} "${LINUX_SYSROOT}")
+            set(ENV{PKG_CONFIG_LIBDIR} "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/pkgconfig;${LINUX_SYSROOT}/usr/lib/pkgconfig;${LINUX_SYSROOT}/usr/share/pkgconfig")
+            set(ENV{PKG_CONFIG_PATH} "")
+            
+            # Disable backends that require host tools or complex dependencies
+            set(SDL_WAYLAND OFF CACHE BOOL "Disable Wayland (requires wayland-scanner)" FORCE)
+            set(SDL_KMSDRM OFF CACHE BOOL "Disable KMSDRM (requires kernel headers)" FORCE)
+            set(SDL_DBUS OFF CACHE BOOL "Disable DBus (requires libdbus-1-dev)" FORCE)
+            set(SDL_PULSEAUDIO OFF CACHE BOOL "Disable PulseAudio (requires libpulse-dev)" FORCE)
+            set(SDL_PIPEWIRE OFF CACHE BOOL "Disable PipeWire (requires libpipewire)" FORCE)
+            
+            # Force X11 support with STATIC linking (we have .a files, not .so)
+            set(SDL_X11 ON CACHE BOOL "Enable X11" FORCE)
+            set(SDL_X11_SHARED OFF CACHE BOOL "Link X11 statically" FORCE)
+            
+            # Tell CMake where to find X11 in our sysroot (static libs)
+            set(X11_INCLUDE_DIR "${LINUX_SYSROOT}/usr/include" CACHE PATH "X11 include dir" FORCE)
+            set(X11_X11_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "X11 include" FORCE)
+            set(X11_FOUND TRUE CACHE BOOL "X11 found" FORCE)
+            
+            # Static libraries
+            set(X11_LIBRARIES "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libX11.a" CACHE FILEPATH "X11 library" FORCE)
+            set(X11_X11_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libX11.a" CACHE FILEPATH "X11 lib" FORCE)
+            set(X11_Xext_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXext.a" CACHE FILEPATH "Xext lib" FORCE)
+            
+            # X11 extensions (static)
+            set(X11_Xcursor_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
+            set(X11_Xcursor_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXcursor.a" CACHE FILEPATH "" FORCE)
+            set(X11_Xfixes_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
+            set(X11_Xfixes_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXfixes.a" CACHE FILEPATH "" FORCE)
+            set(X11_Xi_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
+            set(X11_Xi_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXi.a" CACHE FILEPATH "" FORCE)
+            set(X11_Xrandr_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
+            set(X11_Xrandr_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXrandr.a" CACHE FILEPATH "" FORCE)
+            set(X11_Xss_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
+            set(X11_Xss_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXss.a" CACHE FILEPATH "" FORCE)
+            
+            # xcb dependencies (needed by X11)
+            set(X11_xcb_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libxcb.a" CACHE FILEPATH "" FORCE)
+            set(X11_Xau_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXau.a" CACHE FILEPATH "" FORCE)
+            set(X11_Xdmcp_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXdmcp.a" CACHE FILEPATH "" FORCE)
+            set(X11_Xrender_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXrender.a" CACHE FILEPATH "" FORCE)
+        endif()
+    endif()
+endif()
+
+# ==============================================================================
 # Project paths
 # ==============================================================================
 set(MIDI_STUDIO_ROOT "${CMAKE_SOURCE_DIR}/..")
@@ -220,18 +282,35 @@ target_compile_definitions(midi_studio_desktop PRIVATE OC_DESKTOP=1
 )
 
 # ==============================================================================
-# Platform-specific
+# Platform-specific (based on target, not host)
 # ==============================================================================
-if(WIN32)
+# Detect target platform from CMAKE_SYSTEM_NAME (set by toolchain for cross-compile)
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(TARGET_WINDOWS TRUE)
+    set(TARGET_LINUX FALSE)
+    set(TARGET_MACOS FALSE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(TARGET_WINDOWS FALSE)
+    set(TARGET_LINUX TRUE)
+    set(TARGET_MACOS FALSE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(TARGET_WINDOWS FALSE)
+    set(TARGET_LINUX FALSE)
+    set(TARGET_MACOS TRUE)
+endif()
+
+message(STATUS "Target platform: ${CMAKE_SYSTEM_NAME}")
+
+if(TARGET_WINDOWS)
     if(MSVC)
         target_link_options(midi_studio_desktop PRIVATE "/SUBSYSTEM:CONSOLE")
     else()
         target_link_options(midi_studio_desktop PRIVATE "-mconsole")
     endif()
-    target_link_libraries(midi_studio_desktop PRIVATE winmm imm32 setupapi version dwmapi)
+    target_link_libraries(midi_studio_desktop PRIVATE winmm imm32 setupapi version dwmapi ws2_32)
 endif()
 
-if(UNIX AND NOT APPLE)
+if(TARGET_LINUX)
     target_link_libraries(midi_studio_desktop PRIVATE m pthread)
 endif()
 

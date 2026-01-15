@@ -1,9 +1,10 @@
 # midi-studio/core - Migration Plan & Tracking
 
 ## État Global
-- **Phase actuelle:** Phase 3 ✅ → Phase 4
-- **Dernière màj:** 2025-12-08
-- **Validation hardware:** Phase 3 OK (Buttons + Encoders → Serial output)
+- **Phase actuelle:** Phase 4 ✅ (MIDI + UI) - TERMINÉ
+- **Dernière màj:** 2025-01-14
+- **Validation hardware:** Phase 4 OK - Standalone fonctionnel
+- **Note:** Ce plan est pour midi-studio/core. Voir bitwig-desktop-plan.md pour plugin-bitwig desktop.
 
 ---
 
