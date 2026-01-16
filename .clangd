@@ -1,8 +1,21 @@
+# Unified clangd config for Teensy + SDL builds
+# Run `pio run` then `./sdl/build.sh native` to generate merged compile_commands.json
+#
+# IMPORTANT: Add this to VS Code settings.json for cross-compilation support:
+#   "clangd.arguments": ["--query-driver=**/arm-none-eabi-*,**/c++.exe"]
+
 CompileFlags:
   CompilationDatabase: .
-  Add:
-    - --query-driver=**/arm-none-eabi-*
 
 Diagnostics:
   Suppress:
-    - ovl_diff_return_type  # GCC/Clang incompatibility in external libs (Teensy/Arduino)
+    - ovl_diff_return_type
+
+---
+
+# SDL files: use MinGW target (not MSVC)
+If:
+  PathMatch: sdl/.*
+CompileFlags:
+  Add:
+    - --target=x86_64-w64-mingw32

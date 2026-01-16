@@ -2,15 +2,10 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build Desktop Debug",
+            "label": "Build SDL Debug",
             "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build",
-                "desktop/build",
-                "--target",
-                "midi_studio_desktop"
-            ],
+            "command": "ninja",
+            "args": ["-C", "sdl/build/debug"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -19,33 +14,34 @@
                 "isDefault": true
             },
             "problemMatcher": ["$gcc"],
-            "detail": "Build desktop simulator with debug symbols"
+            "detail": "Build SDL simulator with debug symbols"
         },
         {
-            "label": "Configure Desktop Debug",
+            "label": "Configure SDL Debug",
             "type": "shell",
             "command": "cmake",
             "args": [
-                "-B",
-                "desktop/build",
-                "-G",
-                "MinGW Makefiles",
+                "-G", "Ninja",
+                "-S", "sdl",
+                "-B", "sdl/build/debug",
                 "-DCMAKE_BUILD_TYPE=Debug",
-                "desktop"
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DPLATFORM_ID=native",
+                "-DSDL2_ROOT=${workspaceFolder}/sdl/tools/SDL2"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "Configure CMake for desktop debug build"
+            "detail": "Configure CMake for SDL debug build"
         },
         {
-            "label": "Clean Desktop",
+            "label": "Clean SDL",
             "type": "shell",
             "command": "cmake",
             "args": [
                 "--build",
-                "desktop/build",
+                "sdl/build/debug",
                 "--target",
                 "clean"
             ],
@@ -53,14 +49,14 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "Clean desktop build"
+            "detail": "Clean SDL build"
         },
         {
-            "label": "Full Rebuild Desktop",
-            "dependsOn": ["Configure Desktop Debug", "Build Desktop Debug"],
+            "label": "Full Rebuild SDL Debug",
+            "dependsOn": ["Configure SDL Debug", "Build SDL Debug"],
             "dependsOrder": "sequence",
             "problemMatcher": [],
-            "detail": "Clean configure and build desktop"
+            "detail": "Clean configure and build SDL debug"
         }
     ]
 }

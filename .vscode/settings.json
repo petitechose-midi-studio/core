@@ -23,10 +23,10 @@
     },
 
     // Disable C/C++ IntelliSense (use clangd instead)
-    "C_Cpp.intelliSenseEngine": "default",
-    // Clangd settings
+    "C_Cpp.intelliSenseEngine": "disabled",
+    // Clangd settings (query-driver needed for cross-compilation)
     "clangd.arguments": [
-        "--query-driver=**/arm-none-eabi-*"
+        "--query-driver=**/arm-none-eabi-*,**/c++.exe,**/gcc.exe"
     ],
     // Clang-format settings
     "C_Cpp.formatting": "clangFormat",
@@ -52,5 +52,5 @@
     "taskexplorer.taskButtons.clickAction": "Execute",
     "taskexplorer.usage.enabled": false,
     "workbench.editor.enablePreview": false,
-    "cmake.sourceDirectory": "C:/Users/miu-lab/petitechose-audio/midi-studio/core/desktop"
+    "cmake.sourceDirectory": "C:/Users/miu-lab/petitechose-audio/midi-studio/core/sdl"
 }
