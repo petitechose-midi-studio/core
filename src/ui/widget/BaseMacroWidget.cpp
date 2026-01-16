@@ -4,7 +4,7 @@
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include "ui/font/CoreFonts.hpp"
-#include "ui/font/Icon.hpp"
+#include "ui/font/StandaloneIcons.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -13,6 +13,7 @@ namespace core::ui {
 namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 namespace stheme = standalone::theme;
+namespace icons = standalone::icons;
 
 BaseMacroWidget::BaseMacroWidget(uint8_t index)
     : index_(index) {}
@@ -76,7 +77,7 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     if (standalone_fonts.icons_12) {
         ch_prefix_->font(standalone_fonts.icons_12);
     }
-    ch_prefix_->setText(icon::MIDI_CHANNEL);
+    ch_prefix_->setText(icons::MIDI_CHANNEL);
     lv_obj_set_grid_cell(ch_prefix_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);
@@ -113,7 +114,7 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     if (standalone_fonts.icons_12) {
         cc_prefix_->font(standalone_fonts.icons_12);
     }
-    cc_prefix_->setText(icon::MIDI_CC);
+    cc_prefix_->setText(icons::MIDI_CC);
     lv_obj_set_grid_cell(cc_prefix_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
         LV_GRID_ALIGN_CENTER, 0, 1);

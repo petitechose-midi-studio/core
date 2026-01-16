@@ -1,54 +1,18 @@
 #!/bin/bash
-# Icon Font Builder - SVG to TTF with incremental builds
+# Icon Font Builder - Wrapper for unified builder
+# Usage: ./generate_icons.sh
 
 set -e
 
-# --- Find project root ---
-find_root() {
-    local dir="$(pwd)"
-    while [[ "$dir" != "/" ]]; do
-        [[ -f "$dir/platformio.ini" ]] && echo "$dir" && return
-        dir="$(dirname "$dir")"
-    done
-    echo "$(pwd)"
-}
+# Get script directory and derive paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# core/script/lvgl/icon -> core -> midi-studio
+CORE_ROOT="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
+MIDI_STUDIO_ROOT="$(dirname "$CORE_ROOT")"
+BUILDER="$MIDI_STUDIO_ROOT/script/icon/builder.py"
 
-PROJECT_ROOT="$(find_root)"
-SCRIPT_DIR="$PROJECT_ROOT/script/lvgl/icon"
+# Check builder exists
+[[ -f "$BUILDER" ]] || { echo "Builder not found: $BUILDER" >&2; exit 1; }
 
-# --- Colors ---
-RED='\033[0;31m'    GREEN='\033[0;32m'  YELLOW='\033[1;33m'
-BLUE='\033[0;34m'   BOLD='\033[1m'      DIM='\033[2m'  NC='\033[0m'
-
-# --- Helpers ---
-error() { echo -e "${RED}✗${NC} $1" >&2; exit 1; }
-
-# --- Check dependencies ---
-check_deps() {
-    local missing=()
-
-    [[ -f "$SCRIPT_DIR/build.py" ]] || missing+=("build.py not found")
-    [[ -f "$SCRIPT_DIR/config.py" ]] || missing+=("config.py not found")
-    command -v python &>/dev/null || missing+=("python")
-
-    if ((${#missing[@]} > 0)); then
-        echo -e "\n${BOLD}${RED}Missing dependencies:${NC}"
-        for dep in "${missing[@]}"; do
-            echo -e "  ${RED}✗${NC} $dep"
-        done
-        echo
-        exit 1
-    fi
-}
-
-# --- Main ---
-main() {
-    # Check deps
-    check_deps
-
-    # Run Python script
-    cd "$PROJECT_ROOT"
-    python "$SCRIPT_DIR/build.py" "$@"
-}
-
-main "$@"
+# Run unified builder for core
+python "$BUILDER" core "$@"

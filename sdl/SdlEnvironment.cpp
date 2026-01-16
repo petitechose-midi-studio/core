@@ -1,9 +1,9 @@
 /**
- * @file SdlRunner.cpp
- * @brief SDL runtime implementation
+ * @file SdlEnvironment.cpp
+ * @brief SDL environment implementation
  */
 
-#include "SdlRunner.hpp"
+#include "SdlEnvironment.hpp"
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
@@ -16,27 +16,23 @@ extern "C" {
     void lv_sdl_mouse_handler(SDL_Event* event);
 }
 
-// Framework
 #include <oc/hal/sdl/Sdl.hpp>
-#include <oc/hal/midi/LibreMidiTransport.hpp>
 #include <oc/ui/lvgl/SdlBridge.hpp>
+#include <oc/ui/lvgl/Screen.hpp>
 
-// Application
-#include "app/AppLogic.hpp"
-#include <config/App.hpp>
 #include <config/InputIDs.hpp>
-#include "state/CoreState.hpp"
-#include "MemoryStorage.hpp"
 #include "HwLayout.hpp"
 #include "HwSimulator.hpp"
 
-SdlRunner::SdlRunner() = default;
+namespace sdl {
 
-SdlRunner::~SdlRunner() {
+SdlEnvironment::SdlEnvironment() = default;
+
+SdlEnvironment::~SdlEnvironment() {
     shutdown();
 }
 
-bool SdlRunner::init(int argc, char** argv) {
+bool SdlEnvironment::init(int argc, char** argv) {
     using namespace Config;
 
     // Parse window size from args (used by HTML/JS for responsive sizing)
@@ -59,7 +55,8 @@ bool SdlRunner::init(int argc, char** argv) {
     constexpr int PANEL_SIZE = static_cast<int>(SCREEN_W * PANEL_TO_SCREEN_RATIO);
     constexpr int MARGIN = 40;
     const int LVGL_SIZE = PANEL_SIZE + MARGIN;
-    auto layout = desktop::HwLayout::fit(LVGL_SIZE, MARGIN / 2);
+    
+    layout_ = std::make_unique<desktop::HwLayout>(desktop::HwLayout::fit(LVGL_SIZE, MARGIN / 2));
 
     // LVGL + SDL Bridge
     bridge_ = std::make_unique<oc::ui::lvgl::SdlBridge>(
@@ -81,9 +78,12 @@ bool SdlRunner::init(int argc, char** argv) {
 
     // Hardware simulator
     hwSim_ = std::make_unique<desktop::HwSimulator>(screen);
-    hwSim_->init(layout);
+    hwSim_->init(*layout_);
 
-    // Input
+    // Configure Screen root for app UI (contexts will use Screen::root())
+    oc::ui::lvgl::Screen::setRoot(hwSim_->getScreenArea());
+
+    // Input mapper
     input_ = std::make_unique<oc::hal::sdl::InputMapper>();
     hwSim_->setInputMapper(input_.get());
 
@@ -94,7 +94,15 @@ bool SdlRunner::init(int argc, char** argv) {
         hwSim_->setEncoderValue(id, value);
     });
 
-    // Keyboard mappings
+    setupKeyboardMappings();
+
+    running_ = true;
+    return true;
+}
+
+void SdlEnvironment::setupKeyboardMappings() {
+    using namespace Config;
+
     input_->button(SDLK_ESCAPE, static_cast<oc::hal::ButtonID>(ButtonID::LEFT_TOP))
         .button(SDLK_q, static_cast<oc::hal::ButtonID>(ButtonID::LEFT_CENTER))
         .button(SDLK_a, static_cast<oc::hal::ButtonID>(ButtonID::LEFT_BOTTOM))
@@ -112,40 +120,9 @@ bool SdlRunner::init(int argc, char** argv) {
         .button(SDLK_SPACE, static_cast<oc::hal::ButtonID>(ButtonID::NAV))
         .encoder(SDLK_UP, SDLK_DOWN, static_cast<oc::hal::EncoderID>(EncoderID::NAV), 0.05f)
         .encoder(SDLK_LEFT, SDLK_RIGHT, static_cast<oc::hal::EncoderID>(EncoderID::OPT), 0.02f);
-
-    // Application
-    storage_ = std::make_unique<desktop::MemoryStorage>();
-    coreState_ = std::make_unique<core::state::CoreState>(*storage_);
-
-    app_ = std::make_unique<oc::app::OpenControlApp>(
-        oc::hal::sdl::AppBuilder()
-            .midi(std::make_unique<oc::hal::midi::LibreMidiTransport>(
-                oc::hal::midi::LibreMidiConfig{
-                    .appName = "MIDI Studio",
-                    .inputPortPattern = "IN [core-desktop]",
-                    .outputPortPattern = "OUT [core-desktop]"
-                }))
-            .controllers(*input_)
-            .inputConfig(Config::Input::CONFIG)
-    );
-
-    core::app::registerContexts(*app_, *coreState_);
-    app_->begin();
-
-    // Reparent app UI into screen area
-    lv_obj_t* screenArea = hwSim_->getScreenArea();
-    lv_obj_t* appUI = lv_obj_get_child(screen, 1);
-    if (appUI && appUI != hwSim_->getPanel()) {
-        lv_obj_set_parent(appUI, screenArea);
-        lv_obj_set_pos(appUI, 0, 0);
-        lv_obj_set_size(appUI, layout.screenW, layout.screenH);
-    }
-
-    running_ = true;
-    return true;
 }
 
-bool SdlRunner::tick() {
+bool SdlEnvironment::processEvents() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         lv_sdl_mouse_handler(&event);
@@ -154,12 +131,12 @@ bool SdlRunner::tick() {
             running_ = false;
             return false;
         }
-        
-        if (event.type == SDL_WINDOWEVENT && 
+
+        if (event.type == SDL_WINDOWEVENT &&
             event.window.event == SDL_WINDOWEVENT_RESIZED) {
             lv_obj_invalidate(lv_screen_active());
         }
-        
+
         if (event.type == SDL_MOUSEWHEEL) {
             int sdlX, sdlY;
             SDL_GetMouseState(&sdlX, &sdlY);
@@ -171,21 +148,25 @@ bool SdlRunner::tick() {
         input_->handleEvent(event);
     }
 
-    app_->update();
-    coreState_->update();
-    bridge_->refresh();
-
     return running_;
 }
 
-void SdlRunner::shutdown() {
-    app_.reset();
-    coreState_.reset();
-    storage_.reset();
+void SdlEnvironment::refresh() {
+    bridge_->refresh();
+}
+
+void SdlEnvironment::shutdown() {
     input_.reset();
     hwSim_.reset();
+    layout_.reset();
     bridge_.reset();
-    
+
     SDL_Quit();
     running_ = false;
 }
+
+lv_obj_t* SdlEnvironment::getScreenArea() const {
+    return hwSim_ ? hwSim_->getScreenArea() : nullptr;
+}
+
+}  // namespace sdl

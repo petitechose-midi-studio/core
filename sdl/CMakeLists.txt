@@ -1,410 +1,194 @@
 cmake_minimum_required(VERSION 3.16)
-project(midi_studio_sdl C CXX)
+project(midi_studio C CXX)
 
 # ==============================================================================
-# Unity Build désactivé (conflits de namespace alias dans le code)
+# Platform Detection
 # ==============================================================================
-set(CMAKE_UNITY_BUILD OFF)
+if(EMSCRIPTEN)
+    set(BUILD_WASM TRUE)
+    set(BUILD_NATIVE FALSE)
+    message(STATUS "Target: WebAssembly")
+else()
+    set(BUILD_WASM FALSE)
+    set(BUILD_NATIVE TRUE)
+    message(STATUS "Target: Native (${CMAKE_SYSTEM_NAME})")
+endif()
 
 # ==============================================================================
-# C/C++ Standards
+# Build Settings
 # ==============================================================================
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Default to Release (faster builds & runtime)
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# Generate compile_commands.json for IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_UNITY_BUILD OFF)
 
-# Debug symbols for GDB
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0")
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+endif()
+
+if(BUILD_WASM)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s USE_SDL=2")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2")
 endif()
 
 # ==============================================================================
-# Performance: Precompiled Headers
+# Paths
 # ==============================================================================
-set(USE_PCH ON CACHE BOOL "Use precompiled headers")
-
-# ==============================================================================
-# Cross-compilation: Linux target needs special handling
-# This must be set BEFORE any add_subdirectory() calls
-# ==============================================================================
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_compile_definitions(_GNU_SOURCE)
-    # Zig is stricter than native GCC - allow implicit function declarations
-    # (LVGL has some missing #include <string.h> for memset)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=implicit-function-declaration")
-    message(STATUS "Linux target: added _GNU_SOURCE and relaxed implicit-function-declaration")
-    
-    # Cross-compile from Windows: setup pkg-config for sysroot
-    if(CMAKE_HOST_WIN32)
-        set(LINUX_SYSROOT "${CMAKE_SOURCE_DIR}/tools/linux-sysroot")
-        if(EXISTS "${LINUX_SYSROOT}/usr/include")
-            message(STATUS "Configuring pkg-config for Linux sysroot")
-            set(ENV{PKG_CONFIG_SYSROOT_DIR} "${LINUX_SYSROOT}")
-            set(ENV{PKG_CONFIG_LIBDIR} "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/pkgconfig;${LINUX_SYSROOT}/usr/lib/pkgconfig;${LINUX_SYSROOT}/usr/share/pkgconfig")
-            set(ENV{PKG_CONFIG_PATH} "")
-            
-            # Disable backends that require host tools or complex dependencies
-            set(SDL_WAYLAND OFF CACHE BOOL "Disable Wayland (requires wayland-scanner)" FORCE)
-            set(SDL_KMSDRM OFF CACHE BOOL "Disable KMSDRM (requires kernel headers)" FORCE)
-            set(SDL_DBUS OFF CACHE BOOL "Disable DBus (requires libdbus-1-dev)" FORCE)
-            set(SDL_PULSEAUDIO OFF CACHE BOOL "Disable PulseAudio (requires libpulse-dev)" FORCE)
-            set(SDL_PIPEWIRE OFF CACHE BOOL "Disable PipeWire (requires libpipewire)" FORCE)
-            
-            # Force X11 support with STATIC linking (we have .a files, not .so)
-            set(SDL_X11 ON CACHE BOOL "Enable X11" FORCE)
-            set(SDL_X11_SHARED OFF CACHE BOOL "Link X11 statically" FORCE)
-            
-            # Tell CMake where to find X11 in our sysroot (static libs)
-            set(X11_INCLUDE_DIR "${LINUX_SYSROOT}/usr/include" CACHE PATH "X11 include dir" FORCE)
-            set(X11_X11_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "X11 include" FORCE)
-            set(X11_FOUND TRUE CACHE BOOL "X11 found" FORCE)
-            
-            # Static libraries
-            set(X11_LIBRARIES "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libX11.a" CACHE FILEPATH "X11 library" FORCE)
-            set(X11_X11_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libX11.a" CACHE FILEPATH "X11 lib" FORCE)
-            set(X11_Xext_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXext.a" CACHE FILEPATH "Xext lib" FORCE)
-            
-            # X11 extensions (static)
-            set(X11_Xcursor_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
-            set(X11_Xcursor_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXcursor.a" CACHE FILEPATH "" FORCE)
-            set(X11_Xfixes_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
-            set(X11_Xfixes_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXfixes.a" CACHE FILEPATH "" FORCE)
-            set(X11_Xi_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
-            set(X11_Xi_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXi.a" CACHE FILEPATH "" FORCE)
-            set(X11_Xrandr_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
-            set(X11_Xrandr_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXrandr.a" CACHE FILEPATH "" FORCE)
-            set(X11_Xss_INCLUDE_PATH "${LINUX_SYSROOT}/usr/include" CACHE PATH "" FORCE)
-            set(X11_Xss_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXss.a" CACHE FILEPATH "" FORCE)
-            
-            # xcb dependencies (needed by X11)
-            set(X11_xcb_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libxcb.a" CACHE FILEPATH "" FORCE)
-            set(X11_Xau_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXau.a" CACHE FILEPATH "" FORCE)
-            set(X11_Xdmcp_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXdmcp.a" CACHE FILEPATH "" FORCE)
-            set(X11_Xrender_LIB "${LINUX_SYSROOT}/usr/lib/x86_64-linux-gnu/libXrender.a" CACHE FILEPATH "" FORCE)
-        endif()
-    endif()
-endif()
-
-# ==============================================================================
-# Project paths
-# ==============================================================================
-set(MIDI_STUDIO_ROOT "${CMAKE_SOURCE_DIR}/..")
+set(SDL_DIR "${CMAKE_SOURCE_DIR}")
+set(MIDI_STUDIO_ROOT "${SDL_DIR}/..")
 set(OPEN_CONTROL_ROOT "${MIDI_STUDIO_ROOT}/../../open-control")
-
-# midi-studio paths
 set(CONFIG_DIR "${MIDI_STUDIO_ROOT}/src/config")
-set(SDL_DIR "${CMAKE_SOURCE_DIR}")  # sdl/ directory (lv_conf.h, HwSimulator, etc.)
 set(CORE_SRC "${MIDI_STUDIO_ROOT}/src")
 
-# PlatformIO deps (from midi-studio/core build)
-# Use "dev" environment (or "release" - check which exists)
-if(EXISTS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
-    set(PIO_ENV_DIR "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
-elseif(EXISTS "${MIDI_STUDIO_ROOT}/.pio/libdeps/release")
-    set(PIO_ENV_DIR "${MIDI_STUDIO_ROOT}/.pio/libdeps/release")
-else()
-    message(FATAL_ERROR "No PlatformIO environment found. Run 'pio run' in midi-studio/core first.")
+# App config (core or plugin)
+if(NOT DEFINED APP_PATH)
+    set(APP_PATH "${SDL_DIR}")
+endif()
+include("${APP_PATH}/app.cmake")
+message(STATUS "App: ${APP_ID}")
+
+# Output directory (can be overridden by -DBIN_OUTPUT_DIR=...)
+if(NOT DEFINED BIN_OUTPUT_DIR)
+    set(BIN_OUTPUT_DIR "${MIDI_STUDIO_ROOT}/bin")
 endif()
 
-# ==============================================================================
-# Resolve PlatformIO dependency
-# ==============================================================================
-function(resolve_pio_dep DEP_NAME OUT_VAR)
-    set(DEP_DIR "${PIO_ENV_DIR}/${DEP_NAME}")
-    set(DEP_LINK "${PIO_ENV_DIR}/${DEP_NAME}.pio-link")
+# PlatformIO deps
+if(EXISTS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
+    set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
+else()
+    set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/release")
+endif()
 
-    if(EXISTS "${DEP_DIR}" AND IS_DIRECTORY "${DEP_DIR}")
-        set(${OUT_VAR} "${DEP_DIR}" PARENT_SCOPE)
-        return()
+# Resolve symlinked PIO dependency
+function(pio_dep NAME OUT)
+    if(EXISTS "${PIO_LIBDEPS}/${NAME}")
+        set(${OUT} "${PIO_LIBDEPS}/${NAME}" PARENT_SCOPE)
+    elseif(EXISTS "${PIO_LIBDEPS}/${NAME}.pio-link")
+        file(READ "${PIO_LIBDEPS}/${NAME}.pio-link" LINK)
+        string(REGEX MATCH "symlink://([^\"]+)" _ "${LINK}")
+        set(${OUT} "${MIDI_STUDIO_ROOT}/${CMAKE_MATCH_1}" PARENT_SCOPE)
     endif()
-
-    if(EXISTS "${DEP_LINK}")
-        file(READ "${DEP_LINK}" LINK_CONTENT)
-        string(REGEX MATCH "\"uri\": *\"symlink://([^\"]+)\"" _ "${LINK_CONTENT}")
-        if(CMAKE_MATCH_1)
-            get_filename_component(RESOLVED_PATH "${MIDI_STUDIO_ROOT}/${CMAKE_MATCH_1}" ABSOLUTE)
-            set(${OUT_VAR} "${RESOLVED_PATH}" PARENT_SCOPE)
-            return()
-        endif()
-    endif()
-
-    message(FATAL_ERROR "${DEP_NAME} not found. Run 'pio pkg install' in midi-studio/core first.")
 endfunction()
+
+pio_dep(lvgl LVGL_DIR)
+
+# Open Control paths
+set(OC_FRAMEWORK "${OPEN_CONTROL_ROOT}/framework/src")
+set(OC_UI_LVGL "${OPEN_CONTROL_ROOT}/ui-lvgl/src")
+set(OC_UI_COMPONENTS "${OPEN_CONTROL_ROOT}/ui-lvgl-components")
+set(OC_HAL_SDL "${OPEN_CONTROL_ROOT}/hal-sdl/src")
+set(OC_HAL_NET "${OPEN_CONTROL_ROOT}/hal-net/src")
+set(OC_HAL_MIDI "${OPEN_CONTROL_ROOT}/hal-midi/src")
 
 # ==============================================================================
 # Dependencies
 # ==============================================================================
-resolve_pio_dep("lvgl" LVGL_DIR)
-
-set(FRAMEWORK_DIR "${OPEN_CONTROL_ROOT}/framework")
-set(UI_LVGL_DIR "${OPEN_CONTROL_ROOT}/ui-lvgl")
-set(HAL_SDL_DIR "${OPEN_CONTROL_ROOT}/hal-sdl")
-set(HAL_NET_DIR "${OPEN_CONTROL_ROOT}/hal-net")
-set(HAL_MIDI_DIR "${OPEN_CONTROL_ROOT}/hal-midi")
-set(UI_LVGL_COMPONENTS_DIR "${OPEN_CONTROL_ROOT}/ui-lvgl-components")
-
-message(STATUS "LVGL: ${LVGL_DIR}")
-message(STATUS "Framework: ${FRAMEWORK_DIR}")
-message(STATUS "UI-LVGL: ${UI_LVGL_DIR}")
-message(STATUS "HAL-SDL: ${HAL_SDL_DIR}")
-message(STATUS "HAL-Net: ${HAL_NET_DIR}")
-message(STATUS "HAL-MIDI: ${HAL_MIDI_DIR}")
-message(STATUS "UI-LVGL-Components: ${UI_LVGL_COMPONENTS_DIR}")
-message(STATUS "Config: ${CONFIG_DIR}")
-message(STATUS "SDL Dir: ${SDL_DIR}")
-
-# ==============================================================================
-# SDL2 - Pre-built (fast) or FetchContent (fallback)
-# ==============================================================================
 include(FetchContent)
-set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/deps")
+set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
-if(DEFINED SDL2_ROOT AND EXISTS "${SDL2_ROOT}/include/SDL2/SDL.h")
-    # ========== PRE-BUILT SDL2 (instant configuration) ==========
-    message(STATUS "Using pre-built SDL2: ${SDL2_ROOT}")
-    
-    # Both paths needed: SDL2/SDL.h for some code, SDL.h for hal-sdl
-    set(SDL2_INCLUDE_DIR "${SDL2_ROOT}/include;${SDL2_ROOT}/include/SDL2")
-    set(SDL2_LIBRARY "${SDL2_ROOT}/lib/libSDL2.a")
-    set(SDL2MAIN_LIBRARY "${SDL2_ROOT}/lib/libSDL2main.a")
-    
-    # Create imported target for SDL2
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/libremidi.cmake)
+
+# SDL2 (native only - WASM uses Emscripten's SDL)
+if(BUILD_NATIVE AND DEFINED SDL2_ROOT)
+    set(SDL2_INCLUDE "${SDL2_ROOT}/include;${SDL2_ROOT}/include/SDL2")
     add_library(SDL2-static STATIC IMPORTED GLOBAL)
     set_target_properties(SDL2-static PROPERTIES
-        IMPORTED_LOCATION "${SDL2_LIBRARY}"
-        INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE_DIR}"
-    )
-    
-    # Windows system libraries required by SDL2
+        IMPORTED_LOCATION "${SDL2_ROOT}/lib/libSDL2.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE}")
     if(WIN32)
         set_target_properties(SDL2-static PROPERTIES
-            INTERFACE_LINK_LIBRARIES "mingw32;winmm;imm32;ole32;oleaut32;version;uuid;advapi32;setupapi;shell32;dinput8;dxguid;dxerr8;user32;gdi32;hid;opengl32"
-        )
+            INTERFACE_LINK_LIBRARIES "mingw32;winmm;imm32;ole32;oleaut32;version;uuid;advapi32;setupapi;shell32;dinput8;dxguid;dxerr8;user32;gdi32;hid;opengl32")
     endif()
-    
-    set(SDL2_TARGET "SDL2-static")
-    
-else()
-    # ========== FETCHCONTENT FALLBACK ==========
-    message(STATUS "SDL2_ROOT not set, using FetchContent (slower)...")
-    message(STATUS "  Tip: Run 'build.cmd setup' to download pre-built SDL2")
-    
-    FetchContent_Declare(
-        SDL2
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-        GIT_TAG        release-2.32.10
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-    )
-    
-    # Disable unnecessary SDL2 features
-    set(SDL_TEST OFF CACHE BOOL "" FORCE)
-    set(SDL_TESTS OFF CACHE BOOL "" FORCE)
-    set(SDL2_DISABLE_SDL2MAIN ON CACHE BOOL "" FORCE)
-    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-    set(SDL_STATIC ON CACHE BOOL "" FORCE)
-    set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
-    set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
-    set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
-    set(SDL_POWER OFF CACHE BOOL "" FORCE)
-    set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
-    set(SDL_LOCALE OFF CACHE BOOL "" FORCE)
-    set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
-    set(SDL_LIBC ON CACHE BOOL "" FORCE)
-    
-    if(WIN32)
-        set(PKG_CONFIG_EXECUTABLE "" CACHE STRING "" FORCE)
-        set(SDL_WASAPI OFF CACHE BOOL "" FORCE)
-        set(SDL_DIRECTSOUND OFF CACHE BOOL "" FORCE)
-    endif()
-    
-    FetchContent_MakeAvailable(SDL2)
-    FetchContent_GetProperties(SDL2 SOURCE_DIR SDL2_SOURCE_DIR)
-    set(SDL2_INCLUDE_DIR "${SDL2_SOURCE_DIR}/include")
-    set(SDL2_TARGET "SDL2::SDL2-static")
 endif()
 
-# ==============================================================================
-# libremidi (FetchContent) - Real MIDI support
-# ==============================================================================
-message(STATUS "Fetching libremidi...")
-FetchContent_Declare(
-    libremidi
-    GIT_REPOSITORY https://github.com/celtera/libremidi.git
-    GIT_TAG        v5.4.1
-    GIT_SHALLOW    TRUE
-    GIT_PROGRESS   TRUE
-)
-
-set(LIBREMIDI_HEADER_ONLY ON CACHE BOOL "" FORCE)
-set(LIBREMIDI_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(LIBREMIDI_TESTS OFF CACHE BOOL "" FORCE)
-set(LIBREMIDI_NO_WINMIDI ON CACHE BOOL "" FORCE)
-set(LIBREMIDI_NO_WINUWP ON CACHE BOOL "" FORCE)
-set(LIBREMIDI_DOWNLOAD_CPPWINRT OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(libremidi)
-
-# ==============================================================================
-# LVGL Configuration
-# ==============================================================================
-# LVGL requires lv_conf.h - located in sdl/ directory
-set(LV_BUILD_CONF_DIR "${SDL_DIR}" CACHE STRING "Path to lv_conf.h directory" FORCE)
-
+# LVGL
+if(BUILD_WASM)
+    set(LV_CONF_DIR "${SDL_DIR}/wasm")
+else()
+    set(LV_CONF_DIR "${SDL_DIR}")
+endif()
+set(LV_BUILD_CONF_DIR "${LV_CONF_DIR}" CACHE STRING "" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-
 add_subdirectory(${LVGL_DIR} ${CMAKE_BINARY_DIR}/lvgl)
-
-target_include_directories(lvgl PUBLIC
-    ${SDL_DIR}
-    ${SDL2_INCLUDE_DIR}
-)
+target_include_directories(lvgl PUBLIC ${LV_CONF_DIR})
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
-
-# ==============================================================================
-# Open Control Framework sources
-# ==============================================================================
-file(GLOB_RECURSE FRAMEWORK_SOURCES "${FRAMEWORK_DIR}/src/*.cpp")
-file(GLOB_RECURSE UI_LVGL_SOURCES "${UI_LVGL_DIR}/src/*.cpp")
-file(GLOB_RECURSE HAL_SDL_SOURCES "${HAL_SDL_DIR}/src/*.cpp")
-file(GLOB_RECURSE HAL_NET_SOURCES "${HAL_NET_DIR}/src/*.cpp")
-file(GLOB_RECURSE HAL_MIDI_SOURCES "${HAL_MIDI_DIR}/src/*.cpp")
-file(GLOB_RECURSE UI_LVGL_COMPONENTS_SOURCES "${UI_LVGL_COMPONENTS_DIR}/src/*.cpp")
-
-# Exclude Teensy-specific main.cpp files from framework sources
-list(FILTER UI_LVGL_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
-
-# ==============================================================================
-# midi-studio sources
-# ==============================================================================
-# SDL-specific sources (HwSimulator, etc.)
-set(SDL_PLATFORM_SOURCES
-    ${SDL_DIR}/HwSimulator.cpp
-)
-
-# Core business logic
-file(GLOB_RECURSE CORE_SOURCES "${CORE_SRC}/*.cpp")
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/config/platform-teensy/.*")
-
-# ==============================================================================
-# SDL entry point
-# ==============================================================================
-set(SDL_MAIN
-    ${SDL_DIR}/SdlRunner.cpp
-    ${SDL_DIR}/main-native.cpp
-)
-
-# ==============================================================================
-# Main executable
-# ==============================================================================
-add_executable(midi_studio_sdl
-    ${SDL_MAIN}
-    ${SDL_PLATFORM_SOURCES}
-    ${CORE_SOURCES}
-    ${FRAMEWORK_SOURCES}
-    ${UI_LVGL_SOURCES}
-    ${HAL_SDL_SOURCES}
-    ${HAL_NET_SOURCES}
-    ${HAL_MIDI_SOURCES}
-    ${UI_LVGL_COMPONENTS_SOURCES}
-)
-
-target_include_directories(midi_studio_sdl PRIVATE
-    ${SDL_DIR}
-    ${CONFIG_DIR}
-    ${CORE_SRC}
-    ${FRAMEWORK_DIR}/src
-    ${UI_LVGL_DIR}/src
-    ${HAL_SDL_DIR}/src
-    ${HAL_NET_DIR}/src
-    ${HAL_MIDI_DIR}/src
-    ${UI_LVGL_COMPONENTS_DIR}/include
-    ${SDL2_INCLUDE_DIR}
-)
-
-target_link_libraries(midi_studio_sdl PRIVATE
-    lvgl
-    ${SDL2_TARGET}
-    libremidi
-)
-
-target_compile_definitions(midi_studio_sdl PRIVATE
-    OC_DESKTOP=1
-    OC_LOG=1
-)
-
-# ==============================================================================
-# Platform-specific (based on target, not host)
-# ==============================================================================
-# Detect target platform from CMAKE_SYSTEM_NAME (set by toolchain for cross-compile)
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(TARGET_WINDOWS TRUE)
-    set(TARGET_LINUX FALSE)
-    set(TARGET_MACOS FALSE)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(TARGET_WINDOWS FALSE)
-    set(TARGET_LINUX TRUE)
-    set(TARGET_MACOS FALSE)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    set(TARGET_WINDOWS FALSE)
-    set(TARGET_LINUX FALSE)
-    set(TARGET_MACOS TRUE)
-endif()
-
-message(STATUS "Target platform: ${CMAKE_SYSTEM_NAME}")
-
-if(TARGET_WINDOWS)
-    if(MSVC)
-        target_link_options(midi_studio_sdl PRIVATE "/SUBSYSTEM:CONSOLE")
-    else()
-        target_link_options(midi_studio_sdl PRIVATE "-mconsole")
-    endif()
-    target_link_libraries(midi_studio_sdl PRIVATE winmm imm32 setupapi version dwmapi ws2_32)
-endif()
-
-if(TARGET_LINUX)
-    target_link_libraries(midi_studio_sdl PRIVATE m pthread)
+if(BUILD_NATIVE AND DEFINED SDL2_INCLUDE)
+    target_include_directories(lvgl PUBLIC ${SDL2_INCLUDE})
 endif()
 
 # ==============================================================================
-# Output (platform-specific subdirectory)
+# Sources
 # ==============================================================================
-if(NOT DEFINED PLATFORM_ID)
-    set(PLATFORM_ID "default")
+file(GLOB_RECURSE SRC_FRAMEWORK "${OC_FRAMEWORK}/*.cpp")
+file(GLOB_RECURSE SRC_UI_LVGL "${OC_UI_LVGL}/*.cpp")
+file(GLOB_RECURSE SRC_UI_COMPONENTS "${OC_UI_COMPONENTS}/src/*.cpp")
+file(GLOB_RECURSE SRC_HAL_SDL "${OC_HAL_SDL}/*.cpp")
+file(GLOB_RECURSE SRC_HAL_MIDI "${OC_HAL_MIDI}/*.cpp")
+
+# HAL Net: WASM only uses WebSocket
+if(BUILD_WASM)
+    set(SRC_HAL_NET "${OC_HAL_NET}/oc/hal/net/WebSocketTransport.cpp")
+else()
+    file(GLOB_RECURSE SRC_HAL_NET "${OC_HAL_NET}/*.cpp")
 endif()
 
-set(BIN_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/${PLATFORM_ID}")
+# App sources
+file(GLOB_RECURSE SRC_APP "${APP_SRC_DIR}/*.cpp" "${APP_SRC_DIR}/*.c")
+list(FILTER SRC_APP EXCLUDE REGEX ".*/main\\.cpp$")
+list(FILTER SRC_APP EXCLUDE REGEX ".*/platform-teensy/.*")
+list(FILTER SRC_APP EXCLUDE REGEX ".*/name\\.c$")
+list(FILTER SRC_UI_LVGL EXCLUDE REGEX ".*/main\\.cpp$")
+if(APP_EXTRA_SOURCES)
+    list(APPEND SRC_APP ${APP_EXTRA_SOURCES})
+endif()
 
-set_target_properties(midi_studio_sdl PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${BIN_OUTPUT_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${BIN_OUTPUT_DIR}"
-)
+# SDL layer
+if(BUILD_WASM)
+    set(SRC_SDL ${SDL_DIR}/SdlEnvironment.cpp ${SDL_DIR}/HwSimulator.cpp ${APP_MAIN_WASM})
+else()
+    set(SRC_SDL ${SDL_DIR}/SdlEnvironment.cpp ${SDL_DIR}/HwSimulator.cpp ${APP_MAIN_NATIVE})
+endif()
 
 # ==============================================================================
-# Build instructions
+# Target
 # ==============================================================================
-# Windows (MinGW):
-#   mkdir build && cd build
-#   cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug ..
-#   cmake --build .
-#
-# Windows (MSVC):
-#   mkdir build && cd build
-#   cmake -G "Visual Studio 17 2022" ..
-#   cmake --build . --config Debug
-#
-# Linux:
-#   mkdir build && cd build
-#   cmake -DCMAKE_BUILD_TYPE=Debug ..
-#   cmake --build .
+add_executable(${APP_EXE_NAME}
+    ${SRC_SDL} ${SRC_APP} ${SRC_FRAMEWORK} ${SRC_UI_LVGL}
+    ${SRC_HAL_SDL} ${SRC_HAL_NET} ${SRC_HAL_MIDI} ${SRC_UI_COMPONENTS})
+
+target_include_directories(${APP_EXE_NAME} PRIVATE
+    ${SDL_DIR} ${LV_CONF_DIR} ${CONFIG_DIR} ${APP_SRC_DIR} ${CORE_SRC}
+    ${OC_FRAMEWORK} ${OC_UI_LVGL} ${OC_HAL_SDL} ${OC_HAL_NET} ${OC_HAL_MIDI}
+    ${OC_UI_COMPONENTS}/include)
+
+target_compile_definitions(${APP_EXE_NAME} PRIVATE OC_DESKTOP=1 OC_LOG=1)
+target_link_libraries(${APP_EXE_NAME} PRIVATE lvgl libremidi)
+
+# ==============================================================================
+# Platform-specific
+# ==============================================================================
+if(BUILD_WASM)
+    target_compile_definitions(${APP_EXE_NAME} PRIVATE __EMSCRIPTEN__=1)
+    set_target_properties(${APP_EXE_NAME} PROPERTIES
+        SUFFIX ".html"
+        RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}/${APP_ID}/wasm"
+        LINK_FLAGS "-s USE_SDL=2 -lwebsocket.js \
+            -s INITIAL_MEMORY=67108864 -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=268435456 \
+            -s ASYNCIFY=1 -s ASYNCIFY_STACK_SIZE=65536 -s INVOKE_RUN=0 \
+            -s EXPORTED_RUNTIME_METHODS=['callMain','UTF8ToString','stringToUTF8'] \
+            -s EXPORTED_FUNCTIONS=['_main','_malloc','_free'] \
+            --shell-file ${SDL_DIR}/wasm/shell.html")
+
+elseif(WIN32)
+    target_include_directories(${APP_EXE_NAME} PRIVATE ${SDL2_INCLUDE})
+    target_link_libraries(${APP_EXE_NAME} PRIVATE SDL2-static winmm imm32 setupapi version dwmapi ws2_32)
+    target_link_options(${APP_EXE_NAME} PRIVATE "-mconsole")
+    set_target_properties(${APP_EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}/${APP_ID}/native")
+
+elseif(UNIX)
+    target_include_directories(${APP_EXE_NAME} PRIVATE ${SDL2_INCLUDE})
+    target_link_libraries(${APP_EXE_NAME} PRIVATE SDL2-static m pthread)
+    set_target_properties(${APP_EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}/${APP_ID}/native")
+endif()

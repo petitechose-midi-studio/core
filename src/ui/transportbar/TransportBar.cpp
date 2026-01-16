@@ -5,12 +5,13 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/CoreFonts.hpp"
-#include "ui/font/Icon.hpp"
+#include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
 
 namespace theme = standalone::theme;
+namespace icons = standalone::icons;
 namespace style = oc::ui::lvgl::style;
 
 namespace {
@@ -80,22 +81,22 @@ void TransportBar::createMidiIndicators(lv_obj_t* parent) {
 
     // Note IN icon
     note_in_icon_ = lv_label_create(cell);
-    icon::set(note_in_icon_, icon::NOTE, icon::Size::M);
+    icons::set(note_in_icon_, icons::NOTE, icons::Size::M);
     lv_obj_set_style_text_color(note_in_icon_, COLOR_INACTIVE, 0);
 
     // Note OUT icon
     note_out_icon_ = lv_label_create(cell);
-    icon::set(note_out_icon_, icon::NOTE, icon::Size::M);
+    icons::set(note_out_icon_, icons::NOTE, icons::Size::M);
     lv_obj_set_style_text_color(note_out_icon_, COLOR_INACTIVE, 0);
 
     // CC IN icon
     cc_in_icon_ = lv_label_create(cell);
-    icon::set(cc_in_icon_, icon::KNOB, icon::Size::M);
+    icons::set(cc_in_icon_, icons::KNOB, icons::Size::M);
     lv_obj_set_style_text_color(cc_in_icon_, COLOR_INACTIVE, 0);
 
     // CC OUT icon
     cc_out_icon_ = lv_label_create(cell);
-    icon::set(cc_out_icon_, icon::KNOB, icon::Size::M);
+    icons::set(cc_out_icon_, icons::KNOB, icons::Size::M);
     lv_obj_set_style_text_color(cc_out_icon_, COLOR_INACTIVE, 0);
 }
 
@@ -107,7 +108,7 @@ void TransportBar::createTransportCenter(lv_obj_t* parent) {
                          LV_GRID_ALIGN_STRETCH, 0, 1);
 
     play_icon_ = lv_label_create(cell);
-    icon::set(play_icon_, icon::TRANSPORT_PLAY, icon::Size::L);
+    icons::set(play_icon_, icons::TRANSPORT_PLAY, icons::Size::L);
     lv_obj_set_style_text_color(play_icon_, COLOR_PLAY_INACTIVE, 0);
     lv_obj_center(play_icon_);
 }

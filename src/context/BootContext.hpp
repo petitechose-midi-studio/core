@@ -14,6 +14,7 @@
 #include <oc/context/Requirements.hpp>
 
 #include <oc/ui/lvgl/FontLoader.hpp>
+#include <oc/ui/lvgl/Screen.hpp>
 
 #include <config/App.hpp>
 #include "ui/font/CoreFonts.hpp"
@@ -28,7 +29,7 @@ public:
     bool initialize() override {
         oc::ui::lvgl::font::loadEssential(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
 
-        splash_ = std::make_unique<core::ui::SplashScreenView>(lv_screen_active());
+        splash_ = std::make_unique<core::ui::SplashScreenView>(oc::ui::lvgl::Screen::root());
         splash_->onActivate();
 
         start_ms_ = oc::time::millis();

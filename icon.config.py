@@ -23,11 +23,18 @@ UNICODE_START = 0xE000
 PADDING_PERCENT = 0.10
 
 # LVGL font generation
-FONT_SIZES = {'S': 12, 'M': 14, 'L': 16}
+FONT_SIZES = {"S": 12, "M": 14, "L": 16}
 LVGL_BPP = 4
 
 # Header include (file that declares standalone_fonts global)
 HEADER_INCLUDE = "StandaloneFonts.hpp"
 
-# Name of the fonts struct instance (for Icon::set)
+# Name of the fonts struct instance (for icons::set)
 FONTS_STRUCT = "standalone_fonts"
+
+# Platform compatibility header (for cross-platform builds)
+PLATFORM_INCLUDE = "config/PlatformCompat.hpp"
+
+# Generated header
+NAMESPACE = "standalone::icons"
+HEADER_FILENAME = "StandaloneIcons.hpp"

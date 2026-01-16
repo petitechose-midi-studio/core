@@ -6,6 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS_DIR="$SCRIPT_DIR/tools"
 CORE_DIR="$SCRIPT_DIR/.."
 
+# App configuration (can be overridden via argument)
+APP_PATH="$SCRIPT_DIR"
+APP_ID="core"
+
 # Versions
 ZIG_VERSION="0.15.2"
 NINJA_VERSION="v1.13.2"
@@ -29,6 +33,18 @@ log()     { echo -e "${CYAN}●${NC} $1"; }
 success() { echo -e "${GREEN}✓${NC} $1"; }
 warn()    { echo -e "${YELLOW}⚠${NC} $1"; }
 fail()    { echo -e "${RED}✗${NC} $1" >&2; exit 1; }
+
+# Load app configuration from app.cmake
+load_app_config() {
+    local app_cmake="$APP_PATH/app.cmake"
+    [[ -f "$app_cmake" ]] || fail "App config not found: $app_cmake"
+    
+    # Extract APP_ID from cmake file
+    APP_ID=$(grep -E "^set\(APP_ID" "$app_cmake" | sed 's/.*"\([^"]*\)".*/\1/')
+    [[ -n "$APP_ID" ]] || fail "APP_ID not found in $app_cmake"
+    
+    log "App: ${BOLD}$APP_ID${NC} ${DIM}($APP_PATH)${NC}"
+}
 
 # ═══════════════════════════════════════════════════════════════════
 # Spinner & Progress
@@ -238,9 +254,11 @@ setup_watchexec() {
 # Build
 # ═══════════════════════════════════════════════════════════════════
 do_build_native() {
-    local BUILD_DIR="$SCRIPT_DIR/build/native"
+    load_app_config
+    local BUILD_DIR="$SCRIPT_DIR/build/$APP_ID/native"
+    local BIN_DIR="$SCRIPT_DIR/bin/$APP_ID/native"
     local start=$(date +%s)
-    echo -e "\n${BOLD}${BLUE}═══ Native Build ═══${NC}\n"
+    echo -e "\n${BOLD}${BLUE}═══ Native Build: $APP_ID ═══${NC}\n"
     
     if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
         setup_native_tools
@@ -248,7 +266,8 @@ do_build_native() {
         if ! run_with_spinner "Configuring" cmake -G Ninja -S "$SCRIPT_DIR" -B "$BUILD_DIR" \
             -DCMAKE_TOOLCHAIN_FILE="$SCRIPT_DIR/zig-toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DPLATFORM_ID=native -DSDL2_ROOT="$TOOLS_DIR/SDL2"; then
+            -DSDL2_ROOT="$TOOLS_DIR/SDL2" \
+            -DAPP_PATH="$APP_PATH"; then
             echo "$BUILD_OUTPUT"
             fail "CMake configuration failed"
         fi
@@ -261,34 +280,41 @@ do_build_native() {
     
     python3 "$CORE_DIR/script/pio/merge_compiledb.py" "$CORE_DIR" 2>/dev/null || true
     local elapsed=$(($(date +%s) - start))
-    success "bin/native/midi_studio_sdl.exe ${DIM}(${elapsed}s)${NC}"
+    local exe_name=$(ls "$BIN_DIR"/*.exe 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "midi_studio_$APP_ID.exe")
+    success "bin/$APP_ID/native/$exe_name ${DIM}(${elapsed}s)${NC}"
 }
 
 do_build_wasm() {
-    local BUILD_DIR="$SCRIPT_DIR/build/wasm"
+    load_app_config
+    local BUILD_DIR="$SCRIPT_DIR/build/$APP_ID/wasm"
+    local BIN_DIR="$SCRIPT_DIR/bin/$APP_ID/wasm"
     local EMSDK="$TOOLS_DIR/emsdk"
     local start=$(date +%s)
-    echo -e "\n${BOLD}${BLUE}═══ WASM Build ═══${NC}\n"
+    echo -e "\n${BOLD}${BLUE}═══ WASM Build: $APP_ID ═══${NC}\n"
     
     setup_wasm_tools
     if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
         mkdir -p "$BUILD_DIR" && rm -rf "$BUILD_DIR"/*
         cd "$BUILD_DIR"
-        if ! run_with_spinner "Configuring" python "$EMSDK/upstream/emscripten/emcmake.py" cmake "$SCRIPT_DIR/wasm" -G Ninja -DCMAKE_BUILD_TYPE=Release; then
+        if ! run_with_spinner "Configuring" python "$EMSDK/upstream/emscripten/emcmake.py" cmake "$SCRIPT_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAPP_PATH="$APP_PATH"; then
             echo "$BUILD_OUTPUT"
             fail "CMake configuration failed"
         fi
     fi
     
-    cd "$SCRIPT_DIR/build/wasm"
-    if ! run_ninja_with_progress "$SCRIPT_DIR/build/wasm"; then
+    cd "$BUILD_DIR"
+    if ! run_ninja_with_progress "$BUILD_DIR"; then
         echo "$BUILD_OUTPUT" | grep -E "(error|Error)" | head -10
         fail "Build failed"
     fi
     
     local elapsed=$(($(date +%s) - start))
-    local size=$(du -h "$SCRIPT_DIR/bin/wasm/midi_studio_wasm.wasm" 2>/dev/null | cut -f1)
-    success "bin/wasm/midi_studio_wasm.html ${DIM}($size, ${elapsed}s)${NC}"
+    local wasm_file=$(ls "$BIN_DIR"/*.wasm 2>/dev/null | head -1)
+    local size=$(du -h "$wasm_file" 2>/dev/null | cut -f1 || echo "?")
+    local html_name=$(basename "$wasm_file" .wasm).html
+    success "bin/$APP_ID/wasm/$html_name ${DIM}($size, ${elapsed}s)${NC}"
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -296,14 +322,18 @@ do_build_wasm() {
 # ═══════════════════════════════════════════════════════════════════
 do_run() {
     do_build_native
-    echo -e "\n${CYAN}●${NC} Running...\n"
-    "$SCRIPT_DIR/bin/native/midi_studio_sdl.exe"
+    local exe=$(ls "$SCRIPT_DIR/bin/$APP_ID/native"/*.exe 2>/dev/null | head -1)
+    [[ -f "$exe" ]] || fail "Executable not found"
+    echo -e "\n${CYAN}●${NC} Running $APP_ID...\n"
+    "$exe"
 }
 
 do_serve() {
     do_build_wasm
-    echo -e "\n${CYAN}●${NC} Serving at ${BOLD}http://localhost:8000/midi_studio_wasm.html${NC}\n"
-    python -m http.server 8000 -d "$SCRIPT_DIR/bin/wasm"
+    local html=$(ls "$SCRIPT_DIR/bin/$APP_ID/wasm"/*.html 2>/dev/null | head -1)
+    local html_name=$(basename "$html")
+    echo -e "\n${CYAN}●${NC} Serving at ${BOLD}http://localhost:8000/$html_name${NC}\n"
+    python -m http.server 8000 -d "$SCRIPT_DIR/bin/$APP_ID/wasm"
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -312,15 +342,16 @@ do_serve() {
 do_watch_native() {
     setup_watchexec
     do_build_native
-    echo -e "\n${CYAN}●${NC} Watching... ${DIM}(Ctrl+C to stop)${NC}"
+    echo -e "\n${CYAN}●${NC} Watching $APP_ID... ${DIM}(Ctrl+C to stop)${NC}"
     echo -e "${DIM}   File change → rebuild → restart${NC}\n"
     
     # Convert to Windows paths for PowerShell
-    local build_dir_win=$(cygpath -w "$SCRIPT_DIR/build/native")
-    local exe_win=$(cygpath -w "$SCRIPT_DIR/bin/native/midi_studio_sdl.exe")
+    local build_dir_win=$(cygpath -w "$SCRIPT_DIR/build/$APP_ID/native")
+    local exe=$(ls "$SCRIPT_DIR/bin/$APP_ID/native"/*.exe 2>/dev/null | head -1)
+    local exe_win=$(cygpath -w "$exe")
     
     "$TOOLS_DIR/watchexec/watchexec.exe" \
-        -w "$CORE_DIR/src" -w "$SCRIPT_DIR" \
+        -w "$CORE_DIR/src" -w "$SCRIPT_DIR" -w "$APP_PATH" \
         -e cpp,hpp,h,c \
         --restart \
         --shell=powershell \
@@ -330,9 +361,10 @@ do_watch_native() {
 do_watch_wasm() {
     local EMSDK="$TOOLS_DIR/emsdk"
     do_build_wasm
-    echo -e "\n${CYAN}●${NC} Serving at ${BOLD}http://localhost:8000/midi_studio_wasm.html${NC}"
+    local html=$(ls "$SCRIPT_DIR/bin/$APP_ID/wasm"/*.html 2>/dev/null | head -1)
+    echo -e "\n${CYAN}●${NC} Serving at ${BOLD}http://localhost:8000/$(basename "$html")${NC}"
     echo -e "${DIM}   emrun serves the WASM app${NC}\n"
-    python "$EMSDK/upstream/emscripten/emrun.py" --port 8000 --no_browser "$SCRIPT_DIR/bin/wasm/midi_studio_wasm.html"
+    python "$EMSDK/upstream/emscripten/emrun.py" --port 8000 --no_browser "$html"
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -347,9 +379,10 @@ run_op() {
         serve) do_serve ;;
         watch)
             if [[ "$target" == "native" ]]; then do_watch_native; else do_watch_wasm; fi ;;
-        clean) 
-            rm -rf "$SCRIPT_DIR/build" "$SCRIPT_DIR/bin" 2>/dev/null
-            success "Cleaned build/ and bin/"
+        clean)
+            load_app_config
+            rm -rf "$SCRIPT_DIR/build/$APP_ID" "$SCRIPT_DIR/bin/$APP_ID" 2>/dev/null
+            success "Cleaned build/$APP_ID/ and bin/$APP_ID/"
             ;;
     esac
 }
@@ -384,33 +417,66 @@ ask_target() {
     TARGET="$_target"
 }
 
+# ═══════════════════════════════════════════════════════════════════
+# Argument Parsing
+# ═══════════════════════════════════════════════════════════════════
+# Usage: build.sh <target> [app_path]
+#        build.sh <operation> <target> [app_path]
+#
+# Examples:
+#   build.sh native                     # Build core native
+#   build.sh native /path/to/app/sdl    # Build custom app native
+#   build.sh build native               # Same as above
+#   build.sh clean /path/to/app/sdl     # Clean custom app
+
 ARG1="${1:-}"
 ARG2="${2:-}"
+ARG3="${3:-}"
+
+# Set APP_PATH if provided as last argument
+set_app_path() {
+    local path="$1"
+    if [[ -n "$path" && -d "$path" && -f "$path/app.cmake" ]]; then
+        APP_PATH="$(cd "$path" && pwd)"
+    elif [[ -n "$path" && "$path" != "native" && "$path" != "wasm" ]]; then
+        fail "Invalid app path: $path (must contain app.cmake)"
+    fi
+}
 
 if [[ -z "$ARG1" ]]; then
     interactive_menu
+elif is_target "$ARG1"; then
+    # build.sh native [app_path]
+    TARGET="$ARG1"
+    OP="build"
+    set_app_path "$ARG2"
+    run_op "$OP" "$TARGET"
 elif is_op "$ARG1"; then
     OP="$ARG1"
     if [[ "$OP" =~ ^(build|watch)$ ]]; then
-        if [[ -n "$ARG2" ]]; then
+        if is_target "$ARG2"; then
             TARGET="$ARG2"
+            set_app_path "$ARG3"
+        elif [[ -n "$ARG2" ]]; then
+            # build.sh build /path → assume native
+            TARGET="native"
+            set_app_path "$ARG2"
         else
             ask_target
         fi
-    fi
-    run_op "$OP" "$TARGET"
-elif is_target "$ARG1"; then
-    TARGET="$ARG1"
-    if is_op "$ARG2"; then
-        OP="$ARG2"
-    else
-        ask_op
+    elif [[ "$OP" == "clean" ]]; then
+        set_app_path "$ARG2"
     fi
     run_op "$OP" "$TARGET"
 else
-    echo -e "${BOLD}Usage:${NC} $0 [operation] [target]"
-    echo -e "       $0 [target] [operation]"
+    echo -e "${BOLD}Usage:${NC} $0 <target> [app_path]"
+    echo -e "       $0 <operation> <target> [app_path]"
     echo ""
-    echo -e "${DIM}Operations:${NC} build, run, serve, watch, clean"
     echo -e "${DIM}Targets:${NC}    native, wasm"
+    echo -e "${DIM}Operations:${NC} build, run, serve, watch, clean"
+    echo ""
+    echo -e "${DIM}Examples:${NC}"
+    echo "  $0 native                      # Build core for desktop"
+    echo "  $0 native ../plugin-bitwig/sdl # Build bitwig for desktop"
+    echo "  $0 wasm ../plugin-bitwig/sdl   # Build bitwig for web"
 fi

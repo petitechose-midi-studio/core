@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """LVGL Image Converter - PNG to C array. Config via env: IMG_OUTPUT_DIR, COLOR_FORMAT, COMPRESS."""
+
 from __future__ import annotations
 
 import os
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from types import ModuleType
 
+
 def find_project_root() -> Path:
     """Find project root by looking for platformio.ini."""
     current = Path(__file__).resolve().parent
@@ -19,12 +21,20 @@ def find_project_root() -> Path:
         current = current.parent
     raise FileNotFoundError("Project root not found")
 
+
 def load_lvgl_module() -> ModuleType:
     """Dynamically load LVGLImage from LVGL library."""
     root = find_project_root()
-    sys.path.insert(0, str(root / ".pio/libdeps/debug/lvgl/scripts"))
+    # Try different PIO environments
+    for env in ["dev", "debug", "release"]:
+        scripts_path = root / f".pio/libdeps/{env}/lvgl/scripts"
+        if scripts_path.exists():
+            sys.path.insert(0, str(scripts_path))
+            break
     import LVGLImage as module  # type: ignore[import-not-found]
+
     return module
+
 
 # Load LVGL module
 lvgl = load_lvgl_module()
@@ -75,16 +85,25 @@ def convert(input_path: str) -> bool:
         img.adjust_stride(align=1)
         img.to_c_array(str(output_path), compress=compress, outputname=var_name)
 
-        # Add PROGMEM for Arduino
+        # Add PROGMEM support (Arduino includes pgmspace.h, others define PROGMEM as empty)
         content = output_path.read_text()
         pos = content.find("#endif") + len("#endif")
         if pos > len("#endif"):
-            content = f"{content[:pos]}\n\n#ifdef ARDUINO\n#include <avr/pgmspace.h>\n#endif{content[pos:]}"
+            progmem_block = """
+
+#ifdef ARDUINO
+#include <avr/pgmspace.h>  // For PROGMEM definition
+#else
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+#endif"""
+            content = f"{content[:pos]}{progmem_block}{content[pos:]}"
 
         macro = f"LV_ATTRIBUTE_{var_name.upper()}"
         content = content.replace(
             f"#ifndef {macro}\n#define {macro}\n#endif",
-            f"#ifndef {macro}\n#define {macro} PROGMEM\n#endif"
+            f"#ifndef {macro}\n#define {macro} PROGMEM\n#endif",
         )
         output_path.write_text(content)
 

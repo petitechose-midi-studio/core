@@ -4,6 +4,7 @@
 
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/FontLoader.hpp>
+#include <oc/ui/lvgl/Screen.hpp>
 
 #include <config/App.hpp>
 #include "handler/macro/MacroEditHandler.hpp"
@@ -40,7 +41,7 @@ bool StandaloneContext::initialize() {
     syncEncodersFromState();
 
     // Create UI container with zones
-    view_container_ = std::make_unique<core::ui::ViewContainer>(lv_screen_active());
+    view_container_ = std::make_unique<core::ui::ViewContainer>(oc::ui::lvgl::Screen::root());
 
     // Create MacroView in main zone (TopBar is now internal to MacroView)
     view_ = std::make_unique<core::ui::MacroView>(
