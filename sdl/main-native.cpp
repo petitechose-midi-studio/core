@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
         env.refresh();
     }
 
-    // 6. Cleanup (automatic via destructors, but explicit for clarity)
-    env.shutdown();
+    // 6. Cleanup: handled by destructors in correct order
+    //    (app destroyed first, then env calls SDL_Quit)
     return 0;
 }

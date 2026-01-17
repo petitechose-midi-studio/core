@@ -3,6 +3,7 @@
  * @brief WebAssembly entry point for MIDI Studio Core (Browser)
  *
  * Uses emscripten_set_main_loop for browser-compatible event loop.
+ * Connects to oc-bridge via WebSocket for protocol communication.
  */
 
 #include "SdlEnvironment.hpp"
@@ -10,6 +11,7 @@
 
 #include <oc/hal/sdl/Sdl.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
+#include <oc/hal/net/WebSocketTransport.hpp>
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
@@ -42,11 +44,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Build application
+    // Build application with MIDI + WebSocket (for oc-bridge communication)
     static oc::app::OpenControlApp app = oc::hal::sdl::AppBuilder()
         .midi(std::make_unique<oc::hal::midi::LibreMidiTransport>(
             oc::hal::midi::LibreMidiConfig{
                 .appName = "MIDI Studio WASM"
+            }))
+        .remote(std::make_unique<oc::hal::net::WebSocketTransport>(
+            oc::hal::net::WebSocketConfig{
+                .url = "ws://localhost:8001"
             }))
         .controllers(env.inputMapper())
         .inputConfig(Config::Input::CONFIG);
