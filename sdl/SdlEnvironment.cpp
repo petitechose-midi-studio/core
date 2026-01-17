@@ -118,7 +118,7 @@ void SdlEnvironment::setupKeyboardMappings() {
         .button(SDLK_7, static_cast<oc::hal::ButtonID>(ButtonID::MACRO_7))
         .button(SDLK_8, static_cast<oc::hal::ButtonID>(ButtonID::MACRO_8))
         .button(SDLK_SPACE, static_cast<oc::hal::ButtonID>(ButtonID::NAV))
-        .encoder(SDLK_UP, SDLK_DOWN, static_cast<oc::hal::EncoderID>(EncoderID::NAV), 0.05f)
+        .encoder(SDLK_DOWN, SDLK_UP, static_cast<oc::hal::EncoderID>(EncoderID::NAV), 0.05f)
         .encoder(SDLK_LEFT, SDLK_RIGHT, static_cast<oc::hal::EncoderID>(EncoderID::OPT), 0.02f);
 }
 
@@ -142,7 +142,7 @@ bool SdlEnvironment::processEvents() {
             SDL_GetMouseState(&sdlX, &sdlY);
             float lvglX, lvglY;
             SDL_RenderWindowToLogical(renderer_, sdlX, sdlY, &lvglX, &lvglY);
-            hwSim_->handleMouseWheel(static_cast<int>(lvglX), static_cast<int>(lvglY), event.wheel.y);
+            hwSim_->handleMouseWheel(static_cast<int>(lvglX), static_cast<int>(lvglY), -event.wheel.y);
         }
 
         input_->handleEvent(event);
