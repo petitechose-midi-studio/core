@@ -90,15 +90,29 @@ set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/libremidi.cmake)
 
 # SDL2 (native only - WASM uses Emscripten's SDL)
-if(BUILD_NATIVE AND DEFINED SDL2_ROOT)
-    set(SDL2_INCLUDE "${SDL2_ROOT}/include;${SDL2_ROOT}/include/SDL2")
-    add_library(SDL2-static STATIC IMPORTED GLOBAL)
-    set_target_properties(SDL2-static PROPERTIES
-        IMPORTED_LOCATION "${SDL2_ROOT}/lib/libSDL2.a"
-        INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE}")
-    if(WIN32)
+if(BUILD_NATIVE)
+    if(WIN32 AND DEFINED SDL2_ROOT)
+        # Windows: use bundled SDL2 from tools/windows/
+        set(SDL2_INCLUDE "${SDL2_ROOT}/include;${SDL2_ROOT}/include/SDL2")
+        add_library(SDL2-static STATIC IMPORTED GLOBAL)
+        set_target_properties(SDL2-static PROPERTIES
+            IMPORTED_LOCATION "${SDL2_ROOT}/lib/libSDL2.a"
+            INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE}")
         set_target_properties(SDL2-static PROPERTIES
             INTERFACE_LINK_LIBRARIES "mingw32;winmm;imm32;ole32;oleaut32;version;uuid;advapi32;setupapi;shell32;dinput8;dxguid;dxerr8;user32;gdi32;hid;opengl32")
+        set(SDL2_FOUND TRUE)
+        set(SDL2_LIBRARIES SDL2-static)
+    elseif(UNIX)
+        # Linux/macOS: use system SDL2 (via package manager)
+        find_package(SDL2 REQUIRED)
+        if(NOT SDL2_FOUND)
+            message(FATAL_ERROR "SDL2 not found. Install it with:\n"
+                "  Fedora/RHEL:   sudo dnf install SDL2-devel\n"
+                "  Ubuntu/Debian: sudo apt install libsdl2-dev\n"
+                "  Arch:          sudo pacman -S sdl2\n"
+                "  macOS:         brew install sdl2")
+        endif()
+        set(SDL2_INCLUDE ${SDL2_INCLUDE_DIRS})
     endif()
 endif()
 
@@ -189,6 +203,6 @@ elseif(WIN32)
 
 elseif(UNIX)
     target_include_directories(${APP_EXE_NAME} PRIVATE ${SDL2_INCLUDE})
-    target_link_libraries(${APP_EXE_NAME} PRIVATE SDL2-static m pthread)
+    target_link_libraries(${APP_EXE_NAME} PRIVATE ${SDL2_LIBRARIES} m pthread)
     set_target_properties(${APP_EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}/${APP_ID}/native")
 endif()
