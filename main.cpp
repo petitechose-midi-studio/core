@@ -8,7 +8,7 @@
 
 #include <optional>
 
-#include <oc/hal/teensy/EEPROMBackend.hpp>
+#include <oc/hal/teensy/SDCardBackend.hpp>
 #include <oc/hal/teensy/Teensy.hpp>
 
 #include <config/App.hpp>
@@ -25,7 +25,7 @@
 static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
-static oc::hal::teensy::EEPROMBackend storage;  // EEPROM backend for persistence
+static oc::hal::teensy::SDCardBackend storage("/macros.bin");  // SD card storage (non-blocking)
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 
@@ -60,8 +60,16 @@ static void initMux() {
     checkOrHalt(mux->init(), "MUX");
 }
 
+static void initStorage() {
+    if (!storage.begin()) {
+        OC_LOG_ERROR("Storage init failed!");
+        while (true) {}
+    }
+    OC_LOG_INFO("Storage ready ({}B)", storage.capacity());
+}
+
 static void initApp() {
-    // Create global state with EEPROM storage (survives context switches)
+    // Create global state with storage backend (survives context switches)
     coreState.emplace(storage);
 
     app = oc::hal::teensy::AppBuilder()
@@ -96,6 +104,7 @@ void setup() {
     initDisplay();
     initLVGL();
     initMux();
+    initStorage();
     initApp();
 
     OC_LOG_INFO("Ready");
