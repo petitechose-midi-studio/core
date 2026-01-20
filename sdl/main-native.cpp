@@ -7,9 +7,9 @@
 
 #define SDL_MAIN_HANDLED
 #include "SdlEnvironment.hpp"
-#include "MemoryStorage.hpp"
 
 #include <oc/hal/sdl/Sdl.hpp>
+#include <oc/hal/FileStorageBackend.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
 
 #include <config/App.hpp>
@@ -24,7 +24,11 @@ int main(int argc, char** argv) {
     }
 
     // 2. Create storage and state (specific to core)
-    desktop::MemoryStorage storage;
+    oc::hal::FileStorageBackend storage("./macros.bin");
+    if (!storage.begin()) {
+        fprintf(stderr, "Failed to open storage file\n");
+        return 1;
+    }
     core::state::CoreState coreState(storage);
 
     // 3. Build application with MIDI transport

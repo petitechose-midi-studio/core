@@ -17,6 +17,8 @@ public:
     explicit MemoryStorage(size_t capacity = 4096)
         : data_(capacity, 0xFF) {}
 
+    bool begin() override { return true; }
+
     bool available() const override { return true; }
 
     size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
