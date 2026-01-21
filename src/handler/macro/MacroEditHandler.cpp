@@ -33,7 +33,7 @@ void MacroEditHandler::setupBindings() {
     // ===== MACRO VIEW SCOPE =====
     // Press macro button to open edit overlay
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        auto btnId = static_cast<oc::ButtonID>(Config::MACRO_BUTTONS[i]);
+        auto btnId = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[i]);
         buttons_.button(btnId)
             .press()
             .scope(scope(macro_view_scope_))
@@ -42,25 +42,25 @@ void MacroEditHandler::setupBindings() {
 
     // ===== OVERLAY SCOPE =====
     // NAV encoder: adjust focused value
-    encoders_.encoder(static_cast<oc::EncoderID>(Config::EncoderID::NAV))
+    encoders_.encoder(static_cast<oc::type::EncoderID>(Config::EncoderID::NAV))
         .turn()
         .scope(scope(overlay_scope_))
         .then([this](float delta) { adjustValue(delta); });
 
     // NAV button: toggle focus between CH and CC
-    buttons_.button(static_cast<oc::ButtonID>(Config::ButtonID::NAV))
+    buttons_.button(static_cast<oc::type::ButtonID>(Config::ButtonID::NAV))
         .press()
         .scope(scope(overlay_scope_))
         .then([this]() { toggleFocus(); });
 
     // Confirm: save and close (BOTTOM_CENTER)
-    buttons_.button(static_cast<oc::ButtonID>(Config::ButtonID::BOTTOM_CENTER))
+    buttons_.button(static_cast<oc::type::ButtonID>(Config::ButtonID::BOTTOM_CENTER))
         .release()
         .scope(scope(overlay_scope_))
         .then([this]() { saveAndClose(); });
 
     // Cancel: close without saving (LEFT_TOP)
-    buttons_.button(static_cast<oc::ButtonID>(Config::ButtonID::LEFT_TOP))
+    buttons_.button(static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_TOP))
         .release()
         .scope(scope(overlay_scope_))
         .then([this]() { closeWithoutSave(); });

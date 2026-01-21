@@ -23,9 +23,9 @@
 
 namespace core::state {
 
-using oc::ScopeID;
+using oc::type::ScopeID;
 using oc::core::input::AuthorityResolver;
-using oc::ButtonID;
+using oc::type::ButtonID;
 
 /**
  * @brief Cleanup info for an overlay (scope and latch button)

@@ -26,14 +26,14 @@ class BootContext : public oc::context::ContextBase {
 public:
     static constexpr oc::context::Requirements REQUIRES{};
 
-    oc::Result<void> init() override {
+    oc::type::Result<void> init() override {
         oc::ui::lvgl::font::loadEssential(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
 
         splash_ = std::make_unique<core::ui::SplashScreenView>(oc::ui::lvgl::Screen::root());
         splash_->onActivate();
 
         start_ms_ = oc::time::millis();
-        return oc::Result<void>::ok();
+        return oc::type::Result<void>::ok();
     }
 
     void update() override {

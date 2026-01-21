@@ -1,7 +1,7 @@
 #pragma once
 
 #include <oc/interface/IStorage.hpp>
-#include <oc/types/Result.hpp>
+#include <oc/type/Result.hpp>
 #include <vector>
 #include <cstring>
 
@@ -18,7 +18,7 @@ public:
     explicit MemoryStorage(size_t capacity = 4096)
         : data_(capacity, 0xFF) {}
 
-    oc::Result<void> init() override { return oc::Result<void>::ok(); }
+    oc::type::Result<void> init() override { return oc::type::Result<void>::ok(); }
 
     bool available() const override { return true; }
 

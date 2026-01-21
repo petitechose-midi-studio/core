@@ -87,10 +87,10 @@ bool SdlEnvironment::init(int argc, char** argv) {
     input_ = std::make_unique<oc::hal::sdl::InputMapper>();
     hwSim_->setInputMapper(input_.get());
 
-    input_->setButtonFeedback([this](oc::ButtonID id, bool pressed) {
+    input_->setButtonFeedback([this](oc::type::ButtonID id, bool pressed) {
         hwSim_->setButtonPressed(id, pressed);
     });
-    input_->setEncoderFeedback([this](oc::EncoderID id, float value) {
+    input_->setEncoderFeedback([this](oc::type::EncoderID id, float value) {
         hwSim_->setEncoderValue(id, value);
     });
 
@@ -103,23 +103,23 @@ bool SdlEnvironment::init(int argc, char** argv) {
 void SdlEnvironment::setupKeyboardMappings() {
     using namespace Config;
 
-    input_->button(SDLK_ESCAPE, static_cast<oc::ButtonID>(ButtonID::LEFT_TOP))
-        .button(SDLK_q, static_cast<oc::ButtonID>(ButtonID::LEFT_CENTER))
-        .button(SDLK_a, static_cast<oc::ButtonID>(ButtonID::LEFT_BOTTOM))
-        .button(SDLK_COMMA, static_cast<oc::ButtonID>(ButtonID::BOTTOM_LEFT))
-        .button(SDLK_PERIOD, static_cast<oc::ButtonID>(ButtonID::BOTTOM_CENTER))
-        .button(SDLK_SLASH, static_cast<oc::ButtonID>(ButtonID::BOTTOM_RIGHT))
-        .button(SDLK_1, static_cast<oc::ButtonID>(ButtonID::MACRO_1))
-        .button(SDLK_2, static_cast<oc::ButtonID>(ButtonID::MACRO_2))
-        .button(SDLK_3, static_cast<oc::ButtonID>(ButtonID::MACRO_3))
-        .button(SDLK_4, static_cast<oc::ButtonID>(ButtonID::MACRO_4))
-        .button(SDLK_5, static_cast<oc::ButtonID>(ButtonID::MACRO_5))
-        .button(SDLK_6, static_cast<oc::ButtonID>(ButtonID::MACRO_6))
-        .button(SDLK_7, static_cast<oc::ButtonID>(ButtonID::MACRO_7))
-        .button(SDLK_8, static_cast<oc::ButtonID>(ButtonID::MACRO_8))
-        .button(SDLK_SPACE, static_cast<oc::ButtonID>(ButtonID::NAV))
-        .encoder(SDLK_DOWN, SDLK_UP, static_cast<oc::EncoderID>(EncoderID::NAV), 0.05f)
-        .encoder(SDLK_LEFT, SDLK_RIGHT, static_cast<oc::EncoderID>(EncoderID::OPT), 0.02f);
+    input_->button(SDLK_ESCAPE, static_cast<oc::type::ButtonID>(ButtonID::LEFT_TOP))
+        .button(SDLK_q, static_cast<oc::type::ButtonID>(ButtonID::LEFT_CENTER))
+        .button(SDLK_a, static_cast<oc::type::ButtonID>(ButtonID::LEFT_BOTTOM))
+        .button(SDLK_COMMA, static_cast<oc::type::ButtonID>(ButtonID::BOTTOM_LEFT))
+        .button(SDLK_PERIOD, static_cast<oc::type::ButtonID>(ButtonID::BOTTOM_CENTER))
+        .button(SDLK_SLASH, static_cast<oc::type::ButtonID>(ButtonID::BOTTOM_RIGHT))
+        .button(SDLK_1, static_cast<oc::type::ButtonID>(ButtonID::MACRO_1))
+        .button(SDLK_2, static_cast<oc::type::ButtonID>(ButtonID::MACRO_2))
+        .button(SDLK_3, static_cast<oc::type::ButtonID>(ButtonID::MACRO_3))
+        .button(SDLK_4, static_cast<oc::type::ButtonID>(ButtonID::MACRO_4))
+        .button(SDLK_5, static_cast<oc::type::ButtonID>(ButtonID::MACRO_5))
+        .button(SDLK_6, static_cast<oc::type::ButtonID>(ButtonID::MACRO_6))
+        .button(SDLK_7, static_cast<oc::type::ButtonID>(ButtonID::MACRO_7))
+        .button(SDLK_8, static_cast<oc::type::ButtonID>(ButtonID::MACRO_8))
+        .button(SDLK_SPACE, static_cast<oc::type::ButtonID>(ButtonID::NAV))
+        .encoder(SDLK_DOWN, SDLK_UP, static_cast<oc::type::EncoderID>(EncoderID::NAV), 0.05f)
+        .encoder(SDLK_LEFT, SDLK_RIGHT, static_cast<oc::type::EncoderID>(EncoderID::OPT), 0.02f);
 }
 
 bool SdlEnvironment::processEvents() {
