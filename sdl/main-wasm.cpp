@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     static desktop::MemoryStorage storage;
     static core::state::CoreState coreState(storage);
 
-    if (!storage.begin()) {
+    if (!storage.init()) {
         return 1;
     }
 
