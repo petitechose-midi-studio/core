@@ -9,7 +9,7 @@
 #include "SdlEnvironment.hpp"
 
 #include <oc/hal/sdl/Sdl.hpp>
-#include <oc/hal/FileStorageBackend.hpp>
+#include <oc/impl/FileStorage.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
 
 #include <config/App.hpp>
@@ -24,8 +24,8 @@ int main(int argc, char** argv) {
     }
 
     // 2. Create storage and state (specific to core)
-    oc::hal::FileStorageBackend storage("./macros.bin");
-    if (!storage.begin()) {
+    oc::impl::FileStorage storage("./macros.bin");
+    if (!storage.init()) {
         fprintf(stderr, "Failed to open storage file\n");
         return 1;
     }
