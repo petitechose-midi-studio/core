@@ -52,11 +52,14 @@ int main(int argc, char** argv) {
     static oc::app::OpenControlApp app = oc::hal::sdl::AppBuilder()
         .midi(std::make_unique<oc::hal::midi::LibreMidiTransport>(
             oc::hal::midi::LibreMidiConfig{
-                .appName = "MIDI Studio WASM"
+                .appName = "MIDI Studio WASM",
+                .inputPortName = "MIDI Studio IN",
+                .outputPortName = "MIDI Studio OUT",
+                .useVirtualPorts = false  // WebMIDI connects to existing ports
             }))
         .remote(std::make_unique<oc::hal::net::WebSocketTransport>(
             oc::hal::net::WebSocketConfig{
-                .url = "ws://localhost:8001"
+                .url = "ws://localhost:8100"  // Controller: core wasm (host: 9002)
             }))
         .controllers(env.inputMapper())
         .inputConfig(Config::Input::CONFIG);
