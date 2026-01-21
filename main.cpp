@@ -34,10 +34,10 @@ static std::optional<oc::app::OpenControlApp> app;
 // =============================================================================
 
 /// Check result and halt on error (embedded systems have no recovery)
-static void checkOrHalt(const oc::core::Result<void>& result, const char* component) {
+static void checkOrHalt(const oc::Result<void>& result, const char* component) {
     if (!result) {
         OC_LOG_ERROR("{} init failed: {}", component,
-                     oc::core::errorCodeToString(result.error().code));
+                     oc::errorCodeToString(result.error().code));
         while (true) {}
     }
 }
@@ -61,8 +61,9 @@ static void initMux() {
 }
 
 static void initStorage() {
-    if (!storage.begin()) {
-        OC_LOG_ERROR("Storage init failed!");
+    auto result = storage.init();
+    if (!result) {
+        OC_LOG_ERROR("Storage init failed: {}", oc::errorCodeToString(result.error().code));
         while (true) {}
     }
     OC_LOG_INFO("Storage ready ({}B)", storage.capacity());

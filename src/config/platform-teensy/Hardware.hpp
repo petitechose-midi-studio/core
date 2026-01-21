@@ -7,9 +7,9 @@
 
 #include <array>
 
-#include <oc/hal/embedded/ButtonDef.hpp>
-#include <oc/hal/embedded/EncoderDef.hpp>
-#include <oc/hal/embedded/GpioPin.hpp>
+#include <oc/hal/common/embedded/ButtonDef.hpp>
+#include <oc/hal/common/embedded/EncoderDef.hpp>
+#include <oc/hal/common/embedded/GpioPin.hpp>
 #include <oc/hal/teensy/GenericMux.hpp>
 
 #include "HardwareDisplay.hpp"
@@ -35,7 +35,7 @@ constexpr oc::hal::teensy::CD74HC4067::Config CONFIG = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Encoder {
-using namespace oc::hal::embedded;
+using namespace oc::hal::common::embedded;
 using EncoderID = Config::EncoderID;
 
 // Shared parameters for macro encoders
@@ -66,9 +66,9 @@ constexpr std::array ENCODERS = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Button {
-using namespace oc::hal::embedded;
+using namespace oc::hal::common::embedded;
 using ButtonID = Config::ButtonID;
-using Source = oc::hal::embedded::GpioPin::Source;
+using Source = oc::hal::common::embedded::GpioPin::Source;
 
 constexpr std::array BUTTONS = {
 

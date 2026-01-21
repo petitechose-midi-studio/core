@@ -7,7 +7,7 @@
 
 #include <array>
 #include <cstdint>
-#include <oc/hal/Types.hpp>
+#include <oc/types/Ids.hpp>
 
 namespace Config {
 
@@ -18,7 +18,7 @@ namespace Config {
 /**
  * @brief Button identifiers for midi-studio hardware
  */
-enum class ButtonID : oc::hal::ButtonID {
+enum class ButtonID : oc::ButtonID {
     // Left side navigation (10-19)
     LEFT_TOP = 10,
     LEFT_CENTER = 11,
@@ -50,7 +50,7 @@ enum class ButtonID : oc::hal::ButtonID {
 /**
  * @brief Encoder identifiers for midi-studio hardware
  */
-enum class EncoderID : oc::hal::EncoderID {
+enum class EncoderID : oc::EncoderID {
     // Main encoder matrix (301-308)
     MACRO_1 = 301,
     MACRO_2 = 302,

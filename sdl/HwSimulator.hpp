@@ -85,8 +85,8 @@ public:
     // Visual feedback (from InputMapper)
     // ════════════════════════════════════════════════════════════
 
-    void setButtonPressed(oc::hal::ButtonID id, bool pressed);
-    void setEncoderValue(oc::hal::EncoderID id, float value);
+    void setButtonPressed(oc::ButtonID id, bool pressed);
+    void setEncoderValue(oc::EncoderID id, float value);
 
     /**
      * @brief Handle mouse wheel over encoders

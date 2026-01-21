@@ -33,7 +33,7 @@
 
 #include <memory>
 
-#include <oc/context/IContext.hpp>
+#include <oc/context/ContextBase.hpp>
 #include <oc/context/Requirements.hpp>
 #include <oc/state/SignalWatcher.hpp>
 
@@ -70,7 +70,7 @@ namespace core::context {
  *
  * Receives CoreState reference (state survives context switches).
  */
-class StandaloneContext : public oc::context::IContext {
+class StandaloneContext : public oc::context::ContextBase {
 public:
     static constexpr oc::context::Requirements REQUIRES{
         .button = true,
@@ -93,7 +93,7 @@ public:
     StandaloneContext& operator=(StandaloneContext&&) = delete;
 
     // IContext interface
-    bool initialize() override;
+    oc::Result<void> init() override;
     void update() override;
     void cleanup() override;
     const char* getName() const override { return "Standalone"; }

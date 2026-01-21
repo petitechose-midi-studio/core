@@ -1,7 +1,7 @@
 #include "TransportHandler.hpp"
 
 #include <algorithm>
-#include <oc/hal/IEncoderController.hpp>
+#include <oc/interface/IEncoder.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 namespace core::handler {
@@ -21,7 +21,7 @@ TransportHandler::TransportHandler(core::state::CoreState& coreState,
 
 void TransportHandler::setupBindings() {
     // Set NAV encoder to relative mode (gives delta values)
-    encoders_.setMode(Config::EncoderID::NAV, oc::hal::EncoderMode::RELATIVE);
+    encoders_.setMode(Config::EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
 
     // NAV encoder: tempo +/- 1 BPM per tick (delta from relative mode)
     encoders_.encoder(Config::EncoderID::NAV)

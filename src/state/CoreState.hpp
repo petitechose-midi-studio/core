@@ -17,7 +17,7 @@
 
 #include <memory>
 
-#include <oc/hal/IStorageBackend.hpp>
+#include <oc/interface/IStorage.hpp>
 #include <oc/state/AutoPersistIncremental.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
@@ -60,7 +60,7 @@ struct CoreState {
      * @brief Construct with storage backend
      * @param storage EEPROM or other storage backend
      */
-    explicit CoreState(oc::hal::IStorageBackend& storage)
+    explicit CoreState(oc::interface::IStorage& storage)
         : settings(storage) {
         // Load persisted settings
         settings.load(pages);

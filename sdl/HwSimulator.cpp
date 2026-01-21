@@ -100,7 +100,7 @@ void HwSimulator::createButton(ButtonID id, int x, int y, int radius, uint32_t c
     // Store user data for callback (pack ButtonID as pointer)
     lv_obj_set_user_data(btn, this);
     lv_obj_add_event_cb(btn, buttonEventCb, LV_EVENT_ALL,
-                        reinterpret_cast<void*>(static_cast<intptr_t>(static_cast<oc::hal::ButtonID>(id))));
+                        reinterpret_cast<void*>(static_cast<intptr_t>(static_cast<oc::ButtonID>(id))));
 
     buttons_.push_back({id, btn, color});
 }
@@ -187,7 +187,7 @@ void HwSimulator::createEncoder(EncoderID encId, ButtonID btnId, int x, int y, i
 
     // Center button (if encoder has button)
     lv_obj_t* centerBtn = nullptr;
-    bool hasButton = static_cast<oc::hal::ButtonID>(btnId) != 0;
+    bool hasButton = static_cast<oc::ButtonID>(btnId) != 0;
     if (hasButton) {
         centerBtn = lv_obj_create(container);
         int btnSize = radius * 2 / 3;
@@ -208,7 +208,7 @@ void HwSimulator::createEncoder(EncoderID encId, ButtonID btnId, int x, int y, i
         // Event callback
         lv_obj_set_user_data(centerBtn, this);
         lv_obj_add_event_cb(centerBtn, buttonEventCb, LV_EVENT_ALL,
-                            reinterpret_cast<void*>(static_cast<intptr_t>(static_cast<oc::hal::ButtonID>(btnId))));
+                            reinterpret_cast<void*>(static_cast<intptr_t>(static_cast<oc::ButtonID>(btnId))));
     }
 
     // Store encoder data
@@ -303,10 +303,10 @@ void HwSimulator::updatePositions() {
     }
 }
 
-void HwSimulator::setButtonPressed(oc::hal::ButtonID id, bool pressed) {
+void HwSimulator::setButtonPressed(oc::ButtonID id, bool pressed) {
     // Check standalone buttons
     for (auto& btn : buttons_) {
-        if (static_cast<oc::hal::ButtonID>(btn.id) == id) {
+        if (static_cast<oc::ButtonID>(btn.id) == id) {
             if (pressed) {
                 lv_obj_add_state(btn.obj, LV_STATE_PRESSED);
             } else {
@@ -318,7 +318,7 @@ void HwSimulator::setButtonPressed(oc::hal::ButtonID id, bool pressed) {
 
     // Check encoder buttons
     for (auto& enc : encoders_) {
-        if (static_cast<oc::hal::ButtonID>(enc.btnId) == id && enc.centerBtn) {
+        if (static_cast<oc::ButtonID>(enc.btnId) == id && enc.centerBtn) {
             if (pressed) {
                 lv_obj_add_state(enc.centerBtn, LV_STATE_PRESSED);
             } else {
@@ -329,9 +329,9 @@ void HwSimulator::setButtonPressed(oc::hal::ButtonID id, bool pressed) {
     }
 }
 
-void HwSimulator::setEncoderValue(oc::hal::EncoderID id, float value) {
+void HwSimulator::setEncoderValue(oc::EncoderID id, float value) {
     for (auto& enc : encoders_) {
-        if (static_cast<oc::hal::EncoderID>(enc.encId) == id) {
+        if (static_cast<oc::EncoderID>(enc.encId) == id) {
             enc.value = value;
             int arcValue = static_cast<int>(value * 100.0f);
             lv_arc_set_value(enc.arc, arcValue);
@@ -356,7 +356,7 @@ bool HwSimulator::handleMouseWheel(int mouseX, int mouseY, int delta) {
             mouseY >= area.y1 && mouseY <= area.y2) {
             // Send delta to this encoder
             float encoderDelta = static_cast<float>(delta) * 0.02f;
-            inputMapper_->post(static_cast<oc::hal::EncoderID>(enc.encId), encoderDelta);
+            inputMapper_->post(static_cast<oc::EncoderID>(enc.encId), encoderDelta);
             return true;
         }
     }
@@ -367,7 +367,7 @@ void HwSimulator::buttonEventCb(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
     HwSimulator* self = static_cast<HwSimulator*>(lv_obj_get_user_data(obj));
-    oc::hal::ButtonID id = static_cast<oc::hal::ButtonID>(
+    oc::ButtonID id = static_cast<oc::ButtonID>(
         reinterpret_cast<intptr_t>(lv_event_get_user_data(e)));
 
     if (!self || !self->inputMapper_) return;
@@ -404,7 +404,7 @@ void HwSimulator::encoderEventCb(lv_event_t* e) {
         if (deltaY != 0 && self->inputMapper_) {
             // Sensitivity: ~100 pixels for full range
             float delta = static_cast<float>(deltaY) / 100.0f;
-            self->inputMapper_->post(static_cast<oc::hal::EncoderID>(enc.encId), delta);
+            self->inputMapper_->post(static_cast<oc::EncoderID>(enc.encId), delta);
             enc.dragStartY = p.y;  // Reset for continuous drag
         }
     }

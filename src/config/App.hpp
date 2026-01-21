@@ -54,7 +54,7 @@ constexpr uint32_t DOUBLE_TAP_MS = 300;     // Double tap window
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace Input {
-constexpr oc::core::InputConfig CONFIG = {.longPressMs = Timing::LONG_PRESS_MS,
+constexpr oc::core::input::InputConfig CONFIG = {.longPressMs = Timing::LONG_PRESS_MS,
                                           .doubleTapWindowMs = Timing::DOUBLE_TAP_MS,
                                           .latchThresholdMs = Timing::LATCH_THRESHOLD_MS,
                                           .debounceMs = Timing::DEBOUNCE_MS};

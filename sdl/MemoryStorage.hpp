@@ -1,6 +1,7 @@
 #pragma once
 
-#include <oc/hal/IStorageBackend.hpp>
+#include <oc/interface/IStorage.hpp>
+#include <oc/types/Result.hpp>
 #include <vector>
 #include <cstring>
 
@@ -12,12 +13,12 @@ namespace desktop {
  * Data is lost on exit. For persistent desktop storage,
  * implement a FileStorageBackend instead.
  */
-class MemoryStorage : public oc::hal::IStorageBackend {
+class MemoryStorage : public oc::interface::IStorage {
 public:
     explicit MemoryStorage(size_t capacity = 4096)
         : data_(capacity, 0xFF) {}
 
-    bool begin() override { return true; }
+    oc::Result<void> init() override { return oc::Result<void>::ok(); }
 
     bool available() const override { return true; }
 

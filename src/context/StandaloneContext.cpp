@@ -30,7 +30,7 @@ StandaloneContext::~StandaloneContext() = default;
 // IContext Lifecycle
 // =============================================================================
 
-bool StandaloneContext::initialize() {
+oc::Result<void> StandaloneContext::init() {
     OC_LOG_INFO("StandaloneContext::initialize()");
 
     oc::ui::lvgl::font::load(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
@@ -68,8 +68,8 @@ bool StandaloneContext::initialize() {
     // Register overlay cleanup
     overlay_controller_->registerCleanup(
         core::ui::OverlayType::MACRO_EDIT,
-        reinterpret_cast<oc::core::ScopeID>(macro_edit_overlay_->getElement()),
-        static_cast<oc::hal::ButtonID>(0)  // No latch button
+        reinterpret_cast<oc::ScopeID>(macro_edit_overlay_->getElement()),
+        static_cast<oc::ButtonID>(0)  // No latch button
     );
 
     // Setup rendering subscriptions for MacroEditOverlay (orchestrator pattern)
@@ -99,7 +99,7 @@ bool StandaloneContext::initialize() {
     view_container_->show();
 
     OC_LOG_INFO("StandaloneContext ready");
-    return true;
+    return oc::Result<void>::ok();
 }
 
 void StandaloneContext::update() {

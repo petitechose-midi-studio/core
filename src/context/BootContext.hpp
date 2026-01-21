@@ -10,7 +10,7 @@
 #include <lvgl.h>
 #include <oc/time/Time.hpp>
 
-#include <oc/context/IContext.hpp>
+#include <oc/context/ContextBase.hpp>
 #include <oc/context/Requirements.hpp>
 
 #include <oc/ui/lvgl/FontLoader.hpp>
@@ -22,18 +22,18 @@
 
 namespace core::context {
 
-class BootContext : public oc::context::IContext {
+class BootContext : public oc::context::ContextBase {
 public:
     static constexpr oc::context::Requirements REQUIRES{};
 
-    bool initialize() override {
+    oc::Result<void> init() override {
         oc::ui::lvgl::font::loadEssential(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
 
         splash_ = std::make_unique<core::ui::SplashScreenView>(oc::ui::lvgl::Screen::root());
         splash_->onActivate();
 
         start_ms_ = oc::time::millis();
-        return true;
+        return oc::Result<void>::ok();
     }
 
     void update() override {

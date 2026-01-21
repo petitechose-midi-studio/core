@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include <oc/hal/IStorageBackend.hpp>
+#include <oc/interface/IStorage.hpp>
 #include <oc/log/Log.hpp>
 
 #include "macro/MacroPagesState.hpp"
@@ -78,7 +78,7 @@ class CoreSettings {
 public:
     static constexpr uint32_t VALUE_SAVE_DELAY_MS = 300;  ///< Delay before saving values
 
-    explicit CoreSettings(oc::hal::IStorageBackend& backend)
+    explicit CoreSettings(oc::interface::IStorage& backend)
         : backend_(backend) {}
 
     // Non-copyable
@@ -221,7 +221,7 @@ public:
     }
 
 private:
-    oc::hal::IStorageBackend& backend_;
+    oc::interface::IStorage& backend_;
 };
 
 }  // namespace core::state
