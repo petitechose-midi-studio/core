@@ -1,18 +1,32 @@
-#!/bin/bash
-# Icon Font Builder - Wrapper for unified builder
-# Usage: ./generate_icons.sh
+#!/usr/bin/env bash
+# Generate LVGL icon fonts (core)
 
-set -e
+set -euo pipefail
 
-# Get script directory and derive paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# core/script/lvgl/icon -> core -> midi-studio
-CORE_ROOT="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
-MIDI_STUDIO_ROOT="$(dirname "$CORE_ROOT")"
-BUILDER="$MIDI_STUDIO_ROOT/script/icon/builder.py"
+CORE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-# Check builder exists
+if [[ -n "${WORKSPACE_ROOT:-}" && -f "$WORKSPACE_ROOT/open-control/ui-lvgl-cli-tools/icon/build.py" ]]; then
+  WORKSPACE="$WORKSPACE_ROOT"
+else
+  WORKSPACE="$(cd "$CORE_ROOT/../.." && pwd)"
+fi
+
+BUILDER="$WORKSPACE/open-control/ui-lvgl-cli-tools/icon/build.py"
 [[ -f "$BUILDER" ]] || { echo "Builder not found: $BUILDER" >&2; exit 1; }
 
-# Run unified builder for core
-python "$BUILDER" core "$@"
+PY="$WORKSPACE/.venv/bin/python"
+if [[ -f "$WORKSPACE/.venv/Scripts/python.exe" ]]; then
+  PY="$WORKSPACE/.venv/Scripts/python.exe"
+fi
+
+if [[ ! -x "$PY" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PY=python3
+  else
+    PY=python
+  fi
+fi
+
+cd "$CORE_ROOT"
+exec "$PY" "$BUILDER" "$@"
