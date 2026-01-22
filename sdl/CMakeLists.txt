@@ -132,6 +132,10 @@ if(BUILD_NATIVE AND DEFINED SDL2_INCLUDE)
     target_include_directories(lvgl PUBLIC ${SDL2_INCLUDE})
 endif()
 
+# LVGL's SDL backend uses memset without including <string.h>, which breaks on
+# newer toolchains (implicit function declarations are errors).
+target_compile_options(lvgl PRIVATE $<$<COMPILE_LANGUAGE:C>:-include string.h>)
+
 # ==============================================================================
 # Sources
 # ==============================================================================
