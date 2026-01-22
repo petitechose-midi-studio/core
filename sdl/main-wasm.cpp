@@ -11,6 +11,10 @@
 #include "SdlEnvironment.hpp"
 #include "MemoryStorage.hpp"
 
+#include "entry/MidiDefaults.hpp"
+#include "entry/SdlRunLoop.hpp"
+#include "entry/WasmArgs.hpp"
+
 #include <oc/hal/sdl/Sdl.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
 #include <oc/hal/net/WebSocketTransport.hpp>
@@ -19,21 +23,8 @@
 #include "app/AppLogic.hpp"
 #include "state/CoreState.hpp"
 
-#include <emscripten.h>
-
-// Global state for emscripten main loop callback
-static sdl::SdlEnvironment* g_env = nullptr;
-static oc::app::OpenControlApp* g_app = nullptr;
-static core::state::CoreState* g_coreState = nullptr;
-
-static void tick(void*) {
-    if (!g_env->processEvents()) {
-        emscripten_cancel_main_loop();
-        return;
-    }
-    g_app->update();
-    g_coreState->update();
-    g_env->refresh();
+static void tick_core_state(void* user) {
+    static_cast<core::state::CoreState*>(user)->update();
 }
 
 int main(int argc, char** argv) {
@@ -49,14 +40,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const auto midi = ms::wasm::parse_midi_args(argc, argv);
+
     static oc::app::OpenControlApp app = oc::hal::sdl::AppBuilder()
         .midi(std::make_unique<oc::hal::midi::LibreMidiTransport>(
-            oc::hal::midi::LibreMidiConfig{
-                .appName = "MIDI Studio WASM",
-                .inputPortName = "MIDI Studio IN",
-                .outputPortName = "MIDI Studio OUT",
-                .useVirtualPorts = false  // WebMIDI connects to existing ports
-            }))
+            ms::midi::make_wasm_config("MIDI Studio WASM", midi.in, midi.out)))
         .remote(std::make_unique<oc::hal::net::WebSocketTransport>(
             oc::hal::net::WebSocketConfig{
                 .url = "ws://localhost:8100"  // Controller: core wasm (host: 9002)
@@ -67,10 +55,5 @@ int main(int argc, char** argv) {
     core::app::registerContexts(app, coreState);
     app.begin();
 
-    g_env = &env;
-    g_app = &app;
-    g_coreState = &coreState;
-
-    emscripten_set_main_loop_arg(tick, nullptr, -1, true);
-    return 0;
+    return ms::entry::run_wasm(env, app, &coreState, tick_core_state);
 }

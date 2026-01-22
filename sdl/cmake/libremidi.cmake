@@ -28,3 +28,7 @@ elseif(WIN32)
 endif()
 
 FetchContent_MakeAvailable(libremidi)
+
+# Note (WASM): The Emscripten WebMIDI backend requires exporting
+# `_libremidi_devices_poll` and `_libremidi_devices_input` from the final app.
+# We do that at the app link level in `midi-studio/core/sdl/CMakeLists.txt`.

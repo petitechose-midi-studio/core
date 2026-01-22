@@ -196,7 +196,7 @@ if(BUILD_WASM)
             -s INITIAL_MEMORY=67108864 -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=268435456 \
             -s ASYNCIFY=1 -s ASYNCIFY_STACK_SIZE=65536 -s INVOKE_RUN=0 \
             -s EXPORTED_RUNTIME_METHODS=['callMain','UTF8ToString','stringToUTF8'] \
-            -s EXPORTED_FUNCTIONS=['_main','_malloc','_free'] \
+            -s EXPORTED_FUNCTIONS=['_main','_malloc','_free','_libremidi_devices_poll','_libremidi_devices_input'] \
             --shell-file ${SDL_DIR}/wasm/shell.html")
 
 elseif(WIN32)

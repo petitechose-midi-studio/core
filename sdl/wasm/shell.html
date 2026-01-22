@@ -102,6 +102,44 @@
             gap: 10px;
         }
 
+        #midi-select {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #aaa;
+            font-size: 12px;
+            z-index: 110;
+        }
+
+        #midi-select select {
+            background: rgba(30, 30, 30, 0.9);
+            color: #ddd;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 4px 6px;
+            border-radius: 4px;
+            max-width: 260px;
+        }
+
+        #midi-select button {
+            background: rgba(30, 30, 30, 0.9);
+            color: #ddd;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #midi-select button:hover {
+            background: rgba(50, 50, 50, 0.9);
+        }
+
         #controls button {
             background: #333;
             color: #aaa;
@@ -143,6 +181,15 @@
 
     <div id="controls">
         <button onclick="toggleFullscreen()">Fullscreen</button>
+    </div>
+
+    <div id="midi-select">
+        <span>MIDI</span>
+        <span>In</span>
+        <select id="midi-in"></select>
+        <span>Out</span>
+        <select id="midi-out"></select>
+        <button id="midi-apply" title="Reload with selected ports">Apply</button>
     </div>
 
     <div id="loading">
@@ -194,17 +241,125 @@
         async function initWebMIDI() {
             if (!navigator.requestMIDIAccess) {
                 console.warn('WebMIDI not supported in this browser');
-                return false;
+                return null;
             }
             try {
                 const access = await navigator.requestMIDIAccess({ sysex: true });
-                // Store for libremidi to find
+
+                // Store for libremidi to find.
                 globalThis.__libreMidi_access = access;
                 console.log('WebMIDI ready:', access.inputs.size, 'inputs,', access.outputs.size, 'outputs');
-                return true;
+
+                return access;
             } catch (err) {
                 console.error('WebMIDI access denied:', err);
-                return false;
+                return null;
+            }
+        }
+
+        // =================================================================
+        // MIDI selector UI
+        // =================================================================
+        const keyPrefix = `midi_studio:${location.pathname}:`;
+        const keyIn = `${keyPrefix}midiIn`;
+        const keyOut = `${keyPrefix}midiOut`;
+
+        function getSaved(key) {
+            try {
+                return localStorage.getItem(key) || '';
+            } catch {
+                return '';
+            }
+        }
+
+        function setSaved(key, value) {
+            try {
+                localStorage.setItem(key, value);
+            } catch {
+                // ignore
+            }
+        }
+
+        function portLabel(port) {
+            const m = port.manufacturer || '';
+            const n = port.name || '';
+            if (m && n && !n.startsWith(m)) return `${m}:${n}`;
+            return n || port.id || '(unnamed)';
+        }
+
+        function fillSelect(select, portsMap, savedValue) {
+            select.textContent = '';
+
+            const optAuto = document.createElement('option');
+            optAuto.value = '';
+            optAuto.textContent = 'Auto';
+            select.appendChild(optAuto);
+
+            const ports = Array.from(portsMap.values());
+            ports.sort((a, b) => portLabel(a).localeCompare(portLabel(b)));
+            for (const port of ports) {
+                const opt = document.createElement('option');
+                opt.value = port.name || '';
+                opt.textContent = portLabel(port);
+                if (opt.value && opt.value === savedValue) {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            }
+
+            // If saved value is not present anymore, keep Auto.
+        }
+
+        function buildWasmArgs() {
+            const args = [canvasSize.toString()];
+            const inName = document.getElementById('midi-in').value;
+            const outName = document.getElementById('midi-out').value;
+            if (inName) args.push('--midi-in', inName);
+            if (outName) args.push('--midi-out', outName);
+            return args;
+        }
+
+        function applySelection(reload = true) {
+            const inName = document.getElementById('midi-in').value;
+            const outName = document.getElementById('midi-out').value;
+            setSaved(keyIn, inName);
+            setSaved(keyOut, outName);
+            if (reload) {
+                location.reload();
+            }
+        }
+
+        function setupMidiSelector(access) {
+            const selectIn = document.getElementById('midi-in');
+            const selectOut = document.getElementById('midi-out');
+            const btnApply = document.getElementById('midi-apply');
+
+            const savedIn = getSaved(keyIn);
+            const savedOut = getSaved(keyOut);
+
+            fillSelect(selectIn, access.inputs, savedIn);
+            fillSelect(selectOut, access.outputs, savedOut);
+
+            btnApply.addEventListener('click', () => applySelection(true));
+
+            access.onstatechange = () => {
+                const curIn = getSaved(keyIn);
+                const curOut = getSaved(keyOut);
+                fillSelect(selectIn, access.inputs, curIn);
+                fillSelect(selectOut, access.outputs, curOut);
+            };
+        }
+
+        function patchLibreMidiModule() {
+            // libremidi's Emscripten backend expects Module.HEAPU8.
+            // Newer Emscripten runtimes keep HEAPU8 as a global, not on Module.
+            try {
+                if (!Module || typeof HEAPU8 === 'undefined') return;
+                if (!('HEAPU8' in Module) || !Module.HEAPU8) {
+                    Object.defineProperty(Module, 'HEAPU8', { get: () => HEAPU8 });
+                }
+            } catch {
+                // ignore
             }
         }
 
@@ -222,16 +377,27 @@
             arguments: [canvasSize.toString()],
             noInitialRun: true,  // Don't auto-run main()
             onRuntimeInitialized: async function() {
-                console.log('WASM runtime ready');
-                
-                // Initialize WebMIDI BEFORE starting main()
-                await initWebMIDI();
-                
-                // Now start the app
-                console.log('Starting MIDI Studio...');
-                Module.callMain(Module.arguments);
-                
-                document.getElementById('loading').classList.add('hidden');
+                try {
+                    console.log('WASM runtime ready');
+
+                    // Ensure libremidi can access the Emscripten heap.
+                    patchLibreMidiModule();
+
+                    // Initialize WebMIDI BEFORE starting main()
+                    const access = await initWebMIDI();
+                    if (access) {
+                        setupMidiSelector(access);
+                    }
+
+                    // Now start the app
+                    console.log('Starting MIDI Studio...');
+                    Module.arguments = buildWasmArgs();
+                    Module.callMain(Module.arguments);
+
+                    document.getElementById('loading').classList.add('hidden');
+                } catch (err) {
+                    console.error('WASM init failed:', err);
+                }
             },
             setStatus: function(text) {
                 if (text) {
