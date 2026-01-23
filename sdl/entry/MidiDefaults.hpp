@@ -13,14 +13,20 @@ struct Defaults {
 };
 
 inline Defaults native_defaults() {
-#if defined(__linux__)
+#if defined(__EMSCRIPTEN__)
+    // WASM: should use make_wasm_config() instead
+    return Defaults{.input_pattern = "", .output_pattern = "", .use_virtual_ports = false};
+#elif defined(__linux__)
     return Defaults{.input_pattern = "VirMIDI", .output_pattern = "VirMIDI", .use_virtual_ports = false};
 #elif defined(__APPLE__)
     // macOS: CoreMIDI supports virtual ports.
     return Defaults{.input_pattern = "MIDI Studio IN", .output_pattern = "MIDI Studio OUT", .use_virtual_ports = true};
+#elif defined(_WIN32)
+    // Windows native: specific loopMIDI ports to avoid matching wasm ports
+    return Defaults{.input_pattern = "loopMIDI IN native", .output_pattern = "loopMIDI OUT native", .use_virtual_ports = false};
 #else
-    // Windows: user-created loopMIDI ports.
-    return Defaults{.input_pattern = "loopMIDI", .output_pattern = "loopMIDI", .use_virtual_ports = false};
+    // Unknown platform
+    return Defaults{.input_pattern = "", .output_pattern = "", .use_virtual_ports = false};
 #endif
 }
 

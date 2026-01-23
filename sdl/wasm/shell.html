@@ -350,13 +350,28 @@
             };
         }
 
+        // =================================================================
+        // libremidi compatibility shim
+        // =================================================================
+        // libremidi's Emscripten backend uses Module._malloc, Module._free, 
+        // and Module.HEAPU8. In newer Emscripten versions, these are globals
+        // rather than Module properties. This function patches Module to
+        // ensure compatibility.
         function patchLibreMidiModule() {
-            // libremidi's Emscripten backend expects Module.HEAPU8.
-            // Newer Emscripten runtimes keep HEAPU8 as a global, not on Module.
             try {
-                if (!Module || typeof HEAPU8 === 'undefined') return;
-                if (!('HEAPU8' in Module) || !Module.HEAPU8) {
+                if (!Module) return;
+                
+                // Patch HEAPU8
+                if (typeof HEAPU8 !== 'undefined' && !Module.HEAPU8) {
                     Object.defineProperty(Module, 'HEAPU8', { get: () => HEAPU8 });
+                }
+                
+                // Patch _malloc and _free
+                if (typeof _malloc !== 'undefined' && !Module._malloc) {
+                    Module._malloc = _malloc;
+                }
+                if (typeof _free !== 'undefined' && !Module._free) {
+                    Module._free = _free;
                 }
             } catch {
                 // ignore
@@ -380,7 +395,7 @@
                 try {
                     console.log('WASM runtime ready');
 
-                    // Ensure libremidi can access the Emscripten heap.
+                    // Ensure libremidi can access Emscripten heap and memory functions
                     patchLibreMidiModule();
 
                     // Initialize WebMIDI BEFORE starting main()
