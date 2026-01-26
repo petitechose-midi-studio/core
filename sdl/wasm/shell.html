@@ -239,8 +239,12 @@
         // WebMIDI initialization
         // =================================================================
         async function initWebMIDI() {
+            // Fallback: empty MIDI access (no devices) - prevents libremidi crash
+            const emptyAccess = { inputs: new Map(), outputs: new Map() };
+
             if (!navigator.requestMIDIAccess) {
                 console.warn('WebMIDI not supported in this browser');
+                globalThis.__libreMidi_access = emptyAccess;
                 return null;
             }
             try {
@@ -253,6 +257,8 @@
                 return access;
             } catch (err) {
                 console.error('WebMIDI access denied:', err);
+                // Provide empty access so libremidi doesn't crash
+                globalThis.__libreMidi_access = emptyAccess;
                 return null;
             }
         }
