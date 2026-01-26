@@ -23,7 +23,7 @@ def find_core_path(project_dir):
             continue
 
         # Check .pio-link file (Windows symlink)
-        link_file = os.path.join(env_path, "petitechose-midi-studio-core.pio-link")
+        link_file = os.path.join(env_path, "ms-core.pio-link")
         if os.path.exists(link_file):
             with open(link_file, encoding='utf-8') as f:
                 data = json.load(f)
@@ -33,7 +33,7 @@ def find_core_path(project_dir):
                 return os.path.normpath(os.path.join(project_dir, rel_path))
 
         # Check direct folder (GitHub release)
-        direct = os.path.join(env_path, "petitechose-midi-studio-core")
+        direct = os.path.join(env_path, "ms-core")
         if os.path.isdir(direct):
             return direct
 
