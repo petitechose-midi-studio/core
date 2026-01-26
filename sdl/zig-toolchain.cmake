@@ -1,39 +1,54 @@
 # =============================================================================
-# Zig Toolchain for Windows Native Build (Max Performance)
-# Portable: Zig is in project's tools/ folder
+# Zig Toolchain for Windows Native Build
+# Requires: -DTOOLS_DIR=<path/to/tools>
 # =============================================================================
 
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 
-# Zig wrappers location
-get_filename_component(TOOLS_DIR "${CMAKE_CURRENT_LIST_DIR}/tools" ABSOLUTE)
+# Ensure TOOLS_DIR is passed to try_compile() calls
+set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES TOOLS_DIR)
 
-if(NOT EXISTS "${TOOLS_DIR}/zig/zig.exe")
-    message(FATAL_ERROR "Zig not found at: ${TOOLS_DIR}/zig/zig.exe\nRun ./build.sh native to auto-download.")
+# Tools directory - passed via -DTOOLS_DIR=...
+if(NOT DEFINED TOOLS_DIR)
+    message(FATAL_ERROR "TOOLS_DIR not defined. Pass -DTOOLS_DIR=<path>")
 endif()
 
-message(STATUS "Using Zig from: ${TOOLS_DIR}")
+# Normalize path (convert backslashes to forward slashes)
+file(TO_CMAKE_PATH "${TOOLS_DIR}" TOOLS_DIR)
+
+# Derive paths from TOOLS_DIR
+set(ZIG_ROOT "${TOOLS_DIR}/zig")
+set(ZIG_WRAPPER_DIR "${TOOLS_DIR}/bin")
+set(SDL2_ROOT "${TOOLS_DIR}/sdl2")
+
+if(NOT EXISTS "${ZIG_ROOT}/zig.exe")
+    message(FATAL_ERROR "Zig not found: ${ZIG_ROOT}/zig.exe\nRun: ms tools sync")
+endif()
+
+message(STATUS "Using Zig from: ${ZIG_ROOT}")
 
 # =============================================================================
-# Compiler Setup (using wrapper scripts)
+# Compiler Setup
 # =============================================================================
-set(CMAKE_C_COMPILER "${TOOLS_DIR}/zig-cc.cmd")
-set(CMAKE_CXX_COMPILER "${TOOLS_DIR}/zig-cxx.cmd")
-set(CMAKE_AR "${TOOLS_DIR}/zig-ar.cmd")
-set(CMAKE_C_COMPILER_AR "${TOOLS_DIR}/zig-ar.cmd")
-set(CMAKE_CXX_COMPILER_AR "${TOOLS_DIR}/zig-ar.cmd")
+set(CMAKE_C_COMPILER "${ZIG_WRAPPER_DIR}/zig-cc.cmd")
+set(CMAKE_CXX_COMPILER "${ZIG_WRAPPER_DIR}/zig-cxx.cmd")
+set(CMAKE_AR "${ZIG_WRAPPER_DIR}/zig-ar.cmd")
+set(CMAKE_C_COMPILER_AR "${ZIG_WRAPPER_DIR}/zig-ar.cmd")
+set(CMAKE_CXX_COMPILER_AR "${ZIG_WRAPPER_DIR}/zig-ar.cmd")
 set(CMAKE_RANLIB "true")
 
+# Disable resource compiler (not needed, Zig doesn't have one)
+set(CMAKE_RC_COMPILER_INIT "")
+set(CMAKE_RC_COMPILER NOTFOUND)
+
 # =============================================================================
-# Skip Compiler Checks (Zig handles everything)
+# Skip Compiler Checks
 # =============================================================================
 set(CMAKE_C_COMPILER_WORKS TRUE)
 set(CMAKE_CXX_COMPILER_WORKS TRUE)
 set(CMAKE_C_ABI_COMPILED TRUE)
 set(CMAKE_CXX_ABI_COMPILED TRUE)
-
-# Force compiler ID to avoid detection
 set(CMAKE_C_COMPILER_ID "Clang")
 set(CMAKE_CXX_COMPILER_ID "Clang")
 set(CMAKE_C_COMPILER_VERSION "18.0")
@@ -42,13 +57,8 @@ set(CMAKE_CXX_COMPILER_VERSION "18.0")
 # =============================================================================
 # Performance Flags
 # =============================================================================
-# Zig uses its own cache (~/.cache/zig) - very fast incremental builds
-# LLD linker is built-in - much faster than GNU ld
-
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_DEBUG "-gdwarf -O0" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "-gdwarf -O0" CACHE STRING "" FORCE)
-
-# Use maximum parallelism for linking
 set(CMAKE_EXE_LINKER_FLAGS "-fuse-ld=lld" CACHE STRING "" FORCE)
