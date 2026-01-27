@@ -103,16 +103,47 @@ if(BUILD_NATIVE)
         set(SDL2_FOUND TRUE)
         set(SDL2_LIBRARIES SDL2-static)
     elseif(UNIX)
-        # Linux/macOS: use system SDL2 (via package manager)
-        find_package(SDL2 REQUIRED)
-        if(NOT SDL2_FOUND)
-            message(FATAL_ERROR "SDL2 not found. Install it with:\n"
-                "  Fedora/RHEL:   sudo dnf install SDL2-devel\n"
-                "  Ubuntu/Debian: sudo apt install libsdl2-dev\n"
-                "  Arch:          sudo pacman -S sdl2\n"
-                "  macOS:         brew install sdl2")
+        if(APPLE)
+            # macOS: prefer system SDL2, but fall back to FetchContent.
+            find_package(SDL2 QUIET)
+            if(NOT SDL2_FOUND)
+                message(STATUS "SDL2 not found. Fetching SDL2 (macOS fallback)")
+                FetchContent_Declare(SDL2
+                    URL https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz)
+                FetchContent_MakeAvailable(SDL2)
+
+                # Pick a usable SDL2 target (prefer static when available).
+                set(SDL2_LIBRARIES "")
+                foreach(_cand SDL2::SDL2-static SDL2-static SDL2::SDL2 SDL2)
+                    if(TARGET ${_cand})
+                        set(SDL2_LIBRARIES ${_cand})
+                        break()
+                    endif()
+                endforeach()
+
+                if(NOT SDL2_LIBRARIES)
+                    message(FATAL_ERROR "SDL2 fetched but no usable target was created")
+                endif()
+
+                get_target_property(SDL2_INCLUDE ${SDL2_LIBRARIES} INTERFACE_INCLUDE_DIRECTORIES)
+                if(NOT SDL2_INCLUDE AND DEFINED SDL2_SOURCE_DIR)
+                    set(SDL2_INCLUDE "${SDL2_SOURCE_DIR}/include")
+                endif()
+                set(SDL2_FOUND TRUE)
+            else()
+                set(SDL2_INCLUDE ${SDL2_INCLUDE_DIRS})
+            endif()
+        else()
+            # Linux: use system SDL2 (via package manager)
+            find_package(SDL2 REQUIRED)
+            if(NOT SDL2_FOUND)
+                message(FATAL_ERROR "SDL2 not found. Install it with:\n"
+                    "  Fedora/RHEL:   sudo dnf install SDL2-devel\n"
+                    "  Ubuntu/Debian: sudo apt install libsdl2-dev\n"
+                    "  Arch:          sudo pacman -S sdl2")
+            endif()
+            set(SDL2_INCLUDE ${SDL2_INCLUDE_DIRS})
         endif()
-        set(SDL2_INCLUDE ${SDL2_INCLUDE_DIRS})
     endif()
 endif()
 
