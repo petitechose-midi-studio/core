@@ -57,10 +57,16 @@ set(CMAKE_C_COMPILER_VERSION "18.0")
 set(CMAKE_CXX_COMPILER_VERSION "18.0")
 
 # =============================================================================
+# Compiler Features (required for target_compile_features)
+# =============================================================================
+set(CMAKE_C_COMPILE_FEATURES c_std_11 c_std_17 c_std_23)
+set(CMAKE_CXX_COMPILE_FEATURES cxx_std_11 cxx_std_14 cxx_std_17 cxx_std_20 cxx_std_23)
+
+# =============================================================================
 # Performance Flags
 # =============================================================================
-set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
-set(CMAKE_C_FLAGS_DEBUG "-gdwarf -O0" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_DEBUG "-gdwarf -O0" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "-std=c17 -O3 -DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "-std=c++20 -O3 -DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_DEBUG "-std=c17 -gdwarf -O0" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_DEBUG "-std=c++20 -gdwarf -O0" CACHE STRING "" FORCE)
 set(CMAKE_EXE_LINKER_FLAGS "-fuse-ld=lld" CACHE STRING "" FORCE)
