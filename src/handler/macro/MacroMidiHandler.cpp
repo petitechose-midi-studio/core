@@ -1,5 +1,7 @@
 #include "MacroMidiHandler.hpp"
 
+#include "midi/MidiUtils.hpp"
+
 namespace core::handler {
 
 MacroMidiHandler::MacroMidiHandler(core::state::CoreState& coreState,
@@ -25,7 +27,7 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
     if (index < 0) return;
 
     // Convert CC value to normalized float
-    float normalized = static_cast<float>(value) / 127.0f;
+    float normalized = core::midi::fromCC(value);
 
     // Update state (triggers UI update, marks dirty for persistence)
     core_state_.setMacroValue(static_cast<uint8_t>(index), normalized);

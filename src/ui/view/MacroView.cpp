@@ -16,7 +16,9 @@ MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     createMacros();
 
     // Create debounce timer (synced with display refresh)
-    constexpr uint32_t periodMs = 1000 / Config::Timing::LVGL_HZ;
+    constexpr uint32_t periodMs = (Config::Timing::LVGL_HZ > 1000)
+        ? 1
+        : (1000 / Config::Timing::LVGL_HZ);
     update_timer_ = lv_timer_create(onUpdateTimer, periodMs, this);
 
     bindToState();
@@ -38,11 +40,15 @@ MacroView::~MacroView() {
 }
 
 void MacroView::onActivate() {
-    lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    if (container_) {
+        lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void MacroView::onDeactivate() {
-    lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    if (container_) {
+        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void MacroView::bindToState() {
@@ -68,14 +74,18 @@ void MacroView::bindToState() {
         );
 
         // Initialize UI with current state values
-        macros_[i]->setValue(slot.value.get());
-        updateConfigLabel(i);
+        if (macros_[i]) {
+            macros_[i]->setValue(slot.value.get());
+            updateConfigLabel(i);
+        }
     }
 }
 
 void MacroView::updateConfigLabel(uint8_t index) {
     const auto& config = core_state_.getMacroConfig(index);
-    macros_[index]->setConfig(config.channel, config.cc);
+    if (index < MACRO_COUNT && macros_[index]) {
+        macros_[index]->setConfig(config.channel, config.cc);
+    }
 }
 
 void MacroView::createLayout(lv_obj_t* parent) {
@@ -141,7 +151,9 @@ void MacroView::processDirtyFlags() {
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         if (dirty_flags_[i]) {
             dirty_flags_[i] = false;
-            macros_[i]->setValue(core_state_.macros.slots[i].value.get());
+            if (macros_[i]) {
+                macros_[i]->setValue(core_state_.macros.slots[i].value.get());
+            }
         }
     }
 }

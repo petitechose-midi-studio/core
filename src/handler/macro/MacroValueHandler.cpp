@@ -4,6 +4,8 @@
 
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include "midi/MidiUtils.hpp"
+
 namespace core::handler {
 
 using namespace oc::ui::lvgl;
@@ -36,7 +38,7 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     // Send MIDI CC
     const auto& config = core_state_.getMacroConfig(index);
-    uint8_t cc_value = static_cast<uint8_t>(clamped * 127.0f + 0.5f);
+    uint8_t cc_value = core::midi::toCC(clamped);
     midi_.sendCC(config.channel, config.cc, cc_value);
 
     // Signal CC MIDI OUT activity

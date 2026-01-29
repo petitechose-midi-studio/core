@@ -170,21 +170,21 @@ target_compile_options(lvgl PRIVATE $<$<COMPILE_LANGUAGE:C>:-include string.h>)
 # ==============================================================================
 # Sources
 # ==============================================================================
-file(GLOB_RECURSE SRC_FRAMEWORK "${OC_FRAMEWORK}/*.cpp")
-file(GLOB_RECURSE SRC_UI_LVGL "${OC_UI_LVGL}/*.cpp")
-file(GLOB_RECURSE SRC_UI_COMPONENTS "${OC_UI_COMPONENTS}/src/*.cpp")
-file(GLOB_RECURSE SRC_HAL_SDL "${OC_HAL_SDL}/*.cpp")
-file(GLOB_RECURSE SRC_HAL_MIDI "${OC_HAL_MIDI}/*.cpp")
+file(GLOB_RECURSE SRC_FRAMEWORK CONFIGURE_DEPENDS "${OC_FRAMEWORK}/*.cpp")
+file(GLOB_RECURSE SRC_UI_LVGL CONFIGURE_DEPENDS "${OC_UI_LVGL}/*.cpp")
+file(GLOB_RECURSE SRC_UI_COMPONENTS CONFIGURE_DEPENDS "${OC_UI_COMPONENTS}/src/*.cpp")
+file(GLOB_RECURSE SRC_HAL_SDL CONFIGURE_DEPENDS "${OC_HAL_SDL}/*.cpp")
+file(GLOB_RECURSE SRC_HAL_MIDI CONFIGURE_DEPENDS "${OC_HAL_MIDI}/*.cpp")
 
 # HAL Net: WASM only uses WebSocket
 if(BUILD_WASM)
     set(SRC_HAL_NET "${OC_HAL_NET}/oc/hal/net/WebSocketTransport.cpp")
 else()
-    file(GLOB_RECURSE SRC_HAL_NET "${OC_HAL_NET}/*.cpp")
+    file(GLOB_RECURSE SRC_HAL_NET CONFIGURE_DEPENDS "${OC_HAL_NET}/*.cpp")
 endif()
 
 # App sources
-file(GLOB_RECURSE SRC_APP "${APP_SRC_DIR}/*.cpp" "${APP_SRC_DIR}/*.c")
+file(GLOB_RECURSE SRC_APP CONFIGURE_DEPENDS "${APP_SRC_DIR}/*.cpp" "${APP_SRC_DIR}/*.c")
 list(FILTER SRC_APP EXCLUDE REGEX ".*/main\\.cpp$")
 list(FILTER SRC_APP EXCLUDE REGEX ".*/platform-teensy/.*")
 list(FILTER SRC_APP EXCLUDE REGEX ".*/name\\.c$")

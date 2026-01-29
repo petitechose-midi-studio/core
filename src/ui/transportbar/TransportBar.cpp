@@ -33,11 +33,11 @@ TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
 
 TransportBar::~TransportBar() {
     // Cleanup timers first (they reference indicators)
-    if (note_in_timer_) lv_timer_delete(note_in_timer_);
-    if (note_out_timer_) lv_timer_delete(note_out_timer_);
-    if (cc_in_timer_) lv_timer_delete(cc_in_timer_);
-    if (cc_out_timer_) lv_timer_delete(cc_out_timer_);
-    if (beat_timer_) lv_timer_delete(beat_timer_);
+    if (note_in_timer_) { lv_timer_delete(note_in_timer_); note_in_timer_ = nullptr; }
+    if (note_out_timer_) { lv_timer_delete(note_out_timer_); note_out_timer_ = nullptr; }
+    if (cc_in_timer_) { lv_timer_delete(cc_in_timer_); cc_in_timer_ = nullptr; }
+    if (cc_out_timer_) { lv_timer_delete(cc_out_timer_); cc_out_timer_ = nullptr; }
+    if (beat_timer_) { lv_timer_delete(beat_timer_); beat_timer_ = nullptr; }
 
     // Clear subscriptions before destroying UI
     subs_.clear();
@@ -202,6 +202,7 @@ void TransportBar::setBeatPulse(bool pulse) {
 
 void TransportBar::onNoteInTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->note_in_icon_) return;
     lv_obj_set_style_text_color(self->note_in_icon_, COLOR_INACTIVE, 0);
     self->state_.noteInActive.set(false);  // Reset for next pulse
     self->note_in_timer_ = nullptr;
@@ -209,6 +210,7 @@ void TransportBar::onNoteInTimeout(lv_timer_t* timer) {
 
 void TransportBar::onNoteOutTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->note_out_icon_) return;
     lv_obj_set_style_text_color(self->note_out_icon_, COLOR_INACTIVE, 0);
     self->state_.noteOutActive.set(false);
     self->note_out_timer_ = nullptr;
@@ -216,6 +218,7 @@ void TransportBar::onNoteOutTimeout(lv_timer_t* timer) {
 
 void TransportBar::onCcInTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->cc_in_icon_) return;
     lv_obj_set_style_text_color(self->cc_in_icon_, COLOR_INACTIVE, 0);
     self->state_.ccInActive.set(false);
     self->cc_in_timer_ = nullptr;
@@ -223,6 +226,7 @@ void TransportBar::onCcInTimeout(lv_timer_t* timer) {
 
 void TransportBar::onCcOutTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->cc_out_icon_) return;
     lv_obj_set_style_text_color(self->cc_out_icon_, COLOR_INACTIVE, 0);
     self->state_.ccOutActive.set(false);
     self->cc_out_timer_ = nullptr;
@@ -230,6 +234,7 @@ void TransportBar::onCcOutTimeout(lv_timer_t* timer) {
 
 void TransportBar::onBeatTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->beat_indicator_) return;
     self->beat_indicator_->setState(StateIndicator::State::OFF);
     self->state_.beatPulse.set(false);
     self->beat_timer_ = nullptr;

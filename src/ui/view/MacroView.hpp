@@ -12,6 +12,7 @@
  */
 
 #include <array>
+#include <cassert>
 #include <memory>
 #include <vector>
 
@@ -45,8 +46,16 @@ public:
     lv_obj_t* getElement() const override { return container_; }
 
     // Widget access
-    core::ui::IMacroWidget& macro(uint8_t index) { return *macros_[index]; }
-    const core::ui::IMacroWidget& macro(uint8_t index) const { return *macros_[index]; }
+    core::ui::IMacroWidget& macro(uint8_t index) {
+        assert(index < MACRO_COUNT);
+        if (index >= MACRO_COUNT) index = 0;
+        return *macros_[index];
+    }
+    const core::ui::IMacroWidget& macro(uint8_t index) const {
+        assert(index < MACRO_COUNT);
+        if (index >= MACRO_COUNT) index = 0;
+        return *macros_[index];
+    }
 
 private:
     void createLayout(lv_obj_t* parent);

@@ -14,6 +14,8 @@
 
 #include <config/InputIDs.hpp>
 
+#include "midi/MidiUtils.hpp"
+
 namespace core::state {
 
 using oc::state::DerivedStringSignal;
@@ -36,7 +38,7 @@ struct MacroSlot {
     /// Construct with auto-derived displayValue
     MacroSlot()
         : displayValue(value, [](float v, char* buf, size_t size) {
-              uint8_t cc = static_cast<uint8_t>(v * 127.0f);
+              uint8_t cc = core::midi::toCC(v);
               std::snprintf(buf, size, "%d", cc);
           }) {}
 

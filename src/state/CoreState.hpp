@@ -15,7 +15,9 @@
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 
 #include <oc/interface/IStorage.hpp>
@@ -69,6 +71,9 @@ struct CoreState {
         // Load persisted settings
         settings.load(pages);
 
+        // Reflect loaded page name in UI state
+        statusBar.pageName.set(pages.activePageData().name);
+
         // Sync runtime macros with active page
         syncMacrosFromActivePage();
 
@@ -80,7 +85,11 @@ struct CoreState {
         auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
             [this](uint8_t i) {
                 float value = macros.slots[i].value.get();
-                pages.activePageData().values[i] = value;
+
+                // Avoid redundant writes (e.g., when loading values from storage/page sync).
+                auto& page = pages.activePageData();
+                if (page.values[i] == value) return;
+                page.values[i] = value;
                 settings.saveValue(pages.activePage, i, value);
             },
             [this]() { settings.commit(); },
@@ -105,13 +114,13 @@ struct CoreState {
     void syncMacrosFromActivePage() {
         const auto& pageData = pages.activePageData();
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            // Set label from page name pattern or use page's stored label
+            // Default labels (currently not per-page).
             char label[16];
             snprintf(label, sizeof(label), "Macro %d", i + 1);
             macros.slots[i].label.set(label);
 
             // Restore value from page (displayValue updates automatically)
-            macros.slots[i].value.set(pageData.values[i]);
+            macros.slots[i].value.set(std::clamp(pageData.values[i], 0.0f, 1.0f));
         }
     }
 
@@ -121,11 +130,9 @@ struct CoreState {
     void switchToPage(uint8_t pageIndex) {
         if (pageIndex >= macro::PAGE_COUNT) return;
 
-        // Save current values to old page
-        auto& oldPage = pages.activePageData();
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            oldPage.values[i] = macros.slots[i].value.get();
-        }
+        // Ensure any pending value writes are committed to the current page
+        // before switching the active page.
+        flush();
 
         // Switch page
         pages.setActivePage(pageIndex);
@@ -135,10 +142,8 @@ struct CoreState {
         // Notify UI that config changed
         configRevision.set(configRevision.get() + 1);
 
-        // Update status bar
-        char pageName[16];
-        snprintf(pageName, sizeof(pageName), "Page %d", pageIndex + 1);
-        statusBar.pageName.set(pageName);
+        // Update status bar from persisted page name
+        statusBar.pageName.set(pages.activePageData().name);
 
         // Load new page values
         syncMacrosFromActivePage();
@@ -179,7 +184,7 @@ struct CoreState {
      */
     void setMacroValue(uint8_t index, float value) {
         if (index >= MACRO_COUNT) return;
-        macros.slots[index].value.set(value);
+        macros.slots[index].value.set(std::clamp(value, 0.0f, 1.0f));
         // AutoPersistIncremental handles dirty tracking via signal subscription
     }
 
@@ -214,7 +219,9 @@ struct CoreState {
      * Saves dirty values incrementally after debounce timeout.
      */
     void update() {
-        auto_persist_->update();
+        if (auto_persist_) {
+            auto_persist_->update();
+        }
     }
 
     /**
@@ -225,15 +232,19 @@ struct CoreState {
         pages.initDefaults();
         syncMacrosFromActivePage();
         settings.saveAll(pages);
+        statusBar.pageName.set(pages.activePageData().name);
         macroEdit.reset();
         overlays.hideAll();
+        configRevision.set(configRevision.get() + 1);
     }
 
     /**
      * @brief Flush any pending dirty values immediately
      */
     void flush() {
-        auto_persist_->flush();
+        if (auto_persist_) {
+            auto_persist_->flush();
+        }
     }
 
 private:

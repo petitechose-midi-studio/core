@@ -18,6 +18,7 @@
  */
 
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 
 #include <oc/interface/IStorage.hpp>
@@ -42,6 +43,17 @@ namespace StorageLayout {
     constexpr size_t MACRO_PAGE_SIZE = sizeof(macro::MacroPageData);  // 64 bytes
     static_assert(MACRO_PAGE_SIZE == 64, "Page size must be 64 bytes");
 
+    // Offsets within MacroPageData (avoid magic numbers that must match struct layout).
+    static constexpr uint32_t OFF_NAME = static_cast<uint32_t>(offsetof(macro::MacroPageData, name));
+    static constexpr uint32_t OFF_CC = static_cast<uint32_t>(offsetof(macro::MacroPageData, cc));
+    static constexpr uint32_t OFF_CHANNEL = static_cast<uint32_t>(offsetof(macro::MacroPageData, channel));
+    static constexpr uint32_t OFF_VALUES = static_cast<uint32_t>(offsetof(macro::MacroPageData, values));
+
+    static_assert(OFF_NAME == 0, "Unexpected MacroPageData layout");
+    static_assert(OFF_CC == 16, "Unexpected MacroPageData layout");
+    static_assert(OFF_CHANNEL == 24, "Unexpected MacroPageData layout");
+    static_assert(OFF_VALUES == 32, "Unexpected MacroPageData layout");
+
     /// Get offset for a specific page
     inline constexpr uint32_t pageOffset(uint8_t pageIndex) {
         return ADDR_PAGES + pageIndex * MACRO_PAGE_SIZE;
@@ -49,18 +61,17 @@ namespace StorageLayout {
 
     /// Get offset for a specific value within a page
     inline constexpr uint32_t valueOffset(uint8_t pageIndex, uint8_t macroIndex) {
-        // values start at offset 32 within MacroPageData (after name[16] + cc[8] + channel[8])
-        return pageOffset(pageIndex) + 32 + macroIndex * sizeof(float);
+        return pageOffset(pageIndex) + OFF_VALUES + macroIndex * sizeof(float);
     }
 
     /// Get offset for CC number
     inline constexpr uint32_t ccOffset(uint8_t pageIndex, uint8_t macroIndex) {
-        return pageOffset(pageIndex) + 16 + macroIndex;  // After name[16]
+        return pageOffset(pageIndex) + OFF_CC + macroIndex;
     }
 
     /// Get offset for channel
     inline constexpr uint32_t channelOffset(uint8_t pageIndex, uint8_t macroIndex) {
-        return pageOffset(pageIndex) + 24 + macroIndex;  // After name[16] + cc[8]
+        return pageOffset(pageIndex) + OFF_CHANNEL + macroIndex;
     }
 }
 
@@ -72,8 +83,8 @@ namespace StorageLayout {
  * - 4 bytes for value changes
  * - 64 bytes for full page saves
  *
- * Value changes use a dirty timer to batch writes (3s timeout).
- */
+     * Value changes use a dirty timer to batch writes (see VALUE_SAVE_DELAY_MS).
+     */
 class CoreSettings {
 public:
     static constexpr uint32_t VALUE_SAVE_DELAY_MS = 300;  ///< Delay before saving values
