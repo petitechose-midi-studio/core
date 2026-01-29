@@ -46,7 +46,16 @@ void MacroView::onDeactivate() {
 }
 
 void MacroView::bindToState() {
-    subscriptions_.reserve(MACRO_COUNT);
+    subscriptions_.reserve(MACRO_COUNT + 1);
+
+    // Refresh CH/CC labels when config or page changes
+    subscriptions_.push_back(
+        core_state_.configRevision.subscribe([this](uint32_t) {
+            for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+                updateConfigLabel(i);
+            }
+        })
+    );
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         auto& slot = core_state_.macros.slots[i];

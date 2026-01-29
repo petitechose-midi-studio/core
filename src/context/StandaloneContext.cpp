@@ -3,6 +3,7 @@
 #include <lvgl.h>
 
 #include <oc/log/Log.hpp>
+#include <oc/interface/IEncoder.hpp>
 #include <oc/ui/lvgl/FontLoader.hpp>
 #include <oc/ui/lvgl/Screen.hpp>
 
@@ -14,7 +15,7 @@
 #include "ui/font/CoreFonts.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/macro/MacroEditOverlay.hpp"
-#include "state/OverlayManager.hpp"
+#include <oc/context/OverlayManager.hpp>
 #include "ui/transportbar/TransportBar.hpp"
 #include "ui/view/MacroView.hpp"
 #include "ui/ViewContainer.hpp"
@@ -37,6 +38,9 @@ oc::type::Result<void> StandaloneContext::init() {
     oc::ui::lvgl::font::load(STANDALONE_FONT_ENTRIES, STANDALONE_FONT_COUNT);
     linkCoreFontAliases();
 
+    // Configure special encoders once (avoid hidden handler coupling)
+    encoders().setMode(Config::EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
+
     // Sync encoder positions with restored values BEFORE creating handlers
     syncEncodersFromState();
 
@@ -57,10 +61,9 @@ oc::type::Result<void> StandaloneContext::init() {
     );
 
     // Create overlay manager with AuthorityResolver
-    overlay_controller_ = std::make_unique<core::state::OverlayManager<core::ui::OverlayType>>(
+    overlay_controller_ = std::make_unique<oc::context::OverlayManager<core::ui::OverlayType>>(
         core_state_.overlays, buttons()
     );
-    buttons().setAuthorityResolver(&overlay_controller_->authority());
 
     // Create MacroEdit overlay (parented to MacroView)
     macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(view_->getElement());
@@ -79,9 +82,21 @@ oc::type::Result<void> StandaloneContext::init() {
     input_handler_ = std::make_unique<core::handler::MacroValueHandler>(
         core_state_, encoders(), midi(), view_->getElement()
     );
+
     midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(
-        core_state_, midi(), encoders()
+        core_state_, encoders()
     );
+
+    // MIDI input is routed through the framework EventBus (never via MidiAPI callbacks)
+    onMidiCC([this](uint8_t ch, uint8_t cc, uint8_t val) {
+        if (midi_handler_) midi_handler_->onCC(ch, cc, val);
+    });
+    onMidiNoteOn([this](uint8_t, uint8_t, uint8_t) {
+        if (midi_handler_) midi_handler_->onNoteIn();
+    });
+    onMidiNoteOff([this](uint8_t, uint8_t, uint8_t) {
+        if (midi_handler_) midi_handler_->onNoteIn();
+    });
     transport_handler_ = std::make_unique<core::handler::TransportHandler>(
         core_state_, encoders(), buttons(), view_->getElement()
     );
@@ -106,7 +121,16 @@ void StandaloneContext::update() {
     // Handlers and views are self-updating via Signal subscriptions
 }
 
-void StandaloneContext::cleanup() {
+void StandaloneContext::onCleanup() {
+    // Ensure overlay stack is reset while UI objects are still alive.
+    // CoreState survives context switches.
+    if (overlay_controller_) {
+        overlay_controller_->hideAll();
+    } else {
+        core_state_.overlays.hideAll();
+    }
+    core_state_.macroEdit.reset();
+
     // Handlers first (they reference state/APIs)
     macro_edit_handler_.reset();
     transport_handler_.reset();

@@ -55,11 +55,12 @@ public:
         }
     }
 
-    void cleanup() override {
+    const char* getName() const override { return "Boot"; }
+
+protected:
+    void onCleanup() override {
         splash_.reset();
     }
-
-    const char* getName() const override { return "Boot"; }
 
 private:
     static constexpr uint32_t DURATION_MS = 1000;

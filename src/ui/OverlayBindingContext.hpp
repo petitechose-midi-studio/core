@@ -10,7 +10,7 @@
 
 #include <lvgl.h>
 
-#include "../state/OverlayManager.hpp"
+#include <oc/context/OverlayManager.hpp>
 
 namespace core::ui {
 
@@ -39,7 +39,7 @@ namespace core::ui {
  */
 template <typename OverlayEnumT>
 struct OverlayBindingContext {
-    core::state::OverlayManager<OverlayEnumT>& controller;
+    oc::context::OverlayManager<OverlayEnumT>& controller;
     lv_obj_t* scopeElement;    ///< Element for scoped input bindings (nullptr = global)
     lv_obj_t* overlayElement;  ///< Element for overlay UI positioning
 };

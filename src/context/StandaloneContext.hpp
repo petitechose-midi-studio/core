@@ -55,9 +55,10 @@ class TransportBar;
 class MacroEditOverlay;
 }  // namespace core::ui
 
-namespace core::state {
-template<typename T> class OverlayManager;
-}  // namespace core::state
+namespace oc::context {
+template <typename T>
+class OverlayManager;
+}  // namespace oc::context
 
 namespace core::context {
 
@@ -95,8 +96,10 @@ public:
     // IContext interface
     oc::type::Result<void> init() override;
     void update() override;
-    void cleanup() override;
     const char* getName() const override { return "Standalone"; }
+
+protected:
+    void onCleanup() override;
 
 private:
     void syncEncodersFromState();
@@ -111,7 +114,7 @@ private:
     std::unique_ptr<core::ui::TransportBar> transport_bar_;
 
     // Overlay system
-    std::unique_ptr<core::state::OverlayManager<core::ui::OverlayType>> overlay_controller_;
+    std::unique_ptr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
     std::unique_ptr<core::ui::MacroEditOverlay> macro_edit_overlay_;
     oc::state::SignalWatcher macro_edit_watcher_;
 

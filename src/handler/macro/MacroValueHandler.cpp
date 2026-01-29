@@ -1,5 +1,7 @@
 #include "MacroValueHandler.hpp"
 
+#include <algorithm>
+
 #include <oc/ui/lvgl/Scope.hpp>
 
 namespace core::handler {
@@ -27,12 +29,14 @@ void MacroValueHandler::setupBindings() {
 }
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {
+    const float clamped = std::clamp(value, 0.0f, 1.0f);
+
     // Update state (triggers UI update, marks dirty for persistence)
-    core_state_.setMacroValue(index, value);
+    core_state_.setMacroValue(index, clamped);
 
     // Send MIDI CC
     const auto& config = core_state_.getMacroConfig(index);
-    uint8_t cc_value = static_cast<uint8_t>(value * 127.0f);
+    uint8_t cc_value = static_cast<uint8_t>(clamped * 127.0f + 0.5f);
     midi_.sendCC(config.channel, config.cc, cc_value);
 
     // Signal CC MIDI OUT activity

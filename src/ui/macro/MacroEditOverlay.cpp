@@ -107,7 +107,7 @@ void MacroEditOverlay::render(const MacroEditOverlayProps& props) {
     // Update channel value
     if (props.channel != current_props_.channel) {
         char buf[8];
-        snprintf(buf, sizeof(buf), "%d", props.channel);
+        snprintf(buf, sizeof(buf), "%d", static_cast<int>(props.channel) + 1);
         channel_value_label_->setText(buf);
     }
 

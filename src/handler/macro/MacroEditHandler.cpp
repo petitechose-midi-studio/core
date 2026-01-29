@@ -13,7 +13,7 @@ namespace core::handler {
 
 MacroEditHandler::MacroEditHandler(
     core::state::CoreState& state,
-    core::state::OverlayManager<core::ui::OverlayType>& overlays,
+    oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* macroViewScope,
@@ -85,26 +85,22 @@ void MacroEditHandler::saveAndClose() {
     uint8_t ch = state_.macroEdit.tempChannel.get();
     uint8_t cc = state_.macroEdit.tempCC.get();
 
-    // Update active page config
-    state_.pages.activeConfigs[idx].channel = ch;
-    state_.pages.activeConfigs[idx].cc = cc;
-
-    // Save to persistent storage
-    state_.settings.saveChannel(state_.pages.activePage, idx, ch);
-    state_.settings.saveCC(state_.pages.activePage, idx, cc);
+    // Single source of truth: updates page data + active configs + persistence
+    state_.setMacroConfig(idx, ch, cc);
 
     overlays_.hide();
-    OC_LOG_INFO("[MacroEditHandler] Saved macro {} config: CH={}, CC={}", idx, ch, cc);
+    OC_LOG_INFO("[MacroEditHandler] Saved macro {} config: CH={}, CC={}", idx, static_cast<int>(ch) + 1, cc);
 }
 
 void MacroEditHandler::adjustValue(float delta) {
+    if (delta == 0.0f) return;
     int step = (delta > 0) ? 1 : -1;
     uint8_t focusedRow = state_.macroEdit.focusedRow.get();
 
     if (focusedRow == 0) {
-        // Channel: 1-16
+        // Channel: 0-15 (displayed as 1-16)
         int ch = state_.macroEdit.tempChannel.get() + step;
-        ch = std::clamp(ch, 1, 16);
+        ch = std::clamp(ch, 0, 15);
         state_.macroEdit.tempChannel.set(static_cast<uint8_t>(ch));
     } else {
         // CC: 0-127

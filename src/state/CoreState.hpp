@@ -15,6 +15,7 @@
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
+#include <cstdint>
 #include <memory>
 
 #include <oc/interface/IStorage.hpp>
@@ -43,6 +44,9 @@ struct CoreState {
 
     /// Multi-page configuration (CC, channel, stored values)
     macro::MacroPagesState pages;
+
+    /// Bumps on any config/page change (for UI refresh)
+    oc::state::Signal<uint32_t> configRevision{0};
 
     /// Persistence manager
     CoreSettings settings;
@@ -126,6 +130,10 @@ struct CoreState {
         // Switch page
         pages.setActivePage(pageIndex);
         settings.saveActivePage(pageIndex);
+        settings.commit();
+
+        // Notify UI that config changed
+        configRevision.set(configRevision.get() + 1);
 
         // Update status bar
         char pageName[16];
@@ -134,6 +142,27 @@ struct CoreState {
 
         // Load new page values
         syncMacrosFromActivePage();
+    }
+
+    /**
+     * @brief Set macro MIDI configuration for the active page
+     *
+     * Single source of truth: updates page data, derived active configs, and persistence.
+     */
+    void setMacroConfig(uint8_t index, uint8_t channel, uint8_t cc) {
+        if (index >= MACRO_COUNT) return;
+        if (channel > 15 || cc > 127) return;
+
+        auto& page = pages.activePageData();
+        page.channel[index] = channel;
+        page.cc[index] = cc;
+        pages.updateActiveConfigs();
+
+        settings.saveChannel(pages.activePage, index, channel);
+        settings.saveCC(pages.activePage, index, cc);
+        settings.commit();
+
+        configRevision.set(configRevision.get() + 1);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

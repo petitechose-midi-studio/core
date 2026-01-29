@@ -18,14 +18,14 @@ namespace core::state {
  * before they are saved to persistent storage.
  */
 struct MacroEditState {
-    /// Overlay visibility (connected to ExclusiveVisibilityStack)
+    /// Overlay visibility (owned by ExclusiveVisibilityStack)
     oc::state::Signal<bool> visible{false};
 
     /// Which macro is being edited (0-7)
     oc::state::Signal<uint8_t> editingIndex{0};
 
-    /// Temporary channel value (1-16), not yet saved
-    oc::state::Signal<uint8_t> tempChannel{1};
+    /// Temporary channel value (0-15), not yet saved
+    oc::state::Signal<uint8_t> tempChannel{0};
 
     /// Temporary CC value (0-127), not yet saved
     oc::state::Signal<uint8_t> tempCC{0};
@@ -37,9 +37,8 @@ struct MacroEditState {
      * @brief Reset to defaults
      */
     void reset() {
-        visible.set(false);
         editingIndex.set(0);
-        tempChannel.set(1);
+        tempChannel.set(0);
         tempCC.set(0);
         focusedRow.set(0);
     }
@@ -50,7 +49,7 @@ struct MacroEditState {
      * Loads current config into temp values and shows overlay.
      *
      * @param index Macro index (0-7)
-     * @param channel Current MIDI channel (1-16)
+     * @param channel Current MIDI channel (0-15)
      * @param cc Current CC number (0-127)
      */
     void startEditing(uint8_t index, uint8_t channel, uint8_t cc) {
@@ -58,7 +57,6 @@ struct MacroEditState {
         tempChannel.set(channel);
         tempCC.set(cc);
         focusedRow.set(0);  // Start on channel
-        visible.set(true);
     }
 };
 

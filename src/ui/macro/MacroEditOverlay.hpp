@@ -31,7 +31,7 @@ namespace core::ui {
  */
 struct MacroEditOverlayProps {
     uint8_t editingIndex = 0;   ///< Which macro (0-7)
-    uint8_t channel = 1;        ///< MIDI channel (1-16)
+    uint8_t channel = 0;        ///< MIDI channel (0-15, displayed as 1-16)
     uint8_t cc = 0;             ///< CC number (0-127)
     uint8_t focusedRow = 0;     ///< 0 = channel, 1 = CC
     bool visible = false;       ///< Overlay visibility

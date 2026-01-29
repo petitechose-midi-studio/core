@@ -3,27 +3,17 @@
 namespace core::handler {
 
 MacroMidiHandler::MacroMidiHandler(core::state::CoreState& coreState,
-                                             oc::api::MidiAPI& midi,
                                              oc::api::EncoderAPI& encoders)
     : core_state_(coreState)
-    , midi_(midi)
     , encoders_(encoders) {
-    setupCallbacks();
 }
 
-void MacroMidiHandler::setupCallbacks() {
-    // CC messages
-    midi_.onCC([this](uint8_t channel, uint8_t cc, uint8_t value) {
-        handleIncomingCC(channel, cc, value);
-    });
+void MacroMidiHandler::onCC(uint8_t channel, uint8_t cc, uint8_t value) {
+    handleIncomingCC(channel, cc, value);
+}
 
-    // Note messages (for activity indicator only)
-    midi_.onNoteOn([this](uint8_t, uint8_t, uint8_t) {
-        core_state_.statusBar.noteInActive.set(true);
-    });
-    midi_.onNoteOff([this](uint8_t, uint8_t, uint8_t) {
-        core_state_.statusBar.noteInActive.set(true);
-    });
+void MacroMidiHandler::onNoteIn() {
+    core_state_.statusBar.noteInActive.set(true);
 }
 
 void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t value) {
