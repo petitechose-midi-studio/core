@@ -10,10 +10,12 @@
 
 #include "entry/MidiDefaults.hpp"
 #include "entry/SdlRunLoop.hpp"
+#include "entry/BridgeArgs.hpp"
 
 #include <oc/hal/sdl/Sdl.hpp>
 #include <oc/impl/FileStorage.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
+#include <oc/hal/net/UdpTransport.hpp>
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
@@ -34,10 +36,17 @@ int main(int argc, char** argv) {
     }
     core::state::CoreState coreState(storage);
 
+    const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
+
     // 3. Build application with MIDI transport
     oc::app::OpenControlApp app = oc::hal::sdl::AppBuilder()
         .midi(std::make_unique<oc::hal::midi::LibreMidiTransport>(
             ms::midi::make_native_config("MIDI Studio")))
+        .remote(std::make_unique<oc::hal::net::UdpTransport>(
+            oc::hal::net::UdpConfig{
+                .host = "127.0.0.1",
+                .port = static_cast<uint16_t>(bridge_udp_port)  // --bridge-udp-port
+            }))
         .controllers(env.inputMapper())
         .inputConfig(Config::Input::CONFIG);
 

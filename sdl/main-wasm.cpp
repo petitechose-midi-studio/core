@@ -13,6 +13,7 @@
 
 #include "entry/MidiDefaults.hpp"
 #include "entry/SdlRunLoop.hpp"
+#include "entry/BridgeArgs.hpp"
 #include "entry/WasmArgs.hpp"
 
 #include <oc/hal/sdl/Sdl.hpp>
@@ -41,13 +42,14 @@ int main(int argc, char** argv) {
     }
 
     const auto midi = ms::wasm::parse_midi_args(argc, argv);
+    const auto ws_url = ms::bridge::ws_url(argc, argv, "ws://localhost:8100");
 
     static oc::app::OpenControlApp app = oc::hal::sdl::AppBuilder()
         .midi(std::make_unique<oc::hal::midi::LibreMidiTransport>(
             ms::midi::make_wasm_config("MIDI Studio WASM", midi.in, midi.out)))
         .remote(std::make_unique<oc::hal::net::WebSocketTransport>(
             oc::hal::net::WebSocketConfig{
-                .url = "ws://localhost:8100"  // Controller: core wasm (host: 9002)
+                .url = ws_url  // Controller: core wasm (configurable via --bridge-ws-url)
             }))
         .controllers(env.inputMapper())
         .inputConfig(Config::Input::CONFIG);

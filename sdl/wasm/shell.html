@@ -228,6 +228,17 @@
 
         const canvasSize = getUrlParam('size', DEFAULT_SIZE);
 
+        // Bridge (oc-bridge) controller WS port
+        // Provided by ms CLI via URL: ?bridgeWsPort=8100
+        const bridgeWsPort = getUrlParam('bridgeWsPort', 0);
+
+        function buildBridgeWsUrl() {
+            if (!bridgeWsPort) return '';
+            const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+            const host = location.hostname || 'localhost';
+            return `${scheme}://${host}:${bridgeWsPort}`;
+        }
+
         // =================================================================
         // Canvas setup
         // =================================================================
@@ -322,6 +333,10 @@
             const outName = document.getElementById('midi-out').value;
             if (inName) args.push('--midi-in', inName);
             if (outName) args.push('--midi-out', outName);
+
+            const wsUrl = buildBridgeWsUrl();
+            if (wsUrl) args.push('--bridge-ws-url', wsUrl);
+
             return args;
         }
 
