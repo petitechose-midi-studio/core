@@ -33,6 +33,10 @@ void TransportHandler::setupBindings() {
 }
 
 void TransportHandler::handleTempoChange(float delta) {
+    if (core_state_.viewSelector.visible.get()) return;
+    if (core_state_.macroEdit.visible.get()) return;
+    if (core_state_.activeView.get() == core::ui::ViewType::SEQUENCER) return;
+
     float currentTempo = core_state_.statusBar.tempo.get();
     float newTempo = std::clamp(currentTempo + delta, TEMPO_MIN, TEMPO_MAX);
     core_state_.statusBar.tempo.set(newTempo);

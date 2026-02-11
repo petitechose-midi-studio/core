@@ -38,6 +38,7 @@ endif()
 set(SDL_DIR "${CMAKE_SOURCE_DIR}")
 set(MIDI_STUDIO_ROOT "${SDL_DIR}/..")
 set(OPEN_CONTROL_ROOT "${MIDI_STUDIO_ROOT}/../../open-control")
+set(MS_UI_ROOT "${MIDI_STUDIO_ROOT}/../ui")
 set(CONFIG_DIR "${MIDI_STUDIO_ROOT}/src/config")
 set(CORE_SRC "${MIDI_STUDIO_ROOT}/src")
 
@@ -173,6 +174,7 @@ target_compile_options(lvgl PRIVATE $<$<COMPILE_LANGUAGE:C>:-include string.h>)
 file(GLOB_RECURSE SRC_FRAMEWORK CONFIGURE_DEPENDS "${OC_FRAMEWORK}/*.cpp")
 file(GLOB_RECURSE SRC_UI_LVGL CONFIGURE_DEPENDS "${OC_UI_LVGL}/*.cpp")
 file(GLOB_RECURSE SRC_UI_COMPONENTS CONFIGURE_DEPENDS "${OC_UI_COMPONENTS}/src/*.cpp")
+file(GLOB_RECURSE SRC_MS_UI CONFIGURE_DEPENDS "${MS_UI_ROOT}/src/*.cpp")
 file(GLOB_RECURSE SRC_HAL_SDL CONFIGURE_DEPENDS "${OC_HAL_SDL}/*.cpp")
 file(GLOB_RECURSE SRC_HAL_MIDI CONFIGURE_DEPENDS "${OC_HAL_MIDI}/*.cpp")
 
@@ -204,11 +206,11 @@ endif()
 # Target
 # ==============================================================================
 add_executable(${APP_EXE_NAME}
-    ${SRC_SDL} ${SRC_APP} ${SRC_FRAMEWORK} ${SRC_UI_LVGL}
+    ${SRC_SDL} ${SRC_APP} ${SRC_MS_UI} ${SRC_FRAMEWORK} ${SRC_UI_LVGL}
     ${SRC_HAL_SDL} ${SRC_HAL_NET} ${SRC_HAL_MIDI} ${SRC_UI_COMPONENTS})
 
 target_include_directories(${APP_EXE_NAME} PRIVATE
-    ${SDL_DIR} ${LV_CONF_DIR} ${CONFIG_DIR} ${APP_SRC_DIR} ${CORE_SRC}
+    ${SDL_DIR} ${LV_CONF_DIR} ${CONFIG_DIR} ${APP_SRC_DIR} ${CORE_SRC} ${MS_UI_ROOT}/src
     ${OC_FRAMEWORK} ${OC_UI_LVGL} ${OC_HAL_SDL} ${OC_HAL_NET} ${OC_HAL_MIDI}
     ${OC_UI_COMPONENTS}/include)
 

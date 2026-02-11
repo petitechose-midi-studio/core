@@ -40,17 +40,24 @@
 #include "state/CoreState.hpp"
 #include "ui/OverlayTypes.hpp"
 
+namespace ms::ui {
+class ViewContainer;
+class StringListSelector;
+}  // namespace ms::ui
+
 // Forward declarations
 namespace core::handler {
 class MacroValueHandler;
 class MacroMidiHandler;
 class MacroEditHandler;
 class TransportHandler;
+class ViewSwitcherHandler;
+class SequencerStepHandler;
 }  // namespace core::handler
 
 namespace core::ui {
-class ViewContainer;
 class MacroView;
+class SequencerView;
 class TransportBar;
 class MacroEditOverlay;
 }  // namespace core::ui
@@ -105,23 +112,33 @@ private:
     void syncEncodersFromState();
     void setupMacroEditRendering();
     void renderMacroEdit();
+    void setupViewSelectorRendering();
+    void renderViewSelector();
+    void setupActiveViewSwitching();
+    void applyActiveView();
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
 
     // UI containers
-    std::unique_ptr<core::ui::ViewContainer> view_container_;
-    std::unique_ptr<core::ui::MacroView> view_;
+    std::unique_ptr<ms::ui::ViewContainer> view_container_;
+    std::unique_ptr<core::ui::MacroView> macro_view_;
+    std::unique_ptr<core::ui::SequencerView> sequencer_view_;
     std::unique_ptr<core::ui::TransportBar> transport_bar_;
 
     // Overlay system
     std::unique_ptr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
+    std::unique_ptr<ms::ui::StringListSelector> view_selector_;
+    oc::state::SignalWatcher view_selector_watcher_;
     std::unique_ptr<core::ui::MacroEditOverlay> macro_edit_overlay_;
     oc::state::SignalWatcher macro_edit_watcher_;
+    oc::state::SignalWatcher active_view_watcher_;
 
     // Handlers
     std::unique_ptr<core::handler::MacroValueHandler> input_handler_;
     std::unique_ptr<core::handler::MacroMidiHandler> midi_handler_;
     std::unique_ptr<core::handler::TransportHandler> transport_handler_;
+    std::unique_ptr<core::handler::SequencerStepHandler> sequencer_step_handler_;
+    std::unique_ptr<core::handler::ViewSwitcherHandler> view_switcher_handler_;
     std::unique_ptr<core::handler::MacroEditHandler> macro_edit_handler_;
 };
 

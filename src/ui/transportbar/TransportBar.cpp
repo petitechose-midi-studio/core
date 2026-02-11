@@ -4,7 +4,7 @@
 #include <oc/state/Bind.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
-#include "ui/font/CoreFonts.hpp"
+#include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 

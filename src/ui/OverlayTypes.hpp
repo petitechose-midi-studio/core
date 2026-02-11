@@ -18,6 +18,7 @@ enum class OverlayType : uint8_t {
     NONE = 0,
     PAGE_SELECTOR,    // Sélection de page macro
     MACRO_EDIT,       // Édition d'une macro (CH/CC)
+    VIEW_SELECTOR,    // Top-level view selector
     COUNT             // Sentinel - must be last
 };
 
