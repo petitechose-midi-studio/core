@@ -59,21 +59,26 @@ void SequencerStepHandler::setupBindings() {
 }
 
 void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
-    constexpr uint8_t pageCount = core::state::sequencer::SequencerState::PAGE_COUNT;
-    const uint8_t page = (pageCount == 0)
-        ? 0
-        : static_cast<uint8_t>(state_.sequencer.page.get() % pageCount);
+    const uint8_t len = state_.sequencer.length.get();
+    if (len == 0) return;
 
-    const uint8_t abs = page * core::state::sequencer::SequencerState::STEPS_PER_PAGE + indexInPage;
-    if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
+    const uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
+    const uint8_t pageCount = static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
+    const uint8_t page = static_cast<uint8_t>(state_.sequencer.page.get() % pageCount);
+
+    const uint8_t abs = static_cast<uint8_t>(page * stepsPerPage + indexInPage);
+    if (abs >= len) return;
 
     state_.sequencer.focusedStep.set(abs);
     state_.sequencer.toggle(abs);
 }
 
 void SequencerStepHandler::toggleFocusedStep() {
+    const uint8_t len = state_.sequencer.length.get();
+    if (len == 0) return;
+
     const uint8_t abs = state_.sequencer.focusedStep.get();
-    if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
+    if (abs >= len) return;
     state_.sequencer.toggle(abs);
 }
 
@@ -81,33 +86,44 @@ void SequencerStepHandler::moveFocus(float delta) {
     if (delta == 0.0f) return;
     int step = (delta > 0.0f) ? 1 : -1;
 
-    constexpr int maxSteps = core::state::sequencer::SequencerState::MAX_STEPS;
+    const int len = static_cast<int>(state_.sequencer.length.get());
+    if (len <= 0) return;
+
     constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
 
     const int current = static_cast<int>(state_.sequencer.focusedStep.get());
-    const int next = wrapIndex(current + step, maxSteps);
+    const int safeCurrent = (current < 0 || current >= len) ? 0 : current;
+    const int next = wrapIndex(safeCurrent + step, len);
     state_.sequencer.focusedStep.set(static_cast<uint8_t>(next));
     state_.sequencer.page.set(static_cast<uint8_t>(next / stepsPerPage));
 }
 
 void SequencerStepHandler::prevPage() {
-    constexpr uint8_t pageCount = core::state::sequencer::SequencerState::PAGE_COUNT;
+    const uint8_t len = state_.sequencer.length.get();
+    if (len == 0) return;
+
+    const uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
+    const uint8_t pageCount = static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
     if (pageCount <= 1) return;
 
     const uint8_t current = static_cast<uint8_t>(state_.sequencer.page.get() % pageCount);
     const uint8_t next = (current == 0) ? (pageCount - 1) : (current - 1);
     state_.sequencer.page.set(next);
-    state_.sequencer.focusedStep.set(next * core::state::sequencer::SequencerState::STEPS_PER_PAGE);
+    state_.sequencer.focusedStep.set(static_cast<uint8_t>(next * stepsPerPage));
 }
 
 void SequencerStepHandler::nextPage() {
-    constexpr uint8_t pageCount = core::state::sequencer::SequencerState::PAGE_COUNT;
+    const uint8_t len = state_.sequencer.length.get();
+    if (len == 0) return;
+
+    const uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
+    const uint8_t pageCount = static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
     if (pageCount <= 1) return;
 
     const uint8_t current = static_cast<uint8_t>(state_.sequencer.page.get() % pageCount);
     const uint8_t next = static_cast<uint8_t>((current + 1) % pageCount);
     state_.sequencer.page.set(next);
-    state_.sequencer.focusedStep.set(next * core::state::sequencer::SequencerState::STEPS_PER_PAGE);
+    state_.sequencer.focusedStep.set(static_cast<uint8_t>(next * stepsPerPage));
 }
 
 }  // namespace core::handler

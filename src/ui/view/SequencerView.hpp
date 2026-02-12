@@ -32,6 +32,7 @@ public:
 private:
     void createLayout(lv_obj_t* parent);
     void createTopBar();
+    void createPageBar();
     void createSteps();
     void bindToState();
     void render();
@@ -43,12 +44,18 @@ private:
     lv_obj_t* top_bar_container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
     lv_obj_t* header_container_ = nullptr;
-    lv_obj_t* page_label_ = nullptr;
+    lv_obj_t* page_bar_container_ = nullptr;
 
     std::unique_ptr<core::ui::TopBar> top_bar_;
+
+    std::array<lv_obj_t*, 8> page_rects_{};
+    std::array<lv_obj_t*, 8> page_focus_dots_{};
+
     lv_obj_t* grid_ = nullptr;
-    std::array<lv_obj_t*, 8> steps_{};
-    std::array<lv_obj_t*, 8> step_labels_{};
+    std::array<lv_obj_t*, 8> tiles_{};
+    std::array<lv_obj_t*, 8> note_labels_{};
+    std::array<lv_obj_t*, 8> step_buttons_{};
+    std::array<lv_obj_t*, 8> step_indicators_{};
 };
 
 }  // namespace core::ui
