@@ -55,6 +55,10 @@ class ViewSwitcherHandler;
 class SequencerStepHandler;
 }  // namespace core::handler
 
+namespace core::sequencer {
+class SequencerPlaybackService;
+}  // namespace core::sequencer
+
 namespace core::ui {
 class MacroView;
 class SequencerView;
@@ -140,6 +144,9 @@ private:
     std::unique_ptr<core::handler::SequencerStepHandler> sequencer_step_handler_;
     std::unique_ptr<core::handler::ViewSwitcherHandler> view_switcher_handler_;
     std::unique_ptr<core::handler::MacroEditHandler> macro_edit_handler_;
+
+    // Global services (not tied to a view scope)
+    std::unique_ptr<core::sequencer::SequencerPlaybackService> sequencer_playback_;
 };
 
 }  // namespace core::context

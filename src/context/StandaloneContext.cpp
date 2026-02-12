@@ -9,6 +9,7 @@
 #include <oc/interface/IEncoder.hpp>
 #include <oc/ui/lvgl/FontLoader.hpp>
 #include <oc/ui/lvgl/Screen.hpp>
+#include <oc/time/Time.hpp>
 
 #include <config/App.hpp>
 #include "handler/macro/MacroEditHandler.hpp"
@@ -26,6 +27,8 @@
 #include "ui/view/MacroView.hpp"
 #include "ui/view/SequencerView.hpp"
 #include <ms/ui/ViewContainer.hpp>
+
+#include "sequencer/SequencerPlaybackService.hpp"
 
 namespace core::context {
 
@@ -142,6 +145,13 @@ oc::type::Result<void> StandaloneContext::init() {
         macro_edit_overlay_->getElement()   // Overlay scope (edit/close)
     );
 
+    // Global services (not tied to any view scope)
+    sequencer_playback_ = std::make_unique<core::sequencer::SequencerPlaybackService>(
+        core_state_.sequencer,
+        core_state_.statusBar,
+        midi()
+    );
+
     view_container_->show();
 
     OC_LOG_INFO("StandaloneContext ready");
@@ -149,7 +159,9 @@ oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
-    // Handlers and views are self-updating via Signal subscriptions
+    if (sequencer_playback_) {
+        sequencer_playback_->update(oc::time::millis());
+    }
 }
 
 void StandaloneContext::onCleanup() {
@@ -161,6 +173,11 @@ void StandaloneContext::onCleanup() {
         core_state_.overlays.hideAll();
     }
     core_state_.macroEdit.reset();
+
+    if (sequencer_playback_) {
+        sequencer_playback_->stop();
+        sequencer_playback_.reset();
+    }
 
     // Handlers first (they reference state/APIs)
     macro_edit_handler_.reset();
