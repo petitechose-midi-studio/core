@@ -17,10 +17,6 @@ constexpr uint32_t COLOR_STEP_ON_HEX = theme::color::MACRO_1_RED;
 constexpr uint32_t COLOR_STEP_OFF_HEX = theme::color::INACTIVE_LIGHTER;
 constexpr uint32_t COLOR_STEP_PLAY_HEX = 0x5CA8EE;
 
-constexpr uint32_t COLOR_PAGE_DISABLED_HEX = theme::color::KNOB_BACKGROUND;
-constexpr uint32_t COLOR_PAGE_ACTIVE_HEX = theme::color::INACTIVE;
-constexpr uint32_t COLOR_PAGE_PLAY_HEX = 0x5CA8EE;
-
 void formatNoteName(char* buf, size_t bufSize, uint8_t midiNote) {
     static const char* NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     const int idx = static_cast<int>(midiNote) % 12;
@@ -33,24 +29,28 @@ void formatNoteName(char* buf, size_t bufSize, uint8_t midiNote) {
 SequencerView::SequencerView(lv_obj_t* parent, core::state::CoreState& coreState)
     : core_state_(coreState) {
     createLayout(parent);
-    createTopBar();
-    createPageBar();
+    createHeaderBar();
     createSteps();
     bindToState();
 }
 
 SequencerView::~SequencerView() {
-    subscriptions_.clear();
-    top_bar_.reset();
-    if (container_) {
-        lv_obj_delete(container_);
-        container_ = nullptr;
+    if (render_timer_) {
+        lv_timer_delete(render_timer_);
+        render_timer_ = nullptr;
     }
+
+    header_bar_.reset();
+    layout_.reset();
+    container_ = nullptr;
+    body_container_ = nullptr;
 }
 
 void SequencerView::onActivate() {
     if (container_) {
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
+        render();
+        dirty_ = false;
     }
 }
 
@@ -58,69 +58,29 @@ void SequencerView::onDeactivate() {
     if (container_) {
         lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
     }
+
+    if (render_timer_) {
+        lv_timer_delete(render_timer_);
+        render_timer_ = nullptr;
+    }
 }
 
 void SequencerView::createLayout(lv_obj_t* parent) {
-    container_ = lv_obj_create(parent);
-    style::apply(container_).fullSize().pad(0).bgColor(theme::color::BACKGROUND);
-    lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_gap(container_, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(container_, 0, LV_STATE_DEFAULT);
+    layout_ = std::make_unique<ms::ui::LayoutView>(parent);
+    container_ = layout_->getElement();
+    body_container_ = layout_->content();
 
-    top_bar_container_ = lv_obj_create(container_);
-    lv_obj_set_size(top_bar_container_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(top_bar_container_).transparent();
-
-    body_container_ = lv_obj_create(container_);
-    lv_obj_set_size(body_container_, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_grow(body_container_, 1);
+    // Body styling
     style::apply(body_container_).transparent().pad(theme::layout::MARGIN_MD);
-
     lv_obj_set_layout(body_container_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(body_container_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(body_container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(body_container_, theme::layout::ROW_GAP_MD, 0);
-
-    header_container_ = lv_obj_create(body_container_);
-    lv_obj_set_size(header_container_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(header_container_).transparent().flexRow(LV_FLEX_ALIGN_END, theme::layout::MARGIN_SM);
 }
 
-void SequencerView::createTopBar() {
-    top_bar_ = std::make_unique<TopBar>(top_bar_container_, core_state_.statusBar);
-}
-
-void SequencerView::createPageBar() {
-    page_bar_container_ = lv_obj_create(header_container_);
-    lv_obj_set_size(page_bar_container_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    style::apply(page_bar_container_).transparent().noScroll().flexRow(LV_FLEX_ALIGN_END, theme::layout::MARGIN_XS);
-
-    constexpr lv_coord_t RECT_W = 14;
-    constexpr lv_coord_t RECT_H = 6;
-    constexpr lv_coord_t DOT_S = 3;
-
-    for (uint8_t i = 0; i < page_rects_.size(); ++i) {
-        lv_obj_t* r = lv_obj_create(page_bar_container_);
-        page_rects_[i] = r;
-        lv_obj_clear_flag(r, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_size(r, RECT_W, RECT_H);
-        lv_obj_set_style_radius(r, 2, 0);
-        lv_obj_set_style_border_width(r, 0, 0);
-        lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(r, lv_color_hex(COLOR_PAGE_DISABLED_HEX), 0);
-
-        lv_obj_t* dot = lv_obj_create(r);
-        page_focus_dots_[i] = dot;
-        lv_obj_remove_style_all(dot);
-        lv_obj_set_size(dot, DOT_S, DOT_S);
-        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(dot, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-        lv_obj_set_style_border_width(dot, 0, 0);
-        lv_obj_align(dot, LV_ALIGN_CENTER, 0, 0);
-        lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN);
-    }
+void SequencerView::createHeaderBar() {
+    if (!layout_) return;
+    header_bar_ = std::make_unique<SequencerHeaderBar>(layout_->header());
 }
 
 void SequencerView::createSteps() {
@@ -199,19 +159,51 @@ void SequencerView::createSteps() {
 }
 
 void SequencerView::bindToState() {
-    subscriptions_.reserve(5);
-
-    subscriptions_.push_back(core_state_.sequencer.length.subscribe([this](uint8_t) { render(); }));
-    subscriptions_.push_back(core_state_.sequencer.page.subscribe([this](uint8_t) { render(); }));
-    subscriptions_.push_back(core_state_.sequencer.enabledMask.subscribe([this](uint64_t) { render(); }));
-    subscriptions_.push_back(core_state_.sequencer.focusedStep.subscribe([this](uint8_t) { render(); }));
-    subscriptions_.push_back(core_state_.sequencer.playheadStep.subscribe([this](int16_t) { render(); }));
+    watcher_.watchAll(
+        [this]() { requestRender(); },
+        core_state_.sequencer.length,
+        core_state_.sequencer.stepsPerBeat,
+        core_state_.sequencer.page,
+        core_state_.sequencer.enabledMask,
+        core_state_.sequencer.focusedStep,
+        core_state_.sequencer.playheadStep
+    );
 
     render();
+    dirty_ = false;
+}
+
+void SequencerView::requestRender() {
+    dirty_ = true;
+
+    if (!container_) return;
+    if (lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
+
+    // Schedule a single render at ~60Hz max (coalesces bursts of updates).
+    if (!render_timer_) {
+        render_timer_ = lv_timer_create(onRenderTimer, 16, this);
+        lv_timer_set_repeat_count(render_timer_, 1);
+    }
+}
+
+void SequencerView::onRenderTimer(lv_timer_t* timer) {
+    auto* self = static_cast<SequencerView*>(lv_timer_get_user_data(timer));
+    if (!self) return;
+
+    // One-shot timer: LVGL will delete it after the callback.
+    self->render_timer_ = nullptr;
+
+    if (!self->dirty_) return;
+    if (!self->container_) return;
+    if (lv_obj_has_flag(self->container_, LV_OBJ_FLAG_HIDDEN)) return;
+
+    self->render();
+    self->dirty_ = false;
 }
 
 void SequencerView::render() {
     if (!container_) return;
+    if (lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
 
     const uint8_t len = core_state_.sequencer.length.get();
     constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
@@ -227,46 +219,14 @@ void SequencerView::render() {
     const uint64_t mask = core_state_.sequencer.enabledMask.get();
     const uint8_t focused = core_state_.sequencer.focusedStep.get();
     const int16_t playhead = core_state_.sequencer.playheadStep.get();
-    const int16_t playingPage = (playhead >= 0 && playhead < len)
-        ? static_cast<int16_t>(playhead / stepsPerPage)
-        : -1;
 
-    // Page bar (8 rectangles)
-    for (uint8_t p = 0; p < page_rects_.size(); ++p) {
-        const uint8_t pageStart = static_cast<uint8_t>(p * stepsPerPage);
-        const bool hasSteps = (pageStart < len);
-
-        bool anyEnabled = false;
-        if (hasSteps) {
-            const uint8_t end = (len < static_cast<uint8_t>(pageStart + stepsPerPage))
-                ? len
-                : static_cast<uint8_t>(pageStart + stepsPerPage);
-            for (uint8_t s = pageStart; s < end; ++s) {
-                if ((mask & (1ULL << s)) != 0) {
-                    anyEnabled = true;
-                    break;
-                }
-            }
-        }
-
-        const bool isPlaying = (playingPage >= 0) && (p == static_cast<uint8_t>(playingPage));
-        const uint32_t fill = isPlaying
-            ? COLOR_PAGE_PLAY_HEX
-            : (anyEnabled ? COLOR_PAGE_ACTIVE_HEX : COLOR_PAGE_DISABLED_HEX);
-
-        if (page_rects_[p]) {
-            lv_obj_set_style_bg_color(page_rects_[p], lv_color_hex(fill), 0);
-            lv_obj_set_style_bg_opa(page_rects_[p], LV_OPA_COVER, 0);
-        }
-
-        if (page_focus_dots_[p]) {
-            const bool isFocusedPage = (activePages > 0) && (p == page);
-            if (isFocusedPage) {
-                lv_obj_clear_flag(page_focus_dots_[p], LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_add_flag(page_focus_dots_[p], LV_OBJ_FLAG_HIDDEN);
-            }
-        }
+    if (header_bar_) {
+        header_bar_->render({
+            .length = len,
+            .viewedPage = page,
+            .playheadStep = playhead,
+            .stepsPerBeat = core_state_.sequencer.stepsPerBeat.get(),
+        });
     }
 
     // Step tiles (8 visible)

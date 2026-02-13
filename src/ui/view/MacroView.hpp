@@ -22,6 +22,8 @@
 #include <oc/ui/lvgl/IView.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
+#include <ms/ui/component/LayoutView.hpp>
+
 #include <config/InputIDs.hpp>
 #include "state/CoreState.hpp"
 #include "ui/topbar/TopBar.hpp"
@@ -75,6 +77,7 @@ private:
     lv_timer_t* update_timer_ = nullptr;
 
     // UI structure: container_ (flex col) → top_bar_container_ + body_container_ (grid)
+    std::unique_ptr<ms::ui::LayoutView> layout_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* top_bar_container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;

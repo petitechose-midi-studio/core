@@ -7,15 +7,16 @@
 
 #include <array>
 #include <memory>
-#include <vector>
 
 #include <lvgl.h>
 
-#include <oc/state/Signal.hpp>
+#include <oc/state/SignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
+#include <ms/ui/component/LayoutView.hpp>
+
 #include "state/CoreState.hpp"
-#include "ui/topbar/TopBar.hpp"
+#include "ui/sequencer/SequencerHeaderBar.hpp"
 
 namespace core::ui {
 
@@ -31,25 +32,25 @@ public:
 
 private:
     void createLayout(lv_obj_t* parent);
-    void createTopBar();
-    void createPageBar();
+    void createHeaderBar();
     void createSteps();
     void bindToState();
+
+    void requestRender();
+    static void onRenderTimer(lv_timer_t* timer);
     void render();
 
     core::state::CoreState& core_state_;
-    std::vector<oc::state::Subscription> subscriptions_;
+    oc::state::SignalWatcher watcher_;
 
+    bool dirty_ = false;
+    lv_timer_t* render_timer_ = nullptr;
+
+    std::unique_ptr<ms::ui::LayoutView> layout_;
     lv_obj_t* container_ = nullptr;
-    lv_obj_t* top_bar_container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
-    lv_obj_t* header_container_ = nullptr;
-    lv_obj_t* page_bar_container_ = nullptr;
 
-    std::unique_ptr<core::ui::TopBar> top_bar_;
-
-    std::array<lv_obj_t*, 8> page_rects_{};
-    std::array<lv_obj_t*, 8> page_focus_dots_{};
+    std::unique_ptr<core::ui::SequencerHeaderBar> header_bar_;
 
     lv_obj_t* grid_ = nullptr;
     std::array<lv_obj_t*, 8> tiles_{};
