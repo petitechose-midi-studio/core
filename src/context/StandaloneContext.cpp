@@ -123,7 +123,9 @@ oc::type::Result<void> StandaloneContext::init() {
         if (midi_handler_) midi_handler_->onNoteIn();
     });
     transport_handler_ = std::make_unique<core::handler::TransportHandler>(
-        core_state_, encoders(), buttons(), mainZone
+        core_state_, encoders(), buttons(),
+        macro_view_->getElement(),  // Tempo only in Macro view scope
+        mainZone                    // Play/Pause remains global to main zone
     );
 
     // View selector handler (LEFT_TOP + NAV)
