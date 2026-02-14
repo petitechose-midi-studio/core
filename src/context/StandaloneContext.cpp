@@ -15,11 +15,21 @@
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
 #include "handler/macro/MacroValueHandler.hpp"
+#include "handler/sequencer/SequencerPatternConfigHandler.hpp"
+#include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
+#include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
+#include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
+
+#include <cstdio>
+
 #include <ms/ui/font/CoreFonts.hpp>
 #include <ms/ui/widget/StringListSelector.hpp>
+#include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
+#include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
+#include <oc/ui/lvgl/Scope.hpp>
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/macro/MacroEditOverlay.hpp"
 #include <oc/context/OverlayManager.hpp>
@@ -50,6 +60,11 @@ oc::type::Result<void> StandaloneContext::init() {
 
     // Configure special encoders once (avoid hidden handler coupling)
     encoders().setMode(Config::EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
+    encoders().setMode(Config::EncoderID::OPT, oc::interface::EncoderMode::RELATIVE);
+
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        encoders().setMode(Config::MACRO_ENCODERS[i], oc::interface::EncoderMode::NORMALIZED);
+    }
 
     // Sync encoder positions with restored values BEFORE creating handlers
     syncEncodersFromState();
@@ -98,6 +113,38 @@ oc::type::Result<void> StandaloneContext::init() {
     // Setup rendering subscriptions for MacroEditOverlay (orchestrator pattern)
     setupMacroEditRendering();
 
+    // Create Sequencer overlays (parented to SequencerView)
+    seq_pattern_config_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(
+        sequencer_view_->getElement()
+    );
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::SEQ_PATTERN_CONFIG,
+        oc::ui::lvgl::scopeID(seq_pattern_config_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupSequencerPatternConfigRendering();
+
+    seq_step_edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(
+        sequencer_view_->getElement()
+    );
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::SEQ_STEP_EDIT,
+        oc::ui::lvgl::scopeID(seq_step_edit_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupSequencerStepEditRendering();
+
+    seq_property_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(
+        sequencer_view_->getElement()
+    );
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::SEQ_PROPERTY_SELECTOR,
+        oc::ui::lvgl::scopeID(seq_property_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_BOTTOM)
+    );
+    setupSequencerPropertySelectorRendering();
+    setupSequencerMacroEncoderSync();
+
     // Create handlers (bindings scoped to view element)
     input_handler_ = std::make_unique<core::handler::MacroValueHandler>(
         core_state_, encoders(), midi(), macro_view_->getElement()
@@ -106,6 +153,41 @@ oc::type::Result<void> StandaloneContext::init() {
     // Sequencer input handler (scoped to SequencerView)
     sequencer_step_handler_ = std::make_unique<core::handler::SequencerStepHandler>(
         core_state_, encoders(), buttons(), sequencer_view_->getElement()
+    );
+
+    // Sequencer PatternConfig handler (two-level scoping)
+    sequencer_pattern_config_handler_ = std::make_unique<core::handler::SequencerPatternConfigHandler>(
+        core_state_,
+        *overlay_controller_,
+        encoders(),
+        buttons(),
+        sequencer_view_->getElement(),
+        seq_pattern_config_overlay_->getElement()
+    );
+
+    // Sequencer StepEdit handler (two-level scoping)
+    sequencer_step_edit_handler_ = std::make_unique<core::handler::SequencerStepEditHandler>(
+        core_state_,
+        *overlay_controller_,
+        encoders(),
+        buttons(),
+        sequencer_view_->getElement(),
+        seq_step_edit_overlay_->getElement()
+    );
+
+    sequencer_property_selector_handler_ = std::make_unique<core::handler::SequencerPropertySelectorHandler>(
+        core_state_,
+        *overlay_controller_,
+        encoders(),
+        buttons(),
+        sequencer_view_->getElement(),
+        seq_property_selector_overlay_->getElement()
+    );
+
+    sequencer_macro_property_handler_ = std::make_unique<core::handler::SequencerMacroPropertyHandler>(
+        core_state_,
+        encoders(),
+        sequencer_view_->getElement()
     );
 
     midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(
@@ -175,6 +257,11 @@ void StandaloneContext::onCleanup() {
         core_state_.overlays.hideAll();
     }
     core_state_.macroEdit.reset();
+    core_state_.sequencer.patternConfig.reset();
+    core_state_.sequencer.stepEdit.reset();
+    core_state_.sequencer.propertySelector.reset();
+    core_state_.sequencer.settings.reset();
+    core_state_.sequencer.trackConfig.reset();
 
     if (sequencer_playback_) {
         sequencer_playback_->stop();
@@ -184,6 +271,10 @@ void StandaloneContext::onCleanup() {
     // Handlers first (they reference state/APIs)
     macro_edit_handler_.reset();
     view_switcher_handler_.reset();
+    sequencer_property_selector_handler_.reset();
+    sequencer_macro_property_handler_.reset();
+    sequencer_pattern_config_handler_.reset();
+    sequencer_step_edit_handler_.reset();
     sequencer_step_handler_.reset();
     transport_handler_.reset();
     input_handler_.reset();
@@ -193,6 +284,9 @@ void StandaloneContext::onCleanup() {
 
     // Overlay UI
     macro_edit_overlay_.reset();
+    seq_pattern_config_overlay_.reset();
+    seq_step_edit_overlay_.reset();
+    seq_property_selector_overlay_.reset();
     view_selector_.reset();
 
     // Overlay controller (clears authority resolver)
@@ -236,6 +330,155 @@ void StandaloneContext::setupMacroEditRendering() {
     );
 }
 
+void StandaloneContext::setupSequencerPatternConfigRendering() {
+    seq_pattern_config_watcher_.watchAll(
+        [this]() { renderSequencerPatternConfig(); },
+        core_state_.sequencer.patternConfig.visible,
+        core_state_.sequencer.patternConfig.focusedRow,
+        core_state_.sequencer.length,
+        core_state_.sequencer.stepsPerBeat,
+        core_state_.sequencer.midiChannel
+    );
+}
+
+void StandaloneContext::renderSequencerPatternConfig() {
+    if (!seq_pattern_config_overlay_) return;
+
+    const bool visible = core_state_.sequencer.patternConfig.visible.get();
+    if (!visible) {
+        seq_pattern_config_overlay_->render({.visible = false});
+        return;
+    }
+
+    const uint8_t len = core_state_.sequencer.length.get();
+    const uint8_t stepsPerBeat = core_state_.sequencer.stepsPerBeat.get();
+    const uint8_t ch0 = core_state_.sequencer.midiChannel.get();
+
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(len) << 24) |
+        (static_cast<uint32_t>(stepsPerBeat) << 16) |
+        (static_cast<uint32_t>(ch0) << 8);
+
+    const uint16_t denom = stepsPerBeat > 0 ? static_cast<uint16_t>(4U * stepsPerBeat) : 0;
+
+    char meta[32];
+    if (denom > 0) {
+        snprintf(meta, sizeof(meta), "1/%u  CH %u", static_cast<unsigned>(denom),
+                 static_cast<unsigned>(ch0) + 1);
+    } else {
+        snprintf(meta, sizeof(meta), "CH %u", static_cast<unsigned>(ch0) + 1);
+    }
+
+    char lenStr[8];
+    snprintf(lenStr, sizeof(lenStr), "%u", static_cast<unsigned>(len));
+
+    char divStr[16];
+    if (denom > 0) {
+        snprintf(divStr, sizeof(divStr), "1/%u", static_cast<unsigned>(denom));
+    } else {
+        snprintf(divStr, sizeof(divStr), "?");
+    }
+
+    char chStr[8];
+    snprintf(chStr, sizeof(chStr), "%u", static_cast<unsigned>(ch0) + 1);
+
+    const ms::ui::KeyValueRow rows[] = {
+        {.key = "LEN", .value = lenStr},
+        {.key = "DIV", .value = divStr},
+        {.key = "CH", .value = chStr},
+    };
+
+    seq_pattern_config_overlay_->render({
+        .title = "PATTERN",
+        .meta = meta,
+        .rows = rows,
+        .rowCount = 3,
+        .selectedIndex = core_state_.sequencer.patternConfig.focusedRow.get(),
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
+}
+
+void StandaloneContext::setupSequencerStepEditRendering() {
+    seq_step_edit_watcher_.watchAll(
+        [this]() { renderSequencerStepEdit(); },
+        core_state_.sequencer.stepEdit.visible,
+        core_state_.sequencer.stepEdit.stepIndex,
+        core_state_.sequencer.stepEdit.focusedRow,
+        core_state_.sequencer.length,
+        core_state_.sequencer.stepDataRevision
+    );
+}
+
+void StandaloneContext::renderSequencerStepEdit() {
+    if (!seq_step_edit_overlay_) return;
+
+    const bool visible = core_state_.sequencer.stepEdit.visible.get();
+    if (!visible) {
+        seq_step_edit_overlay_->render({.visible = false});
+        return;
+    }
+
+    const uint8_t abs = core_state_.sequencer.stepEdit.stepIndex.get();
+    if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
+
+    const uint8_t len = core_state_.sequencer.length.get();
+
+    auto formatNoteName = [](char* buf, size_t bufSize, uint8_t midiNote) {
+        static const char* NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+        const int idx = static_cast<int>(midiNote) % 12;
+        const int octave = static_cast<int>(midiNote) / 12 - 1;
+        snprintf(buf, bufSize, "%s%d", NAMES[idx], octave);
+    };
+
+    char title[16];
+    snprintf(title, sizeof(title), "STEP %u", static_cast<unsigned>(abs) + 1);
+
+    char meta[16];
+    if (len > 0) {
+        snprintf(meta, sizeof(meta), "%u/%u", static_cast<unsigned>(abs) + 1,
+                 static_cast<unsigned>(len));
+    } else {
+        snprintf(meta, sizeof(meta), "%u", static_cast<unsigned>(abs) + 1);
+    }
+
+    const uint8_t note = core_state_.sequencer.note[abs];
+    const uint8_t vel = core_state_.sequencer.velocity[abs];
+    const uint16_t gate = core_state_.sequencer.gate[abs];
+
+    const uint32_t dataRevision =
+        core_state_.sequencer.stepDataRevision.get() ^
+        (static_cast<uint32_t>(abs) << 16) ^
+        (static_cast<uint32_t>(len) << 24);
+
+    char noteName[8];
+    formatNoteName(noteName, sizeof(noteName), note);
+    char noteStr[24];
+    snprintf(noteStr, sizeof(noteStr), "%s (%u)", noteName, static_cast<unsigned>(note));
+
+    char velStr[8];
+    snprintf(velStr, sizeof(velStr), "%u", static_cast<unsigned>(vel));
+
+    char gateStr[12];
+    snprintf(gateStr, sizeof(gateStr), "%u%%", static_cast<unsigned>(gate));
+
+    const ms::ui::KeyValueRow rows[] = {
+        {.key = "NOTE", .value = noteStr},
+        {.key = "VEL", .value = velStr},
+        {.key = "GATE", .value = gateStr},
+    };
+
+    seq_step_edit_overlay_->render({
+        .title = title,
+        .meta = meta,
+        .rows = rows,
+        .rowCount = 3,
+        .selectedIndex = core_state_.sequencer.stepEdit.focusedRow.get(),
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
+}
+
 void StandaloneContext::renderMacroEdit() {
     macro_edit_overlay_->render({
         .editingIndex = core_state_.macroEdit.editingIndex.get(),
@@ -244,6 +487,71 @@ void StandaloneContext::renderMacroEdit() {
         .focusedRow = core_state_.macroEdit.focusedRow.get(),
         .visible = core_state_.macroEdit.visible.get()
     });
+}
+
+void StandaloneContext::setupSequencerPropertySelectorRendering() {
+    seq_property_selector_watcher_.watchAll(
+        [this]() { renderSequencerPropertySelector(); },
+        core_state_.sequencer.propertySelector.visible,
+        core_state_.sequencer.propertySelector.selectedIndex
+    );
+}
+
+void StandaloneContext::renderSequencerPropertySelector() {
+    if (!seq_property_selector_overlay_) return;
+    static const char* const ITEMS[] = {"NOTE", "VEL", "GATE"};
+
+    seq_property_selector_overlay_->render({
+        .title = "PROPERTY",
+        .meta = "MACROS",
+        .items = ITEMS,
+        .itemCount = 3,
+        .selectedIndex = core_state_.sequencer.propertySelector.selectedIndex.get(),
+        .showIndexColumn = true,
+        .visible = core_state_.sequencer.propertySelector.visible.get(),
+        .dataRevision = 1,
+    });
+}
+
+void StandaloneContext::setupSequencerMacroEncoderSync() {
+    seq_macro_encoder_watcher_.watchAll(
+        [this]() { syncSequencerMacroEncoderPositions(); },
+        core_state_.activeView,
+        core_state_.sequencer.page,
+        core_state_.sequencer.length,
+        core_state_.sequencer.activeStepProperty,
+        core_state_.sequencer.stepDataRevision
+    );
+}
+
+void StandaloneContext::syncSequencerMacroEncoderPositions() {
+    if (core_state_.activeView.get() != core::ui::ViewType::SEQUENCER) return;
+
+    const uint8_t len = core_state_.sequencer.length.get();
+    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
+    const uint8_t page = core_state_.sequencer.page.get();
+
+    const auto prop = core_state_.sequencer.activeStepProperty.get();
+
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        const uint8_t abs = static_cast<uint8_t>(page * stepsPerPage + i);
+        float normalized = 0.0f;
+
+        if (len > 0 && abs < len && abs < core::state::sequencer::SequencerState::MAX_STEPS) {
+            if (prop == core::state::sequencer::StepProperty::NOTE) {
+                normalized = static_cast<float>(core_state_.sequencer.note[abs]) / 127.0f;
+            } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
+                normalized = static_cast<float>(core_state_.sequencer.velocity[abs]) / 127.0f;
+            } else if (prop == core::state::sequencer::StepProperty::GATE) {
+                normalized = static_cast<float>(core_state_.sequencer.gate[abs]) / 100.0f;
+            }
+        }
+
+        if (normalized < 0.0f) normalized = 0.0f;
+        if (normalized > 1.0f) normalized = 1.0f;
+
+        encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
+    }
 }
 
 void StandaloneContext::setupViewSelectorRendering() {
@@ -279,10 +587,12 @@ void StandaloneContext::applyActiveView() {
     switch (core_state_.activeView.get()) {
         case core::ui::ViewType::SEQUENCER:
             if (sequencer_view_) sequencer_view_->onActivate();
+            syncSequencerMacroEncoderPositions();
             break;
         case core::ui::ViewType::MACRO:
         default:
             if (macro_view_) macro_view_->onActivate();
+            syncEncodersFromState();
             break;
     }
 }

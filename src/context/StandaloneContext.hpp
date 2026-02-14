@@ -53,6 +53,10 @@ class MacroEditHandler;
 class TransportHandler;
 class ViewSwitcherHandler;
 class SequencerStepHandler;
+class SequencerPatternConfigHandler;
+class SequencerStepEditHandler;
+class SequencerPropertySelectorHandler;
+class SequencerMacroPropertyHandler;
 }  // namespace core::handler
 
 namespace core::sequencer {
@@ -65,6 +69,11 @@ class SequencerView;
 class TransportBar;
 class MacroEditOverlay;
 }  // namespace core::ui
+
+namespace ms::ui {
+class VirtualListKeyValueOverlay;
+class VirtualListSelectorOverlay;
+}
 
 namespace oc::context {
 template <typename T>
@@ -116,6 +125,14 @@ private:
     void syncEncodersFromState();
     void setupMacroEditRendering();
     void renderMacroEdit();
+    void setupSequencerPatternConfigRendering();
+    void renderSequencerPatternConfig();
+    void setupSequencerStepEditRendering();
+    void renderSequencerStepEdit();
+    void setupSequencerPropertySelectorRendering();
+    void renderSequencerPropertySelector();
+    void setupSequencerMacroEncoderSync();
+    void syncSequencerMacroEncoderPositions();
     void setupViewSelectorRendering();
     void renderViewSelector();
     void setupActiveViewSwitching();
@@ -135,6 +152,13 @@ private:
     oc::state::SignalWatcher view_selector_watcher_;
     std::unique_ptr<core::ui::MacroEditOverlay> macro_edit_overlay_;
     oc::state::SignalWatcher macro_edit_watcher_;
+    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> seq_pattern_config_overlay_;
+    oc::state::SignalWatcher seq_pattern_config_watcher_;
+    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> seq_step_edit_overlay_;
+    oc::state::SignalWatcher seq_step_edit_watcher_;
+    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> seq_property_selector_overlay_;
+    oc::state::SignalWatcher seq_property_selector_watcher_;
+    oc::state::SignalWatcher seq_macro_encoder_watcher_;
     oc::state::SignalWatcher active_view_watcher_;
 
     // Handlers
@@ -142,6 +166,10 @@ private:
     std::unique_ptr<core::handler::MacroMidiHandler> midi_handler_;
     std::unique_ptr<core::handler::TransportHandler> transport_handler_;
     std::unique_ptr<core::handler::SequencerStepHandler> sequencer_step_handler_;
+    std::unique_ptr<core::handler::SequencerPatternConfigHandler> sequencer_pattern_config_handler_;
+    std::unique_ptr<core::handler::SequencerStepEditHandler> sequencer_step_edit_handler_;
+    std::unique_ptr<core::handler::SequencerPropertySelectorHandler> sequencer_property_selector_handler_;
+    std::unique_ptr<core::handler::SequencerMacroPropertyHandler> sequencer_macro_property_handler_;
     std::unique_ptr<core::handler::ViewSwitcherHandler> view_switcher_handler_;
     std::unique_ptr<core::handler::MacroEditHandler> macro_edit_handler_;
 

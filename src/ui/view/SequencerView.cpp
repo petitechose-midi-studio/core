@@ -166,7 +166,8 @@ void SequencerView::bindToState() {
         core_state_.sequencer.page,
         core_state_.sequencer.enabledMask,
         core_state_.sequencer.focusedStep,
-        core_state_.sequencer.playheadStep
+        core_state_.sequencer.playheadStep,
+        core_state_.sequencer.stepDataRevision
     );
 
     render();

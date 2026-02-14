@@ -14,6 +14,12 @@ namespace core::state::sequencer {
 
 using oc::state::Signal;
 
+enum class StepProperty : uint8_t {
+    NOTE = 0,
+    VELOCITY = 1,
+    GATE = 2,
+};
+
 /**
  * @brief Core sequencer state
  *
@@ -58,8 +64,12 @@ struct SequencerPropertySelectorOverlayState {
     Signal<bool> visible{false};
     Signal<int> selectedIndex{0};
 
+    int snapshotIndex = 0;
+    bool snapshotValid = false;
+
     void reset() {
         selectedIndex.set(0);
+        snapshotValid = false;
     }
 };
 
@@ -95,6 +105,9 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     /// Bumps when non-signal step arrays change (note/velocity/gate)
     Signal<uint32_t> stepDataRevision{0};
 
+    /// Active property edited by the 8 macro encoders in Sequencer view
+    Signal<StepProperty> activeStepProperty{StepProperty::NOTE};
+
     // Overlay state (UI-only)
     SequencerPatternConfigOverlayState patternConfig;
     SequencerStepEditOverlayState stepEdit;
@@ -107,6 +120,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         page.set(0);
         focusedStep.set(0);
         stepDataRevision.set(stepDataRevision.get() + 1);
+        activeStepProperty.set(StepProperty::NOTE);
 
         patternConfig.reset();
         stepEdit.reset();

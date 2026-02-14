@@ -23,7 +23,7 @@ enum class OverlayType : uint8_t {
     // Sequencer overlays
     SEQ_PATTERN_CONFIG,     // Pattern config (LEN / DIV / CH)
     SEQ_STEP_EDIT,          // Step edit (NOTE / VEL / GATE)
-    SEQ_PROPERTY_SELECTOR,  // Which property is edited by encoders (planned)
+    SEQ_PROPERTY_SELECTOR,  // Which property is edited by encoders
     SEQ_SETTINGS,           // Sequencer global settings (v0 may alias pattern config)
     SEQ_TRACK_CONFIG,       // Track-level config (planned)
 

@@ -32,8 +32,12 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
     // Update state (triggers UI update, marks dirty for persistence)
     core_state_.setMacroValue(static_cast<uint8_t>(index), normalized);
 
-    // Sync encoder position
-    encoders_.setPosition(Config::MACRO_ENCODERS[index], normalized);
+    // Sync hardware surface only when the Macro view is active.
+    // When another view repurposes macro encoders (e.g., Sequencer), we must
+    // not move the encoder positions based on incoming MIDI.
+    if (core_state_.activeView.get() == core::ui::ViewType::MACRO) {
+        encoders_.setPosition(Config::MACRO_ENCODERS[index], normalized);
+    }
 }
 
 int8_t MacroMidiHandler::findMacroForCC(uint8_t channel, uint8_t cc) const {
