@@ -81,6 +81,7 @@ set(OC_UI_COMPONENTS "${OPEN_CONTROL_ROOT}/ui-lvgl-components")
 set(OC_HAL_SDL "${OPEN_CONTROL_ROOT}/hal-sdl/src")
 set(OC_HAL_NET "${OPEN_CONTROL_ROOT}/hal-net/src")
 set(OC_HAL_MIDI "${OPEN_CONTROL_ROOT}/hal-midi/src")
+set(OC_NOTE "${OPEN_CONTROL_ROOT}/note/src")
 
 # ==============================================================================
 # Dependencies
@@ -177,6 +178,7 @@ file(GLOB_RECURSE SRC_UI_COMPONENTS CONFIGURE_DEPENDS "${OC_UI_COMPONENTS}/src/*
 file(GLOB_RECURSE SRC_MS_UI CONFIGURE_DEPENDS "${MS_UI_ROOT}/src/*.cpp")
 file(GLOB_RECURSE SRC_HAL_SDL CONFIGURE_DEPENDS "${OC_HAL_SDL}/*.cpp")
 file(GLOB_RECURSE SRC_HAL_MIDI CONFIGURE_DEPENDS "${OC_HAL_MIDI}/*.cpp")
+file(GLOB_RECURSE SRC_NOTE CONFIGURE_DEPENDS "${OC_NOTE}/*.cpp")
 
 # HAL Net: WASM only uses WebSocket
 if(BUILD_WASM)
@@ -207,11 +209,11 @@ endif()
 # ==============================================================================
 add_executable(${APP_EXE_NAME}
     ${SRC_SDL} ${SRC_APP} ${SRC_MS_UI} ${SRC_FRAMEWORK} ${SRC_UI_LVGL}
-    ${SRC_HAL_SDL} ${SRC_HAL_NET} ${SRC_HAL_MIDI} ${SRC_UI_COMPONENTS})
+    ${SRC_HAL_SDL} ${SRC_HAL_NET} ${SRC_HAL_MIDI} ${SRC_UI_COMPONENTS} ${SRC_NOTE})
 
 target_include_directories(${APP_EXE_NAME} PRIVATE
     ${SDL_DIR} ${LV_CONF_DIR} ${CONFIG_DIR} ${APP_SRC_DIR} ${CORE_SRC} ${MS_UI_ROOT}/src
-    ${OC_FRAMEWORK} ${OC_UI_LVGL} ${OC_HAL_SDL} ${OC_HAL_NET} ${OC_HAL_MIDI}
+    ${OC_FRAMEWORK} ${OC_UI_LVGL} ${OC_HAL_SDL} ${OC_HAL_NET} ${OC_HAL_MIDI} ${OC_NOTE}
     ${OC_UI_COMPONENTS}/include)
 
 target_compile_definitions(${APP_EXE_NAME} PRIVATE OC_DESKTOP=1 OC_LOG=1)
