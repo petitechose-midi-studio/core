@@ -19,6 +19,68 @@ using oc::state::Signal;
  *
  * This extends the reusable engine state (oc-note) with UI-only fields.
  */
+
+struct SequencerPatternConfigOverlayState {
+    Signal<bool> visible{false};
+    Signal<uint8_t> focusedRow{0};
+
+    // Snapshot for cancel (live editing)
+    uint8_t snapshotLength = 0;
+    uint8_t snapshotStepsPerBeat = 0;
+    uint8_t snapshotMidiChannel = 0;
+    bool snapshotValid = false;
+
+    void reset() {
+        focusedRow.set(0);
+        snapshotValid = false;
+    }
+};
+
+struct SequencerStepEditOverlayState {
+    Signal<bool> visible{false};
+    Signal<uint8_t> stepIndex{0};    // absolute step index
+    Signal<uint8_t> focusedRow{0};   // 0=NOTE, 1=VEL, 2=GATE
+
+    // Snapshot for cancel (live editing)
+    uint8_t snapshotNote = 0;
+    uint8_t snapshotVelocity = 0;
+    uint16_t snapshotGate = 0;
+    bool snapshotValid = false;
+
+    void reset() {
+        stepIndex.set(0);
+        focusedRow.set(0);
+        snapshotValid = false;
+    }
+};
+
+struct SequencerPropertySelectorOverlayState {
+    Signal<bool> visible{false};
+    Signal<int> selectedIndex{0};
+
+    void reset() {
+        selectedIndex.set(0);
+    }
+};
+
+struct SequencerSettingsOverlayState {
+    Signal<bool> visible{false};
+    Signal<uint8_t> focusedRow{0};
+
+    void reset() {
+        focusedRow.set(0);
+    }
+};
+
+struct SequencerTrackConfigOverlayState {
+    Signal<bool> visible{false};
+    Signal<uint8_t> focusedRow{0};
+
+    void reset() {
+        focusedRow.set(0);
+    }
+};
+
 struct SequencerState : public oc::note::sequencer::StepSequencerState {
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
@@ -30,10 +92,27 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     /// Absolute focused step index [0..length-1]
     Signal<uint8_t> focusedStep{0};
 
+    /// Bumps when non-signal step arrays change (note/velocity/gate)
+    Signal<uint32_t> stepDataRevision{0};
+
+    // Overlay state (UI-only)
+    SequencerPatternConfigOverlayState patternConfig;
+    SequencerStepEditOverlayState stepEdit;
+    SequencerPropertySelectorOverlayState propertySelector;
+    SequencerSettingsOverlayState settings;
+    SequencerTrackConfigOverlayState trackConfig;
+
     void reset() {
         oc::note::sequencer::StepSequencerState::reset();
         page.set(0);
         focusedStep.set(0);
+        stepDataRevision.set(stepDataRevision.get() + 1);
+
+        patternConfig.reset();
+        stepEdit.reset();
+        propertySelector.reset();
+        settings.reset();
+        trackConfig.reset();
     }
 
     uint8_t activePageCount() const {
