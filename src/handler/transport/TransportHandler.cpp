@@ -27,10 +27,9 @@ void TransportHandler::setupBindings() {
         .scope(scope(tempo_scope_element_))
         .then([this](float delta) { handleTempoChange(delta); });
 
-    // BOTTOM_CENTER button: toggle play
+    // BOTTOM_CENTER button: toggle play (global)
     buttons_.button(Config::ButtonID::BOTTOM_CENTER)
-        .press()
-        .scope(scope(transport_scope_element_))
+        .release()
         .then([this]() { handlePlayToggle(); });
 }
 
