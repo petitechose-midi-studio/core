@@ -1,24 +1,34 @@
 #include "StandaloneContext.hpp"
 
+#include <string>
+#include <vector>
+
 #include <lvgl.h>
 
 #include <oc/log/Log.hpp>
 #include <oc/interface/IEncoder.hpp>
 #include <oc/ui/lvgl/FontLoader.hpp>
 #include <oc/ui/lvgl/Screen.hpp>
+#include <oc/time/Time.hpp>
 
 #include <config/App.hpp>
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
 #include "handler/macro/MacroValueHandler.hpp"
+#include "handler/sequencer/SequencerStepHandler.hpp"
 #include "handler/transport/TransportHandler.hpp"
-#include "ui/font/CoreFonts.hpp"
+#include "handler/view/ViewSwitcherHandler.hpp"
+#include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/StringListSelector.hpp>
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/macro/MacroEditOverlay.hpp"
 #include <oc/context/OverlayManager.hpp>
 #include "ui/transportbar/TransportBar.hpp"
 #include "ui/view/MacroView.hpp"
-#include "ui/ViewContainer.hpp"
+#include "ui/view/SequencerView.hpp"
+#include <ms/ui/ViewContainer.hpp>
+
+#include "sequencer/SequencerPlaybackService.hpp"
 
 namespace core::context {
 
@@ -45,14 +55,14 @@ oc::type::Result<void> StandaloneContext::init() {
     syncEncodersFromState();
 
     // Create UI container with zones
-    view_container_ = std::make_unique<core::ui::ViewContainer>(oc::ui::lvgl::Screen::root());
+    view_container_ = std::make_unique<ms::ui::ViewContainer>(oc::ui::lvgl::Screen::root());
+    lv_obj_t* mainZone = view_container_->getMainZone();
 
-    // Create MacroView in main zone (TopBar is now internal to MacroView)
-    view_ = std::make_unique<core::ui::MacroView>(
-        view_container_->getMainZone(),
-        core_state_
-    );
-    view_->onActivate();
+    // Create views (activate via activeView signal)
+    macro_view_ = std::make_unique<core::ui::MacroView>(mainZone, core_state_);
+    sequencer_view_ = std::make_unique<core::ui::SequencerView>(mainZone, core_state_);
+    setupActiveViewSwitching();
+    applyActiveView();
 
     // Create TransportBar in bottom zone
     transport_bar_ = std::make_unique<core::ui::TransportBar>(
@@ -65,8 +75,18 @@ oc::type::Result<void> StandaloneContext::init() {
         core_state_.overlays, buttons()
     );
 
+    // Global overlay: ViewSelector (parent = mainZone so it covers views but not TransportBar)
+    view_selector_ = std::make_unique<ms::ui::StringListSelector>(mainZone);
+    view_selector_->setTitle("Select View");
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::VIEW_SELECTOR,
+        reinterpret_cast<oc::type::ScopeID>(view_selector_->getElement()),
+        static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_TOP)
+    );
+    setupViewSelectorRendering();
+
     // Create MacroEdit overlay (parented to MacroView)
-    macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(view_->getElement());
+    macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(macro_view_->getElement());
 
     // Register overlay cleanup
     overlay_controller_->registerCleanup(
@@ -80,7 +100,12 @@ oc::type::Result<void> StandaloneContext::init() {
 
     // Create handlers (bindings scoped to view element)
     input_handler_ = std::make_unique<core::handler::MacroValueHandler>(
-        core_state_, encoders(), midi(), view_->getElement()
+        core_state_, encoders(), midi(), macro_view_->getElement()
+    );
+
+    // Sequencer input handler (scoped to SequencerView)
+    sequencer_step_handler_ = std::make_unique<core::handler::SequencerStepHandler>(
+        core_state_, encoders(), buttons(), sequencer_view_->getElement()
     );
 
     midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(
@@ -98,8 +123,19 @@ oc::type::Result<void> StandaloneContext::init() {
         if (midi_handler_) midi_handler_->onNoteIn();
     });
     transport_handler_ = std::make_unique<core::handler::TransportHandler>(
-        core_state_, encoders(), buttons(), view_->getElement()
+        core_state_, encoders(), buttons(),
+        macro_view_->getElement(),  // Tempo only in Macro view scope
+        mainZone                    // Play/Pause remains global to main zone
     );
+
+    // View selector handler (LEFT_TOP + NAV)
+    {
+        using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
+        OverlayCtx ctx{*overlay_controller_, mainZone, view_selector_->getElement()};
+        view_switcher_handler_ = std::make_unique<core::handler::ViewSwitcherHandler>(
+            core_state_, ctx, encoders(), buttons()
+        );
+    }
 
     // Create MacroEdit input handler (two-level scoping)
     macro_edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
@@ -107,8 +143,15 @@ oc::type::Result<void> StandaloneContext::init() {
         *overlay_controller_,
         encoders(),
         buttons(),
-        view_->getElement(),              // MacroView scope (open trigger)
+        macro_view_->getElement(),              // MacroView scope (open trigger)
         macro_edit_overlay_->getElement()   // Overlay scope (edit/close)
+    );
+
+    // Global services (not tied to any view scope)
+    sequencer_playback_ = std::make_unique<core::sequencer::SequencerPlaybackService>(
+        core_state_.sequencer,
+        core_state_.statusBar,
+        midi()
     );
 
     view_container_->show();
@@ -118,7 +161,9 @@ oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
-    // Handlers and views are self-updating via Signal subscriptions
+    if (sequencer_playback_) {
+        sequencer_playback_->update(oc::time::millis());
+    }
 }
 
 void StandaloneContext::onCleanup() {
@@ -131,8 +176,15 @@ void StandaloneContext::onCleanup() {
     }
     core_state_.macroEdit.reset();
 
+    if (sequencer_playback_) {
+        sequencer_playback_->stop();
+        sequencer_playback_.reset();
+    }
+
     // Handlers first (they reference state/APIs)
     macro_edit_handler_.reset();
+    view_switcher_handler_.reset();
+    sequencer_step_handler_.reset();
     transport_handler_.reset();
     input_handler_.reset();
     midi_handler_.reset();
@@ -141,6 +193,7 @@ void StandaloneContext::onCleanup() {
 
     // Overlay UI
     macro_edit_overlay_.reset();
+    view_selector_.reset();
 
     // Overlay controller (clears authority resolver)
     overlay_controller_.reset();
@@ -148,9 +201,13 @@ void StandaloneContext::onCleanup() {
     // TransportBar (TopBar is now managed by MacroView)
     transport_bar_.reset();
 
-    if (view_) {
-        view_->onDeactivate();
-        view_.reset();
+    if (macro_view_) {
+        macro_view_->onDeactivate();
+        macro_view_.reset();
+    }
+    if (sequencer_view_) {
+        sequencer_view_->onDeactivate();
+        sequencer_view_.reset();
     }
 
     view_container_.reset();
@@ -187,6 +244,47 @@ void StandaloneContext::renderMacroEdit() {
         .focusedRow = core_state_.macroEdit.focusedRow.get(),
         .visible = core_state_.macroEdit.visible.get()
     });
+}
+
+void StandaloneContext::setupViewSelectorRendering() {
+    view_selector_watcher_.watchAll(
+        [this]() { renderViewSelector(); },
+        core_state_.viewSelector.visible,
+        core_state_.viewSelector.selectedIndex
+    );
+}
+
+void StandaloneContext::renderViewSelector() {
+    if (!view_selector_) return;
+    static const std::vector<std::string> VIEW_NAMES = {"Macros", "Sequencer"};
+
+    view_selector_->render({
+        .items = &VIEW_NAMES,
+        .selectedIndex = core_state_.viewSelector.selectedIndex.get(),
+        .visible = core_state_.viewSelector.visible.get()
+    });
+}
+
+void StandaloneContext::setupActiveViewSwitching() {
+    active_view_watcher_.watchAll(
+        [this]() { applyActiveView(); },
+        core_state_.activeView
+    );
+}
+
+void StandaloneContext::applyActiveView() {
+    if (macro_view_) macro_view_->onDeactivate();
+    if (sequencer_view_) sequencer_view_->onDeactivate();
+
+    switch (core_state_.activeView.get()) {
+        case core::ui::ViewType::SEQUENCER:
+            if (sequencer_view_) sequencer_view_->onActivate();
+            break;
+        case core::ui::ViewType::MACRO:
+        default:
+            if (macro_view_) macro_view_->onActivate();
+            break;
+    }
 }
 
 }  // namespace core::context

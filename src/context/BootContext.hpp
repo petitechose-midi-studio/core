@@ -17,7 +17,7 @@
 #include <oc/ui/lvgl/Screen.hpp>
 
 #include <config/App.hpp>
-#include "ui/font/CoreFonts.hpp"
+#include <ms/ui/font/CoreFonts.hpp>
 #include "ui/view/SplashScreenView.hpp"
 
 namespace core::context {

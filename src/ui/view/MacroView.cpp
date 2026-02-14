@@ -1,11 +1,6 @@
 #include "MacroView.hpp"
 
-#include <oc/ui/lvgl/style/StyleBuilder.hpp>
-
 #include <config/App.hpp>
-
-namespace theme = oc::ui::lvgl::base_theme;
-namespace style = oc::ui::lvgl::style;
 
 namespace core::ui {
 
@@ -34,9 +29,12 @@ MacroView::~MacroView() {
     for (auto& macro : macros_) {
         macro.reset();
     }
-    if (container_) {
-        lv_obj_delete(container_);
-    }
+
+    // Destroy the LVGL tree last (child widgets must be gone first)
+    layout_.reset();
+    container_ = nullptr;
+    top_bar_container_ = nullptr;
+    body_container_ = nullptr;
 }
 
 void MacroView::onActivate() {
@@ -89,24 +87,10 @@ void MacroView::updateConfigLabel(uint8_t index) {
 }
 
 void MacroView::createLayout(lv_obj_t* parent) {
-    // Main container (full size, flex column layout)
-    container_ = lv_obj_create(parent);
-    style::apply(container_).fullSize().pad(0).bgColor(theme::color::BACKGROUND);
-    lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_gap(container_, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(container_, 0, LV_STATE_DEFAULT);
-
-    // TopBar container (content height, for TopBar component)
-    top_bar_container_ = lv_obj_create(container_);
-    lv_obj_set_size(top_bar_container_, LV_PCT(100), LV_SIZE_CONTENT);
-    style::apply(top_bar_container_).transparent();
-
-    // Body container (takes remaining space, grid layout)
-    body_container_ = lv_obj_create(container_);
-    lv_obj_set_size(body_container_, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_grow(body_container_, 1);
-    style::apply(body_container_).transparent();
+    layout_ = std::make_unique<ms::ui::LayoutView>(parent);
+    container_ = layout_->getElement();
+    top_bar_container_ = layout_->header();
+    body_container_ = layout_->content();
 
     // Configure grid layout: 4 columns, 2 rows (no gaps for maximum widget size)
     static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};

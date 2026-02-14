@@ -28,10 +28,25 @@
 #include "MacroEditState.hpp"
 #include "MacroState.hpp"
 #include "../ui/OverlayTypes.hpp"
+#include "../ui/ViewTypes.hpp"
 #include "StatusBarState.hpp"
 #include "macro/MacroPagesState.hpp"
+#include "sequencer/SequencerState.hpp"
 
 namespace core::state {
+
+/**
+ * @brief State for top-level view selector overlay
+ */
+struct ViewSelectorState {
+    oc::state::Signal<int> selectedIndex{0};
+    oc::state::Signal<bool> visible{false};
+
+    void reset() {
+        selectedIndex.set(0);
+        visible.set(false);
+    }
+};
 
 /**
  * @brief Global state container for standalone mode
@@ -55,6 +70,15 @@ struct CoreState {
 
     /// Overlay visibility manager
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
+
+    /// Active top-level view
+    oc::state::Signal<core::ui::ViewType> activeView{core::ui::ViewType::MACRO};
+
+    /// Sequencer UI-first state
+    sequencer::SequencerState sequencer;
+
+    /// View selector overlay state
+    ViewSelectorState viewSelector;
 
     /// Status bar state (TopBar + TransportBar)
     StatusBarState statusBar;
@@ -80,6 +104,7 @@ struct CoreState {
         // Register overlay signals
         overlays.registerItem(core::ui::OverlayType::PAGE_SELECTOR, pages.selector.visible);
         overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, macroEdit.visible);
+        overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, viewSelector.visible);
 
         // Setup auto-persistence for macro values
         auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
@@ -234,6 +259,9 @@ struct CoreState {
         settings.saveAll(pages);
         statusBar.pageName.set(pages.activePageData().name);
         macroEdit.reset();
+        viewSelector.reset();
+        sequencer.reset();
+        activeView.set(core::ui::ViewType::MACRO);
         overlays.hideAll();
         configRevision.set(configRevision.get() + 1);
     }

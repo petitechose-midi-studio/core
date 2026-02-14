@@ -1,10 +1,9 @@
 #include "TransportBar.hpp"
 
-#include <cstdio>
 #include <oc/state/Bind.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
-#include "ui/font/CoreFonts.hpp"
+#include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -188,7 +187,8 @@ void TransportBar::setPlaying(bool playing) {
 
 void TransportBar::setTempo(float bpm) {
     char buf[16];
-    snprintf(buf, sizeof(buf), "%.2f", bpm);
+    // Use LVGL's builtin snprintf (float-capable when LV_USE_FLOAT=1).
+    lv_snprintf(buf, sizeof(buf), "%.2f", bpm);
     lv_label_set_text(tempo_label_, buf);
 }
 

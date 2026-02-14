@@ -3,7 +3,7 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
-#include "ui/font/CoreFonts.hpp"
+#include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
