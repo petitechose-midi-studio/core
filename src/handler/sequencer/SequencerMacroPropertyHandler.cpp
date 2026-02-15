@@ -4,9 +4,12 @@
 
 #include <config/InputIDs.hpp>
 
+#include "SequencerInputUtils.hpp"
+
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
+namespace input_utils = core::handler::sequencer::input_utils;
 
 SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     core::state::CoreState& state,
@@ -26,40 +29,60 @@ void SequencerMacroPropertyHandler::setupBindings() {
             .scope(scope(scope_element_))
             .then([this, i](float value) { handleTurn(i, value); });
     }
+
+    encoders_.encoder(Config::EncoderID::OPT)
+        .turn()
+        .scope(scope(scope_element_))
+        .then([this](float value) { handleFocusedTurn(value); });
 }
 
 void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
-    if (normalized < 0.0f) normalized = 0.0f;
-    if (normalized > 1.0f) normalized = 1.0f;
+    const float value = input_utils::clampNormalized(normalized);
 
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
 
     constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    const uint8_t abs = static_cast<uint8_t>(state_.sequencer.page.get() * stepsPerPage + indexInPage);
+    const uint8_t pageCount = static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
+    const uint8_t page = static_cast<uint8_t>(state_.sequencer.page.get() % pageCount);
+    const uint8_t abs = static_cast<uint8_t>(page * stepsPerPage + indexInPage);
     if (abs >= len) return;
     if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
     const auto prop = state_.sequencer.activeStepProperty.get();
     if (prop == core::state::sequencer::StepProperty::NOTE) {
-        int note = static_cast<int>(normalized * 127.0f + 0.5f);
-        if (note < 0) note = 0;
-        if (note > 127) note = 127;
-        state_.sequencer.note[abs] = static_cast<uint8_t>(note);
+        state_.sequencer.note[abs] = input_utils::normalizedToMidi7(value);
         bumpRevision();
     } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-        int vel = static_cast<int>(normalized * 127.0f + 0.5f);
-        if (vel < 0) vel = 0;
-        if (vel > 127) vel = 127;
-        state_.sequencer.velocity[abs] = static_cast<uint8_t>(vel);
+        state_.sequencer.velocity[abs] = input_utils::normalizedToMidi7(value);
         bumpRevision();
     } else if (prop == core::state::sequencer::StepProperty::GATE) {
-        int gate = static_cast<int>(normalized * 100.0f + 0.5f);
-        if (gate < 0) gate = 0;
-        if (gate > 100) gate = 100;
-        state_.sequencer.gate[abs] = static_cast<uint16_t>(gate);
+        state_.sequencer.gate[abs] = input_utils::normalizedToGatePercent(value);
         bumpRevision();
     }
+}
+
+void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
+    if (state_.overlays.hasVisible()) return;
+
+    const float value = input_utils::clampNormalized(normalized);
+    const uint8_t len = state_.sequencer.length.get();
+    if (len == 0) return;
+
+    const uint8_t focused = state_.sequencer.focusedStep.get();
+    if (focused >= len) return;
+    if (focused >= core::state::sequencer::SequencerState::MAX_STEPS) return;
+
+    const auto prop = state_.sequencer.activeStepProperty.get();
+    if (prop == core::state::sequencer::StepProperty::NOTE) {
+        state_.sequencer.note[focused] = input_utils::normalizedToMidi7(value);
+    } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
+        state_.sequencer.velocity[focused] = input_utils::normalizedToMidi7(value);
+    } else if (prop == core::state::sequencer::StepProperty::GATE) {
+        state_.sequencer.gate[focused] = input_utils::normalizedToGatePercent(value);
+    }
+
+    bumpRevision();
 }
 
 void SequencerMacroPropertyHandler::bumpRevision() {

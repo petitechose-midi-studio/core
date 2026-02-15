@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
 
 namespace core::midi {
 
@@ -16,6 +18,18 @@ inline uint8_t toCC(float normalized) {
 // Convert MIDI CC [0, 127] to normalized [0.0, 1.0].
 inline float fromCC(uint8_t cc) {
     return static_cast<float>(cc) / CC_MAX;
+}
+
+inline void formatNoteName(char* buffer, size_t bufferSize, uint8_t midiNote) {
+    if (!buffer || bufferSize == 0) return;
+
+    static const char* NOTE_NAMES[] = {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+
+    const uint8_t chroma = static_cast<uint8_t>(midiNote % 12);
+    const int octave = static_cast<int>(midiNote) / 12 - 1;
+    std::snprintf(buffer, bufferSize, "%s%d", NOTE_NAMES[chroma], octave);
 }
 
 }  // namespace core::midi

@@ -6,10 +6,13 @@
 
 #include <config/InputIDs.hpp>
 
+#include "SequencerInputUtils.hpp"
+
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
 using oc::util::wrapIndex;
+namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
@@ -138,7 +141,7 @@ void SequencerStepEditHandler::closeCancel() {
 
 void SequencerStepEditHandler::moveFocus(float delta) {
     if (delta == 0.0f) return;
-    int step = (delta > 0.0f) ? 1 : -1;
+    const int step = (delta > 0.0f) ? 1 : -1;
 
     const int current = static_cast<int>(state_.sequencer.stepEdit.focusedRow.get());
     const int next = wrapIndex(current + step, ROW_COUNT);
@@ -148,8 +151,7 @@ void SequencerStepEditHandler::moveFocus(float delta) {
 }
 
 void SequencerStepEditHandler::setFocusedValue(float normalized) {
-    if (normalized < 0.0f) normalized = 0.0f;
-    if (normalized > 1.0f) normalized = 1.0f;
+    const float value = input_utils::clampNormalized(normalized);
 
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
@@ -161,25 +163,13 @@ void SequencerStepEditHandler::setFocusedValue(float normalized) {
     const uint8_t row = state_.sequencer.stepEdit.focusedRow.get();
 
     if (row == 0) {
-        // NOTE: 0..127
-        int note = static_cast<int>(normalized * 127.0f + 0.5f);
-        if (note < 0) note = 0;
-        if (note > 127) note = 127;
-        state_.sequencer.note[abs] = static_cast<uint8_t>(note);
+        state_.sequencer.note[abs] = input_utils::normalizedToMidi7(value);
         bumpStepDataRevision();
     } else if (row == 1) {
-        // VEL: 0..127
-        int vel = static_cast<int>(normalized * 127.0f + 0.5f);
-        if (vel < 0) vel = 0;
-        if (vel > 127) vel = 127;
-        state_.sequencer.velocity[abs] = static_cast<uint8_t>(vel);
+        state_.sequencer.velocity[abs] = input_utils::normalizedToMidi7(value);
         bumpStepDataRevision();
     } else if (row == 2) {
-        // GATE: 0..100
-        int gate = static_cast<int>(normalized * 100.0f + 0.5f);
-        if (gate < 0) gate = 0;
-        if (gate > 100) gate = 100;
-        state_.sequencer.gate[abs] = static_cast<uint16_t>(gate);
+        state_.sequencer.gate[abs] = input_utils::normalizedToGatePercent(value);
         bumpStepDataRevision();
     }
 }
@@ -196,13 +186,25 @@ void SequencerStepEditHandler::configureOptForFocusedRow() {
 
     if (row == 0) {
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, 128);
-        encoders_.setPosition(Config::EncoderID::OPT, static_cast<float>(state_.sequencer.note[abs]) / 127.0f);
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            input_utils::indexToNormalized(state_.sequencer.note[abs], 128)
+        );
     } else if (row == 1) {
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, 128);
-        encoders_.setPosition(Config::EncoderID::OPT, static_cast<float>(state_.sequencer.velocity[abs]) / 127.0f);
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            input_utils::indexToNormalized(state_.sequencer.velocity[abs], 128)
+        );
     } else if (row == 2) {
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 101);
-        encoders_.setPosition(Config::EncoderID::OPT, static_cast<float>(state_.sequencer.gate[abs]) / 100.0f);
+        encoders_.setDiscreteSteps(
+            Config::EncoderID::OPT,
+            static_cast<uint8_t>(core::state::sequencer::SequencerState::MAX_GATE_PERCENT + 1)
+        );
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            input_utils::gatePercentToNormalized(state_.sequencer.gate[abs])
+        );
     }
 }
 

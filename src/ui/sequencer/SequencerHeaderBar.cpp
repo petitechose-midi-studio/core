@@ -1,7 +1,6 @@
 #include "SequencerHeaderBar.hpp"
 
 #include <algorithm>
-#include <cstdio>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
@@ -17,15 +16,13 @@ namespace style = oc::ui::lvgl::style;
 namespace {
 
 constexpr uint32_t COLOR_PROGRESS = 0x5CA8EE;  // Match SequencerView play color
+constexpr uint32_t COLOR_DIM_TEXT = oc::ui::lvgl::base_theme::color::INACTIVE_LIGHTER;
+constexpr lv_opa_t OPA_DIM_TEXT = static_cast<lv_opa_t>(oc::ui::lvgl::base_theme::opacity::OPA_50);
 
 }  // namespace
 
 SequencerHeaderBar::SequencerHeaderBar(lv_obj_t* parent) {
     createUI(parent);
-
-    if (title_label_) {
-        lv_label_set_text(title_label_, "SEQ");
-    }
 }
 
 SequencerHeaderBar::~SequencerHeaderBar() {
@@ -34,15 +31,10 @@ SequencerHeaderBar::~SequencerHeaderBar() {
         container_ = nullptr;
         top_row_ = nullptr;
         strip_row_ = nullptr;
-        title_label_ = nullptr;
-        info_label_ = nullptr;
+        left_label_ = nullptr;
+        center_label_ = nullptr;
+        right_label_ = nullptr;
     }
-}
-
-uint16_t SequencerHeaderBar::stepDivisionDenom(uint8_t stepsPerBeat) {
-    if (stepsPerBeat == 0) return 0;
-    const uint16_t denom = static_cast<uint16_t>(4U * static_cast<uint16_t>(stepsPerBeat));
-    return denom;
 }
 
 void SequencerHeaderBar::createUI(lv_obj_t* parent) {
@@ -69,18 +61,31 @@ void SequencerHeaderBar::createUI(lv_obj_t* parent) {
         .padH(theme::layout::PAD_SM)
         .flexRow(LV_FLEX_ALIGN_SPACE_BETWEEN, 0);
 
-    title_label_ = lv_label_create(top_row_);
-    lv_label_set_text(title_label_, "");
-    style::apply(title_label_)
-        .textFont(fonts.inter_14_semibold)
+    left_label_ = lv_label_create(top_row_);
+    lv_label_set_text(left_label_, "");
+    lv_obj_set_width(left_label_, LV_PCT(34));
+    lv_label_set_long_mode(left_label_, LV_LABEL_LONG_CLIP);
+    style::apply(left_label_)
+        .textFont(fonts.inter_14_medium)
         .textColor(theme::color::TEXT_PRIMARY)
         .textAlign(LV_TEXT_ALIGN_LEFT);
 
-    info_label_ = lv_label_create(top_row_);
-    lv_label_set_text(info_label_, "");
-    style::apply(info_label_)
+    center_label_ = lv_label_create(top_row_);
+    lv_label_set_text(center_label_, "");
+    lv_obj_set_width(center_label_, LV_PCT(32));
+    lv_label_set_long_mode(center_label_, LV_LABEL_LONG_CLIP);
+    style::apply(center_label_)
+        .textFont(fonts.inter_14_semibold)
+        .textColor(theme::color::TEXT_PRIMARY)
+        .textAlign(LV_TEXT_ALIGN_CENTER);
+
+    right_label_ = lv_label_create(top_row_);
+    lv_label_set_text(right_label_, "");
+    lv_obj_set_width(right_label_, LV_PCT(34));
+    lv_label_set_long_mode(right_label_, LV_LABEL_LONG_CLIP);
+    style::apply(right_label_)
         .textFont(fonts.inter_14_medium)
-        .textColor(theme::color::TEXT_SECONDARY)
+        .textColor(theme::color::TEXT_PRIMARY)
         .textAlign(LV_TEXT_ALIGN_RIGHT);
 
     // Strip row (8 segments)
@@ -146,17 +151,29 @@ void SequencerHeaderBar::render(const SequencerHeaderBarProps& props) {
 }
 
 void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
-    if (!info_label_) return;
+    if (!left_label_ || !center_label_ || !right_label_) return;
 
-    const uint16_t denom = stepDivisionDenom(props.stepsPerBeat);
-    char buf[32];
-    if (denom > 0) {
-        snprintf(buf, sizeof(buf), "1/%u   LEN %u", static_cast<unsigned>(denom),
-                 static_cast<unsigned>(props.length));
-    } else {
-        snprintf(buf, sizeof(buf), "?   LEN %u", static_cast<unsigned>(props.length));
-    }
-    lv_label_set_text(info_label_, buf);
+    const lv_color_t propertyColor = lv_color_hex(theme::color::TEXT_PRIMARY);
+    const lv_opa_t propertyOpa = LV_OPA_COVER;
+
+    const lv_color_t stepColor = lv_color_hex(
+        props.dimmed ? COLOR_DIM_TEXT : theme::color::TEXT_PRIMARY
+    );
+    const lv_opa_t stepOpa = props.dimmed ? OPA_DIM_TEXT : LV_OPA_COVER;
+
+    // Property label is global context: never dim it based on focused step state.
+    lv_obj_set_style_text_color(left_label_, propertyColor, 0);
+    lv_obj_set_style_text_opa(left_label_, propertyOpa, 0);
+
+    // Value and step index depend on focused step state.
+    lv_obj_set_style_text_color(center_label_, stepColor, 0);
+    lv_obj_set_style_text_color(right_label_, stepColor, 0);
+    lv_obj_set_style_text_opa(center_label_, stepOpa, 0);
+    lv_obj_set_style_text_opa(right_label_, stepOpa, 0);
+
+    lv_label_set_text(left_label_, (props.leftText && props.leftText[0]) ? props.leftText : "");
+    lv_label_set_text(center_label_, (props.centerText && props.centerText[0]) ? props.centerText : "");
+    lv_label_set_text(right_label_, (props.rightText && props.rightText[0]) ? props.rightText : "");
 }
 
 void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {

@@ -95,6 +95,8 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
     static constexpr uint8_t PAGE_COUNT = (MAX_STEPS + STEPS_PER_PAGE - 1) / STEPS_PER_PAGE;
+    static constexpr uint16_t MAX_GATE_PERCENT =
+        oc::note::sequencer::StepSequencerState::MAX_GATE_PERCENT;
 
     /// Visible page index [0..PAGE_COUNT-1]
     Signal<uint8_t> page{0};

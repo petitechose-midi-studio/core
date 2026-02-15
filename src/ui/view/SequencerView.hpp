@@ -49,6 +49,10 @@ private:
     std::unique_ptr<ms::ui::LayoutView> layout_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
+    lv_obj_t* overlay_layer_ = nullptr;
+    lv_obj_t* division_overlay_label_ = nullptr;
+    lv_obj_t* total_steps_overlay_label_ = nullptr;
+    lv_obj_t* track_overlay_label_ = nullptr;
 
     std::unique_ptr<core::ui::SequencerHeaderBar> header_bar_;
 

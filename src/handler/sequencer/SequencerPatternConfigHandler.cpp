@@ -8,10 +8,13 @@
 
 #include <config/InputIDs.hpp>
 
+#include "SequencerInputUtils.hpp"
+
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
 using oc::util::wrapIndex;
+namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
@@ -122,7 +125,7 @@ void SequencerPatternConfigHandler::closeCancel() {
 
 void SequencerPatternConfigHandler::moveFocus(float delta) {
     if (delta == 0.0f) return;
-    int step = (delta > 0.0f) ? 1 : -1;
+    const int step = (delta > 0.0f) ? 1 : -1;
 
     const int current = static_cast<int>(state_.sequencer.patternConfig.focusedRow.get());
     const int next = wrapIndex(current + step, ROW_COUNT);
@@ -132,32 +135,25 @@ void SequencerPatternConfigHandler::moveFocus(float delta) {
 }
 
 void SequencerPatternConfigHandler::setFocusedValue(float normalized) {
-    if (normalized < 0.0f) normalized = 0.0f;
-    if (normalized > 1.0f) normalized = 1.0f;
+    const float value = input_utils::clampNormalized(normalized);
 
     const uint8_t row = state_.sequencer.patternConfig.focusedRow.get();
 
     if (row == 0) {
         // LEN: [1..MAX_STEPS] (discrete)
         constexpr int steps = core::state::sequencer::SequencerState::MAX_STEPS;
-        int idx = static_cast<int>(normalized * static_cast<float>(steps - 1) + 0.5f);
-        if (idx < 0) idx = 0;
-        if (idx > steps - 1) idx = steps - 1;
+        const int idx = input_utils::normalizedToIndex(value, steps);
         const uint8_t len = static_cast<uint8_t>(idx + 1);
         state_.sequencer.length.set(len);
         clampFocusToLength();
     } else if (row == 1) {
         // DIV: discrete steps-per-beat choices
         constexpr int steps = static_cast<int>(STEPS_PER_BEAT_CHOICES.size());
-        int idx = static_cast<int>(normalized * static_cast<float>(steps - 1) + 0.5f);
-        if (idx < 0) idx = 0;
-        if (idx > steps - 1) idx = steps - 1;
+        const int idx = input_utils::normalizedToIndex(value, steps);
         state_.sequencer.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
     } else if (row == 2) {
         // CH: 0..15 (displayed 1..16)
-        int ch = static_cast<int>(normalized * 15.0f + 0.5f);
-        if (ch < 0) ch = 0;
-        if (ch > 15) ch = 15;
+        const int ch = input_utils::normalizedToInclusiveInt(value, 15);
         state_.sequencer.midiChannel.set(static_cast<uint8_t>(ch));
     }
 }
@@ -172,19 +168,18 @@ void SequencerPatternConfigHandler::configureOptForFocusedRow() {
         steps = core::state::sequencer::SequencerState::MAX_STEPS;
         const uint8_t len = state_.sequencer.length.get();
         const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
-        pos = (steps > 1) ? (static_cast<float>(idx) / static_cast<float>(steps - 1)) : 0.0f;
+        pos = input_utils::indexToNormalized(idx, steps);
     } else if (row == 1) {
         // DIV: choices index
         steps = static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size());
         const uint8_t cur = state_.sequencer.stepsPerBeat.get();
         const uint8_t idx = findStepsPerBeatChoiceIndex(cur);
-        pos = (steps > 1) ? (static_cast<float>(idx) / static_cast<float>(steps - 1)) : 0.0f;
+        pos = input_utils::indexToNormalized(idx, steps);
     } else if (row == 2) {
         // CH: 0..15
         steps = 16;
-        uint8_t ch = state_.sequencer.midiChannel.get();
-        if (ch > 15) ch = 15;
-        pos = static_cast<float>(ch) / 15.0f;
+        const uint8_t ch = state_.sequencer.midiChannel.get();
+        pos = input_utils::indexToNormalized(ch, steps);
     }
 
     if (steps <= 1) return;

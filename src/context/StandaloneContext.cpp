@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include <lvgl.h>
 
@@ -39,6 +40,7 @@
 #include <ms/ui/ViewContainer.hpp>
 
 #include "sequencer/SequencerPlaybackService.hpp"
+#include "midi/MidiUtils.hpp"
 
 namespace core::context {
 
@@ -60,6 +62,7 @@ oc::type::Result<void> StandaloneContext::init() {
 
     // Configure special encoders once (avoid hidden handler coupling)
     encoders().setMode(Config::EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
+    encoders().setMode(Config::EncoderID::OPT, oc::interface::EncoderMode::NORMALIZED);
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         encoders().setMode(Config::MACRO_ENCODERS[i], oc::interface::EncoderMode::NORMALIZED);
@@ -320,6 +323,7 @@ void StandaloneContext::syncEncodersFromState() {
 
     // Leaving Sequencer view disables discrete steps.
     seq_macro_steps_configured_ = 0;
+    seq_opt_steps_configured_ = 0;
 
     OC_LOG_DEBUG("Synced encoder positions from restored state");
 }
@@ -429,13 +433,6 @@ void StandaloneContext::renderSequencerStepEdit() {
 
     const uint8_t len = core_state_.sequencer.length.get();
 
-    auto formatNoteName = [](char* buf, size_t bufSize, uint8_t midiNote) {
-        static const char* NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-        const int idx = static_cast<int>(midiNote) % 12;
-        const int octave = static_cast<int>(midiNote) / 12 - 1;
-        snprintf(buf, bufSize, "%s%d", NAMES[idx], octave);
-    };
-
     char title[16];
     snprintf(title, sizeof(title), "STEP %u", static_cast<unsigned>(abs) + 1);
 
@@ -457,9 +454,9 @@ void StandaloneContext::renderSequencerStepEdit() {
         (static_cast<uint32_t>(len) << 24);
 
     char noteName[8];
-    formatNoteName(noteName, sizeof(noteName), note);
-    char noteStr[24];
-    snprintf(noteStr, sizeof(noteStr), "%s (%u)", noteName, static_cast<unsigned>(note));
+    core::midi::formatNoteName(noteName, sizeof(noteName), note);
+    char noteStr[8];
+    snprintf(noteStr, sizeof(noteStr), "%s", noteName);
 
     char velStr[8];
     snprintf(velStr, sizeof(velStr), "%u", static_cast<unsigned>(vel));
@@ -468,9 +465,9 @@ void StandaloneContext::renderSequencerStepEdit() {
     snprintf(gateStr, sizeof(gateStr), "%u%%", static_cast<unsigned>(gate));
 
     const ms::ui::KeyValueRow rows[] = {
-        {.key = "NOTE", .value = noteStr},
-        {.key = "VEL", .value = velStr},
-        {.key = "GATE", .value = gateStr},
+        {.key = "Note", .value = noteStr},
+        {.key = "Velocity", .value = velStr},
+        {.key = "Gate", .value = gateStr},
     };
 
     seq_step_edit_overlay_->render({
@@ -504,7 +501,7 @@ void StandaloneContext::setupSequencerPropertySelectorRendering() {
 
 void StandaloneContext::renderSequencerPropertySelector() {
     if (!seq_property_selector_overlay_) return;
-    static const char* const ITEMS[] = {"NOTE", "VEL", "GATE"};
+    static const char* const ITEMS[] = {"Note", "Velocity", "Gate"};
 
     seq_property_selector_overlay_->render({
         .title = "PROPERTY",
@@ -524,8 +521,12 @@ void StandaloneContext::setupSequencerMacroEncoderSync() {
         core_state_.activeView,
         core_state_.sequencer.page,
         core_state_.sequencer.length,
+        core_state_.sequencer.focusedStep,
         core_state_.sequencer.activeStepProperty,
-        core_state_.sequencer.stepDataRevision
+        core_state_.sequencer.stepDataRevision,
+        core_state_.sequencer.patternConfig.visible,
+        core_state_.sequencer.stepEdit.visible,
+        core_state_.sequencer.propertySelector.visible
     );
 }
 
@@ -533,13 +534,21 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
     if (core_state_.activeView.get() != core::ui::ViewType::SEQUENCER) return;
 
     const uint8_t len = core_state_.sequencer.length.get();
+    constexpr uint16_t gateMax = core::state::sequencer::SequencerState::MAX_GATE_PERCENT;
     constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    const uint8_t page = core_state_.sequencer.page.get();
+    const uint8_t pageCount = (len == 0)
+        ? 0
+        : static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
+    const uint8_t page = (pageCount == 0)
+        ? 0
+        : static_cast<uint8_t>(core_state_.sequencer.page.get() % pageCount);
 
     const auto prop = core_state_.sequencer.activeStepProperty.get();
 
     // Absolute + discrete steps (framework quantizes [0..1])
-    const uint8_t steps = (prop == core::state::sequencer::StepProperty::GATE) ? 101 : 128;
+    const uint8_t steps = (prop == core::state::sequencer::StepProperty::GATE)
+        ? static_cast<uint8_t>(gateMax + 1)
+        : 128;
 
     if (seq_macro_steps_configured_ != steps) {
         for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
@@ -558,7 +567,8 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
             } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
                 normalized = static_cast<float>(core_state_.sequencer.velocity[abs]) / 127.0f;
             } else if (prop == core::state::sequencer::StepProperty::GATE) {
-                normalized = static_cast<float>(core_state_.sequencer.gate[abs]) / 100.0f;
+                const uint16_t gate = std::min<uint16_t>(core_state_.sequencer.gate[abs], gateMax);
+                normalized = static_cast<float>(gate) / static_cast<float>(gateMax);
             }
         }
 
@@ -567,6 +577,38 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
 
         encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
     }
+
+    if (core_state_.overlays.hasVisible()) {
+        seq_opt_steps_configured_ = 0;
+        return;
+    }
+
+    const uint8_t focused = core_state_.sequencer.focusedStep.get();
+    if (len == 0 || focused >= len || focused >= core::state::sequencer::SequencerState::MAX_STEPS) {
+        return;
+    }
+
+    const uint8_t optSteps =
+        (prop == core::state::sequencer::StepProperty::NOTE)
+        ? 255
+        : ((prop == core::state::sequencer::StepProperty::VELOCITY) ? 191 : static_cast<uint8_t>(gateMax + 1));
+
+    if (seq_opt_steps_configured_ != optSteps) {
+        encoders().setDiscreteSteps(Config::EncoderID::OPT, optSteps);
+        seq_opt_steps_configured_ = optSteps;
+    }
+
+    float optPosition = 0.0f;
+    if (prop == core::state::sequencer::StepProperty::NOTE) {
+        optPosition = static_cast<float>(core_state_.sequencer.note[focused]) / 127.0f;
+    } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
+        optPosition = static_cast<float>(core_state_.sequencer.velocity[focused]) / 127.0f;
+    } else {
+        const uint16_t gate = std::min<uint16_t>(core_state_.sequencer.gate[focused], gateMax);
+        optPosition = static_cast<float>(gate) / static_cast<float>(gateMax);
+    }
+
+    encoders().setPosition(Config::EncoderID::OPT, optPosition);
 }
 
 void StandaloneContext::setupViewSelectorRendering() {

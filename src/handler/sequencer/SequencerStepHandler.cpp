@@ -1,19 +1,14 @@
 #include "SequencerStepHandler.hpp"
 
 #include <oc/ui/lvgl/Scope.hpp>
+#include <oc/util/Index.hpp>
 
 #include <config/InputIDs.hpp>
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
-
-static int wrapIndex(int idx, int count) {
-    if (count <= 0) return 0;
-    idx %= count;
-    if (idx < 0) idx += count;
-    return idx;
-}
+using oc::util::wrapIndex;
 
 SequencerStepHandler::SequencerStepHandler(core::state::CoreState& state,
                                            oc::api::EncoderAPI& encoders,
@@ -84,7 +79,7 @@ void SequencerStepHandler::toggleFocusedStep() {
 
 void SequencerStepHandler::moveFocus(float delta) {
     if (delta == 0.0f) return;
-    int step = (delta > 0.0f) ? 1 : -1;
+    const int step = (delta > 0.0f) ? 1 : -1;
 
     const int len = static_cast<int>(state_.sequencer.length.get());
     if (len <= 0) return;

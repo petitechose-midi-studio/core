@@ -2,7 +2,7 @@
 
 /**
  * @file SequencerHeaderBar.hpp
- * @brief Sequencer header: title + division/length + playhead progress strip
+ * @brief Sequencer header: text row + playhead progress strip
  */
 
 #include <array>
@@ -18,7 +18,10 @@ struct SequencerHeaderBarProps {
     uint8_t length = 0;
     uint8_t viewedPage = 0;     // 0..7
     int16_t playheadStep = -1;  // -1 when stopped
-    uint8_t stepsPerBeat = 0;
+    const char* leftText = "";
+    const char* centerText = "";
+    const char* rightText = "";
+    bool dimmed = false;
 };
 
 /**
@@ -44,8 +47,6 @@ private:
     static constexpr lv_coord_t STRIP_HEIGHT = 3;
     static constexpr lv_coord_t MARKER_WIDTH = 2;
 
-    static uint16_t stepDivisionDenom(uint8_t stepsPerBeat);
-
     void createUI(lv_obj_t* parent);
     void renderTopRow(const SequencerHeaderBarProps& props);
     void renderStrip(const SequencerHeaderBarProps& props);
@@ -61,8 +62,9 @@ private:
     lv_obj_t* top_row_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
 
-    lv_obj_t* title_label_ = nullptr;
-    lv_obj_t* info_label_ = nullptr;
+    lv_obj_t* left_label_ = nullptr;
+    lv_obj_t* center_label_ = nullptr;
+    lv_obj_t* right_label_ = nullptr;
 
     std::array<Segment, PAGE_COUNT> segments_{};
 };

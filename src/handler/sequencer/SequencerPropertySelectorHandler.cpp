@@ -4,24 +4,19 @@
 
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
+#include <oc/util/Index.hpp>
 
 #include <config/InputIDs.hpp>
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
+using oc::util::wrapIndex;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
 namespace {
 constexpr int PROPERTY_COUNT = 3;  // NOTE, VEL, GATE
-
-int wrapIndex(int idx, int count) {
-    if (count <= 0) return 0;
-    idx %= count;
-    if (idx < 0) idx += count;
-    return idx;
-}
 
 }  // namespace
 
@@ -115,10 +110,8 @@ void SequencerPropertySelectorHandler::closeApply() {
 void SequencerPropertySelectorHandler::closeCancel() {
     auto& o = state_.sequencer.propertySelector;
     if (o.snapshotValid) {
-        state_.sequencer.propertySelector.selectedIndex.set(o.snapshotIndex);
-        state_.sequencer.activeStepProperty.set(
-            static_cast<core::state::sequencer::StepProperty>(std::clamp(o.snapshotIndex, 0, PROPERTY_COUNT - 1))
-        );
+        const int restored = std::clamp(o.snapshotIndex, 0, PROPERTY_COUNT - 1);
+        state_.sequencer.activeStepProperty.set(static_cast<core::state::sequencer::StepProperty>(restored));
     }
     overlays_.hide();
     state_.sequencer.propertySelector.reset();
