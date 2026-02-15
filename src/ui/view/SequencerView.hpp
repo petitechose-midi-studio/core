@@ -56,7 +56,9 @@ private:
     std::array<lv_obj_t*, 8> tiles_{};
     std::array<lv_obj_t*, 8> note_labels_{};
     std::array<lv_obj_t*, 8> step_buttons_{};
+    std::array<lv_obj_t*, 8> step_shapes_{};
     std::array<lv_obj_t*, 8> step_indicators_{};
+    std::array<lv_obj_t*, 8> step_selectors_{};
 };
 
 }  // namespace core::ui
