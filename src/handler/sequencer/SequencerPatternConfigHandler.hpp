@@ -41,7 +41,8 @@ private:
     void closeCancel();
 
     void moveFocus(float delta);
-    void adjustValue(float delta);
+    void setFocusedValue(float normalized);
+    void configureOptForFocusedRow();
     void clampFocusToLength();
 
     core::state::CoreState& state_;

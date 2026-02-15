@@ -60,7 +60,6 @@ oc::type::Result<void> StandaloneContext::init() {
 
     // Configure special encoders once (avoid hidden handler coupling)
     encoders().setMode(Config::EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
-    encoders().setMode(Config::EncoderID::OPT, oc::interface::EncoderMode::RELATIVE);
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         encoders().setMode(Config::MACRO_ENCODERS[i], oc::interface::EncoderMode::NORMALIZED);
@@ -120,7 +119,7 @@ oc::type::Result<void> StandaloneContext::init() {
     overlay_controller_->registerCleanup(
         core::ui::OverlayType::SEQ_PATTERN_CONFIG,
         oc::ui::lvgl::scopeID(seq_pattern_config_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
+        static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_CENTER)
     );
     setupSequencerPatternConfigRendering();
 
@@ -314,8 +313,14 @@ void StandaloneContext::onCleanup() {
 void StandaloneContext::syncEncodersFromState() {
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         float value = core_state_.macros.slots[i].value.get();
+        // Macro view defaults: 0..1 continuous
+        encoders().setContinuous(Config::MACRO_ENCODERS[i]);
         encoders().setPosition(Config::MACRO_ENCODERS[i], value);
     }
+
+    // Leaving Sequencer view disables discrete steps.
+    seq_macro_steps_configured_ = 0;
+
     OC_LOG_DEBUG("Synced encoder positions from restored state");
 }
 
@@ -532,6 +537,16 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
     const uint8_t page = core_state_.sequencer.page.get();
 
     const auto prop = core_state_.sequencer.activeStepProperty.get();
+
+    // Absolute + discrete steps (framework quantizes [0..1])
+    const uint8_t steps = (prop == core::state::sequencer::StepProperty::GATE) ? 101 : 128;
+
+    if (seq_macro_steps_configured_ != steps) {
+        for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+            encoders().setDiscreteSteps(Config::MACRO_ENCODERS[i], steps);
+        }
+        seq_macro_steps_configured_ = steps;
+    }
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         const uint8_t abs = static_cast<uint8_t>(page * stepsPerPage + i);

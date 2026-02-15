@@ -1,8 +1,5 @@
 #include "SequencerMacroPropertyHandler.hpp"
 
-#include <algorithm>
-#include <cmath>
-
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/InputIDs.hpp>
@@ -32,7 +29,8 @@ void SequencerMacroPropertyHandler::setupBindings() {
 }
 
 void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
-    normalized = std::clamp(normalized, 0.0f, 1.0f);
+    if (normalized < 0.0f) normalized = 0.0f;
+    if (normalized > 1.0f) normalized = 1.0f;
 
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
@@ -44,16 +42,22 @@ void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normal
 
     const auto prop = state_.sequencer.activeStepProperty.get();
     if (prop == core::state::sequencer::StepProperty::NOTE) {
-        const int note = static_cast<int>(std::lround(normalized * 127.0f));
-        state_.sequencer.note[abs] = static_cast<uint8_t>(std::clamp(note, 0, 127));
+        int note = static_cast<int>(normalized * 127.0f + 0.5f);
+        if (note < 0) note = 0;
+        if (note > 127) note = 127;
+        state_.sequencer.note[abs] = static_cast<uint8_t>(note);
         bumpRevision();
     } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-        const int vel = static_cast<int>(std::lround(normalized * 127.0f));
-        state_.sequencer.velocity[abs] = static_cast<uint8_t>(std::clamp(vel, 0, 127));
+        int vel = static_cast<int>(normalized * 127.0f + 0.5f);
+        if (vel < 0) vel = 0;
+        if (vel > 127) vel = 127;
+        state_.sequencer.velocity[abs] = static_cast<uint8_t>(vel);
         bumpRevision();
     } else if (prop == core::state::sequencer::StepProperty::GATE) {
-        const int gate = static_cast<int>(std::lround(normalized * 100.0f));
-        state_.sequencer.gate[abs] = static_cast<uint16_t>(std::clamp(gate, 0, 100));
+        int gate = static_cast<int>(normalized * 100.0f + 0.5f);
+        if (gate < 0) gate = 0;
+        if (gate > 100) gate = 100;
+        state_.sequencer.gate[abs] = static_cast<uint16_t>(gate);
         bumpRevision();
     }
 }

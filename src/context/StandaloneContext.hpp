@@ -175,6 +175,9 @@ private:
 
     // Global services (not tied to a view scope)
     std::unique_ptr<core::sequencer::SequencerPlaybackService> sequencer_playback_;
+
+    // Cached encoder configuration (avoid resetting quantization every sync)
+    uint8_t seq_macro_steps_configured_ = 0;
 };
 
 }  // namespace core::context

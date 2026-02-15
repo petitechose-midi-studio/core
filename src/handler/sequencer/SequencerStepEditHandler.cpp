@@ -1,26 +1,19 @@
 #include "SequencerStepEditHandler.hpp"
 
-#include <algorithm>
-
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
+#include <oc/util/Index.hpp>
 
 #include <config/InputIDs.hpp>
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
+using oc::util::wrapIndex;
 
 namespace {
 
 constexpr uint8_t ROW_COUNT = 3;
-
-int wrapIndex(int idx, int count) {
-    if (count <= 0) return 0;
-    idx %= count;
-    if (idx < 0) idx += count;
-    return idx;
-}
 
 }  // namespace
 
@@ -64,7 +57,16 @@ void SequencerStepEditHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(scope(overlay_scope_))
-        .then([this](float delta) { adjustValue(delta); });
+        .then([this](float value) { setFocusedValue(value); });
+
+    // Pressing the currently edited step closes + applies
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        auto btn = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[i]);
+        buttons_.button(btn)
+            .release()
+            .scope(scope(overlay_scope_))
+            .then([this, i]() { maybeCloseApplyFromMacro(i); });
+    }
 
     // Apply + close
     buttons_.button(Config::ButtonID::NAV)
@@ -103,10 +105,17 @@ void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
     o.snapshotGate = state_.sequencer.gate[abs];
     o.snapshotValid = true;
 
+    // longPress() fires while button is still pressed; don't immediately close on release.
+    ignore_open_release_ = true;
+    ignore_open_macro_index_in_page_ = indexInPage;
+
     overlays_.show(core::ui::OverlayType::SEQ_STEP_EDIT);
+
+    configureOptForFocusedRow();
 }
 
 void SequencerStepEditHandler::closeApply() {
+    ignore_open_release_ = false;
     overlays_.hide();
     state_.sequencer.stepEdit.reset();
 }
@@ -122,6 +131,7 @@ void SequencerStepEditHandler::closeCancel() {
         bumpStepDataRevision();
     }
 
+    ignore_open_release_ = false;
     overlays_.hide();
     o.reset();
 }
@@ -133,11 +143,13 @@ void SequencerStepEditHandler::moveFocus(float delta) {
     const int current = static_cast<int>(state_.sequencer.stepEdit.focusedRow.get());
     const int next = wrapIndex(current + step, ROW_COUNT);
     state_.sequencer.stepEdit.focusedRow.set(static_cast<uint8_t>(next));
+
+    configureOptForFocusedRow();
 }
 
-void SequencerStepEditHandler::adjustValue(float delta) {
-    if (delta == 0.0f) return;
-    int step = (delta > 0.0f) ? 1 : -1;
+void SequencerStepEditHandler::setFocusedValue(float normalized) {
+    if (normalized < 0.0f) normalized = 0.0f;
+    if (normalized > 1.0f) normalized = 1.0f;
 
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
@@ -149,21 +161,63 @@ void SequencerStepEditHandler::adjustValue(float delta) {
     const uint8_t row = state_.sequencer.stepEdit.focusedRow.get();
 
     if (row == 0) {
-        int note = static_cast<int>(state_.sequencer.note[abs]) + step;
-        note = std::clamp(note, 0, 127);
+        // NOTE: 0..127
+        int note = static_cast<int>(normalized * 127.0f + 0.5f);
+        if (note < 0) note = 0;
+        if (note > 127) note = 127;
         state_.sequencer.note[abs] = static_cast<uint8_t>(note);
         bumpStepDataRevision();
     } else if (row == 1) {
-        int vel = static_cast<int>(state_.sequencer.velocity[abs]) + step;
-        vel = std::clamp(vel, 0, 127);
+        // VEL: 0..127
+        int vel = static_cast<int>(normalized * 127.0f + 0.5f);
+        if (vel < 0) vel = 0;
+        if (vel > 127) vel = 127;
         state_.sequencer.velocity[abs] = static_cast<uint8_t>(vel);
         bumpStepDataRevision();
     } else if (row == 2) {
-        int gate = static_cast<int>(state_.sequencer.gate[abs]) + step;
-        gate = std::clamp(gate, 0, 100);
+        // GATE: 0..100
+        int gate = static_cast<int>(normalized * 100.0f + 0.5f);
+        if (gate < 0) gate = 0;
+        if (gate > 100) gate = 100;
         state_.sequencer.gate[abs] = static_cast<uint16_t>(gate);
         bumpStepDataRevision();
     }
+}
+
+void SequencerStepEditHandler::configureOptForFocusedRow() {
+    const uint8_t len = state_.sequencer.length.get();
+    if (len == 0) return;
+
+    const uint8_t abs = state_.sequencer.stepEdit.stepIndex.get();
+    if (abs >= len) return;
+    if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
+
+    const uint8_t row = state_.sequencer.stepEdit.focusedRow.get();
+
+    if (row == 0) {
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 128);
+        encoders_.setPosition(Config::EncoderID::OPT, static_cast<float>(state_.sequencer.note[abs]) / 127.0f);
+    } else if (row == 1) {
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 128);
+        encoders_.setPosition(Config::EncoderID::OPT, static_cast<float>(state_.sequencer.velocity[abs]) / 127.0f);
+    } else if (row == 2) {
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 101);
+        encoders_.setPosition(Config::EncoderID::OPT, static_cast<float>(state_.sequencer.gate[abs]) / 100.0f);
+    }
+}
+
+void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexInPage) {
+    if (ignore_open_release_ && indexInPage == ignore_open_macro_index_in_page_) {
+        ignore_open_release_ = false;
+        return;
+    }
+
+    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
+    const uint8_t abs = state_.sequencer.stepEdit.stepIndex.get();
+    const uint8_t currentIndexInPage = static_cast<uint8_t>(abs % stepsPerPage);
+
+    if (indexInPage != currentIndexInPage) return;
+    closeApply();
 }
 
 void SequencerStepEditHandler::bumpStepDataRevision() {

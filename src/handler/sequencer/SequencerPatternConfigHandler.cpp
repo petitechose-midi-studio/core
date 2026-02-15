@@ -1,44 +1,28 @@
 #include "SequencerPatternConfigHandler.hpp"
 
-#include <algorithm>
 #include <array>
 
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
+#include <oc/util/Index.hpp>
 
 #include <config/InputIDs.hpp>
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
+using oc::util::wrapIndex;
 
 namespace {
 
 constexpr uint8_t ROW_COUNT = 3;
 constexpr std::array<uint8_t, 6> STEPS_PER_BEAT_CHOICES = {1, 2, 3, 4, 6, 8};
 
-int wrapIndex(int idx, int count) {
-    if (count <= 0) return 0;
-    idx %= count;
-    if (idx < 0) idx += count;
-    return idx;
-}
-
-uint8_t nextStepsPerBeat(uint8_t current, int step) {
-    int found = -1;
-    for (size_t i = 0; i < STEPS_PER_BEAT_CHOICES.size(); ++i) {
-        if (STEPS_PER_BEAT_CHOICES[i] == current) {
-            found = static_cast<int>(i);
-            break;
-        }
+uint8_t findStepsPerBeatChoiceIndex(uint8_t stepsPerBeat) {
+    for (uint8_t i = 0; i < static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size()); ++i) {
+        if (STEPS_PER_BEAT_CHOICES[i] == stepsPerBeat) return i;
     }
-    if (found < 0) {
-        // If state contains an unexpected value, snap to the closest common default.
-        found = 3;  // 4 steps/beat = 1/16
-    }
-
-    const int next = wrapIndex(found + step, static_cast<int>(STEPS_PER_BEAT_CHOICES.size()));
-    return STEPS_PER_BEAT_CHOICES[static_cast<size_t>(next)];
+    return 3;  // Default: 4 steps/beat = 1/16
 }
 
 }  // namespace
@@ -65,9 +49,16 @@ void SequencerPatternConfigHandler::setupBindings() {
     // ===== SEQUENCER VIEW SCOPE =====
     // Open PATTERN CONFIG
     buttons_.button(Config::ButtonID::LEFT_CENTER)
-        .release()
+        .press()
+        .latch()
         .scope(scope(sequencer_view_scope_))
         .then([this]() { open(); });
+
+    // Close + apply on release (latch toggle)
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .release()
+        .scope(scope(overlay_scope_))
+        .then([this]() { closeApply(); });
 
     // ===== OVERLAY SCOPE =====
     // NAV encoder: focus row
@@ -80,7 +71,7 @@ void SequencerPatternConfigHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(scope(overlay_scope_))
-        .then([this](float delta) { adjustValue(delta); });
+        .then([this](float value) { setFocusedValue(value); });
 
     // Apply + close
     buttons_.button(Config::ButtonID::NAV)
@@ -107,6 +98,8 @@ void SequencerPatternConfigHandler::open() {
     o.snapshotValid = true;
 
     overlays_.show(core::ui::OverlayType::SEQ_PATTERN_CONFIG);
+
+    configureOptForFocusedRow();
 }
 
 void SequencerPatternConfigHandler::closeApply() {
@@ -134,30 +127,69 @@ void SequencerPatternConfigHandler::moveFocus(float delta) {
     const int current = static_cast<int>(state_.sequencer.patternConfig.focusedRow.get());
     const int next = wrapIndex(current + step, ROW_COUNT);
     state_.sequencer.patternConfig.focusedRow.set(static_cast<uint8_t>(next));
+
+    configureOptForFocusedRow();
 }
 
-void SequencerPatternConfigHandler::adjustValue(float delta) {
-    if (delta == 0.0f) return;
-    int step = (delta > 0.0f) ? 1 : -1;
+void SequencerPatternConfigHandler::setFocusedValue(float normalized) {
+    if (normalized < 0.0f) normalized = 0.0f;
+    if (normalized > 1.0f) normalized = 1.0f;
 
     const uint8_t row = state_.sequencer.patternConfig.focusedRow.get();
 
     if (row == 0) {
-        // LEN: [1..MAX_STEPS]
-        int len = static_cast<int>(state_.sequencer.length.get()) + step;
-        len = std::clamp(len, 1, static_cast<int>(core::state::sequencer::SequencerState::MAX_STEPS));
-        state_.sequencer.length.set(static_cast<uint8_t>(len));
+        // LEN: [1..MAX_STEPS] (discrete)
+        constexpr int steps = core::state::sequencer::SequencerState::MAX_STEPS;
+        int idx = static_cast<int>(normalized * static_cast<float>(steps - 1) + 0.5f);
+        if (idx < 0) idx = 0;
+        if (idx > steps - 1) idx = steps - 1;
+        const uint8_t len = static_cast<uint8_t>(idx + 1);
+        state_.sequencer.length.set(len);
         clampFocusToLength();
     } else if (row == 1) {
         // DIV: discrete steps-per-beat choices
-        const uint8_t cur = state_.sequencer.stepsPerBeat.get();
-        state_.sequencer.stepsPerBeat.set(nextStepsPerBeat(cur, step));
+        constexpr int steps = static_cast<int>(STEPS_PER_BEAT_CHOICES.size());
+        int idx = static_cast<int>(normalized * static_cast<float>(steps - 1) + 0.5f);
+        if (idx < 0) idx = 0;
+        if (idx > steps - 1) idx = steps - 1;
+        state_.sequencer.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
     } else if (row == 2) {
         // CH: 0..15 (displayed 1..16)
-        int ch = static_cast<int>(state_.sequencer.midiChannel.get()) + step;
-        ch = std::clamp(ch, 0, 15);
+        int ch = static_cast<int>(normalized * 15.0f + 0.5f);
+        if (ch < 0) ch = 0;
+        if (ch > 15) ch = 15;
         state_.sequencer.midiChannel.set(static_cast<uint8_t>(ch));
     }
+}
+
+void SequencerPatternConfigHandler::configureOptForFocusedRow() {
+    const uint8_t row = state_.sequencer.patternConfig.focusedRow.get();
+    float pos = 0.0f;
+    uint8_t steps = 0;
+
+    if (row == 0) {
+        // LEN: [1..MAX_STEPS]
+        steps = core::state::sequencer::SequencerState::MAX_STEPS;
+        const uint8_t len = state_.sequencer.length.get();
+        const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
+        pos = (steps > 1) ? (static_cast<float>(idx) / static_cast<float>(steps - 1)) : 0.0f;
+    } else if (row == 1) {
+        // DIV: choices index
+        steps = static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size());
+        const uint8_t cur = state_.sequencer.stepsPerBeat.get();
+        const uint8_t idx = findStepsPerBeatChoiceIndex(cur);
+        pos = (steps > 1) ? (static_cast<float>(idx) / static_cast<float>(steps - 1)) : 0.0f;
+    } else if (row == 2) {
+        // CH: 0..15
+        steps = 16;
+        uint8_t ch = state_.sequencer.midiChannel.get();
+        if (ch > 15) ch = 15;
+        pos = static_cast<float>(ch) / 15.0f;
+    }
+
+    if (steps <= 1) return;
+    encoders_.setDiscreteSteps(Config::EncoderID::OPT, steps);
+    encoders_.setPosition(Config::EncoderID::OPT, pos);
 }
 
 void SequencerPatternConfigHandler::clampFocusToLength() {

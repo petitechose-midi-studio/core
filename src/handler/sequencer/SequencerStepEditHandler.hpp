@@ -41,8 +41,14 @@ private:
     void closeCancel();
 
     void moveFocus(float delta);
-    void adjustValue(float delta);
+    void setFocusedValue(float normalized);
+    void configureOptForFocusedRow();
+    void maybeCloseApplyFromMacro(uint8_t indexInPage);
     void bumpStepDataRevision();
+
+    // Long-press opens while still pressed; ignore the release that follows.
+    bool ignore_open_release_ = false;
+    uint8_t ignore_open_macro_index_in_page_ = 0;
 
     core::state::CoreState& state_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
