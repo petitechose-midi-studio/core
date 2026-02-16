@@ -128,10 +128,7 @@ void SequencerStepEditHandler::closeCancel() {
 
     const uint8_t abs = o.stepIndex.get();
     if (o.snapshotValid && abs < core::state::sequencer::SequencerState::MAX_STEPS) {
-        state_.sequencer.note[abs] = o.snapshotNote;
-        state_.sequencer.velocity[abs] = o.snapshotVelocity;
-        state_.sequencer.gate[abs] = o.snapshotGate;
-        bumpStepDataRevision();
+        state_.sequencer.setStepDataAt(abs, o.snapshotNote, o.snapshotVelocity, o.snapshotGate);
     }
 
     ignore_open_release_ = false;
@@ -163,14 +160,11 @@ void SequencerStepEditHandler::setFocusedValue(float normalized) {
     const uint8_t row = state_.sequencer.stepEdit.focusedRow.get();
 
     if (row == 0) {
-        state_.sequencer.note[abs] = input_utils::normalizedToMidi7(value);
-        bumpStepDataRevision();
+        state_.sequencer.setStepNoteAt(abs, input_utils::normalizedToMidi7(value));
     } else if (row == 1) {
-        state_.sequencer.velocity[abs] = input_utils::normalizedToMidi7(value);
-        bumpStepDataRevision();
+        state_.sequencer.setStepVelocityAt(abs, input_utils::normalizedToMidi7(value));
     } else if (row == 2) {
-        state_.sequencer.gate[abs] = input_utils::normalizedToGatePercent(value);
-        bumpStepDataRevision();
+        state_.sequencer.setStepGateAt(abs, input_utils::normalizedToGatePercent(value));
     }
 }
 
@@ -220,10 +214,6 @@ void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexInPage) {
 
     if (indexInPage != currentIndexInPage) return;
     closeApply();
-}
-
-void SequencerStepEditHandler::bumpStepDataRevision() {
-    state_.sequencer.stepDataRevision.set(state_.sequencer.stepDataRevision.get() + 1);
 }
 
 }  // namespace core::handler

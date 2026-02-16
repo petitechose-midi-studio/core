@@ -51,14 +51,11 @@ void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normal
 
     const auto prop = state_.sequencer.activeStepProperty.get();
     if (prop == core::state::sequencer::StepProperty::NOTE) {
-        state_.sequencer.note[abs] = input_utils::normalizedToMidi7(value);
-        bumpRevision();
+        state_.sequencer.setStepNoteAt(abs, input_utils::normalizedToMidi7(value));
     } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-        state_.sequencer.velocity[abs] = input_utils::normalizedToMidi7(value);
-        bumpRevision();
+        state_.sequencer.setStepVelocityAt(abs, input_utils::normalizedToMidi7(value));
     } else if (prop == core::state::sequencer::StepProperty::GATE) {
-        state_.sequencer.gate[abs] = input_utils::normalizedToGatePercent(value);
-        bumpRevision();
+        state_.sequencer.setStepGateAt(abs, input_utils::normalizedToGatePercent(value));
     }
 }
 
@@ -75,18 +72,12 @@ void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
 
     const auto prop = state_.sequencer.activeStepProperty.get();
     if (prop == core::state::sequencer::StepProperty::NOTE) {
-        state_.sequencer.note[focused] = input_utils::normalizedToMidi7(value);
+        state_.sequencer.setStepNoteAt(focused, input_utils::normalizedToMidi7(value));
     } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-        state_.sequencer.velocity[focused] = input_utils::normalizedToMidi7(value);
+        state_.sequencer.setStepVelocityAt(focused, input_utils::normalizedToMidi7(value));
     } else if (prop == core::state::sequencer::StepProperty::GATE) {
-        state_.sequencer.gate[focused] = input_utils::normalizedToGatePercent(value);
+        state_.sequencer.setStepGateAt(focused, input_utils::normalizedToGatePercent(value));
     }
-
-    bumpRevision();
-}
-
-void SequencerMacroPropertyHandler::bumpRevision() {
-    state_.sequencer.stepDataRevision.set(state_.sequencer.stepDataRevision.get() + 1);
 }
 
 }  // namespace core::handler

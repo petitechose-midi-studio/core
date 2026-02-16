@@ -44,7 +44,6 @@ private:
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
     void maybeCloseApplyFromMacro(uint8_t indexInPage);
-    void bumpStepDataRevision();
 
     // Long-press opens while still pressed; ignore the release that follows.
     bool ignore_open_release_ = false;

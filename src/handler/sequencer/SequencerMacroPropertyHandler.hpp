@@ -28,7 +28,6 @@ private:
     void setupBindings();
     void handleTurn(uint8_t indexInPage, float normalized);
     void handleFocusedTurn(float normalized);
-    void bumpRevision();
 
     core::state::CoreState& state_;
     oc::api::EncoderAPI& encoders_;

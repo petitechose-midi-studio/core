@@ -117,11 +117,53 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     SequencerSettingsOverlayState settings;
     SequencerTrackConfigOverlayState trackConfig;
 
+    static uint8_t clampMidi7(uint8_t value) {
+        return (value > 127U) ? 127U : value;
+    }
+
+    static uint16_t clampGatePercent(uint16_t value) {
+        return (value > MAX_GATE_PERCENT) ? MAX_GATE_PERCENT : value;
+    }
+
+    void bumpStepDataRevision() {
+        stepDataRevision.set(stepDataRevision.get() + 1);
+    }
+
+    bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
+        if (step >= MAX_STEPS) return false;
+        note[step] = clampMidi7(noteValue);
+        bumpStepDataRevision();
+        return true;
+    }
+
+    bool setStepVelocityAt(uint8_t step, uint8_t velocityValue) {
+        if (step >= MAX_STEPS) return false;
+        velocity[step] = clampMidi7(velocityValue);
+        bumpStepDataRevision();
+        return true;
+    }
+
+    bool setStepGateAt(uint8_t step, uint16_t gatePercent) {
+        if (step >= MAX_STEPS) return false;
+        gate[step] = clampGatePercent(gatePercent);
+        bumpStepDataRevision();
+        return true;
+    }
+
+    bool setStepDataAt(uint8_t step, uint8_t noteValue, uint8_t velocityValue, uint16_t gatePercent) {
+        if (step >= MAX_STEPS) return false;
+        note[step] = clampMidi7(noteValue);
+        velocity[step] = clampMidi7(velocityValue);
+        gate[step] = clampGatePercent(gatePercent);
+        bumpStepDataRevision();
+        return true;
+    }
+
     void reset() {
         oc::note::sequencer::StepSequencerState::reset();
         page.set(0);
         focusedStep.set(0);
-        stepDataRevision.set(stepDataRevision.get() + 1);
+        bumpStepDataRevision();
         activeStepProperty.set(StepProperty::NOTE);
 
         patternConfig.reset();
