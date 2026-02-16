@@ -221,7 +221,13 @@ oc::type::Result<void> StandaloneContext::init() {
     transport_handler_ = std::make_unique<core::handler::TransportHandler>(
         core_state_, encoders(), buttons(),
         macro_view_->getElement(),  // Tempo only in Macro view scope
-        mainZone                    // Play/Pause remains global to main zone
+        // Play/Pause is explicitly mirrored per top-level view scope.
+        // This keeps strict authority (overlay > active view > global) without
+        // relying on global bindings.
+        core::handler::TransportHandler::ViewScopes{
+            macro_view_->getElement(),
+            sequencer_view_->getElement(),
+        }
     );
 
     // View selector handler (LEFT_TOP + NAV)
@@ -229,7 +235,16 @@ oc::type::Result<void> StandaloneContext::init() {
         using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
         OverlayCtx ctx{*overlay_controller_, mainZone, view_selector_->getElement()};
         view_switcher_handler_ = std::make_unique<core::handler::ViewSwitcherHandler>(
-            core_state_, ctx, encoders(), buttons()
+            core_state_,
+            ctx,
+            encoders(),
+            buttons(),
+            // LEFT_TOP open is explicitly mirrored per top-level view scope.
+            // Overlay interactions remain scoped to the selector overlay.
+            core::handler::ViewSwitcherHandler::ViewScopes{
+                macro_view_->getElement(),
+                sequencer_view_->getElement(),
+            }
         );
     }
 

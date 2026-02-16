@@ -7,6 +7,9 @@
 
 #include <lvgl.h>
 
+#include <array>
+#include <cstddef>
+
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <ms/ui/OverlayBindingContext.hpp>
@@ -20,11 +23,14 @@ namespace core::handler {
 class ViewSwitcherHandler {
 public:
     using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
+    static constexpr std::size_t VIEW_SCOPE_COUNT = static_cast<std::size_t>(core::ui::ViewType::COUNT);
+    using ViewScopes = std::array<lv_obj_t*, VIEW_SCOPE_COUNT>;
 
     ViewSwitcherHandler(core::state::CoreState& state,
                         OverlayCtx overlayCtx,
                         oc::api::EncoderAPI& encoders,
-                        oc::api::ButtonAPI& buttons);
+                        oc::api::ButtonAPI& buttons,
+                        ViewScopes viewScopes);
 
     ~ViewSwitcherHandler() = default;
 
@@ -43,6 +49,7 @@ private:
     OverlayCtx overlay_ctx_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
+    ViewScopes view_scopes_{};
 
     static constexpr int VIEW_COUNT = static_cast<int>(core::ui::ViewType::COUNT);
 };

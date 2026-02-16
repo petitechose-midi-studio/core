@@ -21,21 +21,30 @@ static int wrapIndex(int idx, int count) {
 ViewSwitcherHandler::ViewSwitcherHandler(core::state::CoreState& state,
                                          OverlayCtx overlayCtx,
                                          oc::api::EncoderAPI& encoders,
-                                         oc::api::ButtonAPI& buttons)
+                                         oc::api::ButtonAPI& buttons,
+                                         ViewSwitcherHandler::ViewScopes viewScopes)
     : state_(state)
     , overlay_ctx_(overlayCtx)
     , encoders_(encoders)
-    , buttons_(buttons) {
+    , buttons_(buttons)
+    , view_scopes_(viewScopes) {
     setupBindings();
 }
 
 void ViewSwitcherHandler::setupBindings() {
-    // Open selector (latch behavior for toggle)
-    buttons_.button(ButtonID::LEFT_TOP)
-        .press()
-        .latch()
-        .scope(scope(overlay_ctx_.scopeElement))
-        .then([this]() { openSelector(); });
+    // Open selector from any active top-level view scope (latch behavior for toggle)
+    lv_obj_t* lastBoundScope = nullptr;
+    for (auto* viewScope : view_scopes_) {
+        if (!viewScope || viewScope == lastBoundScope) continue;
+
+        buttons_.button(ButtonID::LEFT_TOP)
+            .press()
+            .latch()
+            .scope(scope(viewScope))
+            .then([this]() { openSelector(); });
+
+        lastBoundScope = viewScope;
+    }
 
     // Close and confirm on release
     buttons_.button(ButtonID::LEFT_TOP)

@@ -8,15 +8,15 @@ namespace core::handler {
 using namespace oc::ui::lvgl;
 
 TransportHandler::TransportHandler(core::state::CoreState& coreState,
-                                              oc::api::EncoderAPI& encoders,
-                                              oc::api::ButtonAPI& buttons,
-                                              lv_obj_t* tempoScopeElement,
-                                              lv_obj_t* transportScopeElement)
+                                               oc::api::EncoderAPI& encoders,
+                                               oc::api::ButtonAPI& buttons,
+                                               lv_obj_t* tempoScopeElement,
+                                               TransportHandler::ViewScopes playToggleScopes)
     : core_state_(coreState)
     , encoders_(encoders)
     , buttons_(buttons)
     , tempo_scope_element_(tempoScopeElement)
-    , transport_scope_element_(transportScopeElement) {
+    , play_toggle_scopes_(playToggleScopes) {
     setupBindings();
 }
 
@@ -27,11 +27,18 @@ void TransportHandler::setupBindings() {
         .scope(scope(tempo_scope_element_))
         .then([this](float delta) { handleTempoChange(delta); });
 
-    // BOTTOM_CENTER button: toggle play (transport scope)
-    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
-        .release()
-        .scope(scope(transport_scope_element_))
-        .then([this]() { handlePlayToggle(); });
+    // BOTTOM_CENTER button: toggle play from any active top-level view scope
+    lv_obj_t* lastBoundScope = nullptr;
+    for (auto* playScope : play_toggle_scopes_) {
+        if (!playScope || playScope == lastBoundScope) continue;
+
+        buttons_.button(Config::ButtonID::BOTTOM_CENTER)
+            .release()
+            .scope(scope(playScope))
+            .then([this]() { handlePlayToggle(); });
+
+        lastBoundScope = playScope;
+    }
 }
 
 void TransportHandler::handleTempoChange(float delta) {
