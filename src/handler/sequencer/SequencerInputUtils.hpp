@@ -53,4 +53,26 @@ inline float gatePercentToNormalized(uint16_t gatePercent) {
     );
 }
 
+inline uint8_t discreteStepsForProperty(core::state::sequencer::StepProperty property) {
+    if (property == core::state::sequencer::StepProperty::GATE) {
+        return static_cast<uint8_t>(core::state::sequencer::SequencerState::MAX_GATE_PERCENT + 1);
+    }
+    return 128;
+}
+
+inline float stepPropertyToNormalized(core::state::sequencer::StepProperty property,
+                                      uint8_t note,
+                                      uint8_t velocity,
+                                      uint16_t gatePercent) {
+    if (property == core::state::sequencer::StepProperty::NOTE) {
+        return indexToNormalized(note, 128);
+    }
+
+    if (property == core::state::sequencer::StepProperty::VELOCITY) {
+        return indexToNormalized(velocity, 128);
+    }
+
+    return gatePercentToNormalized(gatePercent);
+}
+
 }  // namespace core::handler::sequencer::input_utils

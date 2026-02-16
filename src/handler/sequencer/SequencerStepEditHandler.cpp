@@ -172,13 +172,19 @@ void SequencerStepEditHandler::configureOptForFocusedRow() {
     const uint8_t row = state_.sequencer.stepEdit.focusedRow.get();
 
     if (row == 0) {
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 128);
+        encoders_.setDiscreteSteps(
+            Config::EncoderID::OPT,
+            input_utils::discreteStepsForProperty(core::state::sequencer::StepProperty::NOTE)
+        );
         encoders_.setPosition(
             Config::EncoderID::OPT,
             input_utils::indexToNormalized(state_.sequencer.note[abs], 128)
         );
     } else if (row == 1) {
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 128);
+        encoders_.setDiscreteSteps(
+            Config::EncoderID::OPT,
+            input_utils::discreteStepsForProperty(core::state::sequencer::StepProperty::VELOCITY)
+        );
         encoders_.setPosition(
             Config::EncoderID::OPT,
             input_utils::indexToNormalized(state_.sequencer.velocity[abs], 128)
@@ -186,7 +192,7 @@ void SequencerStepEditHandler::configureOptForFocusedRow() {
     } else if (row == 2) {
         encoders_.setDiscreteSteps(
             Config::EncoderID::OPT,
-            static_cast<uint8_t>(core::state::sequencer::SequencerState::MAX_GATE_PERCENT + 1)
+            input_utils::discreteStepsForProperty(core::state::sequencer::StepProperty::GATE)
         );
         encoders_.setPosition(
             Config::EncoderID::OPT,

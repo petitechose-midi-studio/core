@@ -21,6 +21,7 @@
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
+#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
 
@@ -43,6 +44,8 @@
 #include "midi/MidiUtils.hpp"
 
 namespace core::context {
+
+namespace input_utils = core::handler::sequencer::input_utils;
 
 // Constructor and destructor must be in .cpp where handler types are complete
 StandaloneContext::StandaloneContext(core::state::CoreState& state) : core_state_(state) {}
@@ -534,15 +537,12 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
     if (core_state_.activeView.get() != core::ui::ViewType::SEQUENCER) return;
 
     const uint8_t len = core_state_.sequencer.length.get();
-    constexpr uint16_t gateMax = core::state::sequencer::SequencerState::MAX_GATE_PERCENT;
     const uint8_t page = core_state_.sequencer.normalizePage(core_state_.sequencer.page.get());
 
     const auto prop = core_state_.sequencer.activeStepProperty.get();
 
     // Absolute + discrete steps (framework quantizes [0..1])
-    const uint8_t steps = (prop == core::state::sequencer::StepProperty::GATE)
-        ? static_cast<uint8_t>(gateMax + 1)
-        : 128;
+    const uint8_t steps = input_utils::discreteStepsForProperty(prop);
 
     if (seq_macro_steps_configured_ != steps) {
         for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
@@ -556,14 +556,12 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
         uint8_t abs = 0;
 
         if (core_state_.sequencer.resolveStepInPage(page, i, abs)) {
-            if (prop == core::state::sequencer::StepProperty::NOTE) {
-                normalized = static_cast<float>(core_state_.sequencer.note[abs]) / 127.0f;
-            } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-                normalized = static_cast<float>(core_state_.sequencer.velocity[abs]) / 127.0f;
-            } else if (prop == core::state::sequencer::StepProperty::GATE) {
-                const uint16_t gate = std::min<uint16_t>(core_state_.sequencer.gate[abs], gateMax);
-                normalized = static_cast<float>(gate) / static_cast<float>(gateMax);
-            }
+            normalized = input_utils::stepPropertyToNormalized(
+                prop,
+                core_state_.sequencer.note[abs],
+                core_state_.sequencer.velocity[abs],
+                core_state_.sequencer.gate[abs]
+            );
         }
 
         if (normalized < 0.0f) normalized = 0.0f;
@@ -582,25 +580,19 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
         return;
     }
 
-    const uint8_t optSteps =
-        (prop == core::state::sequencer::StepProperty::NOTE)
-        ? 255
-        : ((prop == core::state::sequencer::StepProperty::VELOCITY) ? 191 : static_cast<uint8_t>(gateMax + 1));
+    const uint8_t optSteps = input_utils::discreteStepsForProperty(prop);
 
     if (seq_opt_steps_configured_ != optSteps) {
         encoders().setDiscreteSteps(Config::EncoderID::OPT, optSteps);
         seq_opt_steps_configured_ = optSteps;
     }
 
-    float optPosition = 0.0f;
-    if (prop == core::state::sequencer::StepProperty::NOTE) {
-        optPosition = static_cast<float>(core_state_.sequencer.note[focused]) / 127.0f;
-    } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-        optPosition = static_cast<float>(core_state_.sequencer.velocity[focused]) / 127.0f;
-    } else {
-        const uint16_t gate = std::min<uint16_t>(core_state_.sequencer.gate[focused], gateMax);
-        optPosition = static_cast<float>(gate) / static_cast<float>(gateMax);
-    }
+    const float optPosition = input_utils::stepPropertyToNormalized(
+        prop,
+        core_state_.sequencer.note[focused],
+        core_state_.sequencer.velocity[focused],
+        core_state_.sequencer.gate[focused]
+    );
 
     encoders().setPosition(Config::EncoderID::OPT, optPosition);
 }
