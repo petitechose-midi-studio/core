@@ -5,7 +5,7 @@
  * @brief Handles transport controls (tempo, play/stop)
  *
  * - NAV encoder: tempo +/- 1 BPM
- * - BOTTOM_CENTER button: toggle play (global)
+ * - BOTTOM_CENTER button: toggle play (transport scope)
  */
 
 #include <lvgl.h>
