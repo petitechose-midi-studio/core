@@ -94,6 +94,15 @@ oc::type::Result<void> StandaloneContext::init() {
     overlay_controller_ = std::make_unique<oc::context::OverlayManager<core::ui::OverlayType>>(
         core_state_.overlays, buttons()
     );
+    overlay_controller_->setActiveViewProvider([this]() -> oc::type::ScopeID {
+        switch (core_state_.activeView.get()) {
+            case core::ui::ViewType::SEQUENCER:
+                return sequencer_view_ ? oc::ui::lvgl::scopeID(sequencer_view_->getElement()) : 0;
+            case core::ui::ViewType::MACRO:
+            default:
+                return macro_view_ ? oc::ui::lvgl::scopeID(macro_view_->getElement()) : 0;
+        }
+    });
 
     // Global overlay: ViewSelector (parent = mainZone so it covers views but not TransportBar)
     view_selector_ = std::make_unique<ms::ui::StringListSelector>(mainZone);
