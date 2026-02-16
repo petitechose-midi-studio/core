@@ -197,8 +197,7 @@ void SequencerPatternConfigHandler::clampFocusToLength() {
         state_.sequencer.focusedStep.set(focused);
     }
 
-    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    state_.sequencer.page.set(static_cast<uint8_t>(focused / stepsPerPage));
+    state_.sequencer.page.set(state_.sequencer.pageForStep(focused));
 }
 
 }  // namespace core::handler

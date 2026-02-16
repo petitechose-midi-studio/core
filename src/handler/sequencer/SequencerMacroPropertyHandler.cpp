@@ -39,15 +39,8 @@ void SequencerMacroPropertyHandler::setupBindings() {
 void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
     const float value = input_utils::clampNormalized(normalized);
 
-    const uint8_t len = state_.sequencer.length.get();
-    if (len == 0) return;
-
-    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    const uint8_t pageCount = static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
-    const uint8_t page = static_cast<uint8_t>(state_.sequencer.page.get() % pageCount);
-    const uint8_t abs = static_cast<uint8_t>(page * stepsPerPage + indexInPage);
-    if (abs >= len) return;
-    if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
+    uint8_t abs = 0;
+    if (!state_.sequencer.resolveStepInPage(state_.sequencer.page.get(), indexInPage, abs)) return;
 
     const auto prop = state_.sequencer.activeStepProperty.get();
     if (prop == core::state::sequencer::StepProperty::NOTE) {

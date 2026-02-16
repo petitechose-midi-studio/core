@@ -378,16 +378,8 @@ void SequencerView::render() {
     if (lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
 
     const uint8_t len = core_state_.sequencer.length.get();
-    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-
-    const uint8_t activePages = (len == 0)
-        ? 0
-        : static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
-    const uint8_t page = (activePages == 0)
-        ? 0
-        : static_cast<uint8_t>(core_state_.sequencer.page.get() % activePages);
-
-    const uint8_t startStep = static_cast<uint8_t>(page * stepsPerPage);
+    const uint8_t page = core_state_.sequencer.normalizePage(core_state_.sequencer.page.get());
+    const uint8_t startStep = core_state_.sequencer.pageStartStep(page);
     const uint64_t mask = core_state_.sequencer.enabledMask.get();
     const uint8_t focused = core_state_.sequencer.focusedStep.get();
     const int16_t playhead = core_state_.sequencer.playheadStep.get();

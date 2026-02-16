@@ -535,13 +535,7 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
 
     const uint8_t len = core_state_.sequencer.length.get();
     constexpr uint16_t gateMax = core::state::sequencer::SequencerState::MAX_GATE_PERCENT;
-    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    const uint8_t pageCount = (len == 0)
-        ? 0
-        : static_cast<uint8_t>((len + stepsPerPage - 1) / stepsPerPage);
-    const uint8_t page = (pageCount == 0)
-        ? 0
-        : static_cast<uint8_t>(core_state_.sequencer.page.get() % pageCount);
+    const uint8_t page = core_state_.sequencer.normalizePage(core_state_.sequencer.page.get());
 
     const auto prop = core_state_.sequencer.activeStepProperty.get();
 
@@ -558,10 +552,10 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
     }
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        const uint8_t abs = static_cast<uint8_t>(page * stepsPerPage + i);
         float normalized = 0.0f;
+        uint8_t abs = 0;
 
-        if (len > 0 && abs < len && abs < core::state::sequencer::SequencerState::MAX_STEPS) {
+        if (core_state_.sequencer.resolveStepInPage(page, i, abs)) {
             if (prop == core::state::sequencer::StepProperty::NOTE) {
                 normalized = static_cast<float>(core_state_.sequencer.note[abs]) / 127.0f;
             } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {

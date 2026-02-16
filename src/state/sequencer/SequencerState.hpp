@@ -180,6 +180,34 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         return (pages > PAGE_COUNT) ? PAGE_COUNT : pages;
     }
 
+    uint8_t normalizePage(uint8_t page) const {
+        const uint8_t pageCount = activePageCount();
+        if (pageCount == 0) return 0;
+        return static_cast<uint8_t>(page % pageCount);
+    }
+
+    uint8_t pageStartStep(uint8_t page) const {
+        return static_cast<uint8_t>(normalizePage(page) * STEPS_PER_PAGE);
+    }
+
+    uint8_t pageForStep(uint8_t step) const {
+        return static_cast<uint8_t>(step / STEPS_PER_PAGE);
+    }
+
+    bool resolveStepInPage(uint8_t page, uint8_t indexInPage, uint8_t& outStep) const {
+        if (indexInPage >= STEPS_PER_PAGE) return false;
+
+        const uint8_t pageCount = activePageCount();
+        if (pageCount == 0) return false;
+
+        const uint8_t safePage = normalizePage(page);
+        const uint16_t abs = static_cast<uint16_t>(safePage) * STEPS_PER_PAGE + indexInPage;
+        if (abs >= length.get() || abs >= MAX_STEPS) return false;
+
+        outStep = static_cast<uint8_t>(abs);
+        return true;
+    }
+
     bool isInPattern(uint8_t step) const {
         return step < length.get();
     }
