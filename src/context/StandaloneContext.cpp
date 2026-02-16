@@ -233,7 +233,7 @@ oc::type::Result<void> StandaloneContext::init() {
     // View selector handler (LEFT_TOP + NAV)
     {
         using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
-        OverlayCtx ctx{*overlay_controller_, mainZone, view_selector_->getElement()};
+        OverlayCtx ctx{*overlay_controller_, nullptr, view_selector_->getElement()};
         view_switcher_handler_ = std::make_unique<core::handler::ViewSwitcherHandler>(
             core_state_,
             ctx,
