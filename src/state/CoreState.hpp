@@ -109,8 +109,6 @@ struct CoreState {
         overlays.registerItem(core::ui::OverlayType::SEQ_PATTERN_CONFIG, sequencer.patternConfig.visible);
         overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, sequencer.stepEdit.visible);
         overlays.registerItem(core::ui::OverlayType::SEQ_PROPERTY_SELECTOR, sequencer.propertySelector.visible);
-        overlays.registerItem(core::ui::OverlayType::SEQ_SETTINGS, sequencer.settings.visible);
-        overlays.registerItem(core::ui::OverlayType::SEQ_TRACK_CONFIG, sequencer.trackConfig.visible);
 
         // Setup auto-persistence for macro values
         auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(

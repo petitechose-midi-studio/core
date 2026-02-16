@@ -274,8 +274,6 @@ void StandaloneContext::onCleanup() {
     core_state_.sequencer.patternConfig.reset();
     core_state_.sequencer.stepEdit.reset();
     core_state_.sequencer.propertySelector.reset();
-    core_state_.sequencer.settings.reset();
-    core_state_.sequencer.trackConfig.reset();
 
     if (sequencer_playback_) {
         sequencer_playback_->stop();

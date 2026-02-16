@@ -73,24 +73,6 @@ struct SequencerPropertySelectorOverlayState {
     }
 };
 
-struct SequencerSettingsOverlayState {
-    Signal<bool> visible{false};
-    Signal<uint8_t> focusedRow{0};
-
-    void reset() {
-        focusedRow.set(0);
-    }
-};
-
-struct SequencerTrackConfigOverlayState {
-    Signal<bool> visible{false};
-    Signal<uint8_t> focusedRow{0};
-
-    void reset() {
-        focusedRow.set(0);
-    }
-};
-
 struct SequencerState : public oc::note::sequencer::StepSequencerState {
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
@@ -114,8 +96,6 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     SequencerPatternConfigOverlayState patternConfig;
     SequencerStepEditOverlayState stepEdit;
     SequencerPropertySelectorOverlayState propertySelector;
-    SequencerSettingsOverlayState settings;
-    SequencerTrackConfigOverlayState trackConfig;
 
     static uint8_t clampMidi7(uint8_t value) {
         return (value > 127U) ? 127U : value;
@@ -169,8 +149,6 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         patternConfig.reset();
         stepEdit.reset();
         propertySelector.reset();
-        settings.reset();
-        trackConfig.reset();
     }
 
     uint8_t activePageCount() const {
