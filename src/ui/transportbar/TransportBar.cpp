@@ -21,6 +21,10 @@ const lv_color_t COLOR_PLAY_INACTIVE = lv_color_hex(theme::color::PLAY_INACTIVE)
 const lv_color_t COLOR_PLAY_ACTIVE = lv_color_hex(theme::color::PLAY_ACTIVE);
 const lv_color_t COLOR_TEXT = lv_color_hex(theme::color::TEXT_SECONDARY);
 const lv_color_t COLOR_BEAT = lv_color_hex(theme::color::BEAT_PULSE);
+const lv_color_t COLOR_SYNC_IN_INACTIVE = lv_color_hex(theme::color::INACTIVE);
+const lv_color_t COLOR_SYNC_IN_ACTIVE = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
+const lv_color_t COLOR_SOURCE_INT = lv_color_hex(theme::color::TEXT_SECONDARY);
+const lv_color_t COLOR_SOURCE_EXT = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
 }  // namespace
 
 TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
@@ -36,6 +40,7 @@ TransportBar::~TransportBar() {
     if (note_out_timer_) { lv_timer_delete(note_out_timer_); note_out_timer_ = nullptr; }
     if (cc_in_timer_) { lv_timer_delete(cc_in_timer_); cc_in_timer_ = nullptr; }
     if (cc_out_timer_) { lv_timer_delete(cc_out_timer_); cc_out_timer_ = nullptr; }
+    if (sync_in_timer_) { lv_timer_delete(sync_in_timer_); sync_in_timer_ = nullptr; }
     if (beat_timer_) { lv_timer_delete(beat_timer_); beat_timer_ = nullptr; }
 
     // Clear subscriptions before destroying UI
@@ -129,6 +134,16 @@ void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
                   .opacity(StateIndicator::State::ACTIVE, LV_OPA_COVER);
     beat_indicator_->setState(StateIndicator::State::OFF);
 
+    sync_in_label_ = lv_label_create(cell);
+    lv_label_set_text(sync_in_label_, "CLK");
+    lv_obj_set_style_text_font(sync_in_label_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_color(sync_in_label_, COLOR_SYNC_IN_INACTIVE, 0);
+
+    source_label_ = lv_label_create(cell);
+    lv_label_set_text(source_label_, "INT");
+    lv_obj_set_style_text_font(source_label_, fonts.inter_13_bold, 0);
+    lv_obj_set_style_text_color(source_label_, COLOR_SOURCE_INT, 0);
+
     // Tempo label (no BPM unit)
     tempo_label_ = lv_label_create(cell);
     lv_label_set_text(tempo_label_, "120.00");
@@ -144,7 +159,9 @@ void TransportBar::setupBindings() {
         .on(state_.ccInActive, [this](bool active) { setCcIn(active); })
         .on(state_.ccOutActive, [this](bool active) { setCcOut(active); })
         .on(state_.playing, [this](bool playing) { setPlaying(playing); })
-        .on(state_.tempo, [this](float bpm) { setTempo(bpm); })
+        .on(state_.tempoDisplay, [this](float bpm) { setTempo(bpm); })
+        .on(state_.syncExternalSource, [this](bool external) { setSyncSource(external); })
+        .on(state_.syncInputPulse, [this](bool pulse) { setSyncInputPulse(pulse); })
         .on(state_.beatPulse, [this](bool pulse) { setBeatPulse(pulse); });
 }
 
@@ -187,9 +204,22 @@ void TransportBar::setPlaying(bool playing) {
 
 void TransportBar::setTempo(float bpm) {
     char buf[16];
-    // Use LVGL's builtin snprintf (float-capable when LV_USE_FLOAT=1).
-    lv_snprintf(buf, sizeof(buf), "%.2f", bpm);
+    // One decimal keeps display readable with external clock jitter.
+    lv_snprintf(buf, sizeof(buf), "%.1f", bpm);
     lv_label_set_text(tempo_label_, buf);
+}
+
+void TransportBar::setSyncSource(bool external) {
+    if (!source_label_) return;
+
+    lv_label_set_text(source_label_, external ? "EXT" : "INT");
+    lv_obj_set_style_text_color(source_label_, external ? COLOR_SOURCE_EXT : COLOR_SOURCE_INT, 0);
+}
+
+void TransportBar::setSyncInputPulse(bool pulse) {
+    if (!pulse || !sync_in_label_) return;
+    pulseIcon(sync_in_label_, sync_in_timer_, COLOR_SYNC_IN_ACTIVE,
+              theme::timing::MIDI_BLINK_MS, onSyncInTimeout);
 }
 
 void TransportBar::setBeatPulse(bool pulse) {
@@ -232,6 +262,14 @@ void TransportBar::onCcOutTimeout(lv_timer_t* timer) {
     self->cc_out_timer_ = nullptr;
 }
 
+void TransportBar::onSyncInTimeout(lv_timer_t* timer) {
+    auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->sync_in_label_) return;
+    lv_obj_set_style_text_color(self->sync_in_label_, COLOR_SYNC_IN_INACTIVE, 0);
+    self->state_.syncInputPulse.set(false);
+    self->sync_in_timer_ = nullptr;
+}
+
 void TransportBar::onBeatTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
     if (!self || !self->beat_indicator_) return;
@@ -242,7 +280,8 @@ void TransportBar::onBeatTimeout(lv_timer_t* timer) {
 
 void TransportBar::render() {
     setPlaying(state_.playing.get());
-    setTempo(state_.tempo.get());
+    setTempo(state_.tempoDisplay.get());
+    setSyncSource(state_.syncExternalSource.get());
 }
 
 void TransportBar::show() {

@@ -25,6 +25,10 @@ enum class OverlayType : uint8_t {
     SEQ_STEP_EDIT,          // Step edit (NOTE / VEL / GATE)
     SEQ_PROPERTY_SELECTOR,  // Which property is edited by encoders
 
+    // Global settings overlays
+    GLOBAL_SETTINGS,
+    GLOBAL_SETTINGS_SELECTOR,
+
     COUNT             // Sentinel - must be last
 };
 

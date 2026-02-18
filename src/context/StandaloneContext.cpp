@@ -21,6 +21,7 @@
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
+#include "handler/settings/GlobalSettingsHandler.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
@@ -41,6 +42,7 @@
 #include <ms/ui/ViewContainer.hpp>
 
 #include "sequencer/SequencerPlaybackService.hpp"
+#include "sequencer/MidiClockSyncService.hpp"
 #include "midi/MidiUtils.hpp"
 
 namespace core::context {
@@ -113,6 +115,22 @@ oc::type::Result<void> StandaloneContext::init() {
         static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_TOP)
     );
     setupViewSelectorRendering();
+
+    global_settings_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::GLOBAL_SETTINGS,
+        oc::ui::lvgl::scopeID(global_settings_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupGlobalSettingsRendering();
+
+    global_settings_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR,
+        oc::ui::lvgl::scopeID(global_settings_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupGlobalSettingsSelectorRendering();
 
     // Create MacroEdit overlay (parented to MacroView)
     macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(macro_view_->getElement());
@@ -208,6 +226,13 @@ oc::type::Result<void> StandaloneContext::init() {
         core_state_, encoders()
     );
 
+    // Global sync service (clock source arbitration + MIDI realtime IO)
+    midi_clock_sync_ = std::make_unique<core::sequencer::MidiClockSyncService>(
+        core_state_.midiSync,
+        core_state_.statusBar,
+        midi()
+    );
+
     // MIDI input is routed through the framework EventBus (never via MidiAPI callbacks)
     onMidiCC([this](uint8_t ch, uint8_t cc, uint8_t val) {
         if (midi_handler_) midi_handler_->onCC(ch, cc, val);
@@ -217,6 +242,19 @@ oc::type::Result<void> StandaloneContext::init() {
     });
     onMidiNoteOff([this](uint8_t, uint8_t, uint8_t) {
         if (midi_handler_) midi_handler_->onNoteIn();
+    });
+    onMidiClock([this](uint64_t timestampUs) {
+        if (!midi_clock_sync_) return;
+        midi_clock_sync_->onClock(timestampUs, oc::time::millis());
+    });
+    onMidiStart([this]() {
+        if (midi_clock_sync_) midi_clock_sync_->onStart();
+    });
+    onMidiContinue([this]() {
+        if (midi_clock_sync_) midi_clock_sync_->onContinue();
+    });
+    onMidiStop([this]() {
+        if (midi_clock_sync_) midi_clock_sync_->onStop();
     });
     transport_handler_ = std::make_unique<core::handler::TransportHandler>(
         core_state_, encoders(), buttons(),
@@ -248,6 +286,15 @@ oc::type::Result<void> StandaloneContext::init() {
         );
     }
 
+    global_settings_handler_ = std::make_unique<core::handler::GlobalSettingsHandler>(
+        core_state_,
+        *overlay_controller_,
+        encoders(),
+        buttons(),
+        global_settings_overlay_->getElement(),
+        global_settings_selector_overlay_->getElement()
+    );
+
     // Create MacroEdit input handler (two-level scoping)
     macro_edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
         core_state_,
@@ -258,7 +305,7 @@ oc::type::Result<void> StandaloneContext::init() {
         macro_edit_overlay_->getElement()   // Overlay scope (edit/close)
     );
 
-    // Global services (not tied to any view scope)
+    // Global playback service (not tied to any view scope)
     sequencer_playback_ = std::make_unique<core::sequencer::SequencerPlaybackService>(
         core_state_.sequencer,
         core_state_.statusBar,
@@ -272,8 +319,19 @@ oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
-    if (sequencer_playback_) {
-        sequencer_playback_->update(oc::time::millis());
+    const uint32_t nowMs = oc::time::millis();
+
+    if (midi_clock_sync_) {
+        midi_clock_sync_->update(nowMs);
+    }
+
+    if (sequencer_playback_ && midi_clock_sync_) {
+        if (midi_clock_sync_->consumeResyncRequest()) {
+            sequencer_playback_->stop();
+        }
+        sequencer_playback_->update(midi_clock_sync_->tick(), midi_clock_sync_->playing());
+    } else if (sequencer_playback_) {
+        sequencer_playback_->update(0, false);
     }
 }
 
@@ -289,13 +347,16 @@ void StandaloneContext::onCleanup() {
     core_state_.sequencer.patternConfig.reset();
     core_state_.sequencer.stepEdit.reset();
     core_state_.sequencer.propertySelector.reset();
+    core_state_.globalSettings.reset();
 
     if (sequencer_playback_) {
         sequencer_playback_->stop();
         sequencer_playback_.reset();
     }
+    midi_clock_sync_.reset();
 
     // Handlers first (they reference state/APIs)
+    global_settings_handler_.reset();
     macro_edit_handler_.reset();
     view_switcher_handler_.reset();
     sequencer_property_selector_handler_.reset();
@@ -314,6 +375,8 @@ void StandaloneContext::onCleanup() {
     seq_pattern_config_overlay_.reset();
     seq_step_edit_overlay_.reset();
     seq_property_selector_overlay_.reset();
+    global_settings_selector_overlay_.reset();
+    global_settings_overlay_.reset();
     view_selector_.reset();
 
     // Overlay controller (clears authority resolver)
@@ -625,6 +688,157 @@ void StandaloneContext::setupViewSelectorRendering() {
         core_state_.viewSelector.visible,
         core_state_.viewSelector.selectedIndex
     );
+}
+
+void StandaloneContext::setupGlobalSettingsRendering() {
+    global_settings_watcher_.watchAll(
+        [this]() { renderGlobalSettings(); },
+        core_state_.globalSettings.visible,
+        core_state_.globalSettings.focusedRow,
+        core_state_.midiSync.mode,
+        core_state_.midiSync.followTransport,
+        core_state_.midiSync.autoFallbackMs,
+        core_state_.midiSync.autoLockClockCount,
+        core_state_.midiSync.activeSource,
+        core_state_.midiSync.externalClockPresent
+    );
+}
+
+void StandaloneContext::renderGlobalSettings() {
+    if (!global_settings_overlay_) return;
+
+    const bool visible = core_state_.globalSettings.visible.get();
+    if (!visible) {
+        global_settings_overlay_->render({.visible = false});
+        return;
+    }
+
+    const auto mode = core_state_.midiSync.mode.get();
+    const bool followTransport = core_state_.midiSync.followTransport.get();
+    const uint16_t fallbackMs = core_state_.midiSync.autoFallbackMs.get();
+    const uint8_t lockCount = core_state_.midiSync.autoLockClockCount.get();
+
+    const char* modeLabel = "AUTO";
+    switch (mode) {
+        case core::state::MidiSyncMode::MASTER: modeLabel = "MASTER"; break;
+        case core::state::MidiSyncMode::SLAVE: modeLabel = "SLAVE"; break;
+        case core::state::MidiSyncMode::AUTO:
+        default:
+            modeLabel = "AUTO";
+            break;
+    }
+
+    const char* sourceLabel =
+        (core_state_.midiSync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL) ? "EXT" : "INT";
+    const char* signalLabel = core_state_.midiSync.externalClockPresent.get() ? "IN" : "-";
+
+    char meta[24];
+    snprintf(meta, sizeof(meta), "%s  CLK %s", sourceLabel, signalLabel);
+
+    char fallbackStr[16];
+    snprintf(fallbackStr, sizeof(fallbackStr), "%ums", static_cast<unsigned>(fallbackMs));
+
+    char lockStr[16];
+    snprintf(lockStr, sizeof(lockStr), "%u clocks", static_cast<unsigned>(lockCount));
+
+    const ms::ui::KeyValueRow rows[] = {
+        {.key = "Mode", .value = modeLabel},
+        {.key = "Follow", .value = followTransport ? "ON" : "OFF"},
+        {.key = "Timeout", .value = fallbackStr},
+        {.key = "Lock", .value = lockStr},
+    };
+
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(mode) << 24) |
+        (static_cast<uint32_t>(followTransport ? 1 : 0) << 20) |
+        (static_cast<uint32_t>(fallbackMs) << 4) |
+        (static_cast<uint32_t>(lockCount) & 0x0F);
+
+    global_settings_overlay_->render({
+        .title = "SETTINGS",
+        .meta = meta,
+        .rows = rows,
+        .rowCount = 4,
+        .selectedIndex = core_state_.globalSettings.focusedRow.get(),
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
+}
+
+void StandaloneContext::setupGlobalSettingsSelectorRendering() {
+    global_settings_selector_watcher_.watchAll(
+        [this]() { renderGlobalSettingsSelector(); },
+        core_state_.globalSettings.selector.visible,
+        core_state_.globalSettings.selector.selectedIndex,
+        core_state_.globalSettings.selector.editingRow,
+        core_state_.midiSync.mode,
+        core_state_.midiSync.followTransport,
+        core_state_.midiSync.autoFallbackMs,
+        core_state_.midiSync.autoLockClockCount
+    );
+}
+
+void StandaloneContext::renderGlobalSettingsSelector() {
+    if (!global_settings_selector_overlay_) return;
+
+    const bool visible = core_state_.globalSettings.selector.visible.get();
+    if (!visible) {
+        global_settings_selector_overlay_->render({.visible = false});
+        return;
+    }
+
+    static const char* const MODE_ITEMS[] = {"MASTER", "SLAVE", "AUTO"};
+    static const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
+    static const char* const FALLBACK_ITEMS[] = {"150 ms", "250 ms", "500 ms", "750 ms", "1000 ms", "1500 ms", "2000 ms"};
+    static const char* const LOCK_ITEMS[] = {"1", "2", "3", "4", "6", "8", "12", "24"};
+
+    const uint8_t row = core_state_.globalSettings.selector.editingRow.get();
+    const char* title = "VALUE";
+    const char* meta = "GLOBAL";
+    const char* const* items = MODE_ITEMS;
+    int itemCount = 3;
+
+    switch (row) {
+        case 0:
+            title = "SYNC MODE";
+            items = MODE_ITEMS;
+            itemCount = 3;
+            break;
+        case 1:
+            title = "FOLLOW";
+            items = FOLLOW_ITEMS;
+            itemCount = 2;
+            break;
+        case 2:
+            title = "AUTO TIMEOUT";
+            items = FALLBACK_ITEMS;
+            itemCount = 7;
+            break;
+        case 3:
+            title = "AUTO LOCK";
+            items = LOCK_ITEMS;
+            itemCount = 8;
+            break;
+        default:
+            break;
+    }
+
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(row) << 24) |
+        (static_cast<uint32_t>(core_state_.midiSync.mode.get()) << 16) |
+        (static_cast<uint32_t>(core_state_.midiSync.followTransport.get() ? 1 : 0) << 12) |
+        (static_cast<uint32_t>(core_state_.midiSync.autoFallbackMs.get()) & 0x0FFF);
+
+    global_settings_selector_overlay_->render({
+        .title = title,
+        .meta = meta,
+        .items = items,
+        .itemCount = itemCount,
+        .selectedIndex = core_state_.globalSettings.selector.selectedIndex.get(),
+        .showIndexColumn = false,
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
 }
 
 void StandaloneContext::renderViewSelector() {

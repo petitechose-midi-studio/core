@@ -11,7 +11,11 @@
  * | 0x0000 | 4    | Magic number (0x4D435354 = "MCST") |
  * | 0x0004 | 1    | Version |
  * | 0x0005 | 1    | Active page index |
- * | 0x0006 | 10   | Reserved |
+ * | 0x0006 | 1    | MIDI sync mode |
+ * | 0x0007 | 1    | Follow transport flag |
+ * | 0x0008 | 2    | Auto fallback timeout (ms) |
+ * | 0x000A | 1    | Auto lock clock count |
+ * | 0x000B | 5    | Reserved |
  * | 0x0010 | 512  | 8 pages × 64 bytes |
  *
  * Total: 528 bytes used.
@@ -24,6 +28,7 @@
 #include <oc/interface/IStorage.hpp>
 #include <oc/log/Log.hpp>
 
+#include "MidiSyncState.hpp"
 #include "macro/MacroPagesState.hpp"
 
 namespace core::state {
@@ -31,13 +36,18 @@ namespace core::state {
 /// Storage layout constants
 namespace StorageLayout {
     constexpr uint32_t MAGIC = 0x4D435354;  ///< "MCST" in ASCII
-    constexpr uint8_t VERSION = 1;
+    constexpr uint8_t VERSION = 2;
 
     constexpr uint32_t ADDR_MAGIC = 0x0000;
     constexpr uint32_t ADDR_VERSION = 0x0004;
     constexpr uint32_t ADDR_ACTIVE_PAGE = 0x0005;
     constexpr uint32_t ADDR_RESERVED = 0x0006;
     constexpr uint32_t ADDR_PAGES = 0x0010;
+
+    constexpr uint32_t ADDR_SYNC_MODE = ADDR_RESERVED;
+    constexpr uint32_t ADDR_SYNC_FOLLOW_TRANSPORT = ADDR_RESERVED + 1;
+    constexpr uint32_t ADDR_SYNC_AUTO_FALLBACK_MS = ADDR_RESERVED + 2;   // uint16_t
+    constexpr uint32_t ADDR_SYNC_AUTO_LOCK_CLOCKS = ADDR_RESERVED + 4;
 
     // Note: Named MACRO_PAGE_SIZE to avoid conflict with system PAGE_SIZE macro (Emscripten)
     constexpr size_t MACRO_PAGE_SIZE = sizeof(macro::MacroPageData);  // 64 bytes
@@ -101,7 +111,7 @@ public:
      * @param pages State to populate
      * @return true if valid data was loaded, false if defaults used
      */
-    bool load(macro::MacroPagesState& pages) {
+    bool load(macro::MacroPagesState& pages, MidiSyncState& midiSync) {
         // Check magic number
         uint32_t magic = 0;
         backend_.read(StorageLayout::ADDR_MAGIC, reinterpret_cast<uint8_t*>(&magic), sizeof(magic));
@@ -109,52 +119,64 @@ public:
         if (magic != StorageLayout::MAGIC) {
             OC_LOG_INFO("[CoreSettings] No valid data, using defaults");
             pages.initDefaults();
-            saveAll(pages);  // Initialize storage
+            midiSync.reset();
+            saveAll(pages, midiSync);  // Initialize storage
             return false;
         }
 
         // Check version
         uint8_t version = 0;
         backend_.read(StorageLayout::ADDR_VERSION, &version, 1);
-        if (version != StorageLayout::VERSION) {
-            OC_LOG_WARN("[CoreSettings] Version mismatch ({} vs {}), using defaults",
-                        version, StorageLayout::VERSION);
-            pages.initDefaults();
-            saveAll(pages);
-            return false;
+        if (version == StorageLayout::VERSION) {
+            loadPages_(pages);
+            loadMidiSync_(midiSync);
+
+            OC_LOG_INFO("[CoreSettings] Loaded page {}", pages.activePage);
+            return true;
         }
 
-        // Load active page
-        uint8_t activePage = 0;
-        backend_.read(StorageLayout::ADDR_ACTIVE_PAGE, &activePage, 1);
-        if (activePage >= macro::PAGE_COUNT) activePage = 0;
-
-        // Load all pages
-        for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {
-            backend_.read(
-                StorageLayout::pageOffset(i),
-                reinterpret_cast<uint8_t*>(&pages.pages[i]),
-                StorageLayout::MACRO_PAGE_SIZE
-            );
+        if (version == 1) {
+            loadPages_(pages);
+            midiSync.reset();
+            saveAll(pages, midiSync);
+            OC_LOG_INFO("[CoreSettings] Migrated settings v1 -> v{}", StorageLayout::VERSION);
+            return true;
         }
 
-        pages.activePage = activePage;
-        pages.updateActiveConfigs();
-
-        OC_LOG_INFO("[CoreSettings] Loaded page {}", activePage);
-        return true;
+        OC_LOG_WARN("[CoreSettings] Version mismatch ({} vs {}), using defaults",
+                    version, StorageLayout::VERSION);
+        pages.initDefaults();
+        midiSync.reset();
+        saveAll(pages, midiSync);
+        return false;
     }
 
     /**
      * @brief Save all settings to storage
      */
-    void saveAll(const macro::MacroPagesState& pages) {
+    void saveAll(const macro::MacroPagesState& pages, const MidiSyncState& midiSync) {
         // Write header
         uint32_t magic = StorageLayout::MAGIC;
         uint8_t version = StorageLayout::VERSION;
         backend_.write(StorageLayout::ADDR_MAGIC, reinterpret_cast<uint8_t*>(&magic), sizeof(magic));
         backend_.write(StorageLayout::ADDR_VERSION, &version, 1);
         backend_.write(StorageLayout::ADDR_ACTIVE_PAGE, &pages.activePage, 1);
+
+        const uint8_t mode = static_cast<uint8_t>(midiSync.mode.get());
+        const uint8_t followTransport = midiSync.followTransport.get() ? 1 : 0;
+        const uint16_t fallbackMs = midiSync.autoFallbackMs.get();
+        const uint8_t lockClocks = midiSync.autoLockClockCount.get();
+
+        backend_.write(StorageLayout::ADDR_SYNC_MODE, reinterpret_cast<const uint8_t*>(&mode), 1);
+        backend_.write(StorageLayout::ADDR_SYNC_FOLLOW_TRANSPORT,
+                       reinterpret_cast<const uint8_t*>(&followTransport),
+                       1);
+        backend_.write(StorageLayout::ADDR_SYNC_AUTO_FALLBACK_MS,
+                       reinterpret_cast<const uint8_t*>(&fallbackMs),
+                       sizeof(fallbackMs));
+        backend_.write(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
+                       reinterpret_cast<const uint8_t*>(&lockClocks),
+                       1);
 
         // Write all pages
         for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {
@@ -167,6 +189,30 @@ public:
 
         backend_.commit();
         OC_LOG_DEBUG("[CoreSettings] Saved all");
+    }
+
+    void saveMidiSyncMode(MidiSyncMode mode) {
+        const uint8_t value = static_cast<uint8_t>(mode);
+        backend_.write(StorageLayout::ADDR_SYNC_MODE, reinterpret_cast<const uint8_t*>(&value), 1);
+    }
+
+    void saveMidiFollowTransport(bool followTransport) {
+        const uint8_t value = followTransport ? 1 : 0;
+        backend_.write(StorageLayout::ADDR_SYNC_FOLLOW_TRANSPORT,
+                       reinterpret_cast<const uint8_t*>(&value),
+                       1);
+    }
+
+    void saveMidiAutoFallbackMs(uint16_t fallbackMs) {
+        backend_.write(StorageLayout::ADDR_SYNC_AUTO_FALLBACK_MS,
+                       reinterpret_cast<const uint8_t*>(&fallbackMs),
+                       sizeof(fallbackMs));
+    }
+
+    void saveMidiAutoLockClockCount(uint8_t lockCount) {
+        backend_.write(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
+                       reinterpret_cast<const uint8_t*>(&lockCount),
+                       1);
     }
 
     /**
@@ -232,6 +278,52 @@ public:
     }
 
 private:
+    void loadPages_(macro::MacroPagesState& pages) {
+        uint8_t activePage = 0;
+        backend_.read(StorageLayout::ADDR_ACTIVE_PAGE, &activePage, 1);
+        if (activePage >= macro::PAGE_COUNT) activePage = 0;
+
+        for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {
+            backend_.read(
+                StorageLayout::pageOffset(i),
+                reinterpret_cast<uint8_t*>(&pages.pages[i]),
+                StorageLayout::MACRO_PAGE_SIZE
+            );
+        }
+
+        pages.activePage = activePage;
+        pages.updateActiveConfigs();
+    }
+
+    void loadMidiSync_(MidiSyncState& midiSync) {
+        uint8_t rawMode = static_cast<uint8_t>(MidiSyncMode::AUTO);
+        backend_.read(StorageLayout::ADDR_SYNC_MODE, &rawMode, 1);
+        if (rawMode > static_cast<uint8_t>(MidiSyncMode::AUTO)) {
+            rawMode = static_cast<uint8_t>(MidiSyncMode::AUTO);
+        }
+
+        uint8_t followTransport = 1;
+        backend_.read(StorageLayout::ADDR_SYNC_FOLLOW_TRANSPORT, &followTransport, 1);
+
+        uint16_t fallbackMs = 500;
+        backend_.read(StorageLayout::ADDR_SYNC_AUTO_FALLBACK_MS,
+                      reinterpret_cast<uint8_t*>(&fallbackMs),
+                      sizeof(fallbackMs));
+        if (fallbackMs < 100) fallbackMs = 100;
+        if (fallbackMs > 5000) fallbackMs = 5000;
+
+        uint8_t lockClocks = 6;
+        backend_.read(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS, &lockClocks, 1);
+        if (lockClocks < 1) lockClocks = 1;
+        if (lockClocks > 96) lockClocks = 96;
+
+        midiSync.reset();
+        midiSync.mode.set(static_cast<MidiSyncMode>(rawMode));
+        midiSync.followTransport.set(followTransport != 0);
+        midiSync.autoFallbackMs.set(fallbackMs);
+        midiSync.autoLockClockCount.set(lockClocks);
+    }
+
     oc::interface::IStorage& backend_;
 };
 

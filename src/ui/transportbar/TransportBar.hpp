@@ -58,6 +58,8 @@ private:
     lv_obj_t* play_icon_ = nullptr;
 
     // Cell 3: Tempo
+    lv_obj_t* sync_in_label_ = nullptr;
+    lv_obj_t* source_label_ = nullptr;
     lv_obj_t* tempo_label_ = nullptr;
 
     // Cell 4: Beat indicator
@@ -68,6 +70,7 @@ private:
     lv_timer_t* note_out_timer_ = nullptr;
     lv_timer_t* cc_in_timer_ = nullptr;
     lv_timer_t* cc_out_timer_ = nullptr;
+    lv_timer_t* sync_in_timer_ = nullptr;
     lv_timer_t* beat_timer_ = nullptr;
 
     std::vector<oc::state::Subscription> subs_;
@@ -85,6 +88,8 @@ private:
     void setCcOut(bool active);
     void setPlaying(bool playing);
     void setTempo(float bpm);
+    void setSyncSource(bool external);
+    void setSyncInputPulse(bool pulse);
     void setBeatPulse(bool pulse);
 
     // Pulse helper for icon-based indicators
@@ -95,6 +100,7 @@ private:
     static void onNoteOutTimeout(lv_timer_t* timer);
     static void onCcInTimeout(lv_timer_t* timer);
     static void onCcOutTimeout(lv_timer_t* timer);
+    static void onSyncInTimeout(lv_timer_t* timer);
     static void onBeatTimeout(lv_timer_t* timer);
 };
 

@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include <oc/api/MidiAPI.hpp>
-#include <oc/note/clock/InternalClock.hpp>
 #include <oc/note/sequencer/ISequencerOutput.hpp>
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
 
@@ -23,7 +22,7 @@ public:
                              core::state::StatusBarState& statusBar,
                              oc::api::MidiAPI& midi);
 
-    void update(uint32_t nowMs);
+    void update(uint32_t tick, bool playing);
     void stop();
 
 private:
@@ -58,10 +57,10 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     core::state::StatusBarState& status_bar_;
     MidiOutput output_;
-    oc::note::clock::InternalClock clock_;
     oc::note::sequencer::StepSequencerEngine engine_;
 
     int16_t last_playhead_ = -1;
+    uint32_t last_tick_ = 0;
 };
 
 }  // namespace core::sequencer

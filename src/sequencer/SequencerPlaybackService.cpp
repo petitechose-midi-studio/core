@@ -1,7 +1,5 @@
 #include "SequencerPlaybackService.hpp"
 
-#include <oc/time/Time.hpp>
-
 namespace core::sequencer {
 
 SequencerPlaybackService::SequencerPlaybackService(core::state::sequencer::SequencerState& sequencer,
@@ -12,14 +10,9 @@ SequencerPlaybackService::SequencerPlaybackService(core::state::sequencer::Seque
     , output_(midi, statusBar)
     , engine_(static_cast<oc::note::sequencer::StepSequencerState&>(sequencer), output_) {}
 
-void SequencerPlaybackService::update(uint32_t nowMs) {
-    const bool playing = status_bar_.playing.get();
-
-    clock_.setBpm(status_bar_.tempo.get());
-    clock_.setPlaying(playing);
-    clock_.update(nowMs);
-
-    engine_.update(clock_.tick(), playing);
+void SequencerPlaybackService::update(uint32_t tick, bool playing) {
+    last_tick_ = tick;
+    engine_.update(tick, playing);
 
     const int16_t playhead = sequencer_.playheadStep.get();
     if (playing && playhead >= 0 && playhead != last_playhead_) {
@@ -33,9 +26,9 @@ void SequencerPlaybackService::update(uint32_t nowMs) {
 }
 
 void SequencerPlaybackService::stop() {
-    engine_.update(clock_.tick(), false);
+    engine_.update(last_tick_, false);
     engine_.reset();
-    clock_.reset();
+    last_tick_ = 0;
     last_playhead_ = -1;
 }
 

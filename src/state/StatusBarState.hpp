@@ -31,6 +31,11 @@ struct StatusBarState {
     // TransportBar - Transport
     Signal<bool> playing{false};
     Signal<float> tempo{120.0f};
+    Signal<float> tempoDisplay{120.0f};
+
+    // TransportBar - Clock sync indicators
+    Signal<bool> syncExternalSource{false};
+    Signal<bool> syncInputPulse{false};
 
     // TransportBar - Beat
     Signal<bool> beatPulse{false};

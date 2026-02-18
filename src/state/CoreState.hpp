@@ -25,6 +25,8 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "CoreSettings.hpp"
+#include "GlobalSettingsState.hpp"
+#include "MidiSyncState.hpp"
 #include "MacroEditState.hpp"
 #include "MacroState.hpp"
 #include "../ui/OverlayTypes.hpp"
@@ -83,6 +85,12 @@ struct CoreState {
     /// Status bar state (TopBar + TransportBar)
     StatusBarState statusBar;
 
+    /// MIDI sync mode/source state
+    MidiSyncState midiSync;
+
+    /// Global settings overlays state
+    GlobalSettingsState globalSettings;
+
     /// Macro edit overlay state
     MacroEditState macroEdit;
 
@@ -93,7 +101,7 @@ struct CoreState {
     explicit CoreState(oc::interface::IStorage& storage)
         : settings(storage) {
         // Load persisted settings
-        settings.load(pages);
+        settings.load(pages, midiSync);
 
         // Reflect loaded page name in UI state
         statusBar.pageName.set(pages.activePageData().name);
@@ -109,6 +117,8 @@ struct CoreState {
         overlays.registerItem(core::ui::OverlayType::SEQ_PATTERN_CONFIG, sequencer.patternConfig.visible);
         overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, sequencer.stepEdit.visible);
         overlays.registerItem(core::ui::OverlayType::SEQ_PROPERTY_SELECTOR, sequencer.propertySelector.visible);
+        overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, globalSettings.visible);
+        overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, globalSettings.selector.visible);
 
         // Setup auto-persistence for macro values
         auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
@@ -260,11 +270,13 @@ struct CoreState {
         settings.factoryReset();
         pages.initDefaults();
         syncMacrosFromActivePage();
-        settings.saveAll(pages);
+        settings.saveAll(pages, midiSync);
         statusBar.pageName.set(pages.activePageData().name);
         macroEdit.reset();
         viewSelector.reset();
         sequencer.reset();
+        midiSync.reset();
+        globalSettings.reset();
         activeView.set(core::ui::ViewType::MACRO);
         overlays.hideAll();
         configRevision.set(configRevision.get() + 1);
