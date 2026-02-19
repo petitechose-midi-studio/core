@@ -24,7 +24,7 @@
  *     │   ├── MacroView (main zone, owns TopBar)
  *     │   └── TransportBar (bottom zone)
  *     └── Overlays (managed by OverlayManager)
- *         └── MacroEditOverlay (edit CH/CC for a macro)
+ *         └── MacroEdit VirtualList overlays (property + selectors)
  * ```
  *
  * The context itself is thin - handlers and views do the work.
@@ -69,7 +69,6 @@ namespace core::ui {
 class MacroView;
 class SequencerView;
 class TransportBar;
-class MacroEditOverlay;
 }  // namespace core::ui
 
 namespace ms::ui {
@@ -127,6 +126,12 @@ private:
     void syncEncodersFromState();
     void setupMacroEditRendering();
     void renderMacroEdit();
+    void setupMacroEditSelectorRendering();
+    void renderMacroEditSelector();
+    void setupMacroPageSelectorRendering();
+    void renderMacroPageSelector();
+    void setupMacroTargetSelectorRendering();
+    void renderMacroTargetSelector();
     void setupSequencerPatternConfigRendering();
     void renderSequencerPatternConfig();
     void setupSequencerStepEditRendering();
@@ -156,8 +161,14 @@ private:
     std::unique_ptr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
     std::unique_ptr<ms::ui::StringListSelector> view_selector_;
     oc::state::SignalWatcher view_selector_watcher_;
-    std::unique_ptr<core::ui::MacroEditOverlay> macro_edit_overlay_;
+    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> macro_edit_overlay_;
+    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> macro_edit_selector_overlay_;
+    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> macro_page_selector_overlay_;
+    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> macro_target_selector_overlay_;
     oc::state::SignalWatcher macro_edit_watcher_;
+    oc::state::SignalWatcher macro_edit_selector_watcher_;
+    oc::state::SignalWatcher macro_page_selector_watcher_;
+    oc::state::SignalWatcher macro_target_selector_watcher_;
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> seq_pattern_config_overlay_;
     oc::state::SignalWatcher seq_pattern_config_watcher_;
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> seq_step_edit_overlay_;

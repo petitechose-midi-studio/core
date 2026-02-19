@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <array>
 #include <algorithm>
 
 #include <lvgl.h>
@@ -33,8 +34,8 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
+#include <oc/time/Time.hpp>
 #include "ui/font/StandaloneFonts.hpp"
-#include "ui/macro/MacroEditOverlay.hpp"
 #include <oc/context/OverlayManager.hpp>
 #include "ui/transportbar/TransportBar.hpp"
 #include "ui/view/MacroView.hpp"
@@ -132,18 +133,38 @@ oc::type::Result<void> StandaloneContext::init() {
     );
     setupGlobalSettingsSelectorRendering();
 
-    // Create MacroEdit overlay (parented to MacroView)
-    macro_edit_overlay_ = std::make_unique<core::ui::MacroEditOverlay>(macro_view_->getElement());
-
-    // Register overlay cleanup
+    // Macro edit overlays (main + selectors)
+    macro_edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
     overlay_controller_->registerCleanup(
         core::ui::OverlayType::MACRO_EDIT,
-        reinterpret_cast<oc::type::ScopeID>(macro_edit_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)  // No latch button
+        oc::ui::lvgl::scopeID(macro_edit_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
     );
-
-    // Setup rendering subscriptions for MacroEditOverlay (orchestrator pattern)
     setupMacroEditRendering();
+
+    macro_edit_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::MACRO_EDIT_SELECTOR,
+        oc::ui::lvgl::scopeID(macro_edit_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupMacroEditSelectorRendering();
+
+    macro_page_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::PAGE_SELECTOR,
+        oc::ui::lvgl::scopeID(macro_page_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupMacroPageSelectorRendering();
+
+    macro_target_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR,
+        oc::ui::lvgl::scopeID(macro_target_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupMacroTargetSelectorRendering();
 
     // Create Sequencer overlays (parented to SequencerView)
     seq_pattern_config_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(
@@ -301,8 +322,11 @@ oc::type::Result<void> StandaloneContext::init() {
         *overlay_controller_,
         encoders(),
         buttons(),
-        macro_view_->getElement(),              // MacroView scope (open trigger)
-        macro_edit_overlay_->getElement()   // Overlay scope (edit/close)
+        macro_view_->getElement(),
+        macro_edit_overlay_->getElement(),
+        macro_edit_selector_overlay_->getElement(),
+        macro_page_selector_overlay_->getElement(),
+        macro_target_selector_overlay_->getElement()
     );
 
     // Global playback service (not tied to any view scope)
@@ -371,6 +395,9 @@ void StandaloneContext::onCleanup() {
     // SignalWatcher cleanup is automatic (RAII)
 
     // Overlay UI
+    macro_target_selector_overlay_.reset();
+    macro_page_selector_overlay_.reset();
+    macro_edit_selector_overlay_.reset();
     macro_edit_overlay_.reset();
     seq_pattern_config_overlay_.reset();
     seq_step_edit_overlay_.reset();
@@ -423,7 +450,34 @@ void StandaloneContext::setupMacroEditRendering() {
         core_state_.macroEdit.editingIndex,
         core_state_.macroEdit.tempChannel,
         core_state_.macroEdit.tempCC,
-        core_state_.macroEdit.focusedRow
+        core_state_.macroEdit.focusedRow,
+        core_state_.configRevision
+    );
+}
+
+void StandaloneContext::setupMacroEditSelectorRendering() {
+    macro_edit_selector_watcher_.watchAll(
+        [this]() { renderMacroEditSelector(); },
+        core_state_.macroEdit.selector.visible,
+        core_state_.macroEdit.selector.editingRow,
+        core_state_.macroEdit.selector.selectedIndex
+    );
+}
+
+void StandaloneContext::setupMacroPageSelectorRendering() {
+    macro_page_selector_watcher_.watchAll(
+        [this]() { renderMacroPageSelector(); },
+        core_state_.pages.selector.visible,
+        core_state_.pages.selector.selectedIndex,
+        core_state_.configRevision
+    );
+}
+
+void StandaloneContext::setupMacroTargetSelectorRendering() {
+    macro_target_selector_watcher_.watchAll(
+        [this]() { renderMacroTargetSelector(); },
+        core_state_.macroEdit.macroSelector.visible,
+        core_state_.macroEdit.macroSelector.selectedIndex
     );
 }
 
@@ -570,12 +624,174 @@ void StandaloneContext::renderSequencerStepEdit() {
 }
 
 void StandaloneContext::renderMacroEdit() {
+    if (!macro_edit_overlay_) return;
+
+    const bool visible = core_state_.macroEdit.visible.get();
+    if (!visible) {
+        macro_edit_overlay_->render({.visible = false});
+        return;
+    }
+
+    if (core_state_.macroEdit.pendingOpenReleaseDecision && core_state_.macroEdit.openedAtMs == 0) {
+        core_state_.macroEdit.openedAtMs = oc::time::millis();
+    }
+
+    const uint8_t macroIndex = core_state_.macroEdit.editingIndex.get();
+    const uint8_t channel0 = core_state_.macroEdit.tempChannel.get();
+    const uint8_t cc = core_state_.macroEdit.tempCC.get();
+
+    char title[16];
+    snprintf(title, sizeof(title), "MACRO %u", static_cast<unsigned>(macroIndex) + 1U);
+
+    const unsigned page1 = static_cast<unsigned>(core_state_.pages.activePage) + 1U;
+
+    char meta[16];
+    snprintf(meta, sizeof(meta), "PAGE %u", page1);
+
+    char channelStr[8];
+    snprintf(channelStr, sizeof(channelStr), "%u", static_cast<unsigned>(channel0) + 1U);
+
+    char ccStr[8];
+    snprintf(ccStr, sizeof(ccStr), "%u", static_cast<unsigned>(cc));
+
+    const ms::ui::KeyValueRow rows[] = {
+        {.key = "Channel", .value = channelStr},
+        {.key = "CC", .value = ccStr},
+    };
+
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(macroIndex) << 24) |
+        (static_cast<uint32_t>(channel0) << 16) |
+        (static_cast<uint32_t>(cc) << 8) |
+        (static_cast<uint32_t>(core_state_.pages.activePage & 0x0F) << 4) |
+        static_cast<uint32_t>(core_state_.macroEdit.focusedRow.get() & 0x0F);
+
     macro_edit_overlay_->render({
-        .editingIndex = core_state_.macroEdit.editingIndex.get(),
-        .channel = core_state_.macroEdit.tempChannel.get(),
-        .cc = core_state_.macroEdit.tempCC.get(),
-        .focusedRow = core_state_.macroEdit.focusedRow.get(),
-        .visible = core_state_.macroEdit.visible.get()
+        .title = title,
+        .meta = meta,
+        .rows = rows,
+        .rowCount = 2,
+        .selectedIndex = core_state_.macroEdit.focusedRow.get(),
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
+}
+
+void StandaloneContext::renderMacroEditSelector() {
+    if (!macro_edit_selector_overlay_) return;
+
+    const auto& selector = core_state_.macroEdit.selector;
+    if (!selector.visible.get()) {
+        macro_edit_selector_overlay_->render({.visible = false});
+        return;
+    }
+
+    static bool labelsInitialized = false;
+    static char channelLabels[16][4]{};
+    static const char* channelItems[16]{};
+    static char ccLabels[128][4]{};
+    static const char* ccItems[128]{};
+
+    if (!labelsInitialized) {
+        for (int i = 0; i < 16; ++i) {
+            snprintf(channelLabels[i], sizeof(channelLabels[i]), "%d", i + 1);
+            channelItems[i] = channelLabels[i];
+        }
+        for (int i = 0; i < 128; ++i) {
+            snprintf(ccLabels[i], sizeof(ccLabels[i]), "%d", i);
+            ccItems[i] = ccLabels[i];
+        }
+        labelsInitialized = true;
+    }
+
+    const uint8_t row = selector.editingRow.get();
+    const bool isChannel = (row == 0);
+    const int itemCount = isChannel ? 16 : 128;
+    const char* const* items = isChannel ? channelItems : ccItems;
+    const int selected = std::clamp(selector.selectedIndex.get(), 0, itemCount - 1);
+
+    const char* meta = isChannel ? "CHANNEL" : "CC";
+
+    macro_edit_selector_overlay_->render({
+        .title = "VALUE",
+        .meta = meta,
+        .items = items,
+        .itemCount = itemCount,
+        .selectedIndex = selected,
+        .showIndexColumn = false,
+        .visible = true,
+        .dataRevision = static_cast<uint32_t>(row + 1U),
+    });
+}
+
+void StandaloneContext::renderMacroPageSelector() {
+    if (!macro_page_selector_overlay_) return;
+
+    if (!core_state_.pages.selector.visible.get()) {
+        macro_page_selector_overlay_->render({.visible = false});
+        return;
+    }
+
+    std::array<const char*, core::state::macro::PAGE_COUNT> pageItems{};
+    for (uint8_t i = 0; i < core::state::macro::PAGE_COUNT; ++i) {
+        pageItems[i] = core_state_.pages.pageName(i);
+    }
+
+    const int selected = std::clamp(
+        static_cast<int>(core_state_.pages.selector.selectedIndex.get()),
+        0,
+        static_cast<int>(core::state::macro::PAGE_COUNT) - 1
+    );
+
+    macro_page_selector_overlay_->render({
+        .title = "PAGE",
+        .meta = "MACRO",
+        .items = pageItems.data(),
+        .itemCount = core::state::macro::PAGE_COUNT,
+        .selectedIndex = selected,
+        .showIndexColumn = false,
+        .visible = true,
+        .dataRevision = core_state_.configRevision.get(),
+    });
+}
+
+void StandaloneContext::renderMacroTargetSelector() {
+    if (!macro_target_selector_overlay_) return;
+
+    if (!core_state_.macroEdit.macroSelector.visible.get()) {
+        macro_target_selector_overlay_->render({.visible = false});
+        return;
+    }
+
+    static bool labelsInitialized = false;
+    static char macroLabels[core::state::MACRO_COUNT][16]{};
+    static const char* macroItems[core::state::MACRO_COUNT]{};
+
+    if (!labelsInitialized) {
+        for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
+            snprintf(macroLabels[i], sizeof(macroLabels[i]), "Macro %u", static_cast<unsigned>(i) + 1U);
+            macroItems[i] = macroLabels[i];
+        }
+        labelsInitialized = true;
+    }
+
+    const int selected = std::clamp(
+        core_state_.macroEdit.macroSelector.selectedIndex.get(),
+        0,
+        static_cast<int>(core::state::MACRO_COUNT) - 1
+    );
+
+    const char* meta = "TARGET";
+
+    macro_target_selector_overlay_->render({
+        .title = "MACRO",
+        .meta = meta,
+        .items = macroItems,
+        .itemCount = core::state::MACRO_COUNT,
+        .selectedIndex = selected,
+        .showIndexColumn = false,
+        .visible = true,
+        .dataRevision = 1,
     });
 }
 

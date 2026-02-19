@@ -4,7 +4,7 @@
 #include <oc/ui/lvgl/Scope.hpp>
 #include <oc/util/Index.hpp>
 
-#include <config/InputIDs.hpp>
+#include <config/App.hpp>
 
 #include "SequencerInputUtils.hpp"
 
@@ -44,7 +44,7 @@ void SequencerStepEditHandler::setupBindings() {
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         auto btn = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[i]);
         buttons_.button(btn)
-            .longPress()
+            .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(scope(sequencer_view_scope_))
             .then([this, i]() { openForMacroInPage(i); });
     }

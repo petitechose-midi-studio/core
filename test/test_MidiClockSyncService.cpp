@@ -81,6 +81,8 @@ void test_master_emits_realtime() {
     assert(transport.start_sent == 1);
     assert(transport.clock_sent > 0);
     assert(!status.syncExternalSource.get());
+    assert(!status.tempoLocked.get());
+    assert(!status.transportLocked.get());
     assertNear(status.tempoDisplay.get(), 120.0f, 0.01f);
 
     status.playing.set(false);
@@ -111,6 +113,8 @@ void test_slave_follows_external_clock_and_transport() {
 
     assert(service.playing());
     assert(service.tick() == 4);
+    assert(status.tempoLocked.get());
+    assert(status.transportLocked.get());
     assert(transport.clock_sent == 0);
     assert(transport.start_sent == 0);
 
@@ -134,19 +138,135 @@ void test_auto_lock_and_fallback() {
 
     service.update(0);
     assert(sync.activeSource.get() == core::state::ClockSourceActive::INTERNAL);
+    assert(!status.tempoLocked.get());
+    assert(!status.transportLocked.get());
 
     service.onClock(10'000, 10);
     service.onClock(20'000, 20);
     service.onClock(30'000, 30);
     service.update(30);
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
+    assert(status.tempoLocked.get());
+    assert(status.transportLocked.get());
     assert(service.consumeResyncRequest());
 
     service.update(200);
     assert(sync.activeSource.get() == core::state::ClockSourceActive::INTERNAL);
+    assert(!status.tempoLocked.get());
+    assert(!status.transportLocked.get());
     assert(service.consumeResyncRequest());
 
     std::cout << "[PASS] test_auto_lock_and_fallback\n";
+}
+
+void test_auto_latches_start_before_lock() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{sync, status, midi};
+
+    sync.mode.set(core::state::MidiSyncMode::AUTO);
+    sync.followTransport.set(true);
+    sync.autoLockClockCount.set(3);
+    status.playing.set(false);
+
+    service.update(0);
+    service.onStart();
+
+    // Before lock, transport is still internal.
+    service.update(5);
+    assert(sync.activeSource.get() == core::state::ClockSourceActive::INTERNAL);
+    assert(!status.playing.get());
+
+    // After enough clocks, AUTO locks and should apply the latched START.
+    service.onClock(10'000, 10);
+    service.onClock(20'000, 20);
+    service.onClock(30'000, 30);
+    service.update(30);
+
+    assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
+    assert(service.playing());
+    assert(status.playing.get());
+
+    std::cout << "[PASS] test_auto_latches_start_before_lock\n";
+}
+
+void test_slave_clock_only_infers_play_state() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{sync, status, midi};
+
+    sync.mode.set(core::state::MidiSyncMode::SLAVE);
+    sync.followTransport.set(true);
+    sync.autoFallbackMs.set(120);
+
+    service.update(0);
+    assert(!service.playing());
+
+    uint32_t now = 10;
+    for (int i = 0; i < 6; ++i) {
+        service.onClock(static_cast<uint64_t>(now) * 1000ULL, now);
+        service.update(now);
+        now += 20;
+    }
+
+    assert(service.playing());
+    assert(status.playing.get());
+
+    // With no explicit stop event, loss of external clock should still stop playback.
+    service.update(now + 250);
+    assert(!service.playing());
+    assert(!status.playing.get());
+
+    std::cout << "[PASS] test_slave_clock_only_infers_play_state\n";
+}
+
+void test_auto_clock_only_plays_after_lock() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{sync, status, midi};
+
+    sync.mode.set(core::state::MidiSyncMode::AUTO);
+    sync.followTransport.set(true);
+    sync.autoLockClockCount.set(3);
+
+    service.update(0);
+    assert(!service.playing());
+
+    service.onClock(10'000, 10);
+    service.onClock(20'000, 20);
+    service.onClock(30'000, 30);
+    service.update(30);
+
+    assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
+    assert(service.playing());
+    assert(status.playing.get());
+
+    std::cout << "[PASS] test_auto_clock_only_plays_after_lock\n";
+}
+
+void test_transport_lock_requires_follow() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{sync, status, midi};
+
+    sync.mode.set(core::state::MidiSyncMode::SLAVE);
+    sync.followTransport.set(false);
+
+    service.update(0);
+
+    assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
+    assert(status.tempoLocked.get());
+    assert(!status.transportLocked.get());
+
+    std::cout << "[PASS] test_transport_lock_requires_follow\n";
 }
 
 void test_external_source_updates_displayed_tempo_and_activity() {
@@ -254,6 +374,10 @@ int main() {
     test_master_emits_realtime();
     test_slave_follows_external_clock_and_transport();
     test_auto_lock_and_fallback();
+    test_auto_latches_start_before_lock();
+    test_slave_clock_only_infers_play_state();
+    test_auto_clock_only_plays_after_lock();
+    test_transport_lock_requires_follow();
     test_external_source_updates_displayed_tempo_and_activity();
     test_external_tempo_precision_low_mid();
     test_external_tempo_tracks_fast_change();

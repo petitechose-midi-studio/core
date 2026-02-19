@@ -36,6 +36,8 @@ struct StatusBarState {
     // TransportBar - Clock sync indicators
     Signal<bool> syncExternalSource{false};
     Signal<bool> syncInputPulse{false};
+    Signal<bool> tempoLocked{false};
+    Signal<bool> transportLocked{false};
 
     // TransportBar - Beat
     Signal<bool> beatPulse{false};

@@ -18,6 +18,8 @@ enum class OverlayType : uint8_t {
     NONE = 0,
     PAGE_SELECTOR,    // Sélection de page macro
     MACRO_EDIT,       // Édition d'une macro (CH/CC)
+    MACRO_EDIT_SELECTOR,       // Sélecteur de valeur (CH/CC)
+    MACRO_EDIT_MACRO_SELECTOR, // Sélecteur de macro cible (hold LEFT_BOTTOM)
     VIEW_SELECTOR,    // Top-level view selector
 
     // Sequencer overlays

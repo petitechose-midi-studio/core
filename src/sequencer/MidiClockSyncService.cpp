@@ -20,12 +20,12 @@ constexpr float TEMPO_ALPHA_STABLE = 0.18f;
 constexpr float TEMPO_ALPHA_MEDIUM = 0.35f;
 constexpr float TEMPO_ALPHA_FAST = 0.55f;
 
-constexpr uint32_t DISPLAY_PUBLISH_MIN_MS = 100;
-constexpr float DISPLAY_DEADBAND_BPM = 0.15f;
-constexpr float DISPLAY_FORCE_STEP_BPM = 1.2f;
-constexpr float DISPLAY_ALPHA_STABLE = 0.16f;
-constexpr float DISPLAY_ALPHA_MEDIUM = 0.34f;
-constexpr float DISPLAY_ALPHA_FAST = 0.58f;
+constexpr uint32_t DISPLAY_PUBLISH_MIN_MS = 150;
+constexpr float DISPLAY_DEADBAND_BPM = 0.2f;
+constexpr float DISPLAY_FORCE_STEP_BPM = 1.5f;
+constexpr float DISPLAY_ALPHA_STABLE = 0.12f;
+constexpr float DISPLAY_ALPHA_MEDIUM = 0.26f;
+constexpr float DISPLAY_ALPHA_FAST = 0.48f;
 }  // namespace
 
 MidiClockSyncService::MidiClockSyncService(core::state::MidiSyncState& syncState,
@@ -40,6 +40,8 @@ MidiClockSyncService::MidiClockSyncService(core::state::MidiSyncState& syncState
     display_tempo_published_ = tempo;
     status_bar_.syncExternalSource.set(false);
     status_bar_.syncInputPulse.set(false);
+    status_bar_.tempoLocked.set(false);
+    status_bar_.transportLocked.set(false);
 }
 
 void MidiClockSyncService::update(uint32_t nowMs) {
@@ -52,7 +54,14 @@ void MidiClockSyncService::update(uint32_t nowMs) {
 
     if (using_external_source_) {
         current_tick_ = external_tick_;
-        current_playing_ = sync_state_.followTransport.get() ? external_playing_ : status_bar_.playing.get();
+        if (sync_state_.followTransport.get()) {
+            current_playing_ = external_transport_seen_
+                                   ? external_playing_
+                                   : hasExternalClockSignal_(nowMs);
+            status_bar_.playing.set(current_playing_);
+        } else {
+            current_playing_ = status_bar_.playing.get();
+        }
     } else {
         current_playing_ = status_bar_.playing.get();
         internal_clock_.setBpm(status_bar_.tempo.get());
@@ -118,10 +127,9 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
         external_locked_ = true;
     }
 
-    if (status_bar_.syncInputPulse.get()) {
-        status_bar_.syncInputPulse.set(false);
+    if (!status_bar_.syncInputPulse.get()) {
+        status_bar_.syncInputPulse.set(true);
     }
-    status_bar_.syncInputPulse.set(true);
 }
 
 void MidiClockSyncService::resetExternalTempoEstimator_() {
@@ -129,6 +137,7 @@ void MidiClockSyncService::resetExternalTempoEstimator_() {
     clock_interval_count_ = 0;
     clock_interval_write_idx_ = 0;
     external_bpm_valid_ = false;
+    external_transport_seen_ = false;
 }
 
 void MidiClockSyncService::pushClockIntervalUs_(uint32_t intervalUs) {
@@ -188,10 +197,14 @@ float MidiClockSyncService::estimateTempoFromIntervals_() const {
 }
 
 void MidiClockSyncService::onStart() {
-    if (!allowExternalTransport_()) return;
+    if (sync_state_.mode.get() == core::state::MidiSyncMode::MASTER) return;
 
     external_tick_ = 0;
+    external_transport_seen_ = true;
     external_playing_ = true;
+
+    if (!allowExternalTransport_()) return;
+
     resync_requested_ = true;
 
     if (sync_state_.followTransport.get()) {
@@ -200,9 +213,12 @@ void MidiClockSyncService::onStart() {
 }
 
 void MidiClockSyncService::onContinue() {
-    if (!allowExternalTransport_()) return;
+    if (sync_state_.mode.get() == core::state::MidiSyncMode::MASTER) return;
 
+    external_transport_seen_ = true;
     external_playing_ = true;
+
+    if (!allowExternalTransport_()) return;
 
     if (sync_state_.followTransport.get()) {
         status_bar_.playing.set(true);
@@ -210,9 +226,13 @@ void MidiClockSyncService::onContinue() {
 }
 
 void MidiClockSyncService::onStop() {
+    if (sync_state_.mode.get() == core::state::MidiSyncMode::MASTER) return;
+
+    external_transport_seen_ = true;
+    external_playing_ = false;
+
     if (!allowExternalTransport_()) return;
 
-    external_playing_ = false;
     resync_requested_ = true;
 
     if (sync_state_.followTransport.get()) {
@@ -266,8 +286,14 @@ void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
         if (using_external_source_) {
             // Keep continuity on source switch when transport follow is enabled
             // but no explicit external START has been observed yet.
-            if (!external_playing_) {
+            if (!external_transport_seen_ && !external_playing_) {
                 external_playing_ = status_bar_.playing.get();
+            }
+
+            if (sync_state_.followTransport.get()) {
+                status_bar_.playing.set(external_transport_seen_
+                                            ? external_playing_
+                                            : hasExternalClockSignal_(nowMs));
             }
         } else {
             internal_clock_.reset();
@@ -338,6 +364,8 @@ void MidiClockSyncService::updateDisplayedTempo_(uint32_t nowMs) {
 
 void MidiClockSyncService::pushSyncIndicators_() {
     status_bar_.syncExternalSource.set(using_external_source_);
+    status_bar_.tempoLocked.set(using_external_source_);
+    status_bar_.transportLocked.set(using_external_source_ && sync_state_.followTransport.get());
 }
 
 void MidiClockSyncService::updateMasterClockOutput_() {

@@ -23,7 +23,7 @@ namespace core::ui {
  * Layout (3 columns):
  * - Cell 1 (Left): MIDI indicators (Note IN/OUT, CC IN/OUT)
  * - Cell 2 (Center): Play icon
- * - Cell 3 (Right): Beat indicator + Tempo
+ * - Cell 3 (Right): Tempo + lock/pulse indicator
  *
  * Subscribes to StatusBarState signals and auto-updates on changes.
  */
@@ -48,7 +48,8 @@ private:
 
     lv_obj_t* container_ = nullptr;
 
-    // Cell 1: MIDI indicators (Note + CC)
+    // Cell 1: MIDI indicators (Clock + Note + CC)
+    lv_obj_t* clock_mode_icon_ = nullptr;
     lv_obj_t* note_in_icon_ = nullptr;
     lv_obj_t* note_out_icon_ = nullptr;
     lv_obj_t* cc_in_icon_ = nullptr;
@@ -56,13 +57,14 @@ private:
 
     // Cell 2: Transport
     lv_obj_t* play_icon_ = nullptr;
+    lv_obj_t* transport_lock_icon_ = nullptr;
 
     // Cell 3: Tempo
-    lv_obj_t* sync_in_label_ = nullptr;
-    lv_obj_t* source_label_ = nullptr;
+    lv_obj_t* tempo_indicator_container_ = nullptr;
+    lv_obj_t* tempo_lock_icon_ = nullptr;
     lv_obj_t* tempo_label_ = nullptr;
 
-    // Cell 4: Beat indicator
+    // Pulse indicator behind tempo lock icon
     std::unique_ptr<StateIndicator> beat_indicator_;
 
     // Pulse timers (for auto-reset after blink)
@@ -70,7 +72,7 @@ private:
     lv_timer_t* note_out_timer_ = nullptr;
     lv_timer_t* cc_in_timer_ = nullptr;
     lv_timer_t* cc_out_timer_ = nullptr;
-    lv_timer_t* sync_in_timer_ = nullptr;
+    lv_timer_t* clock_pulse_timer_ = nullptr;
     lv_timer_t* beat_timer_ = nullptr;
 
     std::vector<oc::state::Subscription> subs_;
@@ -90,6 +92,8 @@ private:
     void setTempo(float bpm);
     void setSyncSource(bool external);
     void setSyncInputPulse(bool pulse);
+    void setTempoLocked(bool locked);
+    void setTransportLocked(bool locked);
     void setBeatPulse(bool pulse);
 
     // Pulse helper for icon-based indicators
@@ -100,7 +104,7 @@ private:
     static void onNoteOutTimeout(lv_timer_t* timer);
     static void onCcInTimeout(lv_timer_t* timer);
     static void onCcOutTimeout(lv_timer_t* timer);
-    static void onSyncInTimeout(lv_timer_t* timer);
+    static void onClockPulseTimeout(lv_timer_t* timer);
     static void onBeatTimeout(lv_timer_t* timer);
 };
 

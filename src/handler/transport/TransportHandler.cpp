@@ -42,12 +42,20 @@ void TransportHandler::setupBindings() {
 }
 
 void TransportHandler::handleTempoChange(float delta) {
+    if (core_state_.statusBar.tempoLocked.get()) {
+        return;
+    }
+
     float currentTempo = core_state_.statusBar.tempo.get();
     float newTempo = std::clamp(currentTempo + delta, TEMPO_MIN, TEMPO_MAX);
     core_state_.statusBar.tempo.set(newTempo);
 }
 
 void TransportHandler::handlePlayToggle() {
+    if (core_state_.statusBar.transportLocked.get()) {
+        return;
+    }
+
     bool playing = core_state_.statusBar.playing.get();
     core_state_.statusBar.playing.set(!playing);
 }

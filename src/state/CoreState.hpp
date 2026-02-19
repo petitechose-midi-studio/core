@@ -112,6 +112,8 @@ struct CoreState {
         // Register overlay signals
         overlays.registerItem(core::ui::OverlayType::PAGE_SELECTOR, pages.selector.visible);
         overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, macroEdit.visible);
+        overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_SELECTOR, macroEdit.selector.visible);
+        overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, macroEdit.macroSelector.visible);
         overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, viewSelector.visible);
 
         overlays.registerItem(core::ui::OverlayType::SEQ_PATTERN_CONFIG, sequencer.patternConfig.visible);
@@ -191,22 +193,32 @@ struct CoreState {
     /**
      * @brief Set macro MIDI configuration for the active page
      *
-     * Single source of truth: updates page data, derived active configs, and persistence.
+     * Single source of truth: updates page data, derived active configs, and staged persistence.
+     * @return true when channel or CC changed
      */
-    void setMacroConfig(uint8_t index, uint8_t channel, uint8_t cc) {
-        if (index >= MACRO_COUNT) return;
-        if (channel > 15 || cc > 127) return;
+    bool setMacroConfig(uint8_t index, uint8_t channel, uint8_t cc) {
+        if (index >= MACRO_COUNT) return false;
+        if (channel > 15 || cc > 127) return false;
 
         auto& page = pages.activePageData();
+        const bool channelChanged = page.channel[index] != channel;
+        const bool ccChanged = page.cc[index] != cc;
+        if (!channelChanged && !ccChanged) {
+            return false;
+        }
+
         page.channel[index] = channel;
         page.cc[index] = cc;
         pages.updateActiveConfigs();
 
-        settings.saveChannel(pages.activePage, index, channel);
-        settings.saveCC(pages.activePage, index, cc);
-        settings.commit();
+        if (channelChanged) {
+            settings.saveChannel(pages.activePage, index, channel);
+        }
+        if (ccChanged) {
+            settings.saveCC(pages.activePage, index, cc);
+        }
 
-        configRevision.set(configRevision.get() + 1);
+        return true;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

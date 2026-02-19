@@ -58,6 +58,7 @@ private:
     uint8_t clock_interval_write_idx_ = 0;
     uint8_t external_clock_streak_ = 0;
     bool external_locked_ = false;
+    bool external_transport_seen_ = false;
     float external_bpm_estimate_ = 120.0f;
     bool external_bpm_valid_ = false;
 

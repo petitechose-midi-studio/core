@@ -19,12 +19,10 @@ const lv_color_t COLOR_IN_ACTIVE = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
 const lv_color_t COLOR_OUT_ACTIVE = lv_color_hex(theme::color::MIDI_OUT_ACTIVE);
 const lv_color_t COLOR_PLAY_INACTIVE = lv_color_hex(theme::color::PLAY_INACTIVE);
 const lv_color_t COLOR_PLAY_ACTIVE = lv_color_hex(theme::color::PLAY_ACTIVE);
-const lv_color_t COLOR_TEXT = lv_color_hex(theme::color::TEXT_SECONDARY);
-const lv_color_t COLOR_BEAT = lv_color_hex(theme::color::BEAT_PULSE);
-const lv_color_t COLOR_SYNC_IN_INACTIVE = lv_color_hex(theme::color::INACTIVE);
-const lv_color_t COLOR_SYNC_IN_ACTIVE = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
+const lv_color_t COLOR_TEMPO_UNLOCKED = lv_color_hex(theme::color::TEXT_SECONDARY);
 const lv_color_t COLOR_SOURCE_INT = lv_color_hex(theme::color::TEXT_SECONDARY);
 const lv_color_t COLOR_SOURCE_EXT = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
+const lv_color_t COLOR_LOCK = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
 }  // namespace
 
 TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
@@ -40,7 +38,7 @@ TransportBar::~TransportBar() {
     if (note_out_timer_) { lv_timer_delete(note_out_timer_); note_out_timer_ = nullptr; }
     if (cc_in_timer_) { lv_timer_delete(cc_in_timer_); cc_in_timer_ = nullptr; }
     if (cc_out_timer_) { lv_timer_delete(cc_out_timer_); cc_out_timer_ = nullptr; }
-    if (sync_in_timer_) { lv_timer_delete(sync_in_timer_); sync_in_timer_ = nullptr; }
+    if (clock_pulse_timer_) { lv_timer_delete(clock_pulse_timer_); clock_pulse_timer_ = nullptr; }
     if (beat_timer_) { lv_timer_delete(beat_timer_); beat_timer_ = nullptr; }
 
     // Clear subscriptions before destroying UI
@@ -75,13 +73,18 @@ void TransportBar::createLayout(lv_obj_t* parent) {
 }
 
 void TransportBar::createMidiIndicators(lv_obj_t* parent) {
-    // Cell 0: MIDI indicators (Note IN/OUT + CC IN/OUT)
+    // Cell 0: MIDI indicators (Clock source + Note IN/OUT + CC IN/OUT)
     lv_obj_t* cell = lv_obj_create(parent);
     lv_obj_remove_style_all(cell);
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1,
                          LV_GRID_ALIGN_CENTER, 0, 1);
     lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     style::apply(cell).flexRow(LV_FLEX_ALIGN_START, theme::layout::GAP_SM).padLeft(theme::layout::PAD_MD);
+
+    // Clock source icon (first position)
+    clock_mode_icon_ = lv_label_create(cell);
+    icons::set(clock_mode_icon_, icons::CLOCK_MASTER, icons::Size::M);
+    lv_obj_set_style_text_color(clock_mode_icon_, COLOR_SOURCE_INT, 0);
 
     // Note IN icon
     note_in_icon_ = lv_label_create(cell);
@@ -115,10 +118,16 @@ void TransportBar::createTransportCenter(lv_obj_t* parent) {
     icons::set(play_icon_, icons::TRANSPORT_PLAY, icons::Size::L);
     lv_obj_set_style_text_color(play_icon_, COLOR_PLAY_INACTIVE, 0);
     lv_obj_center(play_icon_);
+
+    transport_lock_icon_ = lv_label_create(cell);
+    icons::set(transport_lock_icon_, icons::LOCK, icons::Size::S);
+    lv_obj_set_style_text_color(transport_lock_icon_, COLOR_LOCK, 0);
+    lv_obj_add_flag(transport_lock_icon_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align_to(transport_lock_icon_, play_icon_, LV_ALIGN_OUT_RIGHT_MID, 2, 0);
 }
 
 void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
-    // Cell 2: Beat indicator + Tempo (right-aligned, beat left of tempo)
+    // Cell 2: Tempo label + fixed indicator zone (lock over beat pulse)
     lv_obj_t* cell = lv_obj_create(parent);
     lv_obj_remove_style_all(cell);
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_END, 2, 1,
@@ -126,29 +135,32 @@ void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
     lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     style::apply(cell).flexRow(LV_FLEX_ALIGN_END, theme::layout::GAP_SM).padRight(theme::layout::PAD_MD);
 
-    // Beat indicator (left of tempo)
-    beat_indicator_ = std::make_unique<StateIndicator>(cell, theme::layout::INDICATOR_SIZE);
+    // Tempo label in fixed-width slot to prevent layout jitter.
+    tempo_label_ = lv_label_create(cell);
+    lv_label_set_text(tempo_label_, "120.00");
+    lv_obj_set_style_text_font(tempo_label_, fonts.tempo_label, 0);
+    lv_obj_set_width(tempo_label_, 64);
+    lv_obj_set_style_text_align(tempo_label_, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_style_text_color(tempo_label_, COLOR_TEMPO_UNLOCKED, 0);
+
+    // Fixed indicator zone at the right of tempo.
+    tempo_indicator_container_ = lv_obj_create(cell);
+    lv_obj_remove_style_all(tempo_indicator_container_);
+    lv_obj_clear_flag(tempo_indicator_container_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(tempo_indicator_container_, theme::layout::INDICATOR_SIZE, theme::layout::INDICATOR_SIZE);
+
+    beat_indicator_ = std::make_unique<StateIndicator>(tempo_indicator_container_, theme::layout::INDICATOR_SIZE);
     beat_indicator_->color(StateIndicator::State::OFF, theme::color::INACTIVE)
                   .color(StateIndicator::State::ACTIVE, theme::color::BEAT_PULSE)
                   .opacity(StateIndicator::State::OFF, LV_OPA_COVER)
                   .opacity(StateIndicator::State::ACTIVE, LV_OPA_COVER);
     beat_indicator_->setState(StateIndicator::State::OFF);
 
-    sync_in_label_ = lv_label_create(cell);
-    lv_label_set_text(sync_in_label_, "CLK");
-    lv_obj_set_style_text_font(sync_in_label_, fonts.inter_13_medium, 0);
-    lv_obj_set_style_text_color(sync_in_label_, COLOR_SYNC_IN_INACTIVE, 0);
-
-    source_label_ = lv_label_create(cell);
-    lv_label_set_text(source_label_, "INT");
-    lv_obj_set_style_text_font(source_label_, fonts.inter_13_bold, 0);
-    lv_obj_set_style_text_color(source_label_, COLOR_SOURCE_INT, 0);
-
-    // Tempo label (no BPM unit)
-    tempo_label_ = lv_label_create(cell);
-    lv_label_set_text(tempo_label_, "120.00");
-    lv_obj_set_style_text_font(tempo_label_, fonts.tempo_label, 0);
-    lv_obj_set_style_text_color(tempo_label_, COLOR_TEXT, 0);
+    tempo_lock_icon_ = lv_label_create(tempo_indicator_container_);
+    icons::set(tempo_lock_icon_, icons::LOCK, icons::Size::S);
+    lv_obj_set_style_text_color(tempo_lock_icon_, COLOR_LOCK, 0);
+    lv_obj_center(tempo_lock_icon_);
+    lv_obj_add_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
 }
 
 void TransportBar::setupBindings() {
@@ -162,6 +174,8 @@ void TransportBar::setupBindings() {
         .on(state_.tempoDisplay, [this](float bpm) { setTempo(bpm); })
         .on(state_.syncExternalSource, [this](bool external) { setSyncSource(external); })
         .on(state_.syncInputPulse, [this](bool pulse) { setSyncInputPulse(pulse); })
+        .on(state_.tempoLocked, [this](bool locked) { setTempoLocked(locked); })
+        .on(state_.transportLocked, [this](bool locked) { setTransportLocked(locked); })
         .on(state_.beatPulse, [this](bool pulse) { setBeatPulse(pulse); });
 }
 
@@ -210,16 +224,45 @@ void TransportBar::setTempo(float bpm) {
 }
 
 void TransportBar::setSyncSource(bool external) {
-    if (!source_label_) return;
-
-    lv_label_set_text(source_label_, external ? "EXT" : "INT");
-    lv_obj_set_style_text_color(source_label_, external ? COLOR_SOURCE_EXT : COLOR_SOURCE_INT, 0);
+    if (clock_mode_icon_) {
+        icons::set(clock_mode_icon_, external ? icons::CLOCK_SLAVE : icons::CLOCK_MASTER, icons::Size::M);
+        lv_obj_set_style_text_color(clock_mode_icon_, external ? COLOR_SOURCE_EXT : COLOR_SOURCE_INT, 0);
+    }
 }
 
 void TransportBar::setSyncInputPulse(bool pulse) {
-    if (!pulse || !sync_in_label_) return;
-    pulseIcon(sync_in_label_, sync_in_timer_, COLOR_SYNC_IN_ACTIVE,
-              theme::timing::MIDI_BLINK_MS, onSyncInTimeout);
+    if (!pulse || !clock_mode_icon_) return;
+
+    // External MIDI clock can tick very fast; avoid timer churn by
+    // collapsing bursts into a single visible pulse window.
+    if (clock_pulse_timer_) return;
+
+    pulseIcon(clock_mode_icon_, clock_pulse_timer_, COLOR_SOURCE_EXT,
+              theme::timing::MIDI_BLINK_MS, onClockPulseTimeout);
+}
+
+void TransportBar::setTempoLocked(bool locked) {
+    if (tempo_lock_icon_) {
+        if (locked) {
+            lv_obj_clear_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (tempo_label_) {
+        lv_obj_set_style_text_color(tempo_label_, COLOR_TEMPO_UNLOCKED, 0);
+    }
+}
+
+void TransportBar::setTransportLocked(bool locked) {
+    if (!transport_lock_icon_) return;
+
+    if (locked) {
+        lv_obj_clear_flag(transport_lock_icon_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(transport_lock_icon_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void TransportBar::setBeatPulse(bool pulse) {
@@ -262,12 +305,13 @@ void TransportBar::onCcOutTimeout(lv_timer_t* timer) {
     self->cc_out_timer_ = nullptr;
 }
 
-void TransportBar::onSyncInTimeout(lv_timer_t* timer) {
+void TransportBar::onClockPulseTimeout(lv_timer_t* timer) {
     auto* self = static_cast<TransportBar*>(lv_timer_get_user_data(timer));
-    if (!self || !self->sync_in_label_) return;
-    lv_obj_set_style_text_color(self->sync_in_label_, COLOR_SYNC_IN_INACTIVE, 0);
+    if (!self || !self->clock_mode_icon_) return;
+    const bool external = self->state_.syncExternalSource.get();
+    lv_obj_set_style_text_color(self->clock_mode_icon_, external ? COLOR_SOURCE_EXT : COLOR_SOURCE_INT, 0);
     self->state_.syncInputPulse.set(false);
-    self->sync_in_timer_ = nullptr;
+    self->clock_pulse_timer_ = nullptr;
 }
 
 void TransportBar::onBeatTimeout(lv_timer_t* timer) {
@@ -282,6 +326,8 @@ void TransportBar::render() {
     setPlaying(state_.playing.get());
     setTempo(state_.tempoDisplay.get());
     setSyncSource(state_.syncExternalSource.get());
+    setTempoLocked(state_.tempoLocked.get());
+    setTransportLocked(state_.transportLocked.get());
 }
 
 void TransportBar::show() {

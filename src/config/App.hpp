@@ -45,6 +45,7 @@ constexpr uint32_t LVGL_HZ = REFRESH_HZ;      // Display refresh rate
 
 constexpr uint8_t DEBOUNCE_MS = 12;  // Button debounce
 constexpr uint32_t LONG_PRESS_MS = 500;
+constexpr uint32_t OVERLAY_OPEN_LONG_PRESS_MS = 1000;
 constexpr uint32_t LATCH_THRESHOLD_MS = 200;
 constexpr uint32_t DOUBLE_TAP_MS = 300;     // Double tap window
 }  // namespace Timing
@@ -55,9 +56,9 @@ constexpr uint32_t DOUBLE_TAP_MS = 300;     // Double tap window
 
 namespace Input {
 constexpr oc::core::input::InputConfig CONFIG = {.longPressMs = Timing::LONG_PRESS_MS,
-                                          .doubleTapWindowMs = Timing::DOUBLE_TAP_MS,
-                                          .latchThresholdMs = Timing::LATCH_THRESHOLD_MS,
-                                          .debounceMs = Timing::DEBOUNCE_MS};
+                                           .doubleTapWindowMs = Timing::DOUBLE_TAP_MS,
+                                           .latchThresholdMs = Timing::LATCH_THRESHOLD_MS,
+                                           .debounceMs = Timing::DEBOUNCE_MS};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

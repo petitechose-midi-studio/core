@@ -7,6 +7,8 @@
  * Tracks which macro is being edited and temporary values.
  */
 
+#include <cstdint>
+
 #include <oc/state/Signal.hpp>
 
 namespace core::state {
@@ -33,14 +35,53 @@ struct MacroEditState {
     /// Focused row in overlay (0 = channel, 1 = CC)
     oc::state::Signal<uint8_t> focusedRow{0};
 
+    struct ValueSelectorState {
+        oc::state::Signal<bool> visible{false};
+        oc::state::Signal<uint8_t> editingRow{0};
+        oc::state::Signal<int> selectedIndex{0};
+
+        void reset() {
+            visible.set(false);
+            editingRow.set(0);
+            selectedIndex.set(0);
+        }
+    };
+
+    struct MacroSelectorState {
+        oc::state::Signal<bool> visible{false};
+        oc::state::Signal<int> selectedIndex{0};
+
+        void reset() {
+            visible.set(false);
+            selectedIndex.set(0);
+        }
+    };
+
+    /// Value selector sub-state (CH/CC choices)
+    ValueSelectorState selector;
+
+    /// Macro selector sub-state (macro target while editing)
+    MacroSelectorState macroSelector;
+
+    /// Runtime decision state for long-press open release policy
+    uint8_t openedByMacroIndex = 0;
+    uint32_t openedAtMs = 0;
+    bool pendingOpenReleaseDecision = false;
+
     /**
      * @brief Reset to defaults
      */
     void reset() {
+        visible.set(false);
         editingIndex.set(0);
         tempChannel.set(0);
         tempCC.set(0);
         focusedRow.set(0);
+        selector.reset();
+        macroSelector.reset();
+        openedByMacroIndex = 0;
+        openedAtMs = 0;
+        pendingOpenReleaseDecision = false;
     }
 
     /**
@@ -57,6 +98,8 @@ struct MacroEditState {
         tempChannel.set(channel);
         tempCC.set(cc);
         focusedRow.set(0);  // Start on channel
+        selector.reset();
+        macroSelector.reset();
     }
 };
 
