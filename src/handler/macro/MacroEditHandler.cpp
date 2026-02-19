@@ -168,11 +168,6 @@ void MacroEditHandler::openEdit(uint8_t macroIndex) {
 
     overlays_.show(core::ui::OverlayType::MACRO_EDIT);
 
-    // Transfer ownership so opening-button release is handled by macro-edit
-    // scope even if authority/scope changes before release.
-    const auto btnId = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[macroIndex]);
-    buttons_.setPressOwner(btnId, oc::ui::lvgl::scopeID(overlay_scope_));
-
     configureOptForFocusedRow();
 
 }
@@ -260,9 +255,6 @@ void MacroEditHandler::openValueSelector() {
 
     overlays_.show(core::ui::OverlayType::MACRO_EDIT_SELECTOR, true);
 
-    // Route the paired NAV release of this press to selector scope.
-    buttons_.setPressOwner(static_cast<oc::type::ButtonID>(Config::ButtonID::NAV),
-                           oc::ui::lvgl::scopeID(selector_scope_));
 }
 
 void MacroEditHandler::navigateValueSelector(float delta) {
@@ -297,9 +289,6 @@ void MacroEditHandler::openPageSelector() {
     state_.pages.selector.selectedIndex.set(state_.pages.activePage);
     overlays_.show(core::ui::OverlayType::PAGE_SELECTOR, true);
 
-    // Route paired LEFT_CENTER release to page selector scope.
-    buttons_.setPressOwner(static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_CENTER),
-                           oc::ui::lvgl::scopeID(page_selector_scope_));
 }
 
 void MacroEditHandler::navigatePageSelector(float delta) {
@@ -348,9 +337,6 @@ void MacroEditHandler::openMacroTargetSelector() {
 
     overlays_.show(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, true);
 
-    // Route paired LEFT_BOTTOM release to macro selector scope.
-    buttons_.setPressOwner(static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_BOTTOM),
-                           oc::ui::lvgl::scopeID(macro_selector_scope_));
 }
 
 void MacroEditHandler::navigateMacroTargetSelector(float delta) {
