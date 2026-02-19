@@ -6,7 +6,7 @@
 
 #include <oc/interface/IStorage.hpp>
 
-#include "../src/state/CoreSettings.hpp"
+#include "../../src/state/CoreSettings.hpp"
 
 namespace {
 

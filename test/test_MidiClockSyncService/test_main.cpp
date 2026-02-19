@@ -7,7 +7,9 @@
 #include <oc/api/MidiAPI.hpp>
 #include <oc/interface/IMidi.hpp>
 
-#include "../src/sequencer/MidiClockSyncService.hpp"
+#include "../../src/sequencer/MidiClockSyncService.hpp"
+// Test environment does not link project src by default for this suite.
+#include "../../src/sequencer/MidiClockSyncService.cpp"
 
 namespace {
 
