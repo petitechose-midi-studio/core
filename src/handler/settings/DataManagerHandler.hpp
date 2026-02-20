@@ -55,15 +55,6 @@ private:
 
     core::state::DataManagerContext contextForActiveView_() const;
 
-    std::size_t commandCountForContext_(core::state::DataManagerContext context) const;
-    core::state::DataManagerCommand commandAtIndexForContext_(core::state::DataManagerContext context,
-                                                               int index) const;
-    int commandIndexForContext_(core::state::DataManagerContext context,
-                                core::state::DataManagerCommand command) const;
-
-    uint8_t slotCountForCommand_(core::state::DataManagerCommand command) const;
-    bool slotOccupiedForCommand_(core::state::DataManagerCommand command, uint8_t slot) const;
-
     void setFeedback_(const char* message);
 
     core::state::CoreState& state_;

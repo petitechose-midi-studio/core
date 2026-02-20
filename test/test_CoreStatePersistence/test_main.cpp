@@ -228,6 +228,63 @@ void test_data_manager_shortcuts_persist_and_sanitize() {
     std::cout << "[PASS] test_data_manager_shortcuts_persist_and_sanitize\n";
 }
 
+void test_data_manager_command_execution_and_slot_probe() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    state.setMacroValue(0, 0.73f);
+    oc::state::NotificationQueue::instance().flush();
+    state.flush();
+
+    assert(!state.dataManagerSlotOccupied(core::state::DataManagerCommand::MACRO_SAVE_SLOT, 5));
+
+    const auto save = state.executeDataManagerCommand(core::state::DataManagerCommand::MACRO_SAVE_SLOT,
+                                                      5);
+    assert(save.handled);
+    assert(save.success);
+    assert(!save.isLoadOperation);
+
+    assert(state.dataManagerSlotOccupied(core::state::DataManagerCommand::MACRO_SAVE_SLOT, 5));
+
+    state.setMacroValue(0, 0.11f);
+    oc::state::NotificationQueue::instance().flush();
+    state.flush();
+
+    const auto load = state.executeDataManagerCommand(core::state::DataManagerCommand::MACRO_LOAD_SLOT,
+                                                      5);
+    assert(load.handled);
+    assert(load.success);
+    assert(load.isLoadOperation);
+    assert(load.loadStatus == core::persistence::SlotLoadStatus::OK);
+
+    const float restored = state.getMacroValue(0);
+    assert(restored > 0.7299f && restored < 0.7301f);
+
+    const auto emptyLoad = state.executeDataManagerCommand(
+        core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT,
+        31
+    );
+    assert(emptyLoad.handled);
+    assert(!emptyLoad.success);
+    assert(emptyLoad.isLoadOperation);
+    assert(emptyLoad.loadStatus == core::persistence::SlotLoadStatus::EMPTY);
+
+    const auto none = state.executeDataManagerCommand(core::state::DataManagerCommand::NONE, 0);
+    assert(!none.handled);
+    assert(!none.success);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_data_manager_command_execution_and_slot_probe\n";
+}
+
 void test_sequencer_workspace_and_library_roundtrip() {
     CoreStorages storage;
     storage.initAll();
@@ -502,6 +559,7 @@ int main() {
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_snapshots_runtime_values_without_manual_flush();
     test_data_manager_shortcuts_persist_and_sanitize();
+    test_data_manager_command_execution_and_slot_probe();
     test_sequencer_workspace_and_library_roundtrip();
     test_sequencer_load_is_quantized_to_next_step_when_playing();
     test_sequencer_set_load_merge_preserves_existing_steps();

@@ -14,7 +14,6 @@
 #include <config/App.hpp>
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
-#include "context/BootContext.hpp"
 #include "context/StandaloneContext.hpp"
 #include "state/CoreState.hpp"
 
@@ -65,47 +64,34 @@ static void initMux() {
     checkOrHalt(mux->init(), "MUX");
 }
 
+static void initStorageBackend(oc::hal::teensy::SDCardBackend& backend,
+                               const char* label) {
+    const auto result = backend.init();
+    if (!result) {
+        OC_LOG_ERROR("{} storage init failed: {}",
+                     label,
+                     oc::type::errorCodeToString(result.error().code));
+        while (true) {}
+    }
+}
+
 static void initStorage() {
-    auto settingsResult = settingsStorage.init();
-    if (!settingsResult) {
-        OC_LOG_ERROR("Settings storage init failed: {}",
-                     oc::type::errorCodeToString(settingsResult.error().code));
-        while (true) {}
-    }
+    struct StorageInitItem {
+        const char* label;
+        oc::hal::teensy::SDCardBackend* backend;
+    };
 
-    auto workspaceResult = macroWorkspaceStorage.init();
-    if (!workspaceResult) {
-        OC_LOG_ERROR("Macro workspace storage init failed: {}",
-                     oc::type::errorCodeToString(workspaceResult.error().code));
-        while (true) {}
-    }
+    const StorageInitItem items[] = {
+        {"Settings", &settingsStorage},
+        {"Macro workspace", &macroWorkspaceStorage},
+        {"Macro library", &macroLibraryStorage},
+        {"Sequencer workspace", &sequencerWorkspaceStorage},
+        {"Sequencer pattern library", &sequencerPatternLibraryStorage},
+        {"Sequencer set library", &sequencerSetLibraryStorage},
+    };
 
-    auto libraryResult = macroLibraryStorage.init();
-    if (!libraryResult) {
-        OC_LOG_ERROR("Macro library storage init failed: {}",
-                     oc::type::errorCodeToString(libraryResult.error().code));
-        while (true) {}
-    }
-
-    auto sequencerWorkspaceResult = sequencerWorkspaceStorage.init();
-    if (!sequencerWorkspaceResult) {
-        OC_LOG_ERROR("Sequencer workspace storage init failed: {}",
-                     oc::type::errorCodeToString(sequencerWorkspaceResult.error().code));
-        while (true) {}
-    }
-
-    auto sequencerPatternResult = sequencerPatternLibraryStorage.init();
-    if (!sequencerPatternResult) {
-        OC_LOG_ERROR("Sequencer pattern library storage init failed: {}",
-                     oc::type::errorCodeToString(sequencerPatternResult.error().code));
-        while (true) {}
-    }
-
-    auto sequencerSetResult = sequencerSetLibraryStorage.init();
-    if (!sequencerSetResult) {
-        OC_LOG_ERROR("Sequencer set library storage init failed: {}",
-                     oc::type::errorCodeToString(sequencerSetResult.error().code));
-        while (true) {}
+    for (const auto& item : items) {
+        initStorageBackend(*item.backend, item.label);
     }
 
     OC_LOG_INFO("Storages ready settings={}B macroWs={}B macroLib={}B seqWs={}B seqPatternLib={}B seqSetLib={}B",
@@ -132,9 +118,6 @@ static void initApp() {
               .encoders(Hardware::Encoder::ENCODERS)
               .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
               .inputConfig(Config::Input::CONFIG);
-
-    // Skip BootContext for now - debug crash
-    // app->registerContext<core::context::BootContext>(Config::ContextID::BOOT, "Boot");
 
     // Register context with factory that captures CoreState reference
     app->registerContextWithFactory(

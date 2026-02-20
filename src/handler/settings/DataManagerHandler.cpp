@@ -1,7 +1,6 @@
 #include "DataManagerHandler.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstdio>
 
 #include <oc/log/Log.hpp>
@@ -17,21 +16,6 @@ using oc::util::wrapIndex;
 
 namespace {
 
-constexpr std::array<core::state::DataManagerCommand, 3> MACRO_COMMANDS = {
-    core::state::DataManagerCommand::MACRO_SAVE_SLOT,
-    core::state::DataManagerCommand::MACRO_LOAD_SLOT,
-    core::state::DataManagerCommand::MACRO_ERASE_SLOT,
-};
-
-constexpr std::array<core::state::DataManagerCommand, 6> SEQ_COMMANDS = {
-    core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT,
-    core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT,
-    core::state::DataManagerCommand::SEQ_ERASE_PATTERN_SLOT,
-    core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT,
-    core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT,
-    core::state::DataManagerCommand::SEQ_ERASE_SET_SLOT,
-};
-
 const char* slotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
     using core::persistence::SlotLoadStatus;
     switch (status) {
@@ -46,6 +30,101 @@ const char* slotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
         default:
             return "ERROR";
     }
+}
+
+const char* dataManagerActionFailureLabel(core::state::DataManagerCommandAction action) {
+    switch (action) {
+        case core::state::DataManagerCommandAction::SAVE:
+            return "Save failed";
+        case core::state::DataManagerCommandAction::ERASE:
+            return "Erase failed";
+        case core::state::DataManagerCommandAction::LOAD:
+        case core::state::DataManagerCommandAction::NONE:
+        default:
+            return "Command failed";
+    }
+}
+
+const char* dataManagerActionSuccessVerb(core::state::DataManagerCommandAction action) {
+    switch (action) {
+        case core::state::DataManagerCommandAction::SAVE:
+            return "Saved";
+        case core::state::DataManagerCommandAction::LOAD:
+            return "Loaded";
+        case core::state::DataManagerCommandAction::ERASE:
+            return "Erased";
+        case core::state::DataManagerCommandAction::NONE:
+        default:
+            return "Done";
+    }
+}
+
+void formatCommandExecutionFeedback(
+    char* message,
+    size_t messageSize,
+    core::state::DataManagerCommand command,
+    uint8_t slot,
+    core::state::DataManagerSetLoadMode setLoadMode,
+    const core::state::CoreState::DataManagerCommandExecutionResult& result
+) {
+    if (!message || messageSize == 0U) return;
+
+    message[0] = '\0';
+
+    if (!result.handled || command == core::state::DataManagerCommand::NONE) {
+        std::snprintf(message, messageSize, "No command");
+        return;
+    }
+
+    if (result.isLoadOperation) {
+        if (result.loadStatus != core::persistence::SlotLoadStatus::OK) {
+            std::snprintf(message,
+                          messageSize,
+                          "Load %s",
+                          slotLoadStatusLabel(result.loadStatus));
+            return;
+        }
+
+        const char slotTag = core::state::dataManagerCommandSlotTag(command);
+        const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
+
+        if (core::state::dataManagerCommandSupportsSetLoadMode(command)) {
+            const char modeTag =
+                (setLoadMode == core::state::DataManagerSetLoadMode::MERGE) ? 'M' : 'R';
+            std::snprintf(message,
+                          messageSize,
+                          "Loaded %c%02u %c",
+                          safeSlotTag,
+                          slot + 1U,
+                          modeTag);
+            return;
+        }
+
+        std::snprintf(message,
+                      messageSize,
+                      "Loaded %c%02u",
+                      safeSlotTag,
+                      slot + 1U);
+        return;
+    }
+
+    const auto action = core::state::dataManagerCommandAction(command);
+    if (!result.success) {
+        std::snprintf(message,
+                      messageSize,
+                      "%s",
+                      dataManagerActionFailureLabel(action));
+        return;
+    }
+
+    const char slotTag = core::state::dataManagerCommandSlotTag(command);
+    const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
+    std::snprintf(message,
+                  messageSize,
+                  "%s %c%02u",
+                  dataManagerActionSuccessVerb(action),
+                  safeSlotTag,
+                  slot + 1U);
 }
 
 }  // namespace
@@ -196,7 +275,7 @@ void DataManagerHandler::openShortcutAssignmentDialog_() {
 
     dm.dialog.mode.set(core::state::DataManagerDialogMode::ASSIGN_SHORTCUT);
     dm.dialog.editingShortcutRow.set(row);
-    dm.dialog.selectedIndex.set(commandIndexForContext_(context, current));
+    dm.dialog.selectedIndex.set(core::state::dataManagerCommandIndex(context, current));
 
     overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
 }
@@ -214,8 +293,10 @@ void DataManagerHandler::openCommandPaletteDialog_() {
 
 void DataManagerHandler::runShortcut_(bool leftButton) {
     auto& dm = state_.dataManager;
-    const uint8_t row = leftButton ? 0U : 1U;
-    startCommandFlow_(dm.shortcutForRow(row));
+    const auto side = leftButton
+                          ? core::state::DataManagerShortcutSide::LEFT
+                          : core::state::DataManagerShortcutSide::RIGHT;
+    startCommandFlow_(dm.shortcutForSide(side));
 }
 
 void DataManagerHandler::navigateDialog_(float delta) {
@@ -228,9 +309,9 @@ void DataManagerHandler::navigateDialog_(float delta) {
     const auto mode = dialog.mode.get();
     if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT ||
         mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
-        count = static_cast<int>(commandCountForContext_(state_.dataManager.context.get()));
+        count = static_cast<int>(core::state::dataManagerCommandCount(state_.dataManager.context.get()));
     } else if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
-        count = static_cast<int>(slotCountForCommand_(state_.dataManager.pendingCommand.get()));
+        count = static_cast<int>(state_.dataManagerSlotCount(state_.dataManager.pendingCommand.get()));
     } else if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
         count = 2;
     } else if (mode == core::state::DataManagerDialogMode::CONFIRM) {
@@ -253,7 +334,7 @@ void DataManagerHandler::applyDialogSelection_() {
 
     if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
         const auto context = dm.context.get();
-        const auto command = commandAtIndexForContext_(context, dialog.selectedIndex.get());
+        const auto command = core::state::dataManagerCommandAt(context, dialog.selectedIndex.get());
         const uint8_t row = std::min<uint8_t>(dialog.editingShortcutRow.get(), 1U);
         state_.setDataManagerShortcut(context, row == 0U, command);
 
@@ -265,13 +346,13 @@ void DataManagerHandler::applyDialogSelection_() {
 
     if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
         const auto context = dm.context.get();
-        const auto command = commandAtIndexForContext_(context, dialog.selectedIndex.get());
+        const auto command = core::state::dataManagerCommandAt(context, dialog.selectedIndex.get());
         startCommandFlow_(command);
         return;
     }
 
     if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
-        const uint8_t slotCount = slotCountForCommand_(dm.pendingCommand.get());
+        const uint8_t slotCount = state_.dataManagerSlotCount(dm.pendingCommand.get());
         if (slotCount == 0U) {
             setFeedback_("No slots");
             overlays_.hide();
@@ -293,7 +374,7 @@ void DataManagerHandler::applyDialogSelection_() {
         }
 
         if (core::state::dataManagerCommandIsSave(dm.pendingCommand.get()) &&
-            slotOccupiedForCommand_(dm.pendingCommand.get(), dm.pendingSlot.get())) {
+            state_.dataManagerSlotOccupied(dm.pendingCommand.get(), dm.pendingSlot.get())) {
             openConfirmDialog_();
             return;
         }
@@ -355,7 +436,7 @@ void DataManagerHandler::startCommandFlow_(core::state::DataManagerCommand comma
 
 void DataManagerHandler::openSlotPickerForPendingCommand_() {
     auto& dm = state_.dataManager;
-    const uint8_t slotCount = slotCountForCommand_(dm.pendingCommand.get());
+    const uint8_t slotCount = state_.dataManagerSlotCount(dm.pendingCommand.get());
     if (slotCount == 0U) {
         setFeedback_("No slots");
         return;
@@ -395,75 +476,13 @@ void DataManagerHandler::executePendingCommand_() {
     auto& dm = state_.dataManager;
     const auto command = dm.pendingCommand.get();
     const uint8_t slot = dm.pendingSlot.get();
+    const auto setLoadMode = dm.pendingSetLoadMode.get();
 
     char message[32];
     message[0] = '\0';
 
-    using core::persistence::SlotLoadStatus;
-    switch (command) {
-        case core::state::DataManagerCommand::MACRO_SAVE_SLOT: {
-            const bool ok = state_.saveMacroLibrarySlot(slot);
-            std::snprintf(message, sizeof(message), ok ? "Saved M%02u" : "Save failed", slot + 1);
-            break;
-        }
-        case core::state::DataManagerCommand::MACRO_LOAD_SLOT: {
-            const SlotLoadStatus status = state_.loadMacroLibrarySlot(slot);
-            if (status == SlotLoadStatus::OK) {
-                std::snprintf(message, sizeof(message), "Loaded M%02u", slot + 1);
-            } else {
-                std::snprintf(message, sizeof(message), "Load %s", slotLoadStatusLabel(status));
-            }
-            break;
-        }
-        case core::state::DataManagerCommand::MACRO_ERASE_SLOT: {
-            const bool ok = state_.eraseMacroLibrarySlot(slot);
-            std::snprintf(message, sizeof(message), ok ? "Erased M%02u" : "Erase failed", slot + 1);
-            break;
-        }
-        case core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT: {
-            const bool ok = state_.saveSequencerPatternSlot(slot);
-            std::snprintf(message, sizeof(message), ok ? "Saved P%02u" : "Save failed", slot + 1);
-            break;
-        }
-        case core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT: {
-            const SlotLoadStatus status = state_.loadSequencerPatternSlot(slot);
-            if (status == SlotLoadStatus::OK) {
-                std::snprintf(message, sizeof(message), "Loaded P%02u", slot + 1);
-            } else {
-                std::snprintf(message, sizeof(message), "Load %s", slotLoadStatusLabel(status));
-            }
-            break;
-        }
-        case core::state::DataManagerCommand::SEQ_ERASE_PATTERN_SLOT: {
-            const bool ok = state_.eraseSequencerPatternSlot(slot);
-            std::snprintf(message, sizeof(message), ok ? "Erased P%02u" : "Erase failed", slot + 1);
-            break;
-        }
-        case core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT: {
-            const bool ok = state_.saveSequencerSetSlot(slot);
-            std::snprintf(message, sizeof(message), ok ? "Saved S%02u" : "Save failed", slot + 1);
-            break;
-        }
-        case core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT: {
-            const bool merge = dm.pendingSetLoadMode.get() == core::state::DataManagerSetLoadMode::MERGE;
-            const SlotLoadStatus status = state_.loadSequencerSetSlot(slot, merge);
-            if (status == SlotLoadStatus::OK) {
-                std::snprintf(message, sizeof(message), merge ? "Loaded S%02u M" : "Loaded S%02u R", slot + 1);
-            } else {
-                std::snprintf(message, sizeof(message), "Load %s", slotLoadStatusLabel(status));
-            }
-            break;
-        }
-        case core::state::DataManagerCommand::SEQ_ERASE_SET_SLOT: {
-            const bool ok = state_.eraseSequencerSetSlot(slot);
-            std::snprintf(message, sizeof(message), ok ? "Erased S%02u" : "Erase failed", slot + 1);
-            break;
-        }
-        case core::state::DataManagerCommand::NONE:
-        default:
-            std::snprintf(message, sizeof(message), "No command");
-            break;
-    }
+    const auto result = state_.executeDataManagerCommand(command, slot, setLoadMode);
+    formatCommandExecutionFeedback(message, sizeof(message), command, slot, setLoadMode, result);
 
     setFeedback_(message);
 
@@ -479,93 +498,6 @@ core::state::DataManagerContext DataManagerHandler::contextForActiveView_() cons
         return core::state::DataManagerContext::SEQUENCER;
     }
     return core::state::DataManagerContext::MACRO;
-}
-
-std::size_t DataManagerHandler::commandCountForContext_(core::state::DataManagerContext context) const {
-    return (context == core::state::DataManagerContext::MACRO)
-               ? MACRO_COMMANDS.size()
-               : SEQ_COMMANDS.size();
-}
-
-core::state::DataManagerCommand DataManagerHandler::commandAtIndexForContext_(
-    core::state::DataManagerContext context,
-    int index
-) const {
-    if (context == core::state::DataManagerContext::MACRO) {
-        const int bounded = std::clamp(index, 0, static_cast<int>(MACRO_COMMANDS.size()) - 1);
-        return MACRO_COMMANDS[static_cast<std::size_t>(bounded)];
-    }
-
-    const int bounded = std::clamp(index, 0, static_cast<int>(SEQ_COMMANDS.size()) - 1);
-    return SEQ_COMMANDS[static_cast<std::size_t>(bounded)];
-}
-
-int DataManagerHandler::commandIndexForContext_(core::state::DataManagerContext context,
-                                                core::state::DataManagerCommand command) const {
-    if (context == core::state::DataManagerContext::MACRO) {
-        for (std::size_t i = 0; i < MACRO_COMMANDS.size(); ++i) {
-            if (MACRO_COMMANDS[i] == command) {
-                return static_cast<int>(i);
-            }
-        }
-        return 0;
-    }
-
-    for (std::size_t i = 0; i < SEQ_COMMANDS.size(); ++i) {
-        if (SEQ_COMMANDS[i] == command) {
-            return static_cast<int>(i);
-        }
-    }
-    return 0;
-}
-
-uint8_t DataManagerHandler::slotCountForCommand_(core::state::DataManagerCommand command) const {
-    switch (command) {
-        case core::state::DataManagerCommand::MACRO_SAVE_SLOT:
-        case core::state::DataManagerCommand::MACRO_LOAD_SLOT:
-        case core::state::DataManagerCommand::MACRO_ERASE_SLOT:
-            return core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
-
-        case core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT:
-        case core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT:
-        case core::state::DataManagerCommand::SEQ_ERASE_PATTERN_SLOT:
-            return core::persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
-
-        case core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT:
-        case core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT:
-        case core::state::DataManagerCommand::SEQ_ERASE_SET_SLOT:
-            return core::persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
-
-        case core::state::DataManagerCommand::NONE:
-        default:
-            return 0;
-    }
-}
-
-bool DataManagerHandler::slotOccupiedForCommand_(core::state::DataManagerCommand command,
-                                                 uint8_t slot) const {
-    if (command == core::state::DataManagerCommand::MACRO_SAVE_SLOT ||
-        command == core::state::DataManagerCommand::MACRO_ERASE_SLOT) {
-        core::state::macro::MacroPagesState temp;
-        temp.initDefaults();
-        return state_.macroPersistence.loadLibrarySlot(slot, temp) == core::persistence::SlotLoadStatus::OK;
-    }
-
-    if (command == core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT ||
-        command == core::state::DataManagerCommand::SEQ_ERASE_PATTERN_SLOT) {
-        core::state::sequencer::SequencerState temp;
-        temp.reset();
-        return state_.sequencerPersistence.loadPatternSlot(slot, temp) == core::persistence::SlotLoadStatus::OK;
-    }
-
-    if (command == core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT ||
-        command == core::state::DataManagerCommand::SEQ_ERASE_SET_SLOT) {
-        core::state::sequencer::SequencerState temp;
-        temp.reset();
-        return state_.sequencerPersistence.loadSetSlot(slot, temp) == core::persistence::SlotLoadStatus::OK;
-    }
-
-    return false;
 }
 
 void DataManagerHandler::setFeedback_(const char* message) {

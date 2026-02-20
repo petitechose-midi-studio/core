@@ -1147,10 +1147,8 @@ void StandaloneContext::renderDataManager() {
     const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
     const char* title = macroContext ? "MACRO TOOLS" : "SEQUENCER TOOLS";
 
-    const core::state::DataManagerCommand leftCommand =
-        macroContext ? dm.macroShortcutLeft.get() : dm.seqShortcutLeft.get();
-    const core::state::DataManagerCommand rightCommand =
-        macroContext ? dm.macroShortcutRight.get() : dm.seqShortcutRight.get();
+    const core::state::DataManagerCommand leftCommand = dm.shortcutForRow(0U);
+    const core::state::DataManagerCommand rightCommand = dm.shortcutForRow(1U);
 
     const ms::ui::KeyValueRow rows[] = {
         {.key = "Bottom Left", .value = core::state::dataManagerCommandLabel(leftCommand)},
@@ -1214,34 +1212,20 @@ void StandaloneContext::renderDataManagerDialog() {
         return;
     }
 
-    static const char* const MACRO_COMMAND_ITEMS[] = {
-        "Save Macro",
-        "Load Macro",
-        "Erase Macro",
-    };
-
-    static const char* const SEQ_COMMAND_ITEMS[] = {
-        "Save Pattern",
-        "Load Pattern",
-        "Erase Pattern",
-        "Save Set",
-        "Load Set",
-        "Erase Set",
-    };
-
-    static bool slotLabelsInit = false;
     static char slotLabels[32][8]{};
-    static const char* slotItems[32]{};
-    if (!slotLabelsInit) {
-        for (int i = 0; i < 32; ++i) {
-            std::snprintf(slotLabels[i], sizeof(slotLabels[i]), "S%02d", i + 1);
-            slotItems[i] = slotLabels[i];
-        }
-        slotLabelsInit = true;
-    }
+    const char* slotItems[32]{};
 
     static const char* const SET_MODE_ITEMS[] = {"REPLACE", "MERGE"};
     static const char* const CONFIRM_ITEMS[] = {"CANCEL", "CONFIRM"};
+
+    const auto context = dm.context.get();
+    const int commandCount = static_cast<int>(core::state::dataManagerCommandCount(context));
+    const char* commandItems[core::state::DATA_MANAGER_MAX_COMMANDS_PER_CONTEXT]{};
+    for (int i = 0; i < commandCount; ++i) {
+        commandItems[i] = core::state::dataManagerCommandLabel(
+            core::state::dataManagerCommandAt(context, i)
+        );
+    }
 
     const auto mode = dialog.mode.get();
     const char* title = "COMMAND";
@@ -1251,43 +1235,35 @@ void StandaloneContext::renderDataManagerDialog() {
     int selected = 0;
 
     if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
-        const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
         title = (dialog.editingShortcutRow.get() == 0) ? "MAP LEFT" : "MAP RIGHT";
         meta = "SELECT COMMAND";
-        items = macroContext ? MACRO_COMMAND_ITEMS : SEQ_COMMAND_ITEMS;
-        itemCount = macroContext ? 3 : 6;
+        items = commandItems;
+        itemCount = commandCount;
         selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
     } else if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
-        const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
         title = "COMMANDS";
         meta = "RUN COMMAND";
-        items = macroContext ? MACRO_COMMAND_ITEMS : SEQ_COMMAND_ITEMS;
-        itemCount = macroContext ? 3 : 6;
+        items = commandItems;
+        itemCount = commandCount;
         selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
     } else if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
         title = core::state::dataManagerCommandLabel(dm.pendingCommand.get());
         meta = "SELECT SLOT";
-        uint8_t slotCount = 0;
-        const auto cmd = dm.pendingCommand.get();
-        if (cmd == core::state::DataManagerCommand::MACRO_SAVE_SLOT ||
-            cmd == core::state::DataManagerCommand::MACRO_LOAD_SLOT ||
-            cmd == core::state::DataManagerCommand::MACRO_ERASE_SLOT) {
-            slotCount = core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
-        } else if (cmd == core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT ||
-                   cmd == core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT ||
-                   cmd == core::state::DataManagerCommand::SEQ_ERASE_PATTERN_SLOT) {
-            slotCount = core::persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
-        } else if (cmd == core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT ||
-                   cmd == core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT ||
-                   cmd == core::state::DataManagerCommand::SEQ_ERASE_SET_SLOT) {
-            slotCount = core::persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
-        }
+        const uint8_t slotCount = core_state_.dataManagerSlotCount(dm.pendingCommand.get());
 
         itemCount = static_cast<int>(slotCount);
         if (itemCount <= 0) {
             data_manager_dialog_overlay_->render({.visible = false});
             return;
         }
+
+        const char slotTag = core::state::dataManagerCommandSlotTag(dm.pendingCommand.get());
+        const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
+        for (int i = 0; i < itemCount; ++i) {
+            std::snprintf(slotLabels[i], sizeof(slotLabels[i]), "%c%02d", safeSlotTag, i + 1);
+            slotItems[i] = slotLabels[i];
+        }
+
         items = slotItems;
         selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
     } else if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
@@ -1299,12 +1275,16 @@ void StandaloneContext::renderDataManagerDialog() {
     } else if (mode == core::state::DataManagerDialogMode::CONFIRM) {
         title = "CONFIRM";
         const auto cmd = dm.pendingCommand.get();
+        const char slotTag = core::state::dataManagerCommandSlotTag(cmd);
+        const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
         static char confirmMeta[24];
         if (core::state::dataManagerCommandIsErase(cmd)) {
-            std::snprintf(confirmMeta, sizeof(confirmMeta), "ERASE S%02u ?",
+            std::snprintf(confirmMeta, sizeof(confirmMeta), "ERASE %c%02u ?",
+                          safeSlotTag,
                           static_cast<unsigned>(dm.pendingSlot.get() + 1U));
         } else {
-            std::snprintf(confirmMeta, sizeof(confirmMeta), "OVERWRITE S%02u ?",
+            std::snprintf(confirmMeta, sizeof(confirmMeta), "OVERWRITE %c%02u ?",
+                          safeSlotTag,
                           static_cast<unsigned>(dm.pendingSlot.get() + 1U));
         }
         meta = confirmMeta;
@@ -1358,13 +1338,8 @@ void StandaloneContext::renderDataManagerSoftkeyBar() {
         return;
     }
 
-    const bool macroContext = core_state_.dataManager.context.get() == core::state::DataManagerContext::MACRO;
-    const auto left = macroContext
-                          ? core_state_.dataManager.macroShortcutLeft.get()
-                          : core_state_.dataManager.seqShortcutLeft.get();
-    const auto right = macroContext
-                           ? core_state_.dataManager.macroShortcutRight.get()
-                           : core_state_.dataManager.seqShortcutRight.get();
+    const auto left = core_state_.dataManager.shortcutForRow(0U);
+    const auto right = core_state_.dataManager.shortcutForRow(1U);
 
     char leftLabel[24];
     std::snprintf(leftLabel, sizeof(leftLabel), "L:%s", core::state::dataManagerCommandLabel(left));

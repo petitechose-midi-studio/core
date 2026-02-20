@@ -16,7 +16,6 @@ public:
 
     void show();
     void hide();
-    bool isVisible() const;
 
 private:
     lv_obj_t* container_ = nullptr;

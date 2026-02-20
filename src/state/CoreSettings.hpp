@@ -62,13 +62,13 @@ namespace StorageLayout {
                   "Header fields must stay before page payload region");
 
     constexpr uint8_t DEFAULT_SHORTCUT_MACRO_LEFT =
-        static_cast<uint8_t>(DataManagerCommand::MACRO_SAVE_SLOT);
+        static_cast<uint8_t>(DEFAULT_MACRO_SHORTCUT_LEFT);
     constexpr uint8_t DEFAULT_SHORTCUT_MACRO_RIGHT =
-        static_cast<uint8_t>(DataManagerCommand::MACRO_LOAD_SLOT);
+        static_cast<uint8_t>(DEFAULT_MACRO_SHORTCUT_RIGHT);
     constexpr uint8_t DEFAULT_SHORTCUT_SEQ_LEFT =
-        static_cast<uint8_t>(DataManagerCommand::SEQ_SAVE_PATTERN_SLOT);
+        static_cast<uint8_t>(DEFAULT_SEQ_SHORTCUT_LEFT);
     constexpr uint8_t DEFAULT_SHORTCUT_SEQ_RIGHT =
-        static_cast<uint8_t>(DataManagerCommand::SEQ_LOAD_PATTERN_SLOT);
+        static_cast<uint8_t>(DEFAULT_SEQ_SHORTCUT_RIGHT);
 
     // Note: Named MACRO_PAGE_SIZE to avoid conflict with system PAGE_SIZE macro (Emscripten)
     constexpr size_t MACRO_PAGE_SIZE = sizeof(macro::MacroPageData);  // 64 bytes
@@ -247,27 +247,19 @@ public:
     }
 
     void saveDataManagerMacroShortcutLeft(uint8_t command) {
-        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT,
-                       reinterpret_cast<const uint8_t*>(&command),
-                       1);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, command);
     }
 
     void saveDataManagerMacroShortcutRight(uint8_t command) {
-        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT,
-                       reinterpret_cast<const uint8_t*>(&command),
-                       1);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, command);
     }
 
     void saveDataManagerSeqShortcutLeft(uint8_t command) {
-        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT,
-                       reinterpret_cast<const uint8_t*>(&command),
-                       1);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, command);
     }
 
     void saveDataManagerSeqShortcutRight(uint8_t command) {
-        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT,
-                       reinterpret_cast<const uint8_t*>(&command),
-                       1);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, command);
     }
 
     void loadDataManagerShortcuts(uint8_t& macroLeft,
@@ -354,24 +346,22 @@ public:
     }
 
 private:
+    void saveDataManagerShortcut_(uint32_t address, uint8_t command) {
+        backend_.write(address,
+                       reinterpret_cast<const uint8_t*>(&command),
+                       1);
+    }
+
     void writeDefaultShortcuts_() {
         const uint8_t macroLeft = StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT;
         const uint8_t macroRight = StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT;
         const uint8_t seqLeft = StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT;
         const uint8_t seqRight = StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT;
 
-        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT,
-                       reinterpret_cast<const uint8_t*>(&macroLeft),
-                       1);
-        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT,
-                       reinterpret_cast<const uint8_t*>(&macroRight),
-                       1);
-        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT,
-                       reinterpret_cast<const uint8_t*>(&seqLeft),
-                       1);
-        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT,
-                       reinterpret_cast<const uint8_t*>(&seqRight),
-                       1);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, macroLeft);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, macroRight);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, seqLeft);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, seqRight);
     }
 
     void loadPages_(macro::MacroPagesState& pages) {

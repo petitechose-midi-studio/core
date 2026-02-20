@@ -369,21 +369,130 @@ struct CoreState {
         return sequencerPersistence.eraseSetSlot(slotIndex);
     }
 
-    DataManagerCommand dataManagerShortcut(DataManagerContext context,
-                                           bool leftButton) const {
-        if (context == DataManagerContext::MACRO) {
-            return leftButton ? dataManager.macroShortcutLeft.get()
-                              : dataManager.macroShortcutRight.get();
+    uint8_t dataManagerSlotCount(DataManagerCommand command) const {
+        switch (dataManagerSlotDomain(command)) {
+            case DataManagerSlotDomain::MACRO_LIBRARY:
+                return persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
+            case DataManagerSlotDomain::SEQ_PATTERN_LIBRARY:
+                return persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
+            case DataManagerSlotDomain::SEQ_SET_LIBRARY:
+                return persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
+            case DataManagerSlotDomain::NONE:
+            default:
+                return 0;
         }
+    }
 
-        return leftButton ? dataManager.seqShortcutLeft.get()
-                          : dataManager.seqShortcutRight.get();
+    struct DataManagerCommandExecutionResult {
+        bool handled = false;
+        bool success = false;
+        bool isLoadOperation = false;
+        persistence::SlotLoadStatus loadStatus = persistence::SlotLoadStatus::OK;
+    };
+
+    bool dataManagerSlotOccupied(DataManagerCommand command, uint8_t slotIndex) {
+        using persistence::SlotLoadStatus;
+
+        switch (dataManagerSlotDomain(command)) {
+            case DataManagerSlotDomain::MACRO_LIBRARY: {
+                if (!macro_persistence_ready_) return false;
+
+                macro::MacroPagesState probe;
+                probe.initDefaults();
+                return macroPersistence.loadLibrarySlot(slotIndex, probe) == SlotLoadStatus::OK;
+            }
+
+            case DataManagerSlotDomain::SEQ_PATTERN_LIBRARY: {
+                if (!sequencer_persistence_ready_) return false;
+
+                sequencer::SequencerState probe;
+                probe.reset();
+                return sequencerPersistence.loadPatternSlot(slotIndex, probe) == SlotLoadStatus::OK;
+            }
+
+            case DataManagerSlotDomain::SEQ_SET_LIBRARY: {
+                if (!sequencer_persistence_ready_) return false;
+
+                sequencer::SequencerState probe;
+                probe.reset();
+                return sequencerPersistence.loadSetSlot(slotIndex, probe) == SlotLoadStatus::OK;
+            }
+
+            case DataManagerSlotDomain::NONE:
+            default:
+                return false;
+        }
+    }
+
+    DataManagerCommandExecutionResult executeDataManagerCommand(
+        DataManagerCommand command,
+        uint8_t slotIndex,
+        DataManagerSetLoadMode setLoadMode = DataManagerSetLoadMode::REPLACE
+    ) {
+        DataManagerCommandExecutionResult result;
+        result.handled = true;
+
+        switch (command) {
+            case DataManagerCommand::MACRO_SAVE_SLOT:
+                result.success = saveMacroLibrarySlot(slotIndex);
+                return result;
+
+            case DataManagerCommand::MACRO_LOAD_SLOT:
+                result.isLoadOperation = true;
+                result.loadStatus = loadMacroLibrarySlot(slotIndex);
+                result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
+                return result;
+
+            case DataManagerCommand::MACRO_ERASE_SLOT:
+                result.success = eraseMacroLibrarySlot(slotIndex);
+                return result;
+
+            case DataManagerCommand::SEQ_SAVE_PATTERN_SLOT:
+                result.success = saveSequencerPatternSlot(slotIndex);
+                return result;
+
+            case DataManagerCommand::SEQ_LOAD_PATTERN_SLOT:
+                result.isLoadOperation = true;
+                result.loadStatus = loadSequencerPatternSlot(slotIndex);
+                result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
+                return result;
+
+            case DataManagerCommand::SEQ_ERASE_PATTERN_SLOT:
+                result.success = eraseSequencerPatternSlot(slotIndex);
+                return result;
+
+            case DataManagerCommand::SEQ_SAVE_SET_SLOT:
+                result.success = saveSequencerSetSlot(slotIndex);
+                return result;
+
+            case DataManagerCommand::SEQ_LOAD_SET_SLOT: {
+                const bool merge = (setLoadMode == DataManagerSetLoadMode::MERGE);
+                result.isLoadOperation = true;
+                result.loadStatus = loadSequencerSetSlot(slotIndex, merge);
+                result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
+                return result;
+            }
+
+            case DataManagerCommand::SEQ_ERASE_SET_SLOT:
+                result.success = eraseSequencerSetSlot(slotIndex);
+                return result;
+
+            case DataManagerCommand::NONE:
+            default:
+                result.handled = false;
+                result.success = false;
+                result.isLoadOperation = false;
+                result.loadStatus = persistence::SlotLoadStatus::OUT_OF_RANGE;
+                return result;
+        }
     }
 
     void setDataManagerShortcut(DataManagerContext context,
                                 bool leftButton,
                                 DataManagerCommand command) {
-        const DataManagerCommand fallback = defaultDataManagerShortcut_(context, leftButton);
+        const DataManagerShortcutSide side =
+            leftButton ? DataManagerShortcutSide::LEFT : DataManagerShortcutSide::RIGHT;
+        const DataManagerCommand fallback = defaultDataManagerShortcut(context, side);
         const DataManagerCommand sanitized = sanitizeDataManagerShortcut(context, command, fallback);
 
         if (context == DataManagerContext::MACRO) {
@@ -504,14 +613,6 @@ struct CoreState {
     }
 
 private:
-    static DataManagerCommand defaultDataManagerShortcut_(DataManagerContext context,
-                                                          bool leftButton) {
-        if (context == DataManagerContext::MACRO) {
-            return leftButton ? DEFAULT_MACRO_SHORTCUT_LEFT : DEFAULT_MACRO_SHORTCUT_RIGHT;
-        }
-        return leftButton ? DEFAULT_SEQ_SHORTCUT_LEFT : DEFAULT_SEQ_SHORTCUT_RIGHT;
-    }
-
     void loadDataManagerShortcutsFromSettings_() {
         uint8_t macroLeft = 0;
         uint8_t macroRight = 0;
@@ -522,22 +623,26 @@ private:
         dataManager.macroShortcutLeft.set(
             sanitizeDataManagerShortcut(DataManagerContext::MACRO,
                                         static_cast<DataManagerCommand>(macroLeft),
-                                        DEFAULT_MACRO_SHORTCUT_LEFT)
+                                        defaultDataManagerShortcut(DataManagerContext::MACRO,
+                                                                   DataManagerShortcutSide::LEFT))
         );
         dataManager.macroShortcutRight.set(
             sanitizeDataManagerShortcut(DataManagerContext::MACRO,
                                         static_cast<DataManagerCommand>(macroRight),
-                                        DEFAULT_MACRO_SHORTCUT_RIGHT)
+                                        defaultDataManagerShortcut(DataManagerContext::MACRO,
+                                                                   DataManagerShortcutSide::RIGHT))
         );
         dataManager.seqShortcutLeft.set(
             sanitizeDataManagerShortcut(DataManagerContext::SEQUENCER,
                                         static_cast<DataManagerCommand>(seqLeft),
-                                        DEFAULT_SEQ_SHORTCUT_LEFT)
+                                        defaultDataManagerShortcut(DataManagerContext::SEQUENCER,
+                                                                   DataManagerShortcutSide::LEFT))
         );
         dataManager.seqShortcutRight.set(
             sanitizeDataManagerShortcut(DataManagerContext::SEQUENCER,
                                         static_cast<DataManagerCommand>(seqRight),
-                                        DEFAULT_SEQ_SHORTCUT_RIGHT)
+                                        defaultDataManagerShortcut(DataManagerContext::SEQUENCER,
+                                                                   DataManagerShortcutSide::RIGHT))
         );
     }
 
