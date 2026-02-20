@@ -16,6 +16,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -294,6 +295,16 @@ struct CoreState {
     persistence::SlotLoadStatus loadSequencerPatternSlot(uint8_t slotIndex) {
         if (!sequencer_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
+        if (statusBar.playing.get()) {
+            sequencer::SequencerState staged;
+            const persistence::SlotLoadStatus status =
+                sequencerPersistence.loadPatternSlot(slotIndex, staged);
+            if (status == persistence::SlotLoadStatus::OK) {
+                queueSequencerApply_(staged);
+            }
+            return status;
+        }
+
         const persistence::SlotLoadStatus status = sequencerPersistence.loadPatternSlot(slotIndex, sequencer);
         if (status == persistence::SlotLoadStatus::OK) {
             persistSequencerWorkspace_();
@@ -314,6 +325,16 @@ struct CoreState {
 
     persistence::SlotLoadStatus loadSequencerSetSlot(uint8_t slotIndex) {
         if (!sequencer_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+
+        if (statusBar.playing.get()) {
+            sequencer::SequencerState staged;
+            const persistence::SlotLoadStatus status =
+                sequencerPersistence.loadSetSlot(slotIndex, staged);
+            if (status == persistence::SlotLoadStatus::OK) {
+                queueSequencerApply_(staged);
+            }
+            return status;
+        }
 
         const persistence::SlotLoadStatus status = sequencerPersistence.loadSetSlot(slotIndex, sequencer);
         if (status == persistence::SlotLoadStatus::OK) {
@@ -377,6 +398,8 @@ struct CoreState {
      * Saves dirty values incrementally after debounce timeout.
      */
     void update() {
+        applyPendingSequencerApplyIfReady_();
+
         if (macro_auto_persist_) {
             macro_auto_persist_->update();
         }
@@ -398,6 +421,7 @@ struct CoreState {
         macroEdit.reset();
         viewSelector.reset();
         sequencer.reset();
+        pending_sequencer_apply_.valid = false;
         persistSequencerWorkspace_();
         midiSync.reset();
         globalSettings.reset();
@@ -419,6 +443,105 @@ struct CoreState {
     }
 
 private:
+    struct SequencerPatternSnapshot {
+        uint8_t length = oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
+        uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
+        uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
+        uint64_t enabledMask = 0;
+        std::array<uint8_t, sequencer::SequencerState::MAX_STEPS> note{};
+        std::array<uint8_t, sequencer::SequencerState::MAX_STEPS> velocity{};
+        std::array<uint16_t, sequencer::SequencerState::MAX_STEPS> gate{};
+        std::array<int8_t, sequencer::SequencerState::MAX_STEPS> nudge{};
+    };
+
+    struct PendingSequencerApply {
+        bool valid = false;
+        int16_t anchorPlayhead = -1;
+        SequencerPatternSnapshot snapshot{};
+    };
+
+    static uint8_t sanitizeSequencerLength_(uint8_t length) {
+        if (length == 0 || length > sequencer::SequencerState::MAX_STEPS) {
+            return oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
+        }
+        return length;
+    }
+
+    static uint8_t sanitizeStepsPerBeat_(uint8_t spb) {
+        if (spb == 0) {
+            return oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
+        }
+        return spb;
+    }
+
+    static uint8_t sanitizeMidiChannel_(uint8_t channel) {
+        return (channel > 15U)
+                   ? oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED
+                   : channel;
+    }
+
+    static uint8_t sanitizeMidi7_(uint8_t value) {
+        return (value > 127U) ? 127U : value;
+    }
+
+    static void captureSequencerSnapshot_(const sequencer::SequencerState& source,
+                                          SequencerPatternSnapshot& out) {
+        out.length = sanitizeSequencerLength_(source.length.get());
+        out.stepsPerBeat = sanitizeStepsPerBeat_(source.stepsPerBeat.get());
+        out.midiChannel = sanitizeMidiChannel_(source.midiChannel.get());
+        out.enabledMask = source.enabledMask.get();
+
+        for (uint8_t i = 0; i < sequencer::SequencerState::MAX_STEPS; ++i) {
+            out.note[i] = sanitizeMidi7_(source.note[i]);
+            out.velocity[i] = sanitizeMidi7_(source.velocity[i]);
+            out.gate[i] = sequencer::SequencerState::clampGatePercent(source.gate[i]);
+            out.nudge[i] = source.nudge[i];
+        }
+    }
+
+    void applySequencerSnapshot_(const SequencerPatternSnapshot& snapshot) {
+        const uint8_t length = sanitizeSequencerLength_(snapshot.length);
+        const uint8_t focused_before = sequencer.focusedStep.get();
+
+        sequencer.length.set(length);
+        sequencer.stepsPerBeat.set(sanitizeStepsPerBeat_(snapshot.stepsPerBeat));
+        sequencer.midiChannel.set(sanitizeMidiChannel_(snapshot.midiChannel));
+        sequencer.enabledMask.set(snapshot.enabledMask);
+
+        for (uint8_t i = 0; i < sequencer::SequencerState::MAX_STEPS; ++i) {
+            sequencer.note[i] = sanitizeMidi7_(snapshot.note[i]);
+            sequencer.velocity[i] = sanitizeMidi7_(snapshot.velocity[i]);
+            sequencer.gate[i] = sequencer::SequencerState::clampGatePercent(snapshot.gate[i]);
+            sequencer.nudge[i] = snapshot.nudge[i];
+        }
+
+        const uint8_t focused =
+            (focused_before >= length) ? static_cast<uint8_t>(length - 1U) : focused_before;
+        sequencer.focusedStep.set(focused);
+        sequencer.page.set(sequencer.pageForStep(focused));
+        sequencer.bumpStepDataRevision();
+    }
+
+    void queueSequencerApply_(const sequencer::SequencerState& staged) {
+        captureSequencerSnapshot_(staged, pending_sequencer_apply_.snapshot);
+        pending_sequencer_apply_.anchorPlayhead = sequencer.playheadStep.get();
+        pending_sequencer_apply_.valid = true;
+    }
+
+    void applyPendingSequencerApplyIfReady_() {
+        if (!pending_sequencer_apply_.valid) return;
+
+        if (statusBar.playing.get()) {
+            const int16_t playhead = sequencer.playheadStep.get();
+            if (playhead < 0) return;
+            if (playhead == pending_sequencer_apply_.anchorPlayhead) return;
+        }
+
+        applySequencerSnapshot_(pending_sequencer_apply_.snapshot);
+        pending_sequencer_apply_.valid = false;
+        persistSequencerWorkspace_();
+    }
+
     void persistMacroWorkspace_() {
         if (!macro_persistence_ready_) return;
         macroPersistence.saveWorkspace(pages);
@@ -431,6 +554,7 @@ private:
 
     bool macro_persistence_ready_ = false;
     bool sequencer_persistence_ready_ = false;
+    PendingSequencerApply pending_sequencer_apply_{};
 
     /// Auto-persistence for macro values (watches signals, saves on debounce)
     std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> macro_auto_persist_;

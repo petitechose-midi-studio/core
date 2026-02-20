@@ -231,6 +231,82 @@ void test_sequencer_workspace_and_library_roundtrip() {
     std::cout << "[PASS] test_sequencer_workspace_and_library_roundtrip\n";
 }
 
+void test_sequencer_load_is_quantized_to_next_step_when_playing() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    // Pattern A (will be saved and reloaded)
+    state.sequencer.length.set(8);
+    state.sequencer.stepsPerBeat.set(2);
+    state.sequencer.midiChannel.set(1);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(0, 61, 101, 80);
+    state.sequencer.toggle(0);
+    oc::state::NotificationQueue::instance().flush();
+    state.flush();
+    assert(state.saveSequencerPatternSlot(1));
+
+    // Pattern B (current live state before queued load)
+    state.sequencer.length.set(16);
+    state.sequencer.stepsPerBeat.set(4);
+    state.sequencer.midiChannel.set(6);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(0, 40, 55, 30);
+    state.sequencer.toggle(0);
+
+    state.statusBar.playing.set(true);
+    state.sequencer.playheadStep.set(5);
+
+    const auto queuedStatus = state.loadSequencerPatternSlot(1);
+    assert(queuedStatus == core::persistence::SlotLoadStatus::OK);
+
+    // Load is deferred: no immediate replacement while still on same step.
+    assert(state.sequencer.length.get() == 16);
+    assert(state.sequencer.note[0] == 40);
+
+    state.update();
+    assert(state.sequencer.length.get() == 16);
+    assert(state.sequencer.note[0] == 40);
+
+    // Next step reached -> queued apply must happen.
+    state.sequencer.playheadStep.set(6);
+    state.update();
+    assert(state.sequencer.length.get() == 8);
+    assert(state.sequencer.stepsPerBeat.get() == 2);
+    assert(state.sequencer.midiChannel.get() == 1);
+    assert(state.sequencer.note[0] == 61);
+    assert(state.sequencer.velocity[0] == 101);
+    assert(state.sequencer.gate[0] == 80);
+
+    // Same behavior for set library loads.
+    assert(state.saveSequencerSetSlot(2));
+
+    state.sequencer.length.set(12);
+    state.sequencer.setStepDataAt(0, 77, 77, 77);
+    state.sequencer.playheadStep.set(9);
+
+    const auto queuedSetStatus = state.loadSequencerSetSlot(2);
+    assert(queuedSetStatus == core::persistence::SlotLoadStatus::OK);
+    assert(state.sequencer.length.get() == 12);
+    assert(state.sequencer.note[0] == 77);
+
+    state.sequencer.playheadStep.set(10);
+    state.update();
+    assert(state.sequencer.length.get() == 8);
+    assert(state.sequencer.note[0] == 61);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_load_is_quantized_to_next_step_when_playing\n";
+}
+
 }  // namespace
 
 int main() {
@@ -241,6 +317,7 @@ int main() {
     test_workspace_survives_legacy_corruption();
     test_macro_library_roundtrip_and_erase();
     test_sequencer_workspace_and_library_roundtrip();
+    test_sequencer_load_is_quantized_to_next_step_when_playing();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

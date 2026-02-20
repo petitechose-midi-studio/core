@@ -21,8 +21,8 @@ Implement SD persistence with deterministic runtime behavior and testable increm
 | 1 | Versioned binary storage foundation (format + CRC + slots) | DONE | Implemented in `src/persistence/PersistenceSlotFileStore.hpp` with tests |
 | 2 | Macro domain: workspace + library slots + integration in `CoreState` | DONE | Workspace auto-save/load + library APIs wired in state |
 | 3 | Sequencer domain: workspace + pattern/set libraries | DONE | Workspace + pattern/set slots integrated and tested |
-| 4 | Playback-safe apply queue (`next step`) | IN_PROGRESS | No timeline jump behavior change |
-| 5 | Data Manager UI flow (`NAV` long press) + Replace/Merge prompt | TODO | Replace default highlighted |
+| 4 | Playback-safe apply queue (`next step`) | DONE | Pattern/Set loads are staged and applied on next playhead step while playing |
+| 5 | Data Manager UI flow (`NAV` long press) + Replace/Merge prompt | IN_PROGRESS | Replace default highlighted |
 | 6 | Migration/fallback hardening + regression tests + perf validation | TODO | Record final deviations |
 
 ## Test Strategy
@@ -39,6 +39,8 @@ Each iteration must add/adjust tests before finalizing code changes.
 | 3 | Sequencer persistence workspace/pattern/set behavior | `g++ -std=c++17 test/test_SequencerPersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_SequencerPersistence.exe && .cache/test_SequencerPersistence.exe` | PASS |
 | 3 | CoreState integration for sequencer persistence | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
 | 3 | Firmware compile check after sequencer integration | `pio run -e dev` | PASS |
+| 4 | Quantized next-step apply during playback | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
+| 4 | Firmware compile check after quantized apply | `pio run -e dev` | PASS |
 
 Notes:
 
@@ -65,12 +67,14 @@ Notes:
 | 2026-02-20 | Sequencer persistence uses dedicated workspace/pattern/set backends and `CoreState` autosave watchers | Keeps domains isolated and captures sequencer edits with debounce |
 | 2026-02-20 | Sequencer pattern library capacity starts at 32 slots and set library at 16 slots | Practical initial footprint while keeping UI/library scalable |
 | 2026-02-20 | Sequencer set payload v1 is autonomous but currently mono-track (`trackCount=1`) | Preserves autonomous contract now, leaves multi-track extension to a future payload version |
+| 2026-02-20 | Sequencer Pattern/Set loads while playing are queued and applied when playhead advances | Avoids mid-step mutations and transport discontinuities |
+| 2026-02-20 | Queued sequencer load applies immediately when transport is stopped | Keeps user intent deterministic outside playback |
 
 ## Deviations / Gaps Log
 
 - Host regression command for `test_CoreSettings` requires linking `NotificationQueue.cpp` explicitly in this repo setup.
 - `CoreSettings` still contains legacy macro fields in its schema; they are currently migration/fallback data rather than primary runtime persistence.
-- Sequencer `loadSet` currently applies immediate replace semantics; playback-quantized apply and merge mode are handled in later iterations.
+- Sequencer `loadSet` merge behavior is still pending (current behavior is replace semantics, quantized when playing).
 
 ## Progress Journal
 
@@ -88,6 +92,9 @@ Notes:
 - 2026-02-20 / Checkpoint 12: added `SequencerPersistence` service (`workspace`, `pattern library`, `set library`) with slot-store backing.
 - 2026-02-20 / Checkpoint 13: integrated sequencer persistence into `CoreState` with debounced autosave watchers and public slot APIs.
 - 2026-02-20 / Checkpoint 14: added/extended tests (`test_SequencerPersistence`, `test_CoreStatePersistence`) and validated firmware build.
+- 2026-02-20 / Checkpoint 15: implemented playback-safe queued apply for sequencer Pattern/Set loads (`next step` quantization).
+- 2026-02-20 / Checkpoint 16: extended `test_CoreStatePersistence` with explicit quantized-apply coverage.
+- 2026-02-20 / Checkpoint 17: firmware compile check passed (`pio run -e dev`) after quantized apply integration.
 
 ## Handover Notes
 
