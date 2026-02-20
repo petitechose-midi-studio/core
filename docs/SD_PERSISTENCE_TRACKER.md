@@ -127,9 +127,11 @@ Notes:
 - 2026-02-20 / Checkpoint 29: re-validated host integration (`test_CoreStatePersistence`) and firmware build after added fallback regressions.
 - 2026-02-20 / Checkpoint 30: fixed Data Manager Set load selector confirmation flow to execute load (no prompt reopen loop).
 - 2026-02-20 / Checkpoint 31: re-validated firmware build + host integration tests after Data Manager selector flow fix.
+- 2026-02-20 / Checkpoint 32: added hardware validation checklist document (`docs/SD_PERSISTENCE_HARDWARE_VALIDATION.md`) for Teensy/SD manual sign-off.
 
 ## Handover Notes
 
 - This file is the source of truth for implementation state.
 - Any scope deviation, behavior adjustment, or technical compromise must be logged here before commit.
 - For every commit: update iteration status, tests status, and decision/deviation tables.
+- Hardware execution checklist: `docs/SD_PERSISTENCE_HARDWARE_VALIDATION.md`.
