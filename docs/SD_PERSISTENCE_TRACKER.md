@@ -34,8 +34,8 @@ Each iteration must add/adjust tests before finalizing code changes.
 | 1 | Persistence format/CRC/slot behavior | `g++ -std=c++17 test/test_PersistenceSlotFileStore/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_PersistenceSlotFileStore.exe && .cache/test_PersistenceSlotFileStore.exe` | PASS |
 | 1 | Existing CoreSettings regression | `g++ -std=c++17 test/test_CoreSettings/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -o .cache/test_CoreSettings.exe && .cache/test_CoreSettings.exe` | PASS |
 | 2 | Macro persistence workspace/library behavior | `g++ -std=c++17 test/test_MacroPersistence/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_MacroPersistence.exe && .cache/test_MacroPersistence.exe` | PASS |
-| 2 | Storage slicing adapter behavior | `g++ -std=c++17 test/test_StorageSlice/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_StorageSlice.exe && .cache/test_StorageSlice.exe` | PASS |
 | 2 | CoreState integration for macro persistence | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
+| 2 | Firmware compile check after multi-backend migration | `pio run -e dev` | PASS |
 
 Notes:
 
@@ -57,11 +57,13 @@ Notes:
 | 2026-02-20 | Macro workspace persistence uses dual-slot journal (2 slots) | Keeps last valid snapshot available if latest write is corrupted |
 | 2026-02-20 | Macro library capacity starts at 16 slots | Practical initial UX target with bounded storage footprint |
 | 2026-02-20 | Macro persistence is integrated in `CoreState` and updated on value/page/config writes | Keeps runtime behavior compatible while enabling new save/load APIs |
+| 2026-02-20 | Macro persistence moved from slice-based layout to dedicated storage backends/files | Aligns with target domain isolation and removes temporary address partitioning |
+| 2026-02-20 | Runtime macro edits no longer mirror writes into `CoreSettings` on normal path | Reduces duplicate SD writes while keeping migration source readable |
 
 ## Deviations / Gaps Log
 
 - Host regression command for `test_CoreSettings` requires linking `NotificationQueue.cpp` explicitly in this repo setup.
-- Current macro domain isolation uses `StorageSlice` regions on the same physical backend file; migration to per-domain files is still pending.
+- `CoreSettings` still contains legacy macro fields in its schema; they are currently migration/fallback data rather than primary runtime persistence.
 
 ## Progress Journal
 
@@ -74,6 +76,8 @@ Notes:
 - 2026-02-20 / Checkpoint 7: added `StorageSlice` adapter and test coverage for bounded offset mapping.
 - 2026-02-20 / Checkpoint 8: integrated macro persistence service into `CoreState` (workspace auto-save/load + library slot APIs).
 - 2026-02-20 / Checkpoint 9: added `test/test_CoreStatePersistence/test_main.cpp` to lock integration behavior.
+- 2026-02-20 / Checkpoint 10: migrated to dedicated storages (`settings`, `macro-workspace`, `macro-library`) and removed `StorageSlice` temporary layer.
+- 2026-02-20 / Checkpoint 11: firmware compile check passed (`pio run -e dev`) after constructor/storage wiring changes.
 
 ## Handover Notes
 

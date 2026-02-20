@@ -211,7 +211,6 @@ void MacroEditHandler::closeOverlay() {
 
     // Persist staged CH/CC updates once per edit session.
     if (has_staged_config_changes_) {
-        state_.settings.commit();
         state_.configRevision.set(state_.configRevision.get() + 1);
         has_staged_config_changes_ = false;
     }

@@ -30,10 +30,12 @@ static void tick_core_state(void* user) {
 
 int main(int argc, char** argv) {
     static sdl::SdlEnvironment env;
-    static desktop::MemoryStorage storage;
-    static core::state::CoreState coreState(storage);
+    static desktop::MemoryStorage settingsStorage;
+    static desktop::MemoryStorage macroWorkspaceStorage;
+    static desktop::MemoryStorage macroLibraryStorage;
+    static core::state::CoreState coreState(settingsStorage, macroWorkspaceStorage, macroLibraryStorage);
 
-    if (!storage.init()) {
+    if (!settingsStorage.init() || !macroWorkspaceStorage.init() || !macroLibraryStorage.init()) {
         return 1;
     }
 

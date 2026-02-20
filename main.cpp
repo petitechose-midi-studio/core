@@ -25,7 +25,9 @@
 static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
-static oc::hal::teensy::SDCardBackend storage("/macros.bin");  // SD card storage (non-blocking)
+static oc::hal::teensy::SDCardBackend settingsStorage("/macros.bin");
+static oc::hal::teensy::SDCardBackend macroWorkspaceStorage("/macro-workspace.bin");
+static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 
@@ -61,17 +63,36 @@ static void initMux() {
 }
 
 static void initStorage() {
-    auto result = storage.init();
-    if (!result) {
-        OC_LOG_ERROR("Storage init failed: {}", oc::type::errorCodeToString(result.error().code));
+    auto settingsResult = settingsStorage.init();
+    if (!settingsResult) {
+        OC_LOG_ERROR("Settings storage init failed: {}",
+                     oc::type::errorCodeToString(settingsResult.error().code));
         while (true) {}
     }
-    OC_LOG_INFO("Storage ready ({}B)", storage.capacity());
+
+    auto workspaceResult = macroWorkspaceStorage.init();
+    if (!workspaceResult) {
+        OC_LOG_ERROR("Macro workspace storage init failed: {}",
+                     oc::type::errorCodeToString(workspaceResult.error().code));
+        while (true) {}
+    }
+
+    auto libraryResult = macroLibraryStorage.init();
+    if (!libraryResult) {
+        OC_LOG_ERROR("Macro library storage init failed: {}",
+                     oc::type::errorCodeToString(libraryResult.error().code));
+        while (true) {}
+    }
+
+    OC_LOG_INFO("Storages ready settings={}B workspace={}B library={}B",
+                settingsStorage.capacity(),
+                macroWorkspaceStorage.capacity(),
+                macroLibraryStorage.capacity());
 }
 
 static void initApp() {
-    // Create global state with storage backend (survives context switches)
-    coreState.emplace(storage);
+    // Create global state with dedicated storage domains (survives context switches)
+    coreState.emplace(settingsStorage, macroWorkspaceStorage, macroLibraryStorage);
 
     app = oc::hal::teensy::AppBuilder()
               .midi()

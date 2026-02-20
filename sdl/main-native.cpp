@@ -28,13 +28,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // 2. Create storage and state (specific to core)
-    oc::impl::FileStorage storage("./macros.bin");
-    if (!storage.init()) {
-        fprintf(stderr, "Failed to open storage file\n");
+    // 2. Create storages and state (specific to core)
+    oc::impl::FileStorage settingsStorage("./macros.bin");
+    oc::impl::FileStorage macroWorkspaceStorage("./macro-workspace.bin");
+    oc::impl::FileStorage macroLibraryStorage("./macro-library.bin");
+    if (!settingsStorage.init() || !macroWorkspaceStorage.init() || !macroLibraryStorage.init()) {
+        fprintf(stderr, "Failed to open storage files\n");
         return 1;
     }
-    core::state::CoreState coreState(storage);
+    core::state::CoreState coreState(settingsStorage, macroWorkspaceStorage, macroLibraryStorage);
 
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
 

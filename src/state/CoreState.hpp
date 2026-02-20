@@ -25,7 +25,6 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "persistence/MacroPersistence.hpp"
-#include "persistence/StorageSlice.hpp"
 #include "CoreSettings.hpp"
 #include "GlobalSettingsState.hpp"
 #include "MidiSyncState.hpp"
@@ -60,11 +59,6 @@ struct ViewSelectorState {
  * This allows state to survive context switches.
  */
 struct CoreState {
-    static constexpr uint32_t MACRO_WORKSPACE_SLICE_BASE = 0x1000;
-    static constexpr size_t MACRO_WORKSPACE_SLICE_SIZE = 0x1000;
-    static constexpr uint32_t MACRO_LIBRARY_SLICE_BASE = 0x3000;
-    static constexpr size_t MACRO_LIBRARY_SLICE_SIZE = 0x4000;
-
     /// Runtime macro state (8 slots with values, labels)
     MacroState macros;
 
@@ -76,12 +70,6 @@ struct CoreState {
 
     /// Persistence manager
     CoreSettings settings;
-
-    /// Slice-backed storage for macro workspace persistence
-    persistence::StorageSlice macroWorkspaceStorage;
-
-    /// Slice-backed storage for macro library persistence
-    persistence::StorageSlice macroLibraryStorage;
 
     /// Macro workspace + library persistence service
     persistence::MacroPersistence macroPersistence;
@@ -112,12 +100,14 @@ struct CoreState {
 
     /**
      * @brief Construct with storage backend
-     * @param storage EEPROM or other storage backend
+     * @param settingsStorage Legacy settings storage (midi sync + migration source)
+     * @param macroWorkspaceStorage Dedicated macro workspace storage
+     * @param macroLibraryStorage Dedicated macro library storage
      */
-    explicit CoreState(oc::interface::IStorage& storage)
-        : settings(storage)
-        , macroWorkspaceStorage(storage, MACRO_WORKSPACE_SLICE_BASE, MACRO_WORKSPACE_SLICE_SIZE)
-        , macroLibraryStorage(storage, MACRO_LIBRARY_SLICE_BASE, MACRO_LIBRARY_SLICE_SIZE)
+    explicit CoreState(oc::interface::IStorage& settingsStorage,
+                       oc::interface::IStorage& macroWorkspaceStorage,
+                       oc::interface::IStorage& macroLibraryStorage)
+        : settings(settingsStorage)
         , macroPersistence(macroWorkspaceStorage, macroLibraryStorage) {
         // Load persisted settings
         settings.load(pages, midiSync);
@@ -157,12 +147,8 @@ struct CoreState {
                 auto& page = pages.activePageData();
                 if (page.values[i] == value) return;
                 page.values[i] = value;
-                settings.saveValue(pages.activePage, i, value);
             },
-            [this]() {
-                settings.commit();
-                persistMacroWorkspace_();
-            },
+            [this]() { persistMacroWorkspace_(); },
             CoreSettings::VALUE_SAVE_DELAY_MS
         );
 
@@ -206,8 +192,6 @@ struct CoreState {
 
         // Switch page
         pages.setActivePage(pageIndex);
-        settings.saveActivePage(pageIndex);
-        settings.commit();
         persistMacroWorkspace_();
 
         // Notify UI that config changed
@@ -241,13 +225,6 @@ struct CoreState {
         page.cc[index] = cc;
         pages.updateActiveConfigs();
 
-        if (channelChanged) {
-            settings.saveChannel(pages.activePage, index, channel);
-        }
-        if (ccChanged) {
-            settings.saveCC(pages.activePage, index, cc);
-        }
-
         persistMacroWorkspace_();
 
         return true;
@@ -265,6 +242,7 @@ struct CoreState {
         if (status == persistence::SlotLoadStatus::OK) {
             statusBar.pageName.set(pages.activePageData().name);
             syncMacrosFromActivePage();
+            persistMacroWorkspace_();
             configRevision.set(configRevision.get() + 1);
         }
 

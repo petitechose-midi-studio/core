@@ -55,21 +55,25 @@ private:
 };
 
 void test_workspace_survives_legacy_corruption() {
-    MemoryStorage storage;
-    storage.init();
+    MemoryStorage settingsStorage;
+    MemoryStorage workspaceStorage;
+    MemoryStorage libraryStorage;
+    settingsStorage.init();
+    workspaceStorage.init();
+    libraryStorage.init();
 
     {
-        core::state::CoreState state(storage);
+        core::state::CoreState state(settingsStorage, workspaceStorage, libraryStorage);
         state.setMacroValue(0, 0.13f);
         state.setMacroValue(1, 0.87f);
         oc::state::NotificationQueue::instance().flush();
         state.flush();
     }
 
-    // Corrupt legacy CoreSettings area only (workspace slices start at 0x1000).
-    storage.erase(0, 0x0200);
+    // Corrupt legacy settings storage only.
+    settingsStorage.erase(0, settingsStorage.capacity());
 
-    core::state::CoreState restored(storage);
+    core::state::CoreState restored(settingsStorage, workspaceStorage, libraryStorage);
     assert(restored.getMacroValue(0) == 0.13f);
     assert(restored.getMacroValue(1) == 0.87f);
 
@@ -77,10 +81,14 @@ void test_workspace_survives_legacy_corruption() {
 }
 
 void test_macro_library_roundtrip_and_erase() {
-    MemoryStorage storage;
-    storage.init();
+    MemoryStorage settingsStorage;
+    MemoryStorage workspaceStorage;
+    MemoryStorage libraryStorage;
+    settingsStorage.init();
+    workspaceStorage.init();
+    libraryStorage.init();
 
-    core::state::CoreState state(storage);
+    core::state::CoreState state(settingsStorage, workspaceStorage, libraryStorage);
     state.switchToPage(2);
     state.setMacroConfig(0, 4, 88);
     state.setMacroValue(0, 0.64f);
