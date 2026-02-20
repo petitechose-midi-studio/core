@@ -19,8 +19,8 @@ Implement SD persistence with deterministic runtime behavior and testable increm
 |---|---|---|---|
 | 0 | Branch + tracker + test strategy baseline | DONE | Branch created, tracker initialized |
 | 1 | Versioned binary storage foundation (format + CRC + slots) | DONE | Implemented in `src/persistence/PersistenceSlotFileStore.hpp` with tests |
-| 2 | Macro domain: workspace + library slots + integration in `CoreState` | IN_PROGRESS | Next coding checkpoint |
-| 3 | Sequencer domain: workspace + pattern/set libraries | TODO | Set snapshots autonomous |
+| 2 | Macro domain: workspace + library slots + integration in `CoreState` | DONE | Workspace auto-save/load + library APIs wired in state |
+| 3 | Sequencer domain: workspace + pattern/set libraries | IN_PROGRESS | Set snapshots autonomous |
 | 4 | Playback-safe apply queue (`next step`) | TODO | No timeline jump behavior change |
 | 5 | Data Manager UI flow (`NAV` long press) + Replace/Merge prompt | TODO | Replace default highlighted |
 | 6 | Migration/fallback hardening + regression tests + perf validation | TODO | Record final deviations |
@@ -35,6 +35,7 @@ Each iteration must add/adjust tests before finalizing code changes.
 | 1 | Existing CoreSettings regression | `g++ -std=c++17 test/test_CoreSettings/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -o .cache/test_CoreSettings.exe && .cache/test_CoreSettings.exe` | PASS |
 | 2 | Macro persistence workspace/library behavior | `g++ -std=c++17 test/test_MacroPersistence/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_MacroPersistence.exe && .cache/test_MacroPersistence.exe` | PASS |
 | 2 | Storage slicing adapter behavior | `g++ -std=c++17 test/test_StorageSlice/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_StorageSlice.exe && .cache/test_StorageSlice.exe` | PASS |
+| 2 | CoreState integration for macro persistence | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
 
 Notes:
 
@@ -55,11 +56,12 @@ Notes:
 | 2026-02-20 | `loadLatest` falls back to previous valid slot if newest payload CRC fails | Improves resilience after partial corruption |
 | 2026-02-20 | Macro workspace persistence uses dual-slot journal (2 slots) | Keeps last valid snapshot available if latest write is corrupted |
 | 2026-02-20 | Macro library capacity starts at 16 slots | Practical initial UX target with bounded storage footprint |
+| 2026-02-20 | Macro persistence is integrated in `CoreState` and updated on value/page/config writes | Keeps runtime behavior compatible while enabling new save/load APIs |
 
 ## Deviations / Gaps Log
 
 - Host regression command for `test_CoreSettings` requires linking `NotificationQueue.cpp` explicitly in this repo setup.
-- Iteration 2 integration into `CoreState`/UI is not merged yet (service and tests are ready first).
+- Current macro domain isolation uses `StorageSlice` regions on the same physical backend file; migration to per-domain files is still pending.
 
 ## Progress Journal
 
@@ -70,6 +72,8 @@ Notes:
 - 2026-02-20 / Checkpoint 5: added `MacroPersistence` service (workspace + library) on top of slot store.
 - 2026-02-20 / Checkpoint 6: added `test/test_MacroPersistence/test_main.cpp` and validated workspace/library flows.
 - 2026-02-20 / Checkpoint 7: added `StorageSlice` adapter and test coverage for bounded offset mapping.
+- 2026-02-20 / Checkpoint 8: integrated macro persistence service into `CoreState` (workspace auto-save/load + library slot APIs).
+- 2026-02-20 / Checkpoint 9: added `test/test_CoreStatePersistence/test_main.cpp` to lock integration behavior.
 
 ## Handover Notes
 

@@ -24,6 +24,8 @@
 #include <oc/state/AutoPersistIncremental.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
+#include "persistence/MacroPersistence.hpp"
+#include "persistence/StorageSlice.hpp"
 #include "CoreSettings.hpp"
 #include "GlobalSettingsState.hpp"
 #include "MidiSyncState.hpp"
@@ -58,6 +60,11 @@ struct ViewSelectorState {
  * This allows state to survive context switches.
  */
 struct CoreState {
+    static constexpr uint32_t MACRO_WORKSPACE_SLICE_BASE = 0x1000;
+    static constexpr size_t MACRO_WORKSPACE_SLICE_SIZE = 0x1000;
+    static constexpr uint32_t MACRO_LIBRARY_SLICE_BASE = 0x3000;
+    static constexpr size_t MACRO_LIBRARY_SLICE_SIZE = 0x4000;
+
     /// Runtime macro state (8 slots with values, labels)
     MacroState macros;
 
@@ -69,6 +76,15 @@ struct CoreState {
 
     /// Persistence manager
     CoreSettings settings;
+
+    /// Slice-backed storage for macro workspace persistence
+    persistence::StorageSlice macroWorkspaceStorage;
+
+    /// Slice-backed storage for macro library persistence
+    persistence::StorageSlice macroLibraryStorage;
+
+    /// Macro workspace + library persistence service
+    persistence::MacroPersistence macroPersistence;
 
     /// Overlay visibility manager
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
@@ -99,9 +115,19 @@ struct CoreState {
      * @param storage EEPROM or other storage backend
      */
     explicit CoreState(oc::interface::IStorage& storage)
-        : settings(storage) {
+        : settings(storage)
+        , macroWorkspaceStorage(storage, MACRO_WORKSPACE_SLICE_BASE, MACRO_WORKSPACE_SLICE_SIZE)
+        , macroLibraryStorage(storage, MACRO_LIBRARY_SLICE_BASE, MACRO_LIBRARY_SLICE_SIZE)
+        , macroPersistence(macroWorkspaceStorage, macroLibraryStorage) {
         // Load persisted settings
         settings.load(pages, midiSync);
+
+        macro_persistence_ready_ = macroPersistence.init();
+        if (macro_persistence_ready_) {
+            if (!macroPersistence.loadWorkspace(pages)) {
+                persistMacroWorkspace_();
+            }
+        }
 
         // Reflect loaded page name in UI state
         statusBar.pageName.set(pages.activePageData().name);
@@ -133,7 +159,10 @@ struct CoreState {
                 page.values[i] = value;
                 settings.saveValue(pages.activePage, i, value);
             },
-            [this]() { settings.commit(); },
+            [this]() {
+                settings.commit();
+                persistMacroWorkspace_();
+            },
             CoreSettings::VALUE_SAVE_DELAY_MS
         );
 
@@ -179,6 +208,7 @@ struct CoreState {
         pages.setActivePage(pageIndex);
         settings.saveActivePage(pageIndex);
         settings.commit();
+        persistMacroWorkspace_();
 
         // Notify UI that config changed
         configRevision.set(configRevision.get() + 1);
@@ -218,7 +248,32 @@ struct CoreState {
             settings.saveCC(pages.activePage, index, cc);
         }
 
+        persistMacroWorkspace_();
+
         return true;
+    }
+
+    bool saveMacroLibrarySlot(uint8_t slotIndex) {
+        if (!macro_persistence_ready_) return false;
+        return macroPersistence.saveLibrarySlot(slotIndex, pages);
+    }
+
+    persistence::SlotLoadStatus loadMacroLibrarySlot(uint8_t slotIndex) {
+        if (!macro_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+
+        const persistence::SlotLoadStatus status = macroPersistence.loadLibrarySlot(slotIndex, pages);
+        if (status == persistence::SlotLoadStatus::OK) {
+            statusBar.pageName.set(pages.activePageData().name);
+            syncMacrosFromActivePage();
+            configRevision.set(configRevision.get() + 1);
+        }
+
+        return status;
+    }
+
+    bool eraseMacroLibrarySlot(uint8_t slotIndex) {
+        if (!macro_persistence_ready_) return false;
+        return macroPersistence.eraseLibrarySlot(slotIndex);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -283,6 +338,7 @@ struct CoreState {
         pages.initDefaults();
         syncMacrosFromActivePage();
         settings.saveAll(pages, midiSync);
+        persistMacroWorkspace_();
         statusBar.pageName.set(pages.activePageData().name);
         macroEdit.reset();
         viewSelector.reset();
@@ -304,6 +360,13 @@ struct CoreState {
     }
 
 private:
+    void persistMacroWorkspace_() {
+        if (!macro_persistence_ready_) return;
+        macroPersistence.saveWorkspace(pages);
+    }
+
+    bool macro_persistence_ready_ = false;
+
     /// Auto-persistence for macro values (watches signals, saves on debounce)
     std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> auto_persist_;
 };
