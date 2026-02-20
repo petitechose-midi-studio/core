@@ -603,7 +603,6 @@ void StandaloneContext::setupSequencerStepEditRendering() {
         core_state_.sequencer.stepEdit.visible,
         core_state_.sequencer.stepEdit.stepIndex,
         core_state_.sequencer.stepEdit.focusedRow,
-        core_state_.sequencer.length,
         core_state_.sequencer.stepDataRevision
     );
 }

@@ -74,11 +74,13 @@ Notes:
 | 2026-02-20 | Data Manager opens via `NAV` long press from Macro/Sequencer root scopes | Keeps persistence ops discoverable without colliding with short-press navigation |
 | 2026-02-20 | Data Manager Set load uses explicit selector prompt (`REPLACE`/`MERGE`) with default `REPLACE` | Preserves safe default while allowing additive workflow |
 | 2026-02-20 | Sequencer set `MERGE` overlays incoming enabled steps onto current pattern and preserves current timing/channel | Supports additive set recall without destructive transport/config replacement |
+| 2026-02-20 | Removed `sequencer.length` from StepEdit overlay watcher fan-out | Prevents `Signal<uint8_t>` subscriber overflow (`MaxSubscribers=4`) observed on Teensy boot |
 
 ## Deviations / Gaps Log
 
 - Host regression command for `test_CoreSettings` requires linking `NotificationQueue.cpp` explicitly in this repo setup.
 - `CoreSettings` still contains legacy macro fields in its schema; they are currently migration/fallback data rather than primary runtime persistence.
+- `StepSequencerState::length` (from `oc-note`) still uses default `Signal` subscriber cap; keep fan-out <= 4 in core until upstream cap strategy is adjusted.
 
 ## Progress Journal
 
@@ -103,6 +105,7 @@ Notes:
 - 2026-02-20 / Checkpoint 19: added Set load mode selector prompt (`REPLACE`/`MERGE`, default `REPLACE`) and wired execution flow.
 - 2026-02-20 / Checkpoint 20: implemented sequencer set merge mode in `CoreState` and added host regression coverage.
 - 2026-02-20 / Checkpoint 21: firmware compile check passed (`pio run -e dev`) after Data Manager integration.
+- 2026-02-20 / Checkpoint 22: fixed Teensy boot assertion (`Signal MaxSubscribers exceeded`) by reducing `sequencer.length` watcher fan-out in `StandaloneContext`.
 
 ## Handover Notes
 
