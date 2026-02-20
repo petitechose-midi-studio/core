@@ -1,0 +1,189 @@
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <vector>
+
+#include <oc/interface/IStorage.hpp>
+
+#include "../../src/persistence/MacroPersistence.hpp"
+
+namespace {
+
+class MemoryStorage : public oc::interface::IStorage {
+public:
+    explicit MemoryStorage(size_t capacity = 16 * 1024)
+        : data_(capacity, 0xFF) {}
+
+    oc::type::Result<void> init() override {
+        initialized_ = true;
+        return oc::type::Result<void>::ok();
+    }
+
+    bool available() const override { return initialized_; }
+
+    size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
+        if (!buffer || address >= data_.size()) return 0;
+        const size_t maxSize = data_.size() - static_cast<size_t>(address);
+        const size_t n = (size <= maxSize) ? size : maxSize;
+        std::memcpy(buffer, data_.data() + address, n);
+        return n;
+    }
+
+    size_t write(uint32_t address, const uint8_t* buffer, size_t size) override {
+        if (!buffer || address >= data_.size()) return 0;
+        const size_t maxSize = data_.size() - static_cast<size_t>(address);
+        const size_t n = (size <= maxSize) ? size : maxSize;
+        std::memcpy(data_.data() + address, buffer, n);
+        return n;
+    }
+
+    bool commit() override { return true; }
+
+    bool erase(uint32_t address, size_t size) override {
+        if (address >= data_.size()) return false;
+        const size_t maxSize = data_.size() - static_cast<size_t>(address);
+        const size_t n = (size <= maxSize) ? size : maxSize;
+        std::memset(data_.data() + address, 0xFF, n);
+        return true;
+    }
+
+    size_t capacity() const override { return data_.size(); }
+
+private:
+    bool initialized_ = false;
+    std::vector<uint8_t> data_;
+};
+
+void configureState(core::state::macro::MacroPagesState& pages,
+                    uint8_t activePage,
+                    uint8_t cc,
+                    float value) {
+    pages.initDefaults();
+    pages.activePage = activePage;
+    pages.pages[activePage].cc[0] = cc;
+    pages.pages[activePage].channel[0] = static_cast<uint8_t>(activePage % 16);
+    pages.pages[activePage].values[0] = value;
+    pages.updateActiveConfigs();
+}
+
+void assertStateEquals(const core::state::macro::MacroPagesState& pages,
+                       uint8_t expectedPage,
+                       uint8_t expectedCc,
+                       float expectedValue) {
+    assert(pages.activePage == expectedPage);
+    assert(pages.pages[expectedPage].cc[0] == expectedCc);
+    assert(pages.pages[expectedPage].values[0] == expectedValue);
+}
+
+void test_workspace_roundtrip() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage libraryStorage;
+    workspaceStorage.init();
+    libraryStorage.init();
+
+    core::persistence::MacroPersistence persistence(workspaceStorage, libraryStorage);
+    assert(persistence.init());
+
+    core::state::macro::MacroPagesState source;
+    configureState(source, 3, 74, 0.42f);
+    assert(persistence.saveWorkspace(source));
+
+    core::state::macro::MacroPagesState loaded;
+    loaded.initDefaults();
+    assert(persistence.loadWorkspace(loaded));
+
+    assertStateEquals(loaded, 3, 74, 0.42f);
+    std::cout << "[PASS] test_workspace_roundtrip\n";
+}
+
+void test_workspace_load_latest_after_multiple_saves() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage libraryStorage;
+    workspaceStorage.init();
+    libraryStorage.init();
+
+    core::persistence::MacroPersistence persistence(workspaceStorage, libraryStorage);
+    assert(persistence.init());
+
+    core::state::macro::MacroPagesState first;
+    configureState(first, 1, 21, 0.10f);
+    assert(persistence.saveWorkspace(first));
+
+    core::state::macro::MacroPagesState second;
+    configureState(second, 5, 91, 0.90f);
+    assert(persistence.saveWorkspace(second));
+
+    core::state::macro::MacroPagesState loaded;
+    loaded.initDefaults();
+    assert(persistence.loadWorkspace(loaded));
+
+    assertStateEquals(loaded, 5, 91, 0.90f);
+    std::cout << "[PASS] test_workspace_load_latest_after_multiple_saves\n";
+}
+
+void test_library_save_load_erase_slot() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage libraryStorage;
+    workspaceStorage.init();
+    libraryStorage.init();
+
+    core::persistence::MacroPersistence persistence(workspaceStorage, libraryStorage);
+    assert(persistence.init());
+
+    core::state::macro::MacroPagesState snapshot;
+    configureState(snapshot, 2, 88, 0.75f);
+
+    assert(persistence.saveLibrarySlot(4, snapshot));
+
+    core::state::macro::MacroPagesState loaded;
+    loaded.initDefaults();
+    const auto status = persistence.loadLibrarySlot(4, loaded);
+    assert(status == core::persistence::SlotLoadStatus::OK);
+    assertStateEquals(loaded, 2, 88, 0.75f);
+
+    assert(persistence.eraseLibrarySlot(4));
+    const auto erasedStatus = persistence.loadLibrarySlot(4, loaded);
+    assert(erasedStatus == core::persistence::SlotLoadStatus::EMPTY);
+
+    std::cout << "[PASS] test_library_save_load_erase_slot\n";
+}
+
+void test_library_slot_bounds() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage libraryStorage;
+    workspaceStorage.init();
+    libraryStorage.init();
+
+    core::persistence::MacroPersistence persistence(workspaceStorage, libraryStorage);
+    assert(persistence.init());
+
+    core::state::macro::MacroPagesState pages;
+    pages.initDefaults();
+
+    const uint8_t invalidSlot = static_cast<uint8_t>(core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT);
+    assert(!persistence.saveLibrarySlot(invalidSlot, pages));
+    const auto status = persistence.loadLibrarySlot(invalidSlot, pages);
+    assert(status == core::persistence::SlotLoadStatus::OUT_OF_RANGE);
+    assert(!persistence.eraseLibrarySlot(invalidSlot));
+
+    std::cout << "[PASS] test_library_slot_bounds\n";
+}
+
+}  // namespace
+
+int main() {
+    std::cout << "==============================================\n";
+    std::cout << "MacroPersistence tests\n";
+    std::cout << "==============================================\n\n";
+
+    test_workspace_roundtrip();
+    test_workspace_load_latest_after_multiple_saves();
+    test_library_save_load_erase_slot();
+    test_library_slot_bounds();
+
+    std::cout << "\n==============================================\n";
+    std::cout << "All tests passed\n";
+    std::cout << "==============================================\n";
+    return 0;
+}

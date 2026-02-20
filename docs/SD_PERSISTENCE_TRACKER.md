@@ -33,6 +33,8 @@ Each iteration must add/adjust tests before finalizing code changes.
 |---|---|---|---|
 | 1 | Persistence format/CRC/slot behavior | `g++ -std=c++17 test/test_PersistenceSlotFileStore/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_PersistenceSlotFileStore.exe && .cache/test_PersistenceSlotFileStore.exe` | PASS |
 | 1 | Existing CoreSettings regression | `g++ -std=c++17 test/test_CoreSettings/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -o .cache/test_CoreSettings.exe && .cache/test_CoreSettings.exe` | PASS |
+| 2 | Macro persistence workspace/library behavior | `g++ -std=c++17 test/test_MacroPersistence/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_MacroPersistence.exe && .cache/test_MacroPersistence.exe` | PASS |
+| 2 | Storage slicing adapter behavior | `g++ -std=c++17 test/test_StorageSlice/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_StorageSlice.exe && .cache/test_StorageSlice.exe` | PASS |
 
 Notes:
 
@@ -51,10 +53,13 @@ Notes:
 | 2026-02-20 | New persistence low-level format = file header + fixed slots + per-slot CRC32 | Allows deterministic validation and slot-level corruption isolation |
 | 2026-02-20 | Slot writes use two-phase state transition (`WRITING` then `VALID`) | Reduces false-valid reads on torn/incomplete writes |
 | 2026-02-20 | `loadLatest` falls back to previous valid slot if newest payload CRC fails | Improves resilience after partial corruption |
+| 2026-02-20 | Macro workspace persistence uses dual-slot journal (2 slots) | Keeps last valid snapshot available if latest write is corrupted |
+| 2026-02-20 | Macro library capacity starts at 16 slots | Practical initial UX target with bounded storage footprint |
 
 ## Deviations / Gaps Log
 
 - Host regression command for `test_CoreSettings` requires linking `NotificationQueue.cpp` explicitly in this repo setup.
+- Iteration 2 integration into `CoreState`/UI is not merged yet (service and tests are ready first).
 
 ## Progress Journal
 
@@ -62,6 +67,9 @@ Notes:
 - 2026-02-20 / Checkpoint 2: added `PersistenceSlotFileStore` low-level storage primitive with format checks and CRC.
 - 2026-02-20 / Checkpoint 3: added `test/test_PersistenceSlotFileStore/test_main.cpp` and validated corruption fallback behavior.
 - 2026-02-20 / Checkpoint 4: re-ran legacy `CoreSettings` tests to verify no immediate regression.
+- 2026-02-20 / Checkpoint 5: added `MacroPersistence` service (workspace + library) on top of slot store.
+- 2026-02-20 / Checkpoint 6: added `test/test_MacroPersistence/test_main.cpp` and validated workspace/library flows.
+- 2026-02-20 / Checkpoint 7: added `StorageSlice` adapter and test coverage for bounded offset mapping.
 
 ## Handover Notes
 
