@@ -58,6 +58,16 @@ private:
         lv_obj_t* marker = nullptr;     // playhead marker (hidden when stopped)
     };
 
+    struct SegmentRenderCache {
+        bool initialized = false;
+        lv_coord_t width = -1;
+        lv_coord_t validWidth = -1;
+        lv_coord_t progressWidth = -1;
+        bool markerVisible = false;
+        lv_coord_t markerX = -1;
+        uint32_t validColorHex = 0;
+    };
+
     lv_obj_t* container_ = nullptr;
     lv_obj_t* top_row_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
@@ -67,6 +77,19 @@ private:
     lv_obj_t* right_label_ = nullptr;
 
     std::array<Segment, PAGE_COUNT> segments_{};
+    std::array<SegmentRenderCache, PAGE_COUNT> segment_cache_{};
+
+    bool top_row_cache_initialized_ = false;
+    bool top_row_dimmed_ = false;
+    std::array<char, 32> left_text_cache_{};
+    std::array<char, 32> center_text_cache_{};
+    std::array<char, 32> right_text_cache_{};
+
+    bool strip_cache_initialized_ = false;
+    uint8_t strip_cached_length_ = 0;
+    uint8_t strip_cached_viewed_page_ = 0;
+    int16_t strip_cached_playhead_ = -2;
+    lv_coord_t strip_cached_width_ = -1;
 };
 
 }  // namespace core::ui

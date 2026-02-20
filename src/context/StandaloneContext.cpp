@@ -4,6 +4,7 @@
 #include <vector>
 #include <array>
 #include <algorithm>
+#include <cmath>
 
 #include <lvgl.h>
 
@@ -49,6 +50,16 @@
 namespace core::context {
 
 namespace input_utils = core::handler::sequencer::input_utils;
+
+namespace {
+
+constexpr float ENCODER_POSITION_EPSILON = 0.0005f;
+
+inline bool hasMeaningfulEncoderDelta(float a, float b) {
+    return std::fabs(a - b) > ENCODER_POSITION_EPSILON;
+}
+
+}  // namespace
 
 // Constructor and destructor must be in .cpp where handler types are complete
 StandaloneContext::StandaloneContext(core::state::CoreState& state) : core_state_(state) {}
@@ -439,6 +450,8 @@ void StandaloneContext::syncEncodersFromState() {
     // Leaving Sequencer view disables discrete steps.
     seq_macro_steps_configured_ = 0;
     seq_opt_steps_configured_ = 0;
+    seq_macro_position_valid_.fill(false);
+    seq_opt_position_valid_ = false;
 
     OC_LOG_DEBUG("Synced encoder positions from restored state");
 }
@@ -837,6 +850,14 @@ void StandaloneContext::setupSequencerMacroEncoderSync() {
 void StandaloneContext::syncSequencerMacroEncoderPositions() {
     if (core_state_.activeView.get() != core::ui::ViewType::SEQUENCER) return;
 
+    if (core_state_.overlays.hasVisible()) {
+        // Overlay scope owns controls; defer expensive knob position sync
+        // until overlay closes (visibility change triggers this watcher).
+        seq_opt_steps_configured_ = 0;
+        seq_opt_position_valid_ = false;
+        return;
+    }
+
     const uint8_t len = core_state_.sequencer.length.get();
     const uint8_t page = core_state_.sequencer.normalizePage(core_state_.sequencer.page.get());
 
@@ -868,12 +889,12 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
         if (normalized < 0.0f) normalized = 0.0f;
         if (normalized > 1.0f) normalized = 1.0f;
 
-        encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
-    }
-
-    if (core_state_.overlays.hasVisible()) {
-        seq_opt_steps_configured_ = 0;
-        return;
+        if (!seq_macro_position_valid_[i] ||
+            hasMeaningfulEncoderDelta(seq_macro_position_cache_[i], normalized)) {
+            encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
+            seq_macro_position_cache_[i] = normalized;
+            seq_macro_position_valid_[i] = true;
+        }
     }
 
     const uint8_t focused = core_state_.sequencer.focusedStep.get();
@@ -895,7 +916,11 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
         core_state_.sequencer.gate[focused]
     );
 
-    encoders().setPosition(Config::EncoderID::OPT, optPosition);
+    if (!seq_opt_position_valid_ || hasMeaningfulEncoderDelta(seq_opt_position_cache_, optPosition)) {
+        encoders().setPosition(Config::EncoderID::OPT, optPosition);
+        seq_opt_position_cache_ = optPosition;
+        seq_opt_position_valid_ = true;
+    }
 }
 
 void StandaloneContext::setupViewSelectorRendering() {

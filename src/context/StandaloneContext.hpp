@@ -32,6 +32,7 @@
  */
 
 #include <memory>
+#include <array>
 
 #include <oc/context/ContextBase.hpp>
 #include <oc/context/Requirements.hpp>
@@ -202,6 +203,10 @@ private:
     // Cached encoder configuration (avoid resetting quantization every sync)
     uint8_t seq_macro_steps_configured_ = 0;
     uint8_t seq_opt_steps_configured_ = 0;
+    std::array<float, core::state::MACRO_COUNT> seq_macro_position_cache_{};
+    std::array<bool, core::state::MACRO_COUNT> seq_macro_position_valid_{};
+    float seq_opt_position_cache_ = 0.0f;
+    bool seq_opt_position_valid_ = false;
 };
 
 }  // namespace core::context

@@ -43,8 +43,22 @@ private:
     core::state::CoreState& core_state_;
     oc::state::SignalWatcher watcher_;
 
+    struct TileRenderCache {
+        bool initialized = false;
+        bool inPattern = false;
+        bool enabled = false;
+        bool focused = false;
+        bool playing = false;
+        core::state::sequencer::StepProperty property = core::state::sequencer::StepProperty::NOTE;
+        uint8_t note = 0;
+        uint8_t velocity = 0;
+        uint16_t gate = 0;
+    };
+
     bool dirty_ = false;
     lv_timer_t* render_timer_ = nullptr;
+    uint16_t cached_division_denom_ = 0xFFFF;
+    uint8_t cached_total_steps_ = 0xFF;
 
     std::unique_ptr<ms::ui::LayoutView> layout_;
     lv_obj_t* container_ = nullptr;
@@ -63,6 +77,7 @@ private:
     std::array<lv_obj_t*, 8> step_shapes_{};
     std::array<lv_obj_t*, 8> step_indicators_{};
     std::array<lv_obj_t*, 8> step_selectors_{};
+    std::array<TileRenderCache, 8> tile_render_cache_{};
 };
 
 }  // namespace core::ui

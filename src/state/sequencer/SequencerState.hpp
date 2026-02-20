@@ -111,30 +111,46 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
         if (step >= MAX_STEPS) return false;
-        note[step] = clampMidi7(noteValue);
+        const uint8_t clamped = clampMidi7(noteValue);
+        if (note[step] == clamped) return false;
+        note[step] = clamped;
         bumpStepDataRevision();
         return true;
     }
 
     bool setStepVelocityAt(uint8_t step, uint8_t velocityValue) {
         if (step >= MAX_STEPS) return false;
-        velocity[step] = clampMidi7(velocityValue);
+        const uint8_t clamped = clampMidi7(velocityValue);
+        if (velocity[step] == clamped) return false;
+        velocity[step] = clamped;
         bumpStepDataRevision();
         return true;
     }
 
     bool setStepGateAt(uint8_t step, uint16_t gatePercent) {
         if (step >= MAX_STEPS) return false;
-        gate[step] = clampGatePercent(gatePercent);
+        const uint16_t clamped = clampGatePercent(gatePercent);
+        if (gate[step] == clamped) return false;
+        gate[step] = clamped;
         bumpStepDataRevision();
         return true;
     }
 
     bool setStepDataAt(uint8_t step, uint8_t noteValue, uint8_t velocityValue, uint16_t gatePercent) {
         if (step >= MAX_STEPS) return false;
-        note[step] = clampMidi7(noteValue);
-        velocity[step] = clampMidi7(velocityValue);
-        gate[step] = clampGatePercent(gatePercent);
+        const uint8_t clampedNote = clampMidi7(noteValue);
+        const uint8_t clampedVelocity = clampMidi7(velocityValue);
+        const uint16_t clampedGate = clampGatePercent(gatePercent);
+
+        if (note[step] == clampedNote &&
+            velocity[step] == clampedVelocity &&
+            gate[step] == clampedGate) {
+            return false;
+        }
+
+        note[step] = clampedNote;
+        velocity[step] = clampedVelocity;
+        gate[step] = clampedGate;
         bumpStepDataRevision();
         return true;
     }

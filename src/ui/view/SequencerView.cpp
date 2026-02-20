@@ -168,6 +168,11 @@ SequencerView::~SequencerView() {
 void SequencerView::onActivate() {
     if (container_) {
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
+
+        if (!render_timer_) {
+            render_timer_ = lv_timer_create(onRenderTimer, 16, this);
+        }
+
         render();
         dirty_ = false;
     }
@@ -324,6 +329,7 @@ void SequencerView::createSteps() {
     lv_obj_set_style_text_font(track_overlay_label_, fonts.inter_13_bold, 0);
     lv_obj_set_style_text_color(track_overlay_label_, lv_color_hex(STEP_TEXT_DISABLED_COLOR), 0);
     lv_obj_set_style_text_opa(track_overlay_label_, STEP_TEXT_DISABLED_OPA, 0);
+    lv_label_set_text(track_overlay_label_, "Track 1");
 
     lv_obj_move_foreground(overlay_layer_);
 }
@@ -347,23 +353,11 @@ void SequencerView::bindToState() {
 
 void SequencerView::requestRender() {
     dirty_ = true;
-
-    if (!container_) return;
-    if (lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
-
-    // Schedule a single render at ~60Hz max (coalesces bursts of updates).
-    if (!render_timer_) {
-        render_timer_ = lv_timer_create(onRenderTimer, 16, this);
-        lv_timer_set_repeat_count(render_timer_, 1);
-    }
 }
 
 void SequencerView::onRenderTimer(lv_timer_t* timer) {
     auto* self = static_cast<SequencerView*>(lv_timer_get_user_data(timer));
     if (!self) return;
-
-    // One-shot timer: LVGL will delete it after the callback.
-    self->render_timer_ = nullptr;
 
     if (!self->dirty_) return;
     if (!self->container_) return;
@@ -416,8 +410,9 @@ void SequencerView::render() {
         std::snprintf(rightText, sizeof(rightText), "Step --");
     }
 
-    if (division_overlay_label_) {
-        const uint16_t denom = divisionDenominator(core_state_.sequencer.stepsPerBeat.get());
+    const uint16_t denom = divisionDenominator(core_state_.sequencer.stepsPerBeat.get());
+
+    if (division_overlay_label_ && denom != cached_division_denom_) {
         char divisionBuf[16];
         if (denom > 0) {
             std::snprintf(divisionBuf, sizeof(divisionBuf), "1/%u", static_cast<unsigned>(denom));
@@ -425,19 +420,15 @@ void SequencerView::render() {
             std::snprintf(divisionBuf, sizeof(divisionBuf), "?");
         }
         lv_label_set_text(division_overlay_label_, divisionBuf);
+        cached_division_denom_ = denom;
     }
 
-    if (total_steps_overlay_label_) {
+    if (total_steps_overlay_label_ && len != cached_total_steps_) {
         char stepsBuf[24];
         std::snprintf(stepsBuf, sizeof(stepsBuf), "%u steps", static_cast<unsigned>(len));
         lv_label_set_text(total_steps_overlay_label_, stepsBuf);
+        cached_total_steps_ = len;
     }
-
-    if (track_overlay_label_) {
-        lv_label_set_text(track_overlay_label_, "Track 1");
-    }
-
-    if (overlay_layer_) lv_obj_move_foreground(overlay_layer_);
 
     if (header_bar_) {
         header_bar_->render({
@@ -468,79 +459,112 @@ void SequencerView::render() {
             gate = core_state_.sequencer.gate[abs];
         }
 
-        const uint16_t gateVisual = std::min<uint16_t>(gate, GATE_VISUAL_MAX);
-        const StepVisualStyle visual = buildStepVisualStyle(note, velocity, gateVisual, enabled);
+        auto& cache = tile_render_cache_[i];
+        const bool baseChanged =
+            !cache.initialized ||
+            cache.inPattern != inPattern ||
+            cache.enabled != enabled;
 
-        // Step value label
-        if (note_labels_[i]) {
-            if (inPattern) {
-                char buf[16];
-                core::state::sequencer::formatStepPropertyValue(
-                    buf,
-                    sizeof(buf),
-                    property,
-                    note,
-                    velocity,
-                    gate
-                );
-                lv_label_set_text(note_labels_[i], buf);
-                lv_obj_set_style_text_color(
-                    note_labels_[i],
-                    enabled ? lv_color_hex(theme::color::TEXT_PRIMARY) : lv_color_hex(STEP_TEXT_DISABLED_COLOR),
-                    0
-                );
-                lv_obj_set_style_text_opa(
-                    note_labels_[i],
-                    enabled ? LV_OPA_COVER : STEP_TEXT_DISABLED_OPA,
-                    0
-                );
-            } else {
-                lv_label_set_text(note_labels_[i], " ");
-                lv_obj_set_style_text_color(note_labels_[i], lv_color_hex(STEP_TEXT_DISABLED_COLOR), 0);
-                lv_obj_set_style_text_opa(note_labels_[i], STEP_TEXT_DISABLED_OPA, 0);
+        const bool dataChanged =
+            baseChanged ||
+            (inPattern && (
+                cache.property != property ||
+                cache.note != note ||
+                cache.velocity != velocity ||
+                cache.gate != gate
+            ));
+
+        const bool barChanged =
+            !cache.initialized ||
+            cache.inPattern != inPattern ||
+            cache.focused != isFocused ||
+            cache.playing != isPlaying;
+
+        if (!dataChanged && !barChanged) {
+            continue;
+        }
+
+        if (dataChanged) {
+            const uint16_t gateVisual = std::min<uint16_t>(gate, GATE_VISUAL_MAX);
+            const StepVisualStyle visual = buildStepVisualStyle(note, velocity, gateVisual, enabled);
+
+            // Step value label
+            if (note_labels_[i]) {
+                if (inPattern) {
+                    char buf[16];
+                    core::state::sequencer::formatStepPropertyValue(
+                        buf,
+                        sizeof(buf),
+                        property,
+                        note,
+                        velocity,
+                        gate
+                    );
+                    lv_label_set_text(note_labels_[i], buf);
+                    lv_obj_set_style_text_color(
+                        note_labels_[i],
+                        enabled ? lv_color_hex(theme::color::TEXT_PRIMARY) : lv_color_hex(STEP_TEXT_DISABLED_COLOR),
+                        0
+                    );
+                    lv_obj_set_style_text_opa(
+                        note_labels_[i],
+                        enabled ? LV_OPA_COVER : STEP_TEXT_DISABLED_OPA,
+                        0
+                    );
+                } else {
+                    lv_label_set_text(note_labels_[i], " ");
+                    lv_obj_set_style_text_color(note_labels_[i], lv_color_hex(STEP_TEXT_DISABLED_COLOR), 0);
+                    lv_obj_set_style_text_opa(note_labels_[i], STEP_TEXT_DISABLED_OPA, 0);
+                }
+            }
+
+            // Internal shape (gate -> width, velocity -> height)
+            if (step_shapes_[i]) {
+                if (!inPattern) {
+                    lv_obj_add_flag(step_shapes_[i], LV_OBJ_FLAG_HIDDEN);
+                } else {
+                    lv_obj_clear_flag(step_shapes_[i], LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_set_size(step_shapes_[i], visual.width, visual.height);
+                    lv_obj_align(step_shapes_[i], LV_ALIGN_BOTTOM_MID, 0, -STEP_SHAPE_PADDING);
+                    lv_obj_set_style_bg_color(step_shapes_[i], visual.fillColor, 0);
+                    lv_obj_set_style_bg_opa(step_shapes_[i], visual.fillOpa, 0);
+                }
             }
         }
 
-        // Step container (invisible background, no border)
-        if (step_buttons_[i]) {
-            lv_obj_set_style_bg_opa(step_buttons_[i], LV_OPA_TRANSP, 0);
+        if (dataChanged || barChanged) {
+            // Selector bar (focus only)
+            renderStepBar(
+                step_selectors_[i],
+                step_shapes_[i],
+                inPattern,
+                LV_ALIGN_OUT_BOTTOM_MID,
+                STEP_BAR_SELECTOR_FROM_SHAPE_GAP,
+                lv_color_hex(COLOR_STEP_SELECTOR_HEX),
+                isFocused ? STEP_BAR_SELECTOR_OPA : LV_OPA_TRANSP
+            );
+
+            // Playhead bar (active step only)
+            renderStepBar(
+                step_indicators_[i],
+                step_shapes_[i],
+                inPattern,
+                LV_ALIGN_OUT_TOP_MID,
+                -STEP_BAR_PLAYHEAD_FROM_SHAPE_GAP,
+                lv_color_hex(COLOR_STEP_PLAY_HEX),
+                isPlaying ? STEP_BAR_ACTIVE_OPA : LV_OPA_TRANSP
+            );
         }
 
-        // Internal shape (gate -> width, velocity -> height)
-        if (step_shapes_[i]) {
-            if (!inPattern) {
-                lv_obj_add_flag(step_shapes_[i], LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_clear_flag(step_shapes_[i], LV_OBJ_FLAG_HIDDEN);
-                lv_obj_set_size(step_shapes_[i], visual.width, visual.height);
-                lv_obj_align(step_shapes_[i], LV_ALIGN_BOTTOM_MID, 0, -STEP_SHAPE_PADDING);
-                lv_obj_set_style_bg_color(step_shapes_[i], visual.fillColor, 0);
-                lv_obj_set_style_bg_opa(step_shapes_[i], visual.fillOpa, 0);
-                lv_obj_set_style_border_width(step_shapes_[i], 0, 0);
-            }
-        }
-
-        // Selector bar (focus only)
-        renderStepBar(
-            step_selectors_[i],
-            step_shapes_[i],
-            inPattern,
-            LV_ALIGN_OUT_BOTTOM_MID,
-            STEP_BAR_SELECTOR_FROM_SHAPE_GAP,
-            lv_color_hex(COLOR_STEP_SELECTOR_HEX),
-            isFocused ? STEP_BAR_SELECTOR_OPA : LV_OPA_TRANSP
-        );
-
-        // Playhead bar (active step only)
-        renderStepBar(
-            step_indicators_[i],
-            step_shapes_[i],
-            inPattern,
-            LV_ALIGN_OUT_TOP_MID,
-            -STEP_BAR_PLAYHEAD_FROM_SHAPE_GAP,
-            lv_color_hex(COLOR_STEP_PLAY_HEX),
-            isPlaying ? STEP_BAR_ACTIVE_OPA : LV_OPA_TRANSP
-        );
+        cache.initialized = true;
+        cache.inPattern = inPattern;
+        cache.enabled = enabled;
+        cache.focused = isFocused;
+        cache.playing = isPlaying;
+        cache.property = property;
+        cache.note = note;
+        cache.velocity = velocity;
+        cache.gate = gate;
     }
 }
 
