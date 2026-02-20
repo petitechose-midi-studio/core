@@ -24,6 +24,7 @@
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 #include "handler/settings/GlobalSettingsHandler.hpp"
+#include "handler/settings/DataManagerHandler.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
@@ -143,6 +144,22 @@ oc::type::Result<void> StandaloneContext::init() {
         static_cast<oc::type::ButtonID>(0)
     );
     setupGlobalSettingsSelectorRendering();
+
+    data_manager_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::DATA_MANAGER,
+        oc::ui::lvgl::scopeID(data_manager_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupDataManagerRendering();
+
+    data_manager_set_load_mode_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::DATA_MANAGER_SET_LOAD_MODE_SELECTOR,
+        oc::ui::lvgl::scopeID(data_manager_set_load_mode_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupDataManagerSetLoadModeSelectorRendering();
 
     // Macro edit overlays (main + selectors)
     macro_edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
@@ -327,6 +344,19 @@ oc::type::Result<void> StandaloneContext::init() {
         global_settings_selector_overlay_->getElement()
     );
 
+    data_manager_handler_ = std::make_unique<core::handler::DataManagerHandler>(
+        core_state_,
+        *overlay_controller_,
+        encoders(),
+        buttons(),
+        core::handler::DataManagerHandler::ViewScopes{
+            macro_view_->getElement(),
+            sequencer_view_->getElement(),
+        },
+        data_manager_overlay_->getElement(),
+        data_manager_set_load_mode_selector_overlay_->getElement()
+    );
+
     // Create MacroEdit input handler (two-level scoping)
     macro_edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
         core_state_,
@@ -383,6 +413,7 @@ void StandaloneContext::onCleanup() {
     core_state_.sequencer.stepEdit.reset();
     core_state_.sequencer.propertySelector.reset();
     core_state_.globalSettings.reset();
+    core_state_.dataManager.reset();
 
     if (sequencer_playback_) {
         sequencer_playback_->stop();
@@ -392,6 +423,7 @@ void StandaloneContext::onCleanup() {
 
     // Handlers first (they reference state/APIs)
     global_settings_handler_.reset();
+    data_manager_handler_.reset();
     macro_edit_handler_.reset();
     view_switcher_handler_.reset();
     sequencer_property_selector_handler_.reset();
@@ -415,6 +447,8 @@ void StandaloneContext::onCleanup() {
     seq_property_selector_overlay_.reset();
     global_settings_selector_overlay_.reset();
     global_settings_overlay_.reset();
+    data_manager_set_load_mode_selector_overlay_.reset();
+    data_manager_overlay_.reset();
     view_selector_.reset();
 
     // Overlay controller (clears authority resolver)
@@ -1079,6 +1113,117 @@ void StandaloneContext::renderGlobalSettingsSelector() {
         .showIndexColumn = false,
         .visible = true,
         .dataRevision = dataRevision,
+    });
+}
+
+void StandaloneContext::setupDataManagerRendering() {
+    data_manager_watcher_.watchAll(
+        [this]() { renderDataManager(); },
+        core_state_.dataManager.visible,
+        core_state_.dataManager.focusedRow,
+        core_state_.dataManager.domain,
+        core_state_.dataManager.action,
+        core_state_.dataManager.slotIndex,
+        core_state_.dataManager.setLoadMode
+    );
+}
+
+void StandaloneContext::renderDataManager() {
+    if (!data_manager_overlay_) return;
+
+    const auto& dm = core_state_.dataManager;
+    if (!dm.visible.get()) {
+        data_manager_overlay_->render({.visible = false});
+        return;
+    }
+
+    const char* domainLabel = "MACRO";
+    uint8_t slotCount = core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
+    switch (dm.domain.get()) {
+        case core::state::DataManagerDomain::MACRO_LIBRARY:
+            domainLabel = "MACRO";
+            slotCount = core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
+            break;
+        case core::state::DataManagerDomain::SEQ_PATTERN_LIBRARY:
+            domainLabel = "PATTERN";
+            slotCount = core::persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
+            break;
+        case core::state::DataManagerDomain::SEQ_SET_LIBRARY:
+            domainLabel = "SET";
+            slotCount = core::persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
+            break;
+    }
+
+    const char* actionLabel = "SAVE";
+    switch (dm.action.get()) {
+        case core::state::DataManagerAction::SAVE: actionLabel = "SAVE"; break;
+        case core::state::DataManagerAction::LOAD: actionLabel = "LOAD"; break;
+        case core::state::DataManagerAction::ERASE: actionLabel = "ERASE"; break;
+    }
+
+    char slotLabel[16];
+    snprintf(slotLabel, sizeof(slotLabel), "%u/%u",
+             static_cast<unsigned>(dm.slotIndex.get() + 1U),
+             static_cast<unsigned>(slotCount));
+
+    const bool showSetLoadModeRow = dm.isSetLoadModeRowVisible();
+    const char* setLoadModeLabel =
+        (dm.setLoadMode.get() == core::state::DataManagerSetLoadMode::REPLACE) ? "REPLACE" : "MERGE";
+
+    const ms::ui::KeyValueRow rows[] = {
+        {.key = "Target", .value = domainLabel},
+        {.key = "Action", .value = actionLabel},
+        {.key = "Slot", .value = slotLabel},
+        {.key = "SetLoad", .value = setLoadModeLabel},
+    };
+
+    const uint8_t rowCount = showSetLoadModeRow ? 4U : 3U;
+    const uint8_t selected = std::min<uint8_t>(dm.focusedRow.get(), static_cast<uint8_t>(rowCount - 1U));
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(dm.domain.get()) << 24) |
+        (static_cast<uint32_t>(dm.action.get()) << 16) |
+        (static_cast<uint32_t>(dm.slotIndex.get()) << 8) |
+        static_cast<uint32_t>(dm.setLoadMode.get());
+
+    data_manager_overlay_->render({
+        .title = "DATA MANAGER",
+        .meta = "NAV=RUN OPT=EDIT",
+        .rows = rows,
+        .rowCount = rowCount,
+        .selectedIndex = selected,
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
+}
+
+void StandaloneContext::setupDataManagerSetLoadModeSelectorRendering() {
+    data_manager_set_load_mode_selector_watcher_.watchAll(
+        [this]() { renderDataManagerSetLoadModeSelector(); },
+        core_state_.dataManager.setLoadSelector.visible,
+        core_state_.dataManager.setLoadSelector.selectedIndex
+    );
+}
+
+void StandaloneContext::renderDataManagerSetLoadModeSelector() {
+    if (!data_manager_set_load_mode_selector_overlay_) return;
+
+    const auto& selector = core_state_.dataManager.setLoadSelector;
+    if (!selector.visible.get()) {
+        data_manager_set_load_mode_selector_overlay_->render({.visible = false});
+        return;
+    }
+
+    static const char* const ITEMS[] = {"REPLACE", "MERGE"};
+
+    data_manager_set_load_mode_selector_overlay_->render({
+        .title = "LOAD SET",
+        .meta = "APPLY",
+        .items = ITEMS,
+        .itemCount = 2,
+        .selectedIndex = std::clamp(selector.selectedIndex.get(), 0, 1),
+        .showIndexColumn = false,
+        .visible = true,
+        .dataRevision = static_cast<uint32_t>(selector.selectedIndex.get() + 1),
     });
 }
 

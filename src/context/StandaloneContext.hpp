@@ -59,6 +59,7 @@ class SequencerStepEditHandler;
 class SequencerPropertySelectorHandler;
 class SequencerMacroPropertyHandler;
 class GlobalSettingsHandler;
+class DataManagerHandler;
 }  // namespace core::handler
 
 namespace core::sequencer {
@@ -149,6 +150,10 @@ private:
     void renderGlobalSettings();
     void setupGlobalSettingsSelectorRendering();
     void renderGlobalSettingsSelector();
+    void setupDataManagerRendering();
+    void renderDataManager();
+    void setupDataManagerSetLoadModeSelectorRendering();
+    void renderDataManagerSetLoadModeSelector();
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
 
@@ -177,9 +182,13 @@ private:
     std::unique_ptr<ms::ui::VirtualListSelectorOverlay> seq_property_selector_overlay_;
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> global_settings_overlay_;
     std::unique_ptr<ms::ui::VirtualListSelectorOverlay> global_settings_selector_overlay_;
+    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
+    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> data_manager_set_load_mode_selector_overlay_;
     oc::state::SignalWatcher seq_property_selector_watcher_;
     oc::state::SignalWatcher global_settings_watcher_;
     oc::state::SignalWatcher global_settings_selector_watcher_;
+    oc::state::SignalWatcher data_manager_watcher_;
+    oc::state::SignalWatcher data_manager_set_load_mode_selector_watcher_;
     oc::state::SignalWatcher seq_macro_encoder_watcher_;
     oc::state::SignalWatcher active_view_watcher_;
 
@@ -195,6 +204,7 @@ private:
     std::unique_ptr<core::handler::ViewSwitcherHandler> view_switcher_handler_;
     std::unique_ptr<core::handler::MacroEditHandler> macro_edit_handler_;
     std::unique_ptr<core::handler::GlobalSettingsHandler> global_settings_handler_;
+    std::unique_ptr<core::handler::DataManagerHandler> data_manager_handler_;
 
     // Global services (not tied to a view scope)
     std::unique_ptr<core::sequencer::MidiClockSyncService> midi_clock_sync_;

@@ -28,6 +28,7 @@
 #include "persistence/MacroPersistence.hpp"
 #include "persistence/SequencerPersistence.hpp"
 #include "CoreSettings.hpp"
+#include "DataManagerState.hpp"
 #include "GlobalSettingsState.hpp"
 #include "MidiSyncState.hpp"
 #include "MacroEditState.hpp"
@@ -100,6 +101,9 @@ struct CoreState {
     /// Global settings overlays state
     GlobalSettingsState globalSettings;
 
+    /// Data manager overlays state
+    DataManagerState dataManager;
+
     /// Macro edit overlay state
     MacroEditState macroEdit;
 
@@ -158,6 +162,9 @@ struct CoreState {
         overlays.registerItem(core::ui::OverlayType::SEQ_PROPERTY_SELECTOR, sequencer.propertySelector.visible);
         overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, globalSettings.visible);
         overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, globalSettings.selector.visible);
+        overlays.registerItem(core::ui::OverlayType::DATA_MANAGER, dataManager.visible);
+        overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_SET_LOAD_MODE_SELECTOR,
+                              dataManager.setLoadSelector.visible);
 
         // Setup auto-persistence for macro values
         macro_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
@@ -323,7 +330,8 @@ struct CoreState {
         return sequencerPersistence.saveSetSlot(slotIndex, sequencer);
     }
 
-    persistence::SlotLoadStatus loadSequencerSetSlot(uint8_t slotIndex) {
+    persistence::SlotLoadStatus loadSequencerSetSlot(uint8_t slotIndex,
+                                                     bool merge = false) {
         if (!sequencer_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
         if (statusBar.playing.get()) {
@@ -331,13 +339,19 @@ struct CoreState {
             const persistence::SlotLoadStatus status =
                 sequencerPersistence.loadSetSlot(slotIndex, staged);
             if (status == persistence::SlotLoadStatus::OK) {
-                queueSequencerApply_(staged);
+                queueSequencerApply_(staged, merge);
             }
             return status;
         }
 
-        const persistence::SlotLoadStatus status = sequencerPersistence.loadSetSlot(slotIndex, sequencer);
+        sequencer::SequencerState staged;
+        const persistence::SlotLoadStatus status = sequencerPersistence.loadSetSlot(slotIndex, staged);
         if (status == persistence::SlotLoadStatus::OK) {
+            if (merge) {
+                mergeSequencerSnapshotIntoCurrent_(staged);
+            } else {
+                applySequencerSnapshotFromState_(staged);
+            }
             persistSequencerWorkspace_();
         }
 
@@ -425,6 +439,7 @@ struct CoreState {
         persistSequencerWorkspace_();
         midiSync.reset();
         globalSettings.reset();
+        dataManager.reset();
         activeView.set(core::ui::ViewType::MACRO);
         overlays.hideAll();
         configRevision.set(configRevision.get() + 1);
@@ -457,8 +472,15 @@ private:
     struct PendingSequencerApply {
         bool valid = false;
         int16_t anchorPlayhead = -1;
+        bool merge = false;
         SequencerPatternSnapshot snapshot{};
     };
+
+    static uint64_t lengthMask_(uint8_t length) {
+        if (length == 0) return 0;
+        if (length >= sequencer::SequencerState::MAX_STEPS) return ~uint64_t{0};
+        return (uint64_t{1} << length) - uint64_t{1};
+    }
 
     static uint8_t sanitizeSequencerLength_(uint8_t length) {
         if (length == 0 || length > sequencer::SequencerState::MAX_STEPS) {
@@ -506,7 +528,7 @@ private:
         sequencer.length.set(length);
         sequencer.stepsPerBeat.set(sanitizeStepsPerBeat_(snapshot.stepsPerBeat));
         sequencer.midiChannel.set(sanitizeMidiChannel_(snapshot.midiChannel));
-        sequencer.enabledMask.set(snapshot.enabledMask);
+        sequencer.enabledMask.set(snapshot.enabledMask & lengthMask_(length));
 
         for (uint8_t i = 0; i < sequencer::SequencerState::MAX_STEPS; ++i) {
             sequencer.note[i] = sanitizeMidi7_(snapshot.note[i]);
@@ -522,9 +544,55 @@ private:
         sequencer.bumpStepDataRevision();
     }
 
-    void queueSequencerApply_(const sequencer::SequencerState& staged) {
+    void applySequencerSnapshotFromState_(const sequencer::SequencerState& source) {
+        SequencerPatternSnapshot snapshot;
+        captureSequencerSnapshot_(source, snapshot);
+        applySequencerSnapshot_(snapshot);
+    }
+
+    void mergeSequencerSnapshotIntoCurrent_(const sequencer::SequencerState& incoming) {
+        SequencerPatternSnapshot snapshot;
+        captureSequencerSnapshot_(incoming, snapshot);
+        mergeSequencerSnapshotIntoCurrent_(snapshot);
+    }
+
+    void mergeSequencerSnapshotIntoCurrent_(const SequencerPatternSnapshot& snapshot) {
+        const uint8_t focused_before = sequencer.focusedStep.get();
+
+        const uint8_t currentLength = sanitizeSequencerLength_(sequencer.length.get());
+        const uint8_t incomingLength = sanitizeSequencerLength_(snapshot.length);
+        const uint8_t mergedLength = std::max(currentLength, incomingLength);
+
+        sequencer.length.set(mergedLength);
+
+        uint64_t mergedMask = sequencer.enabledMask.get() & lengthMask_(mergedLength);
+        const uint64_t incomingMask = snapshot.enabledMask & lengthMask_(incomingLength);
+
+        for (uint8_t i = 0; i < incomingLength; ++i) {
+            const uint64_t bit = uint64_t{1} << i;
+            if ((incomingMask & bit) == 0) continue;
+
+            sequencer.note[i] = sanitizeMidi7_(snapshot.note[i]);
+            sequencer.velocity[i] = sanitizeMidi7_(snapshot.velocity[i]);
+            sequencer.gate[i] = sequencer::SequencerState::clampGatePercent(snapshot.gate[i]);
+            sequencer.nudge[i] = snapshot.nudge[i];
+            mergedMask |= bit;
+        }
+
+        sequencer.enabledMask.set(mergedMask);
+
+        const uint8_t focused =
+            (focused_before >= mergedLength) ? static_cast<uint8_t>(mergedLength - 1U) : focused_before;
+        sequencer.focusedStep.set(focused);
+        sequencer.page.set(sequencer.pageForStep(focused));
+        sequencer.bumpStepDataRevision();
+    }
+
+    void queueSequencerApply_(const sequencer::SequencerState& staged,
+                              bool merge = false) {
         captureSequencerSnapshot_(staged, pending_sequencer_apply_.snapshot);
         pending_sequencer_apply_.anchorPlayhead = sequencer.playheadStep.get();
+        pending_sequencer_apply_.merge = merge;
         pending_sequencer_apply_.valid = true;
     }
 
@@ -537,7 +605,11 @@ private:
             if (playhead == pending_sequencer_apply_.anchorPlayhead) return;
         }
 
-        applySequencerSnapshot_(pending_sequencer_apply_.snapshot);
+        if (pending_sequencer_apply_.merge) {
+            mergeSequencerSnapshotIntoCurrent_(pending_sequencer_apply_.snapshot);
+        } else {
+            applySequencerSnapshot_(pending_sequencer_apply_.snapshot);
+        }
         pending_sequencer_apply_.valid = false;
         persistSequencerWorkspace_();
     }

@@ -22,7 +22,7 @@ Implement SD persistence with deterministic runtime behavior and testable increm
 | 2 | Macro domain: workspace + library slots + integration in `CoreState` | DONE | Workspace auto-save/load + library APIs wired in state |
 | 3 | Sequencer domain: workspace + pattern/set libraries | DONE | Workspace + pattern/set slots integrated and tested |
 | 4 | Playback-safe apply queue (`next step`) | DONE | Pattern/Set loads are staged and applied on next playhead step while playing |
-| 5 | Data Manager UI flow (`NAV` long press) + Replace/Merge prompt | IN_PROGRESS | Replace default highlighted |
+| 5 | Data Manager UI flow (`NAV` long press) + Replace/Merge prompt | DONE | Added Data Manager overlay + Set load mode selector (default `Replace`) |
 | 6 | Migration/fallback hardening + regression tests + perf validation | TODO | Record final deviations |
 
 ## Test Strategy
@@ -41,6 +41,8 @@ Each iteration must add/adjust tests before finalizing code changes.
 | 3 | Firmware compile check after sequencer integration | `pio run -e dev` | PASS |
 | 4 | Quantized next-step apply during playback | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
 | 4 | Firmware compile check after quantized apply | `pio run -e dev` | PASS |
+| 5 | Data Manager + set merge semantics regression | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
+| 5 | Firmware compile check after Data Manager integration | `pio run -e dev` | PASS |
 
 Notes:
 
@@ -69,12 +71,14 @@ Notes:
 | 2026-02-20 | Sequencer set payload v1 is autonomous but currently mono-track (`trackCount=1`) | Preserves autonomous contract now, leaves multi-track extension to a future payload version |
 | 2026-02-20 | Sequencer Pattern/Set loads while playing are queued and applied when playhead advances | Avoids mid-step mutations and transport discontinuities |
 | 2026-02-20 | Queued sequencer load applies immediately when transport is stopped | Keeps user intent deterministic outside playback |
+| 2026-02-20 | Data Manager opens via `NAV` long press from Macro/Sequencer root scopes | Keeps persistence ops discoverable without colliding with short-press navigation |
+| 2026-02-20 | Data Manager Set load uses explicit selector prompt (`REPLACE`/`MERGE`) with default `REPLACE` | Preserves safe default while allowing additive workflow |
+| 2026-02-20 | Sequencer set `MERGE` overlays incoming enabled steps onto current pattern and preserves current timing/channel | Supports additive set recall without destructive transport/config replacement |
 
 ## Deviations / Gaps Log
 
 - Host regression command for `test_CoreSettings` requires linking `NotificationQueue.cpp` explicitly in this repo setup.
 - `CoreSettings` still contains legacy macro fields in its schema; they are currently migration/fallback data rather than primary runtime persistence.
-- Sequencer `loadSet` merge behavior is still pending (current behavior is replace semantics, quantized when playing).
 
 ## Progress Journal
 
@@ -95,6 +99,10 @@ Notes:
 - 2026-02-20 / Checkpoint 15: implemented playback-safe queued apply for sequencer Pattern/Set loads (`next step` quantization).
 - 2026-02-20 / Checkpoint 16: extended `test_CoreStatePersistence` with explicit quantized-apply coverage.
 - 2026-02-20 / Checkpoint 17: firmware compile check passed (`pio run -e dev`) after quantized apply integration.
+- 2026-02-20 / Checkpoint 18: added Data Manager overlay flow (open via `NAV` long press, Target/Action/Slot controls).
+- 2026-02-20 / Checkpoint 19: added Set load mode selector prompt (`REPLACE`/`MERGE`, default `REPLACE`) and wired execution flow.
+- 2026-02-20 / Checkpoint 20: implemented sequencer set merge mode in `CoreState` and added host regression coverage.
+- 2026-02-20 / Checkpoint 21: firmware compile check passed (`pio run -e dev`) after Data Manager integration.
 
 ## Handover Notes
 

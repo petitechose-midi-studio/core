@@ -307,6 +307,114 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     std::cout << "[PASS] test_sequencer_load_is_quantized_to_next_step_when_playing\n";
 }
 
+void test_sequencer_set_load_merge_preserves_existing_steps() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    // Incoming set snapshot: step 0 and step 3 enabled.
+    state.sequencer.length.set(8);
+    state.sequencer.stepsPerBeat.set(2);
+    state.sequencer.midiChannel.set(1);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(0, 61, 101, 80);
+    state.sequencer.toggle(0);
+    state.sequencer.setStepDataAt(3, 65, 99, 70);
+    state.sequencer.toggle(3);
+    assert(state.saveSequencerSetSlot(4));
+
+    // Live pattern before merge: longer length + existing step 1 enabled.
+    state.sequencer.length.set(16);
+    state.sequencer.stepsPerBeat.set(4);
+    state.sequencer.midiChannel.set(6);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(1, 44, 55, 66);
+    state.sequencer.toggle(1);
+
+    const auto status = state.loadSequencerSetSlot(4, true);
+    assert(status == core::persistence::SlotLoadStatus::OK);
+
+    // Merge keeps current transport config and length, overlays incoming enabled steps only.
+    assert(state.sequencer.length.get() == 16);
+    assert(state.sequencer.stepsPerBeat.get() == 4);
+    assert(state.sequencer.midiChannel.get() == 6);
+
+    assert(state.sequencer.note[0] == 61);
+    assert(state.sequencer.velocity[0] == 101);
+    assert(state.sequencer.gate[0] == 80);
+
+    // Existing enabled step remains untouched if incoming did not enable it.
+    assert(state.sequencer.note[1] == 44);
+    assert(state.sequencer.velocity[1] == 55);
+    assert(state.sequencer.gate[1] == 66);
+
+    assert(state.sequencer.note[3] == 65);
+    assert(state.sequencer.velocity[3] == 99);
+    assert(state.sequencer.gate[3] == 70);
+
+    assert((state.sequencer.enabledMask.get() & (1ULL << 0)) != 0);
+    assert((state.sequencer.enabledMask.get() & (1ULL << 1)) != 0);
+    assert((state.sequencer.enabledMask.get() & (1ULL << 3)) != 0);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_set_load_merge_preserves_existing_steps\n";
+}
+
+void test_sequencer_set_load_merge_is_quantized_when_playing() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    // Prepare incoming set with only step 2 enabled.
+    state.sequencer.length.set(8);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(2, 72, 110, 45);
+    state.sequencer.toggle(2);
+    assert(state.saveSequencerSetSlot(6));
+
+    // Live state before queued merge.
+    state.sequencer.length.set(16);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(1, 48, 64, 55);
+    state.sequencer.toggle(1);
+    state.sequencer.playheadStep.set(7);
+    state.statusBar.playing.set(true);
+
+    const auto status = state.loadSequencerSetSlot(6, true);
+    assert(status == core::persistence::SlotLoadStatus::OK);
+
+    // Same-step update must stay deferred.
+    state.update();
+    assert(state.sequencer.note[2] != 72 || (state.sequencer.enabledMask.get() & (1ULL << 2)) == 0);
+
+    // Next step triggers queued merge.
+    state.sequencer.playheadStep.set(8);
+    state.update();
+    assert(state.sequencer.length.get() == 16);
+    assert(state.sequencer.note[2] == 72);
+    assert(state.sequencer.velocity[2] == 110);
+    assert(state.sequencer.gate[2] == 45);
+    assert((state.sequencer.enabledMask.get() & (1ULL << 1)) != 0);
+    assert((state.sequencer.enabledMask.get() & (1ULL << 2)) != 0);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_set_load_merge_is_quantized_when_playing\n";
+}
+
 }  // namespace
 
 int main() {
@@ -318,6 +426,8 @@ int main() {
     test_macro_library_roundtrip_and_erase();
     test_sequencer_workspace_and_library_roundtrip();
     test_sequencer_load_is_quantized_to_next_step_when_playing();
+    test_sequencer_set_load_merge_preserves_existing_steps();
+    test_sequencer_set_load_merge_is_quantized_when_playing();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
