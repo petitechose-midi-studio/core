@@ -33,9 +33,22 @@ int main(int argc, char** argv) {
     static desktop::MemoryStorage settingsStorage;
     static desktop::MemoryStorage macroWorkspaceStorage;
     static desktop::MemoryStorage macroLibraryStorage;
-    static core::state::CoreState coreState(settingsStorage, macroWorkspaceStorage, macroLibraryStorage);
+    static desktop::MemoryStorage sequencerWorkspaceStorage;
+    static desktop::MemoryStorage sequencerPatternLibraryStorage;
+    static desktop::MemoryStorage sequencerSetLibraryStorage;
+    static core::state::CoreState coreState(settingsStorage,
+                                            macroWorkspaceStorage,
+                                            macroLibraryStorage,
+                                            sequencerWorkspaceStorage,
+                                            sequencerPatternLibraryStorage,
+                                            sequencerSetLibraryStorage);
 
-    if (!settingsStorage.init() || !macroWorkspaceStorage.init() || !macroLibraryStorage.init()) {
+    if (!settingsStorage.init() ||
+        !macroWorkspaceStorage.init() ||
+        !macroLibraryStorage.init() ||
+        !sequencerWorkspaceStorage.init() ||
+        !sequencerPatternLibraryStorage.init() ||
+        !sequencerSetLibraryStorage.init()) {
         return 1;
     }
 

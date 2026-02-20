@@ -28,6 +28,9 @@ static std::optional<oc::hal::teensy::CD74HC4067> mux;
 static oc::hal::teensy::SDCardBackend settingsStorage("/macros.bin");
 static oc::hal::teensy::SDCardBackend macroWorkspaceStorage("/macro-workspace.bin");
 static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
+static oc::hal::teensy::SDCardBackend sequencerWorkspaceStorage("/sequencer-workspace.bin");
+static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer-pattern-library.bin");
+static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 
@@ -84,15 +87,44 @@ static void initStorage() {
         while (true) {}
     }
 
-    OC_LOG_INFO("Storages ready settings={}B workspace={}B library={}B",
+    auto sequencerWorkspaceResult = sequencerWorkspaceStorage.init();
+    if (!sequencerWorkspaceResult) {
+        OC_LOG_ERROR("Sequencer workspace storage init failed: {}",
+                     oc::type::errorCodeToString(sequencerWorkspaceResult.error().code));
+        while (true) {}
+    }
+
+    auto sequencerPatternResult = sequencerPatternLibraryStorage.init();
+    if (!sequencerPatternResult) {
+        OC_LOG_ERROR("Sequencer pattern library storage init failed: {}",
+                     oc::type::errorCodeToString(sequencerPatternResult.error().code));
+        while (true) {}
+    }
+
+    auto sequencerSetResult = sequencerSetLibraryStorage.init();
+    if (!sequencerSetResult) {
+        OC_LOG_ERROR("Sequencer set library storage init failed: {}",
+                     oc::type::errorCodeToString(sequencerSetResult.error().code));
+        while (true) {}
+    }
+
+    OC_LOG_INFO("Storages ready settings={}B macroWs={}B macroLib={}B seqWs={}B seqPatternLib={}B seqSetLib={}B",
                 settingsStorage.capacity(),
                 macroWorkspaceStorage.capacity(),
-                macroLibraryStorage.capacity());
+                macroLibraryStorage.capacity(),
+                sequencerWorkspaceStorage.capacity(),
+                sequencerPatternLibraryStorage.capacity(),
+                sequencerSetLibraryStorage.capacity());
 }
 
 static void initApp() {
     // Create global state with dedicated storage domains (survives context switches)
-    coreState.emplace(settingsStorage, macroWorkspaceStorage, macroLibraryStorage);
+    coreState.emplace(settingsStorage,
+                      macroWorkspaceStorage,
+                      macroLibraryStorage,
+                      sequencerWorkspaceStorage,
+                      sequencerPatternLibraryStorage,
+                      sequencerSetLibraryStorage);
 
     app = oc::hal::teensy::AppBuilder()
               .midi()

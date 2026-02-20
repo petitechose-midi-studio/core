@@ -32,11 +32,24 @@ int main(int argc, char** argv) {
     oc::impl::FileStorage settingsStorage("./macros.bin");
     oc::impl::FileStorage macroWorkspaceStorage("./macro-workspace.bin");
     oc::impl::FileStorage macroLibraryStorage("./macro-library.bin");
-    if (!settingsStorage.init() || !macroWorkspaceStorage.init() || !macroLibraryStorage.init()) {
+    oc::impl::FileStorage sequencerWorkspaceStorage("./sequencer-workspace.bin");
+    oc::impl::FileStorage sequencerPatternLibraryStorage("./sequencer-pattern-library.bin");
+    oc::impl::FileStorage sequencerSetLibraryStorage("./sequencer-set-library.bin");
+    if (!settingsStorage.init() ||
+        !macroWorkspaceStorage.init() ||
+        !macroLibraryStorage.init() ||
+        !sequencerWorkspaceStorage.init() ||
+        !sequencerPatternLibraryStorage.init() ||
+        !sequencerSetLibraryStorage.init()) {
         fprintf(stderr, "Failed to open storage files\n");
         return 1;
     }
-    core::state::CoreState coreState(settingsStorage, macroWorkspaceStorage, macroLibraryStorage);
+    core::state::CoreState coreState(settingsStorage,
+                                     macroWorkspaceStorage,
+                                     macroLibraryStorage,
+                                     sequencerWorkspaceStorage,
+                                     sequencerPatternLibraryStorage,
+                                     sequencerSetLibraryStorage);
 
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
 

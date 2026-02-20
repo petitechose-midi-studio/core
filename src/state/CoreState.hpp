@@ -25,6 +25,7 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "persistence/MacroPersistence.hpp"
+#include "persistence/SequencerPersistence.hpp"
 #include "CoreSettings.hpp"
 #include "GlobalSettingsState.hpp"
 #include "MidiSyncState.hpp"
@@ -74,6 +75,9 @@ struct CoreState {
     /// Macro workspace + library persistence service
     persistence::MacroPersistence macroPersistence;
 
+    /// Sequencer workspace + pattern/set libraries persistence service
+    persistence::SequencerPersistence sequencerPersistence;
+
     /// Overlay visibility manager
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
 
@@ -103,12 +107,21 @@ struct CoreState {
      * @param settingsStorage Legacy settings storage (midi sync + migration source)
      * @param macroWorkspaceStorage Dedicated macro workspace storage
      * @param macroLibraryStorage Dedicated macro library storage
+     * @param sequencerWorkspaceStorage Dedicated sequencer workspace storage
+     * @param sequencerPatternLibraryStorage Dedicated sequencer pattern library storage
+     * @param sequencerSetLibraryStorage Dedicated sequencer set library storage
      */
     explicit CoreState(oc::interface::IStorage& settingsStorage,
                        oc::interface::IStorage& macroWorkspaceStorage,
-                       oc::interface::IStorage& macroLibraryStorage)
+                       oc::interface::IStorage& macroLibraryStorage,
+                       oc::interface::IStorage& sequencerWorkspaceStorage,
+                       oc::interface::IStorage& sequencerPatternLibraryStorage,
+                       oc::interface::IStorage& sequencerSetLibraryStorage)
         : settings(settingsStorage)
-        , macroPersistence(macroWorkspaceStorage, macroLibraryStorage) {
+        , macroPersistence(macroWorkspaceStorage, macroLibraryStorage)
+        , sequencerPersistence(sequencerWorkspaceStorage,
+                               sequencerPatternLibraryStorage,
+                               sequencerSetLibraryStorage) {
         // Load persisted settings
         settings.load(pages, midiSync);
 
@@ -116,6 +129,13 @@ struct CoreState {
         if (macro_persistence_ready_) {
             if (!macroPersistence.loadWorkspace(pages)) {
                 persistMacroWorkspace_();
+            }
+        }
+
+        sequencer_persistence_ready_ = sequencerPersistence.init();
+        if (sequencer_persistence_ready_) {
+            if (!sequencerPersistence.loadWorkspace(sequencer)) {
+                persistSequencerWorkspace_();
             }
         }
 
@@ -139,7 +159,7 @@ struct CoreState {
         overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, globalSettings.selector.visible);
 
         // Setup auto-persistence for macro values
-        auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
+        macro_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
             [this](uint8_t i) {
                 float value = macros.slots[i].value.get();
 
@@ -154,8 +174,20 @@ struct CoreState {
 
         // Watch each macro value signal
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            auto_persist_->watchAt(i, macros.slots[i].value);
+            macro_auto_persist_->watchAt(i, macros.slots[i].value);
         }
+
+        sequencer_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<5>>(
+            [](uint8_t) {},
+            [this]() { persistSequencerWorkspace_(); },
+            CoreSettings::VALUE_SAVE_DELAY_MS
+        );
+
+        sequencer_auto_persist_->watchAt(0, sequencer.length);
+        sequencer_auto_persist_->watchAt(1, sequencer.stepsPerBeat);
+        sequencer_auto_persist_->watchAt(2, sequencer.midiChannel);
+        sequencer_auto_persist_->watchAt(3, sequencer.enabledMask);
+        sequencer_auto_persist_->watchAt(4, sequencer.stepDataRevision);
     }
 
     // Non-copyable, non-movable
@@ -254,6 +286,48 @@ struct CoreState {
         return macroPersistence.eraseLibrarySlot(slotIndex);
     }
 
+    bool saveSequencerPatternSlot(uint8_t slotIndex) {
+        if (!sequencer_persistence_ready_) return false;
+        return sequencerPersistence.savePatternSlot(slotIndex, sequencer);
+    }
+
+    persistence::SlotLoadStatus loadSequencerPatternSlot(uint8_t slotIndex) {
+        if (!sequencer_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+
+        const persistence::SlotLoadStatus status = sequencerPersistence.loadPatternSlot(slotIndex, sequencer);
+        if (status == persistence::SlotLoadStatus::OK) {
+            persistSequencerWorkspace_();
+        }
+
+        return status;
+    }
+
+    bool eraseSequencerPatternSlot(uint8_t slotIndex) {
+        if (!sequencer_persistence_ready_) return false;
+        return sequencerPersistence.erasePatternSlot(slotIndex);
+    }
+
+    bool saveSequencerSetSlot(uint8_t slotIndex) {
+        if (!sequencer_persistence_ready_) return false;
+        return sequencerPersistence.saveSetSlot(slotIndex, sequencer);
+    }
+
+    persistence::SlotLoadStatus loadSequencerSetSlot(uint8_t slotIndex) {
+        if (!sequencer_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+
+        const persistence::SlotLoadStatus status = sequencerPersistence.loadSetSlot(slotIndex, sequencer);
+        if (status == persistence::SlotLoadStatus::OK) {
+            persistSequencerWorkspace_();
+        }
+
+        return status;
+    }
+
+    bool eraseSequencerSetSlot(uint8_t slotIndex) {
+        if (!sequencer_persistence_ready_) return false;
+        return sequencerPersistence.eraseSetSlot(slotIndex);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Macro Accessors (encapsulated access for handlers)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -303,8 +377,11 @@ struct CoreState {
      * Saves dirty values incrementally after debounce timeout.
      */
     void update() {
-        if (auto_persist_) {
-            auto_persist_->update();
+        if (macro_auto_persist_) {
+            macro_auto_persist_->update();
+        }
+        if (sequencer_auto_persist_) {
+            sequencer_auto_persist_->update();
         }
     }
 
@@ -321,6 +398,7 @@ struct CoreState {
         macroEdit.reset();
         viewSelector.reset();
         sequencer.reset();
+        persistSequencerWorkspace_();
         midiSync.reset();
         globalSettings.reset();
         activeView.set(core::ui::ViewType::MACRO);
@@ -332,8 +410,11 @@ struct CoreState {
      * @brief Flush any pending dirty values immediately
      */
     void flush() {
-        if (auto_persist_) {
-            auto_persist_->flush();
+        if (macro_auto_persist_) {
+            macro_auto_persist_->flush();
+        }
+        if (sequencer_auto_persist_) {
+            sequencer_auto_persist_->flush();
         }
     }
 
@@ -343,10 +424,19 @@ private:
         macroPersistence.saveWorkspace(pages);
     }
 
+    void persistSequencerWorkspace_() {
+        if (!sequencer_persistence_ready_) return;
+        sequencerPersistence.saveWorkspace(sequencer);
+    }
+
     bool macro_persistence_ready_ = false;
+    bool sequencer_persistence_ready_ = false;
 
     /// Auto-persistence for macro values (watches signals, saves on debounce)
-    std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> auto_persist_;
+    std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> macro_auto_persist_;
+
+    /// Auto-persistence for sequencer workspace (watches key sequencer signals)
+    std::unique_ptr<oc::state::AutoPersistIncremental<5>> sequencer_auto_persist_;
 };
 
 }  // namespace core::state

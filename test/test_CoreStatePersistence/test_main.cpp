@@ -54,16 +54,42 @@ private:
     std::vector<uint8_t> data_;
 };
 
+struct CoreStorages {
+    MemoryStorage settings;
+    MemoryStorage macroWorkspace;
+    MemoryStorage macroLibrary;
+    MemoryStorage sequencerWorkspace;
+    MemoryStorage sequencerPatternLibrary;
+    MemoryStorage sequencerSetLibrary;
+
+    void initAll() {
+        settings.init();
+        macroWorkspace.init();
+        macroLibrary.init();
+        sequencerWorkspace.init();
+        sequencerPatternLibrary.init();
+        sequencerSetLibrary.init();
+    }
+};
+
+void drainNotifications() {
+    auto& queue = oc::state::NotificationQueue::instance();
+    while (queue.hasPending()) {
+        queue.flush();
+    }
+}
+
 void test_workspace_survives_legacy_corruption() {
-    MemoryStorage settingsStorage;
-    MemoryStorage workspaceStorage;
-    MemoryStorage libraryStorage;
-    settingsStorage.init();
-    workspaceStorage.init();
-    libraryStorage.init();
+    CoreStorages storage;
+    storage.initAll();
 
     {
-        core::state::CoreState state(settingsStorage, workspaceStorage, libraryStorage);
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
         state.setMacroValue(0, 0.13f);
         state.setMacroValue(1, 0.87f);
         oc::state::NotificationQueue::instance().flush();
@@ -71,24 +97,32 @@ void test_workspace_survives_legacy_corruption() {
     }
 
     // Corrupt legacy settings storage only.
-    settingsStorage.erase(0, settingsStorage.capacity());
+    storage.settings.erase(0, storage.settings.capacity());
 
-    core::state::CoreState restored(settingsStorage, workspaceStorage, libraryStorage);
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
     assert(restored.getMacroValue(0) == 0.13f);
     assert(restored.getMacroValue(1) == 0.87f);
+
+    drainNotifications();
 
     std::cout << "[PASS] test_workspace_survives_legacy_corruption\n";
 }
 
 void test_macro_library_roundtrip_and_erase() {
-    MemoryStorage settingsStorage;
-    MemoryStorage workspaceStorage;
-    MemoryStorage libraryStorage;
-    settingsStorage.init();
-    workspaceStorage.init();
-    libraryStorage.init();
+    CoreStorages storage;
+    storage.initAll();
 
-    core::state::CoreState state(settingsStorage, workspaceStorage, libraryStorage);
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
     state.switchToPage(2);
     state.setMacroConfig(0, 4, 88);
     state.setMacroValue(0, 0.64f);
@@ -113,7 +147,88 @@ void test_macro_library_roundtrip_and_erase() {
     const auto erasedStatus = state.loadMacroLibrarySlot(3);
     assert(erasedStatus == core::persistence::SlotLoadStatus::EMPTY);
 
+    drainNotifications();
+
     std::cout << "[PASS] test_macro_library_roundtrip_and_erase\n";
+}
+
+void test_sequencer_workspace_and_library_roundtrip() {
+    CoreStorages storage;
+    storage.initAll();
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        state.sequencer.length.set(16);
+        state.sequencer.stepsPerBeat.set(4);
+        state.sequencer.midiChannel.set(3);
+        state.sequencer.toggle(0);
+        state.sequencer.setStepDataAt(0, 64, 120, 70);
+
+        oc::state::NotificationQueue::instance().flush();
+        state.flush();
+
+        assert(state.saveSequencerPatternSlot(4));
+        assert(state.saveSequencerSetSlot(2));
+
+        state.sequencer.length.set(8);
+        state.sequencer.stepsPerBeat.set(2);
+        state.sequencer.midiChannel.set(0);
+        state.sequencer.enabledMask.set(0);
+        state.sequencer.setStepDataAt(0, 40, 40, 40);
+        oc::state::NotificationQueue::instance().flush();
+        state.flush();
+
+        const auto patternStatus = state.loadSequencerPatternSlot(4);
+        assert(patternStatus == core::persistence::SlotLoadStatus::OK);
+        assert(state.sequencer.length.get() == 16);
+        assert(state.sequencer.stepsPerBeat.get() == 4);
+        assert(state.sequencer.midiChannel.get() == 3);
+        assert(state.sequencer.isEnabled(0));
+        assert(state.sequencer.note[0] == 64);
+        assert(state.sequencer.velocity[0] == 120);
+        assert(state.sequencer.gate[0] == 70);
+
+        assert(state.eraseSequencerPatternSlot(4));
+        const auto erasedPatternStatus = state.loadSequencerPatternSlot(4);
+        assert(erasedPatternStatus == core::persistence::SlotLoadStatus::EMPTY);
+
+        const auto setStatus = state.loadSequencerSetSlot(2);
+        assert(setStatus == core::persistence::SlotLoadStatus::OK);
+        assert(state.sequencer.length.get() == 16);
+        assert(state.sequencer.stepsPerBeat.get() == 4);
+        assert(state.sequencer.midiChannel.get() == 3);
+
+        assert(state.eraseSequencerSetSlot(2));
+        const auto erasedSetStatus = state.loadSequencerSetSlot(2);
+        assert(erasedSetStatus == core::persistence::SlotLoadStatus::EMPTY);
+    }
+
+    // Corrupt legacy settings storage only and verify sequencer workspace restores.
+    storage.settings.erase(0, storage.settings.capacity());
+
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
+    assert(restored.sequencer.length.get() == 16);
+    assert(restored.sequencer.stepsPerBeat.get() == 4);
+    assert(restored.sequencer.midiChannel.get() == 3);
+    assert(restored.sequencer.isEnabled(0));
+    assert(restored.sequencer.note[0] == 64);
+    assert(restored.sequencer.velocity[0] == 120);
+    assert(restored.sequencer.gate[0] == 70);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_workspace_and_library_roundtrip\n";
 }
 
 }  // namespace
@@ -125,6 +240,7 @@ int main() {
 
     test_workspace_survives_legacy_corruption();
     test_macro_library_roundtrip_and_erase();
+    test_sequencer_workspace_and_library_roundtrip();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
