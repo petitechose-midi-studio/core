@@ -162,6 +162,35 @@ void test_workspace_load_latest_after_multiple_saves() {
     std::cout << "[PASS] test_workspace_load_latest_after_multiple_saves\n";
 }
 
+void test_workspace_masks_enabled_bits_outside_length() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage patternStorage;
+    MemoryStorage setStorage;
+    workspaceStorage.init();
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    assert(persistence.init());
+
+    core::state::sequencer::SequencerState source;
+    source.reset();
+    source.length.set(8);
+    source.enabledMask.set((1ULL << 0) | (1ULL << 7) | (1ULL << 9) | (1ULL << 15));
+
+    assert(persistence.saveWorkspace(source));
+
+    core::state::sequencer::SequencerState loaded;
+    loaded.reset();
+    assert(persistence.loadWorkspace(loaded));
+
+    const uint64_t expectedMask = (1ULL << 0) | (1ULL << 7);
+    assert(loaded.length.get() == 8);
+    assert(loaded.enabledMask.get() == expectedMask);
+
+    std::cout << "[PASS] test_workspace_masks_enabled_bits_outside_length\n";
+}
+
 void test_pattern_library_save_load_erase() {
     MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
@@ -188,6 +217,36 @@ void test_pattern_library_save_load_erase() {
     assert(emptyStatus == core::persistence::SlotLoadStatus::EMPTY);
 
     std::cout << "[PASS] test_pattern_library_save_load_erase\n";
+}
+
+void test_pattern_library_masks_enabled_bits_outside_length() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage patternStorage;
+    MemoryStorage setStorage;
+    workspaceStorage.init();
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    assert(persistence.init());
+
+    core::state::sequencer::SequencerState source;
+    source.reset();
+    source.length.set(16);
+    source.enabledMask.set((1ULL << 0) | (1ULL << 5) | (1ULL << 20) | (1ULL << 63));
+
+    assert(persistence.savePatternSlot(9, source));
+
+    core::state::sequencer::SequencerState loaded;
+    loaded.reset();
+    const auto status = persistence.loadPatternSlot(9, loaded);
+    assert(status == core::persistence::SlotLoadStatus::OK);
+
+    const uint64_t expectedMask = (1ULL << 0) | (1ULL << 5);
+    assert(loaded.length.get() == 16);
+    assert(loaded.enabledMask.get() == expectedMask);
+
+    std::cout << "[PASS] test_pattern_library_masks_enabled_bits_outside_length\n";
 }
 
 void test_set_library_save_load_erase() {
@@ -260,7 +319,9 @@ int main() {
 
     test_workspace_roundtrip();
     test_workspace_load_latest_after_multiple_saves();
+    test_workspace_masks_enabled_bits_outside_length();
     test_pattern_library_save_load_erase();
+    test_pattern_library_masks_enabled_bits_outside_length();
     test_set_library_save_load_erase();
     test_library_bounds();
 

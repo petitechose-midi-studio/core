@@ -23,7 +23,7 @@ Implement SD persistence with deterministic runtime behavior and testable increm
 | 3 | Sequencer domain: workspace + pattern/set libraries | DONE | Workspace + pattern/set slots integrated and tested |
 | 4 | Playback-safe apply queue (`next step`) | DONE | Pattern/Set loads are staged and applied on next playhead step while playing |
 | 5 | Data Manager UI flow (`NAV` long press) + Replace/Merge prompt | DONE | Added Data Manager overlay + Set load mode selector (default `Replace`) |
-| 6 | Migration/fallback hardening + regression tests + perf validation | TODO | Record final deviations |
+| 6 | Migration/fallback hardening + regression tests + perf validation | DONE | Hardened macro explicit save snapshot + sequencer mask sanitation, full regression pass |
 
 ## Test Strategy
 
@@ -43,6 +43,10 @@ Each iteration must add/adjust tests before finalizing code changes.
 | 4 | Firmware compile check after quantized apply | `pio run -e dev` | PASS |
 | 5 | Data Manager + set merge semantics regression | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
 | 5 | Firmware compile check after Data Manager integration | `pio run -e dev` | PASS |
+| 6 | Sequencer mask sanitation regression | `g++ -std=c++17 test/test_SequencerPersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_SequencerPersistence.exe && .cache/test_SequencerPersistence.exe` | PASS |
+| 6 | Macro explicit save snapshot regression | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
+| 6 | Full host persistence regression sweep | `g++ -std=c++17 test/test_PersistenceSlotFileStore/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_PersistenceSlotFileStore.exe && .cache/test_PersistenceSlotFileStore.exe` + `g++ -std=c++17 test/test_MacroPersistence/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_MacroPersistence.exe && .cache/test_MacroPersistence.exe` + `g++ -std=c++17 test/test_CoreSettings/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -o .cache/test_CoreSettings.exe && .cache/test_CoreSettings.exe` | PASS |
+| 6 | Firmware compile + footprint snapshot after hardening | `pio run -e dev` | PASS |
 
 Notes:
 
@@ -75,12 +79,15 @@ Notes:
 | 2026-02-20 | Data Manager Set load uses explicit selector prompt (`REPLACE`/`MERGE`) with default `REPLACE` | Preserves safe default while allowing additive workflow |
 | 2026-02-20 | Sequencer set `MERGE` overlays incoming enabled steps onto current pattern and preserves current timing/channel | Supports additive set recall without destructive transport/config replacement |
 | 2026-02-20 | Removed `sequencer.length` from StepEdit overlay watcher fan-out | Prevents `Signal<uint8_t>` subscriber overflow (`MaxSubscribers=4`) observed on Teensy boot |
+| 2026-02-20 | Explicit macro library save snapshots runtime macro values before serialization | Avoids debounce race where `pages.values[]` may lag behind live macro encoder state |
+| 2026-02-20 | Sequencer persistence masks `enabledMask` to sanitized pattern length on save/load | Limits stale/corrupted out-of-pattern bits and keeps payload behavior deterministic |
 
 ## Deviations / Gaps Log
 
 - Host regression command for `test_CoreSettings` requires linking `NotificationQueue.cpp` explicitly in this repo setup.
 - `CoreSettings` still contains legacy macro fields in its schema; they are currently migration/fallback data rather than primary runtime persistence.
 - `StepSequencerState::length` (from `oc-note`) still uses default `Signal` subscriber cap; keep fan-out <= 4 in core until upstream cap strategy is adjusted.
+- Dev firmware snapshot after iteration 6 hardening: FLASH code/data/headers = `349076/142316/8316`, RAM1 variables/code/padding = `71968/317432/10248`, RAM2 variables = `434336`.
 
 ## Progress Journal
 
@@ -106,6 +113,10 @@ Notes:
 - 2026-02-20 / Checkpoint 20: implemented sequencer set merge mode in `CoreState` and added host regression coverage.
 - 2026-02-20 / Checkpoint 21: firmware compile check passed (`pio run -e dev`) after Data Manager integration.
 - 2026-02-20 / Checkpoint 22: fixed Teensy boot assertion (`Signal MaxSubscribers exceeded`) by reducing `sequencer.length` watcher fan-out in `StandaloneContext`.
+- 2026-02-20 / Checkpoint 23: hardened `CoreState::saveMacroLibrarySlot` to snapshot live runtime values before explicit slot save.
+- 2026-02-20 / Checkpoint 24: hardened `SequencerPersistence` to clamp `enabledMask` to sanitized pattern length during save/load.
+- 2026-02-20 / Checkpoint 25: added regression tests for macro explicit-save snapshot path and sequencer mask sanitation.
+- 2026-02-20 / Checkpoint 26: completed full host persistence regression sweep and firmware compile/footprint validation.
 
 ## Handover Notes
 

@@ -272,6 +272,11 @@ struct CoreState {
 
     bool saveMacroLibrarySlot(uint8_t slotIndex) {
         if (!macro_persistence_ready_) return false;
+
+        // Explicit library saves should snapshot current runtime macro values,
+        // even if AutoPersist debounce has not propagated them into page storage yet.
+        syncActivePageValuesFromRuntime_();
+
         return macroPersistence.saveLibrarySlot(slotIndex, pages);
     }
 
@@ -617,6 +622,13 @@ private:
     void persistMacroWorkspace_() {
         if (!macro_persistence_ready_) return;
         macroPersistence.saveWorkspace(pages);
+    }
+
+    void syncActivePageValuesFromRuntime_() {
+        auto& page = pages.activePageData();
+        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+            page.values[i] = std::clamp(macros.slots[i].value.get(), 0.0f, 1.0f);
+        }
     }
 
     void persistSequencerWorkspace_() {

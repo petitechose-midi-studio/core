@@ -152,6 +152,37 @@ void test_macro_library_roundtrip_and_erase() {
     std::cout << "[PASS] test_macro_library_roundtrip_and_erase\n";
 }
 
+void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    // Change runtime macro value and save immediately (without NotificationQueue/state flush).
+    state.setMacroValue(0, 0.37f);
+    assert(state.saveMacroLibrarySlot(6));
+
+    // Move away from that value so load verification is unambiguous.
+    state.setMacroValue(0, 0.02f);
+    oc::state::NotificationQueue::instance().flush();
+    state.flush();
+
+    const auto status = state.loadMacroLibrarySlot(6);
+    assert(status == core::persistence::SlotLoadStatus::OK);
+
+    const float restored = state.getMacroValue(0);
+    assert(restored > 0.3699f && restored < 0.3701f);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_macro_library_save_snapshots_runtime_values_without_manual_flush\n";
+}
+
 void test_sequencer_workspace_and_library_roundtrip() {
     CoreStorages storage;
     storage.initAll();
@@ -424,6 +455,7 @@ int main() {
 
     test_workspace_survives_legacy_corruption();
     test_macro_library_roundtrip_and_erase();
+    test_macro_library_save_snapshots_runtime_values_without_manual_flush();
     test_sequencer_workspace_and_library_roundtrip();
     test_sequencer_load_is_quantized_to_next_step_when_playing();
     test_sequencer_set_load_merge_preserves_existing_steps();

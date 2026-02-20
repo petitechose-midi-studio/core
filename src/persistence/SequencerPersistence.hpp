@@ -222,6 +222,12 @@ private:
         return length;
     }
 
+    static uint64_t lengthMask_(uint8_t length) {
+        if (length == 0) return 0;
+        if (length >= state::sequencer::SequencerState::MAX_STEPS) return ~uint64_t{0};
+        return (uint64_t{1} << length) - uint64_t{1};
+    }
+
     static uint8_t sanitizeStepsPerBeat_(uint8_t spb) {
         if (spb == 0) {
             return oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
@@ -257,10 +263,11 @@ private:
 
     static void fillPatternPayload_(const state::sequencer::SequencerState& source,
                                     PatternPayloadV1& out) {
-        out.length = sanitizeLength_(source.length.get());
+        const uint8_t length = sanitizeLength_(source.length.get());
+        out.length = length;
         out.stepsPerBeat = sanitizeStepsPerBeat_(source.stepsPerBeat.get());
         out.midiChannel = sanitizeMidiChannel_(source.midiChannel.get());
-        out.enabledMask = source.enabledMask.get();
+        out.enabledMask = source.enabledMask.get() & lengthMask_(length);
 
         for (uint8_t i = 0; i < state::sequencer::SequencerState::MAX_STEPS; ++i) {
             out.note[i] = sanitizeMidi7_(source.note[i]);
@@ -276,7 +283,7 @@ private:
         target.length.set(length);
         target.stepsPerBeat.set(sanitizeStepsPerBeat_(payload.stepsPerBeat));
         target.midiChannel.set(sanitizeMidiChannel_(payload.midiChannel));
-        target.enabledMask.set(payload.enabledMask);
+        target.enabledMask.set(payload.enabledMask & lengthMask_(length));
 
         for (uint8_t i = 0; i < state::sequencer::SequencerState::MAX_STEPS; ++i) {
             target.note[i] = sanitizeMidi7_(payload.note[i]);
