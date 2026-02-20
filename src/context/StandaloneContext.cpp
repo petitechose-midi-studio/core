@@ -40,6 +40,7 @@
 #include "ui/font/StandaloneFonts.hpp"
 #include <oc/context/OverlayManager.hpp>
 #include "ui/transportbar/TransportBar.hpp"
+#include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/view/MacroView.hpp"
 #include "ui/view/SequencerView.hpp"
 #include <ms/ui/ViewContainer.hpp>
@@ -104,6 +105,11 @@ oc::type::Result<void> StandaloneContext::init() {
         view_container_->getBottomZone(),
         core_state_.statusBar
     );
+    context_softkey_bar_ = std::make_unique<core::ui::ContextSoftkeyBar>(
+        view_container_->getBottomZone()
+    );
+    setupDataManagerSoftkeyBarRendering();
+    renderDataManagerSoftkeyBar();
 
     // Create overlay manager with AuthorityResolver
     overlay_controller_ = std::make_unique<oc::context::OverlayManager<core::ui::OverlayType>>(
@@ -153,13 +159,13 @@ oc::type::Result<void> StandaloneContext::init() {
     );
     setupDataManagerRendering();
 
-    data_manager_set_load_mode_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    data_manager_dialog_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlay_controller_->registerCleanup(
-        core::ui::OverlayType::DATA_MANAGER_SET_LOAD_MODE_SELECTOR,
-        oc::ui::lvgl::scopeID(data_manager_set_load_mode_selector_overlay_->getElement()),
+        core::ui::OverlayType::DATA_MANAGER_DIALOG,
+        oc::ui::lvgl::scopeID(data_manager_dialog_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
-    setupDataManagerSetLoadModeSelectorRendering();
+    setupDataManagerDialogRendering();
 
     // Macro edit overlays (main + selectors)
     macro_edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
@@ -354,7 +360,7 @@ oc::type::Result<void> StandaloneContext::init() {
             sequencer_view_->getElement(),
         },
         data_manager_overlay_->getElement(),
-        data_manager_set_load_mode_selector_overlay_->getElement()
+        data_manager_dialog_overlay_->getElement()
     );
 
     // Create MacroEdit input handler (two-level scoping)
@@ -413,7 +419,7 @@ void StandaloneContext::onCleanup() {
     core_state_.sequencer.stepEdit.reset();
     core_state_.sequencer.propertySelector.reset();
     core_state_.globalSettings.reset();
-    core_state_.dataManager.reset();
+    core_state_.dataManager.resetSession(core::state::DataManagerContext::MACRO);
 
     if (sequencer_playback_) {
         sequencer_playback_->stop();
@@ -447,7 +453,7 @@ void StandaloneContext::onCleanup() {
     seq_property_selector_overlay_.reset();
     global_settings_selector_overlay_.reset();
     global_settings_overlay_.reset();
-    data_manager_set_load_mode_selector_overlay_.reset();
+    data_manager_dialog_overlay_.reset();
     data_manager_overlay_.reset();
     view_selector_.reset();
 
@@ -455,6 +461,7 @@ void StandaloneContext::onCleanup() {
     overlay_controller_.reset();
 
     // TransportBar (TopBar is now managed by MacroView)
+    context_softkey_bar_.reset();
     transport_bar_.reset();
 
     if (macro_view_) {
@@ -1120,10 +1127,12 @@ void StandaloneContext::setupDataManagerRendering() {
         [this]() { renderDataManager(); },
         core_state_.dataManager.visible,
         core_state_.dataManager.focusedRow,
-        core_state_.dataManager.domain,
-        core_state_.dataManager.action,
-        core_state_.dataManager.slotIndex,
-        core_state_.dataManager.setLoadMode
+        core_state_.dataManager.context,
+        core_state_.dataManager.macroShortcutLeft,
+        core_state_.dataManager.macroShortcutRight,
+        core_state_.dataManager.seqShortcutLeft,
+        core_state_.dataManager.seqShortcutRight,
+        core_state_.dataManager.feedback
     );
 }
 
@@ -1136,57 +1145,43 @@ void StandaloneContext::renderDataManager() {
         return;
     }
 
-    const char* domainLabel = "MACRO";
-    uint8_t slotCount = core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
-    switch (dm.domain.get()) {
-        case core::state::DataManagerDomain::MACRO_LIBRARY:
-            domainLabel = "MACRO";
-            slotCount = core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
-            break;
-        case core::state::DataManagerDomain::SEQ_PATTERN_LIBRARY:
-            domainLabel = "PATTERN";
-            slotCount = core::persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
-            break;
-        case core::state::DataManagerDomain::SEQ_SET_LIBRARY:
-            domainLabel = "SET";
-            slotCount = core::persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
-            break;
-    }
+    const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
+    const char* title = macroContext ? "MACRO TOOLS" : "SEQUENCER TOOLS";
 
-    const char* actionLabel = "SAVE";
-    switch (dm.action.get()) {
-        case core::state::DataManagerAction::SAVE: actionLabel = "SAVE"; break;
-        case core::state::DataManagerAction::LOAD: actionLabel = "LOAD"; break;
-        case core::state::DataManagerAction::ERASE: actionLabel = "ERASE"; break;
-    }
-
-    char slotLabel[16];
-    snprintf(slotLabel, sizeof(slotLabel), "%u/%u",
-             static_cast<unsigned>(dm.slotIndex.get() + 1U),
-             static_cast<unsigned>(slotCount));
-
-    const bool showSetLoadModeRow = dm.isSetLoadModeRowVisible();
-    const char* setLoadModeLabel =
-        (dm.setLoadMode.get() == core::state::DataManagerSetLoadMode::REPLACE) ? "REPLACE" : "MERGE";
+    const core::state::DataManagerCommand leftCommand =
+        macroContext ? dm.macroShortcutLeft.get() : dm.seqShortcutLeft.get();
+    const core::state::DataManagerCommand rightCommand =
+        macroContext ? dm.macroShortcutRight.get() : dm.seqShortcutRight.get();
 
     const ms::ui::KeyValueRow rows[] = {
-        {.key = "Target", .value = domainLabel},
-        {.key = "Action", .value = actionLabel},
-        {.key = "Slot", .value = slotLabel},
-        {.key = "SetLoad", .value = setLoadModeLabel},
+        {.key = "Bottom Left", .value = core::state::dataManagerCommandLabel(leftCommand)},
+        {.key = "Bottom Right", .value = core::state::dataManagerCommandLabel(rightCommand)},
     };
 
-    const uint8_t rowCount = showSetLoadModeRow ? 4U : 3U;
-    const uint8_t selected = std::min<uint8_t>(dm.focusedRow.get(), static_cast<uint8_t>(rowCount - 1U));
+    const uint8_t rowCount = 2U;
+    const uint8_t selected = std::min<uint8_t>(dm.focusedRow.get(), 1U);
+
+    const char* feedback = dm.feedback.get();
+    const char* meta = (feedback && feedback[0] != '\0')
+                           ? feedback
+                           : "NAV=MAP  L/R=RUN  C=ALL";
+
+    uint32_t feedbackHash = 0;
+    if (feedback) {
+        for (const char* p = feedback; *p; ++p) {
+            feedbackHash = (feedbackHash * 131U) + static_cast<uint8_t>(*p);
+        }
+    }
+
     const uint32_t dataRevision =
-        (static_cast<uint32_t>(dm.domain.get()) << 24) |
-        (static_cast<uint32_t>(dm.action.get()) << 16) |
-        (static_cast<uint32_t>(dm.slotIndex.get()) << 8) |
-        static_cast<uint32_t>(dm.setLoadMode.get());
+        (static_cast<uint32_t>(dm.context.get()) << 24) |
+        (static_cast<uint32_t>(leftCommand) << 16) |
+        (static_cast<uint32_t>(rightCommand) << 8) |
+        (feedbackHash & 0xFFU);
 
     data_manager_overlay_->render({
-        .title = "DATA MANAGER",
-        .meta = "NAV=RUN OPT=EDIT",
+        .title = title,
+        .meta = meta,
         .rows = rows,
         .rowCount = rowCount,
         .selectedIndex = selected,
@@ -1195,35 +1190,192 @@ void StandaloneContext::renderDataManager() {
     });
 }
 
-void StandaloneContext::setupDataManagerSetLoadModeSelectorRendering() {
-    data_manager_set_load_mode_selector_watcher_.watchAll(
-        [this]() { renderDataManagerSetLoadModeSelector(); },
-        core_state_.dataManager.setLoadSelector.visible,
-        core_state_.dataManager.setLoadSelector.selectedIndex
+void StandaloneContext::setupDataManagerDialogRendering() {
+    data_manager_dialog_watcher_.watchAll(
+        [this]() { renderDataManagerDialog(); },
+        core_state_.dataManager.dialog.visible,
+        core_state_.dataManager.dialog.mode,
+        core_state_.dataManager.dialog.selectedIndex,
+        core_state_.dataManager.dialog.editingShortcutRow,
+        core_state_.dataManager.context,
+        core_state_.dataManager.pendingCommand,
+        core_state_.dataManager.pendingSlot,
+        core_state_.dataManager.pendingSetLoadMode
     );
 }
 
-void StandaloneContext::renderDataManagerSetLoadModeSelector() {
-    if (!data_manager_set_load_mode_selector_overlay_) return;
+void StandaloneContext::renderDataManagerDialog() {
+    if (!data_manager_dialog_overlay_) return;
 
-    const auto& selector = core_state_.dataManager.setLoadSelector;
-    if (!selector.visible.get()) {
-        data_manager_set_load_mode_selector_overlay_->render({.visible = false});
+    const auto& dm = core_state_.dataManager;
+    const auto& dialog = dm.dialog;
+
+    if (!dialog.visible.get()) {
+        data_manager_dialog_overlay_->render({.visible = false});
         return;
     }
 
-    static const char* const ITEMS[] = {"REPLACE", "MERGE"};
+    static const char* const MACRO_COMMAND_ITEMS[] = {
+        "Save Macro",
+        "Load Macro",
+        "Erase Macro",
+    };
 
-    data_manager_set_load_mode_selector_overlay_->render({
-        .title = "LOAD SET",
-        .meta = "APPLY",
-        .items = ITEMS,
-        .itemCount = 2,
-        .selectedIndex = std::clamp(selector.selectedIndex.get(), 0, 1),
+    static const char* const SEQ_COMMAND_ITEMS[] = {
+        "Save Pattern",
+        "Load Pattern",
+        "Erase Pattern",
+        "Save Set",
+        "Load Set",
+        "Erase Set",
+    };
+
+    static bool slotLabelsInit = false;
+    static char slotLabels[32][8]{};
+    static const char* slotItems[32]{};
+    if (!slotLabelsInit) {
+        for (int i = 0; i < 32; ++i) {
+            std::snprintf(slotLabels[i], sizeof(slotLabels[i]), "S%02d", i + 1);
+            slotItems[i] = slotLabels[i];
+        }
+        slotLabelsInit = true;
+    }
+
+    static const char* const SET_MODE_ITEMS[] = {"REPLACE", "MERGE"};
+    static const char* const CONFIRM_ITEMS[] = {"CANCEL", "CONFIRM"};
+
+    const auto mode = dialog.mode.get();
+    const char* title = "COMMAND";
+    const char* meta = "";
+    const char* const* items = nullptr;
+    int itemCount = 0;
+    int selected = 0;
+
+    if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
+        const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
+        title = (dialog.editingShortcutRow.get() == 0) ? "MAP LEFT" : "MAP RIGHT";
+        meta = "SELECT COMMAND";
+        items = macroContext ? MACRO_COMMAND_ITEMS : SEQ_COMMAND_ITEMS;
+        itemCount = macroContext ? 3 : 6;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
+    } else if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
+        const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
+        title = "COMMANDS";
+        meta = "RUN COMMAND";
+        items = macroContext ? MACRO_COMMAND_ITEMS : SEQ_COMMAND_ITEMS;
+        itemCount = macroContext ? 3 : 6;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
+    } else if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
+        title = core::state::dataManagerCommandLabel(dm.pendingCommand.get());
+        meta = "SELECT SLOT";
+        uint8_t slotCount = 0;
+        const auto cmd = dm.pendingCommand.get();
+        if (cmd == core::state::DataManagerCommand::MACRO_SAVE_SLOT ||
+            cmd == core::state::DataManagerCommand::MACRO_LOAD_SLOT ||
+            cmd == core::state::DataManagerCommand::MACRO_ERASE_SLOT) {
+            slotCount = core::persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
+        } else if (cmd == core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT ||
+                   cmd == core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT ||
+                   cmd == core::state::DataManagerCommand::SEQ_ERASE_PATTERN_SLOT) {
+            slotCount = core::persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
+        } else if (cmd == core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT ||
+                   cmd == core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT ||
+                   cmd == core::state::DataManagerCommand::SEQ_ERASE_SET_SLOT) {
+            slotCount = core::persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
+        }
+
+        itemCount = static_cast<int>(slotCount);
+        if (itemCount <= 0) {
+            data_manager_dialog_overlay_->render({.visible = false});
+            return;
+        }
+        items = slotItems;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
+    } else if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
+        title = "LOAD SET";
+        meta = "MODE";
+        items = SET_MODE_ITEMS;
+        itemCount = 2;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, 1);
+    } else if (mode == core::state::DataManagerDialogMode::CONFIRM) {
+        title = "CONFIRM";
+        const auto cmd = dm.pendingCommand.get();
+        static char confirmMeta[24];
+        if (core::state::dataManagerCommandIsErase(cmd)) {
+            std::snprintf(confirmMeta, sizeof(confirmMeta), "ERASE S%02u ?",
+                          static_cast<unsigned>(dm.pendingSlot.get() + 1U));
+        } else {
+            std::snprintf(confirmMeta, sizeof(confirmMeta), "OVERWRITE S%02u ?",
+                          static_cast<unsigned>(dm.pendingSlot.get() + 1U));
+        }
+        meta = confirmMeta;
+        items = CONFIRM_ITEMS;
+        itemCount = 2;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, 1);
+    }
+
+    if (!items || itemCount <= 0) {
+        data_manager_dialog_overlay_->render({.visible = false});
+        return;
+    }
+
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(mode) << 24) |
+        (static_cast<uint32_t>(selected) << 16) |
+        (static_cast<uint32_t>(dm.pendingCommand.get()) << 8) |
+        static_cast<uint32_t>(dm.pendingSlot.get());
+
+    data_manager_dialog_overlay_->render({
+        .title = title,
+        .meta = meta,
+        .items = items,
+        .itemCount = itemCount,
+        .selectedIndex = selected,
         .showIndexColumn = false,
         .visible = true,
-        .dataRevision = static_cast<uint32_t>(selector.selectedIndex.get() + 1),
+        .dataRevision = dataRevision,
     });
+}
+
+void StandaloneContext::setupDataManagerSoftkeyBarRendering() {
+    data_manager_softkey_bar_watcher_.watchAll(
+        [this]() { renderDataManagerSoftkeyBar(); },
+        core_state_.dataManager.visible,
+        core_state_.dataManager.context,
+        core_state_.dataManager.macroShortcutLeft,
+        core_state_.dataManager.macroShortcutRight,
+        core_state_.dataManager.seqShortcutLeft,
+        core_state_.dataManager.seqShortcutRight
+    );
+}
+
+void StandaloneContext::renderDataManagerSoftkeyBar() {
+    if (!context_softkey_bar_) return;
+
+    const bool visible = core_state_.dataManager.visible.get();
+    if (!visible) {
+        context_softkey_bar_->hide();
+        if (transport_bar_) transport_bar_->show();
+        return;
+    }
+
+    const bool macroContext = core_state_.dataManager.context.get() == core::state::DataManagerContext::MACRO;
+    const auto left = macroContext
+                          ? core_state_.dataManager.macroShortcutLeft.get()
+                          : core_state_.dataManager.seqShortcutLeft.get();
+    const auto right = macroContext
+                           ? core_state_.dataManager.macroShortcutRight.get()
+                           : core_state_.dataManager.seqShortcutRight.get();
+
+    char leftLabel[24];
+    std::snprintf(leftLabel, sizeof(leftLabel), "L:%s", core::state::dataManagerCommandLabel(left));
+
+    char rightLabel[24];
+    std::snprintf(rightLabel, sizeof(rightLabel), "R:%s", core::state::dataManagerCommandLabel(right));
+
+    context_softkey_bar_->setLabels(leftLabel, "C:Commands", rightLabel);
+    context_softkey_bar_->show();
+    if (transport_bar_) transport_bar_->hide();
 }
 
 void StandaloneContext::renderViewSelector() {

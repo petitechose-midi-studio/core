@@ -25,7 +25,7 @@ public:
                        oc::api::ButtonAPI& buttons,
                        ViewScopes viewScopes,
                        lv_obj_t* managerOverlayScope,
-                       lv_obj_t* setLoadSelectorScope);
+                       lv_obj_t* dialogOverlayScope);
 
     ~DataManagerHandler() = default;
 
@@ -38,16 +38,33 @@ private:
     void openManager();
     void closeManager();
     void moveFocus(float delta);
-    void editFocusedValue(float normalized);
-    void executeFocusedAction(bool skipSetLoadPrompt = false);
 
-    void openSetLoadModeSelector_();
-    void navigateSetLoadModeSelector_(float delta);
-    void applySetLoadModeAndExecute_();
-    void closeSetLoadModeSelector_();
+    void openShortcutAssignmentDialog_();
+    void openCommandPaletteDialog_();
+    void runShortcut_(bool leftButton);
 
-    uint8_t slotCountForDomain_(core::state::DataManagerDomain domain) const;
-    void clampSlotToDomain_();
+    void navigateDialog_(float delta);
+    void applyDialogSelection_();
+    void closeDialog_();
+
+    void startCommandFlow_(core::state::DataManagerCommand command);
+    void openSlotPickerForPendingCommand_();
+    void openSetLoadModeDialog_();
+    void openConfirmDialog_();
+    void executePendingCommand_();
+
+    core::state::DataManagerContext contextForActiveView_() const;
+
+    std::size_t commandCountForContext_(core::state::DataManagerContext context) const;
+    core::state::DataManagerCommand commandAtIndexForContext_(core::state::DataManagerContext context,
+                                                               int index) const;
+    int commandIndexForContext_(core::state::DataManagerContext context,
+                                core::state::DataManagerCommand command) const;
+
+    uint8_t slotCountForCommand_(core::state::DataManagerCommand command) const;
+    bool slotOccupiedForCommand_(core::state::DataManagerCommand command, uint8_t slot) const;
+
+    void setFeedback_(const char* message);
 
     core::state::CoreState& state_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
@@ -55,7 +72,7 @@ private:
     oc::api::ButtonAPI& buttons_;
     ViewScopes view_scopes_{};
     lv_obj_t* manager_overlay_scope_ = nullptr;
-    lv_obj_t* set_load_selector_scope_ = nullptr;
+    lv_obj_t* dialog_overlay_scope_ = nullptr;
 
     bool ignore_open_release_ = false;
 

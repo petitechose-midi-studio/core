@@ -33,7 +33,7 @@ enum class OverlayType : uint8_t {
 
     // Data manager overlays
     DATA_MANAGER,
-    DATA_MANAGER_SET_LOAD_MODE_SELECTOR,
+    DATA_MANAGER_DIALOG,
 
     COUNT             // Sentinel - must be last
 };

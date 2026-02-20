@@ -29,6 +29,7 @@
 #include <oc/log/Log.hpp>
 
 #include "MidiSyncState.hpp"
+#include "DataManagerState.hpp"
 #include "macro/MacroPagesState.hpp"
 
 namespace core::state {
@@ -36,7 +37,7 @@ namespace core::state {
 /// Storage layout constants
 namespace StorageLayout {
     constexpr uint32_t MAGIC = 0x4D435354;  ///< "MCST" in ASCII
-    constexpr uint8_t VERSION = 2;
+    constexpr uint8_t VERSION = 3;
 
     constexpr uint32_t ADDR_MAGIC = 0x0000;
     constexpr uint32_t ADDR_VERSION = 0x0004;
@@ -48,6 +49,20 @@ namespace StorageLayout {
     constexpr uint32_t ADDR_SYNC_FOLLOW_TRANSPORT = ADDR_RESERVED + 1;
     constexpr uint32_t ADDR_SYNC_AUTO_FALLBACK_MS = ADDR_RESERVED + 2;   // uint16_t
     constexpr uint32_t ADDR_SYNC_AUTO_LOCK_CLOCKS = ADDR_RESERVED + 4;
+
+    constexpr uint32_t ADDR_SHORTCUT_MACRO_LEFT = ADDR_RESERVED + 5;
+    constexpr uint32_t ADDR_SHORTCUT_MACRO_RIGHT = ADDR_RESERVED + 6;
+    constexpr uint32_t ADDR_SHORTCUT_SEQ_LEFT = ADDR_RESERVED + 7;
+    constexpr uint32_t ADDR_SHORTCUT_SEQ_RIGHT = ADDR_RESERVED + 8;
+
+    constexpr uint8_t DEFAULT_SHORTCUT_MACRO_LEFT =
+        static_cast<uint8_t>(DataManagerCommand::MACRO_SAVE_SLOT);
+    constexpr uint8_t DEFAULT_SHORTCUT_MACRO_RIGHT =
+        static_cast<uint8_t>(DataManagerCommand::MACRO_LOAD_SLOT);
+    constexpr uint8_t DEFAULT_SHORTCUT_SEQ_LEFT =
+        static_cast<uint8_t>(DataManagerCommand::SEQ_SAVE_PATTERN_SLOT);
+    constexpr uint8_t DEFAULT_SHORTCUT_SEQ_RIGHT =
+        static_cast<uint8_t>(DataManagerCommand::SEQ_LOAD_PATTERN_SLOT);
 
     // Note: Named MACRO_PAGE_SIZE to avoid conflict with system PAGE_SIZE macro (Emscripten)
     constexpr size_t MACRO_PAGE_SIZE = sizeof(macro::MacroPageData);  // 64 bytes
@@ -135,6 +150,14 @@ public:
             return true;
         }
 
+        if (version == 2) {
+            loadPages_(pages);
+            loadMidiSync_(midiSync);
+            saveAll(pages, midiSync);
+            OC_LOG_INFO("[CoreSettings] Migrated settings v2 -> v{}", StorageLayout::VERSION);
+            return true;
+        }
+
         if (version == 1) {
             loadPages_(pages);
             midiSync.reset();
@@ -178,6 +201,8 @@ public:
                        reinterpret_cast<const uint8_t*>(&lockClocks),
                        1);
 
+        writeDefaultShortcuts_();
+
         // Write all pages
         for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {
             backend_.write(
@@ -213,6 +238,51 @@ public:
         backend_.write(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
                        reinterpret_cast<const uint8_t*>(&lockCount),
                        1);
+    }
+
+    void saveDataManagerMacroShortcutLeft(uint8_t command) {
+        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT,
+                       reinterpret_cast<const uint8_t*>(&command),
+                       1);
+    }
+
+    void saveDataManagerMacroShortcutRight(uint8_t command) {
+        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT,
+                       reinterpret_cast<const uint8_t*>(&command),
+                       1);
+    }
+
+    void saveDataManagerSeqShortcutLeft(uint8_t command) {
+        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT,
+                       reinterpret_cast<const uint8_t*>(&command),
+                       1);
+    }
+
+    void saveDataManagerSeqShortcutRight(uint8_t command) {
+        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT,
+                       reinterpret_cast<const uint8_t*>(&command),
+                       1);
+    }
+
+    void loadDataManagerShortcuts(uint8_t& macroLeft,
+                                  uint8_t& macroRight,
+                                  uint8_t& seqLeft,
+                                  uint8_t& seqRight) {
+        macroLeft = StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT;
+        macroRight = StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT;
+        seqLeft = StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT;
+        seqRight = StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT;
+
+        uint8_t version = 0;
+        backend_.read(StorageLayout::ADDR_VERSION, &version, 1);
+        if (version < StorageLayout::VERSION) {
+            return;
+        }
+
+        backend_.read(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, &macroLeft, 1);
+        backend_.read(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, &macroRight, 1);
+        backend_.read(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, &seqLeft, 1);
+        backend_.read(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
     }
 
     /**
@@ -278,6 +348,26 @@ public:
     }
 
 private:
+    void writeDefaultShortcuts_() {
+        const uint8_t macroLeft = StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT;
+        const uint8_t macroRight = StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT;
+        const uint8_t seqLeft = StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT;
+        const uint8_t seqRight = StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT;
+
+        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT,
+                       reinterpret_cast<const uint8_t*>(&macroLeft),
+                       1);
+        backend_.write(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT,
+                       reinterpret_cast<const uint8_t*>(&macroRight),
+                       1);
+        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT,
+                       reinterpret_cast<const uint8_t*>(&seqLeft),
+                       1);
+        backend_.write(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT,
+                       reinterpret_cast<const uint8_t*>(&seqRight),
+                       1);
+    }
+
     void loadPages_(macro::MacroPagesState& pages) {
         uint8_t activePage = 0;
         backend_.read(StorageLayout::ADDR_ACTIVE_PAGE, &activePage, 1);

@@ -183,6 +183,51 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
     std::cout << "[PASS] test_macro_library_save_snapshots_runtime_values_without_manual_flush\n";
 }
 
+void test_data_manager_shortcuts_persist_and_sanitize() {
+    CoreStorages storage;
+    storage.initAll();
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        state.setDataManagerShortcut(core::state::DataManagerContext::MACRO,
+                                     true,
+                                     core::state::DataManagerCommand::MACRO_ERASE_SLOT);
+        // Cross-context mapping should sanitize to macro default right shortcut.
+        state.setDataManagerShortcut(core::state::DataManagerContext::MACRO,
+                                     false,
+                                     core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT);
+
+        state.setDataManagerShortcut(core::state::DataManagerContext::SEQUENCER,
+                                     true,
+                                     core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT);
+        state.setDataManagerShortcut(core::state::DataManagerContext::SEQUENCER,
+                                     false,
+                                     core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT);
+    }
+
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
+
+    assert(restored.dataManager.macroShortcutLeft.get() == core::state::DataManagerCommand::MACRO_ERASE_SLOT);
+    assert(restored.dataManager.macroShortcutRight.get() == core::state::DEFAULT_MACRO_SHORTCUT_RIGHT);
+    assert(restored.dataManager.seqShortcutLeft.get() == core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT);
+    assert(restored.dataManager.seqShortcutRight.get() == core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_data_manager_shortcuts_persist_and_sanitize\n";
+}
+
 void test_sequencer_workspace_and_library_roundtrip() {
     CoreStorages storage;
     storage.initAll();
@@ -456,6 +501,7 @@ int main() {
     test_workspace_survives_legacy_corruption();
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_snapshots_runtime_values_without_manual_flush();
+    test_data_manager_shortcuts_persist_and_sanitize();
     test_sequencer_workspace_and_library_roundtrip();
     test_sequencer_load_is_quantized_to_next_step_when_playing();
     test_sequencer_set_load_merge_preserves_existing_steps();

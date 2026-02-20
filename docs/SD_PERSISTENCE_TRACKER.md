@@ -24,6 +24,7 @@ Implement SD persistence with deterministic runtime behavior and testable increm
 | 4 | Playback-safe apply queue (`next step`) | DONE | Pattern/Set loads are staged and applied on next playhead step while playing |
 | 5 | Data Manager UI flow (`NAV` long press) + Replace/Merge prompt | DONE | Added Data Manager overlay + Set load mode selector (default `Replace`) |
 | 6 | Migration/fallback hardening + regression tests + perf validation | DONE | Hardened macro explicit save snapshot + sequencer mask sanitation, full regression pass |
+| 7 | Contextual command UX refactor (softkeys + assignable shortcuts + persisted mappings) | DONE | Replaced global target/action list with context-aware command model and slot/confirm flows |
 
 ## Test Strategy
 
@@ -50,6 +51,10 @@ Each iteration must add/adjust tests before finalizing code changes.
 | 6 | Full host persistence regression sweep | `g++ -std=c++17 test/test_PersistenceSlotFileStore/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_PersistenceSlotFileStore.exe && .cache/test_PersistenceSlotFileStore.exe` + `g++ -std=c++17 test/test_MacroPersistence/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_MacroPersistence.exe && .cache/test_MacroPersistence.exe` + `g++ -std=c++17 test/test_CoreSettings/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -o .cache/test_CoreSettings.exe && .cache/test_CoreSettings.exe` | PASS |
 | 6 | Firmware compile + footprint snapshot after hardening | `pio run -e dev` | PASS |
 | 6 | Data Manager set-load selector execution regression | `pio run -e dev` + `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
+| 7 | CoreSettings v3 shortcut persistence + v1/v2 migration coverage | `g++ -std=c++17 test/test_CoreSettings/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -o .cache/test_CoreSettings.exe && .cache/test_CoreSettings.exe` | PASS |
+| 7 | CoreState shortcut persistence + context-sanitize integration | `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
+| 7 | Persistence regression sweep after contextual UX refactor | `g++ -std=c++17 test/test_PersistenceSlotFileStore/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_PersistenceSlotFileStore.exe && .cache/test_PersistenceSlotFileStore.exe` + `g++ -std=c++17 test/test_MacroPersistence/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_MacroPersistence.exe && .cache/test_MacroPersistence.exe` + `g++ -std=c++17 test/test_SequencerPersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_SequencerPersistence.exe && .cache/test_SequencerPersistence.exe` | PASS |
+| 7 | Firmware compile + footprint after contextual UX refactor | `pio run -e dev` | PASS |
 
 Notes:
 
@@ -86,6 +91,10 @@ Notes:
 | 2026-02-20 | Sequencer persistence masks `enabledMask` to sanitized pattern length on save/load | Limits stale/corrupted out-of-pattern bits and keeps payload behavior deterministic |
 | 2026-02-20 | Workspace corruption fallback is validated at domain-service level (macro + sequencer) by corrupting newest journal slot payload | Confirms latest-valid fallback behavior survives service integration, not only slot-store unit tests |
 | 2026-02-20 | Confirming Set load mode now bypasses prompt reopening and executes load immediately | Prevents selector loop when validating `REPLACE`/`MERGE` choice in Data Manager |
+| 2026-02-20 | Data Manager switched from global `Target/Action/Slot` model to context-aware command model | Reduces cognitive load and removes irrelevant target selection in active view |
+| 2026-02-20 | While context overlay is visible, bottom buttons are remapped to softkeys (`L`/`C`/`R`) with overlay authority | Ensures command affordance is explicit and avoids accidental transport/page actions |
+| 2026-02-20 | Added per-context persistent shortcut mappings (Macro L/R + Sequencer L/R) in `CoreSettings` v3 | Keeps user-customized shortcut workflow stable across reboots |
+| 2026-02-20 | Command execution flow standardized to command -> slot picker -> optional mode/confirm -> execute -> feedback | Improves safety and predictability for save/load/erase operations |
 
 ## Deviations / Gaps Log
 
@@ -93,6 +102,7 @@ Notes:
 - `CoreSettings` still contains legacy macro fields in its schema; they are currently migration/fallback data rather than primary runtime persistence.
 - `StepSequencerState::length` (from `oc-note`) still uses default `Signal` subscriber cap; keep fan-out <= 4 in core until upstream cap strategy is adjusted.
 - Dev firmware snapshot after iteration 6 hardening: FLASH code/data/headers = `349076/142316/8316`, RAM1 variables/code/padding = `71968/317432/10248`, RAM2 variables = `434336`.
+- Dev firmware snapshot after iteration 7 contextual UX refactor: FLASH code/data/headers = `354020/143340/8492`, RAM1 variables/code/padding = `73888/322376/5304`, RAM2 variables = `434336`.
 
 ## Progress Journal
 
@@ -128,6 +138,11 @@ Notes:
 - 2026-02-20 / Checkpoint 30: fixed Data Manager Set load selector confirmation flow to execute load (no prompt reopen loop).
 - 2026-02-20 / Checkpoint 31: re-validated firmware build + host integration tests after Data Manager selector flow fix.
 - 2026-02-20 / Checkpoint 32: added hardware validation checklist document (`docs/SD_PERSISTENCE_HARDWARE_VALIDATION.md`) for Teensy/SD manual sign-off.
+- 2026-02-20 / Checkpoint 33: refactored Data Manager to context-aware command overlay with assignable `BOTTOM_LEFT/RIGHT` shortcuts and `BOTTOM_CENTER` command palette.
+- 2026-02-20 / Checkpoint 34: added bottom softkey bar UI (transport hidden while context overlay visible) to expose active shortcut mapping.
+- 2026-02-20 / Checkpoint 35: implemented persistent shortcut mapping storage in `CoreSettings` v3 and loaded/sanitized mappings in `CoreState`.
+- 2026-02-20 / Checkpoint 36: standardized command flow to slot picker + mode/confirm dialogs with action feedback.
+- 2026-02-20 / Checkpoint 37: expanded tests (`test_CoreSettings`, `test_CoreStatePersistence`) for shortcut persistence/migration/sanitization and re-ran full regression + firmware build.
 
 ## Handover Notes
 

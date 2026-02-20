@@ -129,6 +129,7 @@ struct CoreState {
                                sequencerSetLibraryStorage) {
         // Load persisted settings
         settings.load(pages, midiSync);
+        loadDataManagerShortcutsFromSettings_();
 
         macro_persistence_ready_ = macroPersistence.init();
         if (macro_persistence_ready_) {
@@ -163,8 +164,8 @@ struct CoreState {
         overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, globalSettings.visible);
         overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, globalSettings.selector.visible);
         overlays.registerItem(core::ui::OverlayType::DATA_MANAGER, dataManager.visible);
-        overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_SET_LOAD_MODE_SELECTOR,
-                              dataManager.setLoadSelector.visible);
+        overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_DIALOG,
+                              dataManager.dialog.visible);
 
         // Setup auto-persistence for macro values
         macro_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
@@ -368,6 +369,44 @@ struct CoreState {
         return sequencerPersistence.eraseSetSlot(slotIndex);
     }
 
+    DataManagerCommand dataManagerShortcut(DataManagerContext context,
+                                           bool leftButton) const {
+        if (context == DataManagerContext::MACRO) {
+            return leftButton ? dataManager.macroShortcutLeft.get()
+                              : dataManager.macroShortcutRight.get();
+        }
+
+        return leftButton ? dataManager.seqShortcutLeft.get()
+                          : dataManager.seqShortcutRight.get();
+    }
+
+    void setDataManagerShortcut(DataManagerContext context,
+                                bool leftButton,
+                                DataManagerCommand command) {
+        const DataManagerCommand fallback = defaultDataManagerShortcut_(context, leftButton);
+        const DataManagerCommand sanitized = sanitizeDataManagerShortcut(context, command, fallback);
+
+        if (context == DataManagerContext::MACRO) {
+            if (leftButton) {
+                dataManager.macroShortcutLeft.set(sanitized);
+                settings.saveDataManagerMacroShortcutLeft(static_cast<uint8_t>(sanitized));
+            } else {
+                dataManager.macroShortcutRight.set(sanitized);
+                settings.saveDataManagerMacroShortcutRight(static_cast<uint8_t>(sanitized));
+            }
+        } else {
+            if (leftButton) {
+                dataManager.seqShortcutLeft.set(sanitized);
+                settings.saveDataManagerSeqShortcutLeft(static_cast<uint8_t>(sanitized));
+            } else {
+                dataManager.seqShortcutRight.set(sanitized);
+                settings.saveDataManagerSeqShortcutRight(static_cast<uint8_t>(sanitized));
+            }
+        }
+
+        settings.commit();
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Macro Accessors (encapsulated access for handlers)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -433,8 +472,10 @@ struct CoreState {
     void factoryReset() {
         settings.factoryReset();
         pages.initDefaults();
+        midiSync.reset();
         syncMacrosFromActivePage();
         settings.saveAll(pages, midiSync);
+        loadDataManagerShortcutsFromSettings_();
         persistMacroWorkspace_();
         statusBar.pageName.set(pages.activePageData().name);
         macroEdit.reset();
@@ -442,9 +483,9 @@ struct CoreState {
         sequencer.reset();
         pending_sequencer_apply_.valid = false;
         persistSequencerWorkspace_();
-        midiSync.reset();
         globalSettings.reset();
-        dataManager.reset();
+        dataManager.resetSession(DataManagerContext::MACRO);
+        dataManager.feedback.set("");
         activeView.set(core::ui::ViewType::MACRO);
         overlays.hideAll();
         configRevision.set(configRevision.get() + 1);
@@ -463,6 +504,43 @@ struct CoreState {
     }
 
 private:
+    static DataManagerCommand defaultDataManagerShortcut_(DataManagerContext context,
+                                                          bool leftButton) {
+        if (context == DataManagerContext::MACRO) {
+            return leftButton ? DEFAULT_MACRO_SHORTCUT_LEFT : DEFAULT_MACRO_SHORTCUT_RIGHT;
+        }
+        return leftButton ? DEFAULT_SEQ_SHORTCUT_LEFT : DEFAULT_SEQ_SHORTCUT_RIGHT;
+    }
+
+    void loadDataManagerShortcutsFromSettings_() {
+        uint8_t macroLeft = 0;
+        uint8_t macroRight = 0;
+        uint8_t seqLeft = 0;
+        uint8_t seqRight = 0;
+        settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight);
+
+        dataManager.macroShortcutLeft.set(
+            sanitizeDataManagerShortcut(DataManagerContext::MACRO,
+                                        static_cast<DataManagerCommand>(macroLeft),
+                                        DEFAULT_MACRO_SHORTCUT_LEFT)
+        );
+        dataManager.macroShortcutRight.set(
+            sanitizeDataManagerShortcut(DataManagerContext::MACRO,
+                                        static_cast<DataManagerCommand>(macroRight),
+                                        DEFAULT_MACRO_SHORTCUT_RIGHT)
+        );
+        dataManager.seqShortcutLeft.set(
+            sanitizeDataManagerShortcut(DataManagerContext::SEQUENCER,
+                                        static_cast<DataManagerCommand>(seqLeft),
+                                        DEFAULT_SEQ_SHORTCUT_LEFT)
+        );
+        dataManager.seqShortcutRight.set(
+            sanitizeDataManagerShortcut(DataManagerContext::SEQUENCER,
+                                        static_cast<DataManagerCommand>(seqRight),
+                                        DEFAULT_SEQ_SHORTCUT_RIGHT)
+        );
+    }
+
     struct SequencerPatternSnapshot {
         uint8_t length = oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
         uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;

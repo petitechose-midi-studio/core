@@ -71,6 +71,7 @@ namespace core::ui {
 class MacroView;
 class SequencerView;
 class TransportBar;
+class ContextSoftkeyBar;
 }  // namespace core::ui
 
 namespace ms::ui {
@@ -152,8 +153,10 @@ private:
     void renderGlobalSettingsSelector();
     void setupDataManagerRendering();
     void renderDataManager();
-    void setupDataManagerSetLoadModeSelectorRendering();
-    void renderDataManagerSetLoadModeSelector();
+    void setupDataManagerDialogRendering();
+    void renderDataManagerDialog();
+    void setupDataManagerSoftkeyBarRendering();
+    void renderDataManagerSoftkeyBar();
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
 
@@ -162,6 +165,7 @@ private:
     std::unique_ptr<core::ui::MacroView> macro_view_;
     std::unique_ptr<core::ui::SequencerView> sequencer_view_;
     std::unique_ptr<core::ui::TransportBar> transport_bar_;
+    std::unique_ptr<core::ui::ContextSoftkeyBar> context_softkey_bar_;
 
     // Overlay system
     std::unique_ptr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
@@ -183,12 +187,13 @@ private:
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> global_settings_overlay_;
     std::unique_ptr<ms::ui::VirtualListSelectorOverlay> global_settings_selector_overlay_;
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
-    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> data_manager_set_load_mode_selector_overlay_;
+    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> data_manager_dialog_overlay_;
     oc::state::SignalWatcher seq_property_selector_watcher_;
     oc::state::SignalWatcher global_settings_watcher_;
     oc::state::SignalWatcher global_settings_selector_watcher_;
     oc::state::SignalWatcher data_manager_watcher_;
-    oc::state::SignalWatcher data_manager_set_load_mode_selector_watcher_;
+    oc::state::SignalWatcher data_manager_dialog_watcher_;
+    oc::state::SignalWatcher data_manager_softkey_bar_watcher_;
     oc::state::SignalWatcher seq_macro_encoder_watcher_;
     oc::state::SignalWatcher active_view_watcher_;
 
