@@ -55,6 +55,35 @@ private:
     std::vector<uint8_t> data_;
 };
 
+#pragma pack(push, 1)
+struct SlotFileHeaderRaw {
+    uint32_t magic = 0;
+    uint8_t formatVersion = 0;
+    uint8_t domainVersion = 0;
+    uint16_t slotCount = 0;
+    uint16_t slotPayloadSize = 0;
+    uint16_t reserved0 = 0;
+    uint32_t layoutCrc32 = 0;
+    uint32_t reserved1 = 0;
+    uint32_t reserved2 = 0;
+};
+#pragma pack(pop)
+
+static_assert(sizeof(SlotFileHeaderRaw) == 24, "Unexpected slot file header size");
+
+uint32_t workspaceSlotPayloadAddress(MemoryStorage& storage, uint16_t slotIndex) {
+    SlotFileHeaderRaw header{};
+    const size_t readBytes = storage.read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header));
+    assert(readBytes == sizeof(header));
+    assert(slotIndex < header.slotCount);
+
+    constexpr uint32_t SLOT_HEADER_SIZE = 16;
+    const uint32_t slotSize = SLOT_HEADER_SIZE + header.slotPayloadSize;
+    return static_cast<uint32_t>(sizeof(header)) +
+           static_cast<uint32_t>(slotIndex) * slotSize +
+           SLOT_HEADER_SIZE;
+}
+
 void configurePattern(core::state::sequencer::SequencerState& sequencer,
                       uint8_t length,
                       uint8_t stepsPerBeat,
@@ -160,6 +189,43 @@ void test_workspace_load_latest_after_multiple_saves() {
     assert(loaded.activeStepProperty.get() == core::state::sequencer::StepProperty::GATE);
 
     std::cout << "[PASS] test_workspace_load_latest_after_multiple_saves\n";
+}
+
+void test_workspace_falls_back_when_latest_slot_is_corrupted() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage patternStorage;
+    MemoryStorage setStorage;
+    workspaceStorage.init();
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    assert(persistence.init());
+
+    core::state::sequencer::SequencerState first;
+    configurePattern(first, 8, 2, 1, 3, core::state::sequencer::StepProperty::NOTE);
+    assert(persistence.saveWorkspace(first));
+
+    core::state::sequencer::SequencerState second;
+    configurePattern(second, 32, 8, 7, 12, core::state::sequencer::StepProperty::GATE);
+    assert(persistence.saveWorkspace(second));
+
+    // Two-slot workspace journal: second save lands in slot 1.
+    const uint32_t latestPayloadAddress = workspaceSlotPayloadAddress(workspaceStorage, 1);
+    const uint8_t badByte = 0x00;
+    const size_t written = workspaceStorage.write(latestPayloadAddress, &badByte, 1);
+    assert(written == 1);
+
+    core::state::sequencer::SequencerState loaded;
+    loaded.reset();
+    assert(persistence.loadWorkspace(loaded));
+
+    // Must fall back to older valid slot (first save).
+    assertPatternEquals(loaded, 8, 2, 1);
+    assert(loaded.focusedStep.get() == 3);
+    assert(loaded.activeStepProperty.get() == core::state::sequencer::StepProperty::NOTE);
+
+    std::cout << "[PASS] test_workspace_falls_back_when_latest_slot_is_corrupted\n";
 }
 
 void test_workspace_masks_enabled_bits_outside_length() {
@@ -319,6 +385,7 @@ int main() {
 
     test_workspace_roundtrip();
     test_workspace_load_latest_after_multiple_saves();
+    test_workspace_falls_back_when_latest_slot_is_corrupted();
     test_workspace_masks_enabled_bits_outside_length();
     test_pattern_library_save_load_erase();
     test_pattern_library_masks_enabled_bits_outside_length();
