@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
-#include <cstring>
 
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>

@@ -2,7 +2,7 @@
 
 /**
  * @file CoreSettings.hpp
- * @brief Incremental persistence for macro pages
+ * @brief Incremental persistence for pages + sync + shortcut mappings
  *
  * Storage layout in EEPROM (4KB available on Teensy 4.x):
  *
@@ -15,7 +15,11 @@
  * | 0x0007 | 1    | Follow transport flag |
  * | 0x0008 | 2    | Auto fallback timeout (ms) |
  * | 0x000A | 1    | Auto lock clock count |
- * | 0x000B | 5    | Reserved |
+ * | 0x000B | 1    | Macro shortcut LEFT |
+ * | 0x000C | 1    | Macro shortcut RIGHT |
+ * | 0x000D | 1    | Sequencer shortcut LEFT |
+ * | 0x000E | 1    | Sequencer shortcut RIGHT |
+ * | 0x000F | 1    | Reserved |
  * | 0x0010 | 512  | 8 pages × 64 bytes |
  *
  * Total: 528 bytes used.
@@ -54,6 +58,8 @@ namespace StorageLayout {
     constexpr uint32_t ADDR_SHORTCUT_MACRO_RIGHT = ADDR_RESERVED + 6;
     constexpr uint32_t ADDR_SHORTCUT_SEQ_LEFT = ADDR_RESERVED + 7;
     constexpr uint32_t ADDR_SHORTCUT_SEQ_RIGHT = ADDR_RESERVED + 8;
+    static_assert(ADDR_SHORTCUT_SEQ_RIGHT < ADDR_PAGES,
+                  "Header fields must stay before page payload region");
 
     constexpr uint8_t DEFAULT_SHORTCUT_MACRO_LEFT =
         static_cast<uint8_t>(DataManagerCommand::MACRO_SAVE_SLOT);

@@ -143,6 +143,7 @@ Notes:
 - 2026-02-20 / Checkpoint 35: implemented persistent shortcut mapping storage in `CoreSettings` v3 and loaded/sanitized mappings in `CoreState`.
 - 2026-02-20 / Checkpoint 36: standardized command flow to slot picker + mode/confirm dialogs with action feedback.
 - 2026-02-20 / Checkpoint 37: expanded tests (`test_CoreSettings`, `test_CoreStatePersistence`) for shortcut persistence/migration/sanitization and re-ran full regression + firmware build.
+- 2026-02-20 / Checkpoint 38: cleanup pass removing dead DataManager helpers, stale include duplication, and outdated `CoreSettings` header layout comments.
 
 ## Handover Notes
 

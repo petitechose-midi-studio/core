@@ -91,12 +91,6 @@ inline constexpr bool dataManagerCommandIsSave(DataManagerCommand cmd) {
            cmd == DataManagerCommand::SEQ_SAVE_SET_SLOT;
 }
 
-inline constexpr bool dataManagerCommandIsLoad(DataManagerCommand cmd) {
-    return cmd == DataManagerCommand::MACRO_LOAD_SLOT ||
-           cmd == DataManagerCommand::SEQ_LOAD_PATTERN_SLOT ||
-           cmd == DataManagerCommand::SEQ_LOAD_SET_SLOT;
-}
-
 inline constexpr bool dataManagerCommandIsErase(DataManagerCommand cmd) {
     return cmd == DataManagerCommand::MACRO_ERASE_SLOT ||
            cmd == DataManagerCommand::SEQ_ERASE_PATTERN_SLOT ||
@@ -168,24 +162,6 @@ struct DataManagerState {
             return left ? macroShortcutLeft.get() : macroShortcutRight.get();
         }
         return left ? seqShortcutLeft.get() : seqShortcutRight.get();
-    }
-
-    void setShortcutForRow(uint8_t row, DataManagerCommand command) {
-        const bool left = (row == 0);
-        if (context.get() == DataManagerContext::MACRO) {
-            if (left) {
-                macroShortcutLeft.set(command);
-            } else {
-                macroShortcutRight.set(command);
-            }
-            return;
-        }
-
-        if (left) {
-            seqShortcutLeft.set(command);
-        } else {
-            seqShortcutRight.set(command);
-        }
     }
 
     uint8_t rowCount() const {
