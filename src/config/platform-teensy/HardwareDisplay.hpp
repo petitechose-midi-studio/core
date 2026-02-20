@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+#include <config/Timing.hpp>
+
 // Only include Teensy headers when building for Teensy (not SDL desktop)
 #ifndef OC_DESKTOP
 #include <oc/hal/teensy/Ili9341.hpp>
@@ -24,7 +26,10 @@ namespace Display {
 
 constexpr uint8_t VSYNC_SPACING = 1;
 constexpr uint32_t SPI_SPEED = 40'000'000;  // 40MHz
-constexpr uint16_t REFRESH_HZ = 240;         // Target refresh rate
+
+static_assert(Config::Timing::LVGL_HZ > 0, "LVGL_HZ must be > 0");
+static_assert((Config::Timing::LVGL_HZ % VSYNC_SPACING) == 0,
+              "LVGL_HZ must be divisible by VSYNC_SPACING");
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Teensy-specific configuration (only when building for Teensy)
@@ -48,7 +53,7 @@ constexpr oc::hal::teensy::Ili9341Config CONFIG = {
     .diffGap = 4,
     .irqPriority = 128,
     .lateStartRatio = 0.2f,
-    .refreshRate = REFRESH_HZ
+    .refreshRate = Config::Timing::LVGL_HZ
 };
 
 constexpr size_t BUFFER_SIZE = CONFIG.framebufferSize();  // 320*240 = 76800
@@ -65,9 +70,11 @@ constexpr size_t DIFF_SIZE = 16384;  // 8KB
 #ifndef OC_DESKTOP
 namespace LVGL {
 constexpr oc::ui::lvgl::BridgeConfig CONFIG = {
-    .renderMode = LV_DISPLAY_RENDER_MODE_FULL,
+    // DIRECT mode draws only invalid areas into the framebuffer while keeping
+    // full-frame buffers for the ILI9341 diff transfer path.
+    .renderMode = LV_DISPLAY_RENDER_MODE_DIRECT,
     .buffer2 = nullptr,
-    .refreshHz = Display::REFRESH_HZ / Display::VSYNC_SPACING
+    .refreshHz = Config::Timing::LVGL_HZ / Display::VSYNC_SPACING
 };
 }  // namespace LVGL
 #endif // !OC_DESKTOP

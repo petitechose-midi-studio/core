@@ -10,11 +10,19 @@ MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     createTopBar();
     createMacros();
 
-    // Create debounce timer (synced with display refresh)
-    constexpr uint32_t periodMs = (Config::Timing::LVGL_HZ > 1000)
+    // Coalesce value redraws to a practical UI cadence.
+    // 120 Hz is enough for smooth knob motion while avoiding unnecessary
+    // per-frame work at very high internal refresh rates.
+    constexpr uint32_t MAX_MACRO_UI_HZ = 120;
+    constexpr uint32_t targetHz =
+        (Config::Timing::LVGL_HZ > MAX_MACRO_UI_HZ) ? MAX_MACRO_UI_HZ : Config::Timing::LVGL_HZ;
+    constexpr uint32_t periodMs = (targetHz > 1000)
         ? 1
-        : (1000 / Config::Timing::LVGL_HZ);
+        : ((1000 + targetHz - 1) / targetHz);
     update_timer_ = lv_timer_create(onUpdateTimer, periodMs, this);
+    if (update_timer_) {
+        lv_timer_pause(update_timer_);
+    }
 
     bindToState();
 }
@@ -40,12 +48,17 @@ MacroView::~MacroView() {
 void MacroView::onActivate() {
     if (container_) {
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
+        processDirtyFlags();
     }
 }
 
 void MacroView::onDeactivate() {
     if (container_) {
         lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (update_timer_) {
+        lv_timer_pause(update_timer_);
     }
 }
 
@@ -128,10 +141,30 @@ void MacroView::createMacros() {
 void MacroView::markDirty(uint8_t index) {
     if (index < MACRO_COUNT) {
         dirty_flags_[index] = true;
+        has_dirty_ = true;
+
+        if (update_timer_) {
+            lv_timer_resume(update_timer_);
+            lv_timer_ready(update_timer_);
+        }
     }
 }
 
 void MacroView::processDirtyFlags() {
+    if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) {
+        if (update_timer_) {
+            lv_timer_pause(update_timer_);
+        }
+        return;
+    }
+
+    if (!has_dirty_) {
+        if (update_timer_) {
+            lv_timer_pause(update_timer_);
+        }
+        return;
+    }
+
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         if (dirty_flags_[i]) {
             dirty_flags_[i] = false;
@@ -139,6 +172,12 @@ void MacroView::processDirtyFlags() {
                 macros_[i]->setValue(core_state_.macros.slots[i].value.get());
             }
         }
+    }
+
+    has_dirty_ = false;
+
+    if (update_timer_) {
+        lv_timer_pause(update_timer_);
     }
 }
 

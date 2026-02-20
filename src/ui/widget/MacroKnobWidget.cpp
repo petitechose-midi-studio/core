@@ -31,7 +31,8 @@ void MacroKnobWidget::createUI(lv_obj_t* parent) {
         .bgColor(theme::color::KNOB_BACKGROUND)
         .trackColor(theme::color::getMacroColor(index_))
         .valueColor(theme::color::KNOB_VALUE)
-        .flashColor(theme::color::getMacroColor(index_));
+        .flashColor(theme::color::getMacroColor(index_))
+        .flashEnabled(false);
     lv_obj_set_grid_cell(knob_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,  // Horizontal: stretch to get width
         LV_GRID_ALIGN_START, 0, 1);   // Vertical: start in CONTENT row

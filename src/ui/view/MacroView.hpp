@@ -74,6 +74,7 @@ private:
     core::state::CoreState& core_state_;
     std::vector<oc::state::Subscription> subscriptions_;
     std::array<bool, MACRO_COUNT> dirty_flags_{};
+    bool has_dirty_ = false;
     lv_timer_t* update_timer_ = nullptr;
 
     // UI structure: container_ (flex col) → top_bar_container_ + body_container_ (grid)

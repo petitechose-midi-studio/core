@@ -9,6 +9,7 @@
 
 #include "Version.hpp"
 #include "InputIDs.hpp"
+#include "Timing.hpp"
 
 #include <cstdint>
 
@@ -33,22 +34,6 @@ enum class ContextID : uint8_t {
     STANDALONE = 0,  // First for debug (skipping BootContext)
     BOOT = 1,
 };
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Timing
-// ═══════════════════════════════════════════════════════════════════════════
-
-namespace Timing {
-constexpr uint16_t REFRESH_HZ = 240;  // Display refresh rate (shared default)
-constexpr uint32_t APP_HZ = REFRESH_HZ * 2;   // App polling rate (encoders, buttons)
-constexpr uint32_t LVGL_HZ = REFRESH_HZ;      // Display refresh rate
-
-constexpr uint8_t DEBOUNCE_MS = 12;  // Button debounce
-constexpr uint32_t LONG_PRESS_MS = 500;
-constexpr uint32_t OVERLAY_OPEN_LONG_PRESS_MS = 1000;
-constexpr uint32_t LATCH_THRESHOLD_MS = 200;
-constexpr uint32_t DOUBLE_TAP_MS = 300;     // Double tap window
-}  // namespace Timing
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Input Configuration
