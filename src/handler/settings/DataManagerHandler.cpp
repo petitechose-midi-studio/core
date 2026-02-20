@@ -173,7 +173,7 @@ void DataManagerHandler::editFocusedValue(float normalized) {
     }
 }
 
-void DataManagerHandler::executeFocusedAction() {
+void DataManagerHandler::executeFocusedAction(bool skipSetLoadPrompt) {
     if (ignore_open_release_) {
         ignore_open_release_ = false;
         return;
@@ -184,7 +184,8 @@ void DataManagerHandler::executeFocusedAction() {
     const auto action = dm.action.get();
     const uint8_t slot = dm.slotIndex.get();
 
-    if (domain == core::state::DataManagerDomain::SEQ_SET_LIBRARY &&
+    if (!skipSetLoadPrompt &&
+        domain == core::state::DataManagerDomain::SEQ_SET_LIBRARY &&
         action == core::state::DataManagerAction::LOAD &&
         !dm.setLoadSelector.visible.get()) {
         openSetLoadModeSelector_();
@@ -267,7 +268,7 @@ void DataManagerHandler::applySetLoadModeAndExecute_() {
     overlays_.hide();
     selector.reset();
 
-    executeFocusedAction();
+    executeFocusedAction(true);
 }
 
 void DataManagerHandler::closeSetLoadModeSelector_() {

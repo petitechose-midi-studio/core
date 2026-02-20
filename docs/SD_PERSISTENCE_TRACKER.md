@@ -49,6 +49,7 @@ Each iteration must add/adjust tests before finalizing code changes.
 | 6 | Sequencer workspace fallback-on-corruption regression | `g++ -std=c++17 test/test_SequencerPersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_SequencerPersistence.exe && .cache/test_SequencerPersistence.exe` | PASS |
 | 6 | Full host persistence regression sweep | `g++ -std=c++17 test/test_PersistenceSlotFileStore/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_PersistenceSlotFileStore.exe && .cache/test_PersistenceSlotFileStore.exe` + `g++ -std=c++17 test/test_MacroPersistence/test_main.cpp -I src -I ../../open-control/framework/src -o .cache/test_MacroPersistence.exe && .cache/test_MacroPersistence.exe` + `g++ -std=c++17 test/test_CoreSettings/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp -I src -I ../../open-control/framework/src -o .cache/test_CoreSettings.exe && .cache/test_CoreSettings.exe` | PASS |
 | 6 | Firmware compile + footprint snapshot after hardening | `pio run -e dev` | PASS |
+| 6 | Data Manager set-load selector execution regression | `pio run -e dev` + `g++ -std=c++17 test/test_CoreStatePersistence/test_main.cpp ../../open-control/framework/src/oc/state/NotificationQueue.cpp ../../open-control/framework/src/oc/time/Time.cpp -I src -I ../../open-control/framework/src -I ../../open-control/note/src -o .cache/test_CoreStatePersistence.exe && .cache/test_CoreStatePersistence.exe` | PASS |
 
 Notes:
 
@@ -84,6 +85,7 @@ Notes:
 | 2026-02-20 | Explicit macro library save snapshots runtime macro values before serialization | Avoids debounce race where `pages.values[]` may lag behind live macro encoder state |
 | 2026-02-20 | Sequencer persistence masks `enabledMask` to sanitized pattern length on save/load | Limits stale/corrupted out-of-pattern bits and keeps payload behavior deterministic |
 | 2026-02-20 | Workspace corruption fallback is validated at domain-service level (macro + sequencer) by corrupting newest journal slot payload | Confirms latest-valid fallback behavior survives service integration, not only slot-store unit tests |
+| 2026-02-20 | Confirming Set load mode now bypasses prompt reopening and executes load immediately | Prevents selector loop when validating `REPLACE`/`MERGE` choice in Data Manager |
 
 ## Deviations / Gaps Log
 
@@ -123,6 +125,8 @@ Notes:
 - 2026-02-20 / Checkpoint 27: added macro workspace corruption regression (`loadLatest` fallback to previous slot when newest payload CRC fails).
 - 2026-02-20 / Checkpoint 28: added sequencer workspace corruption regression (`loadLatest` fallback to previous slot when newest payload CRC fails).
 - 2026-02-20 / Checkpoint 29: re-validated host integration (`test_CoreStatePersistence`) and firmware build after added fallback regressions.
+- 2026-02-20 / Checkpoint 30: fixed Data Manager Set load selector confirmation flow to execute load (no prompt reopen loop).
+- 2026-02-20 / Checkpoint 31: re-validated firmware build + host integration tests after Data Manager selector flow fix.
 
 ## Handover Notes
 

@@ -39,7 +39,7 @@ private:
     void closeManager();
     void moveFocus(float delta);
     void editFocusedValue(float normalized);
-    void executeFocusedAction();
+    void executeFocusedAction(bool skipSetLoadPrompt = false);
 
     void openSetLoadModeSelector_();
     void navigateSetLoadModeSelector_(float delta);
