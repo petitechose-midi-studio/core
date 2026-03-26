@@ -1212,17 +1212,13 @@ void StandaloneContext::renderDataManagerDialog() {
         return;
     }
 
-    static char slotLabels[32][8]{};
-    const char* slotItems[32]{};
-
     static const char* const SET_MODE_ITEMS[] = {"REPLACE", "MERGE"};
     static const char* const CONFIRM_ITEMS[] = {"CANCEL", "CONFIRM"};
 
     const auto context = dm.context.get();
     const int commandCount = static_cast<int>(core::state::dataManagerCommandCount(context));
-    const char* commandItems[core::state::DATA_MANAGER_MAX_COMMANDS_PER_CONTEXT]{};
     for (int i = 0; i < commandCount; ++i) {
-        commandItems[i] = core::state::dataManagerCommandLabel(
+        data_manager_dialog_command_items_[i] = core::state::dataManagerCommandLabel(
             core::state::dataManagerCommandAt(context, i)
         );
     }
@@ -1237,13 +1233,13 @@ void StandaloneContext::renderDataManagerDialog() {
     if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
         title = (dialog.editingShortcutRow.get() == 0) ? "MAP LEFT" : "MAP RIGHT";
         meta = "SELECT COMMAND";
-        items = commandItems;
+        items = data_manager_dialog_command_items_.data();
         itemCount = commandCount;
         selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
     } else if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
         title = "COMMANDS";
         meta = "RUN COMMAND";
-        items = commandItems;
+        items = data_manager_dialog_command_items_.data();
         itemCount = commandCount;
         selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
     } else if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
@@ -1260,11 +1256,15 @@ void StandaloneContext::renderDataManagerDialog() {
         const char slotTag = core::state::dataManagerCommandSlotTag(dm.pendingCommand.get());
         const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
         for (int i = 0; i < itemCount; ++i) {
-            std::snprintf(slotLabels[i], sizeof(slotLabels[i]), "%c%02d", safeSlotTag, i + 1);
-            slotItems[i] = slotLabels[i];
+            std::snprintf(data_manager_dialog_slot_labels_[i].data(),
+                          data_manager_dialog_slot_labels_[i].size(),
+                          "%c%02d",
+                          safeSlotTag,
+                          i + 1);
+            data_manager_dialog_slot_items_[i] = data_manager_dialog_slot_labels_[i].data();
         }
 
-        items = slotItems;
+        items = data_manager_dialog_slot_items_.data();
         selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
     } else if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
         title = "LOAD SET";

@@ -222,6 +222,12 @@ private:
     std::array<bool, core::state::MACRO_COUNT> seq_macro_position_valid_{};
     float seq_opt_position_cache_ = 0.0f;
     bool seq_opt_position_valid_ = false;
+
+    // Data Manager dialog overlays keep item pointers beyond the render() call.
+    std::array<std::array<char, 8>, 32> data_manager_dialog_slot_labels_{};
+    std::array<const char*, 32> data_manager_dialog_slot_items_{};
+    std::array<const char*, core::state::DATA_MANAGER_MAX_COMMANDS_PER_CONTEXT>
+        data_manager_dialog_command_items_{};
 };
 
 }  // namespace core::context
