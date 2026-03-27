@@ -62,7 +62,7 @@ private:
     std::vector<uint8_t> data_;
 };
 
-void test_roundtrip_v2() {
+void test_roundtrip_v3() {
     MemoryStorage storage;
     storage.init();
 
@@ -81,6 +81,11 @@ void test_roundtrip_v2() {
 
     core::state::CoreSettings settings(storage);
     settings.saveAll(pages, sync);
+    settings.saveDataManagerMacroShortcutLeft(static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_LOAD_SLOT));
+    settings.saveDataManagerMacroShortcutRight(static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_ERASE_SLOT));
+    settings.saveDataManagerSeqShortcutLeft(static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT));
+    settings.saveDataManagerSeqShortcutRight(static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT));
+    settings.commit();
 
     core::state::macro::MacroPagesState loadedPages;
     core::state::MidiSyncState loadedSync;
@@ -97,10 +102,21 @@ void test_roundtrip_v2() {
     assert(loadedSync.autoFallbackMs.get() == 750);
     assert(loadedSync.autoLockClockCount.get() == 12);
 
-    std::cout << "[PASS] test_roundtrip_v2\n";
+    uint8_t macroLeft = 0;
+    uint8_t macroRight = 0;
+    uint8_t seqLeft = 0;
+    uint8_t seqRight = 0;
+    settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight);
+
+    assert(macroLeft == static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_LOAD_SLOT));
+    assert(macroRight == static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_ERASE_SLOT));
+    assert(seqLeft == static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT));
+    assert(seqRight == static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT));
+
+    std::cout << "[PASS] test_roundtrip_v3\n";
 }
 
-void test_migration_v1_to_v2() {
+void test_migration_v1_to_v3() {
     MemoryStorage storage;
     storage.init();
 
@@ -113,7 +129,9 @@ void test_migration_v1_to_v2() {
 
     uint32_t magic = core::state::StorageLayout::MAGIC;
     const uint8_t version = 1;
-    storage.write(core::state::StorageLayout::ADDR_MAGIC, reinterpret_cast<const uint8_t*>(&magic), sizeof(magic));
+    storage.write(core::state::StorageLayout::ADDR_MAGIC,
+                  reinterpret_cast<const uint8_t*>(&magic),
+                  sizeof(magic));
     storage.write(core::state::StorageLayout::ADDR_VERSION, &version, 1);
     storage.write(core::state::StorageLayout::ADDR_ACTIVE_PAGE, &pagesV1.activePage, 1);
     for (uint8_t i = 0; i < core::state::macro::PAGE_COUNT; ++i) {
@@ -143,7 +161,94 @@ void test_migration_v1_to_v2() {
     storage.read(core::state::StorageLayout::ADDR_VERSION, &migratedVersion, 1);
     assert(migratedVersion == core::state::StorageLayout::VERSION);
 
-    std::cout << "[PASS] test_migration_v1_to_v2\n";
+    uint8_t macroLeft = 0;
+    uint8_t macroRight = 0;
+    uint8_t seqLeft = 0;
+    uint8_t seqRight = 0;
+    settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight);
+
+    assert(macroLeft == core::state::StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT);
+    assert(macroRight == core::state::StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT);
+    assert(seqLeft == core::state::StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT);
+    assert(seqRight == core::state::StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT);
+
+    std::cout << "[PASS] test_migration_v1_to_v3\n";
+}
+
+void test_migration_v2_to_v3() {
+    MemoryStorage storage;
+    storage.init();
+
+    core::state::macro::MacroPagesState pagesV2;
+    pagesV2.initDefaults();
+    pagesV2.activePage = 4;
+    pagesV2.pages[4].cc[2] = 99;
+    pagesV2.pages[4].channel[2] = 5;
+    pagesV2.pages[4].values[2] = 0.63f;
+
+    uint32_t magic = core::state::StorageLayout::MAGIC;
+    const uint8_t version = 2;
+    storage.write(core::state::StorageLayout::ADDR_MAGIC,
+                  reinterpret_cast<const uint8_t*>(&magic),
+                  sizeof(magic));
+    storage.write(core::state::StorageLayout::ADDR_VERSION, &version, 1);
+    storage.write(core::state::StorageLayout::ADDR_ACTIVE_PAGE, &pagesV2.activePage, 1);
+
+    const uint8_t mode = static_cast<uint8_t>(core::state::MidiSyncMode::MASTER);
+    const uint8_t follow = 0;
+    const uint16_t fallbackMs = 1500;
+    const uint8_t lockCount = 24;
+    storage.write(core::state::StorageLayout::ADDR_SYNC_MODE,
+                  reinterpret_cast<const uint8_t*>(&mode),
+                  1);
+    storage.write(core::state::StorageLayout::ADDR_SYNC_FOLLOW_TRANSPORT,
+                  reinterpret_cast<const uint8_t*>(&follow),
+                  1);
+    storage.write(core::state::StorageLayout::ADDR_SYNC_AUTO_FALLBACK_MS,
+                  reinterpret_cast<const uint8_t*>(&fallbackMs),
+                  sizeof(fallbackMs));
+    storage.write(core::state::StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
+                  reinterpret_cast<const uint8_t*>(&lockCount),
+                  1);
+
+    for (uint8_t i = 0; i < core::state::macro::PAGE_COUNT; ++i) {
+        storage.write(core::state::StorageLayout::pageOffset(i),
+                      reinterpret_cast<const uint8_t*>(&pagesV2.pages[i]),
+                      core::state::StorageLayout::MACRO_PAGE_SIZE);
+    }
+    storage.commit();
+
+    core::state::CoreSettings settings(storage);
+    core::state::macro::MacroPagesState loadedPages;
+    core::state::MidiSyncState loadedSync;
+    const bool loaded = settings.load(loadedPages, loadedSync);
+
+    assert(loaded);
+    assert(loadedPages.activePage == 4);
+    assert(loadedPages.pages[4].cc[2] == 99);
+    assert(loadedPages.pages[4].channel[2] == 5);
+    assert(loadedPages.pages[4].values[2] == 0.63f);
+    assert(loadedSync.mode.get() == core::state::MidiSyncMode::MASTER);
+    assert(!loadedSync.followTransport.get());
+    assert(loadedSync.autoFallbackMs.get() == 1500);
+    assert(loadedSync.autoLockClockCount.get() == 24);
+
+    uint8_t migratedVersion = 0;
+    storage.read(core::state::StorageLayout::ADDR_VERSION, &migratedVersion, 1);
+    assert(migratedVersion == core::state::StorageLayout::VERSION);
+
+    uint8_t macroLeft = 0;
+    uint8_t macroRight = 0;
+    uint8_t seqLeft = 0;
+    uint8_t seqRight = 0;
+    settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight);
+
+    assert(macroLeft == core::state::StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT);
+    assert(macroRight == core::state::StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT);
+    assert(seqLeft == core::state::StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT);
+    assert(seqRight == core::state::StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT);
+
+    std::cout << "[PASS] test_migration_v2_to_v3\n";
 }
 
 }  // namespace
@@ -153,8 +258,9 @@ int main() {
     std::cout << "CoreSettings tests\n";
     std::cout << "==============================================\n\n";
 
-    test_roundtrip_v2();
-    test_migration_v1_to_v2();
+    test_roundtrip_v3();
+    test_migration_v1_to_v3();
+    test_migration_v2_to_v3();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

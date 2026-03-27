@@ -2,7 +2,7 @@
 
 /**
  * @file CoreSettings.hpp
- * @brief Incremental persistence for macro pages
+ * @brief Incremental persistence for pages + sync + shortcut mappings
  *
  * Storage layout in EEPROM (4KB available on Teensy 4.x):
  *
@@ -15,7 +15,11 @@
  * | 0x0007 | 1    | Follow transport flag |
  * | 0x0008 | 2    | Auto fallback timeout (ms) |
  * | 0x000A | 1    | Auto lock clock count |
- * | 0x000B | 5    | Reserved |
+ * | 0x000B | 1    | Macro shortcut LEFT |
+ * | 0x000C | 1    | Macro shortcut RIGHT |
+ * | 0x000D | 1    | Sequencer shortcut LEFT |
+ * | 0x000E | 1    | Sequencer shortcut RIGHT |
+ * | 0x000F | 1    | Reserved |
  * | 0x0010 | 512  | 8 pages × 64 bytes |
  *
  * Total: 528 bytes used.
@@ -29,6 +33,7 @@
 #include <oc/log/Log.hpp>
 
 #include "MidiSyncState.hpp"
+#include "DataManagerState.hpp"
 #include "macro/MacroPagesState.hpp"
 
 namespace core::state {
@@ -36,7 +41,7 @@ namespace core::state {
 /// Storage layout constants
 namespace StorageLayout {
     constexpr uint32_t MAGIC = 0x4D435354;  ///< "MCST" in ASCII
-    constexpr uint8_t VERSION = 2;
+    constexpr uint8_t VERSION = 3;
 
     constexpr uint32_t ADDR_MAGIC = 0x0000;
     constexpr uint32_t ADDR_VERSION = 0x0004;
@@ -48,6 +53,22 @@ namespace StorageLayout {
     constexpr uint32_t ADDR_SYNC_FOLLOW_TRANSPORT = ADDR_RESERVED + 1;
     constexpr uint32_t ADDR_SYNC_AUTO_FALLBACK_MS = ADDR_RESERVED + 2;   // uint16_t
     constexpr uint32_t ADDR_SYNC_AUTO_LOCK_CLOCKS = ADDR_RESERVED + 4;
+
+    constexpr uint32_t ADDR_SHORTCUT_MACRO_LEFT = ADDR_RESERVED + 5;
+    constexpr uint32_t ADDR_SHORTCUT_MACRO_RIGHT = ADDR_RESERVED + 6;
+    constexpr uint32_t ADDR_SHORTCUT_SEQ_LEFT = ADDR_RESERVED + 7;
+    constexpr uint32_t ADDR_SHORTCUT_SEQ_RIGHT = ADDR_RESERVED + 8;
+    static_assert(ADDR_SHORTCUT_SEQ_RIGHT < ADDR_PAGES,
+                  "Header fields must stay before page payload region");
+
+    constexpr uint8_t DEFAULT_SHORTCUT_MACRO_LEFT =
+        static_cast<uint8_t>(DEFAULT_MACRO_SHORTCUT_LEFT);
+    constexpr uint8_t DEFAULT_SHORTCUT_MACRO_RIGHT =
+        static_cast<uint8_t>(DEFAULT_MACRO_SHORTCUT_RIGHT);
+    constexpr uint8_t DEFAULT_SHORTCUT_SEQ_LEFT =
+        static_cast<uint8_t>(DEFAULT_SEQ_SHORTCUT_LEFT);
+    constexpr uint8_t DEFAULT_SHORTCUT_SEQ_RIGHT =
+        static_cast<uint8_t>(DEFAULT_SEQ_SHORTCUT_RIGHT);
 
     // Note: Named MACRO_PAGE_SIZE to avoid conflict with system PAGE_SIZE macro (Emscripten)
     constexpr size_t MACRO_PAGE_SIZE = sizeof(macro::MacroPageData);  // 64 bytes
@@ -135,6 +156,14 @@ public:
             return true;
         }
 
+        if (version == 2) {
+            loadPages_(pages);
+            loadMidiSync_(midiSync);
+            saveAll(pages, midiSync);
+            OC_LOG_INFO("[CoreSettings] Migrated settings v2 -> v{}", StorageLayout::VERSION);
+            return true;
+        }
+
         if (version == 1) {
             loadPages_(pages);
             midiSync.reset();
@@ -178,6 +207,8 @@ public:
                        reinterpret_cast<const uint8_t*>(&lockClocks),
                        1);
 
+        writeDefaultShortcuts_();
+
         // Write all pages
         for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {
             backend_.write(
@@ -213,6 +244,43 @@ public:
         backend_.write(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
                        reinterpret_cast<const uint8_t*>(&lockCount),
                        1);
+    }
+
+    void saveDataManagerMacroShortcutLeft(uint8_t command) {
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, command);
+    }
+
+    void saveDataManagerMacroShortcutRight(uint8_t command) {
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, command);
+    }
+
+    void saveDataManagerSeqShortcutLeft(uint8_t command) {
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, command);
+    }
+
+    void saveDataManagerSeqShortcutRight(uint8_t command) {
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, command);
+    }
+
+    void loadDataManagerShortcuts(uint8_t& macroLeft,
+                                  uint8_t& macroRight,
+                                  uint8_t& seqLeft,
+                                  uint8_t& seqRight) {
+        macroLeft = StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT;
+        macroRight = StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT;
+        seqLeft = StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT;
+        seqRight = StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT;
+
+        uint8_t version = 0;
+        backend_.read(StorageLayout::ADDR_VERSION, &version, 1);
+        if (version < StorageLayout::VERSION) {
+            return;
+        }
+
+        backend_.read(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, &macroLeft, 1);
+        backend_.read(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, &macroRight, 1);
+        backend_.read(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, &seqLeft, 1);
+        backend_.read(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
     }
 
     /**
@@ -278,6 +346,24 @@ public:
     }
 
 private:
+    void saveDataManagerShortcut_(uint32_t address, uint8_t command) {
+        backend_.write(address,
+                       reinterpret_cast<const uint8_t*>(&command),
+                       1);
+    }
+
+    void writeDefaultShortcuts_() {
+        const uint8_t macroLeft = StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT;
+        const uint8_t macroRight = StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT;
+        const uint8_t seqLeft = StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT;
+        const uint8_t seqRight = StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT;
+
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, macroLeft);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, macroRight);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, seqLeft);
+        saveDataManagerShortcut_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, seqRight);
+    }
+
     void loadPages_(macro::MacroPagesState& pages) {
         uint8_t activePage = 0;
         backend_.read(StorageLayout::ADDR_ACTIVE_PAGE, &activePage, 1);

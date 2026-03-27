@@ -14,8 +14,8 @@
 #include <config/App.hpp>
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
-#include "context/BootContext.hpp"
 #include "context/StandaloneContext.hpp"
+#include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
 // =============================================================================
@@ -25,9 +25,15 @@
 static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
-static oc::hal::teensy::SDCardBackend storage("/macros.bin");  // SD card storage (non-blocking)
+static oc::hal::teensy::SDCardBackend settingsStorage("/macros.bin");
+static oc::hal::teensy::SDCardBackend macroWorkspaceStorage("/macro-workspace.bin");
+static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
+static oc::hal::teensy::SDCardBackend sequencerWorkspaceStorage("/sequencer-workspace.bin");
+static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer-pattern-library.bin");
+static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
+static std::optional<core::sequencer::SequencerRuntimeService> sequencerRuntime;
 
 // =============================================================================
 // Initialization Helpers
@@ -60,18 +66,53 @@ static void initMux() {
     checkOrHalt(mux->init(), "MUX");
 }
 
-static void initStorage() {
-    auto result = storage.init();
+static void initStorageBackend(oc::hal::teensy::SDCardBackend& backend,
+                               const char* label) {
+    const auto result = backend.init();
     if (!result) {
-        OC_LOG_ERROR("Storage init failed: {}", oc::type::errorCodeToString(result.error().code));
+        OC_LOG_ERROR("{} storage init failed: {}",
+                     label,
+                     oc::type::errorCodeToString(result.error().code));
         while (true) {}
     }
-    OC_LOG_INFO("Storage ready ({}B)", storage.capacity());
+}
+
+static void initStorage() {
+    struct StorageInitItem {
+        const char* label;
+        oc::hal::teensy::SDCardBackend* backend;
+    };
+
+    const StorageInitItem items[] = {
+        {"Settings", &settingsStorage},
+        {"Macro workspace", &macroWorkspaceStorage},
+        {"Macro library", &macroLibraryStorage},
+        {"Sequencer workspace", &sequencerWorkspaceStorage},
+        {"Sequencer pattern library", &sequencerPatternLibraryStorage},
+        {"Sequencer set library", &sequencerSetLibraryStorage},
+    };
+
+    for (const auto& item : items) {
+        initStorageBackend(*item.backend, item.label);
+    }
+
+    OC_LOG_INFO("Storages ready settings={}B macroWs={}B macroLib={}B seqWs={}B seqPatternLib={}B seqSetLib={}B",
+                settingsStorage.capacity(),
+                macroWorkspaceStorage.capacity(),
+                macroLibraryStorage.capacity(),
+                sequencerWorkspaceStorage.capacity(),
+                sequencerPatternLibraryStorage.capacity(),
+                sequencerSetLibraryStorage.capacity());
 }
 
 static void initApp() {
-    // Create global state with storage backend (survives context switches)
-    coreState.emplace(storage);
+    // Create global state with dedicated storage domains (survives context switches)
+    coreState.emplace(settingsStorage,
+                      macroWorkspaceStorage,
+                      macroLibraryStorage,
+                      sequencerWorkspaceStorage,
+                      sequencerPatternLibraryStorage,
+                      sequencerSetLibraryStorage);
 
     app = oc::hal::teensy::AppBuilder()
               .midi()
@@ -80,8 +121,37 @@ static void initApp() {
               .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
               .inputConfig(Config::Input::CONFIG);
 
-    // Skip BootContext for now - debug crash
-    // app->registerContext<core::context::BootContext>(Config::ContextID::BOOT, "Boot");
+    if (!app->midiAPI()) {
+        OC_LOG_ERROR("Sequencer runtime init failed: MIDI API unavailable");
+        while (true) {}
+    }
+
+    sequencerRuntime.emplace(*coreState, *app->midiAPI(), app->eventBus());
+
+    const bool runtimeHookRegistered = app->registerPreContextUpdateHook([]() {
+        if (!app || !sequencerRuntime) return;
+
+        static bool wasStandaloneActive = false;
+
+        const bool isStandaloneActive =
+            app->contexts().activeId() == static_cast<uint8_t>(Config::ContextID::STANDALONE);
+
+        if (!isStandaloneActive) {
+            if (wasStandaloneActive) {
+                sequencerRuntime->stop();
+            }
+            wasStandaloneActive = false;
+            return;
+        }
+
+        sequencerRuntime->update();
+        wasStandaloneActive = true;
+    });
+
+    if (!runtimeHookRegistered) {
+        OC_LOG_ERROR("Sequencer runtime init failed: app pre-context hook registry full");
+        while (true) {}
+    }
 
     // Register context with factory that captures CoreState reference
     app->registerContextWithFactory(

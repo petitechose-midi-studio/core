@@ -162,6 +162,8 @@ void SequencerPatternConfigHandler::configureOptForFocusedRow() {
     const uint8_t row = state_.sequencer.patternConfig.focusedRow.get();
     float pos = 0.0f;
     uint8_t steps = 0;
+    uint16_t ticksPerStep = input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
+    float normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
 
     if (row == 0) {
         // LEN: [1..MAX_STEPS]
@@ -183,6 +185,8 @@ void SequencerPatternConfigHandler::configureOptForFocusedRow() {
     }
 
     if (steps <= 1) return;
+    encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, ticksPerStep);
+    encoders_.setNormalizedTurns(Config::EncoderID::OPT, normalizedTurns);
     encoders_.setDiscreteSteps(Config::EncoderID::OPT, steps);
     encoders_.setPosition(Config::EncoderID::OPT, pos);
 }

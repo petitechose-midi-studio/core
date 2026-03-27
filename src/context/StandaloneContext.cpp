@@ -24,6 +24,7 @@
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 #include "handler/settings/GlobalSettingsHandler.hpp"
+#include "handler/settings/DataManagerHandler.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
@@ -35,17 +36,16 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
-#include <oc/time/Time.hpp>
 #include "ui/font/StandaloneFonts.hpp"
 #include <oc/context/OverlayManager.hpp>
 #include "ui/transportbar/TransportBar.hpp"
+#include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/view/MacroView.hpp"
 #include "ui/view/SequencerView.hpp"
 #include <ms/ui/ViewContainer.hpp>
 
-#include "sequencer/SequencerPlaybackService.hpp"
-#include "sequencer/MidiClockSyncService.hpp"
 #include "midi/MidiUtils.hpp"
+#include "state/sequencer/StepPropertyDisplay.hpp"
 
 namespace core::context {
 
@@ -54,9 +54,62 @@ namespace input_utils = core::handler::sequencer::input_utils;
 namespace {
 
 constexpr float ENCODER_POSITION_EPSILON = 0.0005f;
+constexpr std::array<core::state::sequencer::StepProperty, 5> SEQUENCER_STEP_EDIT_PROPERTIES = {
+    core::state::sequencer::StepProperty::NOTE,
+    core::state::sequencer::StepProperty::VELOCITY,
+    core::state::sequencer::StepProperty::GATE,
+    core::state::sequencer::StepProperty::NUDGE,
+    core::state::sequencer::StepProperty::PROBABILITY,
+};
+constexpr std::array<const char*, 5> SEQUENCER_STEP_EDIT_KEYS = {
+    "Note",
+    "Velocity",
+    "Gate",
+    "Nudge",
+    "Probability",
+};
 
 inline bool hasMeaningfulEncoderDelta(float a, float b) {
     return std::fabs(a - b) > ENCODER_POSITION_EPSILON;
+}
+
+template <typename EncoderIdT>
+inline void applySequencerEncoderConfig(
+    oc::api::EncoderAPI& encoders,
+    EncoderIdT encoderId,
+    const input_utils::StepPropertyEncoderConfig& config
+) {
+    encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
+    encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
+    encoders.setDiscreteSteps(encoderId, config.discreteSteps);
+}
+
+template <size_t N>
+void formatSequencerStepEditRows(
+    std::array<std::array<char, N>, 5>& valueBuffers,
+    std::array<ms::ui::KeyValueRow, 5>& rows,
+    uint8_t note,
+    uint8_t velocity,
+    uint16_t gate,
+    int8_t nudge,
+    uint8_t probability
+) {
+    for (size_t i = 0; i < rows.size(); ++i) {
+        core::state::sequencer::formatStepPropertyValue(
+            valueBuffers[i].data(),
+            valueBuffers[i].size(),
+            SEQUENCER_STEP_EDIT_PROPERTIES[i],
+            note,
+            velocity,
+            gate,
+            nudge,
+            probability
+        );
+        rows[i] = {
+            .key = SEQUENCER_STEP_EDIT_KEYS[i],
+            .value = valueBuffers[i].data(),
+        };
+    }
 }
 
 }  // namespace
@@ -103,6 +156,11 @@ oc::type::Result<void> StandaloneContext::init() {
         view_container_->getBottomZone(),
         core_state_.statusBar
     );
+    context_softkey_bar_ = std::make_unique<core::ui::ContextSoftkeyBar>(
+        view_container_->getBottomZone()
+    );
+    setupDataManagerSoftkeyBarRendering();
+    renderDataManagerSoftkeyBar();
 
     // Create overlay manager with AuthorityResolver
     overlay_controller_ = std::make_unique<oc::context::OverlayManager<core::ui::OverlayType>>(
@@ -143,6 +201,22 @@ oc::type::Result<void> StandaloneContext::init() {
         static_cast<oc::type::ButtonID>(0)
     );
     setupGlobalSettingsSelectorRendering();
+
+    data_manager_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::DATA_MANAGER,
+        oc::ui::lvgl::scopeID(data_manager_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupDataManagerRendering();
+
+    data_manager_dialog_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlay_controller_->registerCleanup(
+        core::ui::OverlayType::DATA_MANAGER_DIALOG,
+        oc::ui::lvgl::scopeID(data_manager_dialog_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    setupDataManagerDialogRendering();
 
     // Macro edit overlays (main + selectors)
     macro_edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
@@ -198,12 +272,9 @@ oc::type::Result<void> StandaloneContext::init() {
     );
     setupSequencerStepEditRendering();
 
-    seq_property_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(
-        sequencer_view_->getElement()
-    );
     overlay_controller_->registerCleanup(
         core::ui::OverlayType::SEQ_PROPERTY_SELECTOR,
-        oc::ui::lvgl::scopeID(seq_property_selector_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(sequencer_view_->getPropertySelectorScopeElement()),
         static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_BOTTOM)
     );
     setupSequencerPropertySelectorRendering();
@@ -245,7 +316,7 @@ oc::type::Result<void> StandaloneContext::init() {
         encoders(),
         buttons(),
         sequencer_view_->getElement(),
-        seq_property_selector_overlay_->getElement()
+        sequencer_view_->getPropertySelectorScopeElement()
     );
 
     sequencer_macro_property_handler_ = std::make_unique<core::handler::SequencerMacroPropertyHandler>(
@@ -258,13 +329,6 @@ oc::type::Result<void> StandaloneContext::init() {
         core_state_, encoders()
     );
 
-    // Global sync service (clock source arbitration + MIDI realtime IO)
-    midi_clock_sync_ = std::make_unique<core::sequencer::MidiClockSyncService>(
-        core_state_.midiSync,
-        core_state_.statusBar,
-        midi()
-    );
-
     // MIDI input is routed through the framework EventBus (never via MidiAPI callbacks)
     onMidiCC([this](uint8_t ch, uint8_t cc, uint8_t val) {
         if (midi_handler_) midi_handler_->onCC(ch, cc, val);
@@ -274,19 +338,6 @@ oc::type::Result<void> StandaloneContext::init() {
     });
     onMidiNoteOff([this](uint8_t, uint8_t, uint8_t) {
         if (midi_handler_) midi_handler_->onNoteIn();
-    });
-    onMidiClock([this](uint64_t timestampUs) {
-        if (!midi_clock_sync_) return;
-        midi_clock_sync_->onClock(timestampUs, oc::time::millis());
-    });
-    onMidiStart([this]() {
-        if (midi_clock_sync_) midi_clock_sync_->onStart();
-    });
-    onMidiContinue([this]() {
-        if (midi_clock_sync_) midi_clock_sync_->onContinue();
-    });
-    onMidiStop([this]() {
-        if (midi_clock_sync_) midi_clock_sync_->onStop();
     });
     transport_handler_ = std::make_unique<core::handler::TransportHandler>(
         core_state_, encoders(), buttons(),
@@ -327,6 +378,19 @@ oc::type::Result<void> StandaloneContext::init() {
         global_settings_selector_overlay_->getElement()
     );
 
+    data_manager_handler_ = std::make_unique<core::handler::DataManagerHandler>(
+        core_state_,
+        *overlay_controller_,
+        encoders(),
+        buttons(),
+        core::handler::DataManagerHandler::ViewScopes{
+            macro_view_->getElement(),
+            sequencer_view_->getElement(),
+        },
+        data_manager_overlay_->getElement(),
+        data_manager_dialog_overlay_->getElement()
+    );
+
     // Create MacroEdit input handler (two-level scoping)
     macro_edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
         core_state_,
@@ -339,14 +403,6 @@ oc::type::Result<void> StandaloneContext::init() {
         macro_page_selector_overlay_->getElement(),
         macro_target_selector_overlay_->getElement()
     );
-
-    // Global playback service (not tied to any view scope)
-    sequencer_playback_ = std::make_unique<core::sequencer::SequencerPlaybackService>(
-        core_state_.sequencer,
-        core_state_.statusBar,
-        midi()
-    );
-
     view_container_->show();
 
     OC_LOG_INFO("StandaloneContext ready");
@@ -354,20 +410,6 @@ oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
-    const uint32_t nowMs = oc::time::millis();
-
-    if (midi_clock_sync_) {
-        midi_clock_sync_->update(nowMs);
-    }
-
-    if (sequencer_playback_ && midi_clock_sync_) {
-        if (midi_clock_sync_->consumeResyncRequest()) {
-            sequencer_playback_->stop();
-        }
-        sequencer_playback_->update(midi_clock_sync_->tick(), midi_clock_sync_->playing());
-    } else if (sequencer_playback_) {
-        sequencer_playback_->update(0, false);
-    }
 }
 
 void StandaloneContext::onCleanup() {
@@ -383,15 +425,11 @@ void StandaloneContext::onCleanup() {
     core_state_.sequencer.stepEdit.reset();
     core_state_.sequencer.propertySelector.reset();
     core_state_.globalSettings.reset();
-
-    if (sequencer_playback_) {
-        sequencer_playback_->stop();
-        sequencer_playback_.reset();
-    }
-    midi_clock_sync_.reset();
+    core_state_.dataManager.resetSession(core::state::DataManagerContext::MACRO);
 
     // Handlers first (they reference state/APIs)
     global_settings_handler_.reset();
+    data_manager_handler_.reset();
     macro_edit_handler_.reset();
     view_switcher_handler_.reset();
     sequencer_property_selector_handler_.reset();
@@ -412,15 +450,17 @@ void StandaloneContext::onCleanup() {
     macro_edit_overlay_.reset();
     seq_pattern_config_overlay_.reset();
     seq_step_edit_overlay_.reset();
-    seq_property_selector_overlay_.reset();
     global_settings_selector_overlay_.reset();
     global_settings_overlay_.reset();
+    data_manager_dialog_overlay_.reset();
+    data_manager_overlay_.reset();
     view_selector_.reset();
 
     // Overlay controller (clears authority resolver)
     overlay_controller_.reset();
 
     // TransportBar (TopBar is now managed by MacroView)
+    context_softkey_bar_.reset();
     transport_bar_.reset();
 
     if (macro_view_) {
@@ -443,17 +483,126 @@ void StandaloneContext::syncEncodersFromState() {
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         float value = core_state_.macros.slots[i].value.get();
         // Macro view defaults: 0..1 continuous
+        encoders().setDiscreteTicksPerStep(
+            Config::MACRO_ENCODERS[i],
+            input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        );
+        encoders().setNormalizedTurns(
+            Config::MACRO_ENCODERS[i],
+            input_utils::DEFAULT_NORMALIZED_TURNS
+        );
         encoders().setContinuous(Config::MACRO_ENCODERS[i]);
         encoders().setPosition(Config::MACRO_ENCODERS[i], value);
     }
 
+    encoders().setDiscreteTicksPerStep(
+        Config::EncoderID::OPT,
+        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+    );
+    encoders().setNormalizedTurns(
+        Config::EncoderID::OPT,
+        input_utils::DEFAULT_NORMALIZED_TURNS
+    );
+
     // Leaving Sequencer view disables discrete steps.
-    seq_macro_steps_configured_ = 0;
-    seq_opt_steps_configured_ = 0;
-    seq_macro_position_valid_.fill(false);
-    seq_opt_position_valid_ = false;
+    resetSequencerEncoderSyncCache();
 
     OC_LOG_DEBUG("Synced encoder positions from restored state");
+}
+
+void StandaloneContext::resetSequencerEncoderSyncCache() {
+    seq_macro_steps_configured_ = 0;
+    seq_opt_steps_configured_ = 0;
+    seq_macro_ticks_per_step_configured_ = 0;
+    seq_opt_ticks_per_step_configured_ = 0;
+    seq_macro_turns_configured_ = 0.0f;
+    seq_opt_turns_configured_ = 0.0f;
+    seq_macro_position_valid_.fill(false);
+    seq_opt_position_valid_ = false;
+}
+
+void StandaloneContext::resetSequencerOptEncoderSyncCache() {
+    seq_opt_steps_configured_ = 0;
+    seq_opt_ticks_per_step_configured_ = 0;
+    seq_opt_turns_configured_ = 0.0f;
+    seq_opt_position_valid_ = false;
+}
+
+void StandaloneContext::ensureSequencerMacroEncoderConfig(
+    const input_utils::StepPropertyEncoderConfig& config
+) {
+    if (seq_macro_steps_configured_ == config.discreteSteps &&
+        seq_macro_ticks_per_step_configured_ == config.discreteTicksPerStep &&
+        !hasMeaningfulEncoderDelta(seq_macro_turns_configured_, config.normalizedTurns)) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        applySequencerEncoderConfig(encoders(), Config::MACRO_ENCODERS[i], config);
+    }
+
+    seq_macro_steps_configured_ = config.discreteSteps;
+    seq_macro_ticks_per_step_configured_ = config.discreteTicksPerStep;
+    seq_macro_turns_configured_ = config.normalizedTurns;
+}
+
+void StandaloneContext::syncSequencerMacroEncoderValues(
+    uint8_t page,
+    core::state::sequencer::StepProperty property
+) {
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        float normalized = 0.0f;
+        uint8_t abs = 0;
+
+        if (core_state_.sequencer.resolveStepInPage(page, i, abs)) {
+            normalized = input_utils::stepPropertyToNormalized(core_state_.sequencer, abs, property);
+        }
+
+        normalized = input_utils::clampNormalized(normalized);
+
+        if (!seq_macro_position_valid_[i] ||
+            hasMeaningfulEncoderDelta(seq_macro_position_cache_[i], normalized)) {
+            encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
+            seq_macro_position_cache_[i] = normalized;
+            seq_macro_position_valid_[i] = true;
+        }
+    }
+}
+
+void StandaloneContext::ensureSequencerOptEncoderConfig(
+    const input_utils::StepPropertyEncoderConfig& config
+) {
+    if (seq_opt_steps_configured_ == config.discreteSteps &&
+        seq_opt_ticks_per_step_configured_ == config.discreteTicksPerStep &&
+        !hasMeaningfulEncoderDelta(seq_opt_turns_configured_, config.normalizedTurns)) {
+        return;
+    }
+
+    applySequencerEncoderConfig(encoders(), Config::EncoderID::OPT, config);
+    seq_opt_steps_configured_ = config.discreteSteps;
+    seq_opt_ticks_per_step_configured_ = config.discreteTicksPerStep;
+    seq_opt_turns_configured_ = config.normalizedTurns;
+}
+
+void StandaloneContext::syncSequencerOptEncoderValue(
+    uint8_t length,
+    uint8_t focusedStep,
+    core::state::sequencer::StepProperty property
+) {
+    if (length == 0 ||
+        focusedStep >= length ||
+        focusedStep >= core::state::sequencer::SequencerState::MAX_STEPS) {
+        return;
+    }
+
+    const float optPosition =
+        input_utils::stepPropertyToNormalized(core_state_.sequencer, focusedStep, property);
+
+    if (!seq_opt_position_valid_ || hasMeaningfulEncoderDelta(seq_opt_position_cache_, optPosition)) {
+        encoders().setPosition(Config::EncoderID::OPT, optPosition);
+        seq_opt_position_cache_ = optPosition;
+        seq_opt_position_valid_ = true;
+    }
 }
 
 void StandaloneContext::setupMacroEditRendering() {
@@ -569,7 +718,6 @@ void StandaloneContext::setupSequencerStepEditRendering() {
         core_state_.sequencer.stepEdit.visible,
         core_state_.sequencer.stepEdit.stepIndex,
         core_state_.sequencer.stepEdit.focusedRow,
-        core_state_.sequencer.length,
         core_state_.sequencer.stepDataRevision
     );
 }
@@ -602,34 +750,23 @@ void StandaloneContext::renderSequencerStepEdit() {
     const uint8_t note = core_state_.sequencer.note[abs];
     const uint8_t vel = core_state_.sequencer.velocity[abs];
     const uint16_t gate = core_state_.sequencer.gate[abs];
+    const int8_t nudge = core_state_.sequencer.nudge[abs];
+    const uint8_t probability = core_state_.sequencer.probability[abs];
 
     const uint32_t dataRevision =
         core_state_.sequencer.stepDataRevision.get() ^
         (static_cast<uint32_t>(abs) << 16) ^
         (static_cast<uint32_t>(len) << 24);
 
-    char noteName[8];
-    core::midi::formatNoteName(noteName, sizeof(noteName), note);
-    char noteStr[8];
-    snprintf(noteStr, sizeof(noteStr), "%s", noteName);
-
-    char velStr[8];
-    snprintf(velStr, sizeof(velStr), "%u", static_cast<unsigned>(vel));
-
-    char gateStr[12];
-    snprintf(gateStr, sizeof(gateStr), "%u%%", static_cast<unsigned>(gate));
-
-    const ms::ui::KeyValueRow rows[] = {
-        {.key = "Note", .value = noteStr},
-        {.key = "Velocity", .value = velStr},
-        {.key = "Gate", .value = gateStr},
-    };
+    std::array<std::array<char, 12>, 5> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 5> rows{};
+    formatSequencerStepEditRows(valueBuffers, rows, note, vel, gate, nudge, probability);
 
     seq_step_edit_overlay_->render({
         .title = title,
         .meta = meta,
-        .rows = rows,
-        .rowCount = 3,
+        .rows = rows.data(),
+        .rowCount = static_cast<int>(rows.size()),
         .selectedIndex = core_state_.sequencer.stepEdit.focusedRow.get(),
         .visible = true,
         .dataRevision = dataRevision,
@@ -810,26 +947,14 @@ void StandaloneContext::renderMacroTargetSelector() {
 
 void StandaloneContext::setupSequencerPropertySelectorRendering() {
     seq_property_selector_watcher_.watchAll(
-        [this]() { renderSequencerPropertySelector(); },
-        core_state_.sequencer.propertySelector.visible,
-        core_state_.sequencer.propertySelector.selectedIndex
+        [this]() {
+            if (!sequencer_view_) return;
+            sequencer_view_->setPropertySelectorScopeVisible(
+                core_state_.sequencer.propertySelector.visible.get()
+            );
+        },
+        core_state_.sequencer.propertySelector.visible
     );
-}
-
-void StandaloneContext::renderSequencerPropertySelector() {
-    if (!seq_property_selector_overlay_) return;
-    static const char* const ITEMS[] = {"Note", "Velocity", "Gate"};
-
-    seq_property_selector_overlay_->render({
-        .title = "PROPERTY",
-        .meta = "MACROS",
-        .items = ITEMS,
-        .itemCount = 3,
-        .selectedIndex = core_state_.sequencer.propertySelector.selectedIndex.get(),
-        .showIndexColumn = true,
-        .visible = core_state_.sequencer.propertySelector.visible.get(),
-        .dataRevision = 1,
-    });
 }
 
 void StandaloneContext::setupSequencerMacroEncoderSync() {
@@ -840,7 +965,6 @@ void StandaloneContext::setupSequencerMacroEncoderSync() {
         core_state_.sequencer.length,
         core_state_.sequencer.focusedStep,
         core_state_.sequencer.activeStepProperty,
-        core_state_.sequencer.stepDataRevision,
         core_state_.sequencer.patternConfig.visible,
         core_state_.sequencer.stepEdit.visible,
         core_state_.sequencer.propertySelector.visible
@@ -853,74 +977,18 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
     if (core_state_.overlays.hasVisible()) {
         // Overlay scope owns controls; defer expensive knob position sync
         // until overlay closes (visibility change triggers this watcher).
-        seq_opt_steps_configured_ = 0;
-        seq_opt_position_valid_ = false;
+        resetSequencerOptEncoderSyncCache();
         return;
     }
 
     const uint8_t len = core_state_.sequencer.length.get();
     const uint8_t page = core_state_.sequencer.normalizePage(core_state_.sequencer.page.get());
-
     const auto prop = core_state_.sequencer.activeStepProperty.get();
-
-    // Absolute + discrete steps (framework quantizes [0..1])
-    const uint8_t steps = input_utils::discreteStepsForProperty(prop);
-
-    if (seq_macro_steps_configured_ != steps) {
-        for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-            encoders().setDiscreteSteps(Config::MACRO_ENCODERS[i], steps);
-        }
-        seq_macro_steps_configured_ = steps;
-    }
-
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        float normalized = 0.0f;
-        uint8_t abs = 0;
-
-        if (core_state_.sequencer.resolveStepInPage(page, i, abs)) {
-            normalized = input_utils::stepPropertyToNormalized(
-                prop,
-                core_state_.sequencer.note[abs],
-                core_state_.sequencer.velocity[abs],
-                core_state_.sequencer.gate[abs]
-            );
-        }
-
-        if (normalized < 0.0f) normalized = 0.0f;
-        if (normalized > 1.0f) normalized = 1.0f;
-
-        if (!seq_macro_position_valid_[i] ||
-            hasMeaningfulEncoderDelta(seq_macro_position_cache_[i], normalized)) {
-            encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
-            seq_macro_position_cache_[i] = normalized;
-            seq_macro_position_valid_[i] = true;
-        }
-    }
-
-    const uint8_t focused = core_state_.sequencer.focusedStep.get();
-    if (len == 0 || focused >= len || focused >= core::state::sequencer::SequencerState::MAX_STEPS) {
-        return;
-    }
-
-    const uint8_t optSteps = input_utils::discreteStepsForProperty(prop);
-
-    if (seq_opt_steps_configured_ != optSteps) {
-        encoders().setDiscreteSteps(Config::EncoderID::OPT, optSteps);
-        seq_opt_steps_configured_ = optSteps;
-    }
-
-    const float optPosition = input_utils::stepPropertyToNormalized(
-        prop,
-        core_state_.sequencer.note[focused],
-        core_state_.sequencer.velocity[focused],
-        core_state_.sequencer.gate[focused]
-    );
-
-    if (!seq_opt_position_valid_ || hasMeaningfulEncoderDelta(seq_opt_position_cache_, optPosition)) {
-        encoders().setPosition(Config::EncoderID::OPT, optPosition);
-        seq_opt_position_cache_ = optPosition;
-        seq_opt_position_valid_ = true;
-    }
+    const auto config = input_utils::encoderConfigForProperty(prop);
+    ensureSequencerMacroEncoderConfig(config);
+    syncSequencerMacroEncoderValues(page, prop);
+    ensureSequencerOptEncoderConfig(config);
+    syncSequencerOptEncoderValue(len, core_state_.sequencer.focusedStep.get(), prop);
 }
 
 void StandaloneContext::setupViewSelectorRendering() {
@@ -1080,6 +1148,237 @@ void StandaloneContext::renderGlobalSettingsSelector() {
         .visible = true,
         .dataRevision = dataRevision,
     });
+}
+
+void StandaloneContext::setupDataManagerRendering() {
+    data_manager_watcher_.watchAll(
+        [this]() { renderDataManager(); },
+        core_state_.dataManager.visible,
+        core_state_.dataManager.focusedRow,
+        core_state_.dataManager.context,
+        core_state_.dataManager.macroShortcutLeft,
+        core_state_.dataManager.macroShortcutRight,
+        core_state_.dataManager.seqShortcutLeft,
+        core_state_.dataManager.seqShortcutRight,
+        core_state_.dataManager.feedback
+    );
+}
+
+void StandaloneContext::renderDataManager() {
+    if (!data_manager_overlay_) return;
+
+    const auto& dm = core_state_.dataManager;
+    if (!dm.visible.get()) {
+        data_manager_overlay_->render({.visible = false});
+        return;
+    }
+
+    const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
+    const char* title = macroContext ? "MACRO TOOLS" : "SEQUENCER TOOLS";
+
+    const core::state::DataManagerCommand leftCommand = dm.shortcutForRow(0U);
+    const core::state::DataManagerCommand rightCommand = dm.shortcutForRow(1U);
+
+    const ms::ui::KeyValueRow rows[] = {
+        {.key = "Bottom Left", .value = core::state::dataManagerCommandLabel(leftCommand)},
+        {.key = "Bottom Right", .value = core::state::dataManagerCommandLabel(rightCommand)},
+    };
+
+    const uint8_t rowCount = 2U;
+    const uint8_t selected = std::min<uint8_t>(dm.focusedRow.get(), 1U);
+
+    const char* feedback = dm.feedback.get();
+    const char* meta = (feedback && feedback[0] != '\0')
+                           ? feedback
+                           : "NAV=MAP  L/R=RUN  C=ALL";
+
+    uint32_t feedbackHash = 0;
+    if (feedback) {
+        for (const char* p = feedback; *p; ++p) {
+            feedbackHash = (feedbackHash * 131U) + static_cast<uint8_t>(*p);
+        }
+    }
+
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(dm.context.get()) << 24) |
+        (static_cast<uint32_t>(leftCommand) << 16) |
+        (static_cast<uint32_t>(rightCommand) << 8) |
+        (feedbackHash & 0xFFU);
+
+    data_manager_overlay_->render({
+        .title = title,
+        .meta = meta,
+        .rows = rows,
+        .rowCount = rowCount,
+        .selectedIndex = selected,
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
+}
+
+void StandaloneContext::setupDataManagerDialogRendering() {
+    data_manager_dialog_watcher_.watchAll(
+        [this]() { renderDataManagerDialog(); },
+        core_state_.dataManager.dialog.visible,
+        core_state_.dataManager.dialog.mode,
+        core_state_.dataManager.dialog.selectedIndex,
+        core_state_.dataManager.dialog.editingShortcutRow,
+        core_state_.dataManager.context,
+        core_state_.dataManager.pendingCommand,
+        core_state_.dataManager.pendingSlot,
+        core_state_.dataManager.pendingSetLoadMode
+    );
+}
+
+void StandaloneContext::renderDataManagerDialog() {
+    if (!data_manager_dialog_overlay_) return;
+
+    const auto& dm = core_state_.dataManager;
+    const auto& dialog = dm.dialog;
+
+    if (!dialog.visible.get()) {
+        data_manager_dialog_overlay_->render({.visible = false});
+        return;
+    }
+
+    static const char* const SET_MODE_ITEMS[] = {"REPLACE", "MERGE"};
+    static const char* const CONFIRM_ITEMS[] = {"CANCEL", "CONFIRM"};
+
+    const auto context = dm.context.get();
+    const int commandCount = static_cast<int>(core::state::dataManagerCommandCount(context));
+    for (int i = 0; i < commandCount; ++i) {
+        data_manager_dialog_command_items_[i] = core::state::dataManagerCommandLabel(
+            core::state::dataManagerCommandAt(context, i)
+        );
+    }
+
+    const auto mode = dialog.mode.get();
+    const char* title = "COMMAND";
+    const char* meta = "";
+    const char* const* items = nullptr;
+    int itemCount = 0;
+    int selected = 0;
+
+    if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
+        title = (dialog.editingShortcutRow.get() == 0) ? "MAP LEFT" : "MAP RIGHT";
+        meta = "SELECT COMMAND";
+        items = data_manager_dialog_command_items_.data();
+        itemCount = commandCount;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
+    } else if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
+        title = "COMMANDS";
+        meta = "RUN COMMAND";
+        items = data_manager_dialog_command_items_.data();
+        itemCount = commandCount;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
+    } else if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
+        title = core::state::dataManagerCommandLabel(dm.pendingCommand.get());
+        meta = "SELECT SLOT";
+        const uint8_t slotCount = core_state_.dataManagerSlotCount(dm.pendingCommand.get());
+
+        itemCount = static_cast<int>(slotCount);
+        if (itemCount <= 0) {
+            data_manager_dialog_overlay_->render({.visible = false});
+            return;
+        }
+
+        const char slotTag = core::state::dataManagerCommandSlotTag(dm.pendingCommand.get());
+        const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
+        for (int i = 0; i < itemCount; ++i) {
+            std::snprintf(data_manager_dialog_slot_labels_[i].data(),
+                          data_manager_dialog_slot_labels_[i].size(),
+                          "%c%02d",
+                          safeSlotTag,
+                          i + 1);
+            data_manager_dialog_slot_items_[i] = data_manager_dialog_slot_labels_[i].data();
+        }
+
+        items = data_manager_dialog_slot_items_.data();
+        selected = std::clamp(dialog.selectedIndex.get(), 0, itemCount - 1);
+    } else if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
+        title = "LOAD SET";
+        meta = "MODE";
+        items = SET_MODE_ITEMS;
+        itemCount = 2;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, 1);
+    } else if (mode == core::state::DataManagerDialogMode::CONFIRM) {
+        title = "CONFIRM";
+        const auto cmd = dm.pendingCommand.get();
+        const char slotTag = core::state::dataManagerCommandSlotTag(cmd);
+        const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
+        static char confirmMeta[24];
+        if (core::state::dataManagerCommandIsErase(cmd)) {
+            std::snprintf(confirmMeta, sizeof(confirmMeta), "ERASE %c%02u ?",
+                          safeSlotTag,
+                          static_cast<unsigned>(dm.pendingSlot.get() + 1U));
+        } else {
+            std::snprintf(confirmMeta, sizeof(confirmMeta), "OVERWRITE %c%02u ?",
+                          safeSlotTag,
+                          static_cast<unsigned>(dm.pendingSlot.get() + 1U));
+        }
+        meta = confirmMeta;
+        items = CONFIRM_ITEMS;
+        itemCount = 2;
+        selected = std::clamp(dialog.selectedIndex.get(), 0, 1);
+    }
+
+    if (!items || itemCount <= 0) {
+        data_manager_dialog_overlay_->render({.visible = false});
+        return;
+    }
+
+    const uint32_t dataRevision =
+        (static_cast<uint32_t>(mode) << 24) |
+        (static_cast<uint32_t>(selected) << 16) |
+        (static_cast<uint32_t>(dm.pendingCommand.get()) << 8) |
+        static_cast<uint32_t>(dm.pendingSlot.get());
+
+    data_manager_dialog_overlay_->render({
+        .title = title,
+        .meta = meta,
+        .items = items,
+        .itemCount = itemCount,
+        .selectedIndex = selected,
+        .showIndexColumn = false,
+        .visible = true,
+        .dataRevision = dataRevision,
+    });
+}
+
+void StandaloneContext::setupDataManagerSoftkeyBarRendering() {
+    data_manager_softkey_bar_watcher_.watchAll(
+        [this]() { renderDataManagerSoftkeyBar(); },
+        core_state_.dataManager.visible,
+        core_state_.dataManager.context,
+        core_state_.dataManager.macroShortcutLeft,
+        core_state_.dataManager.macroShortcutRight,
+        core_state_.dataManager.seqShortcutLeft,
+        core_state_.dataManager.seqShortcutRight
+    );
+}
+
+void StandaloneContext::renderDataManagerSoftkeyBar() {
+    if (!context_softkey_bar_) return;
+
+    const bool visible = core_state_.dataManager.visible.get();
+    if (!visible) {
+        context_softkey_bar_->hide();
+        if (transport_bar_) transport_bar_->show();
+        return;
+    }
+
+    const auto left = core_state_.dataManager.shortcutForRow(0U);
+    const auto right = core_state_.dataManager.shortcutForRow(1U);
+
+    char leftLabel[24];
+    std::snprintf(leftLabel, sizeof(leftLabel), "L:%s", core::state::dataManagerCommandLabel(left));
+
+    char rightLabel[24];
+    std::snprintf(rightLabel, sizeof(rightLabel), "R:%s", core::state::dataManagerCommandLabel(right));
+
+    context_softkey_bar_->setLabels(leftLabel, "C:Commands", rightLabel);
+    context_softkey_bar_->show();
+    if (transport_bar_) transport_bar_->hide();
 }
 
 void StandaloneContext::renderViewSelector() {

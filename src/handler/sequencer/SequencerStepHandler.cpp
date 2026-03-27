@@ -1,14 +1,13 @@
 #include "SequencerStepHandler.hpp"
 
 #include <oc/ui/lvgl/Scope.hpp>
-#include <oc/util/Index.hpp>
 
+#include <config/App.hpp>
 #include <config/InputIDs.hpp>
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
-using oc::util::wrapIndex;
 
 SequencerStepHandler::SequencerStepHandler(core::state::CoreState& state,
                                            oc::api::EncoderAPI& encoders,
@@ -41,11 +40,16 @@ void SequencerStepHandler::setupBindings() {
         .scope(scope(scope_element_))
         .then([this]() { nextPage(); });
 
-    // Focus navigation + toggle on NAV
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope(scope_element_))
+        .then([this]() { duplicatePageForward(); });
+
+    // Page navigation + toggle on NAV
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope(scope_element_))
-        .then([this](float delta) { moveFocus(delta); });
+        .then([this](float delta) { movePage(delta); });
 
     buttons_.button(Config::ButtonID::NAV)
         .release()
@@ -70,19 +74,19 @@ void SequencerStepHandler::toggleFocusedStep() {
     state_.sequencer.toggle(abs);
 }
 
-void SequencerStepHandler::moveFocus(float delta) {
+void SequencerStepHandler::movePage(float delta) {
     if (delta == 0.0f) return;
-    const int step = (delta > 0.0f) ? 1 : -1;
+    if (delta > 0.0f) {
+        nextPage();
+        return;
+    }
 
-    const int len = static_cast<int>(state_.sequencer.length.get());
-    if (len <= 0) return;
+    prevPage();
+}
 
-    const int current = static_cast<int>(state_.sequencer.focusedStep.get());
-    const int safeCurrent = (current < 0 || current >= len) ? 0 : current;
-    const int next = wrapIndex(safeCurrent + step, len);
-    const uint8_t nextStep = static_cast<uint8_t>(next);
-    state_.sequencer.focusedStep.set(nextStep);
-    state_.sequencer.page.set(state_.sequencer.pageForStep(nextStep));
+void SequencerStepHandler::duplicatePageForward() {
+    ignore_next_bottom_right_release_ = true;
+    state_.sequencer.duplicatePageForward(state_.sequencer.page.get());
 }
 
 void SequencerStepHandler::prevPage() {
@@ -96,6 +100,11 @@ void SequencerStepHandler::prevPage() {
 }
 
 void SequencerStepHandler::nextPage() {
+    if (ignore_next_bottom_right_release_) {
+        ignore_next_bottom_right_release_ = false;
+        return;
+    }
+
     const uint8_t pageCount = state_.sequencer.activePageCount();
     if (pageCount <= 1) return;
 

@@ -37,25 +37,20 @@ void SequencerMacroPropertyHandler::setupBindings() {
 }
 
 void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
-    const float value = input_utils::clampNormalized(normalized);
-
     uint8_t abs = 0;
     if (!state_.sequencer.resolveStepInPage(state_.sequencer.page.get(), indexInPage, abs)) return;
 
-    const auto prop = state_.sequencer.activeStepProperty.get();
-    if (prop == core::state::sequencer::StepProperty::NOTE) {
-        state_.sequencer.setStepNoteAt(abs, input_utils::normalizedToMidi7(value));
-    } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-        state_.sequencer.setStepVelocityAt(abs, input_utils::normalizedToMidi7(value));
-    } else if (prop == core::state::sequencer::StepProperty::GATE) {
-        state_.sequencer.setStepGateAt(abs, input_utils::normalizedToGatePercent(value));
-    }
+    input_utils::applyNormalizedToStep(
+        state_.sequencer,
+        abs,
+        state_.sequencer.activeStepProperty.get(),
+        normalized
+    );
 }
 
 void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
     if (state_.overlays.hasVisible()) return;
 
-    const float value = input_utils::clampNormalized(normalized);
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
 
@@ -63,14 +58,12 @@ void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
     if (focused >= len) return;
     if (focused >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
-    const auto prop = state_.sequencer.activeStepProperty.get();
-    if (prop == core::state::sequencer::StepProperty::NOTE) {
-        state_.sequencer.setStepNoteAt(focused, input_utils::normalizedToMidi7(value));
-    } else if (prop == core::state::sequencer::StepProperty::VELOCITY) {
-        state_.sequencer.setStepVelocityAt(focused, input_utils::normalizedToMidi7(value));
-    } else if (prop == core::state::sequencer::StepProperty::GATE) {
-        state_.sequencer.setStepGateAt(focused, input_utils::normalizedToGatePercent(value));
-    }
+    input_utils::applyNormalizedToStep(
+        state_.sequencer,
+        focused,
+        state_.sequencer.activeStepProperty.get(),
+        normalized
+    );
 }
 
 }  // namespace core::handler

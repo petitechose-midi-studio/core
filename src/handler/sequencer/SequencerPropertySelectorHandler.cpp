@@ -16,7 +16,8 @@ using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
 namespace {
-constexpr int PROPERTY_COUNT = 3;  // NOTE, VEL, GATE
+constexpr int PROPERTY_COUNT =
+    static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
 
 }  // namespace
 

@@ -23,6 +23,7 @@
 | Document | Description |
 |----------|-------------|
 | [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md) | System-level architecture, patterns, and recommendations |
+| [SEQUENCER_INLINE_WORKFLOW_ROADMAP.md](SEQUENCER_INLINE_WORKFLOW_ROADMAP.md) | Approved roadmap for inline sequencer workflow refactor |
 | [CODE_STYLE.md](CODE_STYLE.md) | Naming conventions, formatting, tooling |
 | [INVARIANTS.md](INVARIANTS.md) | Non-negotiable architectural rules |
 | [EXTENSION_CHECKLIST.md](EXTENSION_CHECKLIST.md) | Checklist before adding major features |

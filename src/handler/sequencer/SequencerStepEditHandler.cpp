@@ -16,7 +16,23 @@ namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
-constexpr uint8_t ROW_COUNT = 3;
+constexpr uint8_t ROW_COUNT =
+    static_cast<uint8_t>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
+
+template <typename EncoderIdT>
+void configureStepEditEncoder(
+    oc::api::EncoderAPI& encoders,
+    EncoderIdT encoderId,
+    core::state::sequencer::StepProperty property,
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t step
+) {
+    const auto config = input_utils::encoderConfigForProperty(property);
+    encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
+    encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
+    encoders.setDiscreteSteps(encoderId, config.discreteSteps);
+    encoders.setPosition(encoderId, input_utils::stepPropertyToNormalized(sequencer, step, property));
+}
 
 }  // namespace
 
@@ -99,6 +115,8 @@ void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
     o.snapshotNote = state_.sequencer.note[abs];
     o.snapshotVelocity = state_.sequencer.velocity[abs];
     o.snapshotGate = state_.sequencer.gate[abs];
+    o.snapshotNudge = state_.sequencer.nudge[abs];
+    o.snapshotProbability = state_.sequencer.probability[abs];
     o.snapshotValid = true;
 
     // longPress() fires while button is still pressed; don't immediately close on release.
@@ -121,7 +139,14 @@ void SequencerStepEditHandler::closeCancel() {
 
     const uint8_t abs = o.stepIndex.get();
     if (o.snapshotValid && abs < core::state::sequencer::SequencerState::MAX_STEPS) {
-        state_.sequencer.setStepDataAt(abs, o.snapshotNote, o.snapshotVelocity, o.snapshotGate);
+        state_.sequencer.setStepDataAt(
+            abs,
+            o.snapshotNote,
+            o.snapshotVelocity,
+            o.snapshotGate,
+            o.snapshotNudge,
+            o.snapshotProbability
+        );
     }
 
     ignore_open_release_ = false;
@@ -141,8 +166,6 @@ void SequencerStepEditHandler::moveFocus(float delta) {
 }
 
 void SequencerStepEditHandler::setFocusedValue(float normalized) {
-    const float value = input_utils::clampNormalized(normalized);
-
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
 
@@ -150,15 +173,12 @@ void SequencerStepEditHandler::setFocusedValue(float normalized) {
     if (abs >= len) return;
     if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
-    const uint8_t row = state_.sequencer.stepEdit.focusedRow.get();
-
-    if (row == 0) {
-        state_.sequencer.setStepNoteAt(abs, input_utils::normalizedToMidi7(value));
-    } else if (row == 1) {
-        state_.sequencer.setStepVelocityAt(abs, input_utils::normalizedToMidi7(value));
-    } else if (row == 2) {
-        state_.sequencer.setStepGateAt(abs, input_utils::normalizedToGatePercent(value));
-    }
+    input_utils::applyNormalizedToStep(
+        state_.sequencer,
+        abs,
+        input_utils::stepEditRowToProperty(state_.sequencer.stepEdit.focusedRow.get()),
+        normalized
+    );
 }
 
 void SequencerStepEditHandler::configureOptForFocusedRow() {
@@ -169,36 +189,13 @@ void SequencerStepEditHandler::configureOptForFocusedRow() {
     if (abs >= len) return;
     if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
-    const uint8_t row = state_.sequencer.stepEdit.focusedRow.get();
-
-    if (row == 0) {
-        encoders_.setDiscreteSteps(
-            Config::EncoderID::OPT,
-            input_utils::discreteStepsForProperty(core::state::sequencer::StepProperty::NOTE)
-        );
-        encoders_.setPosition(
-            Config::EncoderID::OPT,
-            input_utils::indexToNormalized(state_.sequencer.note[abs], 128)
-        );
-    } else if (row == 1) {
-        encoders_.setDiscreteSteps(
-            Config::EncoderID::OPT,
-            input_utils::discreteStepsForProperty(core::state::sequencer::StepProperty::VELOCITY)
-        );
-        encoders_.setPosition(
-            Config::EncoderID::OPT,
-            input_utils::indexToNormalized(state_.sequencer.velocity[abs], 128)
-        );
-    } else if (row == 2) {
-        encoders_.setDiscreteSteps(
-            Config::EncoderID::OPT,
-            input_utils::discreteStepsForProperty(core::state::sequencer::StepProperty::GATE)
-        );
-        encoders_.setPosition(
-            Config::EncoderID::OPT,
-            input_utils::gatePercentToNormalized(state_.sequencer.gate[abs])
-        );
-    }
+    configureStepEditEncoder(
+        encoders_,
+        Config::EncoderID::OPT,
+        input_utils::stepEditRowToProperty(state_.sequencer.stepEdit.focusedRow.get()),
+        state_.sequencer,
+        abs
+    );
 }
 
 void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexInPage) {
