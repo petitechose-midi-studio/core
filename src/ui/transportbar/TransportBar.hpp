@@ -67,14 +67,6 @@ private:
     // Pulse indicator behind tempo lock icon
     std::unique_ptr<StateIndicator> beat_indicator_;
 
-    // Pulse timers (for auto-reset after blink)
-    lv_timer_t* note_in_timer_ = nullptr;
-    lv_timer_t* note_out_timer_ = nullptr;
-    lv_timer_t* cc_in_timer_ = nullptr;
-    lv_timer_t* cc_out_timer_ = nullptr;
-    lv_timer_t* clock_pulse_timer_ = nullptr;
-    lv_timer_t* beat_timer_ = nullptr;
-
     std::vector<oc::state::Subscription> subs_;
 
     void createLayout(lv_obj_t* parent);
@@ -95,17 +87,6 @@ private:
     void setTempoLocked(bool locked);
     void setTransportLocked(bool locked);
     void setBeatPulse(bool pulse);
-
-    // Pulse helper for icon-based indicators
-    void pulseIcon(lv_obj_t* icon, lv_timer_t*& timer, lv_color_t activeColor,
-                   uint32_t duration, lv_timer_cb_t callback);
-
-    static void onNoteInTimeout(lv_timer_t* timer);
-    static void onNoteOutTimeout(lv_timer_t* timer);
-    static void onCcInTimeout(lv_timer_t* timer);
-    static void onCcOutTimeout(lv_timer_t* timer);
-    static void onClockPulseTimeout(lv_timer_t* timer);
-    static void onBeatTimeout(lv_timer_t* timer);
 };
 
 }  // namespace core::ui

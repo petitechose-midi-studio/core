@@ -409,7 +409,7 @@ Tasks:
 - replace overlay-based property selection with inline hold mode
 - update `activeStepProperty` during `NAV` movement, not only on release
 - keep cancel support via snapshot
-- remove `SEQ_PROPERTY_SELECTOR` from normal interaction flow
+- retire the old property-selector overlay path completely
 
 Acceptance:
 
@@ -480,17 +480,12 @@ Acceptance:
 - no stale quantization when switching inline mode
 - no audible regression from UI interaction
 
-### Phase 6: Optional Advanced Overlay Reuse
-
-Files:
-
-- [SequencerPatternConfigHandler.cpp](../src/handler/sequencer/SequencerPatternConfigHandler.cpp)
-- any new selector overlays if needed
+### Phase 6: Retire Legacy Sequencer Overlays
 
 Tasks:
 
-- reduce old pattern overlay to advanced detail only, or remove it
-- keep only what still provides value beyond inline editing
+- remove the old pattern-config overlay path once inline quick controls are validated
+- keep overlays only for advanced interactions that still add real value
 
 Acceptance:
 

@@ -6,22 +6,22 @@
  */
 
 #include <lvgl.h>
-#include <vector>
-#include <oc/state/Signal.hpp>
 #include <oc/ui/lvgl/IComponent.hpp>
 
-#include "state/StatusBarState.hpp"
-
 namespace core::ui {
+
+struct TopBarProps {
+    const char* pageName = "";
+};
 
 /**
  * @brief Top bar component displaying current page name (centered)
  *
- * Subscribes to StatusBarState signals and auto-updates on changes.
+ * Stateless component rendered from props.
  */
 class TopBar : public oc::ui::lvgl::IComponent {
 public:
-    TopBar(lv_obj_t* parent, core::state::StatusBarState& state);
+    explicit TopBar(lv_obj_t* parent);
     ~TopBar() override;
 
     TopBar(const TopBar&) = delete;
@@ -32,16 +32,13 @@ public:
     void hide() override;
     bool isVisible() const override;
     lv_obj_t* getElement() const override { return container_; }
+    void render(const TopBarProps& props);
 
 private:
-    core::state::StatusBarState& state_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* label_ = nullptr;
-    std::vector<oc::state::Subscription> subs_;
 
     void createLayout(lv_obj_t* parent);
-    void setupBindings();
-    void render();
 };
 
 }  // namespace core::ui

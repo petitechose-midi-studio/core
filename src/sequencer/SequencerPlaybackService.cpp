@@ -23,7 +23,7 @@ void SequencerPlaybackService::update(uint32_t tick, bool playing) {
     if (playing && playhead >= 0 && playhead != last_playhead_) {
         const uint8_t spb = sequencer_.stepsPerBeat.get();
         if (spb > 0 && (static_cast<uint8_t>(playhead) % spb) == 0) {
-            status_bar_.beatPulse.set(true);
+            status_bar_.pulseBeat();
         }
     }
     last_playhead_ = playhead;

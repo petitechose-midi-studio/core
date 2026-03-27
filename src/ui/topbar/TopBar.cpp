@@ -1,6 +1,5 @@
 #include "TopBar.hpp"
 
-#include <oc/state/Bind.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <ms/ui/font/CoreFonts.hpp>
@@ -11,11 +10,8 @@ namespace core::ui {
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
 
-TopBar::TopBar(lv_obj_t* parent, core::state::StatusBarState& state)
-    : state_(state) {
+TopBar::TopBar(lv_obj_t* parent) {
     createLayout(parent);
-    setupBindings();
-    render();
 }
 
 TopBar::~TopBar() {
@@ -33,22 +29,7 @@ void TopBar::createLayout(lv_obj_t* parent) {
     label_ = lv_label_create(container_);
     style::apply(label_).textFont(fonts.inter_14_medium).textColor(theme::color::TEXT_SECONDARY);
     lv_obj_center(label_);
-    lv_label_set_text(label_, state_.pageName.get());
-}
-
-void TopBar::setupBindings() {
-    using oc::state::bind;
-    bind(subs_).on(state_.pageName, [this](const char* name) {
-        if (label_) {
-            lv_label_set_text(label_, name);
-        }
-    });
-}
-
-void TopBar::render() {
-    if (label_) {
-        lv_label_set_text(label_, state_.pageName.get());
-    }
+    lv_label_set_text(label_, "");
 }
 
 void TopBar::show() {
@@ -61,6 +42,12 @@ void TopBar::hide() {
 
 bool TopBar::isVisible() const {
     return container_ && !lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN);
+}
+
+void TopBar::render(const TopBarProps& props) {
+    if (label_) {
+        lv_label_set_text(label_, props.pageName ? props.pageName : "");
+    }
 }
 
 }  // namespace core::ui

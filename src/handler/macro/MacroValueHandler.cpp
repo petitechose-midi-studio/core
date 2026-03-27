@@ -2,6 +2,9 @@
 
 #include <algorithm>
 
+#include <Arduino.h>
+
+#include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "midi/MidiUtils.hpp"
@@ -9,6 +12,45 @@
 namespace core::handler {
 
 using namespace oc::ui::lvgl;
+
+namespace {
+
+struct MacroValueProfiling {
+    uint32_t window_start_ms = 0;
+    uint32_t call_count = 0;
+    uint32_t total_us = 0;
+    uint32_t max_us = 0;
+
+    void record(uint32_t elapsed_us) {
+        const uint32_t now = millis();
+        if (window_start_ms == 0) {
+            window_start_ms = now;
+        }
+
+        call_count += 1;
+        total_us += elapsed_us;
+        max_us = std::max(max_us, elapsed_us);
+
+        if ((now - window_start_ms) < 500) return;
+
+        const uint32_t avg_us = call_count > 0 ? (total_us / call_count) : 0;
+        if (max_us >= 1000 || avg_us >= 500) {
+            OC_LOG_INFO("[Perf][MacroValue] calls={} avg={}us max={}us",
+                        call_count,
+                        avg_us,
+                        max_us);
+        }
+
+        window_start_ms = now;
+        call_count = 0;
+        total_us = 0;
+        max_us = 0;
+    }
+};
+
+MacroValueProfiling g_macro_value_profiling;
+
+}  // namespace
 
 MacroValueHandler::MacroValueHandler(core::state::CoreState& coreState,
                                      oc::api::EncoderAPI& encoders,
@@ -31,18 +73,28 @@ void MacroValueHandler::setupBindings() {
 }
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {
+    const uint32_t start_us = micros();
     const float clamped = std::clamp(value, 0.0f, 1.0f);
+    const uint8_t cc_value = core::midi::toCC(clamped);
+    const float quantized = core::midi::fromCC(cc_value);
+
+    if (std::abs(core::state::macro::MacroWorkflow::runtimeValue(core_state_, index) - quantized) <
+        0.0005f) {
+        g_macro_value_profiling.record(micros() - start_us);
+        return;
+    }
 
     // Update state (triggers UI update, marks dirty for persistence)
-    core_state_.setMacroValue(index, clamped);
+    core::state::macro::MacroWorkflow::setRuntimeValue(core_state_, index, quantized);
 
     // Send MIDI CC
-    const auto& config = core_state_.getMacroConfig(index);
-    uint8_t cc_value = core::midi::toCC(clamped);
+    const auto& config = core::state::macro::MacroWorkflow::activeConfig(core_state_, index);
     midi_.sendCC(config.channel, config.cc, cc_value);
 
     // Signal CC MIDI OUT activity
-    core_state_.statusBar.ccOutActive.set(true);
+    core_state_.statusBar.pulseCcOut();
+
+    g_macro_value_profiling.record(micros() - start_us);
 }
 
 }  // namespace core::handler

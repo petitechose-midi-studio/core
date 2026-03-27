@@ -4,19 +4,13 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/InputIDs.hpp>
+#include "handler/common/NavigationUtils.hpp"
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
-
-static int wrapIndex(int idx, int count) {
-    if (count <= 0) return 0;
-    idx %= count;
-    if (idx < 0) idx += count;
-    return idx;
-}
 
 ViewSwitcherHandler::ViewSwitcherHandler(core::state::CoreState& state,
                                          OverlayCtx overlayCtx,
@@ -77,11 +71,10 @@ void ViewSwitcherHandler::openSelector() {
 }
 
 void ViewSwitcherHandler::navigate(float delta) {
-    if (delta == 0.0f) return;
-    int step = (delta > 0.0f) ? 1 : -1;
+    if (!nav::hasTurnDelta(delta)) return;
 
     int current = state_.viewSelector.selectedIndex.get();
-    int next = wrapIndex(current + step, VIEW_COUNT);
+    int next = nav::nextWrappedIndex(delta, current, VIEW_COUNT);
     state_.viewSelector.selectedIndex.set(next);
 }
 

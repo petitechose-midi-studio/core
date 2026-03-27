@@ -12,7 +12,6 @@
  */
 
 #include <array>
-#include <cstdint>
 
 #include <oc/log/Log.hpp>
 #include <oc/state/Signal.hpp>

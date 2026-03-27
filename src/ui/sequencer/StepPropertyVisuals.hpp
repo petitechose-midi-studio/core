@@ -7,22 +7,17 @@
 
 #include <cstdint>
 
-#include <lvgl.h>
-
-#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerUiState.hpp"
 
 namespace core::ui::sequencer::visual {
 
-enum class PropertyValueBarMode : uint8_t {
+enum class InlineLabelMode : uint8_t {
     NONE = 0,
-    UNIPOLAR = 1,
-    BIPOLAR = 2,
-};
-
-enum class PropertyEdgeTickMode : uint8_t {
-    NONE = 0,
-    START = 1,
-    END = 2,
+    NOTE = 1,
+    VELOCITY = 2,
+    GATE = 3,
+    NUDGE = 4,
+    PROBABILITY = 5,
 };
 
 struct StepPropertyVisualInput {
@@ -36,15 +31,9 @@ struct StepPropertyVisualInput {
 };
 
 struct StepPropertyVisualSpec {
-    const char* icon = "";
-    bool showWatermark = false;
+    InlineLabelMode inlineLabelMode = InlineLabelMode::NONE;
+    bool showInlineIcon = false;
     bool showNoteLabel = false;
-    bool showHorizontalAccent = false;
-    PropertyValueBarMode valueBarMode = PropertyValueBarMode::NONE;
-    PropertyEdgeTickMode edgeTickMode = PropertyEdgeTickMode::NONE;
-    uint8_t valueBarPercent = 0;
-    bool valueBarPositive = true;
-    lv_opa_t watermarkOpa = LV_OPA_TRANSP;
 };
 
 const char* propertyIconGlyph(core::state::sequencer::StepProperty property);

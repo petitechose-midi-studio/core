@@ -52,7 +52,6 @@ StepPropertyStrip::~StepPropertyStrip() {
         lv_obj_delete(container_);
         container_ = nullptr;
         selection_cursor_ = nullptr;
-        selector_scope_ = nullptr;
     }
 }
 
@@ -91,15 +90,6 @@ void StepPropertyStrip::createUI(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(selection_cursor_, ACTIVE_OPA, 0);
     lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
 
-    selector_scope_ = lv_obj_create(container_);
-    lv_obj_remove_style_all(selector_scope_);
-    lv_obj_add_flag(selector_scope_, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_clear_flag(selector_scope_, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(selector_scope_, 1, 1);
-    lv_obj_add_flag(selector_scope_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_opa(selector_scope_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(selector_scope_, 0, 0);
-
     for (size_t i = 0; i < items_.size(); ++i) {
         lv_obj_t* item = lv_obj_create(container_);
         items_[i] = item;
@@ -117,16 +107,6 @@ void StepPropertyStrip::createUI(lv_obj_t* parent) {
         lv_obj_center(icon);
         lv_obj_set_style_text_color(icon, lv_color_hex(ACTIVE_COLOR), 0);
         lv_obj_set_style_text_opa(icon, INACTIVE_OPA, 0);
-    }
-}
-
-void StepPropertyStrip::setSelectorScopeVisible(bool visible) {
-    if (!selector_scope_) return;
-
-    if (visible) {
-        lv_obj_clear_flag(selector_scope_, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(selector_scope_, LV_OBJ_FLAG_HIDDEN);
     }
 }
 

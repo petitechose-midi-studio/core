@@ -57,51 +57,11 @@ void SequencerHeaderBar::createUI(lv_obj_t* parent) {
 
     container_ = lv_obj_create(parent);
     style::apply(container_)
-        .size(LV_PCT(100), static_cast<lv_coord_t>(theme::layout::TOP_BAR_HEIGHT + STRIP_HEIGHT))
-        .bgColor(theme::color::BACKGROUND)
+        .size(LV_PCT(100), STRIP_HEIGHT)
+        .transparent()
         .pad(0)
         .noScroll()
         .noBorder();
-    lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_gap(container_, 0, LV_STATE_DEFAULT);
-
-    // Top row (text)
-    top_row_ = lv_obj_create(container_);
-    style::apply(top_row_)
-        .size(LV_PCT(100), theme::layout::TOP_BAR_HEIGHT)
-        .transparent()
-        .noScroll()
-        .noBorder()
-        .padH(theme::layout::PAD_SM)
-        .flexRow(LV_FLEX_ALIGN_SPACE_BETWEEN, 0);
-
-    left_label_ = lv_label_create(top_row_);
-    lv_label_set_text(left_label_, "");
-    lv_obj_set_width(left_label_, LV_PCT(34));
-    lv_label_set_long_mode(left_label_, LV_LABEL_LONG_CLIP);
-    style::apply(left_label_)
-        .textFont(fonts.inter_14_medium)
-        .textColor(theme::color::TEXT_PRIMARY)
-        .textAlign(LV_TEXT_ALIGN_LEFT);
-
-    center_label_ = lv_label_create(top_row_);
-    lv_label_set_text(center_label_, "");
-    lv_obj_set_width(center_label_, LV_PCT(32));
-    lv_label_set_long_mode(center_label_, LV_LABEL_LONG_CLIP);
-    style::apply(center_label_)
-        .textFont(fonts.inter_14_semibold)
-        .textColor(theme::color::TEXT_PRIMARY)
-        .textAlign(LV_TEXT_ALIGN_CENTER);
-
-    right_label_ = lv_label_create(top_row_);
-    lv_label_set_text(right_label_, "");
-    lv_obj_set_width(right_label_, LV_PCT(34));
-    lv_label_set_long_mode(right_label_, LV_LABEL_LONG_CLIP);
-    style::apply(right_label_)
-        .textFont(fonts.inter_14_medium)
-        .textColor(theme::color::TEXT_PRIMARY)
-        .textAlign(LV_TEXT_ALIGN_RIGHT);
 
     // Strip row (8 segments)
     strip_row_ = lv_obj_create(container_);

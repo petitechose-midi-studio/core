@@ -23,9 +23,7 @@ enum class OverlayType : uint8_t {
     VIEW_SELECTOR,    // Top-level view selector
 
     // Sequencer overlays
-    SEQ_PATTERN_CONFIG,     // Pattern config (LEN / DIV / CH)
     SEQ_STEP_EDIT,          // Step edit (NOTE / VEL / GATE)
-    SEQ_PROPERTY_SELECTOR,  // Which property is edited by encoders
 
     // Global settings overlays
     GLOBAL_SETTINGS,

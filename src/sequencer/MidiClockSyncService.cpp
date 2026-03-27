@@ -48,10 +48,6 @@ void MidiClockSyncService::update(uint32_t nowMs) {
     updateSourceSelection_(nowMs);
     pushSyncIndicators_();
 
-    if (!sync_state_.externalClockPresent.get() && status_bar_.syncInputPulse.get()) {
-        status_bar_.syncInputPulse.set(false);
-    }
-
     if (using_external_source_) {
         current_tick_ = external_tick_;
         if (sync_state_.followTransport.get()) {
@@ -127,9 +123,7 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
         external_locked_ = true;
     }
 
-    if (!status_bar_.syncInputPulse.get()) {
-        status_bar_.syncInputPulse.set(true);
-    }
+    status_bar_.pulseSyncInput();
 }
 
 void MidiClockSyncService::resetExternalTempoEstimator_() {

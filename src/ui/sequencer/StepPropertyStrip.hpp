@@ -6,13 +6,11 @@
  */
 
 #include <array>
-#include <cstdint>
-
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IWidget.hpp>
 
-#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerUiState.hpp"
 
 namespace core::ui {
 
@@ -32,10 +30,8 @@ public:
     StepPropertyStrip& operator=(const StepPropertyStrip&) = delete;
 
     void render(const StepPropertyStripProps& props);
-    void setSelectorScopeVisible(bool visible);
 
     lv_obj_t* getElement() const override { return container_; }
-    lv_obj_t* getSelectorScopeElement() const { return selector_scope_; }
 
 private:
     static constexpr size_t PROPERTY_COUNT = 5;
@@ -44,7 +40,6 @@ private:
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* selection_cursor_ = nullptr;
-    lv_obj_t* selector_scope_ = nullptr;
     std::array<lv_obj_t*, PROPERTY_COUNT> items_{};
     std::array<lv_obj_t*, PROPERTY_COUNT> icons_{};
 };

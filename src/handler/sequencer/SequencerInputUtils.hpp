@@ -6,6 +6,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 
 #include "state/sequencer/SequencerState.hpp"
@@ -22,6 +23,7 @@ inline constexpr float NOTE_NORMALIZED_TURNS = 64.0f / 3.0f;
 inline constexpr int PROBABILITY_MAX = 100;
 inline constexpr int NUDGE_MIN = -50;
 inline constexpr int NUDGE_MAX = 50;
+inline constexpr std::array<uint8_t, 6> STEPS_PER_BEAT_CHOICES = {1, 2, 3, 4, 6, 8};
 
 struct StepPropertyEncoderConfig {
     uint8_t discreteSteps = 128;
@@ -114,6 +116,85 @@ inline StepPropertyEncoderConfig encoderConfigForProperty(StepProperty property)
     }
 
     return config;
+}
+
+inline uint8_t findStepsPerBeatChoiceIndex(uint8_t stepsPerBeat) {
+    for (uint8_t i = 0; i < static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size()); ++i) {
+        if (STEPS_PER_BEAT_CHOICES[i] == stepsPerBeat) return i;
+    }
+    return 1;
+}
+
+inline const char* quickControlShortLabel(core::state::sequencer::PatternQuickControlItem item) {
+    switch (item) {
+        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
+            return "CH";
+        case core::state::sequencer::PatternQuickControlItem::DIVISION:
+            return "DIV";
+        case core::state::sequencer::PatternQuickControlItem::LENGTH:
+        default:
+            return "LEN";
+    }
+}
+
+inline float quickControlToNormalized(
+    const SequencerState& state,
+    core::state::sequencer::PatternQuickControlItem item
+) {
+    switch (item) {
+        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
+            return indexToNormalized(state.midiChannel.get(), 16);
+        case core::state::sequencer::PatternQuickControlItem::DIVISION:
+            return indexToNormalized(findStepsPerBeatChoiceIndex(state.stepsPerBeat.get()), static_cast<int>(STEPS_PER_BEAT_CHOICES.size()));
+        case core::state::sequencer::PatternQuickControlItem::LENGTH:
+        default: {
+            const uint8_t len = state.length.get();
+            const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
+            return indexToNormalized(idx, static_cast<int>(SequencerState::MAX_STEPS));
+        }
+    }
+}
+
+inline StepPropertyEncoderConfig encoderConfigForQuickControl(
+    core::state::sequencer::PatternQuickControlItem item
+) {
+    StepPropertyEncoderConfig config;
+    switch (item) {
+        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
+            config.discreteSteps = 16;
+            return config;
+        case core::state::sequencer::PatternQuickControlItem::DIVISION:
+            config.discreteSteps = static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size());
+            return config;
+        case core::state::sequencer::PatternQuickControlItem::LENGTH:
+        default:
+            config.discreteSteps = SequencerState::MAX_STEPS;
+            return config;
+    }
+}
+
+inline void applyNormalizedToQuickControl(
+    SequencerState& state,
+    core::state::sequencer::PatternQuickControlItem item,
+    float normalized
+) {
+    const float value = clampNormalized(normalized);
+    switch (item) {
+        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
+            state.midiChannel.set(static_cast<uint8_t>(normalizedToInclusiveInt(value, 15)));
+            return;
+        case core::state::sequencer::PatternQuickControlItem::DIVISION: {
+            const int idx = normalizedToIndex(value, static_cast<int>(STEPS_PER_BEAT_CHOICES.size()));
+            state.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
+            return;
+        }
+        case core::state::sequencer::PatternQuickControlItem::LENGTH:
+        default: {
+            const int idx = normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
+            state.length.set(static_cast<uint8_t>(idx + 1));
+            return;
+        }
+    }
 }
 
 inline uint8_t discreteStepsForProperty(StepProperty property) {

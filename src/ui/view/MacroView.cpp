@@ -1,8 +1,61 @@
 #include "MacroView.hpp"
 
+#include <Arduino.h>
+
+#include <oc/log/Log.hpp>
 #include <config/App.hpp>
 
+#include "ui/view/MacroViewModelBuilder.hpp"
+#include "ui/widget/MacroKnobWidget.hpp"
+
 namespace core::ui {
+
+namespace {
+
+struct MacroRenderProfiling {
+    uint32_t window_start_ms = 0;
+    uint32_t pass_count = 0;
+    uint32_t total_us = 0;
+    uint32_t max_us = 0;
+    uint32_t total_value_updates = 0;
+    uint32_t total_config_updates = 0;
+
+    void record(uint32_t elapsed_us, uint32_t value_updates, uint32_t config_updates) {
+        const uint32_t now = millis();
+        if (window_start_ms == 0) {
+            window_start_ms = now;
+        }
+
+        pass_count += 1;
+        total_us += elapsed_us;
+        max_us = std::max(max_us, elapsed_us);
+        total_value_updates += value_updates;
+        total_config_updates += config_updates;
+
+        if ((now - window_start_ms) < 500) return;
+
+        const uint32_t avg_us = pass_count > 0 ? (total_us / pass_count) : 0;
+        if (max_us >= 2000 || avg_us >= 1000) {
+            OC_LOG_INFO("[Perf][MacroView] passes={} avg={}us max={}us valueUpdates={} configUpdates={}",
+                        pass_count,
+                        avg_us,
+                        max_us,
+                        total_value_updates,
+                        total_config_updates);
+        }
+
+        window_start_ms = now;
+        pass_count = 0;
+        total_us = 0;
+        max_us = 0;
+        total_value_updates = 0;
+        total_config_updates = 0;
+    }
+};
+
+MacroRenderProfiling g_macro_render_profiling;
+
+}  // namespace
 
 MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     : core_state_(coreState) {
@@ -10,12 +63,10 @@ MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     createTopBar();
     createMacros();
 
-    // Coalesce value redraws to a practical UI cadence.
-    // 120 Hz is enough for smooth knob motion while avoiding unnecessary
-    // per-frame work at very high internal refresh rates.
-    constexpr uint32_t MAX_MACRO_UI_HZ = 120;
-    constexpr uint32_t targetHz =
-        (Config::Timing::LVGL_HZ > MAX_MACRO_UI_HZ) ? MAX_MACRO_UI_HZ : Config::Timing::LVGL_HZ;
+    // Macro rendering is sampled at the global LVGL cadence.
+    // This keeps the macro path bounded by the actual display refresh rate
+    // instead of letting local scheduling run ahead of visible frames.
+    constexpr uint32_t targetHz = Config::Timing::LVGL_HZ;
     constexpr uint32_t periodMs = (targetHz > 1000)
         ? 1
         : ((1000 + targetHz - 1) / targetHz);
@@ -48,6 +99,7 @@ MacroView::~MacroView() {
 void MacroView::onActivate() {
     if (container_) {
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
+        requestTopBarRender();
         processDirtyFlags();
     }
 }
@@ -63,40 +115,33 @@ void MacroView::onDeactivate() {
 }
 
 void MacroView::bindToState() {
-    subscriptions_.reserve(MACRO_COUNT + 1);
+    subscriptions_.reserve(MACRO_COUNT + 2);
 
-    // Refresh CH/CC labels when config or page changes
     subscriptions_.push_back(
         core_state_.configRevision.subscribe([this](uint32_t) {
-            for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-                updateConfigLabel(i);
-            }
+            markAllConfigDirty();
+        })
+    );
+
+    subscriptions_.push_back(
+        core_state_.statusBar.pageName.subscribe([this](const char*) {
+            requestTopBarRender();
         })
     );
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         auto& slot = core_state_.macros.slots[i];
 
-        // Subscribe to value changes (debounced via dirty flags)
         subscriptions_.push_back(
             slot.value.subscribe([this, i](float) {
                 markDirty(i);
             })
         );
-
-        // Initialize UI with current state values
-        if (macros_[i]) {
-            macros_[i]->setValue(slot.value.get());
-            updateConfigLabel(i);
-        }
     }
-}
 
-void MacroView::updateConfigLabel(uint8_t index) {
-    const auto& config = core_state_.getMacroConfig(index);
-    if (index < MACRO_COUNT && macros_[index]) {
-        macros_[index]->setConfig(config.channel, config.cc);
-    }
+    top_bar_dirty_ = true;
+    markAllDirty();
+    processDirtyFlags();
 }
 
 void MacroView::createLayout(lv_obj_t* parent) {
@@ -116,7 +161,7 @@ void MacroView::createLayout(lv_obj_t* parent) {
 }
 
 void MacroView::createTopBar() {
-    top_bar_ = std::make_unique<TopBar>(top_bar_container_, core_state_.statusBar);
+    top_bar_ = std::make_unique<TopBar>(top_bar_container_);
 }
 
 void MacroView::createMacros() {
@@ -134,51 +179,89 @@ void MacroView::createMacros() {
     }
 }
 
+void MacroView::scheduleUpdate() {
+    if (update_timer_) {
+        lv_timer_resume(update_timer_);
+    }
+}
+
+void MacroView::pauseUpdateIfIdle() {
+    if (!update_timer_) return;
+    if (has_dirty_ || top_bar_dirty_) return;
+    lv_timer_pause(update_timer_);
+}
+
+void MacroView::requestTopBarRender() {
+    top_bar_dirty_ = true;
+    scheduleUpdate();
+}
+
 // =============================================================================
 // Debounced Update System
 // =============================================================================
+
+void MacroView::markAllDirty() {
+    dirty_flags_.fill(true);
+    config_dirty_flags_.fill(true);
+    has_dirty_ = true;
+    scheduleUpdate();
+}
+
+void MacroView::markAllConfigDirty() {
+    config_dirty_flags_.fill(true);
+    has_dirty_ = true;
+    scheduleUpdate();
+}
 
 void MacroView::markDirty(uint8_t index) {
     if (index < MACRO_COUNT) {
         dirty_flags_[index] = true;
         has_dirty_ = true;
-
-        if (update_timer_) {
-            lv_timer_resume(update_timer_);
-            lv_timer_ready(update_timer_);
-        }
+        scheduleUpdate();
     }
 }
 
 void MacroView::processDirtyFlags() {
+    const uint32_t start_us = micros();
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) {
-        if (update_timer_) {
-            lv_timer_pause(update_timer_);
-        }
+        pauseUpdateIfIdle();
         return;
+    }
+
+    if (top_bar_dirty_ && top_bar_) {
+        top_bar_->render(buildMacroTopBarProps(core_state_));
+        top_bar_dirty_ = false;
     }
 
     if (!has_dirty_) {
-        if (update_timer_) {
-            lv_timer_pause(update_timer_);
-        }
+        pauseUpdateIfIdle();
         return;
     }
 
+    const auto frame = buildMacroViewFrameState(core_state_);
+
+    uint32_t value_updates = 0;
+    uint32_t config_updates = 0;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        if (dirty_flags_[i]) {
-            dirty_flags_[i] = false;
+        if (dirty_flags_[i] || config_dirty_flags_[i]) {
             if (macros_[i]) {
-                macros_[i]->setValue(core_state_.macros.slots[i].value.get());
+                if (dirty_flags_[i]) {
+                    macros_[i]->setValue(frame.macros[i].value);
+                    value_updates += 1;
+                }
+                if (config_dirty_flags_[i]) {
+                    macros_[i]->setConfig(frame.macros[i].channel, frame.macros[i].cc);
+                    config_updates += 1;
+                }
             }
+            dirty_flags_[i] = false;
+            config_dirty_flags_[i] = false;
         }
     }
 
     has_dirty_ = false;
-
-    if (update_timer_) {
-        lv_timer_pause(update_timer_);
-    }
+    pauseUpdateIfIdle();
+    g_macro_render_profiling.record(micros() - start_us, value_updates, config_updates);
 }
 
 void MacroView::onUpdateTimer(lv_timer_t* timer) {

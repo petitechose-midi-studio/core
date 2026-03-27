@@ -4,10 +4,22 @@
 
 #include <config/App.hpp>
 #include <config/InputIDs.hpp>
+#include "handler/common/NavigationUtils.hpp"
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
+
+namespace {
+
+inline oc::type::IsActiveFn notSelectingStepProperty(core::state::CoreState& state) {
+    return [&state]() {
+        return !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
+               !state.sequencer.patternQuickControls.selecting.get();
+    };
+}
+
+}  // namespace
 
 SequencerStepHandler::SequencerStepHandler(core::state::CoreState& state,
                                            oc::api::EncoderAPI& encoders,
@@ -49,11 +61,13 @@ void SequencerStepHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope(scope_element_))
+        .when(notSelectingStepProperty(state_))
         .then([this](float delta) { movePage(delta); });
 
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope(scope_element_))
+        .when(notSelectingStepProperty(state_))
         .then([this]() { toggleFocusedStep(); });
 }
 
@@ -75,7 +89,7 @@ void SequencerStepHandler::toggleFocusedStep() {
 }
 
 void SequencerStepHandler::movePage(float delta) {
-    if (delta == 0.0f) return;
+    if (!nav::hasTurnDelta(delta)) return;
     if (delta > 0.0f) {
         nextPage();
         return;

@@ -28,6 +28,31 @@ enum class SlotLoadStatus : uint8_t {
     IO_ERROR,
 };
 
+enum class PersistenceWriteStatus : uint8_t {
+    OK = 0,
+    INVALID_CONFIG,
+    STORAGE_UNAVAILABLE,
+    OUT_OF_RANGE,
+    PAYLOAD_TOO_LARGE,
+    IO_ERROR,
+    ERASE_FAILED,
+    COMMIT_FAILED,
+};
+
+inline const char* persistenceWriteStatusLabel(PersistenceWriteStatus status) {
+    switch (status) {
+        case PersistenceWriteStatus::OK: return "OK";
+        case PersistenceWriteStatus::INVALID_CONFIG: return "INVALID_CONFIG";
+        case PersistenceWriteStatus::STORAGE_UNAVAILABLE: return "STORAGE_UNAVAILABLE";
+        case PersistenceWriteStatus::OUT_OF_RANGE: return "OUT_OF_RANGE";
+        case PersistenceWriteStatus::PAYLOAD_TOO_LARGE: return "PAYLOAD_TOO_LARGE";
+        case PersistenceWriteStatus::IO_ERROR: return "IO_ERROR";
+        case PersistenceWriteStatus::ERASE_FAILED: return "ERASE_FAILED";
+        case PersistenceWriteStatus::COMMIT_FAILED: return "COMMIT_FAILED";
+        default: return "UNKNOWN";
+    }
+}
+
 struct SlotMetadata {
     uint16_t payloadSize = 0;
     uint32_t saveCounter = 0;
@@ -70,32 +95,44 @@ public:
     }
 
     bool format() {
-        if (!isConfigValid_()) return false;
-        if (!storage_.available()) return false;
+        return formatStatus() == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus formatStatus() {
+        if (!isConfigValid_()) return PersistenceWriteStatus::INVALID_CONFIG;
+        if (!storage_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
 
         const FileHeader header = buildHeader_();
         if (!writeBytes_(0, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
-            return false;
+            return PersistenceWriteStatus::IO_ERROR;
         }
 
         const uint32_t slots_region_address = sizeof(FileHeader);
         const size_t slots_region_size = static_cast<size_t>(config_.slotCount) * slotSize_();
         if (!storage_.erase(slots_region_address, slots_region_size)) {
-            return false;
+            return PersistenceWriteStatus::ERASE_FAILED;
         }
 
-        return storage_.commit();
+        return storage_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
     }
 
     bool saveSlot(uint16_t slotIndex,
                   const uint8_t* payload,
                   uint16_t payloadSize,
                   uint32_t saveCounter) {
-        if (!isConfigValid_()) return false;
-        if (!storage_.available()) return false;
-        if (!isSlotIndexValid_(slotIndex)) return false;
-        if (!payload && payloadSize > 0) return false;
-        if (payloadSize > config_.slotPayloadSize) return false;
+        return saveSlotStatus(slotIndex, payload, payloadSize, saveCounter) ==
+               PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus saveSlotStatus(uint16_t slotIndex,
+                                          const uint8_t* payload,
+                                          uint16_t payloadSize,
+                                          uint32_t saveCounter) {
+        if (!isConfigValid_()) return PersistenceWriteStatus::INVALID_CONFIG;
+        if (!storage_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
+        if (!isSlotIndexValid_(slotIndex)) return PersistenceWriteStatus::OUT_OF_RANGE;
+        if (!payload && payloadSize > 0) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
+        if (payloadSize > config_.slotPayloadSize) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
 
         SlotHeader header{};
         header.magic = SLOT_HEADER_MAGIC;
@@ -107,22 +144,22 @@ public:
 
         const uint32_t header_address = slotHeaderAddress(slotIndex);
         if (!writeBytes_(header_address, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
-            return false;
+            return PersistenceWriteStatus::IO_ERROR;
         }
 
         if (payloadSize > 0) {
             const uint32_t payload_address = slotPayloadAddress(slotIndex);
             if (!writeBytes_(payload_address, payload, payloadSize)) {
-                return false;
+                return PersistenceWriteStatus::IO_ERROR;
             }
         }
 
         header.state = SLOT_STATE_VALID;
         if (!writeBytes_(header_address, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
-            return false;
+            return PersistenceWriteStatus::IO_ERROR;
         }
 
-        return storage_.commit();
+        return storage_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
     }
 
     SlotLoadStatus loadSlot(uint16_t slotIndex,
@@ -227,15 +264,19 @@ public:
     }
 
     bool eraseSlot(uint16_t slotIndex) {
-        if (!isConfigValid_()) return false;
-        if (!storage_.available()) return false;
-        if (!isSlotIndexValid_(slotIndex)) return false;
+        return eraseSlotStatus(slotIndex) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus eraseSlotStatus(uint16_t slotIndex) {
+        if (!isConfigValid_()) return PersistenceWriteStatus::INVALID_CONFIG;
+        if (!storage_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
+        if (!isSlotIndexValid_(slotIndex)) return PersistenceWriteStatus::OUT_OF_RANGE;
 
         if (!storage_.erase(slotHeaderAddress(slotIndex), slotSize_())) {
-            return false;
+            return PersistenceWriteStatus::ERASE_FAILED;
         }
 
-        return storage_.commit();
+        return storage_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
     }
 
     uint32_t slotHeaderAddress(uint16_t slotIndex) const {
