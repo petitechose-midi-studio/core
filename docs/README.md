@@ -1,114 +1,68 @@
-# MIDI Studio Core Documentation
+# MIDI Studio Core Docs
 
-> **Last updated**: January 2026
-> **Audience**: Developers contributing to MIDI Studio
+Developer documentation for the standalone firmware in this repository.
 
----
+## Start Here
 
-## Quick Start
+Read these first:
 
-| I want to... | Read this |
-|--------------|-----------|
-| Understand the architecture | [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md) |
-| Know the coding conventions | [CODE_STYLE.md](CODE_STYLE.md) |
-| Add a new feature | [EXTENSION_CHECKLIST.md](EXTENSION_CHECKLIST.md) |
-| Understand the rules | [INVARIANTS.md](INVARIANTS.md) |
+1. [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md)
+2. [INVARIANTS.md](INVARIANTS.md)
+3. [CODE_STYLE.md](CODE_STYLE.md)
+4. [EXTENSION_CHECKLIST.md](EXTENSION_CHECKLIST.md)
+5. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
 
----
+## Current Architecture References
 
-## Documentation Structure
+- [CODEBASE_CLEANUP_AUDIT.md](CODEBASE_CLEANUP_AUDIT.md)
+- [CORE_ALIGNMENT_ROADMAP.md](CORE_ALIGNMENT_ROADMAP.md)
+- [SEQUENCER_CODEBASE_CLEANUP_AUDIT.md](SEQUENCER_CODEBASE_CLEANUP_AUDIT.md)
+- [SEQUENCER_INLINE_WORKFLOW_ROADMAP.md](SEQUENCER_INLINE_WORKFLOW_ROADMAP.md)
 
-### Reference Documents
+These documents reflect the current cleanup and refactor direction more accurately than older high-level descriptions.
 
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md) | System-level architecture, patterns, and recommendations |
-| [SEQUENCER_INLINE_WORKFLOW_ROADMAP.md](SEQUENCER_INLINE_WORKFLOW_ROADMAP.md) | Approved roadmap for inline sequencer workflow refactor |
-| [CODE_STYLE.md](CODE_STYLE.md) | Naming conventions, formatting, tooling |
-| [INVARIANTS.md](INVARIANTS.md) | Non-negotiable architectural rules |
-| [EXTENSION_CHECKLIST.md](EXTENSION_CHECKLIST.md) | Checklist before adding major features |
+## Practical Guides
 
-### Step-by-Step Tutorials
+- [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)
+- [HOW_TO_ADD_WIDGET.md](HOW_TO_ADD_WIDGET.md)
+- [HOW_TO_ADD_HANDLER.md](HOW_TO_ADD_HANDLER.md)
+- [HOW_TO_ADD_VIEW.md](HOW_TO_ADD_VIEW.md)
+- [HOW_TO_ADD_OVERLAY.md](HOW_TO_ADD_OVERLAY.md)
 
-Read in this order for best understanding:
+## Persistence Notes
 
-| # | Tutorial | What You'll Learn |
-|---|----------|-------------------|
-| 1 | [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md) | Signals, subscriptions, reactive state |
-| 2 | [HOW_TO_ADD_WIDGET.md](HOW_TO_ADD_WIDGET.md) | Creating LVGL widgets |
-| 3 | [HOW_TO_ADD_HANDLER.md](HOW_TO_ADD_HANDLER.md) | Input bindings, button/encoder handling |
-| 4 | [HOW_TO_ADD_VIEW.md](HOW_TO_ADD_VIEW.md) | Full-screen views with lifecycle |
-| 5 | [HOW_TO_ADD_OVERLAY.md](HOW_TO_ADD_OVERLAY.md) | Modal overlays with two-level scoping |
+- [SD_PERSISTENCE_TRACKER.md](SD_PERSISTENCE_TRACKER.md)
+- [SD_PERSISTENCE_HARDWARE_VALIDATION.md](SD_PERSISTENCE_HARDWARE_VALIDATION.md)
 
----
+## Source Map
 
-## Key Patterns
+Main code areas in this repo:
 
-### Data Flow
-
-```
-User Input → Handler → State (Signals) → View (LVGL)
-```
-
-### Component Relationships
-
-```
-Context
-├── State (CoreState)
-├── Handlers (InputHandler)
-├── Views (IView)
-│   └── Widgets (IWidget)
-└── Overlays (via OverlayManager)
+```text
+src/
+  config/       configuration and platform constants
+  context/      composition roots, overlay presenters, runtime wiring
+  handler/      input logic and interaction workflows
+  persistence/  slot-based persistence helpers
+  sequencer/    playback and clock services
+  state/        reactive state, workflows, bootstrap, lifecycle
+  ui/           views, components, widgets, top bar, transport bar
 ```
 
-### Golden Rules
+## Ground Rules
 
-1. **Handlers never touch LVGL** - Only update state
-2. **Views never send protocol** - Only observe state
-3. **State is the source of truth** - UI is a projection
-4. **Use scoped bindings** - For input authority
-5. **Clean up in destructors** - RAII everywhere
+- handlers update state, not LVGL
+- views render projections of state
+- transient UI lifecycle belongs in state/runtime, not in widgets when avoidable
+- workflows and persistence logic should stay out of components
+- avoid generic abstractions unless duplication is both real and stable
 
----
+## Downstream Check
 
-## File Organization
+Before changing exported headers or moving files consumed by other repos, run:
 
-```
-midi-studio/core/
-├── docs/                    # This documentation
-├── src/
-│   ├── config/              # Configuration constants
-│   ├── context/             # Application contexts
-│   ├── handler/input/       # Input handlers
-│   ├── state/               # Reactive state (Signals)
-│   └── ui/
-│       ├── component/       # Reusable components
-│       ├── macro/           # Macro-specific UI
-│       ├── topbar/          # Top bar components
-│       ├── transportbar/    # Transport bar
-│       ├── view/            # Full-screen views
-│       └── widget/          # Widgets
-└── platformio.ini           # Build configuration
+```powershell
+pwsh ./script/dev/check-downstream-compat.ps1
 ```
 
----
-
-## Contributing
-
-1. Read [INVARIANTS.md](INVARIANTS.md) before writing code
-2. Follow [CODE_STYLE.md](CODE_STYLE.md) conventions
-3. Use the appropriate tutorial for your task
-4. Complete [EXTENSION_CHECKLIST.md](EXTENSION_CHECKLIST.md) before merge
-
----
-
-## Serena Memories
-
-Related memories in `.serena/memories/`:
-
-| Memory | Content |
-|--------|---------|
-| `code-style` | Unified style guide (Core + Bitwig) |
-| `project-paths` | File paths and structure |
-| `changelog` | Version history |
-| `alignment-plan-core-bitwig` | Refactoring plan |
+This rebuilds `plugin-bitwig` against the current `ms-core` checkout and catches public include regressions earlier.
