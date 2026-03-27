@@ -135,11 +135,13 @@ void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
 }
 
 void BaseMacroWidget::setConfig(uint8_t channel, uint8_t cc) {
-    if (ch_value_) {
+    if (ch_value_ && current_channel_ != channel) {
         ch_value_->setText(static_cast<int>(channel + 1));  // 1-indexed
+        current_channel_ = channel;
     }
-    if (cc_value_) {
+    if (cc_value_ && current_cc_ != cc) {
         cc_value_->setText(static_cast<int>(cc));
+        current_cc_ = cc;
     }
 }
 

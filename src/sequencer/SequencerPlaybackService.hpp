@@ -34,7 +34,7 @@ private:
 
         void sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) override {
             midi_.sendNoteOn(channel, note, velocity);
-            status_bar_.noteOutActive.set(true);
+            status_bar_.pulseNoteOut();
         }
 
         void sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) override {

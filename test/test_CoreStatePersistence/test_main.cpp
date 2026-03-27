@@ -90,8 +90,8 @@ void test_workspace_survives_legacy_corruption() {
                                      storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
-        state.setMacroValue(0, 0.13f);
-        state.setMacroValue(1, 0.87f);
+        core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.13f);
+        core::state::macro::MacroWorkflow::setRuntimeValue(state, 1, 0.87f);
         oc::state::NotificationQueue::instance().flush();
         state.flush();
     }
@@ -105,8 +105,8 @@ void test_workspace_survives_legacy_corruption() {
                                     storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
-    assert(restored.getMacroValue(0) == 0.13f);
-    assert(restored.getMacroValue(1) == 0.87f);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(restored, 0) == 0.13f);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(restored, 1) == 0.87f);
 
     drainNotifications();
 
@@ -123,28 +123,31 @@ void test_macro_library_roundtrip_and_erase() {
                                  storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
-    state.switchToPage(2);
-    state.setMacroConfig(0, 4, 88);
-    state.setMacroValue(0, 0.64f);
+    core::state::macro::MacroWorkflow::switchToPage(state, 2);
+    core::state::macro::MacroWorkflow::setConfig(state, 0, 4, 88);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.64f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
-    assert(state.saveMacroLibrarySlot(3));
+    assert(core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 3));
 
-    state.setMacroConfig(0, 0, 1);
-    state.setMacroValue(0, 0.01f);
+    core::state::macro::MacroWorkflow::setConfig(state, 0, 0, 1);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.01f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
-    const auto status = state.loadMacroLibrarySlot(3);
+    const auto status = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 3);
     assert(status == core::persistence::SlotLoadStatus::OK);
     assert(state.pages.activePage == 2);
-    assert(state.getMacroConfig(0).channel == 4);
-    assert(state.getMacroConfig(0).cc == 88);
-    assert(state.getMacroValue(0) == 0.64f);
+    assert(core::state::macro::MacroWorkflow::activeConfig(state, 0).channel == 4);
+    assert(core::state::macro::MacroWorkflow::activeConfig(state, 0).cc == 88);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(state, 0) == 0.64f);
 
-    assert(state.eraseMacroLibrarySlot(3));
-    const auto erasedStatus = state.loadMacroLibrarySlot(3);
+    assert(core::state::macro::MacroPersistenceWorkflow::eraseLibrarySlot(state, 3));
+    const auto erasedStatus = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(
+        state,
+        3
+    );
     assert(erasedStatus == core::persistence::SlotLoadStatus::EMPTY);
 
     drainNotifications();
@@ -164,18 +167,18 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
                                  storage.sequencerSetLibrary);
 
     // Change runtime macro value and save immediately (without NotificationQueue/state flush).
-    state.setMacroValue(0, 0.37f);
-    assert(state.saveMacroLibrarySlot(6));
+    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.37f);
+    assert(core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 6));
 
     // Move away from that value so load verification is unambiguous.
-    state.setMacroValue(0, 0.02f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.02f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
-    const auto status = state.loadMacroLibrarySlot(6);
+    const auto status = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 6);
     assert(status == core::persistence::SlotLoadStatus::OK);
 
-    const float restored = state.getMacroValue(0);
+    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state, 0);
     assert(restored > 0.3699f && restored < 0.3701f);
 
     drainNotifications();
@@ -195,20 +198,30 @@ void test_data_manager_shortcuts_persist_and_sanitize() {
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
-        state.setDataManagerShortcut(core::state::DataManagerContext::MACRO,
-                                     true,
-                                     core::state::DataManagerCommand::MACRO_ERASE_SLOT);
+        core::state::DataManagerWorkflow::setShortcut(state,
+                                                      core::state::DataManagerContext::MACRO,
+                                                      true,
+                                                      core::state::DataManagerCommand::MACRO_ERASE_SLOT);
         // Cross-context mapping should sanitize to macro default right shortcut.
-        state.setDataManagerShortcut(core::state::DataManagerContext::MACRO,
-                                     false,
-                                     core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT);
+        core::state::DataManagerWorkflow::setShortcut(
+            state,
+            core::state::DataManagerContext::MACRO,
+            false,
+            core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT
+        );
 
-        state.setDataManagerShortcut(core::state::DataManagerContext::SEQUENCER,
-                                     true,
-                                     core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT);
-        state.setDataManagerShortcut(core::state::DataManagerContext::SEQUENCER,
-                                     false,
-                                     core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT);
+        core::state::DataManagerWorkflow::setShortcut(
+            state,
+            core::state::DataManagerContext::SEQUENCER,
+            true,
+            core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT
+        );
+        core::state::DataManagerWorkflow::setShortcut(
+            state,
+            core::state::DataManagerContext::SEQUENCER,
+            false,
+            core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT
+        );
     }
 
     core::state::CoreState restored(storage.settings,
@@ -239,44 +252,67 @@ void test_data_manager_command_execution_and_slot_probe() {
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
-    state.setMacroValue(0, 0.73f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.73f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
-    assert(!state.dataManagerSlotOccupied(core::state::DataManagerCommand::MACRO_SAVE_SLOT, 5));
+    assert(!core::state::DataManagerWorkflow::slotOccupied(
+        state,
+        core::state::DataManagerCommand::MACRO_SAVE_SLOT,
+        5
+    ));
 
-    const auto save = state.executeDataManagerCommand(core::state::DataManagerCommand::MACRO_SAVE_SLOT,
-                                                      5);
+    const auto save = core::state::DataManagerWorkflow::execute(
+        state,
+        core::state::DataManagerCommand::MACRO_SAVE_SLOT,
+        5,
+        core::state::DataManagerSetLoadMode::REPLACE
+    );
     assert(save.handled);
     assert(save.success);
     assert(!save.isLoadOperation);
 
-    assert(state.dataManagerSlotOccupied(core::state::DataManagerCommand::MACRO_SAVE_SLOT, 5));
+    assert(core::state::DataManagerWorkflow::slotOccupied(
+        state,
+        core::state::DataManagerCommand::MACRO_SAVE_SLOT,
+        5
+    ));
 
-    state.setMacroValue(0, 0.11f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.11f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
-    const auto load = state.executeDataManagerCommand(core::state::DataManagerCommand::MACRO_LOAD_SLOT,
-                                                      5);
+    const auto load = core::state::DataManagerWorkflow::execute(
+        state,
+        core::state::DataManagerCommand::MACRO_LOAD_SLOT,
+        5,
+        core::state::DataManagerSetLoadMode::REPLACE
+    );
     assert(load.handled);
     assert(load.success);
     assert(load.isLoadOperation);
     assert(load.loadStatus == core::persistence::SlotLoadStatus::OK);
 
-    const float restored = state.getMacroValue(0);
+    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state, 0);
     assert(restored > 0.7299f && restored < 0.7301f);
 
-    const auto emptyLoad = state.executeDataManagerCommand(
+    const auto emptyLoad = core::state::DataManagerWorkflow::execute(
+        state,
         core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT,
-        31
+        31,
+        core::state::DataManagerSetLoadMode::REPLACE
     );
     assert(emptyLoad.handled);
     assert(!emptyLoad.success);
     assert(emptyLoad.isLoadOperation);
     assert(emptyLoad.loadStatus == core::persistence::SlotLoadStatus::EMPTY);
 
-    const auto none = state.executeDataManagerCommand(core::state::DataManagerCommand::NONE, 0);
+    const auto none = core::state::DataManagerWorkflow::execute(
+        state,
+        core::state::DataManagerCommand::NONE,
+        0,
+        core::state::DataManagerSetLoadMode::REPLACE
+    );
     assert(!none.handled);
     assert(!none.success);
 
@@ -307,8 +343,8 @@ void test_sequencer_workspace_and_library_roundtrip() {
         oc::state::NotificationQueue::instance().flush();
         state.flush();
 
-        assert(state.saveSequencerPatternSlot(4));
-        assert(state.saveSequencerSetSlot(2));
+        assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 4));
+        assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 2));
 
         state.sequencer.length.set(8);
         state.sequencer.stepsPerBeat.set(2);
@@ -318,7 +354,8 @@ void test_sequencer_workspace_and_library_roundtrip() {
         oc::state::NotificationQueue::instance().flush();
         state.flush();
 
-        const auto patternStatus = state.loadSequencerPatternSlot(4);
+        const auto patternStatus =
+            core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 4);
         assert(patternStatus == core::persistence::SlotLoadStatus::OK);
         assert(state.sequencer.length.get() == 16);
         assert(state.sequencer.stepsPerBeat.get() == 4);
@@ -329,18 +366,21 @@ void test_sequencer_workspace_and_library_roundtrip() {
         assert(state.sequencer.gate[0] == 70);
         assert(state.sequencer.probability[0] == 42);
 
-        assert(state.eraseSequencerPatternSlot(4));
-        const auto erasedPatternStatus = state.loadSequencerPatternSlot(4);
+        assert(core::state::sequencer::SequencerPersistenceWorkflow::erasePatternSlot(state, 4));
+        const auto erasedPatternStatus =
+            core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 4);
         assert(erasedPatternStatus == core::persistence::SlotLoadStatus::EMPTY);
 
-        const auto setStatus = state.loadSequencerSetSlot(2);
+        const auto setStatus =
+            core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 2);
         assert(setStatus == core::persistence::SlotLoadStatus::OK);
         assert(state.sequencer.length.get() == 16);
         assert(state.sequencer.stepsPerBeat.get() == 4);
         assert(state.sequencer.midiChannel.get() == 3);
 
-        assert(state.eraseSequencerSetSlot(2));
-        const auto erasedSetStatus = state.loadSequencerSetSlot(2);
+        assert(core::state::sequencer::SequencerPersistenceWorkflow::eraseSetSlot(state, 2));
+        const auto erasedSetStatus =
+            core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 2);
         assert(erasedSetStatus == core::persistence::SlotLoadStatus::EMPTY);
     }
 
@@ -425,7 +465,7 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     state.sequencer.toggle(0);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
-    assert(state.saveSequencerPatternSlot(1));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 1));
 
     // Pattern B (current live state before queued load)
     state.sequencer.length.set(16);
@@ -438,7 +478,8 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     state.statusBar.playing.set(true);
     state.sequencer.playheadStep.set(5);
 
-    const auto queuedStatus = state.loadSequencerPatternSlot(1);
+    const auto queuedStatus =
+        core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 1);
     assert(queuedStatus == core::persistence::SlotLoadStatus::OK);
 
     // Load is deferred: no immediate replacement while still on same step.
@@ -460,13 +501,14 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     assert(state.sequencer.gate[0] == 80);
 
     // Same behavior for set library loads.
-    assert(state.saveSequencerSetSlot(2));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 2));
 
     state.sequencer.length.set(12);
     state.sequencer.setStepDataAt(0, 77, 77, 77);
     state.sequencer.playheadStep.set(9);
 
-    const auto queuedSetStatus = state.loadSequencerSetSlot(2);
+    const auto queuedSetStatus =
+        core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 2);
     assert(queuedSetStatus == core::persistence::SlotLoadStatus::OK);
     assert(state.sequencer.length.get() == 12);
     assert(state.sequencer.note[0] == 77);
@@ -497,23 +539,25 @@ void test_direct_load_clears_stale_pending_quantized_apply() {
     state.sequencer.enabledMask.set(0);
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.toggle(0);
-    assert(state.saveSequencerPatternSlot(1));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 1));
 
     // Slot 2: loaded explicitly after transport stops.
     state.sequencer.length.set(12);
     state.sequencer.enabledMask.set(0);
     state.sequencer.setStepDataAt(0, 72, 88, 44);
     state.sequencer.toggle(0);
-    assert(state.saveSequencerPatternSlot(2));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 2));
 
     // Queue slot 1 while transport is running.
     state.statusBar.playing.set(true);
     state.sequencer.playheadStep.set(4);
-    assert(state.loadSequencerPatternSlot(1) == core::persistence::SlotLoadStatus::OK);
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 1) ==
+           core::persistence::SlotLoadStatus::OK);
 
     // Stop before the queued apply is consumed, then load slot 2 directly.
     state.statusBar.playing.set(false);
-    assert(state.loadSequencerPatternSlot(2) == core::persistence::SlotLoadStatus::OK);
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 2) ==
+           core::persistence::SlotLoadStatus::OK);
     assert(state.sequencer.length.get() == 12);
     assert(state.sequencer.note[0] == 72);
 
@@ -549,7 +593,7 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     state.sequencer.toggle(0);
     state.sequencer.setStepDataAt(3, 65, 99, 70);
     state.sequencer.toggle(3);
-    assert(state.saveSequencerSetSlot(4));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 4));
 
     // Live pattern before merge: longer length + existing step 1 enabled.
     state.sequencer.length.set(16);
@@ -559,7 +603,8 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     state.sequencer.setStepDataAt(1, 44, 55, 66);
     state.sequencer.toggle(1);
 
-    const auto status = state.loadSequencerSetSlot(4, true);
+    const auto status =
+        core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 4, true);
     assert(status == core::persistence::SlotLoadStatus::OK);
 
     // Merge keeps current transport config and length, overlays incoming enabled steps only.
@@ -605,7 +650,7 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
     state.sequencer.enabledMask.set(0);
     state.sequencer.setStepDataAt(2, 72, 110, 45);
     state.sequencer.toggle(2);
-    assert(state.saveSequencerSetSlot(6));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 6));
 
     // Live state before queued merge.
     state.sequencer.length.set(16);
@@ -615,7 +660,8 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
     state.sequencer.playheadStep.set(7);
     state.statusBar.playing.set(true);
 
-    const auto status = state.loadSequencerSetSlot(6, true);
+    const auto status =
+        core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 6, true);
     assert(status == core::persistence::SlotLoadStatus::OK);
 
     // Same-step update must stay deferred.

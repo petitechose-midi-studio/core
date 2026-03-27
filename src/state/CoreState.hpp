@@ -22,13 +22,17 @@
 #include <memory>
 
 #include <oc/interface/IStorage.hpp>
+#include <oc/log/Log.hpp>
 #include <oc/state/AutoPersistIncremental.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "persistence/MacroPersistence.hpp"
 #include "persistence/SequencerPersistence.hpp"
 #include "CoreSettings.hpp"
+#include "CoreStateBootstrap.hpp"
+#include "CoreStateLifecycle.hpp"
 #include "DataManagerState.hpp"
+#include "DataManagerWorkflow.hpp"
 #include "GlobalSettingsState.hpp"
 #include "MidiSyncState.hpp"
 #include "MacroEditState.hpp"
@@ -37,6 +41,10 @@
 #include "../ui/ViewTypes.hpp"
 #include "StatusBarState.hpp"
 #include "macro/MacroPagesState.hpp"
+#include "macro/MacroPersistenceWorkflow.hpp"
+#include "macro/MacroWorkflow.hpp"
+#include "sequencer/SequencerPersistenceWorkflow.hpp"
+#include "sequencer/SequencerSnapshotOps.hpp"
 #include "sequencer/SequencerState.hpp"
 
 namespace core::state {
@@ -62,6 +70,9 @@ struct ViewSelectorState {
  * This allows state to survive context switches.
  */
 struct CoreState {
+    friend struct CoreStateBootstrap;
+    friend struct CoreStateLifecycle;
+
     /// Runtime macro state (8 slots with values, labels)
     MacroState macros;
 
@@ -127,81 +138,7 @@ struct CoreState {
         , sequencerPersistence(sequencerWorkspaceStorage,
                                sequencerPatternLibraryStorage,
                                sequencerSetLibraryStorage) {
-        sequencer.reset();
-
-        // Load persisted settings
-        settings.load(pages, midiSync);
-        loadDataManagerShortcutsFromSettings_();
-
-        macro_persistence_ready_ = macroPersistence.init();
-        if (macro_persistence_ready_) {
-            if (!macroPersistence.loadWorkspace(pages)) {
-                persistMacroWorkspace_();
-            }
-        }
-
-        sequencer_persistence_ready_ = sequencerPersistence.init();
-        if (sequencer_persistence_ready_) {
-            if (!sequencerPersistence.loadWorkspace(sequencer)) {
-                persistSequencerWorkspace_();
-            }
-        }
-
-        // Reflect loaded page name in UI state
-        statusBar.pageName.set(pages.activePageData().name);
-
-        // Sync runtime macros with active page
-        syncMacrosFromActivePage();
-
-        // Register overlay signals
-        overlays.registerItem(core::ui::OverlayType::PAGE_SELECTOR, pages.selector.visible);
-        overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, macroEdit.visible);
-        overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_SELECTOR, macroEdit.selector.visible);
-        overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, macroEdit.macroSelector.visible);
-        overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, viewSelector.visible);
-
-        overlays.registerItem(core::ui::OverlayType::SEQ_PATTERN_CONFIG, sequencer.patternConfig.visible);
-        overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, sequencer.stepEdit.visible);
-        overlays.registerItem(core::ui::OverlayType::SEQ_PROPERTY_SELECTOR, sequencer.propertySelector.visible);
-        overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, globalSettings.visible);
-        overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, globalSettings.selector.visible);
-        overlays.registerItem(core::ui::OverlayType::DATA_MANAGER, dataManager.visible);
-        overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_DIALOG,
-                              dataManager.dialog.visible);
-
-        // Setup auto-persistence for macro values
-        macro_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
-            [this](uint8_t i) {
-                float value = macros.slots[i].value.get();
-
-                // Avoid redundant writes (e.g., when loading values from storage/page sync).
-                auto& page = pages.activePageData();
-                if (page.values[i] == value) return;
-                page.values[i] = value;
-            },
-            [this]() { persistMacroWorkspace_(); },
-            CoreSettings::VALUE_SAVE_DELAY_MS
-        );
-
-        // Watch each macro value signal
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            macro_auto_persist_->watchAt(i, macros.slots[i].value);
-        }
-
-        sequencer_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<8>>(
-            [](uint8_t) {},
-            [this]() { persistSequencerWorkspace_(); },
-            CoreSettings::VALUE_SAVE_DELAY_MS
-        );
-
-        sequencer_auto_persist_->watchAt(0, sequencer.length);
-        sequencer_auto_persist_->watchAt(1, sequencer.stepsPerBeat);
-        sequencer_auto_persist_->watchAt(2, sequencer.midiChannel);
-        sequencer_auto_persist_->watchAt(3, sequencer.enabledMask);
-        sequencer_auto_persist_->watchAt(4, sequencer.stepDataRevision);
-        sequencer_auto_persist_->watchAt(5, sequencer.page);
-        sequencer_auto_persist_->watchAt(6, sequencer.focusedStep);
-        sequencer_auto_persist_->watchAt(7, sequencer.activeStepProperty);
+        CoreStateBootstrap::initialize(*this);
     }
 
     // Non-copyable, non-movable
@@ -209,361 +146,6 @@ struct CoreState {
     CoreState& operator=(const CoreState&) = delete;
     CoreState(CoreState&&) = delete;
     CoreState& operator=(CoreState&&) = delete;
-
-    /**
-     * @brief Sync runtime macro state from active page config
-     */
-    void syncMacrosFromActivePage() {
-        const auto& pageData = pages.activePageData();
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            // Default labels (currently not per-page).
-            char label[16];
-            snprintf(label, sizeof(label), "Macro %d", i + 1);
-            macros.slots[i].label.set(label);
-
-            // Restore value from page (displayValue updates automatically)
-            macros.slots[i].value.set(std::clamp(pageData.values[i], 0.0f, 1.0f));
-        }
-    }
-
-    /**
-     * @brief Switch to a different page
-     */
-    void switchToPage(uint8_t pageIndex) {
-        if (pageIndex >= macro::PAGE_COUNT) return;
-
-        // Ensure any pending value writes are committed to the current page
-        // before switching the active page.
-        flush();
-
-        // Switch page
-        pages.setActivePage(pageIndex);
-        persistMacroWorkspace_();
-
-        // Notify UI that config changed
-        configRevision.set(configRevision.get() + 1);
-
-        // Update status bar from persisted page name
-        statusBar.pageName.set(pages.activePageData().name);
-
-        // Load new page values
-        syncMacrosFromActivePage();
-    }
-
-    /**
-     * @brief Set macro MIDI configuration for the active page
-     *
-     * Single source of truth: updates page data, derived active configs, and staged persistence.
-     * @return true when channel or CC changed
-     */
-    bool setMacroConfig(uint8_t index, uint8_t channel, uint8_t cc) {
-        if (index >= MACRO_COUNT) return false;
-        if (channel > 15 || cc > 127) return false;
-
-        auto& page = pages.activePageData();
-        const bool channelChanged = page.channel[index] != channel;
-        const bool ccChanged = page.cc[index] != cc;
-        if (!channelChanged && !ccChanged) {
-            return false;
-        }
-
-        page.channel[index] = channel;
-        page.cc[index] = cc;
-        pages.updateActiveConfigs();
-
-        persistMacroWorkspace_();
-
-        return true;
-    }
-
-    bool saveMacroLibrarySlot(uint8_t slotIndex) {
-        if (!macro_persistence_ready_) return false;
-
-        // Explicit library saves should snapshot current runtime macro values,
-        // even if AutoPersist debounce has not propagated them into page storage yet.
-        syncActivePageValuesFromRuntime_();
-
-        return macroPersistence.saveLibrarySlot(slotIndex, pages);
-    }
-
-    persistence::SlotLoadStatus loadMacroLibrarySlot(uint8_t slotIndex) {
-        if (!macro_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
-
-        const persistence::SlotLoadStatus status = macroPersistence.loadLibrarySlot(slotIndex, pages);
-        if (status == persistence::SlotLoadStatus::OK) {
-            statusBar.pageName.set(pages.activePageData().name);
-            syncMacrosFromActivePage();
-            persistMacroWorkspace_();
-            configRevision.set(configRevision.get() + 1);
-        }
-
-        return status;
-    }
-
-    bool eraseMacroLibrarySlot(uint8_t slotIndex) {
-        if (!macro_persistence_ready_) return false;
-        return macroPersistence.eraseLibrarySlot(slotIndex);
-    }
-
-    bool saveSequencerPatternSlot(uint8_t slotIndex) {
-        if (!sequencer_persistence_ready_) return false;
-        return sequencerPersistence.savePatternSlot(slotIndex, sequencer);
-    }
-
-    persistence::SlotLoadStatus loadSequencerPatternSlot(uint8_t slotIndex) {
-        if (!sequencer_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
-
-        if (statusBar.playing.get()) {
-            sequencer::SequencerState staged;
-            const persistence::SlotLoadStatus status =
-                sequencerPersistence.loadPatternSlot(slotIndex, staged);
-            if (status == persistence::SlotLoadStatus::OK) {
-                queueSequencerApply_(staged);
-            }
-            return status;
-        }
-
-        clearPendingSequencerApply_();
-        const persistence::SlotLoadStatus status = sequencerPersistence.loadPatternSlot(slotIndex, sequencer);
-        if (status == persistence::SlotLoadStatus::OK) {
-            persistSequencerWorkspace_();
-        }
-
-        return status;
-    }
-
-    bool eraseSequencerPatternSlot(uint8_t slotIndex) {
-        if (!sequencer_persistence_ready_) return false;
-        return sequencerPersistence.erasePatternSlot(slotIndex);
-    }
-
-    bool saveSequencerSetSlot(uint8_t slotIndex) {
-        if (!sequencer_persistence_ready_) return false;
-        return sequencerPersistence.saveSetSlot(slotIndex, sequencer);
-    }
-
-    persistence::SlotLoadStatus loadSequencerSetSlot(uint8_t slotIndex,
-                                                     bool merge = false) {
-        if (!sequencer_persistence_ready_) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
-
-        if (statusBar.playing.get()) {
-            sequencer::SequencerState staged;
-            const persistence::SlotLoadStatus status =
-                sequencerPersistence.loadSetSlot(slotIndex, staged);
-            if (status == persistence::SlotLoadStatus::OK) {
-                queueSequencerApply_(staged, merge);
-            }
-            return status;
-        }
-
-        clearPendingSequencerApply_();
-        sequencer::SequencerState staged;
-        const persistence::SlotLoadStatus status = sequencerPersistence.loadSetSlot(slotIndex, staged);
-        if (status == persistence::SlotLoadStatus::OK) {
-            if (merge) {
-                mergeSequencerSnapshotIntoCurrent_(staged);
-            } else {
-                applySequencerSnapshotFromState_(staged);
-            }
-            persistSequencerWorkspace_();
-        }
-
-        return status;
-    }
-
-    bool eraseSequencerSetSlot(uint8_t slotIndex) {
-        if (!sequencer_persistence_ready_) return false;
-        return sequencerPersistence.eraseSetSlot(slotIndex);
-    }
-
-    uint8_t dataManagerSlotCount(DataManagerCommand command) const {
-        switch (dataManagerSlotDomain(command)) {
-            case DataManagerSlotDomain::MACRO_LIBRARY:
-                return persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
-            case DataManagerSlotDomain::SEQ_PATTERN_LIBRARY:
-                return persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
-            case DataManagerSlotDomain::SEQ_SET_LIBRARY:
-                return persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
-            case DataManagerSlotDomain::NONE:
-            default:
-                return 0;
-        }
-    }
-
-    struct DataManagerCommandExecutionResult {
-        bool handled = false;
-        bool success = false;
-        bool isLoadOperation = false;
-        bool deferredApply = false;
-        persistence::SlotLoadStatus loadStatus = persistence::SlotLoadStatus::OK;
-    };
-
-    bool dataManagerSlotOccupied(DataManagerCommand command, uint8_t slotIndex) {
-        using persistence::SlotLoadStatus;
-
-        switch (dataManagerSlotDomain(command)) {
-            case DataManagerSlotDomain::MACRO_LIBRARY: {
-                if (!macro_persistence_ready_) return false;
-
-                macro::MacroPagesState probe;
-                probe.initDefaults();
-                return macroPersistence.loadLibrarySlot(slotIndex, probe) == SlotLoadStatus::OK;
-            }
-
-            case DataManagerSlotDomain::SEQ_PATTERN_LIBRARY: {
-                if (!sequencer_persistence_ready_) return false;
-
-                sequencer::SequencerState probe;
-                probe.reset();
-                return sequencerPersistence.loadPatternSlot(slotIndex, probe) == SlotLoadStatus::OK;
-            }
-
-            case DataManagerSlotDomain::SEQ_SET_LIBRARY: {
-                if (!sequencer_persistence_ready_) return false;
-
-                sequencer::SequencerState probe;
-                probe.reset();
-                return sequencerPersistence.loadSetSlot(slotIndex, probe) == SlotLoadStatus::OK;
-            }
-
-            case DataManagerSlotDomain::NONE:
-            default:
-                return false;
-        }
-    }
-
-    DataManagerCommandExecutionResult executeDataManagerCommand(
-        DataManagerCommand command,
-        uint8_t slotIndex,
-        DataManagerSetLoadMode setLoadMode = DataManagerSetLoadMode::REPLACE
-    ) {
-        DataManagerCommandExecutionResult result;
-        result.handled = true;
-
-        switch (command) {
-            case DataManagerCommand::MACRO_SAVE_SLOT:
-                result.success = saveMacroLibrarySlot(slotIndex);
-                return result;
-
-            case DataManagerCommand::MACRO_LOAD_SLOT:
-                result.isLoadOperation = true;
-                result.loadStatus = loadMacroLibrarySlot(slotIndex);
-                result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
-                return result;
-
-            case DataManagerCommand::MACRO_ERASE_SLOT:
-                result.success = eraseMacroLibrarySlot(slotIndex);
-                return result;
-
-            case DataManagerCommand::SEQ_SAVE_PATTERN_SLOT:
-                result.success = saveSequencerPatternSlot(slotIndex);
-                return result;
-
-            case DataManagerCommand::SEQ_LOAD_PATTERN_SLOT:
-                result.isLoadOperation = true;
-                result.loadStatus = loadSequencerPatternSlot(slotIndex);
-                result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
-                result.deferredApply = result.success && pending_sequencer_apply_.valid;
-                return result;
-
-            case DataManagerCommand::SEQ_ERASE_PATTERN_SLOT:
-                result.success = eraseSequencerPatternSlot(slotIndex);
-                return result;
-
-            case DataManagerCommand::SEQ_SAVE_SET_SLOT:
-                result.success = saveSequencerSetSlot(slotIndex);
-                return result;
-
-            case DataManagerCommand::SEQ_LOAD_SET_SLOT: {
-                const bool merge = (setLoadMode == DataManagerSetLoadMode::MERGE);
-                result.isLoadOperation = true;
-                result.loadStatus = loadSequencerSetSlot(slotIndex, merge);
-                result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
-                result.deferredApply = result.success && pending_sequencer_apply_.valid;
-                return result;
-            }
-
-            case DataManagerCommand::SEQ_ERASE_SET_SLOT:
-                result.success = eraseSequencerSetSlot(slotIndex);
-                return result;
-
-            case DataManagerCommand::NONE:
-            default:
-                result.handled = false;
-                result.success = false;
-                result.isLoadOperation = false;
-                result.loadStatus = persistence::SlotLoadStatus::OUT_OF_RANGE;
-                return result;
-        }
-    }
-
-    void setDataManagerShortcut(DataManagerContext context,
-                                bool leftButton,
-                                DataManagerCommand command) {
-        const DataManagerShortcutSide side =
-            leftButton ? DataManagerShortcutSide::LEFT : DataManagerShortcutSide::RIGHT;
-        const DataManagerCommand fallback = defaultDataManagerShortcut(context, side);
-        const DataManagerCommand sanitized = sanitizeDataManagerShortcut(context, command, fallback);
-
-        if (context == DataManagerContext::MACRO) {
-            if (leftButton) {
-                dataManager.macroShortcutLeft.set(sanitized);
-                settings.saveDataManagerMacroShortcutLeft(static_cast<uint8_t>(sanitized));
-            } else {
-                dataManager.macroShortcutRight.set(sanitized);
-                settings.saveDataManagerMacroShortcutRight(static_cast<uint8_t>(sanitized));
-            }
-        } else {
-            if (leftButton) {
-                dataManager.seqShortcutLeft.set(sanitized);
-                settings.saveDataManagerSeqShortcutLeft(static_cast<uint8_t>(sanitized));
-            } else {
-                dataManager.seqShortcutRight.set(sanitized);
-                settings.saveDataManagerSeqShortcutRight(static_cast<uint8_t>(sanitized));
-            }
-        }
-
-        settings.commit();
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Macro Accessors (encapsulated access for handlers)
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /**
-     * @brief Set macro value (user-initiated change)
-     *
-     * Updates runtime state. Persistence and displayValue update automatically.
-     *
-     * @param index Macro index (0-7)
-     * @param value Normalized value [0.0, 1.0]
-     */
-    void setMacroValue(uint8_t index, float value) {
-        if (index >= MACRO_COUNT) return;
-        macros.slots[index].value.set(std::clamp(value, 0.0f, 1.0f));
-        // AutoPersistIncremental handles dirty tracking via signal subscription
-    }
-
-    /**
-     * @brief Get current macro value
-     * @param index Macro index (0-7)
-     * @return Normalized value [0.0, 1.0]
-     */
-    float getMacroValue(uint8_t index) const {
-        if (index >= MACRO_COUNT) return 0.0f;
-        return macros.slots[index].value.get();
-    }
-
-    /**
-     * @brief Get macro MIDI configuration (CC, channel)
-     * @param index Macro index (0-7)
-     * @return Config for active page
-     */
-    const macro::MacroConfig& getMacroConfig(uint8_t index) const {
-        static const macro::MacroConfig defaultConfig{};
-        if (index >= MACRO_COUNT) return defaultConfig;
-        return pages.activeConfigs[index];
-    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Persistence
@@ -575,266 +157,66 @@ struct CoreState {
      * Saves dirty values incrementally after debounce timeout.
      */
     void update() {
-        applyPendingSequencerApplyIfReady_();
-
-        if (macro_auto_persist_) {
-            macro_auto_persist_->update();
-        }
-        if (sequencer_auto_persist_) {
-            sequencer_auto_persist_->update();
-        }
+        CoreStateLifecycle::update(*this);
     }
 
     /**
      * @brief Factory reset - clear all settings
      */
     void factoryReset() {
-        settings.factoryReset();
-        pages.initDefaults();
-        midiSync.reset();
-        syncMacrosFromActivePage();
-        settings.saveAll(pages, midiSync);
-        loadDataManagerShortcutsFromSettings_();
-        persistMacroWorkspace_();
-        statusBar.pageName.set(pages.activePageData().name);
-        macroEdit.reset();
-        viewSelector.reset();
-        sequencer.reset();
-        pending_sequencer_apply_.valid = false;
-        persistSequencerWorkspace_();
-        globalSettings.reset();
-        dataManager.resetSession(DataManagerContext::MACRO);
-        dataManager.feedback.set("");
-        activeView.set(core::ui::ViewType::MACRO);
-        overlays.hideAll();
-        configRevision.set(configRevision.get() + 1);
+        CoreStateLifecycle::factoryReset(*this);
     }
 
     /**
      * @brief Flush any pending dirty values immediately
      */
     void flush() {
-        if (macro_auto_persist_) {
-            macro_auto_persist_->flush();
-        }
-        if (sequencer_auto_persist_) {
-            sequencer_auto_persist_->flush();
-        }
+        CoreStateLifecycle::flush(*this);
     }
+
+    bool isMacroPersistenceReady() const { return macro_persistence_ready_; }
+    bool isSequencerPersistenceReady() const { return sequencer_persistence_ready_; }
+    void persistMacroWorkspace() { persistMacroWorkspace_(); }
+    void persistSequencerWorkspace() { persistSequencerWorkspace_(); }
+    void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false) {
+        queueSequencerApply_(staged, merge);
+    }
+    void clearPendingSequencerApply() { clearPendingSequencerApply_(); }
+    bool hasPendingSequencerApply() const { return pending_sequencer_apply_.valid; }
 
 private:
-    void loadDataManagerShortcutsFromSettings_() {
-        uint8_t macroLeft = 0;
-        uint8_t macroRight = 0;
-        uint8_t seqLeft = 0;
-        uint8_t seqRight = 0;
-        settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight);
-
-        dataManager.macroShortcutLeft.set(
-            sanitizeDataManagerShortcut(DataManagerContext::MACRO,
-                                        static_cast<DataManagerCommand>(macroLeft),
-                                        defaultDataManagerShortcut(DataManagerContext::MACRO,
-                                                                   DataManagerShortcutSide::LEFT))
-        );
-        dataManager.macroShortcutRight.set(
-            sanitizeDataManagerShortcut(DataManagerContext::MACRO,
-                                        static_cast<DataManagerCommand>(macroRight),
-                                        defaultDataManagerShortcut(DataManagerContext::MACRO,
-                                                                   DataManagerShortcutSide::RIGHT))
-        );
-        dataManager.seqShortcutLeft.set(
-            sanitizeDataManagerShortcut(DataManagerContext::SEQUENCER,
-                                        static_cast<DataManagerCommand>(seqLeft),
-                                        defaultDataManagerShortcut(DataManagerContext::SEQUENCER,
-                                                                   DataManagerShortcutSide::LEFT))
-        );
-        dataManager.seqShortcutRight.set(
-            sanitizeDataManagerShortcut(DataManagerContext::SEQUENCER,
-                                        static_cast<DataManagerCommand>(seqRight),
-                                        defaultDataManagerShortcut(DataManagerContext::SEQUENCER,
-                                                                   DataManagerShortcutSide::RIGHT))
-        );
-    }
-
-    struct SequencerPatternSnapshot {
-        uint8_t length = oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
-        uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
-        uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
-        uint64_t enabledMask = 0;
-        std::array<uint8_t, sequencer::SequencerState::MAX_STEPS> note{};
-        std::array<uint8_t, sequencer::SequencerState::MAX_STEPS> velocity{};
-        std::array<uint16_t, sequencer::SequencerState::MAX_STEPS> gate{};
-        std::array<int8_t, sequencer::SequencerState::MAX_STEPS> nudge{};
-        std::array<uint8_t, sequencer::SequencerState::MAX_STEPS> probability{};
-    };
-
     struct PendingSequencerApply {
         bool valid = false;
         int16_t anchorPlayhead = -1;
         bool merge = false;
-        SequencerPatternSnapshot snapshot{};
+        sequencer::SequencerPatternSnapshot snapshot{};
     };
-
-    static uint64_t lengthMask_(uint8_t length) {
-        if (length == 0) return 0;
-        if (length >= sequencer::SequencerState::MAX_STEPS) return ~uint64_t{0};
-        return (uint64_t{1} << length) - uint64_t{1};
-    }
-
-    static uint8_t sanitizeSequencerLength_(uint8_t length) {
-        if (length == 0 || length > sequencer::SequencerState::MAX_STEPS) {
-            return oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
-        }
-        return length;
-    }
-
-    static uint8_t sanitizeStepsPerBeat_(uint8_t spb) {
-        if (spb == 0) {
-            return oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
-        }
-        return spb;
-    }
-
-    static uint8_t sanitizeMidiChannel_(uint8_t channel) {
-        return (channel > 15U)
-                   ? oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED
-                   : channel;
-    }
-
-    static uint8_t sanitizeMidi7_(uint8_t value) {
-        return (value > 127U) ? 127U : value;
-    }
-
-    static void captureSequencerSnapshot_(const sequencer::SequencerState& source,
-                                          SequencerPatternSnapshot& out) {
-        out.length = sanitizeSequencerLength_(source.length.get());
-        out.stepsPerBeat = sanitizeStepsPerBeat_(source.stepsPerBeat.get());
-        out.midiChannel = sanitizeMidiChannel_(source.midiChannel.get());
-        out.enabledMask = source.enabledMask.get();
-
-        for (uint8_t i = 0; i < sequencer::SequencerState::MAX_STEPS; ++i) {
-            out.note[i] = sanitizeMidi7_(source.note[i]);
-            out.velocity[i] = sanitizeMidi7_(source.velocity[i]);
-            out.gate[i] = sequencer::SequencerState::clampGatePercent(source.gate[i]);
-            out.nudge[i] = source.nudge[i];
-            out.probability[i] = sequencer::SequencerState::clampProbability(source.probability[i]);
-        }
-    }
-
-    void applySequencerSnapshot_(const SequencerPatternSnapshot& snapshot) {
-        const uint8_t length = sanitizeSequencerLength_(snapshot.length);
-        const uint8_t focused_before = sequencer.focusedStep.get();
-
-        sequencer.length.set(length);
-        sequencer.stepsPerBeat.set(sanitizeStepsPerBeat_(snapshot.stepsPerBeat));
-        sequencer.midiChannel.set(sanitizeMidiChannel_(snapshot.midiChannel));
-        sequencer.enabledMask.set(snapshot.enabledMask & lengthMask_(length));
-
-        for (uint8_t i = 0; i < sequencer::SequencerState::MAX_STEPS; ++i) {
-            sequencer.note[i] = sanitizeMidi7_(snapshot.note[i]);
-            sequencer.velocity[i] = sanitizeMidi7_(snapshot.velocity[i]);
-            sequencer.gate[i] = sequencer::SequencerState::clampGatePercent(snapshot.gate[i]);
-            sequencer.nudge[i] = snapshot.nudge[i];
-            sequencer.probability[i] = sequencer::SequencerState::clampProbability(snapshot.probability[i]);
-        }
-
-        const uint8_t focused =
-            (focused_before >= length) ? static_cast<uint8_t>(length - 1U) : focused_before;
-        sequencer.focusedStep.set(focused);
-        sequencer.page.set(sequencer.pageForStep(focused));
-        sequencer.bumpStepDataRevision();
-    }
-
-    void applySequencerSnapshotFromState_(const sequencer::SequencerState& source) {
-        SequencerPatternSnapshot snapshot;
-        captureSequencerSnapshot_(source, snapshot);
-        applySequencerSnapshot_(snapshot);
-    }
-
-    void mergeSequencerSnapshotIntoCurrent_(const sequencer::SequencerState& incoming) {
-        SequencerPatternSnapshot snapshot;
-        captureSequencerSnapshot_(incoming, snapshot);
-        mergeSequencerSnapshotIntoCurrent_(snapshot);
-    }
-
-    void mergeSequencerSnapshotIntoCurrent_(const SequencerPatternSnapshot& snapshot) {
-        const uint8_t focused_before = sequencer.focusedStep.get();
-
-        const uint8_t currentLength = sanitizeSequencerLength_(sequencer.length.get());
-        const uint8_t incomingLength = sanitizeSequencerLength_(snapshot.length);
-        const uint8_t mergedLength = std::max(currentLength, incomingLength);
-
-        sequencer.length.set(mergedLength);
-
-        uint64_t mergedMask = sequencer.enabledMask.get() & lengthMask_(mergedLength);
-        const uint64_t incomingMask = snapshot.enabledMask & lengthMask_(incomingLength);
-
-        for (uint8_t i = 0; i < incomingLength; ++i) {
-            const uint64_t bit = uint64_t{1} << i;
-            if ((incomingMask & bit) == 0) continue;
-
-            sequencer.note[i] = sanitizeMidi7_(snapshot.note[i]);
-            sequencer.velocity[i] = sanitizeMidi7_(snapshot.velocity[i]);
-            sequencer.gate[i] = sequencer::SequencerState::clampGatePercent(snapshot.gate[i]);
-            sequencer.nudge[i] = snapshot.nudge[i];
-            sequencer.probability[i] = sequencer::SequencerState::clampProbability(snapshot.probability[i]);
-            mergedMask |= bit;
-        }
-
-        sequencer.enabledMask.set(mergedMask);
-
-        const uint8_t focused =
-            (focused_before >= mergedLength) ? static_cast<uint8_t>(mergedLength - 1U) : focused_before;
-        sequencer.focusedStep.set(focused);
-        sequencer.page.set(sequencer.pageForStep(focused));
-        sequencer.bumpStepDataRevision();
-    }
 
     void queueSequencerApply_(const sequencer::SequencerState& staged,
                               bool merge = false) {
-        captureSequencerSnapshot_(staged, pending_sequencer_apply_.snapshot);
-        pending_sequencer_apply_.anchorPlayhead = sequencer.playheadStep.get();
-        pending_sequencer_apply_.merge = merge;
-        pending_sequencer_apply_.valid = true;
-    }
-
-    void applyPendingSequencerApplyIfReady_() {
-        if (!pending_sequencer_apply_.valid) return;
-
-        if (statusBar.playing.get()) {
-            const int16_t playhead = sequencer.playheadStep.get();
-            if (playhead < 0) return;
-            if (playhead == pending_sequencer_apply_.anchorPlayhead) return;
-        }
-
-        if (pending_sequencer_apply_.merge) {
-            mergeSequencerSnapshotIntoCurrent_(pending_sequencer_apply_.snapshot);
-        } else {
-            applySequencerSnapshot_(pending_sequencer_apply_.snapshot);
-        }
-        pending_sequencer_apply_.valid = false;
-        persistSequencerWorkspace_();
+        CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
     }
 
     void persistMacroWorkspace_() {
         if (!macro_persistence_ready_) return;
-        macroPersistence.saveWorkspace(pages);
-    }
-
-    void syncActivePageValuesFromRuntime_() {
-        auto& page = pages.activePageData();
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            page.values[i] = std::clamp(macros.slots[i].value.get(), 0.0f, 1.0f);
+        const auto status = macroPersistence.saveWorkspaceStatus(pages);
+        if (status != persistence::PersistenceWriteStatus::OK) {
+            OC_LOG_WARN("[CoreState] Failed to persist macro workspace: {}",
+                        persistence::persistenceWriteStatusLabel(status));
         }
     }
 
     void persistSequencerWorkspace_() {
         if (!sequencer_persistence_ready_) return;
-        sequencerPersistence.saveWorkspace(sequencer);
+        const auto status = sequencerPersistence.saveWorkspaceStatus(sequencer);
+        if (status != persistence::PersistenceWriteStatus::OK) {
+            OC_LOG_WARN("[CoreState] Failed to persist sequencer workspace: {}",
+                        persistence::persistenceWriteStatusLabel(status));
+        }
     }
 
     void clearPendingSequencerApply_() {
-        pending_sequencer_apply_.valid = false;
+        CoreStateLifecycle::clearPendingSequencerApply(*this);
     }
 
     bool macro_persistence_ready_ = false;

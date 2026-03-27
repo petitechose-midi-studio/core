@@ -12,6 +12,12 @@ namespace {
 
 class MemoryStorage : public oc::interface::IStorage {
 public:
+    enum class FaultMode {
+        NONE,
+        COMMIT_FAIL,
+        SHORT_WRITE,
+    };
+
     explicit MemoryStorage(size_t capacity = 64 * 1024)
         : data_(capacity, 0xFF) {}
 
@@ -33,12 +39,15 @@ public:
     size_t write(uint32_t address, const uint8_t* buffer, size_t size) override {
         if (!buffer || address >= data_.size()) return 0;
         const size_t maxSize = data_.size() - static_cast<size_t>(address);
-        const size_t n = (size <= maxSize) ? size : maxSize;
+        size_t n = (size <= maxSize) ? size : maxSize;
+        if (fault_mode_ == FaultMode::SHORT_WRITE && n > 0) {
+            n -= 1;
+        }
         std::memcpy(data_.data() + address, buffer, n);
         return n;
     }
 
-    bool commit() override { return true; }
+    bool commit() override { return fault_mode_ != FaultMode::COMMIT_FAIL; }
 
     bool erase(uint32_t address, size_t size) override {
         if (address >= data_.size()) return false;
@@ -49,9 +58,11 @@ public:
     }
 
     size_t capacity() const override { return data_.size(); }
+    void setFaultMode(FaultMode mode) { fault_mode_ = mode; }
 
 private:
     bool initialized_ = false;
+    FaultMode fault_mode_ = FaultMode::NONE;
     std::vector<uint8_t> data_;
 };
 
@@ -382,6 +393,35 @@ void test_library_bounds() {
     std::cout << "[PASS] test_library_bounds\n";
 }
 
+void test_write_status_reports_commit_failure_and_out_of_range() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage patternStorage;
+    MemoryStorage setStorage;
+    workspaceStorage.init();
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    assert(persistence.initStatus() == core::persistence::PersistenceWriteStatus::OK);
+
+    core::state::sequencer::SequencerState sequencer;
+    sequencer.reset();
+
+    patternStorage.setFaultMode(MemoryStorage::FaultMode::COMMIT_FAIL);
+    assert(persistence.savePatternSlotStatus(2, sequencer) ==
+           core::persistence::PersistenceWriteStatus::COMMIT_FAILED);
+
+    const uint8_t invalidPatternSlot =
+        static_cast<uint8_t>(core::persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT);
+    assert(persistence.savePatternSlotStatus(invalidPatternSlot, sequencer) ==
+           core::persistence::PersistenceWriteStatus::OUT_OF_RANGE);
+    assert(persistence.eraseSetSlotStatus(
+               static_cast<uint8_t>(core::persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT)
+           ) == core::persistence::PersistenceWriteStatus::OUT_OF_RANGE);
+
+    std::cout << "[PASS] test_write_status_reports_commit_failure_and_out_of_range\n";
+}
+
 }  // namespace
 
 int main() {
@@ -397,6 +437,7 @@ int main() {
     test_pattern_library_masks_enabled_bits_outside_length();
     test_set_library_save_load_erase();
     test_library_bounds();
+    test_write_status_reports_commit_failure_and_out_of_range();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

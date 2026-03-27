@@ -1,5 +1,6 @@
 #include "SequencerMacroPropertyHandler.hpp"
 
+#include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/InputIDs.hpp>
@@ -10,6 +11,14 @@ namespace core::handler {
 
 using oc::ui::lvgl::scope;
 namespace input_utils = core::handler::sequencer::input_utils;
+
+namespace {
+
+inline oc::type::IsActiveFn notSelectingPatternQuickControls(core::state::CoreState& state) {
+    return [&state]() { return !state.sequencer.patternQuickControls.selecting.get(); };
+}
+
+}  // namespace
 
 SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     core::state::CoreState& state,
@@ -27,25 +36,29 @@ void SequencerMacroPropertyHandler::setupBindings() {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope(scope_element_))
+            .when(notSelectingPatternQuickControls(state_))
             .then([this, i](float value) { handleTurn(i, value); });
     }
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(scope(scope_element_))
+        .when(notSelectingPatternQuickControls(state_))
         .then([this](float value) { handleFocusedTurn(value); });
 }
 
 void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
     uint8_t abs = 0;
     if (!state_.sequencer.resolveStepInPage(state_.sequencer.page.get(), indexInPage, abs)) return;
+    const auto property = state_.sequencer.activeStepProperty.get();
 
     input_utils::applyNormalizedToStep(
         state_.sequencer,
         abs,
-        state_.sequencer.activeStepProperty.get(),
+        property,
         normalized
     );
+    state_.sequencer.stepInlineFeedback.show(abs, property, oc::time::millis());
 }
 
 void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
@@ -57,13 +70,15 @@ void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
     const uint8_t focused = state_.sequencer.focusedStep.get();
     if (focused >= len) return;
     if (focused >= core::state::sequencer::SequencerState::MAX_STEPS) return;
+    const auto property = state_.sequencer.activeStepProperty.get();
 
     input_utils::applyNormalizedToStep(
         state_.sequencer,
         focused,
-        state_.sequencer.activeStepProperty.get(),
+        property,
         normalized
     );
+    state_.sequencer.stepInlineFeedback.show(focused, property, oc::time::millis());
 }
 
 }  // namespace core::handler

@@ -1,0 +1,92 @@
+#include "context/standalone/MacroFeatureModule.hpp"
+
+#include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
+#include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
+#include <oc/ui/lvgl/Scope.hpp>
+
+#include "context/standalone/MacroOverlayPresenter.hpp"
+#include "handler/macro/MacroEditHandler.hpp"
+#include "handler/macro/MacroMidiHandler.hpp"
+#include "handler/macro/MacroValueHandler.hpp"
+
+namespace core::context::standalone {
+
+MacroFeatureModule::MacroFeatureModule(core::state::CoreState& state,
+                                       oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                                       oc::api::EncoderAPI& encoders,
+                                       oc::api::ButtonAPI& buttons,
+                                       oc::api::MidiAPI& midi,
+                                       lv_obj_t* mainZone,
+                                       lv_obj_t* macroViewScope) {
+    edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    overlays.registerCleanup(
+        core::ui::OverlayType::MACRO_EDIT,
+        oc::ui::lvgl::scopeID(edit_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
+    edit_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlays.registerCleanup(
+        core::ui::OverlayType::MACRO_EDIT_SELECTOR,
+        oc::ui::lvgl::scopeID(edit_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
+    page_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlays.registerCleanup(
+        core::ui::OverlayType::PAGE_SELECTOR,
+        oc::ui::lvgl::scopeID(page_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
+    target_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlays.registerCleanup(
+        core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR,
+        oc::ui::lvgl::scopeID(target_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
+    presenter_ = std::make_unique<MacroOverlayPresenter>(
+        state,
+        *edit_overlay_,
+        *edit_selector_overlay_,
+        *page_selector_overlay_,
+        *target_selector_overlay_
+    );
+    presenter_->bind();
+
+    value_handler_ = std::make_unique<core::handler::MacroValueHandler>(
+        state,
+        encoders,
+        midi,
+        macroViewScope
+    );
+    midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(state, encoders);
+    edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
+        state,
+        overlays,
+        encoders,
+        buttons,
+        macroViewScope,
+        edit_overlay_->getElement(),
+        edit_selector_overlay_->getElement(),
+        page_selector_overlay_->getElement(),
+        target_selector_overlay_->getElement()
+    );
+}
+
+MacroFeatureModule::~MacroFeatureModule() = default;
+
+void MacroFeatureModule::onCC(uint8_t channel, uint8_t cc, uint8_t value) {
+    if (midi_handler_) {
+        midi_handler_->onCC(channel, cc, value);
+    }
+}
+
+void MacroFeatureModule::onNoteIn() {
+    if (midi_handler_) {
+        midi_handler_->onNoteIn();
+    }
+}
+
+}  // namespace core::context::standalone

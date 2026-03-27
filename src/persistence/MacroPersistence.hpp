@@ -6,6 +6,8 @@
 #include <type_traits>
 
 #include <oc/interface/IStorage.hpp>
+#include <oc/log/Log.hpp>
+#include <oc/time/Time.hpp>
 
 #include "state/macro/MacroPagesState.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
@@ -35,8 +37,12 @@ public:
                           .slotPayloadSize = PAYLOAD_SIZE}) {}
 
     bool init() {
-        if (!workspace_store_.init()) return false;
-        if (!library_store_.init()) return false;
+        return initStatus() == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus initStatus() {
+        if (!workspace_store_.init()) return PersistenceWriteStatus::IO_ERROR;
+        if (!library_store_.init()) return PersistenceWriteStatus::IO_ERROR;
 
         uint8_t payload[PAYLOAD_SIZE] = {};
         const auto latest = workspace_store_.loadLatest(payload, sizeof(payload));
@@ -48,7 +54,7 @@ public:
             next_workspace_slot_ = 0;
         }
 
-        return true;
+        return PersistenceWriteStatus::OK;
     }
 
     bool loadWorkspace(state::macro::MacroPagesState& pages) {
@@ -68,27 +74,41 @@ public:
     }
 
     bool saveWorkspace(const state::macro::MacroPagesState& pages) {
+        return saveWorkspaceStatus(pages) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus saveWorkspaceStatus(const state::macro::MacroPagesState& pages) {
+        const uint32_t start_ms = oc::time::millis();
         PayloadV1 snapshot{};
         fillPayload_(pages, snapshot);
 
         uint8_t payload[PAYLOAD_SIZE] = {};
         std::memcpy(payload, &snapshot, sizeof(snapshot));
 
-        if (!workspace_store_.saveSlot(
+        const auto status = workspace_store_.saveSlotStatus(
                 next_workspace_slot_,
                 payload,
                 sizeof(snapshot),
-                next_workspace_counter_)) {
-            return false;
-        }
+                next_workspace_counter_);
+        if (status != PersistenceWriteStatus::OK) return status;
 
         next_workspace_counter_ += 1;
         next_workspace_slot_ = static_cast<uint16_t>((next_workspace_slot_ + 1) % WORKSPACE_SLOT_COUNT);
-        return true;
+
+        const uint32_t elapsed_ms = oc::time::millis() - start_ms;
+        if (elapsed_ms >= 5) {
+            OC_LOG_INFO("[Perf][MacroPersist] workspace save took {}ms", elapsed_ms);
+        }
+        return PersistenceWriteStatus::OK;
     }
 
     bool saveLibrarySlot(uint8_t slotIndex, const state::macro::MacroPagesState& pages) {
-        if (slotIndex >= LIBRARY_SLOT_COUNT) return false;
+        return saveLibrarySlotStatus(slotIndex, pages) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus saveLibrarySlotStatus(uint8_t slotIndex,
+                                                 const state::macro::MacroPagesState& pages) {
+        if (slotIndex >= LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
         PayloadV1 snapshot{};
         fillPayload_(pages, snapshot);
@@ -97,7 +117,7 @@ public:
         std::memcpy(payload, &snapshot, sizeof(snapshot));
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
-        return library_store_.saveSlot(slotIndex, payload, sizeof(snapshot), counter);
+        return library_store_.saveSlotStatus(slotIndex, payload, sizeof(snapshot), counter);
     }
 
     SlotLoadStatus loadLibrarySlot(uint8_t slotIndex, state::macro::MacroPagesState& pages) {
@@ -121,8 +141,12 @@ public:
     }
 
     bool eraseLibrarySlot(uint8_t slotIndex) {
-        if (slotIndex >= LIBRARY_SLOT_COUNT) return false;
-        return library_store_.eraseSlot(slotIndex);
+        return eraseLibrarySlotStatus(slotIndex) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus eraseLibrarySlotStatus(uint8_t slotIndex) {
+        if (slotIndex >= LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
+        return library_store_.eraseSlotStatus(slotIndex);
     }
 
 private:

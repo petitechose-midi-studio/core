@@ -5,14 +5,14 @@
 
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
-#include <oc/util/Index.hpp>
 
 #include <config/InputIDs.hpp>
+#include "handler/common/ModalSelectionUtils.hpp"
+#include "handler/common/NavigationUtils.hpp"
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
-using oc::util::wrapIndex;
 
 namespace {
 
@@ -65,7 +65,7 @@ void formatCommandExecutionFeedback(
     core::state::DataManagerCommand command,
     uint8_t slot,
     core::state::DataManagerSetLoadMode setLoadMode,
-    const core::state::CoreState::DataManagerCommandExecutionResult& result
+    const core::state::DataManagerCommandExecutionResult& result
 ) {
     if (!message || messageSize == 0U) return;
 
@@ -253,13 +253,12 @@ void DataManagerHandler::closeManager() {
 }
 
 void DataManagerHandler::moveFocus(float delta) {
-    if (delta == 0.0f) return;
+    if (!nav::hasTurnDelta(delta)) return;
 
-    const int step = (delta > 0.0f) ? 1 : -1;
     auto& dm = state_.dataManager;
     const int count = static_cast<int>(dm.rowCount());
     const int current = static_cast<int>(dm.focusedRow.get());
-    const int next = wrapIndex(current + step, count);
+    const int next = nav::nextWrappedIndex(delta, current, count);
     dm.focusedRow.set(static_cast<uint8_t>(next));
 }
 
@@ -276,22 +275,18 @@ void DataManagerHandler::openShortcutAssignmentDialog_() {
     const auto context = dm.context.get();
     const auto current = dm.shortcutForRow(row);
 
-    dm.dialog.mode.set(core::state::DataManagerDialogMode::ASSIGN_SHORTCUT);
-    dm.dialog.editingShortcutRow.set(row);
-    dm.dialog.selectedIndex.set(core::state::dataManagerCommandIndex(context, current));
-
-    overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
+    showDialog_(
+        core::state::DataManagerDialogMode::ASSIGN_SHORTCUT,
+        core::state::dataManagerCommandIndex(context, current),
+        row
+    );
 }
 
 void DataManagerHandler::openCommandPaletteDialog_() {
     auto& dm = state_.dataManager;
     if (dm.dialog.visible.get()) return;
 
-    dm.dialog.mode.set(core::state::DataManagerDialogMode::COMMAND_PALETTE);
-    dm.dialog.selectedIndex.set(0);
-    dm.dialog.editingShortcutRow.set(0);
-
-    overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
+    showDialog_(core::state::DataManagerDialogMode::COMMAND_PALETTE, 0);
 }
 
 void DataManagerHandler::runShortcut_(bool leftButton) {
@@ -303,29 +298,15 @@ void DataManagerHandler::runShortcut_(bool leftButton) {
 }
 
 void DataManagerHandler::navigateDialog_(float delta) {
-    if (delta == 0.0f) return;
-
     auto& dialog = state_.dataManager.dialog;
-    if (!dialog.visible.get()) return;
-
-    int count = 0;
     const auto mode = dialog.mode.get();
-    if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT ||
-        mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
-        count = static_cast<int>(core::state::dataManagerCommandCount(state_.dataManager.context.get()));
-    } else if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
-        count = static_cast<int>(state_.dataManagerSlotCount(state_.dataManager.pendingCommand.get()));
-    } else if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
-        count = 2;
-    } else if (mode == core::state::DataManagerDialogMode::CONFIRM) {
-        count = 2;
-    }
-
-    if (count <= 0) return;
-
-    const int step = (delta > 0.0f) ? 1 : -1;
+    const int count = dialogChoiceCount_(mode);
     const int current = dialog.selectedIndex.get();
-    dialog.selectedIndex.set(wrapIndex(current + step, count));
+    int next = current;
+    if (!modal::advanceWrappedSelection(delta, dialog.visible.get(), current, count, next)) {
+        return;
+    }
+    dialog.selectedIndex.set(next);
 }
 
 void DataManagerHandler::applyDialogSelection_() {
@@ -339,7 +320,7 @@ void DataManagerHandler::applyDialogSelection_() {
         const auto context = dm.context.get();
         const auto command = core::state::dataManagerCommandAt(context, dialog.selectedIndex.get());
         const uint8_t row = std::min<uint8_t>(dialog.editingShortcutRow.get(), 1U);
-        state_.setDataManagerShortcut(context, row == 0U, command);
+        core::state::DataManagerWorkflow::setShortcut(state_, context, row == 0U, command);
 
         overlays_.hide();
         dialog.reset();
@@ -355,7 +336,9 @@ void DataManagerHandler::applyDialogSelection_() {
     }
 
     if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
-        const uint8_t slotCount = state_.dataManagerSlotCount(dm.pendingCommand.get());
+        const uint8_t slotCount = core::state::DataManagerWorkflow::slotCount(
+            dm.pendingCommand.get()
+        );
         if (slotCount == 0U) {
             setFeedback_("No slots");
             overlays_.hide();
@@ -377,7 +360,11 @@ void DataManagerHandler::applyDialogSelection_() {
         }
 
         if (core::state::dataManagerCommandIsSave(dm.pendingCommand.get()) &&
-            state_.dataManagerSlotOccupied(dm.pendingCommand.get(), dm.pendingSlot.get())) {
+            core::state::DataManagerWorkflow::slotOccupied(
+                state_,
+                dm.pendingCommand.get(),
+                dm.pendingSlot.get()
+            )) {
             openConfirmDialog_();
             return;
         }
@@ -399,8 +386,7 @@ void DataManagerHandler::applyDialogSelection_() {
     if (mode == core::state::DataManagerDialogMode::CONFIRM) {
         const bool confirmed = dialog.selectedIndex.get() == 1;
         if (!confirmed) {
-            overlays_.hide();
-            dialog.reset();
+            modal::hideOverlayAndReset(overlays_, [&dialog]() { dialog.reset(); });
             dm.pendingCommand.set(core::state::DataManagerCommand::NONE);
             setFeedback_("Cancelled");
             return;
@@ -412,11 +398,46 @@ void DataManagerHandler::applyDialogSelection_() {
 
 void DataManagerHandler::closeDialog_() {
     if (overlays_.current() == core::ui::OverlayType::DATA_MANAGER_DIALOG) {
-        overlays_.hide();
+        modal::hideOverlayAndReset(overlays_, [this]() { state_.dataManager.dialog.reset(); });
+    } else {
+        state_.dataManager.dialog.reset();
     }
 
-    state_.dataManager.dialog.reset();
     state_.dataManager.pendingCommand.set(core::state::DataManagerCommand::NONE);
+}
+
+void DataManagerHandler::showDialog_(core::state::DataManagerDialogMode mode,
+                                     int selectedIndex,
+                                     uint8_t editingShortcutRow) {
+    auto& dialog = state_.dataManager.dialog;
+    dialog.mode.set(mode);
+    dialog.selectedIndex.set(selectedIndex);
+    dialog.editingShortcutRow.set(editingShortcutRow);
+
+    if (!dialog.visible.get()) {
+        overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
+    }
+}
+
+int DataManagerHandler::dialogChoiceCount_(core::state::DataManagerDialogMode mode) const {
+    switch (mode) {
+        case core::state::DataManagerDialogMode::ASSIGN_SHORTCUT:
+        case core::state::DataManagerDialogMode::COMMAND_PALETTE:
+            return static_cast<int>(
+                core::state::dataManagerCommandCount(state_.dataManager.context.get())
+            );
+        case core::state::DataManagerDialogMode::SLOT_PICKER:
+            return static_cast<int>(
+                core::state::DataManagerWorkflow::slotCount(
+                    state_.dataManager.pendingCommand.get()
+                )
+            );
+        case core::state::DataManagerDialogMode::SET_LOAD_MODE:
+        case core::state::DataManagerDialogMode::CONFIRM:
+            return 2;
+        default:
+            return 0;
+    }
 }
 
 void DataManagerHandler::startCommandFlow_(core::state::DataManagerCommand command) {
@@ -439,7 +460,9 @@ void DataManagerHandler::startCommandFlow_(core::state::DataManagerCommand comma
 
 void DataManagerHandler::openSlotPickerForPendingCommand_() {
     auto& dm = state_.dataManager;
-    const uint8_t slotCount = state_.dataManagerSlotCount(dm.pendingCommand.get());
+    const uint8_t slotCount = core::state::DataManagerWorkflow::slotCount(
+        dm.pendingCommand.get()
+    );
     if (slotCount == 0U) {
         setFeedback_("No slots");
         return;
@@ -447,32 +470,19 @@ void DataManagerHandler::openSlotPickerForPendingCommand_() {
 
     const uint8_t clampedSlot = std::min<uint8_t>(dm.pendingSlot.get(), static_cast<uint8_t>(slotCount - 1U));
     dm.pendingSlot.set(clampedSlot);
-    dm.dialog.mode.set(core::state::DataManagerDialogMode::SLOT_PICKER);
-    dm.dialog.selectedIndex.set(static_cast<int>(clampedSlot));
-
-    if (!dm.dialog.visible.get()) {
-        overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
-    }
+    showDialog_(core::state::DataManagerDialogMode::SLOT_PICKER, static_cast<int>(clampedSlot));
 }
 
 void DataManagerHandler::openSetLoadModeDialog_() {
     auto& dm = state_.dataManager;
-    dm.dialog.mode.set(core::state::DataManagerDialogMode::SET_LOAD_MODE);
-    dm.dialog.selectedIndex.set(dm.pendingSetLoadMode.get() == core::state::DataManagerSetLoadMode::REPLACE ? 0 : 1);
-
-    if (!dm.dialog.visible.get()) {
-        overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
-    }
+    showDialog_(
+        core::state::DataManagerDialogMode::SET_LOAD_MODE,
+        dm.pendingSetLoadMode.get() == core::state::DataManagerSetLoadMode::REPLACE ? 0 : 1
+    );
 }
 
 void DataManagerHandler::openConfirmDialog_() {
-    auto& dm = state_.dataManager;
-    dm.dialog.mode.set(core::state::DataManagerDialogMode::CONFIRM);
-    dm.dialog.selectedIndex.set(0);  // Default to cancel
-
-    if (!dm.dialog.visible.get()) {
-        overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
-    }
+    showDialog_(core::state::DataManagerDialogMode::CONFIRM, 0);
 }
 
 void DataManagerHandler::executePendingCommand_() {
@@ -484,15 +494,21 @@ void DataManagerHandler::executePendingCommand_() {
     char message[32];
     message[0] = '\0';
 
-    const auto result = state_.executeDataManagerCommand(command, slot, setLoadMode);
+    const auto result = core::state::DataManagerWorkflow::execute(
+        state_,
+        command,
+        slot,
+        setLoadMode
+    );
     formatCommandExecutionFeedback(message, sizeof(message), command, slot, setLoadMode, result);
 
     setFeedback_(message);
 
     if (overlays_.current() == core::ui::OverlayType::DATA_MANAGER_DIALOG) {
-        overlays_.hide();
+        modal::hideOverlayAndReset(overlays_, [&dm]() { dm.dialog.reset(); });
+    } else {
+        dm.dialog.reset();
     }
-    dm.dialog.reset();
     dm.pendingCommand.set(core::state::DataManagerCommand::NONE);
 }
 

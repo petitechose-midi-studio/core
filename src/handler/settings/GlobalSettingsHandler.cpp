@@ -4,14 +4,14 @@
 
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
-#include <oc/util/Index.hpp>
 
 #include <config/InputIDs.hpp>
+#include "handler/common/ModalSelectionUtils.hpp"
+#include "handler/common/NavigationUtils.hpp"
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
-using oc::util::wrapIndex;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
@@ -121,11 +121,10 @@ void GlobalSettingsHandler::closeSettings() {
 }
 
 void GlobalSettingsHandler::moveFocus(float delta) {
-    if (delta == 0.0f) return;
+    if (!nav::hasTurnDelta(delta)) return;
 
-    const int step = (delta > 0.0f) ? 1 : -1;
     const int current = static_cast<int>(state_.globalSettings.focusedRow.get());
-    const int next = wrapIndex(current + step, ROW_COUNT);
+    const int next = nav::nextWrappedIndex(delta, current, ROW_COUNT);
 
     state_.globalSettings.focusedRow.set(static_cast<uint8_t>(next));
 }
@@ -147,8 +146,6 @@ void GlobalSettingsHandler::openValueSelector() {
 }
 
 void GlobalSettingsHandler::navigateSelector(float delta) {
-    if (delta == 0.0f) return;
-
     const uint8_t row = state_.globalSettings.selector.editingRow.get();
     int count = 0;
 
@@ -160,9 +157,17 @@ void GlobalSettingsHandler::navigateSelector(float delta) {
         default: return;
     }
 
-    const int step = (delta > 0.0f) ? 1 : -1;
     const int current = state_.globalSettings.selector.selectedIndex.get();
-    const int next = wrapIndex(current + step, count);
+    int next = current;
+    if (!modal::advanceWrappedSelection(
+            delta,
+            state_.globalSettings.selector.visible.get(),
+            current,
+            count,
+            next
+        )) {
+        return;
+    }
     state_.globalSettings.selector.selectedIndex.set(next);
 }
 
@@ -174,13 +179,11 @@ void GlobalSettingsHandler::applySelectorAndClose() {
     applyChoiceForRow_(row, choice);
     persistRow_(row);
 
-    overlays_.hide();
-    selector.reset();
+    modal::hideOverlayAndReset(overlays_, [&selector]() { selector.reset(); });
 }
 
 void GlobalSettingsHandler::closeSelectorCancel() {
-    overlays_.hide();
-    state_.globalSettings.selector.reset();
+    modal::hideOverlayAndReset(overlays_, [this]() { state_.globalSettings.selector.reset(); });
 }
 
 int GlobalSettingsHandler::currentChoiceIndexForRow_(uint8_t row) const {
@@ -233,24 +236,43 @@ void GlobalSettingsHandler::applyChoiceForRow_(uint8_t row, int choiceIndex) {
 }
 
 void GlobalSettingsHandler::persistRow_(uint8_t row) {
+    auto status = core::persistence::PersistenceWriteStatus::OK;
     switch (row) {
         case 0:
-            state_.settings.saveMidiSyncMode(state_.midiSync.mode.get());
+            status = state_.settings.saveMidiSyncModeStatus(state_.midiSync.mode.get());
             break;
         case 1:
-            state_.settings.saveMidiFollowTransport(state_.midiSync.followTransport.get());
+            status = state_.settings.saveMidiFollowTransportStatus(
+                state_.midiSync.followTransport.get()
+            );
             break;
         case 2:
-            state_.settings.saveMidiAutoFallbackMs(state_.midiSync.autoFallbackMs.get());
+            status = state_.settings.saveMidiAutoFallbackMsStatus(
+                state_.midiSync.autoFallbackMs.get()
+            );
             break;
         case 3:
-            state_.settings.saveMidiAutoLockClockCount(state_.midiSync.autoLockClockCount.get());
+            status = state_.settings.saveMidiAutoLockClockCountStatus(
+                state_.midiSync.autoLockClockCount.get()
+            );
             break;
         default:
             return;
     }
 
-    state_.settings.commit();
+    if (status != core::persistence::PersistenceWriteStatus::OK) {
+        OC_LOG_WARN("[GlobalSettings] Failed to stage settings row {}: {}",
+                    row,
+                    core::persistence::persistenceWriteStatusLabel(status));
+        return;
+    }
+
+    const auto commitStatus = state_.settings.commitStatus();
+    if (commitStatus != core::persistence::PersistenceWriteStatus::OK) {
+        OC_LOG_WARN("[GlobalSettings] Failed to commit settings row {}: {}",
+                    row,
+                    core::persistence::persistenceWriteStatusLabel(commitStatus));
+    }
 }
 
 }  // namespace core::handler

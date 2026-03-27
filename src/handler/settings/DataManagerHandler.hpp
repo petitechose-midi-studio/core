@@ -46,6 +46,8 @@ private:
     void navigateDialog_(float delta);
     void applyDialogSelection_();
     void closeDialog_();
+    void showDialog_(core::state::DataManagerDialogMode mode, int selectedIndex, uint8_t editingShortcutRow = 0);
+    int dialogChoiceCount_(core::state::DataManagerDialogMode mode) const;
 
     void startCommandFlow_(core::state::DataManagerCommand command);
     void openSlotPickerForPendingCommand_();

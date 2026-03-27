@@ -53,6 +53,8 @@ protected:
     std::unique_ptr<oc::ui::lvgl::Label> cc_value_;    // CC number
 
     uint8_t index_ = 0;
+    uint8_t current_channel_ = 0xFF;
+    uint8_t current_cc_ = 0xFF;
 };
 
 }  // namespace core::ui

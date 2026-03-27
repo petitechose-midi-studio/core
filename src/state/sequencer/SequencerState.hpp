@@ -8,74 +8,11 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerState.hpp>
-#include <oc/state/Signal.hpp>
+#include "SequencerUiState.hpp"
 
 namespace core::state::sequencer {
 
 using oc::state::Signal;
-
-enum class StepProperty : uint8_t {
-    NOTE = 0,
-    VELOCITY = 1,
-    GATE = 2,
-    NUDGE = 3,
-    PROBABILITY = 4,
-};
-
-/**
- * @brief Core sequencer state
- *
- * This extends the reusable engine state (oc-note) with UI-only fields.
- */
-
-struct SequencerPatternConfigOverlayState {
-    Signal<bool> visible{false};
-    Signal<uint8_t> focusedRow{0};
-
-    // Snapshot for cancel (live editing)
-    uint8_t snapshotLength = 0;
-    uint8_t snapshotStepsPerBeat = 0;
-    uint8_t snapshotMidiChannel = 0;
-    bool snapshotValid = false;
-
-    void reset() {
-        focusedRow.set(0);
-        snapshotValid = false;
-    }
-};
-
-struct SequencerStepEditOverlayState {
-    Signal<bool> visible{false};
-    Signal<uint8_t> stepIndex{0};    // absolute step index
-    Signal<uint8_t> focusedRow{0};   // 0=NOTE, 1=VEL, 2=GATE, 3=NUDGE, 4=PROB
-
-    // Snapshot for cancel (live editing)
-    uint8_t snapshotNote = 0;
-    uint8_t snapshotVelocity = 0;
-    uint16_t snapshotGate = 0;
-    int8_t snapshotNudge = 0;
-    uint8_t snapshotProbability = 100;
-    bool snapshotValid = false;
-
-    void reset() {
-        stepIndex.set(0);
-        focusedRow.set(0);
-        snapshotValid = false;
-    }
-};
-
-struct SequencerPropertySelectorOverlayState {
-    Signal<bool> visible{false};
-    Signal<int> selectedIndex{0};
-
-    int snapshotIndex = 0;
-    bool snapshotValid = false;
-
-    void reset() {
-        selectedIndex.set(0);
-        snapshotValid = false;
-    }
-};
 
 struct SequencerState : public oc::note::sequencer::StepSequencerState {
     static constexpr uint8_t STEPS_PER_PAGE = 8;
@@ -98,10 +35,11 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     /// Active property edited by the 8 macro encoders in Sequencer view
     Signal<StepProperty> activeStepProperty{StepProperty::NOTE};
 
-    // Overlay state (UI-only)
-    SequencerPatternConfigOverlayState patternConfig;
+    // UI state
     SequencerStepEditOverlayState stepEdit;
-    SequencerPropertySelectorOverlayState propertySelector;
+    SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
+    SequencerStepInlineFeedbackState stepInlineFeedback;
+    SequencerPatternQuickControlsState patternQuickControls;
 
     static uint8_t clampMidi7(uint8_t value) {
         return (value > 127U) ? 127U : value;
@@ -309,9 +247,14 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         bumpStepDataRevision();
         activeStepProperty.set(StepProperty::NOTE);
 
-        patternConfig.reset();
         stepEdit.reset();
-        propertySelector.reset();
+        stepPropertyInlineSelector.reset();
+        stepInlineFeedback.reset();
+        patternQuickControls.reset();
+    }
+
+    void updateUi(uint32_t nowMs) {
+        stepInlineFeedback.update(nowMs);
     }
 
     uint8_t activePageCount() const {

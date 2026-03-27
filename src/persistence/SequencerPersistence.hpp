@@ -43,9 +43,13 @@ public:
                               .slotPayloadSize = SET_PAYLOAD_SIZE}) {}
 
     bool init() {
-        if (!workspace_store_.init()) return false;
-        if (!pattern_library_store_.init()) return false;
-        if (!set_library_store_.init()) return false;
+        return initStatus() == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus initStatus() {
+        if (!workspace_store_.init()) return PersistenceWriteStatus::IO_ERROR;
+        if (!pattern_library_store_.init()) return PersistenceWriteStatus::IO_ERROR;
+        if (!set_library_store_.init()) return PersistenceWriteStatus::IO_ERROR;
 
         uint8_t payload[WORKSPACE_PAYLOAD_SIZE] = {};
         const auto latest = workspace_store_.loadLatest(payload, sizeof(payload));
@@ -57,7 +61,7 @@ public:
             next_workspace_slot_ = 0;
         }
 
-        return true;
+        return PersistenceWriteStatus::OK;
     }
 
     bool loadWorkspace(state::sequencer::SequencerState& sequencer) {
@@ -77,27 +81,35 @@ public:
     }
 
     bool saveWorkspace(const state::sequencer::SequencerState& sequencer) {
+        return saveWorkspaceStatus(sequencer) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus saveWorkspaceStatus(const state::sequencer::SequencerState& sequencer) {
         WorkspacePayloadV1 snapshot{};
         fillWorkspacePayload_(sequencer, snapshot);
 
         uint8_t payload[WORKSPACE_PAYLOAD_SIZE] = {};
         std::memcpy(payload, &snapshot, sizeof(snapshot));
 
-        if (!workspace_store_.saveSlot(
+        const auto status = workspace_store_.saveSlotStatus(
                 next_workspace_slot_,
                 payload,
                 sizeof(snapshot),
-                next_workspace_counter_)) {
-            return false;
-        }
+                next_workspace_counter_);
+        if (status != PersistenceWriteStatus::OK) return status;
 
         next_workspace_counter_ += 1;
         next_workspace_slot_ = static_cast<uint16_t>((next_workspace_slot_ + 1) % WORKSPACE_SLOT_COUNT);
-        return true;
+        return PersistenceWriteStatus::OK;
     }
 
     bool savePatternSlot(uint8_t slotIndex, const state::sequencer::SequencerState& sequencer) {
-        if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return false;
+        return savePatternSlotStatus(slotIndex, sequencer) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus savePatternSlotStatus(uint8_t slotIndex,
+                                                 const state::sequencer::SequencerState& sequencer) {
+        if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
         PatternPayloadV1 payloadData{};
         fillPatternPayload_(sequencer, payloadData);
@@ -106,7 +118,12 @@ public:
         std::memcpy(payload, &payloadData, sizeof(payloadData));
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
-        return pattern_library_store_.saveSlot(slotIndex, payload, sizeof(payloadData), counter);
+        return pattern_library_store_.saveSlotStatus(
+            slotIndex,
+            payload,
+            sizeof(payloadData),
+            counter
+        );
     }
 
     SlotLoadStatus loadPatternSlot(uint8_t slotIndex, state::sequencer::SequencerState& sequencer) {
@@ -131,12 +148,21 @@ public:
     }
 
     bool erasePatternSlot(uint8_t slotIndex) {
-        if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return false;
-        return pattern_library_store_.eraseSlot(slotIndex);
+        return erasePatternSlotStatus(slotIndex) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus erasePatternSlotStatus(uint8_t slotIndex) {
+        if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
+        return pattern_library_store_.eraseSlotStatus(slotIndex);
     }
 
     bool saveSetSlot(uint8_t slotIndex, const state::sequencer::SequencerState& sequencer) {
-        if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return false;
+        return saveSetSlotStatus(slotIndex, sequencer) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus saveSetSlotStatus(uint8_t slotIndex,
+                                             const state::sequencer::SequencerState& sequencer) {
+        if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
         SetPayloadV1 payloadData{};
         fillSetPayload_(sequencer, payloadData);
@@ -145,7 +171,7 @@ public:
         std::memcpy(payload, &payloadData, sizeof(payloadData));
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
-        return set_library_store_.saveSlot(slotIndex, payload, sizeof(payloadData), counter);
+        return set_library_store_.saveSlotStatus(slotIndex, payload, sizeof(payloadData), counter);
     }
 
     SlotLoadStatus loadSetSlot(uint8_t slotIndex, state::sequencer::SequencerState& sequencer) {
@@ -170,8 +196,12 @@ public:
     }
 
     bool eraseSetSlot(uint8_t slotIndex) {
-        if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return false;
-        return set_library_store_.eraseSlot(slotIndex);
+        return eraseSetSlotStatus(slotIndex) == PersistenceWriteStatus::OK;
+    }
+
+    PersistenceWriteStatus eraseSetSlotStatus(uint8_t slotIndex) {
+        if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
+        return set_library_store_.eraseSlotStatus(slotIndex);
     }
 
 private:

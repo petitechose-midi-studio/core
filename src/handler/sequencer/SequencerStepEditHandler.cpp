@@ -2,16 +2,15 @@
 
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
-#include <oc/util/Index.hpp>
 
 #include <config/App.hpp>
 
+#include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
-using oc::util::wrapIndex;
 namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
@@ -155,11 +154,10 @@ void SequencerStepEditHandler::closeCancel() {
 }
 
 void SequencerStepEditHandler::moveFocus(float delta) {
-    if (delta == 0.0f) return;
-    const int step = (delta > 0.0f) ? 1 : -1;
+    if (!nav::hasTurnDelta(delta)) return;
 
     const int current = static_cast<int>(state_.sequencer.stepEdit.focusedRow.get());
-    const int next = wrapIndex(current + step, ROW_COUNT);
+    const int next = nav::nextWrappedIndex(delta, current, ROW_COUNT);
     state_.sequencer.stepEdit.focusedRow.set(static_cast<uint8_t>(next));
 
     configureOptForFocusedRow();

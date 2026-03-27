@@ -18,13 +18,10 @@
 
 #include <lvgl.h>
 
-#include <oc/state/Signal.hpp>
 #include <oc/ui/lvgl/IView.hpp>
-#include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include <ms/ui/component/LayoutView.hpp>
 
-#include <config/InputIDs.hpp>
 #include "state/CoreState.hpp"
 #include "ui/topbar/TopBar.hpp"
 #include "ui/widget/IMacroWidget.hpp"
@@ -64,9 +61,13 @@ private:
     void createTopBar();
     void createMacros();
     void bindToState();
-    void updateConfigLabel(uint8_t index);
 
     // Debounced update system
+    void scheduleUpdate();
+    void pauseUpdateIfIdle();
+    void requestTopBarRender();
+    void markAllDirty();
+    void markAllConfigDirty();
     void markDirty(uint8_t index);
     void processDirtyFlags();
     static void onUpdateTimer(lv_timer_t* timer);
@@ -74,7 +75,9 @@ private:
     core::state::CoreState& core_state_;
     std::vector<oc::state::Subscription> subscriptions_;
     std::array<bool, MACRO_COUNT> dirty_flags_{};
+    std::array<bool, MACRO_COUNT> config_dirty_flags_{};
     bool has_dirty_ = false;
+    bool top_bar_dirty_ = true;
     lv_timer_t* update_timer_ = nullptr;
 
     // UI structure: container_ (flex col) → top_bar_container_ + body_container_ (grid)

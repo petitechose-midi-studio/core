@@ -4,11 +4,10 @@
 
 #include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
-#include <oc/util/Index.hpp>
 
 #include <config/App.hpp>
-
-using oc::util::wrapIndex;
+#include "handler/common/ModalSelectionUtils.hpp"
+#include "handler/common/NavigationUtils.hpp"
 
 namespace core::handler {
 
@@ -157,7 +156,7 @@ void MacroEditHandler::setupBindings() {
 }
 
 void MacroEditHandler::openEdit(uint8_t macroIndex) {
-    const auto& config = state_.getMacroConfig(macroIndex);
+    const auto& config = core::state::macro::MacroWorkflow::activeConfig(state_, macroIndex);
     has_staged_config_changes_ = false;
 
     auto& edit = state_.macroEdit;
@@ -221,11 +220,10 @@ void MacroEditHandler::closeOverlay() {
 }
 
 void MacroEditHandler::moveFocus(float delta) {
-    if (delta == 0.0f) return;
+    if (!nav::hasTurnDelta(delta)) return;
 
-    const int step = (delta > 0.0f) ? 1 : -1;
     const int current = static_cast<int>(state_.macroEdit.focusedRow.get());
-    const int next = wrapIndex(current + step, ROW_COUNT);
+    const int next = nav::nextWrappedIndex(delta, current, ROW_COUNT);
     state_.macroEdit.focusedRow.set(static_cast<uint8_t>(next));
 
     configureOptForFocusedRow();
@@ -257,15 +255,13 @@ void MacroEditHandler::openValueSelector() {
 }
 
 void MacroEditHandler::navigateValueSelector(float delta) {
-    if (delta == 0.0f) return;
-
     auto& selector = state_.macroEdit.selector;
-    if (!selector.visible.get()) return;
-
     const int count = valueCountForRow(selector.editingRow.get());
-    const int step = (delta > 0.0f) ? 1 : -1;
     const int current = selector.selectedIndex.get();
-    const int next = wrapIndex(current + step, count);
+    int next = current;
+    if (!modal::advanceWrappedSelection(delta, selector.visible.get(), current, count, next)) {
+        return;
+    }
     selector.selectedIndex.set(next);
 }
 
@@ -291,12 +287,17 @@ void MacroEditHandler::openPageSelector() {
 }
 
 void MacroEditHandler::navigatePageSelector(float delta) {
-    if (delta == 0.0f) return;
-    if (!state_.pages.selector.visible.get()) return;
-
-    const int step = (delta > 0.0f) ? 1 : -1;
     const int current = static_cast<int>(state_.pages.selector.selectedIndex.get());
-    const int next = wrapIndex(current + step, core::state::macro::PAGE_COUNT);
+    int next = current;
+    if (!modal::advanceWrappedSelection(
+            delta,
+            state_.pages.selector.visible.get(),
+            current,
+            core::state::macro::PAGE_COUNT,
+            next
+        )) {
+        return;
+    }
     state_.pages.selector.selectedIndex.set(static_cast<uint8_t>(next));
 }
 
@@ -310,11 +311,11 @@ void MacroEditHandler::applyPageSelectorAndClose() {
     );
 
     if (targetPage != state_.pages.activePage) {
-        state_.switchToPage(targetPage);
+        core::state::macro::MacroWorkflow::switchToPage(state_, targetPage);
         has_staged_config_changes_ = false;
 
         const uint8_t macroIndex = state_.macroEdit.editingIndex.get();
-        const auto& config = state_.getMacroConfig(macroIndex);
+        const auto& config = core::state::macro::MacroWorkflow::activeConfig(state_, macroIndex);
         state_.macroEdit.tempChannel.set(config.channel);
         state_.macroEdit.tempCC.set(config.cc);
     }
@@ -339,14 +340,18 @@ void MacroEditHandler::openMacroTargetSelector() {
 }
 
 void MacroEditHandler::navigateMacroTargetSelector(float delta) {
-    if (delta == 0.0f) return;
-
     auto& selector = state_.macroEdit.macroSelector;
-    if (!selector.visible.get()) return;
-
-    const int step = (delta > 0.0f) ? 1 : -1;
     const int current = selector.selectedIndex.get();
-    const int next = wrapIndex(current + step, core::state::MACRO_COUNT);
+    int next = current;
+    if (!modal::advanceWrappedSelection(
+            delta,
+            selector.visible.get(),
+            current,
+            core::state::MACRO_COUNT,
+            next
+        )) {
+        return;
+    }
     selector.selectedIndex.set(next);
 }
 
@@ -361,7 +366,7 @@ void MacroEditHandler::applyMacroTargetSelectorAndClose() {
     ));
 
     if (targetMacro != state_.macroEdit.editingIndex.get()) {
-        const auto& config = state_.getMacroConfig(targetMacro);
+        const auto& config = core::state::macro::MacroWorkflow::activeConfig(state_, targetMacro);
         state_.macroEdit.editingIndex.set(targetMacro);
         state_.macroEdit.tempChannel.set(config.channel);
         state_.macroEdit.tempCC.set(config.cc);
@@ -401,7 +406,12 @@ void MacroEditHandler::applyTempConfig() {
     const uint8_t channel = state_.macroEdit.tempChannel.get();
     const uint8_t cc = state_.macroEdit.tempCC.get();
 
-    has_staged_config_changes_ |= state_.setMacroConfig(macroIndex, channel, cc);
+    has_staged_config_changes_ |= core::state::macro::MacroWorkflow::setConfig(
+        state_,
+        macroIndex,
+        channel,
+        cc
+    );
 }
 
 void MacroEditHandler::configureOptForFocusedRow() {
