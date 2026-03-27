@@ -1,9 +1,9 @@
 #pragma once
 
 #include "state/CoreState.hpp"
-#include "ui/sequencer/StepGridFrameLogic.hpp"
 #include "ui/sequencer/PatternQuickControls.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
+#include "ui/sequencer/StepGridRenderTypes.hpp"
 #include "ui/sequencer/StepPropertyStrip.hpp"
 
 namespace core::ui::sequencer {

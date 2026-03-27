@@ -6,6 +6,7 @@
 #include <config/App.hpp>
 
 #include "ui/view/MacroViewModelBuilder.hpp"
+#include "ui/widget/MacroKnobWidget.hpp"
 
 namespace core::ui {
 

@@ -2,6 +2,8 @@
 
 #include <cstdio>
 
+#include "ui/sequencer/StepGridFrameLogic.hpp"
+
 namespace core::ui::sequencer {
 
 SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreState) {

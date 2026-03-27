@@ -32,13 +32,11 @@
  */
 
 #include <memory>
-#include <array>
 
 #include <oc/context/ContextBase.hpp>
 #include <oc/context/Requirements.hpp>
 #include <oc/state/SignalWatcher.hpp>
 
-#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/CoreState.hpp"
 #include "ui/OverlayTypes.hpp"
 

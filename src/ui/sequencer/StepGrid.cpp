@@ -1,6 +1,5 @@
 #include "StepGrid.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -27,7 +26,6 @@ constexpr uint32_t COLOR_STEP_PLAY_HEX = 0x5CA8EE;
 constexpr uint32_t COLOR_STEP_SELECTOR_HEX = theme::color::TEXT_PRIMARY;
 
 constexpr lv_coord_t STEP_BUTTON_SIZE = grid::STEP_BUTTON_SIZE;
-constexpr lv_coord_t STEP_SHAPE_PAD_X = grid::STEP_SHAPE_PAD_X;
 constexpr lv_coord_t STEP_SHAPE_RADIUS = 0;
 constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
 constexpr lv_coord_t STEP_SHAPE_MIN_WIDTH = grid::STEP_SHAPE_MIN_WIDTH;

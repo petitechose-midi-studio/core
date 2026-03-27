@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "DataManagerState.hpp"
+#include "DataManagerCatalog.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
 
 namespace core::state {

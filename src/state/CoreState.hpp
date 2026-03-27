@@ -15,8 +15,6 @@
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <memory>

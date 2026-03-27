@@ -2,8 +2,6 @@
 
 #include <string>
 #include <vector>
-#include <array>
-#include <algorithm>
 
 #include <lvgl.h>
 
@@ -21,8 +19,6 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
-
-#include <cstdio>
 
 #include <ms/ui/font/CoreFonts.hpp>
 #include <ms/ui/widget/StringListSelector.hpp>

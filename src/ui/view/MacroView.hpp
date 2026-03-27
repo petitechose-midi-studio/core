@@ -25,7 +25,6 @@
 #include "state/CoreState.hpp"
 #include "ui/topbar/TopBar.hpp"
 #include "ui/widget/IMacroWidget.hpp"
-#include "ui/widget/MacroKnobWidget.hpp"
 
 namespace core::ui {
 

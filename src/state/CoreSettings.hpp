@@ -11,7 +11,7 @@
 #include <oc/interface/IStorage.hpp>
 
 #include "persistence/PersistenceSlotFileStore.hpp"
-#include "DataManagerState.hpp"
+#include "DataManagerCatalog.hpp"
 #include "MidiSyncState.hpp"
 #include "macro/MacroPagesState.hpp"
 
