@@ -60,7 +60,6 @@ private:
     oc::note::sequencer::StepSequencerEngine engine_;
 
     int16_t last_playhead_ = -1;
-    uint32_t last_tick_ = 0;
 };
 
 }  // namespace core::sequencer

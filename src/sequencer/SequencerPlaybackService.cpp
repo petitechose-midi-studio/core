@@ -8,11 +8,16 @@ SequencerPlaybackService::SequencerPlaybackService(core::state::sequencer::Seque
     : sequencer_(sequencer)
     , status_bar_(statusBar)
     , output_(midi, statusBar)
-    , engine_(static_cast<oc::note::sequencer::StepSequencerState&>(sequencer), output_) {}
+    , engine_(sequencer, output_) {}
 
 void SequencerPlaybackService::update(uint32_t tick, bool playing) {
-    last_tick_ = tick;
-    engine_.update(tick, playing);
+    if (!playing) {
+        engine_.update(tick, false);
+        last_playhead_ = -1;
+        return;
+    }
+
+    engine_.update(tick, true);
 
     const int16_t playhead = sequencer_.playheadStep.get();
     if (playing && playhead >= 0 && playhead != last_playhead_) {
@@ -22,13 +27,10 @@ void SequencerPlaybackService::update(uint32_t tick, bool playing) {
         }
     }
     last_playhead_ = playhead;
-    if (!playing) last_playhead_ = -1;
 }
 
 void SequencerPlaybackService::stop() {
-    engine_.update(last_tick_, false);
     engine_.reset();
-    last_tick_ = 0;
     last_playhead_ = -1;
 }
 

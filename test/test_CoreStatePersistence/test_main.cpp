@@ -302,6 +302,7 @@ void test_sequencer_workspace_and_library_roundtrip() {
         state.sequencer.midiChannel.set(3);
         state.sequencer.toggle(0);
         state.sequencer.setStepDataAt(0, 64, 120, 70);
+        state.sequencer.setStepProbabilityAt(0, 42);
 
         oc::state::NotificationQueue::instance().flush();
         state.flush();
@@ -326,6 +327,7 @@ void test_sequencer_workspace_and_library_roundtrip() {
         assert(state.sequencer.note[0] == 64);
         assert(state.sequencer.velocity[0] == 120);
         assert(state.sequencer.gate[0] == 70);
+        assert(state.sequencer.probability[0] == 42);
 
         assert(state.eraseSequencerPatternSlot(4));
         const auto erasedPatternStatus = state.loadSequencerPatternSlot(4);
@@ -358,6 +360,7 @@ void test_sequencer_workspace_and_library_roundtrip() {
     assert(restored.sequencer.note[0] == 64);
     assert(restored.sequencer.velocity[0] == 120);
     assert(restored.sequencer.gate[0] == 70);
+    assert(restored.sequencer.probability[0] == 42);
 
     drainNotifications();
 

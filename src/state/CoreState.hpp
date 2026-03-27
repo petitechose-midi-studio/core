@@ -127,6 +127,8 @@ struct CoreState {
         , sequencerPersistence(sequencerWorkspaceStorage,
                                sequencerPatternLibraryStorage,
                                sequencerSetLibraryStorage) {
+        sequencer.reset();
+
         // Load persisted settings
         settings.load(pages, midiSync);
         loadDataManagerShortcutsFromSettings_();
@@ -663,6 +665,7 @@ private:
         std::array<uint8_t, sequencer::SequencerState::MAX_STEPS> velocity{};
         std::array<uint16_t, sequencer::SequencerState::MAX_STEPS> gate{};
         std::array<int8_t, sequencer::SequencerState::MAX_STEPS> nudge{};
+        std::array<uint8_t, sequencer::SequencerState::MAX_STEPS> probability{};
     };
 
     struct PendingSequencerApply {
@@ -714,6 +717,7 @@ private:
             out.velocity[i] = sanitizeMidi7_(source.velocity[i]);
             out.gate[i] = sequencer::SequencerState::clampGatePercent(source.gate[i]);
             out.nudge[i] = source.nudge[i];
+            out.probability[i] = sequencer::SequencerState::clampProbability(source.probability[i]);
         }
     }
 
@@ -731,6 +735,7 @@ private:
             sequencer.velocity[i] = sanitizeMidi7_(snapshot.velocity[i]);
             sequencer.gate[i] = sequencer::SequencerState::clampGatePercent(snapshot.gate[i]);
             sequencer.nudge[i] = snapshot.nudge[i];
+            sequencer.probability[i] = sequencer::SequencerState::clampProbability(snapshot.probability[i]);
         }
 
         const uint8_t focused =
@@ -772,6 +777,7 @@ private:
             sequencer.velocity[i] = sanitizeMidi7_(snapshot.velocity[i]);
             sequencer.gate[i] = sequencer::SequencerState::clampGatePercent(snapshot.gate[i]);
             sequencer.nudge[i] = snapshot.nudge[i];
+            sequencer.probability[i] = sequencer::SequencerState::clampProbability(snapshot.probability[i]);
             mergedMask |= bit;
         }
 

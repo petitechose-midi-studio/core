@@ -99,6 +99,9 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
     sequencer.setStepDataAt(0, 60, 110, 95);
     sequencer.setStepDataAt(3, 72, 90, 60);
     sequencer.setStepDataAt(7, 45, 127, 120);
+    sequencer.setStepProbabilityAt(0, 100);
+    sequencer.setStepProbabilityAt(3, 65);
+    sequencer.setStepProbabilityAt(7, 25);
 
     sequencer.toggle(0);
     sequencer.toggle(3);
@@ -124,14 +127,17 @@ void assertPatternEquals(const core::state::sequencer::SequencerState& sequencer
     assert(sequencer.note[0] == 60);
     assert(sequencer.velocity[0] == 110);
     assert(sequencer.gate[0] == 95);
+    assert(sequencer.probability[0] == 100);
 
     assert(sequencer.note[3] == 72);
     assert(sequencer.velocity[3] == 90);
     assert(sequencer.gate[3] == 60);
+    assert(sequencer.probability[3] == 65);
 
     assert(sequencer.note[7] == 45);
     assert(sequencer.velocity[7] == 127);
     assert(sequencer.gate[7] == 120);
+    assert(sequencer.probability[7] == 25);
 }
 
 void test_workspace_roundtrip() {

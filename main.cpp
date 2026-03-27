@@ -15,6 +15,7 @@
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
 #include "context/StandaloneContext.hpp"
+#include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
 // =============================================================================
@@ -32,6 +33,7 @@ static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer
 static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
+static std::optional<core::sequencer::SequencerRuntimeService> sequencerRuntime;
 
 // =============================================================================
 // Initialization Helpers
@@ -118,6 +120,38 @@ static void initApp() {
               .encoders(Hardware::Encoder::ENCODERS)
               .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
               .inputConfig(Config::Input::CONFIG);
+
+    if (!app->midiAPI()) {
+        OC_LOG_ERROR("Sequencer runtime init failed: MIDI API unavailable");
+        while (true) {}
+    }
+
+    sequencerRuntime.emplace(*coreState, *app->midiAPI(), app->eventBus());
+
+    const bool runtimeHookRegistered = app->registerPreContextUpdateHook([]() {
+        if (!app || !sequencerRuntime) return;
+
+        static bool wasStandaloneActive = false;
+
+        const bool isStandaloneActive =
+            app->contexts().activeId() == static_cast<uint8_t>(Config::ContextID::STANDALONE);
+
+        if (!isStandaloneActive) {
+            if (wasStandaloneActive) {
+                sequencerRuntime->stop();
+            }
+            wasStandaloneActive = false;
+            return;
+        }
+
+        sequencerRuntime->update();
+        wasStandaloneActive = true;
+    });
+
+    if (!runtimeHookRegistered) {
+        OC_LOG_ERROR("Sequencer runtime init failed: app pre-context hook registry full");
+        while (true) {}
+    }
 
     // Register context with factory that captures CoreState reference
     app->registerContextWithFactory(

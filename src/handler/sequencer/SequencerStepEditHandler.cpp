@@ -17,7 +17,7 @@ namespace input_utils = core::handler::sequencer::input_utils;
 namespace {
 
 constexpr uint8_t ROW_COUNT =
-    static_cast<uint8_t>(core::state::sequencer::StepProperty::NUDGE) + 1;
+    static_cast<uint8_t>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
 
 template <typename EncoderIdT>
 void configureStepEditEncoder(
@@ -116,6 +116,7 @@ void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
     o.snapshotVelocity = state_.sequencer.velocity[abs];
     o.snapshotGate = state_.sequencer.gate[abs];
     o.snapshotNudge = state_.sequencer.nudge[abs];
+    o.snapshotProbability = state_.sequencer.probability[abs];
     o.snapshotValid = true;
 
     // longPress() fires while button is still pressed; don't immediately close on release.
@@ -143,7 +144,8 @@ void SequencerStepEditHandler::closeCancel() {
             o.snapshotNote,
             o.snapshotVelocity,
             o.snapshotGate,
-            o.snapshotNudge
+            o.snapshotNudge,
+            o.snapshotProbability
         );
     }
 

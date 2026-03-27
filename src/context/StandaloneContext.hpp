@@ -63,11 +63,6 @@ class GlobalSettingsHandler;
 class DataManagerHandler;
 }  // namespace core::handler
 
-namespace core::sequencer {
-class SequencerPlaybackService;
-class MidiClockSyncService;
-}  // namespace core::sequencer
-
 namespace core::ui {
 class MacroView;
 class SequencerView;
@@ -141,7 +136,6 @@ private:
     void setupSequencerStepEditRendering();
     void renderSequencerStepEdit();
     void setupSequencerPropertySelectorRendering();
-    void renderSequencerPropertySelector();
     void setupSequencerMacroEncoderSync();
     void syncSequencerMacroEncoderPositions();
     void resetSequencerEncoderSyncCache();
@@ -201,7 +195,6 @@ private:
     oc::state::SignalWatcher seq_pattern_config_watcher_;
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> seq_step_edit_overlay_;
     oc::state::SignalWatcher seq_step_edit_watcher_;
-    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> seq_property_selector_overlay_;
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> global_settings_overlay_;
     std::unique_ptr<ms::ui::VirtualListSelectorOverlay> global_settings_selector_overlay_;
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
@@ -228,10 +221,6 @@ private:
     std::unique_ptr<core::handler::MacroEditHandler> macro_edit_handler_;
     std::unique_ptr<core::handler::GlobalSettingsHandler> global_settings_handler_;
     std::unique_ptr<core::handler::DataManagerHandler> data_manager_handler_;
-
-    // Global services (not tied to a view scope)
-    std::unique_ptr<core::sequencer::MidiClockSyncService> midi_clock_sync_;
-    std::unique_ptr<core::sequencer::SequencerPlaybackService> sequencer_playback_;
 
     // Cached encoder configuration (avoid resetting quantization every sync)
     uint8_t seq_macro_steps_configured_ = 0;

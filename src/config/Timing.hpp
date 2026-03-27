@@ -4,7 +4,7 @@
 
 namespace Config::Timing {
 
-constexpr uint16_t REFRESH_HZ = 480;            // Display refresh rate
+constexpr uint16_t REFRESH_HZ = 120;            // Display refresh rate
 constexpr uint32_t APP_HZ = REFRESH_HZ * 2;     // App polling rate (encoders, buttons)
 constexpr uint32_t LVGL_HZ = REFRESH_HZ;        // LVGL refresh cadence
 

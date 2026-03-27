@@ -20,6 +20,8 @@ inline const char* stepPropertyName(StepProperty property) {
             return "Gate";
         case StepProperty::NUDGE:
             return "Nudge";
+        case StepProperty::PROBABILITY:
+            return "Probability";
     }
     return "Note";
 }
@@ -31,7 +33,8 @@ inline void formatStepPropertyValue(
     uint8_t note,
     uint8_t velocity,
     uint16_t gate,
-    int8_t nudge = 0
+    int8_t nudge = 0,
+    uint8_t probability = SequencerState::DEFAULT_PROBABILITY
 ) {
     if (!buffer || bufferSize == 0) return;
 
@@ -44,6 +47,9 @@ inline void formatStepPropertyValue(
             return;
         case StepProperty::NUDGE:
             std::snprintf(buffer, bufferSize, "%+d%%", static_cast<int>(nudge));
+            return;
+        case StepProperty::PROBABILITY:
+            std::snprintf(buffer, bufferSize, "%u%%", static_cast<unsigned>(probability));
             return;
         case StepProperty::GATE:
         default:

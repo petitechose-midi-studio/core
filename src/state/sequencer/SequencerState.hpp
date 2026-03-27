@@ -19,6 +19,7 @@ enum class StepProperty : uint8_t {
     VELOCITY = 1,
     GATE = 2,
     NUDGE = 3,
+    PROBABILITY = 4,
 };
 
 /**
@@ -46,13 +47,14 @@ struct SequencerPatternConfigOverlayState {
 struct SequencerStepEditOverlayState {
     Signal<bool> visible{false};
     Signal<uint8_t> stepIndex{0};    // absolute step index
-    Signal<uint8_t> focusedRow{0};   // 0=NOTE, 1=VEL, 2=GATE, 3=NUDGE
+    Signal<uint8_t> focusedRow{0};   // 0=NOTE, 1=VEL, 2=GATE, 3=NUDGE, 4=PROB
 
     // Snapshot for cancel (live editing)
     uint8_t snapshotNote = 0;
     uint8_t snapshotVelocity = 0;
     uint16_t snapshotGate = 0;
     int8_t snapshotNudge = 0;
+    uint8_t snapshotProbability = 100;
     bool snapshotValid = false;
 
     void reset() {
@@ -81,6 +83,8 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     static constexpr uint8_t PAGE_COUNT = (MAX_STEPS + STEPS_PER_PAGE - 1) / STEPS_PER_PAGE;
     static constexpr uint16_t MAX_GATE_PERCENT =
         oc::note::sequencer::StepSequencerState::MAX_GATE_PERCENT;
+    static constexpr uint8_t DEFAULT_PROBABILITY =
+        oc::note::sequencer::StepSequencerState::DEFAULT_PROBABILITY;
 
     /// Visible page index [0..PAGE_COUNT-1]
     Signal<uint8_t> page{0};
@@ -88,7 +92,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     /// Absolute focused step index [0..length-1]
     Signal<uint8_t> focusedStep{0};
 
-    /// Bumps when non-signal step arrays change (note/velocity/gate/nudge)
+    /// Bumps when non-signal step arrays change (note/velocity/gate/nudge/probability)
     Signal<uint32_t> stepDataRevision{0};
 
     /// Active property edited by the 8 macro encoders in Sequencer view
@@ -111,6 +115,10 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         if (value < -50) return -50;
         if (value > 50) return 50;
         return static_cast<int8_t>(value);
+    }
+
+    static uint8_t clampProbability(uint8_t value) {
+        return oc::note::sequencer::StepSequencerState::clampProbability(value);
     }
 
     void bumpStepDataRevision() {
@@ -153,9 +161,18 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         return true;
     }
 
+    bool setStepProbabilityAt(uint8_t step, uint8_t probabilityValue) {
+        if (step >= MAX_STEPS) return false;
+        const uint8_t clamped = clampProbability(probabilityValue);
+        if (probability[step] == clamped) return false;
+        probability[step] = clamped;
+        bumpStepDataRevision();
+        return true;
+    }
+
     bool setStepDataAt(uint8_t step, uint8_t noteValue, uint8_t velocityValue, uint16_t gatePercent) {
         if (step >= MAX_STEPS) return false;
-        return setStepDataAt(step, noteValue, velocityValue, gatePercent, nudge[step]);
+        return setStepDataAt(step, noteValue, velocityValue, gatePercent, nudge[step], probability[step]);
     }
 
     bool setStepDataAt(
@@ -166,15 +183,36 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         int8_t nudgeValue
     ) {
         if (step >= MAX_STEPS) return false;
+        return setStepDataAt(
+            step,
+            noteValue,
+            velocityValue,
+            gatePercent,
+            nudgeValue,
+            probability[step]
+        );
+    }
+
+    bool setStepDataAt(
+        uint8_t step,
+        uint8_t noteValue,
+        uint8_t velocityValue,
+        uint16_t gatePercent,
+        int8_t nudgeValue,
+        uint8_t probabilityValue
+    ) {
+        if (step >= MAX_STEPS) return false;
         const uint8_t clampedNote = clampMidi7(noteValue);
         const uint8_t clampedVelocity = clampMidi7(velocityValue);
         const uint16_t clampedGate = clampGatePercent(gatePercent);
         const int8_t clampedNudge = clampNudge(nudgeValue);
+        const uint8_t clampedProbability = clampProbability(probabilityValue);
 
         if (note[step] == clampedNote &&
             velocity[step] == clampedVelocity &&
             gate[step] == clampedGate &&
-            nudge[step] == clampedNudge) {
+            nudge[step] == clampedNudge &&
+            probability[step] == clampedProbability) {
             return false;
         }
 
@@ -182,6 +220,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         velocity[step] = clampedVelocity;
         gate[step] = clampedGate;
         nudge[step] = clampedNudge;
+        probability[step] = clampedProbability;
         bumpStepDataRevision();
         return true;
     }
@@ -221,7 +260,8 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
             if (note[dst] != note[src] ||
                 velocity[dst] != velocity[src] ||
                 gate[dst] != gate[src] ||
-                nudge[dst] != nudge[src]) {
+                nudge[dst] != nudge[src] ||
+                probability[dst] != probability[src]) {
                 dataChanged = true;
             }
 
@@ -229,6 +269,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
             velocity[dst] = velocity[src];
             gate[dst] = gate[src];
             nudge[dst] = nudge[src];
+            probability[dst] = probability[src];
 
             const uint64_t dstBit = (1ULL << dst);
             const bool srcEnabled = (mask & (1ULL << src)) != 0;

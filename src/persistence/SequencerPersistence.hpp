@@ -186,6 +186,7 @@ private:
         std::array<uint8_t, state::sequencer::SequencerState::MAX_STEPS> velocity{};
         std::array<uint16_t, state::sequencer::SequencerState::MAX_STEPS> gate{};
         std::array<int8_t, state::sequencer::SequencerState::MAX_STEPS> nudge{};
+        std::array<uint8_t, state::sequencer::SequencerState::MAX_STEPS> probability{};
     };
 
     struct WorkspacePayloadV1 {
@@ -249,8 +250,12 @@ private:
         return state::sequencer::SequencerState::clampGatePercent(value);
     }
 
+    static uint8_t sanitizeProbability_(uint8_t value) {
+        return state::sequencer::SequencerState::clampProbability(value);
+    }
+
     static state::sequencer::StepProperty sanitizeStepProperty_(uint8_t value) {
-        if (value > static_cast<uint8_t>(state::sequencer::StepProperty::GATE)) {
+        if (value > static_cast<uint8_t>(state::sequencer::StepProperty::PROBABILITY)) {
             return state::sequencer::StepProperty::NOTE;
         }
         return static_cast<state::sequencer::StepProperty>(value);
@@ -274,6 +279,7 @@ private:
             out.velocity[i] = sanitizeMidi7_(source.velocity[i]);
             out.gate[i] = sanitizeGate_(source.gate[i]);
             out.nudge[i] = source.nudge[i];
+            out.probability[i] = sanitizeProbability_(source.probability[i]);
         }
     }
 
@@ -290,6 +296,7 @@ private:
             target.velocity[i] = sanitizeMidi7_(payload.velocity[i]);
             target.gate[i] = sanitizeGate_(payload.gate[i]);
             target.nudge[i] = payload.nudge[i];
+            target.probability[i] = sanitizeProbability_(payload.probability[i]);
         }
 
         const uint8_t focused = sanitizeFocusedStep_(target.focusedStep.get(), length);

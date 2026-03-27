@@ -19,6 +19,7 @@ inline constexpr uint16_t DEFAULT_DISCRETE_TICKS_PER_STEP = 2;
 inline constexpr float DEFAULT_NORMALIZED_TURNS = 0.0f;
 // Matches the previous "16 ticks/step on macro encoders" feel, but in physical turns.
 inline constexpr float NOTE_NORMALIZED_TURNS = 64.0f / 3.0f;
+inline constexpr int PROBABILITY_MAX = 100;
 inline constexpr int NUDGE_MIN = -50;
 inline constexpr int NUDGE_MAX = 50;
 
@@ -62,10 +63,21 @@ inline uint16_t normalizedToGatePercent(float normalized) {
     );
 }
 
+inline uint8_t normalizedToProbability(float normalized) {
+    return static_cast<uint8_t>(normalizedToInclusiveInt(normalized, PROBABILITY_MAX));
+}
+
 inline float gatePercentToNormalized(uint16_t gatePercent) {
     return indexToNormalized(
         gatePercent,
         static_cast<int>(SequencerState::MAX_GATE_PERCENT) + 1
+    );
+}
+
+inline float probabilityToNormalized(uint8_t probability) {
+    return indexToNormalized(
+        SequencerState::clampProbability(probability),
+        PROBABILITY_MAX + 1
     );
 }
 
@@ -89,6 +101,11 @@ inline StepPropertyEncoderConfig encoderConfigForProperty(StepProperty property)
 
     if (property == StepProperty::NUDGE) {
         config.discreteSteps = static_cast<uint8_t>((NUDGE_MAX - NUDGE_MIN) + 1);
+        return config;
+    }
+
+    if (property == StepProperty::PROBABILITY) {
+        config.discreteSteps = static_cast<uint8_t>(PROBABILITY_MAX + 1);
         return config;
     }
 
@@ -119,6 +136,8 @@ inline StepProperty stepEditRowToProperty(uint8_t row) {
             return StepProperty::GATE;
         case 3:
             return StepProperty::NUDGE;
+        case 4:
+            return StepProperty::PROBABILITY;
         case 0:
         default:
             return StepProperty::NOTE;
@@ -129,7 +148,8 @@ inline float stepPropertyToNormalized(StepProperty property,
                                       uint8_t note,
                                       uint8_t velocity,
                                       uint16_t gatePercent,
-                                      int8_t nudge) {
+                                      int8_t nudge,
+                                      uint8_t probability = SequencerState::DEFAULT_PROBABILITY) {
     if (property == StepProperty::NOTE) {
         return indexToNormalized(note, 128);
     }
@@ -140,6 +160,10 @@ inline float stepPropertyToNormalized(StepProperty property,
 
     if (property == StepProperty::NUDGE) {
         return nudgeToNormalized(nudge);
+    }
+
+    if (property == StepProperty::PROBABILITY) {
+        return probabilityToNormalized(probability);
     }
 
     return gatePercentToNormalized(gatePercent);
@@ -153,7 +177,8 @@ inline float stepPropertyToNormalized(const SequencerState& state, uint8_t step,
         state.note[step],
         state.velocity[step],
         state.gate[step],
-        state.nudge[step]
+        state.nudge[step],
+        state.probability[step]
     );
 }
 
@@ -174,6 +199,8 @@ inline bool applyNormalizedToStep(
             return state.setStepGateAt(step, normalizedToGatePercent(value));
         case StepProperty::NUDGE:
             return state.setStepNudgeAt(step, normalizedToNudge(value));
+        case StepProperty::PROBABILITY:
+            return state.setStepProbabilityAt(step, normalizedToProbability(value));
     }
 
     return false;

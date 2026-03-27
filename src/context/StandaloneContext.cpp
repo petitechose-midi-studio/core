@@ -44,8 +44,6 @@
 #include "ui/view/SequencerView.hpp"
 #include <ms/ui/ViewContainer.hpp>
 
-#include "sequencer/SequencerPlaybackService.hpp"
-#include "sequencer/MidiClockSyncService.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 
@@ -56,23 +54,19 @@ namespace input_utils = core::handler::sequencer::input_utils;
 namespace {
 
 constexpr float ENCODER_POSITION_EPSILON = 0.0005f;
-constexpr std::array<const char*, 4> SEQUENCER_PROPERTY_SELECTOR_ITEMS = {
-    "Note",
-    "Velocity",
-    "Gate",
-    "Nudge",
-};
-constexpr std::array<core::state::sequencer::StepProperty, 4> SEQUENCER_STEP_EDIT_PROPERTIES = {
+constexpr std::array<core::state::sequencer::StepProperty, 5> SEQUENCER_STEP_EDIT_PROPERTIES = {
     core::state::sequencer::StepProperty::NOTE,
     core::state::sequencer::StepProperty::VELOCITY,
     core::state::sequencer::StepProperty::GATE,
     core::state::sequencer::StepProperty::NUDGE,
+    core::state::sequencer::StepProperty::PROBABILITY,
 };
-constexpr std::array<const char*, 4> SEQUENCER_STEP_EDIT_KEYS = {
+constexpr std::array<const char*, 5> SEQUENCER_STEP_EDIT_KEYS = {
     "Note",
     "Velocity",
     "Gate",
     "Nudge",
+    "Probability",
 };
 
 inline bool hasMeaningfulEncoderDelta(float a, float b) {
@@ -92,12 +86,13 @@ inline void applySequencerEncoderConfig(
 
 template <size_t N>
 void formatSequencerStepEditRows(
-    std::array<std::array<char, N>, 4>& valueBuffers,
-    std::array<ms::ui::KeyValueRow, 4>& rows,
+    std::array<std::array<char, N>, 5>& valueBuffers,
+    std::array<ms::ui::KeyValueRow, 5>& rows,
     uint8_t note,
     uint8_t velocity,
     uint16_t gate,
-    int8_t nudge
+    int8_t nudge,
+    uint8_t probability
 ) {
     for (size_t i = 0; i < rows.size(); ++i) {
         core::state::sequencer::formatStepPropertyValue(
@@ -107,7 +102,8 @@ void formatSequencerStepEditRows(
             note,
             velocity,
             gate,
-            nudge
+            nudge,
+            probability
         );
         rows[i] = {
             .key = SEQUENCER_STEP_EDIT_KEYS[i],
@@ -276,12 +272,9 @@ oc::type::Result<void> StandaloneContext::init() {
     );
     setupSequencerStepEditRendering();
 
-    seq_property_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(
-        sequencer_view_->getElement()
-    );
     overlay_controller_->registerCleanup(
         core::ui::OverlayType::SEQ_PROPERTY_SELECTOR,
-        oc::ui::lvgl::scopeID(seq_property_selector_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(sequencer_view_->getPropertySelectorScopeElement()),
         static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_BOTTOM)
     );
     setupSequencerPropertySelectorRendering();
@@ -323,7 +316,7 @@ oc::type::Result<void> StandaloneContext::init() {
         encoders(),
         buttons(),
         sequencer_view_->getElement(),
-        seq_property_selector_overlay_->getElement()
+        sequencer_view_->getPropertySelectorScopeElement()
     );
 
     sequencer_macro_property_handler_ = std::make_unique<core::handler::SequencerMacroPropertyHandler>(
@@ -336,13 +329,6 @@ oc::type::Result<void> StandaloneContext::init() {
         core_state_, encoders()
     );
 
-    // Global sync service (clock source arbitration + MIDI realtime IO)
-    midi_clock_sync_ = std::make_unique<core::sequencer::MidiClockSyncService>(
-        core_state_.midiSync,
-        core_state_.statusBar,
-        midi()
-    );
-
     // MIDI input is routed through the framework EventBus (never via MidiAPI callbacks)
     onMidiCC([this](uint8_t ch, uint8_t cc, uint8_t val) {
         if (midi_handler_) midi_handler_->onCC(ch, cc, val);
@@ -352,19 +338,6 @@ oc::type::Result<void> StandaloneContext::init() {
     });
     onMidiNoteOff([this](uint8_t, uint8_t, uint8_t) {
         if (midi_handler_) midi_handler_->onNoteIn();
-    });
-    onMidiClock([this](uint64_t timestampUs) {
-        if (!midi_clock_sync_) return;
-        midi_clock_sync_->onClock(timestampUs, oc::time::millis());
-    });
-    onMidiStart([this]() {
-        if (midi_clock_sync_) midi_clock_sync_->onStart();
-    });
-    onMidiContinue([this]() {
-        if (midi_clock_sync_) midi_clock_sync_->onContinue();
-    });
-    onMidiStop([this]() {
-        if (midi_clock_sync_) midi_clock_sync_->onStop();
     });
     transport_handler_ = std::make_unique<core::handler::TransportHandler>(
         core_state_, encoders(), buttons(),
@@ -430,14 +403,6 @@ oc::type::Result<void> StandaloneContext::init() {
         macro_page_selector_overlay_->getElement(),
         macro_target_selector_overlay_->getElement()
     );
-
-    // Global playback service (not tied to any view scope)
-    sequencer_playback_ = std::make_unique<core::sequencer::SequencerPlaybackService>(
-        core_state_.sequencer,
-        core_state_.statusBar,
-        midi()
-    );
-
     view_container_->show();
 
     OC_LOG_INFO("StandaloneContext ready");
@@ -445,20 +410,6 @@ oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
-    const uint32_t nowMs = oc::time::millis();
-
-    if (midi_clock_sync_) {
-        midi_clock_sync_->update(nowMs);
-    }
-
-    if (sequencer_playback_ && midi_clock_sync_) {
-        if (midi_clock_sync_->consumeResyncRequest()) {
-            sequencer_playback_->stop();
-        }
-        sequencer_playback_->update(midi_clock_sync_->tick(), midi_clock_sync_->playing());
-    } else if (sequencer_playback_) {
-        sequencer_playback_->update(0, false);
-    }
 }
 
 void StandaloneContext::onCleanup() {
@@ -475,12 +426,6 @@ void StandaloneContext::onCleanup() {
     core_state_.sequencer.propertySelector.reset();
     core_state_.globalSettings.reset();
     core_state_.dataManager.resetSession(core::state::DataManagerContext::MACRO);
-
-    if (sequencer_playback_) {
-        sequencer_playback_->stop();
-        sequencer_playback_.reset();
-    }
-    midi_clock_sync_.reset();
 
     // Handlers first (they reference state/APIs)
     global_settings_handler_.reset();
@@ -505,7 +450,6 @@ void StandaloneContext::onCleanup() {
     macro_edit_overlay_.reset();
     seq_pattern_config_overlay_.reset();
     seq_step_edit_overlay_.reset();
-    seq_property_selector_overlay_.reset();
     global_settings_selector_overlay_.reset();
     global_settings_overlay_.reset();
     data_manager_dialog_overlay_.reset();
@@ -807,15 +751,16 @@ void StandaloneContext::renderSequencerStepEdit() {
     const uint8_t vel = core_state_.sequencer.velocity[abs];
     const uint16_t gate = core_state_.sequencer.gate[abs];
     const int8_t nudge = core_state_.sequencer.nudge[abs];
+    const uint8_t probability = core_state_.sequencer.probability[abs];
 
     const uint32_t dataRevision =
         core_state_.sequencer.stepDataRevision.get() ^
         (static_cast<uint32_t>(abs) << 16) ^
         (static_cast<uint32_t>(len) << 24);
 
-    std::array<std::array<char, 12>, 4> valueBuffers{};
-    std::array<ms::ui::KeyValueRow, 4> rows{};
-    formatSequencerStepEditRows(valueBuffers, rows, note, vel, gate, nudge);
+    std::array<std::array<char, 12>, 5> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 5> rows{};
+    formatSequencerStepEditRows(valueBuffers, rows, note, vel, gate, nudge, probability);
 
     seq_step_edit_overlay_->render({
         .title = title,
@@ -1002,25 +947,14 @@ void StandaloneContext::renderMacroTargetSelector() {
 
 void StandaloneContext::setupSequencerPropertySelectorRendering() {
     seq_property_selector_watcher_.watchAll(
-        [this]() { renderSequencerPropertySelector(); },
-        core_state_.sequencer.propertySelector.visible,
-        core_state_.sequencer.propertySelector.selectedIndex
+        [this]() {
+            if (!sequencer_view_) return;
+            sequencer_view_->setPropertySelectorScopeVisible(
+                core_state_.sequencer.propertySelector.visible.get()
+            );
+        },
+        core_state_.sequencer.propertySelector.visible
     );
-}
-
-void StandaloneContext::renderSequencerPropertySelector() {
-    if (!seq_property_selector_overlay_) return;
-
-    seq_property_selector_overlay_->render({
-        .title = "PROPERTY",
-        .meta = "MACROS",
-        .items = SEQUENCER_PROPERTY_SELECTOR_ITEMS.data(),
-        .itemCount = static_cast<int>(SEQUENCER_PROPERTY_SELECTOR_ITEMS.size()),
-        .selectedIndex = core_state_.sequencer.propertySelector.selectedIndex.get(),
-        .showIndexColumn = true,
-        .visible = core_state_.sequencer.propertySelector.visible.get(),
-        .dataRevision = 1,
-    });
 }
 
 void StandaloneContext::setupSequencerMacroEncoderSync() {

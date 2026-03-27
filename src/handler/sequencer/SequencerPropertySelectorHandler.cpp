@@ -17,7 +17,7 @@ using EncoderID = Config::EncoderID;
 
 namespace {
 constexpr int PROPERTY_COUNT =
-    static_cast<int>(core::state::sequencer::StepProperty::NUDGE) + 1;
+    static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
 
 }  // namespace
 
