@@ -364,6 +364,44 @@ void test_sequencer_workspace_and_library_roundtrip() {
     std::cout << "[PASS] test_sequencer_workspace_and_library_roundtrip\n";
 }
 
+void test_sequencer_workspace_persists_navigation_context() {
+    CoreStorages storage;
+    storage.initAll();
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        state.sequencer.length.set(24);
+        state.sequencer.focusedStep.set(10);
+        state.sequencer.page.set(state.sequencer.pageForStep(10));
+        state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::GATE);
+
+        oc::state::NotificationQueue::instance().flush();
+        state.flush();
+    }
+
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
+
+    assert(restored.sequencer.length.get() == 24);
+    assert(restored.sequencer.focusedStep.get() == 10);
+    assert(restored.sequencer.page.get() == restored.sequencer.pageForStep(10));
+    assert(restored.sequencer.activeStepProperty.get() == core::state::sequencer::StepProperty::GATE);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_workspace_persists_navigation_context\n";
+}
+
 void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     CoreStorages storage;
     storage.initAll();
@@ -438,6 +476,54 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     drainNotifications();
 
     std::cout << "[PASS] test_sequencer_load_is_quantized_to_next_step_when_playing\n";
+}
+
+void test_direct_load_clears_stale_pending_quantized_apply() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    // Slot 1: queued while playing.
+    state.sequencer.length.set(8);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(0, 61, 101, 80);
+    state.sequencer.toggle(0);
+    assert(state.saveSequencerPatternSlot(1));
+
+    // Slot 2: loaded explicitly after transport stops.
+    state.sequencer.length.set(12);
+    state.sequencer.enabledMask.set(0);
+    state.sequencer.setStepDataAt(0, 72, 88, 44);
+    state.sequencer.toggle(0);
+    assert(state.saveSequencerPatternSlot(2));
+
+    // Queue slot 1 while transport is running.
+    state.statusBar.playing.set(true);
+    state.sequencer.playheadStep.set(4);
+    assert(state.loadSequencerPatternSlot(1) == core::persistence::SlotLoadStatus::OK);
+
+    // Stop before the queued apply is consumed, then load slot 2 directly.
+    state.statusBar.playing.set(false);
+    assert(state.loadSequencerPatternSlot(2) == core::persistence::SlotLoadStatus::OK);
+    assert(state.sequencer.length.get() == 12);
+    assert(state.sequencer.note[0] == 72);
+
+    // A later update must not replay the stale queued load from slot 1.
+    state.update();
+    assert(state.sequencer.length.get() == 12);
+    assert(state.sequencer.note[0] == 72);
+    assert(state.sequencer.velocity[0] == 88);
+    assert(state.sequencer.gate[0] == 44);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_direct_load_clears_stale_pending_quantized_apply\n";
 }
 
 void test_sequencer_set_load_merge_preserves_existing_steps() {
@@ -561,7 +647,9 @@ int main() {
     test_data_manager_shortcuts_persist_and_sanitize();
     test_data_manager_command_execution_and_slot_probe();
     test_sequencer_workspace_and_library_roundtrip();
+    test_sequencer_workspace_persists_navigation_context();
     test_sequencer_load_is_quantized_to_next_step_when_playing();
+    test_direct_load_clears_stale_pending_quantized_apply();
     test_sequencer_set_load_merge_preserves_existing_steps();
     test_sequencer_set_load_merge_is_quantized_when_playing();
 

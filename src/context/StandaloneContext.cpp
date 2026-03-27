@@ -47,6 +47,7 @@
 #include "sequencer/SequencerPlaybackService.hpp"
 #include "sequencer/MidiClockSyncService.hpp"
 #include "midi/MidiUtils.hpp"
+#include "state/sequencer/StepPropertyDisplay.hpp"
 
 namespace core::context {
 
@@ -55,9 +56,64 @@ namespace input_utils = core::handler::sequencer::input_utils;
 namespace {
 
 constexpr float ENCODER_POSITION_EPSILON = 0.0005f;
+constexpr std::array<const char*, 4> SEQUENCER_PROPERTY_SELECTOR_ITEMS = {
+    "Note",
+    "Velocity",
+    "Gate",
+    "Nudge",
+};
+constexpr std::array<core::state::sequencer::StepProperty, 4> SEQUENCER_STEP_EDIT_PROPERTIES = {
+    core::state::sequencer::StepProperty::NOTE,
+    core::state::sequencer::StepProperty::VELOCITY,
+    core::state::sequencer::StepProperty::GATE,
+    core::state::sequencer::StepProperty::NUDGE,
+};
+constexpr std::array<const char*, 4> SEQUENCER_STEP_EDIT_KEYS = {
+    "Note",
+    "Velocity",
+    "Gate",
+    "Nudge",
+};
 
 inline bool hasMeaningfulEncoderDelta(float a, float b) {
     return std::fabs(a - b) > ENCODER_POSITION_EPSILON;
+}
+
+template <typename EncoderIdT>
+inline void applySequencerEncoderConfig(
+    oc::api::EncoderAPI& encoders,
+    EncoderIdT encoderId,
+    const input_utils::StepPropertyEncoderConfig& config
+) {
+    encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
+    encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
+    encoders.setDiscreteSteps(encoderId, config.discreteSteps);
+}
+
+template <size_t N>
+void formatSequencerStepEditRows(
+    std::array<std::array<char, N>, 4>& valueBuffers,
+    std::array<ms::ui::KeyValueRow, 4>& rows,
+    uint8_t note,
+    uint8_t velocity,
+    uint16_t gate,
+    int8_t nudge
+) {
+    for (size_t i = 0; i < rows.size(); ++i) {
+        core::state::sequencer::formatStepPropertyValue(
+            valueBuffers[i].data(),
+            valueBuffers[i].size(),
+            SEQUENCER_STEP_EDIT_PROPERTIES[i],
+            note,
+            velocity,
+            gate,
+            nudge
+        );
+        rows[i] = {
+            .key = SEQUENCER_STEP_EDIT_KEYS[i],
+            .value = valueBuffers[i].data(),
+        };
+    }
 }
 
 }  // namespace
@@ -483,17 +539,126 @@ void StandaloneContext::syncEncodersFromState() {
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         float value = core_state_.macros.slots[i].value.get();
         // Macro view defaults: 0..1 continuous
+        encoders().setDiscreteTicksPerStep(
+            Config::MACRO_ENCODERS[i],
+            input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        );
+        encoders().setNormalizedTurns(
+            Config::MACRO_ENCODERS[i],
+            input_utils::DEFAULT_NORMALIZED_TURNS
+        );
         encoders().setContinuous(Config::MACRO_ENCODERS[i]);
         encoders().setPosition(Config::MACRO_ENCODERS[i], value);
     }
 
+    encoders().setDiscreteTicksPerStep(
+        Config::EncoderID::OPT,
+        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+    );
+    encoders().setNormalizedTurns(
+        Config::EncoderID::OPT,
+        input_utils::DEFAULT_NORMALIZED_TURNS
+    );
+
     // Leaving Sequencer view disables discrete steps.
-    seq_macro_steps_configured_ = 0;
-    seq_opt_steps_configured_ = 0;
-    seq_macro_position_valid_.fill(false);
-    seq_opt_position_valid_ = false;
+    resetSequencerEncoderSyncCache();
 
     OC_LOG_DEBUG("Synced encoder positions from restored state");
+}
+
+void StandaloneContext::resetSequencerEncoderSyncCache() {
+    seq_macro_steps_configured_ = 0;
+    seq_opt_steps_configured_ = 0;
+    seq_macro_ticks_per_step_configured_ = 0;
+    seq_opt_ticks_per_step_configured_ = 0;
+    seq_macro_turns_configured_ = 0.0f;
+    seq_opt_turns_configured_ = 0.0f;
+    seq_macro_position_valid_.fill(false);
+    seq_opt_position_valid_ = false;
+}
+
+void StandaloneContext::resetSequencerOptEncoderSyncCache() {
+    seq_opt_steps_configured_ = 0;
+    seq_opt_ticks_per_step_configured_ = 0;
+    seq_opt_turns_configured_ = 0.0f;
+    seq_opt_position_valid_ = false;
+}
+
+void StandaloneContext::ensureSequencerMacroEncoderConfig(
+    const input_utils::StepPropertyEncoderConfig& config
+) {
+    if (seq_macro_steps_configured_ == config.discreteSteps &&
+        seq_macro_ticks_per_step_configured_ == config.discreteTicksPerStep &&
+        !hasMeaningfulEncoderDelta(seq_macro_turns_configured_, config.normalizedTurns)) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        applySequencerEncoderConfig(encoders(), Config::MACRO_ENCODERS[i], config);
+    }
+
+    seq_macro_steps_configured_ = config.discreteSteps;
+    seq_macro_ticks_per_step_configured_ = config.discreteTicksPerStep;
+    seq_macro_turns_configured_ = config.normalizedTurns;
+}
+
+void StandaloneContext::syncSequencerMacroEncoderValues(
+    uint8_t page,
+    core::state::sequencer::StepProperty property
+) {
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        float normalized = 0.0f;
+        uint8_t abs = 0;
+
+        if (core_state_.sequencer.resolveStepInPage(page, i, abs)) {
+            normalized = input_utils::stepPropertyToNormalized(core_state_.sequencer, abs, property);
+        }
+
+        normalized = input_utils::clampNormalized(normalized);
+
+        if (!seq_macro_position_valid_[i] ||
+            hasMeaningfulEncoderDelta(seq_macro_position_cache_[i], normalized)) {
+            encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
+            seq_macro_position_cache_[i] = normalized;
+            seq_macro_position_valid_[i] = true;
+        }
+    }
+}
+
+void StandaloneContext::ensureSequencerOptEncoderConfig(
+    const input_utils::StepPropertyEncoderConfig& config
+) {
+    if (seq_opt_steps_configured_ == config.discreteSteps &&
+        seq_opt_ticks_per_step_configured_ == config.discreteTicksPerStep &&
+        !hasMeaningfulEncoderDelta(seq_opt_turns_configured_, config.normalizedTurns)) {
+        return;
+    }
+
+    applySequencerEncoderConfig(encoders(), Config::EncoderID::OPT, config);
+    seq_opt_steps_configured_ = config.discreteSteps;
+    seq_opt_ticks_per_step_configured_ = config.discreteTicksPerStep;
+    seq_opt_turns_configured_ = config.normalizedTurns;
+}
+
+void StandaloneContext::syncSequencerOptEncoderValue(
+    uint8_t length,
+    uint8_t focusedStep,
+    core::state::sequencer::StepProperty property
+) {
+    if (length == 0 ||
+        focusedStep >= length ||
+        focusedStep >= core::state::sequencer::SequencerState::MAX_STEPS) {
+        return;
+    }
+
+    const float optPosition =
+        input_utils::stepPropertyToNormalized(core_state_.sequencer, focusedStep, property);
+
+    if (!seq_opt_position_valid_ || hasMeaningfulEncoderDelta(seq_opt_position_cache_, optPosition)) {
+        encoders().setPosition(Config::EncoderID::OPT, optPosition);
+        seq_opt_position_cache_ = optPosition;
+        seq_opt_position_valid_ = true;
+    }
 }
 
 void StandaloneContext::setupMacroEditRendering() {
@@ -641,34 +806,22 @@ void StandaloneContext::renderSequencerStepEdit() {
     const uint8_t note = core_state_.sequencer.note[abs];
     const uint8_t vel = core_state_.sequencer.velocity[abs];
     const uint16_t gate = core_state_.sequencer.gate[abs];
+    const int8_t nudge = core_state_.sequencer.nudge[abs];
 
     const uint32_t dataRevision =
         core_state_.sequencer.stepDataRevision.get() ^
         (static_cast<uint32_t>(abs) << 16) ^
         (static_cast<uint32_t>(len) << 24);
 
-    char noteName[8];
-    core::midi::formatNoteName(noteName, sizeof(noteName), note);
-    char noteStr[8];
-    snprintf(noteStr, sizeof(noteStr), "%s", noteName);
-
-    char velStr[8];
-    snprintf(velStr, sizeof(velStr), "%u", static_cast<unsigned>(vel));
-
-    char gateStr[12];
-    snprintf(gateStr, sizeof(gateStr), "%u%%", static_cast<unsigned>(gate));
-
-    const ms::ui::KeyValueRow rows[] = {
-        {.key = "Note", .value = noteStr},
-        {.key = "Velocity", .value = velStr},
-        {.key = "Gate", .value = gateStr},
-    };
+    std::array<std::array<char, 12>, 4> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 4> rows{};
+    formatSequencerStepEditRows(valueBuffers, rows, note, vel, gate, nudge);
 
     seq_step_edit_overlay_->render({
         .title = title,
         .meta = meta,
-        .rows = rows,
-        .rowCount = 3,
+        .rows = rows.data(),
+        .rowCount = static_cast<int>(rows.size()),
         .selectedIndex = core_state_.sequencer.stepEdit.focusedRow.get(),
         .visible = true,
         .dataRevision = dataRevision,
@@ -857,13 +1010,12 @@ void StandaloneContext::setupSequencerPropertySelectorRendering() {
 
 void StandaloneContext::renderSequencerPropertySelector() {
     if (!seq_property_selector_overlay_) return;
-    static const char* const ITEMS[] = {"Note", "Velocity", "Gate"};
 
     seq_property_selector_overlay_->render({
         .title = "PROPERTY",
         .meta = "MACROS",
-        .items = ITEMS,
-        .itemCount = 3,
+        .items = SEQUENCER_PROPERTY_SELECTOR_ITEMS.data(),
+        .itemCount = static_cast<int>(SEQUENCER_PROPERTY_SELECTOR_ITEMS.size()),
         .selectedIndex = core_state_.sequencer.propertySelector.selectedIndex.get(),
         .showIndexColumn = true,
         .visible = core_state_.sequencer.propertySelector.visible.get(),
@@ -879,7 +1031,6 @@ void StandaloneContext::setupSequencerMacroEncoderSync() {
         core_state_.sequencer.length,
         core_state_.sequencer.focusedStep,
         core_state_.sequencer.activeStepProperty,
-        core_state_.sequencer.stepDataRevision,
         core_state_.sequencer.patternConfig.visible,
         core_state_.sequencer.stepEdit.visible,
         core_state_.sequencer.propertySelector.visible
@@ -892,74 +1043,18 @@ void StandaloneContext::syncSequencerMacroEncoderPositions() {
     if (core_state_.overlays.hasVisible()) {
         // Overlay scope owns controls; defer expensive knob position sync
         // until overlay closes (visibility change triggers this watcher).
-        seq_opt_steps_configured_ = 0;
-        seq_opt_position_valid_ = false;
+        resetSequencerOptEncoderSyncCache();
         return;
     }
 
     const uint8_t len = core_state_.sequencer.length.get();
     const uint8_t page = core_state_.sequencer.normalizePage(core_state_.sequencer.page.get());
-
     const auto prop = core_state_.sequencer.activeStepProperty.get();
-
-    // Absolute + discrete steps (framework quantizes [0..1])
-    const uint8_t steps = input_utils::discreteStepsForProperty(prop);
-
-    if (seq_macro_steps_configured_ != steps) {
-        for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-            encoders().setDiscreteSteps(Config::MACRO_ENCODERS[i], steps);
-        }
-        seq_macro_steps_configured_ = steps;
-    }
-
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        float normalized = 0.0f;
-        uint8_t abs = 0;
-
-        if (core_state_.sequencer.resolveStepInPage(page, i, abs)) {
-            normalized = input_utils::stepPropertyToNormalized(
-                prop,
-                core_state_.sequencer.note[abs],
-                core_state_.sequencer.velocity[abs],
-                core_state_.sequencer.gate[abs]
-            );
-        }
-
-        if (normalized < 0.0f) normalized = 0.0f;
-        if (normalized > 1.0f) normalized = 1.0f;
-
-        if (!seq_macro_position_valid_[i] ||
-            hasMeaningfulEncoderDelta(seq_macro_position_cache_[i], normalized)) {
-            encoders().setPosition(Config::MACRO_ENCODERS[i], normalized);
-            seq_macro_position_cache_[i] = normalized;
-            seq_macro_position_valid_[i] = true;
-        }
-    }
-
-    const uint8_t focused = core_state_.sequencer.focusedStep.get();
-    if (len == 0 || focused >= len || focused >= core::state::sequencer::SequencerState::MAX_STEPS) {
-        return;
-    }
-
-    const uint8_t optSteps = input_utils::discreteStepsForProperty(prop);
-
-    if (seq_opt_steps_configured_ != optSteps) {
-        encoders().setDiscreteSteps(Config::EncoderID::OPT, optSteps);
-        seq_opt_steps_configured_ = optSteps;
-    }
-
-    const float optPosition = input_utils::stepPropertyToNormalized(
-        prop,
-        core_state_.sequencer.note[focused],
-        core_state_.sequencer.velocity[focused],
-        core_state_.sequencer.gate[focused]
-    );
-
-    if (!seq_opt_position_valid_ || hasMeaningfulEncoderDelta(seq_opt_position_cache_, optPosition)) {
-        encoders().setPosition(Config::EncoderID::OPT, optPosition);
-        seq_opt_position_cache_ = optPosition;
-        seq_opt_position_valid_ = true;
-    }
+    const auto config = input_utils::encoderConfigForProperty(prop);
+    ensureSequencerMacroEncoderConfig(config);
+    syncSequencerMacroEncoderValues(page, prop);
+    ensureSequencerOptEncoderConfig(config);
+    syncSequencerOptEncoderValue(len, core_state_.sequencer.focusedStep.get(), prop);
 }
 
 void StandaloneContext::setupViewSelectorRendering() {

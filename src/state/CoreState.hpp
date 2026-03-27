@@ -186,7 +186,7 @@ struct CoreState {
             macro_auto_persist_->watchAt(i, macros.slots[i].value);
         }
 
-        sequencer_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<5>>(
+        sequencer_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<8>>(
             [](uint8_t) {},
             [this]() { persistSequencerWorkspace_(); },
             CoreSettings::VALUE_SAVE_DELAY_MS
@@ -197,6 +197,9 @@ struct CoreState {
         sequencer_auto_persist_->watchAt(2, sequencer.midiChannel);
         sequencer_auto_persist_->watchAt(3, sequencer.enabledMask);
         sequencer_auto_persist_->watchAt(4, sequencer.stepDataRevision);
+        sequencer_auto_persist_->watchAt(5, sequencer.page);
+        sequencer_auto_persist_->watchAt(6, sequencer.focusedStep);
+        sequencer_auto_persist_->watchAt(7, sequencer.activeStepProperty);
     }
 
     // Non-copyable, non-movable
@@ -318,6 +321,7 @@ struct CoreState {
             return status;
         }
 
+        clearPendingSequencerApply_();
         const persistence::SlotLoadStatus status = sequencerPersistence.loadPatternSlot(slotIndex, sequencer);
         if (status == persistence::SlotLoadStatus::OK) {
             persistSequencerWorkspace_();
@@ -350,6 +354,7 @@ struct CoreState {
             return status;
         }
 
+        clearPendingSequencerApply_();
         sequencer::SequencerState staged;
         const persistence::SlotLoadStatus status = sequencerPersistence.loadSetSlot(slotIndex, staged);
         if (status == persistence::SlotLoadStatus::OK) {
@@ -387,6 +392,7 @@ struct CoreState {
         bool handled = false;
         bool success = false;
         bool isLoadOperation = false;
+        bool deferredApply = false;
         persistence::SlotLoadStatus loadStatus = persistence::SlotLoadStatus::OK;
     };
 
@@ -455,6 +461,7 @@ struct CoreState {
                 result.isLoadOperation = true;
                 result.loadStatus = loadSequencerPatternSlot(slotIndex);
                 result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
+                result.deferredApply = result.success && pending_sequencer_apply_.valid;
                 return result;
 
             case DataManagerCommand::SEQ_ERASE_PATTERN_SLOT:
@@ -470,6 +477,7 @@ struct CoreState {
                 result.isLoadOperation = true;
                 result.loadStatus = loadSequencerSetSlot(slotIndex, merge);
                 result.success = (result.loadStatus == persistence::SlotLoadStatus::OK);
+                result.deferredApply = result.success && pending_sequencer_apply_.valid;
                 return result;
             }
 
@@ -819,6 +827,10 @@ private:
         sequencerPersistence.saveWorkspace(sequencer);
     }
 
+    void clearPendingSequencerApply_() {
+        pending_sequencer_apply_.valid = false;
+    }
+
     bool macro_persistence_ready_ = false;
     bool sequencer_persistence_ready_ = false;
     PendingSequencerApply pending_sequencer_apply_{};
@@ -827,7 +839,7 @@ private:
     std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> macro_auto_persist_;
 
     /// Auto-persistence for sequencer workspace (watches key sequencer signals)
-    std::unique_ptr<oc::state::AutoPersistIncremental<5>> sequencer_auto_persist_;
+    std::unique_ptr<oc::state::AutoPersistIncremental<8>> sequencer_auto_persist_;
 };
 
 }  // namespace core::state

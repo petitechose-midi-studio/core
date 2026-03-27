@@ -87,13 +87,15 @@ void formatCommandExecutionFeedback(
 
         const char slotTag = core::state::dataManagerCommandSlotTag(command);
         const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
+        const char* verb = result.deferredApply ? "Queued" : "Loaded";
 
         if (core::state::dataManagerCommandSupportsSetLoadMode(command)) {
             const char modeTag =
                 (setLoadMode == core::state::DataManagerSetLoadMode::MERGE) ? 'M' : 'R';
             std::snprintf(message,
                           messageSize,
-                          "Loaded %c%02u %c",
+                          "%s %c%02u %c",
+                          verb,
                           safeSlotTag,
                           slot + 1U,
                           modeTag);
@@ -102,7 +104,8 @@ void formatCommandExecutionFeedback(
 
         std::snprintf(message,
                       messageSize,
-                      "Loaded %c%02u",
+                      "%s %c%02u",
+                      verb,
                       safeSlotTag,
                       slot + 1U);
         return;

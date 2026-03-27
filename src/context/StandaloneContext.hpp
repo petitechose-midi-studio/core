@@ -38,6 +38,7 @@
 #include <oc/context/Requirements.hpp>
 #include <oc/state/SignalWatcher.hpp>
 
+#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/CoreState.hpp"
 #include "ui/OverlayTypes.hpp"
 
@@ -143,6 +144,23 @@ private:
     void renderSequencerPropertySelector();
     void setupSequencerMacroEncoderSync();
     void syncSequencerMacroEncoderPositions();
+    void resetSequencerEncoderSyncCache();
+    void resetSequencerOptEncoderSyncCache();
+    void ensureSequencerMacroEncoderConfig(
+        const core::handler::sequencer::input_utils::StepPropertyEncoderConfig& config
+    );
+    void syncSequencerMacroEncoderValues(
+        uint8_t page,
+        core::state::sequencer::StepProperty property
+    );
+    void ensureSequencerOptEncoderConfig(
+        const core::handler::sequencer::input_utils::StepPropertyEncoderConfig& config
+    );
+    void syncSequencerOptEncoderValue(
+        uint8_t length,
+        uint8_t focusedStep,
+        core::state::sequencer::StepProperty property
+    );
     void setupViewSelectorRendering();
     void renderViewSelector();
     void setupActiveViewSwitching();
@@ -218,6 +236,10 @@ private:
     // Cached encoder configuration (avoid resetting quantization every sync)
     uint8_t seq_macro_steps_configured_ = 0;
     uint8_t seq_opt_steps_configured_ = 0;
+    uint16_t seq_macro_ticks_per_step_configured_ = 0;
+    uint16_t seq_opt_ticks_per_step_configured_ = 0;
+    float seq_macro_turns_configured_ = 0.0f;
+    float seq_opt_turns_configured_ = 0.0f;
     std::array<float, core::state::MACRO_COUNT> seq_macro_position_cache_{};
     std::array<bool, core::state::MACRO_COUNT> seq_macro_position_valid_{};
     float seq_opt_position_cache_ = 0.0f;

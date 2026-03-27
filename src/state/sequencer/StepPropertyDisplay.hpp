@@ -18,6 +18,8 @@ inline const char* stepPropertyName(StepProperty property) {
             return "Velocity";
         case StepProperty::GATE:
             return "Gate";
+        case StepProperty::NUDGE:
+            return "Nudge";
     }
     return "Note";
 }
@@ -28,18 +30,24 @@ inline void formatStepPropertyValue(
     StepProperty property,
     uint8_t note,
     uint8_t velocity,
-    uint16_t gate
+    uint16_t gate,
+    int8_t nudge = 0
 ) {
     if (!buffer || bufferSize == 0) return;
 
-    if (property == StepProperty::NOTE) {
-        core::midi::formatNoteName(buffer, bufferSize, note);
-        return;
-    }
-
-    if (property == StepProperty::VELOCITY) {
-        std::snprintf(buffer, bufferSize, "%u", static_cast<unsigned>(velocity));
-        return;
+    switch (property) {
+        case StepProperty::NOTE:
+            core::midi::formatNoteName(buffer, bufferSize, note);
+            return;
+        case StepProperty::VELOCITY:
+            std::snprintf(buffer, bufferSize, "%u", static_cast<unsigned>(velocity));
+            return;
+        case StepProperty::NUDGE:
+            std::snprintf(buffer, bufferSize, "%+d%%", static_cast<int>(nudge));
+            return;
+        case StepProperty::GATE:
+        default:
+            break;
     }
 
     const uint16_t safeGate = std::min<uint16_t>(gate, SequencerState::MAX_GATE_PERCENT);
