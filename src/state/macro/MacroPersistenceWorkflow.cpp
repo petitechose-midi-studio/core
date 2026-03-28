@@ -1,5 +1,6 @@
 #include "state/macro/MacroPersistenceWorkflow.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
 #include "state/CoreState.hpp"
@@ -7,7 +8,7 @@
 
 namespace core::state::macro {
 
-bool MacroPersistenceWorkflow::saveLibrarySlot(CoreState& state, uint8_t slotIndex) {
+FLASHMEM bool MacroPersistenceWorkflow::saveLibrarySlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isMacroPersistenceReady()) return false;
 
     MacroWorkflow::syncActivePageValuesFromRuntime(state);
@@ -20,7 +21,7 @@ bool MacroPersistenceWorkflow::saveLibrarySlot(CoreState& state, uint8_t slotInd
     return status == persistence::PersistenceWriteStatus::OK;
 }
 
-persistence::SlotLoadStatus MacroPersistenceWorkflow::loadLibrarySlot(CoreState& state,
+FLASHMEM persistence::SlotLoadStatus MacroPersistenceWorkflow::loadLibrarySlot(CoreState& state,
                                                                       uint8_t slotIndex) {
     if (!state.isMacroPersistenceReady()) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
@@ -36,7 +37,7 @@ persistence::SlotLoadStatus MacroPersistenceWorkflow::loadLibrarySlot(CoreState&
     return status;
 }
 
-bool MacroPersistenceWorkflow::eraseLibrarySlot(CoreState& state, uint8_t slotIndex) {
+FLASHMEM bool MacroPersistenceWorkflow::eraseLibrarySlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isMacroPersistenceReady()) return false;
     const auto status = state.macroPersistence.eraseLibrarySlotStatus(slotIndex);
     if (status != persistence::PersistenceWriteStatus::OK) {

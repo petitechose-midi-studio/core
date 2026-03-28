@@ -4,6 +4,7 @@
 
 #include <oc/api/EncoderAPI.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
 namespace core::context::standalone {
@@ -38,7 +39,7 @@ SequencerEncoderSyncCoordinator::SequencerEncoderSyncCoordinator(
     : state_(state)
     , encoders_(encoders) {}
 
-void SequencerEncoderSyncCoordinator::bind() {
+FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
     watcher_.watchAll(
         [this]() { syncPositions(); },
         state_.activeView,

@@ -39,7 +39,6 @@
     ]
   },
   "build": {
-    "extraScript": "script/pio/lib_pre_build.py",
     "includeDir": "src",
     "libArchive": false,
     "flags": [

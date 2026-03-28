@@ -5,6 +5,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
 
@@ -45,7 +46,7 @@ SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     setupBindings();
 }
 
-void SequencerPropertySelectorHandler::setupBindings() {
+FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .press()
         .latch()

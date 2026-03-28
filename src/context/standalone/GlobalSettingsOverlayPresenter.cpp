@@ -1,9 +1,9 @@
 #include "context/standalone/GlobalSettingsOverlayPresenter.hpp"
 
-#include <cstdio>
-
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
+#include <oc/type/TextFormat.hpp>
 
 namespace core::context::standalone {
 
@@ -16,7 +16,7 @@ GlobalSettingsOverlayPresenter::GlobalSettingsOverlayPresenter(
     , overlay_(overlay)
     , selector_overlay_(selectorOverlay) {}
 
-void GlobalSettingsOverlayPresenter::bind() {
+FLASHMEM void GlobalSettingsOverlayPresenter::bind() {
     overlay_watcher_.watchAll(
         [this]() { renderOverlay(); },
         state_.globalSettings.visible,
@@ -41,7 +41,7 @@ void GlobalSettingsOverlayPresenter::bind() {
     );
 }
 
-void GlobalSettingsOverlayPresenter::renderOverlay() {
+FLASHMEM void GlobalSettingsOverlayPresenter::renderOverlay() {
     const bool visible = state_.globalSettings.visible.get();
     if (!visible) {
         overlay_.render({.visible = false});
@@ -67,13 +67,25 @@ void GlobalSettingsOverlayPresenter::renderOverlay() {
     const char* signalLabel = state_.midiSync.externalClockPresent.get() ? "IN" : "-";
 
     char meta[24];
-    std::snprintf(meta, sizeof(meta), "%s  CLK %s", sourceLabel, signalLabel);
+    size_t metaPos = oc::type::text::appendString(meta, sizeof(meta), 0, sourceLabel);
+    metaPos = oc::type::text::appendString(meta, sizeof(meta), metaPos, "  CLK ");
+    metaPos = oc::type::text::appendString(meta, sizeof(meta), metaPos, signalLabel);
+    oc::type::text::terminate(meta, sizeof(meta), metaPos);
 
     char fallbackStr[16];
-    std::snprintf(fallbackStr, sizeof(fallbackStr), "%ums", static_cast<unsigned>(fallbackMs));
+    size_t fallbackPos = oc::type::text::appendUnsigned(
+        fallbackStr,
+        sizeof(fallbackStr),
+        0,
+        static_cast<unsigned>(fallbackMs)
+    );
+    fallbackPos = oc::type::text::appendString(fallbackStr, sizeof(fallbackStr), fallbackPos, "ms");
+    oc::type::text::terminate(fallbackStr, sizeof(fallbackStr), fallbackPos);
 
     char lockStr[16];
-    std::snprintf(lockStr, sizeof(lockStr), "%u clocks", static_cast<unsigned>(lockCount));
+    size_t lockPos = oc::type::text::appendUnsigned(lockStr, sizeof(lockStr), 0, static_cast<unsigned>(lockCount));
+    lockPos = oc::type::text::appendString(lockStr, sizeof(lockStr), lockPos, " clocks");
+    oc::type::text::terminate(lockStr, sizeof(lockStr), lockPos);
 
     const ms::ui::KeyValueRow rows[] = {
         {.key = "Mode", .value = modeLabel},
@@ -99,7 +111,7 @@ void GlobalSettingsOverlayPresenter::renderOverlay() {
     });
 }
 
-void GlobalSettingsOverlayPresenter::renderSelector() {
+FLASHMEM void GlobalSettingsOverlayPresenter::renderSelector() {
     const bool visible = state_.globalSettings.selector.visible.get();
     if (!visible) {
         selector_overlay_.render({.visible = false});

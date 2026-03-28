@@ -3,6 +3,7 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/font/StandaloneFonts.hpp"
@@ -30,7 +31,7 @@ BaseMacroWidget::~BaseMacroWidget() {
     }
 }
 
-void BaseMacroWidget::createContainerWithGrid(lv_obj_t* parent) {
+FLASHMEM void BaseMacroWidget::createContainerWithGrid(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
     style::apply(container_).transparent().noScroll();
@@ -42,7 +43,7 @@ void BaseMacroWidget::createContainerWithGrid(lv_obj_t* parent) {
     lv_obj_set_layout(container_, LV_LAYOUT_GRID);
 }
 
-void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
+FLASHMEM void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     // Floating label container - offset upward to be closer to knob
     lv_obj_t* labelContainer = lv_obj_create(labelParent);
     style::apply(labelContainer).transparent().noScroll();

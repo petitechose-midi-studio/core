@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
-
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
+#include <oc/type/TextFormat.hpp>
 
 namespace core::context::standalone {
 
@@ -22,7 +22,7 @@ MacroOverlayPresenter::MacroOverlayPresenter(
     , page_selector_overlay_(pageSelectorOverlay)
     , macro_target_selector_overlay_(macroTargetSelectorOverlay) {}
 
-void MacroOverlayPresenter::bind() {
+FLASHMEM void MacroOverlayPresenter::bind() {
     edit_watcher_.watchAll(
         [this]() { renderEdit(); },
         state_.macroEdit.visible,
@@ -54,7 +54,7 @@ void MacroOverlayPresenter::bind() {
     );
 }
 
-void MacroOverlayPresenter::renderEdit() {
+FLASHMEM void MacroOverlayPresenter::renderEdit() {
     const bool visible = state_.macroEdit.visible.get();
     if (!visible) {
         macro_edit_overlay_.render({.visible = false});
@@ -70,18 +70,22 @@ void MacroOverlayPresenter::renderEdit() {
     const uint8_t cc = state_.macroEdit.tempCC.get();
 
     char title[16];
-    std::snprintf(title, sizeof(title), "MACRO %u", static_cast<unsigned>(macroIndex) + 1U);
+    size_t titlePos = oc::type::text::appendString(title, sizeof(title), 0, "MACRO ");
+    titlePos = oc::type::text::appendUnsigned(title, sizeof(title), titlePos, static_cast<unsigned>(macroIndex) + 1U);
+    oc::type::text::terminate(title, sizeof(title), titlePos);
 
     const unsigned page1 = static_cast<unsigned>(state_.pages.activePage) + 1U;
 
     char meta[16];
-    std::snprintf(meta, sizeof(meta), "PAGE %u", page1);
+    size_t metaPos = oc::type::text::appendString(meta, sizeof(meta), 0, "PAGE ");
+    metaPos = oc::type::text::appendUnsigned(meta, sizeof(meta), metaPos, page1);
+    oc::type::text::terminate(meta, sizeof(meta), metaPos);
 
     char channelStr[8];
-    std::snprintf(channelStr, sizeof(channelStr), "%u", static_cast<unsigned>(channel0) + 1U);
+    oc::type::text::formatUnsigned(channelStr, sizeof(channelStr), static_cast<unsigned>(channel0) + 1U);
 
     char ccStr[8];
-    std::snprintf(ccStr, sizeof(ccStr), "%u", static_cast<unsigned>(cc));
+    oc::type::text::formatUnsigned(ccStr, sizeof(ccStr), static_cast<unsigned>(cc));
 
     const ms::ui::KeyValueRow rows[] = {
         {.key = "Channel", .value = channelStr},
@@ -106,7 +110,7 @@ void MacroOverlayPresenter::renderEdit() {
     });
 }
 
-void MacroOverlayPresenter::renderEditSelector() {
+FLASHMEM void MacroOverlayPresenter::renderEditSelector() {
     const auto& selector = state_.macroEdit.selector;
     if (!selector.visible.get()) {
         macro_edit_selector_overlay_.render({.visible = false});
@@ -134,7 +138,7 @@ void MacroOverlayPresenter::renderEditSelector() {
     });
 }
 
-void MacroOverlayPresenter::renderPageSelector() {
+FLASHMEM void MacroOverlayPresenter::renderPageSelector() {
     if (!state_.pages.selector.visible.get()) {
         page_selector_overlay_.render({.visible = false});
         return;
@@ -163,7 +167,7 @@ void MacroOverlayPresenter::renderPageSelector() {
     });
 }
 
-void MacroOverlayPresenter::renderTargetSelector() {
+FLASHMEM void MacroOverlayPresenter::renderTargetSelector() {
     if (!state_.macroEdit.macroSelector.visible.get()) {
         macro_target_selector_overlay_.render({.visible = false});
         return;
@@ -189,26 +193,28 @@ void MacroOverlayPresenter::renderTargetSelector() {
     });
 }
 
-void MacroOverlayPresenter::initializeStaticItems_() {
+FLASHMEM void MacroOverlayPresenter::initializeStaticItems_() {
     if (static_items_initialized_) return;
 
     for (int i = 0; i < 16; ++i) {
-        std::snprintf(channel_labels_[i].data(), channel_labels_[i].size(), "%d", i + 1);
+        oc::type::text::formatUnsigned(channel_labels_[i].data(), channel_labels_[i].size(), i + 1);
         channel_items_[i] = channel_labels_[i].data();
     }
 
     for (int i = 0; i < 128; ++i) {
-        std::snprintf(cc_labels_[i].data(), cc_labels_[i].size(), "%d", i);
+        oc::type::text::formatUnsigned(cc_labels_[i].data(), cc_labels_[i].size(), i);
         cc_items_[i] = cc_labels_[i].data();
     }
 
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
-        std::snprintf(
+        size_t pos = oc::type::text::appendString(macro_labels_[i].data(), macro_labels_[i].size(), 0, "Macro ");
+        pos = oc::type::text::appendUnsigned(
             macro_labels_[i].data(),
             macro_labels_[i].size(),
-            "Macro %u",
+            pos,
             static_cast<unsigned>(i) + 1U
         );
+        oc::type::text::terminate(macro_labels_[i].data(), macro_labels_[i].size(), pos);
         macro_items_[i] = macro_labels_[i].data();
     }
 

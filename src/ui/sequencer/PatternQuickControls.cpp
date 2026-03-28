@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
-
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
+#include <oc/type/TextFormat.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
 namespace theme = oc::ui::lvgl::base_theme;
@@ -51,19 +51,19 @@ void formatValue(char* buffer, size_t size, const PatternQuickControlsProps& pro
 
     switch (item) {
         case Item::CHANNEL:
-            std::snprintf(buffer, size, "1");
+            oc::type::text::copy(buffer, size, "1");
             return;
         case Item::DIVISION:
-            std::snprintf(
+            oc::type::text::formatFraction(
                 buffer,
                 size,
-                "1/%u",
+                1U,
                 static_cast<unsigned>(4U * static_cast<uint16_t>(props.stepsPerBeat))
             );
             return;
         case Item::LENGTH:
         default:
-            std::snprintf(buffer, size, "%u", static_cast<unsigned>(props.length));
+            oc::type::text::formatUnsigned(buffer, size, static_cast<unsigned>(props.length));
             return;
     }
 }
@@ -82,7 +82,7 @@ PatternQuickControls::~PatternQuickControls() {
     }
 }
 
-void PatternQuickControls::createUI(lv_obj_t* parent) {
+FLASHMEM void PatternQuickControls::createUI(lv_obj_t* parent) {
     if (!parent) return;
 
     container_ = lv_obj_create(parent);

@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 #include <oc/state/AutoPersistIncremental.hpp>
 
@@ -16,7 +17,7 @@ namespace {
 constexpr uint32_t MACRO_WORKSPACE_SAVE_DELAY_MS = 5000;
 }
 
-void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
+FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::PAGE_SELECTOR, state.pages.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, state.macroEdit.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_SELECTOR, state.macroEdit.selector.visible);
@@ -30,7 +31,7 @@ void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_DIALOG, state.dataManager.dialog.visible);
 }
 
-void CoreStateBootstrap::initializePersistence_(CoreState& state) {
+FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer.reset();
     state.settings.load(state.pages, state.midiSync);
     DataManagerWorkflow::loadShortcutsFromSettings(state);
@@ -56,7 +57,7 @@ void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     }
 }
 
-void CoreStateBootstrap::setupAutoPersist_(CoreState& state) {
+FLASHMEM void CoreStateBootstrap::setupAutoPersist_(CoreState& state) {
     state.macro_auto_persist_ = std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
         [&state](uint8_t i) {
             float value = state.macros.slots[i].value.get();
@@ -88,7 +89,7 @@ void CoreStateBootstrap::setupAutoPersist_(CoreState& state) {
     state.sequencer_auto_persist_->watchAt(7, state.sequencer.activeStepProperty);
 }
 
-void CoreStateBootstrap::initialize(CoreState& state) {
+FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
     initializePersistence_(state);
     state.statusBar.pageName.set(state.pages.activePageData().name);
     macro::MacroWorkflow::syncRuntimeFromActivePage(state);

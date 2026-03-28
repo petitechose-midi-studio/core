@@ -1,8 +1,10 @@
 #include "TransportBar.hpp"
 
 #include <oc/state/Bind.hpp>
+#include <oc/type/TextFormat.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -42,7 +44,7 @@ TransportBar::~TransportBar() {
     }
 }
 
-void TransportBar::createLayout(lv_obj_t* parent) {
+FLASHMEM void TransportBar::createLayout(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_remove_style_all(container_);
     lv_obj_set_size(container_, LV_PCT(100), theme::layout::TRANSPORT_BAR_HEIGHT);
@@ -64,7 +66,7 @@ void TransportBar::createLayout(lv_obj_t* parent) {
     createTempoWithBeat(container_);
 }
 
-void TransportBar::createMidiIndicators(lv_obj_t* parent) {
+FLASHMEM void TransportBar::createMidiIndicators(lv_obj_t* parent) {
     // Cell 0: MIDI indicators (Clock source + Note IN/OUT + CC IN/OUT)
     lv_obj_t* cell = lv_obj_create(parent);
     lv_obj_remove_style_all(cell);
@@ -99,7 +101,7 @@ void TransportBar::createMidiIndicators(lv_obj_t* parent) {
     lv_obj_set_style_text_color(cc_out_icon_, COLOR_INACTIVE, 0);
 }
 
-void TransportBar::createTransportCenter(lv_obj_t* parent) {
+FLASHMEM void TransportBar::createTransportCenter(lv_obj_t* parent) {
     // Cell 1: Play icon (fully centered in cell)
     lv_obj_t* cell = lv_obj_create(parent);
     lv_obj_remove_style_all(cell);
@@ -118,7 +120,7 @@ void TransportBar::createTransportCenter(lv_obj_t* parent) {
     lv_obj_align_to(transport_lock_icon_, play_icon_, LV_ALIGN_OUT_RIGHT_MID, 2, 0);
 }
 
-void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
+FLASHMEM void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
     // Cell 2: Tempo label + fixed indicator zone (lock over beat pulse)
     lv_obj_t* cell = lv_obj_create(parent);
     lv_obj_remove_style_all(cell);
@@ -155,7 +157,7 @@ void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
     lv_obj_add_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void TransportBar::setupBindings() {
+FLASHMEM void TransportBar::setupBindings() {
     using oc::state::bind;
     bind(subs_)
         .on(state_.noteInActive, [this](bool active) { setNoteIn(active); })
@@ -198,8 +200,7 @@ void TransportBar::setPlaying(bool playing) {
 
 void TransportBar::setTempo(float bpm) {
     char buf[16];
-    // One decimal keeps display readable with external clock jitter.
-    lv_snprintf(buf, sizeof(buf), "%.1f", bpm);
+    oc::type::text::formatFixed1(buf, sizeof(buf), bpm);
     lv_label_set_text(tempo_label_, buf);
 }
 

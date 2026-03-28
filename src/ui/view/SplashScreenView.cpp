@@ -3,6 +3,7 @@
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
 namespace core::ui {
@@ -52,7 +53,7 @@ void SplashScreenView::fadeOut(uint32_t durationMs) {
     lv_anim_start(&anim);
 }
 
-void SplashScreenView::createContainer(lv_obj_t* parent) {
+FLASHMEM void SplashScreenView::createContainer(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
     lv_obj_set_style_bg_color(container_, config_.bg_color, 0);
@@ -61,7 +62,7 @@ void SplashScreenView::createContainer(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(container_, 0, 0);
 }
 
-void SplashScreenView::createLogo() {
+FLASHMEM void SplashScreenView::createLogo() {
     lv_obj_t* logo = lv_obj_create(container_);
     lv_obj_set_size(logo, 159, 159);
     lv_obj_align(logo, LV_ALIGN_CENTER, 0, -28);
@@ -103,7 +104,7 @@ void SplashScreenView::createLogo() {
     lv_obj_set_style_border_width(dot, 0, 0);
 }
 
-void SplashScreenView::createLabels() {
+FLASHMEM void SplashScreenView::createLabels() {
     title_label_ = lv_label_create(container_);
     lv_label_set_text(title_label_, config_.title);
     lv_obj_set_style_text_color(title_label_, config_.text_color, 0);
@@ -121,7 +122,7 @@ void SplashScreenView::createLabels() {
     lv_obj_align(version_label_, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
 }
 
-void SplashScreenView::createProgressBar() {
+FLASHMEM void SplashScreenView::createProgressBar() {
     lv_obj_t* container = lv_obj_create(container_);
     lv_obj_set_size(container, 200, 12);
     lv_obj_set_pos(container, (320 - 200) / 2, 195);

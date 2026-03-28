@@ -6,6 +6,7 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
 
@@ -22,7 +23,7 @@ float clampNormalized(float value) {
 
 }  // namespace
 
-MacroEditHandler::MacroEditHandler(
+FLASHMEM MacroEditHandler::MacroEditHandler(
     core::state::CoreState& state,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
@@ -46,7 +47,7 @@ MacroEditHandler::MacroEditHandler(
     setupBindings();
 }
 
-void MacroEditHandler::setupBindings() {
+FLASHMEM void MacroEditHandler::setupBindings() {
     const auto navButton = static_cast<oc::type::ButtonID>(Config::ButtonID::NAV);
     const auto leftTopButton = static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_TOP);
     const auto leftCenterButton = static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_CENTER);
@@ -155,7 +156,7 @@ void MacroEditHandler::setupBindings() {
 
 }
 
-void MacroEditHandler::openEdit(uint8_t macroIndex) {
+FLASHMEM void MacroEditHandler::openEdit(uint8_t macroIndex) {
     const auto& config = core::state::macro::MacroWorkflow::activeConfig(state_, macroIndex);
     has_staged_config_changes_ = false;
 
@@ -171,7 +172,7 @@ void MacroEditHandler::openEdit(uint8_t macroIndex) {
 
 }
 
-void MacroEditHandler::handleOpeningMacroRelease(uint8_t macroIndex) {
+FLASHMEM void MacroEditHandler::handleOpeningMacroRelease(uint8_t macroIndex) {
     auto& edit = state_.macroEdit;
     if (!edit.visible.get()) return;
     if (!edit.pendingOpenReleaseDecision) return;
@@ -191,7 +192,7 @@ void MacroEditHandler::handleOpeningMacroRelease(uint8_t macroIndex) {
     }
 }
 
-void MacroEditHandler::closeOverlay() {
+FLASHMEM void MacroEditHandler::closeOverlay() {
     // Close any stacked macro-edit related selector first, then the main overlay.
     while (true) {
         const auto current = overlays_.current();
@@ -219,7 +220,7 @@ void MacroEditHandler::closeOverlay() {
     state_.pages.selector.selectedIndex.set(state_.pages.activePage);
 }
 
-void MacroEditHandler::moveFocus(float delta) {
+FLASHMEM void MacroEditHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     const int current = static_cast<int>(state_.macroEdit.focusedRow.get());
@@ -229,7 +230,7 @@ void MacroEditHandler::moveFocus(float delta) {
     configureOptForFocusedRow();
 }
 
-void MacroEditHandler::setFocusedValue(float normalized) {
+FLASHMEM void MacroEditHandler::setFocusedValue(float normalized) {
     const uint8_t row = state_.macroEdit.focusedRow.get();
     const int count = valueCountForRow(row);
 
@@ -238,7 +239,7 @@ void MacroEditHandler::setFocusedValue(float normalized) {
     setValueForRow(row, index);
 }
 
-void MacroEditHandler::openValueSelector() {
+FLASHMEM void MacroEditHandler::openValueSelector() {
     if (!state_.macroEdit.visible.get()) return;
     if (state_.macroEdit.selector.visible.get()) return;
 
@@ -254,7 +255,7 @@ void MacroEditHandler::openValueSelector() {
 
 }
 
-void MacroEditHandler::navigateValueSelector(float delta) {
+FLASHMEM void MacroEditHandler::navigateValueSelector(float delta) {
     auto& selector = state_.macroEdit.selector;
     const int count = valueCountForRow(selector.editingRow.get());
     const int current = selector.selectedIndex.get();
@@ -265,7 +266,7 @@ void MacroEditHandler::navigateValueSelector(float delta) {
     selector.selectedIndex.set(next);
 }
 
-void MacroEditHandler::applyValueSelectorAndClose() {
+FLASHMEM void MacroEditHandler::applyValueSelectorAndClose() {
     auto& selector = state_.macroEdit.selector;
     if (!selector.visible.get()) return;
 
@@ -276,7 +277,7 @@ void MacroEditHandler::applyValueSelectorAndClose() {
     configureOptForFocusedRow();
 }
 
-void MacroEditHandler::openPageSelector() {
+FLASHMEM void MacroEditHandler::openPageSelector() {
     if (!state_.macroEdit.visible.get()) return;
     if (state_.macroEdit.selector.visible.get()) return;
     if (state_.macroEdit.macroSelector.visible.get()) return;
@@ -286,7 +287,7 @@ void MacroEditHandler::openPageSelector() {
 
 }
 
-void MacroEditHandler::navigatePageSelector(float delta) {
+FLASHMEM void MacroEditHandler::navigatePageSelector(float delta) {
     const int current = static_cast<int>(state_.pages.selector.selectedIndex.get());
     int next = current;
     if (!modal::advanceWrappedSelection(
@@ -301,7 +302,7 @@ void MacroEditHandler::navigatePageSelector(float delta) {
     state_.pages.selector.selectedIndex.set(static_cast<uint8_t>(next));
 }
 
-void MacroEditHandler::applyPageSelectorAndClose() {
+FLASHMEM void MacroEditHandler::applyPageSelectorAndClose() {
     if (!state_.pages.selector.visible.get()) return;
 
     const uint8_t targetPage = std::clamp(
@@ -325,7 +326,7 @@ void MacroEditHandler::applyPageSelectorAndClose() {
     configureOptForFocusedRow();
 }
 
-void MacroEditHandler::openMacroTargetSelector() {
+FLASHMEM void MacroEditHandler::openMacroTargetSelector() {
     if (!state_.macroEdit.visible.get()) return;
     if (state_.macroEdit.selector.visible.get()) return;
     if (state_.pages.selector.visible.get()) return;
@@ -339,7 +340,7 @@ void MacroEditHandler::openMacroTargetSelector() {
 
 }
 
-void MacroEditHandler::navigateMacroTargetSelector(float delta) {
+FLASHMEM void MacroEditHandler::navigateMacroTargetSelector(float delta) {
     auto& selector = state_.macroEdit.macroSelector;
     const int current = selector.selectedIndex.get();
     int next = current;
@@ -355,7 +356,7 @@ void MacroEditHandler::navigateMacroTargetSelector(float delta) {
     selector.selectedIndex.set(next);
 }
 
-void MacroEditHandler::applyMacroTargetSelectorAndClose() {
+FLASHMEM void MacroEditHandler::applyMacroTargetSelectorAndClose() {
     auto& selector = state_.macroEdit.macroSelector;
     if (!selector.visible.get()) return;
 
@@ -377,7 +378,7 @@ void MacroEditHandler::applyMacroTargetSelectorAndClose() {
     configureOptForFocusedRow();
 }
 
-void MacroEditHandler::setValueForRow(uint8_t row, int value) {
+FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
     if (row == 0) {
         const int clamped = std::clamp(value, 0, 15);
         state_.macroEdit.tempChannel.set(static_cast<uint8_t>(clamped));
@@ -389,19 +390,19 @@ void MacroEditHandler::setValueForRow(uint8_t row, int value) {
     applyTempConfig();
 }
 
-int MacroEditHandler::valueForRow(uint8_t row) const {
+FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
     if (row == 0) {
         return static_cast<int>(state_.macroEdit.tempChannel.get());
     }
     return static_cast<int>(state_.macroEdit.tempCC.get());
 }
 
-int MacroEditHandler::valueCountForRow(uint8_t row) const {
+FLASHMEM int MacroEditHandler::valueCountForRow(uint8_t row) const {
     if (row == 0) return 16;
     return 128;
 }
 
-void MacroEditHandler::applyTempConfig() {
+FLASHMEM void MacroEditHandler::applyTempConfig() {
     const uint8_t macroIndex = state_.macroEdit.editingIndex.get();
     const uint8_t channel = state_.macroEdit.tempChannel.get();
     const uint8_t cc = state_.macroEdit.tempCC.get();
@@ -414,7 +415,7 @@ void MacroEditHandler::applyTempConfig() {
     );
 }
 
-void MacroEditHandler::configureOptForFocusedRow() {
+FLASHMEM void MacroEditHandler::configureOptForFocusedRow() {
     const uint8_t row = state_.macroEdit.focusedRow.get();
     const int count = valueCountForRow(row);
     const int current = valueForRow(row);

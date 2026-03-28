@@ -1,10 +1,10 @@
 #include "context/standalone/DataManagerPresenter.hpp"
 
 #include <algorithm>
-#include <cstdio>
-
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
+#include <oc/type/TextFormat.hpp>
 
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
@@ -24,7 +24,7 @@ DataManagerPresenter::DataManagerPresenter(
     , softkey_bar_(softkeyBar)
     , transport_bar_(transportBar) {}
 
-void DataManagerPresenter::bind() {
+FLASHMEM void DataManagerPresenter::bind() {
     overlay_watcher_.watchAll(
         [this]() { renderOverlay(); },
         state_.dataManager.visible,
@@ -60,7 +60,7 @@ void DataManagerPresenter::bind() {
     );
 }
 
-void DataManagerPresenter::renderOverlay() {
+FLASHMEM void DataManagerPresenter::renderOverlay() {
     const auto& dm = state_.dataManager;
     if (!dm.visible.get()) {
         overlay_.render({.visible = false});
@@ -107,7 +107,7 @@ void DataManagerPresenter::renderOverlay() {
     });
 }
 
-void DataManagerPresenter::renderDialog() {
+FLASHMEM void DataManagerPresenter::renderDialog() {
     const auto& dm = state_.dataManager;
     const auto& dialog = dm.dialog;
 
@@ -162,11 +162,20 @@ void DataManagerPresenter::renderDialog() {
         const char slotTag = core::state::dataManagerCommandSlotTag(dm.pendingCommand.get());
         const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
         for (int i = 0; i < itemCount; ++i) {
-            std::snprintf(dialog_slot_labels_[i].data(),
-                          dialog_slot_labels_[i].size(),
-                          "%c%02d",
-                          safeSlotTag,
-                          i + 1);
+            size_t pos = oc::type::text::appendChar(
+                dialog_slot_labels_[i].data(),
+                dialog_slot_labels_[i].size(),
+                0,
+                safeSlotTag
+            );
+            pos = oc::type::text::appendUnsigned(
+                dialog_slot_labels_[i].data(),
+                dialog_slot_labels_[i].size(),
+                pos,
+                static_cast<unsigned>(i + 1),
+                2
+            );
+            oc::type::text::terminate(dialog_slot_labels_[i].data(), dialog_slot_labels_[i].size(), pos);
             dialog_slot_items_[i] = dialog_slot_labels_[i].data();
         }
 
@@ -185,13 +194,29 @@ void DataManagerPresenter::renderDialog() {
         const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
         static char confirmMeta[24];
         if (core::state::dataManagerCommandIsErase(cmd)) {
-            std::snprintf(confirmMeta, sizeof(confirmMeta), "ERASE %c%02u ?",
-                          safeSlotTag,
-                          static_cast<unsigned>(dm.pendingSlot.get() + 1U));
+            size_t pos = oc::type::text::appendString(confirmMeta, sizeof(confirmMeta), 0, "ERASE ");
+            pos = oc::type::text::appendChar(confirmMeta, sizeof(confirmMeta), pos, safeSlotTag);
+            pos = oc::type::text::appendUnsigned(
+                confirmMeta,
+                sizeof(confirmMeta),
+                pos,
+                static_cast<unsigned>(dm.pendingSlot.get() + 1U),
+                2
+            );
+            pos = oc::type::text::appendString(confirmMeta, sizeof(confirmMeta), pos, " ?");
+            oc::type::text::terminate(confirmMeta, sizeof(confirmMeta), pos);
         } else {
-            std::snprintf(confirmMeta, sizeof(confirmMeta), "OVERWRITE %c%02u ?",
-                          safeSlotTag,
-                          static_cast<unsigned>(dm.pendingSlot.get() + 1U));
+            size_t pos = oc::type::text::appendString(confirmMeta, sizeof(confirmMeta), 0, "OVERWRITE ");
+            pos = oc::type::text::appendChar(confirmMeta, sizeof(confirmMeta), pos, safeSlotTag);
+            pos = oc::type::text::appendUnsigned(
+                confirmMeta,
+                sizeof(confirmMeta),
+                pos,
+                static_cast<unsigned>(dm.pendingSlot.get() + 1U),
+                2
+            );
+            pos = oc::type::text::appendString(confirmMeta, sizeof(confirmMeta), pos, " ?");
+            oc::type::text::terminate(confirmMeta, sizeof(confirmMeta), pos);
         }
         meta = confirmMeta;
         items = CONFIRM_ITEMS;
@@ -222,7 +247,7 @@ void DataManagerPresenter::renderDialog() {
     });
 }
 
-void DataManagerPresenter::renderSoftkeyBar() {
+FLASHMEM void DataManagerPresenter::renderSoftkeyBar() {
     const bool visible = state_.dataManager.visible.get();
     if (!visible) {
         softkey_bar_.hide();
@@ -234,10 +259,24 @@ void DataManagerPresenter::renderSoftkeyBar() {
     const auto right = state_.dataManager.shortcutForRow(1U);
 
     char leftLabel[24];
-    std::snprintf(leftLabel, sizeof(leftLabel), "L:%s", core::state::dataManagerCommandLabel(left));
+    size_t leftPos = oc::type::text::appendString(leftLabel, sizeof(leftLabel), 0, "L:");
+    leftPos = oc::type::text::appendString(
+        leftLabel,
+        sizeof(leftLabel),
+        leftPos,
+        core::state::dataManagerCommandLabel(left)
+    );
+    oc::type::text::terminate(leftLabel, sizeof(leftLabel), leftPos);
 
     char rightLabel[24];
-    std::snprintf(rightLabel, sizeof(rightLabel), "R:%s", core::state::dataManagerCommandLabel(right));
+    size_t rightPos = oc::type::text::appendString(rightLabel, sizeof(rightLabel), 0, "R:");
+    rightPos = oc::type::text::appendString(
+        rightLabel,
+        sizeof(rightLabel),
+        rightPos,
+        core::state::dataManagerCommandLabel(right)
+    );
+    oc::type::text::terminate(rightLabel, sizeof(rightLabel), rightPos);
 
     softkey_bar_.setLabels(leftLabel, "C:Commands", rightLabel);
     softkey_bar_.show();

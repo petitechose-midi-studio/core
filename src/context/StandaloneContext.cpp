@@ -12,6 +12,7 @@
 #include <oc/time/Time.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 #include "context/standalone/ActiveViewLifecyclePlan.hpp"
 #include "context/standalone/MacroFeatureModule.hpp"
 #include "context/standalone/SequencerFeatureModule.hpp"
@@ -47,7 +48,7 @@ StandaloneContext::~StandaloneContext() = default;
 // IContext Lifecycle
 // =============================================================================
 
-oc::type::Result<void> StandaloneContext::init() {
+FLASHMEM oc::type::Result<void> StandaloneContext::init() {
     OC_LOG_INFO("StandaloneContext::initialize()");
 
     oc::ui::lvgl::font::load(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
@@ -72,7 +73,7 @@ oc::type::Result<void> StandaloneContext::init() {
 void StandaloneContext::update() {
 }
 
-void StandaloneContext::onCleanup() {
+FLASHMEM void StandaloneContext::onCleanup() {
     // Ensure overlay stack is reset while UI objects are still alive.
     // CoreState survives context switches.
     if (overlay_controller_) {
@@ -91,7 +92,7 @@ void StandaloneContext::onCleanup() {
 // Private Methods
 // =============================================================================
 
-void StandaloneContext::configureEncoders() {
+FLASHMEM void StandaloneContext::configureEncoders() {
     // Configure special encoders once (avoid hidden handler coupling)
     encoders().setMode(Config::EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
     encoders().setMode(Config::EncoderID::OPT, oc::interface::EncoderMode::NORMALIZED);
@@ -101,11 +102,11 @@ void StandaloneContext::configureEncoders() {
     }
 }
 
-void StandaloneContext::createViewContainer() {
+FLASHMEM void StandaloneContext::createViewContainer() {
     view_container_ = std::make_unique<ms::ui::ViewContainer>(oc::ui::lvgl::Screen::root());
 }
 
-void StandaloneContext::createViews() {
+FLASHMEM void StandaloneContext::createViews() {
     lv_obj_t* mainZone = view_container_->getMainZone();
 
     macro_view_ = std::make_unique<core::ui::MacroView>(mainZone, core_state_);
@@ -114,13 +115,13 @@ void StandaloneContext::createViews() {
     applyActiveView();
 }
 
-void StandaloneContext::createBottomBar() {
+FLASHMEM void StandaloneContext::createBottomBar() {
     lv_obj_t* bottomZone = view_container_->getBottomZone();
     transport_bar_ = std::make_unique<core::ui::TransportBar>(bottomZone, core_state_.statusBar);
     context_softkey_bar_ = std::make_unique<core::ui::ContextSoftkeyBar>(bottomZone);
 }
 
-void StandaloneContext::createOverlayController() {
+FLASHMEM void StandaloneContext::createOverlayController() {
     overlay_controller_ = std::make_unique<oc::context::OverlayManager<core::ui::OverlayType>>(
         core_state_.overlays,
         buttons()
@@ -136,7 +137,7 @@ void StandaloneContext::createOverlayController() {
     });
 }
 
-void StandaloneContext::createViewSelectorOverlay() {
+FLASHMEM void StandaloneContext::createViewSelectorOverlay() {
     lv_obj_t* mainZone = view_container_->getMainZone();
 
     // Global overlay: ViewSelector (parent = mainZone so it covers views but not TransportBar)
@@ -150,7 +151,7 @@ void StandaloneContext::createViewSelectorOverlay() {
     setupViewSelectorRendering();
 }
 
-void StandaloneContext::createFeatureModules() {
+FLASHMEM void StandaloneContext::createFeatureModules() {
     syncEncodersFromState();
     macro_feature_ = std::make_unique<core::context::standalone::MacroFeatureModule>(
         core_state_,
@@ -183,7 +184,7 @@ void StandaloneContext::createFeatureModules() {
     );
 }
 
-void StandaloneContext::createGlobalHandlers() {
+FLASHMEM void StandaloneContext::createGlobalHandlers() {
     // MIDI input is routed through the framework EventBus (never via MidiAPI callbacks)
     onMidiCC([this](uint8_t ch, uint8_t cc, uint8_t val) {
         if (macro_feature_) macro_feature_->onCC(ch, cc, val);
@@ -222,7 +223,7 @@ void StandaloneContext::createGlobalHandlers() {
     }
 }
 
-void StandaloneContext::resetTransientUiState() {
+FLASHMEM void StandaloneContext::resetTransientUiState() {
     core_state_.macroEdit.reset();
     core_state_.sequencer.stepEdit.reset();
     core_state_.sequencer.stepPropertyInlineSelector.reset();
@@ -232,25 +233,25 @@ void StandaloneContext::resetTransientUiState() {
     core_state_.dataManager.resetSession(core::state::DataManagerContext::MACRO);
 }
 
-void StandaloneContext::cleanupGlobalHandlers() {
+FLASHMEM void StandaloneContext::cleanupGlobalHandlers() {
     view_switcher_handler_.reset();
     transport_handler_.reset();
 }
 
-void StandaloneContext::cleanupFeatureModules() {
+FLASHMEM void StandaloneContext::cleanupFeatureModules() {
     settings_feature_.reset();
     sequencer_feature_.reset();
     macro_feature_.reset();
 }
 
-void StandaloneContext::cleanupOverlayController() {
+FLASHMEM void StandaloneContext::cleanupOverlayController() {
     view_selector_.reset();
 
     // Overlay controller clears authority resolver after overlay views are gone.
     overlay_controller_.reset();
 }
 
-void StandaloneContext::cleanupViews() {
+FLASHMEM void StandaloneContext::cleanupViews() {
     context_softkey_bar_.reset();
     transport_bar_.reset();
 
@@ -266,7 +267,7 @@ void StandaloneContext::cleanupViews() {
     view_container_.reset();
 }
 
-void StandaloneContext::syncEncodersFromState() {
+FLASHMEM void StandaloneContext::syncEncodersFromState() {
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         float value = core_state_.macros.slots[i].value.get();
         // Macro view defaults: 0..1 continuous
@@ -299,7 +300,7 @@ void StandaloneContext::syncEncodersFromState() {
     OC_LOG_DEBUG("Synced encoder positions from restored state");
 }
 
-void StandaloneContext::setupViewSelectorRendering() {
+FLASHMEM void StandaloneContext::setupViewSelectorRendering() {
     view_selector_watcher_.watchAll(
         [this]() { renderViewSelector(); },
         core_state_.viewSelector.visible,
@@ -307,7 +308,7 @@ void StandaloneContext::setupViewSelectorRendering() {
     );
 }
 
-void StandaloneContext::renderViewSelector() {
+FLASHMEM void StandaloneContext::renderViewSelector() {
     if (!view_selector_) return;
     static const std::vector<std::string> VIEW_NAMES = {"Macros", "Sequencer"};
 
@@ -318,14 +319,14 @@ void StandaloneContext::renderViewSelector() {
     });
 }
 
-void StandaloneContext::setupActiveViewSwitching() {
+FLASHMEM void StandaloneContext::setupActiveViewSwitching() {
     active_view_watcher_.watchAll(
         [this]() { applyActiveView(); },
         core_state_.activeView
     );
 }
 
-void StandaloneContext::applyActiveView() {
+FLASHMEM void StandaloneContext::applyActiveView() {
     for (auto step :
          core::context::standalone::makeActiveViewLifecyclePlan(core_state_.activeView.get())) {
         switch (step) {

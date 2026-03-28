@@ -12,6 +12,7 @@
 #include <oc/hal/teensy/Teensy.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
 #include "context/StandaloneContext.hpp"
@@ -40,7 +41,7 @@ static std::optional<core::sequencer::SequencerRuntimeService> sequencerRuntime;
 // =============================================================================
 
 /// Check result and halt on error (embedded systems have no recovery)
-static void checkOrHalt(const oc::type::Result<void>& result, const char* component) {
+static FLASHMEM void checkOrHalt(const oc::type::Result<void>& result, const char* component) {
     if (!result) {
         OC_LOG_ERROR("{} init failed: {}", component,
                      oc::type::errorCodeToString(result.error().code));
@@ -48,26 +49,26 @@ static void checkOrHalt(const oc::type::Result<void>& result, const char* compon
     }
 }
 
-static void initDisplay() {
+static FLASHMEM void initDisplay() {
     display = oc::hal::teensy::Ili9341(
         Hardware::Display::CONFIG,
         {.framebuffer = Buffer::framebuffer, .diff1 = Buffer::diff1, .diff2 = Buffer::diff2});
     checkOrHalt(display->init(), "Display");
 }
 
-static void initLVGL() {
+static FLASHMEM void initLVGL() {
     lvgl = oc::ui::lvgl::Bridge(*display, Buffer::lvgl, oc::hal::teensy::defaultTimeProvider,
                                  Hardware::LVGL::CONFIG);
     checkOrHalt(lvgl->init(), "LVGL");
 }
 
-static void initMux() {
+static FLASHMEM void initMux() {
     mux = oc::hal::teensy::CD74HC4067(Hardware::Mux::CONFIG, oc::hal::teensy::gpio());
     checkOrHalt(mux->init(), "MUX");
 }
 
-static void initStorageBackend(oc::hal::teensy::SDCardBackend& backend,
-                               const char* label) {
+static FLASHMEM void initStorageBackend(oc::hal::teensy::SDCardBackend& backend,
+                                        const char* label) {
     const auto result = backend.init();
     if (!result) {
         OC_LOG_ERROR("{} storage init failed: {}",
@@ -77,7 +78,7 @@ static void initStorageBackend(oc::hal::teensy::SDCardBackend& backend,
     }
 }
 
-static void initStorage() {
+static FLASHMEM void initStorage() {
     struct StorageInitItem {
         const char* label;
         oc::hal::teensy::SDCardBackend* backend;
@@ -105,7 +106,7 @@ static void initStorage() {
                 sequencerSetLibraryStorage.capacity());
 }
 
-static void initApp() {
+static FLASHMEM void initApp() {
     // Create global state with dedicated storage domains (survives context switches)
     coreState.emplace(settingsStorage,
                       macroWorkspaceStorage,
@@ -166,7 +167,7 @@ static void initApp() {
 // Arduino Entry Points
 // =============================================================================
 
-void setup() {
+FLASHMEM void setup() {
     oc::hal::teensy::initLogging();
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");

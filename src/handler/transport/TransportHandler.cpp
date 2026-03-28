@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::handler {
 
 using namespace oc::ui::lvgl;
@@ -20,7 +22,7 @@ TransportHandler::TransportHandler(core::state::CoreState& coreState,
     setupBindings();
 }
 
-void TransportHandler::setupBindings() {
+FLASHMEM void TransportHandler::setupBindings() {
     // NAV encoder: tempo +/- 1 BPM per tick (expects EncoderMode::RELATIVE)
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()

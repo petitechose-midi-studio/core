@@ -6,7 +6,7 @@
  */
 
 #include <cstdint>
-#include <cstdio>
+#include <oc/type/TextFormat.hpp>
 
 #include <oc/state/DerivedSignal.hpp>
 #include <oc/state/Signal.hpp>
@@ -39,7 +39,7 @@ struct MacroSlot {
     MacroSlot()
         : displayValue(value, [](float v, char* buf, size_t size) {
               uint8_t cc = core::midi::toCC(v);
-              std::snprintf(buf, size, "%d", cc);
+              oc::type::text::formatUnsigned(buf, size, cc);
           }) {}
 
     // Non-copyable, non-movable (signals hold references)
@@ -64,7 +64,9 @@ struct MacroState {
     MacroState() {
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
             char buf[16];
-            std::snprintf(buf, sizeof(buf), "Macro %d", i + 1);
+            size_t pos = oc::type::text::appendString(buf, sizeof(buf), 0, "Macro ");
+            pos = oc::type::text::appendUnsigned(buf, sizeof(buf), pos, i + 1);
+            oc::type::text::terminate(buf, sizeof(buf), pos);
             slots[i].label.set(buf);
             // displayValue is auto-derived from value, no manual sync needed
         }

@@ -3,6 +3,7 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
 
@@ -33,7 +34,7 @@ SequencerStepHandler::SequencerStepHandler(core::state::CoreState& state,
     setupBindings();
 }
 
-void SequencerStepHandler::setupBindings() {
+FLASHMEM void SequencerStepHandler::setupBindings() {
     // Toggle step (release = future-proof vs long-press overlays)
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         buttons_.button(Config::MACRO_BUTTONS[i])

@@ -46,13 +46,4 @@ constexpr oc::core::input::InputConfig CONFIG = {.longPressMs = Timing::LONG_PRE
                                            .debounceMs = Timing::DEBOUNCE_MS};
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// MIDI / SysEx
-// ═══════════════════════════════════════════════════════════════════════════
-
-namespace Midi {
-/// USB MIDI SysEx buffer size (used by sysex_patch.py to patch Teensyduino)
-constexpr uint16_t USB_SYSEX_MAX_SIZE = 16000;
-}  // namespace Midi
-
 }  // namespace Config

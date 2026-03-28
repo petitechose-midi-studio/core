@@ -5,6 +5,7 @@
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 
@@ -55,7 +56,7 @@ StepPropertyStrip::~StepPropertyStrip() {
     }
 }
 
-void StepPropertyStrip::createUI(lv_obj_t* parent) {
+FLASHMEM void StepPropertyStrip::createUI(lv_obj_t* parent) {
     if (!parent) return;
 
     container_ = lv_obj_create(parent);

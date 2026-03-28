@@ -5,6 +5,7 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
 #include "handler/common/NavigationUtils.hpp"
@@ -36,10 +37,10 @@ inline oc::type::IsActiveFn activeRangePredicate(core::state::CoreState& state) 
 
 }  // namespace
 
-SequencerRangeActionHandler::SequencerRangeActionHandler(core::state::CoreState& state,
-                                                         oc::api::EncoderAPI& encoders,
-                                                         oc::api::ButtonAPI& buttons,
-                                                         lv_obj_t* sequencerViewScope)
+FLASHMEM SequencerRangeActionHandler::SequencerRangeActionHandler(core::state::CoreState& state,
+                                                                  oc::api::EncoderAPI& encoders,
+                                                                  oc::api::ButtonAPI& buttons,
+                                                                  lv_obj_t* sequencerViewScope)
     : state_(state)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -47,7 +48,7 @@ SequencerRangeActionHandler::SequencerRangeActionHandler(core::state::CoreState&
     setupBindings();
 }
 
-void SequencerRangeActionHandler::setupBindings() {
+FLASHMEM void SequencerRangeActionHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope(scope_element_))
@@ -134,7 +135,7 @@ void SequencerRangeActionHandler::setupBindings() {
         });
 }
 
-void SequencerRangeActionHandler::armClearPage() {
+FLASHMEM void SequencerRangeActionHandler::armClearPage() {
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
 
@@ -153,21 +154,21 @@ void SequencerRangeActionHandler::armClearPage() {
     setCursorStep(start);
 }
 
-void SequencerRangeActionHandler::openClearRange() {
+FLASHMEM void SequencerRangeActionHandler::openClearRange() {
     ignoreNextBottomLeftRelease();
     beginRangeSelection(RangeSelectionKind::CLEAR);
 }
 
-void SequencerRangeActionHandler::openCopyRange() {
+FLASHMEM void SequencerRangeActionHandler::openCopyRange() {
     ignoreNextBottomRightRelease();
     beginRangeSelection(RangeSelectionKind::COPY);
 }
 
-void SequencerRangeActionHandler::cancel() {
+FLASHMEM void SequencerRangeActionHandler::cancel() {
     state_.sequencer.rangeSelection.reset();
 }
 
-void SequencerRangeActionHandler::moveCursor(float delta) {
+FLASHMEM void SequencerRangeActionHandler::moveCursor(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     auto& range = state_.sequencer.rangeSelection;
@@ -193,7 +194,7 @@ void SequencerRangeActionHandler::moveCursor(float delta) {
     setCursorStep(next);
 }
 
-void SequencerRangeActionHandler::moveRange(float normalized) {
+FLASHMEM void SequencerRangeActionHandler::moveRange(float normalized) {
     auto& range = state_.sequencer.rangeSelection;
     if (!range.selectingSourceRange()) return;
 
@@ -204,7 +205,7 @@ void SequencerRangeActionHandler::moveRange(float normalized) {
     setSelectedRange(range.anchorStep.get(), span);
 }
 
-void SequencerRangeActionHandler::commitCursor() {
+FLASHMEM void SequencerRangeActionHandler::commitCursor() {
     auto& range = state_.sequencer.rangeSelection;
 
     switch (range.phase.get()) {
@@ -238,7 +239,7 @@ void SequencerRangeActionHandler::commitCursor() {
     }
 }
 
-void SequencerRangeActionHandler::applyClear() {
+FLASHMEM void SequencerRangeActionHandler::applyClear() {
     auto& range = state_.sequencer.rangeSelection;
     if (!range.confirmingClearPage()) return;
 
@@ -246,7 +247,7 @@ void SequencerRangeActionHandler::applyClear() {
     range.reset();
 }
 
-void SequencerRangeActionHandler::applyPaste() {
+FLASHMEM void SequencerRangeActionHandler::applyPaste() {
     auto& range = state_.sequencer.rangeSelection;
     if (!range.selectingPasteTarget()) return;
 
@@ -254,11 +255,11 @@ void SequencerRangeActionHandler::applyPaste() {
     range.reset();
 }
 
-void SequencerRangeActionHandler::duplicatePageForward() {
+FLASHMEM void SequencerRangeActionHandler::duplicatePageForward() {
     state_.sequencer.duplicatePageForward(state_.sequencer.page.get());
 }
 
-void SequencerRangeActionHandler::beginRangeSelection(RangeSelectionKind kind) {
+FLASHMEM void SequencerRangeActionHandler::beginRangeSelection(RangeSelectionKind kind) {
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
 
@@ -275,7 +276,7 @@ void SequencerRangeActionHandler::beginRangeSelection(RangeSelectionKind kind) {
     configureOptForRangeEdit();
 }
 
-void SequencerRangeActionHandler::configureOptForRangeEdit() {
+FLASHMEM void SequencerRangeActionHandler::configureOptForRangeEdit() {
     auto& range = state_.sequencer.rangeSelection;
     if (!range.selectingSourceRange()) return;
 
@@ -295,7 +296,7 @@ void SequencerRangeActionHandler::configureOptForRangeEdit() {
     );
 }
 
-void SequencerRangeActionHandler::setSelectedRange(uint8_t start, uint8_t span) {
+FLASHMEM void SequencerRangeActionHandler::setSelectedRange(uint8_t start, uint8_t span) {
     auto& range = state_.sequencer.rangeSelection;
     const uint8_t clampedSpan = static_cast<uint8_t>(std::min<uint16_t>(span, maxRangeSpan()));
     range.rangeStart.set(start);
@@ -303,7 +304,7 @@ void SequencerRangeActionHandler::setSelectedRange(uint8_t start, uint8_t span) 
     range.rangeValid.set(true);
 }
 
-uint8_t SequencerRangeActionHandler::currentRangeSpan() const {
+FLASHMEM uint8_t SequencerRangeActionHandler::currentRangeSpan() const {
     const auto& range = state_.sequencer.rangeSelection;
     const uint8_t start = range.rangeStart.get();
     const uint8_t end = range.rangeEnd.get();
@@ -311,7 +312,7 @@ uint8_t SequencerRangeActionHandler::currentRangeSpan() const {
     return static_cast<uint8_t>(end - start);
 }
 
-uint8_t SequencerRangeActionHandler::maxRangeSpan() const {
+FLASHMEM uint8_t SequencerRangeActionHandler::maxRangeSpan() const {
     const auto& range = state_.sequencer.rangeSelection;
     const uint8_t start = range.anchorStep.get();
     const uint8_t maxStep = static_cast<uint8_t>(state_.sequencer.length.get() - 1);
@@ -319,25 +320,25 @@ uint8_t SequencerRangeActionHandler::maxRangeSpan() const {
     return static_cast<uint8_t>(maxStep - start);
 }
 
-void SequencerRangeActionHandler::ignoreNextBottomLeftRelease() {
+FLASHMEM void SequencerRangeActionHandler::ignoreNextBottomLeftRelease() {
     ignore_next_bottom_left_release_ = true;
 }
 
-void SequencerRangeActionHandler::ignoreNextBottomRightRelease() {
+FLASHMEM void SequencerRangeActionHandler::ignoreNextBottomRightRelease() {
     ignore_next_bottom_right_release_ = true;
 }
 
-void SequencerRangeActionHandler::setCursorStep(uint8_t step) {
+FLASHMEM void SequencerRangeActionHandler::setCursorStep(uint8_t step) {
     state_.sequencer.rangeSelection.cursorStep.set(step);
     state_.sequencer.focusedStep.set(step);
     state_.sequencer.page.set(state_.sequencer.pageForStep(step));
 }
 
-uint8_t SequencerRangeActionHandler::currentPageStart() const {
+FLASHMEM uint8_t SequencerRangeActionHandler::currentPageStart() const {
     return state_.sequencer.pageStartStep(state_.sequencer.page.get());
 }
 
-uint8_t SequencerRangeActionHandler::currentPageEnd() const {
+FLASHMEM uint8_t SequencerRangeActionHandler::currentPageEnd() const {
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return 0;
 
@@ -348,7 +349,7 @@ uint8_t SequencerRangeActionHandler::currentPageEnd() const {
     ));
 }
 
-uint8_t SequencerRangeActionHandler::initialCursorStep() const {
+FLASHMEM uint8_t SequencerRangeActionHandler::initialCursorStep() const {
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return 0;
 
@@ -357,7 +358,7 @@ uint8_t SequencerRangeActionHandler::initialCursorStep() const {
     return state_.sequencer.pageStartStep(state_.sequencer.page.get());
 }
 
-uint8_t SequencerRangeActionHandler::maxCursorStep() const {
+FLASHMEM uint8_t SequencerRangeActionHandler::maxCursorStep() const {
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return 0;
 

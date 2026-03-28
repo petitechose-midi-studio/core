@@ -3,6 +3,7 @@
 #include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
 #include "SequencerInputUtils.hpp"
@@ -35,7 +36,7 @@ SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     setupBindings();
 }
 
-void SequencerMacroPropertyHandler::setupBindings() {
+FLASHMEM void SequencerMacroPropertyHandler::setupBindings() {
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()

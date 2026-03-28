@@ -1,5 +1,6 @@
 #include "context/standalone/MacroFeatureModule.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
@@ -11,13 +12,13 @@
 
 namespace core::context::standalone {
 
-MacroFeatureModule::MacroFeatureModule(core::state::CoreState& state,
-                                       oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-                                       oc::api::EncoderAPI& encoders,
-                                       oc::api::ButtonAPI& buttons,
-                                       oc::api::MidiAPI& midi,
-                                       lv_obj_t* mainZone,
-                                       lv_obj_t* macroViewScope) {
+FLASHMEM MacroFeatureModule::MacroFeatureModule(core::state::CoreState& state,
+                                                oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                                                oc::api::EncoderAPI& encoders,
+                                                oc::api::ButtonAPI& buttons,
+                                                oc::api::MidiAPI& midi,
+                                                lv_obj_t* mainZone,
+                                                lv_obj_t* macroViewScope) {
     edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::MACRO_EDIT,

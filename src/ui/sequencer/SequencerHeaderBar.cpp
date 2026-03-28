@@ -5,6 +5,7 @@
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/theme/StandaloneTheme.hpp"
@@ -52,7 +53,7 @@ SequencerHeaderBar::~SequencerHeaderBar() {
     }
 }
 
-void SequencerHeaderBar::createUI(lv_obj_t* parent) {
+FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     if (!parent) return;
 
     container_ = lv_obj_create(parent);

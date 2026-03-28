@@ -3,6 +3,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
 
@@ -25,7 +26,7 @@ ViewSwitcherHandler::ViewSwitcherHandler(core::state::CoreState& state,
     setupBindings();
 }
 
-void ViewSwitcherHandler::setupBindings() {
+FLASHMEM void ViewSwitcherHandler::setupBindings() {
     // Open selector from any active top-level view scope (latch behavior for toggle)
     lv_obj_t* lastBoundScope = nullptr;
     for (auto* viewScope : view_scopes_) {

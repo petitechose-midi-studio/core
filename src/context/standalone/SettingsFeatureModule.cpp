@@ -1,5 +1,6 @@
 #include "context/standalone/SettingsFeatureModule.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
@@ -11,7 +12,7 @@
 
 namespace core::context::standalone {
 
-SettingsFeatureModule::SettingsFeatureModule(
+FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     core::state::CoreState& state,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,

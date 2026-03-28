@@ -5,6 +5,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
@@ -42,12 +43,12 @@ int findChoiceIndex(const T& value, const T (&choices)[N], int fallback = 0) {
 
 }  // namespace
 
-GlobalSettingsHandler::GlobalSettingsHandler(core::state::CoreState& state,
-                                             oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-                                             oc::api::EncoderAPI& encoders,
-                                             oc::api::ButtonAPI& buttons,
-                                             lv_obj_t* settingsOverlayScope,
-                                             lv_obj_t* selectorOverlayScope)
+FLASHMEM GlobalSettingsHandler::GlobalSettingsHandler(core::state::CoreState& state,
+                                                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                                                      oc::api::EncoderAPI& encoders,
+                                                      oc::api::ButtonAPI& buttons,
+                                                      lv_obj_t* settingsOverlayScope,
+                                                      lv_obj_t* selectorOverlayScope)
     : state_(state)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -57,7 +58,7 @@ GlobalSettingsHandler::GlobalSettingsHandler(core::state::CoreState& state,
     setupBindings();
 }
 
-void GlobalSettingsHandler::setupBindings() {
+FLASHMEM void GlobalSettingsHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_TOP)
         .longPress(SETTINGS_LONG_PRESS_MS)
         .when([this]() {
@@ -102,7 +103,7 @@ void GlobalSettingsHandler::setupBindings() {
     OC_LOG_DEBUG("[GlobalSettingsHandler] Bindings setup complete");
 }
 
-void GlobalSettingsHandler::openSettings() {
+FLASHMEM void GlobalSettingsHandler::openSettings() {
     auto& s = state_.globalSettings;
     s.reset();
 
@@ -110,7 +111,7 @@ void GlobalSettingsHandler::openSettings() {
     overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS, false);
 }
 
-void GlobalSettingsHandler::closeSettings() {
+FLASHMEM void GlobalSettingsHandler::closeSettings() {
     if (ignore_open_release_) {
         ignore_open_release_ = false;
         return;
@@ -120,7 +121,7 @@ void GlobalSettingsHandler::closeSettings() {
     state_.globalSettings.reset();
 }
 
-void GlobalSettingsHandler::moveFocus(float delta) {
+FLASHMEM void GlobalSettingsHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     const int current = static_cast<int>(state_.globalSettings.focusedRow.get());
@@ -129,7 +130,7 @@ void GlobalSettingsHandler::moveFocus(float delta) {
     state_.globalSettings.focusedRow.set(static_cast<uint8_t>(next));
 }
 
-void GlobalSettingsHandler::openValueSelector() {
+FLASHMEM void GlobalSettingsHandler::openValueSelector() {
     auto& s = state_.globalSettings;
     const uint8_t row = s.focusedRow.get();
 
@@ -145,7 +146,7 @@ void GlobalSettingsHandler::openValueSelector() {
     overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, true);
 }
 
-void GlobalSettingsHandler::navigateSelector(float delta) {
+FLASHMEM void GlobalSettingsHandler::navigateSelector(float delta) {
     const uint8_t row = state_.globalSettings.selector.editingRow.get();
     int count = 0;
 
@@ -171,7 +172,7 @@ void GlobalSettingsHandler::navigateSelector(float delta) {
     state_.globalSettings.selector.selectedIndex.set(next);
 }
 
-void GlobalSettingsHandler::applySelectorAndClose() {
+FLASHMEM void GlobalSettingsHandler::applySelectorAndClose() {
     auto& selector = state_.globalSettings.selector;
     const uint8_t row = selector.editingRow.get();
     const int choice = selector.selectedIndex.get();
@@ -182,11 +183,11 @@ void GlobalSettingsHandler::applySelectorAndClose() {
     modal::hideOverlayAndReset(overlays_, [&selector]() { selector.reset(); });
 }
 
-void GlobalSettingsHandler::closeSelectorCancel() {
+FLASHMEM void GlobalSettingsHandler::closeSelectorCancel() {
     modal::hideOverlayAndReset(overlays_, [this]() { state_.globalSettings.selector.reset(); });
 }
 
-int GlobalSettingsHandler::currentChoiceIndexForRow_(uint8_t row) const {
+FLASHMEM int GlobalSettingsHandler::currentChoiceIndexForRow_(uint8_t row) const {
     const auto& sync = state_.midiSync;
 
     switch (row) {
@@ -206,7 +207,7 @@ int GlobalSettingsHandler::currentChoiceIndexForRow_(uint8_t row) const {
     }
 }
 
-void GlobalSettingsHandler::applyChoiceForRow_(uint8_t row, int choiceIndex) {
+FLASHMEM void GlobalSettingsHandler::applyChoiceForRow_(uint8_t row, int choiceIndex) {
     auto& sync = state_.midiSync;
 
     switch (row) {
@@ -235,7 +236,7 @@ void GlobalSettingsHandler::applyChoiceForRow_(uint8_t row, int choiceIndex) {
     }
 }
 
-void GlobalSettingsHandler::persistRow_(uint8_t row) {
+FLASHMEM void GlobalSettingsHandler::persistRow_(uint8_t row) {
     auto status = core::persistence::PersistenceWriteStatus::OK;
     switch (row) {
         case 0:

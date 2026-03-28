@@ -6,6 +6,7 @@
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include "state/sequencer/StepPropertyDisplay.hpp"
@@ -139,7 +140,7 @@ void StepGrid::forceRefresh() {
     invalidateTileCaches();
 }
 
-void StepGrid::createUI(lv_obj_t* parent) {
+FLASHMEM void StepGrid::createUI(lv_obj_t* parent) {
     if (!parent) return;
 
     container_ = lv_obj_create(parent);
@@ -179,7 +180,7 @@ void StepGrid::createUI(lv_obj_t* parent) {
     lv_obj_add_event_cb(note_layer_, onGeometryChangedEvent, LV_EVENT_SIZE_CHANGED, this);
 }
 
-void StepGrid::createTiles() {
+FLASHMEM void StepGrid::createTiles() {
     note_label_height_ = static_cast<lv_coord_t>(lv_font_get_line_height(fonts.inter_13_bold));
 
     for (uint8_t i = 0; i < tiles_.size(); ++i) {

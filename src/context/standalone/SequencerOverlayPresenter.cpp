@@ -1,9 +1,9 @@
 #include "context/standalone/SequencerOverlayPresenter.hpp"
 
 #include <array>
-#include <cstdio>
-
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
+#include <oc/type/TextFormat.hpp>
 
 #include "state/sequencer/StepPropertyDisplay.hpp"
 
@@ -64,7 +64,7 @@ SequencerOverlayPresenter::SequencerOverlayPresenter(
     : state_(state)
     , step_edit_overlay_(stepEditOverlay) {}
 
-void SequencerOverlayPresenter::bind() {
+FLASHMEM void SequencerOverlayPresenter::bind() {
     step_edit_watcher_.watchAll(
         [this]() { renderStepEdit(); },
         state_.sequencer.stepEdit.visible,
@@ -87,19 +87,20 @@ void SequencerOverlayPresenter::renderStepEdit() {
     const uint8_t len = state_.sequencer.length.get();
 
     char title[16];
-    std::snprintf(title, sizeof(title), "STEP %u", static_cast<unsigned>(abs) + 1);
+    size_t titlePos = oc::type::text::appendString(title, sizeof(title), 0, "STEP ");
+    titlePos = oc::type::text::appendUnsigned(title, sizeof(title), titlePos, static_cast<unsigned>(abs) + 1U);
+    oc::type::text::terminate(title, sizeof(title), titlePos);
 
     char meta[16];
     if (len > 0) {
-        std::snprintf(
+        oc::type::text::formatFraction(
             meta,
             sizeof(meta),
-            "%u/%u",
-            static_cast<unsigned>(abs) + 1,
+            static_cast<unsigned>(abs) + 1U,
             static_cast<unsigned>(len)
         );
     } else {
-        std::snprintf(meta, sizeof(meta), "%u", static_cast<unsigned>(abs) + 1);
+        oc::type::text::formatUnsigned(meta, sizeof(meta), static_cast<unsigned>(abs) + 1U);
     }
 
     const uint8_t note = state_.sequencer.note[abs];

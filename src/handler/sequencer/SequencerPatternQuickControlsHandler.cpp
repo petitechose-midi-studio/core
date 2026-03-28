@@ -3,6 +3,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
 #include "handler/common/NavigationUtils.hpp"
@@ -47,7 +48,7 @@ SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHandler(
     setupBindings();
 }
 
-void SequencerPatternQuickControlsHandler::setupBindings() {
+FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_CENTER)
         .press()
         .latch()

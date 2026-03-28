@@ -4,6 +4,7 @@
 
 #include <oc/log/Log.hpp>
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 
 #include "ui/view/MacroViewModelBuilder.hpp"
 #include "ui/widget/MacroKnobWidget.hpp"
@@ -112,7 +113,7 @@ void MacroView::onDeactivate() {
     }
 }
 
-void MacroView::bindToState() {
+FLASHMEM void MacroView::bindToState() {
     subscriptions_.reserve(MACRO_COUNT + 2);
 
     subscriptions_.push_back(
@@ -142,7 +143,7 @@ void MacroView::bindToState() {
     processDirtyFlags();
 }
 
-void MacroView::createLayout(lv_obj_t* parent) {
+FLASHMEM void MacroView::createLayout(lv_obj_t* parent) {
     layout_ = std::make_unique<ms::ui::LayoutView>(parent);
     container_ = layout_->getElement();
     top_bar_container_ = layout_->header();
@@ -158,11 +159,11 @@ void MacroView::createLayout(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(body_container_, 0, 0);
 }
 
-void MacroView::createTopBar() {
+FLASHMEM void MacroView::createTopBar() {
     top_bar_ = std::make_unique<TopBar>(top_bar_container_);
 }
 
-void MacroView::createMacros() {
+FLASHMEM void MacroView::createMacros() {
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         uint8_t col = i % COLS;
         uint8_t row = i / COLS;

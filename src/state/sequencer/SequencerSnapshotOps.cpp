@@ -2,43 +2,44 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
 namespace core::state::sequencer {
 
 namespace {
 
-uint8_t sanitizeSequencerLength(uint8_t length) {
+FLASHMEM uint8_t sanitizeSequencerLength(uint8_t length) {
     if (length == 0 || length > SequencerState::MAX_STEPS) {
         return oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
     }
     return length;
 }
 
-uint8_t sanitizeStepsPerBeat(uint8_t spb) {
+FLASHMEM uint8_t sanitizeStepsPerBeat(uint8_t spb) {
     if (spb == 0) {
         return oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
     }
     return spb;
 }
 
-uint8_t sanitizeMidiChannel(uint8_t channel) {
+FLASHMEM uint8_t sanitizeMidiChannel(uint8_t channel) {
     return (channel > 15U)
                ? oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED
                : channel;
 }
 
-uint8_t sanitizeMidi7(uint8_t value) {
+FLASHMEM uint8_t sanitizeMidi7(uint8_t value) {
     return (value > 127U) ? 127U : value;
 }
 
 }  // namespace
 
-uint64_t lengthMask(uint8_t length) {
+FLASHMEM uint64_t lengthMask(uint8_t length) {
     if (length == 0) return 0;
     if (length >= SequencerState::MAX_STEPS) return ~uint64_t{0};
     return (uint64_t{1} << length) - uint64_t{1};
 }
 
-void captureSnapshot(const SequencerState& source, SequencerPatternSnapshot& out) {
+FLASHMEM void captureSnapshot(const SequencerState& source, SequencerPatternSnapshot& out) {
     out.length = sanitizeSequencerLength(source.length.get());
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
     out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
@@ -53,7 +54,7 @@ void captureSnapshot(const SequencerState& source, SequencerPatternSnapshot& out
     }
 }
 
-void applySnapshot(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
+FLASHMEM void applySnapshot(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
     const uint8_t length = sanitizeSequencerLength(snapshot.length);
     const uint8_t focusedBefore = target.focusedStep.get();
 
@@ -77,7 +78,7 @@ void applySnapshot(SequencerState& target, const SequencerPatternSnapshot& snaps
     target.bumpStepDataRevision();
 }
 
-void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
+FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
     const uint8_t focusedBefore = target.focusedStep.get();
 
     const uint8_t currentLength = sanitizeSequencerLength(target.length.get());

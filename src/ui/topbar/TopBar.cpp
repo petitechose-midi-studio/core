@@ -2,6 +2,7 @@
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -20,7 +21,7 @@ TopBar::~TopBar() {
     }
 }
 
-void TopBar::createLayout(lv_obj_t* parent) {
+FLASHMEM void TopBar::createLayout(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_remove_style_all(container_);
     lv_obj_set_size(container_, LV_PCT(100), theme::layout::TOP_BAR_HEIGHT);

@@ -1,5 +1,6 @@
 #include "MacroButtonWidget.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
@@ -19,7 +20,7 @@ MacroButtonWidget::~MacroButtonWidget() {
     button_.reset();
 }
 
-void MacroButtonWidget::createUI(lv_obj_t* parent) {
+FLASHMEM void MacroButtonWidget::createUI(lv_obj_t* parent) {
     createContainerWithGrid(parent);
 
     // ButtonWidget - stretch horizontally, CONTENT row sizes to button height

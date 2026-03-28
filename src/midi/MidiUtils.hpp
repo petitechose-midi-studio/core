@@ -2,7 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
+#include <oc/type/TextFormat.hpp>
 
 namespace core::midi {
 
@@ -29,7 +29,9 @@ inline void formatNoteName(char* buffer, size_t bufferSize, uint8_t midiNote) {
 
     const uint8_t chroma = static_cast<uint8_t>(midiNote % 12);
     const int octave = static_cast<int>(midiNote) / 12 - 1;
-    std::snprintf(buffer, bufferSize, "%s%d", NOTE_NAMES[chroma], octave);
+    size_t pos = oc::type::text::appendString(buffer, bufferSize, 0, NOTE_NAMES[chroma]);
+    pos = oc::type::text::appendSigned(buffer, bufferSize, pos, octave);
+    oc::type::text::terminate(buffer, bufferSize, pos);
 }
 
 }  // namespace core::midi

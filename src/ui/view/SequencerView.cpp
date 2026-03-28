@@ -2,6 +2,7 @@
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 
 namespace style = oc::ui::lvgl::style;
@@ -67,7 +68,7 @@ void SequencerView::onDeactivate() {
     }
 }
 
-void SequencerView::createLayout(lv_obj_t* parent) {
+FLASHMEM void SequencerView::createLayout(lv_obj_t* parent) {
     layout_ = std::make_unique<ms::ui::LayoutView>(parent);
     container_ = layout_->getElement();
     body_container_ = layout_->content();
@@ -99,24 +100,24 @@ void SequencerView::createLayout(lv_obj_t* parent) {
     lv_obj_set_style_pad_column(interaction_container_, 0, 0);
 }
 
-void SequencerView::createHeaderBar() {
+FLASHMEM void SequencerView::createHeaderBar() {
     if (!layout_) return;
     header_bar_ = std::make_unique<SequencerHeaderBar>(layout_->header());
 }
 
-void SequencerView::createGrid() {
+FLASHMEM void SequencerView::createGrid() {
     if (!center_column_) return;
 
     property_strip_ = std::make_unique<StepPropertyStrip>(center_column_);
     step_grid_ = std::make_unique<StepGrid>(center_column_);
 }
 
-void SequencerView::createQuickControls() {
+FLASHMEM void SequencerView::createQuickControls() {
     if (!layout_) return;
     pattern_quick_controls_ = std::make_unique<PatternQuickControls>(layout_->header());
 }
 
-void SequencerView::createActionStrips() {
+FLASHMEM void SequencerView::createActionStrips() {
     if (!interaction_container_ || !body_container_) return;
     left_action_strip_ = std::make_unique<ContextActionStrip>(
         interaction_container_,
@@ -139,7 +140,7 @@ void SequencerView::createActionStrips() {
     );
 }
 
-void SequencerView::bindToState() {
+FLASHMEM void SequencerView::bindToState() {
     watcher_.watchAll(
         [this]() {
             requestQuickControlsRender();

@@ -15,10 +15,10 @@
 
 #include <array>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 #include <oc/state/Signal.hpp>
+#include <oc/type/TextFormat.hpp>
 
 #include <config/InputIDs.hpp>
 
@@ -58,7 +58,9 @@ struct MacroPageData {
     /// Initialize with page number
     void initDefault(uint8_t pageIndex) {
         std::memset(name, 0, PAGE_NAME_SIZE);
-        snprintf(name, PAGE_NAME_SIZE, "Page %d", pageIndex + 1);
+        size_t pos = oc::type::text::appendString(name, PAGE_NAME_SIZE, 0, "Page ");
+        pos = oc::type::text::appendUnsigned(name, PAGE_NAME_SIZE, pos, pageIndex + 1);
+        oc::type::text::terminate(name, PAGE_NAME_SIZE, pos);
 
         // Default CC mapping: page 0 = CC 1-8, page 1 = CC 9-16, etc.
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {

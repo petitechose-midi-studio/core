@@ -1,6 +1,6 @@
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 
-#include <cstdio>
+#include <oc/type/TextFormat.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
@@ -39,13 +39,15 @@ SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreSt
     static char leftText[24];
     static char rightText[24];
 
-    std::snprintf(leftText, sizeof(leftText), "Track 1");
-    std::snprintf(
+    oc::type::text::copy(leftText, sizeof(leftText), "Track 1");
+    size_t pos = oc::type::text::appendUnsigned(
         rightText,
         sizeof(rightText),
-        "%u steps",
+        0,
         static_cast<unsigned>(sequencer.length.get())
     );
+    pos = oc::type::text::appendString(rightText, sizeof(rightText), pos, " steps");
+    oc::type::text::terminate(rightText, sizeof(rightText), pos);
 
     return {
         .length = sequencer.length.get(),

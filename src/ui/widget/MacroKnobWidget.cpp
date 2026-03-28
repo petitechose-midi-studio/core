@@ -1,5 +1,6 @@
 #include "MacroKnobWidget.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
@@ -18,7 +19,7 @@ MacroKnobWidget::~MacroKnobWidget() {
     knob_.reset();
 }
 
-void MacroKnobWidget::createUI(lv_obj_t* parent) {
+FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
     createContainerWithGrid(parent);
 
     knob_ = std::make_unique<oc::ui::lvgl::KnobWidget>(container_);

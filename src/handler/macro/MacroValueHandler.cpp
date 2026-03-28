@@ -7,6 +7,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include <config/PlatformCompat.hpp>
 #include "midi/MidiUtils.hpp"
 
 namespace core::handler {
@@ -63,7 +64,7 @@ MacroValueHandler::MacroValueHandler(core::state::CoreState& coreState,
     setupBindings();
 }
 
-void MacroValueHandler::setupBindings() {
+FLASHMEM void MacroValueHandler::setupBindings() {
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()

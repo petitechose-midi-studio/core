@@ -1,7 +1,7 @@
 #include "state/macro/MacroWorkflow.hpp"
 
 #include <algorithm>
-#include <cstdio>
+#include <oc/type/TextFormat.hpp>
 
 #include "state/CoreState.hpp"
 
@@ -11,7 +11,9 @@ void MacroWorkflow::syncRuntimeFromActivePage(CoreState& state) {
     const auto& pageData = state.pages.activePageData();
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         char label[16];
-        std::snprintf(label, sizeof(label), "Macro %d", i + 1);
+        size_t pos = oc::type::text::appendString(label, sizeof(label), 0, "Macro ");
+        pos = oc::type::text::appendUnsigned(label, sizeof(label), pos, i + 1);
+        oc::type::text::terminate(label, sizeof(label), pos);
         state.macros.slots[i].label.set(label);
         state.macros.slots[i].value.set(std::clamp(pageData.values[i], 0.0f, 1.0f));
     }

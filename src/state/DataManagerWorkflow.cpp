@@ -1,10 +1,11 @@
 #include "state/DataManagerWorkflow.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include "state/CoreState.hpp"
 
 namespace core::state {
 
-uint8_t DataManagerWorkflow::slotCount(DataManagerCommand command) {
+FLASHMEM uint8_t DataManagerWorkflow::slotCount(DataManagerCommand command) {
     switch (dataManagerSlotDomain(command)) {
         case DataManagerSlotDomain::MACRO_LIBRARY:
             return persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
@@ -18,7 +19,7 @@ uint8_t DataManagerWorkflow::slotCount(DataManagerCommand command) {
     }
 }
 
-bool DataManagerWorkflow::slotOccupied(CoreState& state,
+FLASHMEM bool DataManagerWorkflow::slotOccupied(CoreState& state,
                                        DataManagerCommand command,
                                        uint8_t slotIndex) {
     using persistence::SlotLoadStatus;
@@ -54,7 +55,7 @@ bool DataManagerWorkflow::slotOccupied(CoreState& state,
     }
 }
 
-DataManagerCommandExecutionResult DataManagerWorkflow::execute(
+FLASHMEM DataManagerCommandExecutionResult DataManagerWorkflow::execute(
     CoreState& state,
     DataManagerCommand command,
     uint8_t slotIndex,
@@ -136,7 +137,7 @@ DataManagerCommandExecutionResult DataManagerWorkflow::execute(
     }
 }
 
-void DataManagerWorkflow::setShortcut(CoreState& state,
+FLASHMEM void DataManagerWorkflow::setShortcut(CoreState& state,
                                      DataManagerContext context,
                                      bool leftButton,
                                      DataManagerCommand command) {
@@ -192,7 +193,7 @@ void DataManagerWorkflow::setShortcut(CoreState& state,
     }
 }
 
-void DataManagerWorkflow::loadShortcutsFromSettings(CoreState& state) {
+FLASHMEM void DataManagerWorkflow::loadShortcutsFromSettings(CoreState& state) {
     uint8_t macroLeft = 0;
     uint8_t macroRight = 0;
     uint8_t seqLeft = 0;

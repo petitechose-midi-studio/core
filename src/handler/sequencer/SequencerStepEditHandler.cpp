@@ -4,6 +4,7 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
 
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
@@ -62,7 +63,7 @@ SequencerStepEditHandler::SequencerStepEditHandler(
     setupBindings();
 }
 
-void SequencerStepEditHandler::setupBindings() {
+FLASHMEM void SequencerStepEditHandler::setupBindings() {
     // ===== SEQUENCER VIEW SCOPE =====
     // MACRO_i long press: open STEP EDIT for step i in the current page.
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {

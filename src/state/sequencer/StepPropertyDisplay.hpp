@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
+#include <oc/type/TextFormat.hpp>
 
 #include "midi/MidiUtils.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -43,13 +43,13 @@ inline void formatStepPropertyValue(
             core::midi::formatNoteName(buffer, bufferSize, note);
             return;
         case StepProperty::VELOCITY:
-            std::snprintf(buffer, bufferSize, "%u", static_cast<unsigned>(velocity));
+            oc::type::text::formatUnsigned(buffer, bufferSize, static_cast<unsigned>(velocity));
             return;
         case StepProperty::NUDGE:
-            std::snprintf(buffer, bufferSize, "%+d%%", static_cast<int>(nudge));
+            oc::type::text::formatSignedPercent(buffer, bufferSize, static_cast<int>(nudge));
             return;
         case StepProperty::PROBABILITY:
-            std::snprintf(buffer, bufferSize, "%u%%", static_cast<unsigned>(probability));
+            oc::type::text::formatUnsignedPercent(buffer, bufferSize, static_cast<unsigned>(probability));
             return;
         case StepProperty::GATE:
         default:
@@ -57,7 +57,7 @@ inline void formatStepPropertyValue(
     }
 
     const uint16_t safeGate = std::min<uint16_t>(gate, SequencerState::MAX_GATE_PERCENT);
-    std::snprintf(buffer, bufferSize, "%u%%", static_cast<unsigned>(safeGate));
+    oc::type::text::formatUnsignedPercent(buffer, bufferSize, static_cast<unsigned>(safeGate));
 }
 
 }  // namespace core::state::sequencer

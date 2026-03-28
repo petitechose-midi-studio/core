@@ -1,5 +1,6 @@
 #include "context/standalone/SequencerFeatureModule.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
@@ -14,7 +15,7 @@
 
 namespace core::context::standalone {
 
-SequencerFeatureModule::SequencerFeatureModule(
+FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     core::state::CoreState& state,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,

@@ -1,5 +1,6 @@
 #include "state/sequencer/SequencerPersistenceWorkflow.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
 #include "state/CoreState.hpp"
@@ -7,7 +8,7 @@
 
 namespace core::state::sequencer {
 
-bool SequencerPersistenceWorkflow::savePatternSlot(CoreState& state, uint8_t slotIndex) {
+FLASHMEM bool SequencerPersistenceWorkflow::savePatternSlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return false;
     const auto status = state.sequencerPersistence.savePatternSlotStatus(slotIndex, state.sequencer);
     if (status != persistence::PersistenceWriteStatus::OK) {
@@ -18,7 +19,7 @@ bool SequencerPersistenceWorkflow::savePatternSlot(CoreState& state, uint8_t slo
     return status == persistence::PersistenceWriteStatus::OK;
 }
 
-persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSlot(CoreState& state,
+FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSlot(CoreState& state,
                                                                           uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
@@ -42,7 +43,7 @@ persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSlot(CoreSt
     return status;
 }
 
-bool SequencerPersistenceWorkflow::erasePatternSlot(CoreState& state, uint8_t slotIndex) {
+FLASHMEM bool SequencerPersistenceWorkflow::erasePatternSlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return false;
     const auto status = state.sequencerPersistence.erasePatternSlotStatus(slotIndex);
     if (status != persistence::PersistenceWriteStatus::OK) {
@@ -53,7 +54,7 @@ bool SequencerPersistenceWorkflow::erasePatternSlot(CoreState& state, uint8_t sl
     return status == persistence::PersistenceWriteStatus::OK;
 }
 
-bool SequencerPersistenceWorkflow::saveSetSlot(CoreState& state, uint8_t slotIndex) {
+FLASHMEM bool SequencerPersistenceWorkflow::saveSetSlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return false;
     const auto status = state.sequencerPersistence.saveSetSlotStatus(slotIndex, state.sequencer);
     if (status != persistence::PersistenceWriteStatus::OK) {
@@ -64,7 +65,7 @@ bool SequencerPersistenceWorkflow::saveSetSlot(CoreState& state, uint8_t slotInd
     return status == persistence::PersistenceWriteStatus::OK;
 }
 
-persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
+FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
     CoreState& state,
     uint8_t slotIndex,
     bool merge
@@ -99,7 +100,7 @@ persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
     return status;
 }
 
-bool SequencerPersistenceWorkflow::eraseSetSlot(CoreState& state, uint8_t slotIndex) {
+FLASHMEM bool SequencerPersistenceWorkflow::eraseSetSlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return false;
     const auto status = state.sequencerPersistence.eraseSetSlotStatus(slotIndex);
     if (status != persistence::PersistenceWriteStatus::OK) {

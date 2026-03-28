@@ -1,15 +1,16 @@
 #include "state/CoreSettings.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
 namespace core::state {
 
 using core::persistence::PersistenceWriteStatus;
 
-CoreSettings::CoreSettings(oc::interface::IStorage& backend)
+FLASHMEM CoreSettings::CoreSettings(oc::interface::IStorage& backend)
     : backend_(backend) {}
 
-bool CoreSettings::load(macro::MacroPagesState& pages, MidiSyncState& midiSync) {
+FLASHMEM bool CoreSettings::load(macro::MacroPagesState& pages, MidiSyncState& midiSync) {
     uint32_t magic = 0;
     if (!readExact_(StorageLayout::ADDR_MAGIC, reinterpret_cast<uint8_t*>(&magic), sizeof(magic))) {
         OC_LOG_WARN("[CoreSettings] Failed to read magic, using defaults");
@@ -115,11 +116,11 @@ bool CoreSettings::load(macro::MacroPagesState& pages, MidiSyncState& midiSync) 
     return false;
 }
 
-bool CoreSettings::saveAll(const macro::MacroPagesState& pages, const MidiSyncState& midiSync) {
+FLASHMEM bool CoreSettings::saveAll(const macro::MacroPagesState& pages, const MidiSyncState& midiSync) {
     return saveAllStatus(pages, midiSync) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveAllStatus(const macro::MacroPagesState& pages,
+FLASHMEM PersistenceWriteStatus CoreSettings::saveAllStatus(const macro::MacroPagesState& pages,
                                                    const MidiSyncState& midiSync) {
     const uint32_t magic = StorageLayout::MAGIC;
     const uint8_t version = StorageLayout::VERSION;
@@ -182,81 +183,81 @@ PersistenceWriteStatus CoreSettings::saveAllStatus(const macro::MacroPagesState&
     return PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::saveMidiSyncMode(MidiSyncMode mode) {
+FLASHMEM bool CoreSettings::saveMidiSyncMode(MidiSyncMode mode) {
     return saveMidiSyncModeStatus(mode) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveMidiSyncModeStatus(MidiSyncMode mode) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveMidiSyncModeStatus(MidiSyncMode mode) {
     const uint8_t value = static_cast<uint8_t>(mode);
     return writeExactStatus_(StorageLayout::ADDR_SYNC_MODE,
                              reinterpret_cast<const uint8_t*>(&value),
                              1);
 }
 
-bool CoreSettings::saveMidiFollowTransport(bool followTransport) {
+FLASHMEM bool CoreSettings::saveMidiFollowTransport(bool followTransport) {
     return saveMidiFollowTransportStatus(followTransport) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveMidiFollowTransportStatus(bool followTransport) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveMidiFollowTransportStatus(bool followTransport) {
     const uint8_t value = followTransport ? 1 : 0;
     return writeExactStatus_(StorageLayout::ADDR_SYNC_FOLLOW_TRANSPORT,
                              reinterpret_cast<const uint8_t*>(&value),
                              1);
 }
 
-bool CoreSettings::saveMidiAutoFallbackMs(uint16_t fallbackMs) {
+FLASHMEM bool CoreSettings::saveMidiAutoFallbackMs(uint16_t fallbackMs) {
     return saveMidiAutoFallbackMsStatus(fallbackMs) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveMidiAutoFallbackMsStatus(uint16_t fallbackMs) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveMidiAutoFallbackMsStatus(uint16_t fallbackMs) {
     return writeExactStatus_(StorageLayout::ADDR_SYNC_AUTO_FALLBACK_MS,
                              reinterpret_cast<const uint8_t*>(&fallbackMs),
                              sizeof(fallbackMs));
 }
 
-bool CoreSettings::saveMidiAutoLockClockCount(uint8_t lockCount) {
+FLASHMEM bool CoreSettings::saveMidiAutoLockClockCount(uint8_t lockCount) {
     return saveMidiAutoLockClockCountStatus(lockCount) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveMidiAutoLockClockCountStatus(uint8_t lockCount) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveMidiAutoLockClockCountStatus(uint8_t lockCount) {
     return writeExactStatus_(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
                              reinterpret_cast<const uint8_t*>(&lockCount),
                              1);
 }
 
-bool CoreSettings::saveDataManagerMacroShortcutLeft(uint8_t command) {
+FLASHMEM bool CoreSettings::saveDataManagerMacroShortcutLeft(uint8_t command) {
     return saveDataManagerMacroShortcutLeftStatus(command) == PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::saveDataManagerMacroShortcutRight(uint8_t command) {
+FLASHMEM bool CoreSettings::saveDataManagerMacroShortcutRight(uint8_t command) {
     return saveDataManagerMacroShortcutRightStatus(command) == PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::saveDataManagerSeqShortcutLeft(uint8_t command) {
+FLASHMEM bool CoreSettings::saveDataManagerSeqShortcutLeft(uint8_t command) {
     return saveDataManagerSeqShortcutLeftStatus(command) == PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::saveDataManagerSeqShortcutRight(uint8_t command) {
+FLASHMEM bool CoreSettings::saveDataManagerSeqShortcutRight(uint8_t command) {
     return saveDataManagerSeqShortcutRightStatus(command) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveDataManagerMacroShortcutLeftStatus(uint8_t command) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerMacroShortcutLeftStatus(uint8_t command) {
     return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, command);
 }
 
-PersistenceWriteStatus CoreSettings::saveDataManagerMacroShortcutRightStatus(uint8_t command) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerMacroShortcutRightStatus(uint8_t command) {
     return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, command);
 }
 
-PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutLeftStatus(uint8_t command) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutLeftStatus(uint8_t command) {
     return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, command);
 }
 
-PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutRightStatus(uint8_t command) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutRightStatus(uint8_t command) {
     return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, command);
 }
 
-bool CoreSettings::loadDataManagerShortcuts(uint8_t& macroLeft,
+FLASHMEM bool CoreSettings::loadDataManagerShortcuts(uint8_t& macroLeft,
                                             uint8_t& macroRight,
                                             uint8_t& seqLeft,
                                             uint8_t& seqRight) {
@@ -279,22 +280,22 @@ bool CoreSettings::loadDataManagerShortcuts(uint8_t& macroLeft,
            readExact_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
 }
 
-bool CoreSettings::saveActivePage(uint8_t pageIndex) {
+FLASHMEM bool CoreSettings::saveActivePage(uint8_t pageIndex) {
     return saveActivePageStatus(pageIndex) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveActivePageStatus(uint8_t pageIndex) {
+FLASHMEM PersistenceWriteStatus CoreSettings::saveActivePageStatus(uint8_t pageIndex) {
     const auto status = writeExactStatus_(StorageLayout::ADDR_ACTIVE_PAGE, &pageIndex, 1);
     if (status != PersistenceWriteStatus::OK) return status;
     OC_LOG_DEBUG("[CoreSettings] Saved active page: {}", pageIndex);
     return PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::savePage(uint8_t pageIndex, const macro::MacroPageData& page) {
+FLASHMEM bool CoreSettings::savePage(uint8_t pageIndex, const macro::MacroPageData& page) {
     return savePageStatus(pageIndex, page) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::savePageStatus(uint8_t pageIndex,
+FLASHMEM PersistenceWriteStatus CoreSettings::savePageStatus(uint8_t pageIndex,
                                                     const macro::MacroPageData& page) {
     const auto status = writeExactStatus_(StorageLayout::pageOffset(pageIndex),
                                           reinterpret_cast<const uint8_t*>(&page),
@@ -304,11 +305,11 @@ PersistenceWriteStatus CoreSettings::savePageStatus(uint8_t pageIndex,
     return PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::saveValue(uint8_t pageIndex, uint8_t macroIndex, float value) {
+FLASHMEM bool CoreSettings::saveValue(uint8_t pageIndex, uint8_t macroIndex, float value) {
     return saveValueStatus(pageIndex, macroIndex, value) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveValueStatus(uint8_t pageIndex,
+FLASHMEM PersistenceWriteStatus CoreSettings::saveValueStatus(uint8_t pageIndex,
                                                      uint8_t macroIndex,
                                                      float value) {
     return writeExactStatus_(StorageLayout::valueOffset(pageIndex, macroIndex),
@@ -316,11 +317,11 @@ PersistenceWriteStatus CoreSettings::saveValueStatus(uint8_t pageIndex,
                              sizeof(float));
 }
 
-bool CoreSettings::saveCC(uint8_t pageIndex, uint8_t macroIndex, uint8_t cc) {
+FLASHMEM bool CoreSettings::saveCC(uint8_t pageIndex, uint8_t macroIndex, uint8_t cc) {
     return saveCCStatus(pageIndex, macroIndex, cc) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveCCStatus(uint8_t pageIndex,
+FLASHMEM PersistenceWriteStatus CoreSettings::saveCCStatus(uint8_t pageIndex,
                                                   uint8_t macroIndex,
                                                   uint8_t cc) {
     const auto status = writeExactStatus_(StorageLayout::ccOffset(pageIndex, macroIndex), &cc, 1);
@@ -329,11 +330,11 @@ PersistenceWriteStatus CoreSettings::saveCCStatus(uint8_t pageIndex,
     return PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::saveChannel(uint8_t pageIndex, uint8_t macroIndex, uint8_t channel) {
+FLASHMEM bool CoreSettings::saveChannel(uint8_t pageIndex, uint8_t macroIndex, uint8_t channel) {
     return saveChannelStatus(pageIndex, macroIndex, channel) == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::saveChannelStatus(uint8_t pageIndex,
+FLASHMEM PersistenceWriteStatus CoreSettings::saveChannelStatus(uint8_t pageIndex,
                                                        uint8_t macroIndex,
                                                        uint8_t channel) {
     const auto status =
@@ -343,19 +344,19 @@ PersistenceWriteStatus CoreSettings::saveChannelStatus(uint8_t pageIndex,
     return PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::commit() {
+FLASHMEM bool CoreSettings::commit() {
     return commitStatus() == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::commitStatus() {
+FLASHMEM PersistenceWriteStatus CoreSettings::commitStatus() {
     return backend_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
 }
 
-bool CoreSettings::factoryReset() {
+FLASHMEM bool CoreSettings::factoryReset() {
     return factoryResetStatus() == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::factoryResetStatus() {
+FLASHMEM PersistenceWriteStatus CoreSettings::factoryResetStatus() {
     if (!backend_.erase(0, StorageLayout::ADDR_PAGES + macro::PAGE_COUNT * StorageLayout::MACRO_PAGE_SIZE)) {
         return PersistenceWriteStatus::ERASE_FAILED;
     }
@@ -365,35 +366,35 @@ PersistenceWriteStatus CoreSettings::factoryResetStatus() {
     return PersistenceWriteStatus::OK;
 }
 
-bool CoreSettings::readExact_(uint32_t address, uint8_t* buffer, size_t size) {
+FLASHMEM bool CoreSettings::readExact_(uint32_t address, uint8_t* buffer, size_t size) {
     return backend_.read(address, buffer, size) == size;
 }
 
-bool CoreSettings::writeExact_(uint32_t address, const uint8_t* buffer, size_t size) {
+FLASHMEM bool CoreSettings::writeExact_(uint32_t address, const uint8_t* buffer, size_t size) {
     return backend_.write(address, buffer, size) == size;
 }
 
-PersistenceWriteStatus CoreSettings::writeExactStatus_(uint32_t address,
+FLASHMEM PersistenceWriteStatus CoreSettings::writeExactStatus_(uint32_t address,
                                                        const uint8_t* buffer,
                                                        size_t size) {
     return writeExact_(address, buffer, size) ? PersistenceWriteStatus::OK
                                               : PersistenceWriteStatus::IO_ERROR;
 }
 
-bool CoreSettings::saveDataManagerShortcut_(uint32_t address, uint8_t command) {
+FLASHMEM bool CoreSettings::saveDataManagerShortcut_(uint32_t address, uint8_t command) {
     return writeExact_(address, reinterpret_cast<const uint8_t*>(&command), 1);
 }
 
-PersistenceWriteStatus CoreSettings::saveDataManagerShortcutStatus_(uint32_t address,
+FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerShortcutStatus_(uint32_t address,
                                                                     uint8_t command) {
     return writeExactStatus_(address, reinterpret_cast<const uint8_t*>(&command), 1);
 }
 
-bool CoreSettings::writeDefaultShortcuts_() {
+FLASHMEM bool CoreSettings::writeDefaultShortcuts_() {
     return writeDefaultShortcutsStatus_() == PersistenceWriteStatus::OK;
 }
 
-PersistenceWriteStatus CoreSettings::writeDefaultShortcutsStatus_() {
+FLASHMEM PersistenceWriteStatus CoreSettings::writeDefaultShortcutsStatus_() {
     const uint8_t macroLeft = StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT;
     const uint8_t macroRight = StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT;
     const uint8_t seqLeft = StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT;
@@ -411,7 +412,7 @@ PersistenceWriteStatus CoreSettings::writeDefaultShortcutsStatus_() {
     return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, seqRight);
 }
 
-bool CoreSettings::loadPages_(macro::MacroPagesState& pages) {
+FLASHMEM bool CoreSettings::loadPages_(macro::MacroPagesState& pages) {
     uint8_t activePage = 0;
     if (!readExact_(StorageLayout::ADDR_ACTIVE_PAGE, &activePage, 1)) {
         return false;
@@ -433,7 +434,7 @@ bool CoreSettings::loadPages_(macro::MacroPagesState& pages) {
     return true;
 }
 
-bool CoreSettings::loadMidiSync_(MidiSyncState& midiSync) {
+FLASHMEM bool CoreSettings::loadMidiSync_(MidiSyncState& midiSync) {
     uint8_t rawMode = static_cast<uint8_t>(MidiSyncMode::AUTO);
     if (!readExact_(StorageLayout::ADDR_SYNC_MODE, &rawMode, 1)) {
         return false;
