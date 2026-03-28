@@ -22,6 +22,14 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::CoreState& state) {
     return [&state]() { return state.sequencer.stepPropertyInlineSelector.selecting.get(); };
 }
 
+inline oc::type::IsActiveFn canOpenPropertySelector(core::state::CoreState& state) {
+    return [&state]() {
+        return !state.overlays.hasVisible() &&
+               !state.sequencer.patternQuickControls.selecting.get() &&
+               !state.sequencer.rangeSelection.active();
+    };
+}
+
 }  // namespace
 
 SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
@@ -42,6 +50,7 @@ void SequencerPropertySelectorHandler::setupBindings() {
         .press()
         .latch()
         .scope(scope(sequencer_view_scope_))
+        .when(canOpenPropertySelector(state_))
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)

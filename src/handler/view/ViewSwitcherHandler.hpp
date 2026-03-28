@@ -39,6 +39,7 @@ public:
 
 private:
     void setupBindings();
+    bool canOpenSelector() const;
 
     void openSelector();
     void navigate(float delta);

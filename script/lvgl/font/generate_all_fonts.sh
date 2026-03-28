@@ -22,7 +22,7 @@ find_project_root() {
 PROJECT_ROOT="$(find_project_root)"
 
 FONT_SOURCE_DIR="$PROJECT_ROOT/asset/font"
-FONT_OUTPUT_DIR="$PROJECT_ROOT/src/ui/font/data"
+FONT_OUTPUT_DIR="$PROJECT_ROOT/../ui/src/ms/ui/font/data"
 
 CHAR_RANGE="0x20-0x7F,0x80-0xFF"  # ASCII + Latin1
 BPP=4
@@ -38,6 +38,7 @@ NC='\033[0m'
 
 # --- Font list: "path:size" ---
 FONTS=(
+    "InterDisplay/InterDisplay-Medium.ttf:12"
     "InterDisplay/InterDisplay-Bold.ttf:13"
     "InterDisplay/InterDisplay-Bold.ttf:14"
     "InterDisplay/InterDisplay-Bold.ttf:20"

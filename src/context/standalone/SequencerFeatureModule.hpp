@@ -24,6 +24,7 @@ namespace core::handler {
 class SequencerMacroPropertyHandler;
 class SequencerPatternQuickControlsHandler;
 class SequencerPropertySelectorHandler;
+class SequencerRangeActionHandler;
 class SequencerStepEditHandler;
 class SequencerStepHandler;
 }  // namespace core::handler
@@ -50,6 +51,7 @@ private:
     std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;
     std::unique_ptr<core::context::standalone::SequencerOverlayPresenter> presenter_;
     std::unique_ptr<core::handler::SequencerStepHandler> step_handler_;
+    std::unique_ptr<core::handler::SequencerRangeActionHandler> range_action_handler_;
     std::unique_ptr<core::handler::SequencerPatternQuickControlsHandler> quick_controls_handler_;
     std::unique_ptr<core::handler::SequencerStepEditHandler> step_edit_handler_;
     std::unique_ptr<core::handler::SequencerPropertySelectorHandler> property_selector_handler_;

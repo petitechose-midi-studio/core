@@ -13,6 +13,7 @@ SequencerView::SequencerView(lv_obj_t* parent, core::state::CoreState& coreState
     createLayout(parent);
     createQuickControls();
     createHeaderBar();
+    createActionStrips();
     createGrid();
     ensureRenderTimer();
     bindToState();
@@ -25,12 +26,16 @@ SequencerView::~SequencerView() {
     }
 
     step_grid_.reset();
+    bottom_action_strip_.reset();
     property_strip_.reset();
+    left_action_strip_.reset();
     pattern_quick_controls_.reset();
     header_bar_.reset();
     layout_.reset();
     container_ = nullptr;
     body_container_ = nullptr;
+    interaction_container_ = nullptr;
+    center_column_ = nullptr;
 }
 
 void SequencerView::onActivate() {
@@ -79,6 +84,19 @@ void SequencerView::createLayout(lv_obj_t* parent) {
     lv_obj_set_flex_flow(body_container_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(body_container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(body_container_, 0, 0);
+
+    interaction_container_ = lv_obj_create(body_container_);
+    style::apply(interaction_container_).size(LV_PCT(100), LV_PCT(100)).transparent().noBorder().pad(0).noScroll();
+    lv_obj_set_flex_grow(interaction_container_, 1);
+    lv_obj_set_layout(interaction_container_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(interaction_container_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(
+        interaction_container_,
+        LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_START
+    );
+    lv_obj_set_style_pad_column(interaction_container_, 0, 0);
 }
 
 void SequencerView::createHeaderBar() {
@@ -87,10 +105,10 @@ void SequencerView::createHeaderBar() {
 }
 
 void SequencerView::createGrid() {
-    if (!body_container_) return;
+    if (!center_column_) return;
 
-    property_strip_ = std::make_unique<StepPropertyStrip>(body_container_);
-    step_grid_ = std::make_unique<StepGrid>(body_container_);
+    property_strip_ = std::make_unique<StepPropertyStrip>(center_column_);
+    step_grid_ = std::make_unique<StepGrid>(center_column_);
 }
 
 void SequencerView::createQuickControls() {
@@ -98,16 +116,53 @@ void SequencerView::createQuickControls() {
     pattern_quick_controls_ = std::make_unique<PatternQuickControls>(layout_->header());
 }
 
+void SequencerView::createActionStrips() {
+    if (!interaction_container_ || !body_container_) return;
+    left_action_strip_ = std::make_unique<ContextActionStrip>(
+        interaction_container_,
+        ContextActionStripOrientation::VERTICAL
+    );
+
+    center_column_ = lv_obj_create(interaction_container_);
+    style::apply(center_column_).transparent().noBorder().pad(0).noScroll();
+    lv_obj_set_width(center_column_, 0);
+    lv_obj_set_height(center_column_, LV_PCT(100));
+    lv_obj_set_flex_grow(center_column_, 1);
+    lv_obj_set_layout(center_column_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(center_column_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(center_column_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(center_column_, 0, 0);
+
+    bottom_action_strip_ = std::make_unique<ContextActionStrip>(
+        body_container_,
+        ContextActionStripOrientation::HORIZONTAL
+    );
+}
+
 void SequencerView::bindToState() {
     watcher_.watchAll(
         [this]() {
-            requestGridRender();
-            requestHeaderRender();
             requestQuickControlsRender();
         },
-        core_state_.sequencer.length,
         core_state_.sequencer.stepsPerBeat,
         core_state_.sequencer.midiChannel,
+        core_state_.sequencer.length
+    );
+
+    watcher_.watchAll(
+        [this]() {
+            requestHeaderRender();
+        },
+        core_state_.sequencer.length,
+        core_state_.sequencer.page,
+        core_state_.sequencer.playheadStep
+    );
+
+    watcher_.watchAll(
+        [this]() {
+            requestGridRender();
+        },
+        core_state_.sequencer.length,
         core_state_.sequencer.page,
         core_state_.sequencer.enabledMask,
         core_state_.sequencer.playheadStep,
@@ -115,19 +170,34 @@ void SequencerView::bindToState() {
         core_state_.sequencer.probabilityCycleRevision,
         core_state_.sequencer.activeStepProperty,
         core_state_.sequencer.stepInlineFeedback.visible,
-        core_state_.sequencer.stepInlineFeedback.stepIndex,
-        core_state_.sequencer.stepInlineFeedback.property
+        core_state_.sequencer.stepInlineFeedback.touchedMask,
+        core_state_.sequencer.stepInlineFeedback.property,
+        core_state_.sequencer.rangeSelection.kind,
+        core_state_.sequencer.rangeSelection.phase,
+        core_state_.sequencer.rangeSelection.cursorStep,
+        core_state_.sequencer.rangeSelection.anchorStep,
+        core_state_.sequencer.rangeSelection.rangeStart,
+        core_state_.sequencer.rangeSelection.rangeEnd,
+        core_state_.sequencer.rangeSelection.rangeValid
     );
 
     watcher_.watchAll(
-        [this]() { requestStripRender(); },
+        [this]() {
+            requestStripRender();
+            requestActionStripsRender();
+        },
         core_state_.sequencer.activeStepProperty,
         core_state_.sequencer.stepPropertyInlineSelector.selecting,
-        core_state_.sequencer.stepPropertyInlineSelector.selectedIndex
+        core_state_.sequencer.stepPropertyInlineSelector.selectedIndex,
+        core_state_.sequencer.rangeSelection.kind,
+        core_state_.sequencer.rangeSelection.phase
     );
 
     watcher_.watchAll(
-        [this]() { requestQuickControlsRender(); },
+        [this]() {
+            requestQuickControlsRender();
+            requestActionStripsRender();
+        },
         core_state_.sequencer.patternQuickControls.selecting,
         core_state_.sequencer.patternQuickControls.focusedItem
     );
@@ -181,10 +251,16 @@ void SequencerView::requestGridRender() {
     scheduleRender();
 }
 
+void SequencerView::requestActionStripsRender() {
+    action_strips_dirty_ = true;
+    scheduleRender();
+}
+
 void SequencerView::markAllDirty() {
     header_dirty_ = true;
     quick_controls_dirty_ = true;
     strip_dirty_ = true;
+    action_strips_dirty_ = true;
     grid_dirty_ = true;
 }
 
@@ -212,15 +288,22 @@ void SequencerView::render() {
 
     const bool needsQuickControls = quick_controls_dirty_ && pattern_quick_controls_;
     const bool needsStrip = strip_dirty_ && property_strip_;
+    const bool needsActionStrips = action_strips_dirty_ && left_action_strip_ && bottom_action_strip_;
     const bool needsHeader = header_dirty_ && header_bar_;
     const bool needsGrid = grid_dirty_ && step_grid_;
-    if (!needsQuickControls && !needsStrip && !needsHeader && !needsGrid) {
+    if (!needsQuickControls && !needsStrip && !needsActionStrips && !needsHeader && !needsGrid) {
         return;
     }
 
     if (needsStrip) {
         property_strip_->render(sequencer::buildStepPropertyStripProps(core_state_));
         strip_dirty_ = false;
+    }
+
+    if (needsActionStrips) {
+        left_action_strip_->render(sequencer::buildLeftActionStripProps(core_state_));
+        bottom_action_strip_->render(sequencer::buildBottomActionStripProps(core_state_));
+        action_strips_dirty_ = false;
     }
 
     if (needsQuickControls) {

@@ -19,6 +19,7 @@
 #include "ui/sequencer/SequencerHeaderBar.hpp"
 #include "ui/sequencer/StepGrid.hpp"
 #include "ui/sequencer/StepPropertyStrip.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
 
 namespace core::ui {
 
@@ -37,6 +38,7 @@ private:
     void createHeaderBar();
     void createGrid();
     void createQuickControls();
+    void createActionStrips();
     void bindToState();
 
     void ensureRenderTimer();
@@ -45,6 +47,7 @@ private:
     void requestHeaderRender();
     void requestQuickControlsRender();
     void requestStripRender();
+    void requestActionStripsRender();
     void requestGridRender();
     static void onRenderTimer(lv_timer_t* timer);
     void markAllDirty();
@@ -57,15 +60,20 @@ private:
     bool header_dirty_ = true;
     bool quick_controls_dirty_ = true;
     bool strip_dirty_ = true;
+    bool action_strips_dirty_ = true;
     bool grid_dirty_ = true;
     lv_timer_t* render_timer_ = nullptr;
 
     std::unique_ptr<ms::ui::LayoutView> layout_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
+    lv_obj_t* interaction_container_ = nullptr;
+    lv_obj_t* center_column_ = nullptr;
 
     std::unique_ptr<core::ui::SequencerHeaderBar> header_bar_;
     std::unique_ptr<core::ui::PatternQuickControls> pattern_quick_controls_;
+    std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
+    std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
     std::unique_ptr<core::ui::StepPropertyStrip> property_strip_;
     std::unique_ptr<core::ui::StepGrid> step_grid_;
 };

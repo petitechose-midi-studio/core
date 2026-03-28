@@ -14,8 +14,12 @@ namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
-inline oc::type::IsActiveFn notSelectingPatternQuickControls(core::state::CoreState& state) {
-    return [&state]() { return !state.sequencer.patternQuickControls.selecting.get(); };
+inline oc::type::IsActiveFn canEditSequencerProperty(core::state::CoreState& state) {
+    return [&state]() {
+        return !state.sequencer.patternQuickControls.selecting.get() &&
+               !state.sequencer.rangeSelection.active() &&
+               !state.overlays.hasVisible();
+    };
 }
 
 }  // namespace
@@ -36,14 +40,14 @@ void SequencerMacroPropertyHandler::setupBindings() {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope(scope_element_))
-            .when(notSelectingPatternQuickControls(state_))
+            .when(canEditSequencerProperty(state_))
             .then([this, i](float value) { handleTurn(i, value); });
     }
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(scope(scope_element_))
-        .when(notSelectingPatternQuickControls(state_))
+        .when(canEditSequencerProperty(state_))
         .then([this](float value) { handleFocusedTurn(value); });
 }
 

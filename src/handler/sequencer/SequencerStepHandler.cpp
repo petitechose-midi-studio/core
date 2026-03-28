@@ -15,7 +15,8 @@ namespace {
 inline oc::type::IsActiveFn notSelectingStepProperty(core::state::CoreState& state) {
     return [&state]() {
         return !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
-               !state.sequencer.patternQuickControls.selecting.get();
+               !state.sequencer.patternQuickControls.selecting.get() &&
+               !state.sequencer.rangeSelection.active();
     };
 }
 
@@ -38,24 +39,9 @@ void SequencerStepHandler::setupBindings() {
         buttons_.button(Config::MACRO_BUTTONS[i])
             .release()
             .scope(scope(scope_element_))
+            .when(notSelectingStepProperty(state_))
             .then([this, i]() { toggleStep(i); });
     }
-
-    // Page switch
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(scope(scope_element_))
-        .then([this]() { prevPage(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(scope(scope_element_))
-        .then([this]() { nextPage(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(scope(scope_element_))
-        .then([this]() { duplicatePageForward(); });
 
     // Page navigation + toggle on NAV
     encoders_.encoder(Config::EncoderID::NAV)
@@ -98,11 +84,6 @@ void SequencerStepHandler::movePage(float delta) {
     prevPage();
 }
 
-void SequencerStepHandler::duplicatePageForward() {
-    ignore_next_bottom_right_release_ = true;
-    state_.sequencer.duplicatePageForward(state_.sequencer.page.get());
-}
-
 void SequencerStepHandler::prevPage() {
     const uint8_t pageCount = state_.sequencer.activePageCount();
     if (pageCount <= 1) return;
@@ -114,11 +95,6 @@ void SequencerStepHandler::prevPage() {
 }
 
 void SequencerStepHandler::nextPage() {
-    if (ignore_next_bottom_right_release_) {
-        ignore_next_bottom_right_release_ = false;
-        return;
-    }
-
     const uint8_t pageCount = state_.sequencer.activePageCount();
     if (pageCount <= 1) return;
 

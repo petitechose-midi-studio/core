@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 
 #include <lvgl.h>
 
@@ -49,15 +50,57 @@ struct TileRenderCache {
     uint16_t gate = 0;
     int8_t nudge = 0;
     lv_coord_t noteLabelHeight = 0;
+    bool noteLabelVisible = false;
+    bool inlineIconVisible = false;
+    uint32_t noteLabelColorFull = 0;
+    lv_opa_t noteLabelOpa = LV_OPA_TRANSP;
+    uint32_t inlineIconColorFull = 0;
+    lv_opa_t inlineIconOpa = LV_OPA_TRANSP;
+    lv_coord_t noteLabelX = 0;
+    lv_coord_t noteLabelY = 0;
+    lv_coord_t inlineIconX = 0;
+    lv_coord_t inlineIconY = 0;
+    char noteLabelText[16] = {0};
+    bool shapeVisible = false;
+    lv_coord_t shapeX = 0;
+    lv_coord_t shapeY = 0;
+    lv_coord_t shapeWidth = 0;
+    lv_coord_t shapeHeight = 0;
+    uint32_t shapeStrokeColor = 0;
+    lv_opa_t shapeStrokeOpa = LV_OPA_TRANSP;
+    bool markerVisible = false;
+    lv_coord_t markerX = 0;
+    lv_coord_t markerY = 0;
+    uint32_t markerColor = 0;
+    lv_opa_t markerOpa = LV_OPA_TRANSP;
+    bool indicatorVisible = false;
+    lv_opa_t indicatorOpa = LV_OPA_TRANSP;
+    uint32_t buttonBgColor = 0;
+    lv_opa_t buttonBgOpa = LV_OPA_TRANSP;
+    uint32_t buttonBorderColor = 0;
+    lv_opa_t buttonBorderOpa = LV_OPA_TRANSP;
+};
+
+struct RangeSelectionSnapshot {
+    bool active = false;
+    core::state::sequencer::RangeSelectionKind kind =
+        core::state::sequencer::RangeSelectionKind::NONE;
+    core::state::sequencer::RangeSelectionPhase phase =
+        core::state::sequencer::RangeSelectionPhase::IDLE;
+    uint8_t cursorStep = 0;
+    bool sourceRangeVisible = false;
+    uint8_t sourceStart = 0;
+    uint8_t sourceEnd = 0;
 };
 
 struct StepGridFrameState {
     core::state::sequencer::StepProperty activeProperty =
         core::state::sequencer::StepProperty::NOTE;
     bool feedbackVisible = false;
-    uint8_t feedbackStep = 0xFF;
+    uint64_t feedbackTouchedMask = 0;
     core::state::sequencer::StepProperty feedbackProperty =
         core::state::sequencer::StepProperty::NOTE;
+    RangeSelectionSnapshot selection{};
     std::array<TileRenderState, 8> tiles{};
 };
 

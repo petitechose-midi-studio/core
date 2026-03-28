@@ -25,11 +25,11 @@ const char* propertyIconGlyph(core::state::sequencer::StepProperty property) {
 
 StepPropertyVisualSpec buildStepPropertyVisual(
     core::state::sequencer::StepProperty property,
-    const StepPropertyVisualInput& input
+    bool inPattern
 ) {
     StepPropertyVisualSpec spec;
 
-    if (!input.inPattern) {
+    if (!inPattern) {
         return spec;
     }
 

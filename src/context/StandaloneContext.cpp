@@ -227,6 +227,7 @@ void StandaloneContext::resetTransientUiState() {
     core_state_.sequencer.stepEdit.reset();
     core_state_.sequencer.stepPropertyInlineSelector.reset();
     core_state_.sequencer.patternQuickControls.reset();
+    core_state_.sequencer.rangeSelection.reset();
     core_state_.globalSettings.reset();
     core_state_.dataManager.resetSession(core::state::DataManagerContext::MACRO);
 }

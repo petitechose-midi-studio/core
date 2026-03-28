@@ -35,6 +35,7 @@ void ViewSwitcherHandler::setupBindings() {
             .press()
             .latch()
             .scope(scope(viewScope))
+            .when([this]() { return canOpenSelector(); })
             .then([this]() { openSelector(); });
 
         lastBoundScope = viewScope;
@@ -57,6 +58,18 @@ void ViewSwitcherHandler::setupBindings() {
         .release()
         .scope(scope(overlay_ctx_.overlayElement))
         .then([this]() { confirmSelection(); });
+}
+
+bool ViewSwitcherHandler::canOpenSelector() const {
+    if (state_.overlays.hasVisible()) return false;
+
+    if (state_.activeView.get() != core::ui::ViewType::SEQUENCER) {
+        return true;
+    }
+
+    return !state_.sequencer.rangeSelection.active() &&
+           !state_.sequencer.patternQuickControls.selecting.get() &&
+           !state_.sequencer.stepPropertyInlineSelector.selecting.get();
 }
 
 void ViewSwitcherHandler::openSelector() {

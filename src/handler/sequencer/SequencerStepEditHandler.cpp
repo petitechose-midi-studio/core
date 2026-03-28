@@ -33,6 +33,15 @@ void configureStepEditEncoder(
     encoders.setPosition(encoderId, input_utils::stepPropertyToNormalized(sequencer, step, property));
 }
 
+inline oc::type::IsActiveFn canOpenStepEdit(core::state::CoreState& state) {
+    return [&state]() {
+        return !state.overlays.hasVisible() &&
+               !state.sequencer.patternQuickControls.selecting.get() &&
+               !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
+               !state.sequencer.rangeSelection.active();
+    };
+}
+
 }  // namespace
 
 SequencerStepEditHandler::SequencerStepEditHandler(
@@ -61,6 +70,7 @@ void SequencerStepEditHandler::setupBindings() {
         buttons_.button(btn)
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(scope(sequencer_view_scope_))
+            .when(canOpenStepEdit(state_))
             .then([this, i]() { openForMacroInPage(i); });
     }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <oc/state/Signal.hpp>
@@ -20,6 +21,19 @@ enum class PatternQuickControlItem : uint8_t {
     CHANNEL = 0,
     DIVISION = 1,
     LENGTH = 2,
+};
+
+enum class RangeSelectionKind : uint8_t {
+    NONE = 0,
+    CLEAR = 1,
+    COPY = 2,
+};
+
+enum class RangeSelectionPhase : uint8_t {
+    IDLE = 0,
+    SELECT_RANGE = 1,
+    CONFIRM_CLEAR = 2,
+    PASTE_TARGET = 3,
 };
 
 struct SequencerStepEditOverlayState {
@@ -57,31 +71,53 @@ struct SequencerStepPropertyInlineSelectorState {
 
 struct SequencerStepInlineFeedbackState {
     static constexpr uint32_t DISPLAY_HOLD_MS = 700;
+    static constexpr uint8_t MAX_STEPS = 64;
 
     Signal<bool> visible{false};
-    Signal<uint8_t> stepIndex{0};
+    Signal<uint64_t> touchedMask{0};
     Signal<StepProperty> property{StepProperty::NOTE};
 
-    uint32_t hideAtMs = 0;
+    uint32_t hideAtMs[MAX_STEPS]{};
 
     void show(uint8_t step, StepProperty stepProperty, uint32_t nowMs) {
-        stepIndex.set(step);
+        if (step >= MAX_STEPS) return;
+
+        uint64_t mask = touchedMask.get();
+        mask |= (1ULL << step);
+        touchedMask.set(mask);
         property.set(stepProperty);
-        hideAtMs = nowMs + DISPLAY_HOLD_MS;
+        hideAtMs[step] = nowMs + DISPLAY_HOLD_MS;
         visible.set(true);
     }
 
     void update(uint32_t nowMs) {
         if (!visible.get()) return;
-        if (nowMs < hideAtMs) return;
-        visible.set(false);
+
+        uint64_t nextMask = touchedMask.get();
+        if (nextMask == 0) {
+            visible.set(false);
+            return;
+        }
+
+        for (uint8_t step = 0; step < MAX_STEPS; ++step) {
+            const uint64_t bit = (1ULL << step);
+            if ((nextMask & bit) == 0) continue;
+            if (nowMs < hideAtMs[step]) continue;
+            nextMask &= ~bit;
+            hideAtMs[step] = 0;
+        }
+
+        touchedMask.set(nextMask);
+        visible.set(nextMask != 0);
     }
 
     void reset() {
         visible.set(false);
-        stepIndex.set(0);
+        touchedMask.set(0);
         property.set(StepProperty::NOTE);
-        hideAtMs = 0;
+        for (auto& value : hideAtMs) {
+            value = 0;
+        }
     }
 };
 
@@ -97,6 +133,66 @@ struct SequencerPatternQuickControlsState {
     void reset() {
         selecting.set(false);
         snapshotValid = false;
+    }
+};
+
+struct SequencerRangeClipboard {
+    static constexpr uint8_t MAX_STEPS = 64;
+
+    bool valid = false;
+    uint8_t count = 0;
+    uint64_t enabledMask = 0;
+    std::array<uint8_t, MAX_STEPS> note{};
+    std::array<uint8_t, MAX_STEPS> velocity{};
+    std::array<uint16_t, MAX_STEPS> gate{};
+    std::array<int8_t, MAX_STEPS> nudge{};
+    std::array<uint8_t, MAX_STEPS> probability{};
+
+    void reset() {
+        valid = false;
+        count = 0;
+        enabledMask = 0;
+    }
+
+    bool isEnabled(uint8_t index) const {
+        if (index >= count) return false;
+        return (enabledMask & (1ULL << index)) != 0;
+    }
+};
+
+struct SequencerRangeSelectionState {
+    Signal<RangeSelectionKind> kind{RangeSelectionKind::NONE};
+    Signal<RangeSelectionPhase> phase{RangeSelectionPhase::IDLE};
+    Signal<uint8_t> cursorStep{0};
+    Signal<uint8_t> anchorStep{0};
+    Signal<uint8_t> rangeStart{0};
+    Signal<uint8_t> rangeEnd{0};
+    Signal<bool> rangeValid{false};
+
+    SequencerRangeClipboard clipboard{};
+
+    bool active() const { return kind.get() != RangeSelectionKind::NONE; }
+    bool selectingSourceRange() const { return phase.get() == RangeSelectionPhase::SELECT_RANGE; }
+    bool confirmingClearPage() const {
+        return kind.get() == RangeSelectionKind::CLEAR &&
+               phase.get() == RangeSelectionPhase::CONFIRM_CLEAR &&
+               rangeValid.get();
+    }
+    bool selectingPasteTarget() const {
+        return kind.get() == RangeSelectionKind::COPY &&
+               phase.get() == RangeSelectionPhase::PASTE_TARGET &&
+               clipboard.valid;
+    }
+
+    void reset() {
+        kind.set(RangeSelectionKind::NONE);
+        phase.set(RangeSelectionPhase::IDLE);
+        cursorStep.set(0);
+        anchorStep.set(0);
+        rangeStart.set(0);
+        rangeEnd.set(0);
+        rangeValid.set(false);
+        clipboard.reset();
     }
 };
 

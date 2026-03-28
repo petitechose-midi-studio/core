@@ -14,12 +14,7 @@ Read these first:
 
 ## Current Architecture References
 
-- [CODEBASE_CLEANUP_AUDIT.md](CODEBASE_CLEANUP_AUDIT.md)
-- [CORE_ALIGNMENT_ROADMAP.md](CORE_ALIGNMENT_ROADMAP.md)
-- [SEQUENCER_CODEBASE_CLEANUP_AUDIT.md](SEQUENCER_CODEBASE_CLEANUP_AUDIT.md)
-- [SEQUENCER_INLINE_WORKFLOW_ROADMAP.md](SEQUENCER_INLINE_WORKFLOW_ROADMAP.md)
-
-These documents reflect the current cleanup and refactor direction more accurately than older high-level descriptions.
+- [SEQUENCER_ACTION_STRIP_SPEC.md](SEQUENCER_ACTION_STRIP_SPEC.md)
 
 ## Practical Guides
 
@@ -28,11 +23,6 @@ These documents reflect the current cleanup and refactor direction more accurate
 - [HOW_TO_ADD_HANDLER.md](HOW_TO_ADD_HANDLER.md)
 - [HOW_TO_ADD_VIEW.md](HOW_TO_ADD_VIEW.md)
 - [HOW_TO_ADD_OVERLAY.md](HOW_TO_ADD_OVERLAY.md)
-
-## Persistence Notes
-
-- [SD_PERSISTENCE_TRACKER.md](SD_PERSISTENCE_TRACKER.md)
-- [SD_PERSISTENCE_HARDWARE_VALIDATION.md](SD_PERSISTENCE_HARDWARE_VALIDATION.md)
 
 ## Source Map
 

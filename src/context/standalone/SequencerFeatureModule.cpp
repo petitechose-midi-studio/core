@@ -8,6 +8,7 @@
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
+#include "handler/sequencer/SequencerRangeActionHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 
@@ -33,6 +34,12 @@ SequencerFeatureModule::SequencerFeatureModule(
     encoder_sync_->bind();
 
     step_handler_ = std::make_unique<core::handler::SequencerStepHandler>(
+        state,
+        encoders,
+        buttons,
+        sequencerViewScope
+    );
+    range_action_handler_ = std::make_unique<core::handler::SequencerRangeActionHandler>(
         state,
         encoders,
         buttons,

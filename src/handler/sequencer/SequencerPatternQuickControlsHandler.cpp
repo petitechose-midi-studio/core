@@ -24,6 +24,14 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::CoreState& state) {
     return [&state]() { return state.sequencer.patternQuickControls.selecting.get(); };
 }
 
+inline oc::type::IsActiveFn canOpenQuickControls(core::state::CoreState& state) {
+    return [&state]() {
+        return !state.overlays.hasVisible() &&
+               !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
+               !state.sequencer.rangeSelection.active();
+    };
+}
+
 }  // namespace
 
 SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHandler(
@@ -44,6 +52,7 @@ void SequencerPatternQuickControlsHandler::setupBindings() {
         .press()
         .latch()
         .scope(scope(sequencer_view_scope_))
+        .when(canOpenQuickControls(state_))
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_CENTER)

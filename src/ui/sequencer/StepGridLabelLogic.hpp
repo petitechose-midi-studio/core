@@ -10,7 +10,7 @@ namespace core::ui::sequencer::grid {
 
 struct InlineFeedbackSnapshot {
     bool visible = false;
-    uint8_t stepIndex = 0xFF;
+    uint64_t touchedMask = 0;
     core::state::sequencer::StepProperty property =
         core::state::sequencer::StepProperty::NOTE;
 };
@@ -30,11 +30,9 @@ core::state::sequencer::StepProperty displayPropertyForInlineLabelMode(
 
 InlineFeedbackSnapshot readInlineFeedbackSnapshot(
     bool visible,
-    uint8_t stepIndex,
+    uint64_t touchedMask,
     core::state::sequencer::StepProperty property
 );
-
-bool inlineFeedbackChanged(const InlineFeedbackSnapshot& lhs, const InlineFeedbackSnapshot& rhs);
 
 NoteLabelPresentation buildNoteLabelPresentation(
     const TileRenderState& state,

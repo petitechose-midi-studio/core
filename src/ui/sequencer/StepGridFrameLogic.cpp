@@ -1,5 +1,7 @@
 #include "ui/sequencer/StepGridFrameLogic.hpp"
 
+#include <algorithm>
+
 namespace core::ui::sequencer::grid {
 
 StepGridFrameState buildStepGridFrameState(const core::state::CoreState& coreState) {
@@ -8,8 +10,27 @@ StepGridFrameState buildStepGridFrameState(const core::state::CoreState& coreSta
     const auto& sequencer = coreState.sequencer;
     frame.activeProperty = sequencer.activeStepProperty.get();
     frame.feedbackVisible = sequencer.stepInlineFeedback.visible.get();
-    frame.feedbackStep = sequencer.stepInlineFeedback.stepIndex.get();
+    frame.feedbackTouchedMask = sequencer.stepInlineFeedback.touchedMask.get();
     frame.feedbackProperty = sequencer.stepInlineFeedback.property.get();
+    frame.selection.active = sequencer.rangeSelection.active();
+    frame.selection.kind = sequencer.rangeSelection.kind.get();
+    frame.selection.phase = sequencer.rangeSelection.phase.get();
+    frame.selection.cursorStep = sequencer.rangeSelection.cursorStep.get();
+
+    if (frame.selection.active) {
+        switch (frame.selection.phase) {
+            case core::state::sequencer::RangeSelectionPhase::SELECT_RANGE:
+            case core::state::sequencer::RangeSelectionPhase::CONFIRM_CLEAR:
+            case core::state::sequencer::RangeSelectionPhase::PASTE_TARGET:
+                frame.selection.sourceRangeVisible = true;
+                frame.selection.sourceStart = sequencer.rangeSelection.rangeStart.get();
+                frame.selection.sourceEnd = sequencer.rangeSelection.rangeEnd.get();
+                break;
+            case core::state::sequencer::RangeSelectionPhase::IDLE:
+            default:
+                break;
+        }
+    }
 
     const uint8_t length = sequencer.length.get();
     const uint8_t page = sequencer.normalizePage(sequencer.page.get());

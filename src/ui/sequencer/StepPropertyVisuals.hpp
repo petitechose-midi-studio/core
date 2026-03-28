@@ -20,16 +20,6 @@ enum class InlineLabelMode : uint8_t {
     PROBABILITY = 5,
 };
 
-struct StepPropertyVisualInput {
-    bool inPattern = false;
-    bool enabled = false;
-    uint8_t note = 0;
-    uint8_t velocity = 0;
-    uint8_t probability = 0;
-    uint16_t gate = 0;
-    int8_t nudge = 0;
-};
-
 struct StepPropertyVisualSpec {
     InlineLabelMode inlineLabelMode = InlineLabelMode::NONE;
     bool showInlineIcon = false;
@@ -40,7 +30,7 @@ const char* propertyIconGlyph(core::state::sequencer::StepProperty property);
 
 StepPropertyVisualSpec buildStepPropertyVisual(
     core::state::sequencer::StepProperty property,
-    const StepPropertyVisualInput& input
+    bool inPattern
 );
 
 }  // namespace core::ui::sequencer::visual

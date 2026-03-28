@@ -25,20 +25,14 @@ core::state::sequencer::StepProperty displayPropertyForInlineLabelMode(
 
 InlineFeedbackSnapshot readInlineFeedbackSnapshot(
     bool visible,
-    uint8_t stepIndex,
+    uint64_t touchedMask,
     core::state::sequencer::StepProperty property
 ) {
     return {
         .visible = visible,
-        .stepIndex = stepIndex,
+        .touchedMask = touchedMask,
         .property = property,
     };
-}
-
-bool inlineFeedbackChanged(const InlineFeedbackSnapshot& lhs, const InlineFeedbackSnapshot& rhs) {
-    return lhs.visible != rhs.visible ||
-           lhs.stepIndex != rhs.stepIndex ||
-           lhs.property != rhs.property;
 }
 
 NoteLabelPresentation buildNoteLabelPresentation(
@@ -55,7 +49,9 @@ NoteLabelPresentation buildNoteLabelPresentation(
     }
 
     const bool isNoteMode = propertyVisual.inlineLabelMode == visual::InlineLabelMode::NOTE;
-    const bool isFeedbackStep = feedback.visible && state.absoluteStep == feedback.stepIndex;
+    const bool isFeedbackStep =
+        feedback.visible &&
+        ((feedback.touchedMask & (1ULL << state.absoluteStep)) != 0);
     const bool isFeedbackProperty = feedback.property == activeProperty;
 
     presentation.showNoteStyle = isNoteMode;

@@ -64,8 +64,6 @@ MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     createMacros();
 
     // Macro rendering is sampled at the global LVGL cadence.
-    // This keeps the macro path bounded by the actual display refresh rate
-    // instead of letting local scheduling run ahead of visible frames.
     constexpr uint32_t targetHz = Config::Timing::LVGL_HZ;
     constexpr uint32_t periodMs = (targetHz > 1000)
         ? 1
@@ -238,24 +236,23 @@ void MacroView::processDirtyFlags() {
         return;
     }
 
-    const auto frame = buildMacroViewFrameState(core_state_);
-
     uint32_t value_updates = 0;
     uint32_t config_updates = 0;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         if (dirty_flags_[i] || config_dirty_flags_[i]) {
             if (macros_[i]) {
                 if (dirty_flags_[i]) {
-                    macros_[i]->setValue(frame.macros[i].value);
+                    macros_[i]->setValue(core::state::macro::MacroWorkflow::runtimeValue(core_state_, i));
+                    dirty_flags_[i] = false;
                     value_updates += 1;
                 }
                 if (config_dirty_flags_[i]) {
-                    macros_[i]->setConfig(frame.macros[i].channel, frame.macros[i].cc);
+                    const auto& config = core::state::macro::MacroWorkflow::activeConfig(core_state_, i);
+                    macros_[i]->setConfig(config.channel, config.cc);
+                    config_dirty_flags_[i] = false;
                     config_updates += 1;
                 }
             }
-            dirty_flags_[i] = false;
-            config_dirty_flags_[i] = false;
         }
     }
 
