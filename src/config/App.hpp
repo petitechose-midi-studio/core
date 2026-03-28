@@ -9,7 +9,7 @@
 
 #include "Version.hpp"
 #include "InputIDs.hpp"
-#include "Timing.hpp"
+#include "config/Timing.hpp"
 
 #include <cstdint>
 
