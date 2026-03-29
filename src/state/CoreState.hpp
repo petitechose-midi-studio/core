@@ -31,6 +31,7 @@
 #include "../ui/OverlayTypes.hpp"
 #include "../ui/ViewTypes.hpp"
 #include "StatusBarState.hpp"
+#include "ViewSelectorState.hpp"
 #include "persistence/MacroPersistence.hpp"
 #include "persistence/SequencerPersistence.hpp"
 #include "macro/MacroPagesState.hpp"
@@ -42,19 +43,6 @@ namespace core::state {
 
 struct CoreStateBootstrap;
 struct CoreStateLifecycle;
-
-/**
- * @brief State for top-level view selector overlay
- */
-struct ViewSelectorState {
-    oc::state::Signal<int> selectedIndex{0};
-    oc::state::Signal<bool> visible{false};
-
-    void reset() {
-        selectedIndex.set(0);
-        visible.set(false);
-    }
-};
 
 struct MacroDomainState {
     MacroState runtime;

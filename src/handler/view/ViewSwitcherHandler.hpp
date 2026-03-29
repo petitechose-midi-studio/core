@@ -10,9 +10,12 @@
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <ms/ui/OverlayBindingContext.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/ViewSelectorState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/OverlayTypes.hpp"
 #include "ui/ViewTypes.hpp"
 
