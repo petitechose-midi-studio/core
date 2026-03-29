@@ -51,11 +51,29 @@ void test_sequencer_view_lifecycle_plan_orders_deactivate_then_activate_then_syn
         << "[PASS] test_sequencer_view_lifecycle_plan_orders_deactivate_then_activate_then_sync\n";
 }
 
+void test_unknown_view_falls_back_to_macro_lifecycle_plan() {
+    constexpr auto plan = core::context::standalone::makeActiveViewLifecyclePlan(
+        static_cast<core::ui::ViewType>(255)
+    );
+
+    constexpr std::array<ActiveViewLifecycleStep, 4> expected{
+        ActiveViewLifecycleStep::DEACTIVATE_MACRO,
+        ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+        ActiveViewLifecycleStep::ACTIVATE_MACRO,
+        ActiveViewLifecycleStep::SYNC_MACRO_ENCODERS,
+    };
+
+    static_assert(plansMatch(plan, expected));
+    assert(plansMatch(plan, expected));
+    std::cout << "[PASS] test_unknown_view_falls_back_to_macro_lifecycle_plan\n";
+}
+
 }  // namespace
 
 int main() {
     test_macro_view_lifecycle_plan_orders_deactivate_then_activate_then_sync();
     test_sequencer_view_lifecycle_plan_orders_deactivate_then_activate_then_sync();
+    test_unknown_view_falls_back_to_macro_lifecycle_plan();
     std::cout << "\nAll active-view lifecycle tests passed.\n";
     return 0;
 }
