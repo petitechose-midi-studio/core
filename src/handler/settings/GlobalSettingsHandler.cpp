@@ -3,17 +3,13 @@
 #include <algorithm>
 
 #include <oc/log/Log.hpp>
-#include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
-#include "state/CoreState.hpp"
 
 namespace core::handler {
-
-using oc::ui::lvgl::scope;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
@@ -42,9 +38,7 @@ int findChoiceIndex(const T& value, const T (&choices)[N], int fallback = 0) {
     return std::clamp(fallback, 0, N - 1);
 }
 
-int currentChoiceIndexForRow(const core::state::CoreState& state, uint8_t row) {
-    const auto& sync = state.midiSync;
-
+int currentChoiceIndexForRow(const core::state::MidiSyncState& sync, uint8_t row) {
     switch (row) {
         case 0:
             return findChoiceIndex(sync.mode.get(), MODE_VALUES,
@@ -62,9 +56,7 @@ int currentChoiceIndexForRow(const core::state::CoreState& state, uint8_t row) {
     }
 }
 
-void applyChoiceForRow(core::state::CoreState& state, uint8_t row, int choiceIndex) {
-    auto& sync = state.midiSync;
-
+void applyChoiceForRow(core::state::MidiSyncState& sync, uint8_t row, int choiceIndex) {
     switch (row) {
         case 0: {
             const int idx = std::clamp(choiceIndex, 0, MODE_COUNT - 1);
@@ -91,26 +83,22 @@ void applyChoiceForRow(core::state::CoreState& state, uint8_t row, int choiceInd
     }
 }
 
-void persistRow(core::state::CoreState& state, uint8_t row) {
+void persistRow(core::state::CoreSettings& settings,
+                const core::state::MidiSyncState& sync,
+                uint8_t row) {
     auto status = core::persistence::PersistenceWriteStatus::OK;
     switch (row) {
         case 0:
-            status = state.settings.saveMidiSyncModeStatus(state.midiSync.mode.get());
+            status = settings.saveMidiSyncModeStatus(sync.mode.get());
             break;
         case 1:
-            status = state.settings.saveMidiFollowTransportStatus(
-                state.midiSync.followTransport.get()
-            );
+            status = settings.saveMidiFollowTransportStatus(sync.followTransport.get());
             break;
         case 2:
-            status = state.settings.saveMidiAutoFallbackMsStatus(
-                state.midiSync.autoFallbackMs.get()
-            );
+            status = settings.saveMidiAutoFallbackMsStatus(sync.autoFallbackMs.get());
             break;
         case 3:
-            status = state.settings.saveMidiAutoLockClockCountStatus(
-                state.midiSync.autoLockClockCount.get()
-            );
+            status = settings.saveMidiAutoLockClockCountStatus(sync.autoLockClockCount.get());
             break;
         default:
             return;
@@ -123,7 +111,7 @@ void persistRow(core::state::CoreState& state, uint8_t row) {
         return;
     }
 
-    const auto commitStatus = state.settings.commitStatus();
+    const auto commitStatus = settings.commitStatus();
     if (commitStatus != core::persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[GlobalSettings] Failed to commit settings row {}: {}",
                     row,
@@ -133,13 +121,15 @@ void persistRow(core::state::CoreState& state, uint8_t row) {
 
 }  // namespace
 
-FLASHMEM GlobalSettingsHandler::GlobalSettingsHandler(core::state::CoreState& state,
+FLASHMEM GlobalSettingsHandler::GlobalSettingsHandler(StateRefs state,
                                                       oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                                       oc::api::EncoderAPI& encoders,
                                                       oc::api::ButtonAPI& buttons,
-                                                      lv_obj_t* settingsOverlayScope,
-                                                      lv_obj_t* selectorOverlayScope)
-    : state_(state)
+                                                      oc::type::ScopeID settingsOverlayScope,
+                                                      oc::type::ScopeID selectorOverlayScope)
+    : global_settings_(state.globalSettings)
+    , midi_sync_(state.midiSync)
+    , settings_(state.settings)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -152,7 +142,7 @@ FLASHMEM void GlobalSettingsHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_TOP)
         .longPress(SETTINGS_LONG_PRESS_MS)
         .when([this]() {
-            if (state_.globalSettings.visible.get() || state_.globalSettings.selector.visible.get()) {
+            if (global_settings_.visible.get() || global_settings_.selector.visible.get()) {
                 return false;
             }
             const auto current = overlays_.current();
@@ -162,38 +152,37 @@ FLASHMEM void GlobalSettingsHandler::setupBindings() {
 
     encoders_.encoder(EncoderID::NAV)
         .turn()
-        .scope(scope(settings_overlay_scope_))
+        .scope(settings_overlay_scope_)
         .then([this](float delta) { moveFocus(delta); });
 
     buttons_.button(ButtonID::NAV)
         .release()
-        .scope(scope(settings_overlay_scope_))
+        .scope(settings_overlay_scope_)
         .then([this]() { openValueSelector(); });
 
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
-        .scope(scope(settings_overlay_scope_))
+        .scope(settings_overlay_scope_)
         .then([this]() { closeSettings(); });
 
     encoders_.encoder(EncoderID::NAV)
         .turn()
-        .scope(scope(selector_overlay_scope_))
+        .scope(selector_overlay_scope_)
         .then([this](float delta) { navigateSelector(delta); });
 
     buttons_.button(ButtonID::NAV)
         .release()
-        .scope(scope(selector_overlay_scope_))
+        .scope(selector_overlay_scope_)
         .then([this]() { applySelectorAndClose(); });
 
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
-        .scope(scope(selector_overlay_scope_))
+        .scope(selector_overlay_scope_)
         .then([this]() { closeSelectorCancel(); });
 }
 
 FLASHMEM void GlobalSettingsHandler::openSettings() {
-    auto& s = state_.globalSettings;
-    s.reset();
+    global_settings_.reset();
 
     ignore_open_release_ = true;
     overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS, false);
@@ -206,34 +195,33 @@ FLASHMEM void GlobalSettingsHandler::closeSettings() {
     }
 
     overlays_.hide();
-    state_.globalSettings.reset();
+    global_settings_.reset();
 }
 
 FLASHMEM void GlobalSettingsHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
-    const int current = static_cast<int>(state_.globalSettings.focusedRow.get());
+    const int current = static_cast<int>(global_settings_.focusedRow.get());
     const int next = nav::nextWrappedIndex(delta, current, ROW_COUNT);
 
-    state_.globalSettings.focusedRow.set(static_cast<uint8_t>(next));
+    global_settings_.focusedRow.set(static_cast<uint8_t>(next));
 }
 
 FLASHMEM void GlobalSettingsHandler::openValueSelector() {
-    auto& s = state_.globalSettings;
+    auto& s = global_settings_;
     const uint8_t row = s.focusedRow.get();
-
-    auto& selector = s.selector;
-    selector.reset();
-    selector.editingRow.set(row);
-
-    const int current = currentChoiceIndexForRow(state_, row);
-    selector.selectedIndex.set(current);
-
-    overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, true);
+    const int current = currentChoiceIndexForRow(midi_sync_, row);
+    modal::openSelectorOverlay(
+        overlays_,
+        core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR,
+        s.selector,
+        current,
+        [row](auto& selector) { selector.editingRow.set(row); }
+    );
 }
 
 FLASHMEM void GlobalSettingsHandler::navigateSelector(float delta) {
-    const uint8_t row = state_.globalSettings.selector.editingRow.get();
+    const uint8_t row = global_settings_.selector.editingRow.get();
     int count = 0;
 
     switch (row) {
@@ -244,33 +232,26 @@ FLASHMEM void GlobalSettingsHandler::navigateSelector(float delta) {
         default: return;
     }
 
-    const int current = state_.globalSettings.selector.selectedIndex.get();
-    int next = current;
-    if (!modal::advanceWrappedSelection(
-            delta,
-            state_.globalSettings.selector.visible.get(),
-            current,
-            count,
-            next
-        )) {
+    int next = global_settings_.selector.selectedIndex.get();
+    if (!modal::advanceWrappedSelection(delta, global_settings_.selector, count, next)) {
         return;
     }
-    state_.globalSettings.selector.selectedIndex.set(next);
+    global_settings_.selector.selectedIndex.set(next);
 }
 
 FLASHMEM void GlobalSettingsHandler::applySelectorAndClose() {
-    auto& selector = state_.globalSettings.selector;
+    auto& selector = global_settings_.selector;
     const uint8_t row = selector.editingRow.get();
     const int choice = selector.selectedIndex.get();
 
-    applyChoiceForRow(state_, row, choice);
-    persistRow(state_, row);
+    applyChoiceForRow(midi_sync_, row, choice);
+    persistRow(settings_, midi_sync_, row);
 
-    modal::hideOverlayAndReset(overlays_, [&selector]() { selector.reset(); });
+    modal::hideOverlayAndResetSelector(overlays_, selector);
 }
 
 FLASHMEM void GlobalSettingsHandler::closeSelectorCancel() {
-    modal::hideOverlayAndReset(overlays_, [this]() { state_.globalSettings.selector.reset(); });
+    modal::hideOverlayAndResetSelector(overlays_, global_settings_.selector);
 }
 
 }  // namespace core::handler

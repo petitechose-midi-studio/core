@@ -1,7 +1,6 @@
 #include "context/standalone/GlobalSettingsOverlayPresenterFormatters.hpp"
 
 #include <oc/type/TextFormat.hpp>
-#include "state/CoreState.hpp"
 
 namespace core::context::standalone::global_settings_presenter {
 
@@ -24,17 +23,17 @@ const char* modeLabel(core::state::MidiSyncMode mode) {
 
 }  // namespace
 
-OverlayRenderData buildOverlayRenderData(const core::state::CoreState& state) {
+OverlayRenderData buildOverlayRenderData(const Source& source) {
     OverlayRenderData data{};
 
-    const auto mode = state.midiSync.mode.get();
-    const bool followTransport = state.midiSync.followTransport.get();
-    const uint16_t fallbackMs = state.midiSync.autoFallbackMs.get();
-    const uint8_t lockCount = state.midiSync.autoLockClockCount.get();
+    const auto mode = source.midiSync.mode.get();
+    const bool followTransport = source.midiSync.followTransport.get();
+    const uint16_t fallbackMs = source.midiSync.autoFallbackMs.get();
+    const uint8_t lockCount = source.midiSync.autoLockClockCount.get();
 
     const char* sourceLabel =
-        (state.midiSync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL) ? "EXT" : "INT";
-    const char* signalLabel = state.midiSync.externalClockPresent.get() ? "IN" : "-";
+        (source.midiSync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL) ? "EXT" : "INT";
+    const char* signalLabel = source.midiSync.externalClockPresent.get() ? "IN" : "-";
 
     size_t metaPos = oc::type::text::appendString(data.meta.data(), data.meta.size(), 0, sourceLabel);
     metaPos = oc::type::text::appendString(data.meta.data(), data.meta.size(), metaPos, "  CLK ");
@@ -65,7 +64,7 @@ OverlayRenderData buildOverlayRenderData(const core::state::CoreState& state) {
         {.key = "Timeout", .value = data.valueBuffers[0].data()},
         {.key = "Lock", .value = data.valueBuffers[1].data()},
     }};
-    data.selectedIndex = state.globalSettings.focusedRow.get();
+    data.selectedIndex = source.globalSettings.focusedRow.get();
     data.dataRevision =
         (static_cast<uint32_t>(mode) << 24) |
         (static_cast<uint32_t>(followTransport ? 1 : 0) << 20) |
@@ -75,13 +74,13 @@ OverlayRenderData buildOverlayRenderData(const core::state::CoreState& state) {
     return data;
 }
 
-SelectorRenderData buildSelectorRenderData(const core::state::CoreState& state) {
+SelectorRenderData buildSelectorRenderData(const Source& source) {
     SelectorRenderData data{};
-    if (!state.globalSettings.selector.visible.get()) {
+    if (!source.globalSettings.selector.visible.get()) {
         return data;
     }
 
-    const uint8_t row = state.globalSettings.selector.editingRow.get();
+    const uint8_t row = source.globalSettings.selector.editingRow.get();
     data.visible = true;
 
     switch (row) {
@@ -112,12 +111,12 @@ SelectorRenderData buildSelectorRenderData(const core::state::CoreState& state) 
             break;
     }
 
-    data.selectedIndex = state.globalSettings.selector.selectedIndex.get();
+    data.selectedIndex = source.globalSettings.selector.selectedIndex.get();
     data.dataRevision =
         (static_cast<uint32_t>(row) << 24) |
-        (static_cast<uint32_t>(state.midiSync.mode.get()) << 16) |
-        (static_cast<uint32_t>(state.midiSync.followTransport.get() ? 1 : 0) << 12) |
-        (static_cast<uint32_t>(state.midiSync.autoFallbackMs.get()) & 0x0FFF);
+        (static_cast<uint32_t>(source.midiSync.mode.get()) << 16) |
+        (static_cast<uint32_t>(source.midiSync.followTransport.get() ? 1 : 0) << 12) |
+        (static_cast<uint32_t>(source.midiSync.autoFallbackMs.get()) & 0x0FFF);
 
     return data;
 }

@@ -2,7 +2,7 @@
 
 #include <oc/state/SignalWatcher.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/sequencer/SequencerState.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -12,14 +12,18 @@ namespace core::context::standalone {
 
 class SequencerOverlayPresenter {
 public:
-    SequencerOverlayPresenter(core::state::CoreState& state,
+    struct StateRefs {
+        core::state::sequencer::SequencerState& sequencer;
+    };
+
+    SequencerOverlayPresenter(StateRefs stateRefs,
                               ms::ui::VirtualListKeyValueOverlay& stepEditOverlay);
 
     void bind();
     void renderStepEdit();
 
 private:
-    core::state::CoreState& state_;
+    StateRefs state_refs_;
     ms::ui::VirtualListKeyValueOverlay& step_edit_overlay_;
     oc::state::SignalWatcher step_edit_watcher_;
 };

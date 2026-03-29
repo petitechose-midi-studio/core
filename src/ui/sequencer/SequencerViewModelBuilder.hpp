@@ -1,6 +1,8 @@
 #pragma once
 
-#include "state/CoreState.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/sequencer/SequencerBottomControls.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
 #include "ui/sequencer/StepPropertyStrip.hpp"
@@ -9,11 +11,17 @@
 
 namespace core::ui::sequencer {
 
-SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreState);
-SequencerBottomControlsProps buildBottomControlsProps(const core::state::CoreState& coreState);
-StepPropertyStripProps buildStepPropertyStripProps(const core::state::CoreState& coreState);
-ContextActionStripProps buildLeftActionStripProps(const core::state::CoreState& coreState);
-ContextActionStripProps buildBottomActionStripProps(const core::state::CoreState& coreState);
-grid::StepGridFrameState buildStepGridProps(const core::state::CoreState& coreState);
+struct SequencerViewModelSource {
+    const core::state::sequencer::SequencerState& sequencer;
+    const core::state::sequencer::SequencerTrackBankState& tracks;
+    const core::state::StatusBarState& statusBar;
+};
+
+SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source);
+SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSource& source);
+StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSource& source);
+ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource& source);
+ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSource& source);
+grid::StepGridFrameState buildStepGridProps(const SequencerViewModelSource& source);
 
 }  // namespace core::ui::sequencer

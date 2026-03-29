@@ -13,7 +13,8 @@
 #include <oc/api/EncoderAPI.hpp>
 
 #include <config/InputIDs.hpp>
-#include "state/CoreState.hpp"
+#include "handler/macro/MacroDomainServices.hpp"
+#include "ui/ViewTypes.hpp"
 
 namespace core::handler {
 
@@ -25,8 +26,13 @@ namespace core::handler {
  */
 class MacroMidiHandler {
 public:
-    MacroMidiHandler(core::state::CoreState& coreState,
-                           oc::api::EncoderAPI& encoders);
+    struct StateRefs {
+        oc::state::Signal<core::ui::ViewType>& activeView;
+    };
+
+    MacroMidiHandler(StateRefs state,
+                     MacroDomainServices services,
+                     oc::api::EncoderAPI& encoders);
 
     ~MacroMidiHandler() = default;
 
@@ -43,7 +49,8 @@ private:
     /// Find macro index for given CC/channel (-1 if not found)
     int8_t findMacroForCC(uint8_t channel, uint8_t cc) const;
 
-    core::state::CoreState& core_state_;
+    oc::state::Signal<core::ui::ViewType>& active_view_;
+    MacroDomainServices services_;
     oc::api::EncoderAPI& encoders_;
 };
 

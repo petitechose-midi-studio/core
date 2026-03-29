@@ -12,12 +12,18 @@ using oc::ui::lvgl::scope;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
-ViewSwitcherHandler::ViewSwitcherHandler(core::state::CoreState& state,
+ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
                                          OverlayCtx overlayCtx,
                                          oc::api::EncoderAPI& encoders,
                                          oc::api::ButtonAPI& buttons,
                                          ViewSwitcherHandler::ViewScopes viewScopes)
-    : state_(state)
+    : overlays_state_(state.overlays)
+    , active_view_(state.activeView)
+    , view_selector_(state.viewSelector)
+    , range_selection_(state.rangeSelection)
+    , track_selector_(state.trackSelector)
+    , pattern_quick_controls_(state.patternQuickControls)
+    , step_property_inline_selector_(state.stepPropertyInlineSelector)
     , overlay_ctx_(overlayCtx)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -27,14 +33,14 @@ ViewSwitcherHandler::ViewSwitcherHandler(core::state::CoreState& state,
 
 FLASHMEM void ViewSwitcherHandler::setupBindings() {
     // Open selector from any active top-level view scope (latch behavior for toggle)
-    lv_obj_t* lastBoundScope = nullptr;
-    for (auto* viewScope : view_scopes_) {
+    oc::type::ScopeID lastBoundScope = 0;
+    for (oc::type::ScopeID viewScope : view_scopes_) {
         if (!viewScope || viewScope == lastBoundScope) continue;
 
         buttons_.button(ButtonID::LEFT_TOP)
             .press()
             .latch()
-            .scope(scope(viewScope))
+            .scope(viewScope)
             .when([this]() { return canOpenSelector(); })
             .then([this]() { openSelector(); });
 
@@ -61,41 +67,41 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
 }
 
 bool ViewSwitcherHandler::canOpenSelector() const {
-    if (state_.overlays.hasVisible()) return false;
+    if (overlays_state_.hasVisible()) return false;
 
-    if (state_.activeView.get() != core::ui::ViewType::SEQUENCER) {
+    if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
         return true;
     }
 
-    return !state_.sequencer.rangeSelection.active() &&
-           !state_.sequencerTracks.selector.selecting.get() &&
-           !state_.sequencer.patternQuickControls.selecting.get() &&
-           !state_.sequencer.stepPropertyInlineSelector.selecting.get();
+    return !range_selection_.active() &&
+           !track_selector_.selecting.get() &&
+           !pattern_quick_controls_.selecting.get() &&
+           !step_property_inline_selector_.selecting.get();
 }
 
 void ViewSwitcherHandler::openSelector() {
-    if (!state_.viewSelector.visible.get()) {
+    if (!view_selector_.visible.get()) {
         overlay_ctx_.controller.show(core::ui::OverlayType::VIEW_SELECTOR, false);
     }
 
     encoders_.setMode(EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
-    state_.viewSelector.selectedIndex.set(static_cast<int>(state_.activeView.get()));
+    view_selector_.selectedIndex.set(static_cast<int>(active_view_.get()));
 }
 
 void ViewSwitcherHandler::navigate(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
-    int current = state_.viewSelector.selectedIndex.get();
+    int current = view_selector_.selectedIndex.get();
     int next = nav::nextWrappedIndex(delta, current, VIEW_COUNT);
-    state_.viewSelector.selectedIndex.set(next);
+    view_selector_.selectedIndex.set(next);
 }
 
 void ViewSwitcherHandler::confirmSelection() {
-    int index = state_.viewSelector.selectedIndex.get();
+    int index = view_selector_.selectedIndex.get();
     if (index < 0 || index >= VIEW_COUNT) return;
 
     auto type = static_cast<core::ui::ViewType>(index);
-    state_.activeView.set(type);
+    active_view_.set(type);
 }
 
 void ViewSwitcherHandler::closeSelector() {

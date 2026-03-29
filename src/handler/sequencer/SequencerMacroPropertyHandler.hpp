@@ -5,20 +5,27 @@
  * @brief Map 8 macro encoders to the active sequencer step property
  */
 
-#include <lvgl.h>
-
 #include <oc/api/EncoderAPI.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
+#include "ui/OverlayTypes.hpp"
 
 namespace core::handler {
 
 class SequencerMacroPropertyHandler {
 public:
+    struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& tracks;
+    };
+
     SequencerMacroPropertyHandler(
-        core::state::CoreState& state,
+        StateRefs state,
         oc::api::EncoderAPI& encoders,
-        lv_obj_t* sequencerViewScope
+        oc::type::ScopeID scopeId
     );
 
     SequencerMacroPropertyHandler(const SequencerMacroPropertyHandler&) = delete;
@@ -29,9 +36,11 @@ private:
     void handleTurn(uint8_t indexInPage, float normalized);
     void handleFocusedTurn(float normalized);
 
-    core::state::CoreState& state_;
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
     oc::api::EncoderAPI& encoders_;
-    lv_obj_t* scope_element_ = nullptr;
+    oc::type::ScopeID scope_id_ = 0;
 };
 
 }  // namespace core::handler

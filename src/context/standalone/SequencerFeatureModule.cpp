@@ -17,13 +17,21 @@
 namespace core::context::standalone {
 
 FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
-    core::state::CoreState& state,
+    StateRefs stateRefs,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* sequencerViewScope
 ) {
-    encoder_sync_ = std::make_unique<SequencerEncoderSyncCoordinator>(state, encoders);
+    const auto sequencerViewScopeId = oc::ui::lvgl::scopeID(sequencerViewScope);
+    encoder_sync_ = std::make_unique<SequencerEncoderSyncCoordinator>(
+        SequencerEncoderSyncCoordinator::StateRefs{
+            stateRefs.overlays,
+            stateRefs.activeView,
+            stateRefs.sequencer,
+        },
+        encoders
+    );
     step_edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(sequencerViewScope);
     overlays.registerCleanup(
         core::ui::OverlayType::SEQ_STEP_EDIT,
@@ -31,55 +39,87 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         static_cast<oc::type::ButtonID>(0)
     );
 
-    presenter_ = std::make_unique<SequencerOverlayPresenter>(state, *step_edit_overlay_);
+    presenter_ = std::make_unique<SequencerOverlayPresenter>(
+        SequencerOverlayPresenter::StateRefs{
+            stateRefs.sequencer,
+        },
+        *step_edit_overlay_
+    );
     presenter_->bind();
     encoder_sync_->bind();
 
     step_handler_ = std::make_unique<core::handler::SequencerStepHandler>(
-        state,
+        core::handler::SequencerStepHandler::StateRefs{
+            stateRefs.sequencer,
+            stateRefs.sequencerTracks,
+        },
         encoders,
         buttons,
-        sequencerViewScope
+        sequencerViewScopeId
     );
     range_action_handler_ = std::make_unique<core::handler::SequencerRangeActionHandler>(
-        state,
+        core::handler::SequencerRangeActionHandler::StateRefs{
+            stateRefs.overlays,
+            stateRefs.sequencer,
+            stateRefs.sequencerTracks,
+        },
         encoders,
         buttons,
-        sequencerViewScope
+        sequencerViewScopeId
     );
     track_selector_handler_ = std::make_unique<core::handler::SequencerTrackSelectorHandler>(
-        state,
+        core::handler::SequencerTrackSelectorHandler::StateRefs{
+            stateRefs.overlays,
+            stateRefs.sequencer,
+            stateRefs.sequencerTracks,
+        },
         encoders,
         buttons,
-        sequencerViewScope
+        sequencerViewScopeId
     );
     quick_controls_handler_ =
         std::make_unique<core::handler::SequencerPatternQuickControlsHandler>(
-            state,
+            core::handler::SequencerPatternQuickControlsHandler::StateRefs{
+                stateRefs.overlays,
+                stateRefs.sequencer,
+                stateRefs.sequencerTracks,
+            },
             encoders,
             buttons,
-            sequencerViewScope
+            sequencerViewScopeId
         );
     step_edit_handler_ = std::make_unique<core::handler::SequencerStepEditHandler>(
-        state,
+        core::handler::SequencerStepEditHandler::StateRefs{
+            stateRefs.overlays,
+            stateRefs.sequencer,
+            stateRefs.sequencerTracks,
+        },
         overlays,
         encoders,
         buttons,
-        sequencerViewScope,
-        step_edit_overlay_->getElement()
+        sequencerViewScopeId,
+        oc::ui::lvgl::scopeID(step_edit_overlay_->getElement())
     );
     property_selector_handler_ =
         std::make_unique<core::handler::SequencerPropertySelectorHandler>(
-            state,
+            core::handler::SequencerPropertySelectorHandler::StateRefs{
+                stateRefs.overlays,
+                stateRefs.sequencer,
+                stateRefs.sequencerTracks,
+            },
             encoders,
             buttons,
-            sequencerViewScope
+            sequencerViewScopeId
         );
     macro_property_handler_ =
         std::make_unique<core::handler::SequencerMacroPropertyHandler>(
-            state,
+            core::handler::SequencerMacroPropertyHandler::StateRefs{
+                stateRefs.overlays,
+                stateRefs.sequencer,
+                stateRefs.sequencerTracks,
+            },
             encoders,
-            sequencerViewScope
+            sequencerViewScopeId
         );
 }
 

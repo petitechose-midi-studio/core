@@ -1,27 +1,30 @@
 #pragma once
 
-#include <lvgl.h>
-
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
+#include "state/CoreSettings.hpp"
+#include "state/GlobalSettingsState.hpp"
+#include "state/MidiSyncState.hpp"
 #include "ui/OverlayTypes.hpp"
-
-namespace core::state {
-struct CoreState;
-}
 
 namespace core::handler {
 
 class GlobalSettingsHandler {
 public:
-    GlobalSettingsHandler(core::state::CoreState& state,
+    struct StateRefs {
+        core::state::GlobalSettingsState& globalSettings;
+        core::state::MidiSyncState& midiSync;
+        core::state::CoreSettings& settings;
+    };
+
+    GlobalSettingsHandler(StateRefs state,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,
-                          lv_obj_t* settingsOverlayScope,
-                          lv_obj_t* selectorOverlayScope);
+                          oc::type::ScopeID settingsOverlayScope,
+                          oc::type::ScopeID selectorOverlayScope);
 
     ~GlobalSettingsHandler() = default;
 
@@ -41,12 +44,14 @@ private:
     void applySelectorAndClose();
     void closeSelectorCancel();
 
-    core::state::CoreState& state_;
+    core::state::GlobalSettingsState& global_settings_;
+    core::state::MidiSyncState& midi_sync_;
+    core::state::CoreSettings& settings_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    lv_obj_t* settings_overlay_scope_ = nullptr;
-    lv_obj_t* selector_overlay_scope_ = nullptr;
+    oc::type::ScopeID settings_overlay_scope_ = 0;
+    oc::type::ScopeID selector_overlay_scope_ = 0;
 
     bool ignore_open_release_ = false;
 

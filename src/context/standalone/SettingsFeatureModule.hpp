@@ -9,8 +9,12 @@
 #include <oc/context/OverlayManager.hpp>
 
 #include "handler/settings/DataManagerHandler.hpp"
-#include "state/CoreState.hpp"
+#include "state/CoreSettings.hpp"
+#include "state/DataManagerState.hpp"
+#include "state/GlobalSettingsState.hpp"
+#include "state/MidiSyncState.hpp"
 #include "ui/OverlayTypes.hpp"
+#include "ui/ViewTypes.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -36,7 +40,16 @@ namespace core::context::standalone {
 
 class SettingsFeatureModule {
 public:
-    SettingsFeatureModule(core::state::CoreState& state,
+    struct StateRefs {
+        core::state::GlobalSettingsState& globalSettings;
+        core::state::MidiSyncState& midiSync;
+        core::state::CoreSettings& settings;
+        core::state::DataManagerState& dataManager;
+        oc::state::Signal<core::ui::ViewType>& activeView;
+    };
+
+    SettingsFeatureModule(StateRefs stateRefs,
+                          core::handler::DataManagerHandler::Services services,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,

@@ -13,7 +13,8 @@
 namespace core::context::standalone {
 
 FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
-    core::state::CoreState& state,
+    StateRefs stateRefs,
+    core::handler::DataManagerHandler::Services services,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -54,14 +55,19 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
 
     global_settings_presenter_ =
         std::make_unique<GlobalSettingsOverlayPresenter>(
-            state,
+            GlobalSettingsOverlayPresenter::StateRefs{
+                stateRefs.globalSettings,
+                stateRefs.midiSync,
+            },
             *global_settings_overlay_,
             *global_settings_selector_overlay_
         );
     global_settings_presenter_->bind();
 
     data_manager_presenter_ = std::make_unique<DataManagerPresenter>(
-        state,
+        DataManagerPresenter::StateRefs{
+            stateRefs.dataManager,
+        },
         *data_manager_overlay_,
         *data_manager_dialog_overlay_,
         softkeyBar,
@@ -71,22 +77,30 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     data_manager_presenter_->renderSoftkeyBar();
 
     global_settings_handler_ = std::make_unique<core::handler::GlobalSettingsHandler>(
-        state,
+        core::handler::GlobalSettingsHandler::StateRefs{
+            stateRefs.globalSettings,
+            stateRefs.midiSync,
+            stateRefs.settings,
+        },
         overlays,
         encoders,
         buttons,
-        global_settings_overlay_->getElement(),
-        global_settings_selector_overlay_->getElement()
+        oc::ui::lvgl::scopeID(global_settings_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(global_settings_selector_overlay_->getElement())
     );
 
     data_manager_handler_ = std::make_unique<core::handler::DataManagerHandler>(
-        state,
+        core::handler::DataManagerHandler::StateRefs{
+            stateRefs.dataManager,
+            stateRefs.activeView,
+        },
+        services,
         overlays,
         encoders,
         buttons,
         viewScopes,
-        data_manager_overlay_->getElement(),
-        data_manager_dialog_overlay_->getElement()
+        oc::ui::lvgl::scopeID(data_manager_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(data_manager_dialog_overlay_->getElement())
     );
 }
 

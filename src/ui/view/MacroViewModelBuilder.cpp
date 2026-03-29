@@ -1,22 +1,20 @@
 #include "ui/view/MacroViewModelBuilder.hpp"
 
-#include "state/macro/MacroWorkflow.hpp"
-
 namespace core::ui {
 
-TopBarProps buildMacroTopBarProps(const core::state::CoreState& coreState) {
+TopBarProps buildMacroTopBarProps(const MacroViewModelSource& source) {
     return {
-        .pageName = coreState.statusBar.pageName.get(),
+        .pageName = source.statusBar.pageName.get(),
     };
 }
 
-MacroViewFrameState buildMacroViewFrameState(const core::state::CoreState& coreState) {
+MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source) {
     MacroViewFrameState frame;
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        const auto& config = core::state::macro::MacroWorkflow::activeConfig(coreState, i);
+        const auto& config = source.pages.activeConfigs[i];
         frame.macros[i] = {
-            .value = core::state::macro::MacroWorkflow::runtimeValue(coreState, i),
+            .value = source.macros.slots[i].value.get(),
             .channel = config.channel,
             .cc = config.cc,
         };

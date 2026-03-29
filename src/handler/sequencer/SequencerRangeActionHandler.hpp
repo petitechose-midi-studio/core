@@ -1,20 +1,27 @@
 #pragma once
 
-#include <lvgl.h>
-
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
+#include "ui/OverlayTypes.hpp"
 
 namespace core::handler {
 
 class SequencerRangeActionHandler {
 public:
-    SequencerRangeActionHandler(core::state::CoreState& state,
+    struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& tracks;
+    };
+
+    SequencerRangeActionHandler(StateRefs state,
                                 oc::api::EncoderAPI& encoders,
                                 oc::api::ButtonAPI& buttons,
-                                lv_obj_t* sequencerViewScope);
+                                oc::type::ScopeID scopeId);
 
     SequencerRangeActionHandler(const SequencerRangeActionHandler&) = delete;
     SequencerRangeActionHandler& operator=(const SequencerRangeActionHandler&) = delete;
@@ -49,10 +56,12 @@ private:
     void snapshotCurrentFocus();
     void restoreSnapshotFocus();
 
-    core::state::CoreState& state_;
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    lv_obj_t* scope_element_ = nullptr;
+    oc::type::ScopeID scope_id_ = 0;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
 };

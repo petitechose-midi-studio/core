@@ -4,7 +4,6 @@
 
 #include <oc/type/TextFormat.hpp>
 
-#include "state/CoreState.hpp"
 #include "state/DataManagerWorkflow.hpp"
 
 namespace core::context::standalone::data_manager_presenter {
@@ -80,9 +79,9 @@ const char* buildConfirmMeta(core::state::DataManagerCommand command,
 
 }  // namespace
 
-OverlayRenderData buildOverlayRenderData(const core::state::CoreState& state) {
+OverlayRenderData buildOverlayRenderData(const Source& source) {
     OverlayRenderData data{};
-    const auto& dm = state.dataManager;
+    const auto& dm = source.dataManager;
 
     const bool macroContext = dm.context.get() == core::state::DataManagerContext::MACRO;
     const auto leftCommand = dm.shortcutForRow(0U);
@@ -109,9 +108,9 @@ OverlayRenderData buildOverlayRenderData(const core::state::CoreState& state) {
     return data;
 }
 
-DialogRenderData buildDialogRenderData(const core::state::CoreState& state) {
+DialogRenderData buildDialogRenderData(const Source& source) {
     DialogRenderData data{};
-    const auto& dm = state.dataManager;
+    const auto& dm = source.dataManager;
     const auto& dialog = dm.dialog;
 
     if (!dialog.visible.get()) {
@@ -182,9 +181,9 @@ DialogRenderData buildDialogRenderData(const core::state::CoreState& state) {
     return data;
 }
 
-SoftkeyRenderData buildSoftkeyRenderData(const core::state::CoreState& state) {
+SoftkeyRenderData buildSoftkeyRenderData(const Source& source) {
     SoftkeyRenderData data{};
-    const auto& dm = state.dataManager;
+    const auto& dm = source.dataManager;
     if (!dm.visible.get()) {
         return data;
     }

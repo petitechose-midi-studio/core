@@ -2,10 +2,14 @@
 
 #include <array>
 
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/SignalWatcher.hpp>
 
 #include "handler/sequencer/SequencerInputUtils.hpp"
-#include "state/CoreState.hpp"
+#include "state/MacroState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "ui/OverlayTypes.hpp"
+#include "ui/ViewTypes.hpp"
 
 namespace oc::api {
 class EncoderAPI;
@@ -15,7 +19,13 @@ namespace core::context::standalone {
 
 class SequencerEncoderSyncCoordinator {
 public:
-    SequencerEncoderSyncCoordinator(core::state::CoreState& state, oc::api::EncoderAPI& encoders);
+    struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        oc::state::Signal<core::ui::ViewType>& activeView;
+        core::state::sequencer::SequencerState& sequencer;
+    };
+
+    SequencerEncoderSyncCoordinator(StateRefs state, oc::api::EncoderAPI& encoders);
 
     void bind();
     void reset();
@@ -40,7 +50,9 @@ private:
     );
     void syncPositions();
 
-    core::state::CoreState& state_;
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
+    oc::state::Signal<core::ui::ViewType>& active_view_;
+    core::state::sequencer::SequencerState& sequencer_;
     oc::api::EncoderAPI& encoders_;
     oc::state::SignalWatcher watcher_;
 

@@ -8,8 +8,6 @@
  * - BOTTOM_CENTER button: toggle play (active top-level view scopes)
  */
 
-#include <lvgl.h>
-
 #include <array>
 #include <cstddef>
 
@@ -17,7 +15,7 @@
 #include <oc/api/EncoderAPI.hpp>
 
 #include <config/InputIDs.hpp>
-#include "state/CoreState.hpp"
+#include "state/StatusBarState.hpp"
 #include "ui/ViewTypes.hpp"
 
 namespace core::handler {
@@ -25,13 +23,16 @@ namespace core::handler {
 class TransportHandler {
 public:
     static constexpr std::size_t VIEW_SCOPE_COUNT = static_cast<std::size_t>(core::ui::ViewType::COUNT);
-    using ViewScopes = std::array<lv_obj_t*, VIEW_SCOPE_COUNT>;
+    using ViewScopes = std::array<oc::type::ScopeID, VIEW_SCOPE_COUNT>;
+    struct StateRefs {
+        core::state::StatusBarState& statusBar;
+    };
 
-    TransportHandler(core::state::CoreState& coreState,
-                            oc::api::EncoderAPI& encoders,
-                            oc::api::ButtonAPI& buttons,
-                            lv_obj_t* tempoScopeElement,
-                            ViewScopes playToggleScopes);
+    TransportHandler(StateRefs state,
+                     oc::api::EncoderAPI& encoders,
+                     oc::api::ButtonAPI& buttons,
+                     oc::type::ScopeID tempoScope,
+                     ViewScopes playToggleScopes);
 
     ~TransportHandler() = default;
 
@@ -43,10 +44,10 @@ private:
     void handleTempoChange(float delta);
     void handlePlayToggle();
 
-    core::state::CoreState& core_state_;
+    core::state::StatusBarState& status_bar_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    lv_obj_t* tempo_scope_element_;
+    oc::type::ScopeID tempo_scope_id_ = 0;
     ViewScopes play_toggle_scopes_{};
 
     static constexpr float TEMPO_MIN = 20.0f;

@@ -4,10 +4,9 @@
 
 namespace core::ui::sequencer::grid {
 
-StepGridFrameState buildStepGridFrameState(const core::state::CoreState& coreState) {
+StepGridFrameState buildStepGridFrameState(const core::state::sequencer::SequencerState& sequencer) {
     StepGridFrameState frame;
 
-    const auto& sequencer = coreState.sequencer;
     frame.activeProperty = sequencer.activeStepProperty.get();
     frame.feedbackVisible = sequencer.stepInlineFeedback.visible.get();
     frame.feedbackTouchedMask = sequencer.stepInlineFeedback.touchedMask.get();

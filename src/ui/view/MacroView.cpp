@@ -5,7 +5,6 @@
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
 
-#include "state/macro/MacroWorkflow.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
 #include "ui/widget/MacroKnobWidget.hpp"
 
@@ -58,8 +57,8 @@ MacroRenderProfiling g_macro_render_profiling;
 
 }  // namespace
 
-MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
-    : core_state_(coreState) {
+MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
+    : state_refs_(stateRefs) {
     createLayout(parent);
     createTopBar();
     createMacros();
@@ -69,19 +68,13 @@ MacroView::MacroView(lv_obj_t* parent, core::state::CoreState& coreState)
     constexpr uint32_t periodMs = (targetHz > 1000)
         ? 1
         : ((1000 + targetHz - 1) / targetHz);
-    update_timer_ = lv_timer_create(onUpdateTimer, periodMs, this);
-    if (update_timer_) {
-        lv_timer_pause(update_timer_);
-    }
+    update_timer_ = std::make_unique<PausableLvglTimer>(periodMs, onUpdateTimer, this);
 
     bindToState();
 }
 
 MacroView::~MacroView() {
-    if (update_timer_) {
-        lv_timer_delete(update_timer_);
-        update_timer_ = nullptr;
-    }
+    update_timer_.reset();
     subscriptions_.clear();
     top_bar_.reset();
     for (auto& macro : macros_) {
@@ -109,7 +102,7 @@ void MacroView::onDeactivate() {
     }
 
     if (update_timer_) {
-        lv_timer_pause(update_timer_);
+        update_timer_->pause();
     }
 }
 
@@ -117,19 +110,19 @@ FLASHMEM void MacroView::bindToState() {
     subscriptions_.reserve(MACRO_COUNT + 2);
 
     subscriptions_.push_back(
-        core_state_.configRevision.subscribe([this](uint32_t) {
+        state_refs_.configRevision.subscribe([this](uint32_t) {
             markAllConfigDirty();
         })
     );
 
     subscriptions_.push_back(
-        core_state_.statusBar.pageName.subscribe([this](const char*) {
+        state_refs_.statusBar.pageName.subscribe([this](const char*) {
             requestTopBarRender();
         })
     );
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        auto& slot = core_state_.macros.slots[i];
+        auto& slot = state_refs_.macros.slots[i];
 
         subscriptions_.push_back(
             slot.value.subscribe([this, i](float) {
@@ -180,14 +173,14 @@ FLASHMEM void MacroView::createMacros() {
 
 void MacroView::scheduleUpdate() {
     if (update_timer_) {
-        lv_timer_resume(update_timer_);
+        update_timer_->resume();
     }
 }
 
 void MacroView::pauseUpdateIfIdle() {
     if (!update_timer_) return;
     if (has_dirty_ || top_bar_dirty_) return;
-    lv_timer_pause(update_timer_);
+    update_timer_->pause();
 }
 
 void MacroView::requestTopBarRender() {
@@ -228,7 +221,7 @@ void MacroView::processDirtyFlags() {
     }
 
     if (top_bar_dirty_ && top_bar_) {
-        top_bar_->render(buildMacroTopBarProps(core_state_));
+        top_bar_->render(buildMacroTopBarProps(modelSource()));
         top_bar_dirty_ = false;
     }
 
@@ -243,12 +236,12 @@ void MacroView::processDirtyFlags() {
         if (dirty_flags_[i] || config_dirty_flags_[i]) {
             if (macros_[i]) {
                 if (dirty_flags_[i]) {
-                    macros_[i]->setValue(core::state::macro::MacroWorkflow::runtimeValue(core_state_, i));
+                    macros_[i]->setValue(state_refs_.macros.slots[i].value.get());
                     dirty_flags_[i] = false;
                     value_updates += 1;
                 }
                 if (config_dirty_flags_[i]) {
-                    const auto& config = core::state::macro::MacroWorkflow::activeConfig(core_state_, i);
+                    const auto& config = state_refs_.pages.activeConfigs[i];
                     macros_[i]->setConfig(config.channel, config.cc);
                     config_dirty_flags_[i] = false;
                     config_updates += 1;
@@ -271,6 +264,14 @@ void MacroView::onUpdateTimer(lv_timer_t* timer) {
     if (self) {
         self->processDirtyFlags();
     }
+}
+
+MacroViewModelSource MacroView::modelSource() const {
+    return {
+        .macros = state_refs_.macros,
+        .pages = state_refs_.pages,
+        .statusBar = state_refs_.statusBar,
+    };
 }
 
 }  // namespace core::ui

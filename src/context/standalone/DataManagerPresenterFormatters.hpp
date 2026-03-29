@@ -7,12 +7,13 @@
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
 #include "state/DataManagerCatalog.hpp"
-
-namespace core::state {
-struct CoreState;
-}
+#include "state/DataManagerState.hpp"
 
 namespace core::context::standalone::data_manager_presenter {
+
+struct Source {
+    core::state::DataManagerState& dataManager;
+};
 
 struct OverlayRenderData {
     std::array<ms::ui::KeyValueRow, 2> rows{};
@@ -41,8 +42,8 @@ struct SoftkeyRenderData {
     bool visible = false;
 };
 
-OverlayRenderData buildOverlayRenderData(const core::state::CoreState& state);
-DialogRenderData buildDialogRenderData(const core::state::CoreState& state);
-SoftkeyRenderData buildSoftkeyRenderData(const core::state::CoreState& state);
+OverlayRenderData buildOverlayRenderData(const Source& source);
+DialogRenderData buildDialogRenderData(const Source& source);
+SoftkeyRenderData buildSoftkeyRenderData(const Source& source);
 
 }  // namespace core::context::standalone::data_manager_presenter

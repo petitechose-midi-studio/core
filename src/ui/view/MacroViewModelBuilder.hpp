@@ -2,10 +2,18 @@
 
 #include <array>
 
-#include "state/CoreState.hpp"
+#include "state/MacroState.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 #include "ui/topbar/TopBar.hpp"
 
 namespace core::ui {
+
+struct MacroViewModelSource {
+    const core::state::MacroState& macros;
+    const core::state::macro::MacroPagesState& pages;
+    const core::state::StatusBarState& statusBar;
+};
 
 struct MacroWidgetProps {
     float value = 0.5f;
@@ -17,7 +25,7 @@ struct MacroViewFrameState {
     std::array<MacroWidgetProps, Config::MACRO_COUNT> macros{};
 };
 
-TopBarProps buildMacroTopBarProps(const core::state::CoreState& coreState);
-MacroViewFrameState buildMacroViewFrameState(const core::state::CoreState& coreState);
+TopBarProps buildMacroTopBarProps(const MacroViewModelSource& source);
+MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source);
 
 }  // namespace core::ui

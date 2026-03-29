@@ -10,13 +10,13 @@
  * - selector_scope_: Value selector bindings
  */
 
-#include <lvgl.h>
-
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
-#include "state/CoreState.hpp"
+#include "handler/macro/MacroDomainServices.hpp"
+#include "state/MacroEditState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 #include "ui/OverlayTypes.hpp"
 
 namespace core::handler {
@@ -31,6 +31,12 @@ namespace core::handler {
  */
 class MacroEditHandler {
 public:
+    struct StateRefs {
+        core::state::MacroEditState& macroEdit;
+        core::state::macro::MacroPagesState& pages;
+        oc::state::Signal<uint32_t>& configRevision;
+    };
+
     /**
      * @brief Construct handler
      * @param state Core state reference
@@ -44,15 +50,16 @@ public:
      * @param macroSelectorScope Scope element for macro selector overlay
      */
     MacroEditHandler(
-        core::state::CoreState& state,
+        StateRefs state,
+        MacroDomainServices services,
         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
-        lv_obj_t* macroViewScope,
-        lv_obj_t* overlayScope,
-        lv_obj_t* selectorScope,
-        lv_obj_t* pageSelectorScope,
-        lv_obj_t* macroSelectorScope
+        oc::type::ScopeID macroViewScope,
+        oc::type::ScopeID overlayScope,
+        oc::type::ScopeID selectorScope,
+        oc::type::ScopeID pageSelectorScope,
+        oc::type::ScopeID macroSelectorScope
     );
 
     ~MacroEditHandler() = default;
@@ -90,16 +97,19 @@ private:
     void applyTempConfig();
     void configureOptForFocusedRow();
 
-    core::state::CoreState& state_;
+    core::state::MacroEditState& macro_edit_;
+    core::state::macro::MacroPagesState& pages_;
+    oc::state::Signal<uint32_t>& config_revision_;
+    MacroDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
 
-    lv_obj_t* macro_view_scope_;
-    lv_obj_t* overlay_scope_;
-    lv_obj_t* selector_scope_;
-    lv_obj_t* page_selector_scope_;
-    lv_obj_t* macro_selector_scope_;
+    oc::type::ScopeID macro_view_scope_ = 0;
+    oc::type::ScopeID overlay_scope_ = 0;
+    oc::type::ScopeID selector_scope_ = 0;
+    oc::type::ScopeID page_selector_scope_ = 0;
+    oc::type::ScopeID macro_selector_scope_ = 0;
 
     bool has_staged_config_changes_ = false;
 };

@@ -4,10 +4,6 @@
 
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
 
-namespace core::state {
-struct CoreState;
-}
-
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
 class VirtualListSelectorOverlay;
@@ -17,7 +13,9 @@ namespace core::context::standalone {
 
 class MacroOverlayPresenter {
 public:
-    MacroOverlayPresenter(core::state::CoreState& state,
+    using StateRefs = macro_overlay_presenter::Source;
+
+    MacroOverlayPresenter(StateRefs stateRefs,
                           ms::ui::VirtualListKeyValueOverlay& macroEditOverlay,
                           ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
                           ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
@@ -32,7 +30,7 @@ public:
 private:
     void initializeStaticItems_();
 
-    core::state::CoreState& state_;
+    StateRefs state_refs_;
     ms::ui::VirtualListKeyValueOverlay& macro_edit_overlay_;
     ms::ui::VirtualListSelectorOverlay& macro_edit_selector_overlay_;
     ms::ui::VirtualListSelectorOverlay& page_selector_overlay_;

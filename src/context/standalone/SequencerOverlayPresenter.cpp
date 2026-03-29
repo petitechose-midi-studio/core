@@ -58,33 +58,33 @@ void formatSequencerStepEditRows(
 }  // namespace
 
 SequencerOverlayPresenter::SequencerOverlayPresenter(
-    core::state::CoreState& state,
+    StateRefs stateRefs,
     ms::ui::VirtualListKeyValueOverlay& stepEditOverlay
 )
-    : state_(state)
+    : state_refs_(stateRefs)
     , step_edit_overlay_(stepEditOverlay) {}
 
 FLASHMEM void SequencerOverlayPresenter::bind() {
     step_edit_watcher_.watchAll(
         [this]() { renderStepEdit(); },
-        state_.sequencer.stepEdit.visible,
-        state_.sequencer.stepEdit.stepIndex,
-        state_.sequencer.stepEdit.focusedRow,
-        state_.sequencer.stepDataRevision
+        state_refs_.sequencer.stepEdit.visible,
+        state_refs_.sequencer.stepEdit.stepIndex,
+        state_refs_.sequencer.stepEdit.focusedRow,
+        state_refs_.sequencer.stepDataRevision
     );
 }
 
 void SequencerOverlayPresenter::renderStepEdit() {
-    const bool visible = state_.sequencer.stepEdit.visible.get();
+    const bool visible = state_refs_.sequencer.stepEdit.visible.get();
     if (!visible) {
         step_edit_overlay_.render({.visible = false});
         return;
     }
 
-    const uint8_t abs = state_.sequencer.stepEdit.stepIndex.get();
+    const uint8_t abs = state_refs_.sequencer.stepEdit.stepIndex.get();
     if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = state_refs_.sequencer.length.get();
 
     char title[16];
     size_t titlePos = oc::type::text::appendString(title, sizeof(title), 0, "STEP ");
@@ -103,14 +103,14 @@ void SequencerOverlayPresenter::renderStepEdit() {
         oc::type::text::formatUnsigned(meta, sizeof(meta), static_cast<unsigned>(abs) + 1U);
     }
 
-    const uint8_t note = state_.sequencer.note[abs];
-    const uint8_t vel = state_.sequencer.velocity[abs];
-    const uint16_t gate = state_.sequencer.gate[abs];
-    const int8_t nudge = state_.sequencer.nudge[abs];
-    const uint8_t probability = state_.sequencer.probability[abs];
+    const uint8_t note = state_refs_.sequencer.note[abs];
+    const uint8_t vel = state_refs_.sequencer.velocity[abs];
+    const uint16_t gate = state_refs_.sequencer.gate[abs];
+    const int8_t nudge = state_refs_.sequencer.nudge[abs];
+    const uint8_t probability = state_refs_.sequencer.probability[abs];
 
     const uint32_t dataRevision =
-        state_.sequencer.stepDataRevision.get() ^
+        state_refs_.sequencer.stepDataRevision.get() ^
         (static_cast<uint32_t>(abs) << 16) ^
         (static_cast<uint32_t>(len) << 24);
 
@@ -123,7 +123,7 @@ void SequencerOverlayPresenter::renderStepEdit() {
         .meta = meta,
         .rows = rows.data(),
         .rowCount = static_cast<int>(rows.size()),
-        .selectedIndex = state_.sequencer.stepEdit.focusedRow.get(),
+        .selectedIndex = state_refs_.sequencer.stepEdit.focusedRow.get(),
         .visible = true,
         .dataRevision = dataRevision,
     });

@@ -17,6 +17,7 @@
 #include "context/standalone/MacroFeatureModule.hpp"
 #include "context/standalone/SequencerFeatureModule.hpp"
 #include "context/standalone/SettingsFeatureModule.hpp"
+#include "handler/macro/MacroDomainServices.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
@@ -109,8 +110,24 @@ FLASHMEM void StandaloneContext::createViewContainer() {
 FLASHMEM void StandaloneContext::createViews() {
     lv_obj_t* mainZone = view_container_->getMainZone();
 
-    macro_view_ = std::make_unique<core::ui::MacroView>(mainZone, core_state_);
-    sequencer_view_ = std::make_unique<core::ui::SequencerView>(mainZone, core_state_);
+    macro_view_ = std::make_unique<core::ui::MacroView>(
+        mainZone,
+        core::ui::MacroView::StateRefs{
+            core_state_.macros,
+            core_state_.pages,
+            core_state_.configRevision,
+            core_state_.statusBar,
+        }
+    );
+    sequencer_view_ = std::make_unique<core::ui::SequencerView>(
+        mainZone,
+        core::ui::SequencerView::StateRefs{
+            core_state_.sequencer,
+            core_state_.sequencerTracks,
+            core_state_.statusBar,
+        }
+    );
+    cacheViewScopes();
     setupActiveViewSwitching();
     applyActiveView();
 }
@@ -126,15 +143,7 @@ FLASHMEM void StandaloneContext::createOverlayController() {
         core_state_.overlays,
         buttons()
     );
-    overlay_controller_->setActiveViewProvider([this]() -> oc::type::ScopeID {
-        switch (core_state_.activeView.get()) {
-            case core::ui::ViewType::SEQUENCER:
-                return sequencer_view_ ? oc::ui::lvgl::scopeID(sequencer_view_->getElement()) : 0;
-            case core::ui::ViewType::MACRO:
-            default:
-                return macro_view_ ? oc::ui::lvgl::scopeID(macro_view_->getElement()) : 0;
-        }
-    });
+    overlay_controller_->setActiveViewProvider([this]() -> oc::type::ScopeID { return activeViewScopeId(); });
 }
 
 FLASHMEM void StandaloneContext::createViewSelectorOverlay() {
@@ -143,9 +152,10 @@ FLASHMEM void StandaloneContext::createViewSelectorOverlay() {
     // Global overlay: ViewSelector (parent = mainZone so it covers views but not TransportBar)
     view_selector_ = std::make_unique<ms::ui::StringListSelector>(mainZone);
     view_selector_->setTitle("Select View");
+    cached_scopes_.viewSelector = oc::ui::lvgl::scopeID(view_selector_->getElement());
     overlay_controller_->registerCleanup(
         core::ui::OverlayType::VIEW_SELECTOR,
-        reinterpret_cast<oc::type::ScopeID>(view_selector_->getElement()),
+        cached_scopes_.viewSelector,
         static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_TOP)
     );
     setupViewSelectorRendering();
@@ -154,7 +164,13 @@ FLASHMEM void StandaloneContext::createViewSelectorOverlay() {
 FLASHMEM void StandaloneContext::createFeatureModules() {
     syncEncodersFromState();
     macro_feature_ = std::make_unique<core::context::standalone::MacroFeatureModule>(
-        core_state_,
+        core::context::standalone::MacroFeatureModule::StateRefs{
+            core_state_.activeView,
+            core_state_.macroEdit,
+            core_state_.pages,
+            core_state_.configRevision,
+        },
+        core::handler::MacroDomainServices{core_state_},
         *overlay_controller_,
         encoders(),
         buttons(),
@@ -163,14 +179,26 @@ FLASHMEM void StandaloneContext::createFeatureModules() {
         macro_view_->getElement()
     );
     sequencer_feature_ = std::make_unique<core::context::standalone::SequencerFeatureModule>(
-        core_state_,
+        core::context::standalone::SequencerFeatureModule::StateRefs{
+            core_state_.overlays,
+            core_state_.activeView,
+            core_state_.sequencer,
+            core_state_.sequencerTracks,
+        },
         *overlay_controller_,
         encoders(),
         buttons(),
         sequencer_view_->getElement()
     );
     settings_feature_ = std::make_unique<core::context::standalone::SettingsFeatureModule>(
-        core_state_,
+        core::context::standalone::SettingsFeatureModule::StateRefs{
+            core_state_.globalSettings,
+            core_state_.midiSync,
+            core_state_.settings,
+            core_state_.dataManager,
+            core_state_.activeView,
+        },
+        core::handler::DataManagerHandler::Services{core_state_},
         *overlay_controller_,
         encoders(),
         buttons(),
@@ -178,13 +206,51 @@ FLASHMEM void StandaloneContext::createFeatureModules() {
         *context_softkey_bar_,
         *transport_bar_,
         core::handler::DataManagerHandler::ViewScopes{
-            macro_view_->getElement(),
-            sequencer_view_->getElement(),
+            cached_scopes_.macroView,
+            cached_scopes_.sequencerView,
         }
     );
 }
 
 FLASHMEM void StandaloneContext::createGlobalHandlers() {
+    registerMidiRouting();
+
+    transport_handler_ = std::make_unique<core::handler::TransportHandler>(
+        core::handler::TransportHandler::StateRefs{core_state_.statusBar},
+        encoders(),
+        buttons(),
+        cached_scopes_.macroView,
+        core::handler::TransportHandler::ViewScopes{
+            cached_scopes_.macroView,
+            cached_scopes_.sequencerView,
+        }
+    );
+
+    {
+        using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
+        OverlayCtx ctx{*overlay_controller_, nullptr, view_selector_->getElement()};
+        view_switcher_handler_ = std::make_unique<core::handler::ViewSwitcherHandler>(
+            core::handler::ViewSwitcherHandler::StateRefs{
+                core_state_.overlays,
+                core_state_.activeView,
+                core_state_.viewSelector,
+                core_state_.sequencer.rangeSelection,
+                core_state_.sequencerTracks.selector,
+                core_state_.sequencer.patternQuickControls,
+                core_state_.sequencer.stepPropertyInlineSelector,
+            },
+            ctx,
+            encoders(),
+            buttons(),
+            core::handler::ViewSwitcherHandler::ViewScopes{
+                cached_scopes_.macroView,
+                cached_scopes_.sequencerView,
+            }
+        );
+    }
+}
+
+FLASHMEM void StandaloneContext::registerMidiRouting() {
     // MIDI input is routed through the framework EventBus (never via MidiAPI callbacks)
     onMidiCC([this](uint8_t ch, uint8_t cc, uint8_t val) {
         if (macro_feature_) macro_feature_->onCC(ch, cc, val);
@@ -195,32 +261,6 @@ FLASHMEM void StandaloneContext::createGlobalHandlers() {
     onMidiNoteOff([this](uint8_t, uint8_t, uint8_t) {
         if (macro_feature_) macro_feature_->onNoteIn();
     });
-
-    transport_handler_ = std::make_unique<core::handler::TransportHandler>(
-        core_state_,
-        encoders(),
-        buttons(),
-        macro_view_->getElement(),
-        core::handler::TransportHandler::ViewScopes{
-            macro_view_->getElement(),
-            sequencer_view_->getElement(),
-        }
-    );
-
-    {
-        using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
-        OverlayCtx ctx{*overlay_controller_, nullptr, view_selector_->getElement()};
-        view_switcher_handler_ = std::make_unique<core::handler::ViewSwitcherHandler>(
-            core_state_,
-            ctx,
-            encoders(),
-            buttons(),
-            core::handler::ViewSwitcherHandler::ViewScopes{
-                macro_view_->getElement(),
-                sequencer_view_->getElement(),
-            }
-        );
-    }
 }
 
 FLASHMEM void StandaloneContext::resetTransientUiState() {
@@ -247,6 +287,7 @@ FLASHMEM void StandaloneContext::cleanupFeatureModules() {
 
 FLASHMEM void StandaloneContext::cleanupOverlayController() {
     view_selector_.reset();
+    cached_scopes_.viewSelector = 0;
 
     // Overlay controller clears authority resolver after overlay views are gone.
     overlay_controller_.reset();
@@ -264,6 +305,8 @@ FLASHMEM void StandaloneContext::cleanupViews() {
         sequencer_view_->onDeactivate();
         sequencer_view_.reset();
     }
+    cached_scopes_.macroView = 0;
+    cached_scopes_.sequencerView = 0;
 
     view_container_.reset();
 }
@@ -325,6 +368,22 @@ FLASHMEM void StandaloneContext::setupActiveViewSwitching() {
         [this]() { applyActiveView(); },
         core_state_.activeView
     );
+}
+
+FLASHMEM void StandaloneContext::cacheViewScopes() {
+    cached_scopes_.macroView = macro_view_ ? oc::ui::lvgl::scopeID(macro_view_->getElement()) : 0;
+    cached_scopes_.sequencerView =
+        sequencer_view_ ? oc::ui::lvgl::scopeID(sequencer_view_->getElement()) : 0;
+}
+
+FLASHMEM oc::type::ScopeID StandaloneContext::activeViewScopeId() const {
+    switch (core_state_.activeView.get()) {
+        case core::ui::ViewType::SEQUENCER:
+            return cached_scopes_.sequencerView;
+        case core::ui::ViewType::MACRO:
+        default:
+            return cached_scopes_.macroView;
+    }
 }
 
 FLASHMEM void StandaloneContext::applyActiveView() {

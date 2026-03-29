@@ -116,6 +116,12 @@ protected:
     void onCleanup() override;
 
 private:
+    struct CachedScopes {
+        oc::type::ScopeID macroView = 0;
+        oc::type::ScopeID sequencerView = 0;
+        oc::type::ScopeID viewSelector = 0;
+    };
+
     void configureEncoders();
     void createViewContainer();
     void createViews();
@@ -124,6 +130,7 @@ private:
     void createViewSelectorOverlay();
     void createFeatureModules();
     void createGlobalHandlers();
+    void registerMidiRouting();
     void resetTransientUiState();
     void cleanupGlobalHandlers();
     void cleanupFeatureModules();
@@ -135,8 +142,11 @@ private:
     void renderViewSelector();
     void setupActiveViewSwitching();
     void applyActiveView();
+    void cacheViewScopes();
+    oc::type::ScopeID activeViewScopeId() const;
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
+    CachedScopes cached_scopes_;
 
     // UI containers
     std::unique_ptr<ms::ui::ViewContainer> view_container_;

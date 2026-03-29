@@ -2,9 +2,7 @@
 
 #include <oc/state/SignalWatcher.hpp>
 
-namespace core::state {
-struct CoreState;
-}
+#include "context/standalone/GlobalSettingsOverlayPresenterFormatters.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -15,7 +13,9 @@ namespace core::context::standalone {
 
 class GlobalSettingsOverlayPresenter {
 public:
-    GlobalSettingsOverlayPresenter(core::state::CoreState& state,
+    using StateRefs = global_settings_presenter::Source;
+
+    GlobalSettingsOverlayPresenter(StateRefs stateRefs,
                                    ms::ui::VirtualListKeyValueOverlay& overlay,
                                    ms::ui::VirtualListSelectorOverlay& selectorOverlay);
 
@@ -24,7 +24,7 @@ public:
     void renderSelector();
 
 private:
-    core::state::CoreState& state_;
+    StateRefs state_refs_;
     ms::ui::VirtualListKeyValueOverlay& overlay_;
     ms::ui::VirtualListSelectorOverlay& selector_overlay_;
     oc::state::SignalWatcher overlay_watcher_;

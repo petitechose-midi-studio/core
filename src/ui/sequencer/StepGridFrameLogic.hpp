@@ -1,10 +1,10 @@
 #pragma once
 
-#include "state/CoreState.hpp"
+#include "state/sequencer/SequencerState.hpp"
 #include "ui/sequencer/StepGridRenderTypes.hpp"
 
 namespace core::ui::sequencer::grid {
 
-StepGridFrameState buildStepGridFrameState(const core::state::CoreState& coreState);
+StepGridFrameState buildStepGridFrameState(const core::state::sequencer::SequencerState& sequencerState);
 
 }  // namespace core::ui::sequencer::grid

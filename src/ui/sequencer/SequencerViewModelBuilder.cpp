@@ -33,10 +33,10 @@ SlotProps makeIconSlot(const char* icon,
 
 }  // namespace
 
-SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreState) {
-    const auto& sequencer = coreState.sequencer;
-    const auto& tracks = coreState.sequencerTracks;
-    const auto& status = coreState.statusBar;
+SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source) {
+    const auto& sequencer = source.sequencer;
+    const auto& tracks = source.tracks;
+    const auto& status = source.statusBar;
     const uint8_t activeTrack = tracks.activeTrack.get();
     const uint8_t previewTrack =
         tracks.selector.selecting.get() ? tracks.selector.selectedTrack.get() : activeTrack;
@@ -73,8 +73,8 @@ SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreSt
     };
 }
 
-SequencerBottomControlsProps buildBottomControlsProps(const core::state::CoreState& coreState) {
-    const auto& sequencer = coreState.sequencer;
+SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSource& source) {
+    const auto& sequencer = source.sequencer;
 
     return {
         .selectingQuickControls = sequencer.patternQuickControls.selecting.get(),
@@ -85,8 +85,8 @@ SequencerBottomControlsProps buildBottomControlsProps(const core::state::CoreSta
     };
 }
 
-StepPropertyStripProps buildStepPropertyStripProps(const core::state::CoreState& coreState) {
-    const auto& sequencer = coreState.sequencer;
+StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSource& source) {
+    const auto& sequencer = source.sequencer;
 
     return {
         .activeProperty = sequencer.activeStepProperty.get(),
@@ -95,12 +95,12 @@ StepPropertyStripProps buildStepPropertyStripProps(const core::state::CoreState&
     };
 }
 
-ContextActionStripProps buildLeftActionStripProps(const core::state::CoreState& coreState) {
-    const bool selectingTrack = coreState.sequencerTracks.selector.selecting.get();
-    const bool selectingPattern = coreState.sequencer.patternQuickControls.selecting.get();
-    const bool selectingProperty = coreState.sequencer.stepPropertyInlineSelector.selecting.get();
-    const bool selectingRange = coreState.sequencer.rangeSelection.active();
-    const char* propertyIcon = visual::propertyIconGlyph(coreState.sequencer.activeStepProperty.get());
+ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource& source) {
+    const bool selectingTrack = source.tracks.selector.selecting.get();
+    const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
+    const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
+    const bool selectingRange = source.sequencer.rangeSelection.active();
+    const char* propertyIcon = visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
 
     StripProps props;
     props.visible = true;
@@ -166,8 +166,8 @@ ContextActionStripProps buildLeftActionStripProps(const core::state::CoreState& 
     return props;
 }
 
-ContextActionStripProps buildBottomActionStripProps(const core::state::CoreState& coreState) {
-    const auto& range = coreState.sequencer.rangeSelection;
+ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSource& source) {
+    const auto& range = source.sequencer.rangeSelection;
     StripProps props;
     props.visible = true;
 
@@ -228,8 +228,8 @@ ContextActionStripProps buildBottomActionStripProps(const core::state::CoreState
     return props;
 }
 
-grid::StepGridFrameState buildStepGridProps(const core::state::CoreState& coreState) {
-    return grid::buildStepGridFrameState(coreState);
+grid::StepGridFrameState buildStepGridProps(const SequencerViewModelSource& source) {
+    return grid::buildStepGridFrameState(source.sequencer);
 }
 
 }  // namespace core::ui::sequencer

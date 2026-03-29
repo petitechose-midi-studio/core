@@ -14,18 +14,28 @@
 
 #include <ms/ui/component/LayoutView.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/sequencer/SequencerBottomControls.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
+#include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/sequencer/StepPropertyStrip.hpp"
 #include "ui/sequencer/StepGrid.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/view/PausableLvglTimer.hpp"
 
 namespace core::ui {
 
 class SequencerView : public oc::ui::lvgl::IView {
 public:
-    explicit SequencerView(lv_obj_t* parent, core::state::CoreState& coreState);
+    struct StateRefs {
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& tracks;
+        core::state::StatusBarState& statusBar;
+    };
+
+    explicit SequencerView(lv_obj_t* parent, StateRefs stateRefs);
     ~SequencerView() override;
 
     void onActivate() override;
@@ -60,8 +70,9 @@ private:
     static void onRenderTimer(lv_timer_t* timer);
     void markAllDirty();
     void render();
+    sequencer::SequencerViewModelSource modelSource() const;
 
-    core::state::CoreState& core_state_;
+    StateRefs state_refs_;
     oc::state::SignalWatcher watcher_;
 
     bool dirty_ = false;
@@ -71,7 +82,7 @@ private:
     bool action_strips_dirty_ = true;
     bool grid_dirty_ = true;
     bool track_tint_dirty_ = true;
-    lv_timer_t* render_timer_ = nullptr;
+    std::unique_ptr<PausableLvglTimer> render_timer_;
 
     uint8_t track_tint_cache_track_ = 0;
     uint8_t track_tint_cache_enabled_mask_ = 0xFF;

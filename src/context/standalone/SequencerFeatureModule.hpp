@@ -7,9 +7,12 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/OverlayTypes.hpp"
+#include "ui/ViewTypes.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -34,7 +37,14 @@ namespace core::context::standalone {
 
 class SequencerFeatureModule {
 public:
-    SequencerFeatureModule(core::state::CoreState& state,
+    struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        oc::state::Signal<core::ui::ViewType>& activeView;
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+    };
+
+    SequencerFeatureModule(StateRefs stateRefs,
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,

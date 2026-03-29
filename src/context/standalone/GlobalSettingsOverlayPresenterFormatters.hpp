@@ -6,11 +6,15 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
-namespace core::state {
-struct CoreState;
-}
+#include "state/GlobalSettingsState.hpp"
+#include "state/MidiSyncState.hpp"
 
 namespace core::context::standalone::global_settings_presenter {
+
+struct Source {
+    core::state::GlobalSettingsState& globalSettings;
+    core::state::MidiSyncState& midiSync;
+};
 
 struct OverlayRenderData {
     std::array<std::array<char, 16>, 2> valueBuffers{};
@@ -30,7 +34,7 @@ struct SelectorRenderData {
     bool visible = false;
 };
 
-OverlayRenderData buildOverlayRenderData(const core::state::CoreState& state);
-SelectorRenderData buildSelectorRenderData(const core::state::CoreState& state);
+OverlayRenderData buildOverlayRenderData(const Source& source);
+SelectorRenderData buildSelectorRenderData(const Source& source);
 
 }  // namespace core::context::standalone::global_settings_presenter

@@ -1,23 +1,20 @@
 #include "TransportHandler.hpp"
 
 #include <algorithm>
-#include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
 
 namespace core::handler {
 
-using namespace oc::ui::lvgl;
-
-TransportHandler::TransportHandler(core::state::CoreState& coreState,
-                                               oc::api::EncoderAPI& encoders,
-                                               oc::api::ButtonAPI& buttons,
-                                               lv_obj_t* tempoScopeElement,
-                                               TransportHandler::ViewScopes playToggleScopes)
-    : core_state_(coreState)
+TransportHandler::TransportHandler(StateRefs state,
+                                   oc::api::EncoderAPI& encoders,
+                                   oc::api::ButtonAPI& buttons,
+                                   oc::type::ScopeID tempoScope,
+                                   TransportHandler::ViewScopes playToggleScopes)
+    : status_bar_(state.statusBar)
     , encoders_(encoders)
     , buttons_(buttons)
-    , tempo_scope_element_(tempoScopeElement)
+    , tempo_scope_id_(tempoScope)
     , play_toggle_scopes_(playToggleScopes) {
     setupBindings();
 }
@@ -26,17 +23,17 @@ FLASHMEM void TransportHandler::setupBindings() {
     // NAV encoder: tempo +/- 1 BPM per tick (expects EncoderMode::RELATIVE)
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
-        .scope(scope(tempo_scope_element_))
+        .scope(tempo_scope_id_)
         .then([this](float delta) { handleTempoChange(delta); });
 
     // BOTTOM_CENTER button: toggle play from any active top-level view scope
-    lv_obj_t* lastBoundScope = nullptr;
-    for (auto* playScope : play_toggle_scopes_) {
+    oc::type::ScopeID lastBoundScope = 0;
+    for (oc::type::ScopeID playScope : play_toggle_scopes_) {
         if (!playScope || playScope == lastBoundScope) continue;
 
         buttons_.button(Config::ButtonID::BOTTOM_CENTER)
             .release()
-            .scope(scope(playScope))
+            .scope(playScope)
             .then([this]() { handlePlayToggle(); });
 
         lastBoundScope = playScope;
@@ -44,22 +41,22 @@ FLASHMEM void TransportHandler::setupBindings() {
 }
 
 void TransportHandler::handleTempoChange(float delta) {
-    if (core_state_.statusBar.tempoLocked.get()) {
+    if (status_bar_.tempoLocked.get()) {
         return;
     }
 
-    float currentTempo = core_state_.statusBar.tempo.get();
+    float currentTempo = status_bar_.tempo.get();
     float newTempo = std::clamp(currentTempo + delta, TEMPO_MIN, TEMPO_MAX);
-    core_state_.statusBar.tempo.set(newTempo);
+    status_bar_.tempo.set(newTempo);
 }
 
 void TransportHandler::handlePlayToggle() {
-    if (core_state_.statusBar.transportLocked.get()) {
+    if (status_bar_.transportLocked.get()) {
         return;
     }
 
-    bool playing = core_state_.statusBar.playing.get();
-    core_state_.statusBar.playing.set(!playing);
+    bool playing = status_bar_.playing.get();
+    status_bar_.playing.set(!playing);
 }
 
 }  // namespace core::handler

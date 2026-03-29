@@ -3,16 +3,12 @@
 #include <algorithm>
 
 #include <oc/log/Log.hpp>
-#include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
 #include "midi/MidiUtils.hpp"
-#include "state/macro/MacroWorkflow.hpp"
 
 namespace core::handler {
-
-using namespace oc::ui::lvgl;
 
 namespace {
 
@@ -53,22 +49,22 @@ MacroValueProfiling g_macro_value_profiling;
 
 }  // namespace
 
-MacroValueHandler::MacroValueHandler(core::state::CoreState& coreState,
+MacroValueHandler::MacroValueHandler(MacroDomainServices services,
                                      oc::api::EncoderAPI& encoders,
                                      oc::api::MidiAPI& midi,
-                                     lv_obj_t* scopeElement)
-    : core_state_(coreState)
+                                     oc::type::ScopeID scopeId)
+    : services_(services)
     , encoders_(encoders)
     , midi_(midi)
-    , scope_element_(scopeElement) {
+    , scope_id_(scopeId) {
     setupBindings();
 }
 
 FLASHMEM void MacroValueHandler::setupBindings() {
-    for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
+    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
-            .scope(scope(scope_element_))
+            .scope(scope_id_)
             .then([this, i](float value) { handleValueChange(i, value); });
     }
 }
@@ -79,21 +75,20 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     const uint8_t cc_value = core::midi::toCC(clamped);
     const float quantized = core::midi::fromCC(cc_value);
 
-    if (std::abs(core::state::macro::MacroWorkflow::runtimeValue(core_state_, index) - quantized) <
-        0.0005f) {
+    if (std::abs(services_.runtimeValue(index) - quantized) < 0.0005f) {
         g_macro_value_profiling.record(core::time_compat::micros() - start_us);
         return;
     }
 
     // Update state (triggers UI update, marks dirty for persistence)
-    core::state::macro::MacroWorkflow::setRuntimeValue(core_state_, index, quantized);
+    services_.setRuntimeValue(index, quantized);
 
     // Send MIDI CC
-    const auto& config = core::state::macro::MacroWorkflow::activeConfig(core_state_, index);
+    const auto& config = services_.activeConfig(index);
     midi_.sendCC(config.channel, config.cc, cc_value);
 
     // Signal CC MIDI OUT activity
-    core_state_.statusBar.pulseCcOut();
+    services_.pulseCcOut();
 
     g_macro_value_profiling.record(core::time_compat::micros() - start_us);
 }

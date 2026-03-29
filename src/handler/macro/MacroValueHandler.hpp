@@ -11,13 +11,11 @@
 #include <array>
 #include <cstdint>
 
-#include <lvgl.h>
-
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/api/MidiAPI.hpp>
 
 #include <config/InputIDs.hpp>
-#include "state/CoreState.hpp"
+#include "handler/macro/MacroDomainServices.hpp"
 
 namespace core::handler {
 
@@ -30,10 +28,10 @@ namespace core::handler {
  */
 class MacroValueHandler {
 public:
-    MacroValueHandler(core::state::CoreState& coreState,
+    MacroValueHandler(MacroDomainServices services,
                       oc::api::EncoderAPI& encoders,
                       oc::api::MidiAPI& midi,
-                      lv_obj_t* scopeElement);
+                      oc::type::ScopeID scopeId);
 
     ~MacroValueHandler() = default;
 
@@ -44,10 +42,10 @@ private:
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
 
-    core::state::CoreState& core_state_;
+    MacroDomainServices services_;
     oc::api::EncoderAPI& encoders_;
     oc::api::MidiAPI& midi_;
-    lv_obj_t* scope_element_;
+    oc::type::ScopeID scope_id_ = 0;
 };
 
 }  // namespace core::handler

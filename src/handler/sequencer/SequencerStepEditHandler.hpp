@@ -5,26 +5,32 @@
  * @brief Input bindings for the sequencer STEP EDIT overlay
  */
 
-#include <lvgl.h>
-
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/OverlayTypes.hpp"
 
 namespace core::handler {
 
 class SequencerStepEditHandler {
 public:
+    struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& tracks;
+    };
+
     SequencerStepEditHandler(
-        core::state::CoreState& state,
+        StateRefs state,
         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
-        lv_obj_t* sequencerViewScope,
-        lv_obj_t* overlayScope
+        oc::type::ScopeID sequencerViewScope,
+        oc::type::ScopeID overlayScope
     );
 
     // Non-copyable, non-movable
@@ -49,12 +55,14 @@ private:
     bool ignore_open_release_ = false;
     uint8_t ignore_open_macro_index_in_page_ = 0;
 
-    core::state::CoreState& state_;
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlay_state_;
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    lv_obj_t* sequencer_view_scope_ = nullptr;
-    lv_obj_t* overlay_scope_ = nullptr;
+    oc::type::ScopeID sequencer_view_scope_ = 0;
+    oc::type::ScopeID overlay_scope_ = 0;
 };
 
 }  // namespace core::handler

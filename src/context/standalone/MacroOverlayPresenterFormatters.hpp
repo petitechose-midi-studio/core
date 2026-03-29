@@ -6,13 +6,19 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
-#include "state/MacroState.hpp"
+#include <oc/state/Signal.hpp>
 
-namespace core::state {
-struct CoreState;
-}
+#include "state/MacroEditState.hpp"
+#include "state/MacroState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 
 namespace core::context::standalone::macro_overlay_presenter {
+
+struct Source {
+    core::state::MacroEditState& macroEdit;
+    core::state::macro::MacroPagesState& pages;
+    oc::state::Signal<uint32_t>& configRevision;
+};
 
 struct StaticItems {
     std::array<std::array<char, 4>, 16> channelLabels{};
@@ -43,9 +49,9 @@ struct SelectorRenderData {
 };
 
 void initializeStaticItems(StaticItems& items);
-EditRenderData buildEditRenderData(core::state::CoreState& state);
-SelectorRenderData buildEditSelectorRenderData(const core::state::CoreState& state, const StaticItems& items);
-SelectorRenderData buildPageSelectorRenderData(const core::state::CoreState& state);
-SelectorRenderData buildTargetSelectorRenderData(const core::state::CoreState& state, const StaticItems& items);
+EditRenderData buildEditRenderData(Source& source);
+SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items);
+SelectorRenderData buildPageSelectorRenderData(const Source& source);
+SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items);
 
 }  // namespace core::context::standalone::macro_overlay_presenter

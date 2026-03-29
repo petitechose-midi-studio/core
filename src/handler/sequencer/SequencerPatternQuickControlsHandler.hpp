@@ -1,22 +1,29 @@
 #pragma once
 
-#include <lvgl.h>
-
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 
-#include "state/CoreState.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
+#include "ui/OverlayTypes.hpp"
 
 namespace core::handler {
 
 class SequencerPatternQuickControlsHandler {
 public:
+    struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& tracks;
+    };
+
     SequencerPatternQuickControlsHandler(
-        core::state::CoreState& state,
+        StateRefs state,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
-        lv_obj_t* sequencerViewScope
+        oc::type::ScopeID scopeId
     );
 
     SequencerPatternQuickControlsHandler(const SequencerPatternQuickControlsHandler&) = delete;
@@ -38,10 +45,12 @@ private:
     int normalizedToOffset(float normalized) const;
     void applyOffsetFromSnapshot(int offsetSteps);
 
-    core::state::CoreState& state_;
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    lv_obj_t* sequencer_view_scope_ = nullptr;
+    oc::type::ScopeID scope_id_ = 0;
     core::state::sequencer::SequencerPatternSnapshot cancel_snapshot_{};
     core::state::sequencer::SequencerPatternSnapshot offset_snapshot_{};
 };

@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -22,8 +23,12 @@
 
 #include <ms/ui/component/LayoutView.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/MacroState.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 #include "ui/topbar/TopBar.hpp"
+#include "ui/view/MacroViewModelBuilder.hpp"
+#include "ui/view/PausableLvglTimer.hpp"
 #include "ui/widget/IMacroWidget.hpp"
 
 namespace core::ui {
@@ -34,7 +39,14 @@ public:
     static constexpr uint8_t COLS = 4;
     static constexpr uint8_t ROWS = 2;
 
-    MacroView(lv_obj_t* parent, core::state::CoreState& coreState);
+    struct StateRefs {
+        core::state::MacroState& macros;
+        core::state::macro::MacroPagesState& pages;
+        oc::state::Signal<uint32_t>& configRevision;
+        core::state::StatusBarState& statusBar;
+    };
+
+    MacroView(lv_obj_t* parent, StateRefs stateRefs);
     ~MacroView() override;
 
     // IView interface
@@ -70,14 +82,15 @@ private:
     void markDirty(uint8_t index);
     void processDirtyFlags();
     static void onUpdateTimer(lv_timer_t* timer);
+    MacroViewModelSource modelSource() const;
 
-    core::state::CoreState& core_state_;
+    StateRefs state_refs_;
     std::vector<oc::state::Subscription> subscriptions_;
     std::array<bool, MACRO_COUNT> dirty_flags_{};
     std::array<bool, MACRO_COUNT> config_dirty_flags_{};
     bool has_dirty_ = false;
     bool top_bar_dirty_ = true;
-    lv_timer_t* update_timer_ = nullptr;
+    std::unique_ptr<PausableLvglTimer> update_timer_;
 
     // UI structure: container_ (flex col) → top_bar_container_ + body_container_ (grid)
     std::unique_ptr<ms::ui::LayoutView> layout_;

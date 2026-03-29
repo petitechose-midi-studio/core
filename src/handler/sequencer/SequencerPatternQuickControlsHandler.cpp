@@ -1,7 +1,5 @@
 #include "SequencerPatternQuickControlsHandler.hpp"
 
-#include <oc/ui/lvgl/Scope.hpp>
-
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
@@ -10,8 +8,6 @@
 #include "state/sequencer/SequencerQuickControls.hpp"
 
 namespace core::handler {
-
-using oc::ui::lvgl::scope;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -21,31 +17,37 @@ namespace {
 
 constexpr int ITEM_COUNT = static_cast<int>(core::state::sequencer::QUICK_CONTROL_VISUAL_ORDER.size());
 
-inline oc::type::IsActiveFn selectingPredicate(core::state::CoreState& state) {
-    return [&state]() { return state.sequencer.patternQuickControls.selecting.get(); };
+inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::SequencerState& sequencer) {
+    return [&sequencer]() { return sequencer.patternQuickControls.selecting.get(); };
 }
 
-inline oc::type::IsActiveFn canOpenQuickControls(core::state::CoreState& state) {
-    return [&state]() {
-        return !state.overlays.hasVisible() &&
-               !state.sequencerTracks.selector.selecting.get() &&
-               !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
-               !state.sequencer.rangeSelection.active();
+inline oc::type::IsActiveFn canOpenQuickControls(
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerTrackBankState& tracks
+) {
+    return [&overlays, &sequencer, &tracks]() {
+        return !overlays.hasVisible() &&
+               !tracks.selector.selecting.get() &&
+               !sequencer.stepPropertyInlineSelector.selecting.get() &&
+               !sequencer.rangeSelection.active();
     };
 }
 
 }  // namespace
 
 SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHandler(
-    core::state::CoreState& state,
+    StateRefs state,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
-    lv_obj_t* sequencerViewScope
+    oc::type::ScopeID scopeId
 )
-    : state_(state)
+    : overlays_(state.overlays)
+    , sequencer_(state.sequencer)
+    , tracks_(state.tracks)
     , encoders_(encoders)
     , buttons_(buttons)
-    , sequencer_view_scope_(sequencerViewScope) {
+    , scope_id_(scopeId) {
     setupBindings();
 }
 
@@ -53,62 +55,62 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_CENTER)
         .press()
         .latch()
-        .scope(scope(sequencer_view_scope_))
-        .when(canOpenQuickControls(state_))
+        .scope(scope_id_)
+        .when(canOpenQuickControls(overlays_, sequencer_, tracks_))
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_CENTER)
         .release()
-        .scope(scope(sequencer_view_scope_))
-        .when(selectingPredicate(state_))
+        .scope(scope_id_)
+        .when(selectingPredicate(sequencer_))
         .then([this]() { closeApply(); });
 
     encoders_.encoder(EncoderID::NAV)
         .turn()
-        .scope(scope(sequencer_view_scope_))
-        .when(selectingPredicate(state_))
+        .scope(scope_id_)
+        .when(selectingPredicate(sequencer_))
         .then([this](float delta) { navigate(delta); });
 
     encoders_.encoder(EncoderID::OPT)
         .turn()
-        .scope(scope(sequencer_view_scope_))
-        .when(selectingPredicate(state_))
+        .scope(scope_id_)
+        .when(selectingPredicate(sequencer_))
         .then([this](float normalized) { setFocusedValue(normalized); });
 
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
-        .scope(scope(sequencer_view_scope_))
-        .when(selectingPredicate(state_))
+        .scope(scope_id_)
+        .when(selectingPredicate(sequencer_))
         .then([this]() { closeCancel(); });
 }
 
 void SequencerPatternQuickControlsHandler::open() {
-    auto& quick = state_.sequencer.patternQuickControls;
+    auto& quick = sequencer_.patternQuickControls;
     quick.reset();
     quick.selecting.set(true);
-    core::state::sequencer::captureSnapshot(state_.sequencer, cancel_snapshot_);
-    core::state::sequencer::captureSnapshot(state_.sequencer, offset_snapshot_);
+    core::state::sequencer::captureSnapshot(sequencer_, cancel_snapshot_);
+    core::state::sequencer::captureSnapshot(sequencer_, offset_snapshot_);
     configureOptForFocusedItem();
 }
 
 void SequencerPatternQuickControlsHandler::closeApply() {
-    auto& quick = state_.sequencer.patternQuickControls;
+    auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
     quick.reset();
 }
 
 void SequencerPatternQuickControlsHandler::closeCancel() {
-    auto& quick = state_.sequencer.patternQuickControls;
+    auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
 
-    core::state::sequencer::applySnapshot(state_.sequencer, cancel_snapshot_);
+    core::state::sequencer::applySnapshot(sequencer_, cancel_snapshot_);
     clampFocusToLength();
 
     quick.reset();
 }
 
 void SequencerPatternQuickControlsHandler::navigate(float delta) {
-    if (!state_.sequencer.patternQuickControls.selecting.get()) return;
+    if (!sequencer_.patternQuickControls.selecting.get()) return;
     if (!nav::hasTurnDelta(delta)) return;
 
     const int current = focusedItemOrderIndex();
@@ -116,34 +118,34 @@ void SequencerPatternQuickControlsHandler::navigate(float delta) {
     const auto nextItem = core::state::sequencer::quickControlAtOrderIndex(static_cast<size_t>(next));
     setFocusedItemByOrderIndex(next);
     if (nextItem == Item::OFFSET) {
-        core::state::sequencer::captureSnapshot(state_.sequencer, offset_snapshot_);
-        state_.sequencer.patternQuickControls.offsetSteps.set(0);
+        core::state::sequencer::captureSnapshot(sequencer_, offset_snapshot_);
+        sequencer_.patternQuickControls.offsetSteps.set(0);
     }
     configureOptForFocusedItem();
 }
 
 void SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
-    auto item = state_.sequencer.patternQuickControls.focusedItem.get();
+    auto item = sequencer_.patternQuickControls.focusedItem.get();
     if (item == Item::OFFSET) {
         const int offsetSteps = normalizedToOffset(normalized);
-        if (state_.sequencer.patternQuickControls.offsetSteps.get() == offsetSteps) {
+        if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) {
             return;
         }
-        state_.sequencer.patternQuickControls.offsetSteps.set(static_cast<int8_t>(offsetSteps));
+        sequencer_.patternQuickControls.offsetSteps.set(static_cast<int8_t>(offsetSteps));
         applyOffsetFromSnapshot(offsetSteps);
         return;
     }
 
-    input_utils::applyNormalizedToQuickControl(state_.sequencer, item, normalized);
-    core::state::sequencer::captureSnapshot(state_.sequencer, offset_snapshot_);
-    state_.sequencer.patternQuickControls.offsetSteps.set(0);
+    input_utils::applyNormalizedToQuickControl(sequencer_, item, normalized);
+    core::state::sequencer::captureSnapshot(sequencer_, offset_snapshot_);
+    sequencer_.patternQuickControls.offsetSteps.set(0);
     if (item == Item::LENGTH) {
         clampFocusToLength();
     }
 }
 
 void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
-    const auto item = state_.sequencer.patternQuickControls.focusedItem.get();
+    const auto item = sequencer_.patternQuickControls.focusedItem.get();
     if (item == Item::OFFSET) {
         input_utils::StepPropertyEncoderConfig config;
         config.discreteSteps = static_cast<uint8_t>((currentOffsetMax() * 2) + 1);
@@ -154,7 +156,7 @@ void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
         encoders_.setPosition(
             Config::EncoderID::OPT,
-            offsetToNormalized(state_.sequencer.patternQuickControls.offsetSteps.get())
+            offsetToNormalized(sequencer_.patternQuickControls.offsetSteps.get())
         );
         return;
     }
@@ -165,37 +167,37 @@ void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
     encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
     encoders_.setPosition(
         Config::EncoderID::OPT,
-        input_utils::quickControlToNormalized(state_.sequencer, item)
+        input_utils::quickControlToNormalized(sequencer_, item)
     );
 }
 
 void SequencerPatternQuickControlsHandler::clampFocusToLength() {
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = sequencer_.length.get();
     if (len == 0) return;
 
-    uint8_t focused = state_.sequencer.focusedStep.get();
+    uint8_t focused = sequencer_.focusedStep.get();
     if (focused >= len) {
         focused = static_cast<uint8_t>(len - 1);
-        state_.sequencer.focusedStep.set(focused);
+        sequencer_.focusedStep.set(focused);
     }
 
-    state_.sequencer.page.set(state_.sequencer.pageForStep(focused));
+    sequencer_.page.set(sequencer_.pageForStep(focused));
 }
 
 int SequencerPatternQuickControlsHandler::focusedItemOrderIndex() const {
-    const auto focused = state_.sequencer.patternQuickControls.focusedItem.get();
+    const auto focused = sequencer_.patternQuickControls.focusedItem.get();
     return static_cast<int>(core::state::sequencer::quickControlOrderIndex(focused));
 }
 
 void SequencerPatternQuickControlsHandler::setFocusedItemByOrderIndex(int index) {
     const int clamped = std::clamp(index, 0, ITEM_COUNT - 1);
-    state_.sequencer.patternQuickControls.focusedItem.set(
+    sequencer_.patternQuickControls.focusedItem.set(
         core::state::sequencer::quickControlAtOrderIndex(static_cast<size_t>(clamped))
     );
 }
 
 int SequencerPatternQuickControlsHandler::currentOffsetMax() const {
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = sequencer_.length.get();
     return (len > 0) ? static_cast<int>(len - 1) : 0;
 }
 
@@ -215,9 +217,9 @@ int SequencerPatternQuickControlsHandler::normalizedToOffset(float normalized) c
 }
 
 void SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int offsetSteps) {
-    core::state::sequencer::applySnapshot(state_.sequencer, offset_snapshot_);
+    core::state::sequencer::applySnapshot(sequencer_, offset_snapshot_);
     if (offsetSteps != 0) {
-        core::state::sequencer::rotatePattern(state_.sequencer, offsetSteps);
+        core::state::sequencer::rotatePattern(sequencer_, offsetSteps);
     }
     clampFocusToLength();
 }

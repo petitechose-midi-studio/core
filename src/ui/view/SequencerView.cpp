@@ -11,8 +11,8 @@ namespace theme = standalone::theme;
 
 namespace core::ui {
 
-SequencerView::SequencerView(lv_obj_t* parent, core::state::CoreState& coreState)
-    : core_state_(coreState) {
+SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
+    : state_refs_(stateRefs) {
     createLayout(parent);
     createHeaderBar();
     createBottomControls();
@@ -24,10 +24,7 @@ SequencerView::SequencerView(lv_obj_t* parent, core::state::CoreState& coreState
 }
 
 SequencerView::~SequencerView() {
-    if (render_timer_) {
-        lv_timer_delete(render_timer_);
-        render_timer_ = nullptr;
-    }
+    render_timer_.reset();
 
     step_grid_.reset();
     bottom_action_strip_.reset();
@@ -67,7 +64,7 @@ void SequencerView::onDeactivate() {
     }
 
     if (render_timer_) {
-        lv_timer_pause(render_timer_);
+        render_timer_->pause();
     }
 }
 
@@ -165,9 +162,9 @@ FLASHMEM void SequencerView::bindBottomControlsState() {
         [this]() {
             requestBottomControlsRender();
         },
-        core_state_.sequencer.stepsPerBeat,
-        core_state_.sequencer.patternQuickControls.offsetSteps,
-        core_state_.sequencer.length
+        state_refs_.sequencer.stepsPerBeat,
+        state_refs_.sequencer.patternQuickControls.offsetSteps,
+        state_refs_.sequencer.length
     );
 }
 
@@ -177,21 +174,21 @@ FLASHMEM void SequencerView::bindHeaderState() {
             requestHeaderRender();
             track_tint_dirty_ = true;
         },
-        core_state_.sequencerTracks.activeTrack,
-        core_state_.sequencerTracks.enabledMask,
-        core_state_.sequencerTracks.selector.selecting,
-        core_state_.sequencerTracks.selector.selectedTrack,
-        core_state_.statusBar.trackNoteActivity[0],
-        core_state_.statusBar.trackNoteActivity[1],
-        core_state_.statusBar.trackNoteActivity[2],
-        core_state_.statusBar.trackNoteActivity[3],
-        core_state_.statusBar.trackNoteActivity[4],
-        core_state_.statusBar.trackNoteActivity[5],
-        core_state_.statusBar.trackNoteActivity[6],
-        core_state_.statusBar.trackNoteActivity[7],
-        core_state_.sequencer.length,
-        core_state_.sequencer.page,
-        core_state_.sequencer.playheadStep
+        state_refs_.tracks.activeTrack,
+        state_refs_.tracks.enabledMask,
+        state_refs_.tracks.selector.selecting,
+        state_refs_.tracks.selector.selectedTrack,
+        state_refs_.statusBar.trackNoteActivity[0],
+        state_refs_.statusBar.trackNoteActivity[1],
+        state_refs_.statusBar.trackNoteActivity[2],
+        state_refs_.statusBar.trackNoteActivity[3],
+        state_refs_.statusBar.trackNoteActivity[4],
+        state_refs_.statusBar.trackNoteActivity[5],
+        state_refs_.statusBar.trackNoteActivity[6],
+        state_refs_.statusBar.trackNoteActivity[7],
+        state_refs_.sequencer.length,
+        state_refs_.sequencer.page,
+        state_refs_.sequencer.playheadStep
     );
 }
 
@@ -200,23 +197,23 @@ FLASHMEM void SequencerView::bindGridState() {
         [this]() {
             requestGridRender();
         },
-        core_state_.sequencer.length,
-        core_state_.sequencer.page,
-        core_state_.sequencer.enabledMask,
-        core_state_.sequencer.playheadStep,
-        core_state_.sequencer.stepDataRevision,
-        core_state_.sequencer.probabilityCycleRevision,
-        core_state_.sequencer.activeStepProperty,
-        core_state_.sequencer.stepInlineFeedback.visible,
-        core_state_.sequencer.stepInlineFeedback.touchedMask,
-        core_state_.sequencer.stepInlineFeedback.property,
-        core_state_.sequencer.rangeSelection.kind,
-        core_state_.sequencer.rangeSelection.phase,
-        core_state_.sequencer.rangeSelection.cursorStep,
-        core_state_.sequencer.rangeSelection.anchorStep,
-        core_state_.sequencer.rangeSelection.rangeStart,
-        core_state_.sequencer.rangeSelection.rangeEnd,
-        core_state_.sequencer.rangeSelection.rangeValid
+        state_refs_.sequencer.length,
+        state_refs_.sequencer.page,
+        state_refs_.sequencer.enabledMask,
+        state_refs_.sequencer.playheadStep,
+        state_refs_.sequencer.stepDataRevision,
+        state_refs_.sequencer.probabilityCycleRevision,
+        state_refs_.sequencer.activeStepProperty,
+        state_refs_.sequencer.stepInlineFeedback.visible,
+        state_refs_.sequencer.stepInlineFeedback.touchedMask,
+        state_refs_.sequencer.stepInlineFeedback.property,
+        state_refs_.sequencer.rangeSelection.kind,
+        state_refs_.sequencer.rangeSelection.phase,
+        state_refs_.sequencer.rangeSelection.cursorStep,
+        state_refs_.sequencer.rangeSelection.anchorStep,
+        state_refs_.sequencer.rangeSelection.rangeStart,
+        state_refs_.sequencer.rangeSelection.rangeEnd,
+        state_refs_.sequencer.rangeSelection.rangeValid
     );
 }
 
@@ -226,12 +223,12 @@ FLASHMEM void SequencerView::bindPropertyStripState() {
             requestPropertyStripRender();
             requestActionStripsRender();
         },
-        core_state_.sequencerTracks.selector.selecting,
-        core_state_.sequencer.activeStepProperty,
-        core_state_.sequencer.stepPropertyInlineSelector.selecting,
-        core_state_.sequencer.stepPropertyInlineSelector.selectedIndex,
-        core_state_.sequencer.rangeSelection.kind,
-        core_state_.sequencer.rangeSelection.phase
+        state_refs_.tracks.selector.selecting,
+        state_refs_.sequencer.activeStepProperty,
+        state_refs_.sequencer.stepPropertyInlineSelector.selecting,
+        state_refs_.sequencer.stepPropertyInlineSelector.selectedIndex,
+        state_refs_.sequencer.rangeSelection.kind,
+        state_refs_.sequencer.rangeSelection.phase
     );
 }
 
@@ -241,32 +238,28 @@ FLASHMEM void SequencerView::bindQuickControlsState() {
             requestBottomControlsRender();
             requestActionStripsRender();
         },
-        core_state_.sequencer.patternQuickControls.selecting,
-        core_state_.sequencer.patternQuickControls.focusedItem
+        state_refs_.sequencer.patternQuickControls.selecting,
+        state_refs_.sequencer.patternQuickControls.focusedItem
     );
 }
 
 void SequencerView::ensureRenderTimer() {
     if (render_timer_) return;
-    render_timer_ = lv_timer_create(onRenderTimer, 16, this);
-    if (render_timer_) {
-        lv_timer_pause(render_timer_);
-    }
+    render_timer_ = std::make_unique<PausableLvglTimer>(16, onRenderTimer, this);
 }
 
 void SequencerView::scheduleRender() {
     dirty_ = true;
     ensureRenderTimer();
     if (render_timer_) {
-        lv_timer_resume(render_timer_);
-        lv_timer_ready(render_timer_);
+        render_timer_->resume(true);
     }
 }
 
 void SequencerView::pauseRenderTimerIfIdle() {
     if (!render_timer_) return;
     if (dirty_) return;
-    lv_timer_pause(render_timer_);
+    render_timer_->pause();
 }
 
 void SequencerView::requestRender(bool& dirtyFlag) {
@@ -306,11 +299,11 @@ void SequencerView::markAllDirty() {
 void SequencerView::renderTrackTint() {
     if (!container_) return;
 
-    const uint8_t previewTrack = core_state_.sequencerTracks.selector.selecting.get()
-        ? core_state_.sequencerTracks.selector.selectedTrack.get()
-        : core_state_.sequencerTracks.activeTrack.get();
-    const uint8_t enabledMask = core_state_.sequencerTracks.enabledMask.get();
-    const bool selecting = core_state_.sequencerTracks.selector.selecting.get();
+    const uint8_t previewTrack = state_refs_.tracks.selector.selecting.get()
+        ? state_refs_.tracks.selector.selectedTrack.get()
+        : state_refs_.tracks.activeTrack.get();
+    const uint8_t enabledMask = state_refs_.tracks.enabledMask.get();
+    const bool selecting = state_refs_.tracks.selector.selecting.get();
 
     if (!track_tint_dirty_ &&
         track_tint_cache_track_ == previewTrack &&
@@ -377,33 +370,42 @@ void SequencerView::render() {
         return;
     }
 
+    const auto source = modelSource();
     renderTrackTint();
 
     if (needsActionStrips) {
-        left_action_strip_->render(sequencer::buildLeftActionStripProps(core_state_));
-        bottom_action_strip_->render(sequencer::buildBottomActionStripProps(core_state_));
+        left_action_strip_->render(sequencer::buildLeftActionStripProps(source));
+        bottom_action_strip_->render(sequencer::buildBottomActionStripProps(source));
         action_strips_dirty_ = false;
     }
 
     if (needsBottomControls) {
-        bottom_controls_->render(sequencer::buildBottomControlsProps(core_state_));
+        bottom_controls_->render(sequencer::buildBottomControlsProps(source));
         bottom_controls_dirty_ = false;
     }
 
     if (needsPropertyStrip) {
-        property_strip_->render(sequencer::buildStepPropertyStripProps(core_state_));
+        property_strip_->render(sequencer::buildStepPropertyStripProps(source));
         property_strip_dirty_ = false;
     }
 
     if (needsHeader) {
-        header_bar_->render(sequencer::buildHeaderBarProps(core_state_));
+        header_bar_->render(sequencer::buildHeaderBarProps(source));
         header_dirty_ = false;
     }
 
     if (needsGrid) {
-        step_grid_->render(sequencer::buildStepGridProps(core_state_));
+        step_grid_->render(sequencer::buildStepGridProps(source));
         grid_dirty_ = false;
     }
+}
+
+sequencer::SequencerViewModelSource SequencerView::modelSource() const {
+    return {
+        .sequencer = state_refs_.sequencer,
+        .tracks = state_refs_.tracks,
+        .statusBar = state_refs_.statusBar,
+    };
 }
 
 }  // namespace core::ui

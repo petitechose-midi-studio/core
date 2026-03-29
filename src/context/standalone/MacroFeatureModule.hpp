@@ -9,8 +9,11 @@
 #include <oc/api/MidiAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
-#include "state/CoreState.hpp"
+#include "handler/macro/MacroDomainServices.hpp"
+#include "state/MacroEditState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 #include "ui/OverlayTypes.hpp"
+#include "ui/ViewTypes.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -33,7 +36,15 @@ namespace core::context::standalone {
 
 class MacroFeatureModule {
 public:
-    MacroFeatureModule(core::state::CoreState& state,
+    struct StateRefs {
+        oc::state::Signal<core::ui::ViewType>& activeView;
+        core::state::MacroEditState& macroEdit;
+        core::state::macro::MacroPagesState& pages;
+        oc::state::Signal<uint32_t>& configRevision;
+    };
+
+    MacroFeatureModule(StateRefs stateRefs,
+                       core::handler::MacroDomainServices services,
                        oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                        oc::api::EncoderAPI& encoders,
                        oc::api::ButtonAPI& buttons,

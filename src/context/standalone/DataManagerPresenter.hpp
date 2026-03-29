@@ -2,9 +2,7 @@
 
 #include <oc/state/SignalWatcher.hpp>
 
-namespace core::state {
-struct CoreState;
-}
+#include "context/standalone/DataManagerPresenterFormatters.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -20,7 +18,9 @@ namespace core::context::standalone {
 
 class DataManagerPresenter {
 public:
-    DataManagerPresenter(core::state::CoreState& state,
+    using StateRefs = data_manager_presenter::Source;
+
+    DataManagerPresenter(StateRefs stateRefs,
                          ms::ui::VirtualListKeyValueOverlay& overlay,
                          ms::ui::VirtualListSelectorOverlay& dialogOverlay,
                          core::ui::ContextSoftkeyBar& softkeyBar,
@@ -32,7 +32,7 @@ public:
     void renderSoftkeyBar();
 
 private:
-    core::state::CoreState& state_;
+    StateRefs state_refs_;
     ms::ui::VirtualListKeyValueOverlay& overlay_;
     ms::ui::VirtualListSelectorOverlay& dialog_overlay_;
     core::ui::ContextSoftkeyBar& softkey_bar_;

@@ -2,8 +2,6 @@
 
 #include <algorithm>
 
-#include <oc/ui/lvgl/Scope.hpp>
-
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
@@ -14,47 +12,57 @@
 
 namespace core::handler {
 
-using oc::ui::lvgl::scope;
-
 namespace {
 
 using RangeSelectionKind = core::state::sequencer::RangeSelectionKind;
 using RangeSelectionPhase = core::state::sequencer::RangeSelectionPhase;
 
-inline bool isSequencerIdleForRangeActions(core::state::CoreState& state) {
-    return !state.overlays.hasVisible() &&
-           !state.sequencerTracks.selector.selecting.get() &&
-           !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
-           !state.sequencer.patternQuickControls.selecting.get() &&
-           !state.sequencer.rangeSelection.active();
+inline bool isSequencerIdleForRangeActions(
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerTrackBankState& tracks
+) {
+    return !overlays.hasVisible() &&
+           !tracks.selector.selecting.get() &&
+           !sequencer.stepPropertyInlineSelector.selecting.get() &&
+           !sequencer.patternQuickControls.selecting.get() &&
+           !sequencer.rangeSelection.active();
 }
 
-inline oc::type::IsActiveFn idleRangePredicate(core::state::CoreState& state) {
-    return [&state]() { return isSequencerIdleForRangeActions(state); };
+inline oc::type::IsActiveFn idleRangePredicate(
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerTrackBankState& tracks
+) {
+    return [&overlays, &sequencer, &tracks]() {
+        return isSequencerIdleForRangeActions(overlays, sequencer, tracks);
+    };
 }
 
-inline oc::type::IsActiveFn activeRangePredicate(core::state::CoreState& state) {
-    return [&state]() { return state.sequencer.rangeSelection.active(); };
+inline oc::type::IsActiveFn activeRangePredicate(core::state::sequencer::SequencerState& sequencer) {
+    return [&sequencer]() { return sequencer.rangeSelection.active(); };
 }
 
 }  // namespace
 
-FLASHMEM SequencerRangeActionHandler::SequencerRangeActionHandler(core::state::CoreState& state,
+FLASHMEM SequencerRangeActionHandler::SequencerRangeActionHandler(StateRefs state,
                                                                   oc::api::EncoderAPI& encoders,
                                                                   oc::api::ButtonAPI& buttons,
-                                                                  lv_obj_t* sequencerViewScope)
-    : state_(state)
+                                                                  oc::type::ScopeID scopeId)
+    : overlays_(state.overlays)
+    , sequencer_(state.sequencer)
+    , tracks_(state.tracks)
     , encoders_(encoders)
     , buttons_(buttons)
-    , scope_element_(sequencerViewScope) {
+    , scope_id_(scopeId) {
     setupBindings();
 }
 
 FLASHMEM void SequencerRangeActionHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
-        .scope(scope(scope_element_))
-        .when(idleRangePredicate(state_))
+        .scope(scope_id_)
+        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
         .then([this]() {
             if (ignore_next_bottom_left_release_) {
                 ignore_next_bottom_left_release_ = false;
@@ -65,76 +73,76 @@ FLASHMEM void SequencerRangeActionHandler::setupBindings() {
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(scope(scope_element_))
-        .when(idleRangePredicate(state_))
+        .scope(scope_id_)
+        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
         .then([this]() { openClearRange(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
-        .scope(scope(scope_element_))
-        .when(idleRangePredicate(state_))
+        .scope(scope_id_)
+        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
         .then([this]() {
             if (ignore_next_bottom_right_release_) {
                 ignore_next_bottom_right_release_ = false;
                 return;
             }
-            core::state::sequencer::duplicatePatternForward(state_.sequencer);
+            core::state::sequencer::duplicatePatternForward(sequencer_);
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(scope(scope_element_))
-        .when(idleRangePredicate(state_))
+        .scope(scope_id_)
+        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
         .then([this]() { openCopyRange(); });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
-        .scope(scope(scope_element_))
-        .when(activeRangePredicate(state_))
+        .scope(scope_id_)
+        .when(activeRangePredicate(sequencer_))
         .then([this](float delta) { moveCursor(delta); });
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
-        .scope(scope(scope_element_))
-        .when(activeRangePredicate(state_))
+        .scope(scope_id_)
+        .when(activeRangePredicate(sequencer_))
         .then([this](float normalized) { moveRange(normalized); });
 
     buttons_.button(Config::ButtonID::NAV)
         .release()
-        .scope(scope(scope_element_))
-        .when(activeRangePredicate(state_))
+        .scope(scope_id_)
+        .when(activeRangePredicate(sequencer_))
         .then([this]() { commitCursor(); });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .press()
         .latch()
-        .scope(scope(scope_element_))
-        .when(activeRangePredicate(state_))
+        .scope(scope_id_)
+        .when(activeRangePredicate(sequencer_))
         .then([]() {});
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
-        .scope(scope(scope_element_))
-        .when(activeRangePredicate(state_))
+        .scope(scope_id_)
+        .when(activeRangePredicate(sequencer_))
         .then([this]() { cancel(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
-        .scope(scope(scope_element_))
+        .scope(scope_id_)
         .then([this]() {
-            if (state_.sequencer.rangeSelection.selectingPasteTarget()) {
+            if (sequencer_.rangeSelection.selectingPasteTarget()) {
                 applyPaste();
             }
         });
 }
 
 FLASHMEM void SequencerRangeActionHandler::clearCurrentPage() {
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = sequencer_.length.get();
     if (len == 0) return;
 
     const uint8_t start = currentPageStart();
     const uint8_t end = currentPageEnd();
-    core::state::sequencer::clearStepRange(state_.sequencer, start, end);
+    core::state::sequencer::clearStepRange(sequencer_, start, end);
 }
 
 FLASHMEM void SequencerRangeActionHandler::openClearRange() {
@@ -149,13 +157,13 @@ FLASHMEM void SequencerRangeActionHandler::openCopyRange() {
 
 FLASHMEM void SequencerRangeActionHandler::cancel() {
     restoreSnapshotFocus();
-    state_.sequencer.rangeSelection.reset();
+    sequencer_.rangeSelection.reset();
 }
 
 FLASHMEM void SequencerRangeActionHandler::moveCursor(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
-    auto& range = state_.sequencer.rangeSelection;
+    auto& range = sequencer_.rangeSelection;
     const auto phase = range.phase.get();
     if (!range.selectingSourceRange() && phase != RangeSelectionPhase::PASTE_TARGET) {
         return;
@@ -179,7 +187,7 @@ FLASHMEM void SequencerRangeActionHandler::moveCursor(float delta) {
 }
 
 FLASHMEM void SequencerRangeActionHandler::moveRange(float normalized) {
-    auto& range = state_.sequencer.rangeSelection;
+    auto& range = sequencer_.rangeSelection;
     if (!range.selectingSourceRange()) return;
 
     const uint8_t maxSpan = maxRangeSpan();
@@ -190,20 +198,20 @@ FLASHMEM void SequencerRangeActionHandler::moveRange(float normalized) {
 }
 
 FLASHMEM void SequencerRangeActionHandler::commitCursor() {
-    auto& range = state_.sequencer.rangeSelection;
+    auto& range = sequencer_.rangeSelection;
 
     switch (range.phase.get()) {
         case RangeSelectionPhase::SELECT_RANGE: {
             const uint8_t start = range.rangeStart.get();
             const uint8_t end = range.rangeEnd.get();
             if (range.kind.get() == RangeSelectionKind::CLEAR) {
-                core::state::sequencer::clearStepRange(state_.sequencer, start, end);
+                core::state::sequencer::clearStepRange(sequencer_, start, end);
                 range.reset();
                 return;
             }
 
             if (!core::state::sequencer::copyStepRangeToClipboard(
-                    state_.sequencer,
+                    sequencer_,
                     start,
                     end,
                     range.clipboard
@@ -214,7 +222,7 @@ FLASHMEM void SequencerRangeActionHandler::commitCursor() {
 
             range.phase.set(RangeSelectionPhase::PASTE_TARGET);
             setCursorStep(static_cast<uint8_t>(std::min<uint16_t>(
-                state_.sequencer.length.get(),
+                sequencer_.length.get(),
                 maxCursorStep()
             )));
             return;
@@ -229,11 +237,11 @@ FLASHMEM void SequencerRangeActionHandler::commitCursor() {
 }
 
 FLASHMEM void SequencerRangeActionHandler::applyPaste() {
-    auto& range = state_.sequencer.rangeSelection;
+    auto& range = sequencer_.rangeSelection;
     if (!range.selectingPasteTarget()) return;
 
     core::state::sequencer::pasteClipboardRange(
-        state_.sequencer,
+        sequencer_,
         range.cursorStep.get(),
         range.clipboard
     );
@@ -241,10 +249,10 @@ FLASHMEM void SequencerRangeActionHandler::applyPaste() {
 }
 
 FLASHMEM void SequencerRangeActionHandler::beginRangeSelection(RangeSelectionKind kind) {
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = sequencer_.length.get();
     if (len == 0) return;
 
-    auto& range = state_.sequencer.rangeSelection;
+    auto& range = sequencer_.rangeSelection;
     range.reset();
     snapshotCurrentFocus();
     range.kind.set(kind);
@@ -259,7 +267,7 @@ FLASHMEM void SequencerRangeActionHandler::beginRangeSelection(RangeSelectionKin
 }
 
 FLASHMEM void SequencerRangeActionHandler::configureOptForRangeEdit() {
-    auto& range = state_.sequencer.rangeSelection;
+    auto& range = sequencer_.rangeSelection;
     if (!range.selectingSourceRange()) return;
 
     const uint8_t maxSpan = maxRangeSpan();
@@ -279,7 +287,7 @@ FLASHMEM void SequencerRangeActionHandler::configureOptForRangeEdit() {
 }
 
 FLASHMEM void SequencerRangeActionHandler::setSelectedRange(uint8_t start, uint8_t span) {
-    auto& range = state_.sequencer.rangeSelection;
+    auto& range = sequencer_.rangeSelection;
     const uint8_t clampedSpan = static_cast<uint8_t>(std::min<uint16_t>(span, maxRangeSpan()));
     range.rangeStart.set(start);
     range.rangeEnd.set(static_cast<uint8_t>(start + clampedSpan));
@@ -287,7 +295,7 @@ FLASHMEM void SequencerRangeActionHandler::setSelectedRange(uint8_t start, uint8
 }
 
 FLASHMEM uint8_t SequencerRangeActionHandler::currentRangeSpan() const {
-    const auto& range = state_.sequencer.rangeSelection;
+    const auto& range = sequencer_.rangeSelection;
     const uint8_t start = range.rangeStart.get();
     const uint8_t end = range.rangeEnd.get();
     if (end <= start) return 0;
@@ -295,9 +303,9 @@ FLASHMEM uint8_t SequencerRangeActionHandler::currentRangeSpan() const {
 }
 
 FLASHMEM uint8_t SequencerRangeActionHandler::maxRangeSpan() const {
-    const auto& range = state_.sequencer.rangeSelection;
+    const auto& range = sequencer_.rangeSelection;
     const uint8_t start = range.anchorStep.get();
-    const uint8_t maxStep = static_cast<uint8_t>(state_.sequencer.length.get() - 1);
+    const uint8_t maxStep = static_cast<uint8_t>(sequencer_.length.get() - 1);
     if (start >= maxStep) return 0;
     return static_cast<uint8_t>(maxStep - start);
 }
@@ -311,26 +319,26 @@ FLASHMEM void SequencerRangeActionHandler::ignoreNextBottomRightRelease() {
 }
 
 FLASHMEM void SequencerRangeActionHandler::setCursorStep(uint8_t step) {
-    state_.sequencer.rangeSelection.cursorStep.set(step);
-    state_.sequencer.focusedStep.set(step);
-    state_.sequencer.page.set(state_.sequencer.pageForStep(step));
+    sequencer_.rangeSelection.cursorStep.set(step);
+    sequencer_.focusedStep.set(step);
+    sequencer_.page.set(sequencer_.pageForStep(step));
 }
 
 FLASHMEM uint8_t SequencerRangeActionHandler::initialCursorStep() const {
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = sequencer_.length.get();
     if (len == 0) return 0;
 
-    const uint8_t focused = state_.sequencer.focusedStep.get();
+    const uint8_t focused = sequencer_.focusedStep.get();
     if (focused < len) return focused;
-    return state_.sequencer.pageStartStep(state_.sequencer.page.get());
+    return sequencer_.pageStartStep(sequencer_.page.get());
 }
 
 FLASHMEM uint8_t SequencerRangeActionHandler::currentPageStart() const {
-    return state_.sequencer.pageStartStepClamped(state_.sequencer.visiblePage());
+    return sequencer_.pageStartStepClamped(sequencer_.visiblePage());
 }
 
 FLASHMEM uint8_t SequencerRangeActionHandler::currentPageEnd() const {
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = sequencer_.length.get();
     if (len == 0) return 0;
 
     const uint8_t start = currentPageStart();
@@ -341,10 +349,10 @@ FLASHMEM uint8_t SequencerRangeActionHandler::currentPageEnd() const {
 }
 
 FLASHMEM uint8_t SequencerRangeActionHandler::maxCursorStep() const {
-    const uint8_t len = state_.sequencer.length.get();
+    const uint8_t len = sequencer_.length.get();
     if (len == 0) return 0;
 
-    const auto& range = state_.sequencer.rangeSelection;
+    const auto& range = sequencer_.rangeSelection;
     if (range.selectingSourceRange()) {
         return static_cast<uint8_t>(len - 1);
     }
@@ -357,14 +365,14 @@ FLASHMEM uint8_t SequencerRangeActionHandler::maxCursorStep() const {
 }
 
 FLASHMEM void SequencerRangeActionHandler::snapshotCurrentFocus() {
-    auto& range = state_.sequencer.rangeSelection;
-    range.snapshotPage = state_.sequencer.visiblePage();
-    range.snapshotFocusedStep = state_.sequencer.focusedStep.get();
+    auto& range = sequencer_.rangeSelection;
+    range.snapshotPage = sequencer_.visiblePage();
+    range.snapshotFocusedStep = sequencer_.focusedStep.get();
 }
 
 FLASHMEM void SequencerRangeActionHandler::restoreSnapshotFocus() {
-    const auto& range = state_.sequencer.rangeSelection;
-    state_.sequencer.page.set(range.snapshotPage);
-    state_.sequencer.focusedStep.set(range.snapshotFocusedStep);
+    const auto& range = sequencer_.rangeSelection;
+    sequencer_.page.set(range.snapshotPage);
+    sequencer_.focusedStep.set(range.snapshotFocusedStep);
 }
 }  // namespace core::handler

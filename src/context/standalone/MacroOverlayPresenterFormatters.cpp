@@ -4,7 +4,6 @@
 
 #include <oc/time/Time.hpp>
 #include <oc/type/TextFormat.hpp>
-#include "state/CoreState.hpp"
 
 namespace core::context::standalone::macro_overlay_presenter {
 
@@ -32,16 +31,16 @@ void initializeStaticItems(StaticItems& items) {
     }
 }
 
-EditRenderData buildEditRenderData(core::state::CoreState& state) {
+EditRenderData buildEditRenderData(Source& source) {
     EditRenderData data{};
 
-    if (state.macroEdit.pendingOpenReleaseDecision && state.macroEdit.openedAtMs == 0) {
-        state.macroEdit.openedAtMs = oc::time::millis();
+    if (source.macroEdit.pendingOpenReleaseDecision && source.macroEdit.openedAtMs == 0) {
+        source.macroEdit.openedAtMs = oc::time::millis();
     }
 
-    const uint8_t macroIndex = state.macroEdit.editingIndex.get();
-    const uint8_t channel0 = state.macroEdit.tempChannel.get();
-    const uint8_t cc = state.macroEdit.tempCC.get();
+    const uint8_t macroIndex = source.macroEdit.editingIndex.get();
+    const uint8_t channel0 = source.macroEdit.tempChannel.get();
+    const uint8_t cc = source.macroEdit.tempCC.get();
 
     size_t titlePos = oc::type::text::appendString(data.title.data(), data.title.size(), 0, "MACRO ");
     titlePos = oc::type::text::appendUnsigned(
@@ -52,7 +51,7 @@ EditRenderData buildEditRenderData(core::state::CoreState& state) {
     );
     oc::type::text::terminate(data.title.data(), data.title.size(), titlePos);
 
-    const unsigned page1 = static_cast<unsigned>(state.pages.activePage) + 1U;
+    const unsigned page1 = static_cast<unsigned>(source.pages.activePage) + 1U;
     size_t metaPos = oc::type::text::appendString(data.meta.data(), data.meta.size(), 0, "PAGE ");
     metaPos = oc::type::text::appendUnsigned(data.meta.data(), data.meta.size(), metaPos, page1);
     oc::type::text::terminate(data.meta.data(), data.meta.size(), metaPos);
@@ -64,20 +63,20 @@ EditRenderData buildEditRenderData(core::state::CoreState& state) {
         {.key = "Channel", .value = data.valueBuffers[0].data()},
         {.key = "CC", .value = data.valueBuffers[1].data()},
     }};
-    data.selectedIndex = state.macroEdit.focusedRow.get();
+    data.selectedIndex = source.macroEdit.focusedRow.get();
     data.dataRevision =
         (static_cast<uint32_t>(macroIndex) << 24) |
         (static_cast<uint32_t>(channel0) << 16) |
         (static_cast<uint32_t>(cc) << 8) |
-        (static_cast<uint32_t>(state.pages.activePage & 0x0F) << 4) |
-        static_cast<uint32_t>(state.macroEdit.focusedRow.get() & 0x0F);
+        (static_cast<uint32_t>(source.pages.activePage & 0x0F) << 4) |
+        static_cast<uint32_t>(source.macroEdit.focusedRow.get() & 0x0F);
 
     return data;
 }
 
-SelectorRenderData buildEditSelectorRenderData(const core::state::CoreState& state, const StaticItems& items) {
+SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items) {
     SelectorRenderData data{};
-    const auto& selector = state.macroEdit.selector;
+    const auto& selector = source.macroEdit.selector;
     if (!selector.visible.get()) {
         return data;
     }
@@ -94,15 +93,15 @@ SelectorRenderData buildEditSelectorRenderData(const core::state::CoreState& sta
     return data;
 }
 
-SelectorRenderData buildPageSelectorRenderData(const core::state::CoreState& state) {
+SelectorRenderData buildPageSelectorRenderData(const Source& source) {
     SelectorRenderData data{};
-    if (!state.pages.selector.visible.get()) {
+    if (!source.pages.selector.visible.get()) {
         return data;
     }
 
     static std::array<const char*, core::state::macro::PAGE_COUNT> pageItems{};
     for (uint8_t i = 0; i < core::state::macro::PAGE_COUNT; ++i) {
-        pageItems[i] = state.pages.pageName(i);
+        pageItems[i] = source.pages.pageName(i);
     }
 
     data.title = "PAGE";
@@ -110,18 +109,18 @@ SelectorRenderData buildPageSelectorRenderData(const core::state::CoreState& sta
     data.items = pageItems.data();
     data.itemCount = core::state::macro::PAGE_COUNT;
     data.selectedIndex = std::clamp(
-        static_cast<int>(state.pages.selector.selectedIndex.get()),
+        static_cast<int>(source.pages.selector.selectedIndex.get()),
         0,
         static_cast<int>(core::state::macro::PAGE_COUNT) - 1
     );
-    data.dataRevision = state.configRevision.get();
+    data.dataRevision = source.configRevision.get();
     data.visible = true;
     return data;
 }
 
-SelectorRenderData buildTargetSelectorRenderData(const core::state::CoreState& state, const StaticItems& items) {
+SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items) {
     SelectorRenderData data{};
-    if (!state.macroEdit.macroSelector.visible.get()) {
+    if (!source.macroEdit.macroSelector.visible.get()) {
         return data;
     }
 
@@ -130,7 +129,7 @@ SelectorRenderData buildTargetSelectorRenderData(const core::state::CoreState& s
     data.items = items.macroItems.data();
     data.itemCount = core::state::MACRO_COUNT;
     data.selectedIndex = std::clamp(
-        state.macroEdit.macroSelector.selectedIndex.get(),
+        source.macroEdit.macroSelector.selectedIndex.get(),
         0,
         static_cast<int>(core::state::MACRO_COUNT) - 1
     );

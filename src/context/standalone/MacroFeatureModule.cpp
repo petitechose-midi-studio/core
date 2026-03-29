@@ -6,13 +6,15 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/MacroOverlayPresenter.hpp"
+#include "handler/macro/MacroDomainServices.hpp"
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
 #include "handler/macro/MacroValueHandler.hpp"
 
 namespace core::context::standalone {
 
-FLASHMEM MacroFeatureModule::MacroFeatureModule(core::state::CoreState& state,
+FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
+                                                core::handler::MacroDomainServices services,
                                                 oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                                 oc::api::EncoderAPI& encoders,
                                                 oc::api::ButtonAPI& buttons,
@@ -48,7 +50,11 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(core::state::CoreState& state,
     );
 
     presenter_ = std::make_unique<MacroOverlayPresenter>(
-        state,
+        MacroOverlayPresenter::StateRefs{
+            stateRefs.macroEdit,
+            stateRefs.pages,
+            stateRefs.configRevision,
+        },
         *edit_overlay_,
         *edit_selector_overlay_,
         *page_selector_overlay_,
@@ -56,23 +62,33 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(core::state::CoreState& state,
     );
     presenter_->bind();
 
+    const auto macroViewScopeId = oc::ui::lvgl::scopeID(macroViewScope);
     value_handler_ = std::make_unique<core::handler::MacroValueHandler>(
-        state,
+        services,
         encoders,
         midi,
-        macroViewScope
+        macroViewScopeId
     );
-    midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(state, encoders);
+    midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(
+        core::handler::MacroMidiHandler::StateRefs{stateRefs.activeView},
+        services,
+        encoders
+    );
     edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
-        state,
+        core::handler::MacroEditHandler::StateRefs{
+            stateRefs.macroEdit,
+            stateRefs.pages,
+            stateRefs.configRevision,
+        },
+        services,
         overlays,
         encoders,
         buttons,
-        macroViewScope,
-        edit_overlay_->getElement(),
-        edit_selector_overlay_->getElement(),
-        page_selector_overlay_->getElement(),
-        target_selector_overlay_->getElement()
+        macroViewScopeId,
+        oc::ui::lvgl::scopeID(edit_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(edit_selector_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(page_selector_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(target_selector_overlay_->getElement())
     );
 }
 

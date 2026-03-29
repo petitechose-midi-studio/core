@@ -7,12 +7,11 @@
 
 #include <cstdint>
 
-#include <lvgl.h>
-
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
 
@@ -26,10 +25,15 @@ namespace core::handler {
  */
 class SequencerStepHandler {
 public:
-    SequencerStepHandler(core::state::CoreState& state,
+    struct StateRefs {
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& tracks;
+    };
+
+    SequencerStepHandler(StateRefs state,
                         oc::api::EncoderAPI& encoders,
                         oc::api::ButtonAPI& buttons,
-                        lv_obj_t* scopeElement);
+                        oc::type::ScopeID scopeId);
 
     ~SequencerStepHandler() = default;
 
@@ -47,10 +51,11 @@ private:
     void prevPage();
     void nextPage();
 
-    core::state::CoreState& state_;
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    lv_obj_t* scope_element_ = nullptr;
+    oc::type::ScopeID scope_id_ = 0;
 };
 
 }  // namespace core::handler
