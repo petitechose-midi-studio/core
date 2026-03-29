@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
 
+#include "state/macro/MacroWorkflow.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
 #include "ui/widget/MacroKnobWidget.hpp"
 

@@ -2,7 +2,9 @@
 
 #include <oc/state/SignalWatcher.hpp>
 
-#include "state/CoreState.hpp"
+namespace core::state {
+struct CoreState;
+}
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;

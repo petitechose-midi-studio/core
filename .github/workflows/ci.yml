@@ -45,3 +45,9 @@ jobs:
         run: |
           set -euo pipefail
           python -m platformio run -e release
+
+      - name: Test (native)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m platformio test -e native_ci

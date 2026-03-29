@@ -11,15 +11,10 @@ struct GlobalSettingsValueSelectorState {
     oc::state::Signal<int> selectedIndex{0};
     oc::state::Signal<uint8_t> editingRow{0};
 
-    int snapshotIndex = 0;
-    bool snapshotValid = false;
-
     void reset() {
         visible.set(false);
         selectedIndex.set(0);
         editingRow.set(0);
-        snapshotIndex = 0;
-        snapshotValid = false;
     }
 };
 

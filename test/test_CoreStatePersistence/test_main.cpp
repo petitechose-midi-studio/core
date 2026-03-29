@@ -9,6 +9,10 @@
 #include <oc/state/NotificationQueue.hpp>
 
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/DataManagerWorkflow.hpp"
+#include "../../src/state/macro/MacroPersistenceWorkflow.hpp"
+#include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
 
 namespace {
 

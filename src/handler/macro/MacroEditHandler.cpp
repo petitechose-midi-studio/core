@@ -9,6 +9,7 @@
 #include <config/PlatformCompat.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 
 namespace core::handler {
 

@@ -8,6 +8,7 @@
 #include <oc/interface/IStorage.hpp>
 
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/DataManagerWorkflow.hpp"
 
 namespace {
 

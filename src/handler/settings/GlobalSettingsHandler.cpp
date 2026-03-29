@@ -9,6 +9,7 @@
 #include <config/InputIDs.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/CoreState.hpp"
 
 namespace core::handler {
 
@@ -39,6 +40,95 @@ int findChoiceIndex(const T& value, const T (&choices)[N], int fallback = 0) {
         if (choices[i] == value) return i;
     }
     return std::clamp(fallback, 0, N - 1);
+}
+
+int currentChoiceIndexForRow(const core::state::CoreState& state, uint8_t row) {
+    const auto& sync = state.midiSync;
+
+    switch (row) {
+        case 0:
+            return findChoiceIndex(sync.mode.get(), MODE_VALUES,
+                                   findChoiceIndex(core::state::MidiSyncMode::AUTO, MODE_VALUES, 0));
+        case 1:
+            return findChoiceIndex(sync.followTransport.get(), FOLLOW_VALUES, 1);
+        case 2:
+            return findChoiceIndex(sync.autoFallbackMs.get(), FALLBACK_VALUES,
+                                   findChoiceIndex(static_cast<uint16_t>(500), FALLBACK_VALUES, 0));
+        case 3:
+            return findChoiceIndex(sync.autoLockClockCount.get(), LOCK_VALUES,
+                                   findChoiceIndex(static_cast<uint8_t>(6), LOCK_VALUES, 0));
+        default:
+            return 0;
+    }
+}
+
+void applyChoiceForRow(core::state::CoreState& state, uint8_t row, int choiceIndex) {
+    auto& sync = state.midiSync;
+
+    switch (row) {
+        case 0: {
+            const int idx = std::clamp(choiceIndex, 0, MODE_COUNT - 1);
+            sync.mode.set(MODE_VALUES[idx]);
+            return;
+        }
+        case 1: {
+            const int idx = std::clamp(choiceIndex, 0, FOLLOW_COUNT - 1);
+            sync.followTransport.set(FOLLOW_VALUES[idx]);
+            return;
+        }
+        case 2: {
+            const int idx = std::clamp(choiceIndex, 0, FALLBACK_COUNT - 1);
+            sync.autoFallbackMs.set(FALLBACK_VALUES[idx]);
+            return;
+        }
+        case 3: {
+            const int idx = std::clamp(choiceIndex, 0, LOCK_COUNT - 1);
+            sync.autoLockClockCount.set(LOCK_VALUES[idx]);
+            return;
+        }
+        default:
+            return;
+    }
+}
+
+void persistRow(core::state::CoreState& state, uint8_t row) {
+    auto status = core::persistence::PersistenceWriteStatus::OK;
+    switch (row) {
+        case 0:
+            status = state.settings.saveMidiSyncModeStatus(state.midiSync.mode.get());
+            break;
+        case 1:
+            status = state.settings.saveMidiFollowTransportStatus(
+                state.midiSync.followTransport.get()
+            );
+            break;
+        case 2:
+            status = state.settings.saveMidiAutoFallbackMsStatus(
+                state.midiSync.autoFallbackMs.get()
+            );
+            break;
+        case 3:
+            status = state.settings.saveMidiAutoLockClockCountStatus(
+                state.midiSync.autoLockClockCount.get()
+            );
+            break;
+        default:
+            return;
+    }
+
+    if (status != core::persistence::PersistenceWriteStatus::OK) {
+        OC_LOG_WARN("[GlobalSettings] Failed to stage settings row {}: {}",
+                    row,
+                    core::persistence::persistenceWriteStatusLabel(status));
+        return;
+    }
+
+    const auto commitStatus = state.settings.commitStatus();
+    if (commitStatus != core::persistence::PersistenceWriteStatus::OK) {
+        OC_LOG_WARN("[GlobalSettings] Failed to commit settings row {}: {}",
+                    row,
+                    core::persistence::persistenceWriteStatusLabel(commitStatus));
+    }
 }
 
 }  // namespace
@@ -99,8 +189,6 @@ FLASHMEM void GlobalSettingsHandler::setupBindings() {
         .release()
         .scope(scope(selector_overlay_scope_))
         .then([this]() { closeSelectorCancel(); });
-
-    OC_LOG_DEBUG("[GlobalSettingsHandler] Bindings setup complete");
 }
 
 FLASHMEM void GlobalSettingsHandler::openSettings() {
@@ -138,10 +226,8 @@ FLASHMEM void GlobalSettingsHandler::openValueSelector() {
     selector.reset();
     selector.editingRow.set(row);
 
-    const int current = currentChoiceIndexForRow_(row);
+    const int current = currentChoiceIndexForRow(state_, row);
     selector.selectedIndex.set(current);
-    selector.snapshotIndex = current;
-    selector.snapshotValid = true;
 
     overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, true);
 }
@@ -177,103 +263,14 @@ FLASHMEM void GlobalSettingsHandler::applySelectorAndClose() {
     const uint8_t row = selector.editingRow.get();
     const int choice = selector.selectedIndex.get();
 
-    applyChoiceForRow_(row, choice);
-    persistRow_(row);
+    applyChoiceForRow(state_, row, choice);
+    persistRow(state_, row);
 
     modal::hideOverlayAndReset(overlays_, [&selector]() { selector.reset(); });
 }
 
 FLASHMEM void GlobalSettingsHandler::closeSelectorCancel() {
     modal::hideOverlayAndReset(overlays_, [this]() { state_.globalSettings.selector.reset(); });
-}
-
-FLASHMEM int GlobalSettingsHandler::currentChoiceIndexForRow_(uint8_t row) const {
-    const auto& sync = state_.midiSync;
-
-    switch (row) {
-        case 0:
-            return findChoiceIndex(sync.mode.get(), MODE_VALUES,
-                                   findChoiceIndex(core::state::MidiSyncMode::AUTO, MODE_VALUES, 0));
-        case 1:
-            return findChoiceIndex(sync.followTransport.get(), FOLLOW_VALUES, 1);
-        case 2:
-            return findChoiceIndex(sync.autoFallbackMs.get(), FALLBACK_VALUES,
-                                   findChoiceIndex(static_cast<uint16_t>(500), FALLBACK_VALUES, 0));
-        case 3:
-            return findChoiceIndex(sync.autoLockClockCount.get(), LOCK_VALUES,
-                                   findChoiceIndex(static_cast<uint8_t>(6), LOCK_VALUES, 0));
-        default:
-            return 0;
-    }
-}
-
-FLASHMEM void GlobalSettingsHandler::applyChoiceForRow_(uint8_t row, int choiceIndex) {
-    auto& sync = state_.midiSync;
-
-    switch (row) {
-        case 0: {
-            const int idx = std::clamp(choiceIndex, 0, MODE_COUNT - 1);
-            sync.mode.set(MODE_VALUES[idx]);
-            return;
-        }
-        case 1: {
-            const int idx = std::clamp(choiceIndex, 0, FOLLOW_COUNT - 1);
-            sync.followTransport.set(FOLLOW_VALUES[idx]);
-            return;
-        }
-        case 2: {
-            const int idx = std::clamp(choiceIndex, 0, FALLBACK_COUNT - 1);
-            sync.autoFallbackMs.set(FALLBACK_VALUES[idx]);
-            return;
-        }
-        case 3: {
-            const int idx = std::clamp(choiceIndex, 0, LOCK_COUNT - 1);
-            sync.autoLockClockCount.set(LOCK_VALUES[idx]);
-            return;
-        }
-        default:
-            return;
-    }
-}
-
-FLASHMEM void GlobalSettingsHandler::persistRow_(uint8_t row) {
-    auto status = core::persistence::PersistenceWriteStatus::OK;
-    switch (row) {
-        case 0:
-            status = state_.settings.saveMidiSyncModeStatus(state_.midiSync.mode.get());
-            break;
-        case 1:
-            status = state_.settings.saveMidiFollowTransportStatus(
-                state_.midiSync.followTransport.get()
-            );
-            break;
-        case 2:
-            status = state_.settings.saveMidiAutoFallbackMsStatus(
-                state_.midiSync.autoFallbackMs.get()
-            );
-            break;
-        case 3:
-            status = state_.settings.saveMidiAutoLockClockCountStatus(
-                state_.midiSync.autoLockClockCount.get()
-            );
-            break;
-        default:
-            return;
-    }
-
-    if (status != core::persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[GlobalSettings] Failed to stage settings row {}: {}",
-                    row,
-                    core::persistence::persistenceWriteStatusLabel(status));
-        return;
-    }
-
-    const auto commitStatus = state_.settings.commitStatus();
-    if (commitStatus != core::persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[GlobalSettings] Failed to commit settings row {}: {}",
-                    row,
-                    core::persistence::persistenceWriteStatusLabel(commitStatus));
-    }
 }
 
 }  // namespace core::handler

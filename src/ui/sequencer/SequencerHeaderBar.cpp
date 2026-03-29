@@ -91,8 +91,6 @@ SequencerHeaderBar::~SequencerHeaderBar() {
         track_accent_ = nullptr;
         left_label_ = nullptr;
         top_row_spacer_ = nullptr;
-        center_label_ = nullptr;
-        right_label_ = nullptr;
         track_selector_row_ = nullptr;
     }
 }
@@ -151,20 +149,6 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     top_row_spacer_ = lv_obj_create(top_row_);
     style::apply(top_row_spacer_).size(0, 1).transparent().noBorder().noScroll().pad(0);
     lv_obj_set_flex_grow(top_row_spacer_, 1);
-
-    center_label_ = lv_label_create(top_row_);
-    lv_obj_set_style_text_font(center_label_, fonts.inter_13_medium, 0);
-    lv_obj_set_style_text_color(center_label_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_opa(center_label_, LV_OPA_COVER, 0);
-    lv_label_set_long_mode(center_label_, LV_LABEL_LONG_CLIP);
-
-    right_label_ = lv_label_create(top_row_);
-    lv_obj_set_style_text_font(right_label_, fonts.inter_13_medium, 0);
-    lv_obj_set_style_text_color(right_label_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_opa(right_label_, LV_OPA_COVER, 0);
-    lv_label_set_long_mode(right_label_, LV_LABEL_LONG_CLIP);
-    lv_obj_add_flag(center_label_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(right_label_, LV_OBJ_FLAG_HIDDEN);
 
     track_selector_row_ = lv_obj_create(top_row_);
     style::apply(track_selector_row_).transparent().noBorder().noScroll().pad(0);
@@ -252,30 +236,20 @@ void SequencerHeaderBar::render(const SequencerHeaderBarProps& props) {
 }
 
 void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
-    if (!left_label_ || !center_label_ || !right_label_) return;
+    if (!left_label_) return;
 
     if (!top_row_cache_initialized_ || top_row_dimmed_ != props.dimmed) {
         const lv_color_t propertyColor = lv_color_hex(COLOR_DIM_TEXT);
         const lv_opa_t propertyOpa = TRACK_OPA;
 
-        const lv_color_t stepColor =
-            lv_color_hex(props.dimmed ? COLOR_DIM_TEXT : theme::color::TEXT_PRIMARY);
-        const lv_opa_t stepOpa = props.dimmed ? OPA_DIM_TEXT : LV_OPA_COVER;
-
         lv_obj_set_style_text_color(left_label_, propertyColor, 0);
         lv_obj_set_style_text_opa(left_label_, propertyOpa, 0);
-        lv_obj_set_style_text_color(center_label_, stepColor, 0);
-        lv_obj_set_style_text_color(right_label_, stepColor, 0);
-        lv_obj_set_style_text_opa(center_label_, stepOpa, 0);
-        lv_obj_set_style_text_opa(right_label_, stepOpa, 0);
 
         top_row_dimmed_ = props.dimmed;
         top_row_cache_initialized_ = true;
     }
 
     setLabelTextIfChanged(left_label_, left_text_cache_, props.leftText);
-    setLabelTextIfChanged(center_label_, center_text_cache_, props.centerText);
-    setLabelTextIfChanged(right_label_, right_text_cache_, props.rightText);
 
     if (track_accent_) {
         const uint32_t accentColor =

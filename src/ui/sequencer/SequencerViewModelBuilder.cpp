@@ -69,8 +69,6 @@ SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreSt
              status.trackNoteActivity[6].get(),
              status.trackNoteActivity[7].get()},
         .leftText = leftText,
-        .centerText = "",
-        .rightText = "",
         .dimmed = false,
     };
 }

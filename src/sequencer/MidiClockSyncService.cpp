@@ -123,7 +123,7 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
         external_locked_ = true;
     }
 
-    status_bar_.pulseSyncInput();
+    status_bar_.pulseSyncInput(hostNowMs);
 }
 
 void MidiClockSyncService::resetExternalTempoEstimator_() {

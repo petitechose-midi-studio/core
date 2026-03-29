@@ -9,8 +9,13 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
-#include "state/CoreState.hpp"
+#include "state/DataManagerCatalog.hpp"
 #include "ui/OverlayTypes.hpp"
+#include "ui/ViewTypes.hpp"
+
+namespace core::state {
+struct CoreState;
+}
 
 namespace core::handler {
 
@@ -45,6 +50,11 @@ private:
 
     void navigateDialog_(float delta);
     void applyDialogSelection_();
+    void applyShortcutAssignmentSelection_();
+    void applyCommandPaletteSelection_();
+    void applySlotPickerSelection_();
+    void applySetLoadModeSelection_();
+    void applyConfirmSelection_();
     void closeDialog_();
     void showDialog_(core::state::DataManagerDialogMode mode, int selectedIndex, uint8_t editingShortcutRow = 0);
     int dialogChoiceCount_(core::state::DataManagerDialogMode mode) const;

@@ -148,6 +148,19 @@ FLASHMEM void SequencerView::createActionStrips() {
 }
 
 FLASHMEM void SequencerView::bindToState() {
+    bindBottomControlsState();
+    bindHeaderState();
+    bindGridState();
+    bindPropertyStripState();
+    bindQuickControlsState();
+
+    markAllDirty();
+    render();
+    dirty_ = false;
+    pauseRenderTimerIfIdle();
+}
+
+FLASHMEM void SequencerView::bindBottomControlsState() {
     watcher_.watchAll(
         [this]() {
             requestBottomControlsRender();
@@ -156,7 +169,9 @@ FLASHMEM void SequencerView::bindToState() {
         core_state_.sequencer.patternQuickControls.offsetSteps,
         core_state_.sequencer.length
     );
+}
 
+FLASHMEM void SequencerView::bindHeaderState() {
     watcher_.watchAll(
         [this]() {
             requestHeaderRender();
@@ -178,7 +193,9 @@ FLASHMEM void SequencerView::bindToState() {
         core_state_.sequencer.page,
         core_state_.sequencer.playheadStep
     );
+}
 
+FLASHMEM void SequencerView::bindGridState() {
     watcher_.watchAll(
         [this]() {
             requestGridRender();
@@ -201,7 +218,9 @@ FLASHMEM void SequencerView::bindToState() {
         core_state_.sequencer.rangeSelection.rangeEnd,
         core_state_.sequencer.rangeSelection.rangeValid
     );
+}
 
+FLASHMEM void SequencerView::bindPropertyStripState() {
     watcher_.watchAll(
         [this]() {
             requestPropertyStripRender();
@@ -214,7 +233,9 @@ FLASHMEM void SequencerView::bindToState() {
         core_state_.sequencer.rangeSelection.kind,
         core_state_.sequencer.rangeSelection.phase
     );
+}
 
+FLASHMEM void SequencerView::bindQuickControlsState() {
     watcher_.watchAll(
         [this]() {
             requestBottomControlsRender();
@@ -223,11 +244,6 @@ FLASHMEM void SequencerView::bindToState() {
         core_state_.sequencer.patternQuickControls.selecting,
         core_state_.sequencer.patternQuickControls.focusedItem
     );
-
-    markAllDirty();
-    render();
-    dirty_ = false;
-    pauseRenderTimerIfIdle();
 }
 
 void SequencerView::ensureRenderTimer() {
@@ -253,29 +269,29 @@ void SequencerView::pauseRenderTimerIfIdle() {
     lv_timer_pause(render_timer_);
 }
 
-void SequencerView::requestHeaderRender() {
-    header_dirty_ = true;
+void SequencerView::requestRender(bool& dirtyFlag) {
+    dirtyFlag = true;
     scheduleRender();
+}
+
+void SequencerView::requestHeaderRender() {
+    requestRender(header_dirty_);
 }
 
 void SequencerView::requestBottomControlsRender() {
-    bottom_controls_dirty_ = true;
-    scheduleRender();
+    requestRender(bottom_controls_dirty_);
 }
 
 void SequencerView::requestPropertyStripRender() {
-    property_strip_dirty_ = true;
-    scheduleRender();
+    requestRender(property_strip_dirty_);
 }
 
 void SequencerView::requestGridRender() {
-    grid_dirty_ = true;
-    scheduleRender();
+    requestRender(grid_dirty_);
 }
 
 void SequencerView::requestActionStripsRender() {
-    action_strips_dirty_ = true;
-    scheduleRender();
+    requestRender(action_strips_dirty_);
 }
 
 void SequencerView::markAllDirty() {

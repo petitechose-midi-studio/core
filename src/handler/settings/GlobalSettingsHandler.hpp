@@ -6,8 +6,11 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
-#include "state/CoreState.hpp"
 #include "ui/OverlayTypes.hpp"
+
+namespace core::state {
+struct CoreState;
+}
 
 namespace core::handler {
 
@@ -37,10 +40,6 @@ private:
     void navigateSelector(float delta);
     void applySelectorAndClose();
     void closeSelectorCancel();
-
-    int currentChoiceIndexForRow_(uint8_t row) const;
-    void applyChoiceForRow_(uint8_t row, int choiceIndex);
-    void persistRow_(uint8_t row);
 
     core::state::CoreState& state_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;

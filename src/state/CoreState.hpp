@@ -16,21 +16,14 @@
  */
 
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 
 #include <oc/interface/IStorage.hpp>
-#include <oc/log/Log.hpp>
 #include <oc/state/AutoPersistIncremental.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
-#include "persistence/MacroPersistence.hpp"
-#include "persistence/SequencerPersistence.hpp"
 #include "CoreSettings.hpp"
-#include "CoreStateBootstrap.hpp"
-#include "CoreStateLifecycle.hpp"
 #include "DataManagerState.hpp"
-#include "DataManagerWorkflow.hpp"
 #include "GlobalSettingsState.hpp"
 #include "MidiSyncState.hpp"
 #include "MacroEditState.hpp"
@@ -38,16 +31,17 @@
 #include "../ui/OverlayTypes.hpp"
 #include "../ui/ViewTypes.hpp"
 #include "StatusBarState.hpp"
+#include "persistence/MacroPersistence.hpp"
+#include "persistence/SequencerPersistence.hpp"
 #include "macro/MacroPagesState.hpp"
-#include "macro/MacroPersistenceWorkflow.hpp"
-#include "macro/MacroWorkflow.hpp"
-#include "sequencer/SequencerPersistenceWorkflow.hpp"
-#include "sequencer/SequencerSnapshotOps.hpp"
 #include "sequencer/SequencerState.hpp"
-#include "sequencer/SequencerTrackBankOps.hpp"
+#include "sequencer/SequencerSnapshots.hpp"
 #include "sequencer/SequencerTrackBankState.hpp"
 
 namespace core::state {
+
+struct CoreStateBootstrap;
+struct CoreStateLifecycle;
 
 /**
  * @brief State for top-level view selector overlay
@@ -62,6 +56,59 @@ struct ViewSelectorState {
     }
 };
 
+struct MacroDomainState {
+    MacroState runtime;
+    macro::MacroPagesState pages;
+    oc::state::Signal<uint32_t> configRevision{0};
+    persistence::MacroPersistence persistence;
+    bool persistenceReady = false;
+    std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> autoPersist;
+
+    MacroDomainState(oc::interface::IStorage& workspaceStorage,
+                     oc::interface::IStorage& libraryStorage)
+        : persistence(workspaceStorage, libraryStorage) {}
+
+    MacroDomainState(const MacroDomainState&) = delete;
+    MacroDomainState& operator=(const MacroDomainState&) = delete;
+};
+
+struct SequencerDomainState {
+    struct PendingApply {
+        bool valid = false;
+        int16_t anchorPlayhead = -1;
+        bool merge = false;
+        bool fullBank = false;
+        sequencer::SequencerPatternSnapshot snapshot{};
+        sequencer::SequencerTrackBankSnapshot bankSnapshot{};
+    };
+
+    sequencer::SequencerState editor;
+    sequencer::SequencerTrackBankState tracks;
+    persistence::SequencerPersistence persistence;
+    bool persistenceReady = false;
+    PendingApply pendingApply{};
+    std::unique_ptr<oc::state::AutoPersistIncremental<8>> autoPersist;
+
+    SequencerDomainState(oc::interface::IStorage& workspaceStorage,
+                         oc::interface::IStorage& patternLibraryStorage,
+                         oc::interface::IStorage& setLibraryStorage)
+        : persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage) {}
+
+    SequencerDomainState(const SequencerDomainState&) = delete;
+    SequencerDomainState& operator=(const SequencerDomainState&) = delete;
+};
+
+struct UiSystemState {
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
+    oc::state::Signal<core::ui::ViewType> activeView{core::ui::ViewType::MACRO};
+    ViewSelectorState viewSelector;
+    StatusBarState statusBar;
+    MidiSyncState midiSync;
+    GlobalSettingsState globalSettings;
+    DataManagerState dataManager;
+    MacroEditState macroEdit;
+};
+
 /**
  * @brief Global state container for standalone mode
  *
@@ -73,53 +120,35 @@ struct CoreState {
     friend struct CoreStateBootstrap;
     friend struct CoreStateLifecycle;
 
-    /// Runtime macro state (8 slots with values, labels)
-    MacroState macros;
+private:
+    MacroDomainState macroDomain_;
+    SequencerDomainState sequencerDomain_;
+    UiSystemState systemUi_;
 
-    /// Multi-page configuration (CC, channel, stored values)
-    macro::MacroPagesState pages;
-
-    /// Bumps on any config/page change (for UI refresh)
-    oc::state::Signal<uint32_t> configRevision{0};
-
+public:
     /// Persistence manager
     CoreSettings settings;
 
-    /// Macro workspace + library persistence service
-    persistence::MacroPersistence macroPersistence;
+    /// Macro domain aliases
+    MacroState& macros;
+    macro::MacroPagesState& pages;
+    oc::state::Signal<uint32_t>& configRevision;
+    persistence::MacroPersistence& macroPersistence;
 
-    /// Sequencer workspace + pattern/set libraries persistence service
-    persistence::SequencerPersistence sequencerPersistence;
+    /// Sequencer domain aliases
+    sequencer::SequencerState& sequencer;
+    sequencer::SequencerTrackBankState& sequencerTracks;
+    persistence::SequencerPersistence& sequencerPersistence;
 
-    /// Overlay visibility manager
-    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
-
-    /// Active top-level view
-    oc::state::Signal<core::ui::ViewType> activeView{core::ui::ViewType::MACRO};
-
-    /// Sequencer UI-first state
-    sequencer::SequencerState sequencer;
-
-    /// Stored multi-track bank backing the active sequencer editor state
-    sequencer::SequencerTrackBankState sequencerTracks;
-
-    /// View selector overlay state
-    ViewSelectorState viewSelector;
-
-    /// Status bar state (TopBar + TransportBar)
-    StatusBarState statusBar;
-
-    /// MIDI sync mode/source state
-    MidiSyncState midiSync;
-
-    /// Global settings overlays state
-    GlobalSettingsState globalSettings;
-
-    /// Data manager overlays state
-    DataManagerState dataManager;
-
-    /// Macro edit overlay state
-    MacroEditState macroEdit;
+    /// Shared UI/system domain aliases
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+    oc::state::Signal<core::ui::ViewType>& activeView;
+    ViewSelectorState& viewSelector;
+    StatusBarState& statusBar;
+    MidiSyncState& midiSync;
+    GlobalSettingsState& globalSettings;
+    DataManagerState& dataManager;
+    MacroEditState& macroEdit;
 
     /**
      * @brief Construct with storage backend
@@ -135,14 +164,7 @@ struct CoreState {
                        oc::interface::IStorage& macroLibraryStorage,
                        oc::interface::IStorage& sequencerWorkspaceStorage,
                        oc::interface::IStorage& sequencerPatternLibraryStorage,
-                       oc::interface::IStorage& sequencerSetLibraryStorage)
-        : settings(settingsStorage)
-        , macroPersistence(macroWorkspaceStorage, macroLibraryStorage)
-        , sequencerPersistence(sequencerWorkspaceStorage,
-                               sequencerPatternLibraryStorage,
-                               sequencerSetLibraryStorage) {
-        CoreStateBootstrap::initialize(*this);
-    }
+                       oc::interface::IStorage& sequencerSetLibraryStorage);
 
     // Non-copyable, non-movable
     CoreState(const CoreState&) = delete;
@@ -159,92 +181,34 @@ struct CoreState {
      *
      * Saves dirty values incrementally after debounce timeout.
      */
-    void update() {
-        CoreStateLifecycle::update(*this);
-    }
+    void update();
 
     /**
      * @brief Factory reset - clear all settings
      */
-    void factoryReset() {
-        CoreStateLifecycle::factoryReset(*this);
-    }
+    void factoryReset();
 
     /**
      * @brief Flush any pending dirty values immediately
      */
-    void flush() {
-        CoreStateLifecycle::flush(*this);
-    }
+    void flush();
 
-    bool isMacroPersistenceReady() const { return macro_persistence_ready_; }
-    bool isSequencerPersistenceReady() const { return sequencer_persistence_ready_; }
-    void persistMacroWorkspace() { persistMacroWorkspace_(); }
-    void persistSequencerWorkspace() { persistSequencerWorkspace_(); }
-    void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false) {
-        queueSequencerApply_(staged, merge);
-    }
-    void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankSnapshot& staged) {
-        queueSequencerBankApply_(staged);
-    }
-    void clearPendingSequencerApply() { clearPendingSequencerApply_(); }
-    bool hasPendingSequencerApply() const { return pending_sequencer_apply_.valid; }
+    bool isMacroPersistenceReady() const;
+    bool isSequencerPersistenceReady() const;
+    void persistMacroWorkspace();
+    void persistSequencerWorkspace();
+    void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false);
+    void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankSnapshot& staged);
+    void clearPendingSequencerApply();
+    bool hasPendingSequencerApply() const;
 
 private:
-    struct PendingSequencerApply {
-        bool valid = false;
-        int16_t anchorPlayhead = -1;
-        bool merge = false;
-        bool fullBank = false;
-        sequencer::SequencerPatternSnapshot snapshot{};
-        sequencer::SequencerTrackBankSnapshot bankSnapshot{};
-    };
+    void queueSequencerApply_(const sequencer::SequencerState& staged, bool merge = false);
+    void queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged);
+    void persistMacroWorkspace_();
+    void persistSequencerWorkspace_();
+    void clearPendingSequencerApply_();
 
-    void queueSequencerApply_(const sequencer::SequencerState& staged,
-                              bool merge = false) {
-        CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
-    }
-
-    void queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged) {
-        pending_sequencer_apply_.bankSnapshot = staged;
-        pending_sequencer_apply_.anchorPlayhead = sequencer.playheadStep.get();
-        pending_sequencer_apply_.merge = false;
-        pending_sequencer_apply_.fullBank = true;
-        pending_sequencer_apply_.valid = true;
-    }
-
-    void persistMacroWorkspace_() {
-        if (!macro_persistence_ready_) return;
-        const auto status = macroPersistence.saveWorkspaceStatus(pages);
-        if (status != persistence::PersistenceWriteStatus::OK) {
-            OC_LOG_WARN("[CoreState] Failed to persist macro workspace: {}",
-                        persistence::persistenceWriteStatusLabel(status));
-        }
-    }
-
-    void persistSequencerWorkspace_() {
-        if (!sequencer_persistence_ready_) return;
-        sequencer::storeActiveTrack(sequencerTracks, sequencer);
-        const auto status = sequencerPersistence.saveWorkspaceStatus(sequencerTracks, sequencer);
-        if (status != persistence::PersistenceWriteStatus::OK) {
-            OC_LOG_WARN("[CoreState] Failed to persist sequencer workspace: {}",
-                        persistence::persistenceWriteStatusLabel(status));
-        }
-    }
-
-    void clearPendingSequencerApply_() {
-        CoreStateLifecycle::clearPendingSequencerApply(*this);
-    }
-
-    bool macro_persistence_ready_ = false;
-    bool sequencer_persistence_ready_ = false;
-    PendingSequencerApply pending_sequencer_apply_{};
-
-    /// Auto-persistence for macro values (watches signals, saves on debounce)
-    std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> macro_auto_persist_;
-
-    /// Auto-persistence for sequencer workspace (watches key sequencer signals)
-    std::unique_ptr<oc::state::AutoPersistIncremental<8>> sequencer_auto_persist_;
 };
 
 }  // namespace core::state

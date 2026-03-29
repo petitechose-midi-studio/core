@@ -8,8 +8,6 @@
 #include <oc/interface/IMidi.hpp>
 
 #include "../../src/sequencer/MidiClockSyncService.hpp"
-// Test environment does not link project src by default for this suite.
-#include "../../src/sequencer/MidiClockSyncService.cpp"
 
 namespace {
 
@@ -298,6 +296,7 @@ void test_external_source_updates_displayed_tempo_and_activity() {
     assert(status.tempoDisplay.get() > 120.0f && status.tempoDisplay.get() < 130.0f);
 
     service.update(now + 1000);
+    status.updateTransient(now + 1000);
     assert(!status.syncInputPulse.get());
 
     std::cout << "[PASS] test_external_source_updates_displayed_tempo_and_activity\n";

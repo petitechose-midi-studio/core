@@ -438,7 +438,7 @@ void process(const Data& data) {
 }
 ```
 
-### Designated Initializers (C++20)
+### Designated Initializers (Supported In Current Toolchain)
 
 ```cpp
 ButtonBinding binding{
@@ -538,7 +538,7 @@ Automatic code formatting via `.clang-format` at project root.
 
 ```yaml
 BasedOnStyle: Google
-Standard: c++20
+Standard: c++17
 IndentWidth: 4
 ColumnLimit: 100
 
@@ -599,7 +599,7 @@ PlatformIO generates `compile_commands.json` automatically during build.
 
 ```bash
 # Generate/update compilation database
-pio run -e debug
+pio run -e dev
 ```
 
 > **Note**: Run a build after cloning to generate the compilation database. clangd won't work properly without it.

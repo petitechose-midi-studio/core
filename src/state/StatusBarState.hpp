@@ -75,6 +75,15 @@ struct StatusBarState {
         pulseTransient(syncInputPulse, sync_input_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
     }
 
+    void pulseSyncInput(uint32_t nowMs) {
+        pulseTransientAt(
+            syncInputPulse,
+            sync_input_until_ms_,
+            Config::Timing::STATUS_MIDI_PULSE_MS,
+            nowMs
+        );
+    }
+
     void pulseBeat() {
         pulseTransient(beatPulse, beat_until_ms_, Config::Timing::STATUS_BEAT_PULSE_MS);
     }
@@ -98,11 +107,18 @@ struct StatusBarState {
     }
 
 private:
-    static void pulseTransient(Signal<bool>& signal, uint32_t& untilMs, uint32_t durationMs) {
-        untilMs = oc::time::millis() + durationMs;
+    static void pulseTransientAt(Signal<bool>& signal,
+                                 uint32_t& untilMs,
+                                 uint32_t durationMs,
+                                 uint32_t nowMs) {
+        untilMs = nowMs + durationMs;
         if (!signal.get()) {
             signal.set(true);
         }
+    }
+
+    static void pulseTransient(Signal<bool>& signal, uint32_t& untilMs, uint32_t durationMs) {
+        pulseTransientAt(signal, untilMs, durationMs, oc::time::millis());
     }
 
     static void expireTransient(Signal<bool>& signal, uint32_t& untilMs, uint32_t nowMs) {

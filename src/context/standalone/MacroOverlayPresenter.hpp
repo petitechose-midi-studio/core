@@ -2,7 +2,11 @@
 
 #include <oc/state/SignalWatcher.hpp>
 
-#include "state/CoreState.hpp"
+#include "context/standalone/MacroOverlayPresenterFormatters.hpp"
+
+namespace core::state {
+struct CoreState;
+}
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -38,12 +42,7 @@ private:
     oc::state::SignalWatcher page_selector_watcher_;
     oc::state::SignalWatcher macro_target_selector_watcher_;
     bool static_items_initialized_ = false;
-    std::array<std::array<char, 4>, 16> channel_labels_{};
-    std::array<const char*, 16> channel_items_{};
-    std::array<std::array<char, 4>, 128> cc_labels_{};
-    std::array<const char*, 128> cc_items_{};
-    std::array<std::array<char, 16>, core::state::MACRO_COUNT> macro_labels_{};
-    std::array<const char*, core::state::MACRO_COUNT> macro_items_{};
+    macro_overlay_presenter::StaticItems static_items_{};
 };
 
 }  // namespace core::context::standalone

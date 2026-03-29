@@ -1,6 +1,7 @@
 #include "MacroMidiHandler.hpp"
 
 #include "midi/MidiUtils.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 
 namespace core::handler {
 

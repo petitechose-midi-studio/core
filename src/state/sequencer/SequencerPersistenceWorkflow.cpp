@@ -4,6 +4,7 @@
 #include <oc/log/Log.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::state::sequencer {

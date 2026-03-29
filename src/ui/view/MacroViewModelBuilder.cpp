@@ -1,5 +1,7 @@
 #include "ui/view/MacroViewModelBuilder.hpp"
 
+#include "state/macro/MacroWorkflow.hpp"
+
 namespace core::ui {
 
 TopBarProps buildMacroTopBarProps(const core::state::CoreState& coreState) {

@@ -65,8 +65,8 @@ Current architectural direction:
 For the current architectural audit and cleanup roadmap, start with:
 
 - [docs/ARCHITECTURE_REVIEW.md](docs/ARCHITECTURE_REVIEW.md)
-- [docs/CODEBASE_CLEANUP_AUDIT.md](docs/CODEBASE_CLEANUP_AUDIT.md)
-- [docs/SEQUENCER_CODEBASE_CLEANUP_AUDIT.md](docs/SEQUENCER_CODEBASE_CLEANUP_AUDIT.md)
+- [docs/INVARIANTS.md](docs/INVARIANTS.md)
+- [docs/README.md](docs/README.md)
 
 ## Notes
 

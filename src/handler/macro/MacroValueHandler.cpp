@@ -8,6 +8,7 @@
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
 #include "midi/MidiUtils.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 
 namespace core::handler {
 

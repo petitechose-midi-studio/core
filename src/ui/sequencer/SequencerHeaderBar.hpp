@@ -26,8 +26,6 @@ struct SequencerHeaderBarProps {
     bool selectingTrack = false;
     std::array<uint8_t, TRACK_COUNT> trackActivity{};
     const char* leftText = "";
-    const char* centerText = "";
-    const char* rightText = "";
     bool dimmed = false;
 };
 
@@ -85,8 +83,6 @@ private:
     lv_obj_t* track_accent_ = nullptr;
     lv_obj_t* left_label_ = nullptr;
     lv_obj_t* top_row_spacer_ = nullptr;
-    lv_obj_t* center_label_ = nullptr;
-    lv_obj_t* right_label_ = nullptr;
     lv_obj_t* track_selector_row_ = nullptr;
     std::array<lv_obj_t*, PAGE_COUNT> track_selector_items_{};
 
@@ -96,8 +92,6 @@ private:
     bool top_row_cache_initialized_ = false;
     bool top_row_dimmed_ = false;
     std::array<char, 32> left_text_cache_{};
-    std::array<char, 32> center_text_cache_{};
-    std::array<char, 32> right_text_cache_{};
     uint8_t track_selector_cache_active_ = 0;
     uint8_t track_selector_cache_preview_ = 0;
     uint8_t track_selector_cache_enabled_mask_ = 0xFF;

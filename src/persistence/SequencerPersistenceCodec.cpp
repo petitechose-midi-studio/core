@@ -1,0 +1,194 @@
+#include "persistence/SequencerPersistenceCodec.hpp"
+
+#include <algorithm>
+
+namespace core::persistence::sequencer_codec {
+
+namespace {
+
+uint8_t sanitizeLength(uint8_t length) {
+    if (length == 0 || length > state::sequencer::SequencerState::MAX_STEPS) {
+        return oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
+    }
+    return length;
+}
+
+uint64_t lengthMask(uint8_t length) {
+    if (length == 0) return 0;
+    if (length >= state::sequencer::SequencerState::MAX_STEPS) return ~uint64_t{0};
+    return (uint64_t{1} << length) - uint64_t{1};
+}
+
+uint8_t sanitizeStepsPerBeat(uint8_t spb) {
+    if (spb == 0) {
+        return oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
+    }
+    return spb;
+}
+
+uint8_t sanitizeMidiChannel(uint8_t channel) {
+    return (channel > 15U)
+               ? oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED
+               : channel;
+}
+
+uint8_t sanitizeMidi7(uint8_t value) {
+    return (value > 127U) ? 127U : value;
+}
+
+uint16_t sanitizeGate(uint16_t value) {
+    return state::sequencer::SequencerState::clampGatePercent(value);
+}
+
+uint8_t sanitizeProbability(uint8_t value) {
+    return state::sequencer::SequencerState::clampProbability(value);
+}
+
+state::sequencer::StepProperty sanitizeStepProperty(uint8_t value) {
+    if (value > static_cast<uint8_t>(state::sequencer::StepProperty::PROBABILITY)) {
+        return state::sequencer::StepProperty::NOTE;
+    }
+    return static_cast<state::sequencer::StepProperty>(value);
+}
+
+uint8_t sanitizeFocusedStep(uint8_t focused, uint8_t length) {
+    if (length == 0) return 0;
+    return (focused >= length) ? static_cast<uint8_t>(length - 1) : focused;
+}
+
+}  // namespace
+
+void fillPatternPayload(const state::sequencer::SequencerState& source, PatternPayloadV1& out) {
+    const uint8_t length = sanitizeLength(source.length.get());
+    out.length = length;
+    out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
+    out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
+    out.enabledMask = source.enabledMask.get() & lengthMask(length);
+
+    for (uint8_t i = 0; i < state::sequencer::SequencerState::MAX_STEPS; ++i) {
+        out.note[i] = sanitizeMidi7(source.note[i]);
+        out.velocity[i] = sanitizeMidi7(source.velocity[i]);
+        out.gate[i] = sanitizeGate(source.gate[i]);
+        out.nudge[i] = source.nudge[i];
+        out.probability[i] = sanitizeProbability(source.probability[i]);
+    }
+}
+
+void applyPatternPayload(const PatternPayloadV1& payload, state::sequencer::SequencerState& target) {
+    const uint8_t length = sanitizeLength(payload.length);
+    target.length.set(length);
+    target.stepsPerBeat.set(sanitizeStepsPerBeat(payload.stepsPerBeat));
+    target.midiChannel.set(sanitizeMidiChannel(payload.midiChannel));
+    target.enabledMask.set(payload.enabledMask & lengthMask(length));
+
+    for (uint8_t i = 0; i < state::sequencer::SequencerState::MAX_STEPS; ++i) {
+        target.note[i] = sanitizeMidi7(payload.note[i]);
+        target.velocity[i] = sanitizeMidi7(payload.velocity[i]);
+        target.gate[i] = sanitizeGate(payload.gate[i]);
+        target.nudge[i] = payload.nudge[i];
+        target.probability[i] = sanitizeProbability(payload.probability[i]);
+    }
+
+    const uint8_t focused = sanitizeFocusedStep(target.focusedStep.get(), length);
+    target.focusedStep.set(focused);
+    target.page.set(target.pageForStep(focused));
+    target.bumpStepDataRevision();
+}
+
+void fillWorkspacePayload(const state::sequencer::SequencerTrackBankState& trackBank,
+                          const state::sequencer::SequencerState& active,
+                          WorkspacePayloadV2& out) {
+    const uint8_t activeTrack =
+        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrack.get());
+    out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    out.activeTrack = activeTrack;
+    out.enabledMask = trackBank.enabledMask.get();
+
+    for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        const auto& source = (i == activeTrack) ? active : trackBank.track(i);
+        fillPatternPayload(source, out.tracks[i].pattern);
+        out.tracks[i].focusedStep =
+            sanitizeFocusedStep(source.focusedStep.get(), out.tracks[i].pattern.length);
+        out.tracks[i].page = source.page.get();
+        out.tracks[i].activeStepProperty = static_cast<uint8_t>(source.activeStepProperty.get());
+    }
+}
+
+void applyWorkspacePayload(const WorkspacePayloadV2& payload,
+                           state::sequencer::SequencerTrackBankState& trackBank,
+                           state::sequencer::SequencerState& active) {
+    trackBank.reset();
+    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x01 : payload.enabledMask);
+
+    const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
+        payload.trackCount == 0 ? 1 : payload.trackCount,
+        state::sequencer::SequencerTrackBankState::TRACK_COUNT
+    ));
+
+    for (uint8_t i = 0; i < trackCount; ++i) {
+        applyPatternPayload(payload.tracks[i].pattern, trackBank.track(i));
+        const uint8_t focused =
+            sanitizeFocusedStep(payload.tracks[i].focusedStep, trackBank.track(i).length.get());
+        trackBank.track(i).focusedStep.set(focused);
+        const uint8_t pageCount = trackBank.track(i).activePageCount();
+        const uint8_t safePage = (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[i].page % pageCount);
+        trackBank.track(i).page.set(safePage);
+        trackBank.track(i).activeStepProperty.set(
+            sanitizeStepProperty(payload.tracks[i].activeStepProperty)
+        );
+    }
+
+    const uint8_t activeTrack =
+        std::min<uint8_t>(payload.activeTrack, static_cast<uint8_t>(trackCount - 1));
+    applyPatternPayload(payload.tracks[activeTrack].pattern, active);
+    const uint8_t focused =
+        sanitizeFocusedStep(payload.tracks[activeTrack].focusedStep, active.length.get());
+    active.focusedStep.set(focused);
+    const uint8_t pageCount = active.activePageCount();
+    const uint8_t safePage = (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[activeTrack].page % pageCount);
+    active.page.set(safePage);
+    active.activeStepProperty.set(sanitizeStepProperty(payload.tracks[activeTrack].activeStepProperty));
+    trackBank.activeTrack.set(activeTrack);
+    trackBank.selector.reset(activeTrack);
+    trackBank.selector.snapshotEnabledMask = trackBank.enabledMask.get();
+}
+
+void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
+                    const state::sequencer::SequencerState& active,
+                    SetPayloadV2& out) {
+    const uint8_t activeTrack =
+        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrack.get());
+    out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    out.activeTrack = activeTrack;
+    out.enabledMask = trackBank.enabledMask.get();
+
+    for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        const auto& source = (i == activeTrack) ? active : trackBank.track(i);
+        fillPatternPayload(source, out.tracks[i]);
+    }
+}
+
+void applySetPayload(const SetPayloadV2& payload,
+                     state::sequencer::SequencerTrackBankState& trackBank,
+                     state::sequencer::SequencerState& active) {
+    trackBank.reset();
+    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x01 : payload.enabledMask);
+
+    const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
+        payload.trackCount == 0 ? 1 : payload.trackCount,
+        state::sequencer::SequencerTrackBankState::TRACK_COUNT
+    ));
+
+    for (uint8_t i = 0; i < trackCount; ++i) {
+        applyPatternPayload(payload.tracks[i], trackBank.track(i));
+    }
+
+    const uint8_t activeTrack =
+        std::min<uint8_t>(payload.activeTrack, static_cast<uint8_t>(trackCount - 1));
+    applyPatternPayload(payload.tracks[activeTrack], active);
+    trackBank.activeTrack.set(activeTrack);
+    trackBank.selector.reset(activeTrack);
+    trackBank.selector.snapshotEnabledMask = trackBank.enabledMask.get();
+}
+
+}  // namespace core::persistence::sequencer_codec

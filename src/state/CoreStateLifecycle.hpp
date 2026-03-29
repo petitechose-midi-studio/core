@@ -18,6 +18,12 @@ struct CoreStateLifecycle {
 
 private:
     static void applyPendingSequencerApplyIfReady(CoreState& state);
+    static void updateAutoPersist_(CoreState& state);
+    static void flushAutoPersist_(CoreState& state);
+    static void persistFactoryDefaults_(CoreState& state);
+    static void resetMacroDomain_(CoreState& state);
+    static void resetSequencerDomain_(CoreState& state);
+    static void resetUiState_(CoreState& state);
 };
 
 }  // namespace core::state

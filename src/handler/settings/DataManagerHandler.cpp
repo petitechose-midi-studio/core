@@ -1,130 +1,18 @@
 #include "DataManagerHandler.hpp"
 
 #include <algorithm>
-#include <oc/log/Log.hpp>
-#include <oc/type/TextFormat.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/settings/DataManagerFeedbackFormatter.hpp"
+#include "state/CoreState.hpp"
 
 namespace core::handler {
 
 using oc::ui::lvgl::scope;
-
-namespace {
-
-const char* slotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
-    using core::persistence::SlotLoadStatus;
-    switch (status) {
-        case SlotLoadStatus::OK: return "OK";
-        case SlotLoadStatus::EMPTY: return "EMPTY";
-        case SlotLoadStatus::OUT_OF_RANGE: return "OUT_OF_RANGE";
-        case SlotLoadStatus::CRC_MISMATCH: return "CRC";
-        case SlotLoadStatus::HEADER_MISMATCH: return "HEADER";
-        case SlotLoadStatus::IO_ERROR: return "IO";
-        case SlotLoadStatus::STORAGE_UNAVAILABLE: return "NO_STORAGE";
-        case SlotLoadStatus::CAPACITY_TOO_SMALL: return "CAPACITY";
-        default:
-            return "ERROR";
-    }
-}
-
-const char* dataManagerActionFailureLabel(core::state::DataManagerCommandAction action) {
-    switch (action) {
-        case core::state::DataManagerCommandAction::SAVE:
-            return "Save failed";
-        case core::state::DataManagerCommandAction::ERASE:
-            return "Erase failed";
-        case core::state::DataManagerCommandAction::LOAD:
-        case core::state::DataManagerCommandAction::NONE:
-        default:
-            return "Command failed";
-    }
-}
-
-const char* dataManagerActionSuccessVerb(core::state::DataManagerCommandAction action) {
-    switch (action) {
-        case core::state::DataManagerCommandAction::SAVE:
-            return "Saved";
-        case core::state::DataManagerCommandAction::LOAD:
-            return "Loaded";
-        case core::state::DataManagerCommandAction::ERASE:
-            return "Erased";
-        case core::state::DataManagerCommandAction::NONE:
-        default:
-            return "Done";
-    }
-}
-
-void formatCommandExecutionFeedback(
-    char* message,
-    size_t messageSize,
-    core::state::DataManagerCommand command,
-    uint8_t slot,
-    core::state::DataManagerSetLoadMode setLoadMode,
-    const core::state::DataManagerCommandExecutionResult& result
-) {
-    if (!message || messageSize == 0U) return;
-
-    message[0] = '\0';
-
-    if (!result.handled || command == core::state::DataManagerCommand::NONE) {
-        oc::type::text::copy(message, messageSize, "No command");
-        return;
-    }
-
-    if (result.isLoadOperation) {
-        if (result.loadStatus != core::persistence::SlotLoadStatus::OK) {
-            size_t pos = oc::type::text::appendString(message, messageSize, 0, "Load ");
-            pos = oc::type::text::appendString(message, messageSize, pos, slotLoadStatusLabel(result.loadStatus));
-            oc::type::text::terminate(message, messageSize, pos);
-            return;
-        }
-
-        const char slotTag = core::state::dataManagerCommandSlotTag(command);
-        const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
-        const char* verb = result.deferredApply ? "Queued" : "Loaded";
-
-        if (core::state::dataManagerCommandSupportsSetLoadMode(command)) {
-            const char modeTag =
-                (setLoadMode == core::state::DataManagerSetLoadMode::MERGE) ? 'M' : 'R';
-            size_t pos = oc::type::text::appendString(message, messageSize, 0, verb);
-            pos = oc::type::text::appendChar(message, messageSize, pos, ' ');
-            pos = oc::type::text::appendChar(message, messageSize, pos, safeSlotTag);
-            pos = oc::type::text::appendUnsigned(message, messageSize, pos, slot + 1U, 2);
-            pos = oc::type::text::appendChar(message, messageSize, pos, ' ');
-            pos = oc::type::text::appendChar(message, messageSize, pos, modeTag);
-            oc::type::text::terminate(message, messageSize, pos);
-            return;
-        }
-
-        size_t pos = oc::type::text::appendString(message, messageSize, 0, verb);
-        pos = oc::type::text::appendChar(message, messageSize, pos, ' ');
-        pos = oc::type::text::appendChar(message, messageSize, pos, safeSlotTag);
-        pos = oc::type::text::appendUnsigned(message, messageSize, pos, slot + 1U, 2);
-        oc::type::text::terminate(message, messageSize, pos);
-        return;
-    }
-
-    const auto action = core::state::dataManagerCommandAction(command);
-    if (!result.success) {
-        oc::type::text::copy(message, messageSize, dataManagerActionFailureLabel(action));
-        return;
-    }
-
-    const char slotTag = core::state::dataManagerCommandSlotTag(command);
-    const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
-    size_t pos = oc::type::text::appendString(message, messageSize, 0, dataManagerActionSuccessVerb(action));
-    pos = oc::type::text::appendChar(message, messageSize, pos, ' ');
-    pos = oc::type::text::appendChar(message, messageSize, pos, safeSlotTag);
-    pos = oc::type::text::appendUnsigned(message, messageSize, pos, slot + 1U, 2);
-    oc::type::text::terminate(message, messageSize, pos);
-}
-
-}  // namespace
 
 FLASHMEM DataManagerHandler::DataManagerHandler(core::state::CoreState& state,
                                                 oc::context::OverlayManager<core::ui::OverlayType>& overlays,
@@ -213,8 +101,6 @@ FLASHMEM void DataManagerHandler::setupBindings() {
         .release()
         .scope(scope(dialog_overlay_scope_))
         .then([this]() { closeDialog_(); });
-
-    OC_LOG_DEBUG("[DataManagerHandler] Bindings setup complete");
 }
 
 FLASHMEM void DataManagerHandler::openManager() {
@@ -311,83 +197,107 @@ FLASHMEM void DataManagerHandler::applyDialogSelection_() {
     const auto mode = dialog.mode.get();
 
     if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
-        const auto context = dm.context.get();
-        const auto command = core::state::dataManagerCommandAt(context, dialog.selectedIndex.get());
-        const uint8_t row = std::min<uint8_t>(dialog.editingShortcutRow.get(), 1U);
-        core::state::DataManagerWorkflow::setShortcut(state_, context, row == 0U, command);
-
-        overlays_.hide();
-        dialog.reset();
-        setFeedback_("Shortcut updated");
+        applyShortcutAssignmentSelection_();
         return;
     }
 
     if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
-        const auto context = dm.context.get();
-        const auto command = core::state::dataManagerCommandAt(context, dialog.selectedIndex.get());
-        startCommandFlow_(command);
+        applyCommandPaletteSelection_();
         return;
     }
 
     if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
-        const uint8_t slotCount = core::state::DataManagerWorkflow::slotCount(
-            dm.pendingCommand.get()
-        );
-        if (slotCount == 0U) {
-            setFeedback_("No slots");
-            overlays_.hide();
-            dialog.reset();
-            return;
-        }
-
-        const int bounded = std::clamp(dialog.selectedIndex.get(), 0, static_cast<int>(slotCount - 1U));
-        dm.pendingSlot.set(static_cast<uint8_t>(bounded));
-
-        if (core::state::dataManagerCommandSupportsSetLoadMode(dm.pendingCommand.get())) {
-            openSetLoadModeDialog_();
-            return;
-        }
-
-        if (core::state::dataManagerCommandIsErase(dm.pendingCommand.get())) {
-            openConfirmDialog_();
-            return;
-        }
-
-        if (core::state::dataManagerCommandIsSave(dm.pendingCommand.get()) &&
-            core::state::DataManagerWorkflow::slotOccupied(
-                state_,
-                dm.pendingCommand.get(),
-                dm.pendingSlot.get()
-            )) {
-            openConfirmDialog_();
-            return;
-        }
-
-        executePendingCommand_();
+        applySlotPickerSelection_();
         return;
     }
 
     if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
-        dm.pendingSetLoadMode.set(
-            (dialog.selectedIndex.get() <= 0)
-                ? core::state::DataManagerSetLoadMode::REPLACE
-                : core::state::DataManagerSetLoadMode::MERGE
-        );
-        executePendingCommand_();
+        applySetLoadModeSelection_();
         return;
     }
 
     if (mode == core::state::DataManagerDialogMode::CONFIRM) {
-        const bool confirmed = dialog.selectedIndex.get() == 1;
-        if (!confirmed) {
-            modal::hideOverlayAndReset(overlays_, [&dialog]() { dialog.reset(); });
-            dm.pendingCommand.set(core::state::DataManagerCommand::NONE);
-            setFeedback_("Cancelled");
-            return;
-        }
-
-        executePendingCommand_();
+        applyConfirmSelection_();
     }
+}
+
+FLASHMEM void DataManagerHandler::applyShortcutAssignmentSelection_() {
+    auto& dm = state_.dataManager;
+    auto& dialog = dm.dialog;
+    const auto context = dm.context.get();
+    const auto command = core::state::dataManagerCommandAt(context, dialog.selectedIndex.get());
+    const uint8_t row = std::min<uint8_t>(dialog.editingShortcutRow.get(), 1U);
+    core::state::DataManagerWorkflow::setShortcut(state_, context, row == 0U, command);
+
+    overlays_.hide();
+    dialog.reset();
+    setFeedback_("Shortcut updated");
+}
+
+FLASHMEM void DataManagerHandler::applyCommandPaletteSelection_() {
+    auto& dm = state_.dataManager;
+    const auto context = dm.context.get();
+    const auto command = core::state::dataManagerCommandAt(context, dm.dialog.selectedIndex.get());
+    startCommandFlow_(command);
+}
+
+FLASHMEM void DataManagerHandler::applySlotPickerSelection_() {
+    auto& dm = state_.dataManager;
+    auto& dialog = dm.dialog;
+    const uint8_t slotCount = core::state::DataManagerWorkflow::slotCount(dm.pendingCommand.get());
+    if (slotCount == 0U) {
+        setFeedback_("No slots");
+        overlays_.hide();
+        dialog.reset();
+        return;
+    }
+
+    const int bounded = std::clamp(dialog.selectedIndex.get(), 0, static_cast<int>(slotCount - 1U));
+    dm.pendingSlot.set(static_cast<uint8_t>(bounded));
+
+    if (core::state::dataManagerCommandSupportsSetLoadMode(dm.pendingCommand.get())) {
+        openSetLoadModeDialog_();
+        return;
+    }
+
+    const bool needsConfirm =
+        core::state::dataManagerCommandIsErase(dm.pendingCommand.get()) ||
+        (core::state::dataManagerCommandIsSave(dm.pendingCommand.get()) &&
+         core::state::DataManagerWorkflow::slotOccupied(
+             state_,
+             dm.pendingCommand.get(),
+             dm.pendingSlot.get()
+         ));
+    if (needsConfirm) {
+        openConfirmDialog_();
+        return;
+    }
+
+    executePendingCommand_();
+}
+
+FLASHMEM void DataManagerHandler::applySetLoadModeSelection_() {
+    auto& dm = state_.dataManager;
+    dm.pendingSetLoadMode.set(
+        (dm.dialog.selectedIndex.get() <= 0)
+            ? core::state::DataManagerSetLoadMode::REPLACE
+            : core::state::DataManagerSetLoadMode::MERGE
+    );
+    executePendingCommand_();
+}
+
+FLASHMEM void DataManagerHandler::applyConfirmSelection_() {
+    auto& dm = state_.dataManager;
+    auto& dialog = dm.dialog;
+    const bool confirmed = dialog.selectedIndex.get() == 1;
+    if (!confirmed) {
+        modal::hideOverlayAndReset(overlays_, [&dialog]() { dialog.reset(); });
+        dm.pendingCommand.set(core::state::DataManagerCommand::NONE);
+        setFeedback_("Cancelled");
+        return;
+    }
+
+    executePendingCommand_();
 }
 
 FLASHMEM void DataManagerHandler::closeDialog_() {
@@ -494,7 +404,14 @@ FLASHMEM void DataManagerHandler::executePendingCommand_() {
         slot,
         setLoadMode
     );
-    formatCommandExecutionFeedback(message, sizeof(message), command, slot, setLoadMode, result);
+    formatDataManagerCommandExecutionFeedback(
+        message,
+        sizeof(message),
+        command,
+        slot,
+        setLoadMode,
+        result
+    );
 
     setFeedback_(message);
 

@@ -7,6 +7,7 @@
 #include <oc/interface/IStorage.hpp>
 
 #include "../../src/persistence/SequencerPersistence.hpp"
+#include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace {
 
@@ -123,6 +124,11 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
     sequencer.activeStepProperty.set(property);
 }
 
+void prepareTrackBank(core::state::sequencer::SequencerTrackBankState& trackBank,
+                      const core::state::sequencer::SequencerState& active) {
+    core::state::sequencer::initializeTrackBankFromActive(trackBank, active);
+}
+
 void assertPatternEquals(const core::state::sequencer::SequencerState& sequencer,
                          uint8_t expectedLength,
                          uint8_t expectedSpb,
@@ -163,12 +169,16 @@ void test_workspace_roundtrip() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
+    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
     configurePattern(source, 16, 4, 2, 9, core::state::sequencer::StepProperty::VELOCITY);
-    assert(persistence.saveWorkspace(source));
+    prepareTrackBank(sourceTrackBank, source);
+    assert(persistence.saveWorkspace(sourceTrackBank, source));
 
     core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
     loaded.reset();
-    assert(persistence.loadWorkspace(loaded));
+    loadedTrackBank.reset();
+    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
 
     assertPatternEquals(loaded, 16, 4, 2);
     assert(loaded.focusedStep.get() == 9);
@@ -190,16 +200,22 @@ void test_workspace_load_latest_after_multiple_saves() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState first;
+    core::state::sequencer::SequencerTrackBankState firstTrackBank;
     configurePattern(first, 8, 2, 1, 3, core::state::sequencer::StepProperty::NOTE);
-    assert(persistence.saveWorkspace(first));
+    prepareTrackBank(firstTrackBank, first);
+    assert(persistence.saveWorkspace(firstTrackBank, first));
 
     core::state::sequencer::SequencerState second;
+    core::state::sequencer::SequencerTrackBankState secondTrackBank;
     configurePattern(second, 32, 8, 7, 12, core::state::sequencer::StepProperty::GATE);
-    assert(persistence.saveWorkspace(second));
+    prepareTrackBank(secondTrackBank, second);
+    assert(persistence.saveWorkspace(secondTrackBank, second));
 
     core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
     loaded.reset();
-    assert(persistence.loadWorkspace(loaded));
+    loadedTrackBank.reset();
+    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
 
     assertPatternEquals(loaded, 32, 8, 7);
     assert(loaded.focusedStep.get() == 12);
@@ -220,12 +236,16 @@ void test_workspace_falls_back_when_latest_slot_is_corrupted() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState first;
+    core::state::sequencer::SequencerTrackBankState firstTrackBank;
     configurePattern(first, 8, 2, 1, 3, core::state::sequencer::StepProperty::NOTE);
-    assert(persistence.saveWorkspace(first));
+    prepareTrackBank(firstTrackBank, first);
+    assert(persistence.saveWorkspace(firstTrackBank, first));
 
     core::state::sequencer::SequencerState second;
+    core::state::sequencer::SequencerTrackBankState secondTrackBank;
     configurePattern(second, 32, 8, 7, 12, core::state::sequencer::StepProperty::GATE);
-    assert(persistence.saveWorkspace(second));
+    prepareTrackBank(secondTrackBank, second);
+    assert(persistence.saveWorkspace(secondTrackBank, second));
 
     // Two-slot workspace journal: second save lands in slot 1.
     const uint32_t latestPayloadAddress = workspaceSlotPayloadAddress(workspaceStorage, 1);
@@ -234,8 +254,10 @@ void test_workspace_falls_back_when_latest_slot_is_corrupted() {
     assert(written == 1);
 
     core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
     loaded.reset();
-    assert(persistence.loadWorkspace(loaded));
+    loadedTrackBank.reset();
+    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
 
     // Must fall back to older valid slot (first save).
     assertPatternEquals(loaded, 8, 2, 1);
@@ -257,15 +279,19 @@ void test_workspace_masks_enabled_bits_outside_length() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
+    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
     source.reset();
     source.length.set(8);
     source.enabledMask.set((1ULL << 0) | (1ULL << 7) | (1ULL << 9) | (1ULL << 15));
 
-    assert(persistence.saveWorkspace(source));
+    prepareTrackBank(sourceTrackBank, source);
+    assert(persistence.saveWorkspace(sourceTrackBank, source));
 
     core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
     loaded.reset();
-    assert(persistence.loadWorkspace(loaded));
+    loadedTrackBank.reset();
+    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
 
     const uint64_t expectedMask = (1ULL << 0) | (1ULL << 7);
     assert(loaded.length.get() == 8);
@@ -344,17 +370,21 @@ void test_set_library_save_load_erase() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
+    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
     configurePattern(source, 12, 2, 9, 4, core::state::sequencer::StepProperty::NOTE);
-    assert(persistence.saveSetSlot(3, source));
+    prepareTrackBank(sourceTrackBank, source);
+    assert(persistence.saveSetSlot(3, sourceTrackBank, source));
 
     core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
     loaded.reset();
-    const auto status = persistence.loadSetSlot(3, loaded);
+    loadedTrackBank.reset();
+    const auto status = persistence.loadSetSlot(3, loadedTrackBank, loaded);
     assert(status == core::persistence::SlotLoadStatus::OK);
     assertPatternEquals(loaded, 12, 2, 9);
 
     assert(persistence.eraseSetSlot(3));
-    const auto emptyStatus = persistence.loadSetSlot(3, loaded);
+    const auto emptyStatus = persistence.loadSetSlot(3, loadedTrackBank, loaded);
     assert(emptyStatus == core::persistence::SlotLoadStatus::EMPTY);
 
     std::cout << "[PASS] test_set_library_save_load_erase\n";
@@ -372,7 +402,9 @@ void test_library_bounds() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerTrackBankState trackBank;
     sequencer.reset();
+    trackBank.reset();
 
     const uint8_t invalidPatternSlot =
         static_cast<uint8_t>(core::persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT);
@@ -380,11 +412,11 @@ void test_library_bounds() {
         static_cast<uint8_t>(core::persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT);
 
     assert(!persistence.savePatternSlot(invalidPatternSlot, sequencer));
-    assert(!persistence.saveSetSlot(invalidSetSlot, sequencer));
+    assert(!persistence.saveSetSlot(invalidSetSlot, trackBank, sequencer));
 
     assert(persistence.loadPatternSlot(invalidPatternSlot, sequencer) ==
            core::persistence::SlotLoadStatus::OUT_OF_RANGE);
-    assert(persistence.loadSetSlot(invalidSetSlot, sequencer) ==
+    assert(persistence.loadSetSlot(invalidSetSlot, trackBank, sequencer) ==
            core::persistence::SlotLoadStatus::OUT_OF_RANGE);
 
     assert(!persistence.erasePatternSlot(invalidPatternSlot));

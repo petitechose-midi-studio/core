@@ -41,10 +41,16 @@ private:
     void createPropertyStrip();
     void createActionStrips();
     void bindToState();
+    void bindBottomControlsState();
+    void bindHeaderState();
+    void bindGridState();
+    void bindPropertyStripState();
+    void bindQuickControlsState();
 
     void ensureRenderTimer();
     void scheduleRender();
     void pauseRenderTimerIfIdle();
+    void requestRender(bool& dirtyFlag);
     void requestHeaderRender();
     void requestBottomControlsRender();
     void requestPropertyStripRender();

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <array>
-
 #include <oc/state/SignalWatcher.hpp>
 
-#include "state/CoreState.hpp"
+namespace core::state {
+struct CoreState;
+}
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -40,10 +40,6 @@ private:
     oc::state::SignalWatcher overlay_watcher_;
     oc::state::SignalWatcher dialog_watcher_;
     oc::state::SignalWatcher softkey_bar_watcher_;
-    std::array<std::array<char, 8>, 32> dialog_slot_labels_{};
-    std::array<const char*, 32> dialog_slot_items_{};
-    std::array<const char*, core::state::DATA_MANAGER_MAX_COMMANDS_PER_CONTEXT>
-        dialog_command_items_{};
 };
 
 }  // namespace core::context::standalone

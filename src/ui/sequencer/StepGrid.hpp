@@ -61,15 +61,6 @@ private:
                              uint8_t absoluteStep,
                              const sequencer::grid::RangeSelectionSnapshot& selection);
     void renderTileBar(uint8_t tileIndex, bool visible);
-    void renderTileNoteLabel(uint8_t tileIndex,
-                             const TileRenderState& state,
-                             const TileRenderDiff& diff,
-                             bool propertyVisualChanged,
-                             bool tileFeedbackChanged,
-                             const StepGridFrameState& frameState,
-                             const sequencer::visual::StepPropertyVisualSpec& propertyVisual,
-                             lv_coord_t noteBaseX,
-                             lv_coord_t noteLabelY);
     void renderTile(uint8_t tileIndex,
                     const TileRenderState& state,
                     const TileRenderDiff& diff,
@@ -78,7 +69,25 @@ private:
                     bool selectionChanged,
                     const StepGridFrameState& frameState);
 
-    bool geometry_dirty_ = true;
+    struct GeometryCacheState {
+        bool dirty = true;
+        std::array<lv_coord_t, 8> railWidth{};
+        std::array<lv_coord_t, 8> buttonHeight{};
+        std::array<lv_coord_t, 8> noteBaseX{};
+        std::array<lv_coord_t, 8> noteBaseY{};
+        std::array<lv_coord_t, 8> noteLabelBaselineY{};
+        std::array<lv_coord_t, 8> inlineIconWidth{};
+        std::array<lv_coord_t, 8> inlineIconHeight{};
+        lv_coord_t noteLabelHeight = 0;
+    };
+
+    struct RenderCacheState {
+        std::array<TileRenderCache, 8> tiles{};
+        core::state::sequencer::StepProperty property =
+            core::state::sequencer::StepProperty::NOTE;
+        InlineFeedbackSnapshot feedback{};
+        sequencer::grid::RangeSelectionSnapshot selection{};
+    };
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* grid_ = nullptr;
@@ -94,19 +103,8 @@ private:
     std::array<lv_obj_t*, 8> step_indicators_{};
     std::array<lv_obj_t*, 8> step_selection_dots_{};
     std::array<std::array<lv_obj_t*, 3>, 8> step_guides_{};
-    std::array<lv_coord_t, 8> rail_width_cache_{};
-    std::array<lv_coord_t, 8> button_height_cache_{};
-    std::array<lv_coord_t, 8> note_base_x_{};
-    std::array<lv_coord_t, 8> note_base_y_{};
-    std::array<lv_coord_t, 8> note_label_baseline_y_{};
-    std::array<lv_coord_t, 8> inline_icon_width_{};
-    std::array<lv_coord_t, 8> inline_icon_height_{};
-    std::array<TileRenderCache, 8> tile_render_cache_{};
-    lv_coord_t note_label_height_ = 0;
-    core::state::sequencer::StepProperty cached_property_ =
-        core::state::sequencer::StepProperty::NOTE;
-    InlineFeedbackSnapshot cached_feedback_{};
-    sequencer::grid::RangeSelectionSnapshot cached_selection_{};
+    GeometryCacheState geometry_{};
+    RenderCacheState render_cache_{};
 };
 
 }  // namespace core::ui

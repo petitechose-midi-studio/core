@@ -3,6 +3,8 @@
 > **Type**: Tutorial
 > **Audience**: Developers adding features to MIDI Studio
 > **Prerequisites**: Basic C++17, understanding of reactive programming concepts
+> **Note**: Some examples in this guide are historical/conceptual. Prefer
+> `src/state/CoreState.hpp` and the current workflow headers as the source of truth.
 
 This guide explains how to use the Signal-based reactive state system in MIDI Studio.
 
