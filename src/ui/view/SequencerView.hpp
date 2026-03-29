@@ -50,6 +50,7 @@ private:
     void requestPropertyStripRender();
     void requestActionStripsRender();
     void requestGridRender();
+    void renderTrackTint();
     static void onRenderTimer(lv_timer_t* timer);
     void markAllDirty();
     void render();
@@ -63,7 +64,12 @@ private:
     bool property_strip_dirty_ = true;
     bool action_strips_dirty_ = true;
     bool grid_dirty_ = true;
+    bool track_tint_dirty_ = true;
     lv_timer_t* render_timer_ = nullptr;
+
+    uint8_t track_tint_cache_track_ = 0;
+    uint8_t track_tint_cache_enabled_mask_ = 0xFF;
+    bool track_tint_cache_selecting_ = false;
 
     std::unique_ptr<ms::ui::LayoutView> layout_;
     lv_obj_t* container_ = nullptr;

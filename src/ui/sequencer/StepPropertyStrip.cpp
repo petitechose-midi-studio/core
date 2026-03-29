@@ -61,6 +61,7 @@ FLASHMEM void StepPropertyStrip::createUI(lv_obj_t* parent) {
 
     container_ = lv_obj_create(parent);
     style::apply(container_).transparent().noBorder().pad(0).noScroll();
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(container_, STRIP_WIDTH, LV_PCT(100));
     lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
@@ -96,6 +97,7 @@ FLASHMEM void StepPropertyStrip::createUI(lv_obj_t* parent) {
         lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_width(item, ITEM_WIDTH);
         lv_obj_set_height(item, 18);
+        lv_obj_set_style_bg_opa(item, LV_OPA_TRANSP, 0);
         lv_obj_add_flag(item, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
         lv_obj_t* icon = lv_label_create(item);

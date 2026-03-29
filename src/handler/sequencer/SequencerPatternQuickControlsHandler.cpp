@@ -28,6 +28,7 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::CoreState& state) {
 inline oc::type::IsActiveFn canOpenQuickControls(core::state::CoreState& state) {
     return [&state]() {
         return !state.overlays.hasVisible() &&
+               !state.sequencerTracks.selector.selecting.get() &&
                !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
                !state.sequencer.rangeSelection.active();
     };
@@ -59,6 +60,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_CENTER)
         .release()
         .scope(scope(sequencer_view_scope_))
+        .when(selectingPredicate(state_))
         .then([this]() { closeApply(); });
 
     encoders_.encoder(EncoderID::NAV)

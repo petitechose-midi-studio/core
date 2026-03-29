@@ -3,6 +3,7 @@
 #include <oc/time/Time.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
 
@@ -49,6 +50,8 @@ void CoreStateLifecycle::factoryReset(CoreState& state) {
     state.macroEdit.reset();
     state.viewSelector.reset();
     state.sequencer.reset();
+    state.sequencerTracks.reset();
+    sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer);
     state.pending_sequencer_apply_.valid = false;
     state.persistSequencerWorkspace_();
     state.globalSettings.reset();
@@ -65,11 +68,13 @@ void CoreStateLifecycle::queuePendingSequencerApply(CoreState& state,
     sequencer::captureSnapshot(staged, state.pending_sequencer_apply_.snapshot);
     state.pending_sequencer_apply_.anchorPlayhead = state.sequencer.playheadStep.get();
     state.pending_sequencer_apply_.merge = merge;
+    state.pending_sequencer_apply_.fullBank = false;
     state.pending_sequencer_apply_.valid = true;
 }
 
 void CoreStateLifecycle::clearPendingSequencerApply(CoreState& state) {
     state.pending_sequencer_apply_.valid = false;
+    state.pending_sequencer_apply_.fullBank = false;
 }
 
 void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
@@ -81,11 +86,18 @@ void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
         if (playhead == state.pending_sequencer_apply_.anchorPlayhead) return;
     }
 
-    if (state.pending_sequencer_apply_.merge) {
+    if (state.pending_sequencer_apply_.fullBank) {
+        sequencer::applyTrackBankSnapshot(
+            state.sequencerTracks,
+            state.sequencer,
+            state.pending_sequencer_apply_.bankSnapshot
+        );
+    } else if (state.pending_sequencer_apply_.merge) {
         sequencer::mergeSnapshotIntoCurrent(state.sequencer, state.pending_sequencer_apply_.snapshot);
     } else {
         sequencer::applySnapshot(state.sequencer, state.pending_sequencer_apply_.snapshot);
     }
+    sequencer::storeActiveTrack(state.sequencerTracks, state.sequencer);
     state.pending_sequencer_apply_.valid = false;
     state.persistSequencerWorkspace_();
 }

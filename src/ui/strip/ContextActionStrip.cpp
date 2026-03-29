@@ -118,6 +118,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
 
     container_ = lv_obj_create(parent);
     style::apply(container_).transparent().noBorder().pad(0).noScroll();
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
 
     if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
         lv_obj_set_size(container_, LV_PCT(100), HORIZONTAL_STRIP_HEIGHT);
@@ -162,6 +163,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
         lv_obj_set_style_radius(slot.container, SLOT_RADIUS, 0);
         lv_obj_set_style_border_width(slot.container, 0, 0);
         lv_obj_set_style_pad_all(slot.container, SLOT_PAD, 0);
+        lv_obj_set_style_bg_opa(slot.container, LV_OPA_TRANSP, 0);
         lv_obj_set_layout(slot.container, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(slot.container, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(slot.container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -195,6 +197,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
         lv_obj_clear_flag(slot.content, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_pad_all(slot.content, 0, 0);
         lv_obj_set_style_pad_row(slot.content, CONTENT_GAP, 0);
+        lv_obj_set_style_bg_opa(slot.content, LV_OPA_TRANSP, 0);
         lv_obj_set_layout(slot.content, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(slot.content, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(slot.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);

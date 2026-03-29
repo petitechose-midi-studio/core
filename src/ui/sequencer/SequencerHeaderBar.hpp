@@ -15,9 +15,16 @@
 namespace core::ui {
 
 struct SequencerHeaderBarProps {
+    static constexpr uint8_t TRACK_COUNT = 8;
+
     uint8_t length = 0;
     uint8_t viewedPage = 0;     // 0..7, may point to a future paste target page
     int16_t playheadStep = -1;  // -1 when stopped
+    uint8_t activeTrack = 0;
+    uint8_t previewTrack = 0;
+    uint8_t enabledMask = 0x01;
+    bool selectingTrack = false;
+    std::array<uint8_t, TRACK_COUNT> trackActivity{};
     const char* leftText = "";
     const char* centerText = "";
     const char* rightText = "";
@@ -75,9 +82,13 @@ private:
     lv_obj_t* top_row_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
 
+    lv_obj_t* track_accent_ = nullptr;
     lv_obj_t* left_label_ = nullptr;
+    lv_obj_t* top_row_spacer_ = nullptr;
     lv_obj_t* center_label_ = nullptr;
     lv_obj_t* right_label_ = nullptr;
+    lv_obj_t* track_selector_row_ = nullptr;
+    std::array<lv_obj_t*, PAGE_COUNT> track_selector_items_{};
 
     std::array<Segment, PAGE_COUNT> segments_{};
     std::array<SegmentRenderCache, PAGE_COUNT> segment_cache_{};
@@ -87,6 +98,10 @@ private:
     std::array<char, 32> left_text_cache_{};
     std::array<char, 32> center_text_cache_{};
     std::array<char, 32> right_text_cache_{};
+    uint8_t track_selector_cache_active_ = 0;
+    uint8_t track_selector_cache_preview_ = 0;
+    uint8_t track_selector_cache_enabled_mask_ = 0xFF;
+    std::array<uint8_t, PAGE_COUNT> track_selector_cache_activity_{};
 
     bool strip_cache_initialized_ = false;
     uint8_t strip_cached_length_ = 0;

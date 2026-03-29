@@ -12,6 +12,7 @@
 #include "handler/sequencer/SequencerRangeActionHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
+#include "handler/sequencer/SequencerTrackSelectorHandler.hpp"
 
 namespace core::context::standalone {
 
@@ -41,6 +42,12 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         sequencerViewScope
     );
     range_action_handler_ = std::make_unique<core::handler::SequencerRangeActionHandler>(
+        state,
+        encoders,
+        buttons,
+        sequencerViewScope
+    );
+    track_selector_handler_ = std::make_unique<core::handler::SequencerTrackSelectorHandler>(
         state,
         encoders,
         buttons,

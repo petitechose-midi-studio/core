@@ -4,8 +4,10 @@
 
 #include <config/PlatformCompat.hpp>
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace style = oc::ui::lvgl::style;
+namespace theme = standalone::theme;
 
 namespace core::ui {
 
@@ -158,8 +160,20 @@ FLASHMEM void SequencerView::bindToState() {
     watcher_.watchAll(
         [this]() {
             requestHeaderRender();
+            track_tint_dirty_ = true;
         },
-        core_state_.sequencer.midiChannel,
+        core_state_.sequencerTracks.activeTrack,
+        core_state_.sequencerTracks.enabledMask,
+        core_state_.sequencerTracks.selector.selecting,
+        core_state_.sequencerTracks.selector.selectedTrack,
+        core_state_.statusBar.trackNoteActivity[0],
+        core_state_.statusBar.trackNoteActivity[1],
+        core_state_.statusBar.trackNoteActivity[2],
+        core_state_.statusBar.trackNoteActivity[3],
+        core_state_.statusBar.trackNoteActivity[4],
+        core_state_.statusBar.trackNoteActivity[5],
+        core_state_.statusBar.trackNoteActivity[6],
+        core_state_.statusBar.trackNoteActivity[7],
         core_state_.sequencer.length,
         core_state_.sequencer.page,
         core_state_.sequencer.playheadStep
@@ -193,6 +207,7 @@ FLASHMEM void SequencerView::bindToState() {
             requestPropertyStripRender();
             requestActionStripsRender();
         },
+        core_state_.sequencerTracks.selector.selecting,
         core_state_.sequencer.activeStepProperty,
         core_state_.sequencer.stepPropertyInlineSelector.selecting,
         core_state_.sequencer.stepPropertyInlineSelector.selectedIndex,
@@ -269,6 +284,49 @@ void SequencerView::markAllDirty() {
     property_strip_dirty_ = true;
     action_strips_dirty_ = true;
     grid_dirty_ = true;
+    track_tint_dirty_ = true;
+}
+
+void SequencerView::renderTrackTint() {
+    if (!container_) return;
+
+    const uint8_t previewTrack = core_state_.sequencerTracks.selector.selecting.get()
+        ? core_state_.sequencerTracks.selector.selectedTrack.get()
+        : core_state_.sequencerTracks.activeTrack.get();
+    const uint8_t enabledMask = core_state_.sequencerTracks.enabledMask.get();
+    const bool selecting = core_state_.sequencerTracks.selector.selecting.get();
+
+    if (!track_tint_dirty_ &&
+        track_tint_cache_track_ == previewTrack &&
+        track_tint_cache_enabled_mask_ == enabledMask &&
+        track_tint_cache_selecting_ == selecting) {
+        return;
+    }
+
+    const bool enabled = (enabledMask & static_cast<uint8_t>(1U << previewTrack)) != 0;
+    const uint32_t bgColor = enabled ? theme::color::trackColor(previewTrack) : theme::color::INACTIVE;
+    const lv_opa_t bgOpa = selecting ? static_cast<lv_opa_t>(26) : static_cast<lv_opa_t>(16);
+
+    // Apply the track tint once at the view root only. Reapplying the same
+    // translucent color on nested containers darkens some sequencer zones
+    // (grid, quick controls, action strips) and breaks color consistency.
+    lv_obj_set_style_bg_color(container_, lv_color_hex(bgColor), 0);
+    lv_obj_set_style_bg_opa(container_, bgOpa, 0);
+
+    if (body_container_) {
+        lv_obj_set_style_bg_opa(body_container_, LV_OPA_TRANSP, 0);
+    }
+    if (interaction_container_) {
+        lv_obj_set_style_bg_opa(interaction_container_, LV_OPA_TRANSP, 0);
+    }
+    if (center_column_) {
+        lv_obj_set_style_bg_opa(center_column_, LV_OPA_TRANSP, 0);
+    }
+
+    track_tint_cache_track_ = previewTrack;
+    track_tint_cache_enabled_mask_ = enabledMask;
+    track_tint_cache_selecting_ = selecting;
+    track_tint_dirty_ = false;
 }
 
 void SequencerView::onRenderTimer(lv_timer_t* timer) {
@@ -298,9 +356,12 @@ void SequencerView::render() {
     const bool needsActionStrips = action_strips_dirty_ && left_action_strip_ && bottom_action_strip_;
     const bool needsHeader = header_dirty_ && header_bar_;
     const bool needsGrid = grid_dirty_ && step_grid_;
-    if (!needsBottomControls && !needsPropertyStrip && !needsActionStrips && !needsHeader && !needsGrid) {
+    if (!needsBottomControls && !needsPropertyStrip && !needsActionStrips && !needsHeader &&
+        !needsGrid && !track_tint_dirty_) {
         return;
     }
+
+    renderTrackTint();
 
     if (needsActionStrips) {
         left_action_strip_->render(sequencer::buildLeftActionStripProps(core_state_));

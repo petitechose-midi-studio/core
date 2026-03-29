@@ -104,8 +104,10 @@ void SdlEnvironment::setupKeyboardMappings() {
     using namespace Config;
 
     input_->button(SDLK_ESCAPE, static_cast<oc::type::ButtonID>(ButtonID::LEFT_TOP))
-        .button(SDLK_q, static_cast<oc::type::ButtonID>(ButtonID::LEFT_CENTER))
-        .button(SDLK_a, static_cast<oc::type::ButtonID>(ButtonID::LEFT_BOTTOM))
+        // Use physical scancodes for the left navigation column so the mapping
+        // stays usable across keyboard layouts (AZERTY/QWERTY).
+        .buttonScancode(SDL_SCANCODE_Q, static_cast<oc::type::ButtonID>(ButtonID::LEFT_CENTER))
+        .buttonScancode(SDL_SCANCODE_A, static_cast<oc::type::ButtonID>(ButtonID::LEFT_BOTTOM))
         .button(SDLK_COMMA, static_cast<oc::type::ButtonID>(ButtonID::BOTTOM_LEFT))
         .button(SDLK_PERIOD, static_cast<oc::type::ButtonID>(ButtonID::BOTTOM_CENTER))
         .button(SDLK_SLASH, static_cast<oc::type::ButtonID>(ButtonID::BOTTOM_RIGHT))

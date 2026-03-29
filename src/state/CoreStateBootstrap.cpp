@@ -7,6 +7,7 @@
 #include <oc/state/AutoPersistIncremental.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
 
@@ -33,6 +34,7 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
 
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer.reset();
+    state.sequencerTracks.reset();
     state.settings.load(state.pages, state.midiSync);
     DataManagerWorkflow::loadShortcutsFromSettings(state);
 
@@ -49,7 +51,7 @@ FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer_persistence_ready_ =
         state.sequencerPersistence.initStatus() == persistence::PersistenceWriteStatus::OK;
     if (state.sequencer_persistence_ready_) {
-        if (!state.sequencerPersistence.loadWorkspace(state.sequencer)) {
+        if (!state.sequencerPersistence.loadWorkspace(state.sequencerTracks, state.sequencer)) {
             state.persistSequencerWorkspace_();
         }
     } else {

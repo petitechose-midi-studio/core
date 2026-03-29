@@ -17,7 +17,8 @@ namespace {
 
 inline oc::type::IsActiveFn canEditSequencerProperty(core::state::CoreState& state) {
     return [&state]() {
-        return !state.sequencer.patternQuickControls.selecting.get() &&
+        return !state.sequencerTracks.selector.selecting.get() &&
+               !state.sequencer.patternQuickControls.selecting.get() &&
                !state.sequencer.rangeSelection.active() &&
                !state.overlays.hasVisible();
     };

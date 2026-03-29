@@ -37,6 +37,7 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSl
     const persistence::SlotLoadStatus status =
         state.sequencerPersistence.loadPatternSlot(slotIndex, state.sequencer);
     if (status == persistence::SlotLoadStatus::OK) {
+        storeActiveTrack(state.sequencerTracks, state.sequencer);
         state.persistSequencerWorkspace();
     }
 
@@ -56,7 +57,12 @@ FLASHMEM bool SequencerPersistenceWorkflow::erasePatternSlot(CoreState& state, u
 
 FLASHMEM bool SequencerPersistenceWorkflow::saveSetSlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return false;
-    const auto status = state.sequencerPersistence.saveSetSlotStatus(slotIndex, state.sequencer);
+    storeActiveTrack(state.sequencerTracks, state.sequencer);
+    const auto status = state.sequencerPersistence.saveSetSlotStatus(
+        slotIndex,
+        state.sequencerTracks,
+        state.sequencer
+    );
     if (status != persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[SequencerPersistence] Save set slot {} failed: {}",
                     slotIndex,
@@ -73,26 +79,41 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
     if (!state.isSequencerPersistenceReady()) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
     if (state.statusBar.playing.get()) {
+        SequencerTrackBankState stagedBank;
         SequencerState staged;
+        stagedBank.reset();
+        staged.reset();
         const persistence::SlotLoadStatus status =
-            state.sequencerPersistence.loadSetSlot(slotIndex, staged);
+            state.sequencerPersistence.loadSetSlot(slotIndex, stagedBank, staged);
         if (status == persistence::SlotLoadStatus::OK) {
-            state.queuePendingSequencerApply(staged, merge);
+            if (merge) {
+                state.queuePendingSequencerApply(staged, true);
+            } else {
+                SequencerTrackBankSnapshot snapshot;
+                captureTrackBankSnapshot(stagedBank, staged, snapshot);
+                state.queuePendingSequencerBankApply(snapshot);
+            }
         }
         return status;
     }
 
     state.clearPendingSequencerApply();
+    SequencerTrackBankState stagedBank;
     SequencerState staged;
+    stagedBank.reset();
+    staged.reset();
     const persistence::SlotLoadStatus status =
-        state.sequencerPersistence.loadSetSlot(slotIndex, staged);
+        state.sequencerPersistence.loadSetSlot(slotIndex, stagedBank, staged);
     if (status == persistence::SlotLoadStatus::OK) {
-        SequencerPatternSnapshot snapshot;
-        captureSnapshot(staged, snapshot);
         if (merge) {
+            SequencerPatternSnapshot snapshot;
+            captureSnapshot(staged, snapshot);
             mergeSnapshotIntoCurrent(state.sequencer, snapshot);
+            storeActiveTrack(state.sequencerTracks, state.sequencer);
         } else {
-            applySnapshot(state.sequencer, snapshot);
+            SequencerTrackBankSnapshot snapshot;
+            captureTrackBankSnapshot(stagedBank, staged, snapshot);
+            applyTrackBankSnapshot(state.sequencerTracks, state.sequencer, snapshot);
         }
         state.persistSequencerWorkspace();
     }

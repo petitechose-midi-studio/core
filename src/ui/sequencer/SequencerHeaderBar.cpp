@@ -1,6 +1,7 @@
 #include "SequencerHeaderBar.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
@@ -17,16 +18,49 @@ namespace style = oc::ui::lvgl::style;
 
 namespace {
 
-constexpr uint32_t COLOR_PROGRESS = 0x5CA8EE;  // Match SequencerView play color
-constexpr uint32_t COLOR_PAGE_ACTIVE = 0x182A3B;
-constexpr uint32_t COLOR_PAGE_PLAYING = 0x2A4F72;
-constexpr uint32_t COLOR_PAGE_FOCUSED = 0x346287;
-constexpr uint32_t COLOR_PAGE_FOCUSED_PLAYING = 0x3F79A7;
 constexpr uint32_t COLOR_DIM_TEXT = theme::color::TEXT_PRIMARY;
-constexpr lv_opa_t OPA_DIM_TEXT = static_cast<lv_opa_t>(oc::ui::lvgl::base_theme::opacity::OPA_50);
+constexpr lv_opa_t OPA_DIM_TEXT =
+    static_cast<lv_opa_t>(oc::ui::lvgl::base_theme::opacity::OPA_50);
 constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
 constexpr lv_opa_t TRACK_OPA = LV_OPA_80;
-constexpr lv_coord_t TRACK_PAD_Y = 2;
+constexpr lv_coord_t TRACK_ACCENT_WIDTH = 4;
+constexpr lv_coord_t TRACK_ACTIVITY_SIZE = 7;
+constexpr lv_coord_t TRACK_ACTIVITY_GAP = 4;
+constexpr lv_opa_t TRACK_BG_OPA_IDLE = LV_OPA_10;
+constexpr lv_opa_t TRACK_BG_OPA_SELECTING = static_cast<lv_opa_t>(31);
+constexpr lv_opa_t TRACK_SQUARE_BASE_OPA = LV_OPA_20;
+constexpr lv_opa_t TRACK_SQUARE_ACTIVE_BONUS = LV_OPA_20;
+constexpr lv_opa_t TRACK_SQUARE_PREVIEW_BONUS = LV_OPA_20;
+constexpr lv_opa_t TRACK_SQUARE_VELOCITY_RANGE = LV_OPA_60;
+
+bool isTrackEnabled(uint8_t enabledMask, uint8_t index) {
+    return (enabledMask & static_cast<uint8_t>(1U << index)) != 0;
+}
+
+constexpr uint32_t trackColor(uint8_t index) {
+    return theme::color::trackColor(index);
+}
+
+constexpr uint32_t trackInactiveColor() {
+    return theme::color::INACTIVE;
+}
+
+lv_color_t pageStripBaseColor(const SequencerHeaderBarProps& props) {
+    return lv_color_hex(
+        isTrackEnabled(props.enabledMask, props.previewTrack)
+            ? trackColor(props.previewTrack)
+            : trackInactiveColor()
+    );
+}
+
+lv_opa_t trackSquareOpa(uint8_t velocity, bool isActive, bool isPreview) {
+    uint16_t opa = TRACK_SQUARE_BASE_OPA;
+    if (isPreview) opa += TRACK_SQUARE_PREVIEW_BONUS;
+    if (isActive) opa += TRACK_SQUARE_ACTIVE_BONUS;
+    opa += static_cast<uint16_t>(velocity) * static_cast<uint16_t>(TRACK_SQUARE_VELOCITY_RANGE) /
+           127U;
+    return static_cast<lv_opa_t>(std::min<uint16_t>(opa, LV_OPA_COVER));
+}
 
 template <size_t N>
 void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
@@ -54,9 +88,12 @@ SequencerHeaderBar::~SequencerHeaderBar() {
         container_ = nullptr;
         top_row_ = nullptr;
         strip_row_ = nullptr;
+        track_accent_ = nullptr;
         left_label_ = nullptr;
+        top_row_spacer_ = nullptr;
         center_label_ = nullptr;
         right_label_ = nullptr;
+        track_selector_row_ = nullptr;
     }
 }
 
@@ -72,29 +109,48 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
         .noBorder();
     lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_flex_align(
+        container_,
+        LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_START
+    );
     lv_obj_set_style_pad_row(container_, ROW_GAP, 0);
 
     top_row_ = lv_obj_create(container_);
     style::apply(top_row_)
         .size(LV_PCT(100), TOP_ROW_HEIGHT)
-        .transparent()
         .noScroll()
         .noBorder()
         .pad(0);
-    lv_obj_set_style_pad_left(top_row_, HORIZONTAL_INSET, 0);
+    lv_obj_set_style_bg_opa(top_row_, TRACK_BG_OPA_IDLE, 0);
+    lv_obj_set_style_pad_left(top_row_, 0, 0);
     lv_obj_set_style_pad_right(top_row_, HORIZONTAL_INSET, 0);
-    lv_obj_set_style_pad_top(top_row_, TRACK_PAD_Y, 0);
-    lv_obj_set_style_pad_bottom(top_row_, TRACK_PAD_Y, 0);
+    lv_obj_set_style_pad_top(top_row_, 0, 0);
+    lv_obj_set_style_pad_bottom(top_row_, 0, 0);
     lv_obj_set_layout(top_row_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(top_row_, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(top_row_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(top_row_, 4, 0);
+
+    track_accent_ = lv_obj_create(top_row_);
+    style::apply(track_accent_)
+        .size(TRACK_ACCENT_WIDTH, LV_PCT(100))
+        .noBorder()
+        .noScroll()
+        .pad(0);
+    lv_obj_set_style_radius(track_accent_, 0, 0);
+    lv_obj_set_style_bg_opa(track_accent_, LV_OPA_COVER, 0);
 
     left_label_ = lv_label_create(top_row_);
     lv_obj_set_style_text_font(left_label_, fonts.inter_14_medium, 0);
     lv_obj_set_style_text_color(left_label_, lv_color_hex(COLOR_DIM_TEXT), 0);
     lv_obj_set_style_text_opa(left_label_, TRACK_OPA, 0);
     lv_label_set_long_mode(left_label_, LV_LABEL_LONG_CLIP);
+
+    top_row_spacer_ = lv_obj_create(top_row_);
+    style::apply(top_row_spacer_).size(0, 1).transparent().noBorder().noScroll().pad(0);
+    lv_obj_set_flex_grow(top_row_spacer_, 1);
 
     center_label_ = lv_label_create(top_row_);
     lv_obj_set_style_text_font(center_label_, fonts.inter_13_medium, 0);
@@ -110,7 +166,30 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(center_label_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(right_label_, LV_OBJ_FLAG_HIDDEN);
 
-    // Strip row (8 segments)
+    track_selector_row_ = lv_obj_create(top_row_);
+    style::apply(track_selector_row_).transparent().noBorder().noScroll().pad(0);
+    lv_obj_set_layout(track_selector_row_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(track_selector_row_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(
+        track_selector_row_,
+        LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_CENTER,
+        LV_FLEX_ALIGN_CENTER
+    );
+    lv_obj_set_style_pad_column(track_selector_row_, TRACK_ACTIVITY_GAP, 0);
+
+    for (uint8_t i = 0; i < PAGE_COUNT; ++i) {
+        track_selector_items_[i] = lv_obj_create(track_selector_row_);
+        style::apply(track_selector_items_[i])
+            .size(TRACK_ACTIVITY_SIZE, TRACK_ACTIVITY_SIZE)
+            .noBorder()
+            .noScroll()
+            .pad(0);
+        lv_obj_set_style_radius(track_selector_items_[i], 1, 0);
+        lv_obj_set_style_bg_color(track_selector_items_[i], lv_color_hex(trackColor(i)), 0);
+        lv_obj_set_style_bg_opa(track_selector_items_[i], TRACK_SQUARE_BASE_OPA, 0);
+    }
+
     strip_row_ = lv_obj_create(container_);
     style::apply(strip_row_)
         .size(LV_PCT(100), STRIP_HEIGHT)
@@ -151,7 +230,7 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
         lv_obj_set_style_border_width(seg.progress, 0, 0);
         lv_obj_set_style_radius(seg.progress, 1, 0);
         lv_obj_set_style_bg_opa(seg.progress, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(seg.progress, lv_color_hex(COLOR_PROGRESS), 0);
+        lv_obj_set_style_bg_color(seg.progress, lv_color_hex(trackColor(0)), 0);
         lv_obj_set_pos(seg.progress, 0, 0);
 
         seg.marker = lv_obj_create(seg.container);
@@ -179,16 +258,12 @@ void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
         const lv_color_t propertyColor = lv_color_hex(COLOR_DIM_TEXT);
         const lv_opa_t propertyOpa = TRACK_OPA;
 
-        const lv_color_t stepColor = lv_color_hex(
-            props.dimmed ? COLOR_DIM_TEXT : theme::color::TEXT_PRIMARY
-        );
+        const lv_color_t stepColor =
+            lv_color_hex(props.dimmed ? COLOR_DIM_TEXT : theme::color::TEXT_PRIMARY);
         const lv_opa_t stepOpa = props.dimmed ? OPA_DIM_TEXT : LV_OPA_COVER;
 
-        // Property label is global context: never dim it based on focused step state.
         lv_obj_set_style_text_color(left_label_, propertyColor, 0);
         lv_obj_set_style_text_opa(left_label_, propertyOpa, 0);
-
-        // Value and step index depend on focused step state.
         lv_obj_set_style_text_color(center_label_, stepColor, 0);
         lv_obj_set_style_text_color(right_label_, stepColor, 0);
         lv_obj_set_style_text_opa(center_label_, stepOpa, 0);
@@ -201,12 +276,65 @@ void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
     setLabelTextIfChanged(left_label_, left_text_cache_, props.leftText);
     setLabelTextIfChanged(center_label_, center_text_cache_, props.centerText);
     setLabelTextIfChanged(right_label_, right_text_cache_, props.rightText);
+
+    if (track_accent_) {
+        const uint32_t accentColor =
+            isTrackEnabled(props.enabledMask, props.previewTrack) ? trackColor(props.previewTrack)
+                                                                  : trackInactiveColor();
+        lv_obj_set_style_bg_color(track_accent_, lv_color_hex(accentColor), 0);
+        lv_obj_set_style_bg_opa(track_accent_, props.selectingTrack ? LV_OPA_COVER : LV_OPA_80, 0);
+    }
+
+    if (top_row_) {
+        const uint32_t bgColor =
+            isTrackEnabled(props.enabledMask, props.previewTrack) ? trackColor(props.previewTrack)
+                                                                  : trackInactiveColor();
+        lv_obj_set_style_bg_color(top_row_, lv_color_hex(bgColor), 0);
+        lv_obj_set_style_bg_opa(
+            top_row_,
+            props.selectingTrack ? TRACK_BG_OPA_SELECTING : TRACK_BG_OPA_IDLE,
+            0
+        );
+    }
+
+    const bool activityChanged =
+        track_selector_cache_active_ != props.activeTrack ||
+        track_selector_cache_preview_ != props.previewTrack ||
+        track_selector_cache_enabled_mask_ != props.enabledMask ||
+        track_selector_cache_activity_ != props.trackActivity;
+
+    if (activityChanged) {
+        for (uint8_t i = 0; i < track_selector_items_.size(); ++i) {
+            auto* item = track_selector_items_[i];
+            if (!item) continue;
+
+            const bool isPreview = props.previewTrack == i;
+            const bool isActive = props.activeTrack == i;
+            const bool enabled = isTrackEnabled(props.enabledMask, i);
+            lv_obj_set_style_bg_color(
+                item,
+                lv_color_hex(enabled ? trackColor(i) : trackInactiveColor()),
+                0
+            );
+            lv_obj_set_style_bg_opa(
+                item,
+                trackSquareOpa(props.trackActivity[i], isActive, isPreview),
+                0
+            );
+        }
+
+        track_selector_cache_active_ = props.activeTrack;
+        track_selector_cache_preview_ = props.previewTrack;
+        track_selector_cache_enabled_mask_ = props.enabledMask;
+        track_selector_cache_activity_ = props.trackActivity;
+    }
 }
 
 void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
     if (!strip_row_) return;
 
-    const uint8_t len = std::min<uint8_t>(props.length, static_cast<uint8_t>(PAGE_COUNT * STEPS_PER_PAGE));
+    const uint8_t len =
+        std::min<uint8_t>(props.length, static_cast<uint8_t>(PAGE_COUNT * STEPS_PER_PAGE));
     const bool playing = (props.playheadStep >= 0) && (props.playheadStep < len);
     const int16_t playhead = playing ? props.playheadStep : -1;
 
@@ -224,11 +352,10 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
         }
     }
 
-    const bool stripStateChanged =
-        !strip_cache_initialized_ ||
-        strip_cached_length_ != len ||
-        strip_cached_viewed_page_ != props.viewedPage ||
-        strip_cached_playhead_ != playhead;
+    const bool stripStateChanged = !strip_cache_initialized_ ||
+                                   strip_cached_length_ != len ||
+                                   strip_cached_viewed_page_ != props.viewedPage ||
+                                   strip_cached_playhead_ != playhead;
 
     if (!stripStateChanged && !widthChanged) {
         return;
@@ -260,22 +387,23 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
 
         const uint8_t pageStart = static_cast<uint8_t>(p * STEPS_PER_PAGE);
         const int16_t remaining = static_cast<int16_t>(len) - static_cast<int16_t>(pageStart);
-        const uint8_t validSteps = (remaining <= 0)
-            ? 0
-            : static_cast<uint8_t>(std::min<int16_t>(remaining, static_cast<int16_t>(STEPS_PER_PAGE)));
+        const uint8_t validSteps =
+            (remaining <= 0)
+                ? 0
+                : static_cast<uint8_t>(
+                      std::min<int16_t>(remaining, static_cast<int16_t>(STEPS_PER_PAGE))
+                  );
 
-        const lv_coord_t validW = static_cast<lv_coord_t>((static_cast<int32_t>(w) * validSteps) / STEPS_PER_PAGE);
+        const lv_coord_t validW =
+            static_cast<lv_coord_t>((static_cast<int32_t>(w) * validSteps) / STEPS_PER_PAGE);
 
         bool pagePlaying = false;
         bool showMarker = false;
         uint8_t playheadInPage = 0;
 
         if (playing && validSteps > 0) {
-            if (playhead < pageStart) {
-                pagePlaying = false;
-            } else if (playhead >= static_cast<int16_t>(pageStart + validSteps)) {
-                pagePlaying = false;
-            } else {
+            if (playhead >= pageStart &&
+                playhead < static_cast<int16_t>(pageStart + validSteps)) {
                 playheadInPage = static_cast<uint8_t>(playhead - pageStart);
                 pagePlaying = true;
                 showMarker = true;
@@ -295,17 +423,23 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
         }
 
         const bool isViewed = (p == props.viewedPage);
-        const uint32_t validColor = isViewed ? COLOR_PAGE_FOCUSED : COLOR_PAGE_ACTIVE;
-        if (!initialized || cache.validColorHex != validColor) {
-            lv_obj_set_style_bg_color(seg.valid, lv_color_hex(validColor), 0);
-            cache.validColorHex = validColor;
+        const lv_color_t baseColor = pageStripBaseColor(props);
+        const lv_color_t validColor = isViewed
+            ? lv_color_lighten(baseColor, LV_OPA_20)
+            : lv_color_darken(baseColor, LV_OPA_70);
+        const uint32_t validColorHex = lv_color_to_int(validColor);
+        if (!initialized || cache.validColorHex != validColorHex) {
+            lv_obj_set_style_bg_color(seg.valid, validColor, 0);
+            cache.validColorHex = validColorHex;
         }
 
-        const uint32_t progressColor =
-            isViewed ? COLOR_PAGE_FOCUSED_PLAYING : COLOR_PAGE_PLAYING;
-        if (!initialized || cache.progressColorHex != progressColor) {
-            lv_obj_set_style_bg_color(seg.progress, lv_color_hex(progressColor), 0);
-            cache.progressColorHex = progressColor;
+        const lv_color_t progressColor = isViewed
+            ? lv_color_lighten(baseColor, LV_OPA_10)
+            : lv_color_lighten(baseColor, LV_OPA_40);
+        const uint32_t progressColorHex = lv_color_to_int(progressColor);
+        if (!initialized || cache.progressColorHex != progressColorHex) {
+            lv_obj_set_style_bg_color(seg.progress, progressColor, 0);
+            cache.progressColorHex = progressColorHex;
         }
 
         if (!showMarker) {
@@ -318,9 +452,10 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
             continue;
         }
 
-        // Place marker at the center of the current step.
-        const float stepCenter = (static_cast<float>(playheadInPage) + 0.5f) / static_cast<float>(STEPS_PER_PAGE);
-        lv_coord_t x = static_cast<lv_coord_t>(stepCenter * static_cast<float>(w) - (MARKER_WIDTH / 2.0f));
+        const float stepCenter =
+            (static_cast<float>(playheadInPage) + 0.5f) / static_cast<float>(STEPS_PER_PAGE);
+        lv_coord_t x =
+            static_cast<lv_coord_t>(stepCenter * static_cast<float>(w) - (MARKER_WIDTH / 2.0f));
         const lv_coord_t maxX = std::max<lv_coord_t>(0, validW - MARKER_WIDTH);
         x = std::clamp<lv_coord_t>(x, 0, maxX);
 

@@ -1,6 +1,5 @@
 #include "SequencerStepEditHandler.hpp"
 
-#include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/App.hpp>
@@ -37,6 +36,7 @@ void configureStepEditEncoder(
 inline oc::type::IsActiveFn canOpenStepEdit(core::state::CoreState& state) {
     return [&state]() {
         return !state.overlays.hasVisible() &&
+               !state.sequencerTracks.selector.selecting.get() &&
                !state.sequencer.patternQuickControls.selecting.get() &&
                !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
                !state.sequencer.rangeSelection.active();
@@ -109,7 +109,6 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .scope(scope(overlay_scope_))
         .then([this]() { closeCancel(); });
 
-    OC_LOG_DEBUG("[SequencerStepEditHandler] Bindings setup complete");
 }
 
 void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {

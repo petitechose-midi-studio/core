@@ -23,6 +23,7 @@ using RangeSelectionPhase = core::state::sequencer::RangeSelectionPhase;
 
 inline bool isSequencerIdleForRangeActions(core::state::CoreState& state) {
     return !state.overlays.hasVisible() &&
+           !state.sequencerTracks.selector.selecting.get() &&
            !state.sequencer.stepPropertyInlineSelector.selecting.get() &&
            !state.sequencer.patternQuickControls.selecting.get() &&
            !state.sequencer.rangeSelection.active();

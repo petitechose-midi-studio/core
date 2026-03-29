@@ -27,6 +27,7 @@ class SequencerPropertySelectorHandler;
 class SequencerRangeActionHandler;
 class SequencerStepEditHandler;
 class SequencerStepHandler;
+class SequencerTrackSelectorHandler;
 }  // namespace core::handler
 
 namespace core::context::standalone {
@@ -52,6 +53,7 @@ private:
     std::unique_ptr<core::context::standalone::SequencerOverlayPresenter> presenter_;
     std::unique_ptr<core::handler::SequencerStepHandler> step_handler_;
     std::unique_ptr<core::handler::SequencerRangeActionHandler> range_action_handler_;
+    std::unique_ptr<core::handler::SequencerTrackSelectorHandler> track_selector_handler_;
     std::unique_ptr<core::handler::SequencerPatternQuickControlsHandler> quick_controls_handler_;
     std::unique_ptr<core::handler::SequencerStepEditHandler> step_edit_handler_;
     std::unique_ptr<core::handler::SequencerPropertySelectorHandler> property_selector_handler_;

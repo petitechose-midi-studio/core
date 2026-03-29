@@ -44,6 +44,8 @@
 #include "sequencer/SequencerPersistenceWorkflow.hpp"
 #include "sequencer/SequencerSnapshotOps.hpp"
 #include "sequencer/SequencerState.hpp"
+#include "sequencer/SequencerTrackBankOps.hpp"
+#include "sequencer/SequencerTrackBankState.hpp"
 
 namespace core::state {
 
@@ -97,6 +99,9 @@ struct CoreState {
 
     /// Sequencer UI-first state
     sequencer::SequencerState sequencer;
+
+    /// Stored multi-track bank backing the active sequencer editor state
+    sequencer::SequencerTrackBankState sequencerTracks;
 
     /// View selector overlay state
     ViewSelectorState viewSelector;
@@ -179,6 +184,9 @@ struct CoreState {
     void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false) {
         queueSequencerApply_(staged, merge);
     }
+    void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankSnapshot& staged) {
+        queueSequencerBankApply_(staged);
+    }
     void clearPendingSequencerApply() { clearPendingSequencerApply_(); }
     bool hasPendingSequencerApply() const { return pending_sequencer_apply_.valid; }
 
@@ -187,12 +195,22 @@ private:
         bool valid = false;
         int16_t anchorPlayhead = -1;
         bool merge = false;
+        bool fullBank = false;
         sequencer::SequencerPatternSnapshot snapshot{};
+        sequencer::SequencerTrackBankSnapshot bankSnapshot{};
     };
 
     void queueSequencerApply_(const sequencer::SequencerState& staged,
                               bool merge = false) {
         CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
+    }
+
+    void queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged) {
+        pending_sequencer_apply_.bankSnapshot = staged;
+        pending_sequencer_apply_.anchorPlayhead = sequencer.playheadStep.get();
+        pending_sequencer_apply_.merge = false;
+        pending_sequencer_apply_.fullBank = true;
+        pending_sequencer_apply_.valid = true;
     }
 
     void persistMacroWorkspace_() {
@@ -206,7 +224,8 @@ private:
 
     void persistSequencerWorkspace_() {
         if (!sequencer_persistence_ready_) return;
-        const auto status = sequencerPersistence.saveWorkspaceStatus(sequencer);
+        sequencer::storeActiveTrack(sequencerTracks, sequencer);
+        const auto status = sequencerPersistence.saveWorkspaceStatus(sequencerTracks, sequencer);
         if (status != persistence::PersistenceWriteStatus::OK) {
             OC_LOG_WARN("[CoreState] Failed to persist sequencer workspace: {}",
                         persistence::persistenceWriteStatusLabel(status));

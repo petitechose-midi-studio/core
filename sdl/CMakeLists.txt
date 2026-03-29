@@ -216,7 +216,14 @@ target_include_directories(${APP_EXE_NAME} PRIVATE
     ${OC_FRAMEWORK} ${OC_UI_LVGL} ${OC_HAL_SDL} ${OC_HAL_NET} ${OC_HAL_MIDI} ${OC_NOTE}
     ${OC_UI_COMPONENTS}/include)
 
-target_compile_definitions(${APP_EXE_NAME} PRIVATE OC_DESKTOP=1 OC_LOG=1)
+target_compile_definitions(${APP_EXE_NAME} PRIVATE
+    OC_DESKTOP=1
+    OC_LOG=1
+    # Keep SDL/native/wasm binding capacity aligned with the Teensy firmware.
+    # A smaller desktop registry silently drops later bindings, which mostly
+    # affects the standalone LEFT/BOTTOM button handlers.
+    OC_MAX_BUTTON_BINDINGS=128
+    OC_MAX_ENCODER_BINDINGS=48)
 target_link_libraries(${APP_EXE_NAME} PRIVATE lvgl libremidi)
 
 # ==============================================================================

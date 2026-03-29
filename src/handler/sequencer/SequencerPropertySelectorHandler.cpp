@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-#include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
@@ -26,6 +25,7 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::CoreState& state) {
 inline oc::type::IsActiveFn canOpenPropertySelector(core::state::CoreState& state) {
     return [&state]() {
         return !state.overlays.hasVisible() &&
+               !state.sequencerTracks.selector.selecting.get() &&
                !state.sequencer.patternQuickControls.selecting.get() &&
                !state.sequencer.rangeSelection.active();
     };
@@ -57,6 +57,7 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .release()
         .scope(scope(sequencer_view_scope_))
+        .when(selectingPredicate(state_))
         .then([this]() { closeApply(); });
 
     encoders_.encoder(EncoderID::NAV)
@@ -70,8 +71,6 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
         .scope(scope(sequencer_view_scope_))
         .when(selectingPredicate(state_))
         .then([this]() { closeCancel(); });
-
-    OC_LOG_DEBUG("[SequencerPropertySelectorHandler] Bindings setup complete");
 }
 
 void SequencerPropertySelectorHandler::open() {

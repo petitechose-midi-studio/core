@@ -1,6 +1,5 @@
 #include "ViewSwitcherHandler.hpp"
 
-#include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
@@ -69,13 +68,12 @@ bool ViewSwitcherHandler::canOpenSelector() const {
     }
 
     return !state_.sequencer.rangeSelection.active() &&
+           !state_.sequencerTracks.selector.selecting.get() &&
            !state_.sequencer.patternQuickControls.selecting.get() &&
            !state_.sequencer.stepPropertyInlineSelector.selecting.get();
 }
 
 void ViewSwitcherHandler::openSelector() {
-    OC_LOG_DEBUG("[Core ViewSwitcher] openSelector");
-
     if (!state_.viewSelector.visible.get()) {
         overlay_ctx_.controller.show(core::ui::OverlayType::VIEW_SELECTOR, false);
     }
@@ -98,7 +96,6 @@ void ViewSwitcherHandler::confirmSelection() {
 
     auto type = static_cast<core::ui::ViewType>(index);
     state_.activeView.set(type);
-    OC_LOG_INFO("[Core ViewSwitcher] Switched to view index={}", index);
 }
 
 void ViewSwitcherHandler::closeSelector() {

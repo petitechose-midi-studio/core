@@ -44,9 +44,12 @@ FLASHMEM bool DataManagerWorkflow::slotOccupied(CoreState& state,
         case DataManagerSlotDomain::SEQ_SET_LIBRARY: {
             if (!state.isSequencerPersistenceReady()) return false;
 
+            sequencer::SequencerTrackBankState probeBank;
             sequencer::SequencerState probe;
+            probeBank.reset();
             probe.reset();
-            return state.sequencerPersistence.loadSetSlot(slotIndex, probe) == SlotLoadStatus::OK;
+            return state.sequencerPersistence.loadSetSlot(slotIndex, probeBank, probe) ==
+                   SlotLoadStatus::OK;
         }
 
         case DataManagerSlotDomain::NONE:

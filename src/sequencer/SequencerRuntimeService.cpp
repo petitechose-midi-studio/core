@@ -11,7 +11,7 @@ SequencerRuntimeService::SequencerRuntimeService(core::state::CoreState& coreSta
                                                  oc::interface::IEventBus& eventBus)
     : event_bus_(eventBus)
     , midi_clock_sync_(coreState.midiSync, coreState.statusBar, midi)
-    , sequencer_playback_(coreState.sequencer, coreState.statusBar, midi) {
+    , sequencer_playback_(coreState.sequencer, coreState.sequencerTracks, coreState.statusBar, midi) {
     subscribeToMidiEvents_();
 }
 

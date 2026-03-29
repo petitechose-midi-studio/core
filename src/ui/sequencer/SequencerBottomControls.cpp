@@ -107,6 +107,7 @@ FLASHMEM void SequencerBottomControls::createUI(lv_obj_t* parent) {
         .transparent()
         .noBorder()
         .noScroll();
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(container_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_set_style_pad_top(container_, CONTROL_PAD_TOP, 0);
@@ -124,6 +125,7 @@ FLASHMEM void SequencerBottomControls::createUI(lv_obj_t* parent) {
         .noBorder()
         .noScroll()
         .pad(0);
+    lv_obj_set_style_bg_opa(top_row_, LV_OPA_TRANSP, 0);
     lv_obj_add_flag(top_row_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_set_layout(top_row_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(top_row_, LV_FLEX_FLOW_ROW);
@@ -182,6 +184,7 @@ void SequencerBottomControls::createQuickControl(
     lv_obj_set_width(widgets.slot, slotWidth);
     lv_obj_set_height(widgets.slot, TOP_ROW_HEIGHT);
     lv_obj_set_style_pad_all(widgets.slot, 0, 0);
+    lv_obj_set_style_bg_opa(widgets.slot, LV_OPA_TRANSP, 0);
     lv_obj_set_layout(widgets.slot, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(widgets.slot, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(widgets.slot, align, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -193,6 +196,7 @@ void SequencerBottomControls::createQuickControl(
     lv_obj_set_height(widgets.content, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(widgets.content, 0, 0);
     lv_obj_set_style_pad_column(widgets.content, 4, 0);
+    lv_obj_set_style_bg_opa(widgets.content, LV_OPA_TRANSP, 0);
     lv_obj_set_layout(widgets.content, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(widgets.content, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(widgets.content, align, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);

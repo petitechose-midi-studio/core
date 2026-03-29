@@ -5,6 +5,7 @@
  * @brief Standalone mode theme configuration
  */
 
+#include <array>
 #include <cstdint>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
@@ -57,6 +58,14 @@ constexpr uint32_t MACRO_CC_COLOR = 0x77CC77;    // Muted green
 constexpr lv_opa_t MACRO_PREFIX_OPA = LV_OPA_60; // Prefix opacity (dim)
 
 using base_theme::color::getMacroColor;
+
+constexpr std::array<uint32_t, 8> TRACK_COLORS = {
+    MACRO_1, MACRO_2, MACRO_3, MACRO_4, MACRO_5, MACRO_6, MACRO_7, MACRO_8,
+};
+
+constexpr uint32_t trackColor(uint8_t index) {
+    return TRACK_COLORS[index < TRACK_COLORS.size() ? index : 0];
+}
 
 }  // namespace color
 

@@ -35,6 +35,11 @@ SlotProps makeIconSlot(const char* icon,
 
 SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreState) {
     const auto& sequencer = coreState.sequencer;
+    const auto& tracks = coreState.sequencerTracks;
+    const auto& status = coreState.statusBar;
+    const uint8_t activeTrack = tracks.activeTrack.get();
+    const uint8_t previewTrack =
+        tracks.selector.selecting.get() ? tracks.selector.selectedTrack.get() : activeTrack;
 
     static char leftText[24];
     size_t pos = oc::type::text::appendString(leftText, sizeof(leftText), 0, "Track ");
@@ -42,7 +47,7 @@ SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreSt
         leftText,
         sizeof(leftText),
         pos,
-        static_cast<unsigned>(sequencer.midiChannel.get() + 1U)
+        static_cast<unsigned>(previewTrack + 1U)
     );
     oc::type::text::terminate(leftText, sizeof(leftText), pos);
 
@@ -50,6 +55,19 @@ SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreSt
         .length = sequencer.length.get(),
         .viewedPage = sequencer.visiblePage(),
         .playheadStep = sequencer.playheadStep.get(),
+        .activeTrack = activeTrack,
+        .previewTrack = previewTrack,
+        .enabledMask = tracks.enabledMask.get(),
+        .selectingTrack = tracks.selector.selecting.get(),
+        .trackActivity =
+            {status.trackNoteActivity[0].get(),
+             status.trackNoteActivity[1].get(),
+             status.trackNoteActivity[2].get(),
+             status.trackNoteActivity[3].get(),
+             status.trackNoteActivity[4].get(),
+             status.trackNoteActivity[5].get(),
+             status.trackNoteActivity[6].get(),
+             status.trackNoteActivity[7].get()},
         .leftText = leftText,
         .centerText = "",
         .rightText = "",
@@ -80,6 +98,7 @@ StepPropertyStripProps buildStepPropertyStripProps(const core::state::CoreState&
 }
 
 ContextActionStripProps buildLeftActionStripProps(const core::state::CoreState& coreState) {
+    const bool selectingTrack = coreState.sequencerTracks.selector.selecting.get();
     const bool selectingPattern = coreState.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = coreState.sequencer.stepPropertyInlineSelector.selecting.get();
     const bool selectingRange = coreState.sequencer.rangeSelection.active();
@@ -87,6 +106,19 @@ ContextActionStripProps buildLeftActionStripProps(const core::state::CoreState& 
 
     StripProps props;
     props.visible = true;
+
+    if (selectingTrack) {
+        props.slots[0] = makeIconSlot(
+            standalone::icons::ACTION_CANCEL,
+            Visual::ACTIVE
+        );
+        props.slots[1] = makeIconSlot(
+            standalone::icons::MIDI_CHANNEL,
+            Visual::ACTIVE
+        );
+        props.slots[2] = makeIconSlot(propertyIcon, Visual::DIM);
+        return props;
+    }
 
     if (selectingRange) {
         props.slots[0] = makeIconSlot(
