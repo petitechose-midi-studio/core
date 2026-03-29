@@ -37,36 +37,33 @@ SequencerHeaderBarProps buildHeaderBarProps(const core::state::CoreState& coreSt
     const auto& sequencer = coreState.sequencer;
 
     static char leftText[24];
-    static char rightText[24];
-
-    oc::type::text::copy(leftText, sizeof(leftText), "Track 1");
-    size_t pos = oc::type::text::appendUnsigned(
-        rightText,
-        sizeof(rightText),
-        0,
-        static_cast<unsigned>(sequencer.length.get())
+    size_t pos = oc::type::text::appendString(leftText, sizeof(leftText), 0, "Track ");
+    pos = oc::type::text::appendUnsigned(
+        leftText,
+        sizeof(leftText),
+        pos,
+        static_cast<unsigned>(sequencer.midiChannel.get() + 1U)
     );
-    pos = oc::type::text::appendString(rightText, sizeof(rightText), pos, " steps");
-    oc::type::text::terminate(rightText, sizeof(rightText), pos);
+    oc::type::text::terminate(leftText, sizeof(leftText), pos);
 
     return {
         .length = sequencer.length.get(),
-        .viewedPage = sequencer.normalizePage(sequencer.page.get()),
+        .viewedPage = sequencer.visiblePage(),
         .playheadStep = sequencer.playheadStep.get(),
         .leftText = leftText,
         .centerText = "",
-        .rightText = rightText,
+        .rightText = "",
         .dimmed = false,
     };
 }
 
-PatternQuickControlsProps buildPatternQuickControlsProps(const core::state::CoreState& coreState) {
+SequencerBottomControlsProps buildBottomControlsProps(const core::state::CoreState& coreState) {
     const auto& sequencer = coreState.sequencer;
 
     return {
-        .selecting = sequencer.patternQuickControls.selecting.get(),
-        .focusedItem = sequencer.patternQuickControls.focusedItem.get(),
-        .midiChannel = sequencer.midiChannel.get(),
+        .selectingQuickControls = sequencer.patternQuickControls.selecting.get(),
+        .focusedQuickControl = sequencer.patternQuickControls.focusedItem.get(),
+        .offsetSteps = sequencer.patternQuickControls.offsetSteps.get(),
         .stepsPerBeat = sequencer.stepsPerBeat.get(),
         .length = sequencer.length.get(),
     };
@@ -154,7 +151,7 @@ ContextActionStripProps buildBottomActionStripProps(const core::state::CoreState
         if (kind == Kind::CLEAR) {
             props.slots[0] = makeIconSlot(
                 standalone::icons::ACTION_CLEAR,
-                phase == Phase::CONFIRM_CLEAR ? Visual::ARMED : Visual::ACTIVE,
+                Visual::ACTIVE,
                 Tone::DESTRUCTIVE
             );
             if (phase == Phase::SELECT_RANGE) {

@@ -2,12 +2,11 @@
 
 #include <algorithm>
 
-#include <Arduino.h>
-
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
+#include <config/TimeCompat.hpp>
 #include "midi/MidiUtils.hpp"
 
 namespace core::handler {
@@ -23,7 +22,7 @@ struct MacroValueProfiling {
     uint32_t max_us = 0;
 
     void record(uint32_t elapsed_us) {
-        const uint32_t now = millis();
+        const uint32_t now = core::time_compat::millis();
         if (window_start_ms == 0) {
             window_start_ms = now;
         }
@@ -74,14 +73,14 @@ FLASHMEM void MacroValueHandler::setupBindings() {
 }
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {
-    const uint32_t start_us = micros();
+    const uint32_t start_us = core::time_compat::micros();
     const float clamped = std::clamp(value, 0.0f, 1.0f);
     const uint8_t cc_value = core::midi::toCC(clamped);
     const float quantized = core::midi::fromCC(cc_value);
 
     if (std::abs(core::state::macro::MacroWorkflow::runtimeValue(core_state_, index) - quantized) <
         0.0005f) {
-        g_macro_value_profiling.record(micros() - start_us);
+        g_macro_value_profiling.record(core::time_compat::micros() - start_us);
         return;
     }
 
@@ -95,7 +94,7 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     // Signal CC MIDI OUT activity
     core_state_.statusBar.pulseCcOut();
 
-    g_macro_value_profiling.record(micros() - start_us);
+    g_macro_value_profiling.record(core::time_compat::micros() - start_us);
 }
 
 }  // namespace core::handler

@@ -125,25 +125,13 @@ inline uint8_t findStepsPerBeatChoiceIndex(uint8_t stepsPerBeat) {
     return 1;
 }
 
-inline const char* quickControlShortLabel(core::state::sequencer::PatternQuickControlItem item) {
-    switch (item) {
-        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
-            return "CH";
-        case core::state::sequencer::PatternQuickControlItem::DIVISION:
-            return "DIV";
-        case core::state::sequencer::PatternQuickControlItem::LENGTH:
-        default:
-            return "LEN";
-    }
-}
-
 inline float quickControlToNormalized(
     const SequencerState& state,
     core::state::sequencer::PatternQuickControlItem item
 ) {
     switch (item) {
-        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
-            return indexToNormalized(state.midiChannel.get(), 16);
+        case core::state::sequencer::PatternQuickControlItem::OFFSET:
+            return 0.5f;
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
             return indexToNormalized(findStepsPerBeatChoiceIndex(state.stepsPerBeat.get()), static_cast<int>(STEPS_PER_BEAT_CHOICES.size()));
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
@@ -160,9 +148,6 @@ inline StepPropertyEncoderConfig encoderConfigForQuickControl(
 ) {
     StepPropertyEncoderConfig config;
     switch (item) {
-        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
-            config.discreteSteps = 16;
-            return config;
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
             config.discreteSteps = static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size());
             return config;
@@ -180,9 +165,6 @@ inline void applyNormalizedToQuickControl(
 ) {
     const float value = clampNormalized(normalized);
     switch (item) {
-        case core::state::sequencer::PatternQuickControlItem::CHANNEL:
-            state.midiChannel.set(static_cast<uint8_t>(normalizedToInclusiveInt(value, 15)));
-            return;
         case core::state::sequencer::PatternQuickControlItem::DIVISION: {
             const int idx = normalizedToIndex(value, static_cast<int>(STEPS_PER_BEAT_CHOICES.size()));
             state.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);

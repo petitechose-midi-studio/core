@@ -18,8 +18,15 @@ namespace style = oc::ui::lvgl::style;
 namespace {
 
 constexpr uint32_t COLOR_PROGRESS = 0x5CA8EE;  // Match SequencerView play color
-constexpr uint32_t COLOR_DIM_TEXT = oc::ui::lvgl::base_theme::color::INACTIVE_LIGHTER;
+constexpr uint32_t COLOR_PAGE_ACTIVE = 0x182A3B;
+constexpr uint32_t COLOR_PAGE_PLAYING = 0x2A4F72;
+constexpr uint32_t COLOR_PAGE_FOCUSED = 0x346287;
+constexpr uint32_t COLOR_PAGE_FOCUSED_PLAYING = 0x3F79A7;
+constexpr uint32_t COLOR_DIM_TEXT = theme::color::TEXT_PRIMARY;
 constexpr lv_opa_t OPA_DIM_TEXT = static_cast<lv_opa_t>(oc::ui::lvgl::base_theme::opacity::OPA_50);
+constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
+constexpr lv_opa_t TRACK_OPA = LV_OPA_80;
+constexpr lv_coord_t TRACK_PAD_Y = 2;
 
 template <size_t N>
 void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
@@ -58,11 +65,50 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
 
     container_ = lv_obj_create(parent);
     style::apply(container_)
-        .size(LV_PCT(100), STRIP_HEIGHT)
+        .size(LV_PCT(100), TOP_ROW_HEIGHT + ROW_GAP + STRIP_HEIGHT)
         .transparent()
         .pad(0)
         .noScroll()
         .noBorder();
+    lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(container_, ROW_GAP, 0);
+
+    top_row_ = lv_obj_create(container_);
+    style::apply(top_row_)
+        .size(LV_PCT(100), TOP_ROW_HEIGHT)
+        .transparent()
+        .noScroll()
+        .noBorder()
+        .pad(0);
+    lv_obj_set_style_pad_left(top_row_, HORIZONTAL_INSET, 0);
+    lv_obj_set_style_pad_right(top_row_, HORIZONTAL_INSET, 0);
+    lv_obj_set_style_pad_top(top_row_, TRACK_PAD_Y, 0);
+    lv_obj_set_style_pad_bottom(top_row_, TRACK_PAD_Y, 0);
+    lv_obj_set_layout(top_row_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(top_row_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(top_row_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    left_label_ = lv_label_create(top_row_);
+    lv_obj_set_style_text_font(left_label_, fonts.inter_14_medium, 0);
+    lv_obj_set_style_text_color(left_label_, lv_color_hex(COLOR_DIM_TEXT), 0);
+    lv_obj_set_style_text_opa(left_label_, TRACK_OPA, 0);
+    lv_label_set_long_mode(left_label_, LV_LABEL_LONG_CLIP);
+
+    center_label_ = lv_label_create(top_row_);
+    lv_obj_set_style_text_font(center_label_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_color(center_label_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_opa(center_label_, LV_OPA_COVER, 0);
+    lv_label_set_long_mode(center_label_, LV_LABEL_LONG_CLIP);
+
+    right_label_ = lv_label_create(top_row_);
+    lv_obj_set_style_text_font(right_label_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_color(right_label_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_opa(right_label_, LV_OPA_COVER, 0);
+    lv_label_set_long_mode(right_label_, LV_LABEL_LONG_CLIP);
+    lv_obj_add_flag(center_label_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(right_label_, LV_OBJ_FLAG_HIDDEN);
 
     // Strip row (8 segments)
     strip_row_ = lv_obj_create(container_);
@@ -130,8 +176,8 @@ void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
     if (!left_label_ || !center_label_ || !right_label_) return;
 
     if (!top_row_cache_initialized_ || top_row_dimmed_ != props.dimmed) {
-        const lv_color_t propertyColor = lv_color_hex(theme::color::TEXT_PRIMARY);
-        const lv_opa_t propertyOpa = LV_OPA_COVER;
+        const lv_color_t propertyColor = lv_color_hex(COLOR_DIM_TEXT);
+        const lv_opa_t propertyOpa = TRACK_OPA;
 
         const lv_color_t stepColor = lv_color_hex(
             props.dimmed ? COLOR_DIM_TEXT : theme::color::TEXT_PRIMARY
@@ -209,6 +255,7 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
             cache.markerVisible = false;
             cache.markerX = -1;
             cache.validColorHex = 0;
+            cache.progressColorHex = 0;
         }
 
         const uint8_t pageStart = static_cast<uint8_t>(p * STEPS_PER_PAGE);
@@ -219,43 +266,46 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
 
         const lv_coord_t validW = static_cast<lv_coord_t>((static_cast<int32_t>(w) * validSteps) / STEPS_PER_PAGE);
 
-        uint8_t progressSteps = 0;
+        bool pagePlaying = false;
         bool showMarker = false;
         uint8_t playheadInPage = 0;
 
         if (playing && validSteps > 0) {
             if (playhead < pageStart) {
-                progressSteps = 0;
+                pagePlaying = false;
             } else if (playhead >= static_cast<int16_t>(pageStart + validSteps)) {
-                progressSteps = validSteps;
+                pagePlaying = false;
             } else {
                 playheadInPage = static_cast<uint8_t>(playhead - pageStart);
-                progressSteps = playheadInPage;  // Steps before the playhead
+                pagePlaying = true;
                 showMarker = true;
             }
         }
 
-        const lv_coord_t progressW = static_cast<lv_coord_t>((static_cast<int32_t>(w) * progressSteps) / STEPS_PER_PAGE);
-        const lv_coord_t clampedProgressW = std::min(progressW, validW);
+        const lv_coord_t progressW = pagePlaying ? validW : 0;
 
         if (!initialized || cache.validWidth != validW) {
             lv_obj_set_width(seg.valid, validW);
             cache.validWidth = validW;
         }
 
-        if (!initialized || cache.progressWidth != clampedProgressW) {
-            lv_obj_set_width(seg.progress, clampedProgressW);
-            cache.progressWidth = clampedProgressW;
+        if (!initialized || cache.progressWidth != progressW) {
+            lv_obj_set_width(seg.progress, progressW);
+            cache.progressWidth = progressW;
         }
 
-        // Highlight the viewed page by brightening the valid baseline.
         const bool isViewed = (p == props.viewedPage);
-        const uint32_t validColor = isViewed
-            ? oc::ui::lvgl::base_theme::color::INACTIVE_LIGHTER
-            : theme::color::INACTIVE;
+        const uint32_t validColor = isViewed ? COLOR_PAGE_FOCUSED : COLOR_PAGE_ACTIVE;
         if (!initialized || cache.validColorHex != validColor) {
             lv_obj_set_style_bg_color(seg.valid, lv_color_hex(validColor), 0);
             cache.validColorHex = validColor;
+        }
+
+        const uint32_t progressColor =
+            isViewed ? COLOR_PAGE_FOCUSED_PLAYING : COLOR_PAGE_PLAYING;
+        if (!initialized || cache.progressColorHex != progressColor) {
+            lv_obj_set_style_bg_color(seg.progress, lv_color_hex(progressColor), 0);
+            cache.progressColorHex = progressColor;
         }
 
         if (!showMarker) {

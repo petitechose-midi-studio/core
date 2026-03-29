@@ -2,7 +2,7 @@
 
 /**
  * @file SequencerView.hpp
- * @brief Placeholder sequencer view (UI-first)
+ * @brief Standalone sequencer view
  */
 
 #include <memory>
@@ -15,10 +15,10 @@
 #include <ms/ui/component/LayoutView.hpp>
 
 #include "state/CoreState.hpp"
-#include "ui/sequencer/PatternQuickControls.hpp"
+#include "ui/sequencer/SequencerBottomControls.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
-#include "ui/sequencer/StepGrid.hpp"
 #include "ui/sequencer/StepPropertyStrip.hpp"
+#include "ui/sequencer/StepGrid.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
 namespace core::ui {
@@ -37,7 +37,8 @@ private:
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
     void createGrid();
-    void createQuickControls();
+    void createBottomControls();
+    void createPropertyStrip();
     void createActionStrips();
     void bindToState();
 
@@ -45,8 +46,8 @@ private:
     void scheduleRender();
     void pauseRenderTimerIfIdle();
     void requestHeaderRender();
-    void requestQuickControlsRender();
-    void requestStripRender();
+    void requestBottomControlsRender();
+    void requestPropertyStripRender();
     void requestActionStripsRender();
     void requestGridRender();
     static void onRenderTimer(lv_timer_t* timer);
@@ -58,8 +59,8 @@ private:
 
     bool dirty_ = false;
     bool header_dirty_ = true;
-    bool quick_controls_dirty_ = true;
-    bool strip_dirty_ = true;
+    bool bottom_controls_dirty_ = true;
+    bool property_strip_dirty_ = true;
     bool action_strips_dirty_ = true;
     bool grid_dirty_ = true;
     lv_timer_t* render_timer_ = nullptr;
@@ -71,10 +72,10 @@ private:
     lv_obj_t* center_column_ = nullptr;
 
     std::unique_ptr<core::ui::SequencerHeaderBar> header_bar_;
-    std::unique_ptr<core::ui::PatternQuickControls> pattern_quick_controls_;
+    std::unique_ptr<core::ui::SequencerBottomControls> bottom_controls_;
+    std::unique_ptr<core::ui::StepPropertyStrip> property_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
-    std::unique_ptr<core::ui::StepPropertyStrip> property_strip_;
     std::unique_ptr<core::ui::StepGrid> step_grid_;
 };
 

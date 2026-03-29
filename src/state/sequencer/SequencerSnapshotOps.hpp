@@ -27,4 +27,23 @@ void applySnapshot(SequencerState& target, const SequencerPatternSnapshot& snaps
 
 void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot);
 
+bool duplicatePatternForward(SequencerState& target);
+
+bool rotatePattern(SequencerState& target, int offsetSteps);
+
+bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t endStep);
+
+bool copyStepRangeToClipboard(
+    const SequencerState& source,
+    uint8_t startStep,
+    uint8_t endStep,
+    SequencerRangeClipboard& clipboard
+);
+
+bool pasteClipboardRange(
+    SequencerState& target,
+    uint8_t targetStart,
+    const SequencerRangeClipboard& clipboard
+);
+
 }  // namespace core::state::sequencer

@@ -9,6 +9,7 @@
 #include <config/InputIDs.hpp>
 
 #include "handler/common/NavigationUtils.hpp"
+#include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "SequencerInputUtils.hpp"
 
 namespace core::handler {
@@ -58,7 +59,7 @@ FLASHMEM void SequencerRangeActionHandler::setupBindings() {
                 ignore_next_bottom_left_release_ = false;
                 return;
             }
-            armClearPage();
+            clearCurrentPage();
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
@@ -76,7 +77,7 @@ FLASHMEM void SequencerRangeActionHandler::setupBindings() {
                 ignore_next_bottom_right_release_ = false;
                 return;
             }
-            duplicatePageForward();
+            core::state::sequencer::duplicatePatternForward(state_.sequencer);
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
@@ -116,15 +117,6 @@ FLASHMEM void SequencerRangeActionHandler::setupBindings() {
         .when(activeRangePredicate(state_))
         .then([this]() { cancel(); });
 
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(scope(scope_element_))
-        .then([this]() {
-            if (state_.sequencer.rangeSelection.confirmingClearPage()) {
-                applyClear();
-            }
-        });
-
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope(scope_element_))
@@ -135,23 +127,13 @@ FLASHMEM void SequencerRangeActionHandler::setupBindings() {
         });
 }
 
-FLASHMEM void SequencerRangeActionHandler::armClearPage() {
+FLASHMEM void SequencerRangeActionHandler::clearCurrentPage() {
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return;
 
-    auto& range = state_.sequencer.rangeSelection;
-    range.reset();
-    range.kind.set(RangeSelectionKind::CLEAR);
-    range.phase.set(RangeSelectionPhase::CONFIRM_CLEAR);
-
     const uint8_t start = currentPageStart();
     const uint8_t end = currentPageEnd();
-    range.anchorStep.set(start);
-    range.cursorStep.set(start);
-    range.rangeStart.set(start);
-    range.rangeEnd.set(end);
-    range.rangeValid.set(true);
-    setCursorStep(start);
+    core::state::sequencer::clearStepRange(state_.sequencer, start, end);
 }
 
 FLASHMEM void SequencerRangeActionHandler::openClearRange() {
@@ -165,6 +147,7 @@ FLASHMEM void SequencerRangeActionHandler::openCopyRange() {
 }
 
 FLASHMEM void SequencerRangeActionHandler::cancel() {
+    restoreSnapshotFocus();
     state_.sequencer.rangeSelection.reset();
 }
 
@@ -213,23 +196,28 @@ FLASHMEM void SequencerRangeActionHandler::commitCursor() {
             const uint8_t start = range.rangeStart.get();
             const uint8_t end = range.rangeEnd.get();
             if (range.kind.get() == RangeSelectionKind::CLEAR) {
-                state_.sequencer.clearStepRange(start, end);
+                core::state::sequencer::clearStepRange(state_.sequencer, start, end);
                 range.reset();
                 return;
             }
 
-            if (!state_.sequencer.copyStepRangeToClipboard(start, end, range.clipboard)) {
+            if (!core::state::sequencer::copyStepRangeToClipboard(
+                    state_.sequencer,
+                    start,
+                    end,
+                    range.clipboard
+                )) {
                 cancel();
                 return;
             }
 
             range.phase.set(RangeSelectionPhase::PASTE_TARGET);
-            setCursorStep(start);
+            setCursorStep(static_cast<uint8_t>(std::min<uint16_t>(
+                state_.sequencer.length.get(),
+                maxCursorStep()
+            )));
             return;
         }
-        case RangeSelectionPhase::CONFIRM_CLEAR:
-            applyClear();
-            return;
         case RangeSelectionPhase::PASTE_TARGET:
             applyPaste();
             return;
@@ -239,24 +227,16 @@ FLASHMEM void SequencerRangeActionHandler::commitCursor() {
     }
 }
 
-FLASHMEM void SequencerRangeActionHandler::applyClear() {
-    auto& range = state_.sequencer.rangeSelection;
-    if (!range.confirmingClearPage()) return;
-
-    state_.sequencer.clearStepRange(range.rangeStart.get(), range.rangeEnd.get());
-    range.reset();
-}
-
 FLASHMEM void SequencerRangeActionHandler::applyPaste() {
     auto& range = state_.sequencer.rangeSelection;
     if (!range.selectingPasteTarget()) return;
 
-    state_.sequencer.pasteClipboardRange(range.cursorStep.get(), range.clipboard);
+    core::state::sequencer::pasteClipboardRange(
+        state_.sequencer,
+        range.cursorStep.get(),
+        range.clipboard
+    );
     range.reset();
-}
-
-FLASHMEM void SequencerRangeActionHandler::duplicatePageForward() {
-    state_.sequencer.duplicatePageForward(state_.sequencer.page.get());
 }
 
 FLASHMEM void SequencerRangeActionHandler::beginRangeSelection(RangeSelectionKind kind) {
@@ -265,6 +245,7 @@ FLASHMEM void SequencerRangeActionHandler::beginRangeSelection(RangeSelectionKin
 
     auto& range = state_.sequencer.rangeSelection;
     range.reset();
+    snapshotCurrentFocus();
     range.kind.set(kind);
     range.phase.set(RangeSelectionPhase::SELECT_RANGE);
 
@@ -334,8 +315,17 @@ FLASHMEM void SequencerRangeActionHandler::setCursorStep(uint8_t step) {
     state_.sequencer.page.set(state_.sequencer.pageForStep(step));
 }
 
-FLASHMEM uint8_t SequencerRangeActionHandler::currentPageStart() const {
+FLASHMEM uint8_t SequencerRangeActionHandler::initialCursorStep() const {
+    const uint8_t len = state_.sequencer.length.get();
+    if (len == 0) return 0;
+
+    const uint8_t focused = state_.sequencer.focusedStep.get();
+    if (focused < len) return focused;
     return state_.sequencer.pageStartStep(state_.sequencer.page.get());
+}
+
+FLASHMEM uint8_t SequencerRangeActionHandler::currentPageStart() const {
+    return state_.sequencer.pageStartStepClamped(state_.sequencer.visiblePage());
 }
 
 FLASHMEM uint8_t SequencerRangeActionHandler::currentPageEnd() const {
@@ -349,15 +339,6 @@ FLASHMEM uint8_t SequencerRangeActionHandler::currentPageEnd() const {
     ));
 }
 
-FLASHMEM uint8_t SequencerRangeActionHandler::initialCursorStep() const {
-    const uint8_t len = state_.sequencer.length.get();
-    if (len == 0) return 0;
-
-    const uint8_t focused = state_.sequencer.focusedStep.get();
-    if (focused < len) return focused;
-    return state_.sequencer.pageStartStep(state_.sequencer.page.get());
-}
-
 FLASHMEM uint8_t SequencerRangeActionHandler::maxCursorStep() const {
     const uint8_t len = state_.sequencer.length.get();
     if (len == 0) return 0;
@@ -367,14 +348,22 @@ FLASHMEM uint8_t SequencerRangeActionHandler::maxCursorStep() const {
         return static_cast<uint8_t>(len - 1);
     }
     if (range.selectingPasteTarget() && range.clipboard.count > 0) {
-        // Keep V1 paste fully inside the existing pattern length so the
-        // cursor always stays representable by the current page model.
-        if (len <= range.clipboard.count) {
-            return 0;
-        }
-        return static_cast<uint8_t>(len - range.clipboard.count);
+        return static_cast<uint8_t>(core::state::sequencer::SequencerState::MAX_STEPS -
+                                    range.clipboard.count);
     }
 
     return static_cast<uint8_t>(len - 1);
+}
+
+FLASHMEM void SequencerRangeActionHandler::snapshotCurrentFocus() {
+    auto& range = state_.sequencer.rangeSelection;
+    range.snapshotPage = state_.sequencer.visiblePage();
+    range.snapshotFocusedStep = state_.sequencer.focusedStep.get();
+}
+
+FLASHMEM void SequencerRangeActionHandler::restoreSnapshotFocus() {
+    const auto& range = state_.sequencer.rangeSelection;
+    state_.sequencer.page.set(range.snapshotPage);
+    state_.sequencer.focusedStep.set(range.snapshotFocusedStep);
 }
 }  // namespace core::handler

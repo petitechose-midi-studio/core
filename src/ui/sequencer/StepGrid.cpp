@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
+#include <oc/type/TextFormat.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
@@ -39,9 +40,10 @@ constexpr lv_coord_t STEP_MARKER_SIZE = 6;
 constexpr lv_opa_t STEP_BAR_ACTIVE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_SHAPE_OPA_ENABLED = grid::STEP_SHAPE_OPA_ENABLED;
 
-constexpr lv_coord_t HORIZONTAL_INSET = theme::layout::MARGIN_SM + 4;
-constexpr lv_coord_t OVERLAY_SAFE_TOP = theme::layout::MARGIN_XS;
-constexpr lv_coord_t OVERLAY_SAFE_BOTTOM = theme::layout::MARGIN_SM * 6;
+constexpr lv_coord_t HORIZONTAL_INSET = 2;
+constexpr lv_coord_t OVERLAY_SAFE_TOP = 2;
+constexpr lv_coord_t OVERLAY_SAFE_BOTTOM = 2;
+constexpr lv_coord_t GRID_INTERNAL_PAD = 2;
 constexpr uint32_t STEP_TEXT_DISABLED_COLOR = theme::color::INACTIVE_LIGHTER;
 constexpr lv_opa_t STEP_TEXT_DISABLED_OPA = static_cast<lv_opa_t>(theme::opacity::OPA_50);
 constexpr uint32_t STEP_GUIDE_COLOR = theme::color::INACTIVE_LIGHTER;
@@ -49,12 +51,15 @@ constexpr lv_opa_t STEP_GUIDE_OPA = LV_OPA_50;
 constexpr uint32_t STEP_INLINE_NOTE_COLOR = theme::color::TEXT_PRIMARY;
 constexpr lv_opa_t STEP_INLINE_NOTE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_INLINE_VALUE_OPA = LV_OPA_70;
+constexpr uint32_t STEP_INDEX_COLOR = theme::color::INACTIVE_LIGHTER;
+constexpr lv_opa_t STEP_INDEX_OPA = LV_OPA_60;
 constexpr lv_opa_t STEP_PROBABILITY_MASKED_OPA = LV_OPA_30;
 constexpr uint32_t COLOR_SELECTION_CLEAR_HEX = 0xF28B5B;
 constexpr uint32_t COLOR_SELECTION_COPY_HEX = 0x59B7C9;
 constexpr uint32_t COLOR_SELECTION_PASTE_HEX = 0x79C96B;
-constexpr lv_opa_t STEP_SELECTION_RANGE_OPA = LV_OPA_20;
-constexpr lv_opa_t STEP_SELECTION_CURSOR_OPA = LV_OPA_80;
+constexpr lv_coord_t STEP_SELECTION_DOT_SIZE = 6;
+constexpr lv_opa_t STEP_SELECTION_RANGE_OPA = LV_OPA_50;
+constexpr lv_opa_t STEP_SELECTION_CURSOR_OPA = LV_OPA_COVER;
 void initStepGuide(lv_obj_t* guide) {
     if (!guide) return;
 
@@ -160,8 +165,8 @@ FLASHMEM void StepGrid::createUI(lv_obj_t* parent) {
     lv_obj_set_style_pad_bottom(grid_, OVERLAY_SAFE_BOTTOM, 0);
     lv_obj_set_style_pad_left(grid_, HORIZONTAL_INSET, 0);
     lv_obj_set_style_pad_right(grid_, HORIZONTAL_INSET, 0);
-    lv_obj_set_style_pad_column(grid_, 0, 0);
-    lv_obj_set_style_pad_row(grid_, theme::layout::MARGIN_SM, 0);
+    lv_obj_set_style_pad_column(grid_, GRID_INTERNAL_PAD, 0);
+    lv_obj_set_style_pad_row(grid_, GRID_INTERNAL_PAD, 0);
     lv_obj_add_flag(grid_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_add_event_cb(grid_, onGeometryChangedEvent, LV_EVENT_SIZE_CHANGED, this);
     lv_obj_add_event_cb(grid_, onGeometryChangedEvent, LV_EVENT_LAYOUT_CHANGED, this);
@@ -229,6 +234,16 @@ FLASHMEM void StepGrid::createTiles() {
         lv_obj_add_event_cb(btn, onGeometryChangedEvent, LV_EVENT_SIZE_CHANGED, this);
         lv_obj_add_event_cb(btn, onGeometryChangedEvent, LV_EVENT_LAYOUT_CHANGED, this);
 
+        lv_obj_t* stepIndex = lv_label_create(btn);
+        step_index_labels_[i] = stepIndex;
+        lv_label_set_text(stepIndex, "");
+        lv_obj_set_width(stepIndex, LV_SIZE_CONTENT);
+        lv_obj_set_style_text_font(stepIndex, fonts.inter_13_bold, 0);
+        lv_obj_set_style_text_color(stepIndex, lv_color_hex(STEP_INDEX_COLOR), 0);
+        lv_obj_set_style_text_opa(stepIndex, STEP_INDEX_OPA, 0);
+        lv_obj_set_style_pad_all(stepIndex, 0, 0);
+        lv_obj_align(stepIndex, LV_ALIGN_TOP_RIGHT, -4, 2);
+
         for (uint8_t g = 0; g < STEP_GUIDE_COUNT; ++g) {
             lv_obj_t* guide = lv_obj_create(btn);
             step_guides_[i][g] = guide;
@@ -278,6 +293,19 @@ FLASHMEM void StepGrid::createTiles() {
         lv_obj_set_style_bg_opa(ph, LV_OPA_TRANSP, 0);
         lv_obj_add_flag(ph, LV_OBJ_FLAG_HIDDEN);
         lv_obj_align(ph, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
+        lv_obj_t* selectionDot = lv_obj_create(btn);
+        step_selection_dots_[i] = selectionDot;
+        lv_obj_remove_style_all(selectionDot);
+        lv_obj_clear_flag(selectionDot, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(selectionDot, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(selectionDot, STEP_SELECTION_DOT_SIZE, STEP_SELECTION_DOT_SIZE);
+        lv_obj_set_style_radius(selectionDot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(selectionDot, 0, 0);
+        lv_obj_set_style_bg_color(selectionDot, lv_color_hex(COLOR_SELECTION_COPY_HEX), 0);
+        lv_obj_set_style_bg_opa(selectionDot, LV_OPA_TRANSP, 0);
+        lv_obj_center(selectionDot);
+        lv_obj_add_flag(selectionDot, LV_OBJ_FLAG_HIDDEN);
 
         lv_obj_t* note = lv_label_create(note_layer_);
         note_labels_[i] = note;
@@ -370,6 +398,28 @@ void StepGrid::renderTileGuides(uint8_t tileIndex, bool inPattern, const TileRen
         if (inPattern) lv_obj_clear_flag(guide, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(guide, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+void StepGrid::renderTileIndex(uint8_t tileIndex,
+                               const TileRenderState& state,
+                               const TileRenderDiff& diff) {
+    if (!diff.absoluteStepChanged) {
+        return;
+    }
+
+    auto& cache = tile_render_cache_[tileIndex];
+    lv_obj_t* label = step_index_labels_[tileIndex];
+    if (!label) return;
+
+    char text[4];
+    oc::type::text::formatUnsigned(text, sizeof(text), static_cast<unsigned>(state.absoluteStep) + 1U);
+    if (std::strcmp(cache.stepIndexText, text) == 0) {
+        return;
+    }
+
+    lv_label_set_text(label, text);
+    std::strncpy(cache.stepIndexText, text, sizeof(cache.stepIndexText) - 1);
+    cache.stepIndexText[sizeof(cache.stepIndexText) - 1] = '\0';
 }
 
 void StepGrid::renderTileShape(uint8_t tileIndex,
@@ -476,45 +526,43 @@ void StepGrid::renderTileSelection(uint8_t tileIndex,
                                    uint8_t absoluteStep,
                                    const sequencer::grid::RangeSelectionSnapshot& selection) {
     auto& cache = tile_render_cache_[tileIndex];
-    lv_obj_t* button = step_buttons_[tileIndex];
-    if (!button) return;
+    lv_obj_t* selectionDot = step_selection_dots_[tileIndex];
+    if (!selectionDot) return;
 
     const bool rangeVisible = selection.active && stepInSelectionRange(absoluteStep, selection);
     const bool cursorVisible = selection.active && absoluteStep == selection.cursorStep;
-    const bool pasteTarget =
-        selection.kind == core::state::sequencer::RangeSelectionKind::COPY &&
-        selection.phase == core::state::sequencer::RangeSelectionPhase::PASTE_TARGET;
+    const bool dotVisible = rangeVisible || cursorVisible;
 
-    uint32_t rangeColor = theme::color::INACTIVE;
+    uint32_t dotColor = theme::color::INACTIVE;
     if (selection.kind == core::state::sequencer::RangeSelectionKind::CLEAR) {
-        rangeColor = COLOR_SELECTION_CLEAR_HEX;
+        dotColor = COLOR_SELECTION_CLEAR_HEX;
     } else if (selection.kind == core::state::sequencer::RangeSelectionKind::COPY) {
-        rangeColor = COLOR_SELECTION_COPY_HEX;
+        dotColor = COLOR_SELECTION_COPY_HEX;
+    }
+    if (selection.kind == core::state::sequencer::RangeSelectionKind::COPY &&
+        selection.phase == core::state::sequencer::RangeSelectionPhase::PASTE_TARGET &&
+        cursorVisible) {
+        dotColor = COLOR_SELECTION_PASTE_HEX;
     }
 
-    uint32_t cursorColor = rangeColor;
-    if (pasteTarget) {
-        cursorColor = COLOR_SELECTION_PASTE_HEX;
+    if (dotVisible) {
+        if (!cache.selectionDotVisible) {
+            lv_obj_clear_flag(selectionDot, LV_OBJ_FLAG_HIDDEN);
+            cache.selectionDotVisible = true;
+        }
+    } else if (cache.selectionDotVisible) {
+        lv_obj_add_flag(selectionDot, LV_OBJ_FLAG_HIDDEN);
+        cache.selectionDotVisible = false;
     }
 
-    const lv_opa_t nextBgOpa = rangeVisible ? STEP_SELECTION_RANGE_OPA : LV_OPA_TRANSP;
-    const lv_opa_t nextBorderOpa = cursorVisible ? STEP_SELECTION_CURSOR_OPA : LV_OPA_TRANSP;
-
-    if (cache.buttonBgColor != rangeColor) {
-        lv_obj_set_style_bg_color(button, lv_color_hex(rangeColor), 0);
-        cache.buttonBgColor = rangeColor;
+    const lv_opa_t dotOpa = cursorVisible ? STEP_SELECTION_CURSOR_OPA : STEP_SELECTION_RANGE_OPA;
+    if (cache.selectionDotColor != dotColor) {
+        lv_obj_set_style_bg_color(selectionDot, lv_color_hex(dotColor), 0);
+        cache.selectionDotColor = dotColor;
     }
-    if (cache.buttonBgOpa != nextBgOpa) {
-        lv_obj_set_style_bg_opa(button, nextBgOpa, 0);
-        cache.buttonBgOpa = nextBgOpa;
-    }
-    if (cache.buttonBorderColor != cursorColor) {
-        lv_obj_set_style_border_color(button, lv_color_hex(cursorColor), 0);
-        cache.buttonBorderColor = cursorColor;
-    }
-    if (cache.buttonBorderOpa != nextBorderOpa) {
-        lv_obj_set_style_border_opa(button, nextBorderOpa, 0);
-        cache.buttonBorderOpa = nextBorderOpa;
+    if (cache.selectionDotOpa != dotOpa) {
+        lv_obj_set_style_bg_opa(selectionDot, dotOpa, 0);
+        cache.selectionDotOpa = dotOpa;
     }
 }
 
@@ -562,6 +610,8 @@ void StepGrid::renderTile(
     if (selectionChanged || !cache.initialized) {
         renderTileSelection(tileIndex, state.absoluteStep, frameState.selection);
     }
+
+    renderTileIndex(tileIndex, state, diff);
 
     if (diff.dataChanged) {
         const auto visual = grid::buildStepVisualStyle(
@@ -625,6 +675,7 @@ void StepGrid::renderTile(
     }
 
     cache.initialized = true;
+    cache.absoluteStep = state.absoluteStep;
     cache.inPattern = state.inPattern;
     cache.enabled = state.enabled;
     cache.playing = state.playing;

@@ -6,6 +6,7 @@
 #include <oc/api/EncoderAPI.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::handler {
 
@@ -30,11 +31,19 @@ private:
     void setFocusedValue(float normalized);
     void configureOptForFocusedItem();
     void clampFocusToLength();
+    int focusedItemOrderIndex() const;
+    void setFocusedItemByOrderIndex(int index);
+    int currentOffsetMax() const;
+    float offsetToNormalized(int offsetSteps) const;
+    int normalizedToOffset(float normalized) const;
+    void applyOffsetFromSnapshot(int offsetSteps);
 
     core::state::CoreState& state_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     lv_obj_t* sequencer_view_scope_ = nullptr;
+    core::state::sequencer::SequencerPatternSnapshot cancel_snapshot_{};
+    core::state::sequencer::SequencerPatternSnapshot offset_snapshot_{};
 };
 
 }  // namespace core::handler

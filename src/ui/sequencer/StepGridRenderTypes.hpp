@@ -25,6 +25,7 @@ struct TileRenderState {
 
 struct TileRenderDiff {
     bool initialized = false;
+    bool absoluteStepChanged = false;
     bool inPatternChanged = false;
     bool enabledChanged = false;
     bool noteChanged = false;
@@ -40,6 +41,7 @@ struct TileRenderDiff {
 
 struct TileRenderCache {
     bool initialized = false;
+    uint8_t absoluteStep = 0;
     bool inPattern = false;
     bool enabled = false;
     bool playing = false;
@@ -75,10 +77,10 @@ struct TileRenderCache {
     lv_opa_t markerOpa = LV_OPA_TRANSP;
     bool indicatorVisible = false;
     lv_opa_t indicatorOpa = LV_OPA_TRANSP;
-    uint32_t buttonBgColor = 0;
-    lv_opa_t buttonBgOpa = LV_OPA_TRANSP;
-    uint32_t buttonBorderColor = 0;
-    lv_opa_t buttonBorderOpa = LV_OPA_TRANSP;
+    bool selectionDotVisible = false;
+    uint32_t selectionDotColor = 0;
+    lv_opa_t selectionDotOpa = LV_OPA_TRANSP;
+    char stepIndexText[4] = {0};
 };
 
 struct RangeSelectionSnapshot {

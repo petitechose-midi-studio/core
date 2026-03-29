@@ -16,6 +16,11 @@ enum class ContextActionStripOrientation : uint8_t {
     VERTICAL = 1,
 };
 
+enum class ContextActionStripVerticalLayout : uint8_t {
+    COMPACT = 0,
+    SPREAD = 1,
+};
+
 enum class ContextActionStripTone : uint8_t {
     NEUTRAL = 0,
     CONSTRUCTIVE = 1,
@@ -49,7 +54,11 @@ struct ContextActionStripProps {
 
 class ContextActionStrip : public oc::ui::lvgl::IWidget {
 public:
-    ContextActionStrip(lv_obj_t* parent, ContextActionStripOrientation orientation);
+    ContextActionStrip(
+        lv_obj_t* parent,
+        ContextActionStripOrientation orientation,
+        ContextActionStripVerticalLayout verticalLayout = ContextActionStripVerticalLayout::COMPACT
+    );
     ~ContextActionStrip() override;
 
     ContextActionStrip(const ContextActionStrip&) = delete;
@@ -72,6 +81,7 @@ private:
     void renderSlot(size_t index, const ContextActionStripSlotProps& props);
 
     ContextActionStripOrientation orientation_;
+    ContextActionStripVerticalLayout vertical_layout_;
     lv_obj_t* container_ = nullptr;
     std::array<SlotWidgets, 3> slots_{};
     bool has_rendered_ = false;

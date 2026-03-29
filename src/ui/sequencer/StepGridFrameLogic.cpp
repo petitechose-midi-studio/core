@@ -20,7 +20,6 @@ StepGridFrameState buildStepGridFrameState(const core::state::CoreState& coreSta
     if (frame.selection.active) {
         switch (frame.selection.phase) {
             case core::state::sequencer::RangeSelectionPhase::SELECT_RANGE:
-            case core::state::sequencer::RangeSelectionPhase::CONFIRM_CLEAR:
             case core::state::sequencer::RangeSelectionPhase::PASTE_TARGET:
                 frame.selection.sourceRangeVisible = true;
                 frame.selection.sourceStart = sequencer.rangeSelection.rangeStart.get();
@@ -33,8 +32,8 @@ StepGridFrameState buildStepGridFrameState(const core::state::CoreState& coreSta
     }
 
     const uint8_t length = sequencer.length.get();
-    const uint8_t page = sequencer.normalizePage(sequencer.page.get());
-    const uint8_t pageStart = sequencer.pageStartStep(page);
+    const uint8_t page = sequencer.visiblePage();
+    const uint8_t pageStart = sequencer.pageStartStepClamped(page);
     const uint64_t enabledMask = sequencer.enabledMask.get();
     const uint64_t probabilityCycleMask = sequencer.probabilityCycleMask;
     const int16_t playhead = sequencer.playheadStep.get();

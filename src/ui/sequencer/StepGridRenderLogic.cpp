@@ -109,6 +109,7 @@ StepVisualStyle buildStepVisualStyle(uint8_t note,
 TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRenderState& state) {
     TileRenderDiff diff;
     diff.initialized = cache.initialized;
+    diff.absoluteStepChanged = !diff.initialized || cache.absoluteStep != state.absoluteStep;
     diff.inPatternChanged = !diff.initialized || cache.inPattern != state.inPattern;
     diff.enabledChanged = !diff.initialized || cache.enabled != state.enabled;
     diff.noteChanged = !diff.initialized || cache.note != state.note;
@@ -121,7 +122,7 @@ TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRende
     diff.velocityZeroChanged =
         !diff.initialized || ((cache.velocity == 0) != (state.velocity == 0));
 
-    const bool baseChanged = diff.inPatternChanged || diff.enabledChanged;
+    const bool baseChanged = diff.absoluteStepChanged || diff.inPatternChanged || diff.enabledChanged;
     diff.dataChanged =
         baseChanged ||
         (state.inPattern &&

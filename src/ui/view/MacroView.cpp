@@ -1,10 +1,9 @@
 #include "MacroView.hpp"
 
-#include <Arduino.h>
-
 #include <oc/log/Log.hpp>
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
+#include <config/TimeCompat.hpp>
 
 #include "ui/view/MacroViewModelBuilder.hpp"
 #include "ui/widget/MacroKnobWidget.hpp"
@@ -22,7 +21,7 @@ struct MacroRenderProfiling {
     uint32_t total_config_updates = 0;
 
     void record(uint32_t elapsed_us, uint32_t value_updates, uint32_t config_updates) {
-        const uint32_t now = millis();
+        const uint32_t now = core::time_compat::millis();
         if (window_start_ms == 0) {
             window_start_ms = now;
         }
@@ -221,7 +220,7 @@ void MacroView::markDirty(uint8_t index) {
 }
 
 void MacroView::processDirtyFlags() {
-    const uint32_t start_us = micros();
+    const uint32_t start_us = core::time_compat::micros();
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) {
         pauseUpdateIfIdle();
         return;
@@ -259,7 +258,11 @@ void MacroView::processDirtyFlags() {
 
     has_dirty_ = false;
     pauseUpdateIfIdle();
-    g_macro_render_profiling.record(micros() - start_us, value_updates, config_updates);
+    g_macro_render_profiling.record(
+        core::time_compat::micros() - start_us,
+        value_updates,
+        config_updates
+    );
 }
 
 void MacroView::onUpdateTimer(lv_timer_t* timer) {

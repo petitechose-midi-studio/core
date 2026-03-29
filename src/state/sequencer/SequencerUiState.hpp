@@ -18,7 +18,7 @@ enum class StepProperty : uint8_t {
 };
 
 enum class PatternQuickControlItem : uint8_t {
-    CHANNEL = 0,
+    OFFSET = 0,
     DIVISION = 1,
     LENGTH = 2,
 };
@@ -32,8 +32,7 @@ enum class RangeSelectionKind : uint8_t {
 enum class RangeSelectionPhase : uint8_t {
     IDLE = 0,
     SELECT_RANGE = 1,
-    CONFIRM_CLEAR = 2,
-    PASTE_TARGET = 3,
+    PASTE_TARGET = 2,
 };
 
 struct SequencerStepEditOverlayState {
@@ -123,16 +122,12 @@ struct SequencerStepInlineFeedbackState {
 
 struct SequencerPatternQuickControlsState {
     Signal<bool> selecting{false};
-    Signal<PatternQuickControlItem> focusedItem{PatternQuickControlItem::CHANNEL};
-
-    uint8_t snapshotLength = 0;
-    uint8_t snapshotStepsPerBeat = 0;
-    uint8_t snapshotMidiChannel = 0;
-    bool snapshotValid = false;
+    Signal<PatternQuickControlItem> focusedItem{PatternQuickControlItem::OFFSET};
+    Signal<int8_t> offsetSteps{0};
 
     void reset() {
         selecting.set(false);
-        snapshotValid = false;
+        offsetSteps.set(0);
     }
 };
 
@@ -170,14 +165,11 @@ struct SequencerRangeSelectionState {
     Signal<bool> rangeValid{false};
 
     SequencerRangeClipboard clipboard{};
+    uint8_t snapshotPage = 0;
+    uint8_t snapshotFocusedStep = 0;
 
     bool active() const { return kind.get() != RangeSelectionKind::NONE; }
     bool selectingSourceRange() const { return phase.get() == RangeSelectionPhase::SELECT_RANGE; }
-    bool confirmingClearPage() const {
-        return kind.get() == RangeSelectionKind::CLEAR &&
-               phase.get() == RangeSelectionPhase::CONFIRM_CLEAR &&
-               rangeValid.get();
-    }
     bool selectingPasteTarget() const {
         return kind.get() == RangeSelectionKind::COPY &&
                phase.get() == RangeSelectionPhase::PASTE_TARGET &&
@@ -193,6 +185,8 @@ struct SequencerRangeSelectionState {
         rangeEnd.set(0);
         rangeValid.set(false);
         clipboard.reset();
+        snapshotPage = 0;
+        snapshotFocusedStep = 0;
     }
 };
 

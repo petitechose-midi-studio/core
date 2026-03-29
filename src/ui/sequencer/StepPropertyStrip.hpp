@@ -1,11 +1,7 @@
 #pragma once
 
-/**
- * @file StepPropertyStrip.hpp
- * @brief Inline step-property selector strip for Sequencer view
- */
-
 #include <array>
+
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IWidget.hpp>

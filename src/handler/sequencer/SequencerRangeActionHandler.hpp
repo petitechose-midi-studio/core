@@ -26,16 +26,14 @@ private:
     using RangeSelectionPhase = core::state::sequencer::RangeSelectionPhase;
 
     void setupBindings();
-    void armClearPage();
+    void clearCurrentPage();
     void openClearRange();
     void openCopyRange();
     void cancel();
     void moveCursor(float delta);
     void moveRange(float normalized);
     void commitCursor();
-    void applyClear();
     void applyPaste();
-    void duplicatePageForward();
     void beginRangeSelection(RangeSelectionKind kind);
     void configureOptForRangeEdit();
     void setSelectedRange(uint8_t start, uint8_t span);
@@ -48,6 +46,8 @@ private:
     uint8_t currentPageEnd() const;
     uint8_t initialCursorStep() const;
     uint8_t maxCursorStep() const;
+    void snapshotCurrentFocus();
+    void restoreSnapshotFocus();
 
     core::state::CoreState& state_;
     oc::api::EncoderAPI& encoders_;

@@ -6,7 +6,6 @@
  */
 
 #include <cstdint>
-#include <algorithm>
 
 #include <oc/note/sequencer/StepSequencerState.hpp>
 #include "SequencerUiState.hpp"
@@ -24,10 +23,12 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     static constexpr uint8_t DEFAULT_PROBABILITY =
         oc::note::sequencer::StepSequencerState::DEFAULT_PROBABILITY;
 
-    /// Visible page index [0..PAGE_COUNT-1]
+    /// Visible page index [0..PAGE_COUNT-1].
+    /// May temporarily point beyond the current pattern length during paste target selection.
     Signal<uint8_t, 8> page{0};
 
-    /// Absolute focused step index [0..length-1]
+    /// Absolute focused step index.
+    /// May temporarily point beyond the current pattern length during paste target selection.
     Signal<uint8_t, 6> focusedStep{0};
 
     /// Bumps when non-signal step arrays change (note/velocity/gate/nudge/probability)
@@ -165,230 +166,6 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         return true;
     }
 
-    bool duplicatePageForward(uint8_t sourcePage) {
-        const uint8_t len = length.get();
-        if (len == 0) return false;
-
-        const uint8_t safePage = normalizePage(sourcePage);
-        const uint8_t sourceStart = pageStartStep(safePage);
-        if (sourceStart >= len || sourceStart >= MAX_STEPS) return false;
-
-        const uint8_t targetStart = static_cast<uint8_t>(sourceStart + STEPS_PER_PAGE);
-        if (targetStart >= MAX_STEPS) return false;
-
-        const uint8_t sourceEndExclusive = static_cast<uint8_t>(
-            std::min<uint16_t>(MAX_STEPS, sourceStart + STEPS_PER_PAGE)
-        );
-        const uint8_t sourceCount = static_cast<uint8_t>(
-            std::min<uint16_t>(len, sourceEndExclusive) - sourceStart
-        );
-        if (sourceCount == 0) return false;
-
-        const uint8_t targetEndExclusive = static_cast<uint8_t>(
-            std::min<uint16_t>(MAX_STEPS, targetStart + sourceCount)
-        );
-        const uint8_t copyCount = static_cast<uint8_t>(targetEndExclusive - targetStart);
-        if (copyCount == 0) return false;
-
-        uint64_t mask = enabledMask.get();
-        bool dataChanged = false;
-
-        for (uint8_t i = 0; i < copyCount; ++i) {
-            const uint8_t src = static_cast<uint8_t>(sourceStart + i);
-            const uint8_t dst = static_cast<uint8_t>(targetStart + i);
-
-            if (note[dst] != note[src] ||
-                velocity[dst] != velocity[src] ||
-                gate[dst] != gate[src] ||
-                nudge[dst] != nudge[src] ||
-                probability[dst] != probability[src]) {
-                dataChanged = true;
-            }
-
-            note[dst] = note[src];
-            velocity[dst] = velocity[src];
-            gate[dst] = gate[src];
-            nudge[dst] = nudge[src];
-            probability[dst] = probability[src];
-
-            const uint64_t dstBit = (1ULL << dst);
-            const bool srcEnabled = (mask & (1ULL << src)) != 0;
-            const bool dstEnabledBefore = (mask & dstBit) != 0;
-            if (srcEnabled != dstEnabledBefore) {
-                dataChanged = true;
-            }
-
-            if (srcEnabled) {
-                mask |= dstBit;
-            } else {
-                mask &= ~dstBit;
-            }
-        }
-
-        enabledMask.set(mask);
-
-        const uint8_t requiredLength = static_cast<uint8_t>(targetStart + copyCount);
-        if (requiredLength > len) {
-            length.set(requiredLength);
-        }
-
-        page.set(pageForStep(targetStart));
-        focusedStep.set(targetStart);
-
-        if (dataChanged) {
-            bumpStepDataRevision();
-        }
-
-        return true;
-    }
-
-    bool clearStepRange(uint8_t startStep, uint8_t endStep) {
-        const uint8_t len = length.get();
-        if (len == 0) return false;
-
-        const uint8_t start = static_cast<uint8_t>(std::min(startStep, endStep));
-        const uint8_t end = static_cast<uint8_t>(std::max(startStep, endStep));
-        if (start >= len || start >= MAX_STEPS) return false;
-
-        const uint8_t clampedEnd = static_cast<uint8_t>(std::min<uint16_t>(end, len - 1));
-        uint64_t mask = enabledMask.get();
-        bool dataChanged = false;
-        bool maskChanged = false;
-
-        for (uint8_t step = start; step <= clampedEnd; ++step) {
-            const uint64_t bit = (1ULL << step);
-            if ((mask & bit) != 0) {
-                mask &= ~bit;
-                maskChanged = true;
-            }
-
-            if (note[step] != DEFAULT_NOTE ||
-                velocity[step] != DEFAULT_VELOCITY ||
-                gate[step] != DEFAULT_GATE_PERCENT ||
-                nudge[step] != 0 ||
-                probability[step] != DEFAULT_PROBABILITY) {
-                note[step] = DEFAULT_NOTE;
-                velocity[step] = DEFAULT_VELOCITY;
-                gate[step] = DEFAULT_GATE_PERCENT;
-                nudge[step] = 0;
-                probability[step] = DEFAULT_PROBABILITY;
-                dataChanged = true;
-            }
-        }
-
-        if (maskChanged) {
-            enabledMask.set(mask);
-        }
-
-        focusedStep.set(start);
-        page.set(pageForStep(start));
-
-        if (dataChanged || maskChanged) {
-            bumpStepDataRevision();
-        }
-
-        return dataChanged || maskChanged;
-    }
-
-    bool copyStepRangeToClipboard(
-        uint8_t startStep,
-        uint8_t endStep,
-        SequencerRangeClipboard& clipboard
-    ) const {
-        clipboard.reset();
-
-        const uint8_t len = length.get();
-        if (len == 0) return false;
-
-        const uint8_t start = static_cast<uint8_t>(std::min(startStep, endStep));
-        const uint8_t end = static_cast<uint8_t>(std::max(startStep, endStep));
-        if (start >= len || start >= MAX_STEPS) return false;
-
-        const uint8_t clampedEnd = static_cast<uint8_t>(std::min<uint16_t>(end, len - 1));
-        const uint8_t count = static_cast<uint8_t>((clampedEnd - start) + 1);
-        if (count == 0) return false;
-
-        uint64_t relativeEnabledMask = 0;
-        const uint64_t mask = enabledMask.get();
-
-        for (uint8_t i = 0; i < count; ++i) {
-            const uint8_t step = static_cast<uint8_t>(start + i);
-            clipboard.note[i] = note[step];
-            clipboard.velocity[i] = velocity[step];
-            clipboard.gate[i] = gate[step];
-            clipboard.nudge[i] = nudge[step];
-            clipboard.probability[i] = probability[step];
-
-            if ((mask & (1ULL << step)) != 0) {
-                relativeEnabledMask |= (1ULL << i);
-            }
-        }
-
-        clipboard.count = count;
-        clipboard.enabledMask = relativeEnabledMask;
-        clipboard.valid = true;
-        return true;
-    }
-
-    bool pasteClipboardRange(uint8_t targetStart, const SequencerRangeClipboard& clipboard) {
-        if (!clipboard.valid || clipboard.count == 0) return false;
-        if (targetStart >= MAX_STEPS) return false;
-
-        const uint8_t maxCount = static_cast<uint8_t>(MAX_STEPS - targetStart);
-        const uint8_t copyCount = static_cast<uint8_t>(std::min<uint16_t>(clipboard.count, maxCount));
-        if (copyCount == 0) return false;
-
-        uint64_t mask = enabledMask.get();
-        bool dataChanged = false;
-
-        for (uint8_t i = 0; i < copyCount; ++i) {
-            const uint8_t step = static_cast<uint8_t>(targetStart + i);
-
-            if (note[step] != clipboard.note[i] ||
-                velocity[step] != clipboard.velocity[i] ||
-                gate[step] != clipboard.gate[i] ||
-                nudge[step] != clipboard.nudge[i] ||
-                probability[step] != clipboard.probability[i]) {
-                dataChanged = true;
-            }
-
-            note[step] = clipboard.note[i];
-            velocity[step] = clipboard.velocity[i];
-            gate[step] = clipboard.gate[i];
-            nudge[step] = clipboard.nudge[i];
-            probability[step] = clipboard.probability[i];
-
-            const uint64_t bit = (1ULL << step);
-            const bool enabled = clipboard.isEnabled(i);
-            const bool wasEnabled = (mask & bit) != 0;
-            if (enabled != wasEnabled) {
-                dataChanged = true;
-            }
-
-            if (enabled) {
-                mask |= bit;
-            } else {
-                mask &= ~bit;
-            }
-        }
-
-        enabledMask.set(mask);
-
-        const uint8_t requiredLength = static_cast<uint8_t>(targetStart + copyCount);
-        if (requiredLength > length.get()) {
-            length.set(requiredLength);
-        }
-
-        focusedStep.set(targetStart);
-        page.set(pageForStep(targetStart));
-
-        if (dataChanged) {
-            bumpStepDataRevision();
-        }
-
-        return true;
-    }
-
     void reset() {
         oc::note::sequencer::StepSequencerState::reset();
         page.set(0);
@@ -420,8 +197,23 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         return static_cast<uint8_t>(page % pageCount);
     }
 
+    uint8_t clampPage(uint8_t page) const {
+        return (page >= PAGE_COUNT) ? static_cast<uint8_t>(PAGE_COUNT - 1) : page;
+    }
+
+    uint8_t visiblePage() const {
+        if (rangeSelection.selectingPasteTarget()) {
+            return clampPage(page.get());
+        }
+        return normalizePage(page.get());
+    }
+
     uint8_t pageStartStep(uint8_t page) const {
         return static_cast<uint8_t>(normalizePage(page) * STEPS_PER_PAGE);
+    }
+
+    uint8_t pageStartStepClamped(uint8_t page) const {
+        return static_cast<uint8_t>(clampPage(page) * STEPS_PER_PAGE);
     }
 
     uint8_t pageForStep(uint8_t step) const {

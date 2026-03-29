@@ -24,7 +24,10 @@ constexpr lv_coord_t SLOT_PAD = 0;
 constexpr lv_coord_t INDICATOR_LONG = 8;
 constexpr lv_coord_t INDICATOR_THICKNESS = 1;
 constexpr lv_coord_t CONTENT_GAP = 0;
-constexpr lv_coord_t HORIZONTAL_OUTER_PAD = 30;
+constexpr lv_coord_t HORIZONTAL_OUTER_PAD = 2;
+constexpr lv_coord_t VERTICAL_OUTER_PAD = 6;
+constexpr lv_coord_t VERTICAL_SLOT_GAP = 2;
+constexpr lv_coord_t VERTICAL_SPREAD_OUTER_PAD = 4;
 
 uint32_t toneColor(ContextActionStripTone tone) {
     switch (tone) {
@@ -94,8 +97,12 @@ bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionSt
 
 }  // namespace
 
-ContextActionStrip::ContextActionStrip(lv_obj_t* parent, ContextActionStripOrientation orientation)
-    : orientation_(orientation) {
+ContextActionStrip::ContextActionStrip(
+    lv_obj_t* parent,
+    ContextActionStripOrientation orientation,
+    ContextActionStripVerticalLayout verticalLayout
+)
+    : orientation_(orientation), vertical_layout_(verticalLayout) {
     createUI(parent);
 }
 
@@ -126,12 +133,26 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
         lv_obj_set_size(container_, VERTICAL_STRIP_WIDTH, LV_PCT(100));
         lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        const bool spread = vertical_layout_ == ContextActionStripVerticalLayout::SPREAD;
+        lv_obj_set_flex_align(
+            container_,
+            spread ? LV_FLEX_ALIGN_SPACE_BETWEEN : LV_FLEX_ALIGN_CENTER,
+            LV_FLEX_ALIGN_CENTER,
+            LV_FLEX_ALIGN_CENTER
+        );
         lv_obj_set_style_pad_left(container_, 0, 0);
-        lv_obj_set_style_pad_right(container_, 1, 0);
-        lv_obj_set_style_pad_top(container_, 0, 0);
-        lv_obj_set_style_pad_bottom(container_, 0, 0);
-        lv_obj_set_style_pad_row(container_, 0, 0);
+        lv_obj_set_style_pad_right(container_, 2, 0);
+        lv_obj_set_style_pad_top(
+            container_,
+            spread ? VERTICAL_SPREAD_OUTER_PAD : VERTICAL_OUTER_PAD,
+            0
+        );
+        lv_obj_set_style_pad_bottom(
+            container_,
+            spread ? VERTICAL_SPREAD_OUTER_PAD : VERTICAL_OUTER_PAD,
+            0
+        );
+        lv_obj_set_style_pad_row(container_, spread ? 0 : VERTICAL_SLOT_GAP, 0);
     }
 
     for (auto& slot : slots_) {
@@ -151,8 +172,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
             lv_obj_set_flex_grow(slot.container, 1);
         } else {
             lv_obj_set_width(slot.container, LV_PCT(100));
-            lv_obj_set_height(slot.container, 0);
-            lv_obj_set_flex_grow(slot.container, 1);
+            lv_obj_set_height(slot.container, 18);
         }
 
         slot.indicator = lv_obj_create(slot.container);

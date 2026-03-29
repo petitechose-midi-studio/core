@@ -45,6 +45,7 @@ private:
     static void onGeometryChangedEvent(lv_event_t* event);
     void markGeometryDirty();
     void renderTileGuides(uint8_t tileIndex, bool inPattern, const TileRenderDiff& diff);
+    void renderTileIndex(uint8_t tileIndex, const TileRenderState& state, const TileRenderDiff& diff);
     void renderTileShape(uint8_t tileIndex,
                          const sequencer::grid::StepVisualStyle& visual,
                          lv_coord_t noteBaseX,
@@ -85,11 +86,13 @@ private:
 
     std::array<lv_obj_t*, 8> tiles_{};
     std::array<lv_obj_t*, 8> note_labels_{};
+    std::array<lv_obj_t*, 8> step_index_labels_{};
     std::array<lv_obj_t*, 8> step_inline_icons_{};
     std::array<lv_obj_t*, 8> step_buttons_{};
     std::array<lv_obj_t*, 8> step_shapes_{};
     std::array<lv_obj_t*, 8> step_markers_{};
     std::array<lv_obj_t*, 8> step_indicators_{};
+    std::array<lv_obj_t*, 8> step_selection_dots_{};
     std::array<std::array<lv_obj_t*, 3>, 8> step_guides_{};
     std::array<lv_coord_t, 8> rail_width_cache_{};
     std::array<lv_coord_t, 8> button_height_cache_{};

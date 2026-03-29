@@ -16,7 +16,7 @@ namespace core::ui {
 
 struct SequencerHeaderBarProps {
     uint8_t length = 0;
-    uint8_t viewedPage = 0;     // 0..7
+    uint8_t viewedPage = 0;     // 0..7, may point to a future paste target page
     int16_t playheadStep = -1;  // -1 when stopped
     const char* leftText = "";
     const char* centerText = "";
@@ -44,7 +44,9 @@ public:
 private:
     static constexpr uint8_t PAGE_COUNT = 8;
     static constexpr uint8_t STEPS_PER_PAGE = 8;
+    static constexpr lv_coord_t TOP_ROW_HEIGHT = 14;
     static constexpr lv_coord_t STRIP_HEIGHT = 3;
+    static constexpr lv_coord_t ROW_GAP = 2;
     static constexpr lv_coord_t MARKER_WIDTH = 2;
 
     void createUI(lv_obj_t* parent);
@@ -66,6 +68,7 @@ private:
         bool markerVisible = false;
         lv_coord_t markerX = -1;
         uint32_t validColorHex = 0;
+        uint32_t progressColorHex = 0;
     };
 
     lv_obj_t* container_ = nullptr;
