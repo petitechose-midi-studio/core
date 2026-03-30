@@ -30,7 +30,7 @@ FLASHMEM void GlobalSettingsOverlayPresenter::bind() {
 
     selector_watcher_.watchAll(
         [this]() { renderSelector(); },
-        state_refs_.globalSettings.selector.visible,
+        state_refs_.globalSettings.flowPhase,
         state_refs_.globalSettings.selector.selectedIndex,
         state_refs_.globalSettings.selector.editingRow,
         state_refs_.midiSync.mode,

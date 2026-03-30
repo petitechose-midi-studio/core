@@ -2,8 +2,6 @@
 
 #include <algorithm>
 
-#include <oc/time/Time.hpp>
-
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
@@ -32,11 +30,11 @@ FLASHMEM MacroEditHandler::MacroEditHandler(
     oc::type::ScopeID overlayScope,
     oc::type::ScopeID selectorScope,
     oc::type::ScopeID pageSelectorScope,
-    oc::type::ScopeID macroSelectorScope
+    oc::type::ScopeID macroSelectorScope,
+    NowProvider nowProvider
 )
     : macro_edit_(state.macroEdit)
     , pages_(state.pages)
-    , config_revision_(state.configRevision)
     , services_(services)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -46,6 +44,7 @@ FLASHMEM MacroEditHandler::MacroEditHandler(
     , selector_scope_(selectorScope)
     , page_selector_scope_(pageSelectorScope)
     , macro_selector_scope_(macroSelectorScope)
+    , now_provider_(nowProvider)
 {
     setupBindings();
 }
@@ -92,7 +91,7 @@ FLASHMEM void MacroEditHandler::setupBindings() {
         .then([this](float normalized) { setFocusedValue(normalized); });
 
     buttons_.button(navButton)
-        .press()
+        .release()
         .scope(mainScope)
         .then([this]() { openValueSelector(); });
 
@@ -102,12 +101,12 @@ FLASHMEM void MacroEditHandler::setupBindings() {
         .then([this]() { closeOverlay(); });
 
     buttons_.button(leftCenterButton)
-        .press()
+        .release()
         .scope(mainScope)
         .then([this]() { openPageSelector(); });
 
     buttons_.button(leftBottomButton)
-        .press()
+        .release()
         .scope(mainScope)
         .then([this]() { openMacroTargetSelector(); });
 
@@ -161,13 +160,14 @@ FLASHMEM void MacroEditHandler::setupBindings() {
 
 FLASHMEM void MacroEditHandler::openEdit(uint8_t macroIndex) {
     const auto& config = services_.activeConfig(macroIndex);
-    has_staged_config_changes_ = false;
 
     auto& edit = macro_edit_;
-    edit.startEditing(macroIndex, config.channel, config.cc);
-    edit.openedByMacroIndex = macroIndex;
-    edit.openedAtMs = 0;
-    edit.pendingOpenReleaseDecision = true;
+    edit.openEditor(
+        macroIndex,
+        config.channel,
+        config.cc,
+        now_provider_ ? now_provider_() : 0
+    );
 
     overlays_.show(core::ui::OverlayType::MACRO_EDIT);
 
@@ -177,20 +177,8 @@ FLASHMEM void MacroEditHandler::openEdit(uint8_t macroIndex) {
 
 FLASHMEM void MacroEditHandler::handleOpeningMacroRelease(uint8_t macroIndex) {
     auto& edit = macro_edit_;
-    if (!edit.visible.get()) return;
-    if (!edit.pendingOpenReleaseDecision) return;
-    if (macroIndex != edit.openedByMacroIndex) return;
-
-    edit.pendingOpenReleaseDecision = false;
-
-    // If the UI has not stamped the visible-open time yet, treat this release
-    // as quick-release and keep the overlay open.
-    if (edit.openedAtMs == 0) {
-        return;
-    }
-
-    const uint32_t elapsedMs = oc::time::millis() - edit.openedAtMs;
-    if (elapsedMs >= QUICK_RELEASE_WINDOW_MS) {
+    const uint32_t nowMs = now_provider_ ? now_provider_() : edit.openedAtMs;
+    if (edit.consumeOpeningReleaseDecision(macroIndex, nowMs, QUICK_RELEASE_WINDOW_MS)) {
         closeOverlay();
     }
 }
@@ -207,18 +195,13 @@ FLASHMEM void MacroEditHandler::closeOverlay() {
     );
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT);
 
-    // Persist staged CH/CC updates once per edit session.
-    if (has_staged_config_changes_) {
-        config_revision_.set(config_revision_.get() + 1);
-        has_staged_config_changes_ = false;
-    }
-
-    macro_edit_.reset();
+    macro_edit_.closeEditor();
     pages_.selector.visible.set(false);
     pages_.selector.selectedIndex.set(pages_.activePage);
 }
 
 FLASHMEM void MacroEditHandler::moveFocus(float delta) {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
     if (!nav::hasTurnDelta(delta)) return;
 
     const int current = static_cast<int>(macro_edit_.focusedRow.get());
@@ -229,6 +212,7 @@ FLASHMEM void MacroEditHandler::moveFocus(float delta) {
 }
 
 FLASHMEM void MacroEditHandler::setFocusedValue(float normalized) {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
     const uint8_t row = macro_edit_.focusedRow.get();
     const int count = valueCountForRow(row);
 
@@ -238,21 +222,16 @@ FLASHMEM void MacroEditHandler::setFocusedValue(float normalized) {
 }
 
 FLASHMEM void MacroEditHandler::openValueSelector() {
-    if (!macro_edit_.visible.get()) return;
-    if (macro_edit_.selector.visible.get()) return;
+    auto& edit = macro_edit_;
+    if (edit.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
 
-    auto& selector = macro_edit_.selector;
     const uint8_t row = macro_edit_.focusedRow.get();
-    modal::openSelectorOverlay(
-        overlays_,
-        core::ui::OverlayType::MACRO_EDIT_SELECTOR,
-        selector,
-        valueForRow(row),
-        [row](auto& valueSelector) { valueSelector.editingRow.set(row); }
-    );
+    edit.openValueSelector(row, valueForRow(row));
+    overlays_.show(core::ui::OverlayType::MACRO_EDIT_SELECTOR, true);
 }
 
 FLASHMEM void MacroEditHandler::navigateValueSelector(float delta) {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::VALUE_SELECTOR) return;
     auto& selector = macro_edit_.selector;
     const int count = valueCountForRow(selector.editingRow.get());
     int next = selector.selectedIndex.get();
@@ -263,26 +242,30 @@ FLASHMEM void MacroEditHandler::navigateValueSelector(float delta) {
 }
 
 FLASHMEM void MacroEditHandler::applyValueSelectorAndClose() {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::VALUE_SELECTOR) return;
     auto& selector = macro_edit_.selector;
     if (!selector.visible.get()) return;
 
     setValueForRow(selector.editingRow.get(), selector.selectedIndex.get());
 
-    modal::hideOverlayAndResetSelector(overlays_, selector);
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT_SELECTOR);
+    macro_edit_.closeValueSelector();
     configureOptForFocusedRow();
 }
 
 FLASHMEM void MacroEditHandler::openPageSelector() {
-    if (!macro_edit_.visible.get()) return;
-    if (macro_edit_.selector.visible.get()) return;
-    if (macro_edit_.macroSelector.visible.get()) return;
+    auto& edit = macro_edit_;
+    if (edit.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
 
     pages_.selector.selectedIndex.set(pages_.activePage);
+    pages_.selector.visible.set(true);
+    edit.openPageSelector();
     overlays_.show(core::ui::OverlayType::PAGE_SELECTOR, true);
 
 }
 
 FLASHMEM void MacroEditHandler::navigatePageSelector(float delta) {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::PAGE_SELECTOR) return;
     const int current = static_cast<int>(pages_.selector.selectedIndex.get());
     int next = current;
     if (!modal::advanceWrappedSelection(
@@ -298,6 +281,7 @@ FLASHMEM void MacroEditHandler::navigatePageSelector(float delta) {
 }
 
 FLASHMEM void MacroEditHandler::applyPageSelectorAndClose() {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::PAGE_SELECTOR) return;
     if (!pages_.selector.visible.get()) return;
 
     const uint8_t targetPage = std::clamp(
@@ -308,35 +292,28 @@ FLASHMEM void MacroEditHandler::applyPageSelectorAndClose() {
 
     if (targetPage != pages_.activePage) {
         services_.switchToPage(targetPage);
-        has_staged_config_changes_ = false;
 
         const uint8_t macroIndex = macro_edit_.editingIndex.get();
         const auto& config = services_.activeConfig(macroIndex);
-        macro_edit_.tempChannel.set(config.channel);
-        macro_edit_.tempCC.set(config.cc);
+        macro_edit_.loadActiveConfig(macroIndex, config.channel, config.cc);
     }
 
-    overlays_.hide();
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::PAGE_SELECTOR);
     pages_.selector.visible.set(false);
+    macro_edit_.closePageSelector();
     configureOptForFocusedRow();
 }
 
 FLASHMEM void MacroEditHandler::openMacroTargetSelector() {
-    if (!macro_edit_.visible.get()) return;
-    if (macro_edit_.selector.visible.get()) return;
-    if (pages_.selector.visible.get()) return;
-    if (macro_edit_.macroSelector.visible.get()) return;
+    auto& edit = macro_edit_;
+    if (edit.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
 
-    auto& selector = macro_edit_.macroSelector;
-    modal::openSelectorOverlay(
-        overlays_,
-        core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR,
-        selector,
-        macro_edit_.editingIndex.get()
-    );
+    edit.openTargetSelector(macro_edit_.editingIndex.get());
+    overlays_.show(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, true);
 }
 
 FLASHMEM void MacroEditHandler::navigateMacroTargetSelector(float delta) {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::TARGET_SELECTOR) return;
     auto& selector = macro_edit_.macroSelector;
     int next = selector.selectedIndex.get();
     if (!modal::advanceWrappedSelection(delta, selector, core::state::macro::MACRO_COUNT, next)) {
@@ -346,6 +323,7 @@ FLASHMEM void MacroEditHandler::navigateMacroTargetSelector(float delta) {
 }
 
 FLASHMEM void MacroEditHandler::applyMacroTargetSelectorAndClose() {
+    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::TARGET_SELECTOR) return;
     auto& selector = macro_edit_.macroSelector;
     if (!selector.visible.get()) return;
 
@@ -357,12 +335,11 @@ FLASHMEM void MacroEditHandler::applyMacroTargetSelectorAndClose() {
 
     if (targetMacro != macro_edit_.editingIndex.get()) {
         const auto& config = services_.activeConfig(targetMacro);
-        macro_edit_.editingIndex.set(targetMacro);
-        macro_edit_.tempChannel.set(config.channel);
-        macro_edit_.tempCC.set(config.cc);
+        macro_edit_.loadActiveConfig(targetMacro, config.channel, config.cc);
     }
 
-    modal::hideOverlayAndResetSelector(overlays_, selector);
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR);
+    macro_edit_.closeTargetSelector();
     configureOptForFocusedRow();
 }
 
@@ -375,7 +352,7 @@ FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
         macro_edit_.tempCC.set(static_cast<uint8_t>(clamped));
     }
 
-    applyTempConfig();
+    applyEditedConfig();
 }
 
 FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
@@ -390,12 +367,12 @@ FLASHMEM int MacroEditHandler::valueCountForRow(uint8_t row) const {
     return 128;
 }
 
-FLASHMEM void MacroEditHandler::applyTempConfig() {
+FLASHMEM void MacroEditHandler::applyEditedConfig() {
     const uint8_t macroIndex = macro_edit_.editingIndex.get();
     const uint8_t channel = macro_edit_.tempChannel.get();
     const uint8_t cc = macro_edit_.tempCC.get();
 
-    has_staged_config_changes_ |= services_.setConfig(macroIndex, channel, cc);
+    services_.setConfig(macroIndex, channel, cc);
 }
 
 FLASHMEM void MacroEditHandler::configureOptForFocusedRow() {

@@ -7,13 +7,13 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
+#include "handler/settings/DataManagerDomainServices.hpp"
 #include "state/DataManagerCatalog.hpp"
 #include "state/DataManagerState.hpp"
 #include "ui/OverlayTypes.hpp"
 #include "ui/ViewTypes.hpp"
 
 namespace core::state {
-struct CoreState;
 struct DataManagerCommandExecutionResult;
 }
 
@@ -27,27 +27,9 @@ public:
         core::state::DataManagerState& dataManager;
         oc::state::Signal<core::ui::ViewType>& activeView;
     };
-    class Services {
-    public:
-        explicit Services(core::state::CoreState& state);
-
-        uint8_t slotCount(core::state::DataManagerCommand command) const;
-        bool slotOccupied(core::state::DataManagerCommand command, uint8_t slotIndex) const;
-        core::state::DataManagerCommandExecutionResult execute(
-            core::state::DataManagerCommand command,
-            uint8_t slotIndex,
-            core::state::DataManagerSetLoadMode setLoadMode
-        ) const;
-        void setShortcut(core::state::DataManagerContext context,
-                         bool leftButton,
-                         core::state::DataManagerCommand command) const;
-
-    private:
-        core::state::CoreState* state_ = nullptr;
-    };
 
     DataManagerHandler(StateRefs state,
-                       Services services,
+                       DataManagerDomainServices services,
                        oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                        oc::api::EncoderAPI& encoders,
                        oc::api::ButtonAPI& buttons,
@@ -94,7 +76,7 @@ private:
 
     core::state::DataManagerState& data_manager_;
     oc::state::Signal<core::ui::ViewType>& active_view_;
-    Services services_;
+    DataManagerDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

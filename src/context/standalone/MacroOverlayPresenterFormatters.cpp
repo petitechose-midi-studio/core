@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-#include <oc/time/Time.hpp>
 #include <oc/type/TextFormat.hpp>
 
 namespace core::context::standalone::macro_overlay_presenter {
@@ -33,10 +32,6 @@ void initializeStaticItems(StaticItems& items) {
 
 EditRenderData buildEditRenderData(Source& source) {
     EditRenderData data{};
-
-    if (source.macroEdit.pendingOpenReleaseDecision && source.macroEdit.openedAtMs == 0) {
-        source.macroEdit.openedAtMs = oc::time::millis();
-    }
 
     const uint8_t macroIndex = source.macroEdit.editingIndex.get();
     const uint8_t channel0 = source.macroEdit.tempChannel.get();
@@ -77,7 +72,8 @@ EditRenderData buildEditRenderData(Source& source) {
 SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items) {
     SelectorRenderData data{};
     const auto& selector = source.macroEdit.selector;
-    if (!selector.visible.get()) {
+    if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::VALUE_SELECTOR ||
+        !selector.visible.get()) {
         return data;
     }
 
@@ -88,14 +84,16 @@ SelectorRenderData buildEditSelectorRenderData(const Source& source, const Stati
     data.items = isChannel ? items.channelItems.data() : items.ccItems.data();
     data.itemCount = isChannel ? 16 : 128;
     data.selectedIndex = std::clamp(selector.selectedIndex.get(), 0, data.itemCount - 1);
-    data.dataRevision = static_cast<uint32_t>(row + 1U);
+    data.dataRevision = static_cast<uint32_t>(core::state::MacroEditFlowPhase::VALUE_SELECTOR) << 8 |
+                        static_cast<uint32_t>(row + 1U);
     data.visible = true;
     return data;
 }
 
 SelectorRenderData buildPageSelectorRenderData(const Source& source) {
     SelectorRenderData data{};
-    if (!source.pages.selector.visible.get()) {
+    if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::PAGE_SELECTOR ||
+        !source.pages.selector.visible.get()) {
         return data;
     }
 
@@ -113,14 +111,17 @@ SelectorRenderData buildPageSelectorRenderData(const Source& source) {
         0,
         static_cast<int>(core::state::macro::PAGE_COUNT) - 1
     );
-    data.dataRevision = source.configRevision.get();
+    data.dataRevision =
+        (static_cast<uint32_t>(core::state::MacroEditFlowPhase::PAGE_SELECTOR) << 24) |
+        source.configRevision.get();
     data.visible = true;
     return data;
 }
 
 SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items) {
     SelectorRenderData data{};
-    if (!source.macroEdit.macroSelector.visible.get()) {
+    if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::TARGET_SELECTOR ||
+        !source.macroEdit.macroSelector.visible.get()) {
         return data;
     }
 
@@ -133,7 +134,9 @@ SelectorRenderData buildTargetSelectorRenderData(const Source& source, const Sta
         0,
         static_cast<int>(core::state::MACRO_COUNT) - 1
     );
-    data.dataRevision = 1;
+    data.dataRevision =
+        (static_cast<uint32_t>(core::state::MacroEditFlowPhase::TARGET_SELECTOR) << 24) |
+        static_cast<uint32_t>(data.selectedIndex + 1);
     data.visible = true;
     return data;
 }

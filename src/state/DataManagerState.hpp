@@ -9,6 +9,48 @@
 
 namespace core::state {
 
+enum class DataManagerFlowPhase : uint8_t {
+    CLOSED = 0,
+    MANAGER = 1,
+    ASSIGN_SHORTCUT = 2,
+    COMMAND_PALETTE = 3,
+    SLOT_PICKER = 4,
+    SET_LOAD_MODE = 5,
+    CONFIRM = 6,
+};
+
+inline constexpr DataManagerFlowPhase dataManagerFlowPhaseForDialogMode(DataManagerDialogMode mode) {
+    switch (mode) {
+        case DataManagerDialogMode::ASSIGN_SHORTCUT:
+            return DataManagerFlowPhase::ASSIGN_SHORTCUT;
+        case DataManagerDialogMode::COMMAND_PALETTE:
+            return DataManagerFlowPhase::COMMAND_PALETTE;
+        case DataManagerDialogMode::SLOT_PICKER:
+            return DataManagerFlowPhase::SLOT_PICKER;
+        case DataManagerDialogMode::SET_LOAD_MODE:
+            return DataManagerFlowPhase::SET_LOAD_MODE;
+        case DataManagerDialogMode::CONFIRM:
+            return DataManagerFlowPhase::CONFIRM;
+        default:
+            return DataManagerFlowPhase::MANAGER;
+    }
+}
+
+inline constexpr bool dataManagerFlowShowsDialog(DataManagerFlowPhase phase) {
+    switch (phase) {
+        case DataManagerFlowPhase::ASSIGN_SHORTCUT:
+        case DataManagerFlowPhase::COMMAND_PALETTE:
+        case DataManagerFlowPhase::SLOT_PICKER:
+        case DataManagerFlowPhase::SET_LOAD_MODE:
+        case DataManagerFlowPhase::CONFIRM:
+            return true;
+        case DataManagerFlowPhase::CLOSED:
+        case DataManagerFlowPhase::MANAGER:
+        default:
+            return false;
+    }
+}
+
 struct DataManagerDialogState {
     oc::state::Signal<bool> visible{false};
     oc::state::Signal<DataManagerDialogMode> mode{DataManagerDialogMode::ASSIGN_SHORTCUT};
@@ -27,6 +69,7 @@ struct DataManagerState {
     oc::state::Signal<bool> visible{false};
     oc::state::Signal<uint8_t> focusedRow{0};
     oc::state::Signal<DataManagerContext> context{DataManagerContext::MACRO};
+    oc::state::Signal<DataManagerFlowPhase> flowPhase{DataManagerFlowPhase::CLOSED};
 
     oc::state::Signal<DataManagerCommand> macroShortcutLeft{DEFAULT_MACRO_SHORTCUT_LEFT};
     oc::state::Signal<DataManagerCommand> macroShortcutRight{DEFAULT_MACRO_SHORTCUT_RIGHT};
@@ -48,10 +91,46 @@ struct DataManagerState {
         visible.set(false);
         focusedRow.set(0);
         context.set(activeContext);
+        flowPhase.set(DataManagerFlowPhase::CLOSED);
         pendingCommand.set(DataManagerCommand::NONE);
         pendingSlot.set(0);
         pendingSetLoadMode.set(DataManagerSetLoadMode::REPLACE);
         dialog.reset();
+    }
+
+    void openSession(DataManagerContext activeContext) {
+        resetSession(activeContext);
+        visible.set(true);
+        flowPhase.set(DataManagerFlowPhase::MANAGER);
+    }
+
+    void closeSession() {
+        visible.set(false);
+        flowPhase.set(DataManagerFlowPhase::CLOSED);
+        clearPendingCommand();
+        dialog.reset();
+        feedback.set("");
+    }
+
+    void showDialog(DataManagerDialogMode mode,
+                    int selectedIndex,
+                    uint8_t editingShortcutRow = 0) {
+        visible.set(true);
+        dialog.mode.set(mode);
+        dialog.selectedIndex.set(selectedIndex);
+        dialog.editingShortcutRow.set(editingShortcutRow);
+        dialog.visible.set(true);
+        flowPhase.set(dataManagerFlowPhaseForDialogMode(mode));
+    }
+
+    void closeDialog() {
+        dialog.reset();
+        flowPhase.set(visible.get() ? DataManagerFlowPhase::MANAGER : DataManagerFlowPhase::CLOSED);
+    }
+
+    void clearPendingCommand() {
+        pendingCommand.set(DataManagerCommand::NONE);
+        pendingSetLoadMode.set(DataManagerSetLoadMode::REPLACE);
     }
 
     DataManagerCommand shortcutForSide(DataManagerShortcutSide side) const {

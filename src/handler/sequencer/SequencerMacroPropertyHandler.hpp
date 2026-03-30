@@ -5,6 +5,8 @@
  * @brief Map 8 macro encoders to the active sequencer step property
  */
 
+#include <cstdint>
+
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
@@ -16,6 +18,8 @@ namespace core::handler {
 
 class SequencerMacroPropertyHandler {
 public:
+    using NowProvider = uint32_t (*)();
+
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
@@ -25,7 +29,8 @@ public:
     SequencerMacroPropertyHandler(
         StateRefs state,
         oc::api::EncoderAPI& encoders,
-        oc::type::ScopeID scopeId
+        oc::type::ScopeID scopeId,
+        NowProvider nowProvider
     );
 
     SequencerMacroPropertyHandler(const SequencerMacroPropertyHandler&) = delete;
@@ -41,6 +46,7 @@ private:
     core::state::sequencer::SequencerTrackBankState& tracks_;
     oc::api::EncoderAPI& encoders_;
     oc::type::ScopeID scope_id_ = 0;
+    NowProvider now_provider_ = nullptr;
 };
 
 }  // namespace core::handler

@@ -19,7 +19,7 @@ FLASHMEM DataManagerCommand sanitizeShortcut(DataManagerContext context,
     return sanitizeDataManagerShortcut(context, command, defaultDataManagerShortcut(context, side));
 }
 
-FLASHMEM void setShortcutSignal(CoreState& state,
+FLASHMEM void setShortcutSignal(ShortcutStateRefs state,
                                 DataManagerContext context,
                                 DataManagerShortcutSide side,
                                 DataManagerCommand command) {
@@ -34,7 +34,7 @@ FLASHMEM void setShortcutSignal(CoreState& state,
     (left ? state.dataManager.seqShortcutLeft : state.dataManager.seqShortcutRight).set(command);
 }
 
-FLASHMEM persistence::PersistenceWriteStatus persistShortcut(CoreState& state,
+FLASHMEM persistence::PersistenceWriteStatus persistShortcut(ShortcutStateRefs state,
                                                              DataManagerContext context,
                                                              DataManagerShortcutSide side,
                                                              DataManagerCommand command) {
@@ -58,7 +58,7 @@ FLASHMEM void logShortcutPersistFailure(const char* label,
                 persistence::persistenceWriteStatusLabel(status));
 }
 
-FLASHMEM void loadShortcut(CoreState& state,
+FLASHMEM void loadShortcut(ShortcutStateRefs state,
                            DataManagerContext context,
                            DataManagerShortcutSide side,
                            uint8_t rawValue) {
@@ -72,7 +72,7 @@ FLASHMEM void loadShortcut(CoreState& state,
 
 }  // namespace
 
-FLASHMEM void setShortcut(CoreState& state,
+FLASHMEM void setShortcut(ShortcutStateRefs state,
                           DataManagerContext context,
                           bool leftButton,
                           DataManagerCommand command) {
@@ -94,7 +94,22 @@ FLASHMEM void setShortcut(CoreState& state,
     }
 }
 
-FLASHMEM void loadShortcutsFromSettings(CoreState& state) {
+FLASHMEM void setShortcut(CoreState& state,
+                          DataManagerContext context,
+                          bool leftButton,
+                          DataManagerCommand command) {
+    setShortcut(
+        ShortcutStateRefs{
+            state.dataManager,
+            state.settings,
+        },
+        context,
+        leftButton,
+        command
+    );
+}
+
+FLASHMEM void loadShortcutsFromSettings(ShortcutStateRefs state) {
     uint8_t macroLeft = 0;
     uint8_t macroRight = 0;
     uint8_t seqLeft = 0;
@@ -107,6 +122,13 @@ FLASHMEM void loadShortcutsFromSettings(CoreState& state) {
     loadShortcut(state, DataManagerContext::MACRO, DataManagerShortcutSide::RIGHT, macroRight);
     loadShortcut(state, DataManagerContext::SEQUENCER, DataManagerShortcutSide::LEFT, seqLeft);
     loadShortcut(state, DataManagerContext::SEQUENCER, DataManagerShortcutSide::RIGHT, seqRight);
+}
+
+FLASHMEM void loadShortcutsFromSettings(CoreState& state) {
+    loadShortcutsFromSettings(ShortcutStateRefs{
+        state.dataManager,
+        state.settings,
+    });
 }
 
 }  // namespace core::state::data_manager

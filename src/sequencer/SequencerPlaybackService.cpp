@@ -24,7 +24,14 @@ SequencerPlaybackService::SequencerPlaybackService(
     last_active_track_ = track_bank_.activeTrack.get();
 }
 
-void SequencerPlaybackService::update(uint32_t tick, bool playing) {
+void SequencerPlaybackService::update(uint32_t tick, bool playing, uint32_t nowMs) {
+    active_output_.setNowMs(nowMs);
+    for (auto& trackOutput : track_outputs_) {
+        if (trackOutput) {
+            trackOutput->setNowMs(nowMs);
+        }
+    }
+
     const uint8_t activeTrack = track_bank_.activeTrack.get();
     if (activeTrack != last_active_track_) {
         stop();
@@ -57,7 +64,7 @@ void SequencerPlaybackService::update(uint32_t tick, bool playing) {
     if (playhead >= 0 && playhead != last_playhead_) {
         const uint8_t spb = sequencer_.stepsPerBeat.get();
         if (spb > 0 && (static_cast<uint8_t>(playhead) % spb) == 0) {
-            status_bar_.pulseBeat();
+            status_bar_.pulseBeat(nowMs);
         }
     }
     last_playhead_ = playhead;

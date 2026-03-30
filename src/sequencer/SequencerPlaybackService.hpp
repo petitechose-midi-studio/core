@@ -29,7 +29,7 @@ public:
                              core::state::StatusBarState& statusBar,
                              oc::api::MidiAPI& midi);
 
-    void update(uint32_t tick, bool playing);
+    void update(uint32_t tick, bool playing, uint32_t nowMs);
     void stop();
 
 private:
@@ -41,11 +41,12 @@ private:
             , track_index_(trackIndex) {}
 
         void setTrackIndex(uint8_t trackIndex) { track_index_ = trackIndex; }
+        void setNowMs(uint32_t nowMs) { now_ms_ = nowMs; }
 
         void sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) override {
             midi_.sendNoteOn(channel, note, velocity);
-            status_bar_.pulseNoteOut();
-            status_bar_.pulseTrackNote(track_index_, velocity);
+            status_bar_.pulseNoteOut(now_ms_);
+            status_bar_.pulseTrackNote(track_index_, velocity, now_ms_);
         }
 
         void sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) override {
@@ -64,6 +65,7 @@ private:
         oc::api::MidiAPI& midi_;
         core::state::StatusBarState& status_bar_;
         uint8_t track_index_ = 0;
+        uint32_t now_ms_ = 0;
     };
 
     core::state::sequencer::SequencerState& sequencer_;

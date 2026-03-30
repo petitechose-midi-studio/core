@@ -4,9 +4,8 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
-#include "state/CoreSettings.hpp"
+#include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "state/GlobalSettingsState.hpp"
-#include "state/MidiSyncState.hpp"
 #include "ui/OverlayTypes.hpp"
 
 namespace core::handler {
@@ -15,11 +14,10 @@ class GlobalSettingsHandler {
 public:
     struct StateRefs {
         core::state::GlobalSettingsState& globalSettings;
-        core::state::MidiSyncState& midiSync;
-        core::state::CoreSettings& settings;
     };
 
     GlobalSettingsHandler(StateRefs state,
+                          GlobalSettingsDomainServices services,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,
@@ -45,8 +43,7 @@ private:
     void closeSelectorCancel();
 
     core::state::GlobalSettingsState& global_settings_;
-    core::state::MidiSyncState& midi_sync_;
-    core::state::CoreSettings& settings_;
+    GlobalSettingsDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

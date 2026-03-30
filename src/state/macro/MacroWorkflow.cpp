@@ -7,37 +7,80 @@
 
 namespace core::state::macro {
 
-void MacroWorkflow::syncRuntimeFromActivePage(CoreState& state) {
-    const auto& pageData = state.pages.activePageData();
+namespace {
+
+MacroWorkflow::StateRefs makeStateRefs(core::state::CoreState& state) {
+    return MacroWorkflow::StateRefs{
+        state.macros,
+        state.pages,
+        state.configRevision,
+        state.statusBar,
+    };
+}
+
+MacroWorkflow::Hooks makeHooks(core::state::CoreState& state) {
+    return MacroWorkflow::Hooks{&state};
+}
+
+}  // namespace
+
+void MacroWorkflow::Hooks::flushPendingRuntime() const {
+    if (coreState) {
+        coreState->flush();
+    }
+}
+
+void MacroWorkflow::Hooks::persistWorkspaceNow() const {
+    if (coreState) {
+        coreState->persistMacroWorkspace();
+    }
+}
+
+void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& macros,
+                                              const MacroPagesState& pages) {
+    const auto& pageData = pages.activePageData();
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         char label[16];
         size_t pos = oc::type::text::appendString(label, sizeof(label), 0, "Macro ");
         pos = oc::type::text::appendUnsigned(label, sizeof(label), pos, i + 1);
         oc::type::text::terminate(label, sizeof(label), pos);
-        state.macros.slots[i].label.set(label);
-        state.macros.slots[i].value.set(std::clamp(pageData.values[i], 0.0f, 1.0f));
+        macros.slots[i].label.set(label);
+        macros.slots[i].value.set(std::clamp(pageData.values[i], 0.0f, 1.0f));
+    }
+}
+
+void MacroWorkflow::syncRuntimeFromActivePage(CoreState& state) {
+    syncRuntimeFromActivePage(state.macros, state.pages);
+}
+
+void MacroWorkflow::syncActivePageValuesFromRuntime(MacroPagesState& pages,
+                                                    const core::state::MacroState& macros) {
+    auto& page = pages.activePageData();
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        page.values[i] = std::clamp(macros.slots[i].value.get(), 0.0f, 1.0f);
     }
 }
 
 void MacroWorkflow::syncActivePageValuesFromRuntime(CoreState& state) {
-    auto& page = state.pages.activePageData();
-    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        page.values[i] = std::clamp(state.macros.slots[i].value.get(), 0.0f, 1.0f);
-    }
+    syncActivePageValuesFromRuntime(state.pages, state.macros);
+}
+
+void MacroWorkflow::switchToPage(StateRefs state, Hooks hooks, uint8_t pageIndex) {
+    if (pageIndex >= PAGE_COUNT) return;
+
+    hooks.flushPendingRuntime();
+    state.pages.setActivePage(pageIndex);
+    hooks.persistWorkspaceNow();
+    state.configRevision.set(state.configRevision.get() + 1);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
 void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
-    if (pageIndex >= PAGE_COUNT) return;
-
-    state.flush();
-    state.pages.setActivePage(pageIndex);
-    state.persistMacroWorkspace();
-    state.configRevision.set(state.configRevision.get() + 1);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
-    syncRuntimeFromActivePage(state);
+    switchToPage(makeStateRefs(state), makeHooks(state), pageIndex);
 }
 
-bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc) {
+bool MacroWorkflow::setConfig(StateRefs state, Hooks hooks, uint8_t index, uint8_t channel, uint8_t cc) {
     if (index >= MACRO_COUNT) return false;
     if (channel > 15 || cc > 127) return false;
 
@@ -51,24 +94,41 @@ bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, 
     page.channel[index] = channel;
     page.cc[index] = cc;
     state.pages.updateActiveConfigs();
-    state.persistMacroWorkspace();
+    state.configRevision.set(state.configRevision.get() + 1);
+    hooks.persistWorkspaceNow();
     return true;
 }
 
-void MacroWorkflow::setRuntimeValue(CoreState& state, uint8_t index, float value) {
+bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc) {
+    return setConfig(makeStateRefs(state), makeHooks(state), index, channel, cc);
+}
+
+void MacroWorkflow::setRuntimeValue(core::state::MacroState& macros, uint8_t index, float value) {
     if (index >= MACRO_COUNT) return;
-    state.macros.slots[index].value.set(std::clamp(value, 0.0f, 1.0f));
+    macros.slots[index].value.set(std::clamp(value, 0.0f, 1.0f));
+}
+
+void MacroWorkflow::setRuntimeValue(CoreState& state, uint8_t index, float value) {
+    setRuntimeValue(state.macros, index, value);
+}
+
+float MacroWorkflow::runtimeValue(const core::state::MacroState& macros, uint8_t index) {
+    if (index >= MACRO_COUNT) return 0.0f;
+    return macros.slots[index].value.get();
 }
 
 float MacroWorkflow::runtimeValue(const CoreState& state, uint8_t index) {
-    if (index >= MACRO_COUNT) return 0.0f;
-    return state.macros.slots[index].value.get();
+    return runtimeValue(state.macros, index);
+}
+
+const MacroConfig& MacroWorkflow::activeConfig(const MacroPagesState& pages, uint8_t index) {
+    static const MacroConfig defaultConfig{};
+    if (index >= MACRO_COUNT) return defaultConfig;
+    return pages.activeConfigs[index];
 }
 
 const MacroConfig& MacroWorkflow::activeConfig(const CoreState& state, uint8_t index) {
-    static const MacroConfig defaultConfig{};
-    if (index >= MACRO_COUNT) return defaultConfig;
-    return state.pages.activeConfigs[index];
+    return activeConfig(state.pages, index);
 }
 
 }  // namespace core::state::macro

@@ -4,63 +4,11 @@
 #include <iostream>
 #include <vector>
 
-#include <oc/interface/IStorage.hpp>
-
 #include "../../src/state/CoreSettings.hpp"
+#include "../support/MemoryStorage.hpp"
 
 namespace {
-
-class MemoryStorage : public oc::interface::IStorage {
-public:
-    explicit MemoryStorage(size_t capacity = 4096)
-        : data_(capacity, 0xFF) {}
-
-    oc::type::Result<void> init() override {
-        initialized_ = true;
-        return oc::type::Result<void>::ok();
-    }
-
-    bool available() const override { return initialized_; }
-
-    size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t maxSize = data_.size() - static_cast<size_t>(address);
-        const size_t n = (size <= maxSize) ? size : maxSize;
-        std::memcpy(buffer, data_.data() + address, n);
-        return n;
-    }
-
-    size_t write(uint32_t address, const uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t maxSize = data_.size() - static_cast<size_t>(address);
-        const size_t n = (size <= maxSize) ? size : maxSize;
-        std::memcpy(data_.data() + address, buffer, n);
-        dirty_ = true;
-        return n;
-    }
-
-    bool commit() override {
-        dirty_ = false;
-        return true;
-    }
-
-    bool erase(uint32_t address, size_t size) override {
-        if (address >= data_.size()) return false;
-        const size_t maxSize = data_.size() - static_cast<size_t>(address);
-        const size_t n = (size <= maxSize) ? size : maxSize;
-        std::memset(data_.data() + address, 0xFF, n);
-        dirty_ = true;
-        return true;
-    }
-
-    size_t capacity() const override { return data_.size(); }
-    bool isDirty() const override { return dirty_; }
-
-private:
-    bool initialized_ = false;
-    bool dirty_ = false;
-    std::vector<uint8_t> data_;
-};
+using test_support::MemoryStorage;
 
 void test_roundtrip_v3() {
     MemoryStorage storage;

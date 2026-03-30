@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
+#include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/SequencerEncoderSyncCoordinator.hpp"
@@ -119,7 +120,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.sequencerTracks,
             },
             encoders,
-            sequencerViewScopeId
+            sequencerViewScopeId,
+            oc::time::millis
         );
 }
 

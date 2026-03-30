@@ -76,7 +76,8 @@ OverlayRenderData buildOverlayRenderData(const Source& source) {
 
 SelectorRenderData buildSelectorRenderData(const Source& source) {
     SelectorRenderData data{};
-    if (!source.globalSettings.selector.visible.get()) {
+    if (source.globalSettings.flowPhase.get() != core::state::GlobalSettingsFlowPhase::VALUE_SELECTOR ||
+        !source.globalSettings.selector.visible.get()) {
         return data;
     }
 

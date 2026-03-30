@@ -59,16 +59,52 @@ struct StatusBarState {
         pulseTransient(noteInActive, note_in_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
     }
 
+    void pulseNoteIn(uint32_t nowMs) {
+        pulseTransientAt(
+            noteInActive,
+            note_in_until_ms_,
+            Config::Timing::STATUS_MIDI_PULSE_MS,
+            nowMs
+        );
+    }
+
     void pulseNoteOut() {
         pulseTransient(noteOutActive, note_out_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
+    }
+
+    void pulseNoteOut(uint32_t nowMs) {
+        pulseTransientAt(
+            noteOutActive,
+            note_out_until_ms_,
+            Config::Timing::STATUS_MIDI_PULSE_MS,
+            nowMs
+        );
     }
 
     void pulseCcIn() {
         pulseTransient(ccInActive, cc_in_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
     }
 
+    void pulseCcIn(uint32_t nowMs) {
+        pulseTransientAt(
+            ccInActive,
+            cc_in_until_ms_,
+            Config::Timing::STATUS_MIDI_PULSE_MS,
+            nowMs
+        );
+    }
+
     void pulseCcOut() {
         pulseTransient(ccOutActive, cc_out_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
+    }
+
+    void pulseCcOut(uint32_t nowMs) {
+        pulseTransientAt(
+            ccOutActive,
+            cc_out_until_ms_,
+            Config::Timing::STATUS_MIDI_PULSE_MS,
+            nowMs
+        );
     }
 
     void pulseSyncInput() {
@@ -88,9 +124,22 @@ struct StatusBarState {
         pulseTransient(beatPulse, beat_until_ms_, Config::Timing::STATUS_BEAT_PULSE_MS);
     }
 
+    void pulseBeat(uint32_t nowMs) {
+        pulseTransientAt(
+            beatPulse,
+            beat_until_ms_,
+            Config::Timing::STATUS_BEAT_PULSE_MS,
+            nowMs
+        );
+    }
+
     void pulseTrackNote(uint8_t track, uint8_t velocity) {
+        pulseTrackNote(track, velocity, oc::time::millis());
+    }
+
+    void pulseTrackNote(uint8_t track, uint8_t velocity, uint32_t nowMs) {
         if (track >= TRACK_COUNT) return;
-        track_note_until_ms_[track] = oc::time::millis() + Config::Timing::STATUS_MIDI_PULSE_MS;
+        track_note_until_ms_[track] = nowMs + Config::Timing::STATUS_MIDI_PULSE_MS;
         trackNoteActivity[track].set(velocity);
     }
 

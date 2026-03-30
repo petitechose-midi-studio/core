@@ -77,6 +77,18 @@ void CoreStateLifecycle::flush(CoreState& state) {
     flushAutoPersist_(state);
 }
 
+void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
+    state.macroEdit.reset();
+    state.sequencer.stepEdit.visible.set(false);
+    state.sequencer.stepEdit.reset();
+    state.sequencer.stepPropertyInlineSelector.reset();
+    state.sequencer.patternQuickControls.reset();
+    state.sequencer.rangeSelection.reset();
+    state.sequencerTracks.selector.reset(state.sequencerTracks.activeTrack.get());
+    state.globalSettings.reset();
+    state.dataManager.resetSession(DataManagerContext::MACRO);
+}
+
 void CoreStateLifecycle::factoryReset(CoreState& state) {
     const auto resetStatus = state.settings.factoryResetStatus();
     if (resetStatus != persistence::PersistenceWriteStatus::OK) {

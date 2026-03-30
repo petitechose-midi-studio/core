@@ -10,6 +10,8 @@
  * - selector_scope_: Value selector bindings
  */
 
+#include <cstdint>
+
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -27,14 +29,15 @@ namespace core::handler {
  * - Long press on macro button opens MacroEdit for that macro
  * - Main overlay: NAV turn (focus row), OPT turn (live value edit), NAV press (open value selector)
  * - Value selector: NAV turn (navigate), NAV release (apply and close)
- * - LEFT_TOP closes overlay (no rollback)
+ * - LEFT_TOP closes overlay (changes are already applied)
  */
 class MacroEditHandler {
 public:
+    using NowProvider = uint32_t (*)();
+
     struct StateRefs {
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
-        oc::state::Signal<uint32_t>& configRevision;
     };
 
     /**
@@ -59,7 +62,8 @@ public:
         oc::type::ScopeID overlayScope,
         oc::type::ScopeID selectorScope,
         oc::type::ScopeID pageSelectorScope,
-        oc::type::ScopeID macroSelectorScope
+        oc::type::ScopeID macroSelectorScope,
+        NowProvider nowProvider
     );
 
     ~MacroEditHandler() = default;
@@ -94,12 +98,11 @@ private:
     void setValueForRow(uint8_t row, int value);
     int valueForRow(uint8_t row) const;
     int valueCountForRow(uint8_t row) const;
-    void applyTempConfig();
+    void applyEditedConfig();
     void configureOptForFocusedRow();
 
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
-    oc::state::Signal<uint32_t>& config_revision_;
     MacroDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
@@ -110,8 +113,7 @@ private:
     oc::type::ScopeID selector_scope_ = 0;
     oc::type::ScopeID page_selector_scope_ = 0;
     oc::type::ScopeID macro_selector_scope_ = 0;
-
-    bool has_staged_config_changes_ = false;
+    NowProvider now_provider_ = nullptr;
 };
 
 }  // namespace core::handler

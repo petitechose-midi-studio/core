@@ -5,87 +5,20 @@
 #include <iostream>
 #include <vector>
 
-#include <oc/interface/IStorage.hpp>
-#include <oc/state/NotificationQueue.hpp>
-
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/DataManagerWorkflow.hpp"
 #include "../../src/state/macro/MacroPersistenceWorkflow.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
+#include "../support/CoreStorages.hpp"
+#include "../support/NotificationTestUtils.hpp"
 
 namespace {
-
-class MemoryStorage : public oc::interface::IStorage {
-public:
-    explicit MemoryStorage(size_t capacity = 128 * 1024)
-        : data_(capacity, 0xFF) {}
-
-    oc::type::Result<void> init() override {
-        initialized_ = true;
-        return oc::type::Result<void>::ok();
-    }
-
-    bool available() const override { return initialized_; }
-
-    size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memcpy(buffer, data_.data() + address, n);
-        return n;
-    }
-
-    size_t write(uint32_t address, const uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memcpy(data_.data() + address, buffer, n);
-        return n;
-    }
-
-    bool commit() override { return true; }
-
-    bool erase(uint32_t address, size_t size) override {
-        if (address >= data_.size()) return false;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memset(data_.data() + address, 0xFF, n);
-        return true;
-    }
-
-    size_t capacity() const override { return data_.size(); }
-
-private:
-    bool initialized_ = false;
-    std::vector<uint8_t> data_;
-};
-
-struct CoreStorages {
-    MemoryStorage settings;
-    MemoryStorage macroWorkspace;
-    MemoryStorage macroLibrary;
-    MemoryStorage sequencerWorkspace;
-    MemoryStorage sequencerPatternLibrary;
-    MemoryStorage sequencerSetLibrary;
-
-    void initAll() {
-        settings.init();
-        macroWorkspace.init();
-        macroLibrary.init();
-        sequencerWorkspace.init();
-        sequencerPatternLibrary.init();
-        sequencerSetLibrary.init();
-    }
-};
-
-void drainNotifications() {
-    auto& queue = oc::state::NotificationQueue::instance();
-    while (queue.hasPending()) {
-        queue.flush();
-    }
-}
+using test_support::CoreStorages;
+using test_support::drainNotifications;
 
 void test_workspace_survives_legacy_corruption() {
     CoreStorages storage;
-    storage.initAll();
 
     {
         core::state::CoreState state(storage.settings,
@@ -188,6 +121,59 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
     drainNotifications();
 
     std::cout << "[PASS] test_macro_library_save_snapshots_runtime_values_without_manual_flush\n";
+}
+
+void test_macro_config_changes_persist_immediately_and_bump_revision() {
+    CoreStorages storage;
+    storage.initAll();
+
+    uint8_t updatedChannel = 0;
+    uint8_t updatedCc = 0;
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state, 0);
+        const uint32_t initialRevision = state.configRevision.get();
+
+        assert(!core::state::macro::MacroWorkflow::setConfig(
+            state,
+            0,
+            initialConfig.channel,
+            initialConfig.cc
+        ));
+        assert(state.configRevision.get() == initialRevision);
+
+        updatedChannel = static_cast<uint8_t>((initialConfig.channel + 1U) % 16U);
+        updatedCc = static_cast<uint8_t>((initialConfig.cc < 127U) ? (initialConfig.cc + 1U)
+                                                                   : (initialConfig.cc - 1U));
+
+        assert(core::state::macro::MacroWorkflow::setConfig(state, 0, updatedChannel, updatedCc));
+        assert(state.configRevision.get() == initialRevision + 1U);
+
+        const auto& updatedConfig = core::state::macro::MacroWorkflow::activeConfig(state, 0);
+        assert(updatedConfig.channel == updatedChannel);
+        assert(updatedConfig.cc == updatedCc);
+    }
+
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
+    const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored, 0);
+    assert(restoredConfig.channel == updatedChannel);
+    assert(restoredConfig.cc == updatedCc);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_macro_config_changes_persist_immediately_and_bump_revision\n";
 }
 
 void test_data_manager_shortcuts_persist_and_sanitize() {
@@ -697,6 +683,7 @@ int main() {
     test_workspace_survives_legacy_corruption();
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_snapshots_runtime_values_without_manual_flush();
+    test_macro_config_changes_persist_immediately_and_bump_revision();
     test_data_manager_shortcuts_persist_and_sanitize();
     test_data_manager_command_execution_and_slot_probe();
     test_sequencer_workspace_and_library_roundtrip();

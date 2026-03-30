@@ -22,7 +22,7 @@ MacroOverlayPresenter::MacroOverlayPresenter(
 FLASHMEM void MacroOverlayPresenter::bind() {
     edit_watcher_.watchAll(
         [this]() { renderEdit(); },
-        state_refs_.macroEdit.visible,
+        state_refs_.macroEdit.flowPhase,
         state_refs_.macroEdit.editingIndex,
         state_refs_.macroEdit.tempChannel,
         state_refs_.macroEdit.tempCC,
@@ -32,21 +32,21 @@ FLASHMEM void MacroOverlayPresenter::bind() {
 
     edit_selector_watcher_.watchAll(
         [this]() { renderEditSelector(); },
-        state_refs_.macroEdit.selector.visible,
+        state_refs_.macroEdit.flowPhase,
         state_refs_.macroEdit.selector.editingRow,
         state_refs_.macroEdit.selector.selectedIndex
     );
 
     page_selector_watcher_.watchAll(
         [this]() { renderPageSelector(); },
-        state_refs_.pages.selector.visible,
+        state_refs_.macroEdit.flowPhase,
         state_refs_.pages.selector.selectedIndex,
         state_refs_.configRevision
     );
 
     macro_target_selector_watcher_.watchAll(
         [this]() { renderTargetSelector(); },
-        state_refs_.macroEdit.macroSelector.visible,
+        state_refs_.macroEdit.flowPhase,
         state_refs_.macroEdit.macroSelector.selectedIndex
     );
 }

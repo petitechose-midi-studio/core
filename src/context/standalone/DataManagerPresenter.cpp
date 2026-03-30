@@ -37,8 +37,7 @@ FLASHMEM void DataManagerPresenter::bind() {
 
     dialog_watcher_.watchAll(
         [this]() { renderDialog(); },
-        state_refs_.dataManager.dialog.visible,
-        state_refs_.dataManager.dialog.mode,
+        state_refs_.dataManager.flowPhase,
         state_refs_.dataManager.dialog.selectedIndex,
         state_refs_.dataManager.dialog.editingShortcutRow,
         state_refs_.dataManager.context,

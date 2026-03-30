@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
+#include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/MacroOverlayPresenter.hpp"
@@ -78,7 +79,6 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
         core::handler::MacroEditHandler::StateRefs{
             stateRefs.macroEdit,
             stateRefs.pages,
-            stateRefs.configRevision,
         },
         services,
         overlays,
@@ -88,7 +88,8 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
         oc::ui::lvgl::scopeID(edit_overlay_->getElement()),
         oc::ui::lvgl::scopeID(edit_selector_overlay_->getElement()),
         oc::ui::lvgl::scopeID(page_selector_overlay_->getElement()),
-        oc::ui::lvgl::scopeID(target_selector_overlay_->getElement())
+        oc::ui::lvgl::scopeID(target_selector_overlay_->getElement()),
+        oc::time::millis
     );
 }
 

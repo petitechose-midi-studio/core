@@ -112,8 +112,9 @@ DialogRenderData buildDialogRenderData(const Source& source) {
     DialogRenderData data{};
     const auto& dm = source.dataManager;
     const auto& dialog = dm.dialog;
+    const auto phase = dm.flowPhase.get();
 
-    if (!dialog.visible.get()) {
+    if (!core::state::dataManagerFlowShowsDialog(phase) || !dialog.visible.get()) {
         return data;
     }
 
@@ -123,21 +124,19 @@ DialogRenderData buildDialogRenderData(const Source& source) {
     const int commandCount = static_cast<int>(core::state::dataManagerCommandCount(context));
     fillCommandItems(context, data.commandItems, commandCount);
 
-    const auto mode = dialog.mode.get();
-
-    if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
+    if (phase == core::state::DataManagerFlowPhase::ASSIGN_SHORTCUT) {
         data.title = (dialog.editingShortcutRow.get() == 0) ? "MAP LEFT" : "MAP RIGHT";
         data.meta = "SELECT COMMAND";
         data.items = data.commandItems.data();
         data.itemCount = commandCount;
         data.selectedIndex = std::clamp(dialog.selectedIndex.get(), 0, commandCount - 1);
-    } else if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
+    } else if (phase == core::state::DataManagerFlowPhase::COMMAND_PALETTE) {
         data.title = "COMMANDS";
         data.meta = "RUN COMMAND";
         data.items = data.commandItems.data();
         data.itemCount = commandCount;
         data.selectedIndex = std::clamp(dialog.selectedIndex.get(), 0, commandCount - 1);
-    } else if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
+    } else if (phase == core::state::DataManagerFlowPhase::SLOT_PICKER) {
         const auto command = dm.pendingCommand.get();
         const uint8_t slotCount = core::state::DataManagerWorkflow::slotCount(command);
         if (slotCount == 0U) {
@@ -151,13 +150,13 @@ DialogRenderData buildDialogRenderData(const Source& source) {
         data.items = data.slotItems.data();
         data.itemCount = static_cast<int>(slotCount);
         data.selectedIndex = std::clamp(dialog.selectedIndex.get(), 0, data.itemCount - 1);
-    } else if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
+    } else if (phase == core::state::DataManagerFlowPhase::SET_LOAD_MODE) {
         data.title = "LOAD SET";
         data.meta = "MODE";
         data.items = SET_MODE_ITEMS;
         data.itemCount = 2;
         data.selectedIndex = std::clamp(dialog.selectedIndex.get(), 0, 1);
-    } else if (mode == core::state::DataManagerDialogMode::CONFIRM) {
+    } else if (phase == core::state::DataManagerFlowPhase::CONFIRM) {
         static constexpr size_t META_SIZE = 24;
         static std::array<char, META_SIZE> confirmMeta{};
         data.title = "CONFIRM";
@@ -173,7 +172,7 @@ DialogRenderData buildDialogRenderData(const Source& source) {
     }
 
     data.dataRevision =
-        (static_cast<uint32_t>(mode) << 24) |
+        (static_cast<uint32_t>(phase) << 24) |
         (static_cast<uint32_t>(data.selectedIndex) << 16) |
         (static_cast<uint32_t>(dm.pendingCommand.get()) << 8) |
         static_cast<uint32_t>(dm.pendingSlot.get());

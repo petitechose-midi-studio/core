@@ -4,10 +4,10 @@
 #include <iostream>
 #include <vector>
 
-#include <oc/interface/IStorage.hpp>
 #include <oc/time/Time.hpp>
 
 #include "../../src/state/CoreState.hpp"
+#include "../support/CoreStorages.hpp"
 
 namespace {
 
@@ -17,69 +17,10 @@ uint32_t mockTimeMs() {
     return g_mock_now_ms;
 }
 
-class MemoryStorage : public oc::interface::IStorage {
-public:
-    explicit MemoryStorage(size_t capacity = 128 * 1024)
-        : data_(capacity, 0xFF) {}
-
-    oc::type::Result<void> init() override {
-        initialized_ = true;
-        return oc::type::Result<void>::ok();
-    }
-
-    bool available() const override { return initialized_; }
-
-    size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memcpy(buffer, data_.data() + address, n);
-        return n;
-    }
-
-    size_t write(uint32_t address, const uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memcpy(data_.data() + address, buffer, n);
-        return n;
-    }
-
-    bool commit() override { return true; }
-
-    bool erase(uint32_t address, size_t size) override {
-        if (address >= data_.size()) return false;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memset(data_.data() + address, 0xFF, n);
-        return true;
-    }
-
-    size_t capacity() const override { return data_.size(); }
-
-private:
-    bool initialized_ = false;
-    std::vector<uint8_t> data_;
-};
-
-struct CoreStorages {
-    MemoryStorage settings;
-    MemoryStorage macroWorkspace;
-    MemoryStorage macroLibrary;
-    MemoryStorage sequencerWorkspace;
-    MemoryStorage sequencerPatternLibrary;
-    MemoryStorage sequencerSetLibrary;
-
-    void initAll() {
-        settings.init();
-        macroWorkspace.init();
-        macroLibrary.init();
-        sequencerWorkspace.init();
-        sequencerPatternLibrary.init();
-        sequencerSetLibrary.init();
-    }
-};
+using test_support::CoreStorages;
 
 void test_overlay_registration_supports_stacking_and_restore() {
     CoreStorages storage;
-    storage.initAll();
 
     core::state::CoreState state(storage.settings,
                                  storage.macroWorkspace,
@@ -127,7 +68,12 @@ void test_factory_reset_clears_transient_state_and_overlays() {
                                  storage.sequencerSetLibrary);
 
     state.activeView.set(core::ui::ViewType::SEQUENCER);
-    state.dataManager.resetSession(core::state::DataManagerContext::SEQUENCER);
+    state.macroEdit.openEditor(1, 2, 10, 1000);
+    state.macroEdit.openValueSelector(0, 2);
+    state.globalSettings.openOverlay();
+    state.globalSettings.openSelector(1, 1);
+    state.dataManager.openSession(core::state::DataManagerContext::SEQUENCER);
+    state.dataManager.showDialog(core::state::DataManagerDialogMode::SET_LOAD_MODE, 1);
     state.dataManager.feedback.set("busy");
     state.sequencer.stepInlineFeedback.show(
         3,
@@ -143,8 +89,11 @@ void test_factory_reset_clears_transient_state_and_overlays() {
 
     assert(state.activeView.get() == core::ui::ViewType::MACRO);
     assert(state.overlays.current() == core::ui::OverlayType::NONE);
+    assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
+    assert(state.globalSettings.flowPhase.get() == core::state::GlobalSettingsFlowPhase::CLOSED);
     assert(!state.dataManager.visible.get());
     assert(!state.dataManager.dialog.visible.get());
+    assert(state.dataManager.flowPhase.get() == core::state::DataManagerFlowPhase::CLOSED);
     assert(!state.sequencer.stepInlineFeedback.visible.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(std::strcmp(state.dataManager.feedback.get(), "") == 0);
@@ -232,6 +181,51 @@ void test_core_state_update_expires_status_bar_pulses() {
     std::cout << "[PASS] test_core_state_update_expires_status_bar_pulses\n";
 }
 
+void test_reset_standalone_transient_ui_clears_context_owned_state() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    state.macroEdit.openEditor(2, 1, 64, 1500);
+    state.macroEdit.openTargetSelector(4);
+    state.globalSettings.openOverlay();
+    state.globalSettings.openSelector(2, 3);
+    state.dataManager.openSession(core::state::DataManagerContext::SEQUENCER);
+    state.dataManager.showDialog(core::state::DataManagerDialogMode::COMMAND_PALETTE, 0);
+    state.sequencer.stepEdit.visible.set(true);
+    state.sequencer.stepPropertyInlineSelector.selecting.set(true);
+    state.sequencer.patternQuickControls.selecting.set(true);
+    state.sequencer.rangeSelection.kind.set(core::state::sequencer::RangeSelectionKind::COPY);
+    state.sequencerTracks.activeTrack.set(3);
+    state.sequencerTracks.selector.selecting.set(true);
+    state.sequencerTracks.selector.selectedTrack.set(7);
+
+    state.resetStandaloneTransientUi();
+
+    assert(!state.macroEdit.visible.get());
+    assert(!state.macroEdit.selector.visible.get());
+    assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
+    assert(!state.globalSettings.visible.get());
+    assert(state.globalSettings.flowPhase.get() == core::state::GlobalSettingsFlowPhase::CLOSED);
+    assert(!state.dataManager.visible.get());
+    assert(state.dataManager.flowPhase.get() == core::state::DataManagerFlowPhase::CLOSED);
+    assert(state.dataManager.context.get() == core::state::DataManagerContext::MACRO);
+    assert(!state.sequencer.stepEdit.visible.get());
+    assert(!state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(!state.sequencer.patternQuickControls.selecting.get());
+    assert(!state.sequencer.rangeSelection.active());
+    assert(!state.sequencerTracks.selector.selecting.get());
+    assert(state.sequencerTracks.selector.selectedTrack.get() == 3);
+
+    std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
+}
+
 }  // namespace
 
 int main() {
@@ -240,6 +234,7 @@ int main() {
     test_factory_reset_clears_transient_state_and_overlays();
     test_core_state_update_expires_inline_feedback();
     test_core_state_update_expires_status_bar_pulses();
+    test_reset_standalone_transient_ui_clears_context_owned_state();
     std::cout << "\nAll CoreState lifecycle tests passed.\n";
     return 0;
 }

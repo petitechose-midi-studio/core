@@ -1,7 +1,5 @@
 #include "SequencerMacroPropertyHandler.hpp"
 
-#include <oc/time/Time.hpp>
-
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
@@ -30,13 +28,15 @@ inline oc::type::IsActiveFn canEditSequencerProperty(
 SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     StateRefs state,
     oc::api::EncoderAPI& encoders,
-    oc::type::ScopeID scopeId
+    oc::type::ScopeID scopeId,
+    NowProvider nowProvider
 )
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
     , tracks_(state.tracks)
     , encoders_(encoders)
-    , scope_id_(scopeId) {
+    , scope_id_(scopeId)
+    , now_provider_(nowProvider) {
     setupBindings();
 }
 
@@ -67,7 +67,7 @@ void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normal
         property,
         normalized
     );
-    sequencer_.stepInlineFeedback.show(abs, property, oc::time::millis());
+    sequencer_.stepInlineFeedback.show(abs, property, now_provider_ ? now_provider_() : 0);
 }
 
 void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
@@ -87,7 +87,7 @@ void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
         property,
         normalized
     );
-    sequencer_.stepInlineFeedback.show(focused, property, oc::time::millis());
+    sequencer_.stepInlineFeedback.show(focused, property, now_provider_ ? now_provider_() : 0);
 }
 
 }  // namespace core::handler

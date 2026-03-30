@@ -180,6 +180,7 @@ public:
      * @brief Flush any pending dirty values immediately
      */
     void flush();
+    void resetStandaloneTransientUi();
 
     bool isMacroPersistenceReady() const;
     bool isSequencerPersistenceReady() const;

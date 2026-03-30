@@ -4,30 +4,20 @@
  * @file StandaloneContext.hpp
  * @brief Main context for standalone operation mode
  *
- * StandaloneContext manages the lifecycle and wires together:
- * - CoreState: reactive state for all application data
- * - Handlers: input bindings for encoders/buttons
- * - Views: UI components that subscribe to state
+ * StandaloneContext manages the lifecycle and top-level assembly order.
  *
  * ## Architecture
  *
  * ```
  * StandaloneContext
  *     ├── CoreState (reactive state - single source of truth, external)
- *     ├── ViewContainer (2-zone layout: main + bottom)
- *     ├── Handlers
- *     │   ├── MacroValueHandler (encoder → MIDI CC out)
- *     │   ├── MacroMidiHandler (MIDI CC in → state)
- *     │   ├── MacroEditHandler (overlay editing)
- *     │   └── TransportHandler (transport controls)
- *     ├── Views
- *     │   ├── MacroView (main zone, owns TopBar)
- *     │   └── TransportBar (bottom zone)
- *     └── Overlays (managed by OverlayManager)
- *         └── MacroEdit VirtualList overlays (property + selectors)
+ *     ├── StandaloneUiAssembly (container, views, bottom bars)
+ *     ├── StandaloneOverlayAssembly (overlay manager, view selector)
+ *     ├── StandaloneFeatureAssembly (macro, sequencer, settings modules)
+ *     └── StandaloneGlobalHandlerAssembly (transport, view switching)
  * ```
  *
- * The context itself is thin - handlers and views do the work.
+ * The context itself stays focused on lifecycle and assembly order.
  * CoreState is received from main.cpp (survives context switches).
  */
 
@@ -37,42 +27,16 @@
 #include <oc/context/Requirements.hpp>
 #include <oc/state/SignalWatcher.hpp>
 
-#include "state/CoreState.hpp"
-#include "ui/OverlayTypes.hpp"
-
-namespace ms::ui {
-class ViewContainer;
-class StringListSelector;
-}  // namespace ms::ui
-
-// Forward declarations
-namespace core::handler {
-class TransportHandler;
-class ViewSwitcherHandler;
-}  // namespace core::handler
+namespace core::state {
+struct CoreState;
+}
 
 namespace core::context::standalone {
-class MacroFeatureModule;
-class SequencerFeatureModule;
-class SettingsFeatureModule;
+class StandaloneFeatureAssembly;
+class StandaloneGlobalHandlerAssembly;
+class StandaloneOverlayAssembly;
+class StandaloneUiAssembly;
 }
-
-namespace core::ui {
-class MacroView;
-class SequencerView;
-class TransportBar;
-class ContextSoftkeyBar;
-}  // namespace core::ui
-
-namespace ms::ui {
-class VirtualListKeyValueOverlay;
-class VirtualListSelectorOverlay;
-}
-
-namespace oc::context {
-template <typename T>
-class OverlayManager;
-}  // namespace oc::context
 
 namespace core::context {
 
@@ -116,57 +80,32 @@ protected:
     void onCleanup() override;
 
 private:
-    struct CachedScopes {
-        oc::type::ScopeID macroView = 0;
-        oc::type::ScopeID sequencerView = 0;
-        oc::type::ScopeID viewSelector = 0;
-    };
-
     void configureEncoders();
-    void createViewContainer();
-    void createViews();
-    void createBottomBar();
-    void createOverlayController();
-    void createViewSelectorOverlay();
-    void createFeatureModules();
-    void createGlobalHandlers();
+    void createUiAssembly();
+    void createOverlayAssembly();
+    void createFeatureAssembly();
+    void createGlobalHandlerAssembly();
     void registerMidiRouting();
-    void resetTransientUiState();
-    void cleanupGlobalHandlers();
-    void cleanupFeatureModules();
-    void cleanupOverlayController();
-    void cleanupViews();
+    void cleanupGlobalHandlerAssembly();
+    void cleanupFeatureAssembly();
+    void cleanupOverlayAssembly();
+    void cleanupUiAssembly();
 
     void syncEncodersFromState();
     void setupViewSelectorRendering();
-    void renderViewSelector();
     void setupActiveViewSwitching();
     void applyActiveView();
-    void cacheViewScopes();
     oc::type::ScopeID activeViewScopeId() const;
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
-    CachedScopes cached_scopes_;
 
-    // UI containers
-    std::unique_ptr<ms::ui::ViewContainer> view_container_;
-    std::unique_ptr<core::ui::MacroView> macro_view_;
-    std::unique_ptr<core::ui::SequencerView> sequencer_view_;
-    std::unique_ptr<core::ui::TransportBar> transport_bar_;
-    std::unique_ptr<core::ui::ContextSoftkeyBar> context_softkey_bar_;
-
-    // Overlay system
-    std::unique_ptr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
-    std::unique_ptr<ms::ui::StringListSelector> view_selector_;
+    std::unique_ptr<core::context::standalone::StandaloneUiAssembly> ui_assembly_;
+    std::unique_ptr<core::context::standalone::StandaloneOverlayAssembly> overlay_assembly_;
+    std::unique_ptr<core::context::standalone::StandaloneFeatureAssembly> feature_assembly_;
+    std::unique_ptr<core::context::standalone::StandaloneGlobalHandlerAssembly>
+        global_handler_assembly_;
     oc::state::SignalWatcher view_selector_watcher_;
     oc::state::SignalWatcher active_view_watcher_;
-    std::unique_ptr<core::context::standalone::MacroFeatureModule> macro_feature_;
-    std::unique_ptr<core::context::standalone::SequencerFeatureModule> sequencer_feature_;
-    std::unique_ptr<core::context::standalone::SettingsFeatureModule> settings_feature_;
-
-    // Global handlers
-    std::unique_ptr<core::handler::TransportHandler> transport_handler_;
-    std::unique_ptr<core::handler::ViewSwitcherHandler> view_switcher_handler_;
 };
 
 }  // namespace core::context

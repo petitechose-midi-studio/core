@@ -53,6 +53,10 @@ void CoreState::flush() {
     CoreStateLifecycle::flush(*this);
 }
 
+void CoreState::resetStandaloneTransientUi() {
+    CoreStateLifecycle::resetStandaloneTransientUi(*this);
+}
+
 bool CoreState::isMacroPersistenceReady() const {
     return macroDomain_.persistenceReady;
 }

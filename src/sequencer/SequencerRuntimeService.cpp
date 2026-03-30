@@ -28,7 +28,7 @@ void SequencerRuntimeService::update() {
         sequencer_playback_.stop();
     }
 
-    sequencer_playback_.update(midi_clock_sync_.tick(), midi_clock_sync_.playing());
+    sequencer_playback_.update(midi_clock_sync_.tick(), midi_clock_sync_.playing(), nowMs);
 }
 
 void SequencerRuntimeService::stop() {

@@ -5,76 +5,15 @@
 #include <iostream>
 #include <vector>
 
-#include <oc/interface/IStorage.hpp>
-
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/DataManagerWorkflow.hpp"
+#include "../support/CoreStorages.hpp"
 
 namespace {
-
-class MemoryStorage : public oc::interface::IStorage {
-public:
-    explicit MemoryStorage(size_t capacity = 128 * 1024)
-        : data_(capacity, 0xFF) {}
-
-    oc::type::Result<void> init() override {
-        initialized_ = true;
-        return oc::type::Result<void>::ok();
-    }
-
-    bool available() const override { return initialized_; }
-
-    size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memcpy(buffer, data_.data() + address, n);
-        return n;
-    }
-
-    size_t write(uint32_t address, const uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memcpy(data_.data() + address, buffer, n);
-        return n;
-    }
-
-    bool commit() override { return true; }
-
-    bool erase(uint32_t address, size_t size) override {
-        if (address >= data_.size()) return false;
-        const size_t n = std::min(size, data_.size() - static_cast<size_t>(address));
-        std::memset(data_.data() + address, 0xFF, n);
-        return true;
-    }
-
-    size_t capacity() const override { return data_.size(); }
-
-private:
-    bool initialized_ = false;
-    std::vector<uint8_t> data_;
-};
-
-struct CoreStorages {
-    MemoryStorage settings;
-    MemoryStorage macroWorkspace;
-    MemoryStorage macroLibrary;
-    MemoryStorage sequencerWorkspace;
-    MemoryStorage sequencerPatternLibrary;
-    MemoryStorage sequencerSetLibrary;
-
-    void initAll() {
-        settings.init();
-        macroWorkspace.init();
-        macroLibrary.init();
-        sequencerWorkspace.init();
-        sequencerPatternLibrary.init();
-        sequencerSetLibrary.init();
-    }
-};
+using test_support::CoreStorages;
 
 void test_hide_all_invokes_cleanup_for_stacked_overlays() {
     CoreStorages storage;
-    storage.initAll();
 
     core::state::CoreState state(storage.settings,
                                  storage.macroWorkspace,

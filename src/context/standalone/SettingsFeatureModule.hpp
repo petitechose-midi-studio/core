@@ -8,6 +8,8 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
+#include "handler/settings/DataManagerDomainServices.hpp"
+#include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
 #include "state/CoreSettings.hpp"
 #include "state/DataManagerState.hpp"
@@ -49,7 +51,8 @@ public:
     };
 
     SettingsFeatureModule(StateRefs stateRefs,
-                          core::handler::DataManagerHandler::Services services,
+                          core::handler::GlobalSettingsDomainServices globalSettingsServices,
+                          core::handler::DataManagerDomainServices dataManagerServices,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,

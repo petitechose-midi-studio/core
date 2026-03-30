@@ -7,37 +7,11 @@
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/settings/DataManagerFeedbackFormatter.hpp"
-#include "state/DataManagerWorkflow.hpp"
 
 namespace core::handler {
 
-FLASHMEM DataManagerHandler::Services::Services(core::state::CoreState& state) : state_(&state) {}
-
-FLASHMEM uint8_t DataManagerHandler::Services::slotCount(core::state::DataManagerCommand command) const {
-    return core::state::DataManagerWorkflow::slotCount(command);
-}
-
-FLASHMEM bool DataManagerHandler::Services::slotOccupied(core::state::DataManagerCommand command,
-                                                         uint8_t slotIndex) const {
-    return core::state::DataManagerWorkflow::slotOccupied(*state_, command, slotIndex);
-}
-
-FLASHMEM core::state::DataManagerCommandExecutionResult DataManagerHandler::Services::execute(
-    core::state::DataManagerCommand command,
-    uint8_t slotIndex,
-    core::state::DataManagerSetLoadMode setLoadMode
-) const {
-    return core::state::DataManagerWorkflow::execute(*state_, command, slotIndex, setLoadMode);
-}
-
-FLASHMEM void DataManagerHandler::Services::setShortcut(core::state::DataManagerContext context,
-                                                        bool leftButton,
-                                                        core::state::DataManagerCommand command) const {
-    core::state::DataManagerWorkflow::setShortcut(*state_, context, leftButton, command);
-}
-
 FLASHMEM DataManagerHandler::DataManagerHandler(StateRefs state,
-                                                Services services,
+                                                DataManagerDomainServices services,
                                                 oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                                 oc::api::EncoderAPI& encoders,
                                                 oc::api::ButtonAPI& buttons,
@@ -130,8 +104,7 @@ FLASHMEM void DataManagerHandler::setupBindings() {
 
 FLASHMEM void DataManagerHandler::openManager() {
     auto& dm = data_manager_;
-    dm.resetSession(contextForActiveView_());
-    dm.visible.set(true);
+    dm.openSession(contextForActiveView_());
 
     ignore_open_release_ = true;
     overlays_.show(core::ui::OverlayType::DATA_MANAGER, false);
@@ -146,10 +119,7 @@ FLASHMEM void DataManagerHandler::closeManager() {
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::DATA_MANAGER_DIALOG);
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::DATA_MANAGER);
 
-    auto& dm = data_manager_;
-    dm.dialog.reset();
-    dm.pendingCommand.set(core::state::DataManagerCommand::NONE);
-    dm.feedback.set("");
+    data_manager_.closeSession();
 }
 
 FLASHMEM void DataManagerHandler::moveFocus(float delta) {
@@ -169,7 +139,7 @@ FLASHMEM void DataManagerHandler::openShortcutAssignmentDialog_() {
     }
 
     auto& dm = data_manager_;
-    if (dm.dialog.visible.get()) return;
+    if (dm.flowPhase.get() != core::state::DataManagerFlowPhase::MANAGER) return;
 
     const uint8_t row = std::min<uint8_t>(dm.focusedRow.get(), 1U);
     const auto context = dm.context.get();
@@ -184,7 +154,7 @@ FLASHMEM void DataManagerHandler::openShortcutAssignmentDialog_() {
 
 FLASHMEM void DataManagerHandler::openCommandPaletteDialog_() {
     auto& dm = data_manager_;
-    if (dm.dialog.visible.get()) return;
+    if (dm.flowPhase.get() != core::state::DataManagerFlowPhase::MANAGER) return;
 
     showDialog_(core::state::DataManagerDialogMode::COMMAND_PALETTE, 0);
 }
@@ -198,6 +168,10 @@ FLASHMEM void DataManagerHandler::runShortcut_(bool leftButton) {
 }
 
 FLASHMEM void DataManagerHandler::navigateDialog_(float delta) {
+    if (!core::state::dataManagerFlowShowsDialog(data_manager_.flowPhase.get())) {
+        return;
+    }
+
     auto& dialog = data_manager_.dialog;
     const auto mode = dialog.mode.get();
     const int count = dialogChoiceCount_(mode);
@@ -210,33 +184,26 @@ FLASHMEM void DataManagerHandler::navigateDialog_(float delta) {
 
 FLASHMEM void DataManagerHandler::applyDialogSelection_() {
     auto& dm = data_manager_;
-    auto& dialog = dm.dialog;
-    if (!dialog.visible.get()) return;
-
-    const auto mode = dialog.mode.get();
-
-    if (mode == core::state::DataManagerDialogMode::ASSIGN_SHORTCUT) {
-        applyShortcutAssignmentSelection_();
-        return;
-    }
-
-    if (mode == core::state::DataManagerDialogMode::COMMAND_PALETTE) {
-        applyCommandPaletteSelection_();
-        return;
-    }
-
-    if (mode == core::state::DataManagerDialogMode::SLOT_PICKER) {
-        applySlotPickerSelection_();
-        return;
-    }
-
-    if (mode == core::state::DataManagerDialogMode::SET_LOAD_MODE) {
-        applySetLoadModeSelection_();
-        return;
-    }
-
-    if (mode == core::state::DataManagerDialogMode::CONFIRM) {
-        applyConfirmSelection_();
+    switch (dm.flowPhase.get()) {
+        case core::state::DataManagerFlowPhase::ASSIGN_SHORTCUT:
+            applyShortcutAssignmentSelection_();
+            return;
+        case core::state::DataManagerFlowPhase::COMMAND_PALETTE:
+            applyCommandPaletteSelection_();
+            return;
+        case core::state::DataManagerFlowPhase::SLOT_PICKER:
+            applySlotPickerSelection_();
+            return;
+        case core::state::DataManagerFlowPhase::SET_LOAD_MODE:
+            applySetLoadModeSelection_();
+            return;
+        case core::state::DataManagerFlowPhase::CONFIRM:
+            applyConfirmSelection_();
+            return;
+        case core::state::DataManagerFlowPhase::CLOSED:
+        case core::state::DataManagerFlowPhase::MANAGER:
+        default:
+            return;
     }
 }
 
@@ -248,7 +215,8 @@ FLASHMEM void DataManagerHandler::applyShortcutAssignmentSelection_() {
     const uint8_t row = std::min<uint8_t>(dialog.editingShortcutRow.get(), 1U);
     services_.setShortcut(context, row == 0U, command);
 
-    modal::hideOverlayAndResetSelector(overlays_, dialog);
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::DATA_MANAGER_DIALOG);
+    dm.closeDialog();
     setFeedback_("Shortcut updated");
 }
 
@@ -265,7 +233,8 @@ FLASHMEM void DataManagerHandler::applySlotPickerSelection_() {
     const uint8_t slotCount = services_.slotCount(dm.pendingCommand.get());
     if (slotCount == 0U) {
         setFeedback_("No slots");
-        modal::hideOverlayAndResetSelector(overlays_, dialog);
+        modal::hideIfCurrent(overlays_, core::ui::OverlayType::DATA_MANAGER_DIALOG);
+        dm.closeDialog();
         return;
     }
 
@@ -304,8 +273,9 @@ FLASHMEM void DataManagerHandler::applyConfirmSelection_() {
     auto& dialog = dm.dialog;
     const bool confirmed = dialog.selectedIndex.get() == 1;
     if (!confirmed) {
-        modal::hideOverlayAndResetSelector(overlays_, dialog);
-        dm.pendingCommand.set(core::state::DataManagerCommand::NONE);
+        modal::hideIfCurrent(overlays_, core::ui::OverlayType::DATA_MANAGER_DIALOG);
+        dm.closeDialog();
+        dm.clearPendingCommand();
         setFeedback_("Cancelled");
         return;
     }
@@ -314,24 +284,19 @@ FLASHMEM void DataManagerHandler::applyConfirmSelection_() {
 }
 
 FLASHMEM void DataManagerHandler::closeDialog_() {
-    if (overlays_.current() == core::ui::OverlayType::DATA_MANAGER_DIALOG) {
-        modal::hideOverlayAndResetSelector(overlays_, data_manager_.dialog);
-    } else {
-        data_manager_.dialog.reset();
-    }
-
-    data_manager_.pendingCommand.set(core::state::DataManagerCommand::NONE);
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::DATA_MANAGER_DIALOG);
+    data_manager_.closeDialog();
+    data_manager_.clearPendingCommand();
 }
 
 FLASHMEM void DataManagerHandler::showDialog_(core::state::DataManagerDialogMode mode,
                                               int selectedIndex,
                                               uint8_t editingShortcutRow) {
     auto& dialog = data_manager_.dialog;
-    dialog.mode.set(mode);
-    dialog.selectedIndex.set(selectedIndex);
-    dialog.editingShortcutRow.set(editingShortcutRow);
+    const bool wasVisible = dialog.visible.get();
+    data_manager_.showDialog(mode, selectedIndex, editingShortcutRow);
 
-    if (!dialog.visible.get()) {
+    if (!wasVisible) {
         overlays_.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
     }
 }
@@ -419,12 +384,9 @@ FLASHMEM void DataManagerHandler::executePendingCommand_() {
 
     setFeedback_(message);
 
-    if (overlays_.current() == core::ui::OverlayType::DATA_MANAGER_DIALOG) {
-        modal::hideOverlayAndResetSelector(overlays_, dm.dialog);
-    } else {
-        dm.dialog.reset();
-    }
-    dm.pendingCommand.set(core::state::DataManagerCommand::NONE);
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::DATA_MANAGER_DIALOG);
+    dm.closeDialog();
+    dm.clearPendingCommand();
 }
 
 FLASHMEM core::state::DataManagerContext DataManagerHandler::contextForActiveView_() const {

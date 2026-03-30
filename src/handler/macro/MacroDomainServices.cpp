@@ -5,38 +5,75 @@
 
 namespace core::handler {
 
-MacroDomainServices::MacroDomainServices(core::state::CoreState& state) : state_(&state) {}
+MacroDomainServices::MacroDomainServices(StateRefs state, Hooks hooks)
+    : macros_(&state.macros)
+    , pages_(&state.pages)
+    , config_revision_(&state.configRevision)
+    , status_bar_(&state.statusBar)
+    , hooks_(hooks) {}
+
+MacroDomainServices MacroDomainServices::fromCoreState(core::state::CoreState& state) {
+    return MacroDomainServices{
+        StateRefs{
+            state.macros,
+            state.pages,
+            state.configRevision,
+            state.statusBar,
+        },
+        Hooks{&state},
+    };
+}
 
 float MacroDomainServices::runtimeValue(uint8_t index) const {
-    return core::state::macro::MacroWorkflow::runtimeValue(*state_, index);
+    return core::state::macro::MacroWorkflow::runtimeValue(*macros_, index);
 }
 
 void MacroDomainServices::setRuntimeValue(uint8_t index, float value) const {
-    core::state::macro::MacroWorkflow::setRuntimeValue(*state_, index, value);
+    core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, value);
 }
 
 const core::state::macro::MacroConfig& MacroDomainServices::activeConfig(uint8_t index) const {
-    return core::state::macro::MacroWorkflow::activeConfig(*state_, index);
+    return core::state::macro::MacroWorkflow::activeConfig(*pages_, index);
 }
 
 bool MacroDomainServices::setConfig(uint8_t index, uint8_t channel, uint8_t cc) const {
-    return core::state::macro::MacroWorkflow::setConfig(*state_, index, channel, cc);
+    return core::state::macro::MacroWorkflow::setConfig(
+        core::state::macro::MacroWorkflow::StateRefs{
+            *macros_,
+            *pages_,
+            *config_revision_,
+            *status_bar_,
+        },
+        hooks_,
+        index,
+        channel,
+        cc
+    );
 }
 
 void MacroDomainServices::switchToPage(uint8_t pageIndex) const {
-    core::state::macro::MacroWorkflow::switchToPage(*state_, pageIndex);
+    core::state::macro::MacroWorkflow::switchToPage(
+        core::state::macro::MacroWorkflow::StateRefs{
+            *macros_,
+            *pages_,
+            *config_revision_,
+            *status_bar_,
+        },
+        hooks_,
+        pageIndex
+    );
 }
 
 void MacroDomainServices::pulseCcIn() const {
-    state_->statusBar.pulseCcIn();
+    status_bar_->pulseCcIn();
 }
 
 void MacroDomainServices::pulseCcOut() const {
-    state_->statusBar.pulseCcOut();
+    status_bar_->pulseCcOut();
 }
 
 void MacroDomainServices::pulseNoteIn() const {
-    state_->statusBar.pulseNoteIn();
+    status_bar_->pulseNoteIn();
 }
 
 }  // namespace core::handler

@@ -4,68 +4,12 @@
 #include <iostream>
 #include <vector>
 
-#include <oc/interface/IStorage.hpp>
-
 #include "../../src/persistence/SequencerPersistence.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
+#include "../support/MemoryStorage.hpp"
 
 namespace {
-
-class MemoryStorage : public oc::interface::IStorage {
-public:
-    enum class FaultMode {
-        NONE,
-        COMMIT_FAIL,
-        SHORT_WRITE,
-    };
-
-    explicit MemoryStorage(size_t capacity = 64 * 1024)
-        : data_(capacity, 0xFF) {}
-
-    oc::type::Result<void> init() override {
-        initialized_ = true;
-        return oc::type::Result<void>::ok();
-    }
-
-    bool available() const override { return initialized_; }
-
-    size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t maxSize = data_.size() - static_cast<size_t>(address);
-        const size_t n = (size <= maxSize) ? size : maxSize;
-        std::memcpy(buffer, data_.data() + address, n);
-        return n;
-    }
-
-    size_t write(uint32_t address, const uint8_t* buffer, size_t size) override {
-        if (!buffer || address >= data_.size()) return 0;
-        const size_t maxSize = data_.size() - static_cast<size_t>(address);
-        size_t n = (size <= maxSize) ? size : maxSize;
-        if (fault_mode_ == FaultMode::SHORT_WRITE && n > 0) {
-            n -= 1;
-        }
-        std::memcpy(data_.data() + address, buffer, n);
-        return n;
-    }
-
-    bool commit() override { return fault_mode_ != FaultMode::COMMIT_FAIL; }
-
-    bool erase(uint32_t address, size_t size) override {
-        if (address >= data_.size()) return false;
-        const size_t maxSize = data_.size() - static_cast<size_t>(address);
-        const size_t n = (size <= maxSize) ? size : maxSize;
-        std::memset(data_.data() + address, 0xFF, n);
-        return true;
-    }
-
-    size_t capacity() const override { return data_.size(); }
-    void setFaultMode(FaultMode mode) { fault_mode_ = mode; }
-
-private:
-    bool initialized_ = false;
-    FaultMode fault_mode_ = FaultMode::NONE;
-    std::vector<uint8_t> data_;
-};
+using test_support::MemoryStorage;
 
 #pragma pack(push, 1)
 struct SlotFileHeaderRaw {

@@ -10,6 +10,7 @@ struct CoreStateLifecycle {
     static void update(CoreState& state);
     static void flush(CoreState& state);
     static void factoryReset(CoreState& state);
+    static void resetStandaloneTransientUi(CoreState& state);
 
     static void queuePendingSequencerApply(CoreState& state,
                                            const sequencer::SequencerState& staged,

@@ -8,13 +8,15 @@
 #include "context/standalone/DataManagerPresenter.hpp"
 #include "context/standalone/GlobalSettingsOverlayPresenter.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
+#include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/GlobalSettingsHandler.hpp"
 
 namespace core::context::standalone {
 
 FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     StateRefs stateRefs,
-    core::handler::DataManagerHandler::Services services,
+    core::handler::GlobalSettingsDomainServices globalSettingsServices,
+    core::handler::DataManagerDomainServices dataManagerServices,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -79,9 +81,8 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     global_settings_handler_ = std::make_unique<core::handler::GlobalSettingsHandler>(
         core::handler::GlobalSettingsHandler::StateRefs{
             stateRefs.globalSettings,
-            stateRefs.midiSync,
-            stateRefs.settings,
         },
+        globalSettingsServices,
         overlays,
         encoders,
         buttons,
@@ -94,7 +95,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
             stateRefs.dataManager,
             stateRefs.activeView,
         },
-        services,
+        dataManagerServices,
         overlays,
         encoders,
         buttons,
