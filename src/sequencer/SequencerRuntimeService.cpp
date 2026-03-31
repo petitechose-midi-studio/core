@@ -1,8 +1,13 @@
 #include "SequencerRuntimeService.hpp"
 
+#include <algorithm>
+
 #include <oc/core/event/Events.hpp>
+#include <oc/log/Log.hpp>
 #include <oc/time/Time.hpp>
 #include <oc/type/Event.hpp>
+
+#include "config/TimeCompat.hpp"
 
 namespace core::sequencer {
 
@@ -21,14 +26,18 @@ SequencerRuntimeService::~SequencerRuntimeService() {
 }
 
 void SequencerRuntimeService::update() {
+    const uint32_t startUs = core::time_compat::micros();
     const uint32_t nowMs = oc::time::millis();
     midi_clock_sync_.update(nowMs);
 
-    if (midi_clock_sync_.consumeResyncRequest()) {
+    const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
+    if (resyncRequested) {
         sequencer_playback_.stop();
     }
 
     sequencer_playback_.update(midi_clock_sync_.tick(), midi_clock_sync_.playing(), nowMs);
+    recordProfilingWindow_(core::time_compat::micros() - startUs, resyncRequested, nowMs);
+    maybeLogProfilingWindow_(nowMs);
 }
 
 void SequencerRuntimeService::stop() {
@@ -80,6 +89,45 @@ void SequencerRuntimeService::unsubscribeFromMidiEvents_() {
             id = 0;
         }
     }
+}
+
+void SequencerRuntimeService::recordProfilingWindow_(uint32_t updateUs,
+                                                     bool resyncRequested,
+                                                     uint32_t nowMs) {
+    if (profiling_.window_start_ms == 0) {
+        profiling_.resetWindow(nowMs);
+    }
+
+    profiling_.update_count += 1;
+    profiling_.total_update_us += updateUs;
+    profiling_.max_update_us = std::max(profiling_.max_update_us, updateUs);
+    if (resyncRequested) {
+        profiling_.resync_count += 1;
+    }
+}
+
+void SequencerRuntimeService::maybeLogProfilingWindow_(uint32_t nowMs) {
+    if (profiling_.window_start_ms == 0) {
+        profiling_.resetWindow(nowMs);
+        return;
+    }
+
+    if ((nowMs - profiling_.window_start_ms) < 1000) {
+        return;
+    }
+
+    const uint32_t avgUpdateUs =
+        profiling_.update_count > 0 ? (profiling_.total_update_us / profiling_.update_count) : 0;
+
+    if (profiling_.max_update_us >= 1000 || profiling_.resync_count > 0) {
+        OC_LOG_INFO("[Perf][SequencerRuntime] updates={} avgUpdate={}us maxUpdate={}us resyncs={}",
+                    profiling_.update_count,
+                    avgUpdateUs,
+                    profiling_.max_update_us,
+                    profiling_.resync_count);
+    }
+
+    profiling_.resetWindow(nowMs);
 }
 
 }  // namespace core::sequencer
