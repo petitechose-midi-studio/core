@@ -80,12 +80,13 @@ bool ViewSwitcherHandler::canOpenSelector() const {
 }
 
 void ViewSwitcherHandler::openSelector() {
+    view_selector_.selectedIndex.set(static_cast<int>(active_view_.get()));
+
     if (!view_selector_.visible.get()) {
         overlay_ctx_.controller.show(core::ui::OverlayType::VIEW_SELECTOR, false);
     }
 
     encoders_.setMode(EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
-    view_selector_.selectedIndex.set(static_cast<int>(active_view_.get()));
 }
 
 void ViewSwitcherHandler::navigate(float delta) {
@@ -101,12 +102,13 @@ void ViewSwitcherHandler::confirmSelection() {
     if (index < 0 || index >= VIEW_COUNT) return;
 
     auto type = static_cast<core::ui::ViewType>(index);
+    if (active_view_.get() == type) return;
     active_view_.set(type);
 }
 
 void ViewSwitcherHandler::closeSelector() {
-    confirmSelection();
     overlay_ctx_.controller.hide();
+    confirmSelection();
 }
 
 }  // namespace core::handler

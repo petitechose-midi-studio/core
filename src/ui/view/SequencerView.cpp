@@ -48,14 +48,7 @@ void SequencerView::onActivate() {
         step_grid_->forceRefresh();
     }
     markAllDirty();
-    render();
-
-    if (body_container_) {
-        lv_obj_update_layout(body_container_);
-    }
-
-    dirty_ = false;
-    pauseRenderTimerIfIdle();
+    scheduleRender();
 }
 
 void SequencerView::onDeactivate() {
@@ -73,6 +66,7 @@ FLASHMEM void SequencerView::createLayout(lv_obj_t* parent) {
     container_ = layout_->getElement();
     body_container_ = layout_->content();
     lv_obj_t* header = layout_->header();
+    lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
 
     style::apply(header).transparent().pad(0);
     lv_obj_set_layout(header, LV_LAYOUT_FLEX);
@@ -147,8 +141,13 @@ FLASHMEM void SequencerView::createActionStrips() {
 FLASHMEM void SequencerView::bindToState() {
     bindBottomControlsState();
     bindHeaderState();
+    bindHeaderActivityState();
+    bindHeaderStripState();
     bindGridState();
     bindPropertyStripState();
+    bindOverlayVisibilityState();
+    bindLeftActionStripState();
+    bindBottomActionStripState();
     bindQuickControlsState();
 
     markAllDirty();
@@ -171,13 +170,21 @@ FLASHMEM void SequencerView::bindBottomControlsState() {
 FLASHMEM void SequencerView::bindHeaderState() {
     watcher_.watchAll(
         [this]() {
-            requestHeaderRender();
+            requestHeaderTopRender();
             track_tint_dirty_ = true;
         },
         state_refs_.tracks.activeTrack,
         state_refs_.tracks.enabledMask,
         state_refs_.tracks.selector.selecting,
-        state_refs_.tracks.selector.selectedTrack,
+        state_refs_.tracks.selector.selectedTrack
+    );
+}
+
+FLASHMEM void SequencerView::bindHeaderActivityState() {
+    watcher_.watchAll(
+        [this]() {
+            requestHeaderTopRender();
+        },
         state_refs_.statusBar.trackNoteActivity[0],
         state_refs_.statusBar.trackNoteActivity[1],
         state_refs_.statusBar.trackNoteActivity[2],
@@ -185,7 +192,15 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.statusBar.trackNoteActivity[4],
         state_refs_.statusBar.trackNoteActivity[5],
         state_refs_.statusBar.trackNoteActivity[6],
-        state_refs_.statusBar.trackNoteActivity[7],
+        state_refs_.statusBar.trackNoteActivity[7]
+    );
+}
+
+FLASHMEM void SequencerView::bindHeaderStripState() {
+    watcher_.watchAll(
+        [this]() {
+            requestHeaderStripRender();
+        },
         state_refs_.sequencer.length,
         state_refs_.sequencer.page,
         state_refs_.sequencer.playheadStep
@@ -221,12 +236,45 @@ FLASHMEM void SequencerView::bindPropertyStripState() {
     watcher_.watchAll(
         [this]() {
             requestPropertyStripRender();
-            requestActionStripsRender();
         },
-        state_refs_.tracks.selector.selecting,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
-        state_refs_.sequencer.stepPropertyInlineSelector.selectedIndex,
+        state_refs_.sequencer.stepPropertyInlineSelector.selectedIndex
+    );
+}
+
+FLASHMEM void SequencerView::bindOverlayVisibilityState() {
+    watcher_.watchAll(
+        [this]() {
+            handleOverlayVisibilityChanged();
+        },
+        state_refs_.viewSelector.visible,
+        state_refs_.sequencer.stepEdit.visible,
+        state_refs_.globalSettings.visible,
+        state_refs_.globalSettings.selector.visible,
+        state_refs_.dataManager.visible,
+        state_refs_.dataManager.dialog.visible
+    );
+}
+
+FLASHMEM void SequencerView::bindLeftActionStripState() {
+    watcher_.watchAll(
+        [this]() {
+            requestLeftActionStripRender();
+        },
+        state_refs_.tracks.selector.selecting,
+        state_refs_.sequencer.patternQuickControls.selecting,
+        state_refs_.sequencer.activeStepProperty,
+        state_refs_.sequencer.stepPropertyInlineSelector.selecting,
+        state_refs_.sequencer.rangeSelection.kind
+    );
+}
+
+FLASHMEM void SequencerView::bindBottomActionStripState() {
+    watcher_.watchAll(
+        [this]() {
+            requestBottomActionStripRender();
+        },
         state_refs_.sequencer.rangeSelection.kind,
         state_refs_.sequencer.rangeSelection.phase
     );
@@ -236,7 +284,6 @@ FLASHMEM void SequencerView::bindQuickControlsState() {
     watcher_.watchAll(
         [this]() {
             requestBottomControlsRender();
-            requestActionStripsRender();
         },
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.patternQuickControls.focusedItem
@@ -248,11 +295,38 @@ void SequencerView::ensureRenderTimer() {
     render_timer_ = std::make_unique<PausableLvglTimer>(16, onRenderTimer, this);
 }
 
-void SequencerView::scheduleRender() {
-    dirty_ = true;
+bool SequencerView::hasBlockingOverlay() const {
+    return state_refs_.viewSelector.visible.get() ||
+           state_refs_.sequencer.stepEdit.visible.get() ||
+           state_refs_.globalSettings.visible.get() ||
+           state_refs_.globalSettings.selector.visible.get() ||
+           state_refs_.dataManager.visible.get() ||
+           state_refs_.dataManager.dialog.visible.get();
+}
+
+void SequencerView::handleOverlayVisibilityChanged() {
+    if (hasBlockingOverlay()) {
+        pauseRenderTimerIfIdle();
+        if (render_timer_) {
+            render_timer_->pause();
+        }
+        return;
+    }
+
+    if (dirty_) {
+        scheduleRender(true);
+    }
+}
+
+void SequencerView::scheduleRender(bool ready) {
     ensureRenderTimer();
+    const bool wasDirty = dirty_;
+    dirty_ = true;
     if (render_timer_) {
-        render_timer_->resume(true);
+        if ((container_ && lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) || hasBlockingOverlay()) {
+            return;
+        }
+        render_timer_->resume(!wasDirty && ready);
     }
 }
 
@@ -267,8 +341,12 @@ void SequencerView::requestRender(bool& dirtyFlag) {
     scheduleRender();
 }
 
-void SequencerView::requestHeaderRender() {
-    requestRender(header_dirty_);
+void SequencerView::requestHeaderTopRender() {
+    requestRender(header_top_dirty_);
+}
+
+void SequencerView::requestHeaderStripRender() {
+    requestRender(header_strip_dirty_);
 }
 
 void SequencerView::requestBottomControlsRender() {
@@ -279,19 +357,25 @@ void SequencerView::requestPropertyStripRender() {
     requestRender(property_strip_dirty_);
 }
 
+void SequencerView::requestLeftActionStripRender() {
+    requestRender(left_action_strip_dirty_);
+}
+
+void SequencerView::requestBottomActionStripRender() {
+    requestRender(bottom_action_strip_dirty_);
+}
+
 void SequencerView::requestGridRender() {
     requestRender(grid_dirty_);
 }
 
-void SequencerView::requestActionStripsRender() {
-    requestRender(action_strips_dirty_);
-}
-
 void SequencerView::markAllDirty() {
-    header_dirty_ = true;
+    header_top_dirty_ = true;
+    header_strip_dirty_ = true;
     bottom_controls_dirty_ = true;
     property_strip_dirty_ = true;
-    action_strips_dirty_ = true;
+    left_action_strip_dirty_ = true;
+    bottom_action_strip_dirty_ = true;
     grid_dirty_ = true;
     track_tint_dirty_ = true;
 }
@@ -322,16 +406,6 @@ void SequencerView::renderTrackTint() {
     lv_obj_set_style_bg_color(container_, lv_color_hex(bgColor), 0);
     lv_obj_set_style_bg_opa(container_, bgOpa, 0);
 
-    if (body_container_) {
-        lv_obj_set_style_bg_opa(body_container_, LV_OPA_TRANSP, 0);
-    }
-    if (interaction_container_) {
-        lv_obj_set_style_bg_opa(interaction_container_, LV_OPA_TRANSP, 0);
-    }
-    if (center_column_) {
-        lv_obj_set_style_bg_opa(center_column_, LV_OPA_TRANSP, 0);
-    }
-
     track_tint_cache_track_ = previewTrack;
     track_tint_cache_enabled_mask_ = enabledMask;
     track_tint_cache_selecting_ = selecting;
@@ -342,7 +416,8 @@ void SequencerView::onRenderTimer(lv_timer_t* timer) {
     auto* self = static_cast<SequencerView*>(lv_timer_get_user_data(timer));
     if (!self) return;
 
-    if (!self->container_ || lv_obj_has_flag(self->container_, LV_OBJ_FLAG_HIDDEN)) {
+    if (!self->container_ || lv_obj_has_flag(self->container_, LV_OBJ_FLAG_HIDDEN) ||
+        self->hasBlockingOverlay()) {
         self->pauseRenderTimerIfIdle();
         return;
     }
@@ -358,25 +433,33 @@ void SequencerView::onRenderTimer(lv_timer_t* timer) {
 }
 
 void SequencerView::render() {
-    if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
+    if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN) || hasBlockingOverlay()) return;
 
     const bool needsBottomControls = bottom_controls_dirty_ && bottom_controls_;
     const bool needsPropertyStrip = property_strip_dirty_ && property_strip_;
-    const bool needsActionStrips = action_strips_dirty_ && left_action_strip_ && bottom_action_strip_;
-    const bool needsHeader = header_dirty_ && header_bar_;
+    const bool needsLeftActionStrip = left_action_strip_dirty_ && left_action_strip_;
+    const bool needsBottomActionStrip = bottom_action_strip_dirty_ && bottom_action_strip_;
+    const bool needsHeaderTop = header_top_dirty_ && header_bar_;
+    const bool needsHeaderStrip = header_strip_dirty_ && header_bar_;
     const bool needsGrid = grid_dirty_ && step_grid_;
-    if (!needsBottomControls && !needsPropertyStrip && !needsActionStrips && !needsHeader &&
-        !needsGrid && !track_tint_dirty_) {
+    const bool needsTint = track_tint_dirty_;
+    if (!needsBottomControls && !needsPropertyStrip && !needsLeftActionStrip &&
+        !needsBottomActionStrip && !needsHeaderTop &&
+        !needsHeaderStrip && !needsGrid && !needsTint) {
         return;
     }
 
     const auto source = modelSource();
     renderTrackTint();
 
-    if (needsActionStrips) {
+    if (needsLeftActionStrip) {
         left_action_strip_->render(sequencer::buildLeftActionStripProps(source));
+        left_action_strip_dirty_ = false;
+    }
+
+    if (needsBottomActionStrip) {
         bottom_action_strip_->render(sequencer::buildBottomActionStripProps(source));
-        action_strips_dirty_ = false;
+        bottom_action_strip_dirty_ = false;
     }
 
     if (needsBottomControls) {
@@ -389,9 +472,16 @@ void SequencerView::render() {
         property_strip_dirty_ = false;
     }
 
-    if (needsHeader) {
-        header_bar_->render(sequencer::buildHeaderBarProps(source));
-        header_dirty_ = false;
+    if (needsHeaderTop || needsHeaderStrip) {
+        const auto headerProps = sequencer::buildHeaderBarProps(source);
+        if (needsHeaderTop) {
+            header_bar_->renderTopRowOnly(headerProps);
+            header_top_dirty_ = false;
+        }
+        if (needsHeaderStrip) {
+            header_bar_->renderStripOnly(headerProps);
+            header_strip_dirty_ = false;
+        }
     }
 
     if (needsGrid) {

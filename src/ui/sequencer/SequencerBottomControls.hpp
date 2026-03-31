@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IWidget.hpp>
@@ -38,6 +40,10 @@ private:
         lv_obj_t* content = nullptr;
         lv_obj_t* label = nullptr;
         lv_obj_t* value = nullptr;
+        std::array<char, 16> renderedValue{};
+        bool valueInitialized = false;
+        bool highlightedInitialized = false;
+        bool highlighted = false;
     };
 
     void createUI(lv_obj_t* parent);
@@ -56,6 +62,7 @@ private:
         const SequencerBottomControlsProps& props
     );
     void positionQuickControlCursor(const SequencerBottomControlsProps& props);
+    void ensureCursorGeometry();
     lv_obj_t* quickControlAnchor(QuickItem item) const;
 
     lv_obj_t* container_ = nullptr;
@@ -64,6 +71,15 @@ private:
     QuickControlWidgets offset_;
     QuickControlWidgets division_;
     lv_obj_t* quick_cursor_ = nullptr;
+    bool has_rendered_ = false;
+    SequencerBottomControlsProps rendered_props_{};
+    bool cursor_visible_cache_ = false;
+    lv_coord_t cursor_x_cache_ = 0;
+    lv_coord_t cursor_y_cache_ = 0;
+    bool geometry_cache_initialized_ = false;
+    lv_coord_t geometry_cache_width_ = 0;
+    lv_coord_t geometry_cache_height_ = 0;
+    std::array<lv_point_t, 3> cursor_positions_{};
 };
 
 }  // namespace core::ui

@@ -43,6 +43,8 @@ public:
     SequencerHeaderBar& operator=(const SequencerHeaderBar&) = delete;
 
     void render(const SequencerHeaderBarProps& props);
+    void renderTopRowOnly(const SequencerHeaderBarProps& props);
+    void renderStripOnly(const SequencerHeaderBarProps& props);
 
     lv_obj_t* getElement() const override { return container_; }
 
@@ -92,6 +94,11 @@ private:
     bool top_row_cache_initialized_ = false;
     bool top_row_dimmed_ = false;
     std::array<char, 32> left_text_cache_{};
+    bool top_row_surface_cache_initialized_ = false;
+    uint32_t track_accent_cache_color_ = 0;
+    lv_opa_t track_accent_cache_opa_ = LV_OPA_TRANSP;
+    uint32_t top_row_bg_cache_color_ = 0;
+    lv_opa_t top_row_bg_cache_opa_ = LV_OPA_TRANSP;
     uint8_t track_selector_cache_active_ = 0;
     uint8_t track_selector_cache_preview_ = 0;
     uint8_t track_selector_cache_enabled_mask_ = 0xFF;

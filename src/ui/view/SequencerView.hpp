@@ -15,6 +15,9 @@
 #include <ms/ui/component/LayoutView.hpp>
 
 #include "state/StatusBarState.hpp"
+#include "state/DataManagerState.hpp"
+#include "state/GlobalSettingsState.hpp"
+#include "state/ViewSelectorState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/sequencer/SequencerBottomControls.hpp"
@@ -33,6 +36,9 @@ public:
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
         core::state::StatusBarState& statusBar;
+        core::state::ViewSelectorState& viewSelector;
+        core::state::GlobalSettingsState& globalSettings;
+        core::state::DataManagerState& dataManager;
     };
 
     explicit SequencerView(lv_obj_t* parent, StateRefs stateRefs);
@@ -53,18 +59,27 @@ private:
     void bindToState();
     void bindBottomControlsState();
     void bindHeaderState();
+    void bindHeaderActivityState();
+    void bindHeaderStripState();
     void bindGridState();
     void bindPropertyStripState();
+    void bindOverlayVisibilityState();
+    void bindLeftActionStripState();
+    void bindBottomActionStripState();
     void bindQuickControlsState();
+    bool hasBlockingOverlay() const;
+    void handleOverlayVisibilityChanged();
 
     void ensureRenderTimer();
-    void scheduleRender();
+    void scheduleRender(bool ready = false);
     void pauseRenderTimerIfIdle();
     void requestRender(bool& dirtyFlag);
-    void requestHeaderRender();
+    void requestHeaderTopRender();
+    void requestHeaderStripRender();
     void requestBottomControlsRender();
     void requestPropertyStripRender();
-    void requestActionStripsRender();
+    void requestLeftActionStripRender();
+    void requestBottomActionStripRender();
     void requestGridRender();
     void renderTrackTint();
     static void onRenderTimer(lv_timer_t* timer);
@@ -76,10 +91,12 @@ private:
     oc::state::SignalWatcher watcher_;
 
     bool dirty_ = false;
-    bool header_dirty_ = true;
+    bool header_top_dirty_ = true;
+    bool header_strip_dirty_ = true;
     bool bottom_controls_dirty_ = true;
     bool property_strip_dirty_ = true;
-    bool action_strips_dirty_ = true;
+    bool left_action_strip_dirty_ = true;
+    bool bottom_action_strip_dirty_ = true;
     bool grid_dirty_ = true;
     bool track_tint_dirty_ = true;
     std::unique_ptr<PausableLvglTimer> render_timer_;

@@ -231,7 +231,15 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
 }
 
 void SequencerHeaderBar::render(const SequencerHeaderBarProps& props) {
+    renderTopRowOnly(props);
+    renderStripOnly(props);
+}
+
+void SequencerHeaderBar::renderTopRowOnly(const SequencerHeaderBarProps& props) {
     renderTopRow(props);
+}
+
+void SequencerHeaderBar::renderStripOnly(const SequencerHeaderBarProps& props) {
     renderStrip(props);
 }
 
@@ -255,21 +263,33 @@ void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
         const uint32_t accentColor =
             isTrackEnabled(props.enabledMask, props.previewTrack) ? trackColor(props.previewTrack)
                                                                   : trackInactiveColor();
-        lv_obj_set_style_bg_color(track_accent_, lv_color_hex(accentColor), 0);
-        lv_obj_set_style_bg_opa(track_accent_, props.selectingTrack ? LV_OPA_COVER : LV_OPA_80, 0);
+        const lv_opa_t accentOpa = props.selectingTrack ? LV_OPA_COVER : LV_OPA_80;
+        if (!top_row_surface_cache_initialized_ || track_accent_cache_color_ != accentColor) {
+            lv_obj_set_style_bg_color(track_accent_, lv_color_hex(accentColor), 0);
+            track_accent_cache_color_ = accentColor;
+        }
+        if (!top_row_surface_cache_initialized_ || track_accent_cache_opa_ != accentOpa) {
+            lv_obj_set_style_bg_opa(track_accent_, accentOpa, 0);
+            track_accent_cache_opa_ = accentOpa;
+        }
     }
 
     if (top_row_) {
         const uint32_t bgColor =
             isTrackEnabled(props.enabledMask, props.previewTrack) ? trackColor(props.previewTrack)
                                                                   : trackInactiveColor();
-        lv_obj_set_style_bg_color(top_row_, lv_color_hex(bgColor), 0);
-        lv_obj_set_style_bg_opa(
-            top_row_,
-            props.selectingTrack ? TRACK_BG_OPA_SELECTING : TRACK_BG_OPA_IDLE,
-            0
-        );
+        const lv_opa_t bgOpa =
+            props.selectingTrack ? TRACK_BG_OPA_SELECTING : TRACK_BG_OPA_IDLE;
+        if (!top_row_surface_cache_initialized_ || top_row_bg_cache_color_ != bgColor) {
+            lv_obj_set_style_bg_color(top_row_, lv_color_hex(bgColor), 0);
+            top_row_bg_cache_color_ = bgColor;
+        }
+        if (!top_row_surface_cache_initialized_ || top_row_bg_cache_opa_ != bgOpa) {
+            lv_obj_set_style_bg_opa(top_row_, bgOpa, 0);
+            top_row_bg_cache_opa_ = bgOpa;
+        }
     }
+    top_row_surface_cache_initialized_ = true;
 
     const bool activityChanged =
         track_selector_cache_active_ != props.activeTrack ||

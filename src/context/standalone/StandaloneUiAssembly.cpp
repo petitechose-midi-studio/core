@@ -101,6 +101,9 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
             core_state_.sequencer,
             core_state_.sequencerTracks,
             core_state_.statusBar,
+            core_state_.viewSelector,
+            core_state_.globalSettings,
+            core_state_.dataManager,
         }
     );
     cacheViewScopes();

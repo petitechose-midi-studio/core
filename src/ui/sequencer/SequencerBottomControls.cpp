@@ -1,5 +1,8 @@
 #include "SequencerBottomControls.hpp"
 
+#include <algorithm>
+#include <cstring>
+
 #include <oc/type/TextFormat.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
@@ -83,6 +86,26 @@ void applyValueStyle(lv_obj_t* label, bool highlighted) {
         0
     );
     lv_obj_set_style_text_opa(label, highlighted ? VALUE_HIGHLIGHT_OPA : VALUE_OPA, 0);
+}
+
+bool sameProps(const SequencerBottomControlsProps& lhs, const SequencerBottomControlsProps& rhs) {
+    return lhs.selectingQuickControls == rhs.selectingQuickControls &&
+           lhs.focusedQuickControl == rhs.focusedQuickControl &&
+           lhs.offsetSteps == rhs.offsetSteps &&
+           lhs.stepsPerBeat == rhs.stepsPerBeat &&
+           lhs.length == rhs.length;
+}
+
+size_t quickItemIndex(QuickItem item) {
+    switch (item) {
+        case QuickItem::LENGTH:
+            return 0;
+        case QuickItem::DIVISION:
+            return 2;
+        case QuickItem::OFFSET:
+        default:
+            return 1;
+    }
 }
 
 }  // namespace
@@ -226,31 +249,78 @@ lv_obj_t* SequencerBottomControls::quickControlAnchor(QuickItem item) const {
     }
 }
 
+void SequencerBottomControls::ensureCursorGeometry() {
+    if (!container_) return;
+
+    const lv_coord_t width = lv_obj_get_width(container_);
+    const lv_coord_t height = lv_obj_get_height(container_);
+    if (geometry_cache_initialized_ && geometry_cache_width_ == width &&
+        geometry_cache_height_ == height) {
+        return;
+    }
+
+    lv_obj_update_layout(container_);
+
+    const auto cacheAnchorBounds = [this](QuickItem item) {
+        lv_obj_t* anchor = quickControlAnchor(item);
+        if (!anchor) return;
+
+        const lv_area_t bounds = relativeBounds(container_, anchor);
+        const lv_coord_t anchorWidth =
+            static_cast<lv_coord_t>(bounds.x2 - bounds.x1 + 1);
+        const lv_coord_t anchorHeight =
+            static_cast<lv_coord_t>(bounds.y2 - bounds.y1 + 1);
+        const lv_coord_t x = static_cast<lv_coord_t>(
+            bounds.x1 + (anchorWidth - QUICK_CURSOR_WIDTH) / 2
+        );
+        const lv_coord_t y = static_cast<lv_coord_t>(
+            bounds.y1 + anchorHeight - (QUICK_CURSOR_HEIGHT / 2) + QUICK_CURSOR_OFFSET_Y
+        );
+
+        cursor_positions_[quickItemIndex(item)] = {x, y};
+    };
+
+    cacheAnchorBounds(QuickItem::LENGTH);
+    cacheAnchorBounds(QuickItem::OFFSET);
+    cacheAnchorBounds(QuickItem::DIVISION);
+
+    geometry_cache_width_ = width;
+    geometry_cache_height_ = height;
+    geometry_cache_initialized_ = true;
+}
+
 void SequencerBottomControls::positionQuickControlCursor(const SequencerBottomControlsProps& props) {
     if (!props.selectingQuickControls) {
-        lv_obj_add_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
+        if (cursor_visible_cache_) {
+            lv_obj_add_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
+            cursor_visible_cache_ = false;
+        }
         return;
     }
 
     lv_obj_t* anchor = quickControlAnchor(props.focusedQuickControl);
 
     if (!anchor) {
-        lv_obj_add_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
+        if (cursor_visible_cache_) {
+            lv_obj_add_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
+            cursor_visible_cache_ = false;
+        }
         return;
     }
 
-    lv_obj_clear_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_update_layout(container_);
-    const lv_area_t bounds = relativeBounds(container_, anchor);
-    const lv_coord_t width = static_cast<lv_coord_t>(bounds.x2 - bounds.x1 + 1);
-    const lv_coord_t height = static_cast<lv_coord_t>(bounds.y2 - bounds.y1 + 1);
-    const lv_coord_t x = static_cast<lv_coord_t>(
-        bounds.x1 + (width - QUICK_CURSOR_WIDTH) / 2
-    );
-    const lv_coord_t y = static_cast<lv_coord_t>(
-        bounds.y1 + height - (QUICK_CURSOR_HEIGHT / 2) + QUICK_CURSOR_OFFSET_Y
-    );
-    lv_obj_set_pos(quick_cursor_, x, y);
+    ensureCursorGeometry();
+
+    if (!cursor_visible_cache_) {
+        lv_obj_clear_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
+        cursor_visible_cache_ = true;
+    }
+
+    const lv_point_t nextPos = cursor_positions_[quickItemIndex(props.focusedQuickControl)];
+    if (cursor_x_cache_ != nextPos.x || cursor_y_cache_ != nextPos.y) {
+        lv_obj_set_pos(quick_cursor_, nextPos.x, nextPos.y);
+        cursor_x_cache_ = nextPos.x;
+        cursor_y_cache_ = nextPos.y;
+    }
 }
 
 void SequencerBottomControls::renderQuickControl(
@@ -259,12 +329,22 @@ void SequencerBottomControls::renderQuickControl(
 ) {
     char buffer[16];
     formatQuickValue(buffer, sizeof(buffer), props, widgets.item);
-    lv_label_set_text(widgets.value, buffer);
+    if (!widgets.valueInitialized ||
+        std::strcmp(widgets.renderedValue.data(), buffer) != 0) {
+        lv_label_set_text(widgets.value, buffer);
+        std::strncpy(widgets.renderedValue.data(), buffer, widgets.renderedValue.size());
+        widgets.renderedValue.back() = '\0';
+        widgets.valueInitialized = true;
+    }
 
     const bool highlighted =
         props.selectingQuickControls && props.focusedQuickControl == widgets.item;
-    lv_obj_set_style_text_opa(widgets.label, highlighted ? VALUE_OPA : LABEL_OPA, 0);
-    applyValueStyle(widgets.value, highlighted);
+    if (!widgets.highlightedInitialized || widgets.highlighted != highlighted) {
+        lv_obj_set_style_text_opa(widgets.label, highlighted ? VALUE_OPA : LABEL_OPA, 0);
+        applyValueStyle(widgets.value, highlighted);
+        widgets.highlighted = highlighted;
+        widgets.highlightedInitialized = true;
+    }
 }
 
 void SequencerBottomControls::renderQuickControls(const SequencerBottomControlsProps& props) {
@@ -276,7 +356,10 @@ void SequencerBottomControls::renderQuickControls(const SequencerBottomControlsP
 
 void SequencerBottomControls::render(const SequencerBottomControlsProps& props) {
     if (!container_) return;
+    if (has_rendered_ && sameProps(rendered_props_, props)) return;
     renderQuickControls(props);
+    rendered_props_ = props;
+    has_rendered_ = true;
 }
 
 }  // namespace core::ui

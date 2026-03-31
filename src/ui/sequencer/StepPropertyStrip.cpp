@@ -42,6 +42,11 @@ size_t propertyStripIndex(core::state::sequencer::StepProperty property) {
     return std::min(index, STRIP_PROPERTIES.size() - 1);
 }
 
+bool sameProps(const StepPropertyStripProps& lhs, const StepPropertyStripProps& rhs) {
+    return lhs.activeProperty == rhs.activeProperty && lhs.selecting == rhs.selecting &&
+           lhs.selectedIndex == rhs.selectedIndex;
+}
+
 }  // namespace
 
 StepPropertyStrip::StepPropertyStrip(lv_obj_t* parent) {
@@ -113,10 +118,39 @@ FLASHMEM void StepPropertyStrip::createUI(lv_obj_t* parent) {
     }
 }
 
-void StepPropertyStrip::render(const StepPropertyStripProps& props) {
+void StepPropertyStrip::ensureCursorGeometry() {
     if (!container_) return;
 
+    const lv_coord_t width = lv_obj_get_width(container_);
+    const lv_coord_t height = lv_obj_get_height(container_);
+    if (geometry_cache_initialized_ && geometry_cache_width_ == width &&
+        geometry_cache_height_ == height) {
+        return;
+    }
+
     lv_obj_update_layout(container_);
+
+    for (size_t i = 0; i < items_.size(); ++i) {
+        lv_obj_t* item = items_[i];
+        if (!item) continue;
+
+        cursor_positions_[i].x = static_cast<lv_coord_t>(
+            lv_obj_get_x(item) + lv_obj_get_width(item) - SELECTION_CURSOR_WIDTH +
+            SELECTION_CURSOR_OFFSET_X
+        );
+        cursor_positions_[i].y = static_cast<lv_coord_t>(
+            lv_obj_get_y(item) + (lv_obj_get_height(item) - SELECTION_CURSOR_HEIGHT) / 2
+        );
+    }
+
+    geometry_cache_width_ = width;
+    geometry_cache_height_ = height;
+    geometry_cache_initialized_ = true;
+}
+
+void StepPropertyStrip::render(const StepPropertyStripProps& props) {
+    if (!container_) return;
+    if (has_rendered_ && sameProps(rendered_props_, props)) return;
 
     const int selectedIndex =
         std::clamp(props.selectedIndex, 0, static_cast<int>(STRIP_PROPERTIES.size()) - 1);
@@ -131,36 +165,54 @@ void StepPropertyStrip::render(const StepPropertyStripProps& props) {
         const bool highlighted = i == highlightedIndex;
         const bool active = i == activeIndex;
         const bool visibleActive = props.selecting && active && !highlighted;
+        const lv_opa_t nextOpa =
+            highlighted ? HIGHLIGHTED_OPA : (visibleActive ? ACTIVE_OPA : INACTIVE_OPA);
 
-        lv_obj_set_style_text_opa(
-            icon,
-            highlighted ? HIGHLIGHTED_OPA : (visibleActive ? ACTIVE_OPA : INACTIVE_OPA),
-            0
-        );
+        if (!icon_render_cache_[i].initialized || icon_render_cache_[i].textOpa != nextOpa) {
+            lv_obj_set_style_text_opa(icon, nextOpa, 0);
+            icon_render_cache_[i].textOpa = nextOpa;
+            icon_render_cache_[i].initialized = true;
+        }
     }
 
     if (!props.selecting) {
-        lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+        if (cursor_visible_cache_) {
+            lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+            cursor_visible_cache_ = false;
+        }
+        rendered_props_ = props;
+        has_rendered_ = true;
         return;
     }
 
     lv_obj_t* highlightedItem = items_[highlightedIndex];
     if (!highlightedItem) {
-        lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+        if (cursor_visible_cache_) {
+            lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+            cursor_visible_cache_ = false;
+        }
+        rendered_props_ = props;
+        has_rendered_ = true;
         return;
     }
 
-    lv_obj_clear_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(
-        selection_cursor_,
-        static_cast<lv_coord_t>(
-            lv_obj_get_x(highlightedItem) + lv_obj_get_width(highlightedItem) - SELECTION_CURSOR_WIDTH + SELECTION_CURSOR_OFFSET_X
-        ),
-        static_cast<lv_coord_t>(
-            lv_obj_get_y(highlightedItem) +
-            (lv_obj_get_height(highlightedItem) - SELECTION_CURSOR_HEIGHT) / 2
-        )
-    );
+    ensureCursorGeometry();
+
+    if (!cursor_visible_cache_) {
+        lv_obj_clear_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+        cursor_visible_cache_ = true;
+    }
+
+    const lv_coord_t nextX = cursor_positions_[highlightedIndex].x;
+    const lv_coord_t nextY = cursor_positions_[highlightedIndex].y;
+    if (cursor_x_cache_ != nextX || cursor_y_cache_ != nextY) {
+        lv_obj_set_pos(selection_cursor_, nextX, nextY);
+        cursor_x_cache_ = nextX;
+        cursor_y_cache_ = nextY;
+    }
+
+    rendered_props_ = props;
+    has_rendered_ = true;
 }
 
 }  // namespace core::ui
