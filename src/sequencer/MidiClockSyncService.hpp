@@ -4,8 +4,8 @@
 #include <cstdint>
 
 #include <oc/api/MidiAPI.hpp>
-#include <oc/note/clock/InternalClock.hpp>
 
+#include "sequencer/InternalTransportClock.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
 
@@ -44,7 +44,7 @@ private:
     core::state::StatusBarState& status_bar_;
     oc::api::MidiAPI& midi_;
 
-    oc::note::clock::InternalClock internal_clock_;
+    InternalTransportClock internal_clock_;
 
     uint32_t current_tick_ = 0;
     bool current_playing_ = false;

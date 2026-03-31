@@ -512,6 +512,141 @@ If a proposed PR 1 change improves visibility but adds work to the hot path, rej
 
 PR 1 must make the system more observable without making realtime behavior worse.
 
+## PR 2 Execution Skeleton
+
+This is the concrete implementation brief for the second PR.
+
+### PR 2 Title
+
+`core: isolate internal transport timing from cooperative UI cadence`
+
+### PR 2 Objectives
+
+- move internal musical time ownership out of the cooperative update cadence
+- keep scheduler cadence stable under LVGL spikes
+- preserve existing musical behavior while reducing timing sensitivity to UI load
+
+### PR 2 Exact Scope
+
+In scope:
+
+- introduce a dedicated high-priority internal transport timebase
+- base internal tick progression on absolute microsecond deadlines
+- keep the timer callback minimal and deterministic
+- make the sequencer runtime consume that timebase rather than deriving timing from the loop pace
+- measure whether scheduler lateness improves under the same UI stress scenarios
+
+Out of scope:
+
+- no full outbound MIDI queue yet unless required to preserve correctness
+- no DIN/UART backend work yet
+- no large snapshot/state-commit refactor unless strictly needed by the clock split
+- no attempt to "fix USB guarantees" in this PR
+
+### Preferred Technical Shape
+
+Use the smallest viable hardware-timer abstraction first:
+
+- prefer `IntervalTimer` as the first implementation vehicle
+- keep direct PIT/GPT register work as a second step only if `IntervalTimer` proves too limiting
+- track phase with absolute deadlines:
+  - `next_tick_us += interval_us`
+  - avoid `next_tick_us = now + interval_us`
+
+The timer side should:
+
+- own transport cadence
+- avoid LVGL
+- avoid logs
+- avoid allocations
+- avoid heavy backend I/O
+
+The cooperative loop side should:
+
+- observe transport state
+- perform non-realtime follow-up work
+- remain tolerant to visual overload without moving the musical phase
+
+### Most Likely Files
+
+Primary files:
+
+- `src/sequencer/MidiClockSyncService.cpp`
+- `src/sequencer/SequencerRuntimeService.cpp`
+- `../open-control/note/src/oc/note/clock/InternalClock.cpp`
+
+Likely support files:
+
+- new helper under `../open-control/hal-teensy/src/oc/hal/teensy/`
+- possibly a small interface/header to isolate timebase ownership cleanly
+
+Reference hardware locations:
+
+- Teensy core `IntervalTimer.h`
+- Teensy core `imxrt.h` for PIT/GPT if lower-level control becomes necessary
+
+### Architectural Constraints
+
+PR 2 should preserve these rules:
+
+- the timer callback is not the new place where UI or MIDI backend work happens
+- one source of truth owns internal transport phase
+- source switching remains explicit and reviewable
+- external clock behavior is not silently changed while refactoring internal clocking
+
+### Review Checklist
+
+Reviewers should verify:
+
+- internal clock progression no longer depends on cooperative loop cadence
+- timer code is minimal and bounded
+- no UI code or status telemetry leaks into the timer path
+- no hidden blocking path is introduced in the timer callback
+- start/stop/reset behavior remains coherent
+- source switching between internal and external clock remains understandable
+
+### Test Plan
+
+Functional tests:
+
+- internal clock playback still runs at the same musical tempo
+- start, stop, continue, and reset behavior stay correct
+- loop/playhead behavior remains consistent
+
+Stress tests:
+
+- repeat the previous heavy UI scenarios while on internal clock
+- compare scheduler lateness counters before and after PR 2
+- verify that visible UI stalls no longer imply transport phase shifts
+
+Verification targets:
+
+- lower max lateness under the same stress
+- no audible bunching introduced by the timer split itself
+- no regressions in steady-state playback
+
+### Exit Criteria
+
+PR 2 is done when all of the following are true:
+
+- internal transport cadence is no longer loop-paced
+- UI stress no longer shifts internal musical phase in the same way
+- the timer path remains small and auditable
+- PR 1 counters show measurable improvement or, at minimum, expose the remaining bottleneck clearly
+
+### Main Review Risks
+
+- moving too much logic into the timer callback
+- introducing race conditions around start/stop/source-switch state
+- keeping both the old and new clock paths alive in a confusing partial migration
+- mistaking lower jitter in one mode for a full solution when backend send semantics still remain unchanged
+
+### Non-Negotiable Constraint
+
+If PR 2 solves timing by pushing scheduler, UI, or backend work into the timer callback, reject it.
+
+PR 2 must isolate time ownership, not hide more work in a higher-priority context.
+
 ## Recommended First Slice
 
 If we want the highest return with the lowest risk, do this first:
