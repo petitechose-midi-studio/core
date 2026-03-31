@@ -15,6 +15,7 @@ Read these first:
 ## Current Architecture References
 
 - [SEQUENCER_ACTION_STRIP_SPEC.md](SEQUENCER_ACTION_STRIP_SPEC.md)
+- [REALTIME_MIDI_ISOLATION_PLAN.md](REALTIME_MIDI_ISOLATION_PLAN.md)
 
 ## Practical Guides
 
