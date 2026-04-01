@@ -82,8 +82,8 @@ static_assert(sizeof(MacroPageData) == 64, "MacroPageData must be exactly 64 byt
  * @brief State for page selector overlay
  */
 struct PageSelectorState {
-    oc::state::Signal<uint8_t> selectedIndex{0};  ///< Currently highlighted page
-    oc::state::Signal<bool> visible{false};       ///< Overlay visibility
+    oc::state::Signal<uint8_t, 4> selectedIndex{0};  ///< Currently highlighted page
+    oc::state::Signal<bool, 4> visible{false};       ///< Overlay visibility
 };
 
 /**

@@ -3,6 +3,7 @@
 #include <array>
 
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 #include <oc/state/SignalWatcher.hpp>
 
 #include "handler/sequencer/SequencerInputUtils.hpp"
@@ -21,7 +22,7 @@ class SequencerEncoderSyncCoordinator {
 public:
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
-        oc::state::Signal<core::ui::ViewType>& activeView;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::sequencer::SequencerState& sequencer;
     };
 
@@ -51,7 +52,7 @@ private:
     void syncPositions();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
-    oc::state::Signal<core::ui::ViewType>& active_view_;
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::sequencer::SequencerState& sequencer_;
     oc::api::EncoderAPI& encoders_;
     oc::state::SignalWatcher watcher_;

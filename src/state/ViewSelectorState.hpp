@@ -10,8 +10,8 @@ namespace core::state {
  * @brief State for top-level view selector overlay
  */
 struct ViewSelectorState {
-    oc::state::Signal<int> selectedIndex{0};
-    oc::state::Signal<bool> visible{false};
+    oc::state::Signal<int, 4> selectedIndex{0};
+    oc::state::Signal<bool, 4> visible{false};
 
     void reset() {
         selectedIndex.set(0);

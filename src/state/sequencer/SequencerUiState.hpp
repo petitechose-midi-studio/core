@@ -55,8 +55,8 @@ struct SequencerStepEditOverlayState {
 };
 
 struct SequencerStepPropertyInlineSelectorState {
-    Signal<bool> selecting{false};
-    Signal<int> selectedIndex{0};
+    Signal<bool, 4> selecting{false};
+    Signal<int, 4> selectedIndex{0};
 
     int snapshotIndex = 0;
     bool snapshotValid = false;
@@ -121,9 +121,11 @@ struct SequencerStepInlineFeedbackState {
 };
 
 struct SequencerPatternQuickControlsState {
-    Signal<bool> selecting{false};
-    Signal<PatternQuickControlItem> focusedItem{PatternQuickControlItem::OFFSET};
-    Signal<int8_t> offsetSteps{0};
+    Signal<bool, 4> selecting{false};
+    Signal<PatternQuickControlItem, 4> focusedItem{
+        PatternQuickControlItem::OFFSET
+    };
+    Signal<int8_t, 4> offsetSteps{0};
 
     void reset() {
         selecting.set(false);
@@ -156,8 +158,8 @@ struct SequencerRangeClipboard {
 };
 
 struct SequencerRangeSelectionState {
-    Signal<RangeSelectionKind> kind{RangeSelectionKind::NONE};
-    Signal<RangeSelectionPhase> phase{RangeSelectionPhase::IDLE};
+    Signal<RangeSelectionKind, 4> kind{RangeSelectionKind::NONE};
+    Signal<RangeSelectionPhase, 4> phase{RangeSelectionPhase::IDLE};
     Signal<uint8_t> cursorStep{0};
     Signal<uint8_t> anchorStep{0};
     Signal<uint8_t> rangeStart{0};

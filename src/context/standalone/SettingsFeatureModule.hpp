@@ -7,6 +7,7 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
@@ -47,7 +48,7 @@ public:
         core::state::MidiSyncState& midiSync;
         core::state::CoreSettings& settings;
         core::state::DataManagerState& dataManager;
-        oc::state::Signal<core::ui::ViewType>& activeView;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
     };
 
     SettingsFeatureModule(StateRefs stateRefs,

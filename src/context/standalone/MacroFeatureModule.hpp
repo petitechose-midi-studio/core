@@ -8,6 +8,7 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/api/MidiAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/MacroEditState.hpp"
@@ -37,7 +38,7 @@ namespace core::context::standalone {
 class MacroFeatureModule {
 public:
     struct StateRefs {
-        oc::state::Signal<core::ui::ViewType>& activeView;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
         oc::state::Signal<uint32_t>& configRevision;

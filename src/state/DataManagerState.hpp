@@ -52,10 +52,12 @@ inline constexpr bool dataManagerFlowShowsDialog(DataManagerFlowPhase phase) {
 }
 
 struct DataManagerDialogState {
-    oc::state::Signal<bool> visible{false};
-    oc::state::Signal<DataManagerDialogMode> mode{DataManagerDialogMode::ASSIGN_SHORTCUT};
-    oc::state::Signal<int> selectedIndex{0};
-    oc::state::Signal<uint8_t> editingShortcutRow{0};
+    oc::state::Signal<bool, 4> visible{false};
+    oc::state::Signal<DataManagerDialogMode, 4> mode{
+        DataManagerDialogMode::ASSIGN_SHORTCUT
+    };
+    oc::state::Signal<int, 4> selectedIndex{0};
+    oc::state::Signal<uint8_t, 4> editingShortcutRow{0};
 
     void reset() {
         visible.set(false);
@@ -68,8 +70,8 @@ struct DataManagerDialogState {
 struct DataManagerState {
     oc::state::Signal<bool> visible{false};
     oc::state::Signal<uint8_t> focusedRow{0};
-    oc::state::Signal<DataManagerContext> context{DataManagerContext::MACRO};
-    oc::state::Signal<DataManagerFlowPhase> flowPhase{DataManagerFlowPhase::CLOSED};
+    oc::state::Signal<DataManagerContext, 4> context{DataManagerContext::MACRO};
+    oc::state::Signal<DataManagerFlowPhase, 4> flowPhase{DataManagerFlowPhase::CLOSED};
 
     oc::state::Signal<DataManagerCommand> macroShortcutLeft{DEFAULT_MACRO_SHORTCUT_LEFT};
     oc::state::Signal<DataManagerCommand> macroShortcutRight{DEFAULT_MACRO_SHORTCUT_RIGHT};

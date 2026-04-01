@@ -8,6 +8,7 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -39,7 +40,7 @@ class SequencerFeatureModule {
 public:
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
-        oc::state::Signal<core::ui::ViewType>& activeView;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
     };

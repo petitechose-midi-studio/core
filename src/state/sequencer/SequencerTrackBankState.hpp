@@ -12,7 +12,7 @@ namespace core::state::sequencer {
 using oc::state::Signal;
 
 struct SequencerTrackSelectorState {
-    Signal<bool> selecting{false};
+    Signal<bool, 4> selecting{false};
     Signal<uint8_t, 6> selectedTrack{0};
     uint8_t snapshotTrack = 0;
     uint8_t snapshotEnabledMask = 0x01;

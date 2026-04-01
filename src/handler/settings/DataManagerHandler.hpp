@@ -6,6 +6,7 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "state/DataManagerCatalog.hpp"
@@ -25,7 +26,7 @@ public:
     using ViewScopes = std::array<oc::type::ScopeID, VIEW_SCOPE_COUNT>;
     struct StateRefs {
         core::state::DataManagerState& dataManager;
-        oc::state::Signal<core::ui::ViewType>& activeView;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
     };
 
     DataManagerHandler(StateRefs state,
@@ -75,7 +76,7 @@ private:
     void setFeedback_(const char* message);
 
     core::state::DataManagerState& data_manager_;
-    oc::state::Signal<core::ui::ViewType>& active_view_;
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     DataManagerDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

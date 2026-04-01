@@ -21,6 +21,7 @@
 #include <oc/interface/IStorage.hpp>
 #include <oc/state/AutoPersistIncremental.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "CoreSettings.hpp"
 #include "DataManagerState.hpp"
@@ -88,7 +89,7 @@ struct SequencerDomainState {
 
 struct UiSystemState {
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
-    oc::state::Signal<core::ui::ViewType> activeView{core::ui::ViewType::MACRO};
+    oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
     ViewSelectorState viewSelector;
     StatusBarState statusBar;
     MidiSyncState midiSync;
@@ -130,7 +131,7 @@ public:
 
     /// Shared UI/system domain aliases
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
-    oc::state::Signal<core::ui::ViewType>& activeView;
+    oc::state::Signal<core::ui::ViewType, 8>& activeView;
     ViewSelectorState& viewSelector;
     StatusBarState& statusBar;
     MidiSyncState& midiSync;

@@ -11,6 +11,7 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 #include <ms/ui/OverlayBindingContext.hpp>
 
 #include "state/ViewSelectorState.hpp"
@@ -28,7 +29,7 @@ public:
     using ViewScopes = std::array<oc::type::ScopeID, VIEW_SCOPE_COUNT>;
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
-        oc::state::Signal<core::ui::ViewType>& activeView;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::ViewSelectorState& viewSelector;
         core::state::sequencer::SequencerRangeSelectionState& rangeSelection;
         core::state::sequencer::SequencerTrackSelectorState& trackSelector;
@@ -58,7 +59,7 @@ private:
     void closeSelector();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_state_;
-    oc::state::Signal<core::ui::ViewType>& active_view_;
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::ViewSelectorState& view_selector_;
     core::state::sequencer::SequencerRangeSelectionState& range_selection_;
     core::state::sequencer::SequencerTrackSelectorState& track_selector_;

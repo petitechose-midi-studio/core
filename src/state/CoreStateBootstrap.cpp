@@ -18,6 +18,46 @@ namespace {
 // during active performance. Keep the debounce high enough that live movement
 // is not interrupted by periodic workspace flushes.
 constexpr uint32_t MACRO_WORKSPACE_SAVE_DELAY_MS = 5000;
+
+void configureDebugLabels_(CoreState& state) {
+    state.activeView.setDebugLabel("core.activeView");
+
+    state.viewSelector.selectedIndex.setDebugLabel("core.viewSelector.selectedIndex");
+    state.viewSelector.visible.setDebugLabel("core.viewSelector.visible");
+
+    state.pages.selector.selectedIndex.setDebugLabel("core.macroPages.selector.selectedIndex");
+    state.pages.selector.visible.setDebugLabel("core.macroPages.selector.visible");
+
+    state.macroEdit.flowPhase.setDebugLabel("core.macroEdit.flowPhase");
+    state.macroEdit.selector.visible.setDebugLabel("core.macroEdit.selector.visible");
+    state.macroEdit.selector.editingRow.setDebugLabel("core.macroEdit.selector.editingRow");
+    state.macroEdit.selector.selectedIndex.setDebugLabel("core.macroEdit.selector.selectedIndex");
+    state.macroEdit.macroSelector.visible.setDebugLabel("core.macroEdit.macroSelector.visible");
+    state.macroEdit.macroSelector.selectedIndex.setDebugLabel("core.macroEdit.macroSelector.selectedIndex");
+
+    state.globalSettings.flowPhase.setDebugLabel("core.globalSettings.flowPhase");
+    state.globalSettings.selector.visible.setDebugLabel("core.globalSettings.selector.visible");
+    state.globalSettings.selector.selectedIndex.setDebugLabel("core.globalSettings.selector.selectedIndex");
+    state.globalSettings.selector.editingRow.setDebugLabel("core.globalSettings.selector.editingRow");
+
+    state.dataManager.context.setDebugLabel("core.dataManager.context");
+    state.dataManager.flowPhase.setDebugLabel("core.dataManager.flowPhase");
+    state.dataManager.dialog.visible.setDebugLabel("core.dataManager.dialog.visible");
+    state.dataManager.dialog.mode.setDebugLabel("core.dataManager.dialog.mode");
+    state.dataManager.dialog.selectedIndex.setDebugLabel("core.dataManager.dialog.selectedIndex");
+    state.dataManager.dialog.editingShortcutRow.setDebugLabel("core.dataManager.dialog.editingShortcutRow");
+
+    state.sequencerTracks.selector.selecting.setDebugLabel("core.sequencerTracks.selector.selecting");
+    state.sequencerTracks.selector.selectedTrack.setDebugLabel("core.sequencerTracks.selector.selectedTrack");
+
+    state.sequencer.stepPropertyInlineSelector.selecting.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selecting");
+    state.sequencer.stepPropertyInlineSelector.selectedIndex.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selectedIndex");
+    state.sequencer.patternQuickControls.selecting.setDebugLabel("core.sequencer.patternQuickControls.selecting");
+    state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
+    state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
+    state.sequencer.rangeSelection.kind.setDebugLabel("core.sequencer.rangeSelection.kind");
+    state.sequencer.rangeSelection.phase.setDebugLabel("core.sequencer.rangeSelection.phase");
+}
 }  // namespace
 
 FLASHMEM void CoreStateBootstrap::initializeMacroPersistence_(CoreState& state) {
@@ -112,6 +152,7 @@ FLASHMEM void CoreStateBootstrap::setupAutoPersist_(CoreState& state) {
 
 FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
     initializePersistence_(state);
+    configureDebugLabels_(state);
     state.statusBar.pageName.set(state.pages.activePageData().name);
     macro::MacroWorkflow::syncRuntimeFromActivePage(state);
     registerOverlaySignals_(state);
