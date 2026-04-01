@@ -13,6 +13,7 @@ struct SequencerPatternSnapshot {
     uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
     uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
     uint64_t enabledMask = 0;
+    uint32_t stepDataRevision = 0;
     std::array<uint8_t, SequencerState::MAX_STEPS> note{};
     std::array<uint8_t, SequencerState::MAX_STEPS> velocity{};
     std::array<uint16_t, SequencerState::MAX_STEPS> gate{};

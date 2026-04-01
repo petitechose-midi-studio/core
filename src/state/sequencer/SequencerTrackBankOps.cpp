@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include <config/PlatformCompat.hpp>
-
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::state::sequencer {

@@ -44,6 +44,7 @@ FLASHMEM void captureSnapshot(const SequencerState& source, SequencerPatternSnap
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
     out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
     out.enabledMask = source.enabledMask.get();
+    out.stepDataRevision = source.stepDataRevision.get();
 
     for (uint8_t i = 0; i < SequencerState::MAX_STEPS; ++i) {
         out.note[i] = sanitizeMidi7(source.note[i]);

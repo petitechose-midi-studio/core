@@ -7,29 +7,25 @@ namespace core::sequencer {
 
 namespace {
 constexpr float DEFAULT_BPM = 120.0f;
-constexpr uint8_t TIMER_PRIORITY = 32;
 constexpr uint32_t MIN_PERIOD_US = 1;
 }  // namespace
 
 #ifdef ARDUINO
-
-InternalTransportClock* InternalTransportClock::active_instance_ = nullptr;
 
 void InternalTransportClock::setPlaying(bool playing) {
     if (playing_ == playing) {
         return;
     }
 
-    playing_ = playing;
-    if (!playing_) {
-        stopTimer_();
+    if (!playing) {
+        tick_base_ = tick();
+        playing_ = false;
         return;
     }
 
-    noInterrupts();
-    tick_ = 0;
-    interrupts();
-    restartTimer_();
+    tick_base_ = 0;
+    segment_start_us_ = clock_.micros64();
+    playing_ = true;
 }
 
 void InternalTransportClock::setBpm(float bpm) {
@@ -37,27 +33,30 @@ void InternalTransportClock::setBpm(float bpm) {
         return;
     }
 
-    bpm_ = bpm;
     if (playing_) {
-        restartTimer_();
+        tick_base_ = tick();
+        segment_start_us_ = clock_.micros64();
     }
+    bpm_ = bpm;
 }
 
 void InternalTransportClock::reset() {
-    stopTimer_();
     bpm_ = DEFAULT_BPM;
     playing_ = false;
-    noInterrupts();
-    tick_ = 0;
-    interrupts();
+    tick_base_ = 0;
+    segment_start_us_ = 0;
 }
 
 void InternalTransportClock::update(uint32_t /*nowMs*/) {
-    // Timer-backed implementation does not derive phase from cooperative updates.
+    // HAL-backed implementation derives phase from monotonic microseconds.
 }
 
 uint32_t InternalTransportClock::tick() const {
-    return tick_;
+    if (!playing_) {
+        return tick_base_;
+    }
+
+    return tick_base_ + segmentTicks_(clock_.micros64());
 }
 
 float InternalTransportClock::bpm() const {
@@ -79,43 +78,17 @@ uint32_t InternalTransportClock::tickPeriodUs_() const {
     return std::max(static_cast<uint32_t>(periodUs + 0.5f), MIN_PERIOD_US);
 }
 
-void InternalTransportClock::onTimerThunk_() {
-    if (active_instance_) {
-        active_instance_->onTimer_();
-    }
-}
-
-void InternalTransportClock::onTimer_() {
-    tick_ += 1;
-}
-
-void InternalTransportClock::restartTimer_() {
+uint32_t InternalTransportClock::segmentTicks_(uint64_t nowUs) const {
     const uint32_t periodUs = tickPeriodUs_();
     if (periodUs == 0) {
-        stopTimer_();
-        return;
+        return 0;
     }
 
-    active_instance_ = this;
-    if (!timer_running_) {
-        timer_.priority(TIMER_PRIORITY);
-        timer_running_ = timer_.begin(onTimerThunk_, periodUs);
-        return;
+    if (nowUs <= segment_start_us_) {
+        return 0;
     }
 
-    timer_.update(periodUs);
-}
-
-void InternalTransportClock::stopTimer_() {
-    if (!timer_running_) {
-        return;
-    }
-
-    timer_.end();
-    timer_running_ = false;
-    if (active_instance_ == this) {
-        active_instance_ = nullptr;
-    }
+    return static_cast<uint32_t>((nowUs - segment_start_us_) / periodUs);
 }
 
 #else

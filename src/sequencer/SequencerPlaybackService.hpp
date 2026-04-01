@@ -11,8 +11,11 @@
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
 
 #include "config/TimeCompat.hpp"
+#include "sequencer/SequencerMidiOutput.hpp"
+#include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::sequencer {
@@ -26,27 +29,60 @@ class SequencerPlaybackService {
 public:
     static constexpr uint8_t TRACK_COUNT = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 
+    struct UiProjectionSnapshot {
+        bool noteOutPulse = false;
+        bool beatPulse = false;
+        std::array<uint8_t, TRACK_COUNT> trackVelocity{};
+    };
+
+    struct ProfilingSnapshot {
+        uint32_t updateCount = 0;
+        uint32_t avgUpdateUs = 0;
+        uint32_t maxUpdateUs = 0;
+        uint32_t noteOnCount = 0;
+        uint32_t noteOffCount = 0;
+        uint32_t panicNoteOffCount = 0;
+        uint32_t lateNoteOnCount = 0;
+        uint32_t avgMidiSendUs = 0;
+        uint32_t maxMidiSendUs = 0;
+        uint32_t maxTickJump = 0;
+        uint32_t maxNoteBurst = 0;
+    };
+
     SequencerPlaybackService(core::state::sequencer::SequencerState& sequencer,
                              core::state::sequencer::SequencerTrackBankState& trackBank,
                              core::state::StatusBarState& statusBar,
                              oc::api::MidiAPI& midi);
 
-    void update(uint32_t tick, bool playing, uint32_t nowMs);
+    void update(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+                uint32_t tick,
+                bool playing,
+                uint32_t nowMs,
+                bool publishRuntimeState = true,
+                bool emitLogs = true);
     void stop();
+    void publishUiProjection(const UiProjectionSnapshot& projection, uint32_t nowMs);
+    UiProjectionSnapshot takeUiProjectionSnapshot();
+    oc::note::sequencer::StepSequencerRuntimeState copyActiveRuntimeState() const;
+    bool takeProfilingSnapshot(uint32_t nowMs, ProfilingSnapshot& snapshot);
 
 private:
+    const oc::note::sequencer::StepSequencerRuntimeState& activeRuntimeState_() const;
+
     struct ProfilingWindow {
         uint32_t window_start_ms = 0;
         uint32_t update_count = 0;
         uint32_t total_update_us = 0;
         uint32_t max_update_us = 0;
         uint32_t note_on_count = 0;
+        uint32_t note_off_count = 0;
+        uint32_t panic_note_off_count = 0;
         uint32_t late_note_on_count = 0;
         uint32_t max_tick_jump = 0;
         uint32_t max_note_burst = 0;
-        uint32_t note_send_count = 0;
-        uint32_t total_note_send_us = 0;
-        uint32_t max_note_send_us = 0;
+        uint32_t midi_send_count = 0;
+        uint32_t total_midi_send_us = 0;
+        uint32_t max_midi_send_us = 0;
 
         void resetWindow(uint32_t nowMs) {
             window_start_ms = nowMs;
@@ -54,88 +90,119 @@ private:
             total_update_us = 0;
             max_update_us = 0;
             note_on_count = 0;
+            note_off_count = 0;
+            panic_note_off_count = 0;
             late_note_on_count = 0;
             max_tick_jump = 0;
             max_note_burst = 0;
-            note_send_count = 0;
-            total_note_send_us = 0;
-            max_note_send_us = 0;
+            midi_send_count = 0;
+            total_midi_send_us = 0;
+            max_midi_send_us = 0;
         }
     };
 
     struct PendingNoteActivity {
         bool noteOutActive = false;
         uint32_t noteOnCount = 0;
-        uint32_t noteSendTotalUs = 0;
-        uint32_t noteSendMaxUs = 0;
+        uint32_t noteOffCount = 0;
+        uint32_t panicNoteOffCount = 0;
+        uint32_t midiSendCount = 0;
+        uint32_t midiSendTotalUs = 0;
+        uint32_t midiSendMaxUs = 0;
         std::array<uint8_t, TRACK_COUNT> trackVelocity{};
 
         void reset() {
             noteOutActive = false;
             noteOnCount = 0;
-            noteSendTotalUs = 0;
-            noteSendMaxUs = 0;
+            noteOffCount = 0;
+            panicNoteOffCount = 0;
+            midiSendCount = 0;
+            midiSendTotalUs = 0;
+            midiSendMaxUs = 0;
             trackVelocity.fill(0);
         }
 
-        void record(uint8_t trackIndex, uint8_t velocity, uint32_t sendUs) {
+        void recordNoteOn(uint8_t trackIndex, uint8_t velocity, uint32_t sendUs) {
             noteOutActive = true;
             noteOnCount += 1;
-            noteSendTotalUs += sendUs;
-            noteSendMaxUs = std::max(noteSendMaxUs, sendUs);
+            midiSendCount += 1;
+            midiSendTotalUs += sendUs;
+            midiSendMaxUs = std::max(midiSendMaxUs, sendUs);
             if (trackIndex >= TRACK_COUNT) return;
             trackVelocity[trackIndex] = std::max(trackVelocity[trackIndex], velocity);
         }
+
+        void recordNoteOff(uint32_t sendUs) {
+            noteOffCount += 1;
+            midiSendCount += 1;
+            midiSendTotalUs += sendUs;
+            midiSendMaxUs = std::max(midiSendMaxUs, sendUs);
+        }
+
+        void recordPanicNoteOffs(uint32_t count, uint32_t totalUs, uint32_t maxUs) {
+            panicNoteOffCount += count;
+            midiSendCount += count;
+            midiSendTotalUs += totalUs;
+            midiSendMaxUs = std::max(midiSendMaxUs, maxUs);
+        }
     };
 
-    class MidiOutput final : public oc::note::sequencer::ISequencerOutput {
+    class PendingNoteActivityObserver final : public SequencerMidiOutputObserver {
     public:
-        MidiOutput(oc::api::MidiAPI& midi, PendingNoteActivity& pendingNoteActivity, uint8_t trackIndex)
-            : midi_(midi)
-            , pending_note_activity_(pendingNoteActivity)
-            , track_index_(trackIndex) {}
+        explicit PendingNoteActivityObserver(PendingNoteActivity& pendingNoteActivity)
+            : pending_note_activity_(pendingNoteActivity) {}
 
-        void setTrackIndex(uint8_t trackIndex) { track_index_ = trackIndex; }
-
-        void sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) override {
-            const uint32_t startUs = core::time_compat::micros();
-            midi_.sendNoteOn(channel, note, velocity);
-            pending_note_activity_.record(track_index_,
-                                          velocity,
-                                          core::time_compat::micros() - startUs);
+        void onNoteOn(uint8_t trackIndex, uint8_t velocity, uint32_t sendUs) override {
+            pending_note_activity_.recordNoteOn(trackIndex, velocity, sendUs);
         }
 
-        void sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) override {
-            midi_.sendNoteOff(channel, note, velocity);
+        void onNoteOff(uint32_t sendUs) override {
+            pending_note_activity_.recordNoteOff(sendUs);
         }
 
-        void sendCC(uint8_t channel, uint8_t cc, uint8_t value) override {
-            midi_.sendCC(channel, cc, value);
-        }
-
-        void allNotesOff() override {
-            midi_.allNotesOff();
+        void onPanicNoteOffs(uint32_t count, uint32_t totalUs, uint32_t maxUs) override {
+            pending_note_activity_.recordPanicNoteOffs(count, totalUs, maxUs);
         }
 
     private:
-        oc::api::MidiAPI& midi_;
         PendingNoteActivity& pending_note_activity_;
-        uint8_t track_index_ = 0;
     };
 
+    struct PendingUiProjection {
+        bool noteOutPulse = false;
+        bool beatPulse = false;
+        std::array<uint8_t, TRACK_COUNT> trackVelocity{};
+
+        void reset() {
+            noteOutPulse = false;
+            beatPulse = false;
+            trackVelocity.fill(0);
+        }
+    };
+
+    void handleActiveTrackSwitch_();
+    void syncRuntimeStates_(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot);
     void recordProfilingWindow(uint32_t tick, bool playing, uint32_t updateUs, uint32_t nowMs);
     void maybeLogProfilingWindow(uint32_t nowMs);
-    void drainPendingNoteActivity(uint32_t nowMs);
+    void collectUiProjection_();
+
+public:
+    void publishUiState(uint32_t nowMs);
+
+private:
 
     core::state::sequencer::SequencerState& sequencer_;
-    core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::StatusBarState& status_bar_;
     PendingNoteActivity pending_note_activity_{};
+    PendingUiProjection pending_ui_projection_{};
+    PendingNoteActivityObserver note_activity_observer_{pending_note_activity_};
     ProfilingWindow profiling_{};
-    MidiOutput active_output_;
-    oc::note::sequencer::StepSequencerEngine engine_;
-    std::array<std::unique_ptr<MidiOutput>, TRACK_COUNT> track_outputs_{};
+    std::array<oc::note::sequencer::StepSequencerRuntimeState, TRACK_COUNT> track_runtime_states_{};
+    std::array<SequencerRuntimeStateSignature, TRACK_COUNT> track_runtime_signatures_{};
+    std::array<std::unique_ptr<SequencerMidiOutput>, TRACK_COUNT> track_outputs_{};
     std::array<std::unique_ptr<oc::note::sequencer::StepSequencerEngine>, TRACK_COUNT> track_engines_{};
+    uint8_t runtime_active_track_ = 0;
+    uint8_t runtime_enabled_mask_ = 0x01;
 
     int16_t last_playhead_ = -1;
     uint8_t last_active_track_ = 0;

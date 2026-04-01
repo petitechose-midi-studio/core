@@ -5,7 +5,7 @@
 #include "config/PlatformCompat.hpp"
 
 #ifdef ARDUINO
-    #include <IntervalTimer.h>
+    #include <oc/hal/teensy/HighResolutionClock.hpp>
 #endif
 
 #include <oc/note/clock/InternalClock.hpp>
@@ -13,10 +13,12 @@
 namespace core::sequencer {
 
 /**
- * @brief Internal transport clock with a Teensy timer-backed implementation.
+ * @brief Internal transport clock with a Teensy high-resolution time source.
  *
- * On Teensy builds, this class owns an IntervalTimer which advances the
- * transport tick independently from the cooperative UI loop cadence.
+ * On Teensy builds, the musical transport still lives in core, but the raw
+ * monotonic time source comes from the Teensy HAL. This keeps hardware details
+ * out of the domain logic while avoiding a transport tick that depends on a
+ * periodic ISR firing on time.
  *
  * On non-Arduino/native builds, it falls back to the existing loop-driven
  * `oc::note::clock::InternalClock` so host builds keep their current behavior.
@@ -36,18 +38,13 @@ private:
     uint32_t tickPeriodUs_() const;
 
 #ifdef ARDUINO
-    static void onTimerThunk_();
-    void onTimer_();
-    void restartTimer_();
-    void stopTimer_();
+    uint32_t segmentTicks_(uint64_t nowUs) const;
 
-    static InternalTransportClock* active_instance_;
-
-    IntervalTimer timer_{};
-    volatile uint32_t tick_ = 0;
+    mutable oc::hal::teensy::HighResolutionClock clock_{};
+    uint64_t segment_start_us_ = 0;
+    uint32_t tick_base_ = 0;
     float bpm_ = 120.0f;
     bool playing_ = false;
-    bool timer_running_ = false;
 #else
     oc::note::clock::InternalClock fallback_{};
 #endif

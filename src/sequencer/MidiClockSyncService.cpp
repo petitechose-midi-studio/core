@@ -28,13 +28,21 @@ constexpr float DISPLAY_ALPHA_MEDIUM = 0.26f;
 constexpr float DISPLAY_ALPHA_FAST = 0.48f;
 }  // namespace
 
-MidiClockSyncService::MidiClockSyncService(core::state::MidiSyncState& syncState,
-                                           core::state::StatusBarState& statusBar,
-                                           oc::api::MidiAPI& midi)
+FLASHMEM MidiClockSyncService::MidiClockSyncService(core::state::MidiSyncState& syncState,
+                                                    core::state::StatusBarState& statusBar,
+                                                    oc::api::MidiAPI& midi)
     : sync_state_(syncState)
     , status_bar_(statusBar)
     , midi_(midi) {
     const float tempo = status_bar_.tempo.get();
+    runtime_config_.mode = sync_state_.mode.get();
+    runtime_config_.followTransport = sync_state_.followTransport.get();
+    runtime_config_.autoFallbackMs = sync_state_.autoFallbackMs.get();
+    runtime_config_.autoLockClockCount = sync_state_.autoLockClockCount.get();
+    runtime_config_.tempo = tempo;
+    runtime_config_.playing = status_bar_.playing.get();
+    published_playing_ = runtime_config_.playing;
+    published_tempo_display_ = tempo;
     status_bar_.tempoDisplay.set(tempo);
     display_tempo_filtered_ = tempo;
     display_tempo_published_ = tempo;
@@ -44,30 +52,149 @@ MidiClockSyncService::MidiClockSyncService(core::state::MidiSyncState& syncState
     status_bar_.transportLocked.set(false);
 }
 
-void MidiClockSyncService::update(uint32_t nowMs) {
+FLASHMEM void MidiClockSyncService::queuePlayingProjection_(bool playing) {
+    if (!projected_playing_dirty_ && published_playing_ == playing) {
+        return;
+    }
+
+    projected_playing_ = playing;
+    projected_playing_dirty_ = true;
+}
+
+FLASHMEM void MidiClockSyncService::queueTempoDisplayProjection_(float tempo) {
+    if (!projected_tempo_display_dirty_ && published_tempo_display_ == tempo) {
+        return;
+    }
+
+    projected_tempo_display_ = tempo;
+    projected_tempo_display_dirty_ = true;
+}
+
+FLASHMEM void MidiClockSyncService::queueSyncExternalSourceProjection_(bool active) {
+    if (!projected_sync_external_source_dirty_ && published_sync_external_source_ == active) {
+        return;
+    }
+
+    projected_sync_external_source_ = active;
+    projected_sync_external_source_dirty_ = true;
+}
+
+FLASHMEM void MidiClockSyncService::queueTempoLockedProjection_(bool locked) {
+    if (!projected_tempo_locked_dirty_ && published_tempo_locked_ == locked) {
+        return;
+    }
+
+    projected_tempo_locked_ = locked;
+    projected_tempo_locked_dirty_ = true;
+}
+
+FLASHMEM void MidiClockSyncService::queueTransportLockedProjection_(bool locked) {
+    if (!projected_transport_locked_dirty_ && published_transport_locked_ == locked) {
+        return;
+    }
+
+    projected_transport_locked_ = locked;
+    projected_transport_locked_dirty_ = true;
+}
+
+FLASHMEM void MidiClockSyncService::queueActiveSourceProjection_(core::state::ClockSourceActive source) {
+    if (!projected_active_source_dirty_ && published_active_source_ == source) {
+        return;
+    }
+
+    projected_active_source_ = source;
+    projected_active_source_dirty_ = true;
+}
+
+FLASHMEM void MidiClockSyncService::queueExternalClockPresentProjection_(bool present) {
+    if (!projected_external_clock_present_dirty_ && published_external_clock_present_ == present) {
+        return;
+    }
+
+    projected_external_clock_present_ = present;
+    projected_external_clock_present_dirty_ = true;
+}
+
+FLASHMEM void MidiClockSyncService::publishUiState(uint32_t nowMs) {
+    if (projected_playing_dirty_) {
+        status_bar_.playing.set(projected_playing_);
+        published_playing_ = projected_playing_;
+        projected_playing_dirty_ = false;
+    }
+
+    if (projected_tempo_display_dirty_) {
+        status_bar_.tempoDisplay.set(projected_tempo_display_);
+        published_tempo_display_ = projected_tempo_display_;
+        projected_tempo_display_dirty_ = false;
+    }
+
+    if (projected_sync_external_source_dirty_) {
+        status_bar_.syncExternalSource.set(projected_sync_external_source_);
+        published_sync_external_source_ = projected_sync_external_source_;
+        projected_sync_external_source_dirty_ = false;
+    }
+
+    if (projected_tempo_locked_dirty_) {
+        status_bar_.tempoLocked.set(projected_tempo_locked_);
+        published_tempo_locked_ = projected_tempo_locked_;
+        projected_tempo_locked_dirty_ = false;
+    }
+
+    if (projected_transport_locked_dirty_) {
+        status_bar_.transportLocked.set(projected_transport_locked_);
+        published_transport_locked_ = projected_transport_locked_;
+        projected_transport_locked_dirty_ = false;
+    }
+
+    if (projected_active_source_dirty_) {
+        sync_state_.activeSource.set(projected_active_source_);
+        published_active_source_ = projected_active_source_;
+        projected_active_source_dirty_ = false;
+    }
+
+    if (projected_external_clock_present_dirty_) {
+        sync_state_.externalClockPresent.set(projected_external_clock_present_);
+        published_external_clock_present_ = projected_external_clock_present_;
+        projected_external_clock_present_dirty_ = false;
+    }
+
+    if (pending_sync_input_pulse_) {
+        status_bar_.pulseSyncInput(nowMs);
+        pending_sync_input_pulse_ = false;
+    }
+}
+
+void MidiClockSyncService::update(const MidiClockSyncRuntimeConfig& config,
+                                  uint32_t nowMs,
+                                  bool driveTransport) {
+    runtime_config_ = config;
     updateSourceSelection_(nowMs);
     pushSyncIndicators_();
 
     if (using_external_source_) {
         current_tick_ = external_tick_;
-        if (sync_state_.followTransport.get()) {
+        if (runtime_config_.followTransport) {
             current_playing_ = external_transport_seen_
                                    ? external_playing_
                                    : hasExternalClockSignal_(nowMs);
-            status_bar_.playing.set(current_playing_);
+            queuePlayingProjection_(current_playing_);
         } else {
-            current_playing_ = status_bar_.playing.get();
+            current_playing_ = runtime_config_.playing;
         }
     } else {
-        current_playing_ = status_bar_.playing.get();
-        internal_clock_.setBpm(status_bar_.tempo.get());
-        internal_clock_.setPlaying(current_playing_);
-        internal_clock_.update(nowMs);
-        current_tick_ = internal_clock_.tick();
-        updateMasterClockOutput_();
+        current_playing_ = runtime_config_.playing;
+        if (driveTransport) {
+            internal_clock_.setBpm(runtime_config_.tempo);
+            internal_clock_.setPlaying(current_playing_);
+            internal_clock_.update(nowMs);
+            current_tick_ = internal_clock_.tick();
+            updateMasterClockOutput_();
+        } else {
+            current_tick_ = 0;
+        }
     }
 
-    if (using_external_source_) {
+    if (using_external_source_ || !driveTransport) {
         last_master_playing_ = false;
         last_master_tick_sent_ = current_tick_;
     }
@@ -76,7 +203,7 @@ void MidiClockSyncService::update(uint32_t nowMs) {
 }
 
 void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
-    if (sync_state_.mode.get() == core::state::MidiSyncMode::MASTER) {
+    if (runtime_config_.mode == core::state::MidiSyncMode::MASTER) {
         return;
     }
 
@@ -115,15 +242,15 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
         external_clock_streak_ += 1;
     }
 
-    const uint8_t lockNeeded = std::clamp(sync_state_.autoLockClockCount.get(),
+    const uint8_t lockNeeded = std::clamp(runtime_config_.autoLockClockCount,
                                           MIN_AUTO_LOCK_CLOCKS,
                                           MAX_AUTO_LOCK_CLOCKS);
 
-    if (sync_state_.mode.get() == core::state::MidiSyncMode::SLAVE || external_clock_streak_ >= lockNeeded) {
+    if (runtime_config_.mode == core::state::MidiSyncMode::SLAVE || external_clock_streak_ >= lockNeeded) {
         external_locked_ = true;
     }
 
-    status_bar_.pulseSyncInput(hostNowMs);
+    pending_sync_input_pulse_ = true;
 }
 
 void MidiClockSyncService::resetExternalTempoEstimator_() {
@@ -190,8 +317,8 @@ float MidiClockSyncService::estimateTempoFromIntervals_() const {
     return 60000000.0f / (meanUs * 24.0f);
 }
 
-void MidiClockSyncService::onStart() {
-    if (sync_state_.mode.get() == core::state::MidiSyncMode::MASTER) return;
+FLASHMEM void MidiClockSyncService::onStart() {
+    if (runtime_config_.mode == core::state::MidiSyncMode::MASTER) return;
 
     external_tick_ = 0;
     external_transport_seen_ = true;
@@ -201,26 +328,26 @@ void MidiClockSyncService::onStart() {
 
     resync_requested_ = true;
 
-    if (sync_state_.followTransport.get()) {
-        status_bar_.playing.set(true);
+    if (runtime_config_.followTransport) {
+        queuePlayingProjection_(true);
     }
 }
 
-void MidiClockSyncService::onContinue() {
-    if (sync_state_.mode.get() == core::state::MidiSyncMode::MASTER) return;
+FLASHMEM void MidiClockSyncService::onContinue() {
+    if (runtime_config_.mode == core::state::MidiSyncMode::MASTER) return;
 
     external_transport_seen_ = true;
     external_playing_ = true;
 
     if (!allowExternalTransport_()) return;
 
-    if (sync_state_.followTransport.get()) {
-        status_bar_.playing.set(true);
+    if (runtime_config_.followTransport) {
+        queuePlayingProjection_(true);
     }
 }
 
-void MidiClockSyncService::onStop() {
-    if (sync_state_.mode.get() == core::state::MidiSyncMode::MASTER) return;
+FLASHMEM void MidiClockSyncService::onStop() {
+    if (runtime_config_.mode == core::state::MidiSyncMode::MASTER) return;
 
     external_transport_seen_ = true;
     external_playing_ = false;
@@ -229,8 +356,8 @@ void MidiClockSyncService::onStop() {
 
     resync_requested_ = true;
 
-    if (sync_state_.followTransport.get()) {
-        status_bar_.playing.set(false);
+    if (runtime_config_.followTransport) {
+        queuePlayingProjection_(false);
     }
 }
 
@@ -241,14 +368,14 @@ bool MidiClockSyncService::consumeResyncRequest() {
 }
 
 void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
-    const auto mode = sync_state_.mode.get();
+    const auto mode = runtime_config_.mode;
 
     if (mode == core::state::MidiSyncMode::MASTER) {
         external_locked_ = false;
         external_clock_streak_ = 0;
         resetExternalTempoEstimator_();
     } else if (mode == core::state::MidiSyncMode::AUTO) {
-        const uint16_t fallbackMs = std::clamp(sync_state_.autoFallbackMs.get(),
+        const uint16_t fallbackMs = std::clamp(runtime_config_.autoFallbackMs,
                                                MIN_AUTO_FALLBACK_MS,
                                                MAX_AUTO_FALLBACK_MS);
         const uint32_t elapsed = nowMs - last_external_clock_ms_;
@@ -263,7 +390,7 @@ void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
     }
 
     const bool externalSignal = hasExternalClockSignal_(nowMs);
-    sync_state_.externalClockPresent.set(externalSignal);
+    queueExternalClockPresentProjection_(externalSignal);
 
     if (!externalSignal) {
         resetExternalTempoEstimator_();
@@ -281,32 +408,32 @@ void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
             // Keep continuity on source switch when transport follow is enabled
             // but no explicit external START has been observed yet.
             if (!external_transport_seen_ && !external_playing_) {
-                external_playing_ = status_bar_.playing.get();
+                external_playing_ = runtime_config_.playing;
             }
 
-            if (sync_state_.followTransport.get()) {
-                status_bar_.playing.set(external_transport_seen_
+            if (runtime_config_.followTransport) {
+                queuePlayingProjection_(external_transport_seen_
                                             ? external_playing_
                                             : hasExternalClockSignal_(nowMs));
             }
         } else {
             internal_clock_.reset();
-            internal_clock_.setPlaying(status_bar_.playing.get());
-            internal_clock_.setBpm(status_bar_.tempo.get());
+            internal_clock_.setPlaying(runtime_config_.playing);
+            internal_clock_.setBpm(runtime_config_.tempo);
             internal_clock_.update(nowMs);
             last_master_tick_sent_ = internal_clock_.tick();
-            last_master_playing_ = status_bar_.playing.get();
+            last_master_playing_ = runtime_config_.playing;
         }
     }
 
-    sync_state_.activeSource.set(using_external_source_
+    queueActiveSourceProjection_(using_external_source_
                                      ? core::state::ClockSourceActive::EXTERNAL
                                      : core::state::ClockSourceActive::INTERNAL);
 }
 
 void MidiClockSyncService::updateDisplayedTempo_(uint32_t nowMs) {
     const bool externalMode = using_external_source_ && external_bpm_valid_;
-    const float targetTempo = externalMode ? external_bpm_estimate_ : status_bar_.tempo.get();
+    const float targetTempo = externalMode ? external_bpm_estimate_ : runtime_config_.tempo;
 
     if (!display_filter_initialized_ || externalMode != display_filter_external_mode_) {
         display_filter_initialized_ = true;
@@ -314,7 +441,7 @@ void MidiClockSyncService::updateDisplayedTempo_(uint32_t nowMs) {
         display_tempo_filtered_ = targetTempo;
         display_tempo_published_ = targetTempo;
         last_display_publish_ms_ = nowMs;
-        status_bar_.tempoDisplay.set(targetTempo);
+        queueTempoDisplayProjection_(targetTempo);
         return;
     }
 
@@ -322,7 +449,7 @@ void MidiClockSyncService::updateDisplayedTempo_(uint32_t nowMs) {
         display_tempo_filtered_ = targetTempo;
         display_tempo_published_ = targetTempo;
         last_display_publish_ms_ = nowMs;
-        status_bar_.tempoDisplay.set(targetTempo);
+        queueTempoDisplayProjection_(targetTempo);
         return;
     }
 
@@ -351,15 +478,15 @@ void MidiClockSyncService::updateDisplayedTempo_(uint32_t nowMs) {
         return;
     }
 
-    status_bar_.tempoDisplay.set(quantized);
+    queueTempoDisplayProjection_(quantized);
     display_tempo_published_ = quantized;
     last_display_publish_ms_ = nowMs;
 }
 
 void MidiClockSyncService::pushSyncIndicators_() {
-    status_bar_.syncExternalSource.set(using_external_source_);
-    status_bar_.tempoLocked.set(using_external_source_);
-    status_bar_.transportLocked.set(using_external_source_ && sync_state_.followTransport.get());
+    queueSyncExternalSourceProjection_(using_external_source_);
+    queueTempoLockedProjection_(using_external_source_);
+    queueTransportLockedProjection_(using_external_source_ && runtime_config_.followTransport);
 }
 
 void MidiClockSyncService::updateMasterClockOutput_() {
@@ -393,7 +520,7 @@ void MidiClockSyncService::updateMasterClockOutput_() {
 }
 
 bool MidiClockSyncService::allowExternalTransport_() const {
-    const auto mode = sync_state_.mode.get();
+    const auto mode = runtime_config_.mode;
     if (mode == core::state::MidiSyncMode::MASTER) {
         return false;
     }
@@ -408,7 +535,7 @@ bool MidiClockSyncService::allowExternalTransport_() const {
 bool MidiClockSyncService::hasExternalClockSignal_(uint32_t nowMs) const {
     if (last_external_clock_ms_ == 0) return false;
 
-    const uint16_t fallbackMs = std::clamp(sync_state_.autoFallbackMs.get(),
+    const uint16_t fallbackMs = std::clamp(runtime_config_.autoFallbackMs,
                                            MIN_AUTO_FALLBACK_MS,
                                            MAX_AUTO_FALLBACK_MS);
     return (nowMs - last_external_clock_ms_) <= fallbackMs;
