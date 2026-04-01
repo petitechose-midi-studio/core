@@ -96,6 +96,8 @@ struct UiSystemState {
     GlobalSettingsState globalSettings;
     DataManagerState dataManager;
     MacroEditState macroEdit;
+
+    UiSystemState();
 };
 
 /**

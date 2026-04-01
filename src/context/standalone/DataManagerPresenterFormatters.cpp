@@ -1,5 +1,6 @@
 #include "context/standalone/DataManagerPresenterFormatters.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <algorithm>
 
 #include <oc/type/TextFormat.hpp>
@@ -79,7 +80,7 @@ const char* buildConfirmMeta(core::state::DataManagerCommand command,
 
 }  // namespace
 
-OverlayRenderData buildOverlayRenderData(const Source& source) {
+FLASHMEM OverlayRenderData buildOverlayRenderData(const Source& source) {
     OverlayRenderData data{};
     const auto& dm = source.dataManager;
 
@@ -108,7 +109,7 @@ OverlayRenderData buildOverlayRenderData(const Source& source) {
     return data;
 }
 
-DialogRenderData buildDialogRenderData(const Source& source) {
+FLASHMEM DialogRenderData buildDialogRenderData(const Source& source) {
     DialogRenderData data{};
     const auto& dm = source.dataManager;
     const auto& dialog = dm.dialog;
@@ -180,7 +181,7 @@ DialogRenderData buildDialogRenderData(const Source& source) {
     return data;
 }
 
-SoftkeyRenderData buildSoftkeyRenderData(const Source& source) {
+FLASHMEM SoftkeyRenderData buildSoftkeyRenderData(const Source& source) {
     SoftkeyRenderData data{};
     const auto& dm = source.dataManager;
     if (!dm.visible.get()) {

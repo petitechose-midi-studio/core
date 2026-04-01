@@ -1,5 +1,6 @@
 #include "state/CoreState.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
 #include "state/CoreStateBootstrap.hpp"
@@ -12,12 +13,12 @@
 
 namespace core::state {
 
-CoreState::CoreState(oc::interface::IStorage& settingsStorage,
-                     oc::interface::IStorage& macroWorkspaceStorage,
-                     oc::interface::IStorage& macroLibraryStorage,
-                     oc::interface::IStorage& sequencerWorkspaceStorage,
-                     oc::interface::IStorage& sequencerPatternLibraryStorage,
-                     oc::interface::IStorage& sequencerSetLibraryStorage)
+FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
+                              oc::interface::IStorage& macroWorkspaceStorage,
+                              oc::interface::IStorage& macroLibraryStorage,
+                              oc::interface::IStorage& sequencerWorkspaceStorage,
+                              oc::interface::IStorage& sequencerPatternLibraryStorage,
+                              oc::interface::IStorage& sequencerSetLibraryStorage)
     : macroDomain_(macroWorkspaceStorage, macroLibraryStorage)
     , sequencerDomain_(sequencerWorkspaceStorage,
                        sequencerPatternLibraryStorage,

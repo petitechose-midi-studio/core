@@ -1,5 +1,6 @@
 #include "context/standalone/GlobalSettingsOverlayPresenterFormatters.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
 namespace core::context::standalone::global_settings_presenter {
@@ -23,7 +24,7 @@ const char* modeLabel(core::state::MidiSyncMode mode) {
 
 }  // namespace
 
-OverlayRenderData buildOverlayRenderData(const Source& source) {
+FLASHMEM OverlayRenderData buildOverlayRenderData(const Source& source) {
     OverlayRenderData data{};
 
     const auto mode = source.midiSync.mode.get();
@@ -74,7 +75,7 @@ OverlayRenderData buildOverlayRenderData(const Source& source) {
     return data;
 }
 
-SelectorRenderData buildSelectorRenderData(const Source& source) {
+FLASHMEM SelectorRenderData buildSelectorRenderData(const Source& source) {
     SelectorRenderData data{};
     if (source.globalSettings.flowPhase.get() != core::state::GlobalSettingsFlowPhase::VALUE_SELECTOR ||
         !source.globalSettings.selector.visible.get()) {

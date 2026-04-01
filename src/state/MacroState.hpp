@@ -61,16 +61,7 @@ struct MacroSlot {
 struct MacroState {
     MacroSlot slots[MACRO_COUNT];
 
-    MacroState() {
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            char buf[16];
-            size_t pos = oc::type::text::appendString(buf, sizeof(buf), 0, "Macro ");
-            pos = oc::type::text::appendUnsigned(buf, sizeof(buf), pos, i + 1);
-            oc::type::text::terminate(buf, sizeof(buf), pos);
-            slots[i].label.set(buf);
-            // displayValue is auto-derived from value, no manual sync needed
-        }
-    }
+    MacroState();
 
     MacroSlot& operator[](uint8_t index) { return slots[index]; }
     const MacroSlot& operator[](uint8_t index) const { return slots[index]; }

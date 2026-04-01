@@ -51,9 +51,7 @@ struct StatusBarState {
     Signal<bool> beatPulse{false};
     std::array<Signal<uint8_t, 4>, TRACK_COUNT> trackNoteActivity{};
 
-    StatusBarState() {
-        pageName.set("Page 1");
-    }
+    StatusBarState();
 
     void pulseNoteIn() {
         pulseTransient(noteInActive, note_in_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);

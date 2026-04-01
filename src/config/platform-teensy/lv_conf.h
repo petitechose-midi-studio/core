@@ -54,7 +54,7 @@
 #define LV_DRAW_SW_SUPPORT_RGB565 1
 #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED 0
 #define LV_DRAW_SW_SUPPORT_RGB565A8 1
-#define LV_DRAW_SW_SUPPORT_RGB888 1
+#define LV_DRAW_SW_SUPPORT_RGB888 0
 #define LV_DRAW_SW_SUPPORT_XRGB8888 0
 #define LV_DRAW_SW_SUPPORT_ARGB8888 1          // Required for transparency animations
 #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0
@@ -66,7 +66,7 @@
 #define LV_DRAW_SW_COMPLEX 1
 #define LV_DRAW_SW_SHADOW_CACHE_SIZE 32        // Cache shadows (32² = 1KB RAM)
 #define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE
-#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 1     // Keep for future use
+#define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 0
 #endif
 
 #define LV_USE_LOG 0
@@ -146,10 +146,10 @@
 #define LV_USE_ARC 1
 #define LV_USE_BAR 1
 #define LV_USE_BUTTON 1
-#define LV_USE_BUTTONMATRIX 1
+#define LV_USE_BUTTONMATRIX 0
 #define LV_USE_CANVAS 0
 #define LV_USE_CHECKBOX 0
-#define LV_USE_DROPDOWN 1
+#define LV_USE_DROPDOWN 0
 #define LV_USE_IMAGE 1
 #define LV_USE_LABEL 1
 #if LV_USE_LABEL
@@ -161,8 +161,8 @@
 #define LV_USE_LINE 1
 #define LV_USE_LIST 1
 #define LV_USE_MENU 0
-#define LV_USE_MSGBOX 1
-#define LV_USE_SLIDER 1
+#define LV_USE_MSGBOX 0
+#define LV_USE_SLIDER 0
 #define LV_USE_SWITCH 0
 #define LV_USE_TABVIEW 0
 #define LV_USE_ANIMIMG 0
@@ -183,7 +183,7 @@
 
 // Themes
 #define LV_USE_THEME_DEFAULT 0
-#define LV_USE_THEME_SIMPLE 1
+#define LV_USE_THEME_SIMPLE 0
 #define LV_USE_THEME_MONO 0
 
 // Layouts

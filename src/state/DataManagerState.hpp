@@ -85,9 +85,7 @@ struct DataManagerState {
     oc::state::SignalLabel feedback;
     DataManagerDialogState dialog;
 
-    DataManagerState() {
-        feedback.set("");
-    }
+    DataManagerState();
 
     void resetSession(DataManagerContext activeContext) {
         visible.set(false);
