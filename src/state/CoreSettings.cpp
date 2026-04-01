@@ -8,7 +8,6 @@
 namespace core::state {
 
 using core::persistence::PersistenceWriteStatus;
-namespace core_settings = core::state::core_settings;
 
 namespace {
 

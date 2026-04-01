@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
 #include "state/sequencer/SequencerTrackBankOps.hpp"
