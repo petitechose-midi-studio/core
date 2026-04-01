@@ -187,63 +187,14 @@ constexpr uint32_t APP_PERIOD_US = 1'000'000 / Config::Timing::APP_HZ;
 constexpr uint32_t LVGL_PERIOD_US = 1'000'000 / Config::Timing::LVGL_HZ;
 constexpr uint32_t DISPLAY_PERF_LOG_WINDOW_MS = 1000;
 
-static void logDisplayPerfWindow() {
-    if (!display) return;
-
-    const auto perf = display->perfSnapshot();
-    if (!perf.valid || perf.frames == 0) {
-        display->resetPerfStats();
-        return;
-    }
-
-    const float pixelsPct = perf.pixelsRatio * 100.0f;
-    const float tearPct = perf.tearRatio * 100.0f;
-    const float diff1OverflowPct = perf.diff1.overflowRatio * 100.0f;
-    const float diff2OverflowPct = perf.diff2.overflowRatio * 100.0f;
-
-    OC_LOG_INFO(
-        "[Perf][Display] fps={} avgFps={} uploadRate={} uploadAvg={}us cpuAvg={}us pixels={} tx={} tear={}%",
-        perf.currentFps,
-        perf.averageFps,
-        perf.uploadRateFps,
-        perf.uploadTimeUs.avg,
-        perf.cpuTimeUs.avg,
-        pixelsPct,
-        perf.transactionsPerFrame.avg,
-        tearPct);
-
-    OC_LOG_INFO(
-        "[Perf][DisplayDiff] diff1Ov={}/{} ({}%) diff1Size={}B diff1Cpu={}us diff2Ov={}/{} ({}%) diff2Size={}B diff2Cpu={}us vsync={} margin={}",
-        perf.diff1.overflow,
-        perf.diff1.computed,
-        diff1OverflowPct,
-        perf.diff1.sizeBytes.avg,
-        perf.diff1.computeTimeUs.avg,
-        perf.diff2.overflow,
-        perf.diff2.computed,
-        diff2OverflowPct,
-        perf.diff2.sizeBytes.avg,
-        perf.diff2.computeTimeUs.avg,
-        perf.realVSyncSpacing.avg,
-        perf.marginPerFrame.avg);
-
-    display->resetPerfStats();
-}
-
 void loop() {
     static uint32_t lastMicros = 0;
     static uint32_t lvglAccumulator = 0;
-    static uint32_t displayPerfWindowStartMs = 0;
+
 
     const uint32_t now = micros();
     if (now - lastMicros < APP_PERIOD_US) return;
     lastMicros = now;
-
-    const uint32_t nowMs = millis();
-    if (displayPerfWindowStartMs == 0) {
-        displayPerfWindowStartMs = nowMs;
-        display->resetPerfStats();
-    }
 
     // Poll hardware and update active context
     app->update();
@@ -258,8 +209,4 @@ void loop() {
         lvgl->refresh();
     }
 
-    if ((nowMs - displayPerfWindowStartMs) >= DISPLAY_PERF_LOG_WINDOW_MS) {
-        logDisplayPerfWindow();
-        displayPerfWindowStartMs = nowMs;
-    }
 }
