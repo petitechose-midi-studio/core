@@ -38,12 +38,18 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
     oc::ui::lvgl::font::load(STANDALONE_FONT_ENTRIES, STANDALONE_FONT_COUNT);
     linkCoreFontAliases();
 
+    OC_LOG_DEBUG("StandaloneContext: configureEncoders");
     configureEncoders();
+    OC_LOG_DEBUG("StandaloneContext: createUiAssembly");
     createUiAssembly();
+    OC_LOG_DEBUG("StandaloneContext: createOverlayAssembly");
     createOverlayAssembly();
+    OC_LOG_DEBUG("StandaloneContext: createFeatureAssembly");
     createFeatureAssembly();
+    OC_LOG_DEBUG("StandaloneContext: createGlobalHandlerAssembly");
     createGlobalHandlerAssembly();
 
+    OC_LOG_DEBUG("StandaloneContext: show");
     ui_assembly_->show();
 
     OC_LOG_INFO("StandaloneContext ready");
@@ -83,14 +89,16 @@ FLASHMEM void StandaloneContext::configureEncoders() {
 }
 
 FLASHMEM void StandaloneContext::createUiAssembly() {
-    ui_assembly_ = std::make_unique<core::context::standalone::StandaloneUiAssembly>(core_state_);
+    ui_assembly_ = core::app::makeExtmemUnique<core::context::standalone::StandaloneUiAssembly>(
+        core_state_
+    );
     setupActiveViewSwitching();
     applyActiveView();
 }
 
 FLASHMEM void StandaloneContext::createOverlayAssembly() {
     overlay_assembly_ =
-        std::make_unique<core::context::standalone::StandaloneOverlayAssembly>(
+        core::app::makeExtmemUnique<core::context::standalone::StandaloneOverlayAssembly>(
             core_state_,
             buttons(),
             ui_assembly_->mainZone(),
@@ -109,7 +117,7 @@ FLASHMEM void StandaloneContext::cleanupUiAssembly() {
 
 FLASHMEM void StandaloneContext::createFeatureAssembly() {
     syncEncodersFromState();
-    feature_assembly_ = std::make_unique<core::context::standalone::StandaloneFeatureAssembly>(
+    feature_assembly_ = core::app::makeExtmemUnique<core::context::standalone::StandaloneFeatureAssembly>(
         core_state_,
         overlay_assembly_->controller(),
         encoders(),
@@ -128,7 +136,7 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
 FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
     registerMidiRouting();
     global_handler_assembly_ =
-        std::make_unique<core::context::standalone::StandaloneGlobalHandlerAssembly>(
+        core::app::makeExtmemUnique<core::context::standalone::StandaloneGlobalHandlerAssembly>(
             core_state_,
             overlay_assembly_->controller(),
             overlay_assembly_->viewSelectorElement(),

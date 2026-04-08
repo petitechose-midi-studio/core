@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "app/ExtmemAllocator.hpp"
 #include <lvgl.h>
 
 #include <oc/type/Ids.hpp>
@@ -40,7 +41,7 @@ public:
 
 private:
     class Impl;
-    std::unique_ptr<Impl> impl_;
+    core::app::ExtmemUniquePtr<Impl> impl_;
 };
 
 }  // namespace core::context::standalone

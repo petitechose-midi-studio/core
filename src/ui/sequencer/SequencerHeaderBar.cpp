@@ -161,6 +161,7 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
         LV_FLEX_ALIGN_CENTER
     );
     lv_obj_set_style_pad_column(track_selector_row_, TRACK_ACTIVITY_GAP, 0);
+    lv_obj_add_flag(track_selector_row_, LV_OBJ_FLAG_HIDDEN);
 
     for (uint8_t i = 0; i < PAGE_COUNT; ++i) {
         track_selector_items_[i] = lv_obj_create(track_selector_row_);

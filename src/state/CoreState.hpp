@@ -23,6 +23,7 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "CoreSettings.hpp"
 #include "DataManagerState.hpp"
 #include "GlobalSettingsState.hpp"
@@ -36,6 +37,7 @@
 #include "persistence/MacroPersistence.hpp"
 #include "persistence/SequencerPersistence.hpp"
 #include "macro/MacroPagesState.hpp"
+#include "macro/MacroUiState.hpp"
 #include "sequencer/SequencerState.hpp"
 #include "sequencer/SequencerSnapshots.hpp"
 #include "sequencer/SequencerTrackBankState.hpp"
@@ -71,17 +73,24 @@ struct SequencerDomainState {
         sequencer::SequencerTrackBankSnapshot bankSnapshot{};
     };
 
+    struct PendingApplyDeleter {
+        void operator()(PendingApply* ptr) const noexcept;
+    };
+
+    using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;
+
     sequencer::SequencerState editor;
     sequencer::SequencerTrackBankState tracks;
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
-    PendingApply pendingApply{};
+    PendingApplyPtr pendingApply;
     std::unique_ptr<oc::state::AutoPersistIncremental<8>> autoPersist;
 
     SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                          oc::interface::IStorage& patternLibraryStorage,
                          oc::interface::IStorage& setLibraryStorage)
-        : persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage) {}
+        : persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage)
+        , pendingApply(nullptr) {}
 
     SequencerDomainState(const SequencerDomainState&) = delete;
     SequencerDomainState& operator=(const SequencerDomainState&) = delete;
@@ -96,6 +105,7 @@ struct UiSystemState {
     GlobalSettingsState globalSettings;
     DataManagerState dataManager;
     MacroEditState macroEdit;
+    macro::MacroUiState macroUi;
 
     UiSystemState();
 };
@@ -114,7 +124,7 @@ struct CoreState {
 private:
     MacroDomainState macroDomain_;
     SequencerDomainState sequencerDomain_;
-    UiSystemState systemUi_;
+    core::app::ExtmemUniquePtr<UiSystemState> systemUi_;
 
 public:
     /// Persistence manager
@@ -140,6 +150,7 @@ public:
     GlobalSettingsState& globalSettings;
     DataManagerState& dataManager;
     MacroEditState& macroEdit;
+    macro::MacroUiState& macroUi;
 
     /**
      * @brief Construct with storage backend

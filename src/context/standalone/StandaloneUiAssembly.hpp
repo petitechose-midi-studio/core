@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "app/ExtmemAllocator.hpp"
 #include <lvgl.h>
 
 #include <oc/type/Ids.hpp>
@@ -53,11 +54,11 @@ private:
     core::state::CoreState& core_state_;
     oc::type::ScopeID macro_view_scope_ = 0;
     oc::type::ScopeID sequencer_view_scope_ = 0;
-    std::unique_ptr<ms::ui::ViewContainer> view_container_;
-    std::unique_ptr<core::ui::MacroView> macro_view_;
-    std::unique_ptr<core::ui::SequencerView> sequencer_view_;
-    std::unique_ptr<core::ui::TransportBar> transport_bar_;
-    std::unique_ptr<core::ui::ContextSoftkeyBar> context_softkey_bar_;
+    core::app::ExtmemUniquePtr<ms::ui::ViewContainer> view_container_;
+    core::app::ExtmemUniquePtr<core::ui::MacroView> macro_view_;
+    core::app::ExtmemUniquePtr<core::ui::SequencerView> sequencer_view_;
+    core::app::ExtmemUniquePtr<core::ui::TransportBar> transport_bar_;
+    core::app::ExtmemUniquePtr<core::ui::ContextSoftkeyBar> context_softkey_bar_;
 };
 
 }  // namespace core::context::standalone

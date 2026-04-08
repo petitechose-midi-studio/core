@@ -51,7 +51,7 @@ public:
 private:
     static constexpr uint8_t PAGE_COUNT = 8;
     static constexpr uint8_t STEPS_PER_PAGE = 8;
-    static constexpr lv_coord_t TOP_ROW_HEIGHT = 14;
+    static constexpr lv_coord_t TOP_ROW_HEIGHT = 16;
     static constexpr lv_coord_t STRIP_HEIGHT = 3;
     static constexpr lv_coord_t ROW_GAP = 2;
     static constexpr lv_coord_t MARKER_WIDTH = 2;

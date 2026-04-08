@@ -28,7 +28,7 @@ constexpr std::array<const char*, 5> SEQUENCER_STEP_EDIT_KEYS = {
 };
 
 template <size_t N>
-void formatSequencerStepEditRows(
+FLASHMEM void formatSequencerStepEditRows(
     std::array<std::array<char, N>, 5>& valueBuffers,
     std::array<ms::ui::KeyValueRow, 5>& rows,
     uint8_t note,
@@ -74,7 +74,7 @@ FLASHMEM void SequencerOverlayPresenter::bind() {
     );
 }
 
-void SequencerOverlayPresenter::renderStepEdit() {
+FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
     const bool visible = state_refs_.sequencer.stepEdit.visible.get();
     if (!visible) {
         step_edit_overlay_.render({.visible = false});

@@ -6,6 +6,7 @@
  */
 
 #include <memory>
+#include <array>
 #include <vector>
 
 #include <lvgl.h>
@@ -14,6 +15,7 @@
 #include <oc/ui/lvgl/widget/StateIndicator.hpp>
 
 #include "state/StatusBarState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::ui {
 
@@ -21,15 +23,17 @@ namespace core::ui {
  * @brief Transport bar component at bottom of screen
  *
  * Layout (3 columns):
- * - Cell 1 (Left): MIDI indicators (Note IN/OUT, CC IN/OUT)
+ * - Cell 1 (Left): Tempo + beat/lock indicator
  * - Cell 2 (Center): Play icon
- * - Cell 3 (Right): Tempo + lock/pulse indicator
+ * - Cell 3 (Right): Track note output activity
  *
  * Subscribes to StatusBarState signals and auto-updates on changes.
  */
 class TransportBar : public oc::ui::lvgl::IComponent {
 public:
-    TransportBar(lv_obj_t* parent, core::state::StatusBarState& state);
+    TransportBar(lv_obj_t* parent,
+                 core::state::StatusBarState& state,
+                 core::state::sequencer::SequencerTrackBankState& tracks);
     ~TransportBar() override;
 
     TransportBar(const TransportBar&) = delete;
@@ -45,48 +49,46 @@ private:
     using StateIndicator = oc::ui::lvgl::StateIndicator;
 
     core::state::StatusBarState& state_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
 
     lv_obj_t* container_ = nullptr;
 
-    // Cell 1: MIDI indicators (Clock + Note + CC)
-    lv_obj_t* clock_mode_icon_ = nullptr;
-    lv_obj_t* note_in_icon_ = nullptr;
-    lv_obj_t* note_out_icon_ = nullptr;
-    lv_obj_t* cc_in_icon_ = nullptr;
-    lv_obj_t* cc_out_icon_ = nullptr;
+    // Cell 1: Tempo
+    lv_obj_t* tempo_indicator_container_ = nullptr;
+    lv_obj_t* tempo_lock_icon_ = nullptr;
+    lv_obj_t* tempo_label_ = nullptr;
+    lv_obj_t* cc_activity_icon_ = nullptr;
 
     // Cell 2: Transport
     lv_obj_t* play_icon_ = nullptr;
     lv_obj_t* transport_lock_icon_ = nullptr;
 
-    // Cell 3: Tempo
-    lv_obj_t* tempo_indicator_container_ = nullptr;
-    lv_obj_t* tempo_lock_icon_ = nullptr;
-    lv_obj_t* tempo_label_ = nullptr;
+    // Cell 3: Track note outputs
+    std::array<lv_obj_t*, core::state::StatusBarState::TRACK_COUNT> track_note_items_{};
 
     // Pulse indicator behind tempo lock icon
     std::unique_ptr<StateIndicator> beat_indicator_;
 
     std::vector<oc::state::Subscription> subs_;
+    bool cc_in_active_ = false;
+    bool cc_out_active_ = false;
 
     void createLayout(lv_obj_t* parent);
-    void createMidiIndicators(lv_obj_t* parent);
-    void createTransportCenter(lv_obj_t* parent);
     void createTempoWithBeat(lv_obj_t* parent);
+    void createTransportCenter(lv_obj_t* parent);
+    void createTrackNoteOutputs(lv_obj_t* parent);
     void setupBindings();
     void render();
 
-    void setNoteIn(bool active);
-    void setNoteOut(bool active);
-    void setCcIn(bool active);
-    void setCcOut(bool active);
     void setPlaying(bool playing);
     void setTempo(float bpm);
-    void setSyncSource(bool external);
-    void setSyncInputPulse(bool pulse);
+    void setCcIn(bool active);
+    void setCcOut(bool active);
+    void updateCcActivityIcon();
     void setTempoLocked(bool locked);
     void setTransportLocked(bool locked);
     void setBeatPulse(bool pulse);
+    void renderTrackSelectorStrip();
 };
 
 }  // namespace core::ui

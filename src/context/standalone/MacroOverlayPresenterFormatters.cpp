@@ -2,11 +2,12 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
 namespace core::context::standalone::macro_overlay_presenter {
 
-void initializeStaticItems(StaticItems& items) {
+FLASHMEM void initializeStaticItems(StaticItems& items) {
     for (int i = 0; i < 16; ++i) {
         oc::type::text::formatUnsigned(items.channelLabels[i].data(), items.channelLabels[i].size(), i + 1);
         items.channelItems[i] = items.channelLabels[i].data();
@@ -30,7 +31,7 @@ void initializeStaticItems(StaticItems& items) {
     }
 }
 
-EditRenderData buildEditRenderData(Source& source) {
+FLASHMEM EditRenderData buildEditRenderData(Source& source) {
     EditRenderData data{};
 
     const uint8_t macroIndex = source.macroEdit.editingIndex.get();
@@ -69,7 +70,7 @@ EditRenderData buildEditRenderData(Source& source) {
     return data;
 }
 
-SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items) {
+FLASHMEM SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items) {
     SelectorRenderData data{};
     const auto& selector = source.macroEdit.selector;
     if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::VALUE_SELECTOR ||
@@ -90,7 +91,7 @@ SelectorRenderData buildEditSelectorRenderData(const Source& source, const Stati
     return data;
 }
 
-SelectorRenderData buildPageSelectorRenderData(const Source& source) {
+FLASHMEM SelectorRenderData buildPageSelectorRenderData(const Source& source) {
     SelectorRenderData data{};
     if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::PAGE_SELECTOR ||
         !source.pages.selector.visible.get()) {
@@ -118,7 +119,7 @@ SelectorRenderData buildPageSelectorRenderData(const Source& source) {
     return data;
 }
 
-SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items) {
+FLASHMEM SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items) {
     SelectorRenderData data{};
     if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::TARGET_SELECTOR ||
         !source.macroEdit.macroSelector.visible.get()) {

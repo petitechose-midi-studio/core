@@ -34,29 +34,28 @@ BaseMacroWidget::~BaseMacroWidget() {
 FLASHMEM void BaseMacroWidget::createContainerWithGrid(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_set_size(container_, LV_PCT(100), LV_PCT(100));
-    style::apply(container_).transparent().noScroll();
+    style::apply(container_).transparent().noScroll().noBorder().pad(0);
 
-    // Grid: 1 column FR(1), 1 row CONTENT (widget determines height via SquareSizePolicy)
+    // Give the knob a full-height lane so each macro stays centered vertically
+    // within the shared 4x2 grid, even when side strips reserve space.
     static const int32_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t row_dsc[] = {LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST};
+    static const int32_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(container_, col_dsc, row_dsc);
     lv_obj_set_layout(container_, LV_LAYOUT_GRID);
 }
 
 FLASHMEM void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
-    // Floating label container - offset upward to be closer to knob
     lv_obj_t* labelContainer = lv_obj_create(labelParent);
     style::apply(labelContainer).transparent().noScroll();
     lv_obj_set_size(labelContainer, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_add_flag(labelContainer, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(labelContainer, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_translate_y(labelContainer, -8, 0);  // Offset closer to knob
+    lv_obj_align(labelContainer, LV_ALIGN_CENTER, 0, 6);
     lv_obj_set_flex_flow(labelContainer, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(labelContainer, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(labelContainer, 0, 0);
 
     // Shared grid definition for CH and CC rows
-    static constexpr lv_coord_t COL_WIDTH = 20;  // Fixed width for each column
+    static constexpr lv_coord_t COL_WIDTH = 18;
     static const int32_t col_dsc[] = {COL_WIDTH, COL_WIDTH, LV_GRID_TEMPLATE_LAST};
     static const int32_t row_dsc[] = {LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST};
 

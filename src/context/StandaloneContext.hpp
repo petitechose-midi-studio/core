@@ -23,6 +23,7 @@
 
 #include <memory>
 
+#include "app/ExtmemAllocator.hpp"
 #include <oc/context/ContextBase.hpp>
 #include <oc/context/Requirements.hpp>
 #include <oc/state/SignalWatcher.hpp>
@@ -99,10 +100,10 @@ private:
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
 
-    std::unique_ptr<core::context::standalone::StandaloneUiAssembly> ui_assembly_;
-    std::unique_ptr<core::context::standalone::StandaloneOverlayAssembly> overlay_assembly_;
-    std::unique_ptr<core::context::standalone::StandaloneFeatureAssembly> feature_assembly_;
-    std::unique_ptr<core::context::standalone::StandaloneGlobalHandlerAssembly>
+    core::app::ExtmemUniquePtr<core::context::standalone::StandaloneUiAssembly> ui_assembly_;
+    core::app::ExtmemUniquePtr<core::context::standalone::StandaloneOverlayAssembly> overlay_assembly_;
+    core::app::ExtmemUniquePtr<core::context::standalone::StandaloneFeatureAssembly> feature_assembly_;
+    core::app::ExtmemUniquePtr<core::context::standalone::StandaloneGlobalHandlerAssembly>
         global_handler_assembly_;
     oc::state::SignalWatcher view_selector_watcher_;
     oc::state::SignalWatcher active_view_watcher_;

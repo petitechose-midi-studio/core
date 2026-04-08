@@ -1,6 +1,7 @@
 #include "MacroView.hpp"
 
 #include <oc/log/Log.hpp>
+#include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
@@ -10,8 +11,11 @@
 
 namespace core::ui {
 
+namespace style = oc::ui::lvgl::style;
+
 namespace {
 
+#if defined(PERF_MON)
 struct MacroRenderProfiling {
     uint32_t window_start_ms = 0;
     uint32_t pass_count = 0;
@@ -54,13 +58,17 @@ struct MacroRenderProfiling {
 };
 
 MacroRenderProfiling g_macro_render_profiling;
+#endif
 
 }  // namespace
 
-MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
+FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     createLayout(parent);
-    createTopBar();
+    createHeaderBar();
+    createBottomControls();
+    createActionStrips();
+    createPropertyStrip();
     createMacros();
 
     // Macro rendering is sampled at the global LVGL cadence.
@@ -73,30 +81,37 @@ MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     bindToState();
 }
 
-MacroView::~MacroView() {
+FLASHMEM MacroView::~MacroView() {
     update_timer_.reset();
     subscriptions_.clear();
-    top_bar_.reset();
+    bottom_controls_.reset();
+    property_strip_.reset();
+    bottom_action_strip_.reset();
+    left_action_strip_.reset();
+    header_bar_.reset();
     for (auto& macro : macros_) {
         macro.reset();
     }
 
     // Destroy the LVGL tree last (child widgets must be gone first)
-    layout_.reset();
+    frame_.reset();
     container_ = nullptr;
     top_bar_container_ = nullptr;
     body_container_ = nullptr;
+    interaction_container_ = nullptr;
+    center_column_ = nullptr;
+    macro_grid_container_ = nullptr;
 }
 
-void MacroView::onActivate() {
+FLASHMEM void MacroView::onActivate() {
     if (container_) {
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
-        requestTopBarRender();
+        requestHeaderRender();
         processDirtyFlags();
     }
 }
 
-void MacroView::onDeactivate() {
+FLASHMEM void MacroView::onDeactivate() {
     if (container_) {
         lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
     }
@@ -107,17 +122,81 @@ void MacroView::onDeactivate() {
 }
 
 FLASHMEM void MacroView::bindToState() {
-    subscriptions_.reserve(MACRO_COUNT + 2);
+    subscriptions_.reserve(MACRO_COUNT + 16);
 
     subscriptions_.push_back(
         state_refs_.configRevision.subscribe([this](uint32_t) {
             markAllConfigDirty();
+            requestHeaderRender();
         })
     );
 
     subscriptions_.push_back(
         state_refs_.statusBar.pageName.subscribe([this](const char*) {
-            requestTopBarRender();
+            requestHeaderRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.statusBar.ccOutActive.subscribe([this](bool) {
+            requestHeaderRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.activeProperty.subscribe(
+            [this](core::state::macro::MacroPerformanceProperty) {
+                requestPropertyStripRender();
+            }
+        )
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.clutchActive.subscribe([this](bool) {
+            requestHeaderRender();
+            requestLeftActionStripRender();
+            requestPropertyStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.quickControlsSelecting.subscribe([this](bool) {
+            requestLeftActionStripRender();
+            requestBottomActionStripRender();
+            scheduleUpdate();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.focusedQuickControl.subscribe([this](core::state::macro::MacroQuickControlItem) {
+            scheduleUpdate();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.ccOffset.subscribe([this](int8_t) {
+            scheduleUpdate();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelecting.subscribe([this](bool) {
+            requestHeaderRender();
+            requestLeftActionStripRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.selectedPage.subscribe([this](uint8_t) {
+            requestHeaderRender();
+            scheduleUpdate();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.pages.enabledMask.subscribe([this](uint8_t) {
+            requestHeaderRender();
         })
     );
 
@@ -131,29 +210,73 @@ FLASHMEM void MacroView::bindToState() {
         );
     }
 
-    top_bar_dirty_ = true;
+    header_dirty_ = true;
+    left_action_strip_dirty_ = true;
+    bottom_action_strip_dirty_ = true;
+    property_strip_dirty_ = true;
     markAllDirty();
     processDirtyFlags();
 }
 
 FLASHMEM void MacroView::createLayout(lv_obj_t* parent) {
-    layout_ = std::make_unique<ms::ui::LayoutView>(parent);
-    container_ = layout_->getElement();
-    top_bar_container_ = layout_->header();
-    body_container_ = layout_->content();
-
-    // Configure grid layout: 4 columns, 2 rows (no gaps for maximum widget size)
-    static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-
-    lv_obj_set_grid_dsc_array(body_container_, col_dsc, row_dsc);
-    lv_obj_set_layout(body_container_, LV_LAYOUT_GRID);
-    lv_obj_set_style_pad_column(body_container_, 0, 0);
-    lv_obj_set_style_pad_row(body_container_, 0, 0);
+    frame_ = std::make_unique<MainViewFrame>(parent);
+    container_ = frame_->container();
+    top_bar_container_ = frame_->header();
+    body_container_ = frame_->body();
 }
 
-FLASHMEM void MacroView::createTopBar() {
-    top_bar_ = std::make_unique<TopBar>(top_bar_container_);
+FLASHMEM void MacroView::createHeaderBar() {
+    header_bar_ = std::make_unique<MacroHeaderBar>(top_bar_container_);
+}
+
+FLASHMEM void MacroView::createBottomControls() {
+    if (!body_container_) return;
+    bottom_controls_ = std::make_unique<MacroBottomControls>(body_container_);
+}
+
+FLASHMEM void MacroView::createActionStrips() {
+    if (!frame_ || !body_container_) return;
+
+    frame_->createInteractionRow();
+    interaction_container_ = frame_->interactionRow();
+
+    left_action_strip_ = std::make_unique<ContextActionStrip>(
+        interaction_container_,
+        ContextActionStripOrientation::VERTICAL,
+        ContextActionStripVerticalLayout::SPREAD
+    );
+
+    frame_->createCenterColumn();
+    center_column_ = frame_->centerColumn();
+
+    macro_grid_container_ = lv_obj_create(center_column_);
+    style::apply(macro_grid_container_)
+        .size(LV_PCT(100), 0)
+        .transparent()
+        .noBorder()
+        .pad(0)
+        .noScroll();
+    lv_obj_set_flex_grow(macro_grid_container_, 1);
+
+    static lv_coord_t col_dsc[] = {
+        LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST
+    };
+    static lv_coord_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+
+    lv_obj_set_grid_dsc_array(macro_grid_container_, col_dsc, row_dsc);
+    lv_obj_set_layout(macro_grid_container_, LV_LAYOUT_GRID);
+    lv_obj_set_style_pad_column(macro_grid_container_, 0, 0);
+    lv_obj_set_style_pad_row(macro_grid_container_, 0, 0);
+
+    bottom_action_strip_ = std::make_unique<ContextActionStrip>(
+        body_container_,
+        ContextActionStripOrientation::HORIZONTAL
+    );
+}
+
+FLASHMEM void MacroView::createPropertyStrip() {
+    if (!interaction_container_) return;
+    property_strip_ = std::make_unique<MacroPropertyStrip>(interaction_container_);
 }
 
 FLASHMEM void MacroView::createMacros() {
@@ -161,30 +284,43 @@ FLASHMEM void MacroView::createMacros() {
         uint8_t col = i % COLS;
         uint8_t row = i / COLS;
 
-        // Create macro widget directly in body grid
-        macros_[i] = std::make_unique<MacroKnobWidget>(body_container_, i);
-
-        // Position in grid (widget container handles internal layout)
+        macros_[i] = std::make_unique<MacroKnobWidget>(macro_grid_container_, i);
         lv_obj_set_grid_cell(macros_[i]->getElement(),
             LV_GRID_ALIGN_STRETCH, col, 1,
             LV_GRID_ALIGN_STRETCH, row, 1);
     }
 }
 
-void MacroView::scheduleUpdate() {
+FLASHMEM void MacroView::scheduleUpdate() {
     if (update_timer_) {
         update_timer_->resume();
     }
 }
 
-void MacroView::pauseUpdateIfIdle() {
+FLASHMEM void MacroView::pauseUpdateIfIdle() {
     if (!update_timer_) return;
-    if (has_dirty_ || top_bar_dirty_) return;
+    if (has_dirty_ || header_dirty_ || left_action_strip_dirty_ || bottom_action_strip_dirty_ ||
+        property_strip_dirty_) return;
     update_timer_->pause();
 }
 
-void MacroView::requestTopBarRender() {
-    top_bar_dirty_ = true;
+FLASHMEM void MacroView::requestHeaderRender() {
+    header_dirty_ = true;
+    scheduleUpdate();
+}
+
+FLASHMEM void MacroView::requestLeftActionStripRender() {
+    left_action_strip_dirty_ = true;
+    scheduleUpdate();
+}
+
+FLASHMEM void MacroView::requestBottomActionStripRender() {
+    bottom_action_strip_dirty_ = true;
+    scheduleUpdate();
+}
+
+FLASHMEM void MacroView::requestPropertyStripRender() {
+    property_strip_dirty_ = true;
     scheduleUpdate();
 }
 
@@ -192,20 +328,24 @@ void MacroView::requestTopBarRender() {
 // Debounced Update System
 // =============================================================================
 
-void MacroView::markAllDirty() {
+FLASHMEM void MacroView::markAllDirty() {
     dirty_flags_.fill(true);
     config_dirty_flags_.fill(true);
     has_dirty_ = true;
+    header_dirty_ = true;
+    left_action_strip_dirty_ = true;
+    bottom_action_strip_dirty_ = true;
+    property_strip_dirty_ = true;
     scheduleUpdate();
 }
 
-void MacroView::markAllConfigDirty() {
+FLASHMEM void MacroView::markAllConfigDirty() {
     config_dirty_flags_.fill(true);
     has_dirty_ = true;
     scheduleUpdate();
 }
 
-void MacroView::markDirty(uint8_t index) {
+FLASHMEM void MacroView::markDirty(uint8_t index) {
     if (index < MACRO_COUNT) {
         dirty_flags_[index] = true;
         has_dirty_ = true;
@@ -213,16 +353,39 @@ void MacroView::markDirty(uint8_t index) {
     }
 }
 
-void MacroView::processDirtyFlags() {
+FLASHMEM void MacroView::processDirtyFlags() {
+#if defined(PERF_MON)
     const uint32_t start_us = core::time_compat::micros();
+#endif
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) {
         pauseUpdateIfIdle();
         return;
     }
 
-    if (top_bar_dirty_ && top_bar_) {
-        top_bar_->render(buildMacroTopBarProps(modelSource()));
-        top_bar_dirty_ = false;
+    const auto source = modelSource();
+
+    if (header_dirty_ && header_bar_) {
+        header_bar_->render(buildMacroHeaderBarProps(source));
+        header_dirty_ = false;
+    }
+
+    if (left_action_strip_dirty_ && left_action_strip_) {
+        left_action_strip_->render(buildMacroLeftActionStripProps(source));
+        left_action_strip_dirty_ = false;
+    }
+
+    if (property_strip_dirty_ && property_strip_) {
+        property_strip_->render(buildMacroPropertyStripProps(source));
+        property_strip_dirty_ = false;
+    }
+
+    if (bottom_controls_) {
+        bottom_controls_->render(buildMacroBottomControlsProps(source));
+    }
+
+    if (bottom_action_strip_dirty_ && bottom_action_strip_) {
+        bottom_action_strip_->render(buildMacroBottomActionStripProps(source));
+        bottom_action_strip_dirty_ = false;
     }
 
     if (!has_dirty_) {
@@ -252,24 +415,27 @@ void MacroView::processDirtyFlags() {
 
     has_dirty_ = false;
     pauseUpdateIfIdle();
+#if defined(PERF_MON)
     g_macro_render_profiling.record(
         core::time_compat::micros() - start_us,
         value_updates,
         config_updates
     );
+#endif
 }
 
-void MacroView::onUpdateTimer(lv_timer_t* timer) {
+FLASHMEM void MacroView::onUpdateTimer(lv_timer_t* timer) {
     auto* self = static_cast<MacroView*>(lv_timer_get_user_data(timer));
     if (self) {
         self->processDirtyFlags();
     }
 }
 
-MacroViewModelSource MacroView::modelSource() const {
+FLASHMEM MacroViewModelSource MacroView::modelSource() const {
     return {
         .macros = state_refs_.macros,
         .pages = state_refs_.pages,
+        .macroUi = state_refs_.macroUi,
         .statusBar = state_refs_.statusBar,
     };
 }

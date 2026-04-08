@@ -2,13 +2,11 @@
 
 /**
  * @file MacroView.hpp
- * @brief 8-macro parameter view for standalone mode
+ * @brief 8-macro performance view for standalone mode
  *
- * Displays 8 MacroWidgets in a 4x2 grid layout with integrated TopBar.
- * Each widget shows channel + CC labels below.
- * Subscribes to MacroState for reactive updates.
- *
- * Pattern: View owns its TopBar internally (like RemoteControlsView in plugin-bitwig).
+ * Displays 8 macro widgets in a 4x2 grid framed by the standalone main-view layout:
+ * header, reserved action strips, property strip and bottom controls.
+ * Subscribes to macro/page/UI state for reactive updates.
  */
 
 #include <array>
@@ -21,12 +19,15 @@
 
 #include <oc/ui/lvgl/IView.hpp>
 
-#include <ms/ui/component/LayoutView.hpp>
-
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
-#include "ui/topbar/TopBar.hpp"
+#include "state/macro/MacroUiState.hpp"
+#include "ui/macro/MacroBottomControls.hpp"
+#include "ui/macro/MacroHeaderBar.hpp"
+#include "ui/macro/MacroPropertyStrip.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
+#include "ui/view/MainViewFrame.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
 #include "ui/view/PausableLvglTimer.hpp"
 #include "ui/widget/IMacroWidget.hpp"
@@ -42,6 +43,7 @@ public:
     struct StateRefs {
         core::state::MacroState& macros;
         core::state::macro::MacroPagesState& pages;
+        core::state::macro::MacroUiState& macroUi;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
     };
@@ -69,14 +71,20 @@ public:
 
 private:
     void createLayout(lv_obj_t* parent);
-    void createTopBar();
+    void createHeaderBar();
+    void createBottomControls();
+    void createActionStrips();
+    void createPropertyStrip();
     void createMacros();
     void bindToState();
 
     // Debounced update system
     void scheduleUpdate();
     void pauseUpdateIfIdle();
-    void requestTopBarRender();
+    void requestHeaderRender();
+    void requestLeftActionStripRender();
+    void requestBottomActionStripRender();
+    void requestPropertyStripRender();
     void markAllDirty();
     void markAllConfigDirty();
     void markDirty(uint8_t index);
@@ -89,15 +97,25 @@ private:
     std::array<bool, MACRO_COUNT> dirty_flags_{};
     std::array<bool, MACRO_COUNT> config_dirty_flags_{};
     bool has_dirty_ = false;
-    bool top_bar_dirty_ = true;
+    bool header_dirty_ = true;
+    bool left_action_strip_dirty_ = true;
+    bool bottom_action_strip_dirty_ = true;
+    bool property_strip_dirty_ = true;
     std::unique_ptr<PausableLvglTimer> update_timer_;
 
-    // UI structure: container_ (flex col) → top_bar_container_ + body_container_ (grid)
-    std::unique_ptr<ms::ui::LayoutView> layout_;
+    // UI structure: frame_ owns the shared standalone layout skeleton.
+    std::unique_ptr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* top_bar_container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
-    std::unique_ptr<core::ui::TopBar> top_bar_;
+    lv_obj_t* interaction_container_ = nullptr;
+    lv_obj_t* center_column_ = nullptr;
+    lv_obj_t* macro_grid_container_ = nullptr;
+    std::unique_ptr<core::ui::MacroHeaderBar> header_bar_;
+    std::unique_ptr<core::ui::MacroBottomControls> bottom_controls_;
+    std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
+    std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
+    std::unique_ptr<core::ui::MacroPropertyStrip> property_strip_;
     std::array<std::unique_ptr<core::ui::IMacroWidget>, MACRO_COUNT> macros_;
 };
 }  // namespace core::ui

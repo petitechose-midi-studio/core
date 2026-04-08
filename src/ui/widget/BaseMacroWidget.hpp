@@ -15,9 +15,9 @@ namespace core::ui {
 /**
  * @brief Base class for macro widgets with common grid layout and config labels
  *
- * Grid layout:
- * - Row 0 (FR(1)): Widget area (knob or button)
- * - Row 1 (CONTENT): Vertical stack with CH and CC lines
+ * Floating layout:
+ * - widget container fills the grid cell
+ * - CH / CC labels are rendered as a centered overlay inside the knob area
  */
 class BaseMacroWidget : public IMacroWidget {
 public:

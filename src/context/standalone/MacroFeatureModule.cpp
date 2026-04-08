@@ -10,6 +10,7 @@
 #include "handler/macro/MacroDomainServices.hpp"
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
+#include "handler/macro/MacroPerformanceHandler.hpp"
 #include "handler/macro/MacroValueHandler.hpp"
 
 namespace core::context::standalone {
@@ -22,35 +23,38 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
                                                 oc::api::MidiAPI& midi,
                                                 lv_obj_t* mainZone,
                                                 lv_obj_t* macroViewScope) {
-    edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    edit_overlay_ = core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::MACRO_EDIT,
         oc::ui::lvgl::scopeID(edit_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
-    edit_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    edit_selector_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::MACRO_EDIT_SELECTOR,
         oc::ui::lvgl::scopeID(edit_selector_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
-    page_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    page_selector_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::PAGE_SELECTOR,
         oc::ui::lvgl::scopeID(page_selector_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
-    target_selector_overlay_ = std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    target_selector_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR,
         oc::ui::lvgl::scopeID(target_selector_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
-    presenter_ = std::make_unique<MacroOverlayPresenter>(
+    presenter_ = core::app::makeExtmemUnique<MacroOverlayPresenter>(
         MacroOverlayPresenter::StateRefs{
             stateRefs.macroEdit,
             stateRefs.pages,
@@ -65,9 +69,26 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
 
     const auto macroViewScopeId = oc::ui::lvgl::scopeID(macroViewScope);
     value_handler_ = std::make_unique<core::handler::MacroValueHandler>(
+        core::handler::MacroValueHandler::StateRefs{
+            stateRefs.macroUi,
+            stateRefs.activeView,
+            stateRefs.macroEdit,
+        },
         services,
+        overlays,
         encoders,
         midi,
+        macroViewScopeId
+    );
+    performance_handler_ = std::make_unique<core::handler::MacroPerformanceHandler>(
+        core::handler::MacroPerformanceHandler::StateRefs{
+            stateRefs.macroUi,
+            stateRefs.pages,
+        },
+        services,
+        overlays,
+        encoders,
+        buttons,
         macroViewScopeId
     );
     midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(

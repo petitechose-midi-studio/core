@@ -64,6 +64,22 @@ void MacroDomainServices::switchToPage(uint8_t pageIndex) const {
     );
 }
 
+bool MacroDomainServices::isActivePageEnabled() const {
+    return pages_->isPageEnabled(pages_->activePage);
+}
+
+void MacroDomainServices::togglePageEnabled(uint8_t pageIndex) const {
+    pages_->togglePageEnabled(pageIndex);
+}
+
+void MacroDomainServices::setPageEnabledMask(uint8_t mask) const {
+    pages_->enabledMask.set(mask);
+}
+
+uint8_t MacroDomainServices::pageEnabledMask() const {
+    return pages_->enabledMask.get();
+}
+
 void MacroDomainServices::pulseCcIn() const {
     status_bar_->pulseCcIn();
 }

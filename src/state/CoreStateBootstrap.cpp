@@ -34,6 +34,13 @@ void configureDebugLabels_(CoreState& state) {
     state.macroEdit.selector.selectedIndex.setDebugLabel("core.macroEdit.selector.selectedIndex");
     state.macroEdit.macroSelector.visible.setDebugLabel("core.macroEdit.macroSelector.visible");
     state.macroEdit.macroSelector.selectedIndex.setDebugLabel("core.macroEdit.macroSelector.selectedIndex");
+    state.macroUi.activeProperty.setDebugLabel("core.macroUi.activeProperty");
+    state.macroUi.clutchActive.setDebugLabel("core.macroUi.clutchActive");
+    state.macroUi.quickControlsSelecting.setDebugLabel("core.macroUi.quickControlsSelecting");
+    state.macroUi.focusedQuickControl.setDebugLabel("core.macroUi.focusedQuickControl");
+    state.macroUi.ccOffset.setDebugLabel("core.macroUi.ccOffset");
+    state.macroUi.pageSelecting.setDebugLabel("core.macroUi.pageSelecting");
+    state.macroUi.selectedPage.setDebugLabel("core.macroUi.selectedPage");
 
     state.globalSettings.flowPhase.setDebugLabel("core.globalSettings.flowPhase");
     state.globalSettings.selector.visible.setDebugLabel("core.globalSettings.selector.visible");

@@ -10,9 +10,11 @@
 #include <oc/context/OverlayManager.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "ui/OverlayTypes.hpp"
 #include "ui/ViewTypes.hpp"
 
@@ -30,6 +32,7 @@ class MacroOverlayPresenter;
 namespace core::handler {
 class MacroEditHandler;
 class MacroMidiHandler;
+class MacroPerformanceHandler;
 class MacroValueHandler;
 }  // namespace core::handler
 
@@ -41,6 +44,7 @@ public:
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
+        core::state::macro::MacroUiState& macroUi;
         oc::state::Signal<uint32_t>& configRevision;
     };
 
@@ -61,13 +65,14 @@ public:
     void onNoteIn();
 
 private:
-    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> edit_overlay_;
-    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> edit_selector_overlay_;
-    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> page_selector_overlay_;
-    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> target_selector_overlay_;
-    std::unique_ptr<core::context::standalone::MacroOverlayPresenter> presenter_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> edit_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> edit_selector_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> page_selector_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> target_selector_overlay_;
+    core::app::ExtmemUniquePtr<core::context::standalone::MacroOverlayPresenter> presenter_;
     std::unique_ptr<core::handler::MacroValueHandler> value_handler_;
     std::unique_ptr<core::handler::MacroMidiHandler> midi_handler_;
+    std::unique_ptr<core::handler::MacroPerformanceHandler> performance_handler_;
     std::unique_ptr<core::handler::MacroEditHandler> edit_handler_;
 };
 

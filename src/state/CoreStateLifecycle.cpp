@@ -45,13 +45,16 @@ void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.persistMacroWorkspace_();
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroEdit.reset();
+    state.macroUi.reset();
 }
 
 void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
     sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer);
-    state.sequencerDomain_.pendingApply.valid = false;
+    if (state.sequencerDomain_.pendingApply) {
+        state.sequencerDomain_.pendingApply->valid = false;
+    }
     state.persistSequencerWorkspace_();
 }
 
@@ -60,6 +63,7 @@ void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.globalSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
     state.dataManager.feedback.set("");
+    state.macroUi.reset();
     state.activeView.set(core::ui::ViewType::MACRO);
     state.overlays.hideAll();
     state.configRevision.set(state.configRevision.get() + 1);
@@ -79,6 +83,7 @@ void CoreStateLifecycle::flush(CoreState& state) {
 
 void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.macroEdit.reset();
+    state.macroUi.reset();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
@@ -104,43 +109,45 @@ void CoreStateLifecycle::factoryReset(CoreState& state) {
 void CoreStateLifecycle::queuePendingSequencerApply(CoreState& state,
                                                     const sequencer::SequencerState& staged,
                                                     bool merge) {
-    sequencer::captureSnapshot(staged, state.sequencerDomain_.pendingApply.snapshot);
-    state.sequencerDomain_.pendingApply.anchorPlayhead = state.sequencer.playheadStep.get();
-    state.sequencerDomain_.pendingApply.merge = merge;
-    state.sequencerDomain_.pendingApply.fullBank = false;
-    state.sequencerDomain_.pendingApply.valid = true;
+    if (!state.sequencerDomain_.pendingApply) return;
+    sequencer::captureSnapshot(staged, state.sequencerDomain_.pendingApply->snapshot);
+    state.sequencerDomain_.pendingApply->anchorPlayhead = state.sequencer.playheadStep.get();
+    state.sequencerDomain_.pendingApply->merge = merge;
+    state.sequencerDomain_.pendingApply->fullBank = false;
+    state.sequencerDomain_.pendingApply->valid = true;
 }
 
 void CoreStateLifecycle::clearPendingSequencerApply(CoreState& state) {
-    state.sequencerDomain_.pendingApply.valid = false;
-    state.sequencerDomain_.pendingApply.fullBank = false;
+    if (!state.sequencerDomain_.pendingApply) return;
+    state.sequencerDomain_.pendingApply->valid = false;
+    state.sequencerDomain_.pendingApply->fullBank = false;
 }
 
 void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
-    if (!state.sequencerDomain_.pendingApply.valid) return;
+    if (!state.sequencerDomain_.pendingApply || !state.sequencerDomain_.pendingApply->valid) return;
 
     if (state.statusBar.playing.get()) {
         const int16_t playhead = state.sequencer.playheadStep.get();
         if (playhead < 0) return;
-        if (playhead == state.sequencerDomain_.pendingApply.anchorPlayhead) return;
+        if (playhead == state.sequencerDomain_.pendingApply->anchorPlayhead) return;
     }
 
-    if (state.sequencerDomain_.pendingApply.fullBank) {
+    if (state.sequencerDomain_.pendingApply->fullBank) {
         sequencer::applyTrackBankSnapshot(
             state.sequencerTracks,
             state.sequencer,
-            state.sequencerDomain_.pendingApply.bankSnapshot
+            state.sequencerDomain_.pendingApply->bankSnapshot
         );
-    } else if (state.sequencerDomain_.pendingApply.merge) {
+    } else if (state.sequencerDomain_.pendingApply->merge) {
         sequencer::mergeSnapshotIntoCurrent(
             state.sequencer,
-            state.sequencerDomain_.pendingApply.snapshot
+            state.sequencerDomain_.pendingApply->snapshot
         );
     } else {
-        sequencer::applySnapshot(state.sequencer, state.sequencerDomain_.pendingApply.snapshot);
+        sequencer::applySnapshot(state.sequencer, state.sequencerDomain_.pendingApply->snapshot);
     }
     sequencer::storeActiveTrack(state.sequencerTracks, state.sequencer);
-    state.sequencerDomain_.pendingApply.valid = false;
+    state.sequencerDomain_.pendingApply->valid = false;
     state.persistSequencerWorkspace_();
 }
 

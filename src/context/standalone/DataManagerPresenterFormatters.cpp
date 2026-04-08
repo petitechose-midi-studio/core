@@ -15,7 +15,7 @@ constexpr const char* DEFAULT_OVERLAY_META = "NAV=MAP  L/R=RUN  C=ALL";
 constexpr const char* const SET_MODE_ITEMS[] = {"REPLACE", "MERGE"};
 constexpr const char* const CONFIRM_ITEMS[] = {"CANCEL", "CONFIRM"};
 
-uint32_t hashFeedback(const char* feedback) {
+FLASHMEM uint32_t hashFeedback(const char* feedback) {
     uint32_t hash = 0;
     if (!feedback) return hash;
 
@@ -25,9 +25,11 @@ uint32_t hashFeedback(const char* feedback) {
     return hash;
 }
 
-void fillCommandItems(core::state::DataManagerContext context,
-                      std::array<const char*, core::state::DATA_MANAGER_MAX_COMMANDS_PER_CONTEXT>& items,
-                      int commandCount) {
+FLASHMEM void fillCommandItems(
+    core::state::DataManagerContext context,
+    std::array<const char*, core::state::DATA_MANAGER_MAX_COMMANDS_PER_CONTEXT>& items,
+    int commandCount
+) {
     for (int i = 0; i < commandCount; ++i) {
         items[i] = core::state::dataManagerCommandLabel(
             core::state::dataManagerCommandAt(context, i)
@@ -35,10 +37,12 @@ void fillCommandItems(core::state::DataManagerContext context,
     }
 }
 
-void fillSlotItems(core::state::DataManagerCommand command,
-                   uint8_t slotCount,
-                   std::array<std::array<char, 8>, 32>& slotLabels,
-                   std::array<const char*, 32>& slotItems) {
+FLASHMEM void fillSlotItems(
+    core::state::DataManagerCommand command,
+    uint8_t slotCount,
+    std::array<std::array<char, 8>, 32>& slotLabels,
+    std::array<const char*, 32>& slotItems
+) {
     const char slotTag = core::state::dataManagerCommandSlotTag(command);
     const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
 
@@ -61,10 +65,12 @@ void fillSlotItems(core::state::DataManagerCommand command,
     }
 }
 
-const char* buildConfirmMeta(core::state::DataManagerCommand command,
-                             uint8_t slot,
-                             char* buffer,
-                             size_t bufferSize) {
+FLASHMEM const char* buildConfirmMeta(
+    core::state::DataManagerCommand command,
+    uint8_t slot,
+    char* buffer,
+    size_t bufferSize
+) {
     const char slotTag = core::state::dataManagerCommandSlotTag(command);
     const char safeSlotTag = (slotTag == '\0') ? 'S' : slotTag;
     const char* prefix =

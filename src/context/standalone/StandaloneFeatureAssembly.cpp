@@ -34,11 +34,13 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     oc::type::ScopeID macroViewScope,
     oc::type::ScopeID sequencerViewScope
 ) {
-    macro_feature_ = std::make_unique<core::context::standalone::MacroFeatureModule>(
+    OC_LOG_DEBUG("StandaloneFeatureAssembly: macro_feature");
+    macro_feature_ = core::app::makeExtmemUnique<core::context::standalone::MacroFeatureModule>(
         core::context::standalone::MacroFeatureModule::StateRefs{
             state.activeView,
             state.macroEdit,
             state.pages,
+            state.macroUi,
             state.configRevision,
         },
         core::handler::MacroDomainServices::fromCoreState(state),
@@ -49,7 +51,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         mainZone,
         macroViewElement
     );
-    sequencer_feature_ = std::make_unique<core::context::standalone::SequencerFeatureModule>(
+    OC_LOG_DEBUG("StandaloneFeatureAssembly: sequencer_feature");
+    sequencer_feature_ = core::app::makeExtmemUnique<core::context::standalone::SequencerFeatureModule>(
         core::context::standalone::SequencerFeatureModule::StateRefs{
             state.overlays,
             state.activeView,
@@ -61,7 +64,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         buttons,
         sequencerViewElement
     );
-    settings_feature_ = std::make_unique<core::context::standalone::SettingsFeatureModule>(
+    OC_LOG_DEBUG("StandaloneFeatureAssembly: settings_feature");
+    settings_feature_ = core::app::makeExtmemUnique<core::context::standalone::SettingsFeatureModule>(
         core::context::standalone::SettingsFeatureModule::StateRefs{
             state.globalSettings,
             state.midiSync,
@@ -87,6 +91,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             sequencerViewScope,
         }
     );
+    OC_LOG_DEBUG("StandaloneFeatureAssembly: ready");
 }
 
 FLASHMEM StandaloneFeatureAssembly::~StandaloneFeatureAssembly() = default;

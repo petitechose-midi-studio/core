@@ -17,6 +17,8 @@
 #include <oc/ui/lvgl/Screen.hpp>
 
 #include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
+#include "app/ExtmemAllocator.hpp"
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/view/SplashScreenView.hpp"
 
@@ -26,17 +28,19 @@ class BootContext : public oc::context::ContextBase {
 public:
     static constexpr oc::context::Requirements REQUIRES{};
 
-    oc::type::Result<void> init() override {
+    FLASHMEM oc::type::Result<void> init() override {
         oc::ui::lvgl::font::loadEssential(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
 
-        splash_ = std::make_unique<core::ui::SplashScreenView>(oc::ui::lvgl::Screen::root());
+        splash_ = core::app::makeExtmemUnique<core::ui::SplashScreenView>(
+            oc::ui::lvgl::Screen::root()
+        );
         splash_->onActivate();
 
         start_ms_ = oc::time::millis();
         return oc::type::Result<void>::ok();
     }
 
-    void update() override {
+    FLASHMEM void update() override {
         uint32_t elapsed = oc::time::millis() - start_ms_;
 
         // Update progress
@@ -58,7 +62,7 @@ public:
     const char* getName() const override { return "Boot"; }
 
 protected:
-    void onCleanup() override {
+    FLASHMEM void onCleanup() override {
         splash_.reset();
     }
 
@@ -69,7 +73,7 @@ private:
 
     uint32_t start_ms_ = 0;
     bool fading_ = false;
-    std::unique_ptr<core::ui::SplashScreenView> splash_;
+    core::app::ExtmemUniquePtr<core::ui::SplashScreenView> splash_;
 };
 
 }  // namespace core::context

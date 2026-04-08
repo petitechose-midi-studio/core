@@ -7,6 +7,7 @@
 
 #include <lvgl.h>
 
+#include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
 namespace core::ui {
@@ -26,20 +27,20 @@ public:
         lv_color_t text_color{};
         lv_color_t progress_color{};
 
-        Config();
+        FLASHMEM Config();
     };
 
-    explicit SplashScreenView(lv_obj_t* parent, const Config& config = Config());
-    ~SplashScreenView() override;
+    FLASHMEM explicit SplashScreenView(lv_obj_t* parent, const Config& config = Config());
+    FLASHMEM ~SplashScreenView() override;
 
     // IView interface
-    void onActivate() override;
-    void onDeactivate() override;
+    FLASHMEM void onActivate() override;
+    FLASHMEM void onDeactivate() override;
     const char* getViewId() const override { return "core.splash"; }
     lv_obj_t* getElement() const override { return container_; }
 
-    void setProgress(uint8_t progress);
-    void fadeOut(uint32_t durationMs);
+    FLASHMEM void setProgress(uint8_t progress);
+    FLASHMEM void fadeOut(uint32_t durationMs);
 
 private:
     Config config_;

@@ -63,6 +63,29 @@ void assertNear(float actual, float expected, float epsilon) {
     }
 }
 
+core::sequencer::MidiClockSyncRuntimeConfig captureConfig(
+    const core::state::MidiSyncState& sync,
+    const core::state::StatusBarState& status
+) {
+    return {
+        .mode = sync.mode.get(),
+        .followTransport = sync.followTransport.get(),
+        .autoFallbackMs = sync.autoFallbackMs.get(),
+        .autoLockClockCount = sync.autoLockClockCount.get(),
+        .tempo = status.tempo.get(),
+        .playing = status.playing.get(),
+    };
+}
+
+void stepService(core::sequencer::MidiClockSyncService& service,
+                 const core::state::MidiSyncState& sync,
+                 const core::state::StatusBarState& status,
+                 uint32_t nowMs,
+                 bool driveTransport = true) {
+    service.update(captureConfig(sync, status), nowMs, driveTransport);
+    service.publishUiState(nowMs);
+}
+
 void test_master_emits_realtime() {
     core::state::MidiSyncState sync;
     core::state::StatusBarState status;
@@ -73,10 +96,10 @@ void test_master_emits_realtime() {
     sync.mode.set(core::state::MidiSyncMode::MASTER);
     status.tempo.set(120.0f);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
     status.playing.set(true);
-    service.update(100);
-    service.update(200);
+    stepService(service, sync, status, 100);
+    stepService(service, sync, status, 200);
 
     assert(transport.start_sent == 1);
     assert(transport.clock_sent > 0);
@@ -86,7 +109,7 @@ void test_master_emits_realtime() {
     assertNear(status.tempoDisplay.get(), 120.0f, 0.01f);
 
     status.playing.set(false);
-    service.update(300);
+    stepService(service, sync, status, 300);
     assert(transport.stop_sent == 1);
 
     std::cout << "[PASS] test_master_emits_realtime\n";
@@ -103,13 +126,13 @@ void test_slave_follows_external_clock_and_transport() {
     sync.followTransport.set(true);
     status.playing.set(false);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
     service.onStart();
     service.onClock(10'000, 10);
     service.onClock(20'000, 20);
     service.onClock(30'000, 30);
     service.onClock(40'000, 40);
-    service.update(40);
+    stepService(service, sync, status, 40);
 
     assert(service.playing());
     assert(service.tick() == 4);
@@ -119,7 +142,7 @@ void test_slave_follows_external_clock_and_transport() {
     assert(transport.start_sent == 0);
 
     service.onStop();
-    service.update(60);
+    stepService(service, sync, status, 60);
     assert(!service.playing());
 
     std::cout << "[PASS] test_slave_follows_external_clock_and_transport\n";
@@ -136,7 +159,7 @@ void test_auto_lock_and_fallback() {
     sync.autoLockClockCount.set(3);
     sync.autoFallbackMs.set(100);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
     assert(sync.activeSource.get() == core::state::ClockSourceActive::INTERNAL);
     assert(!status.tempoLocked.get());
     assert(!status.transportLocked.get());
@@ -144,13 +167,13 @@ void test_auto_lock_and_fallback() {
     service.onClock(10'000, 10);
     service.onClock(20'000, 20);
     service.onClock(30'000, 30);
-    service.update(30);
+    stepService(service, sync, status, 30);
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
     assert(status.tempoLocked.get());
     assert(status.transportLocked.get());
     assert(service.consumeResyncRequest());
 
-    service.update(200);
+    stepService(service, sync, status, 200);
     assert(sync.activeSource.get() == core::state::ClockSourceActive::INTERNAL);
     assert(!status.tempoLocked.get());
     assert(!status.transportLocked.get());
@@ -171,11 +194,11 @@ void test_auto_latches_start_before_lock() {
     sync.autoLockClockCount.set(3);
     status.playing.set(false);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
     service.onStart();
 
     // Before lock, transport is still internal.
-    service.update(5);
+    stepService(service, sync, status, 5);
     assert(sync.activeSource.get() == core::state::ClockSourceActive::INTERNAL);
     assert(!status.playing.get());
 
@@ -183,7 +206,7 @@ void test_auto_latches_start_before_lock() {
     service.onClock(10'000, 10);
     service.onClock(20'000, 20);
     service.onClock(30'000, 30);
-    service.update(30);
+    stepService(service, sync, status, 30);
 
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
     assert(service.playing());
@@ -203,13 +226,13 @@ void test_slave_clock_only_infers_play_state() {
     sync.followTransport.set(true);
     sync.autoFallbackMs.set(120);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
     assert(!service.playing());
 
     uint32_t now = 10;
     for (int i = 0; i < 6; ++i) {
         service.onClock(static_cast<uint64_t>(now) * 1000ULL, now);
-        service.update(now);
+        stepService(service, sync, status, now);
         now += 20;
     }
 
@@ -217,7 +240,7 @@ void test_slave_clock_only_infers_play_state() {
     assert(status.playing.get());
 
     // With no explicit stop event, loss of external clock should still stop playback.
-    service.update(now + 250);
+    stepService(service, sync, status, now + 250);
     assert(!service.playing());
     assert(!status.playing.get());
 
@@ -235,13 +258,13 @@ void test_auto_clock_only_plays_after_lock() {
     sync.followTransport.set(true);
     sync.autoLockClockCount.set(3);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
     assert(!service.playing());
 
     service.onClock(10'000, 10);
     service.onClock(20'000, 20);
     service.onClock(30'000, 30);
-    service.update(30);
+    stepService(service, sync, status, 30);
 
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
     assert(service.playing());
@@ -260,7 +283,7 @@ void test_transport_lock_requires_follow() {
     sync.mode.set(core::state::MidiSyncMode::SLAVE);
     sync.followTransport.set(false);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
 
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
     assert(status.tempoLocked.get());
@@ -279,23 +302,23 @@ void test_external_source_updates_displayed_tempo_and_activity() {
     sync.mode.set(core::state::MidiSyncMode::SLAVE);
     status.tempo.set(99.0f);
 
-    service.update(0);
+    stepService(service, sync, status, 0);
     assert(status.syncExternalSource.get());
     assertNear(status.tempoDisplay.get(), 99.0f, 0.01f);
 
     uint32_t now = 100;
     for (int i = 0; i < 60; ++i) {
         service.onClock(static_cast<uint64_t>(now) * 1000ULL, now);
-        service.update(now);
+        stepService(service, sync, status, now);
         now += 20;
     }
-    service.update(now);
+    stepService(service, sync, status, now);
 
     assert(status.syncExternalSource.get());
     assert(status.syncInputPulse.get());
     assert(status.tempoDisplay.get() > 120.0f && status.tempoDisplay.get() < 130.0f);
 
-    service.update(now + 1000);
+    stepService(service, sync, status, now + 1000);
     status.updateTransient(now + 1000);
     assert(!status.syncInputPulse.get());
 
@@ -315,10 +338,10 @@ void test_external_tempo_precision_low_mid() {
         uint32_t now = 100;
         for (int i = 0; i < 120; ++i) {
             service.onClock(static_cast<uint64_t>(now) * 1000ULL, now);
-            service.update(now);
+            stepService(service, sync, status, now);
             now += intervalMs;
         }
-        service.update(now);
+        stepService(service, sync, status, now);
 
         const float bpm = status.tempoDisplay.get();
         assert(bpm >= minBpm && bpm <= maxBpm);
@@ -344,20 +367,20 @@ void test_external_tempo_tracks_fast_change() {
     // Warm-up near 120 BPM (about 20.8 ms per MIDI clock)
     for (int i = 0; i < 64; ++i) {
         service.onClock(static_cast<uint64_t>(now) * 1000ULL, now);
-        service.update(now);
+        stepService(service, sync, status, now);
         now += 21;
     }
-    service.update(now);
+    stepService(service, sync, status, now);
     const float slowTempo = status.tempoDisplay.get();
     assert(slowTempo > 110.0f && slowTempo < 130.0f);
 
     // Jump to fast source near 180 BPM (about 13.9 ms per MIDI clock)
     for (int i = 0; i < 64; ++i) {
         service.onClock(static_cast<uint64_t>(now) * 1000ULL, now);
-        service.update(now);
+        stepService(service, sync, status, now);
         now += 14;
     }
-    service.update(now);
+    stepService(service, sync, status, now);
     const float fastTempo = status.tempoDisplay.get();
 
     assert(fastTempo > 170.0f && fastTempo < 190.0f);

@@ -159,7 +159,6 @@ static FLASHMEM void initApp() {
         Config::ContextID::STANDALONE,
         "Standalone",
         [&]() { return std::make_unique<core::context::StandaloneContext>(*coreState); });
-
     app->begin();
 }
 
@@ -185,12 +184,9 @@ FLASHMEM void setup() {
 // Timing constants for main loop
 constexpr uint32_t APP_PERIOD_US = 1'000'000 / Config::Timing::APP_HZ;
 constexpr uint32_t LVGL_PERIOD_US = 1'000'000 / Config::Timing::LVGL_HZ;
-constexpr uint32_t DISPLAY_PERF_LOG_WINDOW_MS = 1000;
-
 void loop() {
     static uint32_t lastMicros = 0;
     static uint32_t lvglAccumulator = 0;
-
 
     const uint32_t now = micros();
     if (now - lastMicros < APP_PERIOD_US) return;

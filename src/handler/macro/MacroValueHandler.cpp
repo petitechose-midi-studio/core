@@ -6,12 +6,16 @@
 
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
+#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "midi/MidiUtils.hpp"
 
 namespace core::handler {
 
+namespace input_utils = core::handler::sequencer::input_utils;
+
 namespace {
 
+#if defined(PERF_MON)
 struct MacroValueProfiling {
     uint32_t window_start_ms = 0;
     uint32_t call_count = 0;
@@ -46,14 +50,29 @@ struct MacroValueProfiling {
 };
 
 MacroValueProfiling g_macro_value_profiling;
+#endif
+
+inline void recordMacroValueProfiling(uint32_t elapsed_us) {
+#if defined(PERF_MON)
+    g_macro_value_profiling.record(elapsed_us);
+#else
+    (void)elapsed_us;
+#endif
+}
 
 }  // namespace
 
-MacroValueHandler::MacroValueHandler(MacroDomainServices services,
+MacroValueHandler::MacroValueHandler(StateRefs state,
+                                     MacroDomainServices services,
+                                     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                      oc::api::EncoderAPI& encoders,
                                      oc::api::MidiAPI& midi,
                                      oc::type::ScopeID scopeId)
-    : services_(services)
+    : macro_ui_(state.macroUi)
+    , active_view_(state.activeView)
+    , macro_edit_(state.macroEdit)
+    , services_(services)
+    , overlays_(overlays)
     , encoders_(encoders)
     , midi_(midi)
     , scope_id_(scopeId) {
@@ -65,8 +84,24 @@ FLASHMEM void MacroValueHandler::setupBindings() {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope_id_)
-            .then([this, i](float value) { handleValueChange(i, value); });
+            .then([this, i](float value) {
+                if (!shouldHandleTurns()) return;
+                if (!macro_ui_.clutchActive.get() ||
+                    macro_ui_.activeProperty.get() == core::state::macro::MacroPerformanceProperty::VALUE) {
+                    handleValueChange(i, value);
+                    return;
+                }
+                handleConfigChange(i, value);
+            });
     }
+}
+
+bool MacroValueHandler::shouldHandleTurns() const {
+    return active_view_.get() == core::ui::ViewType::MACRO &&
+           !overlays_.hasVisible() &&
+           !macro_edit_.visible.get() &&
+           !macro_ui_.quickControlsSelecting.get() &&
+           !macro_ui_.pageSelecting.get();
 }
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {
@@ -76,12 +111,17 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     const float quantized = core::midi::fromCC(cc_value);
 
     if (std::abs(services_.runtimeValue(index) - quantized) < 0.0005f) {
-        g_macro_value_profiling.record(core::time_compat::micros() - start_us);
+        recordMacroValueProfiling(core::time_compat::micros() - start_us);
         return;
     }
 
     // Update state (triggers UI update, marks dirty for persistence)
     services_.setRuntimeValue(index, quantized);
+
+    if (!services_.isActivePageEnabled()) {
+        recordMacroValueProfiling(core::time_compat::micros() - start_us);
+        return;
+    }
 
     // Send MIDI CC
     const auto& config = services_.activeConfig(index);
@@ -90,7 +130,29 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     // Signal CC MIDI OUT activity
     services_.pulseCcOut();
 
-    g_macro_value_profiling.record(core::time_compat::micros() - start_us);
+    recordMacroValueProfiling(core::time_compat::micros() - start_us);
+}
+
+void MacroValueHandler::handleConfigChange(uint8_t index, float value) {
+    const float normalized = std::clamp(value, 0.0f, 1.0f);
+    const auto current = services_.activeConfig(index);
+
+    switch (macro_ui_.activeProperty.get()) {
+        case core::state::macro::MacroPerformanceProperty::CC: {
+            const uint8_t cc = input_utils::normalizedToMidi7(normalized);
+            services_.setConfig(index, current.channel, cc);
+            return;
+        }
+        case core::state::macro::MacroPerformanceProperty::CHANNEL: {
+            const uint8_t channel = static_cast<uint8_t>(input_utils::normalizedToIndex(normalized, 16));
+            services_.setConfig(index, channel, current.cc);
+            return;
+        }
+        case core::state::macro::MacroPerformanceProperty::VALUE:
+        default:
+            handleValueChange(index, normalized);
+            return;
+    }
 }
 
 }  // namespace core::handler

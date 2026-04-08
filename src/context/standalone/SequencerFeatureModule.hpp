@@ -10,6 +10,7 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/OverlayTypes.hpp"
@@ -59,9 +60,10 @@ public:
     void syncEncodersNow();
 
 private:
-    std::unique_ptr<core::context::standalone::SequencerEncoderSyncCoordinator> encoder_sync_;
-    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;
-    std::unique_ptr<core::context::standalone::SequencerOverlayPresenter> presenter_;
+    core::app::ExtmemUniquePtr<core::context::standalone::SequencerEncoderSyncCoordinator>
+        encoder_sync_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;
+    core::app::ExtmemUniquePtr<core::context::standalone::SequencerOverlayPresenter> presenter_;
     std::unique_ptr<core::handler::SequencerStepHandler> step_handler_;
     std::unique_ptr<core::handler::SequencerRangeActionHandler> range_action_handler_;
     std::unique_ptr<core::handler::SequencerTrackSelectorHandler> track_selector_handler_;

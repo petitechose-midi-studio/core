@@ -60,7 +60,7 @@ FLASHMEM void StandaloneOverlayAssembly::createOverlayController(
     oc::api::ButtonAPI& buttons,
     ActiveViewScopeProvider activeViewScopeProvider
 ) {
-    overlay_controller_ = std::make_unique<oc::context::OverlayManager<core::ui::OverlayType>>(
+    overlay_controller_ = core::app::makeExtmemUnique<oc::context::OverlayManager<core::ui::OverlayType>>(
         core_state_.overlays,
         buttons
     );
@@ -68,7 +68,7 @@ FLASHMEM void StandaloneOverlayAssembly::createOverlayController(
 }
 
 FLASHMEM void StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* mainZone) {
-    view_selector_ = std::make_unique<ms::ui::StringListSelector>(mainZone);
+    view_selector_ = core::app::makeExtmemUnique<ms::ui::StringListSelector>(mainZone);
     view_selector_->setTitle("Select View");
     view_selector_scope_ = oc::ui::lvgl::scopeID(view_selector_->getElement());
     overlay_controller_->registerCleanup(

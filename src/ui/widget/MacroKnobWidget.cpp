@@ -34,7 +34,7 @@ FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
 
     lv_obj_set_grid_cell(knob_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
-        LV_GRID_ALIGN_START, 0, 1);
+        LV_GRID_ALIGN_CENTER, 0, 1);
 
     createConfigLabels(container_);
 }

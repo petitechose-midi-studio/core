@@ -65,7 +65,7 @@ struct MacroPageData {
         // Default CC mapping: page 0 = CC 1-8, page 1 = CC 9-16, etc.
         for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
             cc[i] = static_cast<uint8_t>(pageIndex * MACRO_COUNT + i + 1);
-            channel[i] = 0;
+            channel[i] = pageIndex;
             values[i] = 0.5f;
         }
     }
@@ -93,6 +93,8 @@ struct PageSelectorState {
  * activeConfigs provides quick access to current page's CC/channel mapping.
  */
 struct MacroPagesState {
+    using EnabledMaskSignal = oc::state::Signal<uint8_t, 8>;
+
     /// Page selector overlay state
     PageSelectorState selector;
 
@@ -101,6 +103,9 @@ struct MacroPagesState {
 
     /// Currently active page index
     uint8_t activePage = 0;
+
+    /// Runtime page enabled mask, aligned with the sequencer track model.
+    EnabledMaskSignal enabledMask{0xFF};
 
     /// Quick access to active page's configs (updated on page switch)
     std::array<MacroConfig, MACRO_COUNT> activeConfigs;
@@ -115,6 +120,7 @@ struct MacroPagesState {
             pages[i].initDefault(i);
         }
         activePage = 0;
+        enabledMask.set(0xFF);
         updateActiveConfigs();
     }
 
@@ -132,6 +138,24 @@ struct MacroPagesState {
     /// Get page name
     const char* pageName(uint8_t index) const {
         return (index < PAGE_COUNT) ? pages[index].name : "";
+    }
+
+    bool isPageEnabled(uint8_t index) const {
+        if (index >= PAGE_COUNT) return false;
+        return (enabledMask.get() & static_cast<uint8_t>(1U << index)) != 0;
+    }
+
+    void setPageEnabled(uint8_t index, bool enabled) {
+        if (index >= PAGE_COUNT) return;
+        uint8_t mask = enabledMask.get();
+        const uint8_t bit = static_cast<uint8_t>(1U << index);
+        if (enabled) mask |= bit;
+        else mask &= static_cast<uint8_t>(~bit);
+        enabledMask.set(mask);
+    }
+
+    void togglePageEnabled(uint8_t index) {
+        setPageEnabled(index, !isPageEnabled(index));
     }
 
     /// Update activeConfigs from current page

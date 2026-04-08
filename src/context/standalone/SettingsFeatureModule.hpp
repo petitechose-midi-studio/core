@@ -9,6 +9,7 @@
 #include <oc/context/OverlayManager.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
@@ -67,13 +68,15 @@ public:
     SettingsFeatureModule& operator=(const SettingsFeatureModule&) = delete;
 
 private:
-    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> global_settings_overlay_;
-    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> global_settings_selector_overlay_;
-    std::unique_ptr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
-    std::unique_ptr<ms::ui::VirtualListSelectorOverlay> data_manager_dialog_overlay_;
-    std::unique_ptr<core::context::standalone::GlobalSettingsOverlayPresenter>
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> global_settings_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
+        global_settings_selector_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> data_manager_dialog_overlay_;
+    core::app::ExtmemUniquePtr<core::context::standalone::GlobalSettingsOverlayPresenter>
         global_settings_presenter_;
-    std::unique_ptr<core::context::standalone::DataManagerPresenter> data_manager_presenter_;
+    core::app::ExtmemUniquePtr<core::context::standalone::DataManagerPresenter>
+        data_manager_presenter_;
     std::unique_ptr<core::handler::GlobalSettingsHandler> global_settings_handler_;
     std::unique_ptr<core::handler::DataManagerHandler> data_manager_handler_;
 };

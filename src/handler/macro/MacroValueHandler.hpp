@@ -13,9 +13,14 @@
 
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/api/MidiAPI.hpp>
+#include <oc/context/OverlayManager.hpp>
 
 #include <config/InputIDs.hpp>
 #include "handler/macro/MacroDomainServices.hpp"
+#include "state/MacroEditState.hpp"
+#include "state/macro/MacroUiState.hpp"
+#include "ui/OverlayTypes.hpp"
+#include "ui/ViewTypes.hpp"
 
 namespace core::handler {
 
@@ -28,7 +33,15 @@ namespace core::handler {
  */
 class MacroValueHandler {
 public:
-    MacroValueHandler(MacroDomainServices services,
+    struct StateRefs {
+        core::state::macro::MacroUiState& macroUi;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
+        core::state::MacroEditState& macroEdit;
+    };
+
+    MacroValueHandler(StateRefs state,
+                      MacroDomainServices services,
+                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                       oc::api::EncoderAPI& encoders,
                       oc::api::MidiAPI& midi,
                       oc::type::ScopeID scopeId);
@@ -41,8 +54,14 @@ public:
 private:
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
+    bool shouldHandleTurns() const;
+    void handleConfigChange(uint8_t index, float value);
 
+    core::state::macro::MacroUiState& macro_ui_;
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    core::state::MacroEditState& macro_edit_;
     MacroDomainServices services_;
+    oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::MidiAPI& midi_;
     oc::type::ScopeID scope_id_ = 0;

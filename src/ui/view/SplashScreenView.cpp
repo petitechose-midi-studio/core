@@ -11,12 +11,12 @@ namespace core::ui {
 namespace App = Config::App;
 namespace theme = oc::ui::lvgl::base_theme;
 
-SplashScreenView::Config::Config()
+FLASHMEM SplashScreenView::Config::Config()
     : title(App::NAME), version(App::VERSION), bg_color(lv_color_hex(theme::color::BACKGROUND)),
       text_color(lv_color_hex(theme::color::TEXT_PRIMARY)),
       progress_color(lv_color_hex(theme::color::TEXT_PRIMARY)) {}
 
-SplashScreenView::SplashScreenView(lv_obj_t* parent, const Config& config)
+FLASHMEM SplashScreenView::SplashScreenView(lv_obj_t* parent, const Config& config)
     : config_(config) {
     createContainer(parent);
     createLogo();
@@ -24,23 +24,23 @@ SplashScreenView::SplashScreenView(lv_obj_t* parent, const Config& config)
     createProgressBar();
 }
 
-SplashScreenView::~SplashScreenView() {
+FLASHMEM SplashScreenView::~SplashScreenView() {
     lv_obj_delete(container_);
 }
 
-void SplashScreenView::onActivate() {
+FLASHMEM void SplashScreenView::onActivate() {
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void SplashScreenView::onDeactivate() {
+FLASHMEM void SplashScreenView::onDeactivate() {
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void SplashScreenView::setProgress(uint8_t progress) {
+FLASHMEM void SplashScreenView::setProgress(uint8_t progress) {
     lv_bar_set_value(progress_bar_, progress > 100 ? 100 : progress, LV_ANIM_OFF);
 }
 
-void SplashScreenView::fadeOut(uint32_t durationMs) {
+FLASHMEM void SplashScreenView::fadeOut(uint32_t durationMs) {
     lv_anim_t anim;
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, container_);

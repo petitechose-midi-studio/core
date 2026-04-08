@@ -12,8 +12,6 @@
 #include <oc/state/SignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
-#include <ms/ui/component/LayoutView.hpp>
-
 #include "state/StatusBarState.hpp"
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
@@ -26,6 +24,7 @@
 #include "ui/sequencer/StepPropertyStrip.hpp"
 #include "ui/sequencer/StepGrid.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/view/MainViewFrame.hpp"
 #include "ui/view/PausableLvglTimer.hpp"
 
 namespace core::ui {
@@ -81,7 +80,6 @@ private:
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
     void requestGridRender();
-    void renderTrackTint();
     static void onRenderTimer(lv_timer_t* timer);
     void markAllDirty();
     void render();
@@ -98,14 +96,9 @@ private:
     bool left_action_strip_dirty_ = true;
     bool bottom_action_strip_dirty_ = true;
     bool grid_dirty_ = true;
-    bool track_tint_dirty_ = true;
     std::unique_ptr<PausableLvglTimer> render_timer_;
 
-    uint8_t track_tint_cache_track_ = 0;
-    uint8_t track_tint_cache_enabled_mask_ = 0xFF;
-    bool track_tint_cache_selecting_ = false;
-
-    std::unique_ptr<ms::ui::LayoutView> layout_;
+    std::unique_ptr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
     lv_obj_t* interaction_container_ = nullptr;

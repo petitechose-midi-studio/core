@@ -25,7 +25,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     lv_obj_t* sequencerViewScope
 ) {
     const auto sequencerViewScopeId = oc::ui::lvgl::scopeID(sequencerViewScope);
-    encoder_sync_ = std::make_unique<SequencerEncoderSyncCoordinator>(
+    encoder_sync_ = core::app::makeExtmemUnique<SequencerEncoderSyncCoordinator>(
         SequencerEncoderSyncCoordinator::StateRefs{
             stateRefs.overlays,
             stateRefs.activeView,
@@ -33,14 +33,15 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         },
         encoders
     );
-    step_edit_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(sequencerViewScope);
+    step_edit_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(sequencerViewScope);
     overlays.registerCleanup(
         core::ui::OverlayType::SEQ_STEP_EDIT,
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
-    presenter_ = std::make_unique<SequencerOverlayPresenter>(
+    presenter_ = core::app::makeExtmemUnique<SequencerOverlayPresenter>(
         SequencerOverlayPresenter::StateRefs{
             stateRefs.sequencer,
         },

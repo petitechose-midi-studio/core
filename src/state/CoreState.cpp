@@ -1,7 +1,13 @@
 #include "state/CoreState.hpp"
 
+#include <new>
+
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+#include <wiring.h>
+#endif
 
 #include "state/CoreStateBootstrap.hpp"
 #include "state/CoreStateLifecycle.hpp"
@@ -13,6 +19,34 @@
 
 namespace core::state {
 
+namespace {
+
+SequencerDomainState::PendingApply* createPendingApply() {
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    void* memory = extmem_malloc(sizeof(SequencerDomainState::PendingApply));
+    if (!memory) return nullptr;
+    return new(memory) SequencerDomainState::PendingApply();
+#else
+    return new SequencerDomainState::PendingApply();
+#endif
+}
+
+core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
+    return core::app::makeExtmemUnique<UiSystemState>();
+}
+
+}  // namespace
+
+void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply* ptr) const noexcept {
+    if (!ptr) return;
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    ptr->~PendingApply();
+    extmem_free(ptr);
+#else
+    delete ptr;
+#endif
+}
+
 FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
                               oc::interface::IStorage& macroWorkspaceStorage,
                               oc::interface::IStorage& macroLibraryStorage,
@@ -23,6 +57,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , sequencerDomain_(sequencerWorkspaceStorage,
                        sequencerPatternLibraryStorage,
                        sequencerSetLibraryStorage)
+    , systemUi_(createUiSystemState())
     , settings(settingsStorage)
     , macros(macroDomain_.runtime)
     , pages(macroDomain_.pages)
@@ -31,14 +66,24 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , sequencer(sequencerDomain_.editor)
     , sequencerTracks(sequencerDomain_.tracks)
     , sequencerPersistence(sequencerDomain_.persistence)
-    , overlays(systemUi_.overlays)
-    , activeView(systemUi_.activeView)
-    , viewSelector(systemUi_.viewSelector)
-    , statusBar(systemUi_.statusBar)
-    , midiSync(systemUi_.midiSync)
-    , globalSettings(systemUi_.globalSettings)
-    , dataManager(systemUi_.dataManager)
-    , macroEdit(systemUi_.macroEdit) {
+    , overlays(systemUi_->overlays)
+    , activeView(systemUi_->activeView)
+    , viewSelector(systemUi_->viewSelector)
+    , statusBar(systemUi_->statusBar)
+    , midiSync(systemUi_->midiSync)
+    , globalSettings(systemUi_->globalSettings)
+    , dataManager(systemUi_->dataManager)
+    , macroEdit(systemUi_->macroEdit)
+    , macroUi(systemUi_->macroUi) {
+    if (!systemUi_) {
+        OC_LOG_ERROR("[CoreState] Failed to allocate UI system state");
+        while (true) {}
+    }
+    sequencerDomain_.pendingApply.reset(createPendingApply());
+    if (!sequencerDomain_.pendingApply) {
+        OC_LOG_ERROR("[CoreState] Failed to allocate sequencer pending apply buffer");
+        while (true) {}
+    }
     CoreStateBootstrap::initialize(*this);
 }
 
@@ -89,7 +134,7 @@ void CoreState::clearPendingSequencerApply() {
 }
 
 bool CoreState::hasPendingSequencerApply() const {
-    return sequencerDomain_.pendingApply.valid;
+    return sequencerDomain_.pendingApply && sequencerDomain_.pendingApply->valid;
 }
 
 void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bool merge) {
@@ -97,11 +142,12 @@ void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bo
 }
 
 void CoreState::queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged) {
-    sequencerDomain_.pendingApply.bankSnapshot = staged;
-    sequencerDomain_.pendingApply.anchorPlayhead = sequencer.playheadStep.get();
-    sequencerDomain_.pendingApply.merge = false;
-    sequencerDomain_.pendingApply.fullBank = true;
-    sequencerDomain_.pendingApply.valid = true;
+    if (!sequencerDomain_.pendingApply) return;
+    sequencerDomain_.pendingApply->bankSnapshot = staged;
+    sequencerDomain_.pendingApply->anchorPlayhead = sequencer.playheadStep.get();
+    sequencerDomain_.pendingApply->merge = false;
+    sequencerDomain_.pendingApply->fullBank = true;
+    sequencerDomain_.pendingApply->valid = true;
 }
 
 void CoreState::persistMacroWorkspace_() {

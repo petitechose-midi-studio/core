@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include "app/ExtmemAllocator.hpp"
 #include <lvgl.h>
 
 #include <oc/type/Ids.hpp>
@@ -53,8 +54,8 @@ private:
     void createViewSelectorOverlay(lv_obj_t* mainZone);
 
     core::state::CoreState& core_state_;
-    std::unique_ptr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
-    std::unique_ptr<ms::ui::StringListSelector> view_selector_;
+    core::app::ExtmemUniquePtr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
+    core::app::ExtmemUniquePtr<ms::ui::StringListSelector> view_selector_;
     oc::type::ScopeID view_selector_scope_ = 0;
 };
 

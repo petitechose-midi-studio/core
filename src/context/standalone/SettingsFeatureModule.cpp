@@ -25,7 +25,8 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     core::ui::TransportBar& transportBar,
     core::handler::DataManagerHandler::ViewScopes viewScopes
 ) {
-    global_settings_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    global_settings_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::GLOBAL_SETTINGS,
         oc::ui::lvgl::scopeID(global_settings_overlay_->getElement()),
@@ -33,14 +34,15 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     );
 
     global_settings_selector_overlay_ =
-        std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR,
         oc::ui::lvgl::scopeID(global_settings_selector_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
-    data_manager_overlay_ = std::make_unique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    data_manager_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::DATA_MANAGER,
         oc::ui::lvgl::scopeID(data_manager_overlay_->getElement()),
@@ -48,7 +50,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     );
 
     data_manager_dialog_overlay_ =
-        std::make_unique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::DATA_MANAGER_DIALOG,
         oc::ui::lvgl::scopeID(data_manager_dialog_overlay_->getElement()),
@@ -56,7 +58,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     );
 
     global_settings_presenter_ =
-        std::make_unique<GlobalSettingsOverlayPresenter>(
+        core::app::makeExtmemUnique<GlobalSettingsOverlayPresenter>(
             GlobalSettingsOverlayPresenter::StateRefs{
                 stateRefs.globalSettings,
                 stateRefs.midiSync,
@@ -66,7 +68,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         );
     global_settings_presenter_->bind();
 
-    data_manager_presenter_ = std::make_unique<DataManagerPresenter>(
+    data_manager_presenter_ = core::app::makeExtmemUnique<DataManagerPresenter>(
         DataManagerPresenter::StateRefs{
             stateRefs.dataManager,
         },

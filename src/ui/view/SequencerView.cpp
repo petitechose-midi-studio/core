@@ -1,17 +1,11 @@
 #include "SequencerView.hpp"
 
-#include <oc/ui/lvgl/style/StyleBuilder.hpp>
-
 #include <config/PlatformCompat.hpp>
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
-#include "ui/theme/StandaloneTheme.hpp"
-
-namespace style = oc::ui::lvgl::style;
-namespace theme = standalone::theme;
 
 namespace core::ui {
 
-SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
+FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     createLayout(parent);
     createHeaderBar();
@@ -23,7 +17,7 @@ SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     bindToState();
 }
 
-SequencerView::~SequencerView() {
+FLASHMEM SequencerView::~SequencerView() {
     render_timer_.reset();
 
     step_grid_.reset();
@@ -32,14 +26,14 @@ SequencerView::~SequencerView() {
     bottom_controls_.reset();
     left_action_strip_.reset();
     header_bar_.reset();
-    layout_.reset();
+    frame_.reset();
     container_ = nullptr;
     body_container_ = nullptr;
     interaction_container_ = nullptr;
     center_column_ = nullptr;
 }
 
-void SequencerView::onActivate() {
+FLASHMEM void SequencerView::onActivate() {
     if (!container_) return;
 
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
@@ -51,7 +45,7 @@ void SequencerView::onActivate() {
     scheduleRender();
 }
 
-void SequencerView::onDeactivate() {
+FLASHMEM void SequencerView::onDeactivate() {
     if (container_) {
         lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
     }
@@ -62,28 +56,16 @@ void SequencerView::onDeactivate() {
 }
 
 FLASHMEM void SequencerView::createLayout(lv_obj_t* parent) {
-    layout_ = std::make_unique<ms::ui::LayoutView>(parent);
-    container_ = layout_->getElement();
-    body_container_ = layout_->content();
-    lv_obj_t* header = layout_->header();
+    frame_ = std::make_unique<MainViewFrame>(parent);
+    container_ = frame_->container();
+    body_container_ = frame_->body();
+    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-
-    style::apply(header).transparent().pad(0);
-    lv_obj_set_layout(header, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(header, 0, 0);
-
-    style::apply(body_container_).transparent().pad(0);
-    lv_obj_set_layout(body_container_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(body_container_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(body_container_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(body_container_, 0, 0);
 }
 
 FLASHMEM void SequencerView::createHeaderBar() {
-    if (!layout_) return;
-    header_bar_ = std::make_unique<SequencerHeaderBar>(layout_->header());
+    if (!frame_) return;
+    header_bar_ = std::make_unique<SequencerHeaderBar>(frame_->header());
 }
 
 FLASHMEM void SequencerView::createGrid() {
@@ -102,19 +84,9 @@ FLASHMEM void SequencerView::createBottomControls() {
 }
 
 FLASHMEM void SequencerView::createActionStrips() {
-    if (!body_container_) return;
-    interaction_container_ = lv_obj_create(body_container_);
-    style::apply(interaction_container_).size(LV_PCT(100), LV_PCT(100)).transparent().noBorder().pad(0).noScroll();
-    lv_obj_set_flex_grow(interaction_container_, 1);
-    lv_obj_set_layout(interaction_container_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(interaction_container_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(
-        interaction_container_,
-        LV_FLEX_ALIGN_START,
-        LV_FLEX_ALIGN_START,
-        LV_FLEX_ALIGN_START
-    );
-    lv_obj_set_style_pad_column(interaction_container_, 0, 0);
+    if (!frame_ || !body_container_) return;
+    frame_->createInteractionRow();
+    interaction_container_ = frame_->interactionRow();
 
     left_action_strip_ = std::make_unique<ContextActionStrip>(
         interaction_container_,
@@ -122,15 +94,8 @@ FLASHMEM void SequencerView::createActionStrips() {
         ContextActionStripVerticalLayout::SPREAD
     );
 
-    center_column_ = lv_obj_create(interaction_container_);
-    style::apply(center_column_).transparent().noBorder().pad(0).noScroll();
-    lv_obj_set_width(center_column_, 0);
-    lv_obj_set_height(center_column_, LV_PCT(100));
-    lv_obj_set_flex_grow(center_column_, 1);
-    lv_obj_set_layout(center_column_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(center_column_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(center_column_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(center_column_, 0, 0);
+    frame_->createCenterColumn();
+    center_column_ = frame_->centerColumn();
 
     bottom_action_strip_ = std::make_unique<ContextActionStrip>(
         body_container_,
@@ -171,7 +136,6 @@ FLASHMEM void SequencerView::bindHeaderState() {
     watcher_.watchAll(
         [this]() {
             requestHeaderTopRender();
-            track_tint_dirty_ = true;
         },
         state_refs_.tracks.activeTrack,
         state_refs_.tracks.enabledMask,
@@ -290,12 +254,12 @@ FLASHMEM void SequencerView::bindQuickControlsState() {
     );
 }
 
-void SequencerView::ensureRenderTimer() {
+FLASHMEM void SequencerView::ensureRenderTimer() {
     if (render_timer_) return;
     render_timer_ = std::make_unique<PausableLvglTimer>(16, onRenderTimer, this);
 }
 
-bool SequencerView::hasBlockingOverlay() const {
+FLASHMEM bool SequencerView::hasBlockingOverlay() const {
     return state_refs_.viewSelector.visible.get() ||
            state_refs_.sequencer.stepEdit.visible.get() ||
            state_refs_.globalSettings.visible.get() ||
@@ -304,7 +268,7 @@ bool SequencerView::hasBlockingOverlay() const {
            state_refs_.dataManager.dialog.visible.get();
 }
 
-void SequencerView::handleOverlayVisibilityChanged() {
+FLASHMEM void SequencerView::handleOverlayVisibilityChanged() {
     if (hasBlockingOverlay()) {
         pauseRenderTimerIfIdle();
         if (render_timer_) {
@@ -318,7 +282,7 @@ void SequencerView::handleOverlayVisibilityChanged() {
     }
 }
 
-void SequencerView::scheduleRender(bool ready) {
+FLASHMEM void SequencerView::scheduleRender(bool ready) {
     ensureRenderTimer();
     const bool wasDirty = dirty_;
     dirty_ = true;
@@ -330,46 +294,46 @@ void SequencerView::scheduleRender(bool ready) {
     }
 }
 
-void SequencerView::pauseRenderTimerIfIdle() {
+FLASHMEM void SequencerView::pauseRenderTimerIfIdle() {
     if (!render_timer_) return;
     if (dirty_) return;
     render_timer_->pause();
 }
 
-void SequencerView::requestRender(bool& dirtyFlag) {
+FLASHMEM void SequencerView::requestRender(bool& dirtyFlag) {
     dirtyFlag = true;
     scheduleRender();
 }
 
-void SequencerView::requestHeaderTopRender() {
+FLASHMEM void SequencerView::requestHeaderTopRender() {
     requestRender(header_top_dirty_);
 }
 
-void SequencerView::requestHeaderStripRender() {
+FLASHMEM void SequencerView::requestHeaderStripRender() {
     requestRender(header_strip_dirty_);
 }
 
-void SequencerView::requestBottomControlsRender() {
+FLASHMEM void SequencerView::requestBottomControlsRender() {
     requestRender(bottom_controls_dirty_);
 }
 
-void SequencerView::requestPropertyStripRender() {
+FLASHMEM void SequencerView::requestPropertyStripRender() {
     requestRender(property_strip_dirty_);
 }
 
-void SequencerView::requestLeftActionStripRender() {
+FLASHMEM void SequencerView::requestLeftActionStripRender() {
     requestRender(left_action_strip_dirty_);
 }
 
-void SequencerView::requestBottomActionStripRender() {
+FLASHMEM void SequencerView::requestBottomActionStripRender() {
     requestRender(bottom_action_strip_dirty_);
 }
 
-void SequencerView::requestGridRender() {
+FLASHMEM void SequencerView::requestGridRender() {
     requestRender(grid_dirty_);
 }
 
-void SequencerView::markAllDirty() {
+FLASHMEM void SequencerView::markAllDirty() {
     header_top_dirty_ = true;
     header_strip_dirty_ = true;
     bottom_controls_dirty_ = true;
@@ -377,42 +341,9 @@ void SequencerView::markAllDirty() {
     left_action_strip_dirty_ = true;
     bottom_action_strip_dirty_ = true;
     grid_dirty_ = true;
-    track_tint_dirty_ = true;
 }
 
-void SequencerView::renderTrackTint() {
-    if (!container_) return;
-
-    const uint8_t previewTrack = state_refs_.tracks.selector.selecting.get()
-        ? state_refs_.tracks.selector.selectedTrack.get()
-        : state_refs_.tracks.activeTrack.get();
-    const uint8_t enabledMask = state_refs_.tracks.enabledMask.get();
-    const bool selecting = state_refs_.tracks.selector.selecting.get();
-
-    if (!track_tint_dirty_ &&
-        track_tint_cache_track_ == previewTrack &&
-        track_tint_cache_enabled_mask_ == enabledMask &&
-        track_tint_cache_selecting_ == selecting) {
-        return;
-    }
-
-    const bool enabled = (enabledMask & static_cast<uint8_t>(1U << previewTrack)) != 0;
-    const uint32_t bgColor = enabled ? theme::color::trackColor(previewTrack) : theme::color::INACTIVE;
-    const lv_opa_t bgOpa = selecting ? static_cast<lv_opa_t>(26) : static_cast<lv_opa_t>(16);
-
-    // Apply the track tint once at the view root only. Reapplying the same
-    // translucent color on nested containers darkens some sequencer zones
-    // (grid, quick controls, action strips) and breaks color consistency.
-    lv_obj_set_style_bg_color(container_, lv_color_hex(bgColor), 0);
-    lv_obj_set_style_bg_opa(container_, bgOpa, 0);
-
-    track_tint_cache_track_ = previewTrack;
-    track_tint_cache_enabled_mask_ = enabledMask;
-    track_tint_cache_selecting_ = selecting;
-    track_tint_dirty_ = false;
-}
-
-void SequencerView::onRenderTimer(lv_timer_t* timer) {
+FLASHMEM void SequencerView::onRenderTimer(lv_timer_t* timer) {
     auto* self = static_cast<SequencerView*>(lv_timer_get_user_data(timer));
     if (!self) return;
 
@@ -432,7 +363,7 @@ void SequencerView::onRenderTimer(lv_timer_t* timer) {
     self->pauseRenderTimerIfIdle();
 }
 
-void SequencerView::render() {
+FLASHMEM void SequencerView::render() {
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN) || hasBlockingOverlay()) return;
 
     const bool needsBottomControls = bottom_controls_dirty_ && bottom_controls_;
@@ -442,15 +373,13 @@ void SequencerView::render() {
     const bool needsHeaderTop = header_top_dirty_ && header_bar_;
     const bool needsHeaderStrip = header_strip_dirty_ && header_bar_;
     const bool needsGrid = grid_dirty_ && step_grid_;
-    const bool needsTint = track_tint_dirty_;
     if (!needsBottomControls && !needsPropertyStrip && !needsLeftActionStrip &&
         !needsBottomActionStrip && !needsHeaderTop &&
-        !needsHeaderStrip && !needsGrid && !needsTint) {
+        !needsHeaderStrip && !needsGrid) {
         return;
     }
 
     const auto source = modelSource();
-    renderTrackTint();
 
     if (needsLeftActionStrip) {
         left_action_strip_->render(sequencer::buildLeftActionStripProps(source));
@@ -490,7 +419,7 @@ void SequencerView::render() {
     }
 }
 
-sequencer::SequencerViewModelSource SequencerView::modelSource() const {
+FLASHMEM sequencer::SequencerViewModelSource SequencerView::modelSource() const {
     return {
         .sequencer = state_refs_.sequencer,
         .tracks = state_refs_.tracks,

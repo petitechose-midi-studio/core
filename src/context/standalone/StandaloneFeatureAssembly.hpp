@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "app/ExtmemAllocator.hpp"
 #include <lvgl.h>
 
 #include <oc/type/Ids.hpp>
@@ -60,9 +61,9 @@ public:
     void syncSequencerEncodersNow() const;
 
 private:
-    std::unique_ptr<core::context::standalone::MacroFeatureModule> macro_feature_;
-    std::unique_ptr<core::context::standalone::SequencerFeatureModule> sequencer_feature_;
-    std::unique_ptr<core::context::standalone::SettingsFeatureModule> settings_feature_;
+    core::app::ExtmemUniquePtr<core::context::standalone::MacroFeatureModule> macro_feature_;
+    core::app::ExtmemUniquePtr<core::context::standalone::SequencerFeatureModule> sequencer_feature_;
+    core::app::ExtmemUniquePtr<core::context::standalone::SettingsFeatureModule> settings_feature_;
 };
 
 }  // namespace core::context::standalone

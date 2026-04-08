@@ -80,22 +80,25 @@ FLASHMEM void StandaloneUiAssembly::deactivateSequencerView() const {
 }
 
 FLASHMEM void StandaloneUiAssembly::createViewContainer() {
-    view_container_ = std::make_unique<ms::ui::ViewContainer>(oc::ui::lvgl::Screen::root());
+    view_container_ = core::app::makeExtmemUnique<ms::ui::ViewContainer>(
+        oc::ui::lvgl::Screen::root()
+    );
 }
 
 FLASHMEM void StandaloneUiAssembly::createViews() {
     lv_obj_t* mainZone = view_container_->getMainZone();
 
-    macro_view_ = std::make_unique<core::ui::MacroView>(
+    macro_view_ = core::app::makeExtmemUnique<core::ui::MacroView>(
         mainZone,
         core::ui::MacroView::StateRefs{
             core_state_.macros,
             core_state_.pages,
+            core_state_.macroUi,
             core_state_.configRevision,
             core_state_.statusBar,
         }
     );
-    sequencer_view_ = std::make_unique<core::ui::SequencerView>(
+    sequencer_view_ = core::app::makeExtmemUnique<core::ui::SequencerView>(
         mainZone,
         core::ui::SequencerView::StateRefs{
             core_state_.sequencer,
@@ -111,8 +114,12 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
 
 FLASHMEM void StandaloneUiAssembly::createBottomBar() {
     lv_obj_t* bottomZone = view_container_->getBottomZone();
-    transport_bar_ = std::make_unique<core::ui::TransportBar>(bottomZone, core_state_.statusBar);
-    context_softkey_bar_ = std::make_unique<core::ui::ContextSoftkeyBar>(bottomZone);
+    transport_bar_ = core::app::makeExtmemUnique<core::ui::TransportBar>(
+        bottomZone,
+        core_state_.statusBar,
+        core_state_.sequencerTracks
+    );
+    context_softkey_bar_ = core::app::makeExtmemUnique<core::ui::ContextSoftkeyBar>(bottomZone);
 }
 
 FLASHMEM void StandaloneUiAssembly::cacheViewScopes() {

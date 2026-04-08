@@ -12,7 +12,7 @@ constexpr const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
 constexpr const char* const FALLBACK_ITEMS[] = {"150 ms", "250 ms", "500 ms", "750 ms", "1000 ms", "1500 ms", "2000 ms"};
 constexpr const char* const LOCK_ITEMS[] = {"1", "2", "3", "4", "6", "8", "12", "24"};
 
-const char* modeLabel(core::state::MidiSyncMode mode) {
+FLASHMEM const char* modeLabel(core::state::MidiSyncMode mode) {
     switch (mode) {
         case core::state::MidiSyncMode::MASTER: return "MASTER";
         case core::state::MidiSyncMode::SLAVE: return "SLAVE";

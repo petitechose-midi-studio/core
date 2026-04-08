@@ -23,6 +23,10 @@ public:
     const core::state::macro::MacroConfig& activeConfig(uint8_t index) const;
     bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
     void switchToPage(uint8_t pageIndex) const;
+    bool isActivePageEnabled() const;
+    void togglePageEnabled(uint8_t pageIndex) const;
+    void setPageEnabledMask(uint8_t mask) const;
+    uint8_t pageEnabledMask() const;
 
     void pulseCcIn() const;
     void pulseCcOut() const;
