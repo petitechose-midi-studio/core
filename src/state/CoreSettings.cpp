@@ -12,13 +12,11 @@ using core::persistence::PersistenceWriteStatus;
 namespace {
 
 FLASHMEM bool resetToDefaultsAndPersist(CoreSettings& settings,
-                                        macro::MacroPagesState& pages,
                                         MidiSyncState& midiSync,
                                         const char* logMessage) {
-    pages.initDefaults();
     midiSync.reset();
 
-    const auto status = settings.saveAllStatus(pages, midiSync);
+    const auto status = settings.saveAllStatus(midiSync);
     if (status != PersistenceWriteStatus::OK) {
         OC_LOG_WARN("{}: {}",
                     logMessage,
@@ -32,13 +30,12 @@ FLASHMEM bool resetToDefaultsAndPersist(CoreSettings& settings,
 FLASHMEM CoreSettings::CoreSettings(oc::interface::IStorage& backend)
     : backend_(backend) {}
 
-FLASHMEM bool CoreSettings::load(macro::MacroPagesState& pages, MidiSyncState& midiSync) {
+FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync) {
     uint32_t magic = 0;
     if (!readExact_(StorageLayout::ADDR_MAGIC, reinterpret_cast<uint8_t*>(&magic), sizeof(magic))) {
         OC_LOG_WARN("[CoreSettings] Failed to read magic, using defaults");
         return resetToDefaultsAndPersist(
             *this,
-            pages,
             midiSync,
             "[CoreSettings] Failed to persist defaults after read error"
         );
@@ -48,7 +45,6 @@ FLASHMEM bool CoreSettings::load(macro::MacroPagesState& pages, MidiSyncState& m
         OC_LOG_INFO("[CoreSettings] No valid data, using defaults");
         return resetToDefaultsAndPersist(
             *this,
-            pages,
             midiSync,
             "[CoreSettings] Failed to initialize storage with defaults"
         );
@@ -59,84 +55,40 @@ FLASHMEM bool CoreSettings::load(macro::MacroPagesState& pages, MidiSyncState& m
         OC_LOG_WARN("[CoreSettings] Failed to read version, using defaults");
         return resetToDefaultsAndPersist(
             *this,
-            pages,
             midiSync,
             "[CoreSettings] Failed to persist defaults after version read error"
         );
     }
 
-    if (version == StorageLayout::VERSION) {
-        if (!loadPages_(pages) || !loadMidiSync_(midiSync)) {
-            OC_LOG_WARN("[CoreSettings] Failed to read payload, using defaults");
-            return resetToDefaultsAndPersist(
-                *this,
-                pages,
-                midiSync,
-                "[CoreSettings] Failed to persist defaults after payload read error"
-            );
-        }
-
-        OC_LOG_INFO("[CoreSettings] Loaded page {}", pages.activePage);
-        return true;
+    if (version != StorageLayout::VERSION) {
+        OC_LOG_WARN("[CoreSettings] Version mismatch ({} vs {}), resetting defaults",
+                    version,
+                    StorageLayout::VERSION);
+        return resetToDefaultsAndPersist(
+            *this,
+            midiSync,
+            "[CoreSettings] Failed to persist defaults after version mismatch"
+        );
     }
 
-    if (version == 2) {
-        if (!loadPages_(pages) || !loadMidiSync_(midiSync)) {
-            OC_LOG_WARN("[CoreSettings] Failed to migrate settings v2, using defaults");
-            pages.initDefaults();
-            midiSync.reset();
-            return false;
-        }
-        const auto status = saveAllStatus(pages, midiSync);
-        if (status != PersistenceWriteStatus::OK) {
-            OC_LOG_WARN("[CoreSettings] Failed to migrate settings v2, using defaults");
-            pages.initDefaults();
-            midiSync.reset();
-            return false;
-        }
-        OC_LOG_INFO("[CoreSettings] Migrated settings v2 -> v{}", StorageLayout::VERSION);
-        return true;
+    if (!loadMidiSync_(midiSync)) {
+        OC_LOG_WARN("[CoreSettings] Failed to read payload, using defaults");
+        return resetToDefaultsAndPersist(
+            *this,
+            midiSync,
+            "[CoreSettings] Failed to persist defaults after payload read error"
+        );
     }
 
-    if (version == 1) {
-        if (!loadPages_(pages)) {
-            OC_LOG_WARN("[CoreSettings] Failed to read v1 pages, using defaults");
-            pages.initDefaults();
-            midiSync.reset();
-            return false;
-        }
-        midiSync.reset();
-        const auto status = saveAllStatus(pages, midiSync);
-        if (status != PersistenceWriteStatus::OK) {
-            OC_LOG_WARN("[CoreSettings] Failed to migrate settings v1, using defaults");
-            pages.initDefaults();
-            midiSync.reset();
-            return false;
-        }
-        OC_LOG_INFO("[CoreSettings] Migrated settings v1 -> v{}", StorageLayout::VERSION);
-        return true;
-    }
-
-    OC_LOG_WARN("[CoreSettings] Version mismatch ({} vs {}), using defaults",
-                version,
-                StorageLayout::VERSION);
-    pages.initDefaults();
-    midiSync.reset();
-    const auto status = saveAllStatus(pages, midiSync);
-    if (status != PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreSettings] Failed to persist defaults after version mismatch: {}",
-                    core::persistence::persistenceWriteStatusLabel(status));
-    }
-    return false;
+    return true;
 }
 
-FLASHMEM bool CoreSettings::saveAll(const macro::MacroPagesState& pages, const MidiSyncState& midiSync) {
-    return saveAllStatus(pages, midiSync) == PersistenceWriteStatus::OK;
+FLASHMEM bool CoreSettings::saveAll(const MidiSyncState& midiSync) {
+    return saveAllStatus(midiSync) == PersistenceWriteStatus::OK;
 }
 
-FLASHMEM PersistenceWriteStatus CoreSettings::saveAllStatus(const macro::MacroPagesState& pages,
-                                                   const MidiSyncState& midiSync) {
-    const auto status = core_settings::saveAll(backend_, pages, midiSync);
+FLASHMEM PersistenceWriteStatus CoreSettings::saveAllStatus(const MidiSyncState& midiSync) {
+    const auto status = core_settings::saveAll(backend_, midiSync);
     if (status != PersistenceWriteStatus::OK) return status;
     OC_LOG_DEBUG("[CoreSettings] Saved all");
     return PersistenceWriteStatus::OK;
@@ -217,74 +169,10 @@ FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutRightSta
 }
 
 FLASHMEM bool CoreSettings::loadDataManagerShortcuts(uint8_t& macroLeft,
-                                            uint8_t& macroRight,
-                                            uint8_t& seqLeft,
-                                            uint8_t& seqRight) {
+                                                     uint8_t& macroRight,
+                                                     uint8_t& seqLeft,
+                                                     uint8_t& seqRight) {
     return core_settings::loadDataManagerShortcuts(backend_, macroLeft, macroRight, seqLeft, seqRight);
-}
-
-FLASHMEM bool CoreSettings::saveActivePage(uint8_t pageIndex) {
-    return saveActivePageStatus(pageIndex) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveActivePageStatus(uint8_t pageIndex) {
-    const auto status = writeExactStatus_(StorageLayout::ADDR_ACTIVE_PAGE, &pageIndex, 1);
-    if (status != PersistenceWriteStatus::OK) return status;
-    OC_LOG_DEBUG("[CoreSettings] Saved active page: {}", pageIndex);
-    return PersistenceWriteStatus::OK;
-}
-
-FLASHMEM bool CoreSettings::savePage(uint8_t pageIndex, const macro::MacroPageData& page) {
-    return savePageStatus(pageIndex, page) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::savePageStatus(uint8_t pageIndex,
-                                                    const macro::MacroPageData& page) {
-    const auto status = writeExactStatus_(StorageLayout::pageOffset(pageIndex),
-                                          reinterpret_cast<const uint8_t*>(&page),
-                                          StorageLayout::MACRO_PAGE_SIZE);
-    if (status != PersistenceWriteStatus::OK) return status;
-    OC_LOG_DEBUG("[CoreSettings] Saved page {}", pageIndex);
-    return PersistenceWriteStatus::OK;
-}
-
-FLASHMEM bool CoreSettings::saveValue(uint8_t pageIndex, uint8_t macroIndex, float value) {
-    return saveValueStatus(pageIndex, macroIndex, value) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveValueStatus(uint8_t pageIndex,
-                                                     uint8_t macroIndex,
-                                                     float value) {
-    return writeExactStatus_(StorageLayout::valueOffset(pageIndex, macroIndex),
-                             reinterpret_cast<const uint8_t*>(&value),
-                             sizeof(float));
-}
-
-FLASHMEM bool CoreSettings::saveCC(uint8_t pageIndex, uint8_t macroIndex, uint8_t cc) {
-    return saveCCStatus(pageIndex, macroIndex, cc) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveCCStatus(uint8_t pageIndex,
-                                                  uint8_t macroIndex,
-                                                  uint8_t cc) {
-    const auto status = writeExactStatus_(StorageLayout::ccOffset(pageIndex, macroIndex), &cc, 1);
-    if (status != PersistenceWriteStatus::OK) return status;
-    OC_LOG_DEBUG("[CoreSettings] Saved CC[{}][{}] = {}", pageIndex, macroIndex, cc);
-    return PersistenceWriteStatus::OK;
-}
-
-FLASHMEM bool CoreSettings::saveChannel(uint8_t pageIndex, uint8_t macroIndex, uint8_t channel) {
-    return saveChannelStatus(pageIndex, macroIndex, channel) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveChannelStatus(uint8_t pageIndex,
-                                                       uint8_t macroIndex,
-                                                       uint8_t channel) {
-    const auto status =
-        writeExactStatus_(StorageLayout::channelOffset(pageIndex, macroIndex), &channel, 1);
-    if (status != PersistenceWriteStatus::OK) return status;
-    OC_LOG_DEBUG("[CoreSettings] Saved CH[{}][{}] = {}", pageIndex, macroIndex, channel);
-    return PersistenceWriteStatus::OK;
 }
 
 FLASHMEM bool CoreSettings::commit() {
@@ -300,7 +188,7 @@ FLASHMEM bool CoreSettings::factoryReset() {
 }
 
 FLASHMEM PersistenceWriteStatus CoreSettings::factoryResetStatus() {
-    if (!backend_.erase(0, StorageLayout::ADDR_PAGES + macro::PAGE_COUNT * StorageLayout::MACRO_PAGE_SIZE)) {
+    if (!backend_.erase(0, StorageLayout::STORAGE_END)) {
         return PersistenceWriteStatus::ERASE_FAILED;
     }
     const auto commitWriteStatus = commitStatus();
@@ -318,8 +206,8 @@ FLASHMEM bool CoreSettings::writeExact_(uint32_t address, const uint8_t* buffer,
 }
 
 FLASHMEM PersistenceWriteStatus CoreSettings::writeExactStatus_(uint32_t address,
-                                                       const uint8_t* buffer,
-                                                       size_t size) {
+                                                                const uint8_t* buffer,
+                                                                size_t size) {
     return core_settings::writeExactStatus(backend_, address, buffer, size);
 }
 
@@ -328,7 +216,7 @@ FLASHMEM bool CoreSettings::saveDataManagerShortcut_(uint32_t address, uint8_t c
 }
 
 FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerShortcutStatus_(uint32_t address,
-                                                                    uint8_t command) {
+                                                                             uint8_t command) {
     return writeExactStatus_(address, reinterpret_cast<const uint8_t*>(&command), 1);
 }
 
@@ -338,10 +226,6 @@ FLASHMEM bool CoreSettings::writeDefaultShortcuts_() {
 
 FLASHMEM PersistenceWriteStatus CoreSettings::writeDefaultShortcutsStatus_() {
     return core_settings::writeDefaultShortcuts(backend_);
-}
-
-FLASHMEM bool CoreSettings::loadPages_(macro::MacroPagesState& pages) {
-    return core_settings::loadPages(backend_, pages);
 }
 
 FLASHMEM bool CoreSettings::loadMidiSync_(MidiSyncState& midiSync) {

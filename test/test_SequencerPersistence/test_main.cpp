@@ -4,12 +4,14 @@
 #include <iostream>
 #include <vector>
 
+#include "../../src/persistence/PersistenceSlotFileStore.hpp"
 #include "../../src/persistence/SequencerPersistence.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/MemoryStorage.hpp"
 
 namespace {
 using test_support::MemoryStorage;
+using oc::note::sequencer::StepBitMask128;
 
 #pragma pack(push, 1)
 struct SlotFileHeaderRaw {
@@ -50,7 +52,7 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
     sequencer.length.set(length);
     sequencer.stepsPerBeat.set(stepsPerBeat);
     sequencer.midiChannel.set(midiChannel);
-    sequencer.enabledMask.set(0);
+    sequencer.enabledMask.set({});
 
     sequencer.setStepDataAt(0, 60, 110, 95);
     sequencer.setStepDataAt(3, 72, 90, 60);
@@ -62,6 +64,13 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
     sequencer.toggle(0);
     sequencer.toggle(3);
     sequencer.toggle(7);
+
+    if (length > 64) {
+        const uint8_t lastStep = static_cast<uint8_t>(length - 1);
+        sequencer.setStepDataAt(lastStep, 50, 77, 33);
+        sequencer.setStepProbabilityAt(lastStep, 88);
+        sequencer.toggle(lastStep);
+    }
 
     sequencer.focusedStep.set(focusedStep);
     sequencer.page.set(sequencer.pageForStep(focusedStep));
@@ -99,6 +108,15 @@ void assertPatternEquals(const core::state::sequencer::SequencerState& sequencer
     assert(sequencer.velocity[7] == 127);
     assert(sequencer.gate[7] == 120);
     assert(sequencer.probability[7] == 25);
+
+    if (expectedLength > 64) {
+        const uint8_t lastStep = static_cast<uint8_t>(expectedLength - 1);
+        assert(sequencer.isEnabled(lastStep));
+        assert(sequencer.note[lastStep] == 50);
+        assert(sequencer.velocity[lastStep] == 77);
+        assert(sequencer.gate[lastStep] == 33);
+        assert(sequencer.probability[lastStep] == 88);
+    }
 }
 
 void test_workspace_roundtrip() {
@@ -114,7 +132,7 @@ void test_workspace_roundtrip() {
 
     core::state::sequencer::SequencerState source;
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 16, 4, 2, 9, core::state::sequencer::StepProperty::VELOCITY);
+    configurePattern(source, 96, 4, 2, 73, core::state::sequencer::StepProperty::VELOCITY);
     prepareTrackBank(sourceTrackBank, source);
     assert(persistence.saveWorkspace(sourceTrackBank, source));
 
@@ -124,9 +142,9 @@ void test_workspace_roundtrip() {
     loadedTrackBank.reset();
     assert(persistence.loadWorkspace(loadedTrackBank, loaded));
 
-    assertPatternEquals(loaded, 16, 4, 2);
-    assert(loaded.focusedStep.get() == 9);
-    assert(loaded.page.get() == loaded.pageForStep(9));
+    assertPatternEquals(loaded, 96, 4, 2);
+    assert(loaded.focusedStep.get() == 73);
+    assert(loaded.page.get() == loaded.pageForStep(73));
     assert(loaded.activeStepProperty.get() == core::state::sequencer::StepProperty::VELOCITY);
 
     std::cout << "[PASS] test_workspace_roundtrip\n";
@@ -151,7 +169,7 @@ void test_workspace_load_latest_after_multiple_saves() {
 
     core::state::sequencer::SequencerState second;
     core::state::sequencer::SequencerTrackBankState secondTrackBank;
-    configurePattern(second, 32, 8, 7, 12, core::state::sequencer::StepProperty::GATE);
+    configurePattern(second, 96, 8, 7, 70, core::state::sequencer::StepProperty::GATE);
     prepareTrackBank(secondTrackBank, second);
     assert(persistence.saveWorkspace(secondTrackBank, second));
 
@@ -161,8 +179,8 @@ void test_workspace_load_latest_after_multiple_saves() {
     loadedTrackBank.reset();
     assert(persistence.loadWorkspace(loadedTrackBank, loaded));
 
-    assertPatternEquals(loaded, 32, 8, 7);
-    assert(loaded.focusedStep.get() == 12);
+    assertPatternEquals(loaded, 96, 8, 7);
+    assert(loaded.focusedStep.get() == 70);
     assert(loaded.activeStepProperty.get() == core::state::sequencer::StepProperty::GATE);
 
     std::cout << "[PASS] test_workspace_load_latest_after_multiple_saves\n";
@@ -187,7 +205,7 @@ void test_workspace_falls_back_when_latest_slot_is_corrupted() {
 
     core::state::sequencer::SequencerState second;
     core::state::sequencer::SequencerTrackBankState secondTrackBank;
-    configurePattern(second, 32, 8, 7, 12, core::state::sequencer::StepProperty::GATE);
+    configurePattern(second, 96, 8, 7, 70, core::state::sequencer::StepProperty::GATE);
     prepareTrackBank(secondTrackBank, second);
     assert(persistence.saveWorkspace(secondTrackBank, second));
 
@@ -226,7 +244,9 @@ void test_workspace_masks_enabled_bits_outside_length() {
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
     source.reset();
     source.length.set(8);
-    source.enabledMask.set((1ULL << 0) | (1ULL << 7) | (1ULL << 9) | (1ULL << 15));
+    source.enabledMask.set(StepBitMask128::fromLower64(
+        (1ULL << 0) | (1ULL << 7) | (1ULL << 9) | (1ULL << 15)
+    ));
 
     prepareTrackBank(sourceTrackBank, source);
     assert(persistence.saveWorkspace(sourceTrackBank, source));
@@ -239,7 +259,7 @@ void test_workspace_masks_enabled_bits_outside_length() {
 
     const uint64_t expectedMask = (1ULL << 0) | (1ULL << 7);
     assert(loaded.length.get() == 8);
-    assert(loaded.enabledMask.get() == expectedMask);
+    assert(loaded.enabledMask.get().lower64() == expectedMask);
 
     std::cout << "[PASS] test_workspace_masks_enabled_bits_outside_length\n";
 }
@@ -256,14 +276,14 @@ void test_pattern_library_save_load_erase() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 24, 4, 5, 6, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 104, 4, 5, 95, core::state::sequencer::StepProperty::NOTE);
     assert(persistence.savePatternSlot(5, source));
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
     const auto status = persistence.loadPatternSlot(5, loaded);
     assert(status == core::persistence::SlotLoadStatus::OK);
-    assertPatternEquals(loaded, 24, 4, 5);
+    assertPatternEquals(loaded, 104, 4, 5);
 
     assert(persistence.erasePatternSlot(5));
     const auto emptyStatus = persistence.loadPatternSlot(5, loaded);
@@ -286,7 +306,9 @@ void test_pattern_library_masks_enabled_bits_outside_length() {
     core::state::sequencer::SequencerState source;
     source.reset();
     source.length.set(16);
-    source.enabledMask.set((1ULL << 0) | (1ULL << 5) | (1ULL << 20) | (1ULL << 63));
+    source.enabledMask.set(StepBitMask128::fromLower64(
+        (1ULL << 0) | (1ULL << 5) | (1ULL << 20) | (1ULL << 63)
+    ));
 
     assert(persistence.savePatternSlot(9, source));
 
@@ -297,7 +319,7 @@ void test_pattern_library_masks_enabled_bits_outside_length() {
 
     const uint64_t expectedMask = (1ULL << 0) | (1ULL << 5);
     assert(loaded.length.get() == 16);
-    assert(loaded.enabledMask.get() == expectedMask);
+    assert(loaded.enabledMask.get().lower64() == expectedMask);
 
     std::cout << "[PASS] test_pattern_library_masks_enabled_bits_outside_length\n";
 }
@@ -315,7 +337,7 @@ void test_set_library_save_load_erase() {
 
     core::state::sequencer::SequencerState source;
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 12, 2, 9, 4, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 88, 2, 9, 65, core::state::sequencer::StepProperty::NOTE);
     prepareTrackBank(sourceTrackBank, source);
     assert(persistence.saveSetSlot(3, sourceTrackBank, source));
 
@@ -325,7 +347,7 @@ void test_set_library_save_load_erase() {
     loadedTrackBank.reset();
     const auto status = persistence.loadSetSlot(3, loadedTrackBank, loaded);
     assert(status == core::persistence::SlotLoadStatus::OK);
-    assertPatternEquals(loaded, 12, 2, 9);
+    assertPatternEquals(loaded, 88, 2, 9);
 
     assert(persistence.eraseSetSlot(3));
     const auto emptyStatus = persistence.loadSetSlot(3, loadedTrackBank, loaded);
@@ -414,7 +436,6 @@ int main() {
     test_set_library_save_load_erase();
     test_library_bounds();
     test_write_status_reports_commit_failure_and_out_of_range();
-
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
     std::cout << "==============================================\n";

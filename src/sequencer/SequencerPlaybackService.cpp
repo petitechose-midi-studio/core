@@ -80,7 +80,7 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
         if (!trackEngine) continue;
         trackEngine->update(
             tick,
-            (runtime_enabled_mask_ & static_cast<uint8_t>(1U << i)) != 0
+            (runtime_enabled_mask_ & static_cast<uint16_t>(1U << i)) != 0
         );
     }
 

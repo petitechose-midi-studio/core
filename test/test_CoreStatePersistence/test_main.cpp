@@ -17,7 +17,7 @@ namespace {
 using test_support::CoreStorages;
 using test_support::drainNotifications;
 
-void test_workspace_survives_legacy_corruption() {
+void test_workspace_survives_settings_storage_corruption() {
     CoreStorages storage;
 
     {
@@ -33,7 +33,7 @@ void test_workspace_survives_legacy_corruption() {
         state.flush();
     }
 
-    // Corrupt legacy settings storage only.
+    // Corrupt core settings storage only.
     storage.settings.erase(0, storage.settings.capacity());
 
     core::state::CoreState restored(storage.settings,
@@ -47,7 +47,7 @@ void test_workspace_survives_legacy_corruption() {
 
     drainNotifications();
 
-    std::cout << "[PASS] test_workspace_survives_legacy_corruption\n";
+    std::cout << "[PASS] test_workspace_survives_settings_storage_corruption\n";
 }
 
 void test_macro_library_roundtrip_and_erase() {
@@ -339,7 +339,7 @@ void test_sequencer_workspace_and_library_roundtrip() {
         state.sequencer.length.set(8);
         state.sequencer.stepsPerBeat.set(2);
         state.sequencer.midiChannel.set(0);
-        state.sequencer.enabledMask.set(0);
+        state.sequencer.enabledMask.set({});
         state.sequencer.setStepDataAt(0, 40, 40, 40);
         oc::state::NotificationQueue::instance().flush();
         state.flush();
@@ -374,7 +374,7 @@ void test_sequencer_workspace_and_library_roundtrip() {
         assert(erasedSetStatus == core::persistence::SlotLoadStatus::EMPTY);
     }
 
-    // Corrupt legacy settings storage only and verify sequencer workspace restores.
+    // Corrupt core settings storage only and verify sequencer workspace restores.
     storage.settings.erase(0, storage.settings.capacity());
 
     core::state::CoreState restored(storage.settings,
@@ -450,7 +450,7 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     state.sequencer.length.set(8);
     state.sequencer.stepsPerBeat.set(2);
     state.sequencer.midiChannel.set(1);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.toggle(0);
     oc::state::NotificationQueue::instance().flush();
@@ -461,7 +461,7 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     state.sequencer.length.set(16);
     state.sequencer.stepsPerBeat.set(4);
     state.sequencer.midiChannel.set(6);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 40, 55, 30);
     state.sequencer.toggle(0);
 
@@ -526,14 +526,14 @@ void test_direct_load_clears_stale_pending_quantized_apply() {
 
     // Slot 1: queued while playing.
     state.sequencer.length.set(8);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.toggle(0);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 1));
 
     // Slot 2: loaded explicitly after transport stops.
     state.sequencer.length.set(12);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 72, 88, 44);
     state.sequencer.toggle(0);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 2));
@@ -578,7 +578,7 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     state.sequencer.length.set(8);
     state.sequencer.stepsPerBeat.set(2);
     state.sequencer.midiChannel.set(1);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.toggle(0);
     state.sequencer.setStepDataAt(3, 65, 99, 70);
@@ -589,7 +589,7 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     state.sequencer.length.set(16);
     state.sequencer.stepsPerBeat.set(4);
     state.sequencer.midiChannel.set(6);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 44, 55, 66);
     state.sequencer.toggle(1);
 
@@ -615,9 +615,9 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     assert(state.sequencer.velocity[3] == 99);
     assert(state.sequencer.gate[3] == 70);
 
-    assert((state.sequencer.enabledMask.get() & (1ULL << 0)) != 0);
-    assert((state.sequencer.enabledMask.get() & (1ULL << 1)) != 0);
-    assert((state.sequencer.enabledMask.get() & (1ULL << 3)) != 0);
+    assert(state.sequencer.enabledMask.get().test(0));
+    assert(state.sequencer.enabledMask.get().test(1));
+    assert(state.sequencer.enabledMask.get().test(3));
 
     drainNotifications();
 
@@ -637,14 +637,14 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
 
     // Prepare incoming set with only step 2 enabled.
     state.sequencer.length.set(8);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(2, 72, 110, 45);
     state.sequencer.toggle(2);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 6));
 
     // Live state before queued merge.
     state.sequencer.length.set(16);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 48, 64, 55);
     state.sequencer.toggle(1);
     state.sequencer.playheadStep.set(7);
@@ -656,7 +656,7 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
 
     // Same-step update must stay deferred.
     state.update();
-    assert(state.sequencer.note[2] != 72 || (state.sequencer.enabledMask.get() & (1ULL << 2)) == 0);
+    assert(state.sequencer.note[2] != 72 || !state.sequencer.enabledMask.get().test(2));
 
     // Next step triggers queued merge.
     state.sequencer.playheadStep.set(8);
@@ -665,8 +665,8 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
     assert(state.sequencer.note[2] == 72);
     assert(state.sequencer.velocity[2] == 110);
     assert(state.sequencer.gate[2] == 45);
-    assert((state.sequencer.enabledMask.get() & (1ULL << 1)) != 0);
-    assert((state.sequencer.enabledMask.get() & (1ULL << 2)) != 0);
+    assert(state.sequencer.enabledMask.get().test(1));
+    assert(state.sequencer.enabledMask.get().test(2));
 
     drainNotifications();
 
@@ -680,7 +680,7 @@ int main() {
     std::cout << "CoreState persistence tests\n";
     std::cout << "==============================================\n\n";
 
-    test_workspace_survives_legacy_corruption();
+    test_workspace_survives_settings_storage_corruption();
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_snapshots_runtime_values_without_manual_flush();
     test_macro_config_changes_persist_immediately_and_bump_revision();

@@ -194,20 +194,21 @@ void test_slow_release_closes_macro_edit_immediately() {
 void test_macro_edit_live_and_selector_flows_apply_immediately() {
     MacroEditHarness h;
 
-    h.state.pages.pages[2].channel[0] = 5;
-    h.state.pages.pages[2].cc[0] = 67;
-    h.state.pages.pages[2].channel[3] = 9;
-    h.state.pages.pages[2].cc[3] = 99;
-    std::strncpy(h.state.pages.pages[2].name, "Mix Bus", core::state::macro::PAGE_NAME_SIZE - 1);
-    h.state.pages.pages[2].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
+    h.state.pages.setActiveTrackChannel(5);
+    h.state.pages.activeTrackData().pages[2].cc[0] = 67;
+    h.state.pages.activeTrackData().pages[2].cc[3] = 99;
+    std::strncpy(h.state.pages.activeTrackData().pages[2].name,
+                 "Mix Bus",
+                 core::state::macro::PAGE_NAME_SIZE - 1);
+    h.state.pages.activeTrackData().pages[2].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
 
     openMacroEdit(
         h,
         0,
         Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 200U
     );
-    assert(h.state.macroEdit.tempChannel.get() == 0);
-    assert(h.state.macroEdit.tempCC.get() == 1);
+    assert(h.state.macroEdit.tempChannel.get() == 5);
+    assert(h.state.macroEdit.tempCC.get() == 0);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.state.macroEdit.tempChannel.get() == 15);
@@ -244,7 +245,7 @@ void test_macro_edit_live_and_selector_flows_apply_immediately() {
     assert(h.state.pages.activePage == 2);
     assert(std::strcmp(h.state.statusBar.pageName.get(), "Mix Bus") == 0);
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
-    assert(h.state.macroEdit.tempChannel.get() == 5);
+    assert(h.state.macroEdit.tempChannel.get() == 15);
     assert(h.state.macroEdit.tempCC.get() == 67);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
@@ -260,7 +261,7 @@ void test_macro_edit_live_and_selector_flows_apply_immediately() {
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
     assert(h.state.macroEdit.editingIndex.get() == 3);
-    assert(h.state.macroEdit.tempChannel.get() == 9);
+    assert(h.state.macroEdit.tempChannel.get() == 15);
     assert(h.state.macroEdit.tempCC.get() == 99);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 

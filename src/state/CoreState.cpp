@@ -35,7 +35,24 @@ core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
     return core::app::makeExtmemUnique<UiSystemState>();
 }
 
+core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
+    return core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
+}
+
 }  // namespace
+
+SequencerDomainState::SequencerDomainState(oc::interface::IStorage& workspaceStorage,
+                                           oc::interface::IStorage& patternLibraryStorage,
+                                           oc::interface::IStorage& setLibraryStorage)
+    : editor{}
+    , tracks(createSequencerTrackBankState())
+    , persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage)
+    , pendingApply(nullptr) {
+    if (!tracks) {
+        OC_LOG_ERROR("[CoreState] Failed to allocate sequencer track bank");
+        while (true) {}
+    }
+}
 
 void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply* ptr) const noexcept {
     if (!ptr) return;
@@ -59,12 +76,12 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
                        sequencerSetLibraryStorage)
     , systemUi_(createUiSystemState())
     , settings(settingsStorage)
-    , macros(macroDomain_.runtime)
-    , pages(macroDomain_.pages)
+    , macros(*macroDomain_.runtime)
+    , pages(*macroDomain_.pages)
     , configRevision(macroDomain_.configRevision)
     , macroPersistence(macroDomain_.persistence)
     , sequencer(sequencerDomain_.editor)
-    , sequencerTracks(sequencerDomain_.tracks)
+    , sequencerTracks(*sequencerDomain_.tracks)
     , sequencerPersistence(sequencerDomain_.persistence)
     , overlays(systemUi_->overlays)
     , activeView(systemUi_->activeView)
@@ -75,6 +92,14 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , dataManager(systemUi_->dataManager)
     , macroEdit(systemUi_->macroEdit)
     , macroUi(systemUi_->macroUi) {
+    if (!macroDomain_.runtime) {
+        OC_LOG_ERROR("[CoreState] Failed to allocate macro runtime state");
+        while (true) {}
+    }
+    if (!macroDomain_.pages) {
+        OC_LOG_ERROR("[CoreState] Failed to allocate macro pages state");
+        while (true) {}
+    }
     if (!systemUi_) {
         OC_LOG_ERROR("[CoreState] Failed to allocate UI system state");
         while (true) {}

@@ -44,10 +44,11 @@ void configureState(core::state::macro::MacroPagesState& pages,
                     uint8_t cc,
                     float value) {
     pages.initDefaults();
-    pages.activePage = activePage;
-    pages.pages[activePage].cc[0] = cc;
-    pages.pages[activePage].channel[0] = static_cast<uint8_t>(activePage % 16);
-    pages.pages[activePage].values[0] = value;
+    pages.setActiveTrack(0);
+    pages.setActivePage(activePage);
+    auto& page = pages.pageData(0, activePage);
+    page.cc[0] = cc;
+    page.values[0] = value;
     pages.updateActiveConfigs();
 }
 
@@ -55,9 +56,11 @@ void assertStateEquals(const core::state::macro::MacroPagesState& pages,
                        uint8_t expectedPage,
                        uint8_t expectedCc,
                        float expectedValue) {
-    assert(pages.activePage == expectedPage);
-    assert(pages.pages[expectedPage].cc[0] == expectedCc);
-    assert(pages.pages[expectedPage].values[0] == expectedValue);
+    assert(pages.activeTrack == 0);
+    assert(pages.activeTrackData().activePage == expectedPage);
+    const auto& page = pages.pageData(0, expectedPage);
+    assert(page.cc[0] == expectedCc);
+    assert(page.values[0] == expectedValue);
 }
 
 void test_workspace_roundtrip() {
@@ -124,9 +127,11 @@ void test_workspace_falls_back_when_latest_slot_is_corrupted() {
     assert(persistence.saveWorkspace(second));
 
     // Two-slot workspace journal: second save lands in slot 1.
+    constexpr uint32_t ACTIVE_PAGE_OFFSET = 5;
     const uint32_t latestPayloadAddress = workspaceSlotPayloadAddress(workspaceStorage, 1);
-    const uint8_t badByte = 0x00;
-    const size_t written = workspaceStorage.write(latestPayloadAddress, &badByte, 1);
+    const uint8_t badByte = 0xFF;
+    const size_t written =
+        workspaceStorage.write(latestPayloadAddress + ACTIVE_PAGE_OFFSET, &badByte, 1);
     assert(written == 1);
 
     core::state::macro::MacroPagesState loaded;

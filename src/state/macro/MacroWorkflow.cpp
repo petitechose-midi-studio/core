@@ -53,6 +53,11 @@ void MacroWorkflow::syncRuntimeFromActivePage(CoreState& state) {
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
+void MacroWorkflow::syncRuntimeFromActiveTrack(CoreState& state, uint8_t trackIndex) {
+    state.pages.setActiveTrack(trackIndex);
+    syncRuntimeFromActivePage(state);
+}
+
 void MacroWorkflow::syncActivePageValuesFromRuntime(MacroPagesState& pages,
                                                     const core::state::MacroState& macros) {
     auto& page = pages.activePageData();
@@ -80,18 +85,35 @@ void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     switchToPage(makeStateRefs(state), makeHooks(state), pageIndex);
 }
 
+void MacroWorkflow::switchToTrack(StateRefs state, Hooks hooks, uint8_t trackIndex) {
+    if (trackIndex >= TRACK_COUNT) return;
+
+    hooks.flushPendingRuntime();
+    state.pages.setActiveTrack(trackIndex);
+    hooks.persistWorkspaceNow();
+    state.configRevision.set(state.configRevision.get() + 1);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    syncRuntimeFromActivePage(state.macros, state.pages);
+}
+
+void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex) {
+    switchToTrack(makeStateRefs(state), makeHooks(state), trackIndex);
+}
+
 bool MacroWorkflow::setConfig(StateRefs state, Hooks hooks, uint8_t index, uint8_t channel, uint8_t cc) {
     if (index >= MACRO_COUNT) return false;
     if (channel > 15 || cc > 127) return false;
 
     auto& page = state.pages.activePageData();
-    const bool channelChanged = page.channel[index] != channel;
+    const bool channelChanged = state.pages.activeTrackChannel() != channel;
     const bool ccChanged = page.cc[index] != cc;
     if (!channelChanged && !ccChanged) {
         return false;
     }
 
-    page.channel[index] = channel;
+    if (channelChanged) {
+        state.pages.setActiveTrackChannel(channel);
+    }
     page.cc[index] = cc;
     state.pages.updateActiveConfigs();
     state.configRevision.set(state.configRevision.get() + 1);
@@ -101,6 +123,29 @@ bool MacroWorkflow::setConfig(StateRefs state, Hooks hooks, uint8_t index, uint8
 
 bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc) {
     return setConfig(makeStateRefs(state), makeHooks(state), index, channel, cc);
+}
+
+bool MacroWorkflow::setConfigCc(StateRefs state, Hooks hooks, uint8_t index, uint8_t cc) {
+    if (index >= MACRO_COUNT) return false;
+    return setConfig(state, hooks, index, state.pages.activeTrackChannel(), cc);
+}
+
+bool MacroWorkflow::setConfigCc(CoreState& state, uint8_t index, uint8_t cc) {
+    return setConfigCc(makeStateRefs(state), makeHooks(state), index, cc);
+}
+
+bool MacroWorkflow::setTrackChannel(StateRefs state, Hooks hooks, uint8_t channel) {
+    if (channel > 15) return false;
+    if (state.pages.activeTrackChannel() == channel) return false;
+
+    state.pages.setActiveTrackChannel(channel);
+    state.configRevision.set(state.configRevision.get() + 1);
+    hooks.persistWorkspaceNow();
+    return true;
+}
+
+bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) {
+    return setTrackChannel(makeStateRefs(state), makeHooks(state), channel);
 }
 
 void MacroWorkflow::setRuntimeValue(core::state::MacroState& macros, uint8_t index, float value) {

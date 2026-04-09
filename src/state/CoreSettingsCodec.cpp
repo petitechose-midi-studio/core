@@ -42,88 +42,61 @@ PersistenceWriteStatus writeDefaultShortcuts(oc::interface::IStorage& backend) {
     return writeExactStatus(backend, layout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
 }
 
-PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
-                               const macro::MacroPagesState& pages,
-                               const MidiSyncState& midiSync) {
+PersistenceWriteStatus saveAll(oc::interface::IStorage& backend, const MidiSyncState& midiSync) {
     const uint32_t magic = layout::MAGIC;
     const uint8_t version = layout::VERSION;
-    const uint8_t activePage = pages.activePage;
     const uint8_t mode = static_cast<uint8_t>(midiSync.mode.get());
     const uint8_t followTransport = midiSync.followTransport.get() ? 1 : 0;
     const uint16_t fallbackMs = midiSync.autoFallbackMs.get();
     const uint8_t lockClocks = midiSync.autoLockClockCount.get();
 
-    const auto headerStatus =
-        writeExactStatus(backend, layout::ADDR_MAGIC, reinterpret_cast<const uint8_t*>(&magic), sizeof(magic));
+    const auto headerStatus = writeExactStatus(
+        backend,
+        layout::ADDR_MAGIC,
+        reinterpret_cast<const uint8_t*>(&magic),
+        sizeof(magic)
+    );
     if (headerStatus != PersistenceWriteStatus::OK) return headerStatus;
 
     const auto versionStatus = writeExactStatus(backend, layout::ADDR_VERSION, &version, 1);
     if (versionStatus != PersistenceWriteStatus::OK) return versionStatus;
 
-    const auto activePageStatus = writeExactStatus(backend, layout::ADDR_ACTIVE_PAGE, &activePage, 1);
-    if (activePageStatus != PersistenceWriteStatus::OK) return activePageStatus;
-
-    const auto modeStatus =
-        writeExactStatus(backend, layout::ADDR_SYNC_MODE, reinterpret_cast<const uint8_t*>(&mode), 1);
+    const auto modeStatus = writeExactStatus(
+        backend,
+        layout::ADDR_SYNC_MODE,
+        reinterpret_cast<const uint8_t*>(&mode),
+        1
+    );
     if (modeStatus != PersistenceWriteStatus::OK) return modeStatus;
 
-    const auto followStatus =
-        writeExactStatus(backend,
-                         layout::ADDR_SYNC_FOLLOW_TRANSPORT,
-                         reinterpret_cast<const uint8_t*>(&followTransport),
-                         1);
+    const auto followStatus = writeExactStatus(
+        backend,
+        layout::ADDR_SYNC_FOLLOW_TRANSPORT,
+        reinterpret_cast<const uint8_t*>(&followTransport),
+        1
+    );
     if (followStatus != PersistenceWriteStatus::OK) return followStatus;
 
-    const auto fallbackStatus =
-        writeExactStatus(backend,
-                         layout::ADDR_SYNC_AUTO_FALLBACK_MS,
-                         reinterpret_cast<const uint8_t*>(&fallbackMs),
-                         sizeof(fallbackMs));
+    const auto fallbackStatus = writeExactStatus(
+        backend,
+        layout::ADDR_SYNC_AUTO_FALLBACK_MS,
+        reinterpret_cast<const uint8_t*>(&fallbackMs),
+        sizeof(fallbackMs)
+    );
     if (fallbackStatus != PersistenceWriteStatus::OK) return fallbackStatus;
 
-    const auto lockStatus =
-        writeExactStatus(backend,
-                         layout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
-                         reinterpret_cast<const uint8_t*>(&lockClocks),
-                         1);
+    const auto lockStatus = writeExactStatus(
+        backend,
+        layout::ADDR_SYNC_AUTO_LOCK_CLOCKS,
+        reinterpret_cast<const uint8_t*>(&lockClocks),
+        1
+    );
     if (lockStatus != PersistenceWriteStatus::OK) return lockStatus;
 
     const auto shortcutStatus = writeDefaultShortcuts(backend);
     if (shortcutStatus != PersistenceWriteStatus::OK) return shortcutStatus;
 
-    for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {
-        const auto pageStatus =
-            writeExactStatus(backend,
-                             layout::pageOffset(i),
-                             reinterpret_cast<const uint8_t*>(&pages.pages[i]),
-                             layout::MACRO_PAGE_SIZE);
-        if (pageStatus != PersistenceWriteStatus::OK) return pageStatus;
-    }
-
     return backend.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
-}
-
-bool loadPages(oc::interface::IStorage& backend, macro::MacroPagesState& pages) {
-    uint8_t activePage = 0;
-    if (!readExact(backend, layout::ADDR_ACTIVE_PAGE, &activePage, 1)) {
-        return false;
-    }
-    if (activePage >= macro::PAGE_COUNT) {
-        activePage = 0;
-    }
-
-    for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {
-        if (!readExact(backend,
-                       layout::pageOffset(i),
-                       reinterpret_cast<uint8_t*>(&pages.pages[i]),
-                       layout::MACRO_PAGE_SIZE)) {
-            return false;
-        }
-    }
-
-    pages.activePage = activePage;
-    pages.updateActiveConfigs();
-    return true;
 }
 
 bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midiSync) {
@@ -179,7 +152,7 @@ bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
     if (!readExact(backend, layout::ADDR_VERSION, &version, 1)) {
         return false;
     }
-    if (version < layout::VERSION) {
+    if (version != layout::VERSION) {
         return true;
     }
 

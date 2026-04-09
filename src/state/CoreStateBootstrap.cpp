@@ -146,7 +146,7 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
-    state.settings.load(state.pages, state.midiSync);
+    state.settings.load(state.midiSync);
     DataManagerWorkflow::loadShortcutsFromSettings(state);
     initializeMacroPersistence_(state);
     initializeSequencerPersistence_(state);

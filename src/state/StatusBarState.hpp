@@ -23,7 +23,7 @@ using oc::state::SignalLabel;
  * @brief State for TopBar and TransportBar
  */
 struct StatusBarState {
-    static constexpr uint8_t TRACK_COUNT = 8;
+    static constexpr uint8_t TRACK_COUNT = 16;
 
     // TopBar
     SignalLabel pageName;

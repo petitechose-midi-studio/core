@@ -4,6 +4,8 @@
 #include <cstdint>
 
 #include <oc/state/Signal.hpp>
+#include <oc/note/sequencer/StepSequencerState.hpp>
+#include <oc/note/sequencer/StepBitMask128.hpp>
 
 namespace core::state::sequencer {
 
@@ -70,10 +72,10 @@ struct SequencerStepPropertyInlineSelectorState {
 
 struct SequencerStepInlineFeedbackState {
     static constexpr uint32_t DISPLAY_HOLD_MS = 700;
-    static constexpr uint8_t MAX_STEPS = 64;
+    static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
 
     Signal<bool> visible{false};
-    Signal<uint64_t> touchedMask{0};
+    Signal<oc::note::sequencer::StepBitMask128> touchedMask{};
     Signal<StepProperty> property{StepProperty::NOTE};
 
     uint32_t hideAtMs[MAX_STEPS]{};
@@ -81,8 +83,8 @@ struct SequencerStepInlineFeedbackState {
     void show(uint8_t step, StepProperty stepProperty, uint32_t nowMs) {
         if (step >= MAX_STEPS) return;
 
-        uint64_t mask = touchedMask.get();
-        mask |= (1ULL << step);
+        auto mask = touchedMask.get();
+        mask.setBit(step, true);
         touchedMask.set(mask);
         property.set(stepProperty);
         hideAtMs[step] = nowMs + DISPLAY_HOLD_MS;
@@ -92,27 +94,26 @@ struct SequencerStepInlineFeedbackState {
     void update(uint32_t nowMs) {
         if (!visible.get()) return;
 
-        uint64_t nextMask = touchedMask.get();
-        if (nextMask == 0) {
+        auto nextMask = touchedMask.get();
+        if (!nextMask.any()) {
             visible.set(false);
             return;
         }
 
         for (uint8_t step = 0; step < MAX_STEPS; ++step) {
-            const uint64_t bit = (1ULL << step);
-            if ((nextMask & bit) == 0) continue;
+            if (!nextMask.test(step)) continue;
             if (nowMs < hideAtMs[step]) continue;
-            nextMask &= ~bit;
+            nextMask.setBit(step, false);
             hideAtMs[step] = 0;
         }
 
         touchedMask.set(nextMask);
-        visible.set(nextMask != 0);
+        visible.set(nextMask.any());
     }
 
     void reset() {
         visible.set(false);
-        touchedMask.set(0);
+        touchedMask.set({});
         property.set(StepProperty::NOTE);
         for (auto& value : hideAtMs) {
             value = 0;
@@ -134,11 +135,11 @@ struct SequencerPatternQuickControlsState {
 };
 
 struct SequencerRangeClipboard {
-    static constexpr uint8_t MAX_STEPS = 64;
+    static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
 
     bool valid = false;
     uint8_t count = 0;
-    uint64_t enabledMask = 0;
+    oc::note::sequencer::StepBitMask128 enabledMask{};
     std::array<uint8_t, MAX_STEPS> note{};
     std::array<uint8_t, MAX_STEPS> velocity{};
     std::array<uint16_t, MAX_STEPS> gate{};
@@ -148,12 +149,12 @@ struct SequencerRangeClipboard {
     void reset() {
         valid = false;
         count = 0;
-        enabledMask = 0;
+        enabledMask = {};
     }
 
     bool isEnabled(uint8_t index) const {
         if (index >= count) return false;
-        return (enabledMask & (1ULL << index)) != 0;
+        return enabledMask.test(index);
     }
 };
 

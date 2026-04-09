@@ -7,7 +7,6 @@
 #include "MidiSyncState.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
 #include "state/CoreSettingsLayout.hpp"
-#include "macro/MacroPagesState.hpp"
 
 namespace core::state::core_settings {
 
@@ -19,10 +18,8 @@ persistence::PersistenceWriteStatus writeExactStatus(oc::interface::IStorage& ba
                                                      size_t size);
 
 persistence::PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
-                                            const macro::MacroPagesState& pages,
                                             const MidiSyncState& midiSync);
 
-bool loadPages(oc::interface::IStorage& backend, macro::MacroPagesState& pages);
 bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midiSync);
 bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
                               uint8_t& macroLeft,

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::persistence::sequencer_codec {
 
 namespace {
@@ -13,10 +15,8 @@ uint8_t sanitizeLength(uint8_t length) {
     return length;
 }
 
-uint64_t lengthMask(uint8_t length) {
-    if (length == 0) return 0;
-    if (length >= state::sequencer::SequencerState::MAX_STEPS) return ~uint64_t{0};
-    return (uint64_t{1} << length) - uint64_t{1};
+oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length) {
+    return oc::note::sequencer::StepBitMask128::prefixMask(length);
 }
 
 uint8_t sanitizeStepsPerBeat(uint8_t spb) {
@@ -58,14 +58,16 @@ uint8_t sanitizeFocusedStep(uint8_t focused, uint8_t length) {
 
 }  // namespace
 
-void fillPatternPayload(const state::sequencer::SequencerState& source, PatternPayloadV1& out) {
+FLASHMEM void fillPatternPayload(const state::sequencer::SequencerState& source, PatternPayload& out) {
     const uint8_t length = sanitizeLength(source.length.get());
     out.length = length;
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
     out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
-    out.enabledMask = source.enabledMask.get() & lengthMask(length);
+    const auto mask = source.enabledMask.get() & lengthMask(length);
+    out.enabledMaskLow = mask.low;
+    out.enabledMaskHigh = mask.high;
 
-    for (uint8_t i = 0; i < state::sequencer::SequencerState::MAX_STEPS; ++i) {
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
         out.note[i] = sanitizeMidi7(source.note[i]);
         out.velocity[i] = sanitizeMidi7(source.velocity[i]);
         out.gate[i] = sanitizeGate(source.gate[i]);
@@ -74,14 +76,17 @@ void fillPatternPayload(const state::sequencer::SequencerState& source, PatternP
     }
 }
 
-void applyPatternPayload(const PatternPayloadV1& payload, state::sequencer::SequencerState& target) {
+FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequencer::SequencerState& target) {
     const uint8_t length = sanitizeLength(payload.length);
     target.length.set(length);
     target.stepsPerBeat.set(sanitizeStepsPerBeat(payload.stepsPerBeat));
     target.midiChannel.set(sanitizeMidiChannel(payload.midiChannel));
-    target.enabledMask.set(payload.enabledMask & lengthMask(length));
+    target.enabledMask.set(
+        oc::note::sequencer::StepBitMask128{payload.enabledMaskLow, payload.enabledMaskHigh} &
+        lengthMask(length)
+    );
 
-    for (uint8_t i = 0; i < state::sequencer::SequencerState::MAX_STEPS; ++i) {
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
         target.note[i] = sanitizeMidi7(payload.note[i]);
         target.velocity[i] = sanitizeMidi7(payload.velocity[i]);
         target.gate[i] = sanitizeGate(payload.gate[i]);
@@ -95,9 +100,9 @@ void applyPatternPayload(const PatternPayloadV1& payload, state::sequencer::Sequ
     target.bumpStepDataRevision();
 }
 
-void fillWorkspacePayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                          const state::sequencer::SequencerState& active,
-                          WorkspacePayloadV2& out) {
+FLASHMEM void fillWorkspacePayload(const state::sequencer::SequencerTrackBankState& trackBank,
+                                   const state::sequencer::SequencerState& active,
+                                   WorkspacePayload& out) {
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrack.get());
     out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
@@ -114,11 +119,11 @@ void fillWorkspacePayload(const state::sequencer::SequencerTrackBankState& track
     }
 }
 
-void applyWorkspacePayload(const WorkspacePayloadV2& payload,
-                           state::sequencer::SequencerTrackBankState& trackBank,
-                           state::sequencer::SequencerState& active) {
+FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
+                                    state::sequencer::SequencerTrackBankState& trackBank,
+                                    state::sequencer::SequencerState& active) {
     trackBank.reset();
-    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x01 : payload.enabledMask);
+    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x0001 : payload.enabledMask);
 
     const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
         payload.trackCount == 0 ? 1 : payload.trackCount,
@@ -131,7 +136,8 @@ void applyWorkspacePayload(const WorkspacePayloadV2& payload,
             sanitizeFocusedStep(payload.tracks[i].focusedStep, trackBank.track(i).length.get());
         trackBank.track(i).focusedStep.set(focused);
         const uint8_t pageCount = trackBank.track(i).activePageCount();
-        const uint8_t safePage = (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[i].page % pageCount);
+        const uint8_t safePage =
+            (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[i].page % pageCount);
         trackBank.track(i).page.set(safePage);
         trackBank.track(i).activeStepProperty.set(
             sanitizeStepProperty(payload.tracks[i].activeStepProperty)
@@ -145,17 +151,20 @@ void applyWorkspacePayload(const WorkspacePayloadV2& payload,
         sanitizeFocusedStep(payload.tracks[activeTrack].focusedStep, active.length.get());
     active.focusedStep.set(focused);
     const uint8_t pageCount = active.activePageCount();
-    const uint8_t safePage = (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[activeTrack].page % pageCount);
+    const uint8_t safePage =
+        (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[activeTrack].page % pageCount);
     active.page.set(safePage);
-    active.activeStepProperty.set(sanitizeStepProperty(payload.tracks[activeTrack].activeStepProperty));
+    active.activeStepProperty.set(
+        sanitizeStepProperty(payload.tracks[activeTrack].activeStepProperty)
+    );
     trackBank.activeTrack.set(activeTrack);
     trackBank.selector.reset(activeTrack);
     trackBank.selector.snapshotEnabledMask = trackBank.enabledMask.get();
 }
 
-void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                    const state::sequencer::SequencerState& active,
-                    SetPayloadV2& out) {
+FLASHMEM void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
+                             const state::sequencer::SequencerState& active,
+                             SetPayload& out) {
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrack.get());
     out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
@@ -168,11 +177,11 @@ void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
     }
 }
 
-void applySetPayload(const SetPayloadV2& payload,
-                     state::sequencer::SequencerTrackBankState& trackBank,
-                     state::sequencer::SequencerState& active) {
+FLASHMEM void applySetPayload(const SetPayload& payload,
+                              state::sequencer::SequencerTrackBankState& trackBank,
+                              state::sequencer::SequencerState& active) {
     trackBank.reset();
-    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x01 : payload.enabledMask);
+    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x0001 : payload.enabledMask);
 
     const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
         payload.trackCount == 0 ? 1 : payload.trackCount,

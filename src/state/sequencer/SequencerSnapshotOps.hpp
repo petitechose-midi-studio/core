@@ -6,7 +6,7 @@
 
 namespace core::state::sequencer {
 
-uint64_t lengthMask(uint8_t length);
+oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length);
 
 void captureSnapshot(const SequencerState& source, SequencerPatternSnapshot& out);
 

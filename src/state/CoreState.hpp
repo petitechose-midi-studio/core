@@ -10,8 +10,8 @@
  *
  * Includes:
  * - MacroState: Runtime values and labels for 8 macro slots
- * - MacroPagesState: 8 pages of macro configurations (CC, channel, values)
- * - CoreSettings: Persistence manager for EEPROM storage
+ * - MacroPagesState: macro track/page configurations
+ * - CoreSettings: persistence manager for core settings storage
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
@@ -48,8 +48,8 @@ struct CoreStateBootstrap;
 struct CoreStateLifecycle;
 
 struct MacroDomainState {
-    MacroState runtime;
-    macro::MacroPagesState pages;
+    core::app::ExtmemUniquePtr<MacroState> runtime;
+    core::app::ExtmemUniquePtr<macro::MacroPagesState> pages;
     oc::state::Signal<uint32_t> configRevision{0};
     persistence::MacroPersistence persistence;
     bool persistenceReady = false;
@@ -57,7 +57,9 @@ struct MacroDomainState {
 
     MacroDomainState(oc::interface::IStorage& workspaceStorage,
                      oc::interface::IStorage& libraryStorage)
-        : persistence(workspaceStorage, libraryStorage) {}
+        : runtime(core::app::makeExtmemUnique<MacroState>())
+        , pages(core::app::makeExtmemUnique<macro::MacroPagesState>())
+        , persistence(workspaceStorage, libraryStorage) {}
 
     MacroDomainState(const MacroDomainState&) = delete;
     MacroDomainState& operator=(const MacroDomainState&) = delete;
@@ -80,7 +82,7 @@ struct SequencerDomainState {
     using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;
 
     sequencer::SequencerState editor;
-    sequencer::SequencerTrackBankState tracks;
+    core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
@@ -88,9 +90,7 @@ struct SequencerDomainState {
 
     SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                          oc::interface::IStorage& patternLibraryStorage,
-                         oc::interface::IStorage& setLibraryStorage)
-        : persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage)
-        , pendingApply(nullptr) {}
+                         oc::interface::IStorage& setLibraryStorage);
 
     SequencerDomainState(const SequencerDomainState&) = delete;
     SequencerDomainState& operator=(const SequencerDomainState&) = delete;
@@ -154,7 +154,7 @@ public:
 
     /**
      * @brief Construct with storage backend
-     * @param settingsStorage Legacy settings storage (midi sync + migration source)
+     * @param settingsStorage Core settings storage (midi sync + shortcuts)
      * @param macroWorkspaceStorage Dedicated macro workspace storage
      * @param macroLibraryStorage Dedicated macro library storage
      * @param sequencerWorkspaceStorage Dedicated sequencer workspace storage

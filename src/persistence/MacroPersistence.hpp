@@ -9,8 +9,8 @@
 #include <oc/log/Log.hpp>
 #include <oc/time/Time.hpp>
 
-#include "state/macro/MacroPagesState.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
+#include "state/macro/MacroPagesState.hpp"
 
 namespace core::persistence {
 
@@ -41,14 +41,15 @@ public:
     }
 
     PersistenceWriteStatus initStatus() {
-        if (!workspace_store_.init()) return PersistenceWriteStatus::IO_ERROR;
-        if (!library_store_.init()) return PersistenceWriteStatus::IO_ERROR;
+        if (!workspace_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
+        if (!library_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
 
-        uint8_t payload[PAYLOAD_SIZE] = {};
-        const auto latest = workspace_store_.loadLatest(payload, sizeof(payload));
+        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        const auto latest = workspace_store_.loadLatest(raw.data(), raw.size());
         if (latest.status == SlotLoadStatus::OK) {
             next_workspace_counter_ = latest.metadata.saveCounter + 1;
-            next_workspace_slot_ = static_cast<uint16_t>((latest.slotIndex + 1) % WORKSPACE_SLOT_COUNT);
+            next_workspace_slot_ =
+                static_cast<uint16_t>((latest.slotIndex + 1) % WORKSPACE_SLOT_COUNT);
         } else {
             next_workspace_counter_ = 1;
             next_workspace_slot_ = 0;
@@ -58,18 +59,18 @@ public:
     }
 
     bool loadWorkspace(state::macro::MacroPagesState& pages) {
-        uint8_t payload[PAYLOAD_SIZE] = {};
-        const auto latest = workspace_store_.loadLatest(payload, sizeof(payload));
+        Payload snapshot{};
+        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        const auto latest = workspace_store_.loadLatest(raw.data(), raw.size());
         if (latest.status != SlotLoadStatus::OK) {
             return false;
         }
 
-        PayloadV1 snapshot{};
-        std::memcpy(&snapshot, payload, sizeof(snapshot));
+        std::memcpy(&snapshot, raw.data(), sizeof(snapshot));
         applyPayload_(snapshot, pages);
-
         next_workspace_counter_ = latest.metadata.saveCounter + 1;
-        next_workspace_slot_ = static_cast<uint16_t>((latest.slotIndex + 1) % WORKSPACE_SLOT_COUNT);
+        next_workspace_slot_ =
+            static_cast<uint16_t>((latest.slotIndex + 1) % WORKSPACE_SLOT_COUNT);
         return true;
     }
 
@@ -79,21 +80,22 @@ public:
 
     PersistenceWriteStatus saveWorkspaceStatus(const state::macro::MacroPagesState& pages) {
         const uint32_t start_ms = oc::time::millis();
-        PayloadV1 snapshot{};
+        Payload snapshot{};
         fillPayload_(pages, snapshot);
-
-        uint8_t payload[PAYLOAD_SIZE] = {};
-        std::memcpy(payload, &snapshot, sizeof(snapshot));
+        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        std::memcpy(raw.data(), &snapshot, sizeof(snapshot));
 
         const auto status = workspace_store_.saveSlotStatus(
-                next_workspace_slot_,
-                payload,
-                sizeof(snapshot),
-                next_workspace_counter_);
+            next_workspace_slot_,
+            raw.data(),
+            raw.size(),
+            next_workspace_counter_
+        );
         if (status != PersistenceWriteStatus::OK) return status;
 
         next_workspace_counter_ += 1;
-        next_workspace_slot_ = static_cast<uint16_t>((next_workspace_slot_ + 1) % WORKSPACE_SLOT_COUNT);
+        next_workspace_slot_ =
+            static_cast<uint16_t>((next_workspace_slot_ + 1) % WORKSPACE_SLOT_COUNT);
 
         const uint32_t elapsed_ms = oc::time::millis() - start_ms;
         if (elapsed_ms >= 5) {
@@ -110,32 +112,37 @@ public:
                                                  const state::macro::MacroPagesState& pages) {
         if (slotIndex >= LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
-        PayloadV1 snapshot{};
+        Payload snapshot{};
         fillPayload_(pages, snapshot);
-
-        uint8_t payload[PAYLOAD_SIZE] = {};
-        std::memcpy(payload, &snapshot, sizeof(snapshot));
+        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        std::memcpy(raw.data(), &snapshot, sizeof(snapshot));
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
-        return library_store_.saveSlotStatus(slotIndex, payload, sizeof(snapshot), counter);
+        return library_store_.saveSlotStatus(
+            slotIndex,
+            raw.data(),
+            raw.size(),
+            counter
+        );
     }
 
     SlotLoadStatus loadLibrarySlot(uint8_t slotIndex, state::macro::MacroPagesState& pages) {
         if (slotIndex >= LIBRARY_SLOT_COUNT) return SlotLoadStatus::OUT_OF_RANGE;
 
-        uint8_t payload[PAYLOAD_SIZE] = {};
-        SlotMetadata meta{};
-        const SlotLoadStatus status = library_store_.loadSlot(slotIndex, payload, sizeof(payload), &meta);
+        Payload snapshot{};
+        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        SlotMetadata metadata{};
+        const SlotLoadStatus status =
+            library_store_.loadSlot(slotIndex, raw.data(), raw.size(), &metadata);
         if (status != SlotLoadStatus::OK) {
             return status;
         }
 
-        if (meta.payloadSize != sizeof(PayloadV1)) {
+        if (metadata.payloadSize != raw.size()) {
             return SlotLoadStatus::HEADER_MISMATCH;
         }
 
-        PayloadV1 snapshot{};
-        std::memcpy(&snapshot, payload, sizeof(snapshot));
+        std::memcpy(&snapshot, raw.data(), sizeof(snapshot));
         applyPayload_(snapshot, pages);
         return SlotLoadStatus::OK;
     }
@@ -151,33 +158,34 @@ public:
 
 private:
 #pragma pack(push, 1)
-    struct PayloadV1 {
-        uint8_t activePage = 0;
-        std::array<state::macro::MacroPageData, state::macro::PAGE_COUNT> pages{};
+    struct Payload {
+        uint8_t activeTrack = 0;
+        uint8_t reserved0 = 0;
+        uint16_t trackEnabledMask = 0x01;
+        std::array<state::macro::MacroTrackData, state::macro::TRACK_COUNT> tracks{};
     };
 #pragma pack(pop)
 
-    static_assert(std::is_trivially_copyable<state::macro::MacroPageData>::value,
-                  "MacroPageData must remain trivially copyable");
-    static_assert(sizeof(PayloadV1) == 513, "Unexpected macro payload size");
+    static_assert(std::is_trivially_copyable_v<state::macro::MacroTrackData>,
+                  "MacroTrackData must remain trivially copyable");
+    static_assert(std::is_trivially_copyable_v<Payload>,
+                  "Macro persistence payload must remain trivially copyable");
+    static_assert(sizeof(Payload) == 3620, "Unexpected macro persistence payload size");
 
-    static constexpr uint16_t PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(PayloadV1));
+    static constexpr uint16_t PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(Payload));
 
-    static void fillPayload_(const state::macro::MacroPagesState& source, PayloadV1& out) {
-        out.activePage = source.activePage;
-        for (uint8_t i = 0; i < state::macro::PAGE_COUNT; ++i) {
-            out.pages[i] = source.pages[i];
-        }
+    static void fillPayload_(const state::macro::MacroPagesState& source, Payload& out) {
+        out.activeTrack = source.activeTrack;
+        out.trackEnabledMask = source.trackEnabledMask.get();
+        out.tracks = source.tracks;
     }
 
-    static void applyPayload_(const PayloadV1& payload, state::macro::MacroPagesState& target) {
-        for (uint8_t i = 0; i < state::macro::PAGE_COUNT; ++i) {
-            target.pages[i] = payload.pages[i];
-        }
-
-        const uint8_t clamped_active_page =
-            (payload.activePage < state::macro::PAGE_COUNT) ? payload.activePage : 0;
-        target.activePage = clamped_active_page;
+    static void applyPayload_(const Payload& payload, state::macro::MacroPagesState& target) {
+        target.initDefaults();
+        target.tracks = payload.tracks;
+        target.trackEnabledMask.set(payload.trackEnabledMask == 0 ? 0x01 : payload.trackEnabledMask);
+        target.activeTrack = payload.activeTrack < state::macro::TRACK_COUNT ? payload.activeTrack : 0;
+        target.syncActiveTrackCache();
         target.updateActiveConfigs();
     }
 

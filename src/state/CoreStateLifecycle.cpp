@@ -30,7 +30,7 @@ void CoreStateLifecycle::flushAutoPersist_(CoreState& state) {
 }
 
 void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
-    const auto saveStatus = state.settings.saveAllStatus(state.pages, state.midiSync);
+    const auto saveStatus = state.settings.saveAllStatus(state.midiSync);
     if (saveStatus != persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[CoreState] Failed to persist default core settings during factory reset: {}",
                     persistence::persistenceWriteStatusLabel(saveStatus));

@@ -94,13 +94,11 @@ void test_save_all_returns_false_on_short_write() {
     storage.init();
     storage.setFaultMode(FaultyStorage::FaultMode::SHORT_WRITE);
 
-    core::state::macro::MacroPagesState pages;
-    pages.initDefaults();
     core::state::MidiSyncState sync;
 
     core::state::CoreSettings settings(storage);
-    assert(!settings.saveAll(pages, sync));
-    assert(settings.saveAllStatus(pages, sync) == core::persistence::PersistenceWriteStatus::IO_ERROR);
+    assert(!settings.saveAll(sync));
+    assert(settings.saveAllStatus(sync) == core::persistence::PersistenceWriteStatus::IO_ERROR);
 
     std::cout << "[PASS] test_save_all_returns_false_on_short_write\n";
 }

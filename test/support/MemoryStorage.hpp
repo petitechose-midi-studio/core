@@ -17,7 +17,7 @@ public:
         SHORT_WRITE,
     };
 
-    explicit MemoryStorage(size_t capacity = 128 * 1024)
+    explicit MemoryStorage(size_t capacity = 512 * 1024)
         : data_(capacity, 0xFF) {}
 
     oc::type::Result<void> init() override {

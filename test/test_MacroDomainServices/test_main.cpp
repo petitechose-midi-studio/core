@@ -115,9 +115,11 @@ void test_switch_to_page_updates_runtime_status_and_persists_workspace() {
                                      storage.sequencerSetLibrary);
         const auto services = core::handler::MacroDomainServices::fromCoreState(state);
 
-        std::strncpy(state.pages.pages[2].name, "Mix Bus", core::state::macro::PAGE_NAME_SIZE - 1);
-        state.pages.pages[2].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
-        state.pages.pages[2].values[0] = 0.23f;
+        std::strncpy(state.pages.activeTrackData().pages[2].name,
+                     "Mix Bus",
+                     core::state::macro::PAGE_NAME_SIZE - 1);
+        state.pages.activeTrackData().pages[2].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
+        state.pages.activeTrackData().pages[2].values[0] = 0.23f;
 
         services.switchToPage(2);
 

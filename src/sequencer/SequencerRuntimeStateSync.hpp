@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 
+#include <oc/note/sequencer/StepBitMask128.hpp>
 #include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
 #include "state/sequencer/SequencerState.hpp"
@@ -14,7 +15,7 @@ struct SequencerRuntimeStateSignature {
     uint8_t length = 0;
     uint8_t stepsPerBeat = 0;
     uint8_t midiChannel = 0;
-    uint64_t enabledMask = 0;
+    oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
 
     bool matches(const SequencerRuntimeStateSignature& other) const {

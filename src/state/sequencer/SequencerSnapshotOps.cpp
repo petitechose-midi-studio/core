@@ -33,10 +33,8 @@ FLASHMEM uint8_t sanitizeMidi7(uint8_t value) {
 
 }  // namespace
 
-FLASHMEM uint64_t lengthMask(uint8_t length) {
-    if (length == 0) return 0;
-    if (length >= SequencerState::MAX_STEPS) return ~uint64_t{0};
-    return (uint64_t{1} << length) - uint64_t{1};
+FLASHMEM oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length) {
+    return oc::note::sequencer::StepBitMask128::prefixMask(length);
 }
 
 FLASHMEM void captureSnapshot(const SequencerState& source, SequencerPatternSnapshot& out) {
@@ -88,19 +86,18 @@ FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPa
 
     target.length.set(mergedLength);
 
-    uint64_t mergedMask = target.enabledMask.get() & lengthMask(mergedLength);
-    const uint64_t incomingMask = snapshot.enabledMask & lengthMask(incomingLength);
+    auto mergedMask = target.enabledMask.get() & lengthMask(mergedLength);
+    const auto incomingMask = snapshot.enabledMask & lengthMask(incomingLength);
 
     for (uint8_t i = 0; i < incomingLength; ++i) {
-        const uint64_t bit = uint64_t{1} << i;
-        if ((incomingMask & bit) == 0) continue;
+        if (!incomingMask.test(i)) continue;
 
         target.note[i] = sanitizeMidi7(snapshot.note[i]);
         target.velocity[i] = sanitizeMidi7(snapshot.velocity[i]);
         target.gate[i] = SequencerState::clampGatePercent(snapshot.gate[i]);
         target.nudge[i] = snapshot.nudge[i];
         target.probability[i] = SequencerState::clampProbability(snapshot.probability[i]);
-        mergedMask |= bit;
+        mergedMask.setBit(i, true);
     }
 
     target.enabledMask.set(mergedMask);
@@ -122,7 +119,7 @@ FLASHMEM bool duplicatePatternForward(SequencerState& target) {
     );
     if (copyCount == 0) return false;
 
-    uint64_t mask = target.enabledMask.get();
+    auto mask = target.enabledMask.get();
     bool dataChanged = false;
 
     for (uint8_t i = 0; i < copyCount; ++i) {
@@ -143,15 +140,13 @@ FLASHMEM bool duplicatePatternForward(SequencerState& target) {
         target.nudge[dst] = target.nudge[src];
         target.probability[dst] = target.probability[src];
 
-        const uint64_t dstBit = (uint64_t{1} << dst);
-        const bool srcEnabled = (mask & (uint64_t{1} << src)) != 0;
-        const bool dstEnabledBefore = (mask & dstBit) != 0;
+        const bool srcEnabled = mask.test(src);
+        const bool dstEnabledBefore = mask.test(dst);
         if (srcEnabled != dstEnabledBefore) {
             dataChanged = true;
         }
 
-        if (srcEnabled) mask |= dstBit;
-        else mask &= ~dstBit;
+        mask.setBit(dst, srcEnabled);
     }
 
     target.enabledMask.set(mask);
@@ -186,10 +181,9 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
     std::array<uint16_t, SequencerState::MAX_STEPS> nextGate{};
     std::array<int8_t, SequencerState::MAX_STEPS> nextNudge{};
     std::array<uint8_t, SequencerState::MAX_STEPS> nextProbability{};
-    const uint64_t activeMask =
-        (len >= SequencerState::MAX_STEPS) ? ~uint64_t{0} : ((uint64_t{1} << len) - uint64_t{1});
-    const uint64_t sourceMask = target.enabledMask.get();
-    uint64_t nextMask = sourceMask & ~activeMask;
+    const auto activeMask = lengthMask(len);
+    const auto sourceMask = target.enabledMask.get();
+    auto nextMask = sourceMask & ~activeMask;
 
     for (uint8_t i = 0; i < len; ++i) {
         const uint8_t dst = static_cast<uint8_t>((i + normalizedOffset) % len);
@@ -199,8 +193,8 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
         nextNudge[dst] = target.nudge[i];
         nextProbability[dst] = target.probability[i];
 
-        if ((sourceMask & (uint64_t{1} << i)) != 0) {
-            nextMask |= (uint64_t{1} << dst);
+        if (sourceMask.test(i)) {
+            nextMask.setBit(dst, true);
         }
     }
 
@@ -226,14 +220,13 @@ FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t 
     if (start >= len || start >= SequencerState::MAX_STEPS) return false;
 
     const uint8_t clampedEnd = static_cast<uint8_t>(std::min<uint16_t>(end, len - 1));
-    uint64_t mask = target.enabledMask.get();
+    auto mask = target.enabledMask.get();
     bool dataChanged = false;
     bool maskChanged = false;
 
     for (uint8_t step = start; step <= clampedEnd; ++step) {
-        const uint64_t bit = (uint64_t{1} << step);
-        if ((mask & bit) != 0) {
-            mask &= ~bit;
+        if (mask.test(step)) {
+            mask.setBit(step, false);
             maskChanged = true;
         }
 
@@ -284,8 +277,8 @@ FLASHMEM bool copyStepRangeToClipboard(
     const uint8_t count = static_cast<uint8_t>((clampedEnd - start) + 1);
     if (count == 0) return false;
 
-    uint64_t relativeEnabledMask = 0;
-    const uint64_t mask = source.enabledMask.get();
+    auto relativeEnabledMask = oc::note::sequencer::StepBitMask128{};
+    const auto mask = source.enabledMask.get();
 
     for (uint8_t i = 0; i < count; ++i) {
         const uint8_t step = static_cast<uint8_t>(start + i);
@@ -295,8 +288,8 @@ FLASHMEM bool copyStepRangeToClipboard(
         clipboard.nudge[i] = source.nudge[step];
         clipboard.probability[i] = source.probability[step];
 
-        if ((mask & (uint64_t{1} << step)) != 0) {
-            relativeEnabledMask |= (uint64_t{1} << i);
+        if (mask.test(step)) {
+            relativeEnabledMask.setBit(i, true);
         }
     }
 
@@ -319,7 +312,7 @@ FLASHMEM bool pasteClipboardRange(
         static_cast<uint8_t>(std::min<uint16_t>(clipboard.count, maxCount));
     if (copyCount == 0) return false;
 
-    uint64_t mask = target.enabledMask.get();
+    auto mask = target.enabledMask.get();
     bool dataChanged = false;
 
     for (uint8_t i = 0; i < copyCount; ++i) {
@@ -339,15 +332,13 @@ FLASHMEM bool pasteClipboardRange(
         target.nudge[step] = clipboard.nudge[i];
         target.probability[step] = clipboard.probability[i];
 
-        const uint64_t bit = (uint64_t{1} << step);
         const bool enabled = clipboard.isEnabled(i);
-        const bool wasEnabled = (mask & bit) != 0;
+        const bool wasEnabled = mask.test(step);
         if (enabled != wasEnabled) {
             dataChanged = true;
         }
 
-        if (enabled) mask |= bit;
-        else mask &= ~bit;
+        mask.setBit(step, enabled);
     }
 
     target.enabledMask.set(mask);

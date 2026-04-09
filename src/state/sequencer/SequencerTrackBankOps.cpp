@@ -39,9 +39,9 @@ FLASHMEM void initializeTrackBankFromActive(SequencerTrackBankState& bank, const
     bank.reset();
     copyPersistentState(bank.track(0), active);
     bank.activeTrack.set(0);
-    bank.enabledMask.set(0x01);
+    bank.enabledMask.set(0x0001);
     bank.selector.reset(0);
-    bank.selector.snapshotEnabledMask = 0x01;
+    bank.selector.snapshotEnabledMask = 0x0001;
 }
 
 FLASHMEM void storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active) {
@@ -90,7 +90,7 @@ FLASHMEM void applyTrackBankSnapshot(
     const SequencerTrackBankSnapshot& snapshot
 ) {
     bank.reset();
-    bank.enabledMask.set(snapshot.enabledMask == 0 ? 0x01 : snapshot.enabledMask);
+    bank.enabledMask.set(snapshot.enabledMask == 0 ? 0x0001 : snapshot.enabledMask);
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         applySnapshot(bank.track(i), snapshot.tracks[i]);

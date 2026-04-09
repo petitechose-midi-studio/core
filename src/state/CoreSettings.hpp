@@ -14,8 +14,6 @@
 #include "DataManagerCatalog.hpp"
 #include "MidiSyncState.hpp"
 #include "CoreSettingsLayout.hpp"
-#include "macro/MacroPagesState.hpp"
-
 namespace core::state {
 
 namespace StorageLayout = core::state::core_settings::layout;
@@ -29,10 +27,9 @@ public:
     CoreSettings(const CoreSettings&) = delete;
     CoreSettings& operator=(const CoreSettings&) = delete;
 
-    bool load(macro::MacroPagesState& pages, MidiSyncState& midiSync);
-    bool saveAll(const macro::MacroPagesState& pages, const MidiSyncState& midiSync);
-    persistence::PersistenceWriteStatus saveAllStatus(const macro::MacroPagesState& pages,
-                                                      const MidiSyncState& midiSync);
+    bool load(MidiSyncState& midiSync);
+    bool saveAll(const MidiSyncState& midiSync);
+    persistence::PersistenceWriteStatus saveAllStatus(const MidiSyncState& midiSync);
 
     bool saveMidiSyncMode(MidiSyncMode mode);
     bool saveMidiFollowTransport(bool followTransport);
@@ -56,23 +53,6 @@ public:
                                   uint8_t& seqLeft,
                                   uint8_t& seqRight);
 
-    bool saveActivePage(uint8_t pageIndex);
-    bool savePage(uint8_t pageIndex, const macro::MacroPageData& page);
-    bool saveValue(uint8_t pageIndex, uint8_t macroIndex, float value);
-    bool saveCC(uint8_t pageIndex, uint8_t macroIndex, uint8_t cc);
-    bool saveChannel(uint8_t pageIndex, uint8_t macroIndex, uint8_t channel);
-    persistence::PersistenceWriteStatus saveActivePageStatus(uint8_t pageIndex);
-    persistence::PersistenceWriteStatus savePageStatus(uint8_t pageIndex,
-                                                       const macro::MacroPageData& page);
-    persistence::PersistenceWriteStatus saveValueStatus(uint8_t pageIndex,
-                                                        uint8_t macroIndex,
-                                                        float value);
-    persistence::PersistenceWriteStatus saveCCStatus(uint8_t pageIndex,
-                                                     uint8_t macroIndex,
-                                                     uint8_t cc);
-    persistence::PersistenceWriteStatus saveChannelStatus(uint8_t pageIndex,
-                                                          uint8_t macroIndex,
-                                                          uint8_t channel);
     bool commit();
     bool factoryReset();
     persistence::PersistenceWriteStatus commitStatus();
@@ -89,7 +69,6 @@ private:
                                                                        uint8_t command);
     bool writeDefaultShortcuts_();
     persistence::PersistenceWriteStatus writeDefaultShortcutsStatus_();
-    bool loadPages_(macro::MacroPagesState& pages);
     bool loadMidiSync_(MidiSyncState& midiSync);
 
     oc::interface::IStorage& backend_;
