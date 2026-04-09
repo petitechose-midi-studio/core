@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <oc/note/sequencer/StepBitMask128.hpp>
+
 #include "state/sequencer/SequencerUiState.hpp"
 #include "ui/sequencer/StepGridRenderTypes.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
@@ -10,7 +12,7 @@ namespace core::ui::sequencer::grid {
 
 struct InlineFeedbackSnapshot {
     bool visible = false;
-    uint64_t touchedMask = 0;
+    oc::note::sequencer::StepBitMask128 touchedMask{};
     core::state::sequencer::StepProperty property =
         core::state::sequencer::StepProperty::NOTE;
 };
@@ -30,7 +32,7 @@ core::state::sequencer::StepProperty displayPropertyForInlineLabelMode(
 
 InlineFeedbackSnapshot readInlineFeedbackSnapshot(
     bool visible,
-    uint64_t touchedMask,
+    oc::note::sequencer::StepBitMask128 touchedMask,
     core::state::sequencer::StepProperty property
 );
 

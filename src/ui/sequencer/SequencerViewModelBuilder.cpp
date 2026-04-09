@@ -51,6 +51,11 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
     );
     oc::type::text::terminate(leftText, sizeof(leftText), pos);
 
+    std::array<uint8_t, SequencerHeaderBarProps::TRACK_COUNT> trackActivity{};
+    for (uint8_t i = 0; i < trackActivity.size(); ++i) {
+        trackActivity[i] = status.trackNoteActivity[i].get();
+    }
+
     return {
         .length = sequencer.length.get(),
         .viewedPage = sequencer.visiblePage(),
@@ -59,15 +64,7 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
         .previewTrack = previewTrack,
         .enabledMask = tracks.enabledMask.get(),
         .selectingTrack = tracks.selector.selecting.get(),
-        .trackActivity =
-            {status.trackNoteActivity[0].get(),
-             status.trackNoteActivity[1].get(),
-             status.trackNoteActivity[2].get(),
-             status.trackNoteActivity[3].get(),
-             status.trackNoteActivity[4].get(),
-             status.trackNoteActivity[5].get(),
-             status.trackNoteActivity[6].get(),
-             status.trackNoteActivity[7].get()},
+        .trackActivity = trackActivity,
         .leftText = leftText,
         .dimmed = false,
     };

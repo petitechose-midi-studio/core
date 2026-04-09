@@ -4,6 +4,7 @@
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::handler {
 
@@ -19,6 +20,16 @@ inline oc::type::IsActiveFn notSelectingStepProperty(
                !sequencer.patternQuickControls.selecting.get() &&
                !sequencer.rangeSelection.active();
     };
+}
+
+uint8_t countEnabledTracks(uint16_t enabledMask) {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 }  // namespace
@@ -50,13 +61,26 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when(notSelectingStepProperty(sequencer_, tracks_))
-        .then([this](float delta) { movePage(delta); });
+        .then([this](float delta) {
+            if (buttons_.isPressed(Config::ButtonID::NAV)) {
+                nav_modifier_used_ = true;
+                moveTrack(delta);
+                return;
+            }
+            movePage(delta);
+        });
 
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
         .when(notSelectingStepProperty(sequencer_, tracks_))
-        .then([this]() { toggleFocusedStep(); });
+        .then([this]() {
+            if (nav_modifier_used_) {
+                nav_modifier_used_ = false;
+                return;
+            }
+            toggleActiveTrackEnabled();
+        });
 }
 
 void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
@@ -64,15 +88,6 @@ void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
 
     sequencer_.focusedStep.set(abs);
-    sequencer_.toggle(abs);
-}
-
-void SequencerStepHandler::toggleFocusedStep() {
-    const uint8_t len = sequencer_.length.get();
-    if (len == 0) return;
-
-    const uint8_t abs = sequencer_.focusedStep.get();
-    if (abs >= len) return;
     sequencer_.toggle(abs);
 }
 
@@ -84,6 +99,37 @@ void SequencerStepHandler::movePage(float delta) {
     }
 
     prevPage();
+}
+
+void SequencerStepHandler::moveTrack(float delta) {
+    if (!nav::hasTurnDelta(delta)) return;
+
+    const int current = tracks_.activeTrack.get();
+    const int next = nav::nextWrappedIndex(
+        delta,
+        current,
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+    );
+    if (next == current) return;
+
+    core::state::sequencer::switchActiveTrack(
+        tracks_,
+        sequencer_,
+        static_cast<uint8_t>(next)
+    );
+}
+
+void SequencerStepHandler::toggleActiveTrackEnabled() {
+    const uint8_t activeTrack = tracks_.activeTrack.get();
+    const uint16_t enabledMask = tracks_.enabledMask.get();
+    const uint16_t bit = static_cast<uint16_t>(1U << activeTrack);
+    const bool currentlyEnabled = (enabledMask & bit) != 0;
+
+    if (currentlyEnabled && countEnabledTracks(enabledMask) <= 1U) {
+        return;
+    }
+
+    tracks_.setTrackEnabled(activeTrack, !currentlyEnabled);
 }
 
 void SequencerStepHandler::prevPage() {

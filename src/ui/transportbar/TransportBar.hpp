@@ -47,6 +47,7 @@ public:
 
 private:
     using StateIndicator = oc::ui::lvgl::StateIndicator;
+    static constexpr uint8_t VISIBLE_TRACK_COUNT = 8;
 
     core::state::StatusBarState& state_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
@@ -64,7 +65,7 @@ private:
     lv_obj_t* transport_lock_icon_ = nullptr;
 
     // Cell 3: Track note outputs
-    std::array<lv_obj_t*, core::state::StatusBarState::TRACK_COUNT> track_note_items_{};
+    std::array<lv_obj_t*, VISIBLE_TRACK_COUNT> track_note_items_{};
 
     // Pulse indicator behind tempo lock icon
     std::unique_ptr<StateIndicator> beat_indicator_;

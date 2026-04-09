@@ -14,14 +14,15 @@ uint8_t globalChannelForPage(const core::state::macro::MacroPagesState& pages) {
 
 MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source) {
     MacroHeaderBarProps props;
+    props.activeTrack = source.pages.activeTrack;
     props.activePage = source.pages.activePage;
     props.enabledMask = source.pages.enabledMask.get();
+    props.trackEnabledMask = source.pages.trackEnabledMask.get();
     props.clutchActive = source.macroUi.clutchActive.get();
     props.selectingPage = source.macroUi.pageSelecting.get();
     props.previewPage = source.macroUi.pageSelecting.get()
         ? source.macroUi.selectedPage.get()
         : source.pages.activePage;
-    props.leftText = source.statusBar.pageName.get();
 
     props.pageOutputActivity.fill(0);
     if (source.statusBar.ccOutActive.get()) {

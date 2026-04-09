@@ -47,24 +47,6 @@ SequencerTrackSelectorHandler::SequencerTrackSelectorHandler(
 }
 
 FLASHMEM void SequencerTrackSelectorHandler::setupBindings() {
-    buttons_.button(ButtonID::LEFT_CENTER)
-        .press()
-        .scope(scope_id_)
-        .when([this]() {
-            return canOpenTrackSelector(overlays_, sequencer_, tracks_)() &&
-                   buttons_.isPressed(ButtonID::LEFT_BOTTOM);
-        })
-        .then([this]() { open(); });
-
-    buttons_.button(ButtonID::LEFT_BOTTOM)
-        .press()
-        .scope(scope_id_)
-        .when([this]() {
-            return canOpenTrackSelector(overlays_, sequencer_, tracks_)() &&
-                   buttons_.isPressed(ButtonID::LEFT_CENTER);
-        })
-        .then([this]() { open(); });
-
     encoders_.encoder(EncoderID::NAV)
         .turn()
         .scope(scope_id_)

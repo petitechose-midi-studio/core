@@ -25,7 +25,7 @@ namespace Display {
 // ═══════════════════════════════════════════════════════════════════════════
 
 constexpr uint8_t VSYNC_SPACING = 1;
-constexpr uint32_t SPI_SPEED = 40'000'000;  // 40MHz
+constexpr uint32_t SPI_SPEED = 60'000'000;
 
 static_assert(Config::Timing::LVGL_HZ > 0, "LVGL_HZ must be > 0");
 static_assert((Config::Timing::LVGL_HZ % VSYNC_SPACING) == 0,
@@ -74,7 +74,7 @@ constexpr oc::ui::lvgl::BridgeConfig CONFIG = {
     // full-frame buffers for the ILI9341 diff transfer path.
     .renderMode = LV_DISPLAY_RENDER_MODE_DIRECT,
     .buffer2 = nullptr,
-    .refreshHz = Config::Timing::LVGL_HZ / Display::VSYNC_SPACING
+    .refreshHz = Config::Timing::LVGL_HZ
 };
 }  // namespace LVGL
 #endif // !OC_DESKTOP

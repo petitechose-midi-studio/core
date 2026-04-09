@@ -22,11 +22,18 @@ public:
     void setRuntimeValue(uint8_t index, float value) const;
     const core::state::macro::MacroConfig& activeConfig(uint8_t index) const;
     bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
+    bool setConfigCc(uint8_t index, uint8_t cc) const;
+    bool setTrackChannel(uint8_t channel) const;
     void switchToPage(uint8_t pageIndex) const;
+    void switchToTrack(uint8_t trackIndex) const;
+    uint8_t activeTrack() const;
+    uint8_t activeTrackChannel() const;
     bool isActivePageEnabled() const;
     void togglePageEnabled(uint8_t pageIndex) const;
     void setPageEnabledMask(uint8_t mask) const;
     uint8_t pageEnabledMask() const;
+    void setTrackEnabledMask(uint16_t mask) const;
+    uint16_t trackEnabledMask() const;
 
     void pulseCcIn() const;
     void pulseCcOut() const;

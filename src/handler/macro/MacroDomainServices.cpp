@@ -51,6 +51,33 @@ bool MacroDomainServices::setConfig(uint8_t index, uint8_t channel, uint8_t cc) 
     );
 }
 
+bool MacroDomainServices::setConfigCc(uint8_t index, uint8_t cc) const {
+    return core::state::macro::MacroWorkflow::setConfigCc(
+        core::state::macro::MacroWorkflow::StateRefs{
+            *macros_,
+            *pages_,
+            *config_revision_,
+            *status_bar_,
+        },
+        hooks_,
+        index,
+        cc
+    );
+}
+
+bool MacroDomainServices::setTrackChannel(uint8_t channel) const {
+    return core::state::macro::MacroWorkflow::setTrackChannel(
+        core::state::macro::MacroWorkflow::StateRefs{
+            *macros_,
+            *pages_,
+            *config_revision_,
+            *status_bar_,
+        },
+        hooks_,
+        channel
+    );
+}
+
 void MacroDomainServices::switchToPage(uint8_t pageIndex) const {
     core::state::macro::MacroWorkflow::switchToPage(
         core::state::macro::MacroWorkflow::StateRefs{
@@ -64,6 +91,27 @@ void MacroDomainServices::switchToPage(uint8_t pageIndex) const {
     );
 }
 
+void MacroDomainServices::switchToTrack(uint8_t trackIndex) const {
+    core::state::macro::MacroWorkflow::switchToTrack(
+        core::state::macro::MacroWorkflow::StateRefs{
+            *macros_,
+            *pages_,
+            *config_revision_,
+            *status_bar_,
+        },
+        hooks_,
+        trackIndex
+    );
+}
+
+uint8_t MacroDomainServices::activeTrack() const {
+    return pages_->activeTrack;
+}
+
+uint8_t MacroDomainServices::activeTrackChannel() const {
+    return pages_->activeTrackChannel();
+}
+
 bool MacroDomainServices::isActivePageEnabled() const {
     return pages_->isPageEnabled(pages_->activePage);
 }
@@ -73,11 +121,20 @@ void MacroDomainServices::togglePageEnabled(uint8_t pageIndex) const {
 }
 
 void MacroDomainServices::setPageEnabledMask(uint8_t mask) const {
-    pages_->enabledMask.set(mask);
+    pages_->activeTrackData().enabledPageMask = mask;
+    pages_->syncActiveTrackCache();
 }
 
 uint8_t MacroDomainServices::pageEnabledMask() const {
     return pages_->enabledMask.get();
+}
+
+void MacroDomainServices::setTrackEnabledMask(uint16_t mask) const {
+    pages_->trackEnabledMask.set(mask);
+}
+
+uint16_t MacroDomainServices::trackEnabledMask() const {
+    return pages_->trackEnabledMask.get();
 }
 
 void MacroDomainServices::pulseCcIn() const {

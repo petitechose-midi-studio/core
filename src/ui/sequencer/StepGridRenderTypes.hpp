@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <lvgl.h>
+#include <oc/note/sequencer/StepBitMask128.hpp>
 
 #include "state/sequencer/SequencerUiState.hpp"
 
@@ -99,7 +100,7 @@ struct StepGridFrameState {
     core::state::sequencer::StepProperty activeProperty =
         core::state::sequencer::StepProperty::NOTE;
     bool feedbackVisible = false;
-    uint64_t feedbackTouchedMask = 0;
+    oc::note::sequencer::StepBitMask128 feedbackTouchedMask{};
     core::state::sequencer::StepProperty feedbackProperty =
         core::state::sequencer::StepProperty::NOTE;
     RangeSelectionSnapshot selection{};

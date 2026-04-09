@@ -33,8 +33,8 @@ StepGridFrameState buildStepGridFrameState(const core::state::sequencer::Sequenc
     const uint8_t length = sequencer.length.get();
     const uint8_t page = sequencer.visiblePage();
     const uint8_t pageStart = sequencer.pageStartStepClamped(page);
-    const uint64_t enabledMask = sequencer.enabledMask.get();
-    const uint64_t probabilityCycleMask = sequencer.probabilityCycleMask;
+    const auto enabledMask = sequencer.enabledMask.get();
+    const auto probabilityCycleMask = sequencer.probabilityCycleMask;
     const int16_t playhead = sequencer.playheadStep.get();
 
     for (uint8_t i = 0; i < frame.tiles.size(); ++i) {
@@ -42,7 +42,7 @@ StepGridFrameState buildStepGridFrameState(const core::state::sequencer::Sequenc
         auto& tile = frame.tiles[i];
         tile.absoluteStep = absoluteStep;
         tile.inPattern = absoluteStep < length;
-        tile.enabled = tile.inPattern ? ((enabledMask & (1ULL << absoluteStep)) != 0) : false;
+        tile.enabled = tile.inPattern ? enabledMask.test(absoluteStep) : false;
         tile.playing =
             tile.inPattern && (playhead >= 0) && (absoluteStep == static_cast<uint8_t>(playhead));
 
@@ -50,7 +50,7 @@ StepGridFrameState buildStepGridFrameState(const core::state::sequencer::Sequenc
             continue;
         }
 
-        tile.probabilityCycleActive = (probabilityCycleMask & (1ULL << absoluteStep)) != 0;
+        tile.probabilityCycleActive = probabilityCycleMask.test(absoluteStep);
         tile.note = sequencer.note[absoluteStep];
         tile.velocity = sequencer.velocity[absoluteStep];
         tile.probability = sequencer.probability[absoluteStep];

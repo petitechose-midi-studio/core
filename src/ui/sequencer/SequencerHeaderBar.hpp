@@ -7,22 +7,28 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IWidget.hpp>
 
+#include "state/sequencer/SequencerState.hpp"
+#include "state/StatusBarState.hpp"
+#include "ui/common/TrackHeaderRow.hpp"
+
 namespace core::ui {
 
 struct SequencerHeaderBarProps {
-    static constexpr uint8_t TRACK_COUNT = 8;
+    static constexpr uint8_t TRACK_COUNT = core::state::StatusBarState::TRACK_COUNT;
+    static constexpr uint8_t VISIBLE_TRACK_COUNT = TrackHeaderRowProps::ITEM_COUNT;
 
     uint8_t length = 0;
     uint8_t viewedPage = 0;     // 0..7, may point to a future paste target page
     int16_t playheadStep = -1;  // -1 when stopped
     uint8_t activeTrack = 0;
     uint8_t previewTrack = 0;
-    uint8_t enabledMask = 0x01;
+    uint16_t enabledMask = 0x0001;
     bool selectingTrack = false;
     std::array<uint8_t, TRACK_COUNT> trackActivity{};
     const char* leftText = "";
@@ -49,8 +55,8 @@ public:
     lv_obj_t* getElement() const override { return container_; }
 
 private:
-    static constexpr uint8_t PAGE_COUNT = 8;
-    static constexpr uint8_t STEPS_PER_PAGE = 8;
+    static constexpr uint8_t PAGE_COUNT = core::state::sequencer::SequencerState::PAGE_COUNT;
+    static constexpr uint8_t STEPS_PER_PAGE = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
     static constexpr lv_coord_t TOP_ROW_HEIGHT = 16;
     static constexpr lv_coord_t STRIP_HEIGHT = 3;
     static constexpr lv_coord_t ROW_GAP = 2;
@@ -79,30 +85,11 @@ private:
     };
 
     lv_obj_t* container_ = nullptr;
-    lv_obj_t* top_row_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
-
-    lv_obj_t* track_accent_ = nullptr;
-    lv_obj_t* left_label_ = nullptr;
-    lv_obj_t* top_row_spacer_ = nullptr;
-    lv_obj_t* track_selector_row_ = nullptr;
-    std::array<lv_obj_t*, PAGE_COUNT> track_selector_items_{};
+    std::unique_ptr<TrackHeaderRow> top_row_;
 
     std::array<Segment, PAGE_COUNT> segments_{};
     std::array<SegmentRenderCache, PAGE_COUNT> segment_cache_{};
-
-    bool top_row_cache_initialized_ = false;
-    bool top_row_dimmed_ = false;
-    std::array<char, 32> left_text_cache_{};
-    bool top_row_surface_cache_initialized_ = false;
-    uint32_t track_accent_cache_color_ = 0;
-    lv_opa_t track_accent_cache_opa_ = LV_OPA_TRANSP;
-    uint32_t top_row_bg_cache_color_ = 0;
-    lv_opa_t top_row_bg_cache_opa_ = LV_OPA_TRANSP;
-    uint8_t track_selector_cache_active_ = 0;
-    uint8_t track_selector_cache_preview_ = 0;
-    uint8_t track_selector_cache_enabled_mask_ = 0xFF;
-    std::array<uint8_t, PAGE_COUNT> track_selector_cache_activity_{};
 
     bool strip_cache_initialized_ = false;
     uint8_t strip_cached_length_ = 0;

@@ -8,7 +8,7 @@ namespace core::ui::sequencer::grid {
 namespace {
 
 bool feedbackActiveForStep(const InlineFeedbackSnapshot& feedback, uint8_t absoluteStep) {
-    return feedback.visible && ((feedback.touchedMask & (1ULL << absoluteStep)) != 0);
+    return feedback.visible && feedback.touchedMask.test(absoluteStep);
 }
 
 bool tileFeedbackChanged(uint8_t absoluteStep,

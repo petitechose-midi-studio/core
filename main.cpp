@@ -8,6 +8,8 @@
 
 #include <optional>
 
+#include <imxrt.h>
+
 #include <oc/hal/teensy/SDCardBackend.hpp>
 #include <oc/hal/teensy/Teensy.hpp>
 
@@ -34,7 +36,7 @@ static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer
 static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
-static std::optional<core::sequencer::SequencerRuntimeService> sequencerRuntime;
+static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService> sequencerRuntime;
 
 // =============================================================================
 // Initialization Helpers
@@ -127,7 +129,15 @@ static FLASHMEM void initApp() {
         while (true) {}
     }
 
-    sequencerRuntime.emplace(*coreState, *app->midiAPI(), app->eventBus());
+    sequencerRuntime = core::app::makeExtmemUnique<core::sequencer::SequencerRuntimeService>(
+        *coreState,
+        *app->midiAPI(),
+        app->eventBus()
+    );
+    if (!sequencerRuntime) {
+        OC_LOG_ERROR("Sequencer runtime init failed: EXTMEM allocation failed");
+        while (true) {}
+    }
 
     const bool runtimeHookRegistered = app->registerPreContextUpdateHook([]() {
         if (!app || !sequencerRuntime) return;
@@ -171,7 +181,7 @@ FLASHMEM void setup() {
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");
     OC_LOG_INFO("App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
-
+    
     initDisplay();
     initLVGL();
     initMux();

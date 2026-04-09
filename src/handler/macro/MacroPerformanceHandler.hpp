@@ -49,6 +49,8 @@ private:
     void closePageSelectorCancel();
     void navigateProperty(float delta);
     void movePage(float delta);
+    void moveTrack(float delta);
+    void toggleActiveTrackEnabled();
     void configureMacroEncoders();
     void configureValueEncoders();
     void configureDiscreteEncoders(uint8_t discreteSteps);
@@ -70,6 +72,7 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
+    bool nav_modifier_used_ = false;
     bool left_center_held_ = false;
     bool left_bottom_held_ = false;
     uint8_t quick_snapshot_page_ = 0;

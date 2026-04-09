@@ -32,6 +32,7 @@ constexpr lv_opa_t TRACK_ACTIVITY_BASE_OPA = LV_OPA_20;
 constexpr lv_opa_t TRACK_ACTIVITY_ACTIVE_BONUS = LV_OPA_20;
 constexpr lv_opa_t TRACK_ACTIVITY_PREVIEW_BONUS = LV_OPA_20;
 constexpr lv_opa_t TRACK_ACTIVITY_RANGE = LV_OPA_80;
+constexpr uint8_t VISIBLE_TRACK_COUNT = 8;
 
 lv_opa_t trackSelectorOpa(uint8_t velocity, bool isActive, bool isPreview) {
     uint16_t opa = TRACK_ACTIVITY_BASE_OPA;
@@ -39,6 +40,10 @@ lv_opa_t trackSelectorOpa(uint8_t velocity, bool isActive, bool isPreview) {
     if (isPreview) opa += TRACK_ACTIVITY_PREVIEW_BONUS;
     opa += static_cast<uint16_t>(velocity) * static_cast<uint16_t>(TRACK_ACTIVITY_RANGE) / 127U;
     return static_cast<lv_opa_t>(std::min<uint16_t>(opa, LV_OPA_COVER));
+}
+
+uint8_t trackWindowStart(uint8_t previewTrack) {
+    return static_cast<uint8_t>((previewTrack / VISIBLE_TRACK_COUNT) * VISIBLE_TRACK_COUNT);
 }
 }  // namespace
 
@@ -178,7 +183,7 @@ FLASHMEM void TransportBar::setupBindings() {
         .on(state_.transportLocked, [this](bool locked) { setTransportLocked(locked); })
         .on(state_.beatPulse, [this](bool pulse) { setBeatPulse(pulse); });
 
-    for (uint8_t i = 0; i < track_note_items_.size(); ++i) {
+    for (uint8_t i = 0; i < state_.trackNoteActivity.size(); ++i) {
         subs_.push_back(state_.trackNoteActivity[i].subscribe([this](uint8_t) {
             renderTrackSelectorStrip();
         }));
@@ -186,7 +191,7 @@ FLASHMEM void TransportBar::setupBindings() {
     subs_.push_back(tracks_.activeTrack.subscribe([this](uint8_t) {
         renderTrackSelectorStrip();
     }));
-    subs_.push_back(tracks_.enabledMask.subscribe([this](uint8_t) {
+    subs_.push_back(tracks_.enabledMask.subscribe([this](uint16_t) {
         renderTrackSelectorStrip();
     }));
     subs_.push_back(tracks_.selector.selecting.subscribe([this](bool) {
@@ -262,19 +267,26 @@ FLASHMEM void TransportBar::renderTrackSelectorStrip() {
     const uint8_t previewTrack = tracks_.selector.selecting.get()
         ? tracks_.selector.selectedTrack.get()
         : activeTrack;
+    const uint8_t windowStart = trackWindowStart(previewTrack);
 
     for (uint8_t i = 0; i < track_note_items_.size(); ++i) {
         if (!track_note_items_[i]) continue;
+        const uint8_t trackIndex = static_cast<uint8_t>(windowStart + i);
+        const bool inRange = trackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 
-        const bool enabled = tracks_.isTrackEnabled(i);
+        const bool enabled = inRange && tracks_.isTrackEnabled(trackIndex);
         lv_obj_set_style_bg_color(
             track_note_items_[i],
-            lv_color_hex(enabled ? theme::color::trackColor(i) : theme::color::INACTIVE),
+            lv_color_hex(enabled ? theme::color::trackColor(trackIndex) : theme::color::INACTIVE),
             0
         );
         lv_obj_set_style_bg_opa(
             track_note_items_[i],
-            trackSelectorOpa(state_.trackNoteActivity[i].get(), activeTrack == i, previewTrack == i),
+            trackSelectorOpa(
+                inRange ? state_.trackNoteActivity[trackIndex].get() : 0,
+                inRange && activeTrack == trackIndex,
+                inRange && previewTrack == trackIndex
+            ),
             0
         );
     }

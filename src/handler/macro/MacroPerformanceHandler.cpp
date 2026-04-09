@@ -76,6 +76,16 @@ float normalizedForProperty(const core::handler::MacroDomainServices& services,
     return services.runtimeValue(index);
 }
 
+uint8_t countEnabledMacroTracks(uint16_t enabledMask) {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < core::state::macro::TRACK_COUNT; ++i) {
+        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 }  // namespace
 
 FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
@@ -97,26 +107,6 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
 }
 
 FLASHMEM void MacroPerformanceHandler::setupBindings() {
-    buttons_.button(Config::ButtonID::LEFT_CENTER)
-        .press()
-        .scope(scope_id_)
-        .when([this]() {
-            left_center_held_ = true;
-            return performanceAvailable(overlays_)() &&
-                   left_bottom_held_;
-        })
-        .then([this]() { openPageSelector(); });
-
-    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
-        .press()
-        .scope(scope_id_)
-        .when([this]() {
-            left_bottom_held_ = true;
-            return performanceAvailable(overlays_)() &&
-                   left_center_held_;
-        })
-        .then([this]() { openPageSelector(); });
-
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .press()
         .latch()
@@ -183,6 +173,18 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .when(pageSelecting(macro_ui_, overlays_))
         .then([this]() { toggleSelectedPageEnabled(); });
 
+    buttons_.button(Config::ButtonID::NAV)
+        .release()
+        .scope(scope_id_)
+        .when(clutchInactive(macro_ui_, overlays_))
+        .then([this]() {
+            if (nav_modifier_used_) {
+                nav_modifier_used_ = false;
+                return;
+            }
+            toggleActiveTrackEnabled();
+        });
+
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
@@ -199,7 +201,14 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when(clutchInactive(macro_ui_, overlays_))
-        .then([this](float delta) { movePage(delta); });
+        .then([this](float delta) {
+            if (buttons_.isPressed(Config::ButtonID::NAV)) {
+                nav_modifier_used_ = true;
+                moveTrack(delta);
+                return;
+            }
+            movePage(delta);
+        });
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
@@ -366,6 +375,36 @@ FLASHMEM void MacroPerformanceHandler::movePage(float delta) {
 
     services_.switchToPage(static_cast<uint8_t>(next));
     configureMacroEncoders();
+}
+
+FLASHMEM void MacroPerformanceHandler::moveTrack(float delta) {
+    if (!nav::hasTurnDelta(delta)) return;
+
+    const int current = services_.activeTrack();
+    const int next = nav::nextWrappedIndex(delta, current, core::state::macro::TRACK_COUNT);
+    if (next == current) return;
+
+    services_.switchToTrack(static_cast<uint8_t>(next));
+    configureMacroEncoders();
+}
+
+FLASHMEM void MacroPerformanceHandler::toggleActiveTrackEnabled() {
+    const uint8_t activeTrack = services_.activeTrack();
+    uint16_t mask = services_.trackEnabledMask();
+    const uint16_t bit = static_cast<uint16_t>(1U << activeTrack);
+    const bool currentlyEnabled = (mask & bit) != 0;
+
+    if (currentlyEnabled && countEnabledMacroTracks(mask) <= 1U) {
+        return;
+    }
+
+    if (currentlyEnabled) {
+        mask &= static_cast<uint16_t>(~bit);
+    } else {
+        mask |= bit;
+    }
+
+    services_.setTrackEnabledMask(mask);
 }
 
 FLASHMEM void MacroPerformanceHandler::configureMacroEncoders() {

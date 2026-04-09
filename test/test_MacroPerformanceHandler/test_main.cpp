@@ -100,8 +100,10 @@ struct MacroPerformanceHarness {
 void test_nav_turn_changes_macro_page_when_clutch_is_inactive() {
     MacroPerformanceHarness h;
 
-    std::strncpy(h.state.pages.pages[1].name, "Page 2", core::state::macro::PAGE_NAME_SIZE - 1);
-    h.state.pages.pages[1].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
+    std::strncpy(h.state.pages.activeTrackData().pages[1].name,
+                 "Page 2",
+                 core::state::macro::PAGE_NAME_SIZE - 1);
+    h.state.pages.activeTrackData().pages[1].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
 
     h.turn(Config::EncoderID::NAV, 1.0f);
 
@@ -112,6 +114,56 @@ void test_nav_turn_changes_macro_page_when_clutch_is_inactive() {
     drainNotifications();
 
     std::cout << "[PASS] test_nav_turn_changes_macro_page_when_clutch_is_inactive\n";
+}
+
+void test_nav_hold_and_turn_changes_macro_track_immediately() {
+    MacroPerformanceHarness h;
+
+    h.state.pages.tracks[1].activePage = 3;
+    h.state.pages.tracks[1].channel = 9;
+    h.state.pages.tracks[1].pages[3].cc[0] = 91;
+    std::strncpy(h.state.pages.tracks[1].pages[3].name,
+                 "Track 2 Page 4",
+                 core::state::macro::PAGE_NAME_SIZE - 1);
+    h.state.pages.tracks[1].pages[3].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
+
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.state.pages.activeTrack == 1);
+    assert(h.state.pages.activePage == 3);
+    assert(h.services.activeConfig(0).channel == 9);
+    assert(h.services.activeConfig(0).cc == 91);
+    assert(std::strcmp(h.state.statusBar.pageName.get(), "Track 2 Page 4") == 0);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_nav_hold_and_turn_changes_macro_track_immediately\n";
+}
+
+void test_nav_short_release_toggles_active_macro_track_enabled() {
+    MacroPerformanceHarness h;
+
+    h.state.pages.trackEnabledMask.set(0x03);
+    h.state.pages.activeTrack = 0;
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.pages.trackEnabledMask.get() == 0x02);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.pages.trackEnabledMask.get() == 0x03);
+
+    h.state.pages.trackEnabledMask.set(0x01);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.pages.trackEnabledMask.get() == 0x01);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_nav_short_release_toggles_active_macro_track_enabled\n";
 }
 
 void test_left_bottom_short_press_latches_property_clutch_and_second_tap_releases_it() {
@@ -191,6 +243,8 @@ void test_left_center_opens_macro_quick_controls_and_opt_applies_global_channel_
 
 int main() {
     test_nav_turn_changes_macro_page_when_clutch_is_inactive();
+    test_nav_hold_and_turn_changes_macro_track_immediately();
+    test_nav_short_release_toggles_active_macro_track_enabled();
     test_left_bottom_short_press_latches_property_clutch_and_second_tap_releases_it();
     test_left_center_opens_macro_quick_controls_and_opt_applies_global_channel_and_cc_offset();
     std::cout << "\nAll MacroPerformanceHandler tests passed.\n";

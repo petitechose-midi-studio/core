@@ -64,7 +64,7 @@ constexpr std::array<uint32_t, 8> TRACK_COLORS = {
 };
 
 constexpr uint32_t trackColor(uint8_t index) {
-    return TRACK_COLORS[index < TRACK_COLORS.size() ? index : 0];
+    return TRACK_COLORS[index % TRACK_COLORS.size()];
 }
 
 }  // namespace color

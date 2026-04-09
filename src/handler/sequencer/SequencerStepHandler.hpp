@@ -19,7 +19,8 @@ namespace core::handler {
  * v0 bindings (sequencer view scope):
  * - MACRO_1..MACRO_8 release: toggle step in current page
  * - NAV turn: page switch (wrap)
- * - NAV release: toggle focused step
+ * - NAV short release: toggle active track enabled
+ * - NAV hold + turn: switch track
  *
  * Bottom action buttons are handled separately by SequencerRangeActionHandler.
  */
@@ -46,8 +47,9 @@ private:
     void setupBindings();
 
     void toggleStep(uint8_t indexInPage);
-    void toggleFocusedStep();
     void movePage(float delta);
+    void moveTrack(float delta);
+    void toggleActiveTrackEnabled();
     void prevPage();
     void nextPage();
 
@@ -56,6 +58,7 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
+    bool nav_modifier_used_ = false;
 };
 
 }  // namespace core::handler

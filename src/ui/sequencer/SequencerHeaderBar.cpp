@@ -2,12 +2,10 @@
 
 #include <algorithm>
 #include <array>
-#include <cstring>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <config/PlatformCompat.hpp>
-#include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -19,13 +17,6 @@ namespace style = oc::ui::lvgl::style;
 namespace {
 
 constexpr uint32_t COLOR_DIM_TEXT = theme::color::TEXT_PRIMARY;
-constexpr lv_opa_t OPA_DIM_TEXT =
-    static_cast<lv_opa_t>(oc::ui::lvgl::base_theme::opacity::OPA_50);
-constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
-constexpr lv_opa_t TRACK_OPA = LV_OPA_80;
-constexpr lv_coord_t TRACK_ACCENT_WIDTH = 4;
-constexpr lv_coord_t TRACK_ACTIVITY_SIZE = 7;
-constexpr lv_coord_t TRACK_ACTIVITY_GAP = 4;
 constexpr lv_opa_t TRACK_BG_OPA_IDLE = LV_OPA_10;
 constexpr lv_opa_t TRACK_BG_OPA_SELECTING = static_cast<lv_opa_t>(31);
 constexpr lv_opa_t TRACK_SQUARE_BASE_OPA = LV_OPA_20;
@@ -33,8 +24,8 @@ constexpr lv_opa_t TRACK_SQUARE_ACTIVE_BONUS = LV_OPA_20;
 constexpr lv_opa_t TRACK_SQUARE_PREVIEW_BONUS = LV_OPA_20;
 constexpr lv_opa_t TRACK_SQUARE_VELOCITY_RANGE = LV_OPA_60;
 
-bool isTrackEnabled(uint8_t enabledMask, uint8_t index) {
-    return (enabledMask & static_cast<uint8_t>(1U << index)) != 0;
+bool isTrackEnabled(uint16_t enabledMask, uint8_t index) {
+    return (enabledMask & static_cast<uint16_t>(1U << index)) != 0;
 }
 
 constexpr uint32_t trackColor(uint8_t index) {
@@ -62,18 +53,9 @@ lv_opa_t trackSquareOpa(uint8_t velocity, bool isActive, bool isPreview) {
     return static_cast<lv_opa_t>(std::min<uint16_t>(opa, LV_OPA_COVER));
 }
 
-template <size_t N>
-void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
-    if (!label) return;
-
-    const char* next = (text && text[0]) ? text : "";
-    if (std::strncmp(cache.data(), next, N) == 0) {
-        return;
-    }
-
-    std::strncpy(cache.data(), next, N - 1);
-    cache[N - 1] = '\0';
-    lv_label_set_text(label, cache.data());
+uint8_t trackWindowStart(uint8_t previewTrack) {
+    const uint8_t window = SequencerHeaderBarProps::VISIBLE_TRACK_COUNT;
+    return static_cast<uint8_t>((previewTrack / window) * window);
 }
 
 }  // namespace
@@ -84,14 +66,10 @@ SequencerHeaderBar::SequencerHeaderBar(lv_obj_t* parent) {
 
 SequencerHeaderBar::~SequencerHeaderBar() {
     if (container_) {
+        top_row_.reset();
         lv_obj_delete(container_);
         container_ = nullptr;
-        top_row_ = nullptr;
         strip_row_ = nullptr;
-        track_accent_ = nullptr;
-        left_label_ = nullptr;
-        top_row_spacer_ = nullptr;
-        track_selector_row_ = nullptr;
     }
 }
 
@@ -115,65 +93,7 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     );
     lv_obj_set_style_pad_row(container_, ROW_GAP, 0);
 
-    top_row_ = lv_obj_create(container_);
-    style::apply(top_row_)
-        .size(LV_PCT(100), TOP_ROW_HEIGHT)
-        .noScroll()
-        .noBorder()
-        .pad(0);
-    lv_obj_set_style_bg_opa(top_row_, TRACK_BG_OPA_IDLE, 0);
-    lv_obj_set_style_pad_left(top_row_, 0, 0);
-    lv_obj_set_style_pad_right(top_row_, HORIZONTAL_INSET, 0);
-    lv_obj_set_style_pad_top(top_row_, 0, 0);
-    lv_obj_set_style_pad_bottom(top_row_, 0, 0);
-    lv_obj_set_layout(top_row_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(top_row_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(top_row_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(top_row_, 4, 0);
-
-    track_accent_ = lv_obj_create(top_row_);
-    style::apply(track_accent_)
-        .size(TRACK_ACCENT_WIDTH, LV_PCT(100))
-        .noBorder()
-        .noScroll()
-        .pad(0);
-    lv_obj_set_style_radius(track_accent_, 0, 0);
-    lv_obj_set_style_bg_opa(track_accent_, LV_OPA_COVER, 0);
-
-    left_label_ = lv_label_create(top_row_);
-    lv_obj_set_style_text_font(left_label_, fonts.inter_14_medium, 0);
-    lv_obj_set_style_text_color(left_label_, lv_color_hex(COLOR_DIM_TEXT), 0);
-    lv_obj_set_style_text_opa(left_label_, TRACK_OPA, 0);
-    lv_label_set_long_mode(left_label_, LV_LABEL_LONG_CLIP);
-
-    top_row_spacer_ = lv_obj_create(top_row_);
-    style::apply(top_row_spacer_).size(0, 1).transparent().noBorder().noScroll().pad(0);
-    lv_obj_set_flex_grow(top_row_spacer_, 1);
-
-    track_selector_row_ = lv_obj_create(top_row_);
-    style::apply(track_selector_row_).transparent().noBorder().noScroll().pad(0);
-    lv_obj_set_layout(track_selector_row_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(track_selector_row_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(
-        track_selector_row_,
-        LV_FLEX_ALIGN_START,
-        LV_FLEX_ALIGN_CENTER,
-        LV_FLEX_ALIGN_CENTER
-    );
-    lv_obj_set_style_pad_column(track_selector_row_, TRACK_ACTIVITY_GAP, 0);
-    lv_obj_add_flag(track_selector_row_, LV_OBJ_FLAG_HIDDEN);
-
-    for (uint8_t i = 0; i < PAGE_COUNT; ++i) {
-        track_selector_items_[i] = lv_obj_create(track_selector_row_);
-        style::apply(track_selector_items_[i])
-            .size(TRACK_ACTIVITY_SIZE, TRACK_ACTIVITY_SIZE)
-            .noBorder()
-            .noScroll()
-            .pad(0);
-        lv_obj_set_style_radius(track_selector_items_[i], 1, 0);
-        lv_obj_set_style_bg_color(track_selector_items_[i], lv_color_hex(trackColor(i)), 0);
-        lv_obj_set_style_bg_opa(track_selector_items_[i], TRACK_SQUARE_BASE_OPA, 0);
-    }
+    top_row_ = std::make_unique<TrackHeaderRow>(container_);
 
     strip_row_ = lv_obj_create(container_);
     style::apply(strip_row_)
@@ -245,84 +165,34 @@ void SequencerHeaderBar::renderStripOnly(const SequencerHeaderBarProps& props) {
 }
 
 void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
-    if (!left_label_) return;
+    if (!top_row_) return;
+    const uint8_t windowStart = trackWindowStart(props.previewTrack);
 
-    if (!top_row_cache_initialized_ || top_row_dimmed_ != props.dimmed) {
-        const lv_color_t propertyColor = lv_color_hex(COLOR_DIM_TEXT);
-        const lv_opa_t propertyOpa = TRACK_OPA;
+    TrackHeaderRowProps rowProps;
+    rowProps.leftText = props.leftText;
+    rowProps.accentColor =
+        isTrackEnabled(props.enabledMask, props.previewTrack)
+            ? trackColor(props.previewTrack)
+            : trackInactiveColor();
+    rowProps.accentOpa = props.selectingTrack ? LV_OPA_COVER : LV_OPA_80;
+    rowProps.backgroundColor =
+        isTrackEnabled(props.enabledMask, props.previewTrack)
+            ? trackColor(props.previewTrack)
+            : trackInactiveColor();
+    rowProps.backgroundOpa = props.selectingTrack ? TRACK_BG_OPA_SELECTING : TRACK_BG_OPA_IDLE;
 
-        lv_obj_set_style_text_color(left_label_, propertyColor, 0);
-        lv_obj_set_style_text_opa(left_label_, propertyOpa, 0);
-
-        top_row_dimmed_ = props.dimmed;
-        top_row_cache_initialized_ = true;
+    for (uint8_t i = 0; i < rowProps.ITEM_COUNT; ++i) {
+        const uint8_t trackIndex = static_cast<uint8_t>(windowStart + i);
+        const bool inRange = trackIndex < SequencerHeaderBarProps::TRACK_COUNT;
+        const bool enabled = inRange && isTrackEnabled(props.enabledMask, trackIndex);
+        const bool isActive = inRange && props.activeTrack == trackIndex;
+        const bool isPreview = inRange && props.previewTrack == trackIndex;
+        rowProps.itemColors[i] = enabled ? trackColor(trackIndex) : trackInactiveColor();
+        rowProps.itemOpacities[i] =
+            trackSquareOpa(inRange ? props.trackActivity[trackIndex] : 0, isActive, isPreview);
     }
 
-    setLabelTextIfChanged(left_label_, left_text_cache_, props.leftText);
-
-    if (track_accent_) {
-        const uint32_t accentColor =
-            isTrackEnabled(props.enabledMask, props.previewTrack) ? trackColor(props.previewTrack)
-                                                                  : trackInactiveColor();
-        const lv_opa_t accentOpa = props.selectingTrack ? LV_OPA_COVER : LV_OPA_80;
-        if (!top_row_surface_cache_initialized_ || track_accent_cache_color_ != accentColor) {
-            lv_obj_set_style_bg_color(track_accent_, lv_color_hex(accentColor), 0);
-            track_accent_cache_color_ = accentColor;
-        }
-        if (!top_row_surface_cache_initialized_ || track_accent_cache_opa_ != accentOpa) {
-            lv_obj_set_style_bg_opa(track_accent_, accentOpa, 0);
-            track_accent_cache_opa_ = accentOpa;
-        }
-    }
-
-    if (top_row_) {
-        const uint32_t bgColor =
-            isTrackEnabled(props.enabledMask, props.previewTrack) ? trackColor(props.previewTrack)
-                                                                  : trackInactiveColor();
-        const lv_opa_t bgOpa =
-            props.selectingTrack ? TRACK_BG_OPA_SELECTING : TRACK_BG_OPA_IDLE;
-        if (!top_row_surface_cache_initialized_ || top_row_bg_cache_color_ != bgColor) {
-            lv_obj_set_style_bg_color(top_row_, lv_color_hex(bgColor), 0);
-            top_row_bg_cache_color_ = bgColor;
-        }
-        if (!top_row_surface_cache_initialized_ || top_row_bg_cache_opa_ != bgOpa) {
-            lv_obj_set_style_bg_opa(top_row_, bgOpa, 0);
-            top_row_bg_cache_opa_ = bgOpa;
-        }
-    }
-    top_row_surface_cache_initialized_ = true;
-
-    const bool activityChanged =
-        track_selector_cache_active_ != props.activeTrack ||
-        track_selector_cache_preview_ != props.previewTrack ||
-        track_selector_cache_enabled_mask_ != props.enabledMask ||
-        track_selector_cache_activity_ != props.trackActivity;
-
-    if (activityChanged) {
-        for (uint8_t i = 0; i < track_selector_items_.size(); ++i) {
-            auto* item = track_selector_items_[i];
-            if (!item) continue;
-
-            const bool isPreview = props.previewTrack == i;
-            const bool isActive = props.activeTrack == i;
-            const bool enabled = isTrackEnabled(props.enabledMask, i);
-            lv_obj_set_style_bg_color(
-                item,
-                lv_color_hex(enabled ? trackColor(i) : trackInactiveColor()),
-                0
-            );
-            lv_obj_set_style_bg_opa(
-                item,
-                trackSquareOpa(props.trackActivity[i], isActive, isPreview),
-                0
-            );
-        }
-
-        track_selector_cache_active_ = props.activeTrack;
-        track_selector_cache_preview_ = props.previewTrack;
-        track_selector_cache_enabled_mask_ = props.enabledMask;
-        track_selector_cache_activity_ = props.trackActivity;
-    }
+    top_row_->render(rowProps);
 }
 
 void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
