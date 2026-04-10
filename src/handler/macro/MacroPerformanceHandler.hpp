@@ -8,6 +8,7 @@
 #include <oc/context/OverlayManager.hpp>
 
 #include "handler/macro/MacroDomainServices.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "ui/OverlayTypes.hpp"
@@ -19,6 +20,10 @@ public:
     struct StateRefs {
         core::state::macro::MacroUiState& macroUi;
         core::state::macro::MacroPagesState& pages;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+        core::state::StructureClipboardState& structureClipboard;
     };
 
     MacroPerformanceHandler(StateRefs state,
@@ -42,15 +47,25 @@ private:
     void closeQuickControlsCancel();
     void navigateQuickControls(float delta);
     void setFocusedQuickControlValue(float normalized);
-    void openPageSelector();
-    void navigatePageSelector(float delta);
-    void toggleSelectedPageEnabled();
-    void closePageSelectorApplyIfReleased();
-    void closePageSelectorCancel();
     void navigateProperty(float delta);
+    void cycleNavigationFocus();
     void movePage(float delta);
     void moveTrack(float delta);
-    void toggleActiveTrackEnabled();
+    void eraseCurrentStructure();
+    void removeCurrentStructure();
+    void copyCurrentStructure();
+    void pasteCurrentStructure();
+    void createPreviewedStructure();
+    bool canRemoveCurrentStructure() const;
+    bool canPasteCurrentStructure() const;
+    void beginHoldAction(core::state::StructureHoldAction action);
+    void clearHoldAction();
+    void enterSelectionMode(core::state::StructureSelectionScope scope);
+    void cancelSelectionMode();
+    void toggleSelectionAtCursor();
+    void navigateSelection(float delta);
+    void deleteSelection();
+    void duplicateSelection();
     void configureMacroEncoders();
     void configureValueEncoders();
     void configureDiscreteEncoders(uint8_t discreteSteps);
@@ -67,18 +82,22 @@ private:
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    core::state::StructureClipboardState& structure_clipboard_;
     MacroDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
-    bool nav_modifier_used_ = false;
+    bool nav_long_press_used_ = false;
     bool left_center_held_ = false;
     bool left_bottom_held_ = false;
+    bool ignore_next_bottom_left_release_ = false;
+    bool ignore_next_bottom_right_release_ = false;
     uint8_t quick_snapshot_page_ = 0;
     std::array<core::state::macro::MacroConfig, Config::MACRO_COUNT> quick_snapshot_configs_{};
-    uint8_t page_selector_snapshot_page_ = 0;
-    uint8_t page_selector_snapshot_enabled_mask_ = 0xFF;
 };
 
 }  // namespace core::handler

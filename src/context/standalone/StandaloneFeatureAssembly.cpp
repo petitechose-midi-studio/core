@@ -41,6 +41,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.macroEdit,
             state.pages,
             state.macroUi,
+            state.structureNavigationFocus,
+            state.structureClipboard,
             state.configRevision,
         },
         core::handler::MacroDomainServices::fromCoreState(state),
@@ -56,6 +58,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::context::standalone::SequencerFeatureModule::StateRefs{
             state.overlays,
             state.activeView,
+            state.structureNavigationFocus,
+            state.structureClipboard,
             state.sequencer,
             state.sequencerTracks,
         },

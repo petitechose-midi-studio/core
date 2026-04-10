@@ -161,7 +161,7 @@ private:
     struct Payload {
         uint8_t activeTrack = 0;
         uint8_t reserved0 = 0;
-        uint16_t trackEnabledMask = 0x01;
+        uint16_t trackEnabledMask = 0x0001;
         std::array<state::macro::MacroTrackData, state::macro::TRACK_COUNT> tracks{};
     };
 #pragma pack(pop)
@@ -170,7 +170,7 @@ private:
                   "MacroTrackData must remain trivially copyable");
     static_assert(std::is_trivially_copyable_v<Payload>,
                   "Macro persistence payload must remain trivially copyable");
-    static_assert(sizeof(Payload) == 3620, "Unexpected macro persistence payload size");
+    static_assert(sizeof(Payload) == 14404, "Unexpected macro persistence payload size");
 
     static constexpr uint16_t PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(Payload));
 
@@ -183,7 +183,7 @@ private:
     static void applyPayload_(const Payload& payload, state::macro::MacroPagesState& target) {
         target.initDefaults();
         target.tracks = payload.tracks;
-        target.trackEnabledMask.set(payload.trackEnabledMask == 0 ? 0x01 : payload.trackEnabledMask);
+        target.trackEnabledMask.set(payload.trackEnabledMask == 0 ? 0x0001 : payload.trackEnabledMask);
         target.activeTrack = payload.activeTrack < state::macro::TRACK_COUNT ? payload.activeTrack : 0;
         target.syncActiveTrackCache();
         target.updateActiveConfigs();

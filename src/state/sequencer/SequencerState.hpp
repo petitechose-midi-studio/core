@@ -42,6 +42,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepInlineFeedbackState stepInlineFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
+    SequencerStructureUiState structureUi;
     SequencerRangeSelectionState rangeSelection;
 
     static uint8_t clampMidi7(uint8_t value) {
@@ -177,6 +178,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         stepPropertyInlineSelector.reset();
         stepInlineFeedback.reset();
         patternQuickControls.reset();
+        structureUi.reset();
         rangeSelection.reset();
     }
 

@@ -94,6 +94,8 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
             core_state_.macros,
             core_state_.pages,
             core_state_.macroUi,
+            core_state_.structureNavigationFocus,
+            core_state_.structureClipboard,
             core_state_.configRevision,
             core_state_.statusBar,
         }
@@ -103,6 +105,8 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
         core::ui::SequencerView::StateRefs{
             core_state_.sequencer,
             core_state_.sequencerTracks,
+            core_state_.structureNavigationFocus,
+            core_state_.structureClipboard,
             core_state_.statusBar,
             core_state_.viewSelector,
             core_state_.globalSettings,
@@ -116,8 +120,7 @@ FLASHMEM void StandaloneUiAssembly::createBottomBar() {
     lv_obj_t* bottomZone = view_container_->getBottomZone();
     transport_bar_ = core::app::makeExtmemUnique<core::ui::TransportBar>(
         bottomZone,
-        core_state_.statusBar,
-        core_state_.sequencerTracks
+        core_state_.statusBar
     );
     context_softkey_bar_ = core::app::makeExtmemUnique<core::ui::ContextSoftkeyBar>(bottomZone);
 }

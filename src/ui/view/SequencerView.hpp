@@ -15,9 +15,11 @@
 #include "state/StatusBarState.hpp"
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "ui/common/TrackNavigationStrip.hpp"
 #include "ui/sequencer/SequencerBottomControls.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
@@ -34,6 +36,10 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        core::state::StructureClipboardState& structureClipboard;
         core::state::StatusBarState& statusBar;
         core::state::ViewSelectorState& viewSelector;
         core::state::GlobalSettingsState& globalSettings;
@@ -58,7 +64,6 @@ private:
     void bindToState();
     void bindBottomControlsState();
     void bindHeaderState();
-    void bindHeaderActivityState();
     void bindHeaderStripState();
     void bindGridState();
     void bindPropertyStripState();
@@ -75,6 +80,7 @@ private:
     void requestRender(bool& dirtyFlag);
     void requestHeaderTopRender();
     void requestHeaderStripRender();
+    void requestTrackStripRender();
     void requestBottomControlsRender();
     void requestPropertyStripRender();
     void requestLeftActionStripRender();
@@ -91,6 +97,7 @@ private:
     bool dirty_ = false;
     bool header_top_dirty_ = true;
     bool header_strip_dirty_ = true;
+    bool track_strip_dirty_ = true;
     bool bottom_controls_dirty_ = true;
     bool property_strip_dirty_ = true;
     bool left_action_strip_dirty_ = true;
@@ -103,8 +110,10 @@ private:
     lv_obj_t* body_container_ = nullptr;
     lv_obj_t* interaction_container_ = nullptr;
     lv_obj_t* center_column_ = nullptr;
+    lv_obj_t* structure_row_container_ = nullptr;
 
     std::unique_ptr<core::ui::SequencerHeaderBar> header_bar_;
+    std::unique_ptr<core::ui::TrackNavigationStrip> track_strip_;
     std::unique_ptr<core::ui::SequencerBottomControls> bottom_controls_;
     std::unique_ptr<core::ui::StepPropertyStrip> property_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;

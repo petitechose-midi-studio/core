@@ -25,7 +25,7 @@ namespace Display {
 // ═══════════════════════════════════════════════════════════════════════════
 
 constexpr uint8_t VSYNC_SPACING = 1;
-constexpr uint32_t SPI_SPEED = 60'000'000;
+constexpr uint32_t SPI_SPEED = 50'000'000;
 
 static_assert(Config::Timing::LVGL_HZ > 0, "LVGL_HZ must be > 0");
 static_assert((Config::Timing::LVGL_HZ % VSYNC_SPACING) == 0,

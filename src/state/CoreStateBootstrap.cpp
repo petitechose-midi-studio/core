@@ -39,8 +39,6 @@ void configureDebugLabels_(CoreState& state) {
     state.macroUi.quickControlsSelecting.setDebugLabel("core.macroUi.quickControlsSelecting");
     state.macroUi.focusedQuickControl.setDebugLabel("core.macroUi.focusedQuickControl");
     state.macroUi.ccOffset.setDebugLabel("core.macroUi.ccOffset");
-    state.macroUi.pageSelecting.setDebugLabel("core.macroUi.pageSelecting");
-    state.macroUi.selectedPage.setDebugLabel("core.macroUi.selectedPage");
 
     state.globalSettings.flowPhase.setDebugLabel("core.globalSettings.flowPhase");
     state.globalSettings.selector.visible.setDebugLabel("core.globalSettings.selector.visible");
@@ -53,9 +51,6 @@ void configureDebugLabels_(CoreState& state) {
     state.dataManager.dialog.mode.setDebugLabel("core.dataManager.dialog.mode");
     state.dataManager.dialog.selectedIndex.setDebugLabel("core.dataManager.dialog.selectedIndex");
     state.dataManager.dialog.editingShortcutRow.setDebugLabel("core.dataManager.dialog.editingShortcutRow");
-
-    state.sequencerTracks.selector.selecting.setDebugLabel("core.sequencerTracks.selector.selecting");
-    state.sequencerTracks.selector.selectedTrack.setDebugLabel("core.sequencerTracks.selector.selectedTrack");
 
     state.sequencer.stepPropertyInlineSelector.selecting.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selecting");
     state.sequencer.stepPropertyInlineSelector.selectedIndex.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selectedIndex");
@@ -113,7 +108,7 @@ FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
 
 FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& state) {
     state.sequencerDomain_.autoPersist =
-        std::make_unique<oc::state::AutoPersistIncremental<8>>(
+        std::make_unique<oc::state::AutoPersistIncremental<10>>(
             [](uint8_t) {},
             [&state]() { state.persistSequencerWorkspace_(); },
             CoreSettings::VALUE_SAVE_DELAY_MS
@@ -127,6 +122,8 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
     state.sequencerDomain_.autoPersist->watchAt(5, state.sequencer.page);
     state.sequencerDomain_.autoPersist->watchAt(6, state.sequencer.focusedStep);
     state.sequencerDomain_.autoPersist->watchAt(7, state.sequencer.activeStepProperty);
+    state.sequencerDomain_.autoPersist->watchAt(8, state.sequencerTracks.activeTrack);
+    state.sequencerDomain_.autoPersist->watchAt(9, state.sequencerTracks.enabledMask);
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {

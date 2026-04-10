@@ -13,6 +13,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/MacroEditState.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "ui/OverlayTypes.hpp"
@@ -45,6 +46,10 @@ public:
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        core::state::StructureClipboardState& structureClipboard;
         oc::state::Signal<uint32_t>& configRevision;
     };
 

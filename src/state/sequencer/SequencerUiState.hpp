@@ -7,6 +7,8 @@
 #include <oc/note/sequencer/StepSequencerState.hpp>
 #include <oc/note/sequencer/StepBitMask128.hpp>
 
+#include "state/StructureSelectionState.hpp"
+
 namespace core::state::sequencer {
 
 using oc::state::Signal;
@@ -131,6 +133,18 @@ struct SequencerPatternQuickControlsState {
     void reset() {
         selecting.set(false);
         offsetSteps.set(0);
+    }
+};
+
+struct SequencerStructureUiState {
+    Signal<bool, 4> previewAddSlot{false};
+    core::state::StructureHoldState hold;
+    core::state::StructureSelectionState selection;
+
+    void reset() {
+        previewAddSlot.set(false);
+        hold.clear();
+        selection.reset(core::state::StructureSelectionScope::PAGE);
     }
 };
 

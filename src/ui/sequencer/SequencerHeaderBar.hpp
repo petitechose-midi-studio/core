@@ -21,15 +21,25 @@ namespace core::ui {
 
 struct SequencerHeaderBarProps {
     static constexpr uint8_t TRACK_COUNT = core::state::StatusBarState::TRACK_COUNT;
-    static constexpr uint8_t VISIBLE_TRACK_COUNT = TrackHeaderRowProps::ITEM_COUNT;
+    static constexpr uint8_t VISIBLE_TRACK_COUNT = TRACK_COUNT;
 
     uint8_t length = 0;
-    uint8_t viewedPage = 0;     // 0..7, may point to a future paste target page
+    uint8_t activePage = 0;
+    uint8_t viewedPage = 0;     // 0..15, may point to a future paste target page
     int16_t playheadStep = -1;  // -1 when stopped
     uint8_t activeTrack = 0;
     uint8_t previewTrack = 0;
+    uint8_t addPageIndex = core::state::sequencer::SequencerState::PAGE_COUNT;
+    uint8_t addTrackIndex = TRACK_COUNT;
     uint16_t enabledMask = 0x0001;
+    bool focusingTrack = false;
+    bool focusingPage = false;
     bool selectingTrack = false;
+    bool selectingPage = false;
+    bool previewPageAddSlot = false;
+    bool previewTrackAddSlot = false;
+    uint16_t trackSelectedMask = 0;
+    uint16_t pageSelectedMask = 0;
     std::array<uint8_t, TRACK_COUNT> trackActivity{};
     const char* leftText = "";
     bool dimmed = false;
@@ -57,7 +67,7 @@ public:
 private:
     static constexpr uint8_t PAGE_COUNT = core::state::sequencer::SequencerState::PAGE_COUNT;
     static constexpr uint8_t STEPS_PER_PAGE = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    static constexpr lv_coord_t TOP_ROW_HEIGHT = 16;
+    static constexpr lv_coord_t TOP_ROW_HEIGHT = 20;
     static constexpr lv_coord_t STRIP_HEIGHT = 3;
     static constexpr lv_coord_t ROW_GAP = 2;
     static constexpr lv_coord_t MARKER_WIDTH = 2;
@@ -86,6 +96,7 @@ private:
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
+    lv_obj_t* strip_cursor_ = nullptr;
     std::unique_ptr<TrackHeaderRow> top_row_;
 
     std::array<Segment, PAGE_COUNT> segments_{};
@@ -96,6 +107,9 @@ private:
     uint8_t strip_cached_viewed_page_ = 0;
     int16_t strip_cached_playhead_ = -2;
     lv_coord_t strip_cached_width_ = -1;
+    bool strip_cursor_visible_cache_ = false;
+    lv_coord_t strip_cursor_x_cache_ = -1;
+    lv_coord_t strip_cursor_width_cache_ = -1;
 };
 
 }  // namespace core::ui

@@ -4,6 +4,8 @@
 
 #include <oc/state/Signal.hpp>
 
+#include "state/StructureSelectionState.hpp"
+
 namespace core::state::macro {
 
 enum class MacroPerformanceProperty : uint8_t {
@@ -27,8 +29,9 @@ struct MacroUiState {
         MacroQuickControlItem::GLOBAL_CHANNEL
     };
     oc::state::Signal<int8_t, 2> ccOffset{0};
-    oc::state::Signal<bool, 2> pageSelecting{false};
-    oc::state::Signal<uint8_t, 2> selectedPage{0};
+    oc::state::Signal<bool, 2> previewAddSlot{false};
+    core::state::StructureHoldState hold;
+    core::state::StructureSelectionState structureSelection;
 
     void reset() {
         clutchActive.set(false);
@@ -36,8 +39,9 @@ struct MacroUiState {
         quickControlsSelecting.set(false);
         focusedQuickControl.set(MacroQuickControlItem::GLOBAL_CHANNEL);
         ccOffset.set(0);
-        pageSelecting.set(false);
-        selectedPage.set(0);
+        previewAddSlot.set(false);
+        hold.clear();
+        structureSelection.reset(core::state::StructureSelectionScope::PAGE);
     }
 };
 

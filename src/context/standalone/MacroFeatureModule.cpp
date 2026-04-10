@@ -84,6 +84,8 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
         core::handler::MacroPerformanceHandler::StateRefs{
             stateRefs.macroUi,
             stateRefs.pages,
+            stateRefs.structureNavigationFocus,
+            stateRefs.structureClipboard,
         },
         services,
         overlays,

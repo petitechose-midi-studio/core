@@ -258,6 +258,139 @@ FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t 
     return dataChanged || maskChanged;
 }
 
+FLASHMEM bool appendPage(SequencerState& target) {
+    const uint8_t len = target.length.get();
+    const uint8_t pageCount = target.activePageCount();
+    if (len == 0 || pageCount >= SequencerState::PAGE_COUNT) return false;
+
+    const uint8_t newLength = static_cast<uint8_t>(std::min<uint16_t>(
+        SequencerState::MAX_STEPS,
+        static_cast<uint16_t>(len) + SequencerState::STEPS_PER_PAGE
+    ));
+    if (newLength <= len) return false;
+
+    auto mask = target.enabledMask.get();
+    for (uint8_t step = len; step < newLength; ++step) {
+        target.note[step] = SequencerState::DEFAULT_NOTE;
+        target.velocity[step] = SequencerState::DEFAULT_VELOCITY;
+        target.gate[step] = SequencerState::DEFAULT_GATE_PERCENT;
+        target.nudge[step] = 0;
+        target.probability[step] = SequencerState::DEFAULT_PROBABILITY;
+        mask.setBit(step, false);
+    }
+
+    target.length.set(newLength);
+    target.enabledMask.set(mask & lengthMask(newLength));
+
+    const uint8_t newPage = pageCount;
+    const uint8_t focused = static_cast<uint8_t>(newPage * SequencerState::STEPS_PER_PAGE);
+    target.focusedStep.set(focused);
+    target.page.set(newPage);
+    target.bumpStepDataRevision();
+    return true;
+}
+
+FLASHMEM bool removePage(SequencerState& target, uint8_t pageIndex) {
+    const uint8_t len = target.length.get();
+    if (len <= SequencerState::STEPS_PER_PAGE) return false;
+
+    const uint8_t pageCount = target.activePageCount();
+    if (pageCount <= 1 || pageIndex >= pageCount) return false;
+
+    const uint8_t pageStart = static_cast<uint8_t>(pageIndex * SequencerState::STEPS_PER_PAGE);
+    if (pageStart >= len) return false;
+
+    const uint8_t deleteSpan = static_cast<uint8_t>(std::min<uint16_t>(
+        SequencerState::STEPS_PER_PAGE,
+        static_cast<uint16_t>(len - pageStart)
+    ));
+    const uint8_t newLength = static_cast<uint8_t>(len - deleteSpan);
+    auto mask = target.enabledMask.get();
+
+    for (uint8_t dst = pageStart; static_cast<uint16_t>(dst + deleteSpan) < len; ++dst) {
+        const uint8_t src = static_cast<uint8_t>(dst + deleteSpan);
+        target.note[dst] = target.note[src];
+        target.velocity[dst] = target.velocity[src];
+        target.gate[dst] = target.gate[src];
+        target.nudge[dst] = target.nudge[src];
+        target.probability[dst] = target.probability[src];
+        mask.setBit(dst, mask.test(src));
+    }
+
+    for (uint8_t step = newLength; step < SequencerState::MAX_STEPS; ++step) {
+        target.note[step] = SequencerState::DEFAULT_NOTE;
+        target.velocity[step] = SequencerState::DEFAULT_VELOCITY;
+        target.gate[step] = SequencerState::DEFAULT_GATE_PERCENT;
+        target.nudge[step] = 0;
+        target.probability[step] = SequencerState::DEFAULT_PROBABILITY;
+        mask.setBit(step, false);
+    }
+
+    target.length.set(newLength);
+    target.enabledMask.set(mask & lengthMask(newLength));
+
+    const uint8_t focused = static_cast<uint8_t>(std::min<uint16_t>(
+        pageStart,
+        static_cast<uint16_t>(newLength - 1U)
+    ));
+    target.focusedStep.set(focused);
+    target.page.set(target.pageForStep(focused));
+    target.bumpStepDataRevision();
+    return true;
+}
+
+FLASHMEM bool duplicatePage(SequencerState& target, uint8_t pageIndex) {
+    const uint8_t len = target.length.get();
+    const uint8_t pageCount = target.activePageCount();
+    if (len == 0 || pageIndex >= pageCount || pageCount >= SequencerState::PAGE_COUNT) {
+        return false;
+    }
+
+    const uint8_t srcStart = static_cast<uint8_t>(pageIndex * SequencerState::STEPS_PER_PAGE);
+    if (srcStart >= len) return false;
+
+    const uint8_t copyCount = static_cast<uint8_t>(std::min<uint16_t>(
+        SequencerState::STEPS_PER_PAGE,
+        static_cast<uint16_t>(len - srcStart)
+    ));
+    if (copyCount == 0) return false;
+
+    const uint8_t dstStart = static_cast<uint8_t>(pageCount * SequencerState::STEPS_PER_PAGE);
+    if (dstStart >= SequencerState::MAX_STEPS) return false;
+
+    auto mask = target.enabledMask.get();
+    for (uint8_t i = 0; i < SequencerState::STEPS_PER_PAGE; ++i) {
+        const uint8_t dst = static_cast<uint8_t>(dstStart + i);
+        if (i < copyCount) {
+            const uint8_t src = static_cast<uint8_t>(srcStart + i);
+            target.note[dst] = target.note[src];
+            target.velocity[dst] = target.velocity[src];
+            target.gate[dst] = target.gate[src];
+            target.nudge[dst] = target.nudge[src];
+            target.probability[dst] = target.probability[src];
+            mask.setBit(dst, mask.test(src));
+        } else {
+            target.note[dst] = SequencerState::DEFAULT_NOTE;
+            target.velocity[dst] = SequencerState::DEFAULT_VELOCITY;
+            target.gate[dst] = SequencerState::DEFAULT_GATE_PERCENT;
+            target.nudge[dst] = 0;
+            target.probability[dst] = SequencerState::DEFAULT_PROBABILITY;
+            mask.setBit(dst, false);
+        }
+    }
+
+    const uint8_t newLength = static_cast<uint8_t>(std::min<uint16_t>(
+        SequencerState::MAX_STEPS,
+        static_cast<uint16_t>(len + copyCount)
+    ));
+    target.length.set(newLength);
+    target.enabledMask.set(mask & lengthMask(newLength));
+    target.focusedStep.set(dstStart);
+    target.page.set(target.pageForStep(dstStart));
+    target.bumpStepDataRevision();
+    return true;
+}
+
 FLASHMEM bool copyStepRangeToClipboard(
     const SequencerState& source,
     uint8_t startStep,

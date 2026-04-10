@@ -100,8 +100,7 @@ bool MacroValueHandler::shouldHandleTurns() const {
     return active_view_.get() == core::ui::ViewType::MACRO &&
            !overlays_.hasVisible() &&
            !macro_edit_.visible.get() &&
-           !macro_ui_.quickControlsSelecting.get() &&
-           !macro_ui_.pageSelecting.get();
+           !macro_ui_.quickControlsSelecting.get();
 }
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {

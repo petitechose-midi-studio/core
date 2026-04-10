@@ -64,6 +64,8 @@ void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.dataManager.resetSession(DataManagerContext::MACRO);
     state.dataManager.feedback.set("");
     state.macroUi.reset();
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    state.structureClipboard.clear();
     state.activeView.set(core::ui::ViewType::MACRO);
     state.overlays.hideAll();
     state.configRevision.set(state.configRevision.get() + 1);
@@ -84,12 +86,13 @@ void CoreStateLifecycle::flush(CoreState& state) {
 void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.macroEdit.reset();
     state.macroUi.reset();
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.rangeSelection.reset();
-    state.sequencerTracks.selector.reset(state.sequencerTracks.activeTrack.get());
     state.globalSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
 }

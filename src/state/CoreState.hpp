@@ -30,6 +30,7 @@
 #include "MidiSyncState.hpp"
 #include "MacroEditState.hpp"
 #include "MacroState.hpp"
+#include "StructureClipboardState.hpp"
 #include "../ui/OverlayTypes.hpp"
 #include "../ui/ViewTypes.hpp"
 #include "StatusBarState.hpp"
@@ -86,7 +87,7 @@ struct SequencerDomainState {
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
-    std::unique_ptr<oc::state::AutoPersistIncremental<8>> autoPersist;
+    std::unique_ptr<oc::state::AutoPersistIncremental<10>> autoPersist;
 
     SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                          oc::interface::IStorage& patternLibraryStorage,
@@ -99,6 +100,11 @@ struct SequencerDomainState {
 struct UiSystemState {
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
     oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
+    oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>
+        structureNavigationFocus{
+        core::state::StructureNavigationFocus::PAGE
+    };
+    StructureClipboardState structureClipboard;
     ViewSelectorState viewSelector;
     StatusBarState statusBar;
     MidiSyncState midiSync;
@@ -144,6 +150,9 @@ public:
     /// Shared UI/system domain aliases
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
     oc::state::Signal<core::ui::ViewType, 8>& activeView;
+    oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>&
+        structureNavigationFocus;
+    StructureClipboardState& structureClipboard;
     ViewSelectorState& viewSelector;
     StatusBarState& statusBar;
     MidiSyncState& midiSync;

@@ -13,7 +13,6 @@
 #include "handler/sequencer/SequencerRangeActionHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
-#include "handler/sequencer/SequencerTrackSelectorHandler.hpp"
 
 namespace core::context::standalone {
 
@@ -54,6 +53,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::handler::SequencerStepHandler::StateRefs{
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
+            stateRefs.structureNavigationFocus,
+            stateRefs.structureClipboard,
         },
         encoders,
         buttons,
@@ -61,16 +62,6 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     );
     range_action_handler_ = std::make_unique<core::handler::SequencerRangeActionHandler>(
         core::handler::SequencerRangeActionHandler::StateRefs{
-            stateRefs.overlays,
-            stateRefs.sequencer,
-            stateRefs.sequencerTracks,
-        },
-        encoders,
-        buttons,
-        sequencerViewScopeId
-    );
-    track_selector_handler_ = std::make_unique<core::handler::SequencerTrackSelectorHandler>(
-        core::handler::SequencerTrackSelectorHandler::StateRefs{
             stateRefs.overlays,
             stateRefs.sequencer,
             stateRefs.sequencerTracks,

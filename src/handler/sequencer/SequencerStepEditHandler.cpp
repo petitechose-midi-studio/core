@@ -36,7 +36,7 @@ inline oc::type::IsActiveFn canOpenStepEdit(
 ) {
     return [&overlays, &sequencer, &tracks]() {
         return !overlays.hasVisible() &&
-               !tracks.selector.selecting.get() &&
+               !sequencer.structureUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
                !sequencer.stepPropertyInlineSelector.selecting.get() &&
                !sequencer.rangeSelection.active();

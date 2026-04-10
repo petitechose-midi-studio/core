@@ -11,21 +11,11 @@ namespace core::state::sequencer {
 
 using oc::state::Signal;
 
-struct SequencerTrackSelectorState {
-    Signal<bool, 4> selecting{false};
-    Signal<uint8_t, 6> selectedTrack{0};
-    uint8_t snapshotTrack = 0;
-    uint16_t snapshotEnabledMask = 0x0001;
-
-    void reset(uint8_t track = 0);
-};
-
 struct SequencerTrackBankState {
     static constexpr uint8_t TRACK_COUNT = 16;
 
     Signal<uint8_t, 8> activeTrack{0};
     Signal<uint16_t, 16> enabledMask{0x0001};
-    SequencerTrackSelectorState selector;
     std::array<SequencerState, TRACK_COUNT> tracks{};
 
     SequencerTrackBankState();

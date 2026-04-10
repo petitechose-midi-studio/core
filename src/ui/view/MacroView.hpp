@@ -21,8 +21,10 @@
 
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "ui/common/TrackNavigationStrip.hpp"
 #include "ui/macro/MacroBottomControls.hpp"
 #include "ui/macro/MacroHeaderBar.hpp"
 #include "ui/macro/MacroPropertyStrip.hpp"
@@ -44,6 +46,10 @@ public:
         core::state::MacroState& macros;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        core::state::StructureClipboardState& structureClipboard;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
     };
@@ -82,6 +88,7 @@ private:
     void scheduleUpdate();
     void pauseUpdateIfIdle();
     void requestHeaderRender();
+    void requestTrackStripRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
     void requestPropertyStripRender();
@@ -98,6 +105,7 @@ private:
     std::array<bool, MACRO_COUNT> config_dirty_flags_{};
     bool has_dirty_ = false;
     bool header_dirty_ = true;
+    bool track_strip_dirty_ = true;
     bool left_action_strip_dirty_ = true;
     bool bottom_action_strip_dirty_ = true;
     bool property_strip_dirty_ = true;
@@ -111,8 +119,10 @@ private:
     lv_obj_t* interaction_container_ = nullptr;
     lv_obj_t* center_column_ = nullptr;
     lv_obj_t* macro_grid_container_ = nullptr;
+    lv_obj_t* structure_row_container_ = nullptr;
     std::unique_ptr<core::ui::MacroHeaderBar> header_bar_;
     std::unique_ptr<core::ui::MacroBottomControls> bottom_controls_;
+    std::unique_ptr<core::ui::TrackNavigationStrip> track_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
     std::unique_ptr<core::ui::MacroPropertyStrip> property_strip_;

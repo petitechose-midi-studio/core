@@ -6,13 +6,31 @@ namespace style = oc::ui::lvgl::style;
 
 namespace core::ui {
 
+namespace {
+
+constexpr lv_coord_t STRUCTURE_ROW_HEIGHT = 6;
+
+}  // namespace
+
 MainViewFrame::MainViewFrame(lv_obj_t* parent) {
     layout_ = std::make_unique<ms::ui::LayoutView>(parent);
     container_ = layout_->getElement();
-    header_ = layout_->header();
+    header_root_ = layout_->header();
     body_ = layout_->content();
 
-    style::apply(header_).transparent().pad(0);
+    style::apply(header_root_).transparent().pad(0);
+    lv_obj_set_layout(header_root_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(header_root_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(
+        header_root_,
+        LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_START
+    );
+    lv_obj_set_style_pad_row(header_root_, 0, 0);
+
+    header_ = lv_obj_create(header_root_);
+    style::apply(header_).size(LV_PCT(100), LV_SIZE_CONTENT).transparent().noBorder().pad(0).noScroll();
     lv_obj_set_layout(header_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(header_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(header_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
@@ -54,6 +72,20 @@ void MainViewFrame::createCenterColumn() {
     lv_obj_set_flex_flow(center_column_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(center_column_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(center_column_, 0, 0);
+}
+
+void MainViewFrame::createStructureRow() {
+    if (structure_row_ || !header_root_) return;
+
+    structure_row_ = lv_obj_create(header_root_);
+    style::apply(structure_row_)
+        .size(LV_PCT(100), STRUCTURE_ROW_HEIGHT)
+        .transparent()
+        .noBorder()
+        .pad(0)
+        .noScroll();
+    lv_obj_add_flag(structure_row_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    lv_obj_move_to_index(structure_row_, 0);
 }
 
 }  // namespace core::ui

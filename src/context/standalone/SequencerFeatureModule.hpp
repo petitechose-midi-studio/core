@@ -11,6 +11,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/OverlayTypes.hpp"
@@ -32,7 +33,6 @@ class SequencerPropertySelectorHandler;
 class SequencerRangeActionHandler;
 class SequencerStepEditHandler;
 class SequencerStepHandler;
-class SequencerTrackSelectorHandler;
 }  // namespace core::handler
 
 namespace core::context::standalone {
@@ -42,6 +42,10 @@ public:
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        core::state::StructureClipboardState& structureClipboard;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
     };
@@ -66,7 +70,6 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerOverlayPresenter> presenter_;
     std::unique_ptr<core::handler::SequencerStepHandler> step_handler_;
     std::unique_ptr<core::handler::SequencerRangeActionHandler> range_action_handler_;
-    std::unique_ptr<core::handler::SequencerTrackSelectorHandler> track_selector_handler_;
     std::unique_ptr<core::handler::SequencerPatternQuickControlsHandler> quick_controls_handler_;
     std::unique_ptr<core::handler::SequencerStepEditHandler> step_edit_handler_;
     std::unique_ptr<core::handler::SequencerPropertySelectorHandler> property_selector_handler_;

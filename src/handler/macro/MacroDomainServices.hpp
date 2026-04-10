@@ -30,8 +30,20 @@ public:
     uint8_t activeTrackChannel() const;
     bool isActivePageEnabled() const;
     void togglePageEnabled(uint8_t pageIndex) const;
-    void setPageEnabledMask(uint8_t mask) const;
-    uint8_t pageEnabledMask() const;
+    bool deleteActivePage() const;
+    bool deleteActiveTrack() const;
+    bool deleteSelectedPages(uint16_t selectedMask) const;
+    bool deleteSelectedTracks(uint16_t selectedMask) const;
+    bool duplicateSelectedPages(uint16_t selectedMask) const;
+    bool duplicateSelectedTracks(uint16_t selectedMask) const;
+    bool erasePage(uint8_t pageIndex) const;
+    bool eraseTrack(uint8_t trackIndex) const;
+    bool pastePage(uint8_t pageIndex, const core::state::macro::MacroPageData& pageData) const;
+    bool pasteTrack(uint8_t trackIndex, const core::state::macro::MacroTrackData& trackData) const;
+    bool createNextPage() const;
+    bool createNextTrack() const;
+    void setPageEnabledMask(uint16_t mask) const;
+    uint16_t pageEnabledMask() const;
     void setTrackEnabledMask(uint16_t mask) const;
     uint16_t trackEnabledMask() const;
 

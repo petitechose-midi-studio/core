@@ -21,9 +21,10 @@ ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
     , range_selection_(state.rangeSelection)
-    , track_selector_(state.trackSelector)
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
+    , macro_structure_selection_(state.macroStructureSelection)
+    , sequencer_structure_selection_(state.sequencerStructureSelection)
     , overlay_ctx_(overlayCtx)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -69,12 +70,21 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
 bool ViewSwitcherHandler::canOpenSelector() const {
     if (overlays_state_.hasVisible()) return false;
 
+    if (active_view_.get() == core::ui::ViewType::MACRO &&
+        macro_structure_selection_.active.get()) {
+        return false;
+    }
+
+    if (active_view_.get() == core::ui::ViewType::SEQUENCER &&
+        sequencer_structure_selection_.active.get()) {
+        return false;
+    }
+
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
         return true;
     }
 
     return !range_selection_.active() &&
-           !track_selector_.selecting.get() &&
            !pattern_quick_controls_.selecting.get() &&
            !step_property_inline_selector_.selecting.get();
 }

@@ -1,11 +1,13 @@
 #include "ContextActionStrip.hpp"
 
 #include <array>
+#include <cstdio>
 #include <cstring>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <config/PlatformCompat.hpp>
+#include <config/TimeCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/theme/StandaloneTheme.hpp"
@@ -28,6 +30,7 @@ constexpr lv_coord_t HORIZONTAL_OUTER_PAD = 2;
 constexpr lv_coord_t VERTICAL_OUTER_PAD = 6;
 constexpr lv_coord_t VERTICAL_SLOT_GAP = 2;
 constexpr lv_coord_t VERTICAL_SPREAD_OUTER_PAD = 4;
+constexpr uint32_t HOLD_TIMER_PERIOD_MS = 33;
 
 uint32_t toneColor(ContextActionStripTone tone) {
     switch (tone) {
@@ -92,7 +95,10 @@ bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionSt
            lhs.iconUsesStandaloneFont == rhs.iconUsesStandaloneFont &&
            lhs.iconSize == rhs.iconSize &&
            lhs.showLabel == rhs.showLabel &&
-           sameText(lhs.label, rhs.label);
+           sameText(lhs.label, rhs.label) &&
+           lhs.holdActive == rhs.holdActive &&
+           lhs.holdStartedAtMs == rhs.holdStartedAtMs &&
+           lhs.holdDurationMs == rhs.holdDurationMs;
 }
 
 }  // namespace
@@ -107,6 +113,10 @@ ContextActionStrip::ContextActionStrip(
 }
 
 ContextActionStrip::~ContextActionStrip() {
+    if (hold_timer_) {
+        lv_timer_del(hold_timer_);
+        hold_timer_ = nullptr;
+    }
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -213,6 +223,10 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
     }
 
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    hold_timer_ = lv_timer_create(onHoldTimer, HOLD_TIMER_PERIOD_MS, this);
+    if (hold_timer_) {
+        lv_timer_pause(hold_timer_);
+    }
 }
 
 void ContextActionStrip::render(const ContextActionStripProps& props) {
@@ -240,6 +254,8 @@ void ContextActionStrip::render(const ContextActionStripProps& props) {
 
     rendered_props_ = props;
     has_rendered_ = true;
+    refreshHoldIndicators();
+    updateHoldTimer();
 }
 
 void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotProps& props) {
@@ -253,7 +269,7 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
     const lv_opa_t textOpa = contentOpacity(props.visualState);
     const lv_opa_t bgOpa = backgroundOpacity(props.visualState);
     const lv_opa_t accentOpa = indicatorOpacity(props.visualState);
-    const bool showContent = contentVisible(props);
+    const bool showContent = contentVisible(props) || props.holdActive;
 
     lv_obj_set_style_bg_color(slot.container, color, 0);
     lv_obj_set_style_bg_opa(slot.container, bgOpa, 0);
@@ -292,9 +308,101 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
         lv_obj_set_style_text_color(slot.label, color, 0);
         lv_obj_set_style_text_opa(slot.label, textOpa, 0);
         lv_obj_clear_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
-    } else {
+    } else if (!props.holdActive) {
         lv_obj_add_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+void ContextActionStrip::refreshHoldIndicators() {
+    if (!container_ || !has_rendered_) return;
+
+    const uint32_t nowMs = core::time_compat::millis();
+    char timerText[8]{};
+
+    for (size_t index = 0; index < slots_.size(); ++index) {
+        const auto& props = rendered_props_.slots[index];
+        auto& slot = slots_[index];
+        if (!slot.container || !slot.indicator || !slot.label) continue;
+
+        if (!props.holdActive || props.holdDurationMs == 0) {
+            if (!props.showLabel || !props.label) {
+                lv_obj_add_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
+            }
+            if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
+                lv_obj_set_size(slot.indicator, INDICATOR_LONG, INDICATOR_THICKNESS);
+                lv_obj_align(slot.indicator, LV_ALIGN_TOP_MID, 0, 0);
+            } else {
+                lv_obj_set_size(slot.indicator, INDICATOR_THICKNESS, INDICATOR_LONG);
+                lv_obj_align(slot.indicator, LV_ALIGN_LEFT_MID, 0, 0);
+            }
+            continue;
+        }
+
+        const uint32_t elapsedMs =
+            (nowMs > props.holdStartedAtMs) ? (nowMs - props.holdStartedAtMs) : 0;
+        const uint32_t clampedElapsed = std::min(elapsedMs, props.holdDurationMs);
+        const uint32_t remainingMs = props.holdDurationMs - clampedElapsed;
+        const uint16_t remainingTenths = static_cast<uint16_t>((remainingMs + 99U) / 100U);
+
+        std::snprintf(
+            timerText,
+            sizeof(timerText),
+            "%u.%us",
+            static_cast<unsigned>(remainingTenths / 10U),
+            static_cast<unsigned>(remainingTenths % 10U)
+        );
+        lv_label_set_text(slot.label, timerText);
+        lv_obj_set_style_text_font(slot.label, fonts.inter_13_bold, 0);
+        lv_obj_set_style_text_color(slot.label, lv_color_hex(toneColor(props.tone)), 0);
+        lv_obj_set_style_text_opa(slot.label, LV_OPA_COVER, 0);
+        lv_obj_clear_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
+
+        const lv_coord_t slotWidth = lv_obj_get_width(slot.container);
+        const lv_coord_t slotHeight = lv_obj_get_height(slot.container);
+        const lv_coord_t fillLong = (orientation_ == ContextActionStripOrientation::HORIZONTAL)
+            ? static_cast<lv_coord_t>(
+                  (static_cast<int32_t>(std::max<lv_coord_t>(slotWidth, 1)) * clampedElapsed) /
+                  static_cast<int32_t>(props.holdDurationMs)
+              )
+            : static_cast<lv_coord_t>(
+                  (static_cast<int32_t>(std::max<lv_coord_t>(slotHeight, 1)) * clampedElapsed) /
+                  static_cast<int32_t>(props.holdDurationMs)
+              );
+
+        if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
+            lv_obj_set_size(slot.indicator, std::max<lv_coord_t>(1, fillLong), INDICATOR_THICKNESS);
+            lv_obj_align(slot.indicator, LV_ALIGN_TOP_LEFT, 0, 0);
+        } else {
+            lv_obj_set_size(slot.indicator, INDICATOR_THICKNESS, std::max<lv_coord_t>(1, fillLong));
+            lv_obj_align(slot.indicator, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        }
+        lv_obj_set_style_bg_opa(slot.indicator, LV_OPA_COVER, 0);
+    }
+}
+
+void ContextActionStrip::updateHoldTimer() {
+    if (!hold_timer_) return;
+
+    bool active = false;
+    for (const auto& slot : rendered_props_.slots) {
+        if (slot.holdActive && slot.holdDurationMs > 0) {
+            active = true;
+            break;
+        }
+    }
+
+    if (active) {
+        lv_timer_resume(hold_timer_);
+    } else {
+        lv_timer_pause(hold_timer_);
+    }
+}
+
+void ContextActionStrip::onHoldTimer(lv_timer_t* timer) {
+    auto* self = static_cast<ContextActionStrip*>(lv_timer_get_user_data(timer));
+    if (!self || !self->has_rendered_) return;
+    self->refreshHoldIndicators();
+    self->updateHoldTimer();
 }
 
 }  // namespace core::ui

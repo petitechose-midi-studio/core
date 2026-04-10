@@ -23,7 +23,7 @@ inline bool isSequencerIdleForRangeActions(
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
     return !overlays.hasVisible() &&
-           !tracks.selector.selecting.get() &&
+           !sequencer.structureUi.selection.active.get() &&
            !sequencer.stepPropertyInlineSelector.selecting.get() &&
            !sequencer.patternQuickControls.selecting.get() &&
            !sequencer.rangeSelection.active();
@@ -59,42 +59,6 @@ FLASHMEM SequencerRangeActionHandler::SequencerRangeActionHandler(StateRefs stat
 }
 
 FLASHMEM void SequencerRangeActionHandler::setupBindings() {
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(scope_id_)
-        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
-        .then([this]() {
-            if (ignore_next_bottom_left_release_) {
-                ignore_next_bottom_left_release_ = false;
-                return;
-            }
-            clearCurrentPage();
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(scope_id_)
-        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
-        .then([this]() { openClearRange(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(scope_id_)
-        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
-        .then([this]() {
-            if (ignore_next_bottom_right_release_) {
-                ignore_next_bottom_right_release_ = false;
-                return;
-            }
-            core::state::sequencer::duplicatePatternForward(sequencer_);
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(scope_id_)
-        .when(idleRangePredicate(overlays_, sequencer_, tracks_))
-        .then([this]() { openCopyRange(); });
-
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)

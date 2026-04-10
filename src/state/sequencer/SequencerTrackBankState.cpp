@@ -4,21 +4,12 @@
 
 namespace core::state::sequencer {
 
-FLASHMEM void SequencerTrackSelectorState::reset(uint8_t track) {
-    selecting.set(false);
-    selectedTrack.set(track);
-    snapshotTrack = track;
-    snapshotEnabledMask = 0x0001;
-}
-
 FLASHMEM SequencerTrackBankState::SequencerTrackBankState()
-    : activeTrack{0}, enabledMask{0x0001}, selector{}, tracks{} {}
+    : activeTrack{0}, enabledMask{0x0001}, tracks{} {}
 
 FLASHMEM void SequencerTrackBankState::reset() {
     activeTrack.set(0);
     enabledMask.set(0x0001);
-    selector.reset(0);
-    selector.snapshotEnabledMask = 0x0001;
 
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         auto& seq = tracks[i];

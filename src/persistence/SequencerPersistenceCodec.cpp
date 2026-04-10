@@ -158,8 +158,6 @@ FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
         sanitizeStepProperty(payload.tracks[activeTrack].activeStepProperty)
     );
     trackBank.activeTrack.set(activeTrack);
-    trackBank.selector.reset(activeTrack);
-    trackBank.selector.snapshotEnabledMask = trackBank.enabledMask.get();
 }
 
 FLASHMEM void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
@@ -196,8 +194,6 @@ FLASHMEM void applySetPayload(const SetPayload& payload,
         std::min<uint8_t>(payload.activeTrack, static_cast<uint8_t>(trackCount - 1));
     applyPatternPayload(payload.tracks[activeTrack], active);
     trackBank.activeTrack.set(activeTrack);
-    trackBank.selector.reset(activeTrack);
-    trackBank.selector.snapshotEnabledMask = trackBank.enabledMask.get();
 }
 
 }  // namespace core::persistence::sequencer_codec

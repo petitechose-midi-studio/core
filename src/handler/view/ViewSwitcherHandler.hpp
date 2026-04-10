@@ -15,6 +15,7 @@
 #include <ms/ui/OverlayBindingContext.hpp>
 
 #include "state/ViewSelectorState.hpp"
+#include "state/StructureSelectionState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/OverlayTypes.hpp"
@@ -32,10 +33,11 @@ public:
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::ViewSelectorState& viewSelector;
         core::state::sequencer::SequencerRangeSelectionState& rangeSelection;
-        core::state::sequencer::SequencerTrackSelectorState& trackSelector;
         core::state::sequencer::SequencerPatternQuickControlsState& patternQuickControls;
         core::state::sequencer::SequencerStepPropertyInlineSelectorState&
             stepPropertyInlineSelector;
+        core::state::StructureSelectionState& macroStructureSelection;
+        core::state::StructureSelectionState& sequencerStructureSelection;
     };
 
     ViewSwitcherHandler(StateRefs state,
@@ -62,10 +64,11 @@ private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::ViewSelectorState& view_selector_;
     core::state::sequencer::SequencerRangeSelectionState& range_selection_;
-    core::state::sequencer::SequencerTrackSelectorState& track_selector_;
     core::state::sequencer::SequencerPatternQuickControlsState& pattern_quick_controls_;
     core::state::sequencer::SequencerStepPropertyInlineSelectorState&
         step_property_inline_selector_;
+    core::state::StructureSelectionState& macro_structure_selection_;
+    core::state::StructureSelectionState& sequencer_structure_selection_;
     OverlayCtx overlay_ctx_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

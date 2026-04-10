@@ -20,23 +20,11 @@ TransportHandler::TransportHandler(StateRefs state,
 }
 
 FLASHMEM void TransportHandler::setupBindings() {
-    // NAV encoder: tempo +/- 1 BPM per tick (expects EncoderMode::RELATIVE)
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(tempo_scope_id_)
-        .then([this](float delta) { handleTempoChange(delta); });
-
-    // BOTTOM_CENTER button: toggle play from any active top-level view scope
-    oc::type::ScopeID lastBoundScope = 0;
-    for (oc::type::ScopeID playScope : play_toggle_scopes_) {
-        if (!playScope || playScope == lastBoundScope) continue;
-
+    for (const auto scope : play_toggle_scopes_) {
         buttons_.button(Config::ButtonID::BOTTOM_CENTER)
             .release()
-            .scope(playScope)
+            .scope(scope)
             .then([this]() { handlePlayToggle(); });
-
-        lastBoundScope = playScope;
     }
 }
 

@@ -87,6 +87,7 @@ FLASHMEM MacroView::~MacroView() {
     bottom_controls_.reset();
     property_strip_.reset();
     bottom_action_strip_.reset();
+    track_strip_.reset();
     left_action_strip_.reset();
     header_bar_.reset();
     for (auto& macro : macros_) {
@@ -101,12 +102,14 @@ FLASHMEM MacroView::~MacroView() {
     interaction_container_ = nullptr;
     center_column_ = nullptr;
     macro_grid_container_ = nullptr;
+    structure_row_container_ = nullptr;
 }
 
 FLASHMEM void MacroView::onActivate() {
     if (container_) {
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
         requestHeaderRender();
+        requestTrackStripRender();
         processDirtyFlags();
     }
 }
@@ -128,12 +131,14 @@ FLASHMEM void MacroView::bindToState() {
         state_refs_.configRevision.subscribe([this](uint32_t) {
             markAllConfigDirty();
             requestHeaderRender();
+            requestTrackStripRender();
         })
     );
 
     subscriptions_.push_back(
         state_refs_.statusBar.pageName.subscribe([this](const char*) {
             requestHeaderRender();
+            requestTrackStripRender();
         })
     );
 
@@ -180,25 +185,92 @@ FLASHMEM void MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.pageSelecting.subscribe([this](bool) {
+        state_refs_.structureNavigationFocus.subscribe([this](core::state::StructureNavigationFocus) {
             requestHeaderRender();
+            requestTrackStripRender();
             requestLeftActionStripRender();
             requestBottomActionStripRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.selectedPage.subscribe([this](uint8_t) {
-            requestHeaderRender();
-            scheduleUpdate();
+        state_refs_.structureClipboard.revision.subscribe([this](uint32_t) {
+            requestBottomActionStripRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.pages.enabledMask.subscribe([this](uint8_t) {
+        state_refs_.macroUi.previewAddSlot.subscribe([this](bool) {
+            requestHeaderRender();
+            requestTrackStripRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.hold.action.subscribe([this](core::state::StructureHoldAction) {
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.hold.startedAtMs.subscribe([this](uint32_t) {
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.structureSelection.active.subscribe([this](bool) {
+            requestHeaderRender();
+            requestTrackStripRender();
+            requestLeftActionStripRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.structureSelection.scope.subscribe([this](core::state::StructureSelectionScope) {
+            requestHeaderRender();
+            requestTrackStripRender();
+            requestLeftActionStripRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.structureSelection.cursorIndex.subscribe([this](uint8_t) {
+            requestHeaderRender();
+            requestTrackStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.structureSelection.selectedMask.subscribe([this](uint16_t) {
+            requestTrackStripRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.pages.enabledMask.subscribe([this](uint16_t) {
             requestHeaderRender();
         })
     );
+
+    subscriptions_.push_back(
+        state_refs_.pages.trackEnabledMask.subscribe([this](uint16_t) {
+            requestHeaderRender();
+            requestTrackStripRender();
+        })
+    );
+
+    for (uint8_t i = 0; i < core::state::StatusBarState::TRACK_COUNT; ++i) {
+        subscriptions_.push_back(
+            state_refs_.statusBar.trackNoteActivity[i].subscribe([this](uint8_t) {
+                requestTrackStripRender();
+            })
+        );
+    }
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         auto& slot = state_refs_.macros.slots[i];
@@ -211,6 +283,7 @@ FLASHMEM void MacroView::bindToState() {
     }
 
     header_dirty_ = true;
+    track_strip_dirty_ = true;
     left_action_strip_dirty_ = true;
     bottom_action_strip_dirty_ = true;
     property_strip_dirty_ = true;
@@ -268,6 +341,10 @@ FLASHMEM void MacroView::createActionStrips() {
     lv_obj_set_style_pad_column(macro_grid_container_, 0, 0);
     lv_obj_set_style_pad_row(macro_grid_container_, 0, 0);
 
+    frame_->createStructureRow();
+    structure_row_container_ = frame_->structureRow();
+    track_strip_ = std::make_unique<TrackNavigationStrip>(structure_row_container_);
+
     bottom_action_strip_ = std::make_unique<ContextActionStrip>(
         body_container_,
         ContextActionStripOrientation::HORIZONTAL
@@ -299,13 +376,18 @@ FLASHMEM void MacroView::scheduleUpdate() {
 
 FLASHMEM void MacroView::pauseUpdateIfIdle() {
     if (!update_timer_) return;
-    if (has_dirty_ || header_dirty_ || left_action_strip_dirty_ || bottom_action_strip_dirty_ ||
-        property_strip_dirty_) return;
+    if (has_dirty_ || header_dirty_ || track_strip_dirty_ || left_action_strip_dirty_ ||
+        bottom_action_strip_dirty_ || property_strip_dirty_) return;
     update_timer_->pause();
 }
 
 FLASHMEM void MacroView::requestHeaderRender() {
     header_dirty_ = true;
+    scheduleUpdate();
+}
+
+FLASHMEM void MacroView::requestTrackStripRender() {
+    track_strip_dirty_ = true;
     scheduleUpdate();
 }
 
@@ -333,6 +415,7 @@ FLASHMEM void MacroView::markAllDirty() {
     config_dirty_flags_.fill(true);
     has_dirty_ = true;
     header_dirty_ = true;
+    track_strip_dirty_ = true;
     left_action_strip_dirty_ = true;
     bottom_action_strip_dirty_ = true;
     property_strip_dirty_ = true;
@@ -367,6 +450,11 @@ FLASHMEM void MacroView::processDirtyFlags() {
     if (header_dirty_ && header_bar_) {
         header_bar_->render(buildMacroHeaderBarProps(source));
         header_dirty_ = false;
+    }
+
+    if (track_strip_dirty_ && track_strip_) {
+        track_strip_->render(buildMacroTrackNavigationStripProps(source));
+        track_strip_dirty_ = false;
     }
 
     if (left_action_strip_dirty_ && left_action_strip_) {
@@ -436,6 +524,8 @@ FLASHMEM MacroViewModelSource MacroView::modelSource() const {
         .macros = state_refs_.macros,
         .pages = state_refs_.pages,
         .macroUi = state_refs_.macroUi,
+        .navigationFocus = state_refs_.structureNavigationFocus,
+        .structureClipboard = state_refs_.structureClipboard,
         .statusBar = state_refs_.statusBar,
     };
 }

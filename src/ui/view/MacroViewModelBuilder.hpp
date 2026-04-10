@@ -2,13 +2,18 @@
 
 #include <array>
 
+#include <oc/state/Signal.hpp>
+
 #include "state/MacroState.hpp"
+#include "state/StructureSelectionState.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "ui/macro/MacroBottomControls.hpp"
 #include "ui/macro/MacroHeaderBar.hpp"
 #include "ui/macro/MacroPropertyStrip.hpp"
+#include "ui/common/TrackNavigationStrip.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
 namespace core::ui {
@@ -17,6 +22,10 @@ struct MacroViewModelSource {
     const core::state::MacroState& macros;
     const core::state::macro::MacroPagesState& pages;
     const core::state::macro::MacroUiState& macroUi;
+    const oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+    const core::state::StructureClipboardState& structureClipboard;
     const core::state::StatusBarState& statusBar;
 };
 
@@ -31,6 +40,7 @@ struct MacroViewFrameState {
 };
 
 MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source);
+TrackNavigationStripProps buildMacroTrackNavigationStripProps(const MacroViewModelSource& source);
 MacroBottomControlsProps buildMacroBottomControlsProps(const MacroViewModelSource& source);
 MacroPropertyStripProps buildMacroPropertyStripProps(const MacroViewModelSource& source);
 ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source);

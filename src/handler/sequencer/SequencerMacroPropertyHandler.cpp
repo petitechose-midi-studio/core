@@ -16,7 +16,7 @@ inline oc::type::IsActiveFn canEditSequencerProperty(
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
     return [&overlays, &sequencer, &tracks]() {
-        return !tracks.selector.selecting.get() &&
+        return !sequencer.structureUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
                !sequencer.rangeSelection.active() &&
                !overlays.hasVisible();

@@ -8,14 +8,14 @@
  * - Track MIDI channel
  * - Active page index
  * - Page enabled mask
- * - 8 pages of macro configuration
+ * - 16 pages of macro configuration
  *
  * Each page stores:
  * - Page name (16 chars)
  * - CC numbers for each macro (8 bytes)
  * - Last values for each macro (8 floats = 32 bytes)
  *
- * Total: 56 bytes per page, 452 bytes per track.
+ * Total: 56 bytes per page, 900 bytes per track.
  */
 
 #include <array>
@@ -29,8 +29,8 @@
 
 namespace core::state::macro {
 
-static constexpr uint8_t PAGE_COUNT = 8;
-static constexpr uint8_t TRACK_COUNT = 8;
+static constexpr uint8_t PAGE_COUNT = 16;
+static constexpr uint8_t TRACK_COUNT = 16;
 static constexpr uint8_t MACRO_COUNT = Config::MACRO_COUNT;
 static constexpr uint8_t PAGE_NAME_SIZE = 16;
 
@@ -94,8 +94,7 @@ struct PageSelectorState {
 struct MacroTrackData {
     uint8_t channel = 0;          ///< Track MIDI channel (0-15)
     uint8_t activePage = 0;       ///< Active page within this track
-    uint8_t enabledPageMask = 0x01;  ///< Enabled macro pages for this track
-    uint8_t reserved = 0;
+    uint16_t enabledPageMask = 0x0001;  ///< Enabled macro pages for this track
     std::array<MacroPageData, PAGE_COUNT> pages{};
 
     MacroTrackData() {
@@ -105,8 +104,7 @@ struct MacroTrackData {
     void initDefaults(uint8_t trackIndex) {
         channel = static_cast<uint8_t>(trackIndex % 16U);
         activePage = 0;
-        enabledPageMask = 0x01;
-        reserved = 0;
+        enabledPageMask = 0x0001;
         for (uint8_t i = 0; i < PAGE_COUNT; ++i) {
             pages[i].initDefault(i);
         }
@@ -117,14 +115,14 @@ struct MacroTrackData {
 
     bool isPageEnabled(uint8_t index) const {
         if (index >= PAGE_COUNT) return false;
-        return (enabledPageMask & static_cast<uint8_t>(1U << index)) != 0;
+        return (enabledPageMask & static_cast<uint16_t>(1U << index)) != 0;
     }
 
     void setPageEnabled(uint8_t index, bool enabled) {
         if (index >= PAGE_COUNT) return;
-        const uint8_t bit = static_cast<uint8_t>(1U << index);
+        const uint16_t bit = static_cast<uint16_t>(1U << index);
         if (enabled) enabledPageMask |= bit;
-        else enabledPageMask &= static_cast<uint8_t>(~bit);
+        else enabledPageMask &= static_cast<uint16_t>(~bit);
     }
 };
 
@@ -135,7 +133,7 @@ struct MacroTrackData {
  * currently active track/page to avoid broad UI churn.
  */
 struct MacroPagesState {
-    using EnabledMaskSignal = oc::state::Signal<uint8_t, 8>;
+    using EnabledMaskSignal = oc::state::Signal<uint16_t, 16>;
     using TrackEnabledMaskSignal = oc::state::Signal<uint16_t, 16>;
 
     /// Page selector overlay state
@@ -151,7 +149,7 @@ struct MacroPagesState {
     uint8_t activePage = 0;
 
     /// Compatibility mirror of enabled pages for the current track.
-    EnabledMaskSignal enabledMask{0xFF};
+    EnabledMaskSignal enabledMask{0x0001};
 
     /// Runtime track enabled mask, aligned with the sequencer track model.
     TrackEnabledMaskSignal trackEnabledMask{0x01};
@@ -170,7 +168,7 @@ struct MacroPagesState {
         }
         activeTrack = 0;
         activePage = 0;
-        trackEnabledMask.set(0x01);
+        trackEnabledMask.set(0x0001);
         syncActiveTrackCache();
         updateActiveConfigs();
     }

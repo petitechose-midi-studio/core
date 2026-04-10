@@ -40,8 +40,6 @@ FLASHMEM void initializeTrackBankFromActive(SequencerTrackBankState& bank, const
     copyPersistentState(bank.track(0), active);
     bank.activeTrack.set(0);
     bank.enabledMask.set(0x0001);
-    bank.selector.reset(0);
-    bank.selector.snapshotEnabledMask = 0x0001;
 }
 
 FLASHMEM void storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active) {
@@ -56,7 +54,6 @@ FLASHMEM bool switchActiveTrack(
     const uint8_t current = bank.activeTrack.get();
     const uint8_t clampedNext = SequencerTrackBankState::clampTrackIndex(nextTrack);
     if (clampedNext == current) {
-        bank.selector.reset(current);
         return false;
     }
 
@@ -65,7 +62,6 @@ FLASHMEM bool switchActiveTrack(
     resetTransientTrackState(active);
 
     bank.activeTrack.set(clampedNext);
-    bank.selector.reset(clampedNext);
     return true;
 }
 
@@ -101,8 +97,6 @@ FLASHMEM void applyTrackBankSnapshot(
     resetTransientTrackState(active);
 
     bank.activeTrack.set(activeTrack);
-    bank.selector.reset(activeTrack);
-    bank.selector.snapshotEnabledMask = bank.enabledMask.get();
 }
 
 }  // namespace core::state::sequencer

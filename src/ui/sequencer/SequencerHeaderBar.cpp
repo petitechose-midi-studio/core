@@ -19,10 +19,11 @@ namespace {
 constexpr uint32_t COLOR_DIM_TEXT = theme::color::TEXT_PRIMARY;
 constexpr lv_opa_t TRACK_BG_OPA_IDLE = LV_OPA_10;
 constexpr lv_opa_t TRACK_BG_OPA_SELECTING = static_cast<lv_opa_t>(31);
-constexpr lv_opa_t TRACK_SQUARE_BASE_OPA = LV_OPA_20;
-constexpr lv_opa_t TRACK_SQUARE_ACTIVE_BONUS = LV_OPA_20;
-constexpr lv_opa_t TRACK_SQUARE_PREVIEW_BONUS = LV_OPA_20;
-constexpr lv_opa_t TRACK_SQUARE_VELOCITY_RANGE = LV_OPA_60;
+constexpr lv_opa_t PAGE_ITEM_BASE_OPA_ENABLED = static_cast<lv_opa_t>(18);
+constexpr lv_opa_t PAGE_ITEM_BASE_OPA_DISABLED = static_cast<lv_opa_t>(8);
+constexpr lv_opa_t PAGE_ITEM_ACTIVE_BONUS = static_cast<lv_opa_t>(48);
+constexpr lv_coord_t STRIP_CURSOR_HEIGHT = 2;
+constexpr lv_coord_t STRIP_CURSOR_OFFSET_Y = 1;
 
 bool isTrackEnabled(uint16_t enabledMask, uint8_t index) {
     return (enabledMask & static_cast<uint16_t>(1U << index)) != 0;
@@ -44,18 +45,10 @@ lv_color_t pageStripBaseColor(const SequencerHeaderBarProps& props) {
     );
 }
 
-lv_opa_t trackSquareOpa(uint8_t velocity, bool isActive, bool isPreview) {
-    uint16_t opa = TRACK_SQUARE_BASE_OPA;
-    if (isPreview) opa += TRACK_SQUARE_PREVIEW_BONUS;
-    if (isActive) opa += TRACK_SQUARE_ACTIVE_BONUS;
-    opa += static_cast<uint16_t>(velocity) * static_cast<uint16_t>(TRACK_SQUARE_VELOCITY_RANGE) /
-           127U;
+lv_opa_t pageItemOpa(bool enabled, bool isActive) {
+    uint16_t opa = enabled ? PAGE_ITEM_BASE_OPA_ENABLED : PAGE_ITEM_BASE_OPA_DISABLED;
+    if (isActive) opa += PAGE_ITEM_ACTIVE_BONUS;
     return static_cast<lv_opa_t>(std::min<uint16_t>(opa, LV_OPA_COVER));
-}
-
-uint8_t trackWindowStart(uint8_t previewTrack) {
-    const uint8_t window = SequencerHeaderBarProps::VISIBLE_TRACK_COUNT;
-    return static_cast<uint8_t>((previewTrack / window) * window);
 }
 
 }  // namespace
@@ -92,6 +85,7 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
         LV_FLEX_ALIGN_START
     );
     lv_obj_set_style_pad_row(container_, ROW_GAP, 0);
+    lv_obj_add_flag(container_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
     top_row_ = std::make_unique<TrackHeaderRow>(container_);
 
@@ -103,6 +97,7 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
         .noBorder()
         .padH(theme::layout::PAD_SM)
         .flexRow(LV_FLEX_ALIGN_START, 2);
+    lv_obj_add_flag(strip_row_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
     for (uint8_t i = 0; i < PAGE_COUNT; ++i) {
         auto& seg = segments_[i];
@@ -149,6 +144,16 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
         lv_obj_set_pos(seg.marker, 0, 0);
         lv_obj_add_flag(seg.marker, LV_OBJ_FLAG_HIDDEN);
     }
+
+    strip_cursor_ = lv_obj_create(strip_row_);
+    lv_obj_remove_style_all(strip_cursor_);
+    lv_obj_add_flag(strip_cursor_, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_clear_flag(strip_cursor_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(strip_cursor_, 1, 0);
+    lv_obj_set_style_border_width(strip_cursor_, 0, 0);
+    lv_obj_set_style_bg_color(strip_cursor_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
+    lv_obj_set_style_bg_opa(strip_cursor_, LV_OPA_80, 0);
+    lv_obj_add_flag(strip_cursor_, LV_OBJ_FLAG_HIDDEN);
 }
 
 void SequencerHeaderBar::render(const SequencerHeaderBarProps& props) {
@@ -166,10 +171,13 @@ void SequencerHeaderBar::renderStripOnly(const SequencerHeaderBarProps& props) {
 
 void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
     if (!top_row_) return;
-    const uint8_t windowStart = trackWindowStart(props.previewTrack);
+    const uint8_t pageCount = static_cast<uint8_t>(
+        std::min<uint16_t>((props.length + STEPS_PER_PAGE - 1) / STEPS_PER_PAGE, PAGE_COUNT)
+    );
 
     TrackHeaderRowProps rowProps;
     rowProps.leftText = props.leftText;
+    rowProps.itemCount = PAGE_COUNT;
     rowProps.accentColor =
         isTrackEnabled(props.enabledMask, props.previewTrack)
             ? trackColor(props.previewTrack)
@@ -180,16 +188,21 @@ void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
             ? trackColor(props.previewTrack)
             : trackInactiveColor();
     rowProps.backgroundOpa = props.selectingTrack ? TRACK_BG_OPA_SELECTING : TRACK_BG_OPA_IDLE;
+    rowProps.showCursor = props.selectingPage || props.focusingPage;
+    rowProps.cursorIndex = props.viewedPage;
+    rowProps.cursorColor = props.selectingPage
+        ? theme::color::TEXT_PRIMARY
+        : rowProps.accentColor;
+    rowProps.cursorOpa = LV_OPA_COVER;
+    rowProps.selectedMask = props.pageSelectedMask;
 
-    for (uint8_t i = 0; i < rowProps.ITEM_COUNT; ++i) {
-        const uint8_t trackIndex = static_cast<uint8_t>(windowStart + i);
-        const bool inRange = trackIndex < SequencerHeaderBarProps::TRACK_COUNT;
-        const bool enabled = inRange && isTrackEnabled(props.enabledMask, trackIndex);
-        const bool isActive = inRange && props.activeTrack == trackIndex;
-        const bool isPreview = inRange && props.previewTrack == trackIndex;
-        rowProps.itemColors[i] = enabled ? trackColor(trackIndex) : trackInactiveColor();
-        rowProps.itemOpacities[i] =
-            trackSquareOpa(inRange ? props.trackActivity[trackIndex] : 0, isActive, isPreview);
+    for (uint8_t i = 0; i < rowProps.itemCount; ++i) {
+        const bool enabled = i < pageCount;
+        const bool isActive = props.activePage == i;
+        rowProps.itemAddSlot[i] = props.addPageIndex == i && !enabled;
+        rowProps.itemColors[i] = enabled ? rowProps.accentColor : theme::color::INACTIVE;
+        rowProps.itemActive[i] = isActive;
+        rowProps.itemOpacities[i] = pageItemOpa(enabled, isActive);
     }
 
     top_row_->render(rowProps);
@@ -288,6 +301,8 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
         }
 
         const bool isViewed = (p == props.viewedPage);
+        const bool isSelected = (props.pageSelectedMask & static_cast<uint16_t>(1U << p)) != 0;
+        const bool isAddSlot = props.addPageIndex == p && validSteps == 0;
         const lv_color_t baseColor = pageStripBaseColor(props);
         const lv_color_t validColor = isViewed
             ? lv_color_lighten(baseColor, LV_OPA_20)
@@ -305,6 +320,21 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
         if (!initialized || cache.progressColorHex != progressColorHex) {
             lv_obj_set_style_bg_color(seg.progress, progressColor, 0);
             cache.progressColorHex = progressColorHex;
+        }
+
+        const bool emphasized = isSelected || (props.previewPageAddSlot && p == props.addPageIndex);
+        lv_obj_set_style_border_width(
+            seg.container,
+            isAddSlot ? (emphasized ? 2 : 1) : (isSelected ? 1 : 0),
+            0
+        );
+        if (emphasized || isAddSlot) {
+            lv_obj_set_style_border_color(seg.container, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
+            lv_obj_set_style_border_opa(
+                seg.container,
+                emphasized ? LV_OPA_80 : LV_OPA_30,
+                0
+            );
         }
 
         if (!showMarker) {
@@ -336,6 +366,39 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
         cache.markerVisible = true;
         cache.initialized = true;
     }
+
+    const bool showCursor =
+        (props.selectingPage || props.focusingPage) &&
+        props.viewedPage < PAGE_COUNT &&
+        strip_cursor_;
+    if (!showCursor) {
+        if (strip_cursor_visible_cache_) {
+            lv_obj_add_flag(strip_cursor_, LV_OBJ_FLAG_HIDDEN);
+            strip_cursor_visible_cache_ = false;
+        }
+        return;
+    }
+
+    lv_obj_t* cursorTarget = segments_[props.viewedPage].container;
+    if (!cursorTarget) return;
+
+    lv_obj_update_layout(strip_row_);
+    const lv_coord_t targetX = static_cast<lv_coord_t>(lv_obj_get_x(cursorTarget) + 1);
+    const lv_coord_t targetW = std::max<lv_coord_t>(1, lv_obj_get_width(cursorTarget) - 2);
+
+    if (!strip_cursor_visible_cache_) {
+        lv_obj_clear_flag(strip_cursor_, LV_OBJ_FLAG_HIDDEN);
+        strip_cursor_visible_cache_ = true;
+    }
+    if (strip_cursor_x_cache_ != targetX) {
+        lv_obj_set_x(strip_cursor_, targetX);
+        strip_cursor_x_cache_ = targetX;
+    }
+    if (strip_cursor_width_cache_ != targetW) {
+        lv_obj_set_size(strip_cursor_, targetW, STRIP_CURSOR_HEIGHT);
+        strip_cursor_width_cache_ = targetW;
+    }
+    lv_obj_set_y(strip_cursor_, static_cast<lv_coord_t>(STRIP_HEIGHT + STRIP_CURSOR_OFFSET_Y));
 }
 
 }  // namespace core::ui

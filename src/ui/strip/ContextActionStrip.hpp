@@ -45,6 +45,9 @@ struct ContextActionStripSlotProps {
     standalone::icons::Size iconSize = standalone::icons::Size::M;
     bool showLabel = false;
     const char* label = nullptr;
+    bool holdActive = false;
+    uint32_t holdStartedAtMs = 0;
+    uint32_t holdDurationMs = 0;
 };
 
 struct ContextActionStripProps {
@@ -79,10 +82,14 @@ private:
 
     void createUI(lv_obj_t* parent);
     void renderSlot(size_t index, const ContextActionStripSlotProps& props);
+    void refreshHoldIndicators();
+    void updateHoldTimer();
+    static void onHoldTimer(lv_timer_t* timer);
 
     ContextActionStripOrientation orientation_;
     ContextActionStripVerticalLayout vertical_layout_;
     lv_obj_t* container_ = nullptr;
+    lv_timer_t* hold_timer_ = nullptr;
     std::array<SlotWidgets, 3> slots_{};
     bool has_rendered_ = false;
     ContextActionStripProps rendered_props_{};

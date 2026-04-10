@@ -10,6 +10,7 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 
+#include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -19,8 +20,8 @@ namespace core::handler {
  * v0 bindings (sequencer view scope):
  * - MACRO_1..MACRO_8 release: toggle step in current page
  * - NAV turn: page switch (wrap)
- * - NAV short release: toggle active track enabled
  * - NAV hold + turn: switch track
+ * - NAV long press: enter page/track selection mode
  *
  * Bottom action buttons are handled separately by SequencerRangeActionHandler.
  */
@@ -29,6 +30,10 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+        core::state::StructureClipboardState& structureClipboard;
     };
 
     SequencerStepHandler(StateRefs state,
@@ -47,18 +52,41 @@ private:
     void setupBindings();
 
     void toggleStep(uint8_t indexInPage);
+    void cycleNavigationFocus();
     void movePage(float delta);
     void moveTrack(float delta);
-    void toggleActiveTrackEnabled();
+    void eraseCurrentStructure();
+    void removeCurrentStructure();
+    void copyCurrentStructure();
+    void pasteCurrentStructure();
+    void createPreviewedStructure();
+    bool canRemoveCurrentStructure() const;
+    bool canPasteCurrentStructure() const;
+    void beginHoldAction(core::state::StructureHoldAction action);
+    void clearHoldAction();
+    void enterSelectionMode(core::state::StructureSelectionScope scope);
+    void cancelSelectionMode();
+    void toggleSelectionAtCursor();
+    void navigateSelection(float delta);
+    void deleteSelection();
+    void duplicateSelection();
+    bool createPage();
+    bool createTrack();
     void prevPage();
     void nextPage();
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    core::state::StructureClipboardState& structure_clipboard_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
-    bool nav_modifier_used_ = false;
+    bool nav_long_press_used_ = false;
+    bool ignore_next_bottom_left_release_ = false;
+    bool ignore_next_bottom_right_release_ = false;
 };
 
 }  // namespace core::handler

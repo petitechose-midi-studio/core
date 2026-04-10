@@ -145,6 +145,11 @@ FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
             ui_assembly_->macroViewScope(),
             ui_assembly_->sequencerViewScope()
         );
+    OC_LOG_INFO("Input bindings buttons={}/{} encoders={}/{}",
+                static_cast<unsigned>(buttons().bindingCount()),
+                static_cast<unsigned>(buttons().bindingCapacity()),
+                static_cast<unsigned>(encoders().bindingCount()),
+                static_cast<unsigned>(encoders().bindingCapacity()));
 }
 
 FLASHMEM void StandaloneContext::registerMidiRouting() {

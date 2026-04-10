@@ -25,7 +25,7 @@ inline oc::type::IsActiveFn canOpenPropertySelector(
 ) {
     return [&overlays, &sequencer, &tracks]() {
         return !overlays.hasVisible() &&
-               !tracks.selector.selecting.get() &&
+               !sequencer.structureUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
                !sequencer.rangeSelection.active();
     };

@@ -1,13 +1,12 @@
 #include "TransportBar.hpp"
 
-#include <algorithm>
-
 #include <oc/state/Bind.hpp>
 #include <oc/type/TextFormat.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -26,42 +25,17 @@ const lv_color_t COLOR_PLAY_INACTIVE = lv_color_hex(theme::color::PLAY_INACTIVE)
 const lv_color_t COLOR_PLAY_ACTIVE = lv_color_hex(theme::color::PLAY_ACTIVE);
 const lv_color_t COLOR_TEMPO_UNLOCKED = lv_color_hex(theme::color::TEXT_SECONDARY);
 const lv_color_t COLOR_LOCK = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
-constexpr lv_coord_t TRACK_ACTIVITY_SIZE = 7;
-constexpr lv_coord_t TRACK_ACTIVITY_GAP = 4;
-constexpr lv_opa_t TRACK_ACTIVITY_BASE_OPA = LV_OPA_20;
-constexpr lv_opa_t TRACK_ACTIVITY_ACTIVE_BONUS = LV_OPA_20;
-constexpr lv_opa_t TRACK_ACTIVITY_PREVIEW_BONUS = LV_OPA_20;
-constexpr lv_opa_t TRACK_ACTIVITY_RANGE = LV_OPA_80;
-constexpr uint8_t VISIBLE_TRACK_COUNT = 8;
-
-lv_opa_t trackSelectorOpa(uint8_t velocity, bool isActive, bool isPreview) {
-    uint16_t opa = TRACK_ACTIVITY_BASE_OPA;
-    if (isActive) opa += TRACK_ACTIVITY_ACTIVE_BONUS;
-    if (isPreview) opa += TRACK_ACTIVITY_PREVIEW_BONUS;
-    opa += static_cast<uint16_t>(velocity) * static_cast<uint16_t>(TRACK_ACTIVITY_RANGE) / 127U;
-    return static_cast<lv_opa_t>(std::min<uint16_t>(opa, LV_OPA_COVER));
-}
-
-uint8_t trackWindowStart(uint8_t previewTrack) {
-    return static_cast<uint8_t>((previewTrack / VISIBLE_TRACK_COUNT) * VISIBLE_TRACK_COUNT);
-}
 }  // namespace
 
-TransportBar::TransportBar(lv_obj_t* parent,
-                           core::state::StatusBarState& state,
-                           core::state::sequencer::SequencerTrackBankState& tracks)
-    : state_(state)
-    , tracks_(tracks) {
+TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
+    : state_(state) {
     createLayout(parent);
     setupBindings();
     render();
 }
 
 TransportBar::~TransportBar() {
-    // Clear subscriptions before destroying UI
     subs_.clear();
-
-    // unique_ptr members auto-cleanup, then delete container
     if (container_) {
         lv_obj_delete(container_);
     }
@@ -73,11 +47,10 @@ FLASHMEM void TransportBar::createLayout(lv_obj_t* parent) {
     lv_obj_set_size(container_, LV_PCT(100), theme::layout::TRANSPORT_BAR_HEIGHT);
     style::apply(container_).bgColor(theme::color::BACKGROUND);
 
-    // 3 columns: Tempo | Play | Track note output
     static const int32_t col_dsc[] = {
-        LV_GRID_FR(1),  // Tempo
-        LV_GRID_FR(1),  // Play (centered)
-        LV_GRID_FR(1),  // Track note output
+        LV_GRID_FR(1),
+        LV_GRID_FR(1),
+        LV_GRID_FR(1),
         LV_GRID_TEMPLATE_LAST
     };
     static const int32_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
@@ -86,29 +59,32 @@ FLASHMEM void TransportBar::createLayout(lv_obj_t* parent) {
 
     createTempoWithBeat(container_);
     createTransportCenter(container_);
-    createTrackNoteOutputs(container_);
 }
 
 FLASHMEM void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
-    // Cell 0: Tempo label + fixed indicator zone, flush left.
     lv_obj_t* cell = lv_obj_create(parent);
     lv_obj_remove_style_all(cell);
-    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1,
-                         LV_GRID_ALIGN_CENTER, 0, 1);
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
     lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     style::apply(cell).flexRow(LV_FLEX_ALIGN_START, theme::layout::GAP_SM).padLeft(theme::layout::PAD_MD);
 
-    // Fixed indicator zone at the left of tempo.
     tempo_indicator_container_ = lv_obj_create(cell);
     lv_obj_remove_style_all(tempo_indicator_container_);
     lv_obj_clear_flag(tempo_indicator_container_, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(tempo_indicator_container_, theme::layout::INDICATOR_SIZE, theme::layout::INDICATOR_SIZE);
+    lv_obj_set_size(
+        tempo_indicator_container_,
+        theme::layout::INDICATOR_SIZE,
+        theme::layout::INDICATOR_SIZE
+    );
 
-    beat_indicator_ = std::make_unique<StateIndicator>(tempo_indicator_container_, theme::layout::INDICATOR_SIZE);
+    beat_indicator_ = std::make_unique<StateIndicator>(
+        tempo_indicator_container_,
+        theme::layout::INDICATOR_SIZE
+    );
     beat_indicator_->color(StateIndicator::State::OFF, theme::color::INACTIVE)
-                  .color(StateIndicator::State::ACTIVE, theme::color::BEAT_PULSE)
-                  .opacity(StateIndicator::State::OFF, LV_OPA_COVER)
-                  .opacity(StateIndicator::State::ACTIVE, LV_OPA_COVER);
+        .color(StateIndicator::State::ACTIVE, theme::color::BEAT_PULSE)
+        .opacity(StateIndicator::State::OFF, LV_OPA_COVER)
+        .opacity(StateIndicator::State::ACTIVE, LV_OPA_COVER);
     beat_indicator_->setState(StateIndicator::State::OFF);
 
     tempo_lock_icon_ = lv_label_create(tempo_indicator_container_);
@@ -117,7 +93,6 @@ FLASHMEM void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
     lv_obj_center(tempo_lock_icon_);
     lv_obj_add_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
 
-    // Tempo label in fixed-width slot to prevent layout jitter.
     tempo_label_ = lv_label_create(cell);
     lv_label_set_text(tempo_label_, "120.00");
     lv_obj_set_style_text_font(tempo_label_, fonts.tempo_label, 0);
@@ -131,11 +106,9 @@ FLASHMEM void TransportBar::createTempoWithBeat(lv_obj_t* parent) {
 }
 
 FLASHMEM void TransportBar::createTransportCenter(lv_obj_t* parent) {
-    // Cell 1: Play icon (fully centered in cell)
     lv_obj_t* cell = lv_obj_create(parent);
     lv_obj_remove_style_all(cell);
-    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_STRETCH, 1, 1,
-                         LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
 
     play_icon_ = lv_label_create(cell);
     icons::set(play_icon_, icons::TRANSPORT_PLAY, icons::Size::L);
@@ -149,29 +122,6 @@ FLASHMEM void TransportBar::createTransportCenter(lv_obj_t* parent) {
     lv_obj_align_to(transport_lock_icon_, play_icon_, LV_ALIGN_OUT_RIGHT_MID, 2, 0);
 }
 
-FLASHMEM void TransportBar::createTrackNoteOutputs(lv_obj_t* parent) {
-    // Cell 2: Per-track note output activity, flush right.
-    lv_obj_t* cell = lv_obj_create(parent);
-    lv_obj_remove_style_all(cell);
-    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_END, 2, 1,
-                         LV_GRID_ALIGN_CENTER, 0, 1);
-    lv_obj_set_size(cell, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    style::apply(cell).flexRow(LV_FLEX_ALIGN_END, TRACK_ACTIVITY_GAP).padRight(theme::layout::PAD_MD);
-
-    for (uint8_t i = 0; i < track_note_items_.size(); ++i) {
-        track_note_items_[i] = lv_obj_create(cell);
-        lv_obj_remove_style_all(track_note_items_[i]);
-        lv_obj_set_size(track_note_items_[i], TRACK_ACTIVITY_SIZE, TRACK_ACTIVITY_SIZE);
-        lv_obj_set_style_radius(track_note_items_[i], 1, 0);
-        lv_obj_set_style_bg_color(
-            track_note_items_[i],
-            lv_color_hex(theme::color::trackColor(i)),
-            0
-        );
-        lv_obj_set_style_bg_opa(track_note_items_[i], TRACK_ACTIVITY_BASE_OPA, 0);
-    }
-}
-
 FLASHMEM void TransportBar::setupBindings() {
     using oc::state::bind;
     bind(subs_)
@@ -182,29 +132,10 @@ FLASHMEM void TransportBar::setupBindings() {
         .on(state_.tempoLocked, [this](bool locked) { setTempoLocked(locked); })
         .on(state_.transportLocked, [this](bool locked) { setTransportLocked(locked); })
         .on(state_.beatPulse, [this](bool pulse) { setBeatPulse(pulse); });
-
-    for (uint8_t i = 0; i < state_.trackNoteActivity.size(); ++i) {
-        subs_.push_back(state_.trackNoteActivity[i].subscribe([this](uint8_t) {
-            renderTrackSelectorStrip();
-        }));
-    }
-    subs_.push_back(tracks_.activeTrack.subscribe([this](uint8_t) {
-        renderTrackSelectorStrip();
-    }));
-    subs_.push_back(tracks_.enabledMask.subscribe([this](uint16_t) {
-        renderTrackSelectorStrip();
-    }));
-    subs_.push_back(tracks_.selector.selecting.subscribe([this](bool) {
-        renderTrackSelectorStrip();
-    }));
-    subs_.push_back(tracks_.selector.selectedTrack.subscribe([this](uint8_t) {
-        renderTrackSelectorStrip();
-    }));
 }
 
 FLASHMEM void TransportBar::setPlaying(bool playing) {
-    lv_obj_set_style_text_color(play_icon_,
-        playing ? COLOR_PLAY_ACTIVE : COLOR_PLAY_INACTIVE, 0);
+    lv_obj_set_style_text_color(play_icon_, playing ? COLOR_PLAY_ACTIVE : COLOR_PLAY_INACTIVE, 0);
 }
 
 FLASHMEM void TransportBar::setTempo(float bpm) {
@@ -235,11 +166,8 @@ FLASHMEM void TransportBar::updateCcActivityIcon() {
 
 FLASHMEM void TransportBar::setTempoLocked(bool locked) {
     if (tempo_lock_icon_) {
-        if (locked) {
-            lv_obj_clear_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
-        }
+        if (locked) lv_obj_clear_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(tempo_lock_icon_, LV_OBJ_FLAG_HIDDEN);
     }
 
     if (tempo_label_) {
@@ -249,47 +177,13 @@ FLASHMEM void TransportBar::setTempoLocked(bool locked) {
 
 FLASHMEM void TransportBar::setTransportLocked(bool locked) {
     if (!transport_lock_icon_) return;
-
-    if (locked) {
-        lv_obj_clear_flag(transport_lock_icon_, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(transport_lock_icon_, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (locked) lv_obj_clear_flag(transport_lock_icon_, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(transport_lock_icon_, LV_OBJ_FLAG_HIDDEN);
 }
 
 FLASHMEM void TransportBar::setBeatPulse(bool pulse) {
     if (!beat_indicator_) return;
     beat_indicator_->setState(pulse ? StateIndicator::State::ACTIVE : StateIndicator::State::OFF);
-}
-
-FLASHMEM void TransportBar::renderTrackSelectorStrip() {
-    const uint8_t activeTrack = tracks_.activeTrack.get();
-    const uint8_t previewTrack = tracks_.selector.selecting.get()
-        ? tracks_.selector.selectedTrack.get()
-        : activeTrack;
-    const uint8_t windowStart = trackWindowStart(previewTrack);
-
-    for (uint8_t i = 0; i < track_note_items_.size(); ++i) {
-        if (!track_note_items_[i]) continue;
-        const uint8_t trackIndex = static_cast<uint8_t>(windowStart + i);
-        const bool inRange = trackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-
-        const bool enabled = inRange && tracks_.isTrackEnabled(trackIndex);
-        lv_obj_set_style_bg_color(
-            track_note_items_[i],
-            lv_color_hex(enabled ? theme::color::trackColor(trackIndex) : theme::color::INACTIVE),
-            0
-        );
-        lv_obj_set_style_bg_opa(
-            track_note_items_[i],
-            trackSelectorOpa(
-                inRange ? state_.trackNoteActivity[trackIndex].get() : 0,
-                inRange && activeTrack == trackIndex,
-                inRange && previewTrack == trackIndex
-            ),
-            0
-        );
-    }
 }
 
 FLASHMEM void TransportBar::render() {
@@ -300,15 +194,14 @@ FLASHMEM void TransportBar::render() {
     setTempoLocked(state_.tempoLocked.get());
     setTransportLocked(state_.transportLocked.get());
     setBeatPulse(state_.beatPulse.get());
-    renderTrackSelectorStrip();
 }
 
 FLASHMEM void TransportBar::show() {
-    if (container_) { lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN); }
+    if (container_) lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
 
 FLASHMEM void TransportBar::hide() {
-    if (container_) { lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN); }
+    if (container_) lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
 }
 
 FLASHMEM bool TransportBar::isVisible() const {

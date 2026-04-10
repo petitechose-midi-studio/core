@@ -85,6 +85,8 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , sequencerPersistence(sequencerDomain_.persistence)
     , overlays(systemUi_->overlays)
     , activeView(systemUi_->activeView)
+    , structureNavigationFocus(systemUi_->structureNavigationFocus)
+    , structureClipboard(systemUi_->structureClipboard)
     , viewSelector(systemUi_->viewSelector)
     , statusBar(systemUi_->statusBar)
     , midiSync(systemUi_->midiSync)
