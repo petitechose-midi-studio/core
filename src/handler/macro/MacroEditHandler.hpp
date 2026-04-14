@@ -19,7 +19,8 @@
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/macro/MacroPagesState.hpp"
-#include "ui/OverlayTypes.hpp"
+#include "state/macro/MacroUiState.hpp"
+#include "app/OverlayTypes.hpp"
 
 namespace core::handler {
 
@@ -27,9 +28,9 @@ namespace core::handler {
  * @brief Handles input for MacroEdit overlay
  *
  * - Long press on macro button opens MacroEdit for that macro
- * - Main overlay: NAV turn (focus row), OPT turn (live value edit), NAV press (open value selector)
+ * - Main overlay: NAV turn (focus row), OPT turn (overlay-local value edit), NAV press (open value selector)
  * - Value selector: NAV turn (navigate), NAV release (apply and close)
- * - LEFT_TOP closes overlay (changes are already applied)
+ * - LEFT_TOP closes overlay and commits the buffered edit
  */
 class MacroEditHandler {
 public:
@@ -38,6 +39,7 @@ public:
     struct StateRefs {
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
+        core::state::macro::MacroUiState& macroUi;
     };
 
     /**
@@ -98,11 +100,12 @@ private:
     void setValueForRow(uint8_t row, int value);
     int valueForRow(uint8_t row) const;
     int valueCountForRow(uint8_t row) const;
-    void applyEditedConfig();
+    void commitEditedConfig();
     void configureOptForFocusedRow();
 
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
+    core::state::macro::MacroUiState& macro_ui_;
     MacroDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

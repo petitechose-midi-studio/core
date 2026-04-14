@@ -10,17 +10,10 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <oc/time/Time.hpp>
 #include "../../src/handler/settings/DataManagerDomainServices.hpp"
-// Native tests only build selected source folders; include the implementation
-// here so this handler-level service remains testable without widening the
-// environment's global src filter.
-#include "../../src/handler/settings/DataManagerDomainServices.cpp"
 #include "../../src/handler/settings/DataManagerFeedbackFormatter.hpp"
-#include "../../src/handler/settings/DataManagerFeedbackFormatter.cpp"
 #include "../../src/handler/settings/DataManagerHandler.hpp"
-// Same rationale for the handler itself: keep the native src filter narrow
-// while still testing the real binding logic end to end.
-#include "../../src/handler/settings/DataManagerHandler.cpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
@@ -234,6 +227,7 @@ void test_sequencer_command_palette_load_set_flow_uses_mode_selector() {
 }  // namespace
 
 int main() {
+    oc::time::setProvider(mockTimeMs);
     test_long_press_opens_manager_with_active_view_context_and_ignores_release();
     test_macro_shortcut_save_then_confirm_cancel_flow();
     test_sequencer_command_palette_load_set_flow_uses_mode_selector();

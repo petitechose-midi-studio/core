@@ -16,7 +16,7 @@
 
 #include <config/InputIDs.hpp>
 #include "state/StatusBarState.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace core::handler {
 

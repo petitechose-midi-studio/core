@@ -4,10 +4,6 @@
 #include <vector>
 
 #include "../../src/handler/settings/GlobalSettingsDomainServices.hpp"
-// Native tests only build selected source folders; include the implementation
-// here so this handler-level service remains testable without widening the
-// environment's global src filter.
-#include "../../src/handler/settings/GlobalSettingsDomainServices.cpp"
 #include "../support/MemoryStorage.hpp"
 
 namespace {

@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-#include "ui/ViewTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace core::context::standalone {
 

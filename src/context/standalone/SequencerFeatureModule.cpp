@@ -55,6 +55,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.sequencerTracks,
             stateRefs.structureNavigationFocus,
             stateRefs.structureClipboard,
+            stateRefs.coreState,
         },
         encoders,
         buttons,

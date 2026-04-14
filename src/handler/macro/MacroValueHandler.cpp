@@ -15,7 +15,7 @@ namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
-#if defined(PERF_MON)
+#if defined(PERF_LOG)
 struct MacroValueProfiling {
     uint32_t window_start_ms = 0;
     uint32_t call_count = 0;
@@ -53,7 +53,7 @@ MacroValueProfiling g_macro_value_profiling;
 #endif
 
 inline void recordMacroValueProfiling(uint32_t elapsed_us) {
-#if defined(PERF_MON)
+#if defined(PERF_LOG)
     g_macro_value_profiling.record(elapsed_us);
 #else
     (void)elapsed_us;
@@ -144,13 +144,22 @@ void MacroValueHandler::handleConfigChange(uint8_t index, float value) {
         }
         case core::state::macro::MacroPerformanceProperty::CHANNEL: {
             const uint8_t channel = static_cast<uint8_t>(input_utils::normalizedToIndex(normalized, 16));
-            services_.setConfig(index, channel, current.cc);
+            if (macro_ui_.clutchPreviewTrackChannel.get() == channel) return;
+            macro_ui_.clutchPreviewTrackChannel.set(channel);
+            syncChannelPreviewEncoderPositions(channel);
             return;
         }
         case core::state::macro::MacroPerformanceProperty::VALUE:
         default:
             handleValueChange(index, normalized);
             return;
+    }
+}
+
+void MacroValueHandler::syncChannelPreviewEncoderPositions(uint8_t channel) {
+    const float normalized = input_utils::indexToNormalized(channel, 16);
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        encoders_.setPosition(Config::MACRO_ENCODERS[i], normalized);
     }
 }
 

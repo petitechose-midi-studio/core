@@ -9,11 +9,13 @@
 
 #include "config/InputIDs.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/shared/StructureSlotOps.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 
 namespace core::handler {
 
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace structure_slots = core::state::shared;
 
 namespace {
 
@@ -82,125 +84,20 @@ inline oc::type::IsActiveFn selectionActive(
     };
 }
 
-uint8_t countEnabledMacroTracks(uint16_t enabledMask) {
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < core::state::macro::TRACK_COUNT; ++i) {
-        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
-            ++count;
-        }
+uint8_t currentPageCursor(const core::state::macro::MacroUiState& macroUi,
+                          const core::state::macro::MacroPagesState& pages) {
+    if (macroUi.previewAddSlot.get()) {
+        return pages.currentActivePage();
     }
-    return count;
+    return macroUi.previewPageIndex.get();
 }
 
-uint8_t countEnabledMacroPages(uint16_t enabledMask) {
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < core::state::macro::PAGE_COUNT; ++i) {
-        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
-            ++count;
-        }
+uint8_t currentTrackCursor(const core::state::macro::MacroUiState& macroUi,
+                           const MacroDomainServices& services) {
+    if (macroUi.previewAddSlot.get()) {
+        return services.activeTrack();
     }
-    return count;
-}
-
-uint8_t nextEnabledIndex(uint16_t enabledMask, uint8_t current, uint8_t count, int direction) {
-    if (count == 0) return current;
-
-    for (uint8_t offset = 1; offset < count; ++offset) {
-        const int candidate =
-            (static_cast<int>(current) + (direction * static_cast<int>(offset)) + count) % count;
-        const uint16_t bit = static_cast<uint16_t>(1U << static_cast<uint8_t>(candidate));
-        if ((enabledMask & bit) != 0) {
-            return static_cast<uint8_t>(candidate);
-        }
-    }
-
-    return current;
-}
-
-int nextMacroAddIndexAfterHighest(uint16_t enabledMask, uint8_t count) {
-    for (int index = static_cast<int>(count) - 1; index >= 0; --index) {
-        if ((enabledMask & static_cast<uint16_t>(1U << static_cast<uint8_t>(index))) == 0) {
-            continue;
-        }
-        const int next = index + 1;
-        return (next < count) ? next : -1;
-    }
-    return (count > 0) ? 0 : -1;
-}
-
-struct StructureNavTarget {
-    uint8_t index = 0;
-    bool addSlot = false;
-    bool valid = false;
-};
-
-uint8_t firstEnabledIndex(uint16_t enabledMask, uint8_t count) {
-    for (uint8_t i = 0; i < count; ++i) {
-        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
-            return i;
-        }
-    }
-    return 0;
-}
-
-uint8_t lastEnabledIndex(uint16_t enabledMask, uint8_t count) {
-    for (int i = static_cast<int>(count) - 1; i >= 0; --i) {
-        const auto index = static_cast<uint8_t>(i);
-        if ((enabledMask & static_cast<uint16_t>(1U << index)) != 0) {
-            return index;
-        }
-    }
-    return 0;
-}
-
-StructureNavTarget nextStructureTarget(
-    uint16_t enabledMask,
-    uint8_t current,
-    uint8_t count,
-    bool currentAddSlot,
-    int direction
-) {
-    const int addIndex = nextMacroAddIndexAfterHighest(enabledMask, count);
-    const uint8_t firstEnabled = firstEnabledIndex(enabledMask, count);
-    const uint8_t lastEnabled = lastEnabledIndex(enabledMask, count);
-
-    if (currentAddSlot) {
-        if (direction < 0) {
-            return {.index = lastEnabled, .addSlot = false, .valid = true};
-        }
-        return {
-            .index = (addIndex >= 0) ? static_cast<uint8_t>(addIndex) : lastEnabled,
-            .addSlot = (addIndex >= 0),
-            .valid = true,
-        };
-    }
-
-    if (direction > 0) {
-        for (uint8_t candidate = static_cast<uint8_t>(current + 1); candidate < count; ++candidate) {
-            if ((enabledMask & static_cast<uint16_t>(1U << candidate)) != 0) {
-                return {.index = candidate, .addSlot = false, .valid = true};
-            }
-        }
-
-        if (addIndex >= 0 && current == lastEnabled) {
-            return {
-                .index = static_cast<uint8_t>(addIndex),
-                .addSlot = true,
-                .valid = true,
-            };
-        }
-
-        return {.index = firstEnabled, .addSlot = false, .valid = true};
-    }
-
-    for (int candidate = static_cast<int>(current) - 1; candidate >= 0; --candidate) {
-        const auto index = static_cast<uint8_t>(candidate);
-        if ((enabledMask & static_cast<uint16_t>(1U << index)) != 0) {
-            return {.index = index, .addSlot = false, .valid = true};
-        }
-    }
-
-    return {.index = lastEnabled, .addSlot = false, .valid = true};
+    return macroUi.previewTrackIndex.get();
 }
 
 }  // namespace
@@ -214,6 +111,7 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     oc::type::ScopeID scopeId)
     : macro_ui_(state.macroUi)
     , pages_(state.pages)
+    , shared_track_active_(state.sharedTrackActive)
     , navigation_focus_(state.navigationFocus)
     , structure_clipboard_(state.structureClipboard)
     , services_(services)
@@ -221,8 +119,28 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId) {
+    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    macro_ui_.syncPreviewPage(pages_.currentActivePage());
     configureMacroEncoders();
     setupBindings();
+    bindStateSync();
+}
+
+FLASHMEM void MacroPerformanceHandler::bindStateSync() {
+    subscriptions_.reserve(2);
+
+    subscriptions_.push_back(
+        shared_track_active_.subscribe([this](uint8_t activeTrack) {
+            macro_ui_.syncPreviewTrack(activeTrack);
+            macro_ui_.syncPreviewPage(pages_.currentActivePage());
+        })
+    );
+
+    subscriptions_.push_back(
+        pages_.activePageIndexSignal().subscribe([this](uint8_t activePage) {
+            macro_ui_.syncPreviewPage(activePage);
+        })
+    );
 }
 
 FLASHMEM void MacroPerformanceHandler::setupBindings() {
@@ -310,6 +228,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             }
             if (macro_ui_.previewAddSlot.get()) {
                 createPreviewedStructure();
+                return;
+            }
+            if (commitPreviewSelectionIfNeeded()) {
                 return;
             }
             cycleNavigationFocus();
@@ -444,12 +365,14 @@ FLASHMEM void MacroPerformanceHandler::activateClutch() {
     if (overlays_.hasVisible()) return;
     if (macro_ui_.quickControlsSelecting.get()) return;
     macro_ui_.previewAddSlot.set(false);
+    initializeClutchChannelPreview();
     macro_ui_.clutchActive.set(true);
     configureMacroEncoders();
 }
 
 FLASHMEM void MacroPerformanceHandler::deactivateClutch() {
     if (!macro_ui_.clutchActive.get()) return;
+    commitClutchChannelPreview();
     macro_ui_.clutchActive.set(false);
     macro_ui_.activeProperty.set(core::state::macro::MacroPerformanceProperty::VALUE);
     configureMacroEncoders();
@@ -462,8 +385,9 @@ FLASHMEM void MacroPerformanceHandler::openQuickControls() {
     macro_ui_.clutchActive.set(false);
     macro_ui_.quickControlsSelecting.set(true);
     macro_ui_.focusedQuickControl.set(core::state::macro::MacroQuickControlItem::GLOBAL_CHANNEL);
+    macro_ui_.quickControlGlobalChannel.set(services_.activeConfig(0).channel);
     macro_ui_.ccOffset.set(0);
-    quick_snapshot_page_ = pages_.activePage;
+    quick_snapshot_page_ = pages_.currentActivePage();
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         quick_snapshot_configs_[i] = services_.activeConfig(i);
     }
@@ -473,6 +397,26 @@ FLASHMEM void MacroPerformanceHandler::openQuickControls() {
 
 FLASHMEM void MacroPerformanceHandler::closeQuickControlsApply() {
     if (!macro_ui_.quickControlsSelecting.get()) return;
+
+    const uint8_t originalPage = quick_snapshot_page_;
+    if (pages_.currentActivePage() != originalPage) {
+        services_.switchToPage(originalPage);
+        macro_ui_.syncPreviewPage(pages_.currentActivePage());
+    }
+
+    const uint8_t channel = macro_ui_.quickControlGlobalChannel.get();
+    const int offset = macro_ui_.ccOffset.get();
+    std::array<core::state::macro::MacroConfig, Config::MACRO_COUNT> configs{};
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        const auto& snapshot = quick_snapshot_configs_[i];
+        const int nextCc = std::clamp(static_cast<int>(snapshot.cc) + offset, 0, 127);
+        configs[i] = {
+            .cc = static_cast<uint8_t>(nextCc),
+            .channel = channel,
+        };
+    }
+    services_.setTrackConfigs(configs);
+
     macro_ui_.quickControlsSelecting.set(false);
     resetQuickControlsState();
     configureMacroEncoders();
@@ -482,11 +426,9 @@ FLASHMEM void MacroPerformanceHandler::closeQuickControlsCancel() {
     if (!macro_ui_.quickControlsSelecting.get()) return;
 
     const uint8_t originalPage = quick_snapshot_page_;
-    if (pages_.activePage != originalPage) {
+    if (pages_.currentActivePage() != originalPage) {
         services_.switchToPage(originalPage);
-    }
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        services_.setConfig(i, quick_snapshot_configs_[i].channel, quick_snapshot_configs_[i].cc);
+        macro_ui_.syncPreviewPage(pages_.currentActivePage());
     }
     macro_ui_.quickControlsSelecting.set(false);
     resetQuickControlsState();
@@ -507,25 +449,65 @@ FLASHMEM void MacroPerformanceHandler::setFocusedQuickControlValue(float normali
         const int offset = normalizedToOffset(normalized);
         if (macro_ui_.ccOffset.get() == offset) return;
         macro_ui_.ccOffset.set(static_cast<int8_t>(offset));
-        applyCcOffsetFromSnapshot(offset);
         return;
     }
 
     const uint8_t channel =
         static_cast<uint8_t>(input_utils::normalizedToIndex(std::clamp(normalized, 0.0f, 1.0f), 16));
-    if (services_.activeConfig(0).channel == channel) return;
-    applyGlobalChannel(channel);
+    if (macro_ui_.quickControlGlobalChannel.get() == channel) return;
+    macro_ui_.quickControlGlobalChannel.set(channel);
 }
 
 FLASHMEM void MacroPerformanceHandler::navigateProperty(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
+    const auto currentProperty = macro_ui_.activeProperty.get();
     const int current = core::state::macro::performancePropertyIndex(
-        macro_ui_.activeProperty.get()
+        currentProperty
     );
     const int next = nav::nextWrappedIndex(delta, current, 3);
-    macro_ui_.activeProperty.set(core::state::macro::performancePropertyAtIndex(next));
+    const auto nextProperty = core::state::macro::performancePropertyAtIndex(next);
+
+    if (currentProperty == core::state::macro::MacroPerformanceProperty::CHANNEL &&
+        nextProperty != core::state::macro::MacroPerformanceProperty::CHANNEL) {
+        commitClutchChannelPreview();
+    }
+
+    if (nextProperty == core::state::macro::MacroPerformanceProperty::CHANNEL) {
+        initializeClutchChannelPreview();
+    }
+
+    macro_ui_.activeProperty.set(nextProperty);
     configureMacroEncoders();
+}
+
+FLASHMEM bool MacroPerformanceHandler::commitPreviewSelectionIfNeeded() {
+    if (macro_ui_.previewAddSlot.get()) return false;
+
+    switch (navigation_focus_.get()) {
+        case core::state::StructureNavigationFocus::TRACK: {
+            const uint8_t previewTrack = macro_ui_.previewTrackIndex.get();
+            if (previewTrack == services_.activeTrack()) {
+                return false;
+            }
+            services_.switchToTrack(previewTrack);
+            macro_ui_.syncPreviewTrack(services_.activeTrack());
+            macro_ui_.syncPreviewPage(pages_.currentActivePage());
+            configureMacroEncoders();
+            return true;
+        }
+        case core::state::StructureNavigationFocus::PAGE:
+        default: {
+            const uint8_t previewPage = macro_ui_.previewPageIndex.get();
+            if (previewPage == pages_.currentActivePage()) {
+                return false;
+            }
+            services_.switchToPage(previewPage);
+            macro_ui_.syncPreviewPage(pages_.currentActivePage());
+            configureMacroEncoders();
+            return true;
+        }
+    }
 }
 
 FLASHMEM void MacroPerformanceHandler::cycleNavigationFocus() {
@@ -534,6 +516,8 @@ FLASHMEM void MacroPerformanceHandler::cycleNavigationFocus() {
         ? core::state::StructureNavigationFocus::TRACK
         : core::state::StructureNavigationFocus::PAGE;
     macro_ui_.previewAddSlot.set(false);
+    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    macro_ui_.syncPreviewPage(pages_.currentActivePage());
     navigation_focus_.set(next);
 }
 
@@ -541,11 +525,11 @@ FLASHMEM void MacroPerformanceHandler::movePage(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     const uint16_t enabledMask = services_.pageEnabledMask();
-    if (countEnabledMacroPages(enabledMask) == 0) return;
+    if (structure_slots::countEnabled(enabledMask, core::state::macro::PAGE_COUNT) == 0) return;
 
-    const uint8_t current = pages_.activePage;
+    const uint8_t current = currentPageCursor(macro_ui_, pages_);
     const bool currentAddSlot = macro_ui_.previewAddSlot.get();
-    const auto target = nextStructureTarget(
+    const auto target = structure_slots::nextNavigationTarget(
         enabledMask,
         current,
         core::state::macro::PAGE_COUNT,
@@ -553,15 +537,14 @@ FLASHMEM void MacroPerformanceHandler::movePage(float delta) {
         nav::turnStep(delta)
     );
     if (!target.valid) return;
+    macro_ui_.syncPreviewPage(target.index);
     if (target.addSlot) {
         macro_ui_.previewAddSlot.set(true);
         return;
     }
 
     macro_ui_.previewAddSlot.set(false);
-    if (target.index != current) {
-        services_.switchToPage(target.index);
-    } else if (!currentAddSlot) {
+    if (target.index == current && !currentAddSlot) {
         return;
     }
     configureMacroEncoders();
@@ -571,11 +554,11 @@ FLASHMEM void MacroPerformanceHandler::moveTrack(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     const uint16_t enabledMask = services_.trackEnabledMask();
-    if (countEnabledMacroTracks(enabledMask) == 0) return;
+    if (structure_slots::countEnabled(enabledMask, core::state::macro::TRACK_COUNT) == 0) return;
 
-    const uint8_t current = services_.activeTrack();
+    const uint8_t current = currentTrackCursor(macro_ui_, services_);
     const bool currentAddSlot = macro_ui_.previewAddSlot.get();
-    const auto target = nextStructureTarget(
+    const auto target = structure_slots::nextNavigationTarget(
         enabledMask,
         current,
         core::state::macro::TRACK_COUNT,
@@ -583,15 +566,14 @@ FLASHMEM void MacroPerformanceHandler::moveTrack(float delta) {
         nav::turnStep(delta)
     );
     if (!target.valid) return;
+    macro_ui_.syncPreviewTrack(target.index);
     if (target.addSlot) {
         macro_ui_.previewAddSlot.set(true);
         return;
     }
 
     macro_ui_.previewAddSlot.set(false);
-    if (target.index != current) {
-        services_.switchToTrack(target.index);
-    } else if (!currentAddSlot) {
+    if (target.index == current && !currentAddSlot) {
         return;
     }
     configureMacroEncoders();
@@ -606,7 +588,7 @@ FLASHMEM void MacroPerformanceHandler::eraseCurrentStructure() {
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
-            services_.erasePage(pages_.activePage);
+            services_.erasePage(pages_.currentActivePage());
             return;
     }
 }
@@ -630,10 +612,16 @@ FLASHMEM bool MacroPerformanceHandler::canRemoveCurrentStructure() const {
 
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
-            return countEnabledMacroTracks(services_.trackEnabledMask()) > 1U;
+            return structure_slots::countEnabled(
+                services_.trackEnabledMask(),
+                core::state::macro::TRACK_COUNT
+            ) > 1U;
         case core::state::StructureNavigationFocus::PAGE:
         default:
-            return countEnabledMacroPages(services_.pageEnabledMask()) > 1U;
+            return structure_slots::countEnabled(
+                services_.pageEnabledMask(),
+                core::state::macro::PAGE_COUNT
+            ) > 1U;
     }
 }
 
@@ -656,7 +644,7 @@ FLASHMEM void MacroPerformanceHandler::pasteCurrentStructure() {
         if (!structure_clipboard_.hasMacroTrack()) return;
         const uint8_t addTrackIndex = static_cast<uint8_t>(std::max(
             0,
-            nextMacroAddIndexAfterHighest(
+            structure_slots::nextAddIndexAfterHighest(
                 services_.trackEnabledMask(),
                 core::state::macro::TRACK_COUNT
             )
@@ -672,12 +660,13 @@ FLASHMEM void MacroPerformanceHandler::pasteCurrentStructure() {
     if (!structure_clipboard_.hasMacroPage()) return;
     const uint8_t addPageIndex = static_cast<uint8_t>(std::max(
         0,
-        nextMacroAddIndexAfterHighest(
+        structure_slots::nextAddIndexAfterHighest(
             services_.pageEnabledMask(),
             core::state::macro::PAGE_COUNT
         )
     ));
-    const uint8_t targetIndex = macro_ui_.previewAddSlot.get() ? addPageIndex : pages_.activePage;
+    const uint8_t targetIndex =
+        macro_ui_.previewAddSlot.get() ? addPageIndex : pages_.currentActivePage();
     if (targetIndex >= core::state::macro::PAGE_COUNT) return;
     services_.pastePage(targetIndex, structure_clipboard_.macroPage);
     macro_ui_.previewAddSlot.set(false);
@@ -703,10 +692,13 @@ FLASHMEM void MacroPerformanceHandler::createPreviewedStructure() {
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
             services_.createNextTrack();
+            macro_ui_.syncPreviewTrack(services_.activeTrack());
+            macro_ui_.syncPreviewPage(pages_.currentActivePage());
             break;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             services_.createNextPage();
+            macro_ui_.syncPreviewPage(pages_.currentActivePage());
             break;
     }
 
@@ -721,8 +713,8 @@ FLASHMEM void MacroPerformanceHandler::enterSelectionMode(core::state::Structure
 
     const uint8_t cursor =
         (scope == core::state::StructureSelectionScope::TRACK)
-            ? services_.activeTrack()
-            : pages_.activePage;
+            ? currentTrackCursor(macro_ui_, services_)
+            : currentPageCursor(macro_ui_, pages_);
 
     selection.active.set(true);
     selection.scope.set(scope);
@@ -733,6 +725,8 @@ FLASHMEM void MacroPerformanceHandler::enterSelectionMode(core::state::Structure
             ? core::state::StructureNavigationFocus::TRACK
             : core::state::StructureNavigationFocus::PAGE
     );
+    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    macro_ui_.syncPreviewPage(pages_.currentActivePage());
 }
 
 FLASHMEM void MacroPerformanceHandler::cancelSelectionMode() {
@@ -741,8 +735,10 @@ FLASHMEM void MacroPerformanceHandler::cancelSelectionMode() {
     const uint8_t cursor =
         (scope == core::state::StructureSelectionScope::TRACK)
             ? services_.activeTrack()
-            : pages_.activePage;
+            : pages_.currentActivePage();
     macro_ui_.structureSelection.reset(scope, cursor);
+    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    macro_ui_.syncPreviewPage(pages_.currentActivePage());
 }
 
 FLASHMEM void MacroPerformanceHandler::toggleSelectionAtCursor() {
@@ -776,11 +772,16 @@ FLASHMEM void MacroPerformanceHandler::navigateSelection(float delta) {
     const uint8_t count =
         trackScope ? core::state::macro::TRACK_COUNT : core::state::macro::PAGE_COUNT;
     const uint8_t enabledCount =
-        trackScope ? countEnabledMacroTracks(enabledMask) : countEnabledMacroPages(enabledMask);
+        structure_slots::countEnabled(enabledMask, count);
     if (enabledCount == 0) return;
 
     const uint8_t current = selection.cursorIndex.get();
-    const uint8_t next = nextEnabledIndex(enabledMask, current, count, nav::turnStep(delta));
+    const uint8_t next = structure_slots::nextEnabledIndex(
+        enabledMask,
+        current,
+        count,
+        nav::turnStep(delta)
+    );
     selection.cursorIndex.set(next);
 }
 
@@ -842,8 +843,26 @@ FLASHMEM void MacroPerformanceHandler::configureMacroEncoders() {
     }
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        if (property == core::state::macro::MacroPerformanceProperty::CHANNEL &&
+            macro_ui_.clutchActive.get()) {
+            encoders_.setPosition(
+                Config::MACRO_ENCODERS[i],
+                input_utils::indexToNormalized(macro_ui_.clutchPreviewTrackChannel.get(), 16)
+            );
+            continue;
+        }
         encoders_.setPosition(Config::MACRO_ENCODERS[i], normalizedForProperty(services_, i, property));
     }
+}
+
+FLASHMEM void MacroPerformanceHandler::initializeClutchChannelPreview() {
+    macro_ui_.clutchPreviewTrackChannel.set(services_.activeTrackChannel());
+}
+
+FLASHMEM void MacroPerformanceHandler::commitClutchChannelPreview() {
+    if (!macro_ui_.clutchActive.get()) return;
+    if (macro_ui_.activeProperty.get() != core::state::macro::MacroPerformanceProperty::CHANNEL) return;
+    services_.setTrackChannel(macro_ui_.clutchPreviewTrackChannel.get());
 }
 
 FLASHMEM void MacroPerformanceHandler::configureQuickControlEncoder() {
@@ -862,12 +881,13 @@ FLASHMEM void MacroPerformanceHandler::configureQuickControlEncoder() {
     configureDiscreteEncoder(Config::EncoderID::OPT, 16);
     encoders_.setPosition(
         Config::EncoderID::OPT,
-        input_utils::indexToNormalized(services_.activeConfig(0).channel, 16)
+        input_utils::indexToNormalized(macro_ui_.quickControlGlobalChannel.get(), 16)
     );
 }
 
 FLASHMEM void MacroPerformanceHandler::resetQuickControlsState() {
     macro_ui_.focusedQuickControl.set(core::state::macro::MacroQuickControlItem::GLOBAL_CHANNEL);
+    macro_ui_.quickControlGlobalChannel.set(0);
     macro_ui_.ccOffset.set(0);
 }
 
@@ -903,20 +923,6 @@ FLASHMEM int MacroPerformanceHandler::normalizedToOffset(float normalized) const
     const int itemCount = (maxOffset - minOffset) + 1;
     const int index = input_utils::normalizedToIndex(std::clamp(normalized, 0.0f, 1.0f), itemCount);
     return minOffset + index;
-}
-
-FLASHMEM void MacroPerformanceHandler::applyCcOffsetFromSnapshot(int offset) const {
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        const auto& snapshot = quick_snapshot_configs_[i];
-        const int nextCc = std::clamp(static_cast<int>(snapshot.cc) + offset, 0, 127);
-        services_.setConfig(i, snapshot.channel, static_cast<uint8_t>(nextCc));
-    }
-}
-
-FLASHMEM void MacroPerformanceHandler::applyGlobalChannel(uint8_t channel) const {
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        services_.setConfig(i, channel, services_.activeConfig(i).cc);
-    }
 }
 
 FLASHMEM void MacroPerformanceHandler::configureValueEncoders() {

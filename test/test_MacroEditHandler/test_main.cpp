@@ -12,14 +12,7 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 #include "../../src/handler/macro/MacroDomainServices.hpp"
-// Native tests only build selected source folders; include the implementation
-// here so this handler-level service remains testable without widening the
-// environment's global src filter.
-#include "../../src/handler/macro/MacroDomainServices.cpp"
 #include "../../src/handler/macro/MacroEditHandler.hpp"
-// Same rationale for the handler itself: keep the native src filter narrow
-// while still testing the real binding logic end to end.
-#include "../../src/handler/macro/MacroEditHandler.cpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -73,6 +66,7 @@ struct MacroEditHarness {
         , handler(core::handler::MacroEditHandler::StateRefs{
                       state.macroEdit,
                       state.pages,
+                      state.macroUi,
                   },
                   services,
                   overlays,
@@ -191,7 +185,7 @@ void test_slow_release_closes_macro_edit_immediately() {
     std::cout << "[PASS] test_slow_release_closes_macro_edit_immediately\n";
 }
 
-void test_macro_edit_live_and_selector_flows_apply_immediately() {
+void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     MacroEditHarness h;
 
     h.state.pages.setActiveTrackChannel(5);
@@ -212,7 +206,7 @@ void test_macro_edit_live_and_selector_flows_apply_immediately() {
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.state.macroEdit.tempChannel.get() == 15);
-    assert(h.services.activeConfig(0).channel == 15);
+    assert(h.services.activeConfig(0).channel == 5);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroEdit.focusedRow.get() == 1);
@@ -230,7 +224,7 @@ void test_macro_edit_live_and_selector_flows_apply_immediately() {
     h.tap(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
     assert(h.state.macroEdit.tempCC.get() == 1);
-    assert(h.services.activeConfig(0).cc == 1);
+    assert(h.services.activeConfig(0).cc == 0);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
     h.tap(Config::ButtonID::LEFT_CENTER);
@@ -242,11 +236,13 @@ void test_macro_edit_live_and_selector_flows_apply_immediately() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.pages.selector.selectedIndex.get() == 2);
     h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(h.state.pages.activePage == 2);
+    assert(h.state.pages.currentActivePage() == 2);
     assert(std::strcmp(h.state.statusBar.pageName.get(), "Mix Bus") == 0);
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
     assert(h.state.macroEdit.tempChannel.get() == 15);
     assert(h.state.macroEdit.tempCC.get() == 67);
+    assert(h.state.pages.tracks[h.state.pages.currentActiveTrack()].pages[0].cc[0] == 1);
+    assert(h.state.pages.tracks[h.state.pages.currentActiveTrack()].channel == 15);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
     h.tap(Config::ButtonID::LEFT_BOTTOM);
@@ -273,7 +269,7 @@ void test_macro_edit_live_and_selector_flows_apply_immediately() {
 
     h.flushState();
 
-    std::cout << "[PASS] test_macro_edit_live_and_selector_flows_apply_immediately\n";
+    std::cout << "[PASS] test_macro_edit_buffered_and_selector_flows_commit_on_transition\n";
 }
 
 }  // namespace
@@ -281,7 +277,7 @@ void test_macro_edit_live_and_selector_flows_apply_immediately() {
 int main() {
     test_quick_release_keeps_macro_edit_open_and_left_top_closes();
     test_slow_release_closes_macro_edit_immediately();
-    test_macro_edit_live_and_selector_flows_apply_immediately();
+    test_macro_edit_buffered_and_selector_flows_commit_on_transition();
     std::cout << "\nAll MacroEditHandler tests passed.\n";
     return 0;
 }

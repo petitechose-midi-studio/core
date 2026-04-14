@@ -15,7 +15,7 @@
 
 #include <config/InputIDs.hpp>
 #include "handler/macro/MacroDomainServices.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace core::handler {
 

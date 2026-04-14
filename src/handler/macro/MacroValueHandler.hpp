@@ -8,7 +8,6 @@
  * Uses page configuration for CC/channel mapping.
  */
 
-#include <array>
 #include <cstdint>
 
 #include <oc/api/EncoderAPI.hpp>
@@ -19,8 +18,8 @@
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/macro/MacroUiState.hpp"
-#include "ui/OverlayTypes.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace core::handler {
 
@@ -56,6 +55,7 @@ private:
     void handleValueChange(uint8_t index, float value);
     bool shouldHandleTurns() const;
     void handleConfigChange(uint8_t index, float value);
+    void syncChannelPreviewEncoderPositions(uint8_t channel);
 
     core::state::macro::MacroUiState& macro_ui_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;

@@ -5,11 +5,9 @@
 #include <iostream>
 #include <vector>
 
+#include <oc/time/Time.hpp>
+
 #include "../../src/handler/settings/DataManagerDomainServices.hpp"
-// Native tests only build selected source folders; include the implementation
-// here so this handler-level service remains testable without widening the
-// environment's global src filter.
-#include "../../src/handler/settings/DataManagerDomainServices.cpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
@@ -19,6 +17,12 @@
 namespace {
 using test_support::CoreStorages;
 using test_support::drainNotifications;
+
+uint32_t g_now_ms = 0;
+
+uint32_t mockTimeMs() {
+    return g_now_ms;
+}
 
 void test_slot_counts_match_persistence_domains() {
     CoreStorages storage;
@@ -156,13 +160,13 @@ void test_sequencer_set_load_reports_deferred_apply() {
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
     state.sequencer.length.set(8);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(2, 72, 110, 45);
     state.sequencer.toggle(2);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 6));
 
     state.sequencer.length.set(16);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 48, 64, 55);
     state.sequencer.toggle(1);
     state.sequencer.playheadStep.set(7);
@@ -187,6 +191,7 @@ void test_sequencer_set_load_reports_deferred_apply() {
 }  // namespace
 
 int main() {
+    oc::time::setProvider(mockTimeMs);
     test_slot_counts_match_persistence_domains();
     test_shortcuts_persist_and_sanitize_through_domain_service();
     test_macro_slot_execution_and_probe_roundtrip();

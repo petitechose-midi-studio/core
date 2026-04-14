@@ -16,8 +16,8 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
-#include "ui/OverlayTypes.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -46,9 +46,10 @@ public:
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
         core::state::StructureClipboardState& structureClipboard;
         oc::state::Signal<uint32_t>& configRevision;
     };

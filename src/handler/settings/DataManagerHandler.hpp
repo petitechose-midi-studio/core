@@ -11,8 +11,8 @@
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "state/DataManagerCatalog.hpp"
 #include "state/DataManagerState.hpp"
-#include "ui/OverlayTypes.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace core::state {
 struct DataManagerCommandExecutionResult;

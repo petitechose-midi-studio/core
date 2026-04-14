@@ -14,11 +14,15 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "ui/OverlayTypes.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
+}
+
+namespace core::state {
+struct CoreState;
 }
 
 namespace core::context::standalone {
@@ -40,11 +44,12 @@ namespace core::context::standalone {
 class SequencerFeatureModule {
 public:
     struct StateRefs {
+        core::state::CoreState& coreState;
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
         core::state::StructureClipboardState& structureClipboard;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;

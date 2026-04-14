@@ -17,8 +17,8 @@
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
 #include "state/MidiSyncState.hpp"
-#include "ui/OverlayTypes.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;

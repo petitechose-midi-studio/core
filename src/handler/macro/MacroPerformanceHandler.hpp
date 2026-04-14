@@ -2,16 +2,18 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
-#include "ui/OverlayTypes.hpp"
+#include "app/OverlayTypes.hpp"
 
 namespace core::handler {
 
@@ -20,9 +22,10 @@ public:
     struct StateRefs {
         core::state::macro::MacroUiState& macroUi;
         core::state::macro::MacroPagesState& pages;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+        oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         core::state::StructureClipboardState& structureClipboard;
     };
 
@@ -39,6 +42,7 @@ public:
     MacroPerformanceHandler& operator=(const MacroPerformanceHandler&) = delete;
 
 private:
+    void bindStateSync();
     void setupBindings();
     void activateClutch();
     void deactivateClutch();
@@ -48,6 +52,7 @@ private:
     void navigateQuickControls(float delta);
     void setFocusedQuickControlValue(float normalized);
     void navigateProperty(float delta);
+    bool commitPreviewSelectionIfNeeded();
     void cycleNavigationFocus();
     void movePage(float delta);
     void moveTrack(float delta);
@@ -77,11 +82,12 @@ private:
     int currentCcOffsetMax() const;
     float offsetToNormalized(int offset) const;
     int normalizedToOffset(float normalized) const;
-    void applyCcOffsetFromSnapshot(int offset) const;
-    void applyGlobalChannel(uint8_t channel) const;
+    void initializeClutchChannelPreview();
+    void commitClutchChannelPreview();
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;
+    oc::state::Signal<uint8_t, 8>& shared_track_active_;
     oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
@@ -90,6 +96,7 @@ private:
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
+    std::vector<oc::state::Subscription> subscriptions_;
     oc::type::ScopeID scope_id_ = 0;
     bool nav_long_press_used_ = false;
     bool left_center_held_ = false;

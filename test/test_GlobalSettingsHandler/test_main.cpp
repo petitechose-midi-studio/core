@@ -10,15 +10,9 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <config/InputIDs.hpp>
 #include "../../src/handler/settings/GlobalSettingsDomainServices.hpp"
-// Native tests only build selected source folders; include the implementation
-// here so this handler-level service remains testable without widening the
-// environment's global src filter.
-#include "../../src/handler/settings/GlobalSettingsDomainServices.cpp"
 #include "../../src/handler/settings/GlobalSettingsHandler.hpp"
-// Same rationale for the handler itself: keep the native src filter narrow
-// while still testing the real binding logic end to end.
-#include "../../src/handler/settings/GlobalSettingsHandler.cpp"
 #include "../../src/state/CoreSettings.hpp"
 #include "../../src/state/GlobalSettingsState.hpp"
 #include "../../src/state/MidiSyncState.hpp"

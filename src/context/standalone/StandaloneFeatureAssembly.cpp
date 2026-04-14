@@ -1,7 +1,4 @@
 #include "context/standalone/StandaloneFeatureAssembly.hpp"
-
-#include <memory>
-
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/api/MidiAPI.hpp>
@@ -41,6 +38,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.macroEdit,
             state.pages,
             state.macroUi,
+            state.sharedTrackActive,
             state.structureNavigationFocus,
             state.structureClipboard,
             state.configRevision,
@@ -56,6 +54,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     OC_LOG_DEBUG("StandaloneFeatureAssembly: sequencer_feature");
     sequencer_feature_ = core::app::makeExtmemUnique<core::context::standalone::SequencerFeatureModule>(
         core::context::standalone::SequencerFeatureModule::StateRefs{
+            state,
             state.overlays,
             state.activeView,
             state.structureNavigationFocus,

@@ -8,10 +8,6 @@
 #include <oc/time/Time.hpp>
 
 #include "../../src/handler/macro/MacroDomainServices.hpp"
-// Native tests only build selected source folders; include the implementation
-// here so this handler-level service remains testable without widening the
-// environment's global src filter.
-#include "../../src/handler/macro/MacroDomainServices.cpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
@@ -76,7 +72,13 @@ void test_config_changes_persist_and_bump_revision() {
                                                                    : (initialConfig.cc - 1U));
 
         assert(services.setConfig(0, updatedChannel, updatedCc));
-        assert(state.configRevision.get() == initialRevision + 1U);
+        assert(
+            state.configRevision.get() ==
+            core::state::macro::nextMacroConfigRevision(
+                initialRevision,
+                core::state::macro::kMacroConfigDirtyAll
+            )
+        );
 
         const auto updatedConfig = services.activeConfig(0);
         assert(updatedConfig.channel == updatedChannel);
@@ -123,7 +125,7 @@ void test_switch_to_page_updates_runtime_status_and_persists_workspace() {
 
         services.switchToPage(2);
 
-        assert(state.pages.activePage == 2);
+        assert(state.pages.currentActivePage() == 2);
         assert(std::strcmp(state.statusBar.pageName.get(), "Mix Bus") == 0);
         assert(std::fabs(services.runtimeValue(0) - 0.23f) < 0.0001f);
 
@@ -138,7 +140,7 @@ void test_switch_to_page_updates_runtime_status_and_persists_workspace() {
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
     const auto restoredServices = core::handler::MacroDomainServices::fromCoreState(restored);
-    assert(restored.pages.activePage == 2);
+    assert(restored.pages.currentActivePage() == 2);
     assert(std::strcmp(restored.statusBar.pageName.get(), "Mix Bus") == 0);
     assert(std::fabs(restoredServices.runtimeValue(0) - 0.23f) < 0.0001f);
 

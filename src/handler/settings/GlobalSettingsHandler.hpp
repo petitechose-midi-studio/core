@@ -6,7 +6,7 @@
 
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "state/GlobalSettingsState.hpp"
-#include "ui/OverlayTypes.hpp"
+#include "app/OverlayTypes.hpp"
 
 namespace core::handler {
 

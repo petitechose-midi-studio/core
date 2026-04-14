@@ -7,7 +7,7 @@
 
 #include <oc/type/Ids.hpp>
 
-#include "ui/OverlayTypes.hpp"
+#include "app/OverlayTypes.hpp"
 
 namespace core::state {
 struct CoreState;

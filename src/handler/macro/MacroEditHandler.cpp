@@ -35,6 +35,7 @@ FLASHMEM MacroEditHandler::MacroEditHandler(
 )
     : macro_edit_(state.macroEdit)
     , pages_(state.pages)
+    , macro_ui_(state.macroUi)
     , services_(services)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -184,6 +185,8 @@ FLASHMEM void MacroEditHandler::handleOpeningMacroRelease(uint8_t macroIndex) {
 }
 
 FLASHMEM void MacroEditHandler::closeOverlay() {
+    commitEditedConfig();
+
     // Close any stacked macro-edit related selector first, then the main overlay.
     modal::hideWhileCurrentIn(
         overlays_,
@@ -197,7 +200,7 @@ FLASHMEM void MacroEditHandler::closeOverlay() {
 
     macro_edit_.closeEditor();
     pages_.selector.visible.set(false);
-    pages_.selector.selectedIndex.set(pages_.activePage);
+    pages_.selector.selectedIndex.set(pages_.currentActivePage());
 }
 
 FLASHMEM void MacroEditHandler::moveFocus(float delta) {
@@ -257,7 +260,7 @@ FLASHMEM void MacroEditHandler::openPageSelector() {
     auto& edit = macro_edit_;
     if (edit.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
 
-    pages_.selector.selectedIndex.set(pages_.activePage);
+    pages_.selector.selectedIndex.set(pages_.currentActivePage());
     pages_.selector.visible.set(true);
     edit.openPageSelector();
     overlays_.show(core::ui::OverlayType::PAGE_SELECTOR, true);
@@ -290,8 +293,10 @@ FLASHMEM void MacroEditHandler::applyPageSelectorAndClose() {
         static_cast<uint8_t>(core::state::macro::PAGE_COUNT - 1)
     );
 
-    if (targetPage != pages_.activePage) {
+    if (targetPage != pages_.currentActivePage()) {
+        commitEditedConfig();
         services_.switchToPage(targetPage);
+        macro_ui_.syncPreviewPage(pages_.currentActivePage());
 
         const uint8_t macroIndex = macro_edit_.editingIndex.get();
         const auto& config = services_.activeConfig(macroIndex);
@@ -334,6 +339,7 @@ FLASHMEM void MacroEditHandler::applyMacroTargetSelectorAndClose() {
     ));
 
     if (targetMacro != macro_edit_.editingIndex.get()) {
+        commitEditedConfig();
         const auto& config = services_.activeConfig(targetMacro);
         macro_edit_.loadActiveConfig(targetMacro, config.channel, config.cc);
     }
@@ -351,8 +357,6 @@ FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
         const int clamped = std::clamp(value, 0, 127);
         macro_edit_.tempCC.set(static_cast<uint8_t>(clamped));
     }
-
-    applyEditedConfig();
 }
 
 FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
@@ -367,7 +371,9 @@ FLASHMEM int MacroEditHandler::valueCountForRow(uint8_t row) const {
     return 128;
 }
 
-FLASHMEM void MacroEditHandler::applyEditedConfig() {
+FLASHMEM void MacroEditHandler::commitEditedConfig() {
+    if (!macro_edit_.visible.get()) return;
+
     const uint8_t macroIndex = macro_edit_.editingIndex.get();
     const uint8_t channel = macro_edit_.tempChannel.get();
     const uint8_t cc = macro_edit_.tempCC.get();
