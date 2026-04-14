@@ -16,7 +16,7 @@ namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
-namespace add_slot_icon = core::ui::add_slot_icon;
+namespace add_slot_icon_ns = core::ui::add_slot_icon;
 
 namespace {
 
@@ -437,7 +437,7 @@ void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
         }
 
         if (isAddSlot) {
-            add_slot_icon::drawCentered(
+            add_slot_icon_ns::drawCentered(
                 layer,
                 segmentArea,
                 theme::color::TEXT_PRIMARY,

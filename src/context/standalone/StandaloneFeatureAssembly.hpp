@@ -25,6 +25,10 @@ class EncoderAPI;
 class MidiAPI;
 }  // namespace oc::api
 
+namespace oc::interface {
+class IEventBus;
+}
+
 namespace oc::context {
 template <typename T>
 class OverlayManager;
@@ -43,6 +47,7 @@ public:
                               oc::api::EncoderAPI& encoders,
                               oc::api::ButtonAPI& buttons,
                               oc::api::MidiAPI& midi,
+                              oc::interface::IEventBus& eventBus,
                               lv_obj_t* mainZone,
                               lv_obj_t* macroViewElement,
                               lv_obj_t* sequencerViewElement,
@@ -59,6 +64,7 @@ public:
     void onMacroNoteIn() const;
     void resetSequencerEncoderSync() const;
     void syncSequencerEncodersNow() const;
+    void update() const;
 
 private:
     core::app::ExtmemUniquePtr<core::context::standalone::MacroFeatureModule> macro_feature_;

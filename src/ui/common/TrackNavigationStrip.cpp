@@ -12,7 +12,7 @@ namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
-namespace add_slot_icon = core::ui::add_slot_icon;
+namespace add_slot_icon_ns = core::ui::add_slot_icon;
 
 namespace {
 
@@ -85,7 +85,8 @@ FLASHMEM void TrackNavigationStrip::createUI(lv_obj_t* parent) {
         lv_obj_add_flag(items_[i], LV_OBJ_FLAG_OVERFLOW_VISIBLE);
         lv_obj_set_style_outline_pad(items_[i], 0, 0);
 
-        item_add_icons_[i] = add_slot_icon::createCentered(items_[i], theme::color::TEXT_PRIMARY);
+        item_add_icons_[i] =
+            add_slot_icon_ns::createCentered(items_[i], theme::color::TEXT_PRIMARY);
     }
 
     active_cursor_ = lv_obj_create(items_row_);
@@ -173,14 +174,14 @@ void TrackNavigationStrip::render(const TrackNavigationStripProps& props) {
         }
         if (addSlot) {
             if (focusedCursor && (!cache.initialized || !cache.addVisible)) {
-                add_slot_icon::setVisible(item_add_icons_[i], true);
+                add_slot_icon_ns::setVisible(item_add_icons_[i], true);
                 cache.addVisible = true;
             } else if (!focusedCursor && (!cache.initialized || cache.addVisible)) {
-                add_slot_icon::setVisible(item_add_icons_[i], false);
+                add_slot_icon_ns::setVisible(item_add_icons_[i], false);
                 cache.addVisible = false;
             }
         } else if (!cache.initialized || cache.addVisible) {
-            add_slot_icon::setVisible(item_add_icons_[i], false);
+            add_slot_icon_ns::setVisible(item_add_icons_[i], false);
             cache.addVisible = false;
         }
 

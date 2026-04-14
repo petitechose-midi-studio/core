@@ -13,7 +13,7 @@ namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
-namespace add_slot_icon = core::ui::add_slot_icon;
+namespace add_slot_icon_ns = core::ui::add_slot_icon;
 
 namespace {
 
@@ -112,7 +112,8 @@ FLASHMEM void TrackHeaderRow::createUI(lv_obj_t* parent) {
         lv_obj_set_style_radius(items_[i], 1, 0);
         lv_obj_add_flag(items_[i], LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
-        item_add_icons_[i] = add_slot_icon::createCentered(items_[i], theme::color::TEXT_PRIMARY);
+        item_add_icons_[i] =
+            add_slot_icon_ns::createCentered(items_[i], theme::color::TEXT_PRIMARY);
     }
 
     selection_cursor_ = lv_obj_create(items_row_);
@@ -199,14 +200,14 @@ void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
                 item_border_width_cache_[i] = 0;
             }
             if (cursorItem && !item_add_visible_cache_[i]) {
-                add_slot_icon::setVisible(item_add_icons_[i], true);
+                add_slot_icon_ns::setVisible(item_add_icons_[i], true);
                 item_add_visible_cache_[i] = true;
             } else if (!cursorItem && item_add_visible_cache_[i]) {
-                add_slot_icon::setVisible(item_add_icons_[i], false);
+                add_slot_icon_ns::setVisible(item_add_icons_[i], false);
                 item_add_visible_cache_[i] = false;
             }
         } else if (item_add_visible_cache_[i]) {
-            add_slot_icon::setVisible(item_add_icons_[i], false);
+            add_slot_icon_ns::setVisible(item_add_icons_[i], false);
             item_add_visible_cache_[i] = false;
         }
         lv_opa_t emphasizedOpa = props.itemOpacities[i];

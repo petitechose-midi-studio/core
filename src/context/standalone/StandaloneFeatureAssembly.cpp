@@ -23,6 +23,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     oc::api::MidiAPI& midi,
+    oc::interface::IEventBus& eventBus,
     lv_obj_t* mainZone,
     lv_obj_t* macroViewElement,
     lv_obj_t* sequencerViewElement,
@@ -67,6 +68,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         overlays,
         encoders,
         buttons,
+        midi,
+        eventBus,
         sequencerViewElement
     );
     OC_LOG_DEBUG("StandaloneFeatureAssembly: settings_feature");
@@ -122,6 +125,12 @@ FLASHMEM void StandaloneFeatureAssembly::resetSequencerEncoderSync() const {
 FLASHMEM void StandaloneFeatureAssembly::syncSequencerEncodersNow() const {
     if (sequencer_feature_) {
         sequencer_feature_->syncEncodersNow();
+    }
+}
+
+FLASHMEM void StandaloneFeatureAssembly::update() const {
+    if (sequencer_feature_) {
+        sequencer_feature_->update();
     }
 }
 

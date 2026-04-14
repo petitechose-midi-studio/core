@@ -57,6 +57,9 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
+    if (feature_assembly_) {
+        feature_assembly_->update();
+    }
 }
 
 FLASHMEM void StandaloneContext::onCleanup() {
@@ -123,6 +126,7 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         encoders(),
         buttons(),
         midi(),
+        rawEvents(),
         ui_assembly_->mainZone(),
         ui_assembly_->macroViewElement(),
         ui_assembly_->sequencerViewElement(),

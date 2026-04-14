@@ -222,8 +222,8 @@ target_compile_definitions(${APP_EXE_NAME} PRIVATE
     # Keep SDL/native/wasm binding capacity aligned with the Teensy firmware.
     # A smaller desktop registry silently drops later bindings, which mostly
     # affects the standalone LEFT/BOTTOM button handlers.
-    OC_MAX_BUTTON_BINDINGS=128
-    OC_MAX_ENCODER_BINDINGS=48)
+    OC_MAX_BUTTON_BINDINGS=256
+    OC_MAX_ENCODER_BINDINGS=96)
 target_link_libraries(${APP_EXE_NAME} PRIVATE lvgl libremidi)
 
 # ==============================================================================
