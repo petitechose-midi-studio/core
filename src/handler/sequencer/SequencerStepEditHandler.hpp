@@ -10,6 +10,7 @@
 #include <oc/context/OverlayManager.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
+#include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -21,6 +22,7 @@ public:
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
+        core::state::TrackNavigationState& trackNavigation;
         core::state::sequencer::SequencerTrackBankState& tracks;
     };
 
@@ -57,6 +59,7 @@ private:
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlay_state_;
     core::state::sequencer::SequencerState& sequencer_;
+    core::state::TrackNavigationState& track_ui_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

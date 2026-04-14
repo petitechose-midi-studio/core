@@ -32,11 +32,13 @@ void configureStepEditEncoder(
 inline oc::type::IsActiveFn canOpenStepEdit(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
-    return [&overlays, &sequencer, &tracks]() {
+    return [&overlays, &sequencer, &trackUi, &tracks]() {
         return !overlays.hasVisible() &&
-               !sequencer.structureUi.selection.active.get() &&
+               !sequencer.structureUi.pageSelection.active.get() &&
+               !trackUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
                !sequencer.stepPropertyInlineSelector.selecting.get() &&
                !sequencer.rangeSelection.active();
@@ -55,6 +57,7 @@ SequencerStepEditHandler::SequencerStepEditHandler(
 )
     : overlay_state_(state.overlays)
     , sequencer_(state.sequencer)
+    , track_ui_(state.trackNavigation)
     , tracks_(state.tracks)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -73,7 +76,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         buttons_.button(btn)
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(sequencer_view_scope_)
-            .when(canOpenStepEdit(overlay_state_, sequencer_, tracks_))
+            .when(canOpenStepEdit(overlay_state_, sequencer_, track_ui_, tracks_))
             .then([this, i]() { openForMacroInPage(i); });
     }
 

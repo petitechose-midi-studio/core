@@ -59,6 +59,7 @@ struct SequencerStepHarness {
                   state.sequencer,
                   state.sequencerTracks,
                   navigationFocus,
+                  state.trackNavigation,
                   state.structureClipboard,
                   state,
               },
@@ -105,16 +106,16 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
     h.press(Config::ButtonID::NAV);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.sequencer.structureUi.selection.active.get());
-    assert(h.state.sequencer.structureUi.selection.scope.get() ==
+    assert(h.state.sequencer.structureUi.pageSelection.active.get());
+    assert(h.state.sequencer.structureUi.pageSelection.scope.get() ==
            core::state::StructureSelectionScope::PAGE);
-    assert(h.state.sequencer.structureUi.selection.cursorIndex.get() == 1);
+    assert(h.state.sequencer.structureUi.pageSelection.cursorIndex.get() == 1);
 
     h.release(Config::ButtonID::NAV);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
 
-    h.state.sequencer.structureUi.selection.selectedMask.set(0x0002);
-    assert(h.state.sequencer.structureUi.selection.selectedMask.get() == 0x0002);
+    h.state.sequencer.structureUi.pageSelection.selectedMask.set(0x0002);
+    assert(h.state.sequencer.structureUi.pageSelection.selectedMask.get() == 0x0002);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
@@ -123,7 +124,7 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() <= 7);
     assert(!h.state.sequencer.enabledMask.get().test(8));
-    assert(!h.state.sequencer.structureUi.selection.active.get());
+    assert(!h.state.sequencer.structureUi.pageSelection.active.get());
 
     std::cout << "[PASS] test_nav_selection_mode_deletes_selected_sequencer_page\n";
 }
@@ -135,24 +136,24 @@ void test_sequencer_page_creation_extends_pattern_to_target_slot() {
     h.state.sequencer.focusedStep.set(16);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencer.structureUi.previewAddSlot.get());
+    assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 3);
     assert(h.state.sequencer.page.get() == 3);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencer.structureUi.previewAddSlot.get());
+    assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 4);
     assert(h.state.sequencer.page.get() == 4);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencer.structureUi.previewAddSlot.get());
+    assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 5);
     assert(h.state.sequencer.page.get() == 5);
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
 
-    assert(!h.state.sequencer.structureUi.previewAddSlot.get());
+    assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.length.get() == 48);
     assert(h.state.sequencer.page.get() == 5);
     assert(h.state.sequencer.focusedStep.get() == 40);
@@ -184,23 +185,23 @@ void test_nav_selection_mode_deletes_selected_sequencer_track() {
     h.press(Config::ButtonID::NAV);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.sequencer.structureUi.selection.active.get());
-    assert(h.state.sequencer.structureUi.selection.scope.get() ==
+    assert(h.state.trackNavigation.selection.active.get());
+    assert(h.state.trackNavigation.selection.scope.get() ==
            core::state::StructureSelectionScope::TRACK);
-    assert(h.state.sequencer.structureUi.selection.cursorIndex.get() == 1);
+    assert(h.state.trackNavigation.selection.cursorIndex.get() == 1);
 
     h.release(Config::ButtonID::NAV);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
 
-    h.state.sequencer.structureUi.selection.selectedMask.set(0x0002);
-    assert(h.state.sequencer.structureUi.selection.selectedMask.get() == 0x0002);
+    h.state.trackNavigation.selection.selectedMask.set(0x0002);
+    assert(h.state.trackNavigation.selection.selectedMask.get() == 0x0002);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0001);
     assert(h.state.sequencerTracks.activeTrackIndex() == 0);
     assert(h.state.sequencer.midiChannel.get() == 0);
-    assert(!h.state.sequencer.structureUi.selection.active.get());
+    assert(!h.state.trackNavigation.selection.active.get());
 
     std::cout << "[PASS] test_nav_selection_mode_deletes_selected_sequencer_track\n";
 }
@@ -249,21 +250,21 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencer.structureUi.previewAddSlot.get());
-    assert(h.state.sequencer.structureUi.previewTrackIndex.get() == 1);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(!h.state.sequencer.structureUi.previewAddSlot.get());
+    assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencerTracks.activeTrackIndex() == 2);
 
     h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(h.state.sequencer.structureUi.previewAddSlot.get());
-    assert(h.state.sequencer.structureUi.previewTrackIndex.get() == 1);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
 
-    assert(!h.state.sequencer.structureUi.previewAddSlot.get());
+    assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencerTracks.isTrackEnabled(1));
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.sequencer.midiChannel.get() == 1);

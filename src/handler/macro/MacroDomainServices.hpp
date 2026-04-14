@@ -43,7 +43,7 @@ public:
     bool pastePage(uint8_t pageIndex, const core::state::macro::MacroPageData& pageData) const;
     bool pasteTrack(uint8_t trackIndex, const core::state::macro::MacroTrackData& trackData) const;
     bool createNextPage() const;
-    bool createNextTrack() const;
+    bool createTrack(uint8_t trackIndex) const;
     uint16_t pageEnabledMask() const;
     uint16_t trackEnabledMask() const;
 

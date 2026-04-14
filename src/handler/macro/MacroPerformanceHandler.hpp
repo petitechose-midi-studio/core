@@ -11,6 +11,7 @@
 
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -22,6 +23,7 @@ public:
     struct StateRefs {
         core::state::macro::MacroUiState& macroUi;
         core::state::macro::MacroPagesState& pages;
+        core::state::TrackNavigationState& trackNavigation;
         oc::state::Signal<uint8_t, 8>& sharedTrackActive;
         oc::state::Signal<
             core::state::StructureNavigationFocus,
@@ -52,7 +54,7 @@ private:
     void navigateQuickControls(float delta);
     void setFocusedQuickControlValue(float normalized);
     void navigateProperty(float delta);
-    bool commitPreviewSelectionIfNeeded();
+    bool commitPreviewedPageIfNeeded();
     void cycleNavigationFocus();
     void movePage(float delta);
     void moveTrack(float delta);
@@ -87,6 +89,7 @@ private:
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;
+    core::state::TrackNavigationState& track_ui_;
     oc::state::Signal<uint8_t, 8>& shared_track_active_;
     oc::state::Signal<
         core::state::StructureNavigationFocus,

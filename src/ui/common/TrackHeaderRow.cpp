@@ -13,6 +13,7 @@ namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
+namespace add_slot_icon = core::ui::add_slot_icon;
 
 namespace {
 
@@ -21,9 +22,9 @@ constexpr lv_coord_t ROW_HEIGHT = 20;
 constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
 constexpr lv_opa_t LABEL_OPA = LV_OPA_80;
 constexpr lv_coord_t ACCENT_WIDTH = 4;
-constexpr lv_coord_t ITEM_SIZE_WIDE = 9;
+constexpr lv_coord_t ITEM_SIZE_WIDE = 10;
 constexpr lv_coord_t ITEM_GAP_WIDE = 4;
-constexpr lv_coord_t ITEM_SIZE_DENSE = 7;
+constexpr lv_coord_t ITEM_SIZE_DENSE = 8;
 constexpr lv_coord_t ITEM_GAP_DENSE = 3;
 constexpr lv_coord_t CURSOR_HEIGHT = 3;
 constexpr lv_coord_t CURSOR_OFFSET_Y = 1;
@@ -111,14 +112,7 @@ FLASHMEM void TrackHeaderRow::createUI(lv_obj_t* parent) {
         lv_obj_set_style_radius(items_[i], 1, 0);
         lv_obj_add_flag(items_[i], LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
-        item_add_labels_[i] = lv_label_create(items_[i]);
-        lv_label_set_text(item_add_labels_[i], "+");
-        lv_obj_set_style_text_font(item_add_labels_[i], fonts.inter_13_bold, 0);
-        lv_obj_set_style_text_color(item_add_labels_[i], lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-        lv_obj_set_style_text_opa(item_add_labels_[i], LV_OPA_COVER, 0);
-        lv_obj_center(item_add_labels_[i]);
-        lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
+        item_add_icons_[i] = add_slot_icon::createCentered(items_[i], theme::color::TEXT_PRIMARY);
     }
 
     selection_cursor_ = lv_obj_create(items_row_);
@@ -149,9 +143,6 @@ void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
         lv_obj_set_style_pad_column(items_row_, itemGap, 0);
         for (uint8_t i = 0; i < items_.size(); ++i) {
             lv_obj_set_size(items_[i], itemSize, itemSize);
-            if (item_add_labels_[i]) {
-                lv_obj_center(item_add_labels_[i]);
-            }
         }
         dense_layout_cache_ = denseLayout;
         item_size_cache_ = itemSize;
@@ -208,14 +199,14 @@ void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
                 item_border_width_cache_[i] = 0;
             }
             if (cursorItem && !item_add_visible_cache_[i]) {
-                lv_obj_clear_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
+                add_slot_icon::setVisible(item_add_icons_[i], true);
                 item_add_visible_cache_[i] = true;
             } else if (!cursorItem && item_add_visible_cache_[i]) {
-                lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
+                add_slot_icon::setVisible(item_add_icons_[i], false);
                 item_add_visible_cache_[i] = false;
             }
         } else if (item_add_visible_cache_[i]) {
-            lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
+            add_slot_icon::setVisible(item_add_icons_[i], false);
             item_add_visible_cache_[i] = false;
         }
         lv_opa_t emphasizedOpa = props.itemOpacities[i];

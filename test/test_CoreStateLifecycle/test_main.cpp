@@ -208,10 +208,10 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.sequencer.stepEdit.visible.set(true);
     state.sequencer.stepPropertyInlineSelector.selecting.set(true);
     state.sequencer.patternQuickControls.selecting.set(true);
-    state.sequencer.structureUi.selection.active.set(true);
-    state.sequencer.structureUi.selection.scope.set(core::state::StructureSelectionScope::TRACK);
-    state.sequencer.structureUi.selection.cursorIndex.set(7);
-    state.sequencer.structureUi.selection.selectedMask.set(0x0080);
+    state.trackNavigation.selection.active.set(true);
+    state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
+    state.trackNavigation.selection.cursorIndex.set(7);
+    state.trackNavigation.selection.selectedMask.set(0x0080);
     state.sequencer.rangeSelection.kind.set(core::state::sequencer::RangeSelectionKind::COPY);
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), 3);
 
@@ -228,8 +228,8 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.sequencer.stepEdit.visible.get());
     assert(!state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
-    assert(!state.sequencer.structureUi.selection.active.get());
-    assert(state.sequencer.structureUi.selection.cursorIndex.get() == 0);
+    assert(!state.trackNavigation.selection.active.get());
+    assert(state.trackNavigation.selection.cursorIndex.get() == 0);
     assert(!state.sequencer.rangeSelection.active());
 
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";

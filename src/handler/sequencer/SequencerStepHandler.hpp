@@ -13,6 +13,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/StructureClipboardState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -39,6 +40,7 @@ public:
         oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+        core::state::TrackNavigationState& trackNavigation;
         core::state::StructureClipboardState& structureClipboard;
         core::state::CoreState& coreState;
     };
@@ -82,18 +84,16 @@ private:
     bool createTrack();
     void setPagePreview(uint8_t pageIndex, bool addSlot);
     void setTrackPreview(uint8_t trackIndex, bool addSlot);
-    uint8_t cursorForFocus(core::state::StructureNavigationFocus focus) const;
     uint8_t cursorForSelectionScope(core::state::StructureSelectionScope scope) const;
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
     bool applyTrackState(uint16_t enabledMask, uint8_t activeTrack);
-    void prevPage();
-    void nextPage();
 
     core::state::CoreState& core_state_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
+    core::state::TrackNavigationState& track_ui_;
     oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;

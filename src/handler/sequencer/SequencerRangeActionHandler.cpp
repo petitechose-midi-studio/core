@@ -20,10 +20,12 @@ using RangeSelectionPhase = core::state::sequencer::RangeSelectionPhase;
 inline bool isSequencerIdleForRangeActions(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
     return !overlays.hasVisible() &&
-           !sequencer.structureUi.selection.active.get() &&
+           !sequencer.structureUi.pageSelection.active.get() &&
+           !trackUi.selection.active.get() &&
            !sequencer.stepPropertyInlineSelector.selecting.get() &&
            !sequencer.patternQuickControls.selecting.get() &&
            !sequencer.rangeSelection.active();
@@ -32,10 +34,11 @@ inline bool isSequencerIdleForRangeActions(
 inline oc::type::IsActiveFn idleRangePredicate(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
-    return [&overlays, &sequencer, &tracks]() {
-        return isSequencerIdleForRangeActions(overlays, sequencer, tracks);
+    return [&overlays, &sequencer, &trackUi, &tracks]() {
+        return isSequencerIdleForRangeActions(overlays, sequencer, trackUi, tracks);
     };
 }
 
@@ -51,6 +54,7 @@ FLASHMEM SequencerRangeActionHandler::SequencerRangeActionHandler(StateRefs stat
                                                                   oc::type::ScopeID scopeId)
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
+    , track_ui_(state.trackNavigation)
     , tracks_(state.tracks)
     , encoders_(encoders)
     , buttons_(buttons)

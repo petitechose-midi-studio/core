@@ -67,6 +67,7 @@ struct MacroPerformanceHarness {
               core::handler::MacroPerformanceHandler::StateRefs{
                   state.macroUi,
                   state.pages,
+                  state.trackNavigation,
                   state.sharedTrackActive,
                   navigationFocus,
                   clipboard,
@@ -119,7 +120,7 @@ void test_nav_turn_previews_macro_page_until_nav_commit() {
 
     assert(h.state.macroUi.previewPageIndex.get() == 1);
     assert(h.state.pages.currentActivePage() == 0);
-    assert(!h.state.macroUi.previewAddSlot.get());
+    assert(!h.state.macroUi.previewAddPageSlot.get());
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
@@ -133,7 +134,7 @@ void test_nav_turn_previews_macro_page_until_nav_commit() {
     std::cout << "[PASS] test_nav_turn_previews_macro_page_until_nav_commit\n";
 }
 
-void test_nav_focus_track_then_nav_press_commits_previewed_macro_track() {
+void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
     MacroPerformanceHarness h;
 
     h.state.setSharedTrackState(0x0003, h.state.currentSharedActiveTrack());
@@ -149,12 +150,7 @@ void test_nav_focus_track_then_nav_press_commits_previewed_macro_track() {
     h.release(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 1.0f);
 
-    assert(h.state.macroUi.previewTrackIndex.get() == 1);
-    assert(h.state.pages.currentActiveTrack() == 0);
-
-    h.press(Config::ButtonID::NAV);
-    h.release(Config::ButtonID::NAV);
-
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.pages.currentActiveTrack() == 1);
     assert(h.state.pages.currentActivePage() == 3);
     assert(h.services.activeConfig(0).channel == 9);
@@ -163,7 +159,28 @@ void test_nav_focus_track_then_nav_press_commits_previewed_macro_track() {
 
     drainNotifications();
 
-    std::cout << "[PASS] test_nav_focus_track_then_nav_press_commits_previewed_macro_track\n";
+    std::cout << "[PASS] test_nav_focus_track_turn_switches_context_to_highlighted_macro_track\n";
+}
+
+void test_macro_track_cursor_can_cross_gaps_and_reach_any_track() {
+    MacroPerformanceHarness h;
+
+    h.state.setSharedTrackState(0x0005, 0);
+    h.state.pages.tracks[2].activePage = 2;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.pages.currentActiveTrack() == 0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 2);
+    assert(!h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.pages.currentActiveTrack() == 2);
+    assert(h.state.pages.currentActivePage() == 2);
+
+    std::cout << "[PASS] test_macro_track_cursor_can_cross_gaps_and_reach_any_track\n";
 }
 
 void test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse() {
@@ -173,19 +190,19 @@ void test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse() {
     h.state.pages.syncActiveTrackCache();
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.previewAddSlot.get());
+    assert(h.state.macroUi.previewAddPageSlot.get());
     assert(h.state.pages.currentActivePage() == 0);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.previewAddSlot.get());
+    assert(h.state.macroUi.previewAddPageSlot.get());
     assert(h.state.pages.currentActivePage() == 0);
 
     h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(!h.state.macroUi.previewAddSlot.get());
+    assert(!h.state.macroUi.previewAddPageSlot.get());
     assert(h.state.pages.currentActivePage() == 0);
 
     h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(!h.state.macroUi.previewAddSlot.get());
+    assert(!h.state.macroUi.previewAddPageSlot.get());
     assert(h.state.pages.currentActivePage() == 0);
 
     std::cout << "[PASS] test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse\n";
@@ -203,25 +220,25 @@ void test_nav_selection_mode_deletes_selected_macro_page() {
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
     assert(h.state.pages.currentActivePage() == 1);
     assert(h.state.pages.currentEnabledPageMask() == 0x0003);
-    assert(!h.state.macroUi.structureSelection.active.get());
+    assert(!h.state.macroUi.pageSelection.active.get());
 
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.macroUi.structureSelection.active.get());
-    assert(h.state.macroUi.structureSelection.scope.get() ==
+    assert(h.state.macroUi.pageSelection.active.get());
+    assert(h.state.macroUi.pageSelection.scope.get() ==
            core::state::StructureSelectionScope::PAGE);
-    assert(h.state.macroUi.structureSelection.cursorIndex.get() == 1);
+    assert(h.state.macroUi.pageSelection.cursorIndex.get() == 1);
 
     h.release(Config::ButtonID::NAV);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
 
-    h.state.macroUi.structureSelection.selectedMask.set(0x0002);
-    assert(h.state.macroUi.structureSelection.selectedMask.get() == 0x0002);
+    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
+    assert(h.state.macroUi.pageSelection.selectedMask.get() == 0x0002);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.pages.currentEnabledPageMask() == 0x0001);
     assert(h.state.pages.currentActivePage() == 0);
-    assert(!h.state.macroUi.structureSelection.active.get());
+    assert(!h.state.macroUi.pageSelection.active.get());
 
     drainNotifications();
 
@@ -240,28 +257,28 @@ void test_nav_selection_mode_deletes_selected_macro_track() {
     h.state.pages.tracks[1].pages[0].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.previewTrackIndex.get() == 1);
-    assert(h.state.pages.currentActiveTrack() == 0);
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
+    assert(h.state.pages.currentActiveTrack() == 1);
 
     h.press(Config::ButtonID::NAV);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.macroUi.structureSelection.active.get());
-    assert(h.state.macroUi.structureSelection.scope.get() ==
+    assert(h.state.trackNavigation.selection.active.get());
+    assert(h.state.trackNavigation.selection.scope.get() ==
            core::state::StructureSelectionScope::TRACK);
-    assert(h.state.macroUi.structureSelection.cursorIndex.get() == 1);
+    assert(h.state.trackNavigation.selection.cursorIndex.get() == 1);
 
     h.release(Config::ButtonID::NAV);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
 
-    h.state.macroUi.structureSelection.selectedMask.set(0x0002);
-    assert(h.state.macroUi.structureSelection.selectedMask.get() == 0x0002);
+    h.state.trackNavigation.selection.selectedMask.set(0x0002);
+    assert(h.state.trackNavigation.selection.selectedMask.get() == 0x0002);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.pages.currentTrackEnabledMask() == 0x0001);
     assert(h.state.pages.currentActiveTrack() == 0);
-    assert(!h.state.macroUi.structureSelection.active.get());
+    assert(!h.state.trackNavigation.selection.active.get());
 
     drainNotifications();
 
@@ -384,7 +401,8 @@ void test_left_center_opens_macro_quick_controls_and_opt_applies_global_channel_
 
 int main() {
     test_nav_turn_previews_macro_page_until_nav_commit();
-    test_nav_focus_track_then_nav_press_commits_previewed_macro_track();
+    test_nav_focus_track_turn_switches_context_to_highlighted_macro_track();
+    test_macro_track_cursor_can_cross_gaps_and_reach_any_track();
     test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse();
     test_nav_selection_mode_deletes_selected_macro_page();
     test_nav_selection_mode_deletes_selected_macro_track();

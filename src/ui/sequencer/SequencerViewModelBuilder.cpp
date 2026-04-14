@@ -61,57 +61,61 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
     const auto& status = source.statusBar;
     const uint8_t activeTrack = source.sharedTrackActive.get();
     const bool focusingTrack =
-        !sequencer.structureUi.selection.active.get() &&
+        !source.trackNavigation.selection.active.get() &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const bool focusingPage =
-        !sequencer.structureUi.selection.active.get() &&
+        !sequencer.structureUi.pageSelection.active.get() &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE;
     const bool selectingTrack =
-        sequencer.structureUi.selection.active.get() &&
-        sequencer.structureUi.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
+        source.trackNavigation.selection.active.get() &&
+        source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
     const bool selectingPage =
-        sequencer.structureUi.selection.active.get() &&
-        sequencer.structureUi.selection.scope.get() == core::state::StructureSelectionScope::PAGE;
-    const uint16_t selectedMask = sequencer.structureUi.selection.selectedMask.get();
+        sequencer.structureUi.pageSelection.active.get() &&
+        sequencer.structureUi.pageSelection.scope.get() == core::state::StructureSelectionScope::PAGE;
+    const uint16_t selectedMask = sequencer.structureUi.pageSelection.selectedMask.get();
     const uint8_t selectionCount = countSelectedItems(selectedMask);
-    const bool previewAddSlot =
-        !sequencer.structureUi.selection.active.get() && sequencer.structureUi.previewAddSlot.get();
+    const bool previewAddTrackSlot =
+        !source.trackNavigation.selection.active.get() && source.trackNavigation.previewAddSlot.get();
+    const bool previewAddPageSlot =
+        !sequencer.structureUi.pageSelection.active.get() &&
+        sequencer.structureUi.previewAddPageSlot.get();
     const uint8_t addTrackIndex =
-        (previewAddSlot &&
+        (previewAddTrackSlot &&
          source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK)
             ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-                  sequencer.structureUi.previewTrackIndex.get()
+                  source.trackNavigation.previewTrackIndex.get()
               )
             : core::ui::SequencerHeaderBarProps::TRACK_COUNT;
     const uint8_t previewTrack =
         selectingTrack
-            ? sequencer.structureUi.selection.cursorIndex.get()
-            : ((previewAddSlot && addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT)
+            ? source.trackNavigation.selection.cursorIndex.get()
+            : ((previewAddTrackSlot &&
+                addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT)
                    ? addTrackIndex
                    : activeTrack);
     const uint8_t addPageIndex =
-        (previewAddSlot &&
+        (previewAddPageSlot &&
          source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE)
             ? sequencer.clampPage(sequencer.structureUi.previewPageIndex.get())
             : core::state::sequencer::SequencerState::PAGE_COUNT;
     const uint8_t viewedPage =
         selectingPage
-            ? sequencer.structureUi.selection.cursorIndex.get()
-            : ((previewAddSlot && addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT)
+            ? sequencer.structureUi.pageSelection.cursorIndex.get()
+            : ((previewAddPageSlot && addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT)
                    ? addPageIndex
                    : sequencer.visiblePage());
     const bool previewTrackAddSlot =
-        previewAddSlot &&
+        previewAddTrackSlot &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK &&
         addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-    const bool previewPageAddSlot =
-        previewAddSlot &&
+    const bool previewPageAddSlotActive =
+        previewAddPageSlot &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
         addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT;
 
     const char* leftText = (selectingTrack || focusingTrack) ? "TRACKS" : "PAGES";
     std::array<char, 12> badgeText{};
-    if (sequencer.structureUi.selection.active.get()) {
+    if (source.trackNavigation.selection.active.get() || sequencer.structureUi.pageSelection.active.get()) {
         std::snprintf(
             badgeText.data(),
             badgeText.size(),
@@ -146,10 +150,10 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
         .focusingPage = focusingPage,
         .selectingTrack = selectingTrack,
         .selectingPage = selectingPage,
-        .previewPageAddSlot = previewPageAddSlot,
+        .previewPageAddSlot = previewPageAddSlotActive,
         .previewTrackAddSlot = previewTrackAddSlot,
         .trackSelectedMask = static_cast<uint16_t>(
-            selectingTrack ? sequencer.structureUi.selection.selectedMask.get() : 0U
+            selectingTrack ? source.trackNavigation.selection.selectedMask.get() : 0U
         ),
         .pageSelectedMask = static_cast<uint16_t>(
             selectingPage ? selectedMask : 0U
@@ -159,42 +163,6 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
         .badgeText = badgeText,
         .dimmed = false,
     };
-}
-
-TrackNavigationStripProps buildTrackNavigationStripProps(const SequencerViewModelSource& source) {
-    TrackNavigationStripProps props;
-    const auto& sequencer = source.sequencer;
-    const bool selectingTrack =
-        sequencer.structureUi.selection.active.get() &&
-        sequencer.structureUi.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
-    const bool previewAddSlot =
-        !sequencer.structureUi.selection.active.get() && sequencer.structureUi.previewAddSlot.get();
-    const uint8_t addTrackIndex =
-        (previewAddSlot &&
-         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK)
-            ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-                  sequencer.structureUi.previewTrackIndex.get()
-              )
-            : TrackNavigationStripProps::TRACK_COUNT;
-
-    props.activeTrack = source.sharedTrackActive.get();
-    props.previewTrack =
-        selectingTrack
-            ? sequencer.structureUi.selection.cursorIndex.get()
-            : ((previewAddSlot && addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT)
-                   ? addTrackIndex
-                   : source.sharedTrackActive.get());
-    props.addTrackIndex = addTrackIndex;
-    props.enabledMask = source.sharedTrackEnabledMask.get();
-    props.selectedMask = selectingTrack ? sequencer.structureUi.selection.selectedMask.get() : 0;
-    props.focusingTrack =
-        !sequencer.structureUi.selection.active.get() &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
-    props.selectingTrack = selectingTrack;
-    for (uint8_t i = 0; i < TrackNavigationStripProps::TRACK_COUNT; ++i) {
-        props.activity[i] = source.statusBar.trackNoteActivity[i].get();
-    }
-    return props;
 }
 
 SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSource& source) {
@@ -221,25 +189,24 @@ StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSourc
 
 ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource& source) {
     const bool selectingTrack =
-        source.sequencer.structureUi.selection.active.get() &&
-        source.sequencer.structureUi.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
+        source.trackNavigation.selection.active.get() &&
+        source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
     const bool selectingRange = source.sequencer.rangeSelection.active();
-    const bool selectingStructure = source.sequencer.structureUi.selection.active.get();
+    const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
+    const bool selectingStructure = selectingTrack || selectingPage;
     const char* propertyIcon = visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
 
     StripProps props;
     props.visible = true;
 
     if (selectingStructure) {
-        const bool trackScope =
-            source.sequencer.structureUi.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
         props.slots[0] = makeIconSlot(
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        props.slots[1] = trackScope
+        props.slots[1] = selectingTrack
             ? SlotProps{
                   .visualState = Visual::ACTIVE,
                   .tone = Tone::NEUTRAL,
@@ -328,10 +295,13 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     const bool trackFocus =
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const uint8_t selectionCount = countSelectedItems(
-        source.sequencer.structureUi.selection.selectedMask.get()
+        (source.trackNavigation.selection.active.get()
+             ? source.trackNavigation.selection.selectedMask.get()
+             : source.sequencer.structureUi.pageSelection.selectedMask.get())
     );
 
-    if (source.sequencer.structureUi.selection.active.get()) {
+    if (source.trackNavigation.selection.active.get() ||
+        source.sequencer.structureUi.pageSelection.active.get()) {
         props.slots[0] = makeIconSlot(
             standalone::icons::ACTION_CLEAR,
             Visual::ACTIVE,
@@ -404,12 +374,13 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
         ? source.structureClipboard.hasSequencerTrack()
         : source.structureClipboard.hasSequencerPage();
     const bool canRemove = trackFocus
-        ? source.sequencer.structureUi.previewAddSlot.get() == false &&
+        ? source.trackNavigation.previewAddSlot.get() == false &&
               (source.sharedTrackEnabledMask.get() &
                (source.sharedTrackEnabledMask.get() - 1U)) != 0
-        : source.sequencer.structureUi.previewAddSlot.get() == false &&
+        : source.sequencer.structureUi.previewAddPageSlot.get() == false &&
               source.sequencer.activePageCount() > 1U;
-    const auto holdAction = source.sequencer.structureUi.hold.action.get();
+    const auto& holdState = trackFocus ? source.trackNavigation.hold : source.sequencer.structureUi.pageHold;
+    const auto holdAction = holdState.action.get();
     const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
     const bool pasteHoldActive = holdAction == core::state::StructureHoldAction::PASTE;
 
@@ -421,7 +392,7 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     props.slots[0].showLabel = canRemove;
     props.slots[0].label = canRemove ? "DEL" : nullptr;
     props.slots[0].holdActive = removeHoldActive;
-    props.slots[0].holdStartedAtMs = source.sequencer.structureUi.hold.startedAtMs.get();
+    props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     props.slots[1] = SlotProps{
         .visualState = Visual::DIM,
@@ -439,7 +410,7 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     props.slots[2].showLabel = canPaste;
     props.slots[2].label = canPaste ? "PST" : nullptr;
     props.slots[2].holdActive = pasteHoldActive;
-    props.slots[2].holdStartedAtMs = source.sequencer.structureUi.hold.startedAtMs.get();
+    props.slots[2].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     return props;
 }

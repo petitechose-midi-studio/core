@@ -12,6 +12,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -50,6 +51,7 @@ public:
         oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        core::state::TrackNavigationState& trackNavigation;
         core::state::StructureClipboardState& structureClipboard;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;

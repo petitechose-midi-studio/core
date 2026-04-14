@@ -137,26 +137,20 @@ struct SequencerPatternQuickControlsState {
 };
 
 struct SequencerStructureUiState {
-    Signal<bool, 4> previewAddSlot{false};
-    Signal<uint8_t, 4> previewTrackIndex{0};
+    Signal<bool, 4> previewAddPageSlot{false};
     Signal<uint8_t, 4> previewPageIndex{0};
-    core::state::StructureHoldState hold;
-    core::state::StructureSelectionState selection;
-
-    void syncPreviewTrack(uint8_t trackIndex) {
-        previewTrackIndex.set(trackIndex);
-    }
+    core::state::StructureHoldState pageHold;
+    core::state::StructureSelectionState pageSelection;
 
     void syncPreviewPage(uint8_t pageIndex) {
         previewPageIndex.set(pageIndex);
     }
 
     void reset() {
-        previewAddSlot.set(false);
-        previewTrackIndex.set(0);
+        previewAddPageSlot.set(false);
         previewPageIndex.set(0);
-        hold.clear();
-        selection.reset(core::state::StructureSelectionScope::PAGE);
+        pageHold.clear();
+        pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     }
 };
 

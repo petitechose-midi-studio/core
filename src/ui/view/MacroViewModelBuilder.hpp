@@ -8,6 +8,7 @@
 #include "state/StructureSelectionState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "ui/macro/MacroBottomControls.hpp"
@@ -22,6 +23,7 @@ struct MacroViewModelSource {
     const core::state::MacroState& macros;
     const core::state::macro::MacroPagesState& pages;
     const core::state::macro::MacroUiState& macroUi;
+    const core::state::TrackNavigationState& trackNavigation;
     const oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
@@ -42,7 +44,6 @@ struct MacroViewFrameState {
 };
 
 MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source);
-TrackNavigationStripProps buildMacroTrackNavigationStripProps(const MacroViewModelSource& source);
 MacroBottomControlsProps buildMacroBottomControlsProps(const MacroViewModelSource& source);
 MacroPropertyStripProps buildMacroPropertyStripProps(const MacroViewModelSource& source);
 ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source);

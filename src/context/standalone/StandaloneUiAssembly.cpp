@@ -132,6 +132,7 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
             core_state_.macros,
             core_state_.pages,
             core_state_.macroUi,
+            core_state_.trackNavigation,
             core_state_.structureNavigationFocus,
             core_state_.sharedTrackActive,
             core_state_.sharedTrackEnabledMask,
@@ -149,6 +150,7 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
         core::ui::SequencerView::StateRefs{
             core_state_.sequencer,
             core_state_.sequencerTracks,
+            core_state_.trackNavigation,
             core_state_.structureNavigationFocus,
             core_state_.sharedTrackActive,
             core_state_.sharedTrackEnabledMask,
@@ -180,7 +182,6 @@ FLASHMEM void StandaloneUiAssembly::cacheViewScopes() {
 FLASHMEM void StandaloneUiAssembly::bindGlobalTrackStrip() {
     global_track_strip_watcher_.watchAll(
         [this]() { scheduleGlobalTrackStripRender(true); },
-        core_state_.activeView,
         core_state_.structureNavigationFocus
     );
 
@@ -188,24 +189,12 @@ FLASHMEM void StandaloneUiAssembly::bindGlobalTrackStrip() {
         [this]() { scheduleGlobalTrackStripRender(); },
         core_state_.sharedTrackActive,
         core_state_.sharedTrackEnabledMask,
-        core_state_.macroUi.previewAddSlot,
-        core_state_.macroUi.previewTrackIndex,
-        core_state_.macroUi.previewPageIndex,
-        core_state_.macroUi.structureSelection.active,
-        core_state_.macroUi.structureSelection.scope,
-        core_state_.macroUi.structureSelection.cursorIndex,
-        core_state_.macroUi.structureSelection.selectedMask
-    );
-
-    global_track_strip_watcher_.watchAll(
-        [this]() { scheduleGlobalTrackStripRender(); },
-        core_state_.sequencer.structureUi.previewAddSlot,
-        core_state_.sequencer.structureUi.previewTrackIndex,
-        core_state_.sequencer.structureUi.previewPageIndex,
-        core_state_.sequencer.structureUi.selection.active,
-        core_state_.sequencer.structureUi.selection.scope,
-        core_state_.sequencer.structureUi.selection.cursorIndex,
-        core_state_.sequencer.structureUi.selection.selectedMask
+        core_state_.trackNavigation.previewAddSlot,
+        core_state_.trackNavigation.previewTrackIndex,
+        core_state_.trackNavigation.selection.active,
+        core_state_.trackNavigation.selection.scope,
+        core_state_.trackNavigation.selection.cursorIndex,
+        core_state_.trackNavigation.selection.selectedMask
     );
 
     global_track_strip_watcher_.watchAll(

@@ -25,6 +25,7 @@
 #include "state/GlobalSettingsState.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
@@ -49,6 +50,7 @@ public:
         core::state::MacroState& macros;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
+        core::state::TrackNavigationState& trackNavigation;
         oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;

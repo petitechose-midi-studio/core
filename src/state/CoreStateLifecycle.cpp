@@ -101,6 +101,7 @@ void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroEdit.reset();
     state.macroUi.reset();
+    state.trackNavigation.reset();
 }
 
 void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
@@ -119,6 +120,7 @@ void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.dataManager.resetSession(DataManagerContext::MACRO);
     state.dataManager.feedback.set("");
     state.macroUi.reset();
+    state.trackNavigation.reset();
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     state.structureClipboard.clear();
     state.activeView.set(core::ui::ViewType::MACRO);
@@ -150,6 +152,7 @@ void CoreStateLifecycle::flushAutoPersist(CoreState& state) {
 void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.macroEdit.reset();
     state.macroUi.reset();
+    state.trackNavigation.reset();
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);

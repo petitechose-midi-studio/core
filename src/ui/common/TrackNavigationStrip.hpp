@@ -8,6 +8,7 @@
 #include <oc/ui/lvgl/IWidget.hpp>
 
 #include "state/StatusBarState.hpp"
+#include "ui/common/AddSlotIcon.hpp"
 
 namespace core::ui {
 
@@ -54,7 +55,7 @@ private:
     lv_obj_t* active_cursor_ = nullptr;
     lv_obj_t* current_cursor_ = nullptr;
     std::array<lv_obj_t*, TrackNavigationStripProps::TRACK_COUNT> items_{};
-    std::array<lv_obj_t*, TrackNavigationStripProps::TRACK_COUNT> item_add_labels_{};
+    std::array<add_slot_icon::ObjectPair, TrackNavigationStripProps::TRACK_COUNT> item_add_icons_{};
     std::array<ItemRenderCache, TrackNavigationStripProps::TRACK_COUNT> item_cache_{};
     bool item_geometry_cache_initialized_ = false;
     lv_coord_t cached_row_width_ = -1;

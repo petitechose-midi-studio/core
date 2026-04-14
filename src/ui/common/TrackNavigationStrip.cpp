@@ -5,7 +5,6 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <config/PlatformCompat.hpp>
-#include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -13,6 +12,7 @@ namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
+namespace add_slot_icon = core::ui::add_slot_icon;
 
 namespace {
 
@@ -85,14 +85,7 @@ FLASHMEM void TrackNavigationStrip::createUI(lv_obj_t* parent) {
         lv_obj_add_flag(items_[i], LV_OBJ_FLAG_OVERFLOW_VISIBLE);
         lv_obj_set_style_outline_pad(items_[i], 0, 0);
 
-        item_add_labels_[i] = lv_label_create(items_[i]);
-        lv_label_set_text(item_add_labels_[i], "+");
-        lv_obj_set_style_text_font(item_add_labels_[i], fonts.inter_13_bold, 0);
-        lv_obj_set_style_text_color(item_add_labels_[i], lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-        lv_obj_set_style_text_opa(item_add_labels_[i], LV_OPA_COVER, 0);
-        lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_center(item_add_labels_[i]);
+        item_add_icons_[i] = add_slot_icon::createCentered(items_[i], theme::color::TEXT_PRIMARY);
     }
 
     active_cursor_ = lv_obj_create(items_row_);
@@ -180,15 +173,14 @@ void TrackNavigationStrip::render(const TrackNavigationStripProps& props) {
         }
         if (addSlot) {
             if (focusedCursor && (!cache.initialized || !cache.addVisible)) {
-                lv_obj_clear_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
-                lv_obj_center(item_add_labels_[i]);
+                add_slot_icon::setVisible(item_add_icons_[i], true);
                 cache.addVisible = true;
             } else if (!focusedCursor && (!cache.initialized || cache.addVisible)) {
-                lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
+                add_slot_icon::setVisible(item_add_icons_[i], false);
                 cache.addVisible = false;
             }
         } else if (!cache.initialized || cache.addVisible) {
-            lv_obj_add_flag(item_add_labels_[i], LV_OBJ_FLAG_HIDDEN);
+            add_slot_icon::setVisible(item_add_icons_[i], false);
             cache.addVisible = false;
         }
 

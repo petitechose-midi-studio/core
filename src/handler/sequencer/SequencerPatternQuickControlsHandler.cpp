@@ -24,11 +24,13 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::Sequencer
 inline oc::type::IsActiveFn canOpenQuickControls(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
-    return [&overlays, &sequencer, &tracks]() {
+    return [&overlays, &sequencer, &trackUi, &tracks]() {
         return !overlays.hasVisible() &&
-               !sequencer.structureUi.selection.active.get() &&
+               !sequencer.structureUi.pageSelection.active.get() &&
+               !trackUi.selection.active.get() &&
                !sequencer.stepPropertyInlineSelector.selecting.get() &&
                !sequencer.rangeSelection.active();
     };
@@ -44,6 +46,7 @@ SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHandler(
 )
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
+    , track_ui_(state.trackNavigation)
     , tracks_(state.tracks)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -56,7 +59,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
         .press()
         .latch()
         .scope(scope_id_)
-        .when(canOpenQuickControls(overlays_, sequencer_, tracks_))
+        .when(canOpenQuickControls(overlays_, sequencer_, track_ui_, tracks_))
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_CENTER)

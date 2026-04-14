@@ -36,8 +36,9 @@ public:
         core::state::sequencer::SequencerPatternQuickControlsState& patternQuickControls;
         core::state::sequencer::SequencerStepPropertyInlineSelectorState&
             stepPropertyInlineSelector;
-        core::state::StructureSelectionState& macroStructureSelection;
-        core::state::StructureSelectionState& sequencerStructureSelection;
+        core::state::StructureSelectionState& trackStructureSelection;
+        core::state::StructureSelectionState& macroPageSelection;
+        core::state::StructureSelectionState& sequencerPageSelection;
     };
 
     ViewSwitcherHandler(StateRefs state,
@@ -67,8 +68,9 @@ private:
     core::state::sequencer::SequencerPatternQuickControlsState& pattern_quick_controls_;
     core::state::sequencer::SequencerStepPropertyInlineSelectorState&
         step_property_inline_selector_;
-    core::state::StructureSelectionState& macro_structure_selection_;
-    core::state::StructureSelectionState& sequencer_structure_selection_;
+    core::state::StructureSelectionState& track_structure_selection_;
+    core::state::StructureSelectionState& macro_page_selection_;
+    core::state::StructureSelectionState& sequencer_page_selection_;
     OverlayCtx overlay_ctx_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

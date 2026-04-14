@@ -54,6 +54,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
             stateRefs.structureNavigationFocus,
+            stateRefs.trackNavigation,
             stateRefs.structureClipboard,
             stateRefs.coreState,
         },
@@ -62,11 +63,12 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         sequencerViewScopeId
     );
     range_action_handler_ = std::make_unique<core::handler::SequencerRangeActionHandler>(
-        core::handler::SequencerRangeActionHandler::StateRefs{
-            stateRefs.overlays,
-            stateRefs.sequencer,
-            stateRefs.sequencerTracks,
-        },
+            core::handler::SequencerRangeActionHandler::StateRefs{
+                stateRefs.overlays,
+                stateRefs.sequencer,
+                stateRefs.trackNavigation,
+                stateRefs.sequencerTracks,
+            },
         encoders,
         buttons,
         sequencerViewScopeId
@@ -76,6 +78,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             core::handler::SequencerPatternQuickControlsHandler::StateRefs{
                 stateRefs.overlays,
                 stateRefs.sequencer,
+                stateRefs.trackNavigation,
                 stateRefs.sequencerTracks,
             },
             encoders,
@@ -86,6 +89,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::handler::SequencerStepEditHandler::StateRefs{
             stateRefs.overlays,
             stateRefs.sequencer,
+            stateRefs.trackNavigation,
             stateRefs.sequencerTracks,
         },
         overlays,
@@ -99,6 +103,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             core::handler::SequencerPropertySelectorHandler::StateRefs{
                 stateRefs.overlays,
                 stateRefs.sequencer,
+                stateRefs.trackNavigation,
                 stateRefs.sequencerTracks,
             },
             encoders,
@@ -110,6 +115,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             core::handler::SequencerMacroPropertyHandler::StateRefs{
                 stateRefs.overlays,
                 stateRefs.sequencer,
+                stateRefs.trackNavigation,
                 stateRefs.sequencerTracks,
             },
             encoders,

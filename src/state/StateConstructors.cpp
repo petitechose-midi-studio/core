@@ -26,6 +26,7 @@ FLASHMEM UiSystemState::UiSystemState()
     : overlays{},
       activeView{core::ui::ViewType::MACRO},
       sharedTracks{},
+      trackNavigation{},
       viewSelector{},
       statusBar{},
       midiSync{},

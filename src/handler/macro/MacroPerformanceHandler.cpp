@@ -21,10 +21,13 @@ namespace {
 
 inline oc::type::IsActiveFn performanceAvailable(
     core::state::macro::MacroUiState& macroUi,
+    core::state::TrackNavigationState& trackUi,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays
 ) {
-    return [&macroUi, &overlays]() {
-        return !overlays.hasVisible() && !macroUi.structureSelection.active.get();
+    return [&macroUi, &trackUi, &overlays]() {
+        return !overlays.hasVisible() &&
+               !macroUi.pageSelection.active.get() &&
+               !trackUi.selection.active.get();
     };
 }
 
@@ -39,24 +42,28 @@ inline oc::type::IsActiveFn quickControlsSelecting(
 
 inline oc::type::IsActiveFn clutchActive(
     core::state::macro::MacroUiState& macroUi,
+    core::state::TrackNavigationState& trackUi,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays
 ) {
-    return [&macroUi, &overlays]() {
+    return [&macroUi, &trackUi, &overlays]() {
         return macroUi.clutchActive.get() &&
                !macroUi.quickControlsSelecting.get() &&
-               !macroUi.structureSelection.active.get() &&
+               !macroUi.pageSelection.active.get() &&
+               !trackUi.selection.active.get() &&
                !overlays.hasVisible();
     };
 }
 
 inline oc::type::IsActiveFn clutchInactive(
     core::state::macro::MacroUiState& macroUi,
+    core::state::TrackNavigationState& trackUi,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays
 ) {
-    return [&macroUi, &overlays]() {
+    return [&macroUi, &trackUi, &overlays]() {
         return !macroUi.clutchActive.get() &&
                !macroUi.quickControlsSelecting.get() &&
-               !macroUi.structureSelection.active.get() &&
+               !macroUi.pageSelection.active.get() &&
+               !trackUi.selection.active.get() &&
                !overlays.hasVisible();
     };
 }
@@ -77,27 +84,25 @@ float normalizedForProperty(const core::handler::MacroDomainServices& services,
 
 inline oc::type::IsActiveFn selectionActive(
     core::state::macro::MacroUiState& macroUi,
+    core::state::TrackNavigationState& trackUi,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays
 ) {
-    return [&macroUi, &overlays]() {
-        return macroUi.structureSelection.active.get() && !overlays.hasVisible();
+    return [&macroUi, &trackUi, &overlays]() {
+        return (macroUi.pageSelection.active.get() || trackUi.selection.active.get()) &&
+               !overlays.hasVisible();
     };
 }
 
 uint8_t currentPageCursor(const core::state::macro::MacroUiState& macroUi,
                           const core::state::macro::MacroPagesState& pages) {
-    if (macroUi.previewAddSlot.get()) {
+    if (macroUi.previewAddPageSlot.get()) {
         return pages.currentActivePage();
     }
     return macroUi.previewPageIndex.get();
 }
 
-uint8_t currentTrackCursor(const core::state::macro::MacroUiState& macroUi,
-                           const MacroDomainServices& services) {
-    if (macroUi.previewAddSlot.get()) {
-        return services.activeTrack();
-    }
-    return macroUi.previewTrackIndex.get();
+uint8_t currentTrackCursor(const core::state::TrackNavigationState& trackUi) {
+    return trackUi.previewTrackIndex.get();
 }
 
 }  // namespace
@@ -111,6 +116,7 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     oc::type::ScopeID scopeId)
     : macro_ui_(state.macroUi)
     , pages_(state.pages)
+    , track_ui_(state.trackNavigation)
     , shared_track_active_(state.sharedTrackActive)
     , navigation_focus_(state.navigationFocus)
     , structure_clipboard_(state.structureClipboard)
@@ -119,7 +125,7 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId) {
-    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    track_ui_.syncPreviewTrack(services_.activeTrack());
     macro_ui_.syncPreviewPage(pages_.currentActivePage());
     configureMacroEncoders();
     setupBindings();
@@ -131,7 +137,7 @@ FLASHMEM void MacroPerformanceHandler::bindStateSync() {
 
     subscriptions_.push_back(
         shared_track_active_.subscribe([this](uint8_t activeTrack) {
-            macro_ui_.syncPreviewTrack(activeTrack);
+            track_ui_.syncPreviewTrack(activeTrack);
             macro_ui_.syncPreviewPage(pages_.currentActivePage());
         })
     );
@@ -150,7 +156,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             left_center_held_ = true;
-            return performanceAvailable(macro_ui_, overlays_)() &&
+            return performanceAvailable(macro_ui_, track_ui_, overlays_)() &&
                    !left_bottom_held_;
         })
         .then([this]() { openQuickControls(); });
@@ -171,7 +177,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             left_bottom_held_ = true;
-            return performanceAvailable(macro_ui_, overlays_)() &&
+            return performanceAvailable(macro_ui_, track_ui_, overlays_)() &&
                    !left_center_held_ &&
                    !macro_ui_.quickControlsSelecting.get();
         })
@@ -180,13 +186,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when(selectionActive(macro_ui_, overlays_))
+        .when(selectionActive(macro_ui_, track_ui_, overlays_))
         .then([this](float delta) { navigateSelection(delta); });
 
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             nav_long_press_used_ = true;
             enterSelectionMode(core::state::selectionScopeForFocus(
@@ -197,7 +203,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
-        .when(selectionActive(macro_ui_, overlays_))
+        .when(selectionActive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             if (nav_long_press_used_) {
                 nav_long_press_used_ = false;
@@ -220,17 +226,21 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             if (nav_long_press_used_) {
                 nav_long_press_used_ = false;
                 return;
             }
-            if (macro_ui_.previewAddSlot.get()) {
+            const bool previewAddSlot =
+                navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK
+                    ? track_ui_.previewAddSlot.get()
+                    : macro_ui_.previewAddPageSlot.get();
+            if (previewAddSlot) {
                 createPreviewedStructure();
                 return;
             }
-            if (commitPreviewSelectionIfNeeded()) {
+            if (commitPreviewedPageIfNeeded()) {
                 return;
             }
             cycleNavigationFocus();
@@ -245,13 +255,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when(clutchActive(macro_ui_, overlays_))
+        .when(clutchActive(macro_ui_, track_ui_, overlays_))
         .then([this](float delta) { navigateProperty(delta); });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this](float delta) {
             switch (navigation_focus_.get()) {
                 case core::state::StructureNavigationFocus::TRACK:
@@ -273,13 +283,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when(selectionActive(macro_ui_, overlays_))
+        .when(selectionActive(macro_ui_, track_ui_, overlays_))
         .then([this]() { cancelSelectionMode(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             if (canRemoveCurrentStructure()) {
                 beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -289,13 +299,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when(selectionActive(macro_ui_, overlays_))
+        .when(selectionActive(macro_ui_, track_ui_, overlays_))
         .then([this]() { deleteSelection(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             clearHoldAction();
             if (ignore_next_bottom_left_release_) {
@@ -308,7 +318,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             clearHoldAction();
             ignore_next_bottom_left_release_ = true;
@@ -318,7 +328,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .press()
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             if (canPasteCurrentStructure()) {
                 beginHoldAction(core::state::StructureHoldAction::PASTE);
@@ -328,13 +338,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when(selectionActive(macro_ui_, overlays_))
+        .when(selectionActive(macro_ui_, track_ui_, overlays_))
         .then([this]() { duplicateSelection(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             clearHoldAction();
             if (ignore_next_bottom_right_release_) {
@@ -347,7 +357,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when(clutchInactive(macro_ui_, overlays_))
+        .when(clutchInactive(macro_ui_, track_ui_, overlays_))
         .then([this]() {
             clearHoldAction();
             ignore_next_bottom_right_release_ = true;
@@ -364,7 +374,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 FLASHMEM void MacroPerformanceHandler::activateClutch() {
     if (overlays_.hasVisible()) return;
     if (macro_ui_.quickControlsSelecting.get()) return;
-    macro_ui_.previewAddSlot.set(false);
+    track_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
     initializeClutchChannelPreview();
     macro_ui_.clutchActive.set(true);
     configureMacroEncoders();
@@ -381,7 +392,8 @@ FLASHMEM void MacroPerformanceHandler::deactivateClutch() {
 FLASHMEM void MacroPerformanceHandler::openQuickControls() {
     if (overlays_.hasVisible()) return;
 
-    macro_ui_.previewAddSlot.set(false);
+    track_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
     macro_ui_.clutchActive.set(false);
     macro_ui_.quickControlsSelecting.set(true);
     macro_ui_.focusedQuickControl.set(core::state::macro::MacroQuickControlItem::GLOBAL_CHANNEL);
@@ -481,33 +493,20 @@ FLASHMEM void MacroPerformanceHandler::navigateProperty(float delta) {
     configureMacroEncoders();
 }
 
-FLASHMEM bool MacroPerformanceHandler::commitPreviewSelectionIfNeeded() {
-    if (macro_ui_.previewAddSlot.get()) return false;
-
-    switch (navigation_focus_.get()) {
-        case core::state::StructureNavigationFocus::TRACK: {
-            const uint8_t previewTrack = macro_ui_.previewTrackIndex.get();
-            if (previewTrack == services_.activeTrack()) {
-                return false;
-            }
-            services_.switchToTrack(previewTrack);
-            macro_ui_.syncPreviewTrack(services_.activeTrack());
-            macro_ui_.syncPreviewPage(pages_.currentActivePage());
-            configureMacroEncoders();
-            return true;
-        }
-        case core::state::StructureNavigationFocus::PAGE:
-        default: {
-            const uint8_t previewPage = macro_ui_.previewPageIndex.get();
-            if (previewPage == pages_.currentActivePage()) {
-                return false;
-            }
-            services_.switchToPage(previewPage);
-            macro_ui_.syncPreviewPage(pages_.currentActivePage());
-            configureMacroEncoders();
-            return true;
-        }
+FLASHMEM bool MacroPerformanceHandler::commitPreviewedPageIfNeeded() {
+    if (navigation_focus_.get() != core::state::StructureNavigationFocus::PAGE) {
+        return false;
     }
+
+    if (macro_ui_.previewAddPageSlot.get()) return false;
+    const uint8_t previewPage = macro_ui_.previewPageIndex.get();
+    if (previewPage == pages_.currentActivePage()) {
+        return false;
+    }
+    services_.switchToPage(previewPage);
+    macro_ui_.syncPreviewPage(pages_.currentActivePage());
+    configureMacroEncoders();
+    return true;
 }
 
 FLASHMEM void MacroPerformanceHandler::cycleNavigationFocus() {
@@ -515,8 +514,9 @@ FLASHMEM void MacroPerformanceHandler::cycleNavigationFocus() {
     const auto next = (current == core::state::StructureNavigationFocus::PAGE)
         ? core::state::StructureNavigationFocus::TRACK
         : core::state::StructureNavigationFocus::PAGE;
-    macro_ui_.previewAddSlot.set(false);
-    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    track_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
+    track_ui_.syncPreviewTrack(services_.activeTrack());
     macro_ui_.syncPreviewPage(pages_.currentActivePage());
     navigation_focus_.set(next);
 }
@@ -528,7 +528,7 @@ FLASHMEM void MacroPerformanceHandler::movePage(float delta) {
     if (structure_slots::countEnabled(enabledMask, core::state::macro::PAGE_COUNT) == 0) return;
 
     const uint8_t current = currentPageCursor(macro_ui_, pages_);
-    const bool currentAddSlot = macro_ui_.previewAddSlot.get();
+    const bool currentAddSlot = macro_ui_.previewAddPageSlot.get();
     const auto target = structure_slots::nextNavigationTarget(
         enabledMask,
         current,
@@ -539,11 +539,11 @@ FLASHMEM void MacroPerformanceHandler::movePage(float delta) {
     if (!target.valid) return;
     macro_ui_.syncPreviewPage(target.index);
     if (target.addSlot) {
-        macro_ui_.previewAddSlot.set(true);
+        macro_ui_.previewAddPageSlot.set(true);
         return;
     }
 
-    macro_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
     if (target.index == current && !currentAddSlot) {
         return;
     }
@@ -556,68 +556,59 @@ FLASHMEM void MacroPerformanceHandler::moveTrack(float delta) {
     const uint16_t enabledMask = services_.trackEnabledMask();
     if (structure_slots::countEnabled(enabledMask, core::state::macro::TRACK_COUNT) == 0) return;
 
-    const uint8_t current = currentTrackCursor(macro_ui_, services_);
-    const bool currentAddSlot = macro_ui_.previewAddSlot.get();
-    const auto target = structure_slots::nextNavigationTarget(
-        enabledMask,
-        current,
-        core::state::macro::TRACK_COUNT,
-        currentAddSlot,
-        nav::turnStep(delta)
+    const uint8_t next = structure_slots::wrapIndex(
+        currentTrackCursor(track_ui_),
+        nav::turnStep(delta),
+        core::state::macro::TRACK_COUNT
     );
-    if (!target.valid) return;
-    macro_ui_.syncPreviewTrack(target.index);
-    if (target.addSlot) {
-        macro_ui_.previewAddSlot.set(true);
-        return;
-    }
-
-    macro_ui_.previewAddSlot.set(false);
-    if (target.index == current && !currentAddSlot) {
-        return;
+    track_ui_.syncPreviewTrack(next);
+    const bool enabled = structure_slots::isEnabled(enabledMask, next);
+    track_ui_.previewAddSlot.set(!enabled);
+    if (enabled && next != services_.activeTrack()) {
+        services_.switchToTrack(next);
     }
     configureMacroEncoders();
 }
 
 FLASHMEM void MacroPerformanceHandler::eraseCurrentStructure() {
-    if (macro_ui_.previewAddSlot.get()) return;
-
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
+            if (track_ui_.previewAddSlot.get()) return;
             services_.eraseTrack(services_.activeTrack());
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
+            if (macro_ui_.previewAddPageSlot.get()) return;
             services_.erasePage(pages_.currentActivePage());
             return;
     }
 }
 
 FLASHMEM void MacroPerformanceHandler::removeCurrentStructure() {
-    if (macro_ui_.previewAddSlot.get()) return;
-
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
+            if (track_ui_.previewAddSlot.get()) return;
             services_.deleteActiveTrack();
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
+            if (macro_ui_.previewAddPageSlot.get()) return;
             services_.deleteActivePage();
             return;
     }
 }
 
 FLASHMEM bool MacroPerformanceHandler::canRemoveCurrentStructure() const {
-    if (macro_ui_.previewAddSlot.get()) return false;
-
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
+            if (track_ui_.previewAddSlot.get()) return false;
             return structure_slots::countEnabled(
                 services_.trackEnabledMask(),
                 core::state::macro::TRACK_COUNT
             ) > 1U;
         case core::state::StructureNavigationFocus::PAGE:
         default:
+            if (macro_ui_.previewAddPageSlot.get()) return false;
             return structure_slots::countEnabled(
                 services_.pageEnabledMask(),
                 core::state::macro::PAGE_COUNT
@@ -626,14 +617,14 @@ FLASHMEM bool MacroPerformanceHandler::canRemoveCurrentStructure() const {
 }
 
 FLASHMEM void MacroPerformanceHandler::copyCurrentStructure() {
-    if (macro_ui_.previewAddSlot.get()) return;
-
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
+            if (track_ui_.previewAddSlot.get()) return;
             structure_clipboard_.storeMacroTrack(pages_.tracks[services_.activeTrack()]);
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
+            if (macro_ui_.previewAddPageSlot.get()) return;
             structure_clipboard_.storeMacroPage(pages_.activePageData());
             return;
     }
@@ -642,17 +633,11 @@ FLASHMEM void MacroPerformanceHandler::copyCurrentStructure() {
 FLASHMEM void MacroPerformanceHandler::pasteCurrentStructure() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (!structure_clipboard_.hasMacroTrack()) return;
-        const uint8_t addTrackIndex = static_cast<uint8_t>(std::max(
-            0,
-            structure_slots::nextAddIndexAfterHighest(
-                services_.trackEnabledMask(),
-                core::state::macro::TRACK_COUNT
-            )
-        ));
-        const uint8_t targetIndex = macro_ui_.previewAddSlot.get() ? addTrackIndex : services_.activeTrack();
+        const uint8_t targetIndex =
+            track_ui_.previewAddSlot.get() ? track_ui_.previewTrackIndex.get() : services_.activeTrack();
         if (targetIndex >= core::state::macro::TRACK_COUNT) return;
         services_.pasteTrack(targetIndex, structure_clipboard_.macroTrack);
-        macro_ui_.previewAddSlot.set(false);
+        track_ui_.previewAddSlot.set(false);
         configureMacroEncoders();
         return;
     }
@@ -666,10 +651,10 @@ FLASHMEM void MacroPerformanceHandler::pasteCurrentStructure() {
         )
     ));
     const uint8_t targetIndex =
-        macro_ui_.previewAddSlot.get() ? addPageIndex : pages_.currentActivePage();
+        macro_ui_.previewAddPageSlot.get() ? addPageIndex : pages_.currentActivePage();
     if (targetIndex >= core::state::macro::PAGE_COUNT) return;
     services_.pastePage(targetIndex, structure_clipboard_.macroPage);
-    macro_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
     configureMacroEncoders();
 }
 
@@ -681,18 +666,23 @@ FLASHMEM bool MacroPerformanceHandler::canPasteCurrentStructure() const {
 }
 
 FLASHMEM void MacroPerformanceHandler::beginHoldAction(core::state::StructureHoldAction action) {
-    macro_ui_.hold.begin(action, core::time_compat::millis());
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
+        track_ui_.hold.begin(action, core::time_compat::millis());
+        return;
+    }
+    macro_ui_.pageHold.begin(action, core::time_compat::millis());
 }
 
 FLASHMEM void MacroPerformanceHandler::clearHoldAction() {
-    macro_ui_.hold.clear();
+    track_ui_.hold.clear();
+    macro_ui_.pageHold.clear();
 }
 
 FLASHMEM void MacroPerformanceHandler::createPreviewedStructure() {
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
-            services_.createNextTrack();
-            macro_ui_.syncPreviewTrack(services_.activeTrack());
+            services_.createTrack(track_ui_.previewTrackIndex.get());
+            track_ui_.syncPreviewTrack(services_.activeTrack());
             macro_ui_.syncPreviewPage(pages_.currentActivePage());
             break;
         case core::state::StructureNavigationFocus::PAGE:
@@ -702,18 +692,22 @@ FLASHMEM void MacroPerformanceHandler::createPreviewedStructure() {
             break;
     }
 
-    macro_ui_.previewAddSlot.set(false);
+    track_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
     configureMacroEncoders();
 }
 
 FLASHMEM void MacroPerformanceHandler::enterSelectionMode(core::state::StructureSelectionScope scope) {
-    auto& selection = macro_ui_.structureSelection;
+    auto& selection = scope == core::state::StructureSelectionScope::TRACK
+        ? track_ui_.selection
+        : macro_ui_.pageSelection;
     if (selection.active.get()) return;
-    macro_ui_.previewAddSlot.set(false);
+    track_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
 
     const uint8_t cursor =
         (scope == core::state::StructureSelectionScope::TRACK)
-            ? currentTrackCursor(macro_ui_, services_)
+            ? currentTrackCursor(track_ui_)
             : currentPageCursor(macro_ui_, pages_);
 
     selection.active.set(true);
@@ -725,24 +719,27 @@ FLASHMEM void MacroPerformanceHandler::enterSelectionMode(core::state::Structure
             ? core::state::StructureNavigationFocus::TRACK
             : core::state::StructureNavigationFocus::PAGE
     );
-    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    track_ui_.syncPreviewTrack(services_.activeTrack());
     macro_ui_.syncPreviewPage(pages_.currentActivePage());
 }
 
 FLASHMEM void MacroPerformanceHandler::cancelSelectionMode() {
-    macro_ui_.previewAddSlot.set(false);
-    const auto scope = macro_ui_.structureSelection.scope.get();
+    track_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
+    const bool trackScope = track_ui_.selection.active.get();
+    auto& selection = trackScope ? track_ui_.selection : macro_ui_.pageSelection;
+    const auto scope = selection.scope.get();
     const uint8_t cursor =
         (scope == core::state::StructureSelectionScope::TRACK)
             ? services_.activeTrack()
             : pages_.currentActivePage();
-    macro_ui_.structureSelection.reset(scope, cursor);
-    macro_ui_.syncPreviewTrack(services_.activeTrack());
+    selection.reset(scope, cursor);
+    track_ui_.syncPreviewTrack(services_.activeTrack());
     macro_ui_.syncPreviewPage(pages_.currentActivePage());
 }
 
 FLASHMEM void MacroPerformanceHandler::toggleSelectionAtCursor() {
-    auto& selection = macro_ui_.structureSelection;
+    auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
     if (!selection.active.get()) return;
 
     const uint8_t cursor = selection.cursorIndex.get();
@@ -762,7 +759,7 @@ FLASHMEM void MacroPerformanceHandler::toggleSelectionAtCursor() {
 }
 
 FLASHMEM void MacroPerformanceHandler::navigateSelection(float delta) {
-    auto& selection = macro_ui_.structureSelection;
+    auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
     if (!selection.active.get()) return;
     if (!nav::hasTurnDelta(delta)) return;
 
@@ -786,7 +783,7 @@ FLASHMEM void MacroPerformanceHandler::navigateSelection(float delta) {
 }
 
 FLASHMEM void MacroPerformanceHandler::deleteSelection() {
-    auto& selection = macro_ui_.structureSelection;
+    auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
     if (!selection.active.get()) return;
 
     const bool trackScope = selection.scope.get() == core::state::StructureSelectionScope::TRACK;
@@ -803,7 +800,7 @@ FLASHMEM void MacroPerformanceHandler::deleteSelection() {
 }
 
 FLASHMEM void MacroPerformanceHandler::duplicateSelection() {
-    auto& selection = macro_ui_.structureSelection;
+    auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
     if (!selection.active.get()) return;
 
     const bool trackScope = selection.scope.get() == core::state::StructureSelectionScope::TRACK;

@@ -16,6 +16,7 @@
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -35,9 +36,10 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        core::state::TrackNavigationState& trackNavigation;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
         oc::state::Signal<uint8_t, 8>& sharedTrackActive;
         oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
         core::state::StructureClipboardState& structureClipboard;

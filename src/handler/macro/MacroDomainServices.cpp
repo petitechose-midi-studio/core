@@ -61,7 +61,7 @@ MacroDomainServices MacroDomainServices::fromCoreState(core::state::CoreState& s
 }
 
 void MacroDomainServices::syncPreviewState_() const {
-    state_->macroUi.syncPreviewTrack(activeTrack());
+    state_->trackNavigation.syncPreviewTrack(activeTrack());
     state_->macroUi.syncPreviewPage(state_->pages.currentActivePage());
 }
 
@@ -336,20 +336,17 @@ bool MacroDomainServices::createNextPage() const {
     return true;
 }
 
-bool MacroDomainServices::createNextTrack() const {
-    const uint16_t enabledMask = state_->currentSharedTrackEnabledMask();
-    const int nextTrack = structure_slots::nextAddIndexAfterHighest(
-        enabledMask,
-        core::state::macro::TRACK_COUNT
-    );
-    if (nextTrack < 0) return false;
+bool MacroDomainServices::createTrack(uint8_t trackIndex) const {
+    if (trackIndex >= core::state::macro::TRACK_COUNT) return false;
+    if ((state_->currentSharedTrackEnabledMask() & structure_slots::slotBit(trackIndex)) != 0) {
+        return false;
+    }
 
-    const uint8_t index = static_cast<uint8_t>(nextTrack);
-    state_->pages.tracks[index].initDefaults(index);
+    state_->pages.tracks[trackIndex].initDefaults(trackIndex);
     applyTrackStructureMutation(
         *state_,
-        static_cast<uint16_t>(enabledMask | structure_slots::slotBit(index)),
-        index
+        static_cast<uint16_t>(state_->currentSharedTrackEnabledMask() | structure_slots::slotBit(trackIndex)),
+        trackIndex
     );
     syncPreviewState_();
     return true;

@@ -140,13 +140,18 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sharedTrackEnabledMask,
         state_refs_.structureNavigationFocus,
         state_refs_.structureClipboard.revision,
-        state_refs_.sequencer.structureUi.previewAddSlot,
-        state_refs_.sequencer.structureUi.previewTrackIndex,
+        state_refs_.trackNavigation.previewAddSlot,
+        state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
-        state_refs_.sequencer.structureUi.selection.active,
-        state_refs_.sequencer.structureUi.selection.scope,
-        state_refs_.sequencer.structureUi.selection.cursorIndex,
-        state_refs_.sequencer.structureUi.selection.selectedMask
+        state_refs_.sequencer.structureUi.previewAddPageSlot,
+        state_refs_.trackNavigation.selection.active,
+        state_refs_.trackNavigation.selection.scope,
+        state_refs_.trackNavigation.selection.cursorIndex,
+        state_refs_.trackNavigation.selection.selectedMask,
+        state_refs_.sequencer.structureUi.pageSelection.active,
+        state_refs_.sequencer.structureUi.pageSelection.scope,
+        state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
+        state_refs_.sequencer.structureUi.pageSelection.selectedMask
     );
 }
 
@@ -160,14 +165,19 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.sequencer.length,
         state_refs_.sequencer.page,
         state_refs_.structureNavigationFocus,
-        state_refs_.sequencer.structureUi.previewAddSlot,
-        state_refs_.sequencer.structureUi.previewTrackIndex,
+        state_refs_.trackNavigation.previewAddSlot,
+        state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
+        state_refs_.sequencer.structureUi.previewAddPageSlot,
         state_refs_.sequencer.playheadStep,
-        state_refs_.sequencer.structureUi.selection.active,
-        state_refs_.sequencer.structureUi.selection.scope,
-        state_refs_.sequencer.structureUi.selection.cursorIndex,
-        state_refs_.sequencer.structureUi.selection.selectedMask
+        state_refs_.trackNavigation.selection.active,
+        state_refs_.trackNavigation.selection.scope,
+        state_refs_.trackNavigation.selection.cursorIndex,
+        state_refs_.trackNavigation.selection.selectedMask,
+        state_refs_.sequencer.structureUi.pageSelection.active,
+        state_refs_.sequencer.structureUi.pageSelection.scope,
+        state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
+        state_refs_.sequencer.structureUi.pageSelection.selectedMask
     );
 }
 
@@ -230,8 +240,10 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.rangeSelection.kind,
-        state_refs_.sequencer.structureUi.selection.active,
-        state_refs_.sequencer.structureUi.selection.scope
+        state_refs_.trackNavigation.selection.active,
+        state_refs_.trackNavigation.selection.scope,
+        state_refs_.sequencer.structureUi.pageSelection.active,
+        state_refs_.sequencer.structureUi.pageSelection.scope
     );
 }
 
@@ -242,13 +254,18 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         },
         state_refs_.structureNavigationFocus,
         state_refs_.structureClipboard.revision,
-        state_refs_.sequencer.structureUi.previewAddSlot,
-        state_refs_.sequencer.structureUi.hold.action,
-        state_refs_.sequencer.structureUi.hold.startedAtMs,
+        state_refs_.trackNavigation.previewAddSlot,
+        state_refs_.sequencer.structureUi.previewAddPageSlot,
+        state_refs_.trackNavigation.hold.action,
+        state_refs_.trackNavigation.hold.startedAtMs,
+        state_refs_.sequencer.structureUi.pageHold.action,
+        state_refs_.sequencer.structureUi.pageHold.startedAtMs,
         state_refs_.sequencer.rangeSelection.kind,
         state_refs_.sequencer.rangeSelection.phase,
-        state_refs_.sequencer.structureUi.selection.active,
-        state_refs_.sequencer.structureUi.selection.selectedMask
+        state_refs_.trackNavigation.selection.active,
+        state_refs_.trackNavigation.selection.selectedMask,
+        state_refs_.sequencer.structureUi.pageSelection.active,
+        state_refs_.sequencer.structureUi.pageSelection.selectedMask
     );
 }
 
@@ -432,6 +449,7 @@ FLASHMEM sequencer::SequencerViewModelSource SequencerView::modelSource() const 
     return {
         .sequencer = state_refs_.sequencer,
         .tracks = state_refs_.tracks,
+        .trackNavigation = state_refs_.trackNavigation,
         .navigationFocus = state_refs_.structureNavigationFocus,
         .sharedTrackActive = state_refs_.sharedTrackActive,
         .sharedTrackEnabledMask = state_refs_.sharedTrackEnabledMask,

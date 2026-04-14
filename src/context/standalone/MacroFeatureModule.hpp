@@ -14,6 +14,7 @@
 #include "handler/macro/MacroDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -46,6 +47,7 @@ public:
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
+        core::state::TrackNavigationState& trackNavigation;
         oc::state::Signal<uint8_t, 8>& sharedTrackActive;
         oc::state::Signal<
             core::state::StructureNavigationFocus,

@@ -34,6 +34,7 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "StatusBarState.hpp"
+#include "TrackNavigationState.hpp"
 #include "ViewSelectorState.hpp"
 #include "persistence/MacroPersistence.hpp"
 #include "persistence/SequencerPersistence.hpp"
@@ -115,6 +116,7 @@ struct UiSystemState {
         core::state::StructureNavigationFocus::PAGE
     };
     SharedTrackState sharedTracks;
+    TrackNavigationState trackNavigation;
     StructureClipboardState structureClipboard;
     ViewSelectorState viewSelector;
     StatusBarState statusBar;
@@ -167,6 +169,7 @@ public:
         structureNavigationFocus;
     oc::state::Signal<uint8_t, 8>& sharedTrackActive;
     oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
+    TrackNavigationState& trackNavigation;
     StructureClipboardState& structureClipboard;
     ViewSelectorState& viewSelector;
     StatusBarState& statusBar;

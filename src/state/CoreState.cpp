@@ -113,6 +113,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , structureNavigationFocus(systemUi_->structureNavigationFocus)
     , sharedTrackActive(systemUi_->sharedTracks.activeIndex)
     , sharedTrackEnabledMask(systemUi_->sharedTracks.enabledMask)
+    , trackNavigation(systemUi_->trackNavigation)
     , structureClipboard(systemUi_->structureClipboard)
     , viewSelector(systemUi_->viewSelector)
     , statusBar(systemUi_->statusBar)

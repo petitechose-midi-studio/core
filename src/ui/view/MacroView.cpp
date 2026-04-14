@@ -222,14 +222,14 @@ FLASHMEM void MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.previewAddSlot.subscribe([this](bool) {
+        state_refs_.trackNavigation.previewAddSlot.subscribe([this](bool) {
             requestHeaderRender();
             requestBottomActionStripRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.previewTrackIndex.subscribe([this](uint8_t) {
+        state_refs_.trackNavigation.previewTrackIndex.subscribe([this](uint8_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
         })
@@ -243,19 +243,19 @@ FLASHMEM void MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.hold.action.subscribe([this](core::state::StructureHoldAction) {
+        state_refs_.trackNavigation.hold.action.subscribe([this](core::state::StructureHoldAction) {
             requestBottomActionStripRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.hold.startedAtMs.subscribe([this](uint32_t) {
+        state_refs_.trackNavigation.hold.startedAtMs.subscribe([this](uint32_t) {
             requestBottomActionStripRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.structureSelection.active.subscribe([this](bool) {
+        state_refs_.trackNavigation.selection.active.subscribe([this](bool) {
             requestHeaderRender();
             requestLeftActionStripRender();
             requestBottomActionStripRender();
@@ -263,7 +263,7 @@ FLASHMEM void MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.structureSelection.scope.subscribe([this](core::state::StructureSelectionScope) {
+        state_refs_.trackNavigation.selection.scope.subscribe([this](core::state::StructureSelectionScope) {
             requestHeaderRender();
             requestLeftActionStripRender();
             requestBottomActionStripRender();
@@ -271,13 +271,61 @@ FLASHMEM void MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.structureSelection.cursorIndex.subscribe([this](uint8_t) {
+        state_refs_.trackNavigation.selection.cursorIndex.subscribe([this](uint8_t) {
             requestHeaderRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.structureSelection.selectedMask.subscribe([this](uint16_t) {
+        state_refs_.trackNavigation.selection.selectedMask.subscribe([this](uint16_t) {
+            requestHeaderRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.previewAddPageSlot.subscribe([this](bool) {
+            requestHeaderRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageHold.action.subscribe([this](core::state::StructureHoldAction) {
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageHold.startedAtMs.subscribe([this](uint32_t) {
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.active.subscribe([this](bool) {
+            requestHeaderRender();
+            requestLeftActionStripRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.scope.subscribe([this](core::state::StructureSelectionScope) {
+            requestHeaderRender();
+            requestLeftActionStripRender();
+            requestBottomActionStripRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.cursorIndex.subscribe([this](uint8_t) {
+            requestHeaderRender();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.selectedMask.subscribe([this](uint16_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
         })
@@ -630,6 +678,7 @@ FLASHMEM MacroViewModelSource MacroView::modelSource() const {
         .macros = state_refs_.macros,
         .pages = state_refs_.pages,
         .macroUi = state_refs_.macroUi,
+        .trackNavigation = state_refs_.trackNavigation,
         .navigationFocus = state_refs_.structureNavigationFocus,
         .sharedTrackActive = state_refs_.sharedTrackActive,
         .sharedTrackEnabledMask = state_refs_.sharedTrackEnabledMask,

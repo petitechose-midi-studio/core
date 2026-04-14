@@ -31,15 +31,10 @@ struct MacroUiState {
     oc::state::Signal<uint8_t, 2> clutchPreviewTrackChannel{0};
     oc::state::Signal<uint8_t, 2> quickControlGlobalChannel{0};
     oc::state::Signal<int8_t, 2> ccOffset{0};
-    oc::state::Signal<bool, 2> previewAddSlot{false};
-    oc::state::Signal<uint8_t, 2> previewTrackIndex{0};
+    oc::state::Signal<bool, 2> previewAddPageSlot{false};
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
-    core::state::StructureHoldState hold;
-    core::state::StructureSelectionState structureSelection;
-
-    void syncPreviewTrack(uint8_t trackIndex) {
-        previewTrackIndex.set(trackIndex);
-    }
+    core::state::StructureHoldState pageHold;
+    core::state::StructureSelectionState pageSelection;
 
     void syncPreviewPage(uint8_t pageIndex) {
         previewPageIndex.set(pageIndex);
@@ -53,11 +48,10 @@ struct MacroUiState {
         clutchPreviewTrackChannel.set(0);
         quickControlGlobalChannel.set(0);
         ccOffset.set(0);
-        previewAddSlot.set(false);
-        previewTrackIndex.set(0);
+        previewAddPageSlot.set(false);
         previewPageIndex.set(0);
-        hold.clear();
-        structureSelection.reset(core::state::StructureSelectionScope::PAGE);
+        pageHold.clear();
+        pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     }
 };
 

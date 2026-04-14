@@ -84,6 +84,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
         core::handler::MacroPerformanceHandler::StateRefs{
             stateRefs.macroUi,
             stateRefs.pages,
+            stateRefs.trackNavigation,
             stateRefs.sharedTrackActive,
             stateRefs.structureNavigationFocus,
             stateRefs.structureClipboard,

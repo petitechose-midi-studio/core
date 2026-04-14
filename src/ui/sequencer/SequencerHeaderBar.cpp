@@ -9,12 +9,14 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
+#include "ui/common/AddSlotIcon.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
+namespace add_slot_icon = core::ui::add_slot_icon;
 
 namespace {
 
@@ -108,32 +110,6 @@ void drawStripRect(lv_layer_t* layer,
     rectDsc.border_color = borderColor;
     rectDsc.border_opa = borderOpa;
     lv_draw_rect(layer, &rectDsc, &area);
-}
-
-void drawCenteredLabel(lv_layer_t* layer,
-                       const lv_area_t& area,
-                       const char* text,
-                       const lv_font_t* font,
-                       lv_color_t color,
-                       lv_opa_t opa) {
-    if (!layer || !text || text[0] == '\0' || !font) return;
-
-    const lv_coord_t textHeight = lv_font_get_line_height(font);
-    const lv_coord_t top = static_cast<lv_coord_t>(
-        area.y1 + std::max<lv_coord_t>(0, (lv_area_get_height(&area) - textHeight) / 2)
-    );
-
-    lv_area_t textArea = area;
-    textArea.y1 = top;
-
-    lv_draw_label_dsc_t labelDsc;
-    lv_draw_label_dsc_init(&labelDsc);
-    labelDsc.text = text;
-    labelDsc.font = font;
-    labelDsc.color = color;
-    labelDsc.opa = opa;
-    labelDsc.align = LV_TEXT_ALIGN_CENTER;
-    lv_draw_label(layer, &labelDsc, &textArea);
 }
 
 template <size_t N, typename SegmentGeometry>
@@ -461,12 +437,10 @@ void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
         }
 
         if (isAddSlot) {
-            drawCenteredLabel(
+            add_slot_icon::drawCentered(
                 layer,
                 segmentArea,
-                "+",
-                fonts.inter_13_bold,
-                lv_color_hex(theme::color::TEXT_PRIMARY),
+                theme::color::TEXT_PRIMARY,
                 LV_OPA_COVER
             );
         }

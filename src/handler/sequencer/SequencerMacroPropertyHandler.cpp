@@ -13,10 +13,12 @@ namespace {
 inline oc::type::IsActiveFn canEditSequencerProperty(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
-    return [&overlays, &sequencer, &tracks]() {
-        return !sequencer.structureUi.selection.active.get() &&
+    return [&overlays, &sequencer, &trackUi, &tracks]() {
+        return !sequencer.structureUi.pageSelection.active.get() &&
+               !trackUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
                !sequencer.rangeSelection.active() &&
                !overlays.hasVisible();
@@ -33,6 +35,7 @@ SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
 )
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
+    , track_ui_(state.trackNavigation)
     , tracks_(state.tracks)
     , encoders_(encoders)
     , scope_id_(scopeId)
@@ -45,14 +48,14 @@ FLASHMEM void SequencerMacroPropertyHandler::setupBindings() {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope_id_)
-            .when(canEditSequencerProperty(overlays_, sequencer_, tracks_))
+            .when(canEditSequencerProperty(overlays_, sequencer_, track_ui_, tracks_))
             .then([this, i](float value) { handleTurn(i, value); });
     }
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(scope_id_)
-        .when(canEditSequencerProperty(overlays_, sequencer_, tracks_))
+        .when(canEditSequencerProperty(overlays_, sequencer_, track_ui_, tracks_))
         .then([this](float value) { handleFocusedTurn(value); });
 }
 

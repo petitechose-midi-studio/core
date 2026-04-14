@@ -7,6 +7,8 @@
 
 #include <oc/ui/lvgl/IWidget.hpp>
 
+#include "ui/common/AddSlotIcon.hpp"
+
 namespace core::ui {
 
 struct TrackHeaderRowProps {
@@ -50,7 +52,7 @@ private:
     lv_obj_t* items_row_ = nullptr;
     lv_obj_t* selection_cursor_ = nullptr;
     std::array<lv_obj_t*, TrackHeaderRowProps::MAX_ITEM_COUNT> items_{};
-    std::array<lv_obj_t*, TrackHeaderRowProps::MAX_ITEM_COUNT> item_add_labels_{};
+    std::array<add_slot_icon::ObjectPair, TrackHeaderRowProps::MAX_ITEM_COUNT> item_add_icons_{};
 
     std::array<char, 32> left_text_cache_{};
     bool surface_cache_initialized_ = false;

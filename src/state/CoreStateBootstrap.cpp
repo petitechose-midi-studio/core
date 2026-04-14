@@ -39,6 +39,8 @@ void configureDebugLabels_(CoreState& state) {
     state.macroUi.quickControlsSelecting.setDebugLabel("core.macroUi.quickControlsSelecting");
     state.macroUi.focusedQuickControl.setDebugLabel("core.macroUi.focusedQuickControl");
     state.macroUi.ccOffset.setDebugLabel("core.macroUi.ccOffset");
+    state.trackNavigation.previewAddSlot.setDebugLabel("core.trackNavigation.previewAddSlot");
+    state.trackNavigation.previewTrackIndex.setDebugLabel("core.trackNavigation.previewTrackIndex");
 
     state.globalSettings.flowPhase.setDebugLabel("core.globalSettings.flowPhase");
     state.globalSettings.selector.visible.setDebugLabel("core.globalSettings.selector.visible");
