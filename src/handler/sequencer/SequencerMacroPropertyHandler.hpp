@@ -12,7 +12,7 @@
 
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "ui/OverlayTypes.hpp"
+#include "app/OverlayTypes.hpp"
 
 namespace core::handler {
 

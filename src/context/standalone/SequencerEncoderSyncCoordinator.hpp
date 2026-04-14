@@ -9,8 +9,8 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/MacroState.hpp"
 #include "state/sequencer/SequencerState.hpp"
-#include "ui/OverlayTypes.hpp"
-#include "ui/ViewTypes.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace oc::api {
 class EncoderAPI;

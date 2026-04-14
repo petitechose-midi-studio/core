@@ -10,10 +10,14 @@
 #include <config/TimeCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
+#include "state/CoreState.hpp"
+#include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::handler {
+
+namespace structure_slots = core::state::shared;
 
 namespace {
 
@@ -21,7 +25,7 @@ inline oc::type::IsActiveFn notSelectingStepProperty(
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& tracks
 ) {
-    return [&sequencer, &tracks]() {
+    return [&sequencer]() {
         return !sequencer.structureUi.selection.active.get() &&
                !sequencer.stepPropertyInlineSelector.selecting.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
@@ -33,161 +37,34 @@ inline oc::type::IsActiveFn selectionActive(core::state::sequencer::SequencerSta
     return [&sequencer]() { return sequencer.structureUi.selection.active.get(); };
 }
 
-uint8_t countEnabledTracks(uint16_t enabledMask) {
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
-            ++count;
-        }
-    }
-    return count;
+bool isPageSlotEnabled(const core::state::sequencer::SequencerState& sequencer, uint8_t index) {
+    return index < sequencer.activePageCount();
 }
 
-uint8_t nextEnabledTrack(uint16_t enabledMask, uint8_t current, int direction) {
-    for (uint8_t offset = 1; offset < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++offset) {
-        const int candidate =
-            (static_cast<int>(current) +
-             direction * static_cast<int>(offset) +
-             core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) %
-            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-        const uint16_t bit = static_cast<uint16_t>(1U << static_cast<uint8_t>(candidate));
-        if ((enabledMask & bit) != 0) {
-            return static_cast<uint8_t>(candidate);
-        }
+uint8_t currentPageCursor(const core::state::sequencer::SequencerState& sequencer) {
+    if (sequencer.structureUi.previewAddSlot.get()) {
+        return sequencer.clampPage(sequencer.structureUi.previewPageIndex.get());
     }
-    return current;
+    return sequencer.visiblePage();
 }
 
-int nextAvailableIndexAfterHighest(uint16_t enabledMask, uint8_t count) {
-    for (int index = static_cast<int>(count) - 1; index >= 0; --index) {
-        if ((enabledMask & static_cast<uint16_t>(1U << static_cast<uint8_t>(index))) == 0) {
-            continue;
-        }
-        const int next = index + 1;
-        return (next < count) ? next : -1;
+uint8_t currentTrackCursor(const core::state::sequencer::SequencerState& sequencer,
+                           const core::state::sequencer::SequencerTrackBankState& tracks) {
+    if (sequencer.structureUi.previewAddSlot.get()) {
+        return core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+            sequencer.structureUi.previewTrackIndex.get()
+        );
     }
-    return (count > 0) ? 0 : -1;
+    return tracks.activeTrackIndex();
 }
 
-struct StructureNavTarget {
-    uint8_t index = 0;
-    bool addSlot = false;
-    bool valid = false;
-};
-
-StructureNavTarget nextTrackTarget(
-    uint16_t enabledMask,
-    uint8_t current,
-    bool currentAddSlot,
-    int direction
-) {
-    const int addIndex = nextAvailableIndexAfterHighest(
-        enabledMask,
-        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
-    );
-    const uint8_t firstEnabled = nextEnabledTrack(enabledMask, static_cast<uint8_t>(
-        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT - 1
-    ), 1);
-    const uint8_t lastEnabled = nextEnabledTrack(enabledMask, 0, -1);
-
-    if (currentAddSlot) {
-        if (direction < 0) {
-            return {.index = lastEnabled, .addSlot = false, .valid = true};
-        }
-        return {
-            .index = (addIndex >= 0) ? static_cast<uint8_t>(addIndex) : lastEnabled,
-            .addSlot = (addIndex >= 0),
-            .valid = true,
-        };
-    }
-
-    if (direction > 0) {
-        for (uint8_t candidate = static_cast<uint8_t>(current + 1);
-             candidate < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-             ++candidate) {
-            if ((enabledMask & static_cast<uint16_t>(1U << candidate)) != 0) {
-                return {.index = candidate, .addSlot = false, .valid = true};
-            }
-        }
-
-        if (addIndex >= 0 && current == lastEnabled) {
-            return {
-                .index = static_cast<uint8_t>(addIndex),
-                .addSlot = true,
-                .valid = true,
-            };
-        }
-
-        return {.index = firstEnabled, .addSlot = false, .valid = true};
-    }
-
-    for (int candidate = static_cast<int>(current) - 1; candidate >= 0; --candidate) {
-        const auto index = static_cast<uint8_t>(candidate);
-        if ((enabledMask & static_cast<uint16_t>(1U << index)) != 0) {
-            return {.index = index, .addSlot = false, .valid = true};
-        }
-    }
-
-    return {.index = lastEnabled, .addSlot = false, .valid = true};
-}
-
-StructureNavTarget nextPageTarget(
-    uint8_t pageCount,
-    uint8_t current,
-    bool currentAddSlot,
-    int direction
-) {
-    if (pageCount == 0) return {};
-
-    const bool hasAddSlot = pageCount < core::state::sequencer::SequencerState::PAGE_COUNT;
-
-    if (currentAddSlot) {
-        if (direction < 0) {
-            return {
-                .index = static_cast<uint8_t>(pageCount - 1),
-                .addSlot = false,
-                .valid = true,
-            };
-        }
-        return {
-            .index = pageCount,
-            .addSlot = hasAddSlot,
-            .valid = true,
-        };
-    }
-
-    if (direction > 0) {
-        if (current + 1 < pageCount) {
-            return {
-                .index = static_cast<uint8_t>(current + 1),
-                .addSlot = false,
-                .valid = true,
-            };
-        }
-        if (hasAddSlot) {
-            return {
-                .index = pageCount,
-                .addSlot = true,
-                .valid = true,
-            };
-        }
-        return {.index = 0, .addSlot = false, .valid = true};
-    }
-
-    if (current > 0) {
-        return {
-            .index = static_cast<uint8_t>(current - 1),
-            .addSlot = false,
-            .valid = true,
-        };
-    }
-
-    return {
-        .index = static_cast<uint8_t>(pageCount - 1),
-        .addSlot = false,
-        .valid = true,
-    };
+uint8_t currentExistingPage(const core::state::sequencer::SequencerState& sequencer) {
+    const uint8_t pageCount = sequencer.activePageCount();
+    if (pageCount == 0) return 0;
+    return static_cast<uint8_t>(std::min<uint16_t>(
+        sequencer.clampPage(sequencer.page.get()),
+        static_cast<uint16_t>(pageCount - 1U)
+    ));
 }
 
 uint8_t nextVisiblePage(const core::state::sequencer::SequencerState& sequencer,
@@ -199,16 +76,6 @@ uint8_t nextVisiblePage(const core::state::sequencer::SequencerState& sequencer,
         (static_cast<int>(current) + direction + static_cast<int>(pageCount)) %
         static_cast<int>(pageCount);
     return static_cast<uint8_t>(next);
-}
-
-uint8_t countSelectedPages(uint16_t mask, uint8_t pageCount) {
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < pageCount; ++i) {
-        if ((mask & static_cast<uint16_t>(1U << i)) != 0) {
-            ++count;
-        }
-    }
-    return count;
 }
 
 void copyPersistentTrackState(core::state::sequencer::SequencerState& target,
@@ -233,14 +100,86 @@ SequencerStepHandler::SequencerStepHandler(StateRefs state,
                                            oc::api::EncoderAPI& encoders,
                                            oc::api::ButtonAPI& buttons,
                                            oc::type::ScopeID scopeId)
-    : sequencer_(state.sequencer)
+    : core_state_(state.coreState)
+    , sequencer_(state.sequencer)
     , tracks_(state.tracks)
     , navigation_focus_(state.navigationFocus)
     , structure_clipboard_(state.structureClipboard)
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId) {
+    sequencer_.structureUi.syncPreviewTrack(currentActiveTrack());
+    sequencer_.structureUi.syncPreviewPage(sequencer_.visiblePage());
     setupBindings();
+    bindStateSync();
+}
+
+uint16_t SequencerStepHandler::currentTrackEnabledMask() const {
+    return core_state_.currentSharedTrackEnabledMask();
+}
+
+uint8_t SequencerStepHandler::currentActiveTrack() const {
+    return core_state_.currentSharedActiveTrack();
+}
+
+bool SequencerStepHandler::applyTrackState(uint16_t enabledMask, uint8_t activeTrack) {
+    return core_state_.setSharedTrackState(enabledMask, activeTrack);
+}
+
+void SequencerStepHandler::setPagePreview(uint8_t pageIndex, bool addSlot) {
+    const uint8_t clampedPage = sequencer_.clampPage(pageIndex);
+    sequencer_.structureUi.syncPreviewPage(clampedPage);
+    sequencer_.page.set(clampedPage);
+    sequencer_.structureUi.previewAddSlot.set(addSlot);
+    if (!addSlot) {
+        sequencer_.focusedStep.set(sequencer_.pageStartStep(clampedPage));
+    }
+}
+
+void SequencerStepHandler::setTrackPreview(uint8_t trackIndex, bool addSlot) {
+    const uint8_t clampedTrack =
+        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(trackIndex);
+    sequencer_.structureUi.syncPreviewTrack(clampedTrack);
+    sequencer_.structureUi.previewAddSlot.set(addSlot);
+    if (!addSlot) {
+        applyTrackState(currentTrackEnabledMask(), clampedTrack);
+    }
+}
+
+uint8_t SequencerStepHandler::cursorForFocus(core::state::StructureNavigationFocus focus) const {
+    return focus == core::state::StructureNavigationFocus::TRACK
+        ? currentActiveTrack()
+        : sequencer_.visiblePage();
+}
+
+uint8_t SequencerStepHandler::cursorForSelectionScope(
+    core::state::StructureSelectionScope scope
+) const {
+    return scope == core::state::StructureSelectionScope::TRACK
+        ? currentActiveTrack()
+        : sequencer_.visiblePage();
+}
+
+void SequencerStepHandler::syncPreviewToFocus(core::state::StructureNavigationFocus focus) {
+    sequencer_.structureUi.previewAddSlot.set(false);
+    sequencer_.structureUi.syncPreviewTrack(currentActiveTrack());
+    sequencer_.structureUi.syncPreviewPage(sequencer_.visiblePage());
+}
+
+void SequencerStepHandler::bindStateSync() {
+    subscriptions_.reserve(2);
+
+    subscriptions_.push_back(
+        tracks_.activeTrackSignal().subscribe([this](uint8_t activeTrack) {
+            sequencer_.structureUi.syncPreviewTrack(activeTrack);
+        })
+    );
+
+    subscriptions_.push_back(
+        sequencer_.page.subscribe([this](uint8_t pageIndex) {
+            sequencer_.structureUi.syncPreviewPage(sequencer_.clampPage(pageIndex));
+        })
+    );
 }
 
 FLASHMEM void SequencerStepHandler::setupBindings() {
@@ -413,67 +352,49 @@ void SequencerStepHandler::cycleNavigationFocus() {
     const auto next = (current == core::state::StructureNavigationFocus::PAGE)
         ? core::state::StructureNavigationFocus::TRACK
         : core::state::StructureNavigationFocus::PAGE;
-    sequencer_.structureUi.previewAddSlot.set(false);
+    if (current == core::state::StructureNavigationFocus::PAGE &&
+        sequencer_.structureUi.previewAddSlot.get()) {
+        const uint8_t page = currentExistingPage(sequencer_);
+        sequencer_.page.set(page);
+        sequencer_.focusedStep.set(sequencer_.pageStartStepClamped(page));
+    }
+    syncPreviewToFocus(next);
+    if (next == core::state::StructureNavigationFocus::PAGE) {
+        sequencer_.structureUi.syncPreviewPage(currentExistingPage(sequencer_));
+    }
     navigation_focus_.set(next);
 }
 
 void SequencerStepHandler::movePage(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
-    const uint8_t pageCount = sequencer_.activePageCount();
-    if (pageCount == 0) return;
-
-    const bool currentAddSlot = sequencer_.structureUi.previewAddSlot.get();
-    const auto target = nextPageTarget(
-        pageCount,
-        sequencer_.visiblePage(),
-        currentAddSlot,
-        nav::turnStep(delta)
+    const uint8_t next = structure_slots::wrapIndex(
+        currentPageCursor(sequencer_),
+        nav::turnStep(delta),
+        core::state::sequencer::SequencerState::PAGE_COUNT
     );
-    if (!target.valid) return;
+    const bool enabled = isPageSlotEnabled(sequencer_, next);
 
-    if (target.addSlot) {
-        sequencer_.structureUi.previewAddSlot.set(true);
-        return;
-    }
-
-    sequencer_.structureUi.previewAddSlot.set(false);
-    sequencer_.page.set(target.index);
-    sequencer_.focusedStep.set(sequencer_.pageStartStep(target.index));
+    setPagePreview(next, !enabled);
 }
 
 void SequencerStepHandler::moveTrack(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
-    const uint8_t current = tracks_.activeTrack.get();
-    const uint16_t enabledMask = tracks_.enabledMask.get();
-    if (countEnabledTracks(enabledMask) == 0) return;
-
-    const bool currentAddSlot = sequencer_.structureUi.previewAddSlot.get();
-    const auto target = nextTrackTarget(
-        enabledMask,
-        current,
-        currentAddSlot,
-        nav::turnStep(delta)
+    const uint16_t enabledMask = currentTrackEnabledMask();
+    const uint8_t next = structure_slots::wrapIndex(
+        currentTrackCursor(sequencer_, tracks_),
+        nav::turnStep(delta),
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
     );
-    if (!target.valid) return;
+    const bool enabled = structure_slots::isEnabled(enabledMask, next);
 
-    if (target.addSlot) {
-        sequencer_.structureUi.previewAddSlot.set(true);
-        return;
-    }
-
-    sequencer_.structureUi.previewAddSlot.set(false);
-    core::state::sequencer::switchActiveTrack(
-        tracks_,
-        sequencer_,
-        target.index
-    );
+    setTrackPreview(next, !enabled);
 }
 
 void SequencerStepHandler::eraseCurrentStructure() {
     if (sequencer_.structureUi.previewAddSlot.get()) return;
 
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        const uint8_t activeTrack = tracks_.activeTrack.get();
+        const uint8_t activeTrack = currentActiveTrack();
         sequencer_.reset();
         sequencer_.midiChannel.set(activeTrack);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
@@ -492,18 +413,13 @@ void SequencerStepHandler::removeCurrentStructure() {
     if (sequencer_.structureUi.previewAddSlot.get()) return;
 
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        const uint16_t enabledMask = tracks_.enabledMask.get();
-        const uint8_t activeTrack = tracks_.activeTrack.get();
-        const uint16_t bit = static_cast<uint16_t>(1U << activeTrack);
-        if ((enabledMask & bit) == 0 || countEnabledTracks(enabledMask) <= 1U) return;
-
-        uint16_t nextMask = enabledMask & static_cast<uint16_t>(~bit);
-        uint8_t nextTrack = activeTrack;
-        if ((nextMask & static_cast<uint16_t>(1U << activeTrack)) == 0) {
-            nextTrack = nextEnabledTrack(nextMask, activeTrack, 1);
-        }
-        tracks_.enabledMask.set(nextMask);
-        core::state::sequencer::switchActiveTrack(tracks_, sequencer_, nextTrack);
+        const auto mutation = structure_slots::removeIndex(
+            currentTrackEnabledMask(),
+            currentActiveTrack(),
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        );
+        if (!mutation.changed) return;
+        applyTrackState(mutation.nextMask, mutation.nextActive);
         return;
     }
 
@@ -514,7 +430,10 @@ void SequencerStepHandler::removeCurrentStructure() {
 bool SequencerStepHandler::canRemoveCurrentStructure() const {
     if (sequencer_.structureUi.previewAddSlot.get()) return false;
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        return countEnabledTracks(tracks_.enabledMask.get()) > 1U;
+        return structure_slots::countEnabled(
+            currentTrackEnabledMask(),
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        ) > 1U;
     }
     return sequencer_.activePageCount() > 1U;
 }
@@ -563,14 +482,14 @@ void SequencerStepHandler::pasteCurrentStructure() {
         if (sequencer_.structureUi.previewAddSlot.get() && !createTrack()) return;
         core::state::sequencer::applySnapshot(sequencer_, structure_clipboard_.sequencerTrack);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
-        sequencer_.structureUi.previewAddSlot.set(false);
+        syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
         return;
     }
 
     if (!structure_clipboard_.hasSequencerPage()) return;
     uint8_t targetPage = sequencer_.visiblePage();
     if (sequencer_.structureUi.previewAddSlot.get()) {
-        targetPage = sequencer_.activePageCount();
+        targetPage = sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get());
         if (!createPage()) return;
     }
 
@@ -599,9 +518,7 @@ void SequencerStepHandler::pasteCurrentStructure() {
         sequencer_.setEnabled(step, clipboard.isEnabled(i));
     }
     sequencer_.bumpStepDataRevision();
-    sequencer_.page.set(targetPage);
-    sequencer_.focusedStep.set(targetStart);
-    sequencer_.structureUi.previewAddSlot.set(false);
+    setPagePreview(targetPage, false);
 }
 
 bool SequencerStepHandler::canPasteCurrentStructure() const {
@@ -620,7 +537,8 @@ void SequencerStepHandler::clearHoldAction() {
 }
 
 void SequencerStepHandler::createPreviewedStructure() {
-    switch (navigation_focus_.get()) {
+    const auto focus = navigation_focus_.get();
+    switch (focus) {
         case core::state::StructureNavigationFocus::TRACK:
             createTrack();
             break;
@@ -630,18 +548,21 @@ void SequencerStepHandler::createPreviewedStructure() {
             break;
     }
 
-    sequencer_.structureUi.previewAddSlot.set(false);
+    syncPreviewToFocus(focus);
 }
 
 void SequencerStepHandler::enterSelectionMode(core::state::StructureSelectionScope scope) {
     auto& selection = sequencer_.structureUi.selection;
     if (selection.active.get()) return;
+    if (scope == core::state::StructureSelectionScope::PAGE &&
+        sequencer_.structureUi.previewAddSlot.get()) {
+        const uint8_t page = currentExistingPage(sequencer_);
+        sequencer_.page.set(page);
+        sequencer_.focusedStep.set(sequencer_.pageStartStepClamped(page));
+    }
     sequencer_.structureUi.previewAddSlot.set(false);
 
-    const uint8_t cursor =
-        (scope == core::state::StructureSelectionScope::TRACK)
-            ? tracks_.activeTrack.get()
-            : sequencer_.visiblePage();
+    const uint8_t cursor = cursorForSelectionScope(scope);
 
     selection.active.set(true);
     selection.scope.set(scope);
@@ -655,13 +576,14 @@ void SequencerStepHandler::enterSelectionMode(core::state::StructureSelectionSco
 }
 
 void SequencerStepHandler::cancelSelectionMode() {
-    sequencer_.structureUi.previewAddSlot.set(false);
     const auto scope = sequencer_.structureUi.selection.scope.get();
-    const uint8_t cursor =
-        (scope == core::state::StructureSelectionScope::TRACK)
-            ? tracks_.activeTrack.get()
-            : sequencer_.visiblePage();
+    const uint8_t cursor = cursorForSelectionScope(scope);
     sequencer_.structureUi.selection.reset(scope, cursor);
+    syncPreviewToFocus(
+        scope == core::state::StructureSelectionScope::TRACK
+            ? core::state::StructureNavigationFocus::TRACK
+            : core::state::StructureNavigationFocus::PAGE
+    );
 }
 
 void SequencerStepHandler::toggleSelectionAtCursor() {
@@ -671,7 +593,7 @@ void SequencerStepHandler::toggleSelectionAtCursor() {
     const uint8_t cursor = selection.cursorIndex.get();
     bool selectable = false;
     if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
-        selectable = tracks_.isTrackEnabled(cursor);
+        selectable = (currentTrackEnabledMask() & static_cast<uint16_t>(1U << cursor)) != 0;
     } else {
         selectable = cursor < sequencer_.activePageCount();
     }
@@ -697,7 +619,12 @@ void SequencerStepHandler::navigateSelection(float delta) {
     uint8_t next = current;
 
     if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
-        next = nextEnabledTrack(tracks_.enabledMask.get(), current, direction);
+        next = structure_slots::nextEnabledIndex(
+            currentTrackEnabledMask(),
+            current,
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
+            direction
+        );
     } else {
         next = nextVisiblePage(sequencer_, current, direction);
     }
@@ -715,29 +642,21 @@ void SequencerStepHandler::deleteSelection() {
     bool changed = false;
 
     if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
-        const uint16_t enabledMask = tracks_.enabledMask.get();
-        const uint16_t deleteMask = enabledMask & selectedMask;
-        const uint8_t enabledCount = countEnabledTracks(enabledMask);
-        const uint8_t deleteCount =
-            countEnabledTracks(deleteMask);
-        if (deleteMask != 0 && deleteCount < enabledCount) {
-            const uint8_t activeTrack = tracks_.activeTrack.get();
-            uint16_t nextMask = enabledMask & static_cast<uint16_t>(~deleteMask);
-            uint8_t nextTrack = activeTrack;
-            if ((nextMask & static_cast<uint16_t>(1U << activeTrack)) == 0) {
-                nextTrack = nextEnabledTrack(nextMask, activeTrack, 1);
-            }
-
-            tracks_.enabledMask.set(nextMask);
-            core::state::sequencer::switchActiveTrack(tracks_, sequencer_, nextTrack);
-            changed = true;
+        const auto mutation = structure_slots::removeSelected(
+            currentTrackEnabledMask(),
+            selectedMask,
+            currentActiveTrack(),
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        );
+        if (mutation.changed) {
+            changed = applyTrackState(mutation.nextMask, mutation.nextActive);
         }
     } else {
         const uint8_t pageCount = sequencer_.activePageCount();
-        const uint8_t deleteCount = countSelectedPages(selectedMask, pageCount);
+        const uint8_t deleteCount = structure_slots::countEnabled(selectedMask, pageCount);
         if (deleteCount > 0 && deleteCount < pageCount) {
             for (int page = static_cast<int>(pageCount) - 1; page >= 0; --page) {
-                const uint16_t bit = static_cast<uint16_t>(1U << static_cast<uint8_t>(page));
+                const uint16_t bit = structure_slots::slotBit(static_cast<uint8_t>(page));
                 if ((selectedMask & bit) == 0) continue;
                 changed = core::state::sequencer::removePage(
                               sequencer_,
@@ -752,24 +671,29 @@ void SequencerStepHandler::deleteSelection() {
 }
 
 bool SequencerStepHandler::createPage() {
-    return core::state::sequencer::appendPage(sequencer_);
+    const uint8_t targetPage = sequencer_.structureUi.previewAddSlot.get()
+        ? sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get())
+        : sequencer_.activePageCount();
+    return core::state::sequencer::ensurePageExists(sequencer_, targetPage);
 }
 
 bool SequencerStepHandler::createTrack() {
-    const int nextTrack = nextAvailableIndexAfterHighest(
-        tracks_.enabledMask.get(),
-        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
-    );
-    if (nextTrack < 0) return false;
+    const uint8_t index = sequencer_.structureUi.previewAddSlot.get()
+        ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+              sequencer_.structureUi.previewTrackIndex.get()
+          )
+        : currentActiveTrack();
+    if ((currentTrackEnabledMask() & structure_slots::slotBit(index)) != 0) {
+        return false;
+    }
 
-    const uint8_t index = static_cast<uint8_t>(nextTrack);
     core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
     tracks_.track(index).reset();
     tracks_.track(index).midiChannel.set(index);
-    tracks_.enabledMask.set(
-        tracks_.enabledMask.get() | static_cast<uint16_t>(1U << index)
+    return applyTrackState(
+        static_cast<uint16_t>(currentTrackEnabledMask() | structure_slots::slotBit(index)),
+        index
     );
-    return core::state::sequencer::switchActiveTrack(tracks_, sequencer_, index);
 }
 
 void SequencerStepHandler::duplicateSelection() {
@@ -783,39 +707,19 @@ void SequencerStepHandler::duplicateSelection() {
 
     if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
-        uint16_t nextMask = tracks_.enabledMask.get();
-        uint8_t firstDuplicatedTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-
-        for (uint8_t source = 0; source < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-             ++source) {
-            const uint16_t sourceBit = static_cast<uint16_t>(1U << source);
-            if ((selectedMask & sourceBit) == 0 || (nextMask & sourceBit) == 0) continue;
-
-            uint8_t dest = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-            for (uint8_t candidate = 0;
-                 candidate < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-                 ++candidate) {
-                const uint16_t candidateBit = static_cast<uint16_t>(1U << candidate);
-                if ((nextMask & candidateBit) == 0) {
-                    dest = candidate;
-                    break;
-                }
+        const auto result = structure_slots::duplicateSelectionIntoFreeSlots(
+            currentTrackEnabledMask(),
+            selectedMask,
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
+            [this](uint8_t source, uint8_t dest) {
+                const auto& sourceTrack =
+                    (source == currentActiveTrack()) ? sequencer_ : tracks_.track(source);
+                copyPersistentTrackState(tracks_.track(dest), sourceTrack);
             }
-            if (dest >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) break;
+        );
 
-            const auto& sourceTrack =
-                (source == tracks_.activeTrack.get()) ? sequencer_ : tracks_.track(source);
-            copyPersistentTrackState(tracks_.track(dest), sourceTrack);
-            nextMask |= static_cast<uint16_t>(1U << dest);
-            if (firstDuplicatedTrack >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
-                firstDuplicatedTrack = dest;
-            }
-        }
-
-        if (firstDuplicatedTrack < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
-            tracks_.enabledMask.set(nextMask);
-            core::state::sequencer::switchActiveTrack(tracks_, sequencer_, firstDuplicatedTrack);
-            changed = true;
+        if (result.firstDuplicated < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
+            changed = applyTrackState(result.nextMask, result.firstDuplicated);
         }
     } else {
         const uint8_t pageCount = sequencer_.activePageCount();
