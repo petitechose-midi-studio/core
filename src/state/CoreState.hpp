@@ -31,8 +31,8 @@
 #include "MacroEditState.hpp"
 #include "MacroState.hpp"
 #include "StructureClipboardState.hpp"
-#include "../ui/OverlayTypes.hpp"
-#include "../ui/ViewTypes.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 #include "StatusBarState.hpp"
 #include "ViewSelectorState.hpp"
 #include "persistence/MacroPersistence.hpp"
@@ -49,12 +49,17 @@ struct CoreStateBootstrap;
 struct CoreStateLifecycle;
 
 struct MacroDomainState {
+    static constexpr uint32_t WORKSPACE_MUTATION_SAVE_DELAY_MS = 1000;
+
     core::app::ExtmemUniquePtr<MacroState> runtime;
     core::app::ExtmemUniquePtr<macro::MacroPagesState> pages;
     oc::state::Signal<uint32_t> configRevision{0};
     persistence::MacroPersistence persistence;
     bool persistenceReady = false;
     std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> autoPersist;
+    bool workspacePersistPending = false;
+    uint32_t workspacePersistTimestampMs = 0;
+    uint32_t lastInteractionTimestampMs = 0;
 
     MacroDomainState(oc::interface::IStorage& workspaceStorage,
                      oc::interface::IStorage& libraryStorage)
@@ -98,12 +103,18 @@ struct SequencerDomainState {
 };
 
 struct UiSystemState {
+    struct SharedTrackState {
+        oc::state::Signal<uint8_t, 8> activeIndex{0};
+        oc::state::Signal<uint16_t, 16> enabledMask{0x0001};
+    };
+
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
     oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
     oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>
         structureNavigationFocus{
         core::state::StructureNavigationFocus::PAGE
     };
+    SharedTrackState sharedTracks;
     StructureClipboardState structureClipboard;
     ViewSelectorState viewSelector;
     StatusBarState statusBar;
@@ -131,6 +142,8 @@ private:
     MacroDomainState macroDomain_;
     SequencerDomainState sequencerDomain_;
     core::app::ExtmemUniquePtr<UiSystemState> systemUi_;
+    bool sharedTrackPersistPending_ = false;
+    uint32_t sharedTrackPersistTimestampMs_ = 0;
 
 public:
     /// Persistence manager
@@ -152,6 +165,8 @@ public:
     oc::state::Signal<core::ui::ViewType, 8>& activeView;
     oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>&
         structureNavigationFocus;
+    oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+    oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
     StructureClipboardState& structureClipboard;
     ViewSelectorState& viewSelector;
     StatusBarState& statusBar;
@@ -203,23 +218,36 @@ public:
      * @brief Flush any pending dirty values immediately
      */
     void flush();
+    void flushAutoPersist();
     void resetStandaloneTransientUi();
 
     bool isMacroPersistenceReady() const;
     bool isSequencerPersistenceReady() const;
-    void persistMacroWorkspace();
+    void requestMacroWorkspacePersist();
     void persistSequencerWorkspace();
     void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false);
     void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankSnapshot& staged);
     void clearPendingSequencerApply();
     bool hasPendingSequencerApply() const;
+    uint16_t currentSharedTrackEnabledMask() const;
+    uint8_t currentSharedActiveTrack() const;
+    bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
+    bool refreshSharedTrackStateFromMacroPages();
+    bool refreshSharedTrackStateFromSequencer();
+    void noteMacroInteraction();
 
 private:
     void queueSequencerApply_(const sequencer::SequencerState& staged, bool merge = false);
     void queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged);
-    void persistMacroWorkspace_();
+    void requestMacroWorkspacePersist_();
+    void requestSharedTrackPersist_();
+    void persistMacroWorkspaceNow_();
     void persistSequencerWorkspace_();
+    void persistSharedTrackState_();
     void clearPendingSequencerApply_();
+    bool refreshSharedTrackStateFromMacroPages_(bool persist);
+    bool refreshSharedTrackStateFromSequencer_(bool persist);
+    bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist);
 
 };
 

@@ -5,18 +5,13 @@
  * @brief Incremental persistence for pages + sync + shortcut mappings
  */
 
-#include <cstddef>
 #include <cstdint>
 
 #include <oc/interface/IStorage.hpp>
 
 #include "persistence/PersistenceSlotFileStore.hpp"
-#include "DataManagerCatalog.hpp"
 #include "MidiSyncState.hpp"
-#include "CoreSettingsLayout.hpp"
 namespace core::state {
-
-namespace StorageLayout = core::state::core_settings::layout;
 
 class CoreSettings {
 public:
@@ -27,9 +22,15 @@ public:
     CoreSettings(const CoreSettings&) = delete;
     CoreSettings& operator=(const CoreSettings&) = delete;
 
-    bool load(MidiSyncState& midiSync);
-    bool saveAll(const MidiSyncState& midiSync);
-    persistence::PersistenceWriteStatus saveAllStatus(const MidiSyncState& midiSync);
+    bool load(MidiSyncState& midiSync,
+              uint16_t& sharedTrackEnabledMask,
+              uint8_t& sharedTrackActive);
+    bool saveAll(const MidiSyncState& midiSync,
+                 uint16_t sharedTrackEnabledMask,
+                 uint8_t sharedTrackActive);
+    persistence::PersistenceWriteStatus saveAllStatus(const MidiSyncState& midiSync,
+                                                      uint16_t sharedTrackEnabledMask,
+                                                      uint8_t sharedTrackActive);
 
     bool saveMidiSyncMode(MidiSyncMode mode);
     bool saveMidiFollowTransport(bool followTransport);
@@ -39,6 +40,9 @@ public:
     persistence::PersistenceWriteStatus saveMidiFollowTransportStatus(bool followTransport);
     persistence::PersistenceWriteStatus saveMidiAutoFallbackMsStatus(uint16_t fallbackMs);
     persistence::PersistenceWriteStatus saveMidiAutoLockClockCountStatus(uint8_t lockCount);
+    bool saveSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
+    persistence::PersistenceWriteStatus saveSharedTrackStateStatus(uint16_t enabledMask,
+                                                                   uint8_t activeTrack);
 
     bool saveDataManagerMacroShortcutLeft(uint8_t command);
     bool saveDataManagerMacroShortcutRight(uint8_t command);
@@ -48,6 +52,7 @@ public:
     persistence::PersistenceWriteStatus saveDataManagerMacroShortcutRightStatus(uint8_t command);
     persistence::PersistenceWriteStatus saveDataManagerSeqShortcutLeftStatus(uint8_t command);
     persistence::PersistenceWriteStatus saveDataManagerSeqShortcutRightStatus(uint8_t command);
+    persistence::PersistenceWriteStatus saveDefaultDataManagerShortcutsStatus();
     bool loadDataManagerShortcuts(uint8_t& macroLeft,
                                   uint8_t& macroRight,
                                   uint8_t& seqLeft,
@@ -64,10 +69,8 @@ private:
     persistence::PersistenceWriteStatus writeExactStatus_(uint32_t address,
                                                           const uint8_t* buffer,
                                                           size_t size);
-    bool saveDataManagerShortcut_(uint32_t address, uint8_t command);
     persistence::PersistenceWriteStatus saveDataManagerShortcutStatus_(uint32_t address,
                                                                        uint8_t command);
-    bool writeDefaultShortcuts_();
     persistence::PersistenceWriteStatus writeDefaultShortcutsStatus_();
     bool loadMidiSync_(MidiSyncState& midiSync);
 

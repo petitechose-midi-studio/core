@@ -9,32 +9,19 @@ namespace core::state::macro {
 
 namespace {
 
-MacroWorkflow::StateRefs makeStateRefs(core::state::CoreState& state) {
-    return MacroWorkflow::StateRefs{
-        state.macros,
-        state.pages,
-        state.configRevision,
-        state.statusBar,
-    };
-}
-
-MacroWorkflow::Hooks makeHooks(core::state::CoreState& state) {
-    return MacroWorkflow::Hooks{&state};
+bool configsMatch(
+    const std::array<MacroConfig, MACRO_COUNT>& lhs,
+    const std::array<MacroConfig, MACRO_COUNT>& rhs
+) {
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        if (lhs[i].cc != rhs[i].cc || lhs[i].channel != rhs[i].channel) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
-
-void MacroWorkflow::Hooks::flushPendingRuntime() const {
-    if (coreState) {
-        coreState->flush();
-    }
-}
-
-void MacroWorkflow::Hooks::persistWorkspaceNow() const {
-    if (coreState) {
-        coreState->persistMacroWorkspace();
-    }
-}
 
 void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& macros,
                                               const MacroPagesState& pages) {
@@ -54,7 +41,7 @@ void MacroWorkflow::syncRuntimeFromActivePage(CoreState& state) {
 }
 
 void MacroWorkflow::syncRuntimeFromActiveTrack(CoreState& state, uint8_t trackIndex) {
-    state.pages.setActiveTrack(trackIndex);
+    state.setSharedTrackState(state.currentSharedTrackEnabledMask(), trackIndex);
     syncRuntimeFromActivePage(state);
 }
 
@@ -70,37 +57,35 @@ void MacroWorkflow::syncActivePageValuesFromRuntime(CoreState& state) {
     syncActivePageValuesFromRuntime(state.pages, state.macros);
 }
 
-void MacroWorkflow::switchToPage(StateRefs state, Hooks hooks, uint8_t pageIndex) {
+void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     if (pageIndex >= PAGE_COUNT) return;
 
-    hooks.flushPendingRuntime();
+    const auto previousConfigs = state.pages.activeConfigs;
+    state.flushAutoPersist();
     state.pages.setActivePage(pageIndex);
-    hooks.persistWorkspaceNow();
-    state.configRevision.set(state.configRevision.get() + 1);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
-    syncRuntimeFromActivePage(state.macros, state.pages);
-}
-
-void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
-    switchToPage(makeStateRefs(state), makeHooks(state), pageIndex);
-}
-
-void MacroWorkflow::switchToTrack(StateRefs state, Hooks hooks, uint8_t trackIndex) {
-    if (trackIndex >= TRACK_COUNT) return;
-
-    hooks.flushPendingRuntime();
-    state.pages.setActiveTrack(trackIndex);
-    hooks.persistWorkspaceNow();
-    state.configRevision.set(state.configRevision.get() + 1);
+    state.requestMacroWorkspacePersist();
+    if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
+        state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
+    }
     state.statusBar.pageName.set(state.pages.activePageData().name);
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
 void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex) {
-    switchToTrack(makeStateRefs(state), makeHooks(state), trackIndex);
+    if (trackIndex >= TRACK_COUNT) return;
+
+    const auto previousConfigs = state.pages.activeConfigs;
+    state.flushAutoPersist();
+    state.setSharedTrackState(state.currentSharedTrackEnabledMask(), trackIndex);
+    state.requestMacroWorkspacePersist();
+    if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
+        state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
+    }
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
-bool MacroWorkflow::setConfig(StateRefs state, Hooks hooks, uint8_t index, uint8_t channel, uint8_t cc) {
+bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc) {
     if (index >= MACRO_COUNT) return false;
     if (channel > 15 || cc > 127) return false;
 
@@ -116,36 +101,27 @@ bool MacroWorkflow::setConfig(StateRefs state, Hooks hooks, uint8_t index, uint8
     }
     page.cc[index] = cc;
     state.pages.updateActiveConfigs();
-    state.configRevision.set(state.configRevision.get() + 1);
-    hooks.persistWorkspaceNow();
+    state.configRevision.set(nextMacroConfigRevision(
+        state.configRevision.get(),
+        channelChanged ? kMacroConfigDirtyAll : index
+    ));
+    state.requestMacroWorkspacePersist();
     return true;
 }
 
-bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc) {
-    return setConfig(makeStateRefs(state), makeHooks(state), index, channel, cc);
-}
-
-bool MacroWorkflow::setConfigCc(StateRefs state, Hooks hooks, uint8_t index, uint8_t cc) {
-    if (index >= MACRO_COUNT) return false;
-    return setConfig(state, hooks, index, state.pages.activeTrackChannel(), cc);
-}
-
 bool MacroWorkflow::setConfigCc(CoreState& state, uint8_t index, uint8_t cc) {
-    return setConfigCc(makeStateRefs(state), makeHooks(state), index, cc);
+    if (index >= MACRO_COUNT) return false;
+    return setConfig(state, index, state.pages.activeTrackChannel(), cc);
 }
 
-bool MacroWorkflow::setTrackChannel(StateRefs state, Hooks hooks, uint8_t channel) {
+bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) {
     if (channel > 15) return false;
     if (state.pages.activeTrackChannel() == channel) return false;
 
     state.pages.setActiveTrackChannel(channel);
-    state.configRevision.set(state.configRevision.get() + 1);
-    hooks.persistWorkspaceNow();
+    state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
+    state.requestMacroWorkspacePersist();
     return true;
-}
-
-bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) {
-    return setTrackChannel(makeStateRefs(state), makeHooks(state), channel);
 }
 
 void MacroWorkflow::setRuntimeValue(core::state::MacroState& macros, uint8_t index, float value) {

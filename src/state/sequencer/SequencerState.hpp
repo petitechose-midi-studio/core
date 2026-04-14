@@ -204,7 +204,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     }
 
     uint8_t visiblePage() const {
-        if (rangeSelection.selectingPasteTarget()) {
+        if (rangeSelection.selectingPasteTarget() || structureUi.previewAddSlot.get()) {
             return clampPage(page.get());
         }
         return normalizePage(page.get());

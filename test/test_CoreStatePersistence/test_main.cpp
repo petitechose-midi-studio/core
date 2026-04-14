@@ -75,7 +75,7 @@ void test_macro_library_roundtrip_and_erase() {
 
     const auto status = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 3);
     assert(status == core::persistence::SlotLoadStatus::OK);
-    assert(state.pages.activePage == 2);
+    assert(state.pages.currentActivePage() == 2);
     assert(core::state::macro::MacroWorkflow::activeConfig(state, 0).channel == 4);
     assert(core::state::macro::MacroWorkflow::activeConfig(state, 0).cc == 88);
     assert(core::state::macro::MacroWorkflow::runtimeValue(state, 0) == 0.64f);
@@ -123,7 +123,7 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
     std::cout << "[PASS] test_macro_library_save_snapshots_runtime_values_without_manual_flush\n";
 }
 
-void test_macro_config_changes_persist_immediately_and_bump_revision() {
+void test_macro_config_changes_persist_after_flush_and_bump_revision() {
     CoreStorages storage;
     storage.initAll();
 
@@ -154,11 +154,20 @@ void test_macro_config_changes_persist_immediately_and_bump_revision() {
                                                                    : (initialConfig.cc - 1U));
 
         assert(core::state::macro::MacroWorkflow::setConfig(state, 0, updatedChannel, updatedCc));
-        assert(state.configRevision.get() == initialRevision + 1U);
+        assert(
+            state.configRevision.get() ==
+            core::state::macro::nextMacroConfigRevision(
+                initialRevision,
+                core::state::macro::kMacroConfigDirtyAll
+            )
+        );
 
         const auto& updatedConfig = core::state::macro::MacroWorkflow::activeConfig(state, 0);
         assert(updatedConfig.channel == updatedChannel);
         assert(updatedConfig.cc == updatedCc);
+
+        drainNotifications();
+        state.flush();
     }
 
     core::state::CoreState restored(storage.settings,
@@ -173,7 +182,7 @@ void test_macro_config_changes_persist_immediately_and_bump_revision() {
 
     drainNotifications();
 
-    std::cout << "[PASS] test_macro_config_changes_persist_immediately_and_bump_revision\n";
+    std::cout << "[PASS] test_macro_config_changes_persist_after_flush_and_bump_revision\n";
 }
 
 void test_data_manager_shortcuts_persist_and_sanitize() {
@@ -683,7 +692,7 @@ int main() {
     test_workspace_survives_settings_storage_corruption();
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_snapshots_runtime_values_without_manual_flush();
-    test_macro_config_changes_persist_immediately_and_bump_revision();
+    test_macro_config_changes_persist_after_flush_and_bump_revision();
     test_data_manager_shortcuts_persist_and_sanitize();
     test_data_manager_command_execution_and_slot_probe();
     test_sequencer_workspace_and_library_roundtrip();

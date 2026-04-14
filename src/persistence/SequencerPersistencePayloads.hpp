@@ -6,7 +6,6 @@
 
 #include <oc/note/sequencer/StepSequencerState.hpp>
 
-#include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::persistence::sequencer_codec {
@@ -40,9 +39,6 @@ struct WorkspaceTrackPayload {
 };
 
 struct WorkspacePayload {
-    uint8_t trackCount = PERSISTED_TRACK_COUNT;
-    uint8_t activeTrack = 0;
-    uint16_t enabledMask = 0x0001;
     std::array<WorkspaceTrackPayload, PERSISTED_TRACK_COUNT> tracks{};
 };
 

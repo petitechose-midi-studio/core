@@ -7,6 +7,7 @@
 #include <oc/time/Time.hpp>
 
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 
 namespace {
@@ -98,7 +99,13 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(std::strcmp(state.dataManager.feedback.get(), "") == 0);
     assert(std::strcmp(state.statusBar.pageName.get(), state.pages.activePageData().name) == 0);
-    assert(state.configRevision.get() == beforeRevision + 1);
+    assert(
+        state.configRevision.get() ==
+        core::state::macro::nextMacroConfigRevision(
+            beforeRevision,
+            core::state::macro::kMacroConfigDirtyAll
+        )
+    );
 
     std::cout << "[PASS] test_factory_reset_clears_transient_state_and_overlays\n";
 }
@@ -201,10 +208,12 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.sequencer.stepEdit.visible.set(true);
     state.sequencer.stepPropertyInlineSelector.selecting.set(true);
     state.sequencer.patternQuickControls.selecting.set(true);
+    state.sequencer.structureUi.selection.active.set(true);
+    state.sequencer.structureUi.selection.scope.set(core::state::StructureSelectionScope::TRACK);
+    state.sequencer.structureUi.selection.cursorIndex.set(7);
+    state.sequencer.structureUi.selection.selectedMask.set(0x0080);
     state.sequencer.rangeSelection.kind.set(core::state::sequencer::RangeSelectionKind::COPY);
-    state.sequencerTracks.activeTrack.set(3);
-    state.sequencerTracks.selector.selecting.set(true);
-    state.sequencerTracks.selector.selectedTrack.set(7);
+    state.setSharedTrackState(state.currentSharedTrackEnabledMask(), 3);
 
     state.resetStandaloneTransientUi();
 
@@ -219,9 +228,9 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.sequencer.stepEdit.visible.get());
     assert(!state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
+    assert(!state.sequencer.structureUi.selection.active.get());
+    assert(state.sequencer.structureUi.selection.cursorIndex.get() == 0);
     assert(!state.sequencer.rangeSelection.active());
-    assert(!state.sequencerTracks.selector.selecting.get());
-    assert(state.sequencerTracks.selector.selectedTrack.get() == 3);
 
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
 }

@@ -21,24 +21,25 @@ public:
     static constexpr uint32_t WORKSPACE_MAGIC = 0x5357534B;         // "SWSK"
     static constexpr uint32_t PATTERN_LIBRARY_MAGIC = 0x53504C42;   // "SPLB"
     static constexpr uint32_t SET_LIBRARY_MAGIC = 0x53534554;       // "SSET"
-    static constexpr uint8_t DATA_VERSION = 1;
+    static constexpr uint8_t WORKSPACE_DATA_VERSION = 2;
+    static constexpr uint8_t LIBRARY_DATA_VERSION = 1;
 
     explicit SequencerPersistence(oc::interface::IStorage& workspaceStorage,
                                   oc::interface::IStorage& patternLibraryStorage,
                                   oc::interface::IStorage& setLibraryStorage)
         : workspace_store_(workspaceStorage,
                            {.fileMagic = WORKSPACE_MAGIC,
-                            .domainVersion = DATA_VERSION,
+                            .domainVersion = WORKSPACE_DATA_VERSION,
                             .slotCount = WORKSPACE_SLOT_COUNT,
                             .slotPayloadSize = sequencer_codec::WORKSPACE_PAYLOAD_SIZE})
         , pattern_library_store_(patternLibraryStorage,
                                  {.fileMagic = PATTERN_LIBRARY_MAGIC,
-                                  .domainVersion = DATA_VERSION,
+                                  .domainVersion = LIBRARY_DATA_VERSION,
                                   .slotCount = PATTERN_LIBRARY_SLOT_COUNT,
                                   .slotPayloadSize = sequencer_codec::PATTERN_PAYLOAD_SIZE})
         , set_library_store_(setLibraryStorage,
                              {.fileMagic = SET_LIBRARY_MAGIC,
-                              .domainVersion = DATA_VERSION,
+                              .domainVersion = LIBRARY_DATA_VERSION,
                               .slotCount = SET_LIBRARY_SLOT_COUNT,
                               .slotPayloadSize = sequencer_codec::SET_PAYLOAD_SIZE}) {}
 

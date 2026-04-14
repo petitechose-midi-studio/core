@@ -38,12 +38,11 @@ FLASHMEM void resetTransientTrackState(SequencerState& state) {
 FLASHMEM void initializeTrackBankFromActive(SequencerTrackBankState& bank, const SequencerState& active) {
     bank.reset();
     copyPersistentState(bank.track(0), active);
-    bank.activeTrack.set(0);
-    bank.enabledMask.set(0x0001);
+    bank.syncSharedTrackState(0x0001, 0);
 }
 
 FLASHMEM void storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active) {
-    copyPersistentState(bank.track(bank.activeTrack.get()), active);
+    copyPersistentState(bank.track(bank.activeTrackIndex()), active);
 }
 
 FLASHMEM bool switchActiveTrack(
@@ -51,7 +50,7 @@ FLASHMEM bool switchActiveTrack(
     SequencerState& active,
     uint8_t nextTrack
 ) {
-    const uint8_t current = bank.activeTrack.get();
+    const uint8_t current = bank.activeTrackIndex();
     const uint8_t clampedNext = SequencerTrackBankState::clampTrackIndex(nextTrack);
     if (clampedNext == current) {
         return false;
@@ -61,7 +60,7 @@ FLASHMEM bool switchActiveTrack(
     copyPersistentState(active, bank.track(clampedNext));
     resetTransientTrackState(active);
 
-    bank.activeTrack.set(clampedNext);
+    bank.syncSharedTrackState(bank.currentEnabledMask(), clampedNext);
     return true;
 }
 
@@ -70,9 +69,9 @@ FLASHMEM void captureTrackBankSnapshot(
     const SequencerState& active,
     SequencerTrackBankSnapshot& out
 ) {
-    const uint8_t activeTrack = SequencerTrackBankState::clampTrackIndex(bank.activeTrack.get());
+    const uint8_t activeTrack = SequencerTrackBankState::clampTrackIndex(bank.activeTrackIndex());
     out.activeTrack = activeTrack;
-    out.enabledMask = bank.enabledMask.get();
+    out.enabledMask = bank.currentEnabledMask();
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active : bank.track(i);
@@ -86,17 +85,15 @@ FLASHMEM void applyTrackBankSnapshot(
     const SequencerTrackBankSnapshot& snapshot
 ) {
     bank.reset();
-    bank.enabledMask.set(snapshot.enabledMask == 0 ? 0x0001 : snapshot.enabledMask);
+    bank.syncSharedTrackState(snapshot.enabledMask, snapshot.activeTrack);
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         applySnapshot(bank.track(i), snapshot.tracks[i]);
     }
 
-    const uint8_t activeTrack = SequencerTrackBankState::clampTrackIndex(snapshot.activeTrack);
+    const uint8_t activeTrack = bank.activeTrackIndex();
     applySnapshot(active, snapshot.tracks[activeTrack]);
     resetTransientTrackState(active);
-
-    bank.activeTrack.set(activeTrack);
 }
 
 }  // namespace core::state::sequencer

@@ -116,6 +116,10 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
             captureTrackBankSnapshot(stagedBank, staged, snapshot);
             applyTrackBankSnapshot(state.sequencerTracks, state.sequencer, snapshot);
         }
+        state.setSharedTrackState(
+            state.sequencerTracks.currentEnabledMask(),
+            state.sequencerTracks.activeTrackIndex()
+        );
         state.persistSequencerWorkspace();
     }
 

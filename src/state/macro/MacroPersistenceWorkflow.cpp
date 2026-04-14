@@ -28,10 +28,11 @@ FLASHMEM persistence::SlotLoadStatus MacroPersistenceWorkflow::loadLibrarySlot(C
     const persistence::SlotLoadStatus status =
         state.macroPersistence.loadLibrarySlot(slotIndex, state.pages);
     if (status == persistence::SlotLoadStatus::OK) {
+        state.refreshSharedTrackStateFromMacroPages();
         state.statusBar.pageName.set(state.pages.activePageData().name);
         MacroWorkflow::syncRuntimeFromActivePage(state);
-        state.persistMacroWorkspace();
-        state.configRevision.set(state.configRevision.get() + 1);
+        state.requestMacroWorkspacePersist();
+        state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
     }
 
     return status;

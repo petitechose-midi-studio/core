@@ -1,12 +1,12 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include <oc/interface/IStorage.hpp>
 
 #include "MidiSyncState.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
-#include "state/CoreSettingsLayout.hpp"
 
 namespace core::state::core_settings {
 
@@ -18,9 +18,15 @@ persistence::PersistenceWriteStatus writeExactStatus(oc::interface::IStorage& ba
                                                      size_t size);
 
 persistence::PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
-                                            const MidiSyncState& midiSync);
+                                            const MidiSyncState& midiSync,
+                                            uint16_t sharedTrackEnabledMask,
+                                            uint8_t sharedTrackActive);
 
 bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midiSync);
+bool loadSharedTrackState(oc::interface::IStorage& backend,
+                          uint16_t& sharedTrackEnabledMask,
+                          uint8_t& sharedTrackActive,
+                          uint8_t version);
 bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
                               uint8_t& macroLeft,
                               uint8_t& macroRight,

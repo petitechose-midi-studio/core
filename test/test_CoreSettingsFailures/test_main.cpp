@@ -7,6 +7,7 @@
 #include <oc/interface/IStorage.hpp>
 
 #include "../../src/state/CoreSettings.hpp"
+#include "../../src/state/CoreSettingsLayout.hpp"
 
 namespace {
 
@@ -95,10 +96,15 @@ void test_save_all_returns_false_on_short_write() {
     storage.setFaultMode(FaultyStorage::FaultMode::SHORT_WRITE);
 
     core::state::MidiSyncState sync;
+    constexpr uint16_t sharedTrackEnabledMask = 0x0001;
+    constexpr uint8_t sharedTrackActive = 0;
 
     core::state::CoreSettings settings(storage);
-    assert(!settings.saveAll(sync));
-    assert(settings.saveAllStatus(sync) == core::persistence::PersistenceWriteStatus::IO_ERROR);
+    assert(!settings.saveAll(sync, sharedTrackEnabledMask, sharedTrackActive));
+    assert(
+        settings.saveAllStatus(sync, sharedTrackEnabledMask, sharedTrackActive) ==
+        core::persistence::PersistenceWriteStatus::IO_ERROR
+    );
 
     std::cout << "[PASS] test_save_all_returns_false_on_short_write\n";
 }
@@ -131,12 +137,14 @@ void test_load_shortcuts_returns_false_on_short_read() {
     FaultyStorage storage;
     storage.init();
 
-    uint32_t magic = core::state::StorageLayout::MAGIC;
-    const uint8_t version = core::state::StorageLayout::VERSION;
-    storage.write(core::state::StorageLayout::ADDR_MAGIC,
+    namespace StorageLayout = core::state::core_settings::layout;
+
+    uint32_t magic = StorageLayout::MAGIC;
+    const uint8_t version = StorageLayout::VERSION;
+    storage.write(StorageLayout::ADDR_MAGIC,
                   reinterpret_cast<const uint8_t*>(&magic),
                   sizeof(magic));
-    storage.write(core::state::StorageLayout::ADDR_VERSION, &version, 1);
+    storage.write(StorageLayout::ADDR_VERSION, &version, 1);
     storage.commit();
 
     storage.setFaultMode(FaultyStorage::FaultMode::SHORT_READ);
@@ -149,10 +157,10 @@ void test_load_shortcuts_returns_false_on_short_read() {
     uint8_t seqRight = 0;
 
     assert(!settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight));
-    assert(macroLeft == core::state::StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT);
-    assert(macroRight == core::state::StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT);
-    assert(seqLeft == core::state::StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT);
-    assert(seqRight == core::state::StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT);
+    assert(macroLeft == StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT);
+    assert(macroRight == StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT);
+    assert(seqLeft == StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT);
+    assert(seqRight == StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT);
 
     std::cout << "[PASS] test_load_shortcuts_returns_false_on_short_read\n";
 }

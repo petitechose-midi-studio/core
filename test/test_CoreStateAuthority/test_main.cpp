@@ -59,7 +59,7 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
     state.sequencer.length.set(8);
     state.sequencer.stepsPerBeat.set(2);
     state.sequencer.midiChannel.set(1);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.toggle(0);
     state.flush();
@@ -74,7 +74,7 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
     state.sequencer.length.set(16);
     state.sequencer.stepsPerBeat.set(4);
     state.sequencer.midiChannel.set(6);
-    state.sequencer.enabledMask.set(0);
+    state.sequencer.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 40, 55, 30);
     state.sequencer.toggle(0);
 

@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
+#include <oc/time/Time.hpp>
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 #include <wiring.h>
@@ -14,12 +15,14 @@
 #include "macro/MacroPersistenceWorkflow.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "sequencer/SequencerPersistenceWorkflow.hpp"
-#include "sequencer/SequencerSnapshotOps.hpp"
 #include "sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
 
 namespace {
+
+constexpr uint16_t kSharedTrackMaskAll =
+    static_cast<uint16_t>((1U << sequencer::SequencerTrackBankState::TRACK_COUNT) - 1U);
 
 SequencerDomainState::PendingApply* createPendingApply() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
@@ -37,6 +40,28 @@ core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
 
 core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
     return core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
+}
+
+uint16_t sanitizeSharedTrackMask(uint16_t enabledMask) {
+    const uint16_t sanitized = static_cast<uint16_t>(enabledMask & kSharedTrackMaskAll);
+    return sanitized == 0 ? 0x0001 : sanitized;
+}
+
+uint8_t firstEnabledSharedTrack(uint16_t enabledMask) {
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+uint8_t sanitizeSharedActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
+    const uint8_t clamped =
+        sequencer::SequencerTrackBankState::clampTrackIndex(activeTrack);
+    return (enabledMask & static_cast<uint16_t>(1U << clamped)) != 0
+        ? clamped
+        : firstEnabledSharedTrack(enabledMask);
 }
 
 }  // namespace
@@ -86,6 +111,8 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , overlays(systemUi_->overlays)
     , activeView(systemUi_->activeView)
     , structureNavigationFocus(systemUi_->structureNavigationFocus)
+    , sharedTrackActive(systemUi_->sharedTracks.activeIndex)
+    , sharedTrackEnabledMask(systemUi_->sharedTracks.enabledMask)
     , structureClipboard(systemUi_->structureClipboard)
     , viewSelector(systemUi_->viewSelector)
     , statusBar(systemUi_->statusBar)
@@ -126,6 +153,10 @@ void CoreState::flush() {
     CoreStateLifecycle::flush(*this);
 }
 
+void CoreState::flushAutoPersist() {
+    CoreStateLifecycle::flushAutoPersist(*this);
+}
+
 void CoreState::resetStandaloneTransientUi() {
     CoreStateLifecycle::resetStandaloneTransientUi(*this);
 }
@@ -138,8 +169,8 @@ bool CoreState::isSequencerPersistenceReady() const {
     return sequencerDomain_.persistenceReady;
 }
 
-void CoreState::persistMacroWorkspace() {
-    persistMacroWorkspace_();
+void CoreState::requestMacroWorkspacePersist() {
+    requestMacroWorkspacePersist_();
 }
 
 void CoreState::persistSequencerWorkspace() {
@@ -164,6 +195,33 @@ bool CoreState::hasPendingSequencerApply() const {
     return sequencerDomain_.pendingApply && sequencerDomain_.pendingApply->valid;
 }
 
+uint16_t CoreState::currentSharedTrackEnabledMask() const {
+    return sharedTrackEnabledMask.get();
+}
+
+uint8_t CoreState::currentSharedActiveTrack() const {
+    return sharedTrackActive.get();
+}
+
+bool CoreState::setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack) {
+    return setSharedTrackState_(enabledMask, activeTrack, true);
+}
+
+bool CoreState::refreshSharedTrackStateFromMacroPages() {
+    return refreshSharedTrackStateFromMacroPages_(true);
+}
+
+bool CoreState::refreshSharedTrackStateFromSequencer() {
+    return refreshSharedTrackStateFromSequencer_(true);
+}
+
+void CoreState::noteMacroInteraction() {
+    macroDomain_.lastInteractionTimestampMs = oc::time::millis();
+    if (macroDomain_.lastInteractionTimestampMs == 0) {
+        macroDomain_.lastInteractionTimestampMs = 1;
+    }
+}
+
 void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bool merge) {
     CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
 }
@@ -177,8 +235,20 @@ void CoreState::queueSequencerBankApply_(const sequencer::SequencerTrackBankSnap
     sequencerDomain_.pendingApply->valid = true;
 }
 
-void CoreState::persistMacroWorkspace_() {
+void CoreState::requestMacroWorkspacePersist_() {
     if (!macroDomain_.persistenceReady) return;
+
+    macroDomain_.workspacePersistPending = true;
+    macroDomain_.workspacePersistTimestampMs = oc::time::millis();
+    if (macroDomain_.workspacePersistTimestampMs == 0) {
+        macroDomain_.workspacePersistTimestampMs = 1;
+    }
+}
+
+void CoreState::persistMacroWorkspaceNow_() {
+    if (!macroDomain_.persistenceReady) return;
+    macroDomain_.workspacePersistPending = false;
+    macroDomain_.workspacePersistTimestampMs = 0;
     const auto status = macroPersistence.saveWorkspaceStatus(pages);
     if (status != persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[CoreState] Failed to persist macro workspace: {}",
@@ -196,8 +266,84 @@ void CoreState::persistSequencerWorkspace_() {
     }
 }
 
+void CoreState::requestSharedTrackPersist_() {
+    sharedTrackPersistPending_ = true;
+    sharedTrackPersistTimestampMs_ = oc::time::millis();
+    if (sharedTrackPersistTimestampMs_ == 0) {
+        sharedTrackPersistTimestampMs_ = 1;
+    }
+}
+
+void CoreState::persistSharedTrackState_() {
+    if (!sharedTrackPersistPending_) return;
+
+    sharedTrackPersistPending_ = false;
+    sharedTrackPersistTimestampMs_ = 0;
+
+    const auto persistStatus = settings.saveSharedTrackStateStatus(
+        sharedTrackEnabledMask.get(),
+        sharedTrackActive.get()
+    );
+    if (persistStatus != persistence::PersistenceWriteStatus::OK) {
+        OC_LOG_WARN("[CoreState] Failed to persist shared track state: {}",
+                    persistence::persistenceWriteStatusLabel(persistStatus));
+    }
+}
+
 void CoreState::clearPendingSequencerApply_() {
     CoreStateLifecycle::clearPendingSequencerApply(*this);
+}
+
+bool CoreState::refreshSharedTrackStateFromMacroPages_(bool persist) {
+    return setSharedTrackState_(
+        pages.currentTrackEnabledMask(),
+        pages.currentActiveTrack(),
+        persist
+    );
+}
+
+bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
+    return setSharedTrackState_(
+        sequencerTracks.currentEnabledMask(),
+        sequencerTracks.activeTrackIndex(),
+        persist
+    );
+}
+
+bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist) {
+    const uint16_t sanitizedMask = sanitizeSharedTrackMask(enabledMask);
+    const uint8_t sanitizedActive = sanitizeSharedActiveTrack(sanitizedMask, activeTrack);
+    const uint16_t previousMask = sharedTrackEnabledMask.get();
+    const uint8_t previousActive = sharedTrackActive.get();
+
+    if (previousMask != sanitizedMask) {
+        sharedTrackEnabledMask.set(sanitizedMask);
+    }
+
+    pages.syncSharedTrackState(sanitizedMask, sanitizedActive);
+
+    if (sequencerTracks.currentEnabledMask() != sanitizedMask) {
+        sequencerTracks.enabledMaskSignal().set(sanitizedMask);
+    }
+
+    if (sequencerTracks.activeTrackIndex() != sanitizedActive) {
+        sequencer::switchActiveTrack(sequencerTracks, sequencer, sanitizedActive);
+    }
+
+    if (previousActive != sanitizedActive) {
+        sharedTrackActive.set(sanitizedActive);
+    }
+
+    const bool changed = previousMask != sharedTrackEnabledMask.get() ||
+                         previousActive != sharedTrackActive.get();
+    if (!changed) {
+        return false;
+    }
+    if (persist) {
+        requestSharedTrackPersist_();
+    }
+
+    return true;
 }
 
 }  // namespace core::state

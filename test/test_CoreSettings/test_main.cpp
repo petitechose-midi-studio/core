@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "../../src/state/CoreSettings.hpp"
+#include "../../src/state/CoreSettingsLayout.hpp"
 #include "../support/MemoryStorage.hpp"
 
 namespace {
@@ -17,9 +18,11 @@ void test_roundtrip_current_format() {
     sync.followTransport.set(false);
     sync.autoFallbackMs.set(750);
     sync.autoLockClockCount.set(12);
+    uint16_t sharedTrackEnabledMask = 0x0005;
+    uint8_t sharedTrackActive = 2;
 
     core::state::CoreSettings settings(storage);
-    assert(settings.saveAll(sync));
+    assert(settings.saveAll(sync, sharedTrackEnabledMask, sharedTrackActive));
     assert(settings.saveDataManagerMacroShortcutLeft(
         static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_LOAD_SLOT)));
     assert(settings.saveDataManagerMacroShortcutRight(
@@ -31,13 +34,21 @@ void test_roundtrip_current_format() {
     assert(settings.commit());
 
     core::state::MidiSyncState loadedSync;
-    const bool loaded = settings.load(loadedSync);
+    uint16_t loadedSharedTrackEnabledMask = 0;
+    uint8_t loadedSharedTrackActive = 0;
+    const bool loaded = settings.load(
+        loadedSync,
+        loadedSharedTrackEnabledMask,
+        loadedSharedTrackActive
+    );
 
     assert(loaded);
     assert(loadedSync.mode.get() == core::state::MidiSyncMode::SLAVE);
     assert(!loadedSync.followTransport.get());
     assert(loadedSync.autoFallbackMs.get() == 750);
     assert(loadedSync.autoLockClockCount.get() == 12);
+    assert(loadedSharedTrackEnabledMask == sharedTrackEnabledMask);
+    assert(loadedSharedTrackActive == sharedTrackActive);
 
     uint8_t macroLeft = 0;
     uint8_t macroRight = 0;
@@ -57,27 +68,37 @@ void test_invalid_version_resets_to_defaults() {
     MemoryStorage storage;
     storage.init();
 
-    const uint32_t magic = core::state::StorageLayout::MAGIC;
+    namespace StorageLayout = core::state::core_settings::layout;
+
+    const uint32_t magic = StorageLayout::MAGIC;
     const uint8_t version = 99;
-    storage.write(core::state::StorageLayout::ADDR_MAGIC,
+    storage.write(StorageLayout::ADDR_MAGIC,
                   reinterpret_cast<const uint8_t*>(&magic),
                   sizeof(magic));
-    storage.write(core::state::StorageLayout::ADDR_VERSION, &version, 1);
+    storage.write(StorageLayout::ADDR_VERSION, &version, 1);
     storage.commit();
 
     core::state::CoreSettings settings(storage);
     core::state::MidiSyncState loadedSync;
-    const bool loaded = settings.load(loadedSync);
+    uint16_t loadedSharedTrackEnabledMask = 0xFFFF;
+    uint8_t loadedSharedTrackActive = 0xFF;
+    const bool loaded = settings.load(
+        loadedSync,
+        loadedSharedTrackEnabledMask,
+        loadedSharedTrackActive
+    );
 
-    assert(!loaded);
+    assert(loaded);
     assert(loadedSync.mode.get() == core::state::MidiSyncMode::AUTO);
     assert(loadedSync.followTransport.get());
     assert(loadedSync.autoFallbackMs.get() == 500);
     assert(loadedSync.autoLockClockCount.get() == 6);
+    assert(loadedSharedTrackEnabledMask == StorageLayout::DEFAULT_SHARED_TRACK_ENABLED_MASK);
+    assert(loadedSharedTrackActive == StorageLayout::DEFAULT_SHARED_TRACK_ACTIVE);
 
     uint8_t persistedVersion = 0;
-    storage.read(core::state::StorageLayout::ADDR_VERSION, &persistedVersion, 1);
-    assert(persistedVersion == core::state::StorageLayout::VERSION);
+    storage.read(StorageLayout::ADDR_VERSION, &persistedVersion, 1);
+    assert(persistedVersion == StorageLayout::VERSION);
 
     std::cout << "[PASS] test_invalid_version_resets_to_defaults\n";
 }

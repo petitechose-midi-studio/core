@@ -28,7 +28,7 @@ enum class MacroEditFlowPhase : uint8_t {
  *
  * The overlay keeps its own editable CH/CC fields so the UI can move between
  * rows, selectors, pages, and target macros without repeatedly re-reading
- * state. Those values are applied immediately when changed.
+ * state. Those values are committed when the editor closes or switches context.
  */
 struct MacroEditState {
     /// Overlay visibility (owned by ExclusiveVisibilityStack)

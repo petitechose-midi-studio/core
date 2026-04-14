@@ -7,9 +7,9 @@
 #include <oc/state/AutoPersistIncremental.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/CoreSettingsLayout.hpp"
 #include "state/DataManagerWorkflow.hpp"
 #include "state/macro/MacroWorkflow.hpp"
-#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
 
@@ -71,7 +71,7 @@ FLASHMEM void CoreStateBootstrap::initializeMacroPersistence_(CoreState& state) 
     }
 
     if (!state.macroPersistence.loadWorkspace(state.pages)) {
-        state.persistMacroWorkspace_();
+        state.persistMacroWorkspaceNow_();
     }
 }
 
@@ -97,7 +97,7 @@ FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
                 if (page.values[i] == value) return;
                 page.values[i] = value;
             },
-            [&state]() { state.persistMacroWorkspace_(); },
+            [&state]() { state.requestMacroWorkspacePersist(); },
             MACRO_WORKSPACE_SAVE_DELAY_MS
         );
 
@@ -122,8 +122,8 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
     state.sequencerDomain_.autoPersist->watchAt(5, state.sequencer.page);
     state.sequencerDomain_.autoPersist->watchAt(6, state.sequencer.focusedStep);
     state.sequencerDomain_.autoPersist->watchAt(7, state.sequencer.activeStepProperty);
-    state.sequencerDomain_.autoPersist->watchAt(8, state.sequencerTracks.activeTrack);
-    state.sequencerDomain_.autoPersist->watchAt(9, state.sequencerTracks.enabledMask);
+    state.sequencerDomain_.autoPersist->watchAt(8, state.sequencerTracks.activeTrackSignal());
+    state.sequencerDomain_.autoPersist->watchAt(9, state.sequencerTracks.enabledMaskSignal());
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
@@ -143,8 +143,19 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
-    state.settings.load(state.midiSync);
+    uint16_t persistedSharedTrackMask = core_settings::layout::DEFAULT_SHARED_TRACK_ENABLED_MASK;
+    uint8_t persistedSharedTrackActive = core_settings::layout::DEFAULT_SHARED_TRACK_ACTIVE;
+    state.settings.load(
+        state.midiSync,
+        persistedSharedTrackMask,
+        persistedSharedTrackActive
+    );
     DataManagerWorkflow::loadShortcutsFromSettings(state);
+    state.setSharedTrackState_(
+        persistedSharedTrackMask,
+        persistedSharedTrackActive,
+        false
+    );
     initializeMacroPersistence_(state);
     initializeSequencerPersistence_(state);
 }

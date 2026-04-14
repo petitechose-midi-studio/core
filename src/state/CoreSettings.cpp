@@ -4,25 +4,39 @@
 #include <oc/log/Log.hpp>
 
 #include "state/CoreSettingsCodec.hpp"
+#include "state/CoreSettingsLayout.hpp"
 
 namespace core::state {
 
 using core::persistence::PersistenceWriteStatus;
+namespace StorageLayout = core::state::core_settings::layout;
 
 namespace {
 
 FLASHMEM bool resetToDefaultsAndPersist(CoreSettings& settings,
                                         MidiSyncState& midiSync,
+                                        uint16_t& sharedTrackEnabledMask,
+                                        uint8_t& sharedTrackActive,
                                         const char* logMessage) {
     midiSync.reset();
+    sharedTrackEnabledMask = StorageLayout::DEFAULT_SHARED_TRACK_ENABLED_MASK;
+    sharedTrackActive = StorageLayout::DEFAULT_SHARED_TRACK_ACTIVE;
 
-    const auto status = settings.saveAllStatus(midiSync);
+    const auto status = settings.saveAllStatus(midiSync, sharedTrackEnabledMask, sharedTrackActive);
     if (status != PersistenceWriteStatus::OK) {
         OC_LOG_WARN("{}: {}",
                     logMessage,
                     core::persistence::persistenceWriteStatusLabel(status));
+        return false;
     }
-    return false;
+
+    const auto shortcutStatus = settings.saveDefaultDataManagerShortcutsStatus();
+    if (shortcutStatus != PersistenceWriteStatus::OK) {
+        OC_LOG_WARN("[CoreSettings] Failed to persist default Data Manager shortcuts: {}",
+                    core::persistence::persistenceWriteStatusLabel(shortcutStatus));
+    }
+
+    return true;
 }
 
 }  // namespace
@@ -30,13 +44,17 @@ FLASHMEM bool resetToDefaultsAndPersist(CoreSettings& settings,
 FLASHMEM CoreSettings::CoreSettings(oc::interface::IStorage& backend)
     : backend_(backend) {}
 
-FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync) {
+FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync,
+                                 uint16_t& sharedTrackEnabledMask,
+                                 uint8_t& sharedTrackActive) {
     uint32_t magic = 0;
     if (!readExact_(StorageLayout::ADDR_MAGIC, reinterpret_cast<uint8_t*>(&magic), sizeof(magic))) {
         OC_LOG_WARN("[CoreSettings] Failed to read magic, using defaults");
         return resetToDefaultsAndPersist(
             *this,
             midiSync,
+            sharedTrackEnabledMask,
+            sharedTrackActive,
             "[CoreSettings] Failed to persist defaults after read error"
         );
     }
@@ -46,6 +64,8 @@ FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync) {
         return resetToDefaultsAndPersist(
             *this,
             midiSync,
+            sharedTrackEnabledMask,
+            sharedTrackActive,
             "[CoreSettings] Failed to initialize storage with defaults"
         );
     }
@@ -56,17 +76,21 @@ FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync) {
         return resetToDefaultsAndPersist(
             *this,
             midiSync,
+            sharedTrackEnabledMask,
+            sharedTrackActive,
             "[CoreSettings] Failed to persist defaults after version read error"
         );
     }
 
-    if (version != StorageLayout::VERSION) {
+    if (version == 0 || version > StorageLayout::VERSION) {
         OC_LOG_WARN("[CoreSettings] Version mismatch ({} vs {}), resetting defaults",
                     version,
                     StorageLayout::VERSION);
         return resetToDefaultsAndPersist(
             *this,
             midiSync,
+            sharedTrackEnabledMask,
+            sharedTrackActive,
             "[CoreSettings] Failed to persist defaults after version mismatch"
         );
     }
@@ -76,19 +100,47 @@ FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync) {
         return resetToDefaultsAndPersist(
             *this,
             midiSync,
+            sharedTrackEnabledMask,
+            sharedTrackActive,
             "[CoreSettings] Failed to persist defaults after payload read error"
+        );
+    }
+
+    if (!core_settings::loadSharedTrackState(
+            backend_,
+            sharedTrackEnabledMask,
+            sharedTrackActive,
+            version
+        )) {
+        OC_LOG_WARN("[CoreSettings] Failed to read shared track state, using defaults");
+        return resetToDefaultsAndPersist(
+            *this,
+            midiSync,
+            sharedTrackEnabledMask,
+            sharedTrackActive,
+            "[CoreSettings] Failed to persist defaults after shared track state read error"
         );
     }
 
     return true;
 }
 
-FLASHMEM bool CoreSettings::saveAll(const MidiSyncState& midiSync) {
-    return saveAllStatus(midiSync) == PersistenceWriteStatus::OK;
+FLASHMEM bool CoreSettings::saveAll(const MidiSyncState& midiSync,
+                                    uint16_t sharedTrackEnabledMask,
+                                    uint8_t sharedTrackActive) {
+    return saveAllStatus(midiSync, sharedTrackEnabledMask, sharedTrackActive) ==
+           PersistenceWriteStatus::OK;
 }
 
-FLASHMEM PersistenceWriteStatus CoreSettings::saveAllStatus(const MidiSyncState& midiSync) {
-    const auto status = core_settings::saveAll(backend_, midiSync);
+FLASHMEM PersistenceWriteStatus CoreSettings::saveAllStatus(const MidiSyncState& midiSync,
+                                                            uint16_t sharedTrackEnabledMask,
+                                                            uint8_t sharedTrackActive) {
+    const auto status = core_settings::saveAll(
+        backend_,
+        midiSync,
+        sharedTrackEnabledMask,
+        sharedTrackActive
+    );
     if (status != PersistenceWriteStatus::OK) return status;
     OC_LOG_DEBUG("[CoreSettings] Saved all");
     return PersistenceWriteStatus::OK;
@@ -136,6 +188,31 @@ FLASHMEM PersistenceWriteStatus CoreSettings::saveMidiAutoLockClockCountStatus(u
                              1);
 }
 
+FLASHMEM bool CoreSettings::saveSharedTrackState(uint16_t enabledMask, uint8_t activeTrack) {
+    return saveSharedTrackStateStatus(enabledMask, activeTrack) == PersistenceWriteStatus::OK;
+}
+
+FLASHMEM PersistenceWriteStatus CoreSettings::saveSharedTrackStateStatus(uint16_t enabledMask,
+                                                                         uint8_t activeTrack) {
+    const uint16_t mask =
+        enabledMask == 0 ? StorageLayout::DEFAULT_SHARED_TRACK_ENABLED_MASK : enabledMask;
+    const auto maskStatus = writeExactStatus_(
+        StorageLayout::ADDR_SHARED_TRACK_ENABLED_MASK,
+        reinterpret_cast<const uint8_t*>(&mask),
+        sizeof(mask)
+    );
+    if (maskStatus != PersistenceWriteStatus::OK) return maskStatus;
+
+    const auto activeStatus = writeExactStatus_(
+        StorageLayout::ADDR_SHARED_TRACK_ACTIVE,
+        reinterpret_cast<const uint8_t*>(&activeTrack),
+        1
+    );
+    if (activeStatus != PersistenceWriteStatus::OK) return activeStatus;
+
+    return commitStatus();
+}
+
 FLASHMEM bool CoreSettings::saveDataManagerMacroShortcutLeft(uint8_t command) {
     return saveDataManagerMacroShortcutLeftStatus(command) == PersistenceWriteStatus::OK;
 }
@@ -166,6 +243,12 @@ FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutLeftStat
 
 FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutRightStatus(uint8_t command) {
     return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, command);
+}
+
+FLASHMEM PersistenceWriteStatus CoreSettings::saveDefaultDataManagerShortcutsStatus() {
+    const auto status = writeDefaultShortcutsStatus_();
+    if (status != PersistenceWriteStatus::OK) return status;
+    return commitStatus();
 }
 
 FLASHMEM bool CoreSettings::loadDataManagerShortcuts(uint8_t& macroLeft,
@@ -211,17 +294,9 @@ FLASHMEM PersistenceWriteStatus CoreSettings::writeExactStatus_(uint32_t address
     return core_settings::writeExactStatus(backend_, address, buffer, size);
 }
 
-FLASHMEM bool CoreSettings::saveDataManagerShortcut_(uint32_t address, uint8_t command) {
-    return writeExact_(address, reinterpret_cast<const uint8_t*>(&command), 1);
-}
-
 FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerShortcutStatus_(uint32_t address,
                                                                              uint8_t command) {
     return writeExactStatus_(address, reinterpret_cast<const uint8_t*>(&command), 1);
-}
-
-FLASHMEM bool CoreSettings::writeDefaultShortcuts_() {
-    return writeDefaultShortcutsStatus_() == PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus CoreSettings::writeDefaultShortcutsStatus_() {

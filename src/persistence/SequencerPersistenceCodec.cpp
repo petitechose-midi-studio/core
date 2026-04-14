@@ -104,10 +104,7 @@ FLASHMEM void fillWorkspacePayload(const state::sequencer::SequencerTrackBankSta
                                    const state::sequencer::SequencerState& active,
                                    WorkspacePayload& out) {
     const uint8_t activeTrack =
-        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrack.get());
-    out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-    out.activeTrack = activeTrack;
-    out.enabledMask = trackBank.enabledMask.get();
+        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active : trackBank.track(i);
@@ -122,15 +119,13 @@ FLASHMEM void fillWorkspacePayload(const state::sequencer::SequencerTrackBankSta
 FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
                                     state::sequencer::SequencerTrackBankState& trackBank,
                                     state::sequencer::SequencerState& active) {
+    uint16_t enabledMask = 0x0001;
+    uint8_t activeTrack = 0;
+    trackBank.captureSharedTrackState(enabledMask, activeTrack);
     trackBank.reset();
-    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x0001 : payload.enabledMask);
+    trackBank.syncSharedTrackState(enabledMask, activeTrack);
 
-    const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
-        payload.trackCount == 0 ? 1 : payload.trackCount,
-        state::sequencer::SequencerTrackBankState::TRACK_COUNT
-    ));
-
-    for (uint8_t i = 0; i < trackCount; ++i) {
+    for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         applyPatternPayload(payload.tracks[i].pattern, trackBank.track(i));
         const uint8_t focused =
             sanitizeFocusedStep(payload.tracks[i].focusedStep, trackBank.track(i).length.get());
@@ -144,8 +139,6 @@ FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
         );
     }
 
-    const uint8_t activeTrack =
-        std::min<uint8_t>(payload.activeTrack, static_cast<uint8_t>(trackCount - 1));
     applyPatternPayload(payload.tracks[activeTrack].pattern, active);
     const uint8_t focused =
         sanitizeFocusedStep(payload.tracks[activeTrack].focusedStep, active.length.get());
@@ -157,17 +150,16 @@ FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
     active.activeStepProperty.set(
         sanitizeStepProperty(payload.tracks[activeTrack].activeStepProperty)
     );
-    trackBank.activeTrack.set(activeTrack);
 }
 
 FLASHMEM void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
                              const state::sequencer::SequencerState& active,
                              SetPayload& out) {
     const uint8_t activeTrack =
-        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrack.get());
+        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
     out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     out.activeTrack = activeTrack;
-    out.enabledMask = trackBank.enabledMask.get();
+    out.enabledMask = trackBank.currentEnabledMask();
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active : trackBank.track(i);
@@ -179,7 +171,7 @@ FLASHMEM void applySetPayload(const SetPayload& payload,
                               state::sequencer::SequencerTrackBankState& trackBank,
                               state::sequencer::SequencerState& active) {
     trackBank.reset();
-    trackBank.enabledMask.set(payload.enabledMask == 0 ? 0x0001 : payload.enabledMask);
+    trackBank.syncSharedTrackState(payload.enabledMask, 0);
 
     const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
         payload.trackCount == 0 ? 1 : payload.trackCount,
@@ -193,7 +185,7 @@ FLASHMEM void applySetPayload(const SetPayload& payload,
     const uint8_t activeTrack =
         std::min<uint8_t>(payload.activeTrack, static_cast<uint8_t>(trackCount - 1));
     applyPatternPayload(payload.tracks[activeTrack], active);
-    trackBank.activeTrack.set(activeTrack);
+    trackBank.syncSharedTrackState(trackBank.currentEnabledMask(), activeTrack);
 }
 
 }  // namespace core::persistence::sequencer_codec

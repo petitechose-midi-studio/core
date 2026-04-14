@@ -129,30 +129,21 @@ struct MacroTrackData {
 /**
  * @brief Runtime state for macro tracks/pages
  *
- * Stores all track configurations and exposes a compatibility cache for the
- * currently active track/page to avoid broad UI churn.
+ * Stores all track configurations and maintains synchronized caches for the
+ * currently active track/page so UI code can stay read-only and direct.
  */
 struct MacroPagesState {
+private:
     using EnabledMaskSignal = oc::state::Signal<uint16_t, 16>;
     using TrackEnabledMaskSignal = oc::state::Signal<uint16_t, 16>;
+public:
+    static constexpr uint16_t DEFAULT_TRACK_ENABLED_MASK = 0x0001;
 
     /// Page selector overlay state
     PageSelectorState selector;
 
     /// All track data (persisted)
     std::array<MacroTrackData, TRACK_COUNT> tracks;
-
-    /// Currently active track index
-    uint8_t activeTrack = 0;
-
-    /// Compatibility mirror of the active page in the current track
-    uint8_t activePage = 0;
-
-    /// Compatibility mirror of enabled pages for the current track.
-    EnabledMaskSignal enabledMask{0x0001};
-
-    /// Runtime track enabled mask, aligned with the sequencer track model.
-    TrackEnabledMaskSignal trackEnabledMask{0x01};
 
     /// Quick access to active page's configs (updated on page switch)
     std::array<MacroConfig, MACRO_COUNT> activeConfigs;
@@ -161,35 +152,83 @@ struct MacroPagesState {
         initDefaults();
     }
 
+    static constexpr uint8_t clampTrackIndex(uint8_t index) {
+        return (index >= TRACK_COUNT) ? static_cast<uint8_t>(TRACK_COUNT - 1U) : index;
+    }
+
     /// Initialize all pages with defaults
     void initDefaults() {
         for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
             tracks[i].initDefaults(i);
         }
-        activeTrack = 0;
-        activePage = 0;
-        trackEnabledMask.set(0x0001);
+        active_track_ = 0;
+        active_page_ = 0;
+        track_enabled_mask_.set(DEFAULT_TRACK_ENABLED_MASK);
         syncActiveTrackCache();
         updateActiveConfigs();
     }
 
-    void setActiveTrack(uint8_t index) {
-        if (index >= TRACK_COUNT) return;
-        activeTrack = index;
+    void syncSharedTrackState(uint16_t enabledTrackMask, uint8_t trackIndex) {
+        const uint16_t sanitizedMask = sanitizeTrackEnabledMask(enabledTrackMask);
+        const uint8_t sanitizedTrack = sanitizeActiveTrack(sanitizedMask, trackIndex);
+
+        if (track_enabled_mask_.get() != sanitizedMask) {
+            track_enabled_mask_.set(sanitizedMask);
+        }
+
+        active_track_ = sanitizedTrack;
         syncActiveTrackCache();
         updateActiveConfigs();
+    }
+
+    void captureSharedTrackState(uint16_t& enabledTrackMaskOut, uint8_t& activeTrackOut) const {
+        enabledTrackMaskOut = track_enabled_mask_.get();
+        activeTrackOut = active_track_;
+    }
+
+    void restoreTracksPreservingSharedState(
+        const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks
+    ) {
+        uint16_t enabledTrackMaskOut = DEFAULT_TRACK_ENABLED_MASK;
+        uint8_t activeTrackOut = 0;
+        captureSharedTrackState(enabledTrackMaskOut, activeTrackOut);
+        initDefaults();
+        tracks = persistedTracks;
+        syncSharedTrackState(enabledTrackMaskOut, activeTrackOut);
+    }
+
+    void restoreTracksWithSharedState(
+        const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks,
+        uint16_t enabledTrackMaskIn,
+        uint8_t activeTrackIn
+    ) {
+        initDefaults();
+        tracks = persistedTracks;
+        syncSharedTrackState(enabledTrackMaskIn, activeTrackIn);
     }
 
     /// Switch to a different page
     void setActivePage(uint8_t index) {
         if (index >= PAGE_COUNT) return;
-        tracks[activeTrack].activePage = index;
-        activePage = index;
+        tracks[active_track_].activePage = index;
+        active_page_ = index;
+        active_page_index_.set(active_page_);
         updateActiveConfigs();
     }
 
-    MacroTrackData& activeTrackData() { return tracks[activeTrack]; }
-    const MacroTrackData& activeTrackData() const { return tracks[activeTrack]; }
+    uint8_t currentActiveTrack() const { return active_track_; }
+    uint8_t currentActivePage() const { return active_page_; }
+    uint16_t currentEnabledPageMask() const { return enabled_mask_.get(); }
+    uint16_t currentTrackEnabledMask() const { return track_enabled_mask_.get(); }
+    EnabledMaskSignal& enabledPageMaskSignal() { return enabled_mask_; }
+    const EnabledMaskSignal& enabledPageMaskSignal() const { return enabled_mask_; }
+    TrackEnabledMaskSignal& trackEnabledMaskSignal() { return track_enabled_mask_; }
+    const TrackEnabledMaskSignal& trackEnabledMaskSignal() const { return track_enabled_mask_; }
+    oc::state::Signal<uint8_t, 8>& activePageIndexSignal() { return active_page_index_; }
+    const oc::state::Signal<uint8_t, 8>& activePageIndexSignal() const { return active_page_index_; }
+
+    MacroTrackData& activeTrackData() { return tracks[active_track_]; }
+    const MacroTrackData& activeTrackData() const { return tracks[active_track_]; }
 
     /// Get active page data
     MacroPageData& activePageData() { return activeTrackData().activePageData(); }
@@ -232,20 +271,7 @@ struct MacroPagesState {
 
     bool isTrackEnabled(uint8_t index) const {
         if (index >= TRACK_COUNT) return false;
-        return (trackEnabledMask.get() & static_cast<uint16_t>(1U << index)) != 0;
-    }
-
-    void setTrackEnabled(uint8_t index, bool enabled) {
-        if (index >= TRACK_COUNT) return;
-        uint16_t mask = trackEnabledMask.get();
-        const uint16_t bit = static_cast<uint16_t>(1U << index);
-        if (enabled) mask |= bit;
-        else mask &= static_cast<uint16_t>(~bit);
-        trackEnabledMask.set(mask);
-    }
-
-    void toggleTrackEnabled(uint8_t index) {
-        setTrackEnabled(index, !isTrackEnabled(index));
+        return (track_enabled_mask_.get() & static_cast<uint16_t>(1U << index)) != 0;
     }
 
     /// Update activeConfigs from current page
@@ -259,8 +285,46 @@ struct MacroPagesState {
     }
 
     void syncActiveTrackCache() {
-        activePage = activeTrackData().activePage;
-        enabledMask.set(activeTrackData().enabledPageMask);
+        active_page_ = activeTrackData().activePage;
+        active_page_index_.set(active_page_);
+        enabled_mask_.set(activeTrackData().enabledPageMask);
+    }
+
+private:
+    /// Currently active track index.
+    uint8_t active_track_ = 0;
+
+    /// Cached active page for the current track.
+    uint8_t active_page_ = 0;
+    oc::state::Signal<uint8_t, 8> active_page_index_{0};
+
+    /// Cached enabled pages for the current track.
+    EnabledMaskSignal enabled_mask_{0x0001};
+
+    /// Runtime track enabled mask, aligned with the sequencer track model.
+    TrackEnabledMaskSignal track_enabled_mask_{0x01};
+
+    static uint16_t sanitizeTrackEnabledMask(uint16_t enabledTrackMask) {
+        const uint16_t availableMask =
+            static_cast<uint16_t>((1U << TRACK_COUNT) - 1U);
+        const uint16_t sanitized = static_cast<uint16_t>(enabledTrackMask & availableMask);
+        return sanitized == 0 ? DEFAULT_TRACK_ENABLED_MASK : sanitized;
+    }
+
+    static uint8_t firstEnabledTrack(uint16_t enabledTrackMask) {
+        for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
+            if ((enabledTrackMask & static_cast<uint16_t>(1U << i)) != 0) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    static uint8_t sanitizeActiveTrack(uint16_t enabledTrackMask, uint8_t trackIndex) {
+        const uint8_t clampedTrack = clampTrackIndex(trackIndex);
+        return (enabledTrackMask & static_cast<uint16_t>(1U << clampedTrack)) != 0
+            ? clampedTrack
+            : firstEnabledTrack(enabledTrackMask);
     }
 };
 

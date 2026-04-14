@@ -21,20 +21,21 @@ public:
 
     static constexpr uint32_t WORKSPACE_MAGIC = 0x4D57534B;  // "MWSK"
     static constexpr uint32_t LIBRARY_MAGIC = 0x4D4C4942;    // "MLIB"
-    static constexpr uint8_t DATA_VERSION = 1;
+    static constexpr uint8_t WORKSPACE_DATA_VERSION = 2;
+    static constexpr uint8_t LIBRARY_DATA_VERSION = 1;
 
     explicit MacroPersistence(oc::interface::IStorage& workspaceStorage,
                               oc::interface::IStorage& libraryStorage)
         : workspace_store_(workspaceStorage,
                            {.fileMagic = WORKSPACE_MAGIC,
-                            .domainVersion = DATA_VERSION,
+                            .domainVersion = WORKSPACE_DATA_VERSION,
                             .slotCount = WORKSPACE_SLOT_COUNT,
-                            .slotPayloadSize = PAYLOAD_SIZE})
+                            .slotPayloadSize = WORKSPACE_PAYLOAD_SIZE})
         , library_store_(libraryStorage,
                          {.fileMagic = LIBRARY_MAGIC,
-                          .domainVersion = DATA_VERSION,
+                          .domainVersion = LIBRARY_DATA_VERSION,
                           .slotCount = LIBRARY_SLOT_COUNT,
-                          .slotPayloadSize = PAYLOAD_SIZE}) {}
+                          .slotPayloadSize = LIBRARY_PAYLOAD_SIZE}) {}
 
     bool init() {
         return initStatus() == PersistenceWriteStatus::OK;
@@ -44,7 +45,7 @@ public:
         if (!workspace_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
         if (!library_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
 
-        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        std::array<uint8_t, WORKSPACE_PAYLOAD_SIZE> raw{};
         const auto latest = workspace_store_.loadLatest(raw.data(), raw.size());
         if (latest.status == SlotLoadStatus::OK) {
             next_workspace_counter_ = latest.metadata.saveCounter + 1;
@@ -59,15 +60,15 @@ public:
     }
 
     bool loadWorkspace(state::macro::MacroPagesState& pages) {
-        Payload snapshot{};
-        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        WorkspacePayload snapshot{};
+        std::array<uint8_t, WORKSPACE_PAYLOAD_SIZE> raw{};
         const auto latest = workspace_store_.loadLatest(raw.data(), raw.size());
         if (latest.status != SlotLoadStatus::OK) {
             return false;
         }
 
         std::memcpy(&snapshot, raw.data(), sizeof(snapshot));
-        applyPayload_(snapshot, pages);
+        applyWorkspacePayload_(snapshot, pages);
         next_workspace_counter_ = latest.metadata.saveCounter + 1;
         next_workspace_slot_ =
             static_cast<uint16_t>((latest.slotIndex + 1) % WORKSPACE_SLOT_COUNT);
@@ -80,9 +81,9 @@ public:
 
     PersistenceWriteStatus saveWorkspaceStatus(const state::macro::MacroPagesState& pages) {
         const uint32_t start_ms = oc::time::millis();
-        Payload snapshot{};
-        fillPayload_(pages, snapshot);
-        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        WorkspacePayload snapshot{};
+        fillWorkspacePayload_(pages, snapshot);
+        std::array<uint8_t, WORKSPACE_PAYLOAD_SIZE> raw{};
         std::memcpy(raw.data(), &snapshot, sizeof(snapshot));
 
         const auto status = workspace_store_.saveSlotStatus(
@@ -98,9 +99,13 @@ public:
             static_cast<uint16_t>((next_workspace_slot_ + 1) % WORKSPACE_SLOT_COUNT);
 
         const uint32_t elapsed_ms = oc::time::millis() - start_ms;
+#if defined(PERF_LOG)
         if (elapsed_ms >= 5) {
             OC_LOG_INFO("[Perf][MacroPersist] workspace save took {}ms", elapsed_ms);
         }
+#else
+        (void)elapsed_ms;
+#endif
         return PersistenceWriteStatus::OK;
     }
 
@@ -112,9 +117,9 @@ public:
                                                  const state::macro::MacroPagesState& pages) {
         if (slotIndex >= LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
-        Payload snapshot{};
-        fillPayload_(pages, snapshot);
-        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        LibraryPayload snapshot{};
+        fillLibraryPayload_(pages, snapshot);
+        std::array<uint8_t, LIBRARY_PAYLOAD_SIZE> raw{};
         std::memcpy(raw.data(), &snapshot, sizeof(snapshot));
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
@@ -129,8 +134,8 @@ public:
     SlotLoadStatus loadLibrarySlot(uint8_t slotIndex, state::macro::MacroPagesState& pages) {
         if (slotIndex >= LIBRARY_SLOT_COUNT) return SlotLoadStatus::OUT_OF_RANGE;
 
-        Payload snapshot{};
-        std::array<uint8_t, PAYLOAD_SIZE> raw{};
+        LibraryPayload snapshot{};
+        std::array<uint8_t, LIBRARY_PAYLOAD_SIZE> raw{};
         SlotMetadata metadata{};
         const SlotLoadStatus status =
             library_store_.loadSlot(slotIndex, raw.data(), raw.size(), &metadata);
@@ -143,7 +148,7 @@ public:
         }
 
         std::memcpy(&snapshot, raw.data(), sizeof(snapshot));
-        applyPayload_(snapshot, pages);
+        applyLibraryPayload_(snapshot, pages);
         return SlotLoadStatus::OK;
     }
 
@@ -158,7 +163,11 @@ public:
 
 private:
 #pragma pack(push, 1)
-    struct Payload {
+    struct WorkspacePayload {
+        std::array<state::macro::MacroTrackData, state::macro::TRACK_COUNT> tracks{};
+    };
+
+    struct LibraryPayload {
         uint8_t activeTrack = 0;
         uint8_t reserved0 = 0;
         uint16_t trackEnabledMask = 0x0001;
@@ -168,25 +177,34 @@ private:
 
     static_assert(std::is_trivially_copyable_v<state::macro::MacroTrackData>,
                   "MacroTrackData must remain trivially copyable");
-    static_assert(std::is_trivially_copyable_v<Payload>,
-                  "Macro persistence payload must remain trivially copyable");
-    static_assert(sizeof(Payload) == 14404, "Unexpected macro persistence payload size");
+    static_assert(std::is_trivially_copyable_v<WorkspacePayload>,
+                  "Macro workspace payload must remain trivially copyable");
+    static_assert(std::is_trivially_copyable_v<LibraryPayload>,
+                  "Macro library payload must remain trivially copyable");
+    static_assert(sizeof(LibraryPayload) == 14404, "Unexpected macro library payload size");
 
-    static constexpr uint16_t PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(Payload));
+    static constexpr uint16_t WORKSPACE_PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(WorkspacePayload));
+    static constexpr uint16_t LIBRARY_PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(LibraryPayload));
 
-    static void fillPayload_(const state::macro::MacroPagesState& source, Payload& out) {
-        out.activeTrack = source.activeTrack;
-        out.trackEnabledMask = source.trackEnabledMask.get();
+    static void fillWorkspacePayload_(const state::macro::MacroPagesState& source, WorkspacePayload& out) {
         out.tracks = source.tracks;
     }
 
-    static void applyPayload_(const Payload& payload, state::macro::MacroPagesState& target) {
-        target.initDefaults();
-        target.tracks = payload.tracks;
-        target.trackEnabledMask.set(payload.trackEnabledMask == 0 ? 0x0001 : payload.trackEnabledMask);
-        target.activeTrack = payload.activeTrack < state::macro::TRACK_COUNT ? payload.activeTrack : 0;
-        target.syncActiveTrackCache();
-        target.updateActiveConfigs();
+    static void fillLibraryPayload_(const state::macro::MacroPagesState& source, LibraryPayload& out) {
+        source.captureSharedTrackState(out.trackEnabledMask, out.activeTrack);
+        out.tracks = source.tracks;
+    }
+
+    static void applyWorkspacePayload_(const WorkspacePayload& payload, state::macro::MacroPagesState& target) {
+        target.restoreTracksPreservingSharedState(payload.tracks);
+    }
+
+    static void applyLibraryPayload_(const LibraryPayload& payload, state::macro::MacroPagesState& target) {
+        target.restoreTracksWithSharedState(
+            payload.tracks,
+            payload.trackEnabledMask,
+            payload.activeTrack
+        );
     }
 
     PersistenceSlotFileStore workspace_store_;

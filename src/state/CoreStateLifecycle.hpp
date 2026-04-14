@@ -9,6 +9,7 @@ struct CoreState;
 struct CoreStateLifecycle {
     static void update(CoreState& state);
     static void flush(CoreState& state);
+    static void flushAutoPersist(CoreState& state);
     static void factoryReset(CoreState& state);
     static void resetStandaloneTransientUi(CoreState& state);
 
@@ -20,7 +21,11 @@ struct CoreStateLifecycle {
 private:
     static void applyPendingSequencerApplyIfReady(CoreState& state);
     static void updateAutoPersist_(CoreState& state);
+    static void updatePendingMacroWorkspacePersist_(CoreState& state);
+    static void updatePendingSharedTrackPersist_(CoreState& state);
     static void flushAutoPersist_(CoreState& state);
+    static void flushPendingMacroWorkspacePersist_(CoreState& state);
+    static void flushPendingSharedTrackPersist_(CoreState& state);
     static void persistFactoryDefaults_(CoreState& state);
     static void resetMacroDomain_(CoreState& state);
     static void resetSequencerDomain_(CoreState& state);

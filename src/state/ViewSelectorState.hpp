@@ -2,7 +2,7 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "ui/ViewTypes.hpp"
+#include "app/ViewTypes.hpp"
 
 namespace core::state {
 

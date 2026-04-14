@@ -44,7 +44,7 @@ void configureState(core::state::macro::MacroPagesState& pages,
                     uint8_t cc,
                     float value) {
     pages.initDefaults();
-    pages.setActiveTrack(0);
+    pages.syncSharedTrackState(pages.currentTrackEnabledMask(), 0);
     pages.setActivePage(activePage);
     auto& page = pages.pageData(0, activePage);
     page.cc[0] = cc;
@@ -56,7 +56,7 @@ void assertStateEquals(const core::state::macro::MacroPagesState& pages,
                        uint8_t expectedPage,
                        uint8_t expectedCc,
                        float expectedValue) {
-    assert(pages.activeTrack == 0);
+    assert(pages.currentActiveTrack() == 0);
     assert(pages.activeTrackData().activePage == expectedPage);
     const auto& page = pages.pageData(0, expectedPage);
     assert(page.cc[0] == expectedCc);
