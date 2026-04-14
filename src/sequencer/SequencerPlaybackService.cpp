@@ -36,9 +36,9 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
                 *track_outputs_[i]
             );
     }
-    last_active_track_ = trackBank.activeTrack.get();
+    last_active_track_ = trackBank.activeTrackIndex();
     runtime_active_track_ = last_active_track_;
-    runtime_enabled_mask_ = trackBank.enabledMask.get();
+    runtime_enabled_mask_ = trackBank.currentEnabledMask();
     core::state::sequencer::SequencerTrackBankSnapshot snapshot;
     core::state::sequencer::captureTrackBankSnapshot(trackBank, sequencer, snapshot);
     syncRuntimeStates_(snapshot);
@@ -249,6 +249,11 @@ FLASHMEM void SequencerPlaybackService::recordProfilingWindow(uint32_t tick,
 }
 
 FLASHMEM void SequencerPlaybackService::maybeLogProfilingWindow(uint32_t nowMs) {
+#if !defined(PERF_LOG)
+    profiling_.resetWindow(nowMs);
+    return;
+#endif
+
     if (profiling_.window_start_ms == 0) {
         profiling_.resetWindow(nowMs);
         return;

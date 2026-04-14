@@ -6,7 +6,6 @@
 
 #include "config/PlatformCompat.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/sequencer/StepGridGeometryLogic.hpp"
 #include "ui/sequencer/StepGridRenderLogic.hpp"
 
 namespace theme = oc::ui::lvgl::base_theme;
@@ -16,37 +15,17 @@ namespace core::ui::sequencer::grid::widgets {
 
 namespace {
 
-constexpr lv_coord_t STEP_GUIDE_WIDTH = 1;
-constexpr uint8_t STEP_GUIDE_COUNT = 3;
 constexpr lv_coord_t STEP_SHAPE_RADIUS = 0;
 constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
 constexpr lv_coord_t STEP_SHAPE_MIN_WIDTH = grid::STEP_SHAPE_MIN_WIDTH;
 constexpr lv_coord_t STEP_SHAPE_MIN_HEIGHT = grid::STEP_SHAPE_MIN_HEIGHT;
 constexpr lv_coord_t STEP_MARKER_SIZE = 6;
-constexpr lv_coord_t STEP_SELECTION_DOT_SIZE = 6;
-constexpr uint32_t COLOR_STEP_PLAY_HEX = 0x5CA8EE;
-constexpr uint32_t COLOR_SELECTION_COPY_HEX = 0x59B7C9;
-constexpr uint32_t STEP_INDEX_COLOR = theme::color::INACTIVE_LIGHTER;
-constexpr lv_opa_t STEP_INDEX_OPA = LV_OPA_60;
-constexpr uint32_t STEP_GUIDE_COLOR = theme::color::INACTIVE_LIGHTER;
-constexpr lv_opa_t STEP_GUIDE_OPA = LV_OPA_50;
 constexpr uint32_t STEP_INLINE_NOTE_COLOR = theme::color::TEXT_PRIMARY;
 constexpr lv_opa_t STEP_INLINE_NOTE_OPA = LV_OPA_COVER;
 constexpr lv_coord_t HORIZONTAL_INSET = 2;
 constexpr lv_coord_t OVERLAY_SAFE_TOP = 2;
 constexpr lv_coord_t OVERLAY_SAFE_BOTTOM = 2;
 constexpr lv_coord_t GRID_INTERNAL_PAD = 2;
-
-void initStepGuide(lv_obj_t* guide) {
-    if (!guide) return;
-
-    lv_obj_clear_flag(guide, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(guide, STEP_GUIDE_WIDTH, 8);
-    lv_obj_set_style_radius(guide, 0, 0);
-    lv_obj_set_style_border_width(guide, 0, 0);
-    lv_obj_set_style_bg_color(guide, lv_color_hex(STEP_GUIDE_COLOR), 0);
-    lv_obj_set_style_bg_opa(guide, STEP_GUIDE_OPA, 0);
-}
 
 }  // namespace
 
@@ -99,14 +78,10 @@ FLASHMEM void createTile(uint8_t tileIndex,
                          lv_obj_t* noteLayer,
                          lv_obj_t*& tile,
                          lv_obj_t*& noteLabel,
-                         lv_obj_t*& stepIndexLabel,
                          lv_obj_t*& stepInlineIcon,
                          lv_obj_t*& stepButton,
                          lv_obj_t*& stepShape,
                          lv_obj_t*& stepMarker,
-                         lv_obj_t*& stepIndicator,
-                         lv_obj_t*& stepSelectionDot,
-                         std::array<lv_obj_t*, 3>& stepGuides,
                          lv_coord_t& inlineIconWidth,
                          lv_coord_t& inlineIconHeight,
                          lv_event_cb_t geometryEvent,
@@ -152,23 +127,6 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_set_style_bg_color(stepButton, lv_color_hex(theme::color::INACTIVE), 0);
     lv_obj_set_style_pad_all(stepButton, 0, 0);
     lv_obj_add_event_cb(stepButton, geometryEvent, LV_EVENT_SIZE_CHANGED, geometryUserData);
-    lv_obj_add_event_cb(stepButton, geometryEvent, LV_EVENT_LAYOUT_CHANGED, geometryUserData);
-
-    stepIndexLabel = lv_label_create(stepButton);
-    lv_label_set_text(stepIndexLabel, "");
-    lv_obj_set_width(stepIndexLabel, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_font(stepIndexLabel, fonts.inter_13_bold, 0);
-    lv_obj_set_style_text_color(stepIndexLabel, lv_color_hex(STEP_INDEX_COLOR), 0);
-    lv_obj_set_style_text_opa(stepIndexLabel, STEP_INDEX_OPA, 0);
-    lv_obj_set_style_pad_all(stepIndexLabel, 0, 0);
-    lv_obj_align(stepIndexLabel, LV_ALIGN_TOP_RIGHT, -4, 2);
-
-    for (uint8_t g = 0; g < STEP_GUIDE_COUNT; ++g) {
-        lv_obj_t* guide = lv_obj_create(stepButton);
-        stepGuides[g] = guide;
-        initStepGuide(guide);
-    }
-    positionStepGuides(stepButton, stepGuides);
 
     stepShape = lv_obj_create(noteLayer);
     lv_obj_remove_style_all(stepShape);
@@ -199,29 +157,6 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_set_style_bg_opa(stepMarker, LV_OPA_COVER, 0);
     lv_obj_add_flag(stepMarker, LV_OBJ_FLAG_HIDDEN);
 
-    stepIndicator = lv_obj_create(stepButton);
-    lv_obj_clear_flag(stepIndicator, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_width(stepIndicator, LV_PCT(100));
-    lv_obj_set_height(stepIndicator, grid::STEP_BAR_HEIGHT);
-    lv_obj_set_style_radius(stepIndicator, 0, 0);
-    lv_obj_set_style_border_width(stepIndicator, 0, 0);
-    lv_obj_set_style_bg_color(stepIndicator, lv_color_hex(COLOR_STEP_PLAY_HEX), 0);
-    lv_obj_set_style_bg_opa(stepIndicator, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(stepIndicator, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_align(stepIndicator, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-
-    stepSelectionDot = lv_obj_create(stepButton);
-    lv_obj_remove_style_all(stepSelectionDot);
-    lv_obj_clear_flag(stepSelectionDot, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(stepSelectionDot, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_set_size(stepSelectionDot, STEP_SELECTION_DOT_SIZE, STEP_SELECTION_DOT_SIZE);
-    lv_obj_set_style_radius(stepSelectionDot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(stepSelectionDot, 0, 0);
-    lv_obj_set_style_bg_color(stepSelectionDot, lv_color_hex(COLOR_SELECTION_COPY_HEX), 0);
-    lv_obj_set_style_bg_opa(stepSelectionDot, LV_OPA_TRANSP, 0);
-    lv_obj_center(stepSelectionDot);
-    lv_obj_add_flag(stepSelectionDot, LV_OBJ_FLAG_HIDDEN);
-
     noteLabel = lv_label_create(noteLayer);
     lv_label_set_text(noteLabel, "");
     lv_obj_add_flag(noteLabel, LV_OBJ_FLAG_IGNORE_LAYOUT);
@@ -249,28 +184,6 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_update_layout(stepInlineIcon);
     inlineIconWidth = lv_obj_get_width(stepInlineIcon);
     inlineIconHeight = lv_obj_get_height(stepInlineIcon);
-
-    for (auto* guide : stepGuides) {
-        if (guide) {
-            lv_obj_move_foreground(guide);
-        }
-    }
-}
-
-void positionStepGuides(lv_obj_t* button, const std::array<lv_obj_t*, 3>& guides) {
-    if (!button) return;
-
-    const lv_coord_t railWidth = grid::measureRailWidth(lv_obj_get_content_width(button));
-    const lv_coord_t buttonHeight = grid::measureButtonHeight(lv_obj_get_content_height(button));
-
-    for (uint8_t g = 0; g < STEP_GUIDE_COUNT; ++g) {
-        lv_obj_t* guide = guides[g];
-        if (!guide) continue;
-
-        const auto layout = grid::buildGuideLayout(g, railWidth, buttonHeight);
-        lv_obj_set_height(guide, layout.height);
-        lv_obj_align(guide, LV_ALIGN_TOP_LEFT, layout.x, layout.y);
-    }
 }
 
 }  // namespace core::ui::sequencer::grid::widgets

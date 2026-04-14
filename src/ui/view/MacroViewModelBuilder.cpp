@@ -1,9 +1,12 @@
 #include "ui/view/MacroViewModelBuilder.hpp"
 
 #include "config/Timing.hpp"
+#include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 
 namespace core::ui {
+
+namespace structure_slots = core::state::shared;
 
 namespace {
 
@@ -11,15 +14,24 @@ uint8_t globalChannelForPage(const core::state::macro::MacroPagesState& pages) {
     return pages.activeConfigs[0].channel;
 }
 
-uint8_t nextAddIndexAfterHighest(uint16_t enabledMask, uint8_t count) {
-    for (int index = static_cast<int>(count) - 1; index >= 0; --index) {
-        if ((enabledMask & static_cast<uint16_t>(1U << static_cast<uint8_t>(index))) == 0) {
-            continue;
-        }
-        const int next = index + 1;
-        return (next < count) ? static_cast<uint8_t>(next) : count;
+uint8_t previewGlobalChannelForView(const MacroViewModelSource& source) {
+    if (source.macroUi.quickControlsSelecting.get()) {
+        return source.macroUi.quickControlGlobalChannel.get();
     }
-    return 0;
+    return globalChannelForPage(source.pages);
+}
+
+uint8_t nextAddIndexOrCount(uint16_t enabledMask, uint8_t count) {
+    const int next = structure_slots::nextAddIndexAfterHighest(enabledMask, count);
+    return next >= 0 ? static_cast<uint8_t>(next) : count;
+}
+
+uint8_t clampTrackPreviewIndex(uint8_t index) {
+    return static_cast<uint8_t>(std::min<uint16_t>(index, core::state::macro::TRACK_COUNT - 1U));
+}
+
+uint8_t clampPagePreviewIndex(uint8_t index) {
+    return static_cast<uint8_t>(std::min<uint16_t>(index, core::state::macro::PAGE_COUNT - 1U));
 }
 
 }  // namespace
@@ -40,40 +52,51 @@ MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source)
         source.macroUi.structureSelection.scope.get() == core::state::StructureSelectionScope::PAGE;
     const bool previewAddSlot =
         !source.macroUi.structureSelection.active.get() && source.macroUi.previewAddSlot.get();
-
-    const uint8_t activeTrack = source.pages.activeTrack;
-    const uint8_t addTrackIndex = nextAddIndexAfterHighest(
-        source.pages.trackEnabledMask.get(),
+    const uint8_t activeTrack = source.sharedTrackActive.get();
+    const uint8_t addTrackIndex = nextAddIndexOrCount(
+        source.sharedTrackEnabledMask.get(),
         core::state::macro::TRACK_COUNT
     );
+    const uint8_t previewTrackIndex =
+        (previewAddSlot &&
+         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK &&
+         addTrackIndex < core::state::macro::TRACK_COUNT)
+            ? addTrackIndex
+            : clampTrackPreviewIndex(source.macroUi.previewTrackIndex.get());
     const bool previewTrackAddSlot =
         previewAddSlot &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK &&
         addTrackIndex < core::state::macro::TRACK_COUNT;
     const uint8_t displayTrack = selectingTrack
         ? source.macroUi.structureSelection.cursorIndex.get()
-        : (previewTrackAddSlot ? addTrackIndex : activeTrack);
+        : ((focusingTrack || previewTrackAddSlot) ? previewTrackIndex : activeTrack);
     const auto& displayTrackData = source.pages.tracks[displayTrack];
-    const uint8_t addPageIndex = nextAddIndexAfterHighest(
+    const uint8_t addPageIndex = nextAddIndexOrCount(
         displayTrackData.enabledPageMask,
         core::state::macro::PAGE_COUNT
     );
+    const uint8_t previewPageIndex =
+        (previewAddSlot &&
+         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
+         addPageIndex < core::state::macro::PAGE_COUNT)
+            ? addPageIndex
+            : clampPagePreviewIndex(source.macroUi.previewPageIndex.get());
     const bool previewPageAddSlot =
         previewAddSlot &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
         addPageIndex < core::state::macro::PAGE_COUNT;
     const uint8_t displayPage = selectingPage
         ? source.macroUi.structureSelection.cursorIndex.get()
-        : (previewPageAddSlot ? addPageIndex : displayTrackData.activePage);
+        : ((focusingPage || previewPageAddSlot) ? previewPageIndex : displayTrackData.activePage);
 
     props.activeTrack = activeTrack;
     props.previewTrack = displayTrack;
-    props.activePage = source.pages.activePage;
+    props.activePage = source.pages.currentActivePage();
     props.previewPage = displayPage;
     props.addPageIndex = addPageIndex;
     props.addTrackIndex = addTrackIndex;
     props.enabledMask = displayTrackData.enabledPageMask;
-    props.trackEnabledMask = source.pages.trackEnabledMask.get();
+    props.trackEnabledMask = source.sharedTrackEnabledMask.get();
     props.selectedPageMask =
         (source.macroUi.structureSelection.active.get() &&
          source.macroUi.structureSelection.scope.get() == core::state::StructureSelectionScope::PAGE)
@@ -102,12 +125,12 @@ TrackNavigationStripProps buildMacroTrackNavigationStripProps(const MacroViewMod
         source.macroUi.structureSelection.scope.get() == core::state::StructureSelectionScope::TRACK;
     const bool previewAddSlot =
         !source.macroUi.structureSelection.active.get() && source.macroUi.previewAddSlot.get();
-    const uint8_t addTrackIndex = nextAddIndexAfterHighest(
-        source.pages.trackEnabledMask.get(),
+    const uint8_t addTrackIndex = nextAddIndexOrCount(
+        source.sharedTrackEnabledMask.get(),
         core::state::macro::TRACK_COUNT
     );
 
-    props.activeTrack = source.pages.activeTrack;
+    props.activeTrack = source.sharedTrackActive.get();
     props.previewTrack =
         selectingTrack
             ? source.macroUi.structureSelection.cursorIndex.get()
@@ -115,9 +138,11 @@ TrackNavigationStripProps buildMacroTrackNavigationStripProps(const MacroViewMod
                 source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK &&
                 addTrackIndex < core::state::macro::TRACK_COUNT)
                    ? addTrackIndex
-                   : source.pages.activeTrack);
+                   : ((source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK)
+                          ? clampTrackPreviewIndex(source.macroUi.previewTrackIndex.get())
+                          : source.sharedTrackActive.get()));
     props.addTrackIndex = addTrackIndex;
-    props.enabledMask = source.pages.trackEnabledMask.get();
+    props.enabledMask = source.sharedTrackEnabledMask.get();
     props.selectedMask = selectingTrack ? source.macroUi.structureSelection.selectedMask.get() : 0;
     props.focusingTrack =
         !source.macroUi.structureSelection.active.get() &&
@@ -133,7 +158,7 @@ MacroBottomControlsProps buildMacroBottomControlsProps(const MacroViewModelSourc
     return {
         .selectingQuickControls = source.macroUi.quickControlsSelecting.get(),
         .focusedQuickControl = source.macroUi.focusedQuickControl.get(),
-        .globalChannel = globalChannelForPage(source.pages),
+        .globalChannel = previewGlobalChannelForView(source),
         .ccOffset = source.macroUi.ccOffset.get(),
     };
 }

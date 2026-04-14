@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 
 #include <lvgl.h>
 
@@ -78,6 +79,15 @@ private:
         lv_obj_t* content = nullptr;
         lv_obj_t* icon = nullptr;
         lv_obj_t* label = nullptr;
+        bool hold_geometry_initialized = false;
+        lv_coord_t indicator_long = -1;
+        bool indicator_fill_mode = false;
+        std::array<char, 8> hold_text{};
+        uint16_t hold_tenths = std::numeric_limits<uint16_t>::max();
+        lv_opa_t indicator_opa = LV_OPA_TRANSP;
+        const lv_font_t* label_font = nullptr;
+        uint32_t label_color = 0;
+        lv_opa_t label_opa = LV_OPA_TRANSP;
     };
 
     void createUI(lv_obj_t* parent);

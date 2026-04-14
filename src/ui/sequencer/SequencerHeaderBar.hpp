@@ -7,7 +7,6 @@
 
 #include <array>
 #include <cstdint>
-#include <memory>
 
 #include <lvgl.h>
 
@@ -15,7 +14,6 @@
 
 #include "state/sequencer/SequencerState.hpp"
 #include "state/StatusBarState.hpp"
-#include "ui/common/TrackHeaderRow.hpp"
 
 namespace core::ui {
 
@@ -42,6 +40,7 @@ struct SequencerHeaderBarProps {
     uint16_t pageSelectedMask = 0;
     std::array<uint8_t, TRACK_COUNT> trackActivity{};
     const char* leftText = "";
+    std::array<char, 12> badgeText{};
     bool dimmed = false;
 };
 
@@ -67,49 +66,67 @@ public:
 private:
     static constexpr uint8_t PAGE_COUNT = core::state::sequencer::SequencerState::PAGE_COUNT;
     static constexpr uint8_t STEPS_PER_PAGE = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    static constexpr lv_coord_t TOP_ROW_HEIGHT = 20;
-    static constexpr lv_coord_t STRIP_HEIGHT = 3;
-    static constexpr lv_coord_t ROW_GAP = 2;
+    static constexpr lv_coord_t HEADER_HEIGHT = 28;
+    static constexpr lv_coord_t STRIP_HEIGHT = 14;
     static constexpr lv_coord_t MARKER_WIDTH = 2;
 
     void createUI(lv_obj_t* parent);
+    static void onStripDrawEvent(lv_event_t* event);
     void renderTopRow(const SequencerHeaderBarProps& props);
     void renderStrip(const SequencerHeaderBarProps& props);
 
-    struct Segment {
-        lv_obj_t* container = nullptr;  // full width, disabled background
-        lv_obj_t* valid = nullptr;      // valid range baseline
-        lv_obj_t* progress = nullptr;   // progress fill (before playhead)
-        lv_obj_t* marker = nullptr;     // playhead marker (hidden when stopped)
-    };
-
-    struct SegmentRenderCache {
-        bool initialized = false;
-        lv_coord_t width = -1;
-        lv_coord_t validWidth = -1;
-        lv_coord_t progressWidth = -1;
-        bool markerVisible = false;
-        lv_coord_t markerX = -1;
-        uint32_t validColorHex = 0;
-        uint32_t progressColorHex = 0;
+    struct StripSegmentGeometry {
+        lv_coord_t x = 0;
+        lv_coord_t width = 0;
     };
 
     lv_obj_t* container_ = nullptr;
+    lv_obj_t* accent_ = nullptr;
+    lv_obj_t* label_ = nullptr;
+    lv_obj_t* badge_ = nullptr;
+    lv_obj_t* spacer_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
+    lv_obj_t* view_cursor_ = nullptr;
     lv_obj_t* strip_cursor_ = nullptr;
-    std::unique_ptr<TrackHeaderRow> top_row_;
+    std::array<StripSegmentGeometry, PAGE_COUNT> strip_segment_geometry_{};
 
-    std::array<Segment, PAGE_COUNT> segments_{};
-    std::array<SegmentRenderCache, PAGE_COUNT> segment_cache_{};
+    std::array<char, 16> left_text_cache_{};
+    std::array<char, 12> badge_text_cache_{};
+    bool surface_cache_initialized_ = false;
+    uint32_t accent_cache_color_ = 0;
+    lv_opa_t accent_cache_opa_ = LV_OPA_TRANSP;
+    uint32_t background_cache_color_ = 0;
+    lv_opa_t background_cache_opa_ = LV_OPA_TRANSP;
+    bool badge_cache_initialized_ = false;
+    uint32_t badge_bg_color_cache_ = 0;
+    lv_opa_t badge_bg_opa_cache_ = LV_OPA_TRANSP;
+    lv_coord_t badge_border_width_cache_ = -1;
+    uint32_t badge_border_color_cache_ = 0;
+    lv_opa_t badge_border_opa_cache_ = LV_OPA_TRANSP;
+    lv_opa_t badge_text_opa_cache_ = LV_OPA_TRANSP;
 
     bool strip_cache_initialized_ = false;
+    SequencerHeaderBarProps strip_draw_props_{};
     uint8_t strip_cached_length_ = 0;
+    uint8_t strip_cached_active_page_ = 0;
     uint8_t strip_cached_viewed_page_ = 0;
+    uint8_t strip_cached_preview_track_ = 0;
+    uint8_t strip_cached_add_page_index_ = PAGE_COUNT;
+    uint16_t strip_cached_enabled_mask_ = 0;
+    uint16_t strip_cached_page_selected_mask_ = 0;
+    bool strip_cached_preview_page_add_slot_ = false;
     int16_t strip_cached_playhead_ = -2;
     lv_coord_t strip_cached_width_ = -1;
     bool strip_cursor_visible_cache_ = false;
     lv_coord_t strip_cursor_x_cache_ = -1;
     lv_coord_t strip_cursor_width_cache_ = -1;
+    lv_coord_t strip_cursor_y_cache_ = -1;
+    lv_opa_t strip_cursor_opa_cache_ = LV_OPA_TRANSP;
+    bool view_cursor_visible_cache_ = false;
+    lv_coord_t view_cursor_x_cache_ = -1;
+    lv_coord_t view_cursor_y_cache_ = -1;
+    lv_coord_t view_cursor_width_cache_ = -1;
+    lv_coord_t view_cursor_height_cache_ = -1;
 };
 
 }  // namespace core::ui

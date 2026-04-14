@@ -8,7 +8,7 @@ namespace core::ui {
 
 namespace {
 
-constexpr lv_coord_t STRUCTURE_ROW_HEIGHT = 6;
+constexpr lv_coord_t STRUCTURE_ROW_HEIGHT = 12;
 
 }  // namespace
 

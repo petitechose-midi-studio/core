@@ -38,6 +38,80 @@ static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService> sequencerRuntime;
 
+#if defined(PERF_LOG)
+namespace {
+
+struct LoopPerfWindow {
+    uint32_t startedAtMs = 0;
+
+    uint32_t appUpdateCount = 0;
+    uint64_t appUpdateTotalUs = 0;
+    uint32_t appUpdateMaxUs = 0;
+
+    uint32_t stateUpdateCount = 0;
+    uint64_t stateUpdateTotalUs = 0;
+    uint32_t stateUpdateMaxUs = 0;
+
+    uint32_t lvglRefreshCount = 0;
+    uint64_t lvglRefreshTotalUs = 0;
+    uint32_t lvglRefreshMaxUs = 0;
+};
+
+LoopPerfWindow g_loopPerfWindow;
+
+void recordPerfSample(uint32_t& count, uint64_t& totalUs, uint32_t& maxUs, uint32_t sampleUs) {
+    ++count;
+    totalUs += sampleUs;
+    if (sampleUs > maxUs) {
+        maxUs = sampleUs;
+    }
+}
+
+void maybeLogLoopPerfWindow(uint32_t nowMs) {
+    auto& window = g_loopPerfWindow;
+    if (window.startedAtMs == 0) {
+        window.startedAtMs = nowMs;
+        return;
+    }
+
+    if ((nowMs - window.startedAtMs) < 1000) {
+        return;
+    }
+
+    const uint32_t appUpdateAvgUs =
+        (window.appUpdateCount > 0)
+            ? static_cast<uint32_t>(window.appUpdateTotalUs / window.appUpdateCount)
+            : 0;
+    const uint32_t stateUpdateAvgUs =
+        (window.stateUpdateCount > 0)
+            ? static_cast<uint32_t>(window.stateUpdateTotalUs / window.stateUpdateCount)
+            : 0;
+    const uint32_t lvglRefreshAvgUs =
+        (window.lvglRefreshCount > 0)
+            ? static_cast<uint32_t>(window.lvglRefreshTotalUs / window.lvglRefreshCount)
+            : 0;
+
+    OC_LOG_INFO(
+        "[Perf][MainLoop] appUpdates={} avgApp={}us maxApp={}us stateUpdates={} avgState={}us "
+        "maxState={}us lvglRefreshes={} avgLvgl={}us maxLvgl={}us",
+        window.appUpdateCount,
+        appUpdateAvgUs,
+        window.appUpdateMaxUs,
+        window.stateUpdateCount,
+        stateUpdateAvgUs,
+        window.stateUpdateMaxUs,
+        window.lvglRefreshCount,
+        lvglRefreshAvgUs,
+        window.lvglRefreshMaxUs
+    );
+
+    window = {};
+    window.startedAtMs = nowMs;
+}
+
+}  // namespace
+#endif
+
 // =============================================================================
 // Initialization Helpers
 // =============================================================================
@@ -203,16 +277,52 @@ void loop() {
     lastMicros = now;
 
     // Poll hardware and update active context
+#if defined(PERF_LOG)
+    const uint32_t appUpdateStartUs = micros();
+#endif
     app->update();
+#if defined(PERF_LOG)
+    recordPerfSample(
+        g_loopPerfWindow.appUpdateCount,
+        g_loopPerfWindow.appUpdateTotalUs,
+        g_loopPerfWindow.appUpdateMaxUs,
+        micros() - appUpdateStartUs
+    );
+#endif
 
     // Update persistence (handles delayed value saves)
+#if defined(PERF_LOG)
+    const uint32_t stateUpdateStartUs = micros();
+#endif
     coreState->update();
+#if defined(PERF_LOG)
+    recordPerfSample(
+        g_loopPerfWindow.stateUpdateCount,
+        g_loopPerfWindow.stateUpdateTotalUs,
+        g_loopPerfWindow.stateUpdateMaxUs,
+        micros() - stateUpdateStartUs
+    );
+#endif
 
     // Refresh LVGL at lower frequency to reduce CPU load
     lvglAccumulator += APP_PERIOD_US;
     if (lvglAccumulator >= LVGL_PERIOD_US) {
         lvglAccumulator = 0;
+#if defined(PERF_LOG)
+        const uint32_t lvglRefreshStartUs = micros();
+#endif
         lvgl->refresh();
+#if defined(PERF_LOG)
+        recordPerfSample(
+            g_loopPerfWindow.lvglRefreshCount,
+            g_loopPerfWindow.lvglRefreshTotalUs,
+            g_loopPerfWindow.lvglRefreshMaxUs,
+            micros() - lvglRefreshStartUs
+        );
+#endif
     }
 
+#if defined(PERF_LOG)
+    maybeLogLoopPerfWindow(millis());
+#endif
 }

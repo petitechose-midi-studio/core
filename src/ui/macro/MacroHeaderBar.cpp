@@ -80,9 +80,13 @@ void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     if (!container_ || !header_row_) return;
 
     const uint8_t displayTrack =
-        (props.selectingTrack || props.previewTrackAddSlot) ? props.previewTrack : props.activeTrack;
+        (props.selectingTrack || props.focusingTrack || props.previewTrackAddSlot)
+            ? props.previewTrack
+            : props.activeTrack;
     const uint8_t displayPage =
-        (props.selectingPage || props.previewPageAddSlot) ? props.previewPage : props.activePage;
+        (props.selectingPage || props.focusingPage || props.previewPageAddSlot)
+            ? props.previewPage
+            : props.activePage;
     const bool trackScope = props.selectingTrack || props.focusingTrack;
 
     TrackHeaderRowProps rowProps;

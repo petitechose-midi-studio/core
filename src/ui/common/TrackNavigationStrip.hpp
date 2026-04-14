@@ -37,12 +37,41 @@ public:
 
 private:
     void createUI(lv_obj_t* parent);
+    void refreshItemGeometryCache_();
+
+    struct ItemRenderCache {
+        bool initialized = false;
+        lv_coord_t width = -1;
+        uint32_t bgColor = 0;
+        lv_opa_t bgOpa = LV_OPA_TRANSP;
+        bool addVisible = false;
+        lv_coord_t outlineWidth = -1;
+        lv_opa_t outlineOpa = LV_OPA_TRANSP;
+    };
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* items_row_ = nullptr;
-    lv_obj_t* selection_cursor_ = nullptr;
+    lv_obj_t* active_cursor_ = nullptr;
+    lv_obj_t* current_cursor_ = nullptr;
     std::array<lv_obj_t*, TrackNavigationStripProps::TRACK_COUNT> items_{};
     std::array<lv_obj_t*, TrackNavigationStripProps::TRACK_COUNT> item_add_labels_{};
+    std::array<ItemRenderCache, TrackNavigationStripProps::TRACK_COUNT> item_cache_{};
+    bool item_geometry_cache_initialized_ = false;
+    lv_coord_t cached_row_width_ = -1;
+    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_x_cache_{};
+    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_y_cache_{};
+    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_width_cache_{};
+    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_height_cache_{};
+    bool active_cursor_visible_cache_ = false;
+    lv_coord_t active_cursor_x_cache_ = -1;
+    lv_coord_t active_cursor_y_cache_ = -1;
+    lv_coord_t active_cursor_width_cache_ = -1;
+    bool current_cursor_visible_cache_ = false;
+    lv_coord_t current_cursor_x_cache_ = -1;
+    lv_coord_t current_cursor_y_cache_ = -1;
+    lv_coord_t current_cursor_width_cache_ = -1;
+    lv_coord_t current_cursor_height_cache_ = -1;
+    lv_opa_t current_cursor_opa_cache_ = LV_OPA_TRANSP;
 };
 
 }  // namespace core::ui

@@ -22,7 +22,6 @@ FLASHMEM SequencerView::~SequencerView() {
 
     step_grid_.reset();
     bottom_action_strip_.reset();
-    track_strip_.reset();
     property_strip_.reset();
     bottom_controls_.reset();
     left_action_strip_.reset();
@@ -32,7 +31,6 @@ FLASHMEM SequencerView::~SequencerView() {
     body_container_ = nullptr;
     interaction_container_ = nullptr;
     center_column_ = nullptr;
-    structure_row_container_ = nullptr;
 }
 
 FLASHMEM void SequencerView::onActivate() {
@@ -99,10 +97,6 @@ FLASHMEM void SequencerView::createActionStrips() {
     frame_->createCenterColumn();
     center_column_ = frame_->centerColumn();
 
-    frame_->createStructureRow();
-    structure_row_container_ = frame_->structureRow();
-    track_strip_ = std::make_unique<TrackNavigationStrip>(structure_row_container_);
-
     bottom_action_strip_ = std::make_unique<ContextActionStrip>(
         body_container_,
         ContextActionStripOrientation::HORIZONTAL
@@ -142,62 +136,33 @@ FLASHMEM void SequencerView::bindHeaderState() {
         [this]() {
             requestHeaderTopRender();
         },
-        state_refs_.tracks.activeTrack,
-        state_refs_.tracks.enabledMask,
+        state_refs_.sharedTrackActive,
+        state_refs_.sharedTrackEnabledMask,
         state_refs_.structureNavigationFocus,
         state_refs_.structureClipboard.revision,
         state_refs_.sequencer.structureUi.previewAddSlot,
+        state_refs_.sequencer.structureUi.previewTrackIndex,
+        state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.structureUi.selection.active,
         state_refs_.sequencer.structureUi.selection.scope,
         state_refs_.sequencer.structureUi.selection.cursorIndex,
         state_refs_.sequencer.structureUi.selection.selectedMask
-    );
-    watcher_.watchAll(
-        [this]() {
-            requestTrackStripRender();
-        },
-        state_refs_.tracks.activeTrack,
-        state_refs_.tracks.enabledMask,
-        state_refs_.structureNavigationFocus,
-        state_refs_.sequencer.structureUi.previewAddSlot,
-        state_refs_.sequencer.structureUi.selection.active,
-        state_refs_.sequencer.structureUi.selection.scope,
-        state_refs_.sequencer.structureUi.selection.cursorIndex,
-        state_refs_.sequencer.structureUi.selection.selectedMask,
-        state_refs_.statusBar.trackNoteActivity[0],
-        state_refs_.statusBar.trackNoteActivity[1],
-        state_refs_.statusBar.trackNoteActivity[2],
-        state_refs_.statusBar.trackNoteActivity[3],
-        state_refs_.statusBar.trackNoteActivity[4],
-        state_refs_.statusBar.trackNoteActivity[5],
-        state_refs_.statusBar.trackNoteActivity[6],
-        state_refs_.statusBar.trackNoteActivity[7]
-    );
-    watcher_.watchAll(
-        [this]() {
-            requestTrackStripRender();
-        },
-        state_refs_.statusBar.trackNoteActivity[8],
-        state_refs_.statusBar.trackNoteActivity[9],
-        state_refs_.statusBar.trackNoteActivity[10],
-        state_refs_.statusBar.trackNoteActivity[11],
-        state_refs_.statusBar.trackNoteActivity[12],
-        state_refs_.statusBar.trackNoteActivity[13],
-        state_refs_.statusBar.trackNoteActivity[14],
-        state_refs_.statusBar.trackNoteActivity[15]
     );
 }
 
 FLASHMEM void SequencerView::bindHeaderStripState() {
     watcher_.watchAll(
         [this]() {
-            requestHeaderTopRender();
             requestHeaderStripRender();
         },
+        state_refs_.sharedTrackActive,
+        state_refs_.sharedTrackEnabledMask,
         state_refs_.sequencer.length,
         state_refs_.sequencer.page,
         state_refs_.structureNavigationFocus,
         state_refs_.sequencer.structureUi.previewAddSlot,
+        state_refs_.sequencer.structureUi.previewTrackIndex,
+        state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.playheadStep,
         state_refs_.sequencer.structureUi.selection.active,
         state_refs_.sequencer.structureUi.selection.scope,
@@ -360,10 +325,6 @@ FLASHMEM void SequencerView::requestBottomControlsRender() {
     requestRender(bottom_controls_dirty_);
 }
 
-FLASHMEM void SequencerView::requestTrackStripRender() {
-    requestRender(track_strip_dirty_);
-}
-
 FLASHMEM void SequencerView::requestPropertyStripRender() {
     requestRender(property_strip_dirty_);
 }
@@ -383,7 +344,6 @@ FLASHMEM void SequencerView::requestGridRender() {
 FLASHMEM void SequencerView::markAllDirty() {
     header_top_dirty_ = true;
     header_strip_dirty_ = true;
-    track_strip_dirty_ = true;
     bottom_controls_dirty_ = true;
     property_strip_dirty_ = true;
     left_action_strip_dirty_ = true;
@@ -415,14 +375,13 @@ FLASHMEM void SequencerView::render() {
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN) || hasBlockingOverlay()) return;
 
     const bool needsBottomControls = bottom_controls_dirty_ && bottom_controls_;
-    const bool needsTrackStrip = track_strip_dirty_ && track_strip_;
     const bool needsPropertyStrip = property_strip_dirty_ && property_strip_;
     const bool needsLeftActionStrip = left_action_strip_dirty_ && left_action_strip_;
     const bool needsBottomActionStrip = bottom_action_strip_dirty_ && bottom_action_strip_;
     const bool needsHeaderTop = header_top_dirty_ && header_bar_;
     const bool needsHeaderStrip = header_strip_dirty_ && header_bar_;
     const bool needsGrid = grid_dirty_ && step_grid_;
-    if (!needsBottomControls && !needsTrackStrip && !needsPropertyStrip && !needsLeftActionStrip &&
+    if (!needsBottomControls && !needsPropertyStrip && !needsLeftActionStrip &&
         !needsBottomActionStrip && !needsHeaderTop &&
         !needsHeaderStrip && !needsGrid) {
         return;
@@ -445,11 +404,6 @@ FLASHMEM void SequencerView::render() {
         bottom_controls_dirty_ = false;
     }
 
-    if (needsTrackStrip) {
-        track_strip_->render(sequencer::buildTrackNavigationStripProps(source));
-        track_strip_dirty_ = false;
-    }
-
     if (needsPropertyStrip) {
         property_strip_->render(sequencer::buildStepPropertyStripProps(source));
         property_strip_dirty_ = false;
@@ -468,7 +422,8 @@ FLASHMEM void SequencerView::render() {
     }
 
     if (needsGrid) {
-        step_grid_->render(sequencer::buildStepGridProps(source));
+        const auto gridProps = sequencer::buildStepGridProps(source);
+        step_grid_->render(gridProps);
         grid_dirty_ = false;
     }
 }
@@ -478,6 +433,8 @@ FLASHMEM sequencer::SequencerViewModelSource SequencerView::modelSource() const 
         .sequencer = state_refs_.sequencer,
         .tracks = state_refs_.tracks,
         .navigationFocus = state_refs_.structureNavigationFocus,
+        .sharedTrackActive = state_refs_.sharedTrackActive,
+        .sharedTrackEnabledMask = state_refs_.sharedTrackEnabledMask,
         .structureClipboard = state_refs_.structureClipboard,
         .statusBar = state_refs_.statusBar,
     };

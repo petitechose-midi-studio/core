@@ -22,6 +22,8 @@ struct SequencerViewModelSource {
     const oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+    const oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+    const oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
     const core::state::StructureClipboardState& structureClipboard;
     const core::state::StatusBarState& statusBar;
 };

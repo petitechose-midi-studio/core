@@ -7,9 +7,9 @@
 #include <oc/type/TextFormat.hpp>
 
 #include <config/PlatformCompat.hpp>
+#include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/sequencer/StepGridGeometryLogic.hpp"
-#include "ui/sequencer/StepGridLabelLogic.hpp"
 #include "ui/sequencer/StepGridLabelRenderer.hpp"
 #include "ui/sequencer/StepGridRenderLogic.hpp"
 #include "ui/sequencer/StepGridRenderPlanner.hpp"
@@ -17,7 +17,6 @@
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace theme = oc::ui::lvgl::base_theme;
-namespace style = oc::ui::lvgl::style;
 namespace grid = core::ui::sequencer::grid;
 
 namespace core::ui {
@@ -47,6 +46,13 @@ constexpr uint32_t COLOR_SELECTION_COPY_HEX = 0x59B7C9;
 constexpr uint32_t COLOR_SELECTION_PASTE_HEX = 0x79C96B;
 constexpr lv_opa_t STEP_SELECTION_RANGE_OPA = LV_OPA_50;
 constexpr lv_opa_t STEP_SELECTION_CURSOR_OPA = LV_OPA_COVER;
+constexpr uint32_t STEP_GUIDE_COLOR = theme::color::INACTIVE_LIGHTER;
+constexpr lv_opa_t STEP_GUIDE_OPA = LV_OPA_50;
+constexpr lv_coord_t STEP_GUIDE_WIDTH = 1;
+constexpr uint8_t STEP_GUIDE_COUNT = 3;
+constexpr lv_coord_t STEP_SELECTION_DOT_SIZE = 6;
+constexpr lv_coord_t STEP_INDEX_RIGHT_PAD = 4;
+constexpr lv_coord_t STEP_INDEX_TOP_PAD = 2;
 
 bool stepInSelectionRange(uint8_t absoluteStep, const grid::RangeSelectionSnapshot& selection) {
     return selection.sourceRangeVisible &&
@@ -97,19 +103,24 @@ FLASHMEM void StepGrid::createTiles() {
             note_layer_,
             tiles_[i],
             note_labels_[i],
-            step_index_labels_[i],
             step_inline_icons_[i],
             step_buttons_[i],
             step_shapes_[i],
             step_markers_[i],
-            step_indicators_[i],
-            step_selection_dots_[i],
-            step_guides_[i],
             geometry_.inlineIconWidth[i],
             geometry_.inlineIconHeight[i],
             onGeometryChangedEvent,
             this
         );
+        tile_button_draw_contexts_[i] = TileButtonDrawContext{.grid = this, .tileIndex = i};
+        if (step_buttons_[i]) {
+            lv_obj_add_event_cb(
+                step_buttons_[i],
+                onTileButtonDrawEvent,
+                LV_EVENT_DRAW_MAIN,
+                &tile_button_draw_contexts_[i]
+            );
+        }
     }
 }
 
@@ -132,7 +143,17 @@ void StepGrid::markGeometryDirty() {
 void StepGrid::refreshStaticGeometry() {
     if (!note_layer_ || !container_) return;
 
-    lv_obj_update_layout(container_);
+    const lv_coord_t containerWidth = lv_obj_get_width(container_);
+    const lv_coord_t containerHeight = lv_obj_get_height(container_);
+    const lv_coord_t noteLayerWidth = lv_obj_get_width(note_layer_);
+    const lv_coord_t noteLayerHeight = lv_obj_get_height(note_layer_);
+    if (!geometry_.initialized ||
+        geometry_.containerWidth != containerWidth ||
+        geometry_.containerHeight != containerHeight ||
+        geometry_.noteLayerWidth != noteLayerWidth ||
+        geometry_.noteLayerHeight != noteLayerHeight) {
+        lv_obj_update_layout(container_);
+    }
 
     lv_area_t noteLayerArea{};
     lv_obj_get_coords(note_layer_, &noteLayerArea);
@@ -155,21 +176,14 @@ void StepGrid::refreshStaticGeometry() {
         this->geometry_.noteBaseX[i] = geometry.noteBaseX;
         this->geometry_.noteBaseY[i] = geometry.noteBaseY;
         this->geometry_.noteLabelBaselineY[i] = geometry.noteLabelBaselineY;
-
-        grid::widgets::positionStepGuides(button, step_guides_[i]);
     }
 
+    geometry_.initialized = true;
+    geometry_.containerWidth = lv_obj_get_width(container_);
+    geometry_.containerHeight = lv_obj_get_height(container_);
+    geometry_.noteLayerWidth = lv_obj_get_width(note_layer_);
+    geometry_.noteLayerHeight = lv_obj_get_height(note_layer_);
     geometry_.dirty = false;
-}
-
-void StepGrid::renderTileGuides(uint8_t tileIndex, bool inPattern, const TileRenderDiff& diff) {
-    auto& cache = render_cache_.tiles[tileIndex];
-    for (auto* guide : step_guides_[tileIndex]) {
-        if (!guide) continue;
-        if (!diff.inPatternChanged && cache.initialized) continue;
-        if (inPattern) lv_obj_clear_flag(guide, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(guide, LV_OBJ_FLAG_HIDDEN);
-    }
 }
 
 void StepGrid::renderTileIndex(uint8_t tileIndex,
@@ -180,8 +194,6 @@ void StepGrid::renderTileIndex(uint8_t tileIndex,
     }
 
     auto& cache = render_cache_.tiles[tileIndex];
-    lv_obj_t* label = step_index_labels_[tileIndex];
-    if (!label) return;
 
     char text[4];
     oc::type::text::formatUnsigned(text, sizeof(text), static_cast<unsigned>(state.absoluteStep) + 1U);
@@ -189,7 +201,6 @@ void StepGrid::renderTileIndex(uint8_t tileIndex,
         return;
     }
 
-    lv_label_set_text(label, text);
     std::strncpy(cache.stepIndexText, text, sizeof(cache.stepIndexText) - 1);
     cache.stepIndexText[sizeof(cache.stepIndexText) - 1] = '\0';
 }
@@ -273,23 +284,10 @@ void StepGrid::renderTileMarker(uint8_t tileIndex,
 
 void StepGrid::renderTileBar(uint8_t tileIndex, bool visible) {
     auto& cache = render_cache_.tiles[tileIndex];
-    lv_obj_t* indicator = step_indicators_[tileIndex];
-    if (!indicator) return;
-
     const lv_opa_t nextOpa = visible ? STEP_BAR_ACTIVE_OPA : LV_OPA_TRANSP;
-
-    if (visible) {
-        if (!cache.indicatorVisible) {
-            lv_obj_clear_flag(indicator, LV_OBJ_FLAG_HIDDEN);
-            cache.indicatorVisible = true;
-        }
-    } else if (cache.indicatorVisible) {
-        lv_obj_add_flag(indicator, LV_OBJ_FLAG_HIDDEN);
-        cache.indicatorVisible = false;
-    }
+    cache.indicatorVisible = visible;
 
     if (cache.indicatorOpa != nextOpa) {
-        lv_obj_set_style_bg_opa(indicator, nextOpa, 0);
         cache.indicatorOpa = nextOpa;
     }
 }
@@ -298,8 +296,6 @@ void StepGrid::renderTileSelection(uint8_t tileIndex,
                                    uint8_t absoluteStep,
                                    const sequencer::grid::RangeSelectionSnapshot& selection) {
     auto& cache = render_cache_.tiles[tileIndex];
-    lv_obj_t* selectionDot = step_selection_dots_[tileIndex];
-    if (!selectionDot) return;
 
     const bool rangeVisible = selection.active && stepInSelectionRange(absoluteStep, selection);
     const bool cursorVisible = selection.active && absoluteStep == selection.cursorStep;
@@ -317,24 +313,110 @@ void StepGrid::renderTileSelection(uint8_t tileIndex,
         dotColor = COLOR_SELECTION_PASTE_HEX;
     }
 
-    if (dotVisible) {
-        if (!cache.selectionDotVisible) {
-            lv_obj_clear_flag(selectionDot, LV_OBJ_FLAG_HIDDEN);
-            cache.selectionDotVisible = true;
-        }
-    } else if (cache.selectionDotVisible) {
-        lv_obj_add_flag(selectionDot, LV_OBJ_FLAG_HIDDEN);
-        cache.selectionDotVisible = false;
-    }
+    cache.selectionDotVisible = dotVisible;
 
     const lv_opa_t dotOpa = cursorVisible ? STEP_SELECTION_CURSOR_OPA : STEP_SELECTION_RANGE_OPA;
-    if (cache.selectionDotColor != dotColor) {
-        lv_obj_set_style_bg_color(selectionDot, lv_color_hex(dotColor), 0);
-        cache.selectionDotColor = dotColor;
+    cache.selectionDotColor = dotColor;
+    cache.selectionDotOpa = dotOpa;
+}
+
+void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
+    auto* context = static_cast<TileButtonDrawContext*>(lv_event_get_user_data(event));
+    if (!context || !context->grid) return;
+
+    StepGrid* self = context->grid;
+    const uint8_t tileIndex = context->tileIndex;
+    if (tileIndex >= self->step_buttons_.size()) return;
+
+    lv_obj_t* button = lv_event_get_target_obj(event);
+    if (!button) return;
+
+    lv_layer_t* layer = lv_event_get_layer(event);
+    if (!layer) return;
+
+    const auto& cache = self->render_cache_.tiles[tileIndex];
+    if (!cache.initialized) return;
+
+    lv_area_t buttonArea{};
+    lv_obj_get_coords(button, &buttonArea);
+    const lv_coord_t contentWidth = lv_obj_get_content_width(button);
+    const lv_coord_t contentHeight = lv_obj_get_content_height(button);
+    const lv_coord_t railWidth = grid::measureRailWidth(contentWidth);
+    const lv_coord_t buttonHeight = grid::measureButtonHeight(contentHeight);
+
+    if (cache.inPattern) {
+        lv_draw_rect_dsc_t guideDsc;
+        lv_draw_rect_dsc_init(&guideDsc);
+        guideDsc.bg_color = lv_color_hex(STEP_GUIDE_COLOR);
+        guideDsc.bg_opa = STEP_GUIDE_OPA;
+        guideDsc.radius = 0;
+        guideDsc.border_width = 0;
+
+        for (uint8_t g = 0; g < STEP_GUIDE_COUNT; ++g) {
+            const auto layout = grid::buildGuideLayout(g, railWidth, buttonHeight);
+            const lv_area_t guideArea{
+                .x1 = static_cast<lv_coord_t>(buttonArea.x1 + layout.x),
+                .y1 = static_cast<lv_coord_t>(buttonArea.y1 + layout.y),
+                .x2 = static_cast<lv_coord_t>(buttonArea.x1 + layout.x + STEP_GUIDE_WIDTH - 1),
+                .y2 = static_cast<lv_coord_t>(buttonArea.y1 + layout.y + layout.height - 1),
+            };
+            lv_draw_rect(layer, &guideDsc, &guideArea);
+        }
     }
-    if (cache.selectionDotOpa != dotOpa) {
-        lv_obj_set_style_bg_opa(selectionDot, dotOpa, 0);
-        cache.selectionDotOpa = dotOpa;
+
+    if (cache.indicatorVisible && cache.indicatorOpa != LV_OPA_TRANSP) {
+        lv_draw_rect_dsc_t indicatorDsc;
+        lv_draw_rect_dsc_init(&indicatorDsc);
+        indicatorDsc.bg_color = lv_color_hex(COLOR_STEP_PLAY_HEX);
+        indicatorDsc.bg_opa = cache.indicatorOpa;
+        indicatorDsc.radius = 0;
+        indicatorDsc.border_width = 0;
+        const lv_area_t indicatorArea{
+            .x1 = buttonArea.x1,
+            .y1 = static_cast<lv_coord_t>(buttonArea.y2 - STEP_BAR_HEIGHT + 1),
+            .x2 = buttonArea.x2,
+            .y2 = buttonArea.y2,
+        };
+        lv_draw_rect(layer, &indicatorDsc, &indicatorArea);
+    }
+
+    if (cache.selectionDotVisible && cache.selectionDotOpa != LV_OPA_TRANSP) {
+        lv_draw_rect_dsc_t dotDsc;
+        lv_draw_rect_dsc_init(&dotDsc);
+        dotDsc.bg_color = lv_color_hex(cache.selectionDotColor);
+        dotDsc.bg_opa = cache.selectionDotOpa;
+        dotDsc.radius = LV_RADIUS_CIRCLE;
+        dotDsc.border_width = 0;
+
+        const lv_coord_t dotX = static_cast<lv_coord_t>(
+            buttonArea.x1 + ((lv_area_get_width(&buttonArea) - STEP_SELECTION_DOT_SIZE) / 2)
+        );
+        const lv_coord_t dotY = static_cast<lv_coord_t>(
+            buttonArea.y1 + ((lv_area_get_height(&buttonArea) - STEP_SELECTION_DOT_SIZE) / 2)
+        );
+        const lv_area_t dotArea{
+            .x1 = dotX,
+            .y1 = dotY,
+            .x2 = static_cast<lv_coord_t>(dotX + STEP_SELECTION_DOT_SIZE - 1),
+            .y2 = static_cast<lv_coord_t>(dotY + STEP_SELECTION_DOT_SIZE - 1),
+        };
+        lv_draw_rect(layer, &dotDsc, &dotArea);
+    }
+
+    if (cache.stepIndexText[0] != '\0') {
+        lv_draw_label_dsc_t labelDsc;
+        lv_draw_label_dsc_init(&labelDsc);
+        labelDsc.text = cache.stepIndexText;
+        labelDsc.font = fonts.inter_13_bold;
+        labelDsc.color = lv_color_hex(STEP_INDEX_COLOR);
+        labelDsc.opa = STEP_INDEX_OPA;
+        labelDsc.align = LV_TEXT_ALIGN_RIGHT;
+
+        lv_area_t labelArea = buttonArea;
+        labelArea.x1 = buttonArea.x1;
+        labelArea.x2 = static_cast<lv_coord_t>(buttonArea.x2 - STEP_INDEX_RIGHT_PAD);
+        labelArea.y1 = static_cast<lv_coord_t>(buttonArea.y1 + STEP_INDEX_TOP_PAD);
+        lv_draw_label(layer, &labelDsc, &labelArea);
     }
 }
 
@@ -373,6 +455,8 @@ void StepGrid::renderTile(
         diff.nudgeChanged ||
         diff.probabilityCycleActiveChanged;
     const lv_coord_t noteLabelY = geometry_.noteLabelBaselineY[tileIndex];
+    bool buttonOverlayDirty = !cache.initialized || diff.absoluteStepChanged || selectionChanged ||
+                              diff.inPatternChanged || diff.barChanged;
 
     if (!diff.dataChanged && !diff.barChanged && !propertyVisualChanged && !tileFeedbackChanged &&
         !selectionChanged) {
@@ -403,8 +487,6 @@ void StepGrid::renderTile(
             state.enabled
                 ? (probabilityMasked ? STEP_PROBABILITY_MASKED_OPA : LV_OPA_COVER)
                 : STEP_TEXT_DISABLED_OPA;
-
-        renderTileGuides(tileIndex, state.inPattern, diff);
 
         if (step_shapes_[tileIndex]) {
             if (!state.inPattern) {
@@ -464,6 +546,10 @@ void StepGrid::renderTile(
     cache.probability = state.probability;
     cache.gate = state.gate;
     cache.nudge = state.nudge;
+
+    if (buttonOverlayDirty && step_buttons_[tileIndex]) {
+        lv_obj_invalidate(step_buttons_[tileIndex]);
+    }
 }
 
 void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {

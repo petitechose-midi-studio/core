@@ -47,7 +47,7 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
     );
     oc::type::text::terminate(data.title.data(), data.title.size(), titlePos);
 
-    const unsigned page1 = static_cast<unsigned>(source.pages.activePage) + 1U;
+    const unsigned page1 = static_cast<unsigned>(source.pages.currentActivePage()) + 1U;
     size_t metaPos = oc::type::text::appendString(data.meta.data(), data.meta.size(), 0, "PAGE ");
     metaPos = oc::type::text::appendUnsigned(data.meta.data(), data.meta.size(), metaPos, page1);
     oc::type::text::terminate(data.meta.data(), data.meta.size(), metaPos);
@@ -64,7 +64,7 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
         (static_cast<uint32_t>(macroIndex) << 24) |
         (static_cast<uint32_t>(channel0) << 16) |
         (static_cast<uint32_t>(cc) << 8) |
-        (static_cast<uint32_t>(source.pages.activePage & 0x0F) << 4) |
+        (static_cast<uint32_t>(source.pages.currentActivePage() & 0x0F) << 4) |
         static_cast<uint32_t>(source.macroEdit.focusedRow.get() & 0x0F);
 
     return data;
@@ -113,8 +113,8 @@ FLASHMEM SelectorRenderData buildPageSelectorRenderData(const Source& source) {
         static_cast<int>(core::state::macro::PAGE_COUNT) - 1
     );
     data.dataRevision =
-        (static_cast<uint32_t>(core::state::MacroEditFlowPhase::PAGE_SELECTOR) << 24) |
-        source.configRevision.get();
+        (static_cast<uint32_t>(core::state::MacroEditFlowPhase::PAGE_SELECTOR) << 8) |
+        static_cast<uint32_t>(data.selectedIndex + 1);
     data.visible = true;
     return data;
 }

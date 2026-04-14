@@ -4,8 +4,6 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
-#include "ui/theme/StandaloneTheme.hpp"
-
 namespace core::ui {
 
 namespace theme = oc::ui::lvgl::base_theme;
@@ -24,7 +22,7 @@ FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
 
     knob_ = std::make_unique<oc::ui::lvgl::KnobWidget>(container_);
     knob_
-        ->sizeMode(oc::ui::lvgl::SizeMode::SquareFromWidth)
+        ->sizeMode(oc::ui::lvgl::SizeMode::FitContent)
         .renderProfile(oc::ui::lvgl::KnobRenderProfile::ArcOnly)
         .centered(false)
         .bgColor(theme::color::KNOB_BACKGROUND)

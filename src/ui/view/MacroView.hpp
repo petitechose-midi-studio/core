@@ -21,10 +21,13 @@
 
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/DataManagerState.hpp"
+#include "state/GlobalSettingsState.hpp"
+#include "state/MacroEditState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/ViewSelectorState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
-#include "ui/common/TrackNavigationStrip.hpp"
 #include "ui/macro/MacroBottomControls.hpp"
 #include "ui/macro/MacroHeaderBar.hpp"
 #include "ui/macro/MacroPropertyStrip.hpp"
@@ -46,12 +49,18 @@ public:
         core::state::MacroState& macros;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
+        oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+        oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
         core::state::StructureClipboardState& structureClipboard;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
+        core::state::MacroEditState& macroEdit;
+        core::state::ViewSelectorState& viewSelector;
+        core::state::GlobalSettingsState& globalSettings;
+        core::state::DataManagerState& dataManager;
     };
 
     MacroView(lv_obj_t* parent, StateRefs stateRefs);
@@ -83,17 +92,20 @@ private:
     void createPropertyStrip();
     void createMacros();
     void bindToState();
+    bool hasBlockingOverlay() const;
+    void handleOverlayVisibilityChanged();
 
     // Debounced update system
     void scheduleUpdate();
     void pauseUpdateIfIdle();
     void requestHeaderRender();
-    void requestTrackStripRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
+    void requestBottomControlsRender();
     void requestPropertyStripRender();
     void markAllDirty();
     void markAllConfigDirty();
+    void markConfigDirtyIfChanged();
     void markDirty(uint8_t index);
     void processDirtyFlags();
     static void onUpdateTimer(lv_timer_t* timer);
@@ -103,11 +115,13 @@ private:
     std::vector<oc::state::Subscription> subscriptions_;
     std::array<bool, MACRO_COUNT> dirty_flags_{};
     std::array<bool, MACRO_COUNT> config_dirty_flags_{};
+    std::array<uint8_t, MACRO_COUNT> rendered_channels_{};
+    std::array<uint8_t, MACRO_COUNT> rendered_ccs_{};
     bool has_dirty_ = false;
     bool header_dirty_ = true;
-    bool track_strip_dirty_ = true;
     bool left_action_strip_dirty_ = true;
     bool bottom_action_strip_dirty_ = true;
+    bool bottom_controls_dirty_ = true;
     bool property_strip_dirty_ = true;
     std::unique_ptr<PausableLvglTimer> update_timer_;
 
@@ -119,10 +133,8 @@ private:
     lv_obj_t* interaction_container_ = nullptr;
     lv_obj_t* center_column_ = nullptr;
     lv_obj_t* macro_grid_container_ = nullptr;
-    lv_obj_t* structure_row_container_ = nullptr;
     std::unique_ptr<core::ui::MacroHeaderBar> header_bar_;
     std::unique_ptr<core::ui::MacroBottomControls> bottom_controls_;
-    std::unique_ptr<core::ui::TrackNavigationStrip> track_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
     std::unique_ptr<core::ui::MacroPropertyStrip> property_strip_;

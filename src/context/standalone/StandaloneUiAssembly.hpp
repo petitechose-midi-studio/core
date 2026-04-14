@@ -1,11 +1,13 @@
 #pragma once
 
 #include <memory>
-
 #include "app/ExtmemAllocator.hpp"
 #include <lvgl.h>
 
+#include <oc/state/SignalWatcher.hpp>
 #include <oc/type/Ids.hpp>
+
+#include "ui/common/TrackNavigationStrip.hpp"
 
 namespace core::state {
 struct CoreState;
@@ -18,6 +20,7 @@ class ViewContainer;
 namespace core::ui {
 class ContextSoftkeyBar;
 class MacroView;
+class PausableLvglTimer;
 class SequencerView;
 class TransportBar;
 }  // namespace core::ui
@@ -47,14 +50,27 @@ public:
 
 private:
     void createViewContainer();
+    void createGlobalTrackStrip();
     void createViews();
     void createBottomBar();
     void cacheViewScopes();
+    void bindGlobalTrackStrip();
+    void scheduleGlobalTrackStripRender(bool ready = false);
+    void renderGlobalTrackStrip();
+    static void onGlobalTrackStripTimer(lv_timer_t* timer);
 
     core::state::CoreState& core_state_;
     oc::type::ScopeID macro_view_scope_ = 0;
     oc::type::ScopeID sequencer_view_scope_ = 0;
+    oc::state::SignalWatcher global_track_strip_watcher_;
     core::app::ExtmemUniquePtr<ms::ui::ViewContainer> view_container_;
+    lv_obj_t* views_host_ = nullptr;
+    lv_obj_t* global_track_strip_container_ = nullptr;
+    std::unique_ptr<core::ui::TrackNavigationStrip> global_track_strip_;
+    std::unique_ptr<core::ui::PausableLvglTimer> global_track_strip_timer_;
+    core::ui::TrackNavigationStripProps global_track_strip_props_cache_{};
+    bool global_track_strip_props_initialized_ = false;
+    bool global_track_strip_dirty_ = true;
     core::app::ExtmemUniquePtr<core::ui::MacroView> macro_view_;
     core::app::ExtmemUniquePtr<core::ui::SequencerView> sequencer_view_;
     core::app::ExtmemUniquePtr<core::ui::TransportBar> transport_bar_;

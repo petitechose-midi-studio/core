@@ -26,8 +26,7 @@ FLASHMEM void MacroOverlayPresenter::bind() {
         state_refs_.macroEdit.editingIndex,
         state_refs_.macroEdit.tempChannel,
         state_refs_.macroEdit.tempCC,
-        state_refs_.macroEdit.focusedRow,
-        state_refs_.configRevision
+        state_refs_.macroEdit.focusedRow
     );
 
     edit_selector_watcher_.watchAll(
@@ -40,8 +39,7 @@ FLASHMEM void MacroOverlayPresenter::bind() {
     page_selector_watcher_.watchAll(
         [this]() { renderPageSelector(); },
         state_refs_.macroEdit.flowPhase,
-        state_refs_.pages.selector.selectedIndex,
-        state_refs_.configRevision
+        state_refs_.pages.selector.selectedIndex
     );
 
     macro_target_selector_watcher_.watchAll(

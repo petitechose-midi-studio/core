@@ -14,7 +14,6 @@
 
 #include "ui/sequencer/StepGridLabelLogic.hpp"
 #include "ui/sequencer/StepGridRenderTypes.hpp"
-#include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace core::ui {
 
@@ -43,8 +42,8 @@ private:
     void invalidateTileCaches();
     void refreshStaticGeometry();
     static void onGeometryChangedEvent(lv_event_t* event);
+    static void onTileButtonDrawEvent(lv_event_t* event);
     void markGeometryDirty();
-    void renderTileGuides(uint8_t tileIndex, bool inPattern, const TileRenderDiff& diff);
     void renderTileIndex(uint8_t tileIndex, const TileRenderState& state, const TileRenderDiff& diff);
     void renderTileShape(uint8_t tileIndex,
                          const sequencer::grid::StepVisualStyle& visual,
@@ -69,7 +68,13 @@ private:
                     bool selectionChanged,
                     const StepGridFrameState& frameState);
 
+    struct TileButtonDrawContext {
+        StepGrid* grid = nullptr;
+        uint8_t tileIndex = 0;
+    };
+
     struct GeometryCacheState {
+        bool initialized = false;
         bool dirty = true;
         std::array<lv_coord_t, 8> railWidth{};
         std::array<lv_coord_t, 8> buttonHeight{};
@@ -79,6 +84,10 @@ private:
         std::array<lv_coord_t, 8> inlineIconWidth{};
         std::array<lv_coord_t, 8> inlineIconHeight{};
         lv_coord_t noteLabelHeight = 0;
+        lv_coord_t containerWidth = -1;
+        lv_coord_t containerHeight = -1;
+        lv_coord_t noteLayerWidth = -1;
+        lv_coord_t noteLayerHeight = -1;
     };
 
     struct RenderCacheState {
@@ -95,14 +104,11 @@ private:
 
     std::array<lv_obj_t*, 8> tiles_{};
     std::array<lv_obj_t*, 8> note_labels_{};
-    std::array<lv_obj_t*, 8> step_index_labels_{};
     std::array<lv_obj_t*, 8> step_inline_icons_{};
     std::array<lv_obj_t*, 8> step_buttons_{};
     std::array<lv_obj_t*, 8> step_shapes_{};
     std::array<lv_obj_t*, 8> step_markers_{};
-    std::array<lv_obj_t*, 8> step_indicators_{};
-    std::array<lv_obj_t*, 8> step_selection_dots_{};
-    std::array<std::array<lv_obj_t*, 3>, 8> step_guides_{};
+    std::array<TileButtonDrawContext, 8> tile_button_draw_contexts_{};
     GeometryCacheState geometry_{};
     RenderCacheState render_cache_{};
 };

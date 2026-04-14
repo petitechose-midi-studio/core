@@ -45,6 +45,7 @@ private:
 FLASHMEM void logPlaybackProfilingSnapshot(
     const SequencerPlaybackService::ProfilingSnapshot& snapshot
 ) {
+#if defined(PERF_LOG)
     OC_LOG_INFO(
         "[Perf][SequencerPlayback] updates={} avgUpdate={}us maxUpdate={}us noteOns={} "
         "noteOffs={} panicOffs={} lateNotes={} midiSendAvg={}us midiSendMax={}us "
@@ -61,6 +62,9 @@ FLASHMEM void logPlaybackProfilingSnapshot(
         snapshot.maxTickJump,
         snapshot.maxNoteBurst
     );
+#else
+    (void)snapshot;
+#endif
 }
 
 }  // namespace
@@ -201,11 +205,11 @@ uint8_t SequencerRuntimeService::refreshTrackBankSnapshot_() {
 
     const uint8_t activeTrack =
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-            track_bank_state_.activeTrack.get()
+            track_bank_state_.activeTrackIndex()
         );
 
     runtimeSnapshot.activeTrack = activeTrack;
-    runtimeSnapshot.enabledMask = track_bank_state_.enabledMask.get();
+    runtimeSnapshot.enabledMask = track_bank_state_.currentEnabledMask();
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
         const auto& source = (i == activeTrack) ? sequencer_state_ : track_bank_state_.track(i);
@@ -412,6 +416,11 @@ void SequencerRuntimeService::recordProfilingWindow_(uint32_t updateUs,
 }
 
 FLASHMEM void SequencerRuntimeService::maybeLogProfilingWindow_(uint32_t nowMs) {
+#if !defined(PERF_LOG)
+    profiling_.resetWindow(nowMs);
+    return;
+#endif
+
     if (profiling_.window_start_ms == 0) {
         profiling_.resetWindow(nowMs);
         return;
