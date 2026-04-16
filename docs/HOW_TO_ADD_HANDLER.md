@@ -1,9 +1,13 @@
 # How To Add a Handler
 
-> **Type**: Step-by-step Tutorial
+> **Type**: Step-by-step tutorial / illustrative example
 > **Audience**: Developers adding input handling to MIDI Studio
 > **Time**: 30-45 minutes
 > **Prerequisites**: [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)
+> **Contract Level**: Non-normative. This guide explains the handler pattern, but the production standalone path is defined by the current `src/context/standalone/*` assemblies and live handlers in `src/handler/`.
+> **Normative References**: [INVARIANTS.md](INVARIANTS.md), [CORE_ARCHITECTURE_AUDIT_2026_04.md](CORE_ARCHITECTURE_AUDIT_2026_04.md), `src/context/standalone/`, and the existing handler headers under `src/handler/`.
+
+The example snippets below use simplified names and a reduced context. Reuse the pattern, not the exact class names or constructor shapes.
 
 This guide explains how to create InputHandlers that respond to buttons, encoders, and other input sources.
 

@@ -1,8 +1,14 @@
 # Standalone Interaction Grammar Spec
 
-> **Date**: April 8, 2026  
-> **Status**: Proposed baseline interaction grammar  
-> **Scope**: Standalone main views, initially `Sequencer` and `Macro`
+> **Date**: April 16, 2026
+> **Status**: Current-contract baseline
+> **Scope**: Standalone main views, currently `Sequencer` and `Macro`
+> **Contract**: this doc references only live state and handler seams in the current repo. If the implementation changes, this file must change in the same wave.
+
+Historical note:
+
+- older proposals used `LEFT_CENTER + LEFT_BOTTOM` as the structural selector entry point
+- the current standalone contract uses `NAV long press` to enter structural selection and `StructureNavigationFocus` to switch between `PAGE` and `TRACK`
 
 ---
 
@@ -42,42 +48,53 @@ This is now reflected in the shared frame helper used by `MacroView` and `Sequen
 
 ---
 
-## 3. Shared Gesture Grammar
+## 3. Shared Interaction Contract
 
 ### Primary Rules
 
-- `NAV turn` = navigate the primary context
-- `NAV press` = act on the currently focused or selected target
-- `LEFT_BOTTOM` = property-selection mode
-- `LEFT_CENTER` = quick controls mode
-- `LEFT_CENTER + LEFT_BOTTOM` = structural selector mode
-- `LEFT_TOP` = cancel / restore snapshot
+- `NAV turn` = navigate the currently active context
+- `NAV long press` = enter structural selection for the current `StructureNavigationFocus`
+- `NAV release` = cycle focus, commit previewed structure, or toggle the current structural selection depending on mode
+- `LEFT_BOTTOM hold` = inline property/clutch mode
+- `LEFT_CENTER hold` = quick-controls mode
+- `LEFT_TOP` = cancel the active structural or inline selection mode
 - `8 encoders / 8 buttons` = direct action on the 8 visible lanes
 
 ### Mental Model
 
 - without modifiers, the user is playing
-- `LEFT_BOTTOM` changes what lane gestures mean
-- `LEFT_CENTER` changes global context parameters
-- `LEFT_CENTER + LEFT_BOTTOM` changes the current structural target
+- `LEFT_BOTTOM` changes what the lane controls edit
+- `LEFT_CENTER` opens global quick controls
+- structural selection is shared across views through:
+  - `StructureNavigationFocus`
+  - `TrackNavigationState.selection`
+  - per-view page-selection state
 
-This separation is the core of the instrument-like workflow.
+This is the current shared grammar implemented by the standalone handlers.
 
 ---
 
-## 4. Sequencer Baseline
+## 4. Sequencer Current Baseline
 
-The current Sequencer already implements most of this grammar.
+The current Sequencer implements the shared grammar with separate handlers for:
+
+- step editing / structure navigation
+- inline step-property selection
+- pattern quick controls
 
 ### Main Layer
 
-- `NAV turn` changes page
-- `NAV press` toggles the focused step
-- `macro buttons` toggle visible steps
+- `NAV turn` changes page or track preview depending on `StructureNavigationFocus`
+- `NAV release` cycles `PAGE` / `TRACK` focus when no selection is active
+- `NAV release` creates the previewed page or track when the cursor is on an add slot
+- `macro buttons` toggle the 8 visible steps on release
+- `BOTTOM_LEFT` and `BOTTOM_RIGHT` provide erase/remove/copy/paste/duplicate actions for the focused structure
 
-Reference:
+Implementation anchors:
 
-- [SequencerStepHandler.cpp](/C:/Users/miu-lab/ms-dev-env/midi-studio/core/src/handler/sequencer/SequencerStepHandler.cpp)
+- [src/handler/sequencer/SequencerStepHandler.cpp](../src/handler/sequencer/SequencerStepHandler.cpp)
+- [src/state/TrackNavigationState.hpp](../src/state/TrackNavigationState.hpp)
+- [src/state/sequencer/SequencerState.hpp](../src/state/sequencer/SequencerState.hpp)
 
 ### Property Selector
 
@@ -86,9 +103,9 @@ Reference:
 - release applies
 - `LEFT_TOP` cancels and restores the previous property
 
-Reference:
+Implementation anchor:
 
-- [SequencerPropertySelectorHandler.cpp](/C:/Users/miu-lab/ms-dev-env/midi-studio/core/src/handler/sequencer/SequencerPropertySelectorHandler.cpp)
+- [src/handler/sequencer/SequencerPropertySelectorHandler.cpp](../src/handler/sequencer/SequencerPropertySelectorHandler.cpp)
 
 ### Quick Controls
 
@@ -98,104 +115,91 @@ Reference:
 - release applies
 - `LEFT_TOP` cancels
 
-Reference:
+Implementation anchor:
 
-- [SequencerPatternQuickControlsHandler.cpp](/C:/Users/miu-lab/ms-dev-env/midi-studio/core/src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp)
+- [src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp](../src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp)
 
 ### Structural Selector
 
-- `LEFT_CENTER + LEFT_BOTTOM` opens track selection
-- `NAV` selects a candidate track
-- `NAV press` toggles enabled state of the selected track
-- releasing the combo applies the selected track
-- `LEFT_TOP` cancels and restores the snapshot
+- `NAV long press` opens structural selection for the current focus:
+  - `TRACK` focus uses `trackNavigation.selection`
+  - `PAGE` focus uses `sequencer.structureUi.pageSelection`
+- `NAV turn` moves the selection cursor
+- `NAV release` toggles the selected candidate
+- `LEFT_TOP` cancels and restores the non-selection preview state
+- structural focus stays shared with the global track navigation strip and header UI
 
-Reference:
+Implementation anchors:
 
-- [SequencerTrackSelectorHandler.cpp](/C:/Users/miu-lab/ms-dev-env/midi-studio/core/src/handler/sequencer/SequencerTrackSelectorHandler.cpp)
+- [src/handler/sequencer/SequencerStepHandler.cpp](../src/handler/sequencer/SequencerStepHandler.cpp)
+- [src/context/standalone/StandaloneUiAssembly.cpp](../src/context/standalone/StandaloneUiAssembly.cpp)
 
 ---
 
-## 5. Macro Target Grammar
+## 5. Macro Current Baseline
 
-Macro should converge to the same structure.
+Macro already follows the same structural grammar, but with different lane semantics.
 
 ### Main Layer
 
-- `NAV turn` changes Macro page
-- `8 encoders` edit macro value directly
-- `8 buttons` keep their direct lane meaning or remain unassigned until a safe meaning exists
+- `NAV turn` changes page or track preview depending on `StructureNavigationFocus`
+- `NAV release` cycles focus, commits a previewed page change, or creates a previewed page/track
+- `8 encoders` edit the active macro property for the visible page
 
-### Property Selector
+### Clutch / Property Cycling
 
-- `LEFT_BOTTOM` opens the Macro property selector
-- `NAV` selects one of:
-  - `Value`
-  - `CC`
-  - `Channel`
-- release applies
-- `LEFT_TOP` cancels and restores the previous property
-
-This is already close to the current `MacroPerformanceHandler` model.
+- `LEFT_BOTTOM` activates clutch mode
+- while clutch mode is active:
+  - `NAV` cycles `VALUE`, `CC`, `CHANNEL`
+  - the macro encoders edit the selected property
+- releasing `LEFT_BOTTOM` applies the current clutch edits and returns to `VALUE`
 
 ### Quick Controls
 
-Macro quick controls should be global, not per-lane.
-
-Recommended v1 items:
-
-- `Channel Global`
-- `CC Offset Global`
-
-Interaction should match Sequencer quick controls:
-
 - `LEFT_CENTER` opens
-- `NAV` changes focused item
-- `OPT` edits focused item
+- `NAV` changes focused item between `GLOBAL_CHANNEL` and `CC_OFFSET`
+- `OPT` edits the focused item
 - release applies
 - `LEFT_TOP` cancels
 
 ### Structural Selector
 
-Macro structural selection should mirror Sequencer track selection.
+- `NAV long press` opens structural selection for the current focus:
+  - `TRACK` focus uses `trackNavigation.selection`
+  - `PAGE` focus uses `macroUi.pageSelection`
+- `NAV turn` moves the selection cursor
+- `NAV release` toggles the selected candidate
+- `LEFT_TOP` cancels the active structural selection
+- page and track creation use preview add slots, not a separate structural overlay
 
-Recommended mapping:
+Implementation anchors:
 
-- `LEFT_CENTER + LEFT_BOTTOM` opens the Macro page selector
-- `NAV` selects a page candidate
-- releasing the combo applies the selected page
-- `LEFT_TOP` cancels and restores the snapshot
-
-`NAV press` should remain unassigned in this selector unless a clear, low-risk page-level action is identified.
-
----
-
-## 6. Global Channel and CC Offset
-
-### Global Channel
-
-The working assumption is that many real use cases want one page of macros to target one device context.
-
-So the recommended model is:
-
-- each Macro page has a `global channel`
-- per-macro channel remains possible as an override only if needed later
-- the default editing path should bias toward global channel editing
-
-This reduces repetitive remapping and fits the intended musical workflow better.
-
-### CC Offset Global
-
-The recommended model is an offset-style transformation, parallel to Sequencer pattern offset:
-
-- quick controls keep a snapshot of the page mapping state
-- editing `CC Offset Global` shifts the page's CC bank relative to that snapshot
-- cancel restores the snapshot
-- apply commits the transformed bank
-
-This should be treated as a bank-level operation, not as a destructive remap action.
+- [src/handler/macro/MacroPerformanceHandler.cpp](../src/handler/macro/MacroPerformanceHandler.cpp)
+- [src/state/macro/MacroUiState.hpp](../src/state/macro/MacroUiState.hpp)
+- [src/state/TrackNavigationState.hpp](../src/state/TrackNavigationState.hpp)
 
 ---
+
+## 6. Shared Structural Operations
+
+Both views currently share these structural concepts:
+
+- `StructureNavigationFocus` chooses whether `NAV` is operating on `PAGE` or `TRACK`
+- preview state uses:
+  - `trackNavigation.previewTrackIndex`
+  - `trackNavigation.previewAddSlot`
+  - view-specific page preview state
+- selection state uses:
+  - `trackNavigation.selection`
+  - `macroUi.pageSelection` or `sequencer.structureUi.pageSelection`
+- bottom actions act on the currently focused structure:
+  - `erase`
+  - `remove`
+  - `copy`
+  - `paste`
+  - `duplicate` when selection is active
+
+This is important for maintainability: the shared grammar now lives in state seams, not in one old selector handler.
 
 ## 7. Header Behavior
 
@@ -215,16 +219,13 @@ Current adjustment:
 
 ---
 
-## 8. Implementation Order
+## 8. Maintenance Rule
 
-Recommended order:
+If the standalone interaction grammar changes:
 
-1. stabilize shared frame geometry across views
-2. finalize the current Macro property selector behavior
-3. increase header breathing room in Macro and Sequencer
-4. add Macro quick controls with `Channel Global` and `CC Offset Global`
-5. add Macro structural page selector using the Sequencer track-selector grammar
-6. revisit whether `NAV press` in Macro structural mode needs a meaning
+1. update this file
+2. update the relevant handler/state references in the same change
+3. update [CORE_ARCHITECTURE_AUDIT_2026_04.md](CORE_ARCHITECTURE_AUDIT_2026_04.md) if the change affects ownership, naming, or placement rules
 
 ---
 
@@ -232,9 +233,9 @@ Recommended order:
 
 This spec does not propose:
 
-- immediate unification of all overlay internals
-- removal of deep Macro edit overlays
-- forced reuse of Sequencer-specific widgets for Macro content
-- destructive remapping shortcuts without snapshot/cancel semantics
+- immediate unification of every internal state struct between Macro and Sequencer
+- removal of valid feature-specific workflows that still need separate handlers
+- forced reuse of Sequencer widgets where Macro semantics differ
+- speculative selector concepts that do not exist in the live code
 
-The target is a common interaction language, not a visual clone.
+The target is a common interaction language grounded in the current implementation, not a visual clone.

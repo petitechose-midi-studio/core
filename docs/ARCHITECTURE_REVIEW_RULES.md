@@ -38,4 +38,4 @@ These rules exist to keep `core` readable and maintainable as the codebase grows
 
 - run `pio run -e dev`
 - run `pwsh ./script/dev/check-downstream-compat.ps1` when exported headers move or change
-- update [CORE_ALIGNMENT_ROADMAP.md](CORE_ALIGNMENT_ROADMAP.md) when roadmap work changes status
+- update [CORE_ARCHITECTURE_AUDIT_2026_04.md](CORE_ARCHITECTURE_AUDIT_2026_04.md) when architecture work changes status

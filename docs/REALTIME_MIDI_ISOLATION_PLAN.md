@@ -6,10 +6,23 @@
 
 ## Problem Statement
 
-Today the sequencer runtime is already executed before LVGL refresh in the main loop, which helps.
-However, the transport clock, sequencer update, and UI still share the same cooperative loop budget.
+Today the standalone sequencer runtime already has a meaningful split:
 
-This means a large UI burst can still delay the next runtime iteration and create:
+- the authoritative runtime owner lives in `main.cpp`
+- the runtime is updated from the app pre-context hook
+- internal master transport progression runs from `IntervalTimer`
+
+That is already better than the old fully cooperative loop model.
+
+However, the current contract is still only partly explicit:
+
+- internal master still fuses clock, scheduler, and backend drain in one timer callback
+- external/fallback paths still depend on cooperative loop cadence
+- future reviewers could easily add work to the wrong lane because the rules are not stated clearly
+
+Without an explicit contract, the next refactor could re-introduce exactly the coupling we just removed.
+
+This would create:
 - note jitter
 - late note emission
 - bursty catch-up after a stall
@@ -20,25 +33,102 @@ The target is simple:
 - UI may drop frames
 - MIDI timing may not drift, jump, or bunch
 
+## Current Accepted Contract (2026-04-16)
+
+This section is normative for the current working implementation after `CA-010`.
+
+### Authoritative owner and entry point
+
+- `main.cpp` owns the single standalone `SequencerRuntimeService` instance in PSRAM
+- `OpenControlApp::registerPreContextUpdateHook(...)` is the only live standalone runtime update entry point
+- `StandaloneContext::update()` is not allowed to tick the sequencer runtime
+
+### Current lane split
+
+1. Control lane
+   - entry point: `SequencerRuntimeService::update()`
+   - runs from the app pre-context hook before context/UI work
+   - captures runtime config and track-bank snapshot
+   - decides whether the internal timer owns transport
+   - publishes immutable inputs to the timer lane when internal master is active
+   - publishes UI/state projections outside the timer callback
+
+2. Timer lane (`internal master` only)
+   - entry point: `SequencerRuntimeService::onInternalTimer_()`
+   - advances the internal transport clock
+   - emits MIDI realtime `start` / `stop` / `clock`
+   - runs `sequencer_playback_.update(...)`
+   - drains `midi_.serviceOutput()`
+
+3. Projection lane
+   - still runs on the control lane today
+   - `publishPlaybackUiFromTimerPath_()` snapshots timer-lane output under lock
+   - `SequencerPlaybackService::publishUiProjection(...)` applies status-bar pulses outside the timer callback
+   - `MidiClockSyncService::publishUiState(...)` applies sync/tempo/transport projections outside the timer callback
+
+4. External/fallback path
+   - when the internal timer does not own transport, `SequencerRuntimeService::update()` remains the active driver
+   - this path is still loop-coupled and is tolerated for now
+   - any larger redesign here must pass the measurement gate below
+
+### Timer-lane classification (`SequencerRuntimeService::onInternalTimer_()`)
+
+Required now:
+
+- read only the committed runtime snapshot and committed clock config
+- advance the internal transport clock deterministically
+- emit outgoing MIDI realtime clock/start/stop for the internal-master path
+- run playback scheduling against the committed snapshot
+- drain the backend output path because the current runtime still relies on that coupling
+
+Deferrable later:
+
+- splitting backend drain into a dedicated fixed-capacity output lane
+- moving realtime clock emission behind the same output abstraction
+- emitting richer timer-lane telemetry if it can be done without expanding the callback budget
+
+Forbidden in future additions:
+
+- LVGL calls or view lifecycle work
+- direct `StatusBarState` / `MidiSyncState` writes
+- event bus publication, persistence, or storage I/O
+- dynamic allocation, container growth, or logging
+- reading mutable live state directly instead of consuming the committed snapshot/config
+
+### Measurement gate for future scheduler/output split
+
+Do not split the current clock/scheduler/output path further in this wave unless at least one of these becomes true:
+
+- `[Perf][SequencerRuntime]` shows sustained `maxClockUs >= 1000` or `maxPlaybackUs >= 1000` under the real stress scenarios
+- `[Perf][SequencerPlayback]` shows `tickJumpMax > 1`, growing `lateNotes`, or `midiSendMaxUs` spikes that correlate with audible timing issues
+- loopback or DAW capture shows bunching/jitter that cannot be explained by visual lag alone
+
+If none of these are true, prefer explicit contracts, review guardrails, and narrow cleanups over speculative queue architecture churn.
+
 ## Current Coupling Points
 
 Relevant code paths today:
 
 - `main.cpp`
-  - main loop drives `app->update()`, `coreState->update()`, then `lvgl->refresh()`
+  - owns the authoritative standalone runtime in PSRAM
+  - the app pre-context hook is the only standalone runtime entry point
 - `src/sequencer/SequencerRuntimeService.cpp`
-  - runtime clock + playback update run from the app pre-context hook
+  - control lane runs from the app pre-context hook
+  - internal master clock + playback + backend drain still share one timer callback
 - `src/sequencer/SequencerPlaybackService.hpp`
-  - outgoing MIDI currently also updates status-bar pulses inline
+  - note activity is collected during playback update, then published as status-bar projections later
 - `../open-control/note/src/oc/note/sequencer/StepSequencerEngine.cpp`
   - late runtime updates are caught up by `processUntil(...)`, which avoids silent loss but can bunch events
 
 ## Root Cause
 
-The problem is not that LVGL sends MIDI.
-The problem is that musical time is still serviced by the same loop that also pays for UI work.
+The remaining problem is not "LVGL sends MIDI".
 
-As long as this is true, UI overload can still perturb note timing indirectly.
+The remaining problem is:
+
+- the internal-master timer lane still owns too many realtime responsibilities at once
+- the external/fallback path still depends on cooperative loop cadence
+- the exact lane contract was not explicit enough to prevent accidental recoupling
 
 ## Target Architecture
 

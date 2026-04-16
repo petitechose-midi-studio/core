@@ -1,12 +1,13 @@
 # State Management Guide
 
-> **Type**: Tutorial
+> **Type**: Tutorial / illustrative patterns
 > **Audience**: Developers adding features to MIDI Studio
 > **Prerequisites**: Basic C++17, understanding of reactive programming concepts
-> **Note**: Some examples in this guide are historical/conceptual. Prefer
-> `src/state/CoreState.hpp` and the current workflow headers as the source of truth.
+> **Contract Level**: Non-normative. Use this file to learn the patterns, not as the exact map of the live codebase.
+> **Normative References**: [INVARIANTS.md](INVARIANTS.md), [CORE_ARCHITECTURE_AUDIT_2026_04.md](CORE_ARCHITECTURE_AUDIT_2026_04.md), `src/state/CoreState.hpp`, and the current workflow headers in `src/`.
+> **Note**: Some examples in this guide are intentionally simplified or historical/conceptual. Do not copy names, file paths, or constructor signatures from this guide into production code without checking the live implementation first.
 
-This guide explains how to use the Signal-based reactive state system in MIDI Studio.
+This guide explains the Signal-based reactive state patterns used in MIDI Studio.
 
 ---
 
