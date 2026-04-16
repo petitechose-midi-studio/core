@@ -27,6 +27,9 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
 )
     : sequencer_(sequencer)
     , status_bar_(statusBar)
+    , track_runtime_states_(
+          std::make_unique<oc::note::sequencer::StepSequencerRuntimeState[]>(TRACK_COUNT)
+      )
 {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         track_outputs_[i] = std::make_unique<SequencerMidiOutput>(midi, i, &note_activity_observer_);
@@ -183,8 +186,8 @@ SequencerPlaybackService::activeRuntimeState_() const {
     return track_runtime_states_[runtime_active_track_];
 }
 
-oc::note::sequencer::StepSequencerRuntimeState SequencerPlaybackService::copyActiveRuntimeState() const {
-    return activeRuntimeState_();
+SequencerRuntimeTelemetrySnapshot SequencerPlaybackService::copyActiveRuntimeTelemetry() const {
+    return captureRuntimeTelemetry(activeRuntimeState_());
 }
 
 FLASHMEM bool SequencerPlaybackService::takeProfilingSnapshot(uint32_t nowMs, ProfilingSnapshot& snapshot) {

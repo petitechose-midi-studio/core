@@ -38,6 +38,10 @@ core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
     return core::app::makeExtmemUnique<UiSystemState>();
 }
 
+core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState() {
+    return core::app::makeExtmemUnique<sequencer::SequencerState>();
+}
+
 core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
     return core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
 }
@@ -69,10 +73,14 @@ uint8_t sanitizeSharedActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
 SequencerDomainState::SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                                            oc::interface::IStorage& patternLibraryStorage,
                                            oc::interface::IStorage& setLibraryStorage)
-    : editor{}
+    : editor(createSequencerEditorState())
     , tracks(createSequencerTrackBankState())
     , persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage)
     , pendingApply(nullptr) {
+    if (!editor) {
+        OC_LOG_ERROR("[CoreState] Failed to allocate sequencer editor state");
+        while (true) {}
+    }
     if (!tracks) {
         OC_LOG_ERROR("[CoreState] Failed to allocate sequencer track bank");
         while (true) {}
@@ -105,7 +113,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , pages(*macroDomain_.pages)
     , configRevision(macroDomain_.configRevision)
     , macroPersistence(macroDomain_.persistence)
-    , sequencer(sequencerDomain_.editor)
+    , sequencer(*sequencerDomain_.editor)
     , sequencerTracks(*sequencerDomain_.tracks)
     , sequencerPersistence(sequencerDomain_.persistence)
     , overlays(systemUi_->overlays)

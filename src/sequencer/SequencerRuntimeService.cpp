@@ -67,6 +67,38 @@ FLASHMEM void logPlaybackProfilingSnapshot(
 #endif
 }
 
+FLASHMEM void applyMidiClockSyncUiProjection(
+    core::state::StatusBarState& statusBar,
+    core::state::MidiSyncState& midiSync,
+    const MidiClockSyncService::UiProjectionSnapshot& projection,
+    uint32_t nowMs
+) {
+    if ((projection.dirtyMask & MidiClockSyncService::UiProjectionSnapshot::PLAYING) != 0) {
+        statusBar.playing.set(projection.playing);
+    }
+    if ((projection.dirtyMask & MidiClockSyncService::UiProjectionSnapshot::TEMPO_DISPLAY) != 0) {
+        statusBar.tempoDisplay.set(projection.tempoDisplay);
+    }
+    if ((projection.dirtyMask & MidiClockSyncService::UiProjectionSnapshot::SYNC_EXTERNAL_SOURCE) != 0) {
+        statusBar.syncExternalSource.set(projection.syncExternalSource);
+    }
+    if ((projection.dirtyMask & MidiClockSyncService::UiProjectionSnapshot::TEMPO_LOCKED) != 0) {
+        statusBar.tempoLocked.set(projection.tempoLocked);
+    }
+    if ((projection.dirtyMask & MidiClockSyncService::UiProjectionSnapshot::TRANSPORT_LOCKED) != 0) {
+        statusBar.transportLocked.set(projection.transportLocked);
+    }
+    if ((projection.dirtyMask & MidiClockSyncService::UiProjectionSnapshot::ACTIVE_SOURCE) != 0) {
+        midiSync.activeSource.set(projection.activeSource);
+    }
+    if ((projection.dirtyMask & MidiClockSyncService::UiProjectionSnapshot::EXTERNAL_CLOCK_PRESENT) != 0) {
+        midiSync.externalClockPresent.set(projection.externalClockPresent);
+    }
+    if (projection.syncInputPulse) {
+        statusBar.pulseSyncInput(nowMs);
+    }
+}
+
 }  // namespace
 
 FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
@@ -78,7 +110,7 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     , track_bank_state_(state.trackBank)
     , status_bar_state_(state.statusBar)
     , midi_sync_state_(state.midiSync)
-    , midi_clock_sync_(state.midiSync, state.statusBar, midi)
+    , midi_clock_sync_(midi)
     , sequencer_playback_(state.sequencer, state.trackBank, state.statusBar, midi) {
     const uint8_t initialSnapshotIndex = refreshTrackBankSnapshot_();
     commitRuntimeSnapshot_(initialSnapshotIndex);
@@ -150,7 +182,12 @@ void SequencerRuntimeService::update() {
         sequencer_playback_.publishUiState(nowMs);
     }
 
-    midi_clock_sync_.publishUiState(nowMs);
+    applyMidiClockSyncUiProjection(
+        status_bar_state_,
+        midi_sync_state_,
+        midi_clock_sync_.takeUiProjectionSnapshot(),
+        nowMs
+    );
     const uint32_t updateUs = core::time_compat::micros() - startUs;
 
     recordProfilingWindow_(updateUs, clockUs, playbackUs, resyncRequested, nowMs);
@@ -239,7 +276,7 @@ void SequencerRuntimeService::commitRuntimeSnapshot_(uint8_t snapshotIndex) {
 void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
 #ifdef ARDUINO
     SequencerPlaybackService::UiProjectionSnapshot uiProjection;
-    oc::note::sequencer::StepSequencerRuntimeState runtimeState;
+    SequencerRuntimeTelemetrySnapshot runtimeTelemetry;
     SequencerPlaybackService::ProfilingSnapshot profilingSnapshot{};
     bool shouldLogPlayback = false;
 
@@ -247,11 +284,11 @@ void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
     {
         InterruptLock lock;
         uiProjection = sequencer_playback_.takeUiProjectionSnapshot();
-        runtimeState = sequencer_playback_.copyActiveRuntimeState();
+        runtimeTelemetry = sequencer_playback_.copyActiveRuntimeTelemetry();
         shouldLogPlayback = sequencer_playback_.takeProfilingSnapshot(nowMs, profilingSnapshot);
     }
 
-    publishRuntimeTelemetry(sequencer_state_, runtimeState);
+    publishRuntimeTelemetry(sequencer_state_, runtimeTelemetry);
     sequencer_playback_.publishUiProjection(uiProjection, nowMs);
 
     if (shouldLogPlayback) {

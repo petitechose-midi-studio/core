@@ -17,11 +17,17 @@ public:
         oc::state::Signal<uint16_t, 16>& enabledMask;
     };
 
-    struct Hooks {
-        core::state::CoreState* coreState = nullptr;
+    using SetSharedTrackStateFn = bool (*)(void* context,
+                                           uint16_t enabledMask,
+                                           uint8_t activeTrack);
+
+    struct Operations {
+        void* context = nullptr;
+        SetSharedTrackStateFn setSharedTrackState = nullptr;
     };
 
-    SharedTrackDomainServices(StateRefs state, Hooks hooks);
+    explicit SharedTrackDomainServices(StateRefs state);
+    SharedTrackDomainServices(StateRefs state, Operations operations);
     static SharedTrackDomainServices fromCoreState(core::state::CoreState& state);
 
     uint16_t enabledMask() const;
@@ -31,7 +37,7 @@ public:
 private:
     oc::state::Signal<uint8_t, 8>* active_track_ = nullptr;
     oc::state::Signal<uint16_t, 16>* enabled_mask_ = nullptr;
-    Hooks hooks_{};
+    Operations operations_{};
 };
 
 }  // namespace core::handler

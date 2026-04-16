@@ -56,16 +56,31 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
     std::copy(source.probability.begin(), source.probability.end(), target.probability.begin());
 }
 
-void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
-                             const oc::note::sequencer::StepSequencerRuntimeState& runtimeState) {
-    target.playheadStep.set(runtimeState.playheadStep);
+SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
+    const oc::note::sequencer::StepSequencerRuntimeState& runtimeState
+) {
+    return {
+        .playheadStep = runtimeState.playheadStep,
+        .probabilityCycleIndex = runtimeState.probabilityCycleIndex,
+        .probabilityCycleMask = runtimeState.probabilityCycleMask,
+    };
+}
 
-    if (target.probabilityCycleIndex != runtimeState.probabilityCycleIndex ||
-        target.probabilityCycleMask != runtimeState.probabilityCycleMask) {
-        target.probabilityCycleIndex = runtimeState.probabilityCycleIndex;
-        target.probabilityCycleMask = runtimeState.probabilityCycleMask;
+void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
+                             const SequencerRuntimeTelemetrySnapshot& telemetry) {
+    target.playheadStep.set(telemetry.playheadStep);
+
+    if (target.probabilityCycleIndex != telemetry.probabilityCycleIndex ||
+        target.probabilityCycleMask != telemetry.probabilityCycleMask) {
+        target.probabilityCycleIndex = telemetry.probabilityCycleIndex;
+        target.probabilityCycleMask = telemetry.probabilityCycleMask;
         target.probabilityCycleRevision.set(target.probabilityCycleRevision.get() + 1U);
     }
+}
+
+void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
+                             const oc::note::sequencer::StepSequencerRuntimeState& runtimeState) {
+    publishRuntimeTelemetry(target, captureRuntimeTelemetry(runtimeState));
 }
 
 }  // namespace core::sequencer

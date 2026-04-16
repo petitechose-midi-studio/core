@@ -27,6 +27,12 @@ struct SequencerRuntimeStateSignature {
     }
 };
 
+struct SequencerRuntimeTelemetrySnapshot {
+    int16_t playheadStep = -1;
+    uint32_t probabilityCycleIndex = 0;
+    oc::note::sequencer::StepBitMask128 probabilityCycleMask{};
+};
+
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerState& source
 );
@@ -40,6 +46,13 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
 
 void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
                       const core::state::sequencer::SequencerPatternSnapshot& source);
+
+SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
+    const oc::note::sequencer::StepSequencerRuntimeState& runtimeState
+);
+
+void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
+                             const SequencerRuntimeTelemetrySnapshot& telemetry);
 
 void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
                              const oc::note::sequencer::StepSequencerRuntimeState& runtimeState);

@@ -6,10 +6,30 @@
 
 namespace core::handler {
 
-FLASHMEM SharedTrackDomainServices::SharedTrackDomainServices(StateRefs state, Hooks hooks)
+namespace {
+
+FLASHMEM bool setSharedTrackStateFromCoreState(
+    void* context,
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->setSharedTrackState(enabledMask, activeTrack);
+}
+
+}  // namespace
+
+FLASHMEM SharedTrackDomainServices::SharedTrackDomainServices(StateRefs state)
+    : SharedTrackDomainServices(state, Operations{}) {}
+
+FLASHMEM SharedTrackDomainServices::SharedTrackDomainServices(StateRefs state, Operations operations)
     : active_track_(&state.activeTrack)
     , enabled_mask_(&state.enabledMask)
-    , hooks_(hooks) {}
+    , operations_(operations) {}
 
 FLASHMEM SharedTrackDomainServices SharedTrackDomainServices::fromCoreState(
     core::state::CoreState& state
@@ -19,7 +39,7 @@ FLASHMEM SharedTrackDomainServices SharedTrackDomainServices::fromCoreState(
             state.sharedTrackActive,
             state.sharedTrackEnabledMask,
         },
-        Hooks{&state},
+        Operations{&state, setSharedTrackStateFromCoreState},
     };
 }
 
@@ -32,8 +52,8 @@ FLASHMEM uint8_t SharedTrackDomainServices::activeTrack() const {
 }
 
 FLASHMEM bool SharedTrackDomainServices::setState(uint16_t enabledMask, uint8_t activeTrack) const {
-    return hooks_.coreState != nullptr &&
-           hooks_.coreState->setSharedTrackState(enabledMask, activeTrack);
+    return operations_.setSharedTrackState != nullptr &&
+           operations_.setSharedTrackState(operations_.context, enabledMask, activeTrack);
 }
 
 }  // namespace core::handler

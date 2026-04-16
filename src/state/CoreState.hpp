@@ -88,7 +88,7 @@ struct SequencerDomainState {
 
     using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;
 
-    sequencer::SequencerState editor;
+    core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;

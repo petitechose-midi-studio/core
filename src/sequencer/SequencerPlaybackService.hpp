@@ -63,7 +63,7 @@ public:
     void stop();
     void publishUiProjection(const UiProjectionSnapshot& projection, uint32_t nowMs);
     UiProjectionSnapshot takeUiProjectionSnapshot();
-    oc::note::sequencer::StepSequencerRuntimeState copyActiveRuntimeState() const;
+    SequencerRuntimeTelemetrySnapshot copyActiveRuntimeTelemetry() const;
     bool takeProfilingSnapshot(uint32_t nowMs, ProfilingSnapshot& snapshot);
 
 private:
@@ -197,7 +197,9 @@ private:
     PendingUiProjection pending_ui_projection_{};
     PendingNoteActivityObserver note_activity_observer_{pending_note_activity_};
     ProfilingWindow profiling_{};
-    std::array<oc::note::sequencer::StepSequencerRuntimeState, TRACK_COUNT> track_runtime_states_{};
+    // Keep the per-track runtime bank on the regular heap so the timer/playback
+    // engines do not read their hottest state back from the PSRAM-backed parent.
+    std::unique_ptr<oc::note::sequencer::StepSequencerRuntimeState[]> track_runtime_states_{};
     std::array<SequencerRuntimeStateSignature, TRACK_COUNT> track_runtime_signatures_{};
     std::array<std::unique_ptr<SequencerMidiOutput>, TRACK_COUNT> track_outputs_{};
     std::array<std::unique_ptr<oc::note::sequencer::StepSequencerEngine>, TRACK_COUNT> track_engines_{};

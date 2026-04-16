@@ -28,140 +28,118 @@ constexpr float DISPLAY_ALPHA_MEDIUM = 0.26f;
 constexpr float DISPLAY_ALPHA_FAST = 0.48f;
 }  // namespace
 
-FLASHMEM MidiClockSyncService::MidiClockSyncService(core::state::MidiSyncState& syncState,
-                                                    core::state::StatusBarState& statusBar,
-                                                    oc::api::MidiAPI& midi)
-    : sync_state_(syncState)
-    , status_bar_(statusBar)
-    , midi_(midi) {
-    const float tempo = status_bar_.tempo.get();
-    runtime_config_.mode = sync_state_.mode.get();
-    runtime_config_.followTransport = sync_state_.followTransport.get();
-    runtime_config_.autoFallbackMs = sync_state_.autoFallbackMs.get();
-    runtime_config_.autoLockClockCount = sync_state_.autoLockClockCount.get();
-    runtime_config_.tempo = tempo;
-    runtime_config_.playing = status_bar_.playing.get();
-    published_playing_ = runtime_config_.playing;
-    published_tempo_display_ = tempo;
-    status_bar_.tempoDisplay.set(tempo);
-    display_tempo_filtered_ = tempo;
-    display_tempo_published_ = tempo;
-    status_bar_.syncExternalSource.set(false);
-    status_bar_.syncInputPulse.set(false);
-    status_bar_.tempoLocked.set(false);
-    status_bar_.transportLocked.set(false);
-}
+FLASHMEM MidiClockSyncService::MidiClockSyncService(oc::api::MidiAPI& midi)
+    : midi_(midi) {}
 
 FLASHMEM void MidiClockSyncService::queuePlayingProjection_(bool playing) {
-    if (!projected_playing_dirty_ && published_playing_ == playing) {
+    if ((projected_ui_dirty_mask_ & UiProjectionSnapshot::PLAYING) == 0 &&
+        published_ui_state_.playing == playing) {
         return;
     }
 
-    projected_playing_ = playing;
-    projected_playing_dirty_ = true;
+    projected_ui_state_.playing = playing;
+    projected_ui_dirty_mask_ |= UiProjectionSnapshot::PLAYING;
 }
 
 FLASHMEM void MidiClockSyncService::queueTempoDisplayProjection_(float tempo) {
-    if (!projected_tempo_display_dirty_ && published_tempo_display_ == tempo) {
+    if ((projected_ui_dirty_mask_ & UiProjectionSnapshot::TEMPO_DISPLAY) == 0 &&
+        published_ui_state_.tempoDisplay == tempo) {
         return;
     }
 
-    projected_tempo_display_ = tempo;
-    projected_tempo_display_dirty_ = true;
+    projected_ui_state_.tempoDisplay = tempo;
+    projected_ui_dirty_mask_ |= UiProjectionSnapshot::TEMPO_DISPLAY;
 }
 
 FLASHMEM void MidiClockSyncService::queueSyncExternalSourceProjection_(bool active) {
-    if (!projected_sync_external_source_dirty_ && published_sync_external_source_ == active) {
+    if ((projected_ui_dirty_mask_ & UiProjectionSnapshot::SYNC_EXTERNAL_SOURCE) == 0 &&
+        published_ui_state_.syncExternalSource == active) {
         return;
     }
 
-    projected_sync_external_source_ = active;
-    projected_sync_external_source_dirty_ = true;
+    projected_ui_state_.syncExternalSource = active;
+    projected_ui_dirty_mask_ |= UiProjectionSnapshot::SYNC_EXTERNAL_SOURCE;
 }
 
 FLASHMEM void MidiClockSyncService::queueTempoLockedProjection_(bool locked) {
-    if (!projected_tempo_locked_dirty_ && published_tempo_locked_ == locked) {
+    if ((projected_ui_dirty_mask_ & UiProjectionSnapshot::TEMPO_LOCKED) == 0 &&
+        published_ui_state_.tempoLocked == locked) {
         return;
     }
 
-    projected_tempo_locked_ = locked;
-    projected_tempo_locked_dirty_ = true;
+    projected_ui_state_.tempoLocked = locked;
+    projected_ui_dirty_mask_ |= UiProjectionSnapshot::TEMPO_LOCKED;
 }
 
 FLASHMEM void MidiClockSyncService::queueTransportLockedProjection_(bool locked) {
-    if (!projected_transport_locked_dirty_ && published_transport_locked_ == locked) {
+    if ((projected_ui_dirty_mask_ & UiProjectionSnapshot::TRANSPORT_LOCKED) == 0 &&
+        published_ui_state_.transportLocked == locked) {
         return;
     }
 
-    projected_transport_locked_ = locked;
-    projected_transport_locked_dirty_ = true;
+    projected_ui_state_.transportLocked = locked;
+    projected_ui_dirty_mask_ |= UiProjectionSnapshot::TRANSPORT_LOCKED;
 }
 
 FLASHMEM void MidiClockSyncService::queueActiveSourceProjection_(core::state::ClockSourceActive source) {
-    if (!projected_active_source_dirty_ && published_active_source_ == source) {
+    if ((projected_ui_dirty_mask_ & UiProjectionSnapshot::ACTIVE_SOURCE) == 0 &&
+        published_ui_state_.activeSource == source) {
         return;
     }
 
-    projected_active_source_ = source;
-    projected_active_source_dirty_ = true;
+    projected_ui_state_.activeSource = source;
+    projected_ui_dirty_mask_ |= UiProjectionSnapshot::ACTIVE_SOURCE;
 }
 
 FLASHMEM void MidiClockSyncService::queueExternalClockPresentProjection_(bool present) {
-    if (!projected_external_clock_present_dirty_ && published_external_clock_present_ == present) {
+    if ((projected_ui_dirty_mask_ & UiProjectionSnapshot::EXTERNAL_CLOCK_PRESENT) == 0 &&
+        published_ui_state_.externalClockPresent == present) {
         return;
     }
 
-    projected_external_clock_present_ = present;
-    projected_external_clock_present_dirty_ = true;
+    projected_ui_state_.externalClockPresent = present;
+    projected_ui_dirty_mask_ |= UiProjectionSnapshot::EXTERNAL_CLOCK_PRESENT;
 }
 
-FLASHMEM void MidiClockSyncService::publishUiState(uint32_t nowMs) {
-    if (projected_playing_dirty_) {
-        status_bar_.playing.set(projected_playing_);
-        published_playing_ = projected_playing_;
-        projected_playing_dirty_ = false;
+FLASHMEM MidiClockSyncService::UiProjectionSnapshot MidiClockSyncService::takeUiProjectionSnapshot() {
+    UiProjectionSnapshot snapshot{
+        .dirtyMask = projected_ui_dirty_mask_,
+        .playing = projected_ui_state_.playing,
+        .tempoDisplay = projected_ui_state_.tempoDisplay,
+        .syncExternalSource = projected_ui_state_.syncExternalSource,
+        .tempoLocked = projected_ui_state_.tempoLocked,
+        .transportLocked = projected_ui_state_.transportLocked,
+        .activeSource = projected_ui_state_.activeSource,
+        .externalClockPresent = projected_ui_state_.externalClockPresent,
+        .syncInputPulse = pending_sync_input_pulse_,
+    };
+
+    if ((snapshot.dirtyMask & UiProjectionSnapshot::PLAYING) != 0) {
+        published_ui_state_.playing = snapshot.playing;
+    }
+    if ((snapshot.dirtyMask & UiProjectionSnapshot::TEMPO_DISPLAY) != 0) {
+        published_ui_state_.tempoDisplay = snapshot.tempoDisplay;
+    }
+    if ((snapshot.dirtyMask & UiProjectionSnapshot::SYNC_EXTERNAL_SOURCE) != 0) {
+        published_ui_state_.syncExternalSource = snapshot.syncExternalSource;
+    }
+    if ((snapshot.dirtyMask & UiProjectionSnapshot::TEMPO_LOCKED) != 0) {
+        published_ui_state_.tempoLocked = snapshot.tempoLocked;
+    }
+    if ((snapshot.dirtyMask & UiProjectionSnapshot::TRANSPORT_LOCKED) != 0) {
+        published_ui_state_.transportLocked = snapshot.transportLocked;
+    }
+    if ((snapshot.dirtyMask & UiProjectionSnapshot::ACTIVE_SOURCE) != 0) {
+        published_ui_state_.activeSource = snapshot.activeSource;
+    }
+    if ((snapshot.dirtyMask & UiProjectionSnapshot::EXTERNAL_CLOCK_PRESENT) != 0) {
+        published_ui_state_.externalClockPresent = snapshot.externalClockPresent;
     }
 
-    if (projected_tempo_display_dirty_) {
-        status_bar_.tempoDisplay.set(projected_tempo_display_);
-        published_tempo_display_ = projected_tempo_display_;
-        projected_tempo_display_dirty_ = false;
-    }
+    projected_ui_dirty_mask_ = 0;
+    pending_sync_input_pulse_ = false;
 
-    if (projected_sync_external_source_dirty_) {
-        status_bar_.syncExternalSource.set(projected_sync_external_source_);
-        published_sync_external_source_ = projected_sync_external_source_;
-        projected_sync_external_source_dirty_ = false;
-    }
-
-    if (projected_tempo_locked_dirty_) {
-        status_bar_.tempoLocked.set(projected_tempo_locked_);
-        published_tempo_locked_ = projected_tempo_locked_;
-        projected_tempo_locked_dirty_ = false;
-    }
-
-    if (projected_transport_locked_dirty_) {
-        status_bar_.transportLocked.set(projected_transport_locked_);
-        published_transport_locked_ = projected_transport_locked_;
-        projected_transport_locked_dirty_ = false;
-    }
-
-    if (projected_active_source_dirty_) {
-        sync_state_.activeSource.set(projected_active_source_);
-        published_active_source_ = projected_active_source_;
-        projected_active_source_dirty_ = false;
-    }
-
-    if (projected_external_clock_present_dirty_) {
-        sync_state_.externalClockPresent.set(projected_external_clock_present_);
-        published_external_clock_present_ = projected_external_clock_present_;
-        projected_external_clock_present_dirty_ = false;
-    }
-
-    if (pending_sync_input_pulse_) {
-        status_bar_.pulseSyncInput(nowMs);
-        pending_sync_input_pulse_ = false;
-    }
+    return snapshot;
 }
 
 void MidiClockSyncService::update(const MidiClockSyncRuntimeConfig& config,

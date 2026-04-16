@@ -24,6 +24,12 @@ using oc::state::SignalLabel;
  */
 struct StatusBarState {
     static constexpr uint8_t TRACK_COUNT = 16;
+    static constexpr uint8_t TRANSIENT_NOTE_IN = 1U << 0;
+    static constexpr uint8_t TRANSIENT_NOTE_OUT = 1U << 1;
+    static constexpr uint8_t TRANSIENT_CC_IN = 1U << 2;
+    static constexpr uint8_t TRANSIENT_CC_OUT = 1U << 3;
+    static constexpr uint8_t TRANSIENT_SYNC_INPUT = 1U << 4;
+    static constexpr uint8_t TRANSIENT_BEAT = 1U << 5;
 
     // TopBar
     SignalLabel pageName;
@@ -54,7 +60,7 @@ struct StatusBarState {
     StatusBarState();
 
     void pulseNoteIn() {
-        pulseTransient(noteInActive, note_in_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
+        pulseNoteIn(oc::time::millis());
     }
 
     void pulseNoteIn(uint32_t nowMs) {
@@ -62,12 +68,14 @@ struct StatusBarState {
             noteInActive,
             note_in_until_ms_,
             Config::Timing::STATUS_MIDI_PULSE_MS,
-            nowMs
+            nowMs,
+            active_transient_mask_,
+            TRANSIENT_NOTE_IN
         );
     }
 
     void pulseNoteOut() {
-        pulseTransient(noteOutActive, note_out_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
+        pulseNoteOut(oc::time::millis());
     }
 
     void pulseNoteOut(uint32_t nowMs) {
@@ -75,12 +83,14 @@ struct StatusBarState {
             noteOutActive,
             note_out_until_ms_,
             Config::Timing::STATUS_MIDI_PULSE_MS,
-            nowMs
+            nowMs,
+            active_transient_mask_,
+            TRANSIENT_NOTE_OUT
         );
     }
 
     void pulseCcIn() {
-        pulseTransient(ccInActive, cc_in_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
+        pulseCcIn(oc::time::millis());
     }
 
     void pulseCcIn(uint32_t nowMs) {
@@ -88,12 +98,14 @@ struct StatusBarState {
             ccInActive,
             cc_in_until_ms_,
             Config::Timing::STATUS_MIDI_PULSE_MS,
-            nowMs
+            nowMs,
+            active_transient_mask_,
+            TRANSIENT_CC_IN
         );
     }
 
     void pulseCcOut() {
-        pulseTransient(ccOutActive, cc_out_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
+        pulseCcOut(oc::time::millis());
     }
 
     void pulseCcOut(uint32_t nowMs) {
@@ -101,12 +113,14 @@ struct StatusBarState {
             ccOutActive,
             cc_out_until_ms_,
             Config::Timing::STATUS_MIDI_PULSE_MS,
-            nowMs
+            nowMs,
+            active_transient_mask_,
+            TRANSIENT_CC_OUT
         );
     }
 
     void pulseSyncInput() {
-        pulseTransient(syncInputPulse, sync_input_until_ms_, Config::Timing::STATUS_MIDI_PULSE_MS);
+        pulseSyncInput(oc::time::millis());
     }
 
     void pulseSyncInput(uint32_t nowMs) {
@@ -114,12 +128,14 @@ struct StatusBarState {
             syncInputPulse,
             sync_input_until_ms_,
             Config::Timing::STATUS_MIDI_PULSE_MS,
-            nowMs
+            nowMs,
+            active_transient_mask_,
+            TRANSIENT_SYNC_INPUT
         );
     }
 
     void pulseBeat() {
-        pulseTransient(beatPulse, beat_until_ms_, Config::Timing::STATUS_BEAT_PULSE_MS);
+        pulseBeat(oc::time::millis());
     }
 
     void pulseBeat(uint32_t nowMs) {
@@ -127,7 +143,9 @@ struct StatusBarState {
             beatPulse,
             beat_until_ms_,
             Config::Timing::STATUS_BEAT_PULSE_MS,
-            nowMs
+            nowMs,
+            active_transient_mask_,
+            TRANSIENT_BEAT
         );
     }
 
@@ -138,18 +156,60 @@ struct StatusBarState {
     void pulseTrackNote(uint8_t track, uint8_t velocity, uint32_t nowMs) {
         if (track >= TRACK_COUNT) return;
         track_note_until_ms_[track] = nowMs + Config::Timing::STATUS_MIDI_PULSE_MS;
+        active_track_note_mask_ |= static_cast<uint16_t>(1U << track);
         trackNoteActivity[track].set(velocity);
     }
 
     void updateTransient(uint32_t nowMs) {
-        expireTransient(noteInActive, note_in_until_ms_, nowMs);
-        expireTransient(noteOutActive, note_out_until_ms_, nowMs);
-        expireTransient(ccInActive, cc_in_until_ms_, nowMs);
-        expireTransient(ccOutActive, cc_out_until_ms_, nowMs);
-        expireTransient(syncInputPulse, sync_input_until_ms_, nowMs);
-        expireTransient(beatPulse, beat_until_ms_, nowMs);
+        if (active_transient_mask_ & TRANSIENT_NOTE_IN) {
+            expireTransient(
+                noteInActive,
+                note_in_until_ms_,
+                nowMs,
+                active_transient_mask_,
+                TRANSIENT_NOTE_IN
+            );
+        }
+        if (active_transient_mask_ & TRANSIENT_NOTE_OUT) {
+            expireTransient(
+                noteOutActive,
+                note_out_until_ms_,
+                nowMs,
+                active_transient_mask_,
+                TRANSIENT_NOTE_OUT
+            );
+        }
+        if (active_transient_mask_ & TRANSIENT_CC_IN) {
+            expireTransient(ccInActive, cc_in_until_ms_, nowMs, active_transient_mask_, TRANSIENT_CC_IN);
+        }
+        if (active_transient_mask_ & TRANSIENT_CC_OUT) {
+            expireTransient(ccOutActive,
+                            cc_out_until_ms_,
+                            nowMs,
+                            active_transient_mask_,
+                            TRANSIENT_CC_OUT);
+        }
+        if (active_transient_mask_ & TRANSIENT_SYNC_INPUT) {
+            expireTransient(syncInputPulse,
+                            sync_input_until_ms_,
+                            nowMs,
+                            active_transient_mask_,
+                            TRANSIENT_SYNC_INPUT);
+        }
+        if (active_transient_mask_ & TRANSIENT_BEAT) {
+            expireTransient(beatPulse, beat_until_ms_, nowMs, active_transient_mask_, TRANSIENT_BEAT);
+        }
+
+        if (active_track_note_mask_ == 0) {
+            return;
+        }
+
+        const uint16_t activeTrackMask = active_track_note_mask_;
         for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-            expireTrackTransient(trackNoteActivity[i], track_note_until_ms_[i], nowMs);
+            if ((activeTrackMask & static_cast<uint16_t>(1U << i)) == 0) {
+                continue;
+            }
+            expireTrackTransient(trackNoteActivity[i], track_note_until_ms_[i], nowMs, active_track_note_mask_, i);
         }
     }
 
@@ -157,28 +217,44 @@ private:
     static void pulseTransientAt(Signal<bool>& signal,
                                  uint32_t& untilMs,
                                  uint32_t durationMs,
-                                 uint32_t nowMs) {
+                                 uint32_t nowMs,
+                                 uint8_t& activeMask,
+                                 uint8_t activeBit) {
         untilMs = nowMs + durationMs;
+        activeMask |= activeBit;
         if (!signal.get()) {
             signal.set(true);
         }
     }
 
-    static void pulseTransient(Signal<bool>& signal, uint32_t& untilMs, uint32_t durationMs) {
-        pulseTransientAt(signal, untilMs, durationMs, oc::time::millis());
-    }
-
-    static void expireTransient(Signal<bool>& signal, uint32_t& untilMs, uint32_t nowMs) {
-        if (!signal.get()) return;
+    static void expireTransient(Signal<bool>& signal,
+                                uint32_t& untilMs,
+                                uint32_t nowMs,
+                                uint8_t& activeMask,
+                                uint8_t activeBit) {
+        if (!signal.get()) {
+            activeMask &= static_cast<uint8_t>(~activeBit);
+            return;
+        }
         if (static_cast<uint32_t>(nowMs - untilMs) < 0x80000000u) {
             signal.set(false);
+            activeMask &= static_cast<uint8_t>(~activeBit);
         }
     }
 
-    static void expireTrackTransient(Signal<uint8_t, 4>& signal, uint32_t& untilMs, uint32_t nowMs) {
-        if (signal.get() == 0) return;
+    static void expireTrackTransient(Signal<uint8_t, 4>& signal,
+                                     uint32_t& untilMs,
+                                     uint32_t nowMs,
+                                     uint16_t& activeMask,
+                                     uint8_t track) {
+        const uint16_t trackBit = static_cast<uint16_t>(1U << track);
+        if (signal.get() == 0) {
+            activeMask &= static_cast<uint16_t>(~trackBit);
+            return;
+        }
         if (static_cast<uint32_t>(nowMs - untilMs) < 0x80000000u) {
             signal.set(0);
+            activeMask &= static_cast<uint16_t>(~trackBit);
         }
     }
 
@@ -189,6 +265,8 @@ private:
     uint32_t sync_input_until_ms_ = 0;
     uint32_t beat_until_ms_ = 0;
     std::array<uint32_t, TRACK_COUNT> track_note_until_ms_{};
+    uint8_t active_transient_mask_ = 0;
+    uint16_t active_track_note_mask_ = 0;
 };
 
 }  // namespace core::state

@@ -7,7 +7,6 @@
 
 #include "sequencer/InternalTransportClock.hpp"
 #include "state/MidiSyncState.hpp"
-#include "state/StatusBarState.hpp"
 
 namespace core::sequencer {
 
@@ -22,9 +21,29 @@ struct MidiClockSyncRuntimeConfig {
 
 class MidiClockSyncService {
 public:
-    MidiClockSyncService(core::state::MidiSyncState& syncState,
-                         core::state::StatusBarState& statusBar,
-                         oc::api::MidiAPI& midi);
+    struct UiProjectionSnapshot {
+        enum DirtyBits : uint8_t {
+            PLAYING = 1U << 0,
+            TEMPO_DISPLAY = 1U << 1,
+            SYNC_EXTERNAL_SOURCE = 1U << 2,
+            TEMPO_LOCKED = 1U << 3,
+            TRANSPORT_LOCKED = 1U << 4,
+            ACTIVE_SOURCE = 1U << 5,
+            EXTERNAL_CLOCK_PRESENT = 1U << 6,
+        };
+
+        uint8_t dirtyMask = 0;
+        bool playing = false;
+        float tempoDisplay = 120.0f;
+        bool syncExternalSource = false;
+        bool tempoLocked = false;
+        bool transportLocked = false;
+        core::state::ClockSourceActive activeSource = core::state::ClockSourceActive::INTERNAL;
+        bool externalClockPresent = false;
+        bool syncInputPulse = false;
+    };
+
+    explicit MidiClockSyncService(oc::api::MidiAPI& midi);
 
     void update(const MidiClockSyncRuntimeConfig& config, uint32_t nowMs, bool driveTransport = true);
 
@@ -32,7 +51,7 @@ public:
     void onStart();
     void onContinue();
     void onStop();
-    void publishUiState(uint32_t nowMs);
+    UiProjectionSnapshot takeUiProjectionSnapshot();
 
     uint32_t tick() const { return current_tick_; }
     bool playing() const { return current_playing_; }
@@ -58,8 +77,16 @@ private:
     bool allowExternalTransport_() const;
     bool hasExternalClockSignal_(uint32_t nowMs) const;
 
-    core::state::MidiSyncState& sync_state_;
-    core::state::StatusBarState& status_bar_;
+    struct UiProjectionState {
+        bool playing = false;
+        float tempoDisplay = 120.0f;
+        bool syncExternalSource = false;
+        bool tempoLocked = false;
+        bool transportLocked = false;
+        core::state::ClockSourceActive activeSource = core::state::ClockSourceActive::INTERNAL;
+        bool externalClockPresent = false;
+    };
+
     oc::api::MidiAPI& midi_;
 
     InternalTransportClock internal_clock_;
@@ -92,29 +119,9 @@ private:
     bool display_filter_initialized_ = false;
     bool display_filter_external_mode_ = false;
     MidiClockSyncRuntimeConfig runtime_config_{};
-    bool published_playing_ = false;
-    float published_tempo_display_ = 120.0f;
-    bool published_sync_external_source_ = false;
-    bool published_tempo_locked_ = false;
-    bool published_transport_locked_ = false;
-    core::state::ClockSourceActive published_active_source_ =
-        core::state::ClockSourceActive::INTERNAL;
-    bool published_external_clock_present_ = false;
-    bool projected_playing_ = false;
-    bool projected_playing_dirty_ = false;
-    float projected_tempo_display_ = 120.0f;
-    bool projected_tempo_display_dirty_ = false;
-    bool projected_sync_external_source_ = false;
-    bool projected_sync_external_source_dirty_ = false;
-    bool projected_tempo_locked_ = false;
-    bool projected_tempo_locked_dirty_ = false;
-    bool projected_transport_locked_ = false;
-    bool projected_transport_locked_dirty_ = false;
-    core::state::ClockSourceActive projected_active_source_ =
-        core::state::ClockSourceActive::INTERNAL;
-    bool projected_active_source_dirty_ = false;
-    bool projected_external_clock_present_ = false;
-    bool projected_external_clock_present_dirty_ = false;
+    UiProjectionState published_ui_state_{};
+    UiProjectionState projected_ui_state_{};
+    uint8_t projected_ui_dirty_mask_ = 0;
     bool pending_sync_input_pulse_ = false;
 };
 

@@ -8,6 +8,7 @@
 #include <oc/interface/IMidi.hpp>
 
 #include "../../src/sequencer/MidiClockSyncService.hpp"
+#include "../../src/state/StatusBarState.hpp"
 
 namespace {
 
@@ -78,12 +79,36 @@ core::sequencer::MidiClockSyncRuntimeConfig captureConfig(
 }
 
 void stepService(core::sequencer::MidiClockSyncService& service,
-                 const core::state::MidiSyncState& sync,
-                 const core::state::StatusBarState& status,
+                 core::state::MidiSyncState& sync,
+                 core::state::StatusBarState& status,
                  uint32_t nowMs,
                  bool driveTransport = true) {
     service.update(captureConfig(sync, status), nowMs, driveTransport);
-    service.publishUiState(nowMs);
+    const auto projection = service.takeUiProjectionSnapshot();
+    if ((projection.dirtyMask & core::sequencer::MidiClockSyncService::UiProjectionSnapshot::PLAYING) != 0) {
+        status.playing.set(projection.playing);
+    }
+    if ((projection.dirtyMask & core::sequencer::MidiClockSyncService::UiProjectionSnapshot::TEMPO_DISPLAY) != 0) {
+        status.tempoDisplay.set(projection.tempoDisplay);
+    }
+    if ((projection.dirtyMask & core::sequencer::MidiClockSyncService::UiProjectionSnapshot::SYNC_EXTERNAL_SOURCE) != 0) {
+        status.syncExternalSource.set(projection.syncExternalSource);
+    }
+    if ((projection.dirtyMask & core::sequencer::MidiClockSyncService::UiProjectionSnapshot::TEMPO_LOCKED) != 0) {
+        status.tempoLocked.set(projection.tempoLocked);
+    }
+    if ((projection.dirtyMask & core::sequencer::MidiClockSyncService::UiProjectionSnapshot::TRANSPORT_LOCKED) != 0) {
+        status.transportLocked.set(projection.transportLocked);
+    }
+    if ((projection.dirtyMask & core::sequencer::MidiClockSyncService::UiProjectionSnapshot::ACTIVE_SOURCE) != 0) {
+        sync.activeSource.set(projection.activeSource);
+    }
+    if ((projection.dirtyMask & core::sequencer::MidiClockSyncService::UiProjectionSnapshot::EXTERNAL_CLOCK_PRESENT) != 0) {
+        sync.externalClockPresent.set(projection.externalClockPresent);
+    }
+    if (projection.syncInputPulse) {
+        status.pulseSyncInput(nowMs);
+    }
 }
 
 void test_master_emits_realtime() {
@@ -91,7 +116,7 @@ void test_master_emits_realtime() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::MASTER);
     status.tempo.set(120.0f);
@@ -120,7 +145,7 @@ void test_slave_follows_external_clock_and_transport() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::SLAVE);
     sync.followTransport.set(true);
@@ -153,7 +178,7 @@ void test_auto_lock_and_fallback() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::AUTO);
     sync.autoLockClockCount.set(3);
@@ -187,7 +212,7 @@ void test_auto_latches_start_before_lock() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::AUTO);
     sync.followTransport.set(true);
@@ -220,7 +245,7 @@ void test_slave_clock_only_infers_play_state() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::SLAVE);
     sync.followTransport.set(true);
@@ -252,7 +277,7 @@ void test_auto_clock_only_plays_after_lock() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::AUTO);
     sync.followTransport.set(true);
@@ -278,7 +303,7 @@ void test_transport_lock_requires_follow() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::SLAVE);
     sync.followTransport.set(false);
@@ -297,7 +322,7 @@ void test_external_source_updates_displayed_tempo_and_activity() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::SLAVE);
     status.tempo.set(99.0f);
@@ -331,7 +356,7 @@ void test_external_tempo_precision_low_mid() {
         core::state::StatusBarState status;
         MockMidiTransport transport;
         oc::api::MidiAPI midi{transport};
-        core::sequencer::MidiClockSyncService service{sync, status, midi};
+        core::sequencer::MidiClockSyncService service{midi};
 
         sync.mode.set(core::state::MidiSyncMode::SLAVE);
 
@@ -358,7 +383,7 @@ void test_external_tempo_tracks_fast_change() {
     core::state::StatusBarState status;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    core::sequencer::MidiClockSyncService service{sync, status, midi};
+    core::sequencer::MidiClockSyncService service{midi};
 
     sync.mode.set(core::state::MidiSyncMode::SLAVE);
 
