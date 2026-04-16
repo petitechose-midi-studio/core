@@ -1,7 +1,5 @@
+#include <array>
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
-
-#include <string>
-#include <vector>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/api/ButtonAPI.hpp>
@@ -15,7 +13,7 @@
 namespace core::context::standalone {
 
 namespace {
-const std::vector<std::string> VIEW_NAMES = {"Macros", "Sequencer"};
+constexpr std::array<const char*, 2> kViewNames = {"Macros", "Sequencer"};
 }  // namespace
 
 FLASHMEM StandaloneOverlayAssembly::StandaloneOverlayAssembly(
@@ -50,7 +48,8 @@ FLASHMEM oc::type::ScopeID StandaloneOverlayAssembly::viewSelectorScope() const 
 
 FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, bool visible) {
     view_selector_->render({
-        .items = &VIEW_NAMES,
+        .items = kViewNames.data(),
+        .itemCount = kViewNames.size(),
         .selectedIndex = selectedIndex,
         .visible = visible,
     });

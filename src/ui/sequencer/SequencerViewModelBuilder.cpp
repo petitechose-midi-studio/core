@@ -58,22 +58,21 @@ const char* clipboardBadge(const core::state::StructureClipboardState& clipboard
 
 SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source) {
     const auto& sequencer = source.sequencer;
-    const auto& status = source.statusBar;
     const uint8_t activeTrack = source.sharedTrackActive.get();
     const bool focusingTrack =
         !source.trackNavigation.selection.active.get() &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
-    const bool focusingPage =
-        !sequencer.structureUi.pageSelection.active.get() &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE;
     const bool selectingTrack =
         source.trackNavigation.selection.active.get() &&
         source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
     const bool selectingPage =
         sequencer.structureUi.pageSelection.active.get() &&
         sequencer.structureUi.pageSelection.scope.get() == core::state::StructureSelectionScope::PAGE;
-    const uint16_t selectedMask = sequencer.structureUi.pageSelection.selectedMask.get();
-    const uint8_t selectionCount = countSelectedItems(selectedMask);
+    const uint16_t pageSelectedMask = sequencer.structureUi.pageSelection.selectedMask.get();
+    const uint16_t selectionMask = selectingTrack
+        ? source.trackNavigation.selection.selectedMask.get()
+        : (selectingPage ? pageSelectedMask : 0U);
+    const uint8_t selectionCount = countSelectedItems(selectionMask);
     const bool previewAddTrackSlot =
         !source.trackNavigation.selection.active.get() && source.trackNavigation.previewAddSlot.get();
     const bool previewAddPageSlot =
@@ -104,10 +103,6 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
             : ((previewAddPageSlot && addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT)
                    ? addPageIndex
                    : sequencer.visiblePage());
-    const bool previewTrackAddSlot =
-        previewAddTrackSlot &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK &&
-        addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     const bool previewPageAddSlotActive =
         previewAddPageSlot &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
@@ -131,37 +126,22 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
         );
     }
 
-    std::array<uint8_t, SequencerHeaderBarProps::TRACK_COUNT> trackActivity{};
-    for (uint8_t i = 0; i < trackActivity.size(); ++i) {
-        trackActivity[i] = status.trackNoteActivity[i].get();
-    }
-
     return {
         .length = sequencer.length.get(),
         .activePage = sequencer.pageForStep(sequencer.focusedStep.get()),
         .viewedPage = viewedPage,
         .playheadStep = sequencer.playheadStep.get(),
-        .activeTrack = activeTrack,
         .previewTrack = previewTrack,
         .addPageIndex = addPageIndex,
-        .addTrackIndex = addTrackIndex,
         .enabledMask = source.sharedTrackEnabledMask.get(),
-        .focusingTrack = focusingTrack,
-        .focusingPage = focusingPage,
         .selectingTrack = selectingTrack,
         .selectingPage = selectingPage,
         .previewPageAddSlot = previewPageAddSlotActive,
-        .previewTrackAddSlot = previewTrackAddSlot,
-        .trackSelectedMask = static_cast<uint16_t>(
-            selectingTrack ? source.trackNavigation.selection.selectedMask.get() : 0U
-        ),
         .pageSelectedMask = static_cast<uint16_t>(
-            selectingPage ? selectedMask : 0U
+            selectingPage ? pageSelectedMask : 0U
         ),
-        .trackActivity = trackActivity,
         .leftText = leftText,
         .badgeText = badgeText,
-        .dimmed = false,
     };
 }
 
@@ -224,19 +204,6 @@ ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource
                   .label = "PG",
               };
         props.slots[2].visualState = Visual::HIDDEN;
-        return props;
-    }
-
-    if (selectingTrack) {
-        props.slots[0] = makeIconSlot(
-            standalone::icons::ACTION_CANCEL,
-            Visual::ACTIVE
-        );
-        props.slots[1] = makeIconSlot(
-            standalone::icons::MIDI_CHANNEL,
-            Visual::ACTIVE
-        );
-        props.slots[2] = makeIconSlot(propertyIcon, Visual::DIM);
         return props;
     }
 
