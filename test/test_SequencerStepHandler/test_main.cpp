@@ -10,6 +10,7 @@
 #include <config/Timing.hpp>
 
 #include "../../../../open-control/framework/src/oc/core/event/EventBus.cpp"
+#include "../../src/handler/common/SharedTrackDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/handler/sequencer/SequencerStepHandler.hpp"
 #include "../support/CoreStorages.hpp"
@@ -61,7 +62,7 @@ struct SequencerStepHarness {
                   navigationFocus,
                   state.trackNavigation,
                   state.structureClipboard,
-                  state,
+                  core::handler::SharedTrackDomainServices::fromCoreState(state),
               },
               encoders,
               buttons,

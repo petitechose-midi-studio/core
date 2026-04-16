@@ -17,31 +17,27 @@
 
 namespace core::ui {
 
+struct SequencerHeaderBarStripSegmentGeometry {
+    lv_coord_t x = 0;
+    lv_coord_t width = 0;
+};
+
 struct SequencerHeaderBarProps {
     static constexpr uint8_t TRACK_COUNT = core::state::StatusBarState::TRACK_COUNT;
-    static constexpr uint8_t VISIBLE_TRACK_COUNT = TRACK_COUNT;
 
     uint8_t length = 0;
     uint8_t activePage = 0;
     uint8_t viewedPage = 0;     // 0..15, may point to a future paste target page
     int16_t playheadStep = -1;  // -1 when stopped
-    uint8_t activeTrack = 0;
     uint8_t previewTrack = 0;
     uint8_t addPageIndex = core::state::sequencer::SequencerState::PAGE_COUNT;
-    uint8_t addTrackIndex = TRACK_COUNT;
     uint16_t enabledMask = 0x0001;
-    bool focusingTrack = false;
-    bool focusingPage = false;
     bool selectingTrack = false;
     bool selectingPage = false;
     bool previewPageAddSlot = false;
-    bool previewTrackAddSlot = false;
-    uint16_t trackSelectedMask = 0;
     uint16_t pageSelectedMask = 0;
-    std::array<uint8_t, TRACK_COUNT> trackActivity{};
     const char* leftText = "";
     std::array<char, 12> badgeText{};
-    bool dimmed = false;
 };
 
 /**
@@ -65,30 +61,21 @@ public:
 
 private:
     static constexpr uint8_t PAGE_COUNT = core::state::sequencer::SequencerState::PAGE_COUNT;
-    static constexpr uint8_t STEPS_PER_PAGE = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
     static constexpr lv_coord_t HEADER_HEIGHT = 28;
-    static constexpr lv_coord_t STRIP_HEIGHT = 14;
-    static constexpr lv_coord_t MARKER_WIDTH = 2;
 
     void createUI(lv_obj_t* parent);
     static void onStripDrawEvent(lv_event_t* event);
     void renderTopRow(const SequencerHeaderBarProps& props);
     void renderStrip(const SequencerHeaderBarProps& props);
 
-    struct StripSegmentGeometry {
-        lv_coord_t x = 0;
-        lv_coord_t width = 0;
-    };
-
     lv_obj_t* container_ = nullptr;
     lv_obj_t* accent_ = nullptr;
     lv_obj_t* label_ = nullptr;
     lv_obj_t* badge_ = nullptr;
-    lv_obj_t* spacer_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
     lv_obj_t* view_cursor_ = nullptr;
     lv_obj_t* strip_cursor_ = nullptr;
-    std::array<StripSegmentGeometry, PAGE_COUNT> strip_segment_geometry_{};
+    std::array<SequencerHeaderBarStripSegmentGeometry, PAGE_COUNT> strip_segment_geometry_{};
 
     std::array<char, 16> left_text_cache_{};
     std::array<char, 12> badge_text_cache_{};
