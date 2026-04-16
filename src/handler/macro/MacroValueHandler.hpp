@@ -15,7 +15,7 @@
 #include <oc/context/OverlayManager.hpp>
 
 #include <config/InputIDs.hpp>
-#include "handler/macro/MacroDomainServices.hpp"
+#include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -39,7 +39,7 @@ public:
     };
 
     MacroValueHandler(StateRefs state,
-                      MacroDomainServices services,
+                      MacroPerformanceDomainServices services,
                       oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                       oc::api::EncoderAPI& encoders,
                       oc::api::MidiAPI& midi,
@@ -60,7 +60,7 @@ private:
     core::state::macro::MacroUiState& macro_ui_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::MacroEditState& macro_edit_;
-    MacroDomainServices services_;
+    MacroPerformanceDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::MidiAPI& midi_;

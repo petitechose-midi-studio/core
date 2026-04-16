@@ -18,6 +18,8 @@
  * ```
  *
  * The context itself stays focused on lifecycle and assembly order.
+ * The standalone sequencer runtime is owned outside this context from the
+ * app pre-context hook, so UI/context updates never become its execution path.
  * CoreState is received from main.cpp (survives context switches).
  */
 

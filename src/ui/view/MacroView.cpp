@@ -6,9 +6,9 @@
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
 
+#include "state/macro/MacroWorkflow.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
 #include "ui/widget/MacroKnobWidget.hpp"
-#include "state/macro/MacroWorkflow.hpp"
 
 namespace core::ui {
 
@@ -108,11 +108,6 @@ FLASHMEM MacroView::~MacroView() {
 
 FLASHMEM void MacroView::onActivate() {
     if (container_) {
-        core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
-            state_refs_.macros,
-            state_refs_.pages
-        );
-        state_refs_.statusBar.pageName.set(state_refs_.pages.activePageData().name);
         lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
         dirty_flags_.fill(true);
         has_dirty_ = true;

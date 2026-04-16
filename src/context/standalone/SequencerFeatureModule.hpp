@@ -11,37 +11,22 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
+#include "handler/common/SharedTrackDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "app/OverlayTypes.hpp"
-#include "app/ViewTypes.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
-}
-
-namespace oc::api {
-class MidiAPI;
-}
-
-namespace oc::interface {
-class IEventBus;
-}
-
-namespace core::state {
-struct CoreState;
 }
 
 namespace core::context::standalone {
 class SequencerEncoderSyncCoordinator;
 class SequencerOverlayPresenter;
 }  // namespace core::context::standalone
-
-namespace core::sequencer {
-class SequencerRuntimeService;
-}
 
 namespace core::handler {
 class SequencerMacroPropertyHandler;
@@ -57,7 +42,6 @@ namespace core::context::standalone {
 class SequencerFeatureModule {
 public:
     struct StateRefs {
-        core::state::CoreState& coreState;
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         oc::state::Signal<
@@ -70,11 +54,10 @@ public:
     };
 
     SequencerFeatureModule(StateRefs stateRefs,
+                           core::handler::SharedTrackDomainServices sharedTracks,
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,
-                           oc::api::MidiAPI& midi,
-                           oc::interface::IEventBus& eventBus,
                            lv_obj_t* sequencerViewScope);
     ~SequencerFeatureModule();
 
@@ -83,10 +66,8 @@ public:
 
     void resetEncoderSync();
     void syncEncodersNow();
-    void update();
 
 private:
-    std::unique_ptr<core::sequencer::SequencerRuntimeService> runtime_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerEncoderSyncCoordinator>
         encoder_sync_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;

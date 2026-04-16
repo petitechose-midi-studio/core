@@ -11,7 +11,7 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
-#include "../../src/handler/macro/MacroDomainServices.hpp"
+#include "../../src/handler/macro/MacroEditDomainServices.hpp"
 #include "../../src/handler/macro/MacroEditHandler.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
@@ -40,7 +40,7 @@ struct MacroEditHarness {
 
     CoreStorages storage;
     core::state::CoreState state;
-    core::handler::MacroDomainServices services;
+    core::handler::MacroEditDomainServices services;
 
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
@@ -58,7 +58,7 @@ struct MacroEditHarness {
                 storage.sequencerWorkspace,
                 storage.sequencerPatternLibrary,
                 storage.sequencerSetLibrary)
-        , services(core::handler::MacroDomainServices::fromCoreState(state))
+        , services(core::handler::MacroEditDomainServices::fromCoreState(state))
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)

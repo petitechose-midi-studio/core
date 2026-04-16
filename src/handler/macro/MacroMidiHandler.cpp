@@ -5,7 +5,7 @@
 namespace core::handler {
 
 MacroMidiHandler::MacroMidiHandler(StateRefs state,
-                                   MacroDomainServices services,
+                                   MacroPerformanceDomainServices services,
                                    oc::api::EncoderAPI& encoders)
     : active_view_(state.activeView)
     , services_(services)

@@ -22,7 +22,7 @@ float clampNormalized(float value) {
 
 FLASHMEM MacroEditHandler::MacroEditHandler(
     StateRefs state,
-    MacroDomainServices services,
+    MacroEditDomainServices services,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,

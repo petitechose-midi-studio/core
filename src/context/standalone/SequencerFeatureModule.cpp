@@ -2,34 +2,29 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
-#include <oc/api/MidiAPI.hpp>
-#include <oc/interface/IEventBus.hpp>
 #include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/SequencerEncoderSyncCoordinator.hpp"
 #include "context/standalone/SequencerOverlayPresenter.hpp"
+#include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "handler/sequencer/SequencerRangeActionHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
-#include "sequencer/SequencerRuntimeService.hpp"
 
 namespace core::context::standalone {
 
 FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     StateRefs stateRefs,
+    core::handler::SharedTrackDomainServices sharedTracks,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
-    oc::api::MidiAPI& midi,
-    oc::interface::IEventBus& eventBus,
     lv_obj_t* sequencerViewScope
 ) {
-    runtime_ =
-        std::make_unique<core::sequencer::SequencerRuntimeService>(stateRefs.coreState, midi, eventBus);
     const auto sequencerViewScopeId = oc::ui::lvgl::scopeID(sequencerViewScope);
     encoder_sync_ = core::app::makeExtmemUnique<SequencerEncoderSyncCoordinator>(
         SequencerEncoderSyncCoordinator::StateRefs{
@@ -63,7 +58,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.structureNavigationFocus,
             stateRefs.trackNavigation,
             stateRefs.structureClipboard,
-            stateRefs.coreState,
+            sharedTracks,
         },
         encoders,
         buttons,
@@ -142,12 +137,6 @@ void SequencerFeatureModule::resetEncoderSync() {
 void SequencerFeatureModule::syncEncodersNow() {
     if (encoder_sync_) {
         encoder_sync_->syncNow();
-    }
-}
-
-void SequencerFeatureModule::update() {
-    if (runtime_) {
-        runtime_->update();
     }
 }
 

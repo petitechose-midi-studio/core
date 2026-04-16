@@ -63,7 +63,7 @@ inline void recordMacroValueProfiling(uint32_t elapsed_us) {
 }  // namespace
 
 MacroValueHandler::MacroValueHandler(StateRefs state,
-                                     MacroDomainServices services,
+                                     MacroPerformanceDomainServices services,
                                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                      oc::api::EncoderAPI& encoders,
                                      oc::api::MidiAPI& midi,

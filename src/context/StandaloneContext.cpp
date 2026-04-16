@@ -8,13 +8,13 @@
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include "context/standalone/ActiveViewLifecyclePlan.hpp"
+#include "context/standalone/MacroViewActivationContract.hpp"
 #include "context/standalone/StandaloneFeatureAssembly.hpp"
 #include "context/standalone/StandaloneGlobalHandlerAssembly.hpp"
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 #include "context/standalone/StandaloneUiAssembly.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/CoreState.hpp"
-
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneFonts.hpp"
 
@@ -57,9 +57,9 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
-    if (feature_assembly_) {
-        feature_assembly_->update();
-    }
+    // Standalone UI/handler assemblies are reactive. The authoritative sequencer runtime
+    // is updated from the app pre-context hook in main.cpp to keep its ownership and
+    // execution path outside the context/UI lane.
 }
 
 FLASHMEM void StandaloneContext::onCleanup() {
@@ -126,7 +126,6 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         encoders(),
         buttons(),
         midi(),
-        rawEvents(),
         ui_assembly_->mainZone(),
         ui_assembly_->macroViewElement(),
         ui_assembly_->sequencerViewElement(),
@@ -254,6 +253,7 @@ FLASHMEM void StandaloneContext::applyActiveView() {
                 if (ui_assembly_) ui_assembly_->deactivateSequencerView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_MACRO:
+                core::context::standalone::prepareMacroViewActivation(core_state_);
                 if (ui_assembly_) ui_assembly_->activateMacroView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_SEQUENCER:

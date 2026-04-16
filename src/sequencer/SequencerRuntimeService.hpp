@@ -12,13 +12,23 @@
 #include "sequencer/MidiClockSyncService.hpp"
 #include "sequencer/SequencerPlaybackService.hpp"
 #include "sequencer/SequencerRuntimeStateSync.hpp"
-#include "state/CoreState.hpp"
+#include "state/MidiSyncState.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::sequencer {
 
 class SequencerRuntimeService {
 public:
-    SequencerRuntimeService(core::state::CoreState& coreState,
+    struct StateRefs {
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& trackBank;
+        core::state::StatusBarState& statusBar;
+        core::state::MidiSyncState& midiSync;
+    };
+
+    SequencerRuntimeService(StateRefs state,
                             oc::api::MidiAPI& midi,
                             oc::interface::IEventBus& eventBus);
     ~SequencerRuntimeService();
@@ -36,7 +46,7 @@ private:
     bool updateClockDomainOwnership_(const MidiClockSyncRuntimeConfig& config, uint32_t nowMs);
     uint8_t refreshTrackBankSnapshot_();
     void commitRuntimeSnapshot_(uint8_t snapshotIndex);
-    void publishPlaybackUiFromRealtime_(uint32_t nowMs);
+    void publishPlaybackUiFromTimerPath_(uint32_t nowMs);
 #ifdef ARDUINO
     bool syncInternalTimer_(bool enable);
     void publishInternalTimerInputs_(const MidiClockSyncRuntimeConfig& config, uint8_t snapshotIndex);

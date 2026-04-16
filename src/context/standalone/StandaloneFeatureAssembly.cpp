@@ -8,7 +8,10 @@
 #include "context/standalone/MacroFeatureModule.hpp"
 #include "context/standalone/SequencerFeatureModule.hpp"
 #include "context/standalone/SettingsFeatureModule.hpp"
-#include "handler/macro/MacroDomainServices.hpp"
+#include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/macro/MacroEditDomainServices.hpp"
+#include "handler/macro/MacroPerformanceDomainServices.hpp"
+#include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "state/CoreState.hpp"
@@ -23,7 +26,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     oc::api::MidiAPI& midi,
-    oc::interface::IEventBus& eventBus,
     lv_obj_t* mainZone,
     lv_obj_t* macroViewElement,
     lv_obj_t* sequencerViewElement,
@@ -45,7 +47,9 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.structureClipboard,
             state.configRevision,
         },
-        core::handler::MacroDomainServices::fromCoreState(state),
+        core::handler::MacroEditDomainServices::fromCoreState(state),
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        core::handler::MacroStructureDomainServices::fromCoreState(state),
         overlays,
         encoders,
         buttons,
@@ -56,7 +60,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     OC_LOG_DEBUG("StandaloneFeatureAssembly: sequencer_feature");
     sequencer_feature_ = core::app::makeExtmemUnique<core::context::standalone::SequencerFeatureModule>(
         core::context::standalone::SequencerFeatureModule::StateRefs{
-            state,
             state.overlays,
             state.activeView,
             state.structureNavigationFocus,
@@ -65,11 +68,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.sequencer,
             state.sequencerTracks,
         },
+        core::handler::SharedTrackDomainServices::fromCoreState(state),
         overlays,
         encoders,
         buttons,
-        midi,
-        eventBus,
         sequencerViewElement
     );
     OC_LOG_DEBUG("StandaloneFeatureAssembly: settings_feature");
@@ -125,12 +127,6 @@ FLASHMEM void StandaloneFeatureAssembly::resetSequencerEncoderSync() const {
 FLASHMEM void StandaloneFeatureAssembly::syncSequencerEncodersNow() const {
     if (sequencer_feature_) {
         sequencer_feature_->syncEncodersNow();
-    }
-}
-
-FLASHMEM void StandaloneFeatureAssembly::update() const {
-    if (sequencer_feature_) {
-        sequencer_feature_->update();
     }
 }
 

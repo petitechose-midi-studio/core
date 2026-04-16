@@ -10,8 +10,9 @@
 #include <oc/core/input/InputBinding.hpp>
 
 #include "../../../../open-control/framework/src/oc/core/event/EventBus.cpp"
-#include "../../src/handler/macro/MacroDomainServices.hpp"
 #include "../../src/handler/macro/MacroPerformanceHandler.hpp"
+#include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
+#include "../../src/handler/macro/MacroStructureDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -35,7 +36,8 @@ struct MacroPerformanceHarness {
 
     CoreStorages storage;
     core::state::CoreState state;
-    core::handler::MacroDomainServices services;
+    core::handler::MacroPerformanceDomainServices performanceServices;
+    core::handler::MacroStructureDomainServices structureServices;
     oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers> navigationFocus;
@@ -57,7 +59,8 @@ struct MacroPerformanceHarness {
                 storage.sequencerWorkspace,
                 storage.sequencerPatternLibrary,
                 storage.sequencerSetLibrary)
-        , services(core::handler::MacroDomainServices::fromCoreState(state))
+        , performanceServices(core::handler::MacroPerformanceDomainServices::fromCoreState(state))
+        , structureServices(core::handler::MacroStructureDomainServices::fromCoreState(state))
         , navigationFocus(core::state::StructureNavigationFocus::PAGE)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
@@ -68,11 +71,12 @@ struct MacroPerformanceHarness {
                   state.macroUi,
                   state.pages,
                   state.trackNavigation,
-                  state.sharedTrackActive,
-                  navigationFocus,
-                  clipboard,
+              state.sharedTrackActive,
+              navigationFocus,
+              clipboard,
               },
-              services,
+              performanceServices,
+              structureServices,
               overlays,
               encoders,
               buttons,
@@ -153,8 +157,8 @@ void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
     assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.pages.currentActiveTrack() == 1);
     assert(h.state.pages.currentActivePage() == 3);
-    assert(h.services.activeConfig(0).channel == 9);
-    assert(h.services.activeConfig(0).cc == 91);
+    assert(h.performanceServices.activeConfig(0).channel == 9);
+    assert(h.performanceServices.activeConfig(0).cc == 91);
     assert(std::strcmp(h.state.statusBar.pageName.get(), "Track 2 Page 4") == 0);
 
     drainNotifications();
@@ -213,7 +217,8 @@ void test_nav_selection_mode_deletes_selected_macro_page() {
 
     h.state.pages.activeTrackData().enabledPageMask = 0x0003;
     h.state.pages.syncActiveTrackCache();
-    h.services.switchToPage(1);
+    h.structureServices.switchToPage(1);
+    drainNotifications();
 
     h.press(Config::ButtonID::NAV);
     h.tick(0);
@@ -297,7 +302,8 @@ void test_macro_page_copy_and_long_press_paste() {
     );
     h.state.pages.activeTrackData().pages[0].cc[0] = 55;
     h.state.pages.activeTrackData().pages[1].cc[0] = 12;
-    h.services.switchToPage(0);
+    h.structureServices.switchToPage(0);
+    drainNotifications();
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);

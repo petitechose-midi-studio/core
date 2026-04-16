@@ -18,6 +18,7 @@
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
 #include "context/StandaloneContext.hpp"
+#include "context/standalone/StandaloneSequencerRuntimeGate.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
@@ -36,7 +37,8 @@ static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer
 static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
-static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService> sequencerRuntime;
+static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService>
+    standaloneSequencerRuntime;
 
 #if defined(PERF_LOG)
 namespace {
@@ -203,34 +205,48 @@ static FLASHMEM void initApp() {
         while (true) {}
     }
 
-    sequencerRuntime = core::app::makeExtmemUnique<core::sequencer::SequencerRuntimeService>(
-        *coreState,
+    standaloneSequencerRuntime =
+        core::app::makeExtmemUnique<core::sequencer::SequencerRuntimeService>(
+        core::sequencer::SequencerRuntimeService::StateRefs{
+            coreState->sequencer,
+            coreState->sequencerTracks,
+            coreState->statusBar,
+            coreState->midiSync,
+        },
         *app->midiAPI(),
         app->eventBus()
     );
-    if (!sequencerRuntime) {
+    if (!standaloneSequencerRuntime) {
         OC_LOG_ERROR("Sequencer runtime init failed: EXTMEM allocation failed");
         while (true) {}
     }
 
     const bool runtimeHookRegistered = app->registerPreContextUpdateHook([]() {
-        if (!app || !sequencerRuntime) return;
+        if (!app || !standaloneSequencerRuntime) return;
 
         static bool wasStandaloneActive = false;
 
         const bool isStandaloneActive =
             app->contexts().activeId() == static_cast<uint8_t>(Config::ContextID::STANDALONE);
+        const auto runtimeDecision =
+            core::context::standalone::decideStandaloneSequencerRuntimeAction(
+                isStandaloneActive,
+                wasStandaloneActive
+            );
+        wasStandaloneActive = runtimeDecision.nextWasStandaloneActive;
 
-        if (!isStandaloneActive) {
-            if (wasStandaloneActive) {
-                sequencerRuntime->stop();
-            }
-            wasStandaloneActive = false;
-            return;
+        switch (runtimeDecision.action) {
+            case core::context::standalone::StandaloneSequencerRuntimeAction::UPDATE:
+                // Authoritative standalone runtime lane: kept outside the context/UI update path.
+                standaloneSequencerRuntime->update();
+                return;
+            case core::context::standalone::StandaloneSequencerRuntimeAction::STOP:
+                standaloneSequencerRuntime->stop();
+                return;
+            case core::context::standalone::StandaloneSequencerRuntimeAction::NONE:
+            default:
+                return;
         }
-
-        sequencerRuntime->update();
-        wasStandaloneActive = true;
     });
 
     if (!runtimeHookRegistered) {

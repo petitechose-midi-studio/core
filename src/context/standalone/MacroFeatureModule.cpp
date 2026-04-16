@@ -7,7 +7,6 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/MacroOverlayPresenter.hpp"
-#include "handler/macro/MacroDomainServices.hpp"
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
 #include "handler/macro/MacroPerformanceHandler.hpp"
@@ -15,8 +14,11 @@
 
 namespace core::context::standalone {
 
-FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
-                                                core::handler::MacroDomainServices services,
+FLASHMEM MacroFeatureModule::MacroFeatureModule(
+                                                StateRefs stateRefs,
+                                                core::handler::MacroEditDomainServices editServices,
+                                                core::handler::MacroPerformanceDomainServices performanceServices,
+                                                core::handler::MacroStructureDomainServices structureServices,
                                                 oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                                 oc::api::EncoderAPI& encoders,
                                                 oc::api::ButtonAPI& buttons,
@@ -74,7 +76,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
             stateRefs.activeView,
             stateRefs.macroEdit,
         },
-        services,
+        performanceServices,
         overlays,
         encoders,
         midi,
@@ -89,7 +91,8 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
             stateRefs.structureNavigationFocus,
             stateRefs.structureClipboard,
         },
-        services,
+        performanceServices,
+        structureServices,
         overlays,
         encoders,
         buttons,
@@ -97,7 +100,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
     );
     midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(
         core::handler::MacroMidiHandler::StateRefs{stateRefs.activeView},
-        services,
+        performanceServices,
         encoders
     );
     edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
@@ -106,7 +109,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(StateRefs stateRefs,
             stateRefs.pages,
             stateRefs.macroUi,
         },
-        services,
+        editServices,
         overlays,
         encoders,
         buttons,

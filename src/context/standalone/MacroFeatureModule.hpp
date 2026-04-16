@@ -11,7 +11,9 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
-#include "handler/macro/MacroDomainServices.hpp"
+#include "handler/macro/MacroEditDomainServices.hpp"
+#include "handler/macro/MacroPerformanceDomainServices.hpp"
+#include "handler/macro/MacroStructureDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -57,7 +59,9 @@ public:
     };
 
     MacroFeatureModule(StateRefs stateRefs,
-                       core::handler::MacroDomainServices services,
+                       core::handler::MacroEditDomainServices editServices,
+                       core::handler::MacroPerformanceDomainServices performanceServices,
+                       core::handler::MacroStructureDomainServices structureServices,
                        oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                        oc::api::EncoderAPI& encoders,
                        oc::api::ButtonAPI& buttons,

@@ -69,17 +69,17 @@ FLASHMEM void logPlaybackProfilingSnapshot(
 
 }  // namespace
 
-FLASHMEM SequencerRuntimeService::SequencerRuntimeService(core::state::CoreState& coreState,
+FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
                                                           oc::api::MidiAPI& midi,
                                                           oc::interface::IEventBus& eventBus)
     : event_bus_(eventBus)
     , midi_(midi)
-    , sequencer_state_(coreState.sequencer)
-    , track_bank_state_(coreState.sequencerTracks)
-    , status_bar_state_(coreState.statusBar)
-    , midi_sync_state_(coreState.midiSync)
-    , midi_clock_sync_(coreState.midiSync, coreState.statusBar, midi)
-    , sequencer_playback_(coreState.sequencer, coreState.sequencerTracks, coreState.statusBar, midi) {
+    , sequencer_state_(state.sequencer)
+    , track_bank_state_(state.trackBank)
+    , status_bar_state_(state.statusBar)
+    , midi_sync_state_(state.midiSync)
+    , midi_clock_sync_(state.midiSync, state.statusBar, midi)
+    , sequencer_playback_(state.sequencer, state.trackBank, state.statusBar, midi) {
     const uint8_t initialSnapshotIndex = refreshTrackBankSnapshot_();
     commitRuntimeSnapshot_(initialSnapshotIndex);
 #ifdef ARDUINO
@@ -131,7 +131,9 @@ void SequencerRuntimeService::update() {
 
     if (usingInternalTimerPath) {
         const uint32_t playbackStartUs = core::time_compat::micros();
-        publishPlaybackUiFromRealtime_(nowMs);
+        // The timer callback already advanced transport/playback. This lane only
+        // snapshots timer-produced telemetry and applies UI-facing projections.
+        publishPlaybackUiFromTimerPath_(nowMs);
         playbackUs = core::time_compat::micros() - playbackStartUs;
     } else {
         commitRuntimeSnapshot_(snapshotIndex);
@@ -234,13 +236,14 @@ void SequencerRuntimeService::commitRuntimeSnapshot_(uint8_t snapshotIndex) {
 #endif
 }
 
-void SequencerRuntimeService::publishPlaybackUiFromRealtime_(uint32_t nowMs) {
+void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
 #ifdef ARDUINO
     SequencerPlaybackService::UiProjectionSnapshot uiProjection;
     oc::note::sequencer::StepSequencerRuntimeState runtimeState;
     SequencerPlaybackService::ProfilingSnapshot profilingSnapshot{};
     bool shouldLogPlayback = false;
 
+    // Pull the timer-lane projection under lock, then publish it outside the ISR.
     {
         InterruptLock lock;
         uiProjection = sequencer_playback_.takeUiProjectionSnapshot();
@@ -300,6 +303,8 @@ void SequencerRuntimeService::publishInternalTimerInputs_(const MidiClockSyncRun
 }
 
 void SequencerRuntimeService::onInternalTimer_() {
+    // Internal master timer lane: keep this limited to transport advancement,
+    // playback scheduling, and backend output drain. Do not add UI/state writes here.
     const uint8_t inputIndex = runtime_snapshot_index_;
     const auto& snapshot = runtime_snapshots_[inputIndex];
     const auto config = internal_timer_configs_[inputIndex];

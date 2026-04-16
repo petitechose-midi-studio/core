@@ -16,7 +16,7 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
-#include "handler/macro/MacroDomainServices.hpp"
+#include "handler/macro/MacroEditDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
@@ -56,7 +56,7 @@ public:
      */
     MacroEditHandler(
         StateRefs state,
-        MacroDomainServices services,
+        MacroEditDomainServices services,
         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
@@ -106,7 +106,7 @@ private:
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
-    MacroDomainServices services_;
+    MacroEditDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

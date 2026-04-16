@@ -1,4 +1,4 @@
-#include "handler/macro/MacroDomainServices.hpp"
+#include "handler/macro/MacroStructureDomainServices.hpp"
 
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/CoreState.hpp"
@@ -53,107 +53,36 @@ void persistConfigChange(core::state::CoreState& state) {
 
 }  // namespace
 
-MacroDomainServices::MacroDomainServices(core::state::CoreState& state)
+MacroStructureDomainServices::MacroStructureDomainServices(core::state::CoreState& state)
     : state_(&state) {}
 
-MacroDomainServices MacroDomainServices::fromCoreState(core::state::CoreState& state) {
-    return MacroDomainServices{state};
+MacroStructureDomainServices MacroStructureDomainServices::fromCoreState(
+    core::state::CoreState& state
+) {
+    return MacroStructureDomainServices{state};
 }
 
-void MacroDomainServices::syncPreviewState_() const {
-    state_->trackNavigation.syncPreviewTrack(activeTrack());
-    state_->macroUi.syncPreviewPage(state_->pages.currentActivePage());
-}
-
-float MacroDomainServices::runtimeValue(uint8_t index) const {
-    return core::state::macro::MacroWorkflow::runtimeValue(state_->macros, index);
-}
-
-void MacroDomainServices::setRuntimeValue(uint8_t index, float value) const {
-    state_->noteMacroInteraction();
-    core::state::macro::MacroWorkflow::setRuntimeValue(state_->macros, index, value);
-}
-
-const core::state::macro::MacroConfig& MacroDomainServices::activeConfig(uint8_t index) const {
-    return core::state::macro::MacroWorkflow::activeConfig(state_->pages, index);
-}
-
-bool MacroDomainServices::setConfig(uint8_t index, uint8_t channel, uint8_t cc) const {
-    return core::state::macro::MacroWorkflow::setConfig(*state_, index, channel, cc);
-}
-
-bool MacroDomainServices::setTrackConfigs(
-    const std::array<core::state::macro::MacroConfig, core::state::macro::MACRO_COUNT>& configs
-) const {
-    const uint8_t targetChannel = configs[0].channel;
-    for (uint8_t i = 1; i < core::state::macro::MACRO_COUNT; ++i) {
-        if (configs[i].channel != targetChannel) {
-            return false;
-        }
-    }
-
-    const bool channelChanged = state_->pages.activeTrackChannel() != targetChannel;
-    bool anyCcChanged = false;
-
-    auto& page = state_->pages.activePageData();
-    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        if (page.cc[i] == configs[i].cc) continue;
-        page.cc[i] = configs[i].cc;
-        anyCcChanged = true;
-    }
-
-    if (!channelChanged && !anyCcChanged) {
-        return false;
-    }
-
-    if (channelChanged) {
-        state_->pages.setActiveTrackChannel(targetChannel);
-    } else {
-        state_->pages.updateActiveConfigs();
-    }
-
-    state_->configRevision.set(
-        core::state::macro::nextMacroConfigRevision(state_->configRevision.get())
-    );
-    state_->requestMacroWorkspacePersist();
-    return true;
-}
-
-bool MacroDomainServices::setConfigCc(uint8_t index, uint8_t cc) const {
-    return core::state::macro::MacroWorkflow::setConfigCc(*state_, index, cc);
-}
-
-bool MacroDomainServices::setTrackChannel(uint8_t channel) const {
-    return core::state::macro::MacroWorkflow::setTrackChannel(*state_, channel);
-}
-
-void MacroDomainServices::switchToPage(uint8_t pageIndex) const {
+void MacroStructureDomainServices::switchToPage(uint8_t pageIndex) const {
     core::state::macro::MacroWorkflow::switchToPage(*state_, pageIndex);
-    syncPreviewState_();
 }
 
-void MacroDomainServices::switchToTrack(uint8_t trackIndex) const {
+void MacroStructureDomainServices::switchToTrack(uint8_t trackIndex) const {
     core::state::macro::MacroWorkflow::switchToTrack(*state_, trackIndex);
-    syncPreviewState_();
 }
 
-uint8_t MacroDomainServices::activeTrack() const {
+uint8_t MacroStructureDomainServices::activeTrack() const {
     return state_->currentSharedActiveTrack();
 }
 
-uint8_t MacroDomainServices::activeTrackChannel() const {
-    return state_->pages.activeTrackChannel();
+uint16_t MacroStructureDomainServices::pageEnabledMask() const {
+    return state_->pages.currentEnabledPageMask();
 }
 
-bool MacroDomainServices::isActivePageEnabled() const {
-    return state_->pages.isPageEnabled(state_->pages.currentActivePage());
+uint16_t MacroStructureDomainServices::trackEnabledMask() const {
+    return state_->currentSharedTrackEnabledMask();
 }
 
-void MacroDomainServices::togglePageEnabled(uint8_t pageIndex) const {
-    state_->pages.togglePageEnabled(pageIndex);
-}
-
-bool MacroDomainServices::deleteActivePage() const {
+bool MacroStructureDomainServices::deleteActivePage() const {
     const auto mutation = structure_slots::removeIndex(
         state_->pages.currentEnabledPageMask(),
         state_->pages.currentActivePage(),
@@ -162,11 +91,10 @@ bool MacroDomainServices::deleteActivePage() const {
     if (!mutation.changed) return false;
 
     applyPageStructureMutation(*state_, mutation.nextMask, mutation.nextActive);
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::deleteActiveTrack() const {
+bool MacroStructureDomainServices::deleteActiveTrack() const {
     const auto mutation = structure_slots::removeIndex(
         state_->currentSharedTrackEnabledMask(),
         activeTrack(),
@@ -175,11 +103,10 @@ bool MacroDomainServices::deleteActiveTrack() const {
     if (!mutation.changed) return false;
 
     applyTrackStructureMutation(*state_, mutation.nextMask, mutation.nextActive);
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::deleteSelectedPages(uint16_t selectedMask) const {
+bool MacroStructureDomainServices::deleteSelectedPages(uint16_t selectedMask) const {
     const auto mutation = structure_slots::removeSelected(
         state_->pages.currentEnabledPageMask(),
         selectedMask,
@@ -189,11 +116,10 @@ bool MacroDomainServices::deleteSelectedPages(uint16_t selectedMask) const {
     if (!mutation.changed) return false;
 
     applyPageStructureMutation(*state_, mutation.nextMask, mutation.nextActive);
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::deleteSelectedTracks(uint16_t selectedMask) const {
+bool MacroStructureDomainServices::deleteSelectedTracks(uint16_t selectedMask) const {
     const auto mutation = structure_slots::removeSelected(
         state_->currentSharedTrackEnabledMask(),
         selectedMask,
@@ -203,11 +129,10 @@ bool MacroDomainServices::deleteSelectedTracks(uint16_t selectedMask) const {
     if (!mutation.changed) return false;
 
     applyTrackStructureMutation(*state_, mutation.nextMask, mutation.nextActive);
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::duplicateSelectedPages(uint16_t selectedMask) const {
+bool MacroStructureDomainServices::duplicateSelectedPages(uint16_t selectedMask) const {
     const auto result = structure_slots::duplicateSelectionIntoFreeSlots(
         state_->pages.currentEnabledPageMask(),
         selectedMask,
@@ -225,11 +150,10 @@ bool MacroDomainServices::duplicateSelectedPages(uint16_t selectedMask) const {
             ? result.firstDuplicated
             : state_->pages.currentActivePage()
     );
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::duplicateSelectedTracks(uint16_t selectedMask) const {
+bool MacroStructureDomainServices::duplicateSelectedTracks(uint16_t selectedMask) const {
     const auto result = structure_slots::duplicateSelectionIntoFreeSlots(
         state_->currentSharedTrackEnabledMask(),
         selectedMask,
@@ -247,11 +171,10 @@ bool MacroDomainServices::duplicateSelectedTracks(uint16_t selectedMask) const {
             ? result.firstDuplicated
             : activeTrack()
     );
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::erasePage(uint8_t pageIndex) const {
+bool MacroStructureDomainServices::erasePage(uint8_t pageIndex) const {
     if (pageIndex >= core::state::macro::PAGE_COUNT) return false;
     if (!state_->pages.activeTrackData().isPageEnabled(pageIndex)) return false;
 
@@ -260,13 +183,12 @@ bool MacroDomainServices::erasePage(uint8_t pageIndex) const {
     if (state_->pages.currentActivePage() == pageIndex) {
         state_->pages.setActivePage(pageIndex);
         syncActivePagePresentation(*state_);
-        syncPreviewState_();
     }
     persistConfigChange(*state_);
     return true;
 }
 
-bool MacroDomainServices::eraseTrack(uint8_t trackIndex) const {
+bool MacroStructureDomainServices::eraseTrack(uint8_t trackIndex) const {
     if (trackIndex >= core::state::macro::TRACK_COUNT) return false;
     if (!state_->pages.isTrackEnabled(trackIndex)) return false;
 
@@ -275,13 +197,12 @@ bool MacroDomainServices::eraseTrack(uint8_t trackIndex) const {
     if (activeTrack() == trackIndex) {
         state_->setSharedTrackState(trackEnabledMask(), trackIndex);
         syncActivePagePresentation(*state_);
-        syncPreviewState_();
     }
     persistConfigChange(*state_);
     return true;
 }
 
-bool MacroDomainServices::pastePage(
+bool MacroStructureDomainServices::pastePage(
     uint8_t pageIndex,
     const core::state::macro::MacroPageData& pageData
 ) const {
@@ -293,11 +214,10 @@ bool MacroDomainServices::pastePage(
     state_->pages.syncActiveTrackCache();
     state_->pages.setActivePage(pageIndex);
     finalizeStructureChange(*state_);
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::pasteTrack(
+bool MacroStructureDomainServices::pasteTrack(
     uint8_t trackIndex,
     const core::state::macro::MacroTrackData& trackData
 ) const {
@@ -313,11 +233,10 @@ bool MacroDomainServices::pasteTrack(
         ),
         trackIndex
     );
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::createNextPage() const {
+bool MacroStructureDomainServices::createNextPage() const {
     const uint16_t enabledMask = state_->pages.currentEnabledPageMask();
     const int nextPage = structure_slots::nextAddIndexAfterHighest(
         enabledMask,
@@ -332,11 +251,10 @@ bool MacroDomainServices::createNextPage() const {
         static_cast<uint16_t>(enabledMask | structure_slots::slotBit(index)),
         index
     );
-    syncPreviewState_();
     return true;
 }
 
-bool MacroDomainServices::createTrack(uint8_t trackIndex) const {
+bool MacroStructureDomainServices::createTrack(uint8_t trackIndex) const {
     if (trackIndex >= core::state::macro::TRACK_COUNT) return false;
     if ((state_->currentSharedTrackEnabledMask() & structure_slots::slotBit(trackIndex)) != 0) {
         return false;
@@ -345,31 +263,12 @@ bool MacroDomainServices::createTrack(uint8_t trackIndex) const {
     state_->pages.tracks[trackIndex].initDefaults(trackIndex);
     applyTrackStructureMutation(
         *state_,
-        static_cast<uint16_t>(state_->currentSharedTrackEnabledMask() | structure_slots::slotBit(trackIndex)),
+        static_cast<uint16_t>(
+            state_->currentSharedTrackEnabledMask() | structure_slots::slotBit(trackIndex)
+        ),
         trackIndex
     );
-    syncPreviewState_();
     return true;
-}
-
-uint16_t MacroDomainServices::pageEnabledMask() const {
-    return state_->pages.currentEnabledPageMask();
-}
-
-uint16_t MacroDomainServices::trackEnabledMask() const {
-    return state_->currentSharedTrackEnabledMask();
-}
-
-void MacroDomainServices::pulseCcIn() const {
-    state_->statusBar.pulseCcIn();
-}
-
-void MacroDomainServices::pulseCcOut() const {
-    state_->statusBar.pulseCcOut();
-}
-
-void MacroDomainServices::pulseNoteIn() const {
-    state_->statusBar.pulseNoteIn();
 }
 
 }  // namespace core::handler

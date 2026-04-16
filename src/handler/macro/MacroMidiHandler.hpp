@@ -14,7 +14,7 @@
 #include <oc/state/Signal.hpp>
 
 #include <config/InputIDs.hpp>
-#include "handler/macro/MacroDomainServices.hpp"
+#include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "app/ViewTypes.hpp"
 
 namespace core::handler {
@@ -32,7 +32,7 @@ public:
     };
 
     MacroMidiHandler(StateRefs state,
-                     MacroDomainServices services,
+                     MacroPerformanceDomainServices services,
                      oc::api::EncoderAPI& encoders);
 
     ~MacroMidiHandler() = default;
@@ -51,7 +51,7 @@ private:
     int8_t findMacroForCC(uint8_t channel, uint8_t cc) const;
 
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
-    MacroDomainServices services_;
+    MacroPerformanceDomainServices services_;
     oc::api::EncoderAPI& encoders_;
 };
 
