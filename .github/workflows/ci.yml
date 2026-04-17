@@ -13,10 +13,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PLATFORMIO_VERSION: "6.1.18"
+
 jobs:
   firmware_release:
     name: firmware (release)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,14 +35,14 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install platformio
+          python -m pip install "platformio==${PLATFORMIO_VERSION}"
 
       - name: Cache PlatformIO
         uses: actions/cache@v4
         with:
           path: |
             ~/.platformio
-          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'oc-sdk.ini') }}
+          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'oc-sdk.ini', 'oc-native-sdk.ini') }}
 
       - name: Build
         shell: bash
@@ -46,7 +50,34 @@ jobs:
           set -euo pipefail
           python -m platformio run -e release
 
-      - name: Test (native)
+  native_ci:
+    name: native_ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install PlatformIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "platformio==${PLATFORMIO_VERSION}"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'oc-sdk.ini', 'oc-native-sdk.ini') }}
+
+      - name: Test (native_ci)
         shell: bash
         run: |
           set -euo pipefail
