@@ -9,7 +9,6 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
-#include "../../../../open-control/framework/src/oc/core/event/EventBus.cpp"
 #include "../../src/handler/macro/MacroPerformanceHandler.hpp"
 #include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
 #include "../../src/handler/macro/MacroStructureDomainServices.hpp"
