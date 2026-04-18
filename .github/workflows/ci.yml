@@ -19,6 +19,7 @@ env:
 jobs:
   firmware_release:
     name: firmware (release)
+    if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
