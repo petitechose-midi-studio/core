@@ -1,0 +1,208 @@
+name: Candidate
+
+run-name: Candidate ${{ inputs.source_sha }} / ${{ inputs.request_id || 'manual' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Source commit SHA to package"
+        required: true
+        type: string
+      request_id:
+        description: "Optional dispatch correlation id"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: candidate-${{ inputs.source_sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  PLATFORMIO_VERSION: "6.1.18"
+  GIT_CONFIG_COUNT: 2
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+  GIT_CONFIG_KEY_1: advice.detachedHead
+  GIT_CONFIG_VALUE_1: "false"
+
+jobs:
+  build:
+    name: candidate build (release)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Validate source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          if [ "$sha" != "${{ inputs.source_sha }}" ]; then
+            echo "Checked out SHA does not match input" >&2
+            echo "input=${{ inputs.source_sha }}" >&2
+            echo "head=$sha" >&2
+            exit 1
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install PlatformIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "platformio==${PLATFORMIO_VERSION}"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.platformio
+          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'oc-sdk.ini', 'oc-native-sdk.ini') }}
+
+      - name: Build release firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m platformio run -e release
+
+      - name: Collect candidate firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp ".pio/build/release/firmware.hex" "dist/midi-studio-default-firmware.hex"
+          ls -la dist
+
+      - name: Upload candidate firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: midi-studio-default-firmware
+          path: dist/midi-studio-default-firmware.hex
+
+  metadata:
+    name: candidate metadata
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout source SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: main
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
+
+      - name: Resolve candidate tag
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "candidate_tag=rc-${{ inputs.source_sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Download candidate firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: midi-studio-default-firmware
+          path: artifacts
+
+      - name: Generate candidate metadata inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > artifacts/candidate-artifacts.json <<'EOF'
+          [
+            {
+              "id": "firmware-default",
+              "filename": "midi-studio-default-firmware.hex",
+              "kind": "firmware"
+            }
+          ]
+          EOF
+          cat > artifacts/input-repos.json <<'EOF'
+          [
+            {
+              "id": "core",
+              "repo": "petitechose-midi-studio/core",
+              "sha": "${{ inputs.source_sha }}"
+            }
+          ]
+          EOF
+          cat > artifacts/toolchain.json <<'EOF'
+          {
+            "python": "3.13",
+            "platformio": "6.1.18"
+          }
+          EOF
+
+      - name: Write candidate manifest, checksums, and signature
+        shell: bash
+        working-directory: workspace
+        env:
+          MS_CANDIDATE_ED25519_SK: ${{ secrets.MS_CANDIDATE_ED25519_SK }}
+        run: |
+          set -euo pipefail
+          uv run ms release candidate write \
+            --artifacts-dir ../artifacts \
+            --artifacts-json ../artifacts/candidate-artifacts.json \
+            --input-repos-json ../artifacts/input-repos.json \
+            --producer-repo petitechose-midi-studio/core \
+            --producer-kind core-default-firmware \
+            --workflow-file .github/workflows/candidate.yml \
+            --run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --manifest-path ../artifacts/candidate.json \
+            --checksums-path ../artifacts/checksums.txt \
+            --sig-path ../artifacts/candidate.json.sig \
+            --recipe-base-dir .. \
+            --recipe-path .github/workflows/candidate.yml \
+            --recipe-path platformio.ini \
+            --recipe-path oc-sdk.ini \
+            --recipe-path oc-native-sdk.ini \
+            --toolchain-json ../artifacts/toolchain.json
+
+      - name: Publish signed candidate release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.vars.outputs.candidate_tag }}"
+          if gh release view "$tag" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload \
+              "$tag" \
+              artifacts/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create \
+              "$tag" \
+              artifacts/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "candidate $tag" \
+              --notes "Candidate artifacts for ${{ inputs.source_sha }}" \
+              --draft \
+              --prerelease
+          fi
