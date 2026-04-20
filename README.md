@@ -4,6 +4,15 @@ Firmware standalone for the MIDI Studio hardware on Teensy 4.1.
 
 This repository contains the embedded app, UI, state, handlers, persistence, and sequencer runtime used by the device. It is built with PlatformIO and LVGL, and integrates local `open-control` libraries in development.
 
+## Release Policy
+
+- `core` is a producer repo for signed firmware candidates.
+- Its canonical release-grade output is the exact signed candidate artifact for the firmware it
+  owns.
+- End-user system publication remains centered on `petitechose-midi-studio/distribution`, which
+  consumes the exact signed firmware candidate.
+- This repo does not require an independent end-user final release surface.
+
 ## Scope
 
 This repo currently targets the standalone device workflow:
