@@ -8,9 +8,11 @@
     #include <chrono>
 #endif
 
+#include <oc/time/Time.hpp>
+
 namespace core::time_compat {
 
-inline uint32_t millis() {
+inline uint32_t platformMillis() {
 #ifdef ARDUINO
     return ::millis();
 #else
@@ -21,7 +23,11 @@ inline uint32_t millis() {
 #endif
 }
 
-inline uint32_t micros() {
+inline uint32_t millis() {
+    return oc::time::isConfigured() ? oc::time::millis() : platformMillis();
+}
+
+inline uint32_t platformMicros() {
 #ifdef ARDUINO
     return ::micros();
 #else
@@ -30,6 +36,10 @@ inline uint32_t micros() {
         duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count()
     );
 #endif
+}
+
+inline uint32_t micros() {
+    return oc::time::isMicrosConfigured() ? oc::time::micros32() : platformMicros();
 }
 
 }  // namespace core::time_compat

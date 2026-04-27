@@ -1,25 +1,12 @@
 #include "MidiClockSyncService.hpp"
 
-#include <algorithm>
 #include <cmath>
+
+#include "sequencer/SequencerTiming.hpp"
 
 namespace core::sequencer {
 
 namespace {
-constexpr uint16_t MIN_AUTO_FALLBACK_MS = 100;
-constexpr uint16_t MAX_AUTO_FALLBACK_MS = 5000;
-constexpr uint8_t MIN_AUTO_LOCK_CLOCKS = 1;
-constexpr uint8_t MAX_AUTO_LOCK_CLOCKS = 96;
-constexpr uint32_t MAX_CLOCK_BURST_PER_UPDATE = 96;
-constexpr uint32_t MIN_CLOCK_INTERVAL_US = 2500;
-constexpr uint32_t MAX_CLOCK_INTERVAL_US = 250000;
-constexpr uint8_t MIN_INTERVAL_SAMPLES = 6;
-constexpr float MIN_BPM = 20.0f;
-constexpr float MAX_BPM = 666.0f;
-constexpr float TEMPO_ALPHA_STABLE = 0.18f;
-constexpr float TEMPO_ALPHA_MEDIUM = 0.35f;
-constexpr float TEMPO_ALPHA_FAST = 0.55f;
-
 constexpr uint32_t DISPLAY_PUBLISH_MIN_MS = 150;
 constexpr float DISPLAY_DEADBAND_BPM = 0.2f;
 constexpr float DISPLAY_FORCE_STEP_BPM = 1.5f;
@@ -185,114 +172,21 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
         return;
     }
 
-    if (last_external_clock_us_ > 0 && timestampUs > last_external_clock_us_) {
-        const uint64_t deltaUs64 = timestampUs - last_external_clock_us_;
-        if (deltaUs64 >= MIN_CLOCK_INTERVAL_US && deltaUs64 <= MAX_CLOCK_INTERVAL_US) {
-            pushClockIntervalUs_(static_cast<uint32_t>(deltaUs64));
-
-            const float sampleBpm = estimateTempoFromIntervals_();
-            if (sampleBpm >= MIN_BPM && sampleBpm <= MAX_BPM) {
-                if (!external_bpm_valid_) {
-                    external_bpm_estimate_ = sampleBpm;
-                    external_bpm_valid_ = true;
-                } else {
-                    const float error = std::fabs(sampleBpm - external_bpm_estimate_);
-                    float alpha = TEMPO_ALPHA_STABLE;
-                    if (error > 8.0f) {
-                        alpha = TEMPO_ALPHA_FAST;
-                    } else if (error > 2.5f) {
-                        alpha = TEMPO_ALPHA_MEDIUM;
-                    }
-
-                    external_bpm_estimate_ =
-                        external_bpm_estimate_ * (1.0f - alpha) +
-                        sampleBpm * alpha;
-                }
-            }
-        }
-    }
-
-    last_external_clock_us_ = timestampUs;
+    external_clock_estimator_.recordClock(timestampUs, hostNowMs, last_external_clock_ms_);
     external_tick_ += 1;
     last_external_clock_ms_ = hostNowMs;
-
-    if (external_clock_streak_ < 255) {
-        external_clock_streak_ += 1;
-    }
-
-    const uint8_t lockNeeded = std::clamp(runtime_config_.autoLockClockCount,
-                                          MIN_AUTO_LOCK_CLOCKS,
-                                          MAX_AUTO_LOCK_CLOCKS);
-
-    if (runtime_config_.mode == core::state::MidiSyncMode::SLAVE || external_clock_streak_ >= lockNeeded) {
-        external_locked_ = true;
-    }
+    clock_source_selector_.recordClock(runtime_config_.mode, runtime_config_.autoLockClockCount);
 
     pending_sync_input_pulse_ = true;
 }
 
+MidiClockSyncService::ExternalClockTelemetry MidiClockSyncService::takeExternalClockTelemetry() {
+    return external_clock_estimator_.takeTelemetry();
+}
+
 void MidiClockSyncService::resetExternalTempoEstimator_() {
-    last_external_clock_us_ = 0;
-    clock_interval_count_ = 0;
-    clock_interval_write_idx_ = 0;
-    external_bpm_valid_ = false;
+    external_clock_estimator_.reset();
     external_transport_seen_ = false;
-}
-
-void MidiClockSyncService::pushClockIntervalUs_(uint32_t intervalUs) {
-    clock_interval_us_[clock_interval_write_idx_] = intervalUs;
-
-    const uint8_t next = static_cast<uint8_t>(clock_interval_write_idx_ + 1);
-    clock_interval_write_idx_ = static_cast<uint8_t>(next % clock_interval_us_.size());
-
-    if (clock_interval_count_ < clock_interval_us_.size()) {
-        clock_interval_count_ += 1;
-    }
-}
-
-float MidiClockSyncService::estimateTempoFromIntervals_() const {
-    if (clock_interval_count_ < MIN_INTERVAL_SAMPLES) {
-        return 0.0f;
-    }
-
-    std::array<uint32_t, 24> sorted{};
-    for (uint8_t i = 0; i < clock_interval_count_; ++i) {
-        sorted[i] = clock_interval_us_[i];
-    }
-
-    std::sort(sorted.begin(), sorted.begin() + clock_interval_count_);
-
-    uint8_t trim = 0;
-    if (clock_interval_count_ >= 10) {
-        trim = static_cast<uint8_t>(clock_interval_count_ / 5);  // 20% each side
-    }
-
-    if (trim * 2 >= clock_interval_count_) {
-        trim = 0;
-    }
-
-    const uint8_t start = trim;
-    const uint8_t end = static_cast<uint8_t>(clock_interval_count_ - trim);
-    if (end <= start) {
-        return 0.0f;
-    }
-
-    uint64_t sumUs = 0;
-    for (uint8_t i = start; i < end; ++i) {
-        sumUs += sorted[i];
-    }
-
-    const uint8_t used = static_cast<uint8_t>(end - start);
-    if (used == 0) {
-        return 0.0f;
-    }
-
-    const float meanUs = static_cast<float>(sumUs) / static_cast<float>(used);
-    if (meanUs <= 0.0f) {
-        return 0.0f;
-    }
-
-    return 60000000.0f / (meanUs * 24.0f);
 }
 
 FLASHMEM void MidiClockSyncService::onStart() {
@@ -347,44 +241,24 @@ bool MidiClockSyncService::consumeResyncRequest() {
 
 void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
     const auto mode = runtime_config_.mode;
+    const auto selection = clock_source_selector_.update(
+        mode,
+        runtime_config_.autoFallbackMs,
+        nowMs,
+        last_external_clock_ms_
+    );
 
-    if (mode == core::state::MidiSyncMode::MASTER) {
-        external_locked_ = false;
-        external_clock_streak_ = 0;
-        resetExternalTempoEstimator_();
-    } else if (mode == core::state::MidiSyncMode::AUTO) {
-        const uint16_t fallbackMs = std::clamp(runtime_config_.autoFallbackMs,
-                                               MIN_AUTO_FALLBACK_MS,
-                                               MAX_AUTO_FALLBACK_MS);
-        const uint32_t elapsed = nowMs - last_external_clock_ms_;
-
-        if (external_locked_ && elapsed > fallbackMs) {
-            external_locked_ = false;
-            external_clock_streak_ = 0;
-            resetExternalTempoEstimator_();
-        }
-    } else {
-        external_locked_ = true;
-    }
-
-    const bool externalSignal = hasExternalClockSignal_(nowMs);
-    queueExternalClockPresentProjection_(externalSignal);
-
-    if (!externalSignal) {
+    if (selection.resetExternalTempo) {
         resetExternalTempoEstimator_();
     }
 
-    const bool useExternal =
-        (mode == core::state::MidiSyncMode::SLAVE) ||
-        (mode == core::state::MidiSyncMode::AUTO && external_locked_);
+    queueExternalClockPresentProjection_(selection.externalSignal);
 
-    if (useExternal != using_external_source_) {
-        using_external_source_ = useExternal;
+    if (selection.useExternal != using_external_source_) {
+        using_external_source_ = selection.useExternal;
         resync_requested_ = true;
 
         if (using_external_source_) {
-            // Keep continuity on source switch when transport follow is enabled
-            // but no explicit external START has been observed yet.
             if (!external_transport_seen_ && !external_playing_) {
                 external_playing_ = runtime_config_.playing;
             }
@@ -410,8 +284,10 @@ void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
 }
 
 void MidiClockSyncService::updateDisplayedTempo_(uint32_t nowMs) {
-    const bool externalMode = using_external_source_ && external_bpm_valid_;
-    const float targetTempo = externalMode ? external_bpm_estimate_ : runtime_config_.tempo;
+    const bool externalMode = using_external_source_ && external_clock_estimator_.bpmValid();
+    const float targetTempo = externalMode
+                                  ? external_clock_estimator_.bpmEstimate()
+                                  : runtime_config_.tempo;
 
     if (!display_filter_initialized_ || externalMode != display_filter_external_mode_) {
         display_filter_initialized_ = true;
@@ -487,8 +363,8 @@ void MidiClockSyncService::updateMasterClockOutput_() {
     }
 
     uint32_t pending = current_tick_ - last_master_tick_sent_;
-    if (pending > MAX_CLOCK_BURST_PER_UPDATE) {
-        pending = MAX_CLOCK_BURST_PER_UPDATE;
+    if (pending > MAX_REALTIME_CLOCK_BURST_PER_UPDATE) {
+        pending = MAX_REALTIME_CLOCK_BURST_PER_UPDATE;
     }
 
     for (uint32_t i = 0; i < pending; ++i) {
@@ -507,16 +383,15 @@ bool MidiClockSyncService::allowExternalTransport_() const {
     }
 
     // AUTO: accept transport only when external source is currently trusted.
-    return external_locked_;
+    return clock_source_selector_.locked();
 }
 
 bool MidiClockSyncService::hasExternalClockSignal_(uint32_t nowMs) const {
-    if (last_external_clock_ms_ == 0) return false;
-
-    const uint16_t fallbackMs = std::clamp(runtime_config_.autoFallbackMs,
-                                           MIN_AUTO_FALLBACK_MS,
-                                           MAX_AUTO_FALLBACK_MS);
-    return (nowMs - last_external_clock_ms_) <= fallbackMs;
+    return clock_source_selector_.hasExternalClockSignal(
+        runtime_config_.autoFallbackMs,
+        nowMs,
+        last_external_clock_ms_
+    );
 }
 
 }  // namespace core::sequencer

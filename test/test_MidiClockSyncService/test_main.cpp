@@ -8,6 +8,7 @@
 #include <oc/interface/IMidi.hpp>
 
 #include "../../src/sequencer/MidiClockSyncService.hpp"
+#include "../../src/sequencer/SequencerTiming.hpp"
 #include "../../src/state/StatusBarState.hpp"
 
 namespace {
@@ -138,6 +139,52 @@ void test_master_emits_realtime() {
     assert(transport.stop_sent == 1);
 
     std::cout << "[PASS] test_master_emits_realtime\n";
+}
+
+void test_master_without_transport_drive_does_not_emit_realtime() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{midi};
+
+    sync.mode.set(core::state::MidiSyncMode::MASTER);
+    status.tempo.set(120.0f);
+    status.playing.set(true);
+
+    stepService(service, sync, status, 0, false);
+    stepService(service, sync, status, 100, false);
+
+    assert(service.playing());
+    assert(service.tick() == 0);
+    assert(transport.start_sent == 0);
+    assert(transport.clock_sent == 0);
+    assert(transport.stop_sent == 0);
+
+    stepService(service, sync, status, 200, true);
+    assert(transport.start_sent == 1);
+
+    std::cout << "[PASS] test_master_without_transport_drive_does_not_emit_realtime\n";
+}
+
+void test_master_clock_burst_is_clamped() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{midi};
+
+    sync.mode.set(core::state::MidiSyncMode::MASTER);
+    status.tempo.set(300.0f);
+    status.playing.set(true);
+
+    stepService(service, sync, status, 0);
+    stepService(service, sync, status, 5000);
+
+    assert(transport.start_sent == 1);
+    assert(transport.clock_sent == core::sequencer::MAX_REALTIME_CLOCK_BURST_PER_UPDATE);
+
+    std::cout << "[PASS] test_master_clock_burst_is_clamped\n";
 }
 
 void test_slave_follows_external_clock_and_transport() {
@@ -413,6 +460,37 @@ void test_external_tempo_tracks_fast_change() {
     std::cout << "[PASS] test_external_tempo_tracks_fast_change\n";
 }
 
+void test_external_clock_telemetry_tracks_gap_and_jitter() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{midi};
+
+    sync.mode.set(core::state::MidiSyncMode::SLAVE);
+    stepService(service, sync, status, 0);
+
+    uint32_t now = 100;
+    for (int i = 0; i < 7; ++i) {
+        service.onClock(static_cast<uint64_t>(now) * 1000ULL, now);
+        now += 20;
+    }
+
+    service.onClock(static_cast<uint64_t>(now + 6U) * 1000ULL, now + 6U);
+
+    const auto telemetry = service.externalClockTelemetry();
+    assert(telemetry.clockCount == 8);
+    assert(telemetry.maxIntervalUs == 26000);
+    assert(telemetry.maxHostGapMs == 26);
+    assert(telemetry.maxJitterUs == 6000);
+
+    const auto taken = service.takeExternalClockTelemetry();
+    assert(taken.clockCount == 8);
+    assert(service.externalClockTelemetry().clockCount == 0);
+
+    std::cout << "[PASS] test_external_clock_telemetry_tracks_gap_and_jitter\n";
+}
+
 }  // namespace
 
 int main() {
@@ -421,6 +499,8 @@ int main() {
     std::cout << "==============================================\n\n";
 
     test_master_emits_realtime();
+    test_master_without_transport_drive_does_not_emit_realtime();
+    test_master_clock_burst_is_clamped();
     test_slave_follows_external_clock_and_transport();
     test_auto_lock_and_fallback();
     test_auto_latches_start_before_lock();
@@ -430,6 +510,7 @@ int main() {
     test_external_source_updates_displayed_tempo_and_activity();
     test_external_tempo_precision_low_mid();
     test_external_tempo_tracks_fast_change();
+    test_external_clock_telemetry_tracks_gap_and_jitter();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
