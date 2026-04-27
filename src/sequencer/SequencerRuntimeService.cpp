@@ -1,71 +1,17 @@
 #include "SequencerRuntimeService.hpp"
 
-#include <algorithm>
-
 #include <oc/core/event/Events.hpp>
 #include <oc/log/Log.hpp>
+#include <oc/realtime/InterruptGuard.hpp>
 #include <oc/time/Time.hpp>
 #include <oc/type/Event.hpp>
 
 #include "config/TimeCompat.hpp"
-#include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "sequencer/SequencerTiming.hpp"
 
 namespace core::sequencer {
 
 namespace {
-
-#ifdef ARDUINO
-
-inline uint32_t readPrimask() {
-    uint32_t primask = 0;
-    asm volatile("MRS %0, primask" : "=r"(primask));
-    return primask;
-}
-
-class InterruptLock {
-public:
-    InterruptLock()
-        : primask_(readPrimask()) {
-        __disable_irq();
-    }
-
-    ~InterruptLock() {
-        asm volatile("MSR primask, %0" : : "r"(primask_) : "memory");
-    }
-
-    InterruptLock(const InterruptLock&) = delete;
-    InterruptLock& operator=(const InterruptLock&) = delete;
-
-private:
-    uint32_t primask_ = 0;
-};
-
-#endif
-
-FLASHMEM void logPlaybackProfilingSnapshot(
-    const SequencerPlaybackService::ProfilingSnapshot& snapshot
-) {
-#if defined(PERF_LOG)
-    OC_LOG_INFO(
-        "[Perf][SequencerPlayback] updates={} avgUpdate={}us maxUpdate={}us noteOns={} "
-        "noteOffs={} panicOffs={} lateNotes={} midiSendAvg={}us midiSendMax={}us "
-        "tickJumpMax={} burstMax={}",
-        snapshot.updateCount,
-        snapshot.avgUpdateUs,
-        snapshot.maxUpdateUs,
-        snapshot.noteOnCount,
-        snapshot.noteOffCount,
-        snapshot.panicNoteOffCount,
-        snapshot.lateNoteOnCount,
-        snapshot.avgMidiSendUs,
-        snapshot.maxMidiSendUs,
-        snapshot.maxTickJump,
-        snapshot.maxNoteBurst
-    );
-#else
-    (void)snapshot;
-#endif
-}
 
 FLASHMEM void applyMidiClockSyncUiProjection(
     core::state::StatusBarState& statusBar,
@@ -107,18 +53,14 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     : event_bus_(eventBus)
     , midi_(midi)
     , sequencer_state_(state.sequencer)
-    , track_bank_state_(state.trackBank)
     , status_bar_state_(state.statusBar)
     , midi_sync_state_(state.midiSync)
     , midi_clock_sync_(midi)
-    , sequencer_playback_(state.sequencer, state.trackBank, state.statusBar, midi) {
-    const uint8_t initialSnapshotIndex = refreshTrackBankSnapshot_();
-    commitRuntimeSnapshot_(initialSnapshotIndex);
-#ifdef ARDUINO
-    const auto clockConfig = captureClockSyncRuntimeConfig_();
-    internal_timer_configs_[0] = clockConfig;
-    internal_timer_configs_[1] = clockConfig;
-#endif
+    , snapshot_bank_(state.sequencer, state.trackBank)
+    , sequencer_playback_(state.sequencer, state.trackBank, state.statusBar, midi_event_queue_)
+    , internal_timer_lane_(midi, midi_event_queue_, snapshot_bank_, sequencer_playback_) {
+    const uint8_t initialSnapshotIndex = snapshot_bank_.refresh();
+    snapshot_bank_.commit(initialSnapshotIndex);
     subscribeToMidiEvents_();
 }
 
@@ -129,10 +71,12 @@ FLASHMEM SequencerRuntimeService::~SequencerRuntimeService() {
 
 void SequencerRuntimeService::update() {
     const uint32_t startUs = core::time_compat::micros();
+    const uint32_t nowUs = startUs;
     const uint32_t nowMs = oc::time::millis();
     const auto clockConfig = captureClockSyncRuntimeConfig_();
-    const uint8_t snapshotIndex = refreshTrackBankSnapshot_();
-    const auto& runtimeSnapshot = runtime_snapshots_[snapshotIndex];
+    const uint32_t tickPeriodUs = tickPeriodUsForTempo(clockConfig.tempo);
+    const uint8_t snapshotIndex = snapshot_bank_.refresh();
+    const auto& runtimeSnapshot = snapshot_bank_.snapshot(snapshotIndex);
 
     const uint32_t clockStartUs = core::time_compat::micros();
     const bool timerOwnsTransport = updateClockDomainOwnership_(clockConfig, nowMs);
@@ -145,30 +89,29 @@ void SequencerRuntimeService::update() {
 
 #ifdef ARDUINO
     if (timerOwnsTransport) {
-        publishInternalTimerInputs_(clockConfig, snapshotIndex);
+        internal_timer_lane_.publishRealtimeInputs(clockConfig, snapshotIndex);
 
         if (resyncRequested) {
-            syncInternalTimer_(false);
+            internal_timer_lane_.stop();
             sequencer_playback_.stop();
         }
 
-        usingInternalTimerPath = syncInternalTimer_(true);
+        usingInternalTimerPath = internal_timer_lane_.start();
         if (!usingInternalTimerPath) {
+            OC_LOG_WARN("{}", "[SequencerRuntime] failed to start internal playback timer");
             midi_clock_sync_.update(clockConfig, nowMs, true);
         }
     } else {
-        syncInternalTimer_(false);
+        internal_timer_lane_.stop();
     }
 #endif
 
     if (usingInternalTimerPath) {
         const uint32_t playbackStartUs = core::time_compat::micros();
-        // The timer callback already advanced transport/playback. This lane only
-        // snapshots timer-produced telemetry and applies UI-facing projections.
         publishPlaybackUiFromTimerPath_(nowMs);
         playbackUs = core::time_compat::micros() - playbackStartUs;
     } else {
-        commitRuntimeSnapshot_(snapshotIndex);
+        snapshot_bank_.commit(snapshotIndex);
         if (resyncRequested) {
             sequencer_playback_.stop();
         }
@@ -177,8 +120,11 @@ void SequencerRuntimeService::update() {
         sequencer_playback_.update(runtimeSnapshot,
                                    midi_clock_sync_.tick(),
                                    midi_clock_sync_.playing(),
-                                   nowMs);
+                                   nowMs,
+                                   nowUs,
+                                   tickPeriodUs);
         playbackUs = core::time_compat::micros() - playbackStartUs;
+        drainRealtimeMidiQueue_(core::time_compat::micros());
         sequencer_playback_.publishUiState(nowMs);
     }
 
@@ -190,15 +136,16 @@ void SequencerRuntimeService::update() {
     );
     const uint32_t updateUs = core::time_compat::micros() - startUs;
 
-    recordProfilingWindow_(updateUs, clockUs, playbackUs, resyncRequested, nowMs);
-    maybeLogProfilingWindow_(nowMs);
+    perf_reporter_.record(updateUs, clockUs, playbackUs, resyncRequested, nowMs);
+    perf_reporter_.flush(nowMs, midi_clock_sync_, midi_event_queue_, internal_timer_lane_);
 }
 
 FLASHMEM void SequencerRuntimeService::stop() {
 #ifdef ARDUINO
-    syncInternalTimer_(false);
+    internal_timer_lane_.stop();
 #endif
     sequencer_playback_.stop();
+    drainRealtimeMidiQueue_(core::time_compat::micros());
 }
 
 MidiClockSyncRuntimeConfig SequencerRuntimeService::captureClockSyncRuntimeConfig_() const {
@@ -236,43 +183,6 @@ bool SequencerRuntimeService::updateClockDomainOwnership_(
 #endif
 }
 
-uint8_t SequencerRuntimeService::refreshTrackBankSnapshot_() {
-    const uint8_t currentIndex = runtime_snapshot_index_;
-    const uint8_t writeIndex = static_cast<uint8_t>(currentIndex ^ 0x1U);
-    auto& runtimeSnapshot = runtime_snapshots_[writeIndex];
-    runtimeSnapshot = runtime_snapshots_[currentIndex];
-
-    const uint8_t activeTrack =
-        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-            track_bank_state_.activeTrackIndex()
-        );
-
-    runtimeSnapshot.activeTrack = activeTrack;
-    runtimeSnapshot.enabledMask = track_bank_state_.currentEnabledMask();
-
-    for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
-        const auto& source = (i == activeTrack) ? sequencer_state_ : track_bank_state_.track(i);
-        const auto signature = captureRuntimeStateSignature(source);
-        if (runtime_track_bank_signatures_[i].matches(signature)) {
-            continue;
-        }
-
-        core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
-        runtime_track_bank_signatures_[i] = signature;
-    }
-
-    return writeIndex;
-}
-
-void SequencerRuntimeService::commitRuntimeSnapshot_(uint8_t snapshotIndex) {
-#ifdef ARDUINO
-    InterruptLock lock;
-    runtime_snapshot_index_ = snapshotIndex;
-#else
-    runtime_snapshot_index_ = snapshotIndex;
-#endif
-}
-
 void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
 #ifdef ARDUINO
     SequencerPlaybackService::UiProjectionSnapshot uiProjection;
@@ -282,7 +192,7 @@ void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
 
     // Pull the timer-lane projection under lock, then publish it outside the ISR.
     {
-        InterruptLock lock;
+        oc::realtime::InterruptGuard lock;
         uiProjection = sequencer_playback_.takeUiProjectionSnapshot();
         runtimeTelemetry = sequencer_playback_.copyActiveRuntimeTelemetry();
         shouldLogPlayback = sequencer_playback_.takeProfilingSnapshot(nowMs, profilingSnapshot);
@@ -292,102 +202,17 @@ void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
     sequencer_playback_.publishUiProjection(uiProjection, nowMs);
 
     if (shouldLogPlayback) {
-        logPlaybackProfilingSnapshot(profilingSnapshot);
+        perf_reporter_.logPlaybackSnapshot(profilingSnapshot);
     }
 #else
     sequencer_playback_.publishUiState(nowMs);
 #endif
 }
 
-#ifdef ARDUINO
-
-FLASHMEM bool SequencerRuntimeService::syncInternalTimer_(bool enable) {
-    if (!enable) {
-        if (internal_timer_running_) {
-            internal_timer_.end();
-            internal_timer_running_ = false;
-        }
-
-        internal_transport_clock_.reset();
-        internal_timer_playing_ = false;
-        internal_timer_last_tick_sent_ = 0;
-        return true;
-    }
-
-    if (internal_timer_running_) {
-        return true;
-    }
-
-    internal_transport_clock_.reset();
-    internal_timer_playing_ = false;
-    internal_timer_last_tick_sent_ = 0;
-    internal_timer_.priority(128);
-    internal_timer_running_ =
-        internal_timer_.begin([this]() { onInternalTimer_(); }, INTERNAL_TIMER_PERIOD_US);
-
-    if (!internal_timer_running_) {
-        OC_LOG_WARN("{}", "[SequencerRuntime] failed to start internal playback timer");
-        return false;
-    }
-
-    return true;
+void SequencerRuntimeService::drainRealtimeMidiQueue_(uint32_t nowUs) {
+    midi_event_queue_.drainDue(midi_, nowUs);
+    midi_.serviceOutput(RealtimeMidiQueue::MAX_DRAIN_BUDGET_US);
 }
-
-void SequencerRuntimeService::publishInternalTimerInputs_(const MidiClockSyncRuntimeConfig& config,
-                                                          uint8_t snapshotIndex) {
-    internal_timer_configs_[snapshotIndex] = config;
-    commitRuntimeSnapshot_(snapshotIndex);
-}
-
-void SequencerRuntimeService::onInternalTimer_() {
-    // Internal master timer lane: keep this limited to transport advancement,
-    // playback scheduling, and backend output drain. Do not add UI/state writes here.
-    const uint8_t inputIndex = runtime_snapshot_index_;
-    const auto& snapshot = runtime_snapshots_[inputIndex];
-    const auto config = internal_timer_configs_[inputIndex];
-
-    internal_transport_clock_.setBpm(config.tempo);
-    internal_transport_clock_.setPlaying(config.playing);
-
-    const bool playing = internal_transport_clock_.isPlaying();
-    const uint32_t tick = internal_transport_clock_.tick();
-
-    if (playing && !internal_timer_playing_) {
-        midi_.sendStart();
-    } else if (!playing && internal_timer_playing_) {
-        midi_.sendStop();
-    }
-
-    internal_timer_playing_ = playing;
-
-    if (!playing) {
-        internal_timer_last_tick_sent_ = tick;
-    } else {
-        if (tick < internal_timer_last_tick_sent_) {
-            internal_timer_last_tick_sent_ = tick;
-        }
-
-        uint32_t pendingClockCount = tick - internal_timer_last_tick_sent_;
-        if (pendingClockCount > MAX_CLOCK_BURST_PER_UPDATE) {
-            pendingClockCount = MAX_CLOCK_BURST_PER_UPDATE;
-        }
-
-        for (uint32_t i = 0; i < pendingClockCount; ++i) {
-            midi_.sendClock();
-            internal_timer_last_tick_sent_ += 1U;
-        }
-    }
-
-    sequencer_playback_.update(snapshot,
-                               tick,
-                               playing,
-                               core::time_compat::millis(),
-                               false,
-                               false);
-    midi_.serviceOutput();
-}
-
-#endif
 
 FLASHMEM void SequencerRuntimeService::subscribeToMidiEvents_() {
     using oc::core::event::MidiClockEvent;
@@ -434,65 +259,6 @@ FLASHMEM void SequencerRuntimeService::unsubscribeFromMidiEvents_() {
             id = 0;
         }
     }
-}
-
-void SequencerRuntimeService::recordProfilingWindow_(uint32_t updateUs,
-                                                     uint32_t clockUs,
-                                                     uint32_t playbackUs,
-                                                     bool resyncRequested,
-                                                     uint32_t nowMs) {
-    if (profiling_.window_start_ms == 0) {
-        profiling_.resetWindow(nowMs);
-    }
-
-    profiling_.update_count += 1;
-    profiling_.total_update_us += updateUs;
-    profiling_.max_update_us = std::max(profiling_.max_update_us, updateUs);
-    profiling_.total_clock_us += clockUs;
-    profiling_.max_clock_us = std::max(profiling_.max_clock_us, clockUs);
-    profiling_.total_playback_us += playbackUs;
-    profiling_.max_playback_us = std::max(profiling_.max_playback_us, playbackUs);
-    if (resyncRequested) {
-        profiling_.resync_count += 1;
-    }
-}
-
-FLASHMEM void SequencerRuntimeService::maybeLogProfilingWindow_(uint32_t nowMs) {
-#if !defined(PERF_LOG)
-    profiling_.resetWindow(nowMs);
-    return;
-#endif
-
-    if (profiling_.window_start_ms == 0) {
-        profiling_.resetWindow(nowMs);
-        return;
-    }
-
-    if ((nowMs - profiling_.window_start_ms) < 1000) {
-        return;
-    }
-
-    const uint32_t avgUpdateUs =
-        profiling_.update_count > 0 ? (profiling_.total_update_us / profiling_.update_count) : 0;
-    const uint32_t avgClockUs =
-        profiling_.update_count > 0 ? (profiling_.total_clock_us / profiling_.update_count) : 0;
-    const uint32_t avgPlaybackUs =
-        profiling_.update_count > 0 ? (profiling_.total_playback_us / profiling_.update_count) : 0;
-
-    if (profiling_.max_update_us >= 1000 || profiling_.max_clock_us >= 1000 ||
-        profiling_.max_playback_us >= 1000 || profiling_.resync_count > 0) {
-        OC_LOG_INFO("[Perf][SequencerRuntime] updates={} avgUpdate={}us maxUpdate={}us avgClock={}us maxClock={}us avgPlayback={}us maxPlayback={}us resyncs={}",
-                    profiling_.update_count,
-                    avgUpdateUs,
-                    profiling_.max_update_us,
-                    avgClockUs,
-                    profiling_.max_clock_us,
-                    avgPlaybackUs,
-                    profiling_.max_playback_us,
-                    profiling_.resync_count);
-    }
-
-    profiling_.resetWindow(nowMs);
 }
 
 }  // namespace core::sequencer

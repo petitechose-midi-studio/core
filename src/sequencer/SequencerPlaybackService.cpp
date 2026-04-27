@@ -3,11 +3,74 @@
 #include <algorithm>
 
 #include <config/PlatformCompat.hpp>
-#include <oc/log/Log.hpp>
 
+#include "config/TimeCompat.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::sequencer {
+
+void SequencerPlaybackService::PendingNoteActivity::reset() {
+    noteOutActive = false;
+    noteOnCount = 0;
+    noteOffCount = 0;
+    panicNoteOffCount = 0;
+    queuedEventCount = 0;
+    trackVelocity.fill(0);
+}
+
+void SequencerPlaybackService::PendingNoteActivity::recordNoteOn(uint8_t trackIndex,
+                                                                 uint8_t velocity) {
+    noteOutActive = true;
+    noteOnCount += 1;
+    queuedEventCount += 1;
+    if (trackIndex >= TRACK_COUNT) {
+        return;
+    }
+    trackVelocity[trackIndex] = std::max(trackVelocity[trackIndex], velocity);
+}
+
+void SequencerPlaybackService::PendingNoteActivity::recordNoteOff() {
+    noteOffCount += 1;
+    queuedEventCount += 1;
+}
+
+void SequencerPlaybackService::PendingNoteActivity::recordPanicNoteOffs(uint32_t count) {
+    panicNoteOffCount += count;
+    queuedEventCount += count;
+}
+
+SequencerPlaybackActivitySnapshot SequencerPlaybackService::PendingNoteActivity::snapshot() const {
+    return {
+        .noteOnCount = noteOnCount,
+        .noteOffCount = noteOffCount,
+        .panicNoteOffCount = panicNoteOffCount,
+        .queuedEventCount = queuedEventCount,
+    };
+}
+
+SequencerPlaybackService::PendingNoteActivityObserver::PendingNoteActivityObserver(
+    PendingNoteActivity& pendingNoteActivity
+)
+    : pending_note_activity_(pendingNoteActivity) {}
+
+void SequencerPlaybackService::PendingNoteActivityObserver::onNoteOn(uint8_t trackIndex,
+                                                                     uint8_t velocity) {
+    pending_note_activity_.recordNoteOn(trackIndex, velocity);
+}
+
+void SequencerPlaybackService::PendingNoteActivityObserver::onNoteOff() {
+    pending_note_activity_.recordNoteOff();
+}
+
+void SequencerPlaybackService::PendingNoteActivityObserver::onPanicNoteOffs(uint32_t count) {
+    pending_note_activity_.recordPanicNoteOffs(count);
+}
+
+void SequencerPlaybackService::PendingUiProjection::reset() {
+    noteOutPulse = false;
+    beatPulse = false;
+    trackVelocity.fill(0);
+}
 
 void SequencerPlaybackService::handleActiveTrackSwitch_() {
     const uint8_t activeTrack = runtime_active_track_;
@@ -23,7 +86,7 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& trackBank,
     core::state::StatusBarState& statusBar,
-    oc::api::MidiAPI& midi
+    RealtimeMidiQueue& midiQueue
 )
     : sequencer_(sequencer)
     , status_bar_(statusBar)
@@ -32,11 +95,12 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
       )
 {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        track_outputs_[i] = std::make_unique<SequencerMidiOutput>(midi, i, &note_activity_observer_);
+        track_event_sinks_[i] =
+            std::make_unique<SequencerMidiEventSink>(midiQueue, i, &note_activity_observer_);
         track_engines_[i] =
             std::make_unique<oc::note::sequencer::StepSequencerEngine>(
                 track_runtime_states_[i],
-                *track_outputs_[i]
+                *track_event_sinks_[i]
             );
     }
     last_active_track_ = trackBank.activeTrackIndex();
@@ -52,6 +116,8 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
                                       uint32_t tick,
                                       bool playing,
                                       uint32_t nowMs,
+                                      uint32_t nowUs,
+                                      uint32_t tickPeriodUs,
                                       bool publishRuntimeState,
                                       bool emitLogs) {
     const uint32_t startUs = core::time_compat::micros();
@@ -61,6 +127,11 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
 
     handleActiveTrackSwitch_();
     if (!playing) {
+        for (auto& sink : track_event_sinks_) {
+            if (sink) {
+                sink->setTimeline(tick, nowUs, tickPeriodUs);
+            }
+        }
         for (auto& trackEngine : track_engines_) {
             if (trackEngine) {
                 trackEngine->update(tick, false);
@@ -71,9 +142,9 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
             publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
         }
         const uint32_t updateUs = core::time_compat::micros() - startUs;
-        recordProfilingWindow(tick, false, updateUs, nowMs);
+        recordProfiling_(tick, false, updateUs, nowMs);
         if (emitLogs) {
-            maybeLogProfilingWindow(nowMs);
+            profiler_.maybeLog(nowMs);
         }
         return;
     }
@@ -81,6 +152,9 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
     for (uint8_t i = 0; i < track_engines_.size(); ++i) {
         auto& trackEngine = track_engines_[i];
         if (!trackEngine) continue;
+        if (track_event_sinks_[i]) {
+            track_event_sinks_[i]->setTimeline(tick, nowUs, tickPeriodUs);
+        }
         trackEngine->update(
             tick,
             (runtime_enabled_mask_ & static_cast<uint16_t>(1U << i)) != 0
@@ -103,9 +177,9 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
     }
     last_playhead_ = playhead;
     const uint32_t updateUs = core::time_compat::micros() - startUs;
-    recordProfilingWindow(tick, true, updateUs, nowMs);
+    recordProfiling_(tick, true, updateUs, nowMs);
     if (emitLogs) {
-        maybeLogProfilingWindow(nowMs);
+        profiler_.maybeLog(nowMs);
     }
 }
 
@@ -191,102 +265,14 @@ SequencerRuntimeTelemetrySnapshot SequencerPlaybackService::copyActiveRuntimeTel
 }
 
 FLASHMEM bool SequencerPlaybackService::takeProfilingSnapshot(uint32_t nowMs, ProfilingSnapshot& snapshot) {
-    if (profiling_.window_start_ms == 0) {
-        profiling_.resetWindow(nowMs);
-        return false;
-    }
-
-    if ((nowMs - profiling_.window_start_ms) < 1000) {
-        return false;
-    }
-
-    snapshot.updateCount = profiling_.update_count;
-    snapshot.avgUpdateUs =
-        profiling_.update_count > 0 ? (profiling_.total_update_us / profiling_.update_count) : 0;
-    snapshot.maxUpdateUs = profiling_.max_update_us;
-    snapshot.noteOnCount = profiling_.note_on_count;
-    snapshot.noteOffCount = profiling_.note_off_count;
-    snapshot.panicNoteOffCount = profiling_.panic_note_off_count;
-    snapshot.lateNoteOnCount = profiling_.late_note_on_count;
-    snapshot.avgMidiSendUs =
-        profiling_.midi_send_count > 0 ? (profiling_.total_midi_send_us / profiling_.midi_send_count) : 0;
-    snapshot.maxMidiSendUs = profiling_.max_midi_send_us;
-    snapshot.maxTickJump = profiling_.max_tick_jump;
-    snapshot.maxNoteBurst = profiling_.max_note_burst;
-
-    profiling_.resetWindow(nowMs);
-
-    return snapshot.noteOnCount > 0 || snapshot.maxUpdateUs >= 1000 || snapshot.maxTickJump > 1;
+    return profiler_.takeSnapshot(nowMs, snapshot);
 }
 
-FLASHMEM void SequencerPlaybackService::recordProfilingWindow(uint32_t tick,
-                                                              bool playing,
-                                                              uint32_t updateUs,
-                                                              uint32_t nowMs) {
-    if (profiling_.window_start_ms == 0) {
-        profiling_.resetWindow(nowMs);
-    }
-
-    profiling_.update_count += 1;
-    profiling_.total_update_us += updateUs;
-    profiling_.max_update_us = std::max(profiling_.max_update_us, updateUs);
-    profiling_.note_on_count += pending_note_activity_.noteOnCount;
-    profiling_.note_off_count += pending_note_activity_.noteOffCount;
-    profiling_.panic_note_off_count += pending_note_activity_.panicNoteOffCount;
-    profiling_.max_note_burst = std::max(profiling_.max_note_burst, pending_note_activity_.noteOnCount);
-    profiling_.midi_send_count += pending_note_activity_.midiSendCount;
-    profiling_.total_midi_send_us += pending_note_activity_.midiSendTotalUs;
-    profiling_.max_midi_send_us = std::max(profiling_.max_midi_send_us,
-                                           pending_note_activity_.midiSendMaxUs);
-
-    if (playing && last_tick_valid_) {
-        const uint32_t tickJump = (tick >= last_tick_) ? (tick - last_tick_) : 0;
-        profiling_.max_tick_jump = std::max(profiling_.max_tick_jump, tickJump);
-        if (tickJump > 1) {
-            profiling_.late_note_on_count += pending_note_activity_.noteOnCount;
-        }
-    }
-
-    last_tick_ = tick;
-    last_tick_valid_ = true;
-}
-
-FLASHMEM void SequencerPlaybackService::maybeLogProfilingWindow(uint32_t nowMs) {
-#if !defined(PERF_LOG)
-    profiling_.resetWindow(nowMs);
-    return;
-#endif
-
-    if (profiling_.window_start_ms == 0) {
-        profiling_.resetWindow(nowMs);
-        return;
-    }
-
-    if ((nowMs - profiling_.window_start_ms) < 1000) {
-        return;
-    }
-
-    const uint32_t avgUpdateUs =
-        profiling_.update_count > 0 ? (profiling_.total_update_us / profiling_.update_count) : 0;
-    const uint32_t avgMidiSendUs =
-        profiling_.midi_send_count > 0 ? (profiling_.total_midi_send_us / profiling_.midi_send_count) : 0;
-
-    if (profiling_.note_on_count > 0 || profiling_.max_update_us >= 1000 || profiling_.max_tick_jump > 1) {
-        OC_LOG_INFO("[Perf][SequencerPlayback] updates={} avgUpdate={}us maxUpdate={}us noteOns={} noteOffs={} panicOffs={} lateNotes={} midiSendAvg={}us midiSendMax={}us tickJumpMax={} burstMax={}",
-                    profiling_.update_count,
-                    avgUpdateUs,
-                    profiling_.max_update_us,
-                    profiling_.note_on_count,
-                    profiling_.note_off_count,
-                    profiling_.panic_note_off_count,
-                    profiling_.late_note_on_count,
-                    avgMidiSendUs,
-                    profiling_.max_midi_send_us,
-                    profiling_.max_tick_jump,
-                    profiling_.max_note_burst);
-    }
-
-    profiling_.resetWindow(nowMs);
+FLASHMEM void SequencerPlaybackService::recordProfiling_(uint32_t tick,
+                                                         bool playing,
+                                                         uint32_t updateUs,
+                                                         uint32_t nowMs) {
+    profiler_.record(tick, playing, updateUs, pending_note_activity_.snapshot(), nowMs);
 }
 
 }  // namespace core::sequencer
