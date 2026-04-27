@@ -51,11 +51,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
         sequencer_.activeStepProperty,
         sequencer_.stepEdit.visible,
         sequencer_.stepPropertyInlineSelector.selecting,
-        sequencer_.patternQuickControls.selecting,
-        sequencer_.rangeSelection.kind,
-        sequencer_.rangeSelection.phase,
-        sequencer_.rangeSelection.anchorStep,
-        sequencer_.rangeSelection.rangeEnd
+        sequencer_.patternQuickControls.selecting
     );
 }
 
@@ -178,36 +174,6 @@ void SequencerEncoderSyncCoordinator::syncPositions() {
 
     ensureMacroEncoderConfig(config);
     syncMacroEncoderValues(page, property);
-
-    if (sequencer_.rangeSelection.active()) {
-        if (sequencer_.rangeSelection.selectingSourceRange()) {
-            const uint8_t start = sequencer_.rangeSelection.anchorStep.get();
-            const uint8_t end = sequencer_.rangeSelection.rangeEnd.get();
-            const uint8_t maxStep = static_cast<uint8_t>(len - 1);
-            const uint8_t maxSpan = (start < maxStep) ? static_cast<uint8_t>(maxStep - start) : 0;
-            const uint8_t currentSpan = (end > start) ? static_cast<uint8_t>(end - start) : 0;
-
-            input_utils::StepPropertyEncoderConfig rangeConfig;
-            rangeConfig.discreteSteps = static_cast<uint8_t>(maxSpan + 1);
-            rangeConfig.discreteTicksPerStep = input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-            rangeConfig.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
-
-            ensureOptEncoderConfig(rangeConfig);
-
-            const float normalized = input_utils::indexToNormalized(
-                currentSpan,
-                static_cast<int>(maxSpan) + 1
-            );
-            if (!opt_position_valid_ || hasMeaningfulEncoderDelta(opt_position_cache_, normalized)) {
-                encoders_.setPosition(Config::EncoderID::OPT, normalized);
-                opt_position_cache_ = normalized;
-                opt_position_valid_ = true;
-            }
-        } else {
-            resetOptCache();
-        }
-        return;
-    }
 
     ensureOptEncoderConfig(config);
     syncOptEncoderValue(len, sequencer_.focusedStep.get(), property);
