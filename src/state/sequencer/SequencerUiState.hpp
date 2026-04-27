@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 
 #include <oc/state/Signal.hpp>
@@ -25,18 +24,6 @@ enum class PatternQuickControlItem : uint8_t {
     OFFSET = 0,
     DIVISION = 1,
     LENGTH = 2,
-};
-
-enum class RangeSelectionKind : uint8_t {
-    NONE = 0,
-    CLEAR = 1,
-    COPY = 2,
-};
-
-enum class RangeSelectionPhase : uint8_t {
-    IDLE = 0,
-    SELECT_RANGE = 1,
-    PASTE_TARGET = 2,
 };
 
 struct SequencerStepEditOverlayState {
@@ -151,65 +138,6 @@ struct SequencerStructureUiState {
         previewPageIndex.set(0);
         pageHold.clear();
         pageSelection.reset(core::state::StructureSelectionScope::PAGE);
-    }
-};
-
-struct SequencerRangeClipboard {
-    static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
-
-    bool valid = false;
-    uint8_t count = 0;
-    oc::note::sequencer::StepBitMask128 enabledMask{};
-    std::array<uint8_t, MAX_STEPS> note{};
-    std::array<uint8_t, MAX_STEPS> velocity{};
-    std::array<uint16_t, MAX_STEPS> gate{};
-    std::array<int8_t, MAX_STEPS> nudge{};
-    std::array<uint8_t, MAX_STEPS> probability{};
-
-    void reset() {
-        valid = false;
-        count = 0;
-        enabledMask = {};
-    }
-
-    bool isEnabled(uint8_t index) const {
-        if (index >= count) return false;
-        return enabledMask.test(index);
-    }
-};
-
-struct SequencerRangeSelectionState {
-    Signal<RangeSelectionKind, 4> kind{RangeSelectionKind::NONE};
-    Signal<RangeSelectionPhase, 4> phase{RangeSelectionPhase::IDLE};
-    Signal<uint8_t> cursorStep{0};
-    Signal<uint8_t> anchorStep{0};
-    Signal<uint8_t> rangeStart{0};
-    Signal<uint8_t> rangeEnd{0};
-    Signal<bool> rangeValid{false};
-
-    SequencerRangeClipboard clipboard{};
-    uint8_t snapshotPage = 0;
-    uint8_t snapshotFocusedStep = 0;
-
-    bool active() const { return kind.get() != RangeSelectionKind::NONE; }
-    bool selectingSourceRange() const { return phase.get() == RangeSelectionPhase::SELECT_RANGE; }
-    bool selectingPasteTarget() const {
-        return kind.get() == RangeSelectionKind::COPY &&
-               phase.get() == RangeSelectionPhase::PASTE_TARGET &&
-               clipboard.valid;
-    }
-
-    void reset() {
-        kind.set(RangeSelectionKind::NONE);
-        phase.set(RangeSelectionPhase::IDLE);
-        cursorStep.set(0);
-        anchorStep.set(0);
-        rangeStart.set(0);
-        rangeEnd.set(0);
-        rangeValid.set(false);
-        clipboard.reset();
-        snapshotPage = 0;
-        snapshotFocusedStep = 0;
     }
 };
 

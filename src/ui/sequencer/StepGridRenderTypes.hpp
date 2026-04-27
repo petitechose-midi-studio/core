@@ -36,6 +36,7 @@ struct TileRenderDiff {
     bool gateChanged = false;
     bool nudgeChanged = false;
     bool velocityZeroChanged = false;
+    bool probabilityMaskChanged = false;
     bool dataChanged = false;
     bool barChanged = false;
 };
@@ -78,22 +79,7 @@ struct TileRenderCache {
     lv_opa_t markerOpa = LV_OPA_TRANSP;
     bool indicatorVisible = false;
     lv_opa_t indicatorOpa = LV_OPA_TRANSP;
-    bool selectionDotVisible = false;
-    uint32_t selectionDotColor = 0;
-    lv_opa_t selectionDotOpa = LV_OPA_TRANSP;
     char stepIndexText[4] = {0};
-};
-
-struct RangeSelectionSnapshot {
-    bool active = false;
-    core::state::sequencer::RangeSelectionKind kind =
-        core::state::sequencer::RangeSelectionKind::NONE;
-    core::state::sequencer::RangeSelectionPhase phase =
-        core::state::sequencer::RangeSelectionPhase::IDLE;
-    uint8_t cursorStep = 0;
-    bool sourceRangeVisible = false;
-    uint8_t sourceStart = 0;
-    uint8_t sourceEnd = 0;
 };
 
 struct StepGridFrameState {
@@ -103,7 +89,6 @@ struct StepGridFrameState {
     oc::note::sequencer::StepBitMask128 feedbackTouchedMask{};
     core::state::sequencer::StepProperty feedbackProperty =
         core::state::sequencer::StepProperty::NOTE;
-    RangeSelectionSnapshot selection{};
     std::array<TileRenderState, 8> tiles{};
 };
 

@@ -11,7 +11,6 @@
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
-#include "handler/sequencer/SequencerRangeActionHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 
@@ -60,17 +59,6 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.structureClipboard,
             sharedTracks,
         },
-        encoders,
-        buttons,
-        sequencerViewScopeId
-    );
-    range_action_handler_ = std::make_unique<core::handler::SequencerRangeActionHandler>(
-            core::handler::SequencerRangeActionHandler::StateRefs{
-                stateRefs.overlays,
-                stateRefs.sequencer,
-                stateRefs.trackNavigation,
-                stateRefs.sequencerTracks,
-            },
         encoders,
         buttons,
         sequencerViewScopeId

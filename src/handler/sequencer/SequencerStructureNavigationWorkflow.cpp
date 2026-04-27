@@ -67,8 +67,7 @@ bool SequencerStructureNavigationWorkflow::allowsMainBindings() const {
     return !sequencer_.structureUi.pageSelection.active.get() &&
            !track_ui_.selection.active.get() &&
            !sequencer_.stepPropertyInlineSelector.selecting.get() &&
-           !sequencer_.patternQuickControls.selecting.get() &&
-           !sequencer_.rangeSelection.active();
+           !sequencer_.patternQuickControls.selecting.get();
 }
 
 bool SequencerStructureNavigationWorkflow::selectionActive() const {

@@ -20,7 +20,6 @@ ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     : overlays_state_(state.overlays)
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
-    , range_selection_(state.rangeSelection)
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
     , track_structure_selection_(state.trackStructureSelection)
@@ -86,8 +85,7 @@ bool ViewSwitcherHandler::canOpenSelector() const {
         return true;
     }
 
-    return !range_selection_.active() &&
-           !pattern_quick_controls_.selecting.get() &&
+    return !pattern_quick_controls_.selecting.get() &&
            !step_property_inline_selector_.selecting.get();
 }
 

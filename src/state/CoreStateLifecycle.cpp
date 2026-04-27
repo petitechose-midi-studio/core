@@ -160,7 +160,6 @@ void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
-    state.sequencer.rangeSelection.reset();
     state.globalSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
 }

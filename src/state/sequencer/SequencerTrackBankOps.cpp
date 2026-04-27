@@ -30,7 +30,6 @@ FLASHMEM void resetTransientTrackState(SequencerState& state) {
     state.stepPropertyInlineSelector.reset();
     state.stepInlineFeedback.reset();
     state.patternQuickControls.reset();
-    state.rangeSelection.reset();
 }
 
 }  // namespace

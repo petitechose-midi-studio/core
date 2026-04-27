@@ -20,7 +20,6 @@ inline oc::type::IsActiveFn canEditSequencerProperty(
         return !sequencer.structureUi.pageSelection.active.get() &&
                !trackUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
-               !sequencer.rangeSelection.active() &&
                !overlays.hasVisible();
     };
 }

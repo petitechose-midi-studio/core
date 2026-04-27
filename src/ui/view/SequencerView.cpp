@@ -169,7 +169,6 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.structureUi.previewAddPageSlot,
-        state_refs_.sequencer.playheadStep,
         state_refs_.trackNavigation.selection.active,
         state_refs_.trackNavigation.selection.scope,
         state_refs_.trackNavigation.selection.cursorIndex,
@@ -195,14 +194,7 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepInlineFeedback.visible,
         state_refs_.sequencer.stepInlineFeedback.touchedMask,
-        state_refs_.sequencer.stepInlineFeedback.property,
-        state_refs_.sequencer.rangeSelection.kind,
-        state_refs_.sequencer.rangeSelection.phase,
-        state_refs_.sequencer.rangeSelection.cursorStep,
-        state_refs_.sequencer.rangeSelection.anchorStep,
-        state_refs_.sequencer.rangeSelection.rangeStart,
-        state_refs_.sequencer.rangeSelection.rangeEnd,
-        state_refs_.sequencer.rangeSelection.rangeValid
+        state_refs_.sequencer.stepInlineFeedback.property
     );
 }
 
@@ -239,7 +231,6 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
-        state_refs_.sequencer.rangeSelection.kind,
         state_refs_.trackNavigation.selection.active,
         state_refs_.trackNavigation.selection.scope,
         state_refs_.sequencer.structureUi.pageSelection.active,
@@ -260,8 +251,6 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.trackNavigation.hold.startedAtMs,
         state_refs_.sequencer.structureUi.pageHold.action,
         state_refs_.sequencer.structureUi.pageHold.startedAtMs,
-        state_refs_.sequencer.rangeSelection.kind,
-        state_refs_.sequencer.rangeSelection.phase,
         state_refs_.trackNavigation.selection.active,
         state_refs_.trackNavigation.selection.selectedMask,
         state_refs_.sequencer.structureUi.pageSelection.active,

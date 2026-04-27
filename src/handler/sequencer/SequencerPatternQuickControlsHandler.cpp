@@ -31,8 +31,7 @@ inline oc::type::IsActiveFn canOpenQuickControls(
         return !overlays.hasVisible() &&
                !sequencer.structureUi.pageSelection.active.get() &&
                !trackUi.selection.active.get() &&
-               !sequencer.stepPropertyInlineSelector.selecting.get() &&
-               !sequencer.rangeSelection.active();
+               !sequencer.stepPropertyInlineSelector.selecting.get();
     };
 }
 

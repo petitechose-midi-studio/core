@@ -32,7 +32,6 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::ViewSelectorState& viewSelector;
-        core::state::sequencer::SequencerRangeSelectionState& rangeSelection;
         core::state::sequencer::SequencerPatternQuickControlsState& patternQuickControls;
         core::state::sequencer::SequencerStepPropertyInlineSelectorState&
             stepPropertyInlineSelector;
@@ -64,7 +63,6 @@ private:
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_state_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::ViewSelectorState& view_selector_;
-    core::state::sequencer::SequencerRangeSelectionState& range_selection_;
     core::state::sequencer::SequencerPatternQuickControlsState& pattern_quick_controls_;
     core::state::sequencer::SequencerStepPropertyInlineSelectorState&
         step_property_inline_selector_;

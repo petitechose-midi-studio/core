@@ -279,26 +279,6 @@ void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
             );
         }
 
-        if (visual.drawProgressFill) {
-            drawStripRect(
-                layer,
-                visual.progressArea,
-                visual.progressColor,
-                LV_OPA_COVER,
-                header_model::STRIP_RADIUS
-            );
-        }
-
-        if (visual.drawMarker) {
-            drawStripRect(
-                layer,
-                visual.markerArea,
-                lv_color_hex(theme::color::TEXT_PRIMARY),
-                LV_OPA_COVER,
-                0
-            );
-        }
-
         if (visual.drawAddSlot) {
             add_slot_icon_ns::drawCentered(
                 layer,
@@ -335,8 +315,7 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
                                    strip_cached_add_page_index_ != props.addPageIndex ||
                                    strip_cached_enabled_mask_ != props.enabledMask ||
                                    strip_cached_page_selected_mask_ != props.pageSelectedMask ||
-                                   strip_cached_preview_page_add_slot_ != props.previewPageAddSlot ||
-                                   strip_cached_playhead_ != stripState.playhead;
+                                   strip_cached_preview_page_add_slot_ != props.previewPageAddSlot;
 
     if (!stripStateChanged && !widthChanged) {
         return;
@@ -351,7 +330,6 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
     strip_cached_enabled_mask_ = props.enabledMask;
     strip_cached_page_selected_mask_ = props.pageSelectedMask;
     strip_cached_preview_page_add_slot_ = props.previewPageAddSlot;
-    strip_cached_playhead_ = stripState.playhead;
     strip_draw_props_ = props;
     lv_obj_invalidate(strip_row_);
 

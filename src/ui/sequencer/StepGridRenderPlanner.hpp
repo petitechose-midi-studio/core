@@ -9,7 +9,6 @@ namespace core::ui::sequencer::grid {
 
 struct FrameRenderPlan {
     bool propertyVisualChanged = false;
-    bool selectionChanged = false;
     InlineFeedbackSnapshot nextFeedback{};
     std::array<TileRenderDiff, 8> diffs{};
     std::array<bool, 8> feedbackChanged{};
@@ -20,7 +19,6 @@ struct FrameRenderPlan {
 FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& caches,
                                      core::state::sequencer::StepProperty cachedProperty,
                                      const InlineFeedbackSnapshot& cachedFeedback,
-                                     const RangeSelectionSnapshot& cachedSelection,
                                      const StepGridFrameState& frameState);
 
 }  // namespace core::ui::sequencer::grid

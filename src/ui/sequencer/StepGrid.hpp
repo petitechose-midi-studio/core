@@ -56,16 +56,12 @@ private:
                           lv_coord_t noteBaseX,
                           lv_coord_t noteBaseY,
                           lv_opa_t markerOpa);
-    void renderTileSelection(uint8_t tileIndex,
-                             uint8_t absoluteStep,
-                             const sequencer::grid::RangeSelectionSnapshot& selection);
     void renderTileBar(uint8_t tileIndex, bool visible);
     void renderTile(uint8_t tileIndex,
                     const TileRenderState& state,
                     const TileRenderDiff& diff,
                     bool propertyVisualChanged,
                     bool tileFeedbackChanged,
-                    bool selectionChanged,
                     const StepGridFrameState& frameState);
 
     struct TileButtonDrawContext {
@@ -95,7 +91,6 @@ private:
         core::state::sequencer::StepProperty property =
             core::state::sequencer::StepProperty::NOTE;
         InlineFeedbackSnapshot feedback{};
-        sequencer::grid::RangeSelectionSnapshot selection{};
     };
 
     lv_obj_t* container_ = nullptr;

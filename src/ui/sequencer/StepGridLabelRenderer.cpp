@@ -16,7 +16,6 @@ namespace {
 
 constexpr uint32_t STEP_TEXT_DISABLED_COLOR = theme::color::INACTIVE_LIGHTER;
 constexpr lv_opa_t STEP_TEXT_DISABLED_OPA = static_cast<lv_opa_t>(theme::opacity::OPA_50);
-constexpr uint32_t STEP_INLINE_NOTE_COLOR = theme::color::TEXT_PRIMARY;
 constexpr lv_opa_t STEP_INLINE_NOTE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_INLINE_VALUE_OPA = LV_OPA_70;
 constexpr lv_opa_t STEP_PROBABILITY_MASKED_OPA = LV_OPA_30;

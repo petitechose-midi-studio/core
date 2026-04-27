@@ -18,7 +18,7 @@
 namespace core::handler {
 
 /**
- * v0 bindings (sequencer view scope):
+ * Sequencer view bindings:
  * - MACRO_1..MACRO_8 release: toggle step in current page
  * - NAV turn/release: structure navigation, add-slot preview, selection mode
  * - BOTTOM_LEFT / BOTTOM_RIGHT: structure erase/remove/copy/paste/duplicate

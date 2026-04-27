@@ -28,8 +28,7 @@ inline oc::type::IsActiveFn canOpenPropertySelector(
         return !overlays.hasVisible() &&
                !sequencer.structureUi.pageSelection.active.get() &&
                !trackUi.selection.active.get() &&
-               !sequencer.patternQuickControls.selecting.get() &&
-               !sequencer.rangeSelection.active();
+               !sequencer.patternQuickControls.selecting.get();
     };
 }
 

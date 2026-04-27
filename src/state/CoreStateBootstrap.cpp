@@ -59,8 +59,6 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.patternQuickControls.selecting.setDebugLabel("core.sequencer.patternQuickControls.selecting");
     state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
     state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
-    state.sequencer.rangeSelection.kind.setDebugLabel("core.sequencer.rangeSelection.kind");
-    state.sequencer.rangeSelection.phase.setDebugLabel("core.sequencer.rangeSelection.phase");
 }
 }  // namespace
 

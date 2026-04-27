@@ -73,8 +73,6 @@ TopRowVisualState buildTopRowVisualState(const SequencerHeaderBarProps& props) {
 StripState buildStripState(const SequencerHeaderBarProps& props) {
     StripState state{};
     state.length = std::min<uint8_t>(props.length, static_cast<uint8_t>(PAGE_COUNT * STEPS_PER_PAGE));
-    state.playing = (props.playheadStep >= 0) && (props.playheadStep < state.length);
-    state.playhead = state.playing ? props.playheadStep : -1;
     state.pageCount = static_cast<uint8_t>(
         std::min<uint16_t>((state.length + STEPS_PER_PAGE - 1) / STEPS_PER_PAGE, PAGE_COUNT)
     );
@@ -160,33 +158,6 @@ StripSegmentVisual buildStripSegmentVisual(const SequencerHeaderBarProps& props,
     visual.validColor = isViewed
         ? lv_color_lighten(stripState.baseColor, LV_OPA_20)
         : lv_color_darken(stripState.baseColor, LV_OPA_70);
-
-    if (stripState.playing &&
-        stripState.playhead >= pageStart &&
-        stripState.playhead < static_cast<int16_t>(pageStart + validSteps)) {
-        visual.drawProgressFill = true;
-        visual.progressArea = visual.validArea;
-        visual.progressColor = isViewed
-            ? lv_color_lighten(stripState.baseColor, LV_OPA_10)
-            : lv_color_lighten(stripState.baseColor, LV_OPA_40);
-
-        const uint8_t playheadInPage = static_cast<uint8_t>(stripState.playhead - pageStart);
-        const float stepCenter =
-            (static_cast<float>(playheadInPage) + 0.5f) / static_cast<float>(STEPS_PER_PAGE);
-        lv_coord_t markerX = static_cast<lv_coord_t>(
-            stepCenter * static_cast<float>(geometry.width) - (MARKER_WIDTH / 2.0f)
-        );
-        const lv_coord_t maxX = std::max<lv_coord_t>(0, validWidth - MARKER_WIDTH);
-        markerX = std::clamp<lv_coord_t>(markerX, 0, maxX);
-
-        visual.drawMarker = true;
-        visual.markerArea = makeArea(
-            static_cast<lv_coord_t>(visual.segmentArea.x1 + markerX),
-            visual.segmentArea.y1,
-            MARKER_WIDTH,
-            STRIP_HEIGHT
-        );
-    }
 
     return visual;
 }

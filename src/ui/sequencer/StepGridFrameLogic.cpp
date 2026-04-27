@@ -11,24 +11,6 @@ StepGridFrameState buildStepGridFrameState(const core::state::sequencer::Sequenc
     frame.feedbackVisible = sequencer.stepInlineFeedback.visible.get();
     frame.feedbackTouchedMask = sequencer.stepInlineFeedback.touchedMask.get();
     frame.feedbackProperty = sequencer.stepInlineFeedback.property.get();
-    frame.selection.active = sequencer.rangeSelection.active();
-    frame.selection.kind = sequencer.rangeSelection.kind.get();
-    frame.selection.phase = sequencer.rangeSelection.phase.get();
-    frame.selection.cursorStep = sequencer.rangeSelection.cursorStep.get();
-
-    if (frame.selection.active) {
-        switch (frame.selection.phase) {
-            case core::state::sequencer::RangeSelectionPhase::SELECT_RANGE:
-            case core::state::sequencer::RangeSelectionPhase::PASTE_TARGET:
-                frame.selection.sourceRangeVisible = true;
-                frame.selection.sourceStart = sequencer.rangeSelection.rangeStart.get();
-                frame.selection.sourceEnd = sequencer.rangeSelection.rangeEnd.get();
-                break;
-            case core::state::sequencer::RangeSelectionPhase::IDLE:
-            default:
-                break;
-        }
-    }
 
     const uint8_t length = sequencer.length.get();
     const uint8_t page = sequencer.visiblePage();

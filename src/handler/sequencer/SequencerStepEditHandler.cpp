@@ -40,8 +40,7 @@ inline oc::type::IsActiveFn canOpenStepEdit(
                !sequencer.structureUi.pageSelection.active.get() &&
                !trackUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
-               !sequencer.stepPropertyInlineSelector.selecting.get() &&
-               !sequencer.rangeSelection.active();
+               !sequencer.stepPropertyInlineSelector.selecting.get();
     };
 }
 

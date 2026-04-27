@@ -31,6 +31,72 @@ FLASHMEM uint8_t sanitizeMidi7(uint8_t value) {
     return (value > 127U) ? 127U : value;
 }
 
+struct StepPayload {
+    uint8_t note = SequencerState::DEFAULT_NOTE;
+    uint8_t velocity = SequencerState::DEFAULT_VELOCITY;
+    uint16_t gate = SequencerState::DEFAULT_GATE_PERCENT;
+    int8_t nudge = 0;
+    uint8_t probability = SequencerState::DEFAULT_PROBABILITY;
+};
+
+FLASHMEM StepPayload defaultStep() {
+    return {};
+}
+
+FLASHMEM StepPayload readStep(const SequencerState& source, uint8_t step) {
+    return {
+        source.note[step],
+        source.velocity[step],
+        source.gate[step],
+        source.nudge[step],
+        source.probability[step],
+    };
+}
+
+FLASHMEM StepPayload readSanitizedStep(const SequencerState& source, uint8_t step) {
+    return {
+        sanitizeMidi7(source.note[step]),
+        sanitizeMidi7(source.velocity[step]),
+        SequencerState::clampGatePercent(source.gate[step]),
+        source.nudge[step],
+        SequencerState::clampProbability(source.probability[step]),
+    };
+}
+
+FLASHMEM StepPayload readSanitizedStep(const SequencerPatternSnapshot& source, uint8_t step) {
+    return {
+        sanitizeMidi7(source.note[step]),
+        sanitizeMidi7(source.velocity[step]),
+        SequencerState::clampGatePercent(source.gate[step]),
+        source.nudge[step],
+        SequencerState::clampProbability(source.probability[step]),
+    };
+}
+
+FLASHMEM bool sameStep(const StepPayload& lhs, const StepPayload& rhs) {
+    return lhs.note == rhs.note &&
+           lhs.velocity == rhs.velocity &&
+           lhs.gate == rhs.gate &&
+           lhs.nudge == rhs.nudge &&
+           lhs.probability == rhs.probability;
+}
+
+FLASHMEM void writeStep(SequencerState& target, uint8_t step, const StepPayload& payload) {
+    target.note[step] = payload.note;
+    target.velocity[step] = payload.velocity;
+    target.gate[step] = payload.gate;
+    target.nudge[step] = payload.nudge;
+    target.probability[step] = payload.probability;
+}
+
+FLASHMEM void writeStep(SequencerPatternSnapshot& target, uint8_t step, const StepPayload& payload) {
+    target.note[step] = payload.note;
+    target.velocity[step] = payload.velocity;
+    target.gate[step] = payload.gate;
+    target.nudge[step] = payload.nudge;
+    target.probability[step] = payload.probability;
+}
+
 }  // namespace
 
 FLASHMEM oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length) {
@@ -45,11 +111,7 @@ FLASHMEM void captureSnapshot(const SequencerState& source, SequencerPatternSnap
     out.stepDataRevision = source.stepDataRevision.get();
 
     for (uint8_t i = 0; i < SequencerState::MAX_STEPS; ++i) {
-        out.note[i] = sanitizeMidi7(source.note[i]);
-        out.velocity[i] = sanitizeMidi7(source.velocity[i]);
-        out.gate[i] = SequencerState::clampGatePercent(source.gate[i]);
-        out.nudge[i] = source.nudge[i];
-        out.probability[i] = SequencerState::clampProbability(source.probability[i]);
+        writeStep(out, i, readSanitizedStep(source, i));
     }
 }
 
@@ -63,11 +125,7 @@ FLASHMEM void applySnapshot(SequencerState& target, const SequencerPatternSnapsh
     target.enabledMask.set(snapshot.enabledMask & lengthMask(length));
 
     for (uint8_t i = 0; i < SequencerState::MAX_STEPS; ++i) {
-        target.note[i] = sanitizeMidi7(snapshot.note[i]);
-        target.velocity[i] = sanitizeMidi7(snapshot.velocity[i]);
-        target.gate[i] = SequencerState::clampGatePercent(snapshot.gate[i]);
-        target.nudge[i] = snapshot.nudge[i];
-        target.probability[i] = SequencerState::clampProbability(snapshot.probability[i]);
+        writeStep(target, i, readSanitizedStep(snapshot, i));
     }
 
     const uint8_t focused =
@@ -92,11 +150,7 @@ FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPa
     for (uint8_t i = 0; i < incomingLength; ++i) {
         if (!incomingMask.test(i)) continue;
 
-        target.note[i] = sanitizeMidi7(snapshot.note[i]);
-        target.velocity[i] = sanitizeMidi7(snapshot.velocity[i]);
-        target.gate[i] = SequencerState::clampGatePercent(snapshot.gate[i]);
-        target.nudge[i] = snapshot.nudge[i];
-        target.probability[i] = SequencerState::clampProbability(snapshot.probability[i]);
+        writeStep(target, i, readSanitizedStep(snapshot, i));
         mergedMask.setBit(i, true);
     }
 
@@ -125,20 +179,13 @@ FLASHMEM bool duplicatePatternForward(SequencerState& target) {
     for (uint8_t i = 0; i < copyCount; ++i) {
         const uint8_t src = i;
         const uint8_t dst = static_cast<uint8_t>(targetStart + i);
+        const StepPayload sourceStep = readStep(target, src);
 
-        if (target.note[dst] != target.note[src] ||
-            target.velocity[dst] != target.velocity[src] ||
-            target.gate[dst] != target.gate[src] ||
-            target.nudge[dst] != target.nudge[src] ||
-            target.probability[dst] != target.probability[src]) {
+        if (!sameStep(readStep(target, dst), sourceStep)) {
             dataChanged = true;
         }
 
-        target.note[dst] = target.note[src];
-        target.velocity[dst] = target.velocity[src];
-        target.gate[dst] = target.gate[src];
-        target.nudge[dst] = target.nudge[src];
-        target.probability[dst] = target.probability[src];
+        writeStep(target, dst, sourceStep);
 
         const bool srcEnabled = mask.test(src);
         const bool dstEnabledBefore = mask.test(dst);
@@ -176,22 +223,14 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
     }
     if (normalizedOffset == 0) return false;
 
-    std::array<uint8_t, SequencerState::MAX_STEPS> nextNote{};
-    std::array<uint8_t, SequencerState::MAX_STEPS> nextVelocity{};
-    std::array<uint16_t, SequencerState::MAX_STEPS> nextGate{};
-    std::array<int8_t, SequencerState::MAX_STEPS> nextNudge{};
-    std::array<uint8_t, SequencerState::MAX_STEPS> nextProbability{};
+    std::array<StepPayload, SequencerState::MAX_STEPS> nextSteps{};
     const auto activeMask = lengthMask(len);
     const auto sourceMask = target.enabledMask.get();
     auto nextMask = sourceMask & ~activeMask;
 
     for (uint8_t i = 0; i < len; ++i) {
         const uint8_t dst = static_cast<uint8_t>((i + normalizedOffset) % len);
-        nextNote[dst] = target.note[i];
-        nextVelocity[dst] = target.velocity[i];
-        nextGate[dst] = target.gate[i];
-        nextNudge[dst] = target.nudge[i];
-        nextProbability[dst] = target.probability[i];
+        nextSteps[dst] = readStep(target, i);
 
         if (sourceMask.test(i)) {
             nextMask.setBit(dst, true);
@@ -199,11 +238,7 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
     }
 
     for (uint8_t i = 0; i < len; ++i) {
-        target.note[i] = nextNote[i];
-        target.velocity[i] = nextVelocity[i];
-        target.gate[i] = nextGate[i];
-        target.nudge[i] = nextNudge[i];
-        target.probability[i] = nextProbability[i];
+        writeStep(target, i, nextSteps[i]);
     }
 
     target.enabledMask.set(nextMask);
@@ -230,16 +265,8 @@ FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t 
             maskChanged = true;
         }
 
-        if (target.note[step] != SequencerState::DEFAULT_NOTE ||
-            target.velocity[step] != SequencerState::DEFAULT_VELOCITY ||
-            target.gate[step] != SequencerState::DEFAULT_GATE_PERCENT ||
-            target.nudge[step] != 0 ||
-            target.probability[step] != SequencerState::DEFAULT_PROBABILITY) {
-            target.note[step] = SequencerState::DEFAULT_NOTE;
-            target.velocity[step] = SequencerState::DEFAULT_VELOCITY;
-            target.gate[step] = SequencerState::DEFAULT_GATE_PERCENT;
-            target.nudge[step] = 0;
-            target.probability[step] = SequencerState::DEFAULT_PROBABILITY;
+        if (!sameStep(readStep(target, step), defaultStep())) {
+            writeStep(target, step, defaultStep());
             dataChanged = true;
         }
     }
@@ -271,11 +298,7 @@ FLASHMEM bool appendPage(SequencerState& target) {
 
     auto mask = target.enabledMask.get();
     for (uint8_t step = len; step < newLength; ++step) {
-        target.note[step] = SequencerState::DEFAULT_NOTE;
-        target.velocity[step] = SequencerState::DEFAULT_VELOCITY;
-        target.gate[step] = SequencerState::DEFAULT_GATE_PERCENT;
-        target.nudge[step] = 0;
-        target.probability[step] = SequencerState::DEFAULT_PROBABILITY;
+        writeStep(target, step, defaultStep());
         mask.setBit(step, false);
     }
 
@@ -318,11 +341,7 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
         const uint8_t dstIndex = static_cast<uint8_t>(dst);
         const uint8_t srcIndex =
             static_cast<uint8_t>(dst - static_cast<int>(SequencerState::STEPS_PER_PAGE));
-        target.note[dstIndex] = target.note[srcIndex];
-        target.velocity[dstIndex] = target.velocity[srcIndex];
-        target.gate[dstIndex] = target.gate[srcIndex];
-        target.nudge[dstIndex] = target.nudge[srcIndex];
-        target.probability[dstIndex] = target.probability[srcIndex];
+        writeStep(target, dstIndex, readStep(target, srcIndex));
         mask.setBit(dstIndex, mask.test(srcIndex));
     }
 
@@ -331,11 +350,7 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
         static_cast<uint16_t>(insertStart + SequencerState::STEPS_PER_PAGE - 1)
     ));
     for (uint8_t step = insertStart; step <= clearEnd; ++step) {
-        target.note[step] = SequencerState::DEFAULT_NOTE;
-        target.velocity[step] = SequencerState::DEFAULT_VELOCITY;
-        target.gate[step] = SequencerState::DEFAULT_GATE_PERCENT;
-        target.nudge[step] = 0;
-        target.probability[step] = SequencerState::DEFAULT_PROBABILITY;
+        writeStep(target, step, defaultStep());
         mask.setBit(step, false);
     }
 
@@ -363,11 +378,7 @@ FLASHMEM bool ensurePageExists(SequencerState& target, uint8_t pageIndex) {
 
     auto mask = target.enabledMask.get();
     for (uint8_t step = currentLength; step < requiredLength; ++step) {
-        target.note[step] = SequencerState::DEFAULT_NOTE;
-        target.velocity[step] = SequencerState::DEFAULT_VELOCITY;
-        target.gate[step] = SequencerState::DEFAULT_GATE_PERCENT;
-        target.nudge[step] = 0;
-        target.probability[step] = SequencerState::DEFAULT_PROBABILITY;
+        writeStep(target, step, defaultStep());
         mask.setBit(step, false);
     }
 
@@ -398,20 +409,12 @@ FLASHMEM bool removePage(SequencerState& target, uint8_t pageIndex) {
 
     for (uint8_t dst = pageStart; static_cast<uint16_t>(dst + deleteSpan) < len; ++dst) {
         const uint8_t src = static_cast<uint8_t>(dst + deleteSpan);
-        target.note[dst] = target.note[src];
-        target.velocity[dst] = target.velocity[src];
-        target.gate[dst] = target.gate[src];
-        target.nudge[dst] = target.nudge[src];
-        target.probability[dst] = target.probability[src];
+        writeStep(target, dst, readStep(target, src));
         mask.setBit(dst, mask.test(src));
     }
 
     for (uint8_t step = newLength; step < SequencerState::MAX_STEPS; ++step) {
-        target.note[step] = SequencerState::DEFAULT_NOTE;
-        target.velocity[step] = SequencerState::DEFAULT_VELOCITY;
-        target.gate[step] = SequencerState::DEFAULT_GATE_PERCENT;
-        target.nudge[step] = 0;
-        target.probability[step] = SequencerState::DEFAULT_PROBABILITY;
+        writeStep(target, step, defaultStep());
         mask.setBit(step, false);
     }
 
@@ -452,18 +455,10 @@ FLASHMEM bool duplicatePage(SequencerState& target, uint8_t pageIndex) {
         const uint8_t dst = static_cast<uint8_t>(dstStart + i);
         if (i < copyCount) {
             const uint8_t src = static_cast<uint8_t>(srcStart + i);
-            target.note[dst] = target.note[src];
-            target.velocity[dst] = target.velocity[src];
-            target.gate[dst] = target.gate[src];
-            target.nudge[dst] = target.nudge[src];
-            target.probability[dst] = target.probability[src];
+            writeStep(target, dst, readStep(target, src));
             mask.setBit(dst, mask.test(src));
         } else {
-            target.note[dst] = SequencerState::DEFAULT_NOTE;
-            target.velocity[dst] = SequencerState::DEFAULT_VELOCITY;
-            target.gate[dst] = SequencerState::DEFAULT_GATE_PERCENT;
-            target.nudge[dst] = 0;
-            target.probability[dst] = SequencerState::DEFAULT_PROBABILITY;
+            writeStep(target, dst, defaultStep());
             mask.setBit(dst, false);
         }
     }
@@ -477,106 +472,6 @@ FLASHMEM bool duplicatePage(SequencerState& target, uint8_t pageIndex) {
     target.focusedStep.set(dstStart);
     target.page.set(target.pageForStep(dstStart));
     target.bumpStepDataRevision();
-    return true;
-}
-
-FLASHMEM bool copyStepRangeToClipboard(
-    const SequencerState& source,
-    uint8_t startStep,
-    uint8_t endStep,
-    SequencerRangeClipboard& clipboard
-) {
-    clipboard.reset();
-
-    const uint8_t len = source.length.get();
-    if (len == 0) return false;
-
-    const uint8_t start = static_cast<uint8_t>(std::min(startStep, endStep));
-    const uint8_t end = static_cast<uint8_t>(std::max(startStep, endStep));
-    if (start >= len || start >= SequencerState::MAX_STEPS) return false;
-
-    const uint8_t clampedEnd = static_cast<uint8_t>(std::min<uint16_t>(end, len - 1));
-    const uint8_t count = static_cast<uint8_t>((clampedEnd - start) + 1);
-    if (count == 0) return false;
-
-    auto relativeEnabledMask = oc::note::sequencer::StepBitMask128{};
-    const auto mask = source.enabledMask.get();
-
-    for (uint8_t i = 0; i < count; ++i) {
-        const uint8_t step = static_cast<uint8_t>(start + i);
-        clipboard.note[i] = source.note[step];
-        clipboard.velocity[i] = source.velocity[step];
-        clipboard.gate[i] = source.gate[step];
-        clipboard.nudge[i] = source.nudge[step];
-        clipboard.probability[i] = source.probability[step];
-
-        if (mask.test(step)) {
-            relativeEnabledMask.setBit(i, true);
-        }
-    }
-
-    clipboard.count = count;
-    clipboard.enabledMask = relativeEnabledMask;
-    clipboard.valid = true;
-    return true;
-}
-
-FLASHMEM bool pasteClipboardRange(
-    SequencerState& target,
-    uint8_t targetStart,
-    const SequencerRangeClipboard& clipboard
-) {
-    if (!clipboard.valid || clipboard.count == 0) return false;
-    if (targetStart >= SequencerState::MAX_STEPS) return false;
-
-    const uint8_t maxCount = static_cast<uint8_t>(SequencerState::MAX_STEPS - targetStart);
-    const uint8_t copyCount =
-        static_cast<uint8_t>(std::min<uint16_t>(clipboard.count, maxCount));
-    if (copyCount == 0) return false;
-
-    auto mask = target.enabledMask.get();
-    bool dataChanged = false;
-
-    for (uint8_t i = 0; i < copyCount; ++i) {
-        const uint8_t step = static_cast<uint8_t>(targetStart + i);
-
-        if (target.note[step] != clipboard.note[i] ||
-            target.velocity[step] != clipboard.velocity[i] ||
-            target.gate[step] != clipboard.gate[i] ||
-            target.nudge[step] != clipboard.nudge[i] ||
-            target.probability[step] != clipboard.probability[i]) {
-            dataChanged = true;
-        }
-
-        target.note[step] = clipboard.note[i];
-        target.velocity[step] = clipboard.velocity[i];
-        target.gate[step] = clipboard.gate[i];
-        target.nudge[step] = clipboard.nudge[i];
-        target.probability[step] = clipboard.probability[i];
-
-        const bool enabled = clipboard.isEnabled(i);
-        const bool wasEnabled = mask.test(step);
-        if (enabled != wasEnabled) {
-            dataChanged = true;
-        }
-
-        mask.setBit(step, enabled);
-    }
-
-    target.enabledMask.set(mask);
-
-    const uint8_t requiredLength = static_cast<uint8_t>(targetStart + copyCount);
-    if (requiredLength > target.length.get()) {
-        target.length.set(requiredLength);
-    }
-
-    target.focusedStep.set(targetStart);
-    target.page.set(target.pageForStep(targetStart));
-
-    if (dataChanged) {
-        target.bumpStepDataRevision();
-    }
-
     return true;
 }
 

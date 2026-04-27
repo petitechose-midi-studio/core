@@ -130,7 +130,6 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
         .length = sequencer.length.get(),
         .activePage = sequencer.pageForStep(sequencer.focusedStep.get()),
         .viewedPage = viewedPage,
-        .playheadStep = sequencer.playheadStep.get(),
         .previewTrack = previewTrack,
         .addPageIndex = addPageIndex,
         .enabledMask = source.sharedTrackEnabledMask.get(),
@@ -173,7 +172,6 @@ ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource
         source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
-    const bool selectingRange = source.sequencer.rangeSelection.active();
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
     const bool selectingStructure = selectingTrack || selectingPage;
     const char* propertyIcon = visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
@@ -204,19 +202,6 @@ ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource
                   .label = "PG",
               };
         props.slots[2].visualState = Visual::HIDDEN;
-        return props;
-    }
-
-    if (selectingRange) {
-        props.slots[0] = makeIconSlot(
-            standalone::icons::ACTION_CANCEL,
-            Visual::ACTIVE
-        );
-        props.slots[1] = makeIconSlot(
-            standalone::icons::MIDI_CHANNEL,
-            Visual::DIM
-        );
-        props.slots[2] = makeIconSlot(propertyIcon, Visual::DIM);
         return props;
     }
 
@@ -256,7 +241,6 @@ ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource
 }
 
 ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSource& source) {
-    const auto& range = source.sequencer.rangeSelection;
     StripProps props;
     props.visible = true;
     const bool trackFocus =
@@ -292,49 +276,6 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
         props.slots[2].showLabel = true;
         props.slots[2].label = "DUP";
         return props;
-    }
-
-    if (range.active()) {
-        using Kind = core::state::sequencer::RangeSelectionKind;
-        using Phase = core::state::sequencer::RangeSelectionPhase;
-
-        const auto kind = range.kind.get();
-        const auto phase = range.phase.get();
-
-        if (kind == Kind::CLEAR) {
-            props.slots[0] = makeIconSlot(
-                standalone::icons::ACTION_CLEAR,
-                Visual::ACTIVE,
-                Tone::DESTRUCTIVE
-            );
-            if (phase == Phase::SELECT_RANGE) {
-                props.slots[1] = makeIconSlot(
-                    standalone::icons::ACTION_PLACE_TARGET,
-                    Visual::ACTIVE
-                );
-            } else {
-                props.slots[1].visualState = Visual::HIDDEN;
-            }
-            props.slots[2].visualState = Visual::HIDDEN;
-            return props;
-        }
-
-        if (kind == Kind::COPY) {
-            props.slots[0].visualState = Visual::HIDDEN;
-            props.slots[1] = makeIconSlot(
-                standalone::icons::ACTION_PLACE_TARGET,
-                phase == Phase::SELECT_RANGE || phase == Phase::PASTE_TARGET
-                    ? Visual::ACTIVE
-                    : Visual::DIM
-            );
-            props.slots[2] = makeIconSlot(
-                phase == Phase::PASTE_TARGET ? standalone::icons::ACTION_PASTE
-                                             : standalone::icons::ACTION_COPY,
-                phase == Phase::PASTE_TARGET ? Visual::ARMED : Visual::ACTIVE,
-                Tone::CONSTRUCTIVE
-            );
-            return props;
-        }
     }
 
     const bool canPaste = trackFocus

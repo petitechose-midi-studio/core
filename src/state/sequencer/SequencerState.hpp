@@ -2,7 +2,7 @@
 
 /**
  * @file SequencerState.hpp
- * @brief Sequencer state for Core UI + v0 playback engine integration
+ * @brief Sequencer state for Core UI and playback engine integration
  */
 
 #include <cstdint>
@@ -43,7 +43,6 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     SequencerStepInlineFeedbackState stepInlineFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
     SequencerStructureUiState structureUi;
-    SequencerRangeSelectionState rangeSelection;
 
     static uint8_t clampMidi7(uint8_t value) {
         return (value > 127U) ? 127U : value;
@@ -179,7 +178,6 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         stepInlineFeedback.reset();
         patternQuickControls.reset();
         structureUi.reset();
-        rangeSelection.reset();
     }
 
     void updateUi(uint32_t nowMs) {
@@ -204,7 +202,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     }
 
     uint8_t visiblePage() const {
-        if (rangeSelection.selectingPasteTarget() || structureUi.previewAddPageSlot.get()) {
+        if (structureUi.previewAddPageSlot.get()) {
             return clampPage(page.get());
         }
         return normalizePage(page.get());

@@ -12,7 +12,6 @@ namespace core::ui::sequencer::header_bar {
 constexpr uint8_t PAGE_COUNT = core::state::sequencer::SequencerState::PAGE_COUNT;
 constexpr uint8_t STEPS_PER_PAGE = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
 constexpr lv_coord_t STRIP_HEIGHT = 14;
-constexpr lv_coord_t MARKER_WIDTH = 2;
 constexpr lv_coord_t STRIP_GAP = 1;
 constexpr lv_coord_t STRIP_RADIUS = 2;
 constexpr lv_opa_t TRACK_BG_OPA_IDLE = LV_OPA_10;
@@ -44,8 +43,6 @@ struct TopRowVisualState {
 struct StripState {
     uint8_t length = 0;
     uint8_t pageCount = 0;
-    int16_t playhead = -1;
-    bool playing = false;
     lv_color_t baseColor = lv_color_black();
     lv_color_t disabledColor = lv_color_black();
 };
@@ -58,11 +55,6 @@ struct StripSegmentVisual {
     bool drawValidFill = false;
     lv_area_t validArea{};
     lv_color_t validColor = lv_color_black();
-    bool drawProgressFill = false;
-    lv_area_t progressArea{};
-    lv_color_t progressColor = lv_color_black();
-    bool drawMarker = false;
-    lv_area_t markerArea{};
     bool drawAddSlot = false;
 };
 

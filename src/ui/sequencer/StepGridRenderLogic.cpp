@@ -121,13 +121,15 @@ TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRende
     diff.nudgeChanged = !diff.initialized || cache.nudge != state.nudge;
     diff.velocityZeroChanged =
         !diff.initialized || ((cache.velocity == 0) != (state.velocity == 0));
+    diff.probabilityMaskChanged =
+        !diff.initialized || (state.inPattern && diff.probabilityCycleActiveChanged);
 
     const bool baseChanged = diff.absoluteStepChanged || diff.inPatternChanged || diff.enabledChanged;
     diff.dataChanged =
         baseChanged ||
         (state.inPattern &&
          (diff.noteChanged || diff.velocityChanged || diff.probabilityChanged ||
-          diff.probabilityCycleActiveChanged || diff.gateChanged || diff.nudgeChanged));
+          diff.gateChanged || diff.nudgeChanged));
     diff.barChanged = !diff.initialized || diff.inPatternChanged || cache.playing != state.playing;
     return diff;
 }

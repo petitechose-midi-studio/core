@@ -26,17 +26,4 @@ bool ensurePageExists(SequencerState& target, uint8_t pageIndex);
 bool removePage(SequencerState& target, uint8_t pageIndex);
 bool duplicatePage(SequencerState& target, uint8_t pageIndex);
 
-bool copyStepRangeToClipboard(
-    const SequencerState& source,
-    uint8_t startStep,
-    uint8_t endStep,
-    SequencerRangeClipboard& clipboard
-);
-
-bool pasteClipboardRange(
-    SequencerState& target,
-    uint8_t targetStart,
-    const SequencerRangeClipboard& clipboard
-);
-
 }  // namespace core::state::sequencer

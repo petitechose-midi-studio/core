@@ -212,7 +212,6 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
     state.trackNavigation.selection.cursorIndex.set(7);
     state.trackNavigation.selection.selectedMask.set(0x0080);
-    state.sequencer.rangeSelection.kind.set(core::state::sequencer::RangeSelectionKind::COPY);
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), 3);
 
     state.resetStandaloneTransientUi();
@@ -230,8 +229,6 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(!state.trackNavigation.selection.active.get());
     assert(state.trackNavigation.selection.cursorIndex.get() == 0);
-    assert(!state.sequencer.rangeSelection.active());
-
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
 }
 

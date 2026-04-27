@@ -2,7 +2,7 @@
 
 /**
  * @file SequencerHeaderBar.hpp
- * @brief Sequencer header: text row + playhead progress strip
+ * @brief Sequencer header: text row + structure strip
  */
 
 #include <array>
@@ -28,7 +28,6 @@ struct SequencerHeaderBarProps {
     uint8_t length = 0;
     uint8_t activePage = 0;
     uint8_t viewedPage = 0;     // 0..15, may point to a future paste target page
-    int16_t playheadStep = -1;  // -1 when stopped
     uint8_t previewTrack = 0;
     uint8_t addPageIndex = core::state::sequencer::SequencerState::PAGE_COUNT;
     uint16_t enabledMask = 0x0001;
@@ -102,7 +101,6 @@ private:
     uint16_t strip_cached_enabled_mask_ = 0;
     uint16_t strip_cached_page_selected_mask_ = 0;
     bool strip_cached_preview_page_add_slot_ = false;
-    int16_t strip_cached_playhead_ = -2;
     lv_coord_t strip_cached_width_ = -1;
     bool strip_cursor_visible_cache_ = false;
     lv_coord_t strip_cursor_x_cache_ = -1;

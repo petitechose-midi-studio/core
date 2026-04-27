@@ -21,22 +21,11 @@ bool tileFeedbackChanged(uint8_t absoluteStep,
     return before.property != after.property;
 }
 
-bool sameSelectionSnapshot(const RangeSelectionSnapshot& a, const RangeSelectionSnapshot& b) {
-    return a.active == b.active &&
-           a.kind == b.kind &&
-           a.phase == b.phase &&
-           a.cursorStep == b.cursorStep &&
-           a.sourceRangeVisible == b.sourceRangeVisible &&
-           a.sourceStart == b.sourceStart &&
-           a.sourceEnd == b.sourceEnd;
-}
-
 }  // namespace
 
 FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& caches,
                                      core::state::sequencer::StepProperty cachedProperty,
                                      const InlineFeedbackSnapshot& cachedFeedback,
-                                     const RangeSelectionSnapshot& cachedSelection,
                                      const StepGridFrameState& frameState) {
     FrameRenderPlan plan;
     plan.propertyVisualChanged = frameState.activeProperty != cachedProperty;
@@ -45,7 +34,6 @@ FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& cache
         frameState.feedbackTouchedMask,
         frameState.feedbackProperty
     );
-    plan.selectionChanged = !sameSelectionSnapshot(frameState.selection, cachedSelection);
 
     for (uint8_t i = 0; i < frameState.tiles.size(); ++i) {
         const TileRenderState state = frameState.tiles[i];
@@ -54,10 +42,10 @@ FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& cache
             tileFeedbackChanged(state.absoluteStep, cachedFeedback, plan.nextFeedback);
         plan.tileDirty[i] =
             plan.diffs[i].dataChanged ||
+            plan.diffs[i].probabilityMaskChanged ||
             plan.diffs[i].barChanged ||
             plan.propertyVisualChanged ||
-            plan.feedbackChanged[i] ||
-            plan.selectionChanged;
+            plan.feedbackChanged[i];
         plan.anyDirty = plan.anyDirty || plan.tileDirty[i];
     }
 
