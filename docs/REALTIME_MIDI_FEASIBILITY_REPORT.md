@@ -315,8 +315,8 @@ Current situation:
 Recommended change:
 
 - keep `StepSequencerEngine` responsible for musical intent
-- stop treating `ISequencerOutput` as the physical transport
-- introduce a `ScheduledMidiEvent` representation with:
+- keep the sequencer event sink independent from the physical transport
+- translate `SequencerEvent` work into realtime MIDI events with:
   - absolute deadline in microseconds
   - event type
   - channel
@@ -546,8 +546,8 @@ The guiding rule is:
 
 **Primary outcome**
 
-- stop treating `ISequencerOutput` as the physical transport
-- make the engine produce future MIDI work with absolute deadlines
+- keep the sequencer engine output transport-independent
+- make the sink translate future MIDI work into absolute deadlines
 
 **Repos / ownership**
 

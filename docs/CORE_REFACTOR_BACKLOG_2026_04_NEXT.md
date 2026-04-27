@@ -30,7 +30,7 @@ These constraints are part of the contract for this backlog:
 - the standalone sequencer runtime may stay allocated in PSRAM when built on Teensy 4.1
 - the priority is runtime isolation and predictable ownership, not dogmatic relocation to RAM1/RAM2
 - UI/render work must not become a hidden dependency of sequencer runtime progression or MIDI output
-- dead, futile, or ambiguous legacy code must be removed, not preserved behind compatibility seams
+- dead, futile, or ambiguous stale code must be removed, not preserved behind compatibility seams
 - a new developer must be able to identify the authoritative path for each concern without guesswork
 
 ### 1.2 Non-goals
