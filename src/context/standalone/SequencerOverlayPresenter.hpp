@@ -10,6 +10,12 @@ class VirtualListKeyValueOverlay;
 
 namespace core::context::standalone {
 
+/**
+ * Projects sequencer step-edit state into the step edit overlay.
+ *
+ * The presenter formats current step values and watches step-edit signals; it
+ * does not apply edits or manage input bindings.
+ */
 class SequencerOverlayPresenter {
 public:
     struct StateRefs {

@@ -12,6 +12,13 @@
 
 namespace core::handler {
 
+/**
+ * Binds sequencer pattern quick controls to buttons and encoders.
+ *
+ * The handler snapshots the pattern for cancel/offset behavior, applies length,
+ * division, and offset changes through sequencer state ops, and leaves playback
+ * runtime untouched.
+ */
 class SequencerPatternQuickControlsHandler {
 public:
     struct StateRefs {

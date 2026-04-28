@@ -11,6 +11,12 @@ class VirtualListSelectorOverlay;
 
 namespace core::context::standalone {
 
+/**
+ * Projects global settings state into overlay widgets.
+ *
+ * It watches global settings and MIDI sync signals and renders display data.
+ * Applying selected values remains in settings handlers/domain services.
+ */
 class GlobalSettingsOverlayPresenter {
 public:
     using StateRefs = global_settings_presenter::Source;

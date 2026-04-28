@@ -42,6 +42,12 @@ class MacroValueHandler;
 
 namespace core::context::standalone {
 
+/**
+ * Owns macro feature overlays, presenters, MIDI bridge, and input handlers.
+ *
+ * Domain mutations are delegated to macro domain services/workflows passed in
+ * by the assembly; this module is the LVGL/input binding owner for macro mode.
+ */
 class MacroFeatureModule {
 public:
     struct StateRefs {

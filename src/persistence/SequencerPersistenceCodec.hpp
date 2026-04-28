@@ -4,6 +4,13 @@
 
 namespace core::persistence::sequencer_codec {
 
+/**
+ * Converts sequencer state to/from packed persistence payloads.
+ *
+ * Codec functions sanitize length, masks, MIDI values, focused step, page, and
+ * step property on read/write so persisted bytes cannot put SequencerState into
+ * an invalid runtime shape.
+ */
 void fillPatternPayload(const state::sequencer::SequencerState& source, PatternPayload& out);
 void applyPatternPayload(const PatternPayload& payload, state::sequencer::SequencerState& target);
 

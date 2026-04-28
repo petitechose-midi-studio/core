@@ -4,6 +4,14 @@
 
 namespace core::context::standalone {
 
+/**
+ * Pure decision gate for the standalone runtime owner in `main.cpp`.
+ *
+ * The pre-context hook calls this on each loop. It updates while standalone is
+ * active, stops once when leaving standalone, and otherwise stays idle. Keeping
+ * this as a header-level pure function makes the lifecycle rule testable
+ * without constructing the runtime service.
+ */
 enum class StandaloneSequencerRuntimeAction : uint8_t {
     NONE = 0,
     UPDATE,

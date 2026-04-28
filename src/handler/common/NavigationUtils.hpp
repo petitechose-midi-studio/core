@@ -4,6 +4,12 @@
 
 namespace core::handler::nav {
 
+/**
+ * Mechanical encoder-turn helpers.
+ *
+ * This namespace intentionally contains no UI state or domain behavior; it only
+ * converts turn deltas into signed/wrapped index movement.
+ */
 inline bool hasTurnDelta(float delta) {
     return delta != 0.0f;
 }

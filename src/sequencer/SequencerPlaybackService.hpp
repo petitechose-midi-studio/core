@@ -18,6 +18,13 @@
 
 namespace core::sequencer {
 
+/**
+ * Playback bridge from committed sequencer snapshots to note-engine runtime.
+ *
+ * The service owns per-track `StepSequencerEngine` instances and their event
+ * sinks. It consumes immutable track-bank snapshots, queues MIDI through
+ * `RealtimeMidiQueue`, and publishes only telemetry/UI projection back to state.
+ */
 class SequencerPlaybackService {
 public:
     static constexpr uint8_t TRACK_COUNT = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;

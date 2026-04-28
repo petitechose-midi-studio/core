@@ -12,6 +12,12 @@
 
 namespace core::ui {
 
+/**
+ * Shared compact renderer for the 16-track navigation strip.
+ *
+ * Props carry active/preview/add/selection/activity state; the widget owns LVGL
+ * objects and geometry caches for cursors and per-track cells.
+ */
 struct TrackNavigationStripProps {
     static constexpr uint8_t TRACK_COUNT = core::state::StatusBarState::TRACK_COUNT;
 

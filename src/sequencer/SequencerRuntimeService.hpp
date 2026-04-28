@@ -19,6 +19,17 @@
 
 namespace core::sequencer {
 
+/**
+ * Standalone sequencer runtime orchestrator.
+ *
+ * Ownership is intentionally singular: `main.cpp` owns the live standalone
+ * instance and ticks it from the app pre-context hook. `StandaloneContext`
+ * assembles UI/features but must not become a second runtime execution path.
+ *
+ * The service receives only the state slices it mutates/publishes through
+ * `StateRefs`; avoid widening this to `CoreState&` unless the runtime contract
+ * itself changes.
+ */
 class SequencerRuntimeService {
 public:
     struct StateRefs {

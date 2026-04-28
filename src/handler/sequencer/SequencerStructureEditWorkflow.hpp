@@ -10,6 +10,12 @@
 
 namespace core::handler {
 
+/**
+ * Owns sequencer page/track structure edit actions.
+ *
+ * It applies erase/remove/copy/paste/delete/duplicate intent using snapshot ops,
+ * track-bank ops, shared track services, and the shared structure clipboard.
+ */
 class SequencerStructureEditWorkflow {
 public:
     struct StateRefs {

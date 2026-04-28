@@ -8,6 +8,12 @@ namespace core::state {
 
 inline constexpr unsigned int kStructureNavigationFocusMaxSubscribers = 8;
 
+/**
+ * Shared structure navigation primitives for page/track selection flows.
+ *
+ * These structs intentionally hold only focus, selection masks, and hold action
+ * timing. Domain-specific add/remove/copy behavior lives in workflow/ops code.
+ */
 enum class StructureNavigationFocus : uint8_t {
     PAGE = 0,
     TRACK = 1,

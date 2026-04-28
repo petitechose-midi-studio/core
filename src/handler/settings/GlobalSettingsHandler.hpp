@@ -10,6 +10,12 @@
 
 namespace core::handler {
 
+/**
+ * Binds the global settings overlay and selector to input.
+ *
+ * The handler owns modal open/close and navigation. Applying choices is
+ * delegated to GlobalSettingsDomainServices.
+ */
 class GlobalSettingsHandler {
 public:
     struct StateRefs {

@@ -11,6 +11,12 @@
 
 namespace core::context::standalone::data_manager_presenter {
 
+/**
+ * Pure render-data builders for Data Manager presenters.
+ *
+ * These functions format labels, dialog item arrays, revisions, and softkey
+ * text from DataManagerState without touching widgets or executing commands.
+ */
 struct Source {
     core::state::DataManagerState& dataManager;
 };

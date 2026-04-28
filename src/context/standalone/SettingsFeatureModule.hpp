@@ -42,6 +42,12 @@ class GlobalSettingsHandler;
 
 namespace core::context::standalone {
 
+/**
+ * Owns settings and Data Manager overlays, presenters, and modal handlers.
+ *
+ * Applying setting changes and persistence actions is delegated to the domain
+ * services supplied at construction.
+ */
 class SettingsFeatureModule {
 public:
     struct StateRefs {

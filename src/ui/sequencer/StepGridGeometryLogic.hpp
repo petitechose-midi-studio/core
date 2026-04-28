@@ -6,6 +6,12 @@
 
 namespace core::ui::sequencer::grid {
 
+/**
+ * Pure geometry calculations for step-grid labels, markers, and guides.
+ *
+ * Functions consume LVGL areas and measured sizes but return layout values only;
+ * callers apply positions to widgets.
+ */
 struct StepGuideLayout {
     lv_coord_t x = 0;
     lv_coord_t y = 0;

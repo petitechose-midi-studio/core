@@ -6,6 +6,12 @@
 
 namespace core::state::sequencer {
 
+/**
+ * Pure sequencer snapshot and structural pattern operations.
+ *
+ * These functions sanitize persisted input, maintain focused step/page
+ * consistency, and bump stepDataRevision when step content changes.
+ */
 oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length);
 
 void captureSnapshot(const SequencerState& source, SequencerPatternSnapshot& out);

@@ -4,42 +4,20 @@ Developer documentation for the standalone firmware in this repository.
 
 ## Start Here
 
-Read these first:
+Read these first, in order:
 
-1. [CORE_ARCHITECTURE_AUDIT_2026_04.md](CORE_ARCHITECTURE_AUDIT_2026_04.md)
-2. [CORE_REFACTOR_BACKLOG_2026_04_NEXT.md](CORE_REFACTOR_BACKLOG_2026_04_NEXT.md)
-3. [STANDALONE_LIFECYCLE_CONTRACT.md](STANDALONE_LIFECYCLE_CONTRACT.md)
-4. [INVARIANTS.md](INVARIANTS.md)
-5. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
-6. [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md)
-7. [CODE_STYLE.md](CODE_STYLE.md)
-8. [EXTENSION_CHECKLIST.md](EXTENSION_CHECKLIST.md)
+1. [architecture-chantiers/README.md](architecture-chantiers/README.md)
+2. [architecture-chantiers/sprint-0-documentation-source-of-truth.md](architecture-chantiers/sprint-0-documentation-source-of-truth.md)
+3. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
+4. [CODE_STYLE.md](CODE_STYLE.md)
 
-## Current Architecture References
+Architecture contracts should live as close as possible to the code they
+constrain. Put durable "why" comments in `.hpp` files when a reader needs the
+contract before editing an API. Keep `.cpp` comments short and local to
+non-obvious implementation details.
 
-- [CORE_ARCHITECTURE_AUDIT_2026_04.md](CORE_ARCHITECTURE_AUDIT_2026_04.md)
-- [CORE_REFACTOR_BACKLOG_2026_04_NEXT.md](CORE_REFACTOR_BACKLOG_2026_04_NEXT.md)
-- [INVARIANTS.md](INVARIANTS.md)
-- [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
-- [STANDALONE_LIFECYCLE_CONTRACT.md](STANDALONE_LIFECYCLE_CONTRACT.md)
-- [STANDALONE_INTERACTION_GRAMMAR_SPEC.md](STANDALONE_INTERACTION_GRAMMAR_SPEC.md)
-- [SEQUENCER_ACTION_STRIP_SPEC.md](SEQUENCER_ACTION_STRIP_SPEC.md)
-- [REALTIME_MIDI_ISOLATION_PLAN.md](REALTIME_MIDI_ISOLATION_PLAN.md)
-- [REALTIME_MIDI_REFACTOR_EXECUTION_PLAN.md](REALTIME_MIDI_REFACTOR_EXECUTION_PLAN.md)
-- [REALTIME_MIDI_FEASIBILITY_REPORT.md](REALTIME_MIDI_FEASIBILITY_REPORT.md)
-- [EXTERNAL_CLOCK_INGRESS_STRATEGY.md](EXTERNAL_CLOCK_INGRESS_STRATEGY.md)
-
-These files are the normative entry points for current naming, placement, and responsibility boundaries.
-
-## Practical Guides
-
-These guides are intentionally illustrative. They explain patterns, but they are not the source of truth for current naming, constructor signatures, or composition wiring.
-
-- [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)
-- [HOW_TO_ADD_WIDGET.md](HOW_TO_ADD_WIDGET.md)
-- [HOW_TO_ADD_HANDLER.md](HOW_TO_ADD_HANDLER.md)
-- [HOW_TO_ADD_VIEW.md](HOW_TO_ADD_VIEW.md)
-- [HOW_TO_ADD_OVERLAY.md](HOW_TO_ADD_OVERLAY.md)
+The `architecture-chantiers` directory lists codebase-scale improvement work.
+It is planning documentation, not a replacement for source-level contracts.
 
 ## Source Map
 

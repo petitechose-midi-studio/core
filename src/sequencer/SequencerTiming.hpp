@@ -7,8 +7,20 @@
 
 namespace core::sequencer {
 
+/**
+ * Realtime clock burst clamp shared by loop and timer runtime lanes.
+ *
+ * This limits catch-up MIDI clock emission after stalls so one delayed update
+ * cannot monopolize the loop or timer callback.
+ */
 constexpr uint32_t MAX_REALTIME_CLOCK_BURST_PER_UPDATE = 96;
 
+/**
+ * Convert BPM to one PPQN tick period in microseconds.
+ *
+ * Invalid/non-positive tempos fall back to 120 BPM. Callers use this value to
+ * translate sequencer ticks into realtime MIDI deadlines.
+ */
 inline uint32_t tickPeriodUsForTempo(float tempo) {
     if (!(tempo > 0.0f)) {
         tempo = 120.0f;

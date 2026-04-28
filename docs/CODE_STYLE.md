@@ -13,8 +13,8 @@ This document defines the code conventions for MIDI Studio Core.
 
 | Element | Convention | Example |
 |---------|------------|---------|
-| Classes | `PascalCase` | `MidiStudioApp`, `EncoderController` |
-| Interfaces | `I` + `PascalCase` | `IEventBus`, `IView`, `IPlugin` |
+| Classes | `PascalCase` | `StandaloneContext`, `SequencerRuntimeService` |
+| Interfaces | `I` + `PascalCase` | `IEventBus`, `IStorage`, `IContext` |
 | Structs (data) | `PascalCase` | `ButtonBinding`, `GpioPin` |
 | Enums | `PascalCase` | `ButtonBindingType`, `EncoderMode` |
 | Enum values | `SCREAMING_SNAKE_CASE` | `LONG_PRESS`, `TURN_WHILE_PRESSED` |
@@ -30,8 +30,8 @@ This document defines the code conventions for MIDI Studio Core.
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Headers | `PascalCase.hpp` | `EventBus.hpp`, `MidiMapper.hpp` |
-| Sources | `PascalCase.cpp` | `InputBinding.cpp` |
+| Headers | `PascalCase.hpp` | `CoreState.hpp`, `SequencerRuntimeService.hpp` |
+| Sources | `PascalCase.cpp` | `StandaloneContext.cpp` |
 | One file = one concept | One main class/struct per file |
 
 ---
@@ -87,16 +87,17 @@ for (const auto& item : items) {
 
 ```cpp
 // Parameters on multiple lines
-explicit EncoderController(
-    const std::vector<Hardware::Encoder>& encoderSetups,
-    IEventBus& eventBus);
+SequencerRuntimeService(StateRefs state,
+                        oc::api::MidiAPI& midi,
+                        oc::interface::IEventBus& eventBus);
 
 // Initializer lists
-MidiStudioApp::MidiStudioApp(PluginSetupFn setupPlugins)
-    : display_driver_(),
-      setup_plugins_(setupPlugins),
-      event_bus_(),
-      multiplexer_() {}
+SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
+                                                 oc::api::MidiAPI& midi,
+                                                 oc::interface::IEventBus& eventBus)
+    : event_bus_(eventBus)
+    , midi_(midi)
+    , sequencer_state_(state.sequencer) {}
 
 // Chained calls
 auto result = collection

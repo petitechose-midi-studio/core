@@ -27,6 +27,13 @@ class TransportBar;
 
 namespace core::context::standalone {
 
+/**
+ * Owns the standalone LVGL view tree.
+ *
+ * This assembly creates the root view container, macro/sequencer views, global
+ * track strip, transport bar, and context softkey bar. Feature handlers and
+ * realtime sequencer runtime are wired outside this class.
+ */
 class StandaloneUiAssembly {
 public:
     explicit StandaloneUiAssembly(core::state::CoreState& state);

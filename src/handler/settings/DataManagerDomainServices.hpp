@@ -10,6 +10,12 @@ struct CoreState;
 
 namespace core::handler {
 
+/**
+ * Handler-facing facade over DataManagerWorkflow.
+ *
+ * Slot probing, command execution, and shortcut persistence are routed through
+ * workflow hooks so DataManagerHandler stays focused on modal input flow.
+ */
 class DataManagerDomainServices {
 public:
     using StateRefs = core::state::DataManagerWorkflow::StateRefs;

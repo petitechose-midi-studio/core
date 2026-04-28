@@ -4,6 +4,12 @@
 
 namespace core::sequencer {
 
+/**
+ * Playback activity counters collected during a single playback update.
+ *
+ * This is input to profiling only. It should describe note activity already
+ * queued by playback, not trigger new MIDI or state mutations.
+ */
 struct SequencerPlaybackActivitySnapshot {
     uint32_t noteOnCount = 0;
     uint32_t noteOffCount = 0;
@@ -11,6 +17,13 @@ struct SequencerPlaybackActivitySnapshot {
     uint32_t queuedEventCount = 0;
 };
 
+/**
+ * Windowed profiler for sequencer playback updates.
+ *
+ * The profiler tracks update cost, note activity, and tick jumps so the runtime
+ * can log late/bursty playback behavior. It is diagnostic-only and must remain
+ * outside the musical scheduling contract.
+ */
 class SequencerPlaybackProfiler {
 public:
     struct Snapshot {

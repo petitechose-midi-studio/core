@@ -11,6 +11,13 @@
 
 namespace core::handler {
 
+/**
+ * Owns sequencer page/track navigation and selection state.
+ *
+ * It previews add slots, switches page/track focus, enters selection mode, and
+ * creates previewed structures. Destructive edits live in
+ * SequencerStructureEditWorkflow.
+ */
 class SequencerStructureNavigationWorkflow {
 public:
     struct StateRefs {

@@ -4,6 +4,12 @@
 
 namespace core::ui {
 
+/**
+ * Temporary bottom bar used by modal contexts for softkey labels.
+ *
+ * It owns only three labels and visibility. Modal presenters decide when it
+ * replaces the transport bar and what text to display.
+ */
 class ContextSoftkeyBar {
 public:
     explicit ContextSoftkeyBar(lv_obj_t* parent);

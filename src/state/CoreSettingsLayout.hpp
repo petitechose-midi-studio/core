@@ -5,6 +5,12 @@
 #include "DataManagerCatalog.hpp"
 namespace core::state::core_settings {
 
+/**
+ * Byte-level layout for CoreSettings storage.
+ *
+ * Offsets and VERSION define the compatibility contract for MIDI sync, shared
+ * track state, and Data Manager shortcuts.
+ */
 namespace layout {
 
 constexpr uint32_t MAGIC = 0x4D435354;

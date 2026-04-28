@@ -49,6 +49,12 @@ namespace core::state {
 struct CoreStateBootstrap;
 struct CoreStateLifecycle;
 
+/**
+ * Owns the macro runtime, page bank, persistence adapters, and delayed save state.
+ *
+ * CoreState exposes references to these members for existing call sites, but this
+ * domain struct remains the ownership boundary for allocation and persistence.
+ */
 struct MacroDomainState {
     static constexpr uint32_t WORKSPACE_MUTATION_SAVE_DELAY_MS = 1000;
 
@@ -72,6 +78,10 @@ struct MacroDomainState {
     MacroDomainState& operator=(const MacroDomainState&) = delete;
 };
 
+/**
+ * Owns the editable sequencer state, per-track bank, persistence adapters, and
+ * pending load snapshots staged while transport is playing.
+ */
 struct SequencerDomainState {
     struct PendingApply {
         bool valid = false;
@@ -103,6 +113,12 @@ struct SequencerDomainState {
     SequencerDomainState& operator=(const SequencerDomainState&) = delete;
 };
 
+/**
+ * Owns UI/session-only state shared by views and overlays.
+ *
+ * This domain is reset on standalone transient resets; durable macro/sequencer
+ * data stays in the dedicated domain structs above.
+ */
 struct UiSystemState {
     struct SharedTrackState {
         oc::state::Signal<uint8_t, 8> activeIndex{0};
@@ -130,11 +146,11 @@ struct UiSystemState {
 };
 
 /**
- * @brief Global state container for standalone mode
+ * @brief Global state container for standalone mode.
  *
- * Unlike BitwigContext which owns its state internally,
- * StandaloneContext receives a reference to CoreState.
- * This allows state to survive context switches.
+ * CoreState is the application-level owner for durable macro/sequencer domains,
+ * shared UI state, and the small settings store. Contexts receive references to
+ * it so activation changes do not erase persisted runtime intent.
  */
 struct CoreState {
     friend struct CoreStateBootstrap;
@@ -201,9 +217,7 @@ public:
     CoreState(CoreState&&) = delete;
     CoreState& operator=(CoreState&&) = delete;
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Persistence
-    // ═══════════════════════════════════════════════════════════════════════════
+    // Persistence and runtime coordination.
 
     /**
      * @brief Update persistence (call from main loop)

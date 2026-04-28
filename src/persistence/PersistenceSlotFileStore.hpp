@@ -9,6 +9,13 @@
 
 namespace core::persistence {
 
+/**
+ * Generic fixed-slot storage journal.
+ *
+ * Each domain supplies its magic, version, slot count, and payload size. The
+ * store validates headers and CRCs, writes slots through a WRITING->VALID state
+ * transition, and can recover the latest valid slot by save counter.
+ */
 enum class PersistenceDomain : uint8_t {
     MACRO_WORKSPACE = 1,
     MACRO_LIBRARY = 2,
@@ -71,6 +78,13 @@ struct LatestSlotLoadResult {
     SlotMetadata metadata{};
 };
 
+/**
+ * Fixed-size slot file abstraction over IStorage.
+ *
+ * Payload serialization belongs to domain-specific persistence classes; this
+ * class owns file layout validation, erase/commit sequencing, CRC checking, and
+ * latest-slot fallback.
+ */
 class PersistenceSlotFileStore {
 public:
     static constexpr uint8_t FILE_FORMAT_VERSION = 1;

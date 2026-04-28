@@ -11,6 +11,12 @@ class VirtualListSelectorOverlay;
 
 namespace core::context::standalone {
 
+/**
+ * Projects macro edit/page selector state into LVGL overlay widgets.
+ *
+ * The presenter binds signal watchers and renders formatted rows/items only.
+ * Macro mutations remain in handlers and macro workflows.
+ */
 class MacroOverlayPresenter {
 public:
     using StateRefs = macro_overlay_presenter::Source;

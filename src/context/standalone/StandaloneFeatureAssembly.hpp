@@ -36,6 +36,12 @@ class MacroFeatureModule;
 class SequencerFeatureModule;
 class SettingsFeatureModule;
 
+/**
+ * Composes feature modules after UI and overlay assemblies exist.
+ *
+ * This class only wires feature modules and forwards external MIDI/encoder-sync
+ * events to them. It does not own CoreState or drive the sequencer runtime tick.
+ */
 class StandaloneFeatureAssembly {
 public:
     StandaloneFeatureAssembly(core::state::CoreState& state,

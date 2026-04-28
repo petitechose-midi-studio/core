@@ -10,6 +10,13 @@
 
 namespace core::persistence::sequencer_codec {
 
+/**
+ * Packed on-storage sequencer payloads.
+ *
+ * These structs are copied byte-for-byte into PersistenceSlotFileStore slots.
+ * Field order, packing, and static_asserts are part of the storage contract and
+ * must move in lockstep with data-version changes.
+ */
 inline constexpr uint8_t PERSISTED_PATTERN_STEPS =
     oc::note::sequencer::StepSequencerState::MAX_STEPS;
 inline constexpr uint8_t PERSISTED_TRACK_COUNT =

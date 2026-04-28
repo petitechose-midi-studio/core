@@ -7,6 +7,12 @@
 
 namespace core::state::sequencer {
 
+/**
+ * Presentation order for sequencer pattern quick controls.
+ *
+ * The enum values are stable domain identifiers; this table defines display
+ * order and labels without coupling UI code to enum ordinal order.
+ */
 struct PatternQuickControlSpec {
     PatternQuickControlItem item;
     const char* label;

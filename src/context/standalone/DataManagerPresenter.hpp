@@ -16,6 +16,12 @@ class TransportBar;
 
 namespace core::context::standalone {
 
+/**
+ * Projects Data Manager state into overlays and the context softkey bar.
+ *
+ * Rendering can temporarily swap the transport bar for command shortcuts, but
+ * command execution and shortcut persistence remain in Data Manager services.
+ */
 class DataManagerPresenter {
 public:
     using StateRefs = data_manager_presenter::Source;

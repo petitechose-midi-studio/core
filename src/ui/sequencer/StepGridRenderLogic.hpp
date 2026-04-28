@@ -8,6 +8,12 @@
 
 namespace core::ui::sequencer::grid {
 
+/**
+ * Pure visual calculations for step tile styling and tile diffs.
+ *
+ * This header owns note/velocity/probability colors, shape sizing, and
+ * per-field diff rules. LVGL object mutation belongs to renderers/widgets.
+ */
 inline constexpr uint8_t VELOCITY_MAX = 127;
 inline constexpr int8_t NUDGE_VISUAL_MAX = 50;
 inline constexpr lv_coord_t STEP_BUTTON_SIZE = 56;

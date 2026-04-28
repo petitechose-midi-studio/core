@@ -12,6 +12,12 @@ struct CoreState;
 
 namespace core::state::macro {
 
+/**
+ * Macro domain workflow for runtime/page synchronization and config edits.
+ *
+ * This is the mutation boundary for switching page/track, applying MIDI CC
+ * config changes, and syncing runtime values before persistence.
+ */
 constexpr uint8_t kMacroConfigDirtyAll = 0xFF;
 
 inline uint32_t nextMacroConfigRevision(uint32_t current, uint8_t dirtyIndex = kMacroConfigDirtyAll) {

@@ -29,6 +29,12 @@ class OverlayManager;
 
 namespace core::context::standalone {
 
+/**
+ * Owns standalone overlay controller setup and the view selector widget.
+ *
+ * It registers overlay cleanup against LVGL scopes and delegates active-view
+ * scope lookup through the provider passed by the context.
+ */
 class StandaloneOverlayAssembly {
 public:
     using ActiveViewScopeProvider = std::function<oc::type::ScopeID()>;

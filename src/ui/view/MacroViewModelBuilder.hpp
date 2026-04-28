@@ -19,6 +19,12 @@
 
 namespace core::ui {
 
+/**
+ * Projects macro domain state into immutable view props.
+ *
+ * Builders in this header read MacroState/MacroPagesState/UI state and produce
+ * widget props only. They do not mutate state or touch LVGL objects.
+ */
 struct MacroViewModelSource {
     const core::state::MacroState& macros;
     const core::state::macro::MacroPagesState& pages;

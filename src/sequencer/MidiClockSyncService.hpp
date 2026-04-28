@@ -11,6 +11,13 @@
 
 namespace core::sequencer {
 
+/**
+ * Loop-lane runtime inputs for MIDI clock synchronization.
+ *
+ * The owner captures this from state before calling `MidiClockSyncService`.
+ * `driveTransport=false` lets a separate realtime lane own transport clock
+ * emission while this service still selects source and prepares UI projection.
+ */
 struct MidiClockSyncRuntimeConfig {
     core::state::MidiSyncMode mode = core::state::MidiSyncMode::AUTO;
     bool followTransport = true;
@@ -20,6 +27,14 @@ struct MidiClockSyncRuntimeConfig {
     bool playing = false;
 };
 
+/**
+ * Selects internal vs external clock source and projects sync UI state.
+ *
+ * This service owns clock-source lock/fallback, external transport handling,
+ * master clock output when `driveTransport` is true, and filtered external tempo
+ * display. It does not write UI state directly; callers consume
+ * `takeUiProjectionSnapshot()` and publish the dirty fields in their own lane.
+ */
 class MidiClockSyncService {
 public:
     using ExternalClockTelemetry = ExternalClockEstimator::Telemetry;

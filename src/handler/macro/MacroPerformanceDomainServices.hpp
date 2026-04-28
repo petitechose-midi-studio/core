@@ -11,6 +11,12 @@ struct CoreState;
 
 namespace core::handler {
 
+/**
+ * CoreState bridge for macro performance workflows.
+ *
+ * This service wraps MacroWorkflow and status pulses so input code can mutate
+ * runtime values/configuration without owning CoreState internals.
+ */
 class MacroPerformanceDomainServices {
 public:
     explicit MacroPerformanceDomainServices(core::state::CoreState& state);

@@ -25,6 +25,13 @@ class OverlayManager;
 
 namespace core::context::standalone {
 
+/**
+ * Owns handlers that are global to the standalone context.
+ *
+ * Transport and view-switcher bindings live here because they span macro and
+ * sequencer view scopes. Feature-specific modal bindings stay in feature
+ * modules.
+ */
 class StandaloneGlobalHandlerAssembly {
 public:
     StandaloneGlobalHandlerAssembly(core::state::CoreState& state,

@@ -5,6 +5,13 @@
 
 namespace core::sequencer {
 
+/**
+ * Estimates external MIDI clock tempo and timing quality.
+ *
+ * The estimator consumes timestamped MIDI clock pulses, filters interval
+ * samples into a BPM estimate, and accumulates telemetry for PERF_LOG/runtime
+ * diagnostics. It does not decide whether the external source is authoritative.
+ */
 class ExternalClockEstimator {
 public:
     struct Telemetry {

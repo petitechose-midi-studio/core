@@ -6,6 +6,13 @@ namespace core::state {
 
 struct CoreState;
 
+/**
+ * Centralizes CoreState lifecycle side effects.
+ *
+ * Runtime code calls CoreState's public methods; this helper keeps delayed
+ * persistence, pending sequencer apply, factory reset, and transient UI reset
+ * behavior in one implementation boundary.
+ */
 struct CoreStateLifecycle {
     static void update(CoreState& state);
     static void flush(CoreState& state);

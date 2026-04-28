@@ -12,6 +12,12 @@ namespace core::state::sequencer {
 
 using oc::state::Signal;
 
+/**
+ * Session-only sequencer UI state and quick-edit enums.
+ *
+ * Pattern data lives in SequencerState; these structs track overlays, inline
+ * selector focus, temporary feedback, and page-structure UI.
+ */
 enum class StepProperty : uint8_t {
     NOTE = 0,
     VELOCITY = 1,

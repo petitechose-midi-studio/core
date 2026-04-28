@@ -11,6 +11,12 @@
 
 namespace core::ui::sequencer::grid {
 
+/**
+ * Data exchanged between step-grid projection, planning, and rendering.
+ *
+ * Frame state is the current desired visual model, cache stores what LVGL last
+ * rendered, and diffs tell renderers which tile surfaces must be updated.
+ */
 struct TileRenderState {
     uint8_t absoluteStep = 0;
     bool inPattern = false;

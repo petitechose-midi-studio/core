@@ -12,6 +12,12 @@
 
 namespace core::ui {
 
+/**
+ * Shared three-slot action strip for contextual controls.
+ *
+ * Props describe slot visibility, tone, labels/icons, and hold progress.
+ * Rendering caches slot state and owns the hold timer used for visual countdown.
+ */
 enum class ContextActionStripOrientation : uint8_t {
     HORIZONTAL = 0,
     VERTICAL = 1,

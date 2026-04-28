@@ -10,6 +10,12 @@ struct CoreState;
 
 namespace core::handler {
 
+/**
+ * CoreState bridge for macro edit overlays.
+ *
+ * Macro edit handlers use this service to read/apply active macro config and
+ * switch pages without depending on CoreState layout.
+ */
 class MacroEditDomainServices {
 public:
     explicit MacroEditDomainServices(core::state::CoreState& state);

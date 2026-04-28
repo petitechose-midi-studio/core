@@ -14,6 +14,12 @@
 
 namespace core::context::standalone::macro_overlay_presenter {
 
+/**
+ * Pure render-data builders for macro overlay presenters.
+ *
+ * Static selector labels and edit rows are prepared here; widget rendering and
+ * macro mutations stay outside the formatter namespace.
+ */
 struct Source {
     core::state::MacroEditState& macroEdit;
     core::state::macro::MacroPagesState& pages;

@@ -7,6 +7,12 @@
 
 namespace core::ui::sequencer::grid {
 
+/**
+ * Plans the minimal step-grid render work for the next frame.
+ *
+ * The planner compares frame state with cached LVGL render data and marks dirty
+ * tiles. It does not calculate geometry or draw widgets.
+ */
 struct FrameRenderPlan {
     bool propertyVisualChanged = false;
     InlineFeedbackSnapshot nextFeedback{};

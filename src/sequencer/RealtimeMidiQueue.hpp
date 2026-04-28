@@ -10,6 +10,14 @@
 
 namespace core::sequencer {
 
+/**
+ * Bounded, deadline-ordered queue for sequencer note events.
+ *
+ * Playback/event sinks enqueue note events here; runtime lanes drain due events
+ * through `MidiAPI`. Note-offs have priority over note-ons at the same deadline
+ * and may displace note-ons when the queue is full, so panic/stop paths can
+ * silence active notes instead of being blocked by musical note-ons.
+ */
 class RealtimeMidiQueue {
 public:
     static constexpr size_t MAX_QUEUE_DEPTH = 128;

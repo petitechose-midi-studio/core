@@ -9,6 +9,13 @@
 
 namespace core::sequencer {
 
+/**
+ * Aggregates runtime performance counters into optional PERF_LOG windows.
+ *
+ * Reporting is observational: it drains profiler/queue/clock telemetry and logs
+ * suspicious windows, but it must not change playback behavior. When PERF_LOG is
+ * disabled it still resets sampled inputs so counters do not grow unbounded.
+ */
 class SequencerRuntimePerfReporter {
 public:
     void record(uint32_t updateUs,

@@ -4,6 +4,12 @@
 
 namespace core::state::shared {
 
+/**
+ * Reusable slot-mask operations for page and track structure navigation.
+ *
+ * Callers provide the domain-specific copy operation; this header owns mask
+ * mutation, enabled-slot navigation, and selection duplication rules.
+ */
 struct NavigationTarget {
     uint8_t index = 0;
     bool addSlot = false;

@@ -8,6 +8,12 @@
 
 namespace core::ui {
 
+/**
+ * Shared LVGL frame layout for standalone main views.
+ *
+ * The frame owns the common header/body/interaction/structure containers. View
+ * classes populate those containers with domain-specific widgets.
+ */
 class MainViewFrame {
 public:
     explicit MainViewFrame(lv_obj_t* parent);

@@ -20,6 +20,13 @@ struct DataManagerCommandExecutionResult;
 
 namespace core::handler {
 
+/**
+ * Binds Data Manager modal flow to buttons and encoders.
+ *
+ * The handler owns opening, dialog navigation, confirmation, slot picking, and
+ * feedback. Persistence and command execution are delegated to
+ * DataManagerDomainServices.
+ */
 class DataManagerHandler {
 public:
     static constexpr std::size_t VIEW_SCOPE_COUNT = static_cast<std::size_t>(core::ui::ViewType::COUNT);

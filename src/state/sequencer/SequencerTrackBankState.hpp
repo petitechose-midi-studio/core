@@ -11,6 +11,12 @@ namespace core::state::sequencer {
 
 using oc::state::Signal;
 
+/**
+ * Owns persistent sequencer state for all shared tracks.
+ *
+ * The active editor is kept outside this bank for low-friction UI editing; ops
+ * functions copy sanitized snapshots between the editor and bank on switches.
+ */
 struct SequencerTrackBankState {
     static constexpr uint8_t TRACK_COUNT = 16;
 

@@ -17,6 +17,13 @@
 
 namespace core::ui::sequencer {
 
+/**
+ * Projects sequencer domain state into immutable view props.
+ *
+ * Builders read SequencerState, track navigation, clipboard, and status signals
+ * to produce header, control, action strip, and step-grid props without mutating
+ * state or touching LVGL objects.
+ */
 struct SequencerViewModelSource {
     const core::state::sequencer::SequencerState& sequencer;
     const core::state::sequencer::SequencerTrackBankState& tracks;

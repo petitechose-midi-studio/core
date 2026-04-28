@@ -7,6 +7,12 @@
 
 namespace core::state::sequencer {
 
+/**
+ * Synchronizes the active sequencer editor with the persisted per-track bank.
+ *
+ * Switching tracks stores the current editor, loads the target track, and clears
+ * transient edit overlays while preserving persistent pattern data.
+ */
 void initializeTrackBankFromActive(SequencerTrackBankState& bank, const SequencerState& active);
 
 void storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active);

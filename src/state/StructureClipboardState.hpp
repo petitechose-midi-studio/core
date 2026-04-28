@@ -10,6 +10,12 @@
 
 namespace core::state {
 
+/**
+ * Cross-domain clipboard for page and track structure operations.
+ *
+ * The clipboard stores detached value snapshots plus a revision signal so views
+ * can react without owning macro or sequencer domain mutation.
+ */
 enum class StructureClipboardKind : uint8_t {
     NONE = 0,
     MACRO_PAGE = 1,

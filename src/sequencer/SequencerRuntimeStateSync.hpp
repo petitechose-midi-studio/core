@@ -11,6 +11,12 @@
 
 namespace core::sequencer {
 
+/**
+ * Lightweight signature for deciding whether runtime state must be resynced.
+ *
+ * Runtime playback should copy editor/snapshot data only when this signature
+ * changes, so the hot path can avoid rebuilding track engines on every tick.
+ */
 struct SequencerRuntimeStateSignature {
     uint8_t length = 0;
     uint8_t stepsPerBeat = 0;
@@ -27,6 +33,13 @@ struct SequencerRuntimeStateSignature {
     }
 };
 
+/**
+ * Runtime-only telemetry projected back into sequencer state for the UI.
+ *
+ * These values are observations of playback, not editable pattern data. Keep
+ * them separate from snapshot mutation helpers to avoid making the UI state a
+ * second source of musical truth.
+ */
 struct SequencerRuntimeTelemetrySnapshot {
     int16_t playheadStep = -1;
     uint32_t probabilityCycleIndex = 0;

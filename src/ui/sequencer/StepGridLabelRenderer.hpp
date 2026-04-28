@@ -8,6 +8,12 @@
 
 namespace core::ui::sequencer::grid::label_renderer {
 
+/**
+ * Applies label/icon render decisions to LVGL objects for one tile.
+ *
+ * The renderer uses frame state, diffs, geometry, and cached values to update
+ * only the affected note label and inline icon widgets.
+ */
 void renderTileNoteLabel(uint8_t tileIndex,
                          TileRenderCache& cache,
                          lv_obj_t* noteLabel,

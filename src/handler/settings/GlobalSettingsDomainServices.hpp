@@ -7,6 +7,12 @@
 
 namespace core::handler {
 
+/**
+ * Applies global settings choices to MidiSyncState and CoreSettings.
+ *
+ * The service owns row-to-choice mapping and persistence commits; UI handlers
+ * only navigate/select rows.
+ */
 class GlobalSettingsDomainServices {
 public:
     struct StateRefs {

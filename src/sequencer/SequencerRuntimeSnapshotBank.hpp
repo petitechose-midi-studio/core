@@ -10,6 +10,13 @@
 
 namespace core::sequencer {
 
+/**
+ * Double-buffered sequencer snapshot bridge for runtime lanes.
+ *
+ * Loop code refreshes the inactive snapshot from editor/track-bank state, then
+ * commits it under an interrupt guard. Timer/playback code reads only the active
+ * snapshot, which keeps realtime lanes away from mutable editor state.
+ */
 class SequencerRuntimeSnapshotBank {
 public:
     using Snapshot = core::state::sequencer::SequencerTrackBankSnapshot;

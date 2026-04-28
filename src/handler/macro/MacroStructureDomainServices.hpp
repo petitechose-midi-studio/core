@@ -10,6 +10,12 @@ struct CoreState;
 
 namespace core::handler {
 
+/**
+ * CoreState bridge for macro structure mutations.
+ *
+ * It applies page/track mask changes, duplication, paste, erase, active
+ * selection, workspace persistence, and presentation refresh after mutations.
+ */
 class MacroStructureDomainServices {
 public:
     explicit MacroStructureDomainServices(core::state::CoreState& state);

@@ -6,6 +6,13 @@
 
 namespace core::sequencer {
 
+/**
+ * Small state machine for MIDI clock source ownership.
+ *
+ * MASTER always selects internal transport, SLAVE always selects external, and
+ * AUTO locks to external after enough clocks then falls back after silence. This
+ * class decides source only; tempo estimation and UI projection live elsewhere.
+ */
 class ClockSourceSelector {
 public:
     struct UpdateResult {

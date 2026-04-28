@@ -12,6 +12,13 @@
 
 namespace core::persistence {
 
+/**
+ * Persists sequencer workspace, pattern library, and set library data.
+ *
+ * The workspace journal rotates through latest-valid slots. Pattern and set
+ * library slots are addressed directly and serialized through
+ * sequencer_codec payload helpers.
+ */
 class SequencerPersistence {
 public:
     static constexpr uint16_t WORKSPACE_SLOT_COUNT = 2;

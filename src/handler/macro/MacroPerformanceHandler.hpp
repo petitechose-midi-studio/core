@@ -19,6 +19,13 @@
 
 namespace core::handler {
 
+/**
+ * Binds macro performance buttons/encoders to macro workflows.
+ *
+ * This handler owns physical input predicates for clutch, quick controls, and
+ * structure editing. State transitions and domain mutations stay in the
+ * workflow/service classes it composes.
+ */
 class MacroPerformanceHandler {
 public:
     struct StateRefs {

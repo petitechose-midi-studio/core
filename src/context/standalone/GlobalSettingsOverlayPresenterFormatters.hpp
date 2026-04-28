@@ -11,6 +11,12 @@
 
 namespace core::context::standalone::global_settings_presenter {
 
+/**
+ * Pure render-data builders for global settings overlays.
+ *
+ * Formatting logic lives here so presenters can stay focused on signal binding
+ * and widget rendering.
+ */
 struct Source {
     core::state::GlobalSettingsState& globalSettings;
     core::state::MidiSyncState& midiSync;

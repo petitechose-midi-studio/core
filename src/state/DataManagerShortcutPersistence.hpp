@@ -10,6 +10,12 @@ struct CoreState;
 
 namespace data_manager {
 
+/**
+ * Persists and restores Data Manager shortcuts from CoreSettings.
+ *
+ * Inputs are sanitized through the command catalog so stored bytes cannot select
+ * commands outside the active macro/sequencer context.
+ */
 struct ShortcutStateRefs {
     DataManagerState& dataManager;
     CoreSettings& settings;

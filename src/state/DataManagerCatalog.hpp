@@ -5,6 +5,12 @@
 
 namespace core::state {
 
+/**
+ * Compile-time command catalog for Data Manager.
+ *
+ * UI code, shortcut persistence, and command execution all derive labels,
+ * slot domains, and default shortcuts from this table to avoid drift.
+ */
 enum class DataManagerContext : uint8_t {
     MACRO = 0,
     SEQUENCER = 1,

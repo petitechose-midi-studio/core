@@ -6,6 +6,12 @@
 
 namespace core::ui {
 
+/**
+ * RAII wrapper for an LVGL timer that starts paused.
+ *
+ * Callers explicitly resume rendering work, optionally marking the timer ready
+ * for an immediate run. Destruction deletes the LVGL timer.
+ */
 class PausableLvglTimer {
 public:
     PausableLvglTimer(uint32_t periodMs, lv_timer_cb_t callback, void* userData);

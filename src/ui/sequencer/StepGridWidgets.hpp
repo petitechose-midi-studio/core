@@ -6,6 +6,12 @@
 
 namespace core::ui::sequencer::grid::widgets {
 
+/**
+ * Creates the LVGL object tree used by the step grid.
+ *
+ * Widget creation lives here so render logic can stay focused on state, diffs,
+ * geometry, and style application.
+ */
 void createRoot(lv_obj_t* parent,
                 lv_obj_t*& container,
                 lv_obj_t*& grid,

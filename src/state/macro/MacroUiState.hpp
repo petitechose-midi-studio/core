@@ -8,6 +8,13 @@
 
 namespace core::state::macro {
 
+/**
+ * Session-only macro UI state.
+ *
+ * Runtime macro values and durable page data live in MacroState/MacroPagesState;
+ * this struct tracks editor focus, clutch previews, quick controls, and page
+ * selection UI.
+ */
 enum class MacroPerformanceProperty : uint8_t {
     VALUE = 0,
     CC = 1,

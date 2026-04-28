@@ -38,6 +38,13 @@ class SequencerStepHandler;
 
 namespace core::context::standalone {
 
+/**
+ * Owns sequencer feature overlay, presenter, encoder sync, and input handlers.
+ *
+ * The module binds UI/input to SequencerState and shared-track services. It does
+ * not schedule playback or send realtime MIDI; that remains in sequencer
+ * runtime services.
+ */
 class SequencerFeatureModule {
 public:
     struct StateRefs {

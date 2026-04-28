@@ -6,6 +6,12 @@
 
 namespace core::state {
 
+/**
+ * Session state for the global settings overlay.
+ *
+ * The overlay keeps selection/focus state here; durable settings live in the
+ * domain states and CoreSettings-backed workflows.
+ */
 enum class GlobalSettingsFlowPhase : uint8_t {
     CLOSED = 0,
     OVERLAY = 1,

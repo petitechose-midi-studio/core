@@ -38,4 +38,6 @@ These rules exist to keep `core` readable and maintainable as the codebase grows
 
 - run `pio run -e dev`
 - run `pwsh ./script/dev/check-downstream-compat.ps1` when exported headers move or change
-- update [CORE_ARCHITECTURE_AUDIT_2026_04.md](CORE_ARCHITECTURE_AUDIT_2026_04.md) when architecture work changes status
+- keep durable architecture rationale in the relevant `.hpp` contract comment
+- keep `docs/architecture-chantiers/` current when codebase-scale chantier status changes
+- avoid adding historical plans or audits back to the standard docs entry path

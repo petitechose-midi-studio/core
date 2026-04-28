@@ -13,6 +13,12 @@
 
 namespace core::handler {
 
+/**
+ * Owns macro performance modal state transitions.
+ *
+ * It gates clutch and quick-control modes, configures encoder behavior for each
+ * mode, and delegates durable macro changes through MacroPerformanceDomainServices.
+ */
 class MacroPerformanceModeWorkflow {
 public:
     struct StateRefs {

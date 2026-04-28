@@ -4,6 +4,13 @@ namespace core::state {
 
 struct CoreState;
 
+/**
+ * Initializes CoreState once after construction.
+ *
+ * Bootstrap owns storage loading, default workspace creation, overlay signal
+ * registration, debug labels, and auto-persist wiring. Runtime mutation paths
+ * belong to CoreStateLifecycle and workflow classes.
+ */
 struct CoreStateBootstrap {
     static void initialize(CoreState& state);
 

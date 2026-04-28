@@ -12,6 +12,12 @@
 
 namespace core::handler {
 
+/**
+ * Owns macro page/track structure navigation and edit modes.
+ *
+ * The workflow manages preview, selection, hold, copy/paste, delete, and
+ * duplicate intent; domain mutations are delegated to MacroStructureDomainServices.
+ */
 class MacroStructureWorkflow {
 public:
     struct StateRefs {

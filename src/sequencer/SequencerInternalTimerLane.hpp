@@ -14,6 +14,15 @@
 
 namespace core::sequencer {
 
+/**
+ * Internal transport timer lane for the standalone sequencer.
+ *
+ * This lane owns the high-frequency timer callback path: it reads the committed
+ * runtime snapshot, advances internal transport clock output, updates playback,
+ * drains due realtime MIDI, and records timer-lane profiling. Loop/context code
+ * publishes inputs through `publishRealtimeInputs`; it should not mutate the
+ * timer callback state directly.
+ */
 class SequencerInternalTimerLane {
 public:
     struct ProfilingSnapshot {

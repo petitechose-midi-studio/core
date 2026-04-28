@@ -10,6 +10,13 @@
 
 namespace core::sequencer {
 
+/**
+ * Observer for MIDI activity produced by sequencer event sinks.
+ *
+ * The observer is telemetry/projection only. It should not send MIDI or mutate
+ * sequencer state; the sink's authoritative side effect is enqueueing
+ * `RealtimeMidiEvent` instances.
+ */
 struct SequencerMidiEventSinkObserver {
     virtual ~SequencerMidiEventSinkObserver() = default;
 
@@ -18,6 +25,13 @@ struct SequencerMidiEventSinkObserver {
     virtual void onPanicNoteOffs(uint32_t count) = 0;
 };
 
+/**
+ * Adapts note sequencer engine events into the realtime MIDI queue.
+ *
+ * The sink translates sequencer ticks into microsecond deadlines using the
+ * current timeline, tracks active notes per track, and handles all-notes-off by
+ * cancelling that track's pending note-ons before enqueueing immediate note-offs.
+ */
 class SequencerMidiEventSink final : public oc::note::sequencer::ISequencerEventSink {
 public:
     static constexpr size_t MAX_ACTIVE_NOTES = 32;

@@ -7,6 +7,13 @@
 
 namespace core::context::standalone {
 
+/**
+ * Ordered activation side effects for standalone view changes.
+ *
+ * View classes stay presentation-focused; lifecycle-owned resync work such as
+ * macro runtime/status refresh and encoder sync belongs to the context seam
+ * that applies this plan.
+ */
 enum class ActiveViewLifecycleStep : uint8_t {
     DEACTIVATE_MACRO = 0,
     DEACTIVATE_SEQUENCER,

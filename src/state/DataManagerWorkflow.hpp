@@ -19,6 +19,13 @@ struct DataManagerCommandExecutionResult {
     persistence::SlotLoadStatus loadStatus = persistence::SlotLoadStatus::OK;
 };
 
+/**
+ * UI-level workflow for Data Manager.
+ *
+ * The hookable overloads keep command selection and shortcut persistence
+ * testable without CoreState. CoreState overloads provide the production bridge
+ * to slot probing and command execution.
+ */
 struct DataManagerWorkflow {
     struct StateRefs {
         DataManagerState& dataManager;

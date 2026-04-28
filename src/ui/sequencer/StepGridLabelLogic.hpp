@@ -10,6 +10,12 @@
 
 namespace core::ui::sequencer::grid {
 
+/**
+ * Pure label presentation rules for step-grid inline feedback.
+ *
+ * Logic here decides which property label/icon should appear for a tile; actual
+ * label text, positioning, and LVGL style updates happen in the renderer.
+ */
 struct InlineFeedbackSnapshot {
     bool visible = false;
     oc::note::sequencer::StepBitMask128 touchedMask{};

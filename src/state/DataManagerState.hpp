@@ -9,6 +9,12 @@
 
 namespace core::state {
 
+/**
+ * Session state for the Data Manager overlay.
+ *
+ * It stores UI flow, shortcuts, pending command intent, and feedback only.
+ * Actual persistence operations are performed by DataManagerWorkflow.
+ */
 enum class DataManagerFlowPhase : uint8_t {
     CLOSED = 0,
     MANAGER = 1,

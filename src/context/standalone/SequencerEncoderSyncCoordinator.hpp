@@ -18,6 +18,14 @@ class EncoderAPI;
 
 namespace core::context::standalone {
 
+/**
+ * Keeps physical encoder configuration/positions aligned with sequencer edit
+ * state.
+ *
+ * The coordinator listens to view, overlay, page, length, focused-step, and edit
+ * mode signals. It only updates encoder API state; it does not mutate pattern
+ * data.
+ */
 class SequencerEncoderSyncCoordinator {
 public:
     struct StateRefs {

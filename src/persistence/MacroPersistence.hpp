@@ -14,6 +14,13 @@
 
 namespace core::persistence {
 
+/**
+ * Persists macro workspace and library slots.
+ *
+ * Workspace saves rotate across two slots for latest-valid recovery. Library
+ * slots store the full macro track bank plus shared track state so loading a
+ * slot can restore the selected shared track context.
+ */
 class MacroPersistence {
 public:
     static constexpr uint16_t WORKSPACE_SLOT_COUNT = 2;

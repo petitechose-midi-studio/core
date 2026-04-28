@@ -10,6 +10,12 @@
 
 namespace core::state::core_settings {
 
+/**
+ * Low-level codec for the compact CoreSettings layout.
+ *
+ * It owns exact byte reads/writes for MIDI sync, shared track state, and Data
+ * Manager shortcuts. Callers own timing and save policy.
+ */
 bool readExact(oc::interface::IStorage& backend, uint32_t address, uint8_t* buffer, size_t size);
 bool writeExact(oc::interface::IStorage& backend, uint32_t address, const uint8_t* buffer, size_t size);
 persistence::PersistenceWriteStatus writeExactStatus(oc::interface::IStorage& backend,

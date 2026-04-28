@@ -10,6 +10,12 @@ struct CoreState;
 
 namespace core::handler {
 
+/**
+ * Shared-track mutation facade for macro and sequencer handlers.
+ *
+ * Read access comes from shared track signals. Production writes go through a
+ * CoreState operation so macro, sequencer, settings, and persistence stay in sync.
+ */
 class SharedTrackDomainServices {
 public:
     struct StateRefs {
