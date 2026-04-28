@@ -2,6 +2,10 @@
 
 #include <cstdint>
 
+#include <oc/state/Signal.hpp>
+
+#include "state/MacroState.hpp"
+#include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
 namespace core::state {
@@ -11,14 +15,39 @@ struct CoreState;
 namespace core::handler {
 
 /**
- * CoreState bridge for macro structure mutations.
+ * Macro structure domain service boundary.
  *
  * It applies page/track mask changes, duplication, paste, erase, active
- * selection, workspace persistence, and presentation refresh after mutations.
+ * selection, workspace persistence, and presentation refresh through focused
+ * state refs and typed operations.
  */
 class MacroStructureDomainServices {
 public:
-    explicit MacroStructureDomainServices(core::state::CoreState& state);
+    using FlushAutoPersistFn = void (*)(void* context);
+    using RequestPersistFn = void (*)(void* context);
+    using SetSharedTrackStateFn = bool (*)(void* context, uint16_t enabledMask, uint8_t activeTrack);
+    using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
+    using SwitchToTrackFn = void (*)(void* context, uint8_t trackIndex);
+
+    struct StateRefs {
+        core::state::MacroState& macros;
+        core::state::macro::MacroPagesState& pages;
+        oc::state::Signal<uint32_t>& configRevision;
+        core::state::StatusBarState& statusBar;
+        oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+        oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
+    };
+
+    struct Operations {
+        void* context = nullptr;
+        FlushAutoPersistFn flushAutoPersist = nullptr;
+        RequestPersistFn requestPersist = nullptr;
+        SetSharedTrackStateFn setSharedTrackState = nullptr;
+        SwitchToPageFn switchToPage = nullptr;
+        SwitchToTrackFn switchToTrack = nullptr;
+    };
+
+    MacroStructureDomainServices(StateRefs state, Operations operations);
     static MacroStructureDomainServices fromCoreState(core::state::CoreState& state);
 
     void switchToPage(uint8_t pageIndex) const;
@@ -40,7 +69,15 @@ public:
     bool createTrack(uint8_t trackIndex) const;
 
 private:
-    core::state::CoreState* state_ = nullptr;
+    StateRefs stateRefs_() const;
+
+    core::state::MacroState* macros_ = nullptr;
+    core::state::macro::MacroPagesState* pages_ = nullptr;
+    oc::state::Signal<uint32_t>* config_revision_ = nullptr;
+    core::state::StatusBarState* status_bar_ = nullptr;
+    oc::state::Signal<uint8_t, 8>* shared_track_active_ = nullptr;
+    oc::state::Signal<uint16_t, 16>* shared_track_enabled_mask_ = nullptr;
+    Operations operations_{};
 };
 
 }  // namespace core::handler

@@ -250,7 +250,15 @@ FLASHMEM void StandaloneUiAssembly::renderGlobalTrackStrip() {
 
     if (!global_track_strip_dirty_) return;
 
-    const auto props = core::ui::buildGlobalTrackNavigationStripProps(core_state_);
+    const auto props = core::ui::buildGlobalTrackNavigationStripProps(
+        core::ui::GlobalTrackNavigationStripSource{
+            core_state_.trackNavigation,
+            core_state_.structureNavigationFocus.get(),
+            core_state_.sharedTrackEnabledMask.get(),
+            core_state_.sharedTrackActive.get(),
+            core_state_.statusBar,
+        }
+    );
     if (!global_track_strip_props_initialized_ ||
         !core::ui::globalTrackNavigationStripPropsEqual(global_track_strip_props_cache_, props)) {
         global_track_strip_->render(props);

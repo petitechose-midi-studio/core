@@ -9,8 +9,6 @@
 
 namespace core::state {
 
-struct CoreState;
-
 struct DataManagerCommandExecutionResult {
     bool handled = false;
     bool success = false;
@@ -22,18 +20,28 @@ struct DataManagerCommandExecutionResult {
 /**
  * UI-level workflow for Data Manager.
  *
- * The hookable overloads keep command selection and shortcut persistence
- * testable without CoreState. CoreState overloads provide the production bridge
- * to slot probing and command execution.
+ * The operations keep command selection and shortcut persistence testable
+ * without CoreState. Production bridges provide slot probing and command
+ * execution from composition code.
  */
 struct DataManagerWorkflow {
+    using SlotOccupiedFn = bool (*)(void* context, DataManagerCommand command, uint8_t slotIndex);
+    using ExecuteFn = DataManagerCommandExecutionResult (*)(
+        void* context,
+        DataManagerCommand command,
+        uint8_t slotIndex,
+        DataManagerSetLoadMode setLoadMode
+    );
+
     struct StateRefs {
         DataManagerState& dataManager;
         CoreSettings& settings;
     };
 
-    struct Hooks {
-        CoreState* coreState = nullptr;
+    struct Operations {
+        void* context = nullptr;
+        SlotOccupiedFn slotOccupiedFn = nullptr;
+        ExecuteFn executeFn = nullptr;
 
         bool slotOccupied(DataManagerCommand command, uint8_t slotIndex) const;
         DataManagerCommandExecutionResult execute(DataManagerCommand command,
@@ -42,35 +50,26 @@ struct DataManagerWorkflow {
     };
 
     static uint8_t slotCount(DataManagerCommand command);
-    static bool slotOccupied(StateRefs state, Hooks hooks, DataManagerCommand command, uint8_t slotIndex);
-    static bool slotOccupied(CoreState& state, DataManagerCommand command, uint8_t slotIndex);
-    static DataManagerCommandExecutionResult execute(
+    static bool slotOccupied(
         StateRefs state,
-        Hooks hooks,
+        Operations operations,
         DataManagerCommand command,
-        uint8_t slotIndex,
-        DataManagerSetLoadMode setLoadMode
+        uint8_t slotIndex
     );
     static DataManagerCommandExecutionResult execute(
-        CoreState& state,
+        StateRefs state,
+        Operations operations,
         DataManagerCommand command,
         uint8_t slotIndex,
         DataManagerSetLoadMode setLoadMode
     );
     static void setShortcut(
         StateRefs state,
-        DataManagerContext context,
-        bool leftButton,
-        DataManagerCommand command
-    );
-    static void setShortcut(
-        CoreState& state,
         DataManagerContext context,
         bool leftButton,
         DataManagerCommand command
     );
     static void loadShortcutsFromSettings(StateRefs state);
-    static void loadShortcutsFromSettings(CoreState& state);
 };
 
 }  // namespace core::state

@@ -52,7 +52,7 @@ struct CoreStateLifecycle;
 /**
  * Owns the macro runtime, page bank, persistence adapters, and delayed save state.
  *
- * CoreState exposes references to these members for existing call sites, but this
+ * CoreState exposes public references to the runtime/page state while this
  * domain struct remains the ownership boundary for allocation and persistence.
  */
 struct MacroDomainState {

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 
+#include "../../src/handler/settings/DataManagerDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/DataManagerWorkflow.hpp"
 #include "../../src/state/macro/MacroPersistenceWorkflow.hpp"
@@ -27,8 +28,8 @@ void test_workspace_survives_settings_storage_corruption() {
                                      storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
-        core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.13f);
-        core::state::macro::MacroWorkflow::setRuntimeValue(state, 1, 0.87f);
+        core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.13f);
+        core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 1, 0.87f);
         oc::state::NotificationQueue::instance().flush();
         state.flush();
     }
@@ -42,8 +43,8 @@ void test_workspace_survives_settings_storage_corruption() {
                                     storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
-    assert(core::state::macro::MacroWorkflow::runtimeValue(restored, 0) == 0.13f);
-    assert(core::state::macro::MacroWorkflow::runtimeValue(restored, 1) == 0.87f);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(restored.macros, 0) == 0.13f);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(restored.macros, 1) == 0.87f);
 
     drainNotifications();
 
@@ -62,23 +63,23 @@ void test_macro_library_roundtrip_and_erase() {
                                  storage.sequencerSetLibrary);
     core::state::macro::MacroWorkflow::switchToPage(state, 2);
     core::state::macro::MacroWorkflow::setConfig(state, 0, 4, 88);
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.64f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.64f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
     assert(core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 3));
 
     core::state::macro::MacroWorkflow::setConfig(state, 0, 0, 1);
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.01f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.01f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
     const auto status = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 3);
     assert(status == core::persistence::SlotLoadStatus::OK);
     assert(state.pages.currentActivePage() == 2);
-    assert(core::state::macro::MacroWorkflow::activeConfig(state, 0).channel == 4);
-    assert(core::state::macro::MacroWorkflow::activeConfig(state, 0).cc == 88);
-    assert(core::state::macro::MacroWorkflow::runtimeValue(state, 0) == 0.64f);
+    assert(core::state::macro::MacroWorkflow::activeConfig(state.pages, 0).channel == 4);
+    assert(core::state::macro::MacroWorkflow::activeConfig(state.pages, 0).cc == 88);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(state.macros, 0) == 0.64f);
 
     assert(core::state::macro::MacroPersistenceWorkflow::eraseLibrarySlot(state, 3));
     const auto erasedStatus = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(
@@ -104,18 +105,18 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
                                  storage.sequencerSetLibrary);
 
     // Change runtime macro value and save immediately (without NotificationQueue/state flush).
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.37f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.37f);
     assert(core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 6));
 
     // Move away from that value so load verification is unambiguous.
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.02f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.02f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
     const auto status = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 6);
     assert(status == core::persistence::SlotLoadStatus::OK);
 
-    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state, 0);
+    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state.macros, 0);
     assert(restored > 0.3699f && restored < 0.3701f);
 
     drainNotifications();
@@ -138,7 +139,7 @@ void test_macro_config_changes_persist_after_flush_and_bump_revision() {
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
-        const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state, 0);
+        const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
         const uint32_t initialRevision = state.configRevision.get();
 
         assert(!core::state::macro::MacroWorkflow::setConfig(
@@ -162,7 +163,7 @@ void test_macro_config_changes_persist_after_flush_and_bump_revision() {
             )
         );
 
-        const auto& updatedConfig = core::state::macro::MacroWorkflow::activeConfig(state, 0);
+        const auto& updatedConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
         assert(updatedConfig.channel == updatedChannel);
         assert(updatedConfig.cc == updatedCc);
 
@@ -176,7 +177,7 @@ void test_macro_config_changes_persist_after_flush_and_bump_revision() {
                                     storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
-    const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored, 0);
+    const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
     assert(restoredConfig.channel == updatedChannel);
     assert(restoredConfig.cc == updatedCc);
 
@@ -197,26 +198,31 @@ void test_data_manager_shortcuts_persist_and_sanitize() {
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
-        core::state::DataManagerWorkflow::setShortcut(state,
+        auto refs = core::state::DataManagerWorkflow::StateRefs{
+            state.dataManager,
+            state.settings,
+        };
+
+        core::state::DataManagerWorkflow::setShortcut(refs,
                                                       core::state::DataManagerContext::MACRO,
                                                       true,
                                                       core::state::DataManagerCommand::MACRO_ERASE_SLOT);
         // Cross-context mapping should sanitize to macro default right shortcut.
         core::state::DataManagerWorkflow::setShortcut(
-            state,
+            refs,
             core::state::DataManagerContext::MACRO,
             false,
             core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT
         );
 
         core::state::DataManagerWorkflow::setShortcut(
-            state,
+            refs,
             core::state::DataManagerContext::SEQUENCER,
             true,
             core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT
         );
         core::state::DataManagerWorkflow::setShortcut(
-            state,
+            refs,
             core::state::DataManagerContext::SEQUENCER,
             false,
             core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT
@@ -250,19 +256,18 @@ void test_data_manager_command_execution_and_slot_probe() {
                                  storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
+    const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.73f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.73f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
-    assert(!core::state::DataManagerWorkflow::slotOccupied(
-        state,
+    assert(!services.slotOccupied(
         core::state::DataManagerCommand::MACRO_SAVE_SLOT,
         5
     ));
 
-    const auto save = core::state::DataManagerWorkflow::execute(
-        state,
+    const auto save = services.execute(
         core::state::DataManagerCommand::MACRO_SAVE_SLOT,
         5,
         core::state::DataManagerSetLoadMode::REPLACE
@@ -271,18 +276,16 @@ void test_data_manager_command_execution_and_slot_probe() {
     assert(save.success);
     assert(!save.isLoadOperation);
 
-    assert(core::state::DataManagerWorkflow::slotOccupied(
-        state,
+    assert(services.slotOccupied(
         core::state::DataManagerCommand::MACRO_SAVE_SLOT,
         5
     ));
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.11f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.11f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
-    const auto load = core::state::DataManagerWorkflow::execute(
-        state,
+    const auto load = services.execute(
         core::state::DataManagerCommand::MACRO_LOAD_SLOT,
         5,
         core::state::DataManagerSetLoadMode::REPLACE
@@ -292,11 +295,10 @@ void test_data_manager_command_execution_and_slot_probe() {
     assert(load.isLoadOperation);
     assert(load.loadStatus == core::persistence::SlotLoadStatus::OK);
 
-    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state, 0);
+    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state.macros, 0);
     assert(restored > 0.7299f && restored < 0.7301f);
 
-    const auto emptyLoad = core::state::DataManagerWorkflow::execute(
-        state,
+    const auto emptyLoad = services.execute(
         core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT,
         31,
         core::state::DataManagerSetLoadMode::REPLACE
@@ -306,8 +308,7 @@ void test_data_manager_command_execution_and_slot_probe() {
     assert(emptyLoad.isLoadOperation);
     assert(emptyLoad.loadStatus == core::persistence::SlotLoadStatus::EMPTY);
 
-    const auto none = core::state::DataManagerWorkflow::execute(
-        state,
+    const auto none = services.execute(
         core::state::DataManagerCommand::NONE,
         0,
         core::state::DataManagerSetLoadMode::REPLACE

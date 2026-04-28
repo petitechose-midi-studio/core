@@ -150,7 +150,10 @@ FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
         persistedSharedTrackMask,
         persistedSharedTrackActive
     );
-    DataManagerWorkflow::loadShortcutsFromSettings(state);
+    DataManagerWorkflow::loadShortcutsFromSettings(DataManagerWorkflow::StateRefs{
+        state.dataManager,
+        state.settings,
+    });
     state.setSharedTrackState_(
         persistedSharedTrackMask,
         persistedSharedTrackActive,
@@ -169,7 +172,7 @@ FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
     initializePersistence_(state);
     configureDebugLabels_(state);
     state.statusBar.pageName.set(state.pages.activePageData().name);
-    macro::MacroWorkflow::syncRuntimeFromActivePage(state);
+    macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     registerOverlaySignals_(state);
     setupAutoPersist_(state);
 }

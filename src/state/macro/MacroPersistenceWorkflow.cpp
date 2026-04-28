@@ -11,7 +11,7 @@ namespace core::state::macro {
 FLASHMEM bool MacroPersistenceWorkflow::saveLibrarySlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isMacroPersistenceReady()) return false;
 
-    MacroWorkflow::syncActivePageValuesFromRuntime(state);
+    MacroWorkflow::syncActivePageValuesFromRuntime(state.pages, state.macros);
     const auto status = state.macroPersistence.saveLibrarySlotStatus(slotIndex, state.pages);
     if (status != persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[MacroPersistence] Save library slot {} failed: {}",
@@ -30,7 +30,7 @@ FLASHMEM persistence::SlotLoadStatus MacroPersistenceWorkflow::loadLibrarySlot(C
     if (status == persistence::SlotLoadStatus::OK) {
         state.refreshSharedTrackStateFromMacroPages();
         state.statusBar.pageName.set(state.pages.activePageData().name);
-        MacroWorkflow::syncRuntimeFromActivePage(state);
+        MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
         state.requestMacroWorkspacePersist();
         state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
     }

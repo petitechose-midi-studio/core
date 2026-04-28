@@ -1,0 +1,24 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "native-tests",
+      "displayName": "Native tests",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "native-tests",
+      "configurePreset": "native-tests",
+      "targets": [
+        "test-native"
+      ]
+    }
+  ]
+}

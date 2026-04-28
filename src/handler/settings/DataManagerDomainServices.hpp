@@ -14,14 +14,14 @@ namespace core::handler {
  * Handler-facing facade over DataManagerWorkflow.
  *
  * Slot probing, command execution, and shortcut persistence are routed through
- * workflow hooks so DataManagerHandler stays focused on modal input flow.
+ * workflow operations so DataManagerHandler stays focused on modal input flow.
  */
 class DataManagerDomainServices {
 public:
     using StateRefs = core::state::DataManagerWorkflow::StateRefs;
-    using Hooks = core::state::DataManagerWorkflow::Hooks;
+    using Operations = core::state::DataManagerWorkflow::Operations;
 
-    DataManagerDomainServices(StateRefs state, Hooks hooks);
+    DataManagerDomainServices(StateRefs state, Operations operations);
     static DataManagerDomainServices fromCoreState(core::state::CoreState& state);
 
     uint8_t slotCount(core::state::DataManagerCommand command) const;
@@ -38,7 +38,7 @@ public:
 private:
     core::state::DataManagerState* data_manager_ = nullptr;
     core::state::CoreSettings* settings_ = nullptr;
-    Hooks hooks_{};
+    Operations operations_{};
 };
 
 }  // namespace core::handler

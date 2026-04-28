@@ -3,7 +3,11 @@
 #include <array>
 #include <cstdint>
 
-#include "state/macro/MacroWorkflow.hpp"
+#include <oc/state/Signal.hpp>
+
+#include "state/MacroState.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 
 namespace core::state {
 struct CoreState;
@@ -12,14 +16,36 @@ struct CoreState;
 namespace core::handler {
 
 /**
- * CoreState bridge for macro performance workflows.
+ * Macro performance domain service boundary.
  *
- * This service wraps MacroWorkflow and status pulses so input code can mutate
- * runtime values/configuration without owning CoreState internals.
+ * Input code receives focused macro/status refs and typed operations for
+ * cross-domain effects such as persistence requests and page/config workflows.
  */
 class MacroPerformanceDomainServices {
 public:
-    explicit MacroPerformanceDomainServices(core::state::CoreState& state);
+    using NoteInteractionFn = void (*)(void* context);
+    using RequestPersistFn = void (*)(void* context);
+    using SetConfigFn = bool (*)(void* context, uint8_t index, uint8_t channel, uint8_t cc);
+    using SetTrackChannelFn = bool (*)(void* context, uint8_t channel);
+    using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
+
+    struct StateRefs {
+        core::state::MacroState& macros;
+        core::state::macro::MacroPagesState& pages;
+        oc::state::Signal<uint32_t>& configRevision;
+        core::state::StatusBarState& statusBar;
+    };
+
+    struct Operations {
+        void* context = nullptr;
+        NoteInteractionFn noteInteraction = nullptr;
+        RequestPersistFn requestPersist = nullptr;
+        SetConfigFn setConfig = nullptr;
+        SetTrackChannelFn setTrackChannel = nullptr;
+        SwitchToPageFn switchToPage = nullptr;
+    };
+
+    MacroPerformanceDomainServices(StateRefs state, Operations operations);
     static MacroPerformanceDomainServices fromCoreState(core::state::CoreState& state);
 
     float runtimeValue(uint8_t index) const;
@@ -38,7 +64,11 @@ public:
     void pulseNoteIn() const;
 
 private:
-    core::state::CoreState* state_ = nullptr;
+    core::state::MacroState* macros_ = nullptr;
+    core::state::macro::MacroPagesState* pages_ = nullptr;
+    oc::state::Signal<uint32_t>* config_revision_ = nullptr;
+    core::state::StatusBarState* status_bar_ = nullptr;
+    Operations operations_{};
 };
 
 }  // namespace core::handler

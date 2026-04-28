@@ -8,20 +8,6 @@
 
 namespace core::state::data_manager {
 
-FLASHMEM uint8_t slotCount(DataManagerCommand command) {
-    switch (dataManagerSlotDomain(command)) {
-        case DataManagerSlotDomain::MACRO_LIBRARY:
-            return persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
-        case DataManagerSlotDomain::SEQ_PATTERN_LIBRARY:
-            return persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
-        case DataManagerSlotDomain::SEQ_SET_LIBRARY:
-            return persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
-        case DataManagerSlotDomain::NONE:
-        default:
-            return 0;
-    }
-}
-
 FLASHMEM bool slotOccupied(CoreState& state, DataManagerCommand command, uint8_t slotIndex) {
     using persistence::SlotLoadStatus;
 

@@ -3,8 +3,6 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
-#include "state/CoreState.hpp"
-
 namespace core::state::data_manager {
 
 namespace {
@@ -94,21 +92,6 @@ FLASHMEM void setShortcut(ShortcutStateRefs state,
     }
 }
 
-FLASHMEM void setShortcut(CoreState& state,
-                          DataManagerContext context,
-                          bool leftButton,
-                          DataManagerCommand command) {
-    setShortcut(
-        ShortcutStateRefs{
-            state.dataManager,
-            state.settings,
-        },
-        context,
-        leftButton,
-        command
-    );
-}
-
 FLASHMEM void loadShortcutsFromSettings(ShortcutStateRefs state) {
     uint8_t macroLeft = 0;
     uint8_t macroRight = 0;
@@ -122,13 +105,6 @@ FLASHMEM void loadShortcutsFromSettings(ShortcutStateRefs state) {
     loadShortcut(state, DataManagerContext::MACRO, DataManagerShortcutSide::RIGHT, macroRight);
     loadShortcut(state, DataManagerContext::SEQUENCER, DataManagerShortcutSide::LEFT, seqLeft);
     loadShortcut(state, DataManagerContext::SEQUENCER, DataManagerShortcutSide::RIGHT, seqRight);
-}
-
-FLASHMEM void loadShortcutsFromSettings(CoreState& state) {
-    loadShortcutsFromSettings(ShortcutStateRefs{
-        state.dataManager,
-        state.settings,
-    });
 }
 
 }  // namespace core::state::data_manager

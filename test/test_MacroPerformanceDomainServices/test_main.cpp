@@ -9,6 +9,7 @@
 
 #include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
 

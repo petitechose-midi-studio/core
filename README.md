@@ -44,6 +44,18 @@ Upload to hardware:
 pio run -e dev -t upload
 ```
 
+## Unit Tests
+
+The supported local workflow is the `ms-dev-env` CMake/CTest runner:
+
+```powershell
+uv run ms test core
+```
+
+PlatformIO remains the firmware build/upload path; unit tests are run through CMake/CTest so
+local and CI execution use the same native test backend, workspace-pinned tools, and pinned
+test dependencies.
+
 ## Repository Layout
 
 The main source tree is:
