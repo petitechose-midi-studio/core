@@ -105,7 +105,7 @@ void test_macro_slot_execution_and_probe_roundtrip() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.73f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.73f);
     drainNotifications();
     state.flush();
 
@@ -121,7 +121,7 @@ void test_macro_slot_execution_and_probe_roundtrip() {
 
     assert(services.slotOccupied(core::state::DataManagerCommand::MACRO_LOAD_SLOT, 5));
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state, 0, 0.11f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.11f);
     drainNotifications();
     state.flush();
 
@@ -133,7 +133,7 @@ void test_macro_slot_execution_and_probe_roundtrip() {
     assert(load.isLoadOperation);
     assert(load.loadStatus == core::persistence::SlotLoadStatus::OK);
 
-    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state, 0);
+    const float restored = core::state::macro::MacroWorkflow::runtimeValue(state.macros, 0);
     assert(std::fabs(restored - 0.73f) < 0.0001f);
 
     const auto none = services.execute(core::state::DataManagerCommand::NONE,

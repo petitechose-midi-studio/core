@@ -12,7 +12,7 @@ namespace core::context::standalone {
  * label from the active persisted macro page before input handlers resume.
  */
 inline void prepareMacroViewActivation(core::state::CoreState& state) {
-    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.statusBar.pageName.set(state.pages.activePageData().name);
 }
 

@@ -1,14 +1,13 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IWidget.hpp>
 
-#include "state/StatusBarState.hpp"
 #include "ui/common/AddSlotIcon.hpp"
+#include "ui/common/TrackNavigationStripProps.hpp"
 
 namespace core::ui {
 
@@ -18,19 +17,6 @@ namespace core::ui {
  * Props carry active/preview/add/selection/activity state; the widget owns LVGL
  * objects and geometry caches for cursors and per-track cells.
  */
-struct TrackNavigationStripProps {
-    static constexpr uint8_t TRACK_COUNT = core::state::StatusBarState::TRACK_COUNT;
-
-    uint8_t activeTrack = 0;
-    uint8_t previewTrack = 0;
-    uint8_t addTrackIndex = TRACK_COUNT;
-    uint16_t enabledMask = 0x0001;
-    uint16_t selectedMask = 0;
-    bool focusingTrack = false;
-    bool selectingTrack = false;
-    std::array<uint8_t, TRACK_COUNT> activity{};
-};
-
 class TrackNavigationStrip : public oc::ui::lvgl::IWidget {
 public:
     explicit TrackNavigationStrip(lv_obj_t* parent);

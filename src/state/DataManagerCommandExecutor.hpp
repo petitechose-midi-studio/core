@@ -17,7 +17,6 @@ namespace data_manager {
  * The catalog defines what a command means; this boundary is where slot probing
  * and save/load/erase dispatch reach macro or sequencer storage.
  */
-uint8_t slotCount(DataManagerCommand command);
 bool slotOccupied(CoreState& state, DataManagerCommand command, uint8_t slotIndex);
 DataManagerCommandExecutionResult execute(CoreState& state,
                                           DataManagerCommand command,

@@ -89,7 +89,8 @@ Code seams checked during this review:
 
 This mapping is the current routing table for the codebase-scale discovery work.
 It exists to keep each sprint scoped and to avoid mixing documentation cleanup,
-runtime proof, state-surface review, UI validation, and hardware validation in a
+state-surface reduction, modal workflow review, shared structure mechanics,
+persistence policy, and UI validation in a
 single change wave.
 
 | Todo | Sprint | Why it belongs there |
@@ -97,22 +98,24 @@ single change wave.
 | Finalize and validate this architecture-chantier portfolio | Sprint 0 | It defines the source-of-truth entry point for the rest of the work. |
 | Audit active docs for dead links, obsolete seams, and historical/current-contract confusion | Sprint 0 | Documentation truth must be cleaned before using docs to steer implementation. |
 | Update docs index/results and retire misleading docs | Sprint 0 | Onboarding depends on an accurate entry path. |
-| Verify or add the standalone runtime playhead progression proof | Sprint 1 | This is runtime behavior, not documentation cleanup. |
-| Inventory and classify all `CoreState&` / `fromCoreState(...)` usages | Sprint 2 | This is a state-dependency surface review. |
-| Build the input/overlay binding state-machine matrix | Sprint 3 | This turns lexical input maps into semantic interaction contracts. |
-| Add targeted tests for critical input conflicts | Sprint 3 | Tests should follow the semantic matrix and protect intended behavior. |
-| Capture Teensy PERF_LOG runtime stress data | Sprint 4 | Native tests cannot prove hardware timing. |
-| Capture queue/drain/drop/jitter metrics | Sprint 4 | These are realtime and hardware validation signals. |
+| Reduce broad `CoreState&` / `fromCoreState(...)` usage outside authority/composition | Sprint 1 | This lowers the god-object surface before more feature work stacks on top. |
+| Formalize shared-track authority | Sprint 1 | Shared track is the clearest cross-domain invariant across macro, sequencer, UI, settings, and persistence. |
+| Convert low-risk UI projections away from `CoreState` | Sprint 1 | Projection-only code should prove the narrower read-model pattern first. |
+| Build the input/overlay binding state-machine matrix | Sprint 2 | This turns lexical input maps into semantic interaction contracts. |
+| Add targeted tests for critical input conflicts | Sprint 2 | Tests should follow the semantic matrix and protect intended behavior. |
+| Review shared page/track structure mechanics | Sprint 3 | Macro and sequencer structure behaviors reuse concepts but must keep ownership clear. |
+| Inventory persistence formats and compatibility needs | Sprint 4 | This belongs to storage and migration policy. |
+| Decide SD failure/hot-swap policy | Sprint 4 | This is persistence/hardware-storage semantics. |
 | Capture SDL/LVGL screens and overlays | Sprint 5 | This validates visual UI behavior. |
 | Produce a minimal UI visual reference report | Sprint 5 | This makes UI regressions reviewable. |
-| Inventory persistence formats and compatibility needs | Sprint 6 | This belongs to storage and migration policy. |
-| Decide SD failure/hot-swap policy | Sprint 6 | This is persistence/hardware-storage semantics. |
-| Audit only external dependencies traversed by `core` | Sprint 7 | This is targeted dependency validation after local contracts are clearer. |
+| Verify standalone runtime playhead progression and hardware timing | Realtime validation | Runtime/hardware proof remains required, but it is not the current Sprint 1 scope. |
+| Audit only external dependencies traversed by `core` | Cross-sprint validation | This is targeted dependency validation after local contracts are clearer. |
 | Convert validated discoveries into implementation tickets | Cross-sprint closure | Tickets should be produced continuously after each sprint, then consolidated. |
 
 Detailed sprint plans:
 
 - [Sprint 0: Documentation Source Of Truth](sprint-0-documentation-source-of-truth.md)
+- [Sprint 1: CoreState Domain Boundaries Analysis](sprint-1-corestate-domain-boundaries-analysis.md)
 - [HPP Contract Compliance Map](hpp-contract-compliance-map.md)
 - [HPP Contract Compliance Tracker](hpp-contract-compliance-tracker.md)
 
@@ -160,51 +163,10 @@ Exit signal:
   current within five minutes, without seeing legacy docs in the standard entry
   path.
 
-### Sprint 1: Standalone Runtime Contract And Integration Proof
+### Sprint 1: `CoreState` Surface Reduction And Domain Boundaries
 
-Goal: make the standalone runtime ownership and update path impossible to
-misread or regress.
-
-Why this is a good idea:
-
-- Runtime ownership is safety-critical: duplicate runtime instances or duplicate
-  MIDI subscriptions can produce subtle side effects.
-- A gate test protects the decision logic, but an integration proof is needed to
-  catch "the runtime exists but is not actually ticked" failures.
-
-Evidence:
-
-- `main.cpp` creates `SequencerRuntimeService` and registers the pre-context
-  hook.
-- `StandaloneContext::update()` is intentionally empty for runtime work.
-- `StandaloneContext.hpp`, `StandaloneSequencerRuntimeGate.hpp`, and
-  `SequencerRuntimeService.hpp` document the current ownership rule at the
-  source boundary.
-- The exploration maps identify standalone runtime validation as a high-value
-  follow-up.
-
-Risks:
-
-- Building a broad integration harness too early could become brittle.
-- Test-only seams could accidentally reintroduce a second runtime path.
-
-Mitigations:
-
-- Keep the first test narrow: prove active standalone context plus play state
-  causes playhead progression through the surviving runtime owner.
-- Avoid adding new production abstractions unless the test cannot be written
-  against existing seams.
-- Search for all `SequencerRuntimeService` construction sites before declaring
-  the contract locked.
-
-Exit signal:
-
-- There is exactly one live standalone runtime owner and at least one test would
-  fail if that runtime stopped being updated.
-
-### Sprint 2: `CoreState` Access Surface Review
-
-Goal: preserve `CoreState` as the authority while reducing "grab-bag" access.
+Goal: keep `CoreState` as the private ownership/lifecycle root while removing it
+as the normal feature-facing API.
 
 Why this is a good idea:
 
@@ -213,20 +175,27 @@ Why this is a good idea:
 - The codebase already has a positive pattern: many handlers/modules consume
   `StateRefs` or domain services. The sprint should standardize when each shape
   is appropriate.
+- Reducing the broad state surface now lowers the friction of adding features
+  later, without paying the memory/performance risk of a full rewrite.
 
 Evidence:
 
 - Include maps show `src/state` is the highest internal include target.
 - Existing code has many `StateRefs` seams, but also remaining `CoreState&`
   workflows and `fromCoreState(...)` factories.
-- `ARCHITECTURE_REVIEW_RULES.md` warns against helpers that write across
-  unrelated `CoreState` branches.
+- `sprint-1-corestate-domain-boundaries-analysis.md` classifies production
+  `CoreState` access and defines progressive refactor gates.
+- Native checks already cover `CoreState` lifecycle/persistence, shared track,
+  Data Manager services, macro performance services, macro activation, and the
+  standalone runtime gate.
 
 Risks:
 
 - Over-narrowing too soon can create noisy plumbing.
 - Splitting state access without understanding invariants can hide cross-domain
   transitions instead of clarifying them.
+- Leaving compatibility bridges behind after migration would create a second
+  legacy layer.
 
 Mitigations:
 
@@ -235,13 +204,16 @@ Mitigations:
 - Change only the categories that create real ambiguity.
 - Keep cross-domain invariants named and reviewable rather than hidden behind
   generic helpers.
+- Close each gate by removing old access paths that no longer have callers.
 
 Exit signal:
 
 - New contributors can tell which module owns a mutation without inspecting a
   broad `CoreState` object graph.
+- `src/handler` and `src/ui` no longer expose broad `CoreState` dependencies
+  except for composition-approved bridges.
 
-### Sprint 3: Input And Overlay State-Machine Map
+### Sprint 2: Input And Overlay State-Machine Map
 
 Goal: turn lexical binding knowledge into semantic interaction knowledge.
 
@@ -277,75 +249,42 @@ Exit signal:
 - A reader can answer "which handler owns this button in this mode?" without
   grep archaeology.
 
-### Sprint 4: Realtime And Hardware Validation
+### Sprint 3: Shared Structure Mechanics
 
-Goal: validate the runtime assumptions that native tests cannot prove.
-
-Why this is a good idea:
-
-- Native tests cover logic, but not Teensy timer budgets, USB MIDI pressure, SD
-  latency, display DMA behavior, or electrical input behavior.
-- Realtime MIDI quality depends on missed deadlines, queue depth, drain budgets,
-  and display/storage interference.
-
-Evidence:
-
-- `hardware-target-map.md` lists the Teensy boot, timer, display, storage, and
-  USB MIDI paths.
-- `remaining-dark-zones.md` names hardware timing under load as unknown.
-- Realtime docs already describe counters, deadlines, and queue/drain concerns.
-
-Risks:
-
-- Hardware validation can become anecdotal if counters are incomplete.
-- Running hardware stress too late may uncover architectural issues after other
-  work has stacked on top.
-
-Mitigations:
-
-- Define a small repeatable smoke/stress profile before changing behavior.
-- Capture PERF_LOG output and MIDI queue/drop/drain counters.
-- Run stress with LVGL refresh, sequencer output, MIDI clock, and SD commit
-  activity together.
-
-Exit signal:
-
-- Runtime risk discussions can cite measured counters instead of intuition.
-
-### Sprint 5: UI Visual Validation And Render Maintainability
-
-Goal: make UI projection quality visible and keep rendering code readable.
+Goal: make page/track structure behavior easy to reason about across macro and
+sequencer workflows.
 
 Why this is a good idea:
 
-- Source-level LVGL lifetime is mapped, but visual correctness was not proven.
-- UI code already follows projection patterns, so screenshots can catch layout
-  regressions without forcing broad architecture changes.
+- Macro page/track operations and sequencer structure operations share concepts:
+  masks, active indices, copy/paste, delete, duplicate, and add-slot behavior.
+- Shared mechanics should be obvious without blurring which domain owns each
+  mutation.
 
 Evidence:
 
-- `lvgl-ui-lifetime-map.md` maps UI ownership, timers, overlays, and cleanup.
-- `domain-ui-rendering.md` identifies view-model builders and StepGrid render
-  seams.
-- Remaining dark zones include visual overlap, clipping, frame pacing, and
-  display tearing.
+- `MacroStructureDomainServices` coordinates page/track structure operations.
+- Sequencer structure handlers and workflows own sequencer-side structure edits.
+- Shared slot helpers already exist in `src/state/shared`.
 
 Risks:
 
-- Screenshot tests may be brittle if not scoped.
-- UI extraction can fragment simple render code.
+- Extracting shared mechanics too early can hide domain-specific behavior.
+- Duplicated structure helpers can drift if left unclassified.
 
 Mitigations:
 
-- Start with screenshots/manual captures for major screens and overlays.
-- Only extract render/model code where it reduces local reasoning cost.
-- Keep visual checks focused on stable layout contracts.
+- First document which operations are truly shared and which are domain-owned.
+- Add tests only for helpers that become shared contracts.
+- Keep domain workflows responsible for persistence, status, and runtime side
+  effects.
 
 Exit signal:
 
-- Main screens and overlays have a repeatable visual validation path.
+- Shared structure helpers are reusable without making macro/sequencer ownership
+  ambiguous.
 
-### Sprint 6: Persistence Compatibility And Failure Semantics
+### Sprint 4: Persistence Compatibility And Failure Semantics
 
 Goal: clarify storage format compatibility and failure behavior.
 
@@ -380,6 +319,77 @@ Exit signal:
 
 - Storage changes can be reviewed against a known compatibility and failure
   policy.
+
+### Sprint 5: UI Visual Validation And Render Maintainability
+
+Goal: make UI projection quality visible and keep rendering code readable.
+
+Why this is a good idea:
+
+- Source-level LVGL lifetime is mapped, but visual correctness was not proven.
+- UI code already follows projection patterns, so screenshots can catch layout
+  regressions without forcing broad architecture changes.
+
+Evidence:
+
+- `lvgl-ui-lifetime-map.md` maps UI ownership, timers, overlays, and cleanup.
+- `domain-ui-rendering.md` identifies view-model builders and StepGrid render
+  seams.
+- Remaining dark zones include visual overlap, clipping, frame pacing, and
+  display tearing.
+
+Risks:
+
+- Screenshot tests may be brittle if not scoped.
+- UI extraction can fragment simple render code.
+
+Mitigations:
+
+- Start with screenshots/manual captures for major screens and overlays.
+- Only extract render/model code where it reduces local reasoning cost.
+- Keep visual checks focused on stable layout contracts.
+
+Exit signal:
+
+- Main screens and overlays have a repeatable visual validation path.
+
+### Realtime Validation: Runtime And Hardware Proof
+
+Goal: validate the runtime assumptions that native tests cannot prove.
+
+Why this is a good idea:
+
+- Native tests cover logic, but not Teensy timer budgets, USB MIDI pressure, SD
+  latency, display DMA behavior, or electrical input behavior.
+- Realtime MIDI quality depends on missed deadlines, queue depth, drain budgets,
+  and display/storage interference.
+
+Evidence:
+
+- `hardware-target-map.md` lists the Teensy boot, timer, display, storage, and
+  USB MIDI paths.
+- `remaining-dark-zones.md` names hardware timing under load as unknown.
+- `main.cpp` creates `SequencerRuntimeService` and registers the pre-context
+  hook.
+- `StandaloneContext::update()` is intentionally empty for runtime work.
+
+Risks:
+
+- Hardware validation can become anecdotal if counters are incomplete.
+- Running hardware stress too late may uncover architectural issues after other
+  work has stacked on top.
+
+Mitigations:
+
+- Keep integration proof narrow: active standalone context plus play state should
+  cause playhead progression through the surviving runtime owner.
+- Capture PERF_LOG output and MIDI queue/drop/drain counters for hardware runs.
+- Run stress with LVGL refresh, sequencer output, MIDI clock, and SD commit
+  activity together.
+
+Exit signal:
+
+- Runtime risk discussions can cite measured counters instead of intuition.
 
 ## Portfolio Risks
 

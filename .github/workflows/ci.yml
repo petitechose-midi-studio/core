@@ -15,6 +15,10 @@ concurrency:
 
 env:
   PLATFORMIO_VERSION: "6.1.18"
+  MS_DEV_ENV_REPOSITORY: petitechose-midi-studio/ms-dev-env
+  MS_DEV_ENV_SHA: 2d185972e5e8a76ad25ead9ee314c045fbf6ec9e
+  OPEN_CONTROL_FRAMEWORK_SHA: ae0fe6dad094775f069dca37ac297b4706be95c3
+  OPEN_CONTROL_NOTE_SHA: 2c517f6bd9eae2fe71e4ad50911b17019c2b92b4
 
 jobs:
   firmware_release:
@@ -51,35 +55,61 @@ jobs:
           set -euo pipefail
           python -m platformio run -e release
 
-  native_ci:
-    name: native_ci
+  unit_tests:
+    name: unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout
+      - name: Checkout ms-dev-env
         uses: actions/checkout@v6
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          repository: ${{ env.MS_DEV_ENV_REPOSITORY }}
+          ref: ${{ env.MS_DEV_ENV_SHA }}
+          path: workspace
+          persist-credentials: false
 
-      - name: Install PlatformIO
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install "platformio==${PLATFORMIO_VERSION}"
+      - name: Checkout framework
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/framework
+          ref: ${{ env.OPEN_CONTROL_FRAMEWORK_SHA }}
+          path: workspace/open-control/framework
+          persist-credentials: false
 
-      - name: Cache PlatformIO
+      - name: Checkout note
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/note
+          ref: ${{ env.OPEN_CONTROL_NOTE_SHA }}
+          path: workspace/open-control/note
+          persist-credentials: false
+
+      - name: Checkout core
+        uses: actions/checkout@v6
+        with:
+          path: workspace/midi-studio/core
+          persist-credentials: false
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
+
+      - name: Cache ms test tools
         uses: actions/cache@v5
         with:
           path: |
-            ~/.platformio
-          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'oc-sdk.ini', 'oc-native-sdk.ini') }}
+            workspace/tools
+            workspace/.ms/cache/downloads
+            workspace/.ms/cache/test-deps
+          key: ${{ runner.os }}-ms-test-tools-${{ env.MS_DEV_ENV_SHA }}-${{ hashFiles('workspace/ms/data/toolchains.toml', 'workspace/ms/data/test_dependencies.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-ms-test-tools-${{ env.MS_DEV_ENV_SHA }}-
 
-      - name: Test (native_ci)
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m platformio test -e native_ci
+      - name: Sync test tools
+        working-directory: workspace
+        run: uv run ms sync --test-tools
+
+      - name: Test
+        working-directory: workspace
+        run: uv run ms test core

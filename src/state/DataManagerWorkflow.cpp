@@ -1,77 +1,57 @@
 #include "state/DataManagerWorkflow.hpp"
 
 #include <config/PlatformCompat.hpp>
-#include "state/CoreState.hpp"
-#include "state/DataManagerCommandExecutor.hpp"
+#include "persistence/MacroPersistence.hpp"
+#include "persistence/SequencerPersistence.hpp"
 #include "state/DataManagerShortcutPersistence.hpp"
 
 namespace core::state {
 
-namespace {
-
-DataManagerWorkflow::StateRefs makeStateRefs(CoreState& state) {
-    return DataManagerWorkflow::StateRefs{
-        state.dataManager,
-        state.settings,
-    };
+FLASHMEM bool DataManagerWorkflow::Operations::slotOccupied(DataManagerCommand command,
+                                                            uint8_t slotIndex) const {
+    return slotOccupiedFn != nullptr && slotOccupiedFn(context, command, slotIndex);
 }
 
-DataManagerWorkflow::Hooks makeHooks(CoreState& state) {
-    return DataManagerWorkflow::Hooks{&state};
-}
-
-}  // namespace
-
-FLASHMEM bool DataManagerWorkflow::Hooks::slotOccupied(DataManagerCommand command,
-                                                       uint8_t slotIndex) const {
-    return coreState ? data_manager::slotOccupied(*coreState, command, slotIndex) : false;
-}
-
-FLASHMEM DataManagerCommandExecutionResult DataManagerWorkflow::Hooks::execute(
+FLASHMEM DataManagerCommandExecutionResult DataManagerWorkflow::Operations::execute(
     DataManagerCommand command,
     uint8_t slotIndex,
     DataManagerSetLoadMode setLoadMode
 ) const {
-    if (!coreState) {
+    if (executeFn == nullptr) {
         return {};
     }
-    return data_manager::execute(*coreState, command, slotIndex, setLoadMode);
+    return executeFn(context, command, slotIndex, setLoadMode);
 }
 
 FLASHMEM uint8_t DataManagerWorkflow::slotCount(DataManagerCommand command) {
-    return data_manager::slotCount(command);
+    switch (dataManagerSlotDomain(command)) {
+        case DataManagerSlotDomain::MACRO_LIBRARY:
+            return persistence::MacroPersistence::LIBRARY_SLOT_COUNT;
+        case DataManagerSlotDomain::SEQ_PATTERN_LIBRARY:
+            return persistence::SequencerPersistence::PATTERN_LIBRARY_SLOT_COUNT;
+        case DataManagerSlotDomain::SEQ_SET_LIBRARY:
+            return persistence::SequencerPersistence::SET_LIBRARY_SLOT_COUNT;
+        case DataManagerSlotDomain::NONE:
+        default:
+            return 0;
+    }
 }
 
 FLASHMEM bool DataManagerWorkflow::slotOccupied(StateRefs,
-                                                Hooks hooks,
+                                                Operations operations,
                                                 DataManagerCommand command,
                                                 uint8_t slotIndex) {
-    return hooks.slotOccupied(command, slotIndex);
-}
-
-FLASHMEM bool DataManagerWorkflow::slotOccupied(CoreState& state,
-                                                DataManagerCommand command,
-                                                uint8_t slotIndex) {
-    return slotOccupied(makeStateRefs(state), makeHooks(state), command, slotIndex);
+    return operations.slotOccupied(command, slotIndex);
 }
 
 FLASHMEM DataManagerCommandExecutionResult DataManagerWorkflow::execute(
     StateRefs,
-    Hooks hooks,
+    Operations operations,
     DataManagerCommand command,
     uint8_t slotIndex,
     DataManagerSetLoadMode setLoadMode
 ) {
-    return hooks.execute(command, slotIndex, setLoadMode);
-}
-
-FLASHMEM DataManagerCommandExecutionResult DataManagerWorkflow::execute(
-    CoreState& state,
-    DataManagerCommand command,
-    uint8_t slotIndex,
-    DataManagerSetLoadMode setLoadMode
-) {
-    return execute(makeStateRefs(state), makeHooks(state), command, slotIndex, setLoadMode);
+    return operations.execute(command, slotIndex, setLoadMode);
 }
 
 FLASHMEM void DataManagerWorkflow::setShortcut(StateRefs state,
@@ -89,22 +69,11 @@ FLASHMEM void DataManagerWorkflow::setShortcut(StateRefs state,
     );
 }
 
-FLASHMEM void DataManagerWorkflow::setShortcut(CoreState& state,
-                                               DataManagerContext context,
-                                               bool leftButton,
-                                               DataManagerCommand command) {
-    setShortcut(makeStateRefs(state), context, leftButton, command);
-}
-
 FLASHMEM void DataManagerWorkflow::loadShortcutsFromSettings(StateRefs state) {
     data_manager::loadShortcutsFromSettings(data_manager::ShortcutStateRefs{
         state.dataManager,
         state.settings,
     });
-}
-
-FLASHMEM void DataManagerWorkflow::loadShortcutsFromSettings(CoreState& state) {
-    loadShortcutsFromSettings(makeStateRefs(state));
 }
 
 }  // namespace core::state

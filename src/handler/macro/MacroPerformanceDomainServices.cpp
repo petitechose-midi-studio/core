@@ -1,13 +1,15 @@
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 
 #include "state/CoreState.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 
 namespace core::handler {
 
 namespace {
 
 bool setTrackConfigsImpl(
-    core::state::CoreState& state,
+    MacroPerformanceDomainServices::StateRefs state,
+    MacroPerformanceDomainServices::Operations operations,
     const std::array<core::state::macro::MacroConfig, core::state::macro::MACRO_COUNT>& configs
 ) {
     const uint8_t targetChannel = configs[0].channel;
@@ -40,74 +42,137 @@ bool setTrackConfigsImpl(
     state.configRevision.set(
         core::state::macro::nextMacroConfigRevision(state.configRevision.get())
     );
-    state.requestMacroWorkspacePersist();
+    if (operations.requestPersist != nullptr) {
+        operations.requestPersist(operations.context);
+    }
     return true;
+}
+
+void noteInteractionFromCoreState(void* context) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    if (state == nullptr) return;
+    state->noteMacroInteraction();
+}
+
+void requestPersistFromCoreState(void* context) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    if (state == nullptr) return;
+    state->requestMacroWorkspacePersist();
+}
+
+bool setConfigFromCoreState(void* context, uint8_t index, uint8_t channel, uint8_t cc) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state != nullptr &&
+           core::state::macro::MacroWorkflow::setConfig(*state, index, channel, cc);
+}
+
+bool setTrackChannelFromCoreState(void* context, uint8_t channel) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state != nullptr && core::state::macro::MacroWorkflow::setTrackChannel(*state, channel);
+}
+
+void switchToPageFromCoreState(void* context, uint8_t pageIndex) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    if (state == nullptr) return;
+    core::state::macro::MacroWorkflow::switchToPage(*state, pageIndex);
 }
 
 }  // namespace
 
-MacroPerformanceDomainServices::MacroPerformanceDomainServices(core::state::CoreState& state)
-    : state_(&state) {}
+MacroPerformanceDomainServices::MacroPerformanceDomainServices(
+    StateRefs state,
+    Operations operations
+)
+    : macros_(&state.macros)
+    , pages_(&state.pages)
+    , config_revision_(&state.configRevision)
+    , status_bar_(&state.statusBar)
+    , operations_(operations) {}
 
 MacroPerformanceDomainServices MacroPerformanceDomainServices::fromCoreState(
     core::state::CoreState& state
 ) {
-    return MacroPerformanceDomainServices{state};
+    return MacroPerformanceDomainServices{
+        StateRefs{
+            state.macros,
+            state.pages,
+            state.configRevision,
+            state.statusBar,
+        },
+        Operations{
+            &state,
+            noteInteractionFromCoreState,
+            requestPersistFromCoreState,
+            setConfigFromCoreState,
+            setTrackChannelFromCoreState,
+            switchToPageFromCoreState,
+        },
+    };
 }
 
 float MacroPerformanceDomainServices::runtimeValue(uint8_t index) const {
-    return core::state::macro::MacroWorkflow::runtimeValue(state_->macros, index);
+    return core::state::macro::MacroWorkflow::runtimeValue(*macros_, index);
 }
 
 void MacroPerformanceDomainServices::setRuntimeValue(uint8_t index, float value) const {
-    state_->noteMacroInteraction();
-    core::state::macro::MacroWorkflow::setRuntimeValue(state_->macros, index, value);
+    if (operations_.noteInteraction != nullptr) {
+        operations_.noteInteraction(operations_.context);
+    }
+    core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, value);
 }
 
 const core::state::macro::MacroConfig& MacroPerformanceDomainServices::activeConfig(
     uint8_t index
 ) const {
-    return core::state::macro::MacroWorkflow::activeConfig(state_->pages, index);
+    return core::state::macro::MacroWorkflow::activeConfig(*pages_, index);
 }
 
 bool MacroPerformanceDomainServices::setConfig(uint8_t index,
                                                uint8_t channel,
                                                uint8_t cc) const {
-    return core::state::macro::MacroWorkflow::setConfig(*state_, index, channel, cc);
+    return operations_.setConfig != nullptr &&
+           operations_.setConfig(operations_.context, index, channel, cc);
 }
 
 bool MacroPerformanceDomainServices::setTrackConfigs(
     const std::array<core::state::macro::MacroConfig, core::state::macro::MACRO_COUNT>& configs
 ) const {
-    return setTrackConfigsImpl(*state_, configs);
+    return setTrackConfigsImpl(
+        StateRefs{*macros_, *pages_, *config_revision_, *status_bar_},
+        operations_,
+        configs
+    );
 }
 
 uint8_t MacroPerformanceDomainServices::activeTrackChannel() const {
-    return state_->pages.activeTrackChannel();
+    return pages_->activeTrackChannel();
 }
 
 bool MacroPerformanceDomainServices::setTrackChannel(uint8_t channel) const {
-    return core::state::macro::MacroWorkflow::setTrackChannel(*state_, channel);
+    return operations_.setTrackChannel != nullptr &&
+           operations_.setTrackChannel(operations_.context, channel);
 }
 
 bool MacroPerformanceDomainServices::isActivePageEnabled() const {
-    return state_->pages.isPageEnabled(state_->pages.currentActivePage());
+    return pages_->isPageEnabled(pages_->currentActivePage());
 }
 
 void MacroPerformanceDomainServices::switchToPage(uint8_t pageIndex) const {
-    core::state::macro::MacroWorkflow::switchToPage(*state_, pageIndex);
+    if (operations_.switchToPage != nullptr) {
+        operations_.switchToPage(operations_.context, pageIndex);
+    }
 }
 
 void MacroPerformanceDomainServices::pulseCcIn() const {
-    state_->statusBar.pulseCcIn();
+    status_bar_->pulseCcIn();
 }
 
 void MacroPerformanceDomainServices::pulseCcOut() const {
-    state_->statusBar.pulseCcOut();
+    status_bar_->pulseCcOut();
 }
 
 void MacroPerformanceDomainServices::pulseNoteIn() const {
-    state_->statusBar.pulseNoteIn();
+    status_bar_->pulseNoteIn();
 }
 
 }  // namespace core::handler

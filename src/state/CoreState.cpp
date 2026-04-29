@@ -12,6 +12,7 @@
 
 #include "state/CoreStateBootstrap.hpp"
 #include "state/CoreStateLifecycle.hpp"
+#include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroPersistenceWorkflow.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "sequencer/SequencerPersistenceWorkflow.hpp"
@@ -20,9 +21,6 @@
 namespace core::state {
 
 namespace {
-
-constexpr uint16_t kSharedTrackMaskAll =
-    static_cast<uint16_t>((1U << sequencer::SequencerTrackBankState::TRACK_COUNT) - 1U);
 
 SequencerDomainState::PendingApply* createPendingApply() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
@@ -46,26 +44,14 @@ core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTr
     return core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
 }
 
-uint16_t sanitizeSharedTrackMask(uint16_t enabledMask) {
-    const uint16_t sanitized = static_cast<uint16_t>(enabledMask & kSharedTrackMaskAll);
-    return sanitized == 0 ? 0x0001 : sanitized;
-}
-
-uint8_t firstEnabledSharedTrack(uint16_t enabledMask) {
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
-            return i;
-        }
-    }
-    return 0;
-}
-
-uint8_t sanitizeSharedActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
-    const uint8_t clamped =
-        sequencer::SequencerTrackBankState::clampTrackIndex(activeTrack);
-    return (enabledMask & static_cast<uint16_t>(1U << clamped)) != 0
-        ? clamped
-        : firstEnabledSharedTrack(enabledMask);
+shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& state) {
+    return shared::SharedTrackCoordinator::StateRefs{
+        state.sharedTrackActive,
+        state.sharedTrackEnabledMask,
+        state.pages,
+        state.sequencerTracks,
+        state.sequencer,
+    };
 }
 
 }  // namespace
@@ -304,55 +290,31 @@ void CoreState::clearPendingSequencerApply_() {
 }
 
 bool CoreState::refreshSharedTrackStateFromMacroPages_(bool persist) {
-    return setSharedTrackState_(
-        pages.currentTrackEnabledMask(),
-        pages.currentActiveTrack(),
-        persist
-    );
+    const auto result = shared::SharedTrackCoordinator::refreshFromMacroPages(sharedTrackRefs(*this));
+    if (result.changed && persist) {
+        requestSharedTrackPersist_();
+    }
+    return result.changed;
 }
 
 bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
-    return setSharedTrackState_(
-        sequencerTracks.currentEnabledMask(),
-        sequencerTracks.activeTrackIndex(),
-        persist
-    );
+    const auto result = shared::SharedTrackCoordinator::refreshFromSequencer(sharedTrackRefs(*this));
+    if (result.changed && persist) {
+        requestSharedTrackPersist_();
+    }
+    return result.changed;
 }
 
 bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist) {
-    const uint16_t sanitizedMask = sanitizeSharedTrackMask(enabledMask);
-    const uint8_t sanitizedActive = sanitizeSharedActiveTrack(sanitizedMask, activeTrack);
-    const uint16_t previousMask = sharedTrackEnabledMask.get();
-    const uint8_t previousActive = sharedTrackActive.get();
-
-    if (previousMask != sanitizedMask) {
-        sharedTrackEnabledMask.set(sanitizedMask);
-    }
-
-    pages.syncSharedTrackState(sanitizedMask, sanitizedActive);
-
-    if (sequencerTracks.currentEnabledMask() != sanitizedMask) {
-        sequencerTracks.enabledMaskSignal().set(sanitizedMask);
-    }
-
-    if (sequencerTracks.activeTrackIndex() != sanitizedActive) {
-        sequencer::switchActiveTrack(sequencerTracks, sequencer, sanitizedActive);
-    }
-
-    if (previousActive != sanitizedActive) {
-        sharedTrackActive.set(sanitizedActive);
-    }
-
-    const bool changed = previousMask != sharedTrackEnabledMask.get() ||
-                         previousActive != sharedTrackActive.get();
-    if (!changed) {
-        return false;
-    }
-    if (persist) {
+    const auto result = shared::SharedTrackCoordinator::apply(
+        sharedTrackRefs(*this),
+        enabledMask,
+        activeTrack
+    );
+    if (result.changed && persist) {
         requestSharedTrackPersist_();
     }
-
-    return true;
+    return result.changed;
 }
 
 }  // namespace core::state

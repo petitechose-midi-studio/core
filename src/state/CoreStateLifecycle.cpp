@@ -95,8 +95,11 @@ void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
 void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.pages.initDefaults();
     state.midiSync.reset();
-    macro::MacroWorkflow::syncRuntimeFromActivePage(state);
-    DataManagerWorkflow::loadShortcutsFromSettings(state);
+    macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    DataManagerWorkflow::loadShortcutsFromSettings(DataManagerWorkflow::StateRefs{
+        state.dataManager,
+        state.settings,
+    });
     state.persistMacroWorkspaceNow_();
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroEdit.reset();

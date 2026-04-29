@@ -6,8 +6,6 @@
 
 namespace core::state {
 
-struct CoreState;
-
 namespace data_manager {
 
 /**
@@ -25,12 +23,7 @@ void setShortcut(ShortcutStateRefs state,
                  DataManagerContext context,
                  bool leftButton,
                  DataManagerCommand command);
-void setShortcut(CoreState& state,
-                 DataManagerContext context,
-                 bool leftButton,
-                 DataManagerCommand command);
 void loadShortcutsFromSettings(ShortcutStateRefs state);
-void loadShortcutsFromSettings(CoreState& state);
 
 }  // namespace data_manager
 

@@ -36,25 +36,12 @@ void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& macros,
     }
 }
 
-void MacroWorkflow::syncRuntimeFromActivePage(CoreState& state) {
-    syncRuntimeFromActivePage(state.macros, state.pages);
-}
-
-void MacroWorkflow::syncRuntimeFromActiveTrack(CoreState& state, uint8_t trackIndex) {
-    state.setSharedTrackState(state.currentSharedTrackEnabledMask(), trackIndex);
-    syncRuntimeFromActivePage(state);
-}
-
 void MacroWorkflow::syncActivePageValuesFromRuntime(MacroPagesState& pages,
                                                     const core::state::MacroState& macros) {
     auto& page = pages.activePageData();
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         page.values[i] = std::clamp(macros.slots[i].value.get(), 0.0f, 1.0f);
     }
-}
-
-void MacroWorkflow::syncActivePageValuesFromRuntime(CoreState& state) {
-    syncActivePageValuesFromRuntime(state.pages, state.macros);
 }
 
 void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
@@ -109,11 +96,6 @@ bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, 
     return true;
 }
 
-bool MacroWorkflow::setConfigCc(CoreState& state, uint8_t index, uint8_t cc) {
-    if (index >= MACRO_COUNT) return false;
-    return setConfig(state, index, state.pages.activeTrackChannel(), cc);
-}
-
 bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) {
     if (channel > 15) return false;
     if (state.pages.activeTrackChannel() == channel) return false;
@@ -129,27 +111,15 @@ void MacroWorkflow::setRuntimeValue(core::state::MacroState& macros, uint8_t ind
     macros.slots[index].value.set(std::clamp(value, 0.0f, 1.0f));
 }
 
-void MacroWorkflow::setRuntimeValue(CoreState& state, uint8_t index, float value) {
-    setRuntimeValue(state.macros, index, value);
-}
-
 float MacroWorkflow::runtimeValue(const core::state::MacroState& macros, uint8_t index) {
     if (index >= MACRO_COUNT) return 0.0f;
     return macros.slots[index].value.get();
-}
-
-float MacroWorkflow::runtimeValue(const CoreState& state, uint8_t index) {
-    return runtimeValue(state.macros, index);
 }
 
 const MacroConfig& MacroWorkflow::activeConfig(const MacroPagesState& pages, uint8_t index) {
     static const MacroConfig defaultConfig{};
     if (index >= MACRO_COUNT) return defaultConfig;
     return pages.activeConfigs[index];
-}
-
-const MacroConfig& MacroWorkflow::activeConfig(const CoreState& state, uint8_t index) {
-    return activeConfig(state.pages, index);
 }
 
 }  // namespace core::state::macro

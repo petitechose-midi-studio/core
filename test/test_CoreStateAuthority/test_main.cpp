@@ -5,8 +5,8 @@
 #include <iostream>
 #include <vector>
 
+#include "../../src/handler/settings/DataManagerDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
-#include "../../src/state/DataManagerWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 
 namespace {
@@ -63,9 +63,9 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.toggle(0);
     state.flush();
+    const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
-    assert(core::state::DataManagerWorkflow::execute(
-               state,
+    assert(services.execute(
                core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT,
                1,
                core::state::DataManagerSetLoadMode::REPLACE
@@ -81,8 +81,7 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
     state.statusBar.playing.set(true);
     state.sequencer.playheadStep.set(5);
 
-    const auto result = core::state::DataManagerWorkflow::execute(
-        state,
+    const auto result = services.execute(
         core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT,
         1,
         core::state::DataManagerSetLoadMode::REPLACE

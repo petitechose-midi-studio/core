@@ -4,7 +4,6 @@
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include "context/StandaloneContext.hpp"
-#include "state/CoreState.hpp"
 
 namespace core::app {
 
