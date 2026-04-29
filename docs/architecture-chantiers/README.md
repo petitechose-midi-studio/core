@@ -11,15 +11,12 @@ mitigations before implementation work starts.
 
 Primary exploration sources:
 
-- [`docs/_codex-exploration/README.md`](../_codex-exploration/README.md)
-- [`docs/_codex-exploration/codebase-map.md`](../_codex-exploration/codebase-map.md)
-- [`docs/_codex-exploration/analysis-readiness.md`](../_codex-exploration/analysis-readiness.md)
-- [`docs/_codex-exploration/remaining-dark-zones.md`](../_codex-exploration/remaining-dark-zones.md)
-- [`docs/_codex-exploration/input-binding-map.md`](../_codex-exploration/input-binding-map.md)
-- [`docs/_codex-exploration/midi-event-flow-map.md`](../_codex-exploration/midi-event-flow-map.md)
-- [`docs/_codex-exploration/lvgl-ui-lifetime-map.md`](../_codex-exploration/lvgl-ui-lifetime-map.md)
-- [`docs/_codex-exploration/hardware-target-map.md`](../_codex-exploration/hardware-target-map.md)
-- [`docs/_codex-exploration/external-dependencies-map.md`](../_codex-exploration/external-dependencies-map.md)
+- The versioned docs and source files listed below are the current source of
+  truth.
+- Local exploration notes may exist under `docs/_codex-exploration/`, but that
+  directory is intentionally excluded from Git. Treat those notes as scratch
+  evidence only: verify their claims against current source before using them to
+  plan a change.
 
 Current repo docs and source contracts:
 
@@ -57,10 +54,12 @@ Code seams checked during this review:
 - The main domains already have intended extension seams: macro workflows and
   services, sequencer snapshot/track-bank operations, Data Manager workflow,
   persistence workflows, and UI view-model builders.
-  Evidence: the domain maps under `docs/_codex-exploration/domain-*.md`.
+  Evidence: current source contracts and the source files named in each sprint
+  plan. Local domain maps under `docs/_codex-exploration/domain-*.md`, when
+  present, are secondary navigation aids.
 - There is a meaningful native test surface by domain.
-  Evidence: `docs/_codex-exploration/tests-by-domain.md` and
-  `docs/_codex-exploration/analysis-readiness.md`.
+  Evidence: run `ms test core` and inspect the `test/` directories for the
+  relevant domain.
 - There is real documentation drift.
   Evidence: the Sprint 0 pre-cleanup scan found a missing action-strip spec
   link and older runtime-registry wording that no longer matched the current
@@ -93,19 +92,31 @@ state-surface reduction, modal workflow review, shared structure mechanics,
 persistence policy, and UI validation in a
 single change wave.
 
+Status as of 2026-04-29:
+
+- Sprint 0 is complete for the tracked documentation entry path.
+- Sprint 1 is complete for the scoped Gates 1-6 implementation tranche.
+- Sprint 2 is complete for the scoped handler-review tranche.
+- Sprint 3 is complete for the scoped shared-structure tranche.
+- Sprint 4 is complete for the software compatibility/failure-semantics and
+  Teensy main-loop recovery-wiring tranche; hardware SD hot-swap validation
+  remains future work.
+- Sprint 5 has started: the native SDL app has a repeatable BMP capture path
+  for main screens and high-risk overlays.
+
 | Todo | Sprint | Why it belongs there |
 |---|---|---|
-| Finalize and validate this architecture-chantier portfolio | Sprint 0 | It defines the source-of-truth entry point for the rest of the work. |
-| Audit active docs for dead links, obsolete seams, and historical/current-contract confusion | Sprint 0 | Documentation truth must be cleaned before using docs to steer implementation. |
-| Update docs index/results and retire misleading docs | Sprint 0 | Onboarding depends on an accurate entry path. |
-| Reduce broad `CoreState&` / `fromCoreState(...)` usage outside authority/composition | Sprint 1 | This lowers the god-object surface before more feature work stacks on top. |
-| Formalize shared-track authority | Sprint 1 | Shared track is the clearest cross-domain invariant across macro, sequencer, UI, settings, and persistence. |
-| Convert low-risk UI projections away from `CoreState` | Sprint 1 | Projection-only code should prove the narrower read-model pattern first. |
-| Build the input/overlay binding state-machine matrix | Sprint 2 | This turns lexical input maps into semantic interaction contracts. |
-| Add targeted tests for critical input conflicts | Sprint 2 | Tests should follow the semantic matrix and protect intended behavior. |
-| Review shared page/track structure mechanics | Sprint 3 | Macro and sequencer structure behaviors reuse concepts but must keep ownership clear. |
-| Inventory persistence formats and compatibility needs | Sprint 4 | This belongs to storage and migration policy. |
-| Decide SD failure/hot-swap policy | Sprint 4 | This is persistence/hardware-storage semantics. |
+| Finalize and validate this architecture-chantier portfolio | Sprint 0 | Complete; it defines the source-of-truth entry point for the rest of the work. |
+| Audit active docs for dead links, obsolete seams, and historical/current-contract confusion | Sprint 0 | Complete for tracked docs; repeat after doc moves or renames. |
+| Update docs index/results and retire misleading docs | Sprint 0 | Complete; onboarding now starts from `docs/README.md`. |
+| Reduce broad `CoreState&` / `fromCoreState(...)` usage outside authority/composition | Sprint 1 | Complete for Gates 1-6; keep future changes within the documented access policy. |
+| Formalize shared-track authority | Sprint 1 | Complete through `SharedTrackCoordinator`. |
+| Convert low-risk UI projections away from `CoreState` | Sprint 1 | Complete for `GlobalTrackNavigationStripModel`; use the same focused-source pattern for future projections. |
+| Build the input/overlay binding state-machine matrix | Sprint 2 | Complete for the scoped handler-review tranche; future matrix findings can add focused regressions. |
+| Add targeted tests for critical input conflicts | Sprint 2 | Complete for the named Sprint 2 handler surfaces. |
+| Review shared page/track structure mechanics | Sprint 3 | Complete for scoped tranche: shared slot primitives, duplicate, track copy/paste, and sequencer track creation helper are covered. |
+| Inventory persistence formats and compatibility needs | Sprint 4 | Software tranche complete: active storage domains, versions, sizes, compatibility promises, and status semantics are documented. |
+| Decide SD failure/hot-swap policy | Sprint 4 | Software tranche complete: RAM-authoritative recovery is documented, covered by tests, and wired in the Teensy main loop; hardware validation remains future work. |
 | Capture SDL/LVGL screens and overlays | Sprint 5 | This validates visual UI behavior. |
 | Produce a minimal UI visual reference report | Sprint 5 | This makes UI regressions reviewable. |
 | Verify standalone runtime playhead progression and hardware timing | Realtime validation | Runtime/hardware proof remains required, but it is not the current Sprint 1 scope. |
@@ -116,6 +127,10 @@ Detailed sprint plans:
 
 - [Sprint 0: Documentation Source Of Truth](sprint-0-documentation-source-of-truth.md)
 - [Sprint 1: CoreState Domain Boundaries Analysis](sprint-1-corestate-domain-boundaries-analysis.md)
+- [Sprint 2: Input And Overlay State-Machine Recognition](sprint-2-input-overlay-state-machine-recognition.md)
+- [Sprint 3: Shared Structure Mechanics Recognition](sprint-3-shared-structure-mechanics-recognition.md)
+- [Sprint 4: Persistence Compatibility And Failure Semantics](sprint-4-persistence-compatibility-failure-semantics.md)
+- [Sprint 5: UI Visual Validation And Render Maintainability](sprint-5-ui-visual-validation.md)
 - [HPP Contract Compliance Map](hpp-contract-compliance-map.md)
 - [HPP Contract Compliance Tracker](hpp-contract-compliance-tracker.md)
 
@@ -254,6 +269,13 @@ Exit signal:
 Goal: make page/track structure behavior easy to reason about across macro and
 sequencer workflows.
 
+Current status: complete for the scoped tranche. The current split between
+`StructureSlotOps`, `SharedTrackCoordinator`, macro structure services, and
+sequencer structure workflows is coherent. Sprint 3 adds direct shared slot
+coverage, macro/sequencer duplicate and track copy/paste regressions, and a
+narrow `SequencerStructureTrackOps.hpp` helper for the duplicated sequencer
+track creation path; `ms test core` passes `44/44`.
+
 Why this is a good idea:
 
 - Macro page/track operations and sequencer structure operations share concepts:
@@ -275,6 +297,8 @@ Risks:
 Mitigations:
 
 - First document which operations are truly shared and which are domain-owned.
+- Use the dedicated recognition note:
+  [Sprint 3: Shared Structure Mechanics Recognition](sprint-3-shared-structure-mechanics-recognition.md).
 - Add tests only for helpers that become shared contracts.
 - Keep domain workflows responsible for persistence, status, and runtime side
   effects.
@@ -288,6 +312,18 @@ Exit signal:
 
 Goal: clarify storage format compatibility and failure behavior.
 
+Current status: software tranche complete. The active storage domains, versions,
+payload sizes, failure semantics, and recovery policy are documented in
+[Sprint 4: Persistence Compatibility And Failure Semantics](sprint-4-persistence-compatibility-failure-semantics.md).
+`CoreSettings` now reports unavailable storage explicitly, pending macro/shared
+writes survive transient unavailable storage, and native tests cover the
+existing v1 settings compatibility path plus unavailable-storage behavior. The
+hot-swap strategy is RAM-authoritative recovery: reopen/revalidate storage, then
+persist current RAM workspaces/settings without auto-loading SD data into the
+live session. The pure recovery state machine and `CoreState` recovery API are
+implemented and covered by `ms test core`; the Teensy main-loop manager is wired
+in `main.cpp` and the firmware build passes.
+
 Why this is a good idea:
 
 - Current persistence tests prove present-day roundtrips and corruption handling,
@@ -299,8 +335,10 @@ Evidence:
 - `domain-persistence.md` names missing binary compatibility audit and physical
   SD failure behavior.
 - `hardware-target-map.md` documents six storage domains and SD backend behavior.
-- `SDCardBackend` has a `reopen()` method, but no main-loop recovery path was
-  confirmed in this pass.
+- `main.cpp` wires a main-loop recovery manager around `SDCardBackend::reopen()`.
+- `src/persistence/StorageRecoveryMachine.hpp` and
+  `CoreState::recoverPersistenceFromRamAfterStorageReopen()` provide the native
+  foundation for that manager.
 
 Risks:
 
@@ -312,8 +350,9 @@ Mitigations:
 
 - First inventory payload versions and stored domains.
 - Add fixtures for any released formats before changing codecs.
-- Keep SD recovery policy explicit: unsupported, manual reboot, automatic
-  reopen, or user-visible warning.
+- Keep SD recovery policy explicit: RAM-authoritative recovery is the selected
+  software strategy; hardware validation and dedicated user-visible warnings are
+  the remaining work.
 
 Exit signal:
 
@@ -323,6 +362,11 @@ Exit signal:
 ### Sprint 5: UI Visual Validation And Render Maintainability
 
 Goal: make UI projection quality visible and keep rendering code readable.
+
+Current status: started. The native SDL app exposes `--capture-bmp`,
+`--capture-scenario`, and `--capture-frames`; use `ms build core --target native`
+first, then run the generated native binary from the workspace `bin` directory.
+See [Sprint 5: UI Visual Validation And Render Maintainability](sprint-5-ui-visual-validation.md).
 
 Why this is a good idea:
 
@@ -366,9 +410,8 @@ Why this is a good idea:
 
 Evidence:
 
-- `hardware-target-map.md` lists the Teensy boot, timer, display, storage, and
-  USB MIDI paths.
-- `remaining-dark-zones.md` names hardware timing under load as unknown.
+- Current source shows the Teensy boot, timer, display, storage, and USB MIDI
+  paths, but native tests do not prove timing under load.
 - `main.cpp` creates `SequencerRuntimeService` and registers the pre-context
   hook.
 - `StandaloneContext::update()` is intentionally empty for runtime work.

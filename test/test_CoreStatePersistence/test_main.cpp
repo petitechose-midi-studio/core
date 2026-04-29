@@ -186,6 +186,169 @@ void test_macro_config_changes_persist_after_flush_and_bump_revision() {
     std::cout << "[PASS] test_macro_config_changes_persist_after_flush_and_bump_revision\n";
 }
 
+void test_macro_workspace_pending_save_survives_storage_unavailable() {
+    CoreStorages storage;
+    storage.initAll();
+
+    uint8_t updatedChannel = 0;
+    uint8_t updatedCc = 0;
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
+        updatedChannel = static_cast<uint8_t>((initialConfig.channel + 2U) % 16U);
+        updatedCc = static_cast<uint8_t>((initialConfig.cc + 3U) % 128U);
+
+        storage.macroWorkspace.setAvailable(false);
+        assert(core::state::macro::MacroWorkflow::setConfig(state, 0, updatedChannel, updatedCc));
+        drainNotifications();
+        state.flush();
+
+        storage.macroWorkspace.setAvailable(true);
+        state.flush();
+    }
+
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
+    const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
+    assert(restoredConfig.channel == updatedChannel);
+    assert(restoredConfig.cc == updatedCc);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_macro_workspace_pending_save_survives_storage_unavailable\n";
+}
+
+void test_shared_track_pending_save_survives_settings_storage_unavailable() {
+    CoreStorages storage;
+    storage.initAll();
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        storage.settings.setAvailable(false);
+        assert(state.setSharedTrackState(0x0003, 1));
+        state.flush();
+
+        storage.settings.setAvailable(true);
+        state.flush();
+    }
+
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
+    assert(restored.currentSharedTrackEnabledMask() == 0x0003);
+    assert(restored.currentSharedActiveTrack() == 1);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_shared_track_pending_save_survives_settings_storage_unavailable\n";
+}
+
+void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data() {
+    CoreStorages storage;
+    storage.initAll();
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        core::state::macro::MacroWorkflow::setConfig(state, 0, 1, 10);
+        state.sequencer.length.set(8);
+        state.sequencer.setStepDataAt(0, 60, 80, 50);
+        state.sequencer.toggle(0);
+        drainNotifications();
+        state.flush();
+    }
+
+    {
+        core::state::CoreState state(storage.settings,
+                                     storage.macroWorkspace,
+                                     storage.macroLibrary,
+                                     storage.sequencerWorkspace,
+                                     storage.sequencerPatternLibrary,
+                                     storage.sequencerSetLibrary);
+
+        storage.settings.setAvailable(false);
+        storage.macroWorkspace.setAvailable(false);
+        storage.macroLibrary.setAvailable(false);
+        storage.sequencerWorkspace.setAvailable(false);
+        storage.sequencerPatternLibrary.setAvailable(false);
+        storage.sequencerSetLibrary.setAvailable(false);
+
+        assert(state.setSharedTrackState(0x0003, 1));
+        assert(core::state::macro::MacroWorkflow::setConfig(state, 0, 3, 88));
+        state.sequencer.length.set(16);
+        state.sequencer.setStepDataAt(0, 72, 111, 75);
+        if (!state.sequencer.isEnabled(0)) {
+            state.sequencer.toggle(0);
+        }
+
+        core::state::DataManagerWorkflow::setShortcut(
+            {state.dataManager, state.settings},
+            core::state::DataManagerContext::MACRO,
+            true,
+            core::state::DataManagerCommand::MACRO_ERASE_SLOT
+        );
+
+        storage.settings.setAvailable(true);
+        storage.macroWorkspace.setAvailable(true);
+        storage.macroLibrary.setAvailable(true);
+        storage.sequencerWorkspace.setAvailable(true);
+        storage.sequencerPatternLibrary.setAvailable(true);
+        storage.sequencerSetLibrary.setAvailable(true);
+
+        assert(state.recoverPersistenceFromRamAfterStorageReopen() ==
+               core::persistence::PersistenceWriteStatus::OK);
+    }
+
+    core::state::CoreState restored(storage.settings,
+                                    storage.macroWorkspace,
+                                    storage.macroLibrary,
+                                    storage.sequencerWorkspace,
+                                    storage.sequencerPatternLibrary,
+                                    storage.sequencerSetLibrary);
+
+    const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
+    assert(restoredConfig.channel == 3);
+    assert(restoredConfig.cc == 88);
+    assert(restored.sequencer.length.get() == 16);
+    assert(restored.sequencer.note[0] == 72);
+    assert(restored.sequencer.velocity[0] == 111);
+    assert(restored.sequencer.gate[0] == 75);
+    assert(restored.sequencer.isEnabled(0));
+    assert(restored.currentSharedTrackEnabledMask() == 0x0003);
+    assert(restored.currentSharedActiveTrack() == 1);
+    assert(restored.dataManager.macroShortcutLeft.get() ==
+           core::state::DataManagerCommand::MACRO_ERASE_SLOT);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data\n";
+}
+
 void test_data_manager_shortcuts_persist_and_sanitize() {
     CoreStorages storage;
     storage.initAll();
@@ -694,6 +857,9 @@ int main() {
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_snapshots_runtime_values_without_manual_flush();
     test_macro_config_changes_persist_after_flush_and_bump_revision();
+    test_macro_workspace_pending_save_survives_storage_unavailable();
+    test_shared_track_pending_save_survives_settings_storage_unavailable();
+    test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data();
     test_data_manager_shortcuts_persist_and_sanitize();
     test_data_manager_command_execution_and_slot_probe();
     test_sequencer_workspace_and_library_roundtrip();

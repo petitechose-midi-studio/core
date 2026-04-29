@@ -1,22 +1,20 @@
 #include "ViewSwitcherHandler.hpp"
 
-#include <oc/ui/lvgl/Scope.hpp>
-
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
 
 namespace core::handler {
 
-using oc::ui::lvgl::scope;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
 ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
-                                         OverlayCtx overlayCtx,
+                                         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                          oc::api::EncoderAPI& encoders,
                                          oc::api::ButtonAPI& buttons,
-                                         ViewSwitcherHandler::ViewScopes viewScopes)
+                                         ViewSwitcherHandler::ViewScopes viewScopes,
+                                         oc::type::ScopeID viewSelectorScope)
     : overlays_state_(state.overlays)
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
@@ -25,10 +23,11 @@ ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     , track_structure_selection_(state.trackStructureSelection)
     , macro_page_selection_(state.macroPageSelection)
     , sequencer_page_selection_(state.sequencerPageSelection)
-    , overlay_ctx_(overlayCtx)
+    , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
-    , view_scopes_(viewScopes) {
+    , view_scopes_(viewScopes)
+    , view_selector_scope_(viewSelectorScope) {
     setupBindings();
 }
 
@@ -51,19 +50,19 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
     // Close and confirm on release
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
-        .scope(scope(overlay_ctx_.overlayElement))
+        .scope(view_selector_scope_)
         .then([this]() { closeSelector(); });
 
     // Navigate views (active while overlay visible)
     encoders_.encoder(EncoderID::NAV)
         .turn()
-        .scope(scope(overlay_ctx_.overlayElement))
+        .scope(view_selector_scope_)
         .then([this](float delta) { navigate(delta); });
 
     // Confirm selection on NAV button (without closing)
     buttons_.button(ButtonID::NAV)
         .release()
-        .scope(scope(overlay_ctx_.overlayElement))
+        .scope(view_selector_scope_)
         .then([this]() { confirmSelection(); });
 }
 
@@ -93,7 +92,7 @@ void ViewSwitcherHandler::openSelector() {
     view_selector_.selectedIndex.set(static_cast<int>(active_view_.get()));
 
     if (!view_selector_.visible.get()) {
-        overlay_ctx_.controller.show(core::ui::OverlayType::VIEW_SELECTOR, false);
+        overlays_.show(core::ui::OverlayType::VIEW_SELECTOR, false);
     }
 
     encoders_.setMode(EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
@@ -117,7 +116,7 @@ void ViewSwitcherHandler::confirmSelection() {
 }
 
 void ViewSwitcherHandler::closeSelector() {
-    overlay_ctx_.controller.hide();
+    overlays_.hide();
     confirmSelection();
 }
 

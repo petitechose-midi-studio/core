@@ -53,7 +53,6 @@ private:
     void movePage(float delta);
     void moveTrack(float delta);
     bool createPage();
-    bool createTrack();
     void setPagePreview(uint8_t pageIndex, bool addSlot);
     void setTrackPreview(uint8_t trackIndex, bool addSlot);
     uint8_t cursorForSelectionScope(core::state::StructureSelectionScope scope) const;

@@ -1,6 +1,6 @@
 # Sprint 1: CoreState Domain Boundaries Analysis
 
-Updated: 2026-04-28
+Updated: 2026-04-29
 
 ## Scope
 
@@ -63,23 +63,13 @@ Current verification did not hit those gates.
 
 Source-recognition docs:
 
-- [`../_codex-exploration/codebase-map.md`](../_codex-exploration/codebase-map.md)
-  identifies `CoreState` as the standalone aggregate and notes `StateRefs` /
-  domain-service seams.
-- [`../_codex-exploration/major-discoveries.md`](../_codex-exploration/major-discoveries.md)
-  records the macro/sequencer/settings/persistence discoveries that led to the
-  architecture chantier list.
-- [`../_codex-exploration/domain-macro.md`](../_codex-exploration/domain-macro.md),
-  [`../_codex-exploration/domain-sequencer-editing.md`](../_codex-exploration/domain-sequencer-editing.md),
-  [`../_codex-exploration/domain-settings-data-manager.md`](../_codex-exploration/domain-settings-data-manager.md),
-  and [`../_codex-exploration/domain-persistence.md`](../_codex-exploration/domain-persistence.md)
-  establish the feature domains affected by broad state access.
-- [`../_codex-exploration/remaining-dark-zones.md`](../_codex-exploration/remaining-dark-zones.md)
-  keeps hardware timing, full input semantics, visual correctness, dead-code
-  proof, and full callback graph outside the confirmed scope.
-- [`../_codex-exploration/tests-by-domain.md`](../_codex-exploration/tests-by-domain.md)
-  lists the tests that currently protect state, persistence, handlers, runtime,
-  and service behavior.
+- Local notes under `docs/_codex-exploration/`, when present, were used as
+  navigation during the original pass. They included `codebase-map.md`,
+  `major-discoveries.md`, `domain-*.md`, `remaining-dark-zones.md`, and
+  `tests-by-domain.md`.
+- `docs/_codex-exploration/` is intentionally excluded from Git, so those notes
+  are not a repo contract. The tracked Sprint 1 claims below must be verified
+  against current source, current tests, and the commands listed in this file.
 
 Sprint 0 docs:
 
@@ -98,30 +88,31 @@ Source checks used in this pass:
 - `rg -n "setSharedTrackState|requestMacroWorkspacePersist|persistSequencerWorkspace|queuePendingSequencer" src test`
 - Targeted reads of `CoreState`, macro workflows, sequencer persistence, shared
   track services, standalone assembly, runtime, UI projection, and tests.
-- Native verification:
-  `pio test -e native -f test_SharedTrackDomainServices -f test_CoreStateLifecycle -f test_CoreStatePersistence -f test_MacroPerformanceDomainServices -f test_DataManagerDomainServices -f test_StandaloneSequencerRuntimeGate -f test_MacroViewActivationContract`
-  passed on 2026-04-28.
+- Current native verification entry point: `ms test core`.
+- Historical targeted PlatformIO native verification was used during the first
+  Sprint 1 pass on 2026-04-28. Keep future verification on the `ms` entry point
+  unless a firmware build/upload check is specifically required.
 - Implementation verification:
   `git diff --check`, `rg -n "CoreState" src/ui -g "*.hpp" -g "*.cpp"`,
   `rg -n "CoreState\\* state_|explicit Macro.*DomainServices\\(core::state::CoreState|Macro.*DomainServices\\(core::state::CoreState" src/handler/macro -g "*.hpp" -g "*.cpp"`,
-  and `pio test -e native` passed on 2026-04-28 after Gates 2-5.
+  and `ms test core`.
 
 ## Confirmed Findings
 
 | Finding | Status | Evidence | Sprint 1 implication |
 |---|---|---|---|
-| `CoreState` is the standalone state authority, not a temporary convenience object. | Confirmed | `src/state/CoreState.hpp:148-155`, `src/state/CoreState.cpp:100-124`, `main.cpp:187-194`, `docs/_codex-exploration/codebase-map.md` | Do not split ownership first. Start by classifying access intent. |
+| `CoreState` is the standalone state authority, not a temporary convenience object. | Confirmed | `src/state/CoreState.hpp:148-155`, `src/state/CoreState.cpp:100-124`, `main.cpp:187-194` | Do not split ownership first. Start by classifying access intent. |
 | `CoreState` exposes many public aliases into durable macro/sequencer domains and shared UI/system state. | Confirmed | `src/state/CoreState.hpp:166-196` | The friction is real: a caller can touch many branches after receiving `CoreState&`. |
 | Bootstrap/lifecycle privileged access is intentional and narrow. | Confirmed | `src/state/CoreState.hpp:155-157`, `src/state/CoreStateLifecycle.cpp`, `src/state/CoreStateBootstrap.cpp`, `hpp-contract-compliance-tracker.md` | Treat lifecycle/bootstrap as allowed authority, not cleanup targets. |
 | Composition roots legitimately receive `CoreState&` to build modules, `StateRefs`, and domain services. | Confirmed | `src/context/StandaloneContext.hpp:63-67`, `src/context/StandaloneContext.hpp:103`, `src/context/standalone/StandaloneFeatureAssembly.cpp:23-92` | Composition access is acceptable if it only wires narrower dependencies. |
 | The runtime already uses a strong narrow-access contract. | Confirmed | `src/sequencer/SequencerRuntimeService.hpp:22-40`, `main.cpp:208-218`, `sprint-0-handoff.md` | Preserve this as a rule: runtime should not grow a `CoreState&` dependency. |
-| Feature modules and handlers mostly follow the `StateRefs` plus domain-service pattern. | Confirmed | `src/context/standalone/StandaloneFeatureAssembly.cpp:38-92`, docs in `codebase-map.md`, many handler `StateRefs` definitions found by `rg` | Sprint 1 should standardize an existing pattern, not invent one. |
+| Feature modules and handlers mostly follow the `StateRefs` plus domain-service pattern. | Confirmed | `src/context/standalone/StandaloneFeatureAssembly.cpp:38-92`, many handler `StateRefs` definitions found by `rg` | Sprint 1 should standardize an existing pattern, not invent one. |
 | Cross-domain invariants are currently concentrated in named workflows/services. | Confirmed | `src/state/macro/MacroWorkflow.cpp:60-85`, `src/state/sequencer/SequencerPersistenceWorkflow.cpp:23-43`, `src/state/sequencer/SequencerPersistenceWorkflow.cpp:75-123`, `src/handler/macro/MacroStructureDomainServices.cpp:18-46` | These are legitimate broad operations, but their authority should be explicit. |
 | Shared track state is the clearest cross-domain invariant. | Confirmed and extracted | `src/state/shared/SharedTrackCoordinator.hpp`, `src/state/shared/SharedTrackCoordinator.cpp`, `src/state/CoreState.cpp::setSharedTrackState_`, `src/handler/common/SharedTrackDomainServices.cpp` | Keep shared-track synchronization in the coordinator; callers request the invariant instead of writing every branch. |
 | Data Manager already has a useful seam: `StateRefs` and typed operations; its `CoreState` bridge belongs in command execution, not the UI workflow. | Confirmed and narrowed | `src/state/DataManagerWorkflow.hpp`, `src/handler/settings/DataManagerDomainServices.cpp`, `src/state/DataManagerCommandExecutor.hpp`, `test/test_DataManagerDomainServices/test_main.cpp` | Keep Data Manager UI flow testable without `CoreState`; persistence dispatch remains a named bridge. |
 | UI projection had a broad read candidate. | Confirmed and narrowed | `src/ui/common/GlobalTrackNavigationStripModel.hpp::GlobalTrackNavigationStripSource`, `src/ui/common/TrackNavigationStripProps.hpp`, `src/context/standalone/StandaloneUiAssembly.cpp`, `test/test_GlobalTrackNavigationStripModel/test_main.cpp` | Keep projection builders on focused read sources; composition may still assemble those sources from `CoreState`. |
 | Macro domain services can operate without stored `CoreState*`. | Confirmed and narrowed | `src/handler/macro/MacroEditDomainServices.hpp`, `src/handler/macro/MacroPerformanceDomainServices.hpp`, `src/handler/macro/MacroStructureDomainServices.hpp`; static check listed above | Keep `fromCoreState(...)` as a production bridge only; ordinary service methods use `StateRefs` plus typed operations. |
-| Tests encode direct `CoreState` usage for state authority and persistence. | Confirmed | `test/test_CoreStateAuthority/test_main.cpp`, `test/test_CoreStateLifecycle/test_main.cpp`, `test/test_CoreStatePersistence/test_main.cpp`, `tests-by-domain.md` | Do not treat test directness as production design smell. Preserve behavior coverage. |
+| Tests encode direct `CoreState` usage for state authority and persistence. | Confirmed | `test/test_CoreStateAuthority/test_main.cpp`, `test/test_CoreStateLifecycle/test_main.cpp`, `test/test_CoreStatePersistence/test_main.cpp`, `ms test core` | Do not treat test directness as production design smell. Preserve behavior coverage. |
 
 ## Access Surface Classification
 
@@ -183,7 +174,7 @@ verified access map instead of a vague "CoreState is broad" claim.
 2. Shared track is a cross-domain invariant with multiple entry points.
    Evidence: `CoreState::setSharedTrackState_` synchronizes shared UI state,
    macro pages, sequencer track bank, and active sequencer track at
-   `src/state/CoreState.cpp:322-355`; callers include macro structure services,
+   `src/state/CoreState.cpp:308-318`; callers include macro structure services,
    macro workflow, sequencer persistence, and shared track services.
    Risk: a future caller can bypass part of the invariant if it writes directly
    to `pages`, `sequencerTracks`, `sharedTrackActive`, or `sharedTrackEnabledMask`.
@@ -220,9 +211,9 @@ verified access map instead of a vague "CoreState is broad" claim.
 
 1. Shared-track persistence is debounced and side-effectful.
    Evidence: `CoreState::requestSharedTrackPersist_` and
-   `CoreState::persistSharedTrackState_` at `src/state/CoreState.cpp:278-299`;
+   `CoreState::persistSharedTrackState_` at `src/state/CoreState.cpp:264-289`;
    `setSharedTrackState_` requests persistence only when the sanitized state
-   changes at `src/state/CoreState.cpp:346-353`.
+   changes at `src/state/CoreState.cpp:308-318`.
    Risk: refactoring entry points without preserving change detection could
    create unnecessary writes or missed persistence.
    Mitigation: keep tests around "no change returns false", sanitized active
@@ -249,7 +240,7 @@ verified access map instead of a vague "CoreState is broad" claim.
 
 1. Access-surface refactors can create extra signal churn.
    Evidence: shared track writes fan out to signals and track switching in
-   `src/state/CoreState.cpp:328-343`.
+   `src/state/shared/SharedTrackCoordinator.cpp:37-68`.
    Risk: decomposing the operation into multiple smaller calls could emit
    duplicate signals or switch tracks twice.
    Mitigation: keep shared-track mutation atomic at the public boundary.
@@ -258,7 +249,7 @@ verified access map instead of a vague "CoreState is broad" claim.
    Evidence: macro structure services call `flushAutoPersist`,
    `requestMacroWorkspacePersist`, and shared-track persistence paths
    (`src/handler/macro/MacroStructureDomainServices.cpp:24-52`,
-   `src/state/CoreState.cpp:247-299`).
+   `src/state/CoreState.cpp:233-289`).
    Risk: moving code without preserving debounce boundaries can increase write
    pressure.
    Mitigation: treat persistence behavior as observable runtime behavior, even
@@ -279,9 +270,9 @@ verified access map instead of a vague "CoreState is broad" claim.
    Mitigation: make projection-only dependencies narrower where low-risk.
 
 3. Tests are numerous but not a complete access-contract proof. Evidence:
-   `tests-by-domain.md` shows strong state/persistence/service coverage, while
-   `remaining-dark-zones.md` still excludes full input semantics, hardware
-   timing, visual correctness, and full callback graph.
+   `ms test core` covers the current native suite, while the remaining
+   validation gaps are still full input semantics, hardware timing, visual
+   correctness, and full callback graph.
    Mitigation: use existing tests as guardrails, then add targeted tests only
    where Sprint 1 changes a boundary.
 
@@ -315,9 +306,9 @@ Do not claim these as bugs without more evidence:
   global authority.
 - Broad workflow methods are not automatically design debt when they preserve a
   cross-domain invariant.
-- No code should be declared dead from this sprint alone. `remaining-dark-zones.md`
-  requires caller search, build-target search, tests or compile checks, git
-  history, and platform-guard inspection before dead-code classification.
+- No code should be declared dead from this sprint alone. Dead-code
+  classification requires caller search, build-target search, tests or compile
+  checks, git history, and platform-guard inspection.
 
 ## Recommended Sprint 1 Strategy
 
@@ -366,8 +357,8 @@ Baseline before the first code edit:
   `rg -n "CoreState&|CoreState\\*|fromCoreState\\(" src main.cpp -g "*.hpp" -g "*.cpp"`.
 - Save the current counts by category: composition, state authority, workflow,
   domain-service bridge, UI projection.
-- Run the critical native baseline:
-  `pio test -e native -f test_SharedTrackDomainServices -f test_CoreStateLifecycle -f test_CoreStatePersistence -f test_MacroPerformanceDomainServices -f test_DataManagerDomainServices -f test_StandaloneSequencerRuntimeGate -f test_MacroViewActivationContract`.
+- Run the native unit-test baseline:
+  `ms test core`.
 - Identify the exact behavior protected by the step before changing signatures.
 
 Gate 1: sprint index and access policy.
@@ -490,7 +481,8 @@ Completed in the first implementation tranche:
 - New focused tests cover the UI projection and shared-track coordinator:
   `test/test_GlobalTrackNavigationStripModel/test_main.cpp` and
   `test/test_SharedTrackCoordinator/test_main.cpp`.
-- Full native verification passed after these changes: `pio test -e native`.
+- Full native verification passed after these changes through the workspace
+  entry point: `ms test core`.
 
 Remaining Sprint 1 follow-up boundary:
 
@@ -584,4 +576,6 @@ The first Sprint 1 implementation tranche is complete when:
 - tests needed to protect changed boundaries pass in the full native suite;
 - no old/new duplicate mutation path remains for the gates closed so far.
 
-Current status: complete for Gates 1-6 on the scoped implementation tranche.
+Current status: complete for Gates 1-6 on the scoped implementation tranche as
+of 2026-04-29. Follow-up work belongs to Sprint 2+ unless it corrects
+documentation drift in the tracked Sprint 1 record.

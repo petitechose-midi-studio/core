@@ -217,6 +217,55 @@ void CoreState::noteMacroInteraction() {
     }
 }
 
+persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRamAfterStorageReopen() {
+    auto status = settings.saveAllStatus(
+        midiSync,
+        sharedTrackEnabledMask.get(),
+        sharedTrackActive.get()
+    );
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+
+    status = settings.saveDataManagerMacroShortcutLeftStatus(
+        static_cast<uint8_t>(dataManager.macroShortcutLeft.get())
+    );
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+    status = settings.saveDataManagerMacroShortcutRightStatus(
+        static_cast<uint8_t>(dataManager.macroShortcutRight.get())
+    );
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+    status = settings.saveDataManagerSeqShortcutLeftStatus(
+        static_cast<uint8_t>(dataManager.seqShortcutLeft.get())
+    );
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+    status = settings.saveDataManagerSeqShortcutRightStatus(
+        static_cast<uint8_t>(dataManager.seqShortcutRight.get())
+    );
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+    status = settings.commitStatus();
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+
+    status = macroPersistence.initStatus();
+    macroDomain_.persistenceReady = status == persistence::PersistenceWriteStatus::OK;
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+
+    status = macroPersistence.saveWorkspaceStatus(pages);
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+    macroDomain_.workspacePersistPending = false;
+    macroDomain_.workspacePersistTimestampMs = 0;
+
+    status = sequencerPersistence.initStatus();
+    sequencerDomain_.persistenceReady = status == persistence::PersistenceWriteStatus::OK;
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+
+    sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    status = sequencerPersistence.saveWorkspaceStatus(sequencerTracks, sequencer);
+    if (status != persistence::PersistenceWriteStatus::OK) return status;
+
+    sharedTrackPersistPending_ = false;
+    sharedTrackPersistTimestampMs_ = 0;
+    return persistence::PersistenceWriteStatus::OK;
+}
+
 void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bool merge) {
     CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
 }
@@ -242,12 +291,24 @@ void CoreState::requestMacroWorkspacePersist_() {
 
 void CoreState::persistMacroWorkspaceNow_() {
     if (!macroDomain_.persistenceReady) return;
-    macroDomain_.workspacePersistPending = false;
-    macroDomain_.workspacePersistTimestampMs = 0;
     const auto status = macroPersistence.saveWorkspaceStatus(pages);
-    if (status != persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreState] Failed to persist macro workspace: {}",
-                    persistence::persistenceWriteStatusLabel(status));
+    if (status == persistence::PersistenceWriteStatus::OK) {
+        macroDomain_.workspacePersistPending = false;
+        macroDomain_.workspacePersistTimestampMs = 0;
+        return;
+    }
+
+    OC_LOG_WARN("[CoreState] Failed to persist macro workspace: {}",
+                persistence::persistenceWriteStatusLabel(status));
+    if (status == persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE) {
+        macroDomain_.workspacePersistPending = true;
+        macroDomain_.workspacePersistTimestampMs = oc::time::millis();
+        if (macroDomain_.workspacePersistTimestampMs == 0) {
+            macroDomain_.workspacePersistTimestampMs = 1;
+        }
+    } else {
+        macroDomain_.workspacePersistPending = false;
+        macroDomain_.workspacePersistTimestampMs = 0;
     }
 }
 
@@ -272,16 +333,27 @@ void CoreState::requestSharedTrackPersist_() {
 void CoreState::persistSharedTrackState_() {
     if (!sharedTrackPersistPending_) return;
 
-    sharedTrackPersistPending_ = false;
-    sharedTrackPersistTimestampMs_ = 0;
-
     const auto persistStatus = settings.saveSharedTrackStateStatus(
         sharedTrackEnabledMask.get(),
         sharedTrackActive.get()
     );
-    if (persistStatus != persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreState] Failed to persist shared track state: {}",
-                    persistence::persistenceWriteStatusLabel(persistStatus));
+    if (persistStatus == persistence::PersistenceWriteStatus::OK) {
+        sharedTrackPersistPending_ = false;
+        sharedTrackPersistTimestampMs_ = 0;
+        return;
+    }
+
+    OC_LOG_WARN("[CoreState] Failed to persist shared track state: {}",
+                persistence::persistenceWriteStatusLabel(persistStatus));
+    if (persistStatus == persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE) {
+        sharedTrackPersistPending_ = true;
+        sharedTrackPersistTimestampMs_ = oc::time::millis();
+        if (sharedTrackPersistTimestampMs_ == 0) {
+            sharedTrackPersistTimestampMs_ = 1;
+        }
+    } else {
+        sharedTrackPersistPending_ = false;
+        sharedTrackPersistTimestampMs_ = 0;
     }
 }
 

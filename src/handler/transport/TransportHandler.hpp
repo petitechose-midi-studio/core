@@ -2,9 +2,8 @@
 
 /**
  * @file TransportHandler.hpp
- * @brief Handles transport controls (tempo, play/stop)
+ * @brief Handles transport play/stop controls
  *
- * - NAV encoder: tempo +/- 1 BPM
  * - BOTTOM_CENTER button: toggle play (active top-level view scopes)
  */
 
@@ -12,7 +11,6 @@
 #include <cstddef>
 
 #include <oc/api/ButtonAPI.hpp>
-#include <oc/api/EncoderAPI.hpp>
 
 #include <config/InputIDs.hpp>
 #include "state/StatusBarState.hpp"
@@ -29,9 +27,7 @@ public:
     };
 
     TransportHandler(StateRefs state,
-                     oc::api::EncoderAPI& encoders,
                      oc::api::ButtonAPI& buttons,
-                     oc::type::ScopeID tempoScope,
                      ViewScopes playToggleScopes);
 
     ~TransportHandler() = default;
@@ -41,17 +37,11 @@ public:
 
 private:
     void setupBindings();
-    void handleTempoChange(float delta);
     void handlePlayToggle();
 
     core::state::StatusBarState& status_bar_;
-    oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    oc::type::ScopeID tempo_scope_id_ = 0;
     ViewScopes play_toggle_scopes_{};
-
-    static constexpr float TEMPO_MIN = 20.0f;
-    static constexpr float TEMPO_MAX = 300.0f;
 };
 
 }  // namespace core::handler

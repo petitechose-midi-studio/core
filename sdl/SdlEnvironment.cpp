@@ -157,6 +157,48 @@ void SdlEnvironment::refresh() {
     bridge_->refresh();
 }
 
+bool SdlEnvironment::saveScreenshotBmp(const char* path, ScreenshotScope scope) {
+    if (!renderer_ || !path || path[0] == '\0') return false;
+
+    int width = 0;
+    int height = 0;
+    if (SDL_GetRendererOutputSize(renderer_, &width, &height) != 0 || width <= 0 || height <= 0) {
+        return false;
+    }
+
+    SDL_Rect sourceRect{0, 0, width, height};
+    if (scope == ScreenshotScope::Screen && layout_) {
+        const int logicalSize = layout_->panelSize + 40;
+        const int panelOffset = (logicalSize - layout_->panelSize) / 2;
+        const float scaleX = static_cast<float>(width) / static_cast<float>(logicalSize);
+        const float scaleY = static_cast<float>(height) / static_cast<float>(logicalSize);
+        sourceRect.x = static_cast<int>((panelOffset + layout_->screenX) * scaleX);
+        sourceRect.y = static_cast<int>((panelOffset + layout_->screenY) * scaleY);
+        sourceRect.w = static_cast<int>(layout_->screenW * scaleX);
+        sourceRect.h = static_cast<int>(layout_->screenH * scaleY);
+    }
+
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(
+        0,
+        sourceRect.w,
+        sourceRect.h,
+        32,
+        SDL_PIXELFORMAT_ARGB8888
+    );
+    if (!surface) return false;
+
+    const int readResult = SDL_RenderReadPixels(
+        renderer_,
+        &sourceRect,
+        SDL_PIXELFORMAT_ARGB8888,
+        surface->pixels,
+        surface->pitch
+    );
+    const int saveResult = (readResult == 0) ? SDL_SaveBMP(surface, path) : -1;
+    SDL_FreeSurface(surface);
+    return readResult == 0 && saveResult == 0;
+}
+
 void SdlEnvironment::shutdown() {
     input_.reset();
     hwSim_.reset();

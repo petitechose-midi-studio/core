@@ -103,6 +103,79 @@ void test_invalid_version_resets_to_defaults() {
     std::cout << "[PASS] test_invalid_version_resets_to_defaults\n";
 }
 
+void test_v1_settings_load_uses_legacy_shortcut_offsets_and_default_shared_track() {
+    MemoryStorage storage;
+    storage.init();
+
+    namespace StorageLayout = core::state::core_settings::layout;
+
+    const uint32_t magic = StorageLayout::MAGIC;
+    const uint8_t version = 1;
+    const uint8_t mode = static_cast<uint8_t>(core::state::MidiSyncMode::SLAVE);
+    const uint8_t followTransport = 0;
+    const uint16_t fallbackMs = 900;
+    const uint8_t lockClocks = 8;
+    const uint8_t macroLeft =
+        static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_LOAD_SLOT);
+    const uint8_t macroRight =
+        static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_SAVE_SLOT);
+    const uint8_t seqLeft =
+        static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_LOAD_PATTERN_SLOT);
+    const uint8_t seqRight =
+        static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_SAVE_PATTERN_SLOT);
+
+    storage.write(StorageLayout::ADDR_MAGIC,
+                  reinterpret_cast<const uint8_t*>(&magic),
+                  sizeof(magic));
+    storage.write(StorageLayout::ADDR_VERSION, &version, 1);
+    storage.write(StorageLayout::ADDR_SYNC_MODE, &mode, 1);
+    storage.write(StorageLayout::ADDR_SYNC_FOLLOW_TRANSPORT, &followTransport, 1);
+    storage.write(StorageLayout::ADDR_SYNC_AUTO_FALLBACK_MS,
+                  reinterpret_cast<const uint8_t*>(&fallbackMs),
+                  sizeof(fallbackMs));
+    storage.write(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS, &lockClocks, 1);
+    storage.write(0x000A, &macroLeft, 1);
+    storage.write(0x000B, &macroRight, 1);
+    storage.write(0x000C, &seqLeft, 1);
+    storage.write(0x000D, &seqRight, 1);
+    storage.commit();
+
+    core::state::CoreSettings settings(storage);
+    core::state::MidiSyncState loadedSync;
+    uint16_t loadedSharedTrackEnabledMask = 0;
+    uint8_t loadedSharedTrackActive = 0;
+    assert(settings.load(
+        loadedSync,
+        loadedSharedTrackEnabledMask,
+        loadedSharedTrackActive
+    ));
+
+    assert(loadedSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    assert(!loadedSync.followTransport.get());
+    assert(loadedSync.autoFallbackMs.get() == fallbackMs);
+    assert(loadedSync.autoLockClockCount.get() == lockClocks);
+    assert(loadedSharedTrackEnabledMask == StorageLayout::DEFAULT_SHARED_TRACK_ENABLED_MASK);
+    assert(loadedSharedTrackActive == StorageLayout::DEFAULT_SHARED_TRACK_ACTIVE);
+
+    uint8_t loadedMacroLeft = 0;
+    uint8_t loadedMacroRight = 0;
+    uint8_t loadedSeqLeft = 0;
+    uint8_t loadedSeqRight = 0;
+    assert(settings.loadDataManagerShortcuts(
+        loadedMacroLeft,
+        loadedMacroRight,
+        loadedSeqLeft,
+        loadedSeqRight
+    ));
+
+    assert(loadedMacroLeft == macroLeft);
+    assert(loadedMacroRight == macroRight);
+    assert(loadedSeqLeft == seqLeft);
+    assert(loadedSeqRight == seqRight);
+
+    std::cout << "[PASS] test_v1_settings_load_uses_legacy_shortcut_offsets_and_default_shared_track\n";
+}
+
 }  // namespace
 
 int main() {
@@ -112,6 +185,7 @@ int main() {
 
     test_roundtrip_current_format();
     test_invalid_version_resets_to_defaults();
+    test_v1_settings_load_uses_legacy_shortcut_offsets_and_default_shared_track();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

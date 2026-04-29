@@ -20,7 +20,7 @@ Create `script/lvgl/font/font_converter.conf` in your project:
 
 ```bash
 FONT_SOURCE_DIR="asset/font"           # TTF/OTF source directory
-FONT_OUTPUT_DIR="src/ui/shared/font"   # Output directory (data/ subfolder auto-created)
+FONT_OUTPUT_DIR="src/ui/font"          # Output directory (data/ subfolder auto-created)
 CHAR_RANGE="ASCII,LATIN1"              # Character range (see presets below)
 ```
 
@@ -72,4 +72,4 @@ lv_font_t* font = lv_binfont_create_from_buffer(
 ## Requirements
 
 - Node.js (for lv_font_conv)
-- `npm install -g lv_font_conv` (auto-installed if missing)
+- `npm install -g lv_font_conv`

@@ -1,0 +1,17 @@
+# UX workflow: switch views through the global View Selector.
+# Purpose: validates global LEFT_TOP long-press, overlay authority, NAV navigation,
+# and confirm routing.
+
+0 capture screen boot
+
+# Hold LEFT_TOP long enough to open the global view selector.
+100 button LEFT_TOP down
+1150 tick
+1200 capture screen selector_open
+1250 button LEFT_TOP up
+
+# Move to the next view and confirm with the NAV button.
+1350 encoder NAV 1
+1450 capture screen selector_moved
+1500 tap NAV 60
+1700 capture screen confirmed_view

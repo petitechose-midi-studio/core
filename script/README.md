@@ -31,7 +31,7 @@ Batch converts all PNG files from configured source directory.
 
 | Script | Dependencies |
 |--------|--------------|
-| Font converter | Node.js, `lv_font_conv` (auto-installed) |
+| Font converter | Node.js, `lv_font_conv` installed globally with `npm i -g lv_font_conv` |
 | Image converter | Python 3.8+, [uv](https://github.com/astral-sh/uv) |
 
 ## Configuration Files

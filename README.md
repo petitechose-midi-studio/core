@@ -46,12 +46,14 @@ pio run -e dev -t upload
 
 ## Unit Tests
 
-The supported local workflow is the `ms-dev-env` CMake/CTest runner:
+The supported local unit-test entry point is the workspace `ms` command:
 
 ```powershell
-uv run ms test core
+ms test core
 ```
 
+`ms` resolves the correct workspace, so the command is valid from this
+`midi-studio/core` directory or from elsewhere in the `ms-dev-env` checkout.
 PlatformIO remains the firmware build/upload path; unit tests are run through CMake/CTest so
 local and CI execution use the same native test backend, workspace-pinned tools, and pinned
 test dependencies.
@@ -85,9 +87,9 @@ Current architectural direction:
 
 For the current architectural audit and cleanup roadmap, start with:
 
-- [docs/ARCHITECTURE_REVIEW.md](docs/ARCHITECTURE_REVIEW.md)
-- [docs/INVARIANTS.md](docs/INVARIANTS.md)
 - [docs/README.md](docs/README.md)
+- [docs/architecture-chantiers/README.md](docs/architecture-chantiers/README.md)
+- [docs/ARCHITECTURE_REVIEW_RULES.md](docs/ARCHITECTURE_REVIEW_RULES.md)
 
 ## Notes
 

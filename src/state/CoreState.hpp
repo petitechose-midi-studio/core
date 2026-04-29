@@ -253,6 +253,14 @@ public:
     bool refreshSharedTrackStateFromSequencer();
     void noteMacroInteraction();
 
+    /**
+     * @brief Reinitialize persistence domains and save current RAM to storage.
+     *
+     * Used after platform code has reopened storage. It intentionally does not
+     * load workspaces from storage; runtime state remains authoritative.
+     */
+    persistence::PersistenceWriteStatus recoverPersistenceFromRamAfterStorageReopen();
+
 private:
     void queueSequencerApply_(const sequencer::SequencerState& staged, bool merge = false);
     void queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged);

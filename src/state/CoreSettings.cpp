@@ -263,6 +263,7 @@ FLASHMEM bool CoreSettings::commit() {
 }
 
 FLASHMEM PersistenceWriteStatus CoreSettings::commitStatus() {
+    if (!backend_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     return backend_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
 }
 
@@ -271,6 +272,7 @@ FLASHMEM bool CoreSettings::factoryReset() {
 }
 
 FLASHMEM PersistenceWriteStatus CoreSettings::factoryResetStatus() {
+    if (!backend_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     if (!backend_.erase(0, StorageLayout::STORAGE_END)) {
         return PersistenceWriteStatus::ERASE_FAILED;
     }

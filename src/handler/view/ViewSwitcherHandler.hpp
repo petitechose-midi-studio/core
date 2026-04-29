@@ -10,9 +10,9 @@
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
+#include <oc/context/OverlayManager.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
-#include <ms/ui/OverlayBindingContext.hpp>
 
 #include "state/ViewSelectorState.hpp"
 #include "state/StructureSelectionState.hpp"
@@ -25,7 +25,6 @@ namespace core::handler {
 
 class ViewSwitcherHandler {
 public:
-    using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
     static constexpr std::size_t VIEW_SCOPE_COUNT = static_cast<std::size_t>(core::ui::ViewType::COUNT);
     using ViewScopes = std::array<oc::type::ScopeID, VIEW_SCOPE_COUNT>;
     struct StateRefs {
@@ -41,10 +40,11 @@ public:
     };
 
     ViewSwitcherHandler(StateRefs state,
-                        OverlayCtx overlayCtx,
+                        oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                         oc::api::EncoderAPI& encoders,
                         oc::api::ButtonAPI& buttons,
-                        ViewScopes viewScopes);
+                        ViewScopes viewScopes,
+                        oc::type::ScopeID viewSelectorScope);
 
     ~ViewSwitcherHandler() = default;
 
@@ -69,10 +69,11 @@ private:
     core::state::StructureSelectionState& track_structure_selection_;
     core::state::StructureSelectionState& macro_page_selection_;
     core::state::StructureSelectionState& sequencer_page_selection_;
-    OverlayCtx overlay_ctx_;
+    oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     ViewScopes view_scopes_{};
+    oc::type::ScopeID view_selector_scope_ = 0;
 
     static constexpr int VIEW_COUNT = static_cast<int>(core::ui::ViewType::COUNT);
 };

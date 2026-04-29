@@ -240,6 +240,94 @@ void test_sequencer_page_copy_and_long_press_paste() {
     std::cout << "[PASS] test_sequencer_page_copy_and_long_press_paste\n";
 }
 
+void test_sequencer_selection_duplicate_copies_page_payload() {
+    SequencerStepHarness h;
+    h.state.sequencer.length.set(16);
+    h.state.sequencer.page.set(1);
+    h.state.sequencer.focusedStep.set(8);
+    h.state.sequencer.note[8] = 75;
+    h.state.sequencer.velocity[8] = 101;
+    h.state.sequencer.setEnabled(8, true);
+
+    h.state.sequencer.structureUi.pageSelection.active.set(true);
+    h.state.sequencer.structureUi.pageSelection.scope.set(core::state::StructureSelectionScope::PAGE);
+    h.state.sequencer.structureUi.pageSelection.cursorIndex.set(1);
+    h.state.sequencer.structureUi.pageSelection.selectedMask.set(0x0002);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencer.length.get() == 24);
+    assert(h.state.sequencer.page.get() == 2);
+    assert(h.state.sequencer.focusedStep.get() == 16);
+    assert(h.state.sequencer.note[16] == 75);
+    assert(h.state.sequencer.velocity[16] == 101);
+    assert(h.state.sequencer.isEnabled(16));
+    assert(!h.state.sequencer.structureUi.pageSelection.active.get());
+
+    std::cout << "[PASS] test_sequencer_selection_duplicate_copies_page_payload\n";
+}
+
+void test_sequencer_selection_duplicate_copies_track_payload() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 1);
+    h.state.sequencer.note[0] = 82;
+    h.state.sequencer.velocity[0] = 108;
+    h.state.sequencer.setEnabled(0, true);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.trackNavigation.selection.active.set(true);
+    h.state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
+    h.state.trackNavigation.selection.cursorIndex.set(1);
+    h.state.trackNavigation.selection.selectedMask.set(0x0002);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 2);
+    assert(h.state.sequencer.note[0] == 82);
+    assert(h.state.sequencer.velocity[0] == 108);
+    assert(h.state.sequencer.isEnabled(0));
+    assert(!h.state.trackNavigation.selection.active.get());
+
+    std::cout << "[PASS] test_sequencer_selection_duplicate_copies_track_payload\n";
+}
+
+void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0001, 0);
+    h.state.sequencer.length.set(8);
+    h.state.sequencer.note[0] = 79;
+    h.state.sequencer.velocity[0] = 96;
+    h.state.sequencer.gate[0] = 72;
+    h.state.sequencer.setEnabled(0, true);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerTrack());
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(0);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.note[0] == 79);
+    assert(h.state.sequencer.velocity[0] == 96);
+    assert(h.state.sequencer.gate[0] == 72);
+    assert(h.state.sequencer.isEnabled(0));
+
+    std::cout << "[PASS] test_sequencer_track_copy_and_long_press_paste_to_add_slot\n";
+}
+
 void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
@@ -283,6 +371,9 @@ int main() {
     test_nav_selection_mode_deletes_selected_sequencer_page();
     test_nav_selection_mode_deletes_selected_sequencer_track();
     test_sequencer_page_copy_and_long_press_paste();
+    test_sequencer_selection_duplicate_copies_page_payload();
+    test_sequencer_selection_duplicate_copies_track_payload();
+    test_sequencer_track_copy_and_long_press_paste_to_add_slot();
     test_deleted_track_slot_can_be_recreated_at_any_gap();
 
     std::cout << "\nAll SequencerStepHandler tests passed.\n";

@@ -8,10 +8,12 @@ namespace core::state::core_settings {
 using core::persistence::PersistenceWriteStatus;
 
 bool readExact(oc::interface::IStorage& backend, uint32_t address, uint8_t* buffer, size_t size) {
+    if (!backend.available()) return false;
     return backend.read(address, buffer, size) == size;
 }
 
 bool writeExact(oc::interface::IStorage& backend, uint32_t address, const uint8_t* buffer, size_t size) {
+    if (!backend.available()) return false;
     return backend.write(address, buffer, size) == size;
 }
 
@@ -19,6 +21,7 @@ PersistenceWriteStatus writeExactStatus(oc::interface::IStorage& backend,
                                         uint32_t address,
                                         const uint8_t* buffer,
                                         size_t size) {
+    if (!backend.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     return writeExact(backend, address, buffer, size)
                ? PersistenceWriteStatus::OK
                : PersistenceWriteStatus::IO_ERROR;

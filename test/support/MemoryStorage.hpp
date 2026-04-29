@@ -25,7 +25,7 @@ public:
         return oc::type::Result<void>::ok();
     }
 
-    bool available() const override { return initialized_; }
+    bool available() const override { return initialized_ && !forceUnavailable_; }
 
     size_t read(uint32_t address, uint8_t* buffer, size_t size) override {
         if (!buffer || address >= data_.size()) return 0;
@@ -69,6 +69,7 @@ public:
     bool isDirty() const override { return dirty_; }
 
     void setFaultMode(FaultMode mode) { faultMode_ = mode; }
+    void setAvailable(bool available) { forceUnavailable_ = !available; }
 
     int commitCount = 0;
 
@@ -78,6 +79,7 @@ private:
     }
 
     bool initialized_ = false;
+    bool forceUnavailable_ = false;
     bool dirty_ = false;
     FaultMode faultMode_ = FaultMode::NONE;
     std::vector<uint8_t> data_;

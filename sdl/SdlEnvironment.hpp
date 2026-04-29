@@ -30,6 +30,11 @@ namespace desktop { class HwSimulator; struct HwLayout; }
 
 namespace sdl {
 
+enum class ScreenshotScope {
+    Controller,
+    Screen,
+};
+
 /**
  * @brief SDL environment for MIDI Studio
  *
@@ -91,6 +96,11 @@ public:
      * Call after app.update() in main loop.
      */
     void refresh();
+
+    /**
+     * @brief Save the current SDL renderer contents to a BMP file.
+     */
+    bool saveScreenshotBmp(const char* path, ScreenshotScope scope = ScreenshotScope::Controller);
 
     /**
      * @brief Cleanup all resources

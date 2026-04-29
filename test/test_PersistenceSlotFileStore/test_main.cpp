@@ -57,6 +57,30 @@ void test_save_load_roundtrip() {
     std::cout << "[PASS] test_save_load_roundtrip\n";
 }
 
+void test_unavailable_storage_reports_unavailable_statuses() {
+    MemoryStorage storage;
+    core::persistence::PersistenceSlotFileStore store(storage, makeConfig());
+
+    assert(!store.init(false));
+    assert(store.formatStatus() == core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
+
+    const uint8_t payload[] = {1, 2, 3};
+    assert(store.saveSlotStatus(0, payload, sizeof(payload), 1) ==
+           core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
+
+    uint8_t loaded[32] = {};
+    assert(store.loadSlot(0, loaded, sizeof(loaded)) ==
+           core::persistence::SlotLoadStatus::STORAGE_UNAVAILABLE);
+
+    const auto latest = store.loadLatest(loaded, sizeof(loaded));
+    assert(latest.status == core::persistence::SlotLoadStatus::STORAGE_UNAVAILABLE);
+
+    assert(store.eraseSlotStatus(0) ==
+           core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
+
+    std::cout << "[PASS] test_unavailable_storage_reports_unavailable_statuses\n";
+}
+
 void test_crc_mismatch_detected() {
     MemoryStorage storage;
     storage.init();
@@ -140,6 +164,7 @@ int main() {
 
     test_init_formats_empty_storage();
     test_save_load_roundtrip();
+    test_unavailable_storage_reports_unavailable_statuses();
     test_crc_mismatch_detected();
     test_load_latest_picks_newest_valid_slot();
     test_load_latest_falls_back_when_newest_is_corrupted();

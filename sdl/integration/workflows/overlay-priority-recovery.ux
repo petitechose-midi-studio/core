@@ -1,0 +1,19 @@
+# UX workflow: exercise overlay authority and recovery after closing.
+# Purpose: validates that a visible overlay owns NAV routing, unrelated inputs do
+# not break it, and global/main bindings recover after confirmation.
+
+0 scenario view-selector
+100 capture screen selector_ready
+
+# While the selector is open, send unrelated performance-style input.
+200 encoder MACRO_1 0.25
+300 capture screen selector_after_unrelated_input
+
+# Navigate and confirm the overlay.
+400 encoder NAV 1
+500 tap NAV 60
+700 capture screen selector_confirmed
+
+# After overlay close, verify global input routing works again.
+800 encoder NAV 1
+950 capture screen post_overlay_navigation

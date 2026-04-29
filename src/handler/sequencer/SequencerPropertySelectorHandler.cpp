@@ -21,10 +21,9 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::Sequencer
 inline oc::type::IsActiveFn canOpenPropertySelector(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
-    core::state::TrackNavigationState& trackUi,
-    core::state::sequencer::SequencerTrackBankState& tracks
+    core::state::TrackNavigationState& trackUi
 ) {
-    return [&overlays, &sequencer, &trackUi, &tracks]() {
+    return [&overlays, &sequencer, &trackUi]() {
         return !overlays.hasVisible() &&
                !sequencer.structureUi.pageSelection.active.get() &&
                !trackUi.selection.active.get() &&
@@ -43,7 +42,6 @@ SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
     , track_ui_(state.trackNavigation)
-    , tracks_(state.tracks)
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId) {
@@ -55,7 +53,7 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
         .press()
         .latch()
         .scope(scope_id_)
-        .when(canOpenPropertySelector(overlays_, sequencer_, track_ui_, tracks_))
+        .when(canOpenPropertySelector(overlays_, sequencer_, track_ui_))
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)

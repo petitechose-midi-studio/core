@@ -84,8 +84,8 @@ FLASHMEM void MacroValueHandler::setupBindings() {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope_id_)
+            .when([this]() { return shouldHandleTurns(); })
             .then([this, i](float value) {
-                if (!shouldHandleTurns()) return;
                 if (!macro_ui_.clutchActive.get() ||
                     macro_ui_.activeProperty.get() == core::state::macro::MacroPerformanceProperty::VALUE) {
                     handleValueChange(i, value);

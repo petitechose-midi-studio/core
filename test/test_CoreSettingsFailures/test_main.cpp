@@ -109,6 +109,24 @@ void test_save_all_returns_false_on_short_write() {
     std::cout << "[PASS] test_save_all_returns_false_on_short_write\n";
 }
 
+void test_unavailable_storage_reports_unavailable_statuses() {
+    FaultyStorage storage;
+
+    core::state::MidiSyncState sync;
+    constexpr uint16_t sharedTrackEnabledMask = 0x0001;
+    constexpr uint8_t sharedTrackActive = 0;
+
+    core::state::CoreSettings settings(storage);
+    assert(settings.saveAllStatus(sync, sharedTrackEnabledMask, sharedTrackActive) ==
+           core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
+    assert(settings.commitStatus() ==
+           core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
+    assert(settings.factoryResetStatus() ==
+           core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
+
+    std::cout << "[PASS] test_unavailable_storage_reports_unavailable_statuses\n";
+}
+
 void test_commit_failure_propagates() {
     FaultyStorage storage;
     storage.init();
@@ -169,6 +187,7 @@ void test_load_shortcuts_returns_false_on_short_read() {
 
 int main() {
     test_save_all_returns_false_on_short_write();
+    test_unavailable_storage_reports_unavailable_statuses();
     test_commit_failure_propagates();
     test_factory_reset_failure_propagates();
     test_load_shortcuts_returns_false_on_short_read();

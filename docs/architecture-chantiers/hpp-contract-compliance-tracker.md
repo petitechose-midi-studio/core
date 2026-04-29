@@ -90,7 +90,8 @@ Use this tracker for progress only. The rationale and prioritization live in
 | P0 | persistence | `src/persistence/SequencerPersistence.hpp` | `domain-persistence.md`; class at line 15 | Sequencer workspace/pattern/set storage boundary | PATCHED | Codec and workflow paths verified. |
 | P0 | persistence | `src/persistence/SequencerPersistenceCodec.hpp` | persistence map | Codec ownership vs workflow/handler | PATCHED | `.cpp` sanitizer/apply behavior verified. |
 | P0 | persistence | `src/persistence/SequencerPersistencePayloads.hpp` | payload structs at lines 19 and 41 | Binary layout compatibility warning | PATCHED | Packed payload/static assert contract added. |
-| P0 | persistence | `src/state/CoreSettingsCodec.hpp` | settings persistence map | Settings codec/default shortcut boundary | PATCHED | Codec boundary verified. |
+| P0 | persistence | `src/persistence/StorageRecoveryMachine.hpp` | Sprint 4 recovery strategy; native recovery tests | Pure SD recovery state machine boundary | PATCHED | Debounce, safe-point deferral, retry, and removed-during-pending behavior verified. |
+| P0 | persistence | `src/state/CoreSettingsCodec.hpp` | settings persistence map | Settings codec/default shortcut boundary | PATCHED | Codec boundary verified; v1 compatibility and unavailable-storage status covered. |
 | P0 | persistence | `src/state/CoreSettingsLayout.hpp` | settings persistence map | Settings layout compatibility | PATCHED | Offset/version contract added. |
 | P0 | persistence | `src/state/macro/MacroPersistenceWorkflow.hpp` | `domain-macro.md`; persistence workflow | Macro save/load workflow boundary | PATCHED | `.cpp` runtime-sync/load side effects verified. |
 | P0 | persistence | `src/state/sequencer/SequencerPersistenceWorkflow.hpp` | sequencer editing/persistence maps | Deferred apply and set/pattern workflow boundary | PATCHED | `.cpp` deferred apply and merge/replace behavior verified. |
@@ -129,6 +130,7 @@ Use this tracker for progress only. The rationale and prioritization live in
 | P0 | input | `src/handler/macro/MacroPerformanceHandler.hpp` | input map | Binding owner vs workflow owner | PATCHED | `.cpp` input binding vs workflow split verified. |
 | P0 | input | `src/handler/sequencer/SequencerStructureNavigationWorkflow.hpp` | sequencer/input maps; class at line 14 | Structure navigation modes and selection state | PATCHED | `.cpp` navigation/preview/selection behavior verified. |
 | P0 | input | `src/handler/sequencer/SequencerStructureEditWorkflow.hpp` | sequencer editing map | Structure mutation workflow; snapshot ops delegate | PATCHED | `.cpp` snapshot/clipboard/track-bank behavior verified. |
+| P0 | input | `src/handler/sequencer/SequencerStructureTrackOps.hpp` | Sprint 3 structure mechanics | Shared sequencer-only track creation primitive | PATCHED | Header-only helper verified through navigation create and paste-to-add-slot tests. |
 | P0 | input | `src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp` | input/sequencer maps | Quick-control overlay binding owner | PATCHED | `.cpp` cancel/offset snapshot behavior verified. |
 | P0 | input | `src/handler/settings/DataManagerDomainServices.hpp` | settings map | Data Manager services to workflow/executor | PATCHED | `.cpp` workflow facade behavior verified. |
 | P0 | input | `src/handler/settings/DataManagerHandler.hpp` | input map; handler at line 23 | Data Manager modal/dialog binding owner | PATCHED | `.cpp` modal command flow verified. |
@@ -180,7 +182,7 @@ Use this tracker for progress only. The rationale and prioritization live in
 
 | Priority | Total tracked | PATCHED | VERIFY | TODO | SKIP | BLOCKED |
 |---|---:|---:|---:|---:|---:|---:|
-| P0 | 92 | 92 | 0 | 0 | 0 | 0 |
+| P0 | 94 | 94 | 0 | 0 | 0 | 0 |
 | P1 groups | 5 | 0 | 0 | 5 | 0 | 0 |
 | P2 groups | 3 | 0 | 0 | 2 | 1 | 0 |
 

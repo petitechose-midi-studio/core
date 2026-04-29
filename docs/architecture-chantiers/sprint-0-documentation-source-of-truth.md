@@ -1,7 +1,13 @@
 # Sprint 0: Documentation Source Of Truth
 
+Updated: 2026-04-29
+
 Purpose: make the documentation entry path accurate enough that future
 architecture and implementation work can trust it.
+
+Current status: complete for the tracked documentation entry path. Future doc
+cleanup should re-run the validation checks below after adding, removing, or
+renaming tracked docs.
 
 This sprint is intentionally documentation-first. It should not refactor runtime,
 state, input, UI, persistence, or HAL code except for tiny evidence checks needed
@@ -51,11 +57,12 @@ Primary docs and source contracts to inspect:
 
 Exploration evidence to use as navigation, not unquestioned truth:
 
-- [`../_codex-exploration/codebase-map.md`](../_codex-exploration/codebase-map.md)
-- [`../_codex-exploration/major-discoveries.md`](../_codex-exploration/major-discoveries.md)
-- [`../_codex-exploration/analysis-readiness.md`](../_codex-exploration/analysis-readiness.md)
-- [`../_codex-exploration/remaining-dark-zones.md`](../_codex-exploration/remaining-dark-zones.md)
-- Domain maps under `../_codex-exploration/domain-*.md`
+- Local notes may exist under `docs/_codex-exploration/`, including
+  `codebase-map.md`, `major-discoveries.md`, `analysis-readiness.md`,
+  `remaining-dark-zones.md`, and `domain-*.md`.
+- That directory is intentionally excluded from Git, so these files are not a
+  repo contract. Re-run source checks before turning any local discovery into
+  tracked documentation or code changes.
 
 Source seams to verify when docs disagree:
 
@@ -199,6 +206,15 @@ Sprint 0 is done when:
 - A handoff note lists the exact doc facts Sprint 1 can trust and the runtime
   facts Sprint 1 still needs to prove with tests.
 
+Current completion status:
+
+- Complete as of 2026-04-29 for tracked docs.
+- `docs/README.md` is the active developer entry path.
+- Removed/historical docs are not linked as normal reading material.
+- `docs/_codex-exploration/` is explicitly treated as local, untracked
+  navigation evidence rather than a repo contract.
+- Sprint 1 has consumed this handoff and completed its scoped Gates 1-6 tranche.
+
 ## Recommended Validation
 
 Minimum:
@@ -206,6 +222,7 @@ Minimum:
 ```powershell
 rg -n "\]\([^)]+\.md\)" docs -g "*.md"
 rg -n "SequencerRuntimeService|registerPreContext" main.cpp src docs -g "*.md" -g "*.hpp" -g "*.cpp"
+ms test core
 ```
 
 Manual checks:

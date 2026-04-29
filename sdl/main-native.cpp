@@ -8,10 +8,19 @@
 #define SDL_MAIN_HANDLED
 #include "SdlEnvironment.hpp"
 
+#include "entry/Args.hpp"
 #include "entry/MidiDefaults.hpp"
 #include "entry/SdlRunLoop.hpp"
 #include "entry/BridgeArgs.hpp"
+#include "integration/CaptureScenarios.hpp"
+#include "integration/InputBindingTraceWriter.hpp"
+#include "integration/UxScenarioRunner.hpp"
 
+#include <cstdio>
+#include <filesystem>
+#include <string>
+
+#include <SDL2/SDL.h>
 #include <oc/hal/sdl/Sdl.hpp>
 #include <oc/impl/FileStorage.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
@@ -52,6 +61,20 @@ int main(int argc, char** argv) {
                                      sequencerSetLibraryStorage);
 
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
+    const char* uxScript = ms::args::value(argc, argv, "--ux-script");
+    const char* uxOutputArg = ms::args::value(argc, argv, "--ux-output");
+    const char* uxOutput = uxOutputArg ? uxOutputArg : ".captures/ux-run";
+    std::string bindingTracePath;
+    sdl::integration::InputBindingTraceWriter bindingTrace;
+
+    if (uxScript) {
+        std::filesystem::create_directories(uxOutput);
+        bindingTracePath = (std::filesystem::path(uxOutput) / "binding-trace.ndjson").string();
+        if (!bindingTrace.open(bindingTracePath.c_str())) {
+            std::fprintf(stderr, "Failed to open binding trace: %s\n", bindingTrace.error().c_str());
+            return 1;
+        }
+    }
 
     // 3. Build application with MIDI transport
     oc::app::OpenControlApp app = oc::hal::sdl::AppBuilder()
@@ -63,12 +86,49 @@ int main(int argc, char** argv) {
                 .port = static_cast<uint16_t>(bridge_udp_port)  // --bridge-udp-port
             }))
         .controllers(env.inputMapper())
-        .inputConfig(Config::Input::CONFIG);
+        .inputConfig(Config::Input::CONFIG)
+        .inputTrace([&bindingTrace](const oc::core::input::InputBindingTraceEvent& event) {
+            bindingTrace.write(event);
+        });
 
     // 4. Register contexts and start
     // Note: Contexts use Screen::root() which is configured to HwSimulator's screenArea
     core::app::registerContexts(app, coreState);
     app.begin();
+
+    if (uxScript) {
+        sdl::integration::UxScenarioRunner runner;
+        const bool ok = runner.run(
+            {.scriptPath = uxScript, .outputDir = uxOutput},
+            env,
+            app,
+            coreState,
+            [&coreState](const char* scenario) {
+                return sdl::integration::applyCaptureScenario(coreState, scenario);
+            }
+        );
+        if (!ok) {
+            std::fprintf(stderr, "UX scenario failed: %s\n", runner.error().c_str());
+            return 1;
+        }
+        return 0;
+    }
+
+    if (const char* capturePath = ms::args::value(argc, argv, "--capture-bmp")) {
+        const char* scenario = ms::args::value(argc, argv, "--capture-scenario");
+        const int frames = ms::args::int_value(argc, argv, "--capture-frames", 12);
+        const sdl::ScreenshotScope captureScope =
+            sdl::integration::captureScopeFromArg(ms::args::value(argc, argv, "--capture-scope"));
+        if (!sdl::integration::applyCaptureScenario(coreState, scenario)) {
+            return 1;
+        }
+        sdl::integration::tickFrames(env, app, coreState, frames);
+        if (!env.saveScreenshotBmp(capturePath, captureScope)) {
+            std::fprintf(stderr, "Failed to save capture: %s\n", capturePath);
+            return 1;
+        }
+        return 0;
+    }
 
     // 5. Main loop
     return ms::entry::run_native(

@@ -1,0 +1,22 @@
+# UX workflow: navigate Data Manager, open the command palette, then close cleanly.
+# Purpose: validates Data Manager overlay scope, dialog scope, NAV routing, and
+# modal close behavior without relying on storage mutation.
+
+0 scenario data-manager
+100 capture screen manager_open
+
+# Navigate rows in the manager overlay.
+200 encoder NAV 1
+300 capture screen manager_navigated
+
+# Open the command palette dialog from the manager.
+400 tap BOTTOM_CENTER 60
+550 capture screen command_palette_open
+
+# Navigate inside dialog scope, then close the dialog and manager.
+650 encoder NAV 1
+750 capture screen command_palette_navigated
+850 tap LEFT_TOP 60
+1050 capture screen dialog_closed
+1150 tap LEFT_TOP 60
+1350 capture screen manager_closed

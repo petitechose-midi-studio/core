@@ -11,6 +11,11 @@ runtime, state, UI, or persistence work.
 
 Evidence sources:
 
+Local exploration notes under `docs/_codex-exploration/` were used as
+navigation during the original pass. That directory is intentionally excluded
+from Git, so these names are historical inputs, not versioned source-of-truth
+links:
+
 - `docs/_codex-exploration/codebase-map.md`
 - `docs/_codex-exploration/analysis-readiness.md`
 - `docs/_codex-exploration/remaining-dark-zones.md`
@@ -232,6 +237,8 @@ Evidence:
   workflows.
 - `remaining-dark-zones.md` says binary compatibility and physical SD failure
   behavior remain unproven.
+- `sprint-4-persistence-compatibility-failure-semantics.md` defines the
+  RAM-authoritative recovery policy and the native recovery foundation.
 
 Verified source seams:
 
@@ -244,6 +251,8 @@ Verified source seams:
 - `src/persistence/SequencerPersistence.hpp:15` defines sequencer persistence.
 - `src/persistence/SequencerPersistencePayloads.hpp:19` and `:41` define
   pattern/workspace payloads.
+- `src/persistence/StorageRecoveryMachine.hpp` defines the pure media recovery
+  state machine. Platform code still owns backend reopen and hardware sampling.
 
 Headers to document:
 
@@ -252,6 +261,7 @@ Headers to document:
 - `src/persistence/SequencerPersistence.hpp`
 - `src/persistence/SequencerPersistenceCodec.hpp`
 - `src/persistence/SequencerPersistencePayloads.hpp`
+- `src/persistence/StorageRecoveryMachine.hpp`
 - `src/state/CoreSettingsCodec.hpp`
 - `src/state/CoreSettingsLayout.hpp`
 - `src/state/macro/MacroPersistenceWorkflow.hpp`
@@ -264,6 +274,8 @@ Contract themes:
 - CRC/header semantics;
 - workflow vs codec vs handler responsibilities;
 - compatibility boundary before changing payload structs.
+- separation between pure recovery policy, platform backend reopen, and
+  RAM-authoritative `CoreState` revalidation.
 
 ### Context Composition And Presenters
 
@@ -342,6 +354,7 @@ Headers to document:
 - `src/handler/macro/MacroPerformanceHandler.hpp`
 - `src/handler/sequencer/SequencerStructureNavigationWorkflow.hpp`
 - `src/handler/sequencer/SequencerStructureEditWorkflow.hpp`
+- `src/handler/sequencer/SequencerStructureTrackOps.hpp`
 - `src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp`
 - `src/handler/settings/DataManagerDomainServices.hpp`
 - `src/handler/settings/DataManagerHandler.hpp`

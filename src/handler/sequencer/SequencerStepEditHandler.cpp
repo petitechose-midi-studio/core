@@ -32,10 +32,9 @@ void configureStepEditEncoder(
 inline oc::type::IsActiveFn canOpenStepEdit(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
-    core::state::TrackNavigationState& trackUi,
-    core::state::sequencer::SequencerTrackBankState& tracks
+    core::state::TrackNavigationState& trackUi
 ) {
-    return [&overlays, &sequencer, &trackUi, &tracks]() {
+    return [&overlays, &sequencer, &trackUi]() {
         return !overlays.hasVisible() &&
                !sequencer.structureUi.pageSelection.active.get() &&
                !trackUi.selection.active.get() &&
@@ -57,7 +56,6 @@ SequencerStepEditHandler::SequencerStepEditHandler(
     : overlay_state_(state.overlays)
     , sequencer_(state.sequencer)
     , track_ui_(state.trackNavigation)
-    , tracks_(state.tracks)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -75,7 +73,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         buttons_.button(btn)
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(sequencer_view_scope_)
-            .when(canOpenStepEdit(overlay_state_, sequencer_, track_ui_, tracks_))
+            .when(canOpenStepEdit(overlay_state_, sequencer_, track_ui_))
             .then([this, i]() { openForMacroInPage(i); });
     }
 

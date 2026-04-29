@@ -327,6 +327,101 @@ void test_macro_page_copy_and_long_press_paste() {
     std::cout << "[PASS] test_macro_page_copy_and_long_press_paste\n";
 }
 
+void test_macro_selection_duplicate_copies_page_into_first_free_slot() {
+    MacroPerformanceHarness h;
+
+    h.state.pages.activeTrackData().enabledPageMask = 0x0003;
+    h.state.pages.syncActiveTrackCache();
+    h.state.pages.activeTrackData().pages[1].cc[0] = 77;
+    std::strncpy(
+        h.state.pages.activeTrackData().pages[1].name,
+        "Dupe Page",
+        core::state::macro::PAGE_NAME_SIZE - 1
+    );
+
+    h.state.macroUi.pageSelection.active.set(true);
+    h.state.macroUi.pageSelection.scope.set(core::state::StructureSelectionScope::PAGE);
+    h.state.macroUi.pageSelection.cursorIndex.set(1);
+    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.pages.currentEnabledPageMask() == 0x0007);
+    assert(h.state.pages.currentActivePage() == 2);
+    assert(h.state.pages.activePageData().cc[0] == 77);
+    assert(std::strcmp(h.state.pages.activePageData().name, "Dupe Page") == 0);
+    assert(!h.state.macroUi.pageSelection.active.get());
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_macro_selection_duplicate_copies_page_into_first_free_slot\n";
+}
+
+void test_macro_selection_duplicate_copies_track_into_first_free_slot() {
+    MacroPerformanceHarness h;
+
+    h.state.setSharedTrackState(0x0003, 0);
+    h.state.pages.tracks[1].channel = 12;
+    h.state.pages.tracks[1].activePage = 0;
+    h.state.pages.tracks[1].pages[0].cc[0] = 88;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.trackNavigation.selection.active.set(true);
+    h.state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
+    h.state.trackNavigation.selection.cursorIndex.set(1);
+    h.state.trackNavigation.selection.selectedMask.set(0x0002);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0007);
+    assert(h.state.pages.currentActiveTrack() == 2);
+    assert(h.state.pages.activeTrackData().channel == 12);
+    assert(h.state.pages.activeTrackData().pages[0].cc[0] == 88);
+    assert(!h.state.trackNavigation.selection.active.get());
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_macro_selection_duplicate_copies_track_into_first_free_slot\n";
+}
+
+void test_macro_track_copy_and_long_press_paste_to_add_slot() {
+    MacroPerformanceHarness h;
+
+    h.state.setSharedTrackState(0x0001, 0);
+    h.state.pages.tracks[0].channel = 10;
+    h.state.pages.tracks[0].pages[0].cc[0] = 64;
+    std::strncpy(
+        h.state.pages.tracks[0].pages[0].name,
+        "Copied Track",
+        core::state::macro::PAGE_NAME_SIZE - 1
+    );
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.clipboard.hasMacroTrack());
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(0);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0003);
+    assert(h.state.pages.currentActiveTrack() == 1);
+    assert(h.state.pages.activeTrackData().channel == 10);
+    assert(h.state.pages.activeTrackData().pages[0].cc[0] == 64);
+    assert(std::strcmp(h.state.pages.activeTrackData().pages[0].name, "Copied Track") == 0);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_macro_track_copy_and_long_press_paste_to_add_slot\n";
+}
+
 void test_left_bottom_short_press_latches_property_clutch_and_second_tap_releases_it() {
     MacroPerformanceHarness h;
 
@@ -412,6 +507,9 @@ int main() {
     test_nav_selection_mode_deletes_selected_macro_page();
     test_nav_selection_mode_deletes_selected_macro_track();
     test_macro_page_copy_and_long_press_paste();
+    test_macro_selection_duplicate_copies_page_into_first_free_slot();
+    test_macro_selection_duplicate_copies_track_into_first_free_slot();
+    test_macro_track_copy_and_long_press_paste_to_add_slot();
     test_left_bottom_short_press_latches_property_clutch_and_second_tap_releases_it();
     test_left_center_opens_macro_quick_controls_and_opt_applies_global_channel_and_cc_offset();
     std::cout << "\nAll MacroPerformanceHandler tests passed.\n";

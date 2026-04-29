@@ -42,6 +42,19 @@ src/
 - workflows and persistence logic should stay out of components
 - avoid generic abstractions unless duplication is both real and stable
 
+## Unit Tests
+
+Use the workspace `ms` command as the test entry point:
+
+```powershell
+ms test core
+```
+
+`ms` resolves the correct workspace, so it can be launched from this repository
+or elsewhere in the `ms-dev-env` checkout. This runs the core unit tests through
+the CMake/CTest backend. PlatformIO remains the firmware build/upload path, not
+the primary local unit-test runner.
+
 ## Downstream Check
 
 Before changing exported headers or moving files consumed by other repos, run:

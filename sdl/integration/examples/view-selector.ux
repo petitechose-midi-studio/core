@@ -1,0 +1,16 @@
+# UX smoke: open the View Selector with the same logical button path as hardware.
+# Timestamps are absolute milliseconds from scenario start.
+
+0 capture screen boot
+
+# LEFT_TOP long press opens the View Selector overlay.
+100 button LEFT_TOP down
+1150 tick
+1200 capture screen view_selector_open
+1250 button LEFT_TOP up
+
+# Navigate one row and confirm the selected view.
+1350 encoder NAV 1
+1450 capture screen view_selector_navigated
+1500 tap NAV 60
+1700 capture screen after_confirm

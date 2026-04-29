@@ -4,6 +4,7 @@
 
 #include <config/TimeCompat.hpp>
 
+#include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
@@ -150,7 +151,10 @@ void SequencerStructureEditWorkflow::copyCurrentStructure() {
 void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (!structure_clipboard_.hasSequencerTrack()) return;
-        if (track_ui_.previewAddSlot.get() && !createTrack()) return;
+        if (track_ui_.previewAddSlot.get() &&
+            !createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_)) {
+            return;
+        }
         core::state::sequencer::applySnapshot(sequencer_, structure_clipboard_.sequencerTrack);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
         syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
@@ -281,25 +285,6 @@ bool SequencerStructureEditWorkflow::createPage() {
         ? sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get())
         : sequencer_.activePageCount();
     return core::state::sequencer::ensurePageExists(sequencer_, targetPage);
-}
-
-bool SequencerStructureEditWorkflow::createTrack() {
-    const uint8_t index = track_ui_.previewAddSlot.get()
-        ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-              track_ui_.previewTrackIndex.get()
-          )
-        : currentActiveTrack();
-    if ((currentTrackEnabledMask() & structure_slots::slotBit(index)) != 0) {
-        return false;
-    }
-
-    core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
-    tracks_.track(index).reset();
-    tracks_.track(index).midiChannel.set(index);
-    return applyTrackState(
-        static_cast<uint16_t>(currentTrackEnabledMask() | structure_slots::slotBit(index)),
-        index
-    );
 }
 
 void SequencerStructureEditWorkflow::syncPreviewToFocus(core::state::StructureNavigationFocus focus) {

@@ -19,6 +19,8 @@
 #include <config/platform-teensy/Hardware.hpp>
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeGate.hpp"
+#include "persistence/PersistenceSlotFileStore.hpp"
+#include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
@@ -39,6 +41,126 @@ static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService>
     standaloneSequencerRuntime;
+
+namespace {
+
+constexpr uint32_t STORAGE_RECOVERY_SAMPLE_MS = 500;
+
+struct StorageBackendRef {
+    const char* label;
+    oc::hal::teensy::SDCardBackend* backend;
+};
+
+StorageBackendRef storageBackends[] = {
+    {"Settings", &settingsStorage},
+    {"Macro workspace", &macroWorkspaceStorage},
+    {"Macro library", &macroLibraryStorage},
+    {"Sequencer workspace", &sequencerWorkspaceStorage},
+    {"Sequencer pattern library", &sequencerPatternLibraryStorage},
+    {"Sequencer set library", &sequencerSetLibraryStorage},
+};
+
+class StorageRecoveryRuntimeManager {
+public:
+    void update(uint32_t nowMs, bool playing) {
+        if (last_sample_ms_ != 0 &&
+            static_cast<uint32_t>(nowMs - last_sample_ms_) < STORAGE_RECOVERY_SAMPLE_MS) {
+            return;
+        }
+        last_sample_ms_ = nowMs;
+
+        const auto action = machine_.update({
+            allStorageBackendsAvailable_(),
+            playing,
+            nowMs,
+        });
+        handleAction_(action, nowMs);
+    }
+
+private:
+    bool allStorageBackendsAvailable_() const {
+        for (const auto& item : storageBackends) {
+            if (!item.backend->available()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool reopenStorageBackends_() const {
+        bool ok = true;
+        for (const auto& item : storageBackends) {
+            if (!item.backend->reopen()) {
+                OC_LOG_WARN("[StorageRecovery] Reopen failed for {}", item.label);
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    bool revalidateFromRam_(uint32_t nowMs) {
+        if (!coreState) {
+            OC_LOG_WARN("[StorageRecovery] CoreState unavailable during revalidation");
+            return false;
+        }
+
+        const auto status = coreState->recoverPersistenceFromRamAfterStorageReopen();
+        if (status != core::persistence::PersistenceWriteStatus::OK) {
+            OC_LOG_WARN("[StorageRecovery] RAM revalidation failed at {}ms: {}",
+                        nowMs,
+                        core::persistence::persistenceWriteStatusLabel(status));
+            return false;
+        }
+        return true;
+    }
+
+    void handleAction_(core::persistence::StorageRecoveryAction action, uint32_t nowMs) {
+        switch (action) {
+            case core::persistence::StorageRecoveryAction::MARK_OFFLINE:
+                OC_LOG_WARN("[StorageRecovery] SD unavailable; runtime RAM remains authoritative");
+                return;
+
+            case core::persistence::StorageRecoveryAction::ATTEMPT_REOPEN: {
+                OC_LOG_INFO("[StorageRecovery] SD present; reopening storage backends");
+                const bool reopenOk = reopenStorageBackends_();
+                const auto next = machine_.completeReopen(reopenOk, nowMs);
+                if (!reopenOk) {
+                    OC_LOG_WARN("[StorageRecovery] Reopen failed; retrying after backoff");
+                    return;
+                }
+                handleAction_(next, nowMs);
+                return;
+            }
+
+            case core::persistence::StorageRecoveryAction::ATTEMPT_REVALIDATE: {
+                OC_LOG_INFO("[StorageRecovery] Revalidating storage from live RAM");
+                const bool revalidateOk = revalidateFromRam_(nowMs);
+                const auto next = machine_.completeRevalidation(revalidateOk, nowMs);
+                if (!revalidateOk) {
+                    OC_LOG_WARN("[StorageRecovery] Revalidation failed; retrying after backoff");
+                    return;
+                }
+                handleAction_(next, nowMs);
+                return;
+            }
+
+            case core::persistence::StorageRecoveryAction::MARK_RECOVERED:
+                OC_LOG_INFO("[StorageRecovery] SD recovered; persistence resumed");
+                return;
+
+            case core::persistence::StorageRecoveryAction::NONE:
+            default:
+                return;
+        }
+    }
+
+    core::persistence::StorageRecoveryMachine machine_{};
+    uint32_t last_sample_ms_ = 0;
+};
+
+StorageRecoveryRuntimeManager storageRecovery;
+
+}  // namespace
 
 #if defined(PERF_LOG)
 namespace {
@@ -305,6 +427,8 @@ void loop() {
         micros() - appUpdateStartUs
     );
 #endif
+
+    storageRecovery.update(millis(), coreState->statusBar.playing.get());
 
     // Update persistence (handles delayed value saves)
 #if defined(PERF_LOG)

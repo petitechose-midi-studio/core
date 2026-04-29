@@ -1,0 +1,25 @@
+# UX workflow: enable a sequencer step, open step edit, adjust a value, and close.
+# Purpose: validates sequencer step toggling, long-press edit overlay, focused
+# row navigation, OPT value editing, and overlay close.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Toggle the first visible step.
+150 tap MACRO_1 60
+300 capture screen step_enabled
+
+# Long-press the same step to open the step edit overlay.
+400 button MACRO_1 down
+1450 tick
+1500 capture screen step_edit_open
+1550 button MACRO_1 up
+
+# Move focus and edit the focused step property.
+1650 encoder NAV 1
+1750 encoder OPT 0.65
+1850 capture screen step_edit_adjusted
+
+# Close the edit overlay.
+1950 tap LEFT_TOP 60
+2150 capture screen step_edit_closed

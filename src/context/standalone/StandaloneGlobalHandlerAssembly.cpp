@@ -6,6 +6,7 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 #include <oc/log/Log.hpp>
+#include <oc/ui/lvgl/Scope.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include "handler/transport/TransportHandler.hpp"
@@ -26,17 +27,14 @@ public:
         OC_LOG_DEBUG("StandaloneGlobalHandlerAssembly: transport_handler");
         transport_handler_ = core::app::makeExtmemUnique<core::handler::TransportHandler>(
             core::handler::TransportHandler::StateRefs{state.statusBar},
-            encoders,
             buttons,
-            macroViewScope,
             core::handler::TransportHandler::ViewScopes{
                 macroViewScope,
                 sequencerViewScope,
             }
         );
 
-        using OverlayCtx = ms::ui::OverlayBindingContext<core::ui::OverlayType>;
-        OverlayCtx overlayCtx{overlays, nullptr, viewSelectorElement};
+        const auto viewSelectorScope = oc::ui::lvgl::scopeID(viewSelectorElement);
         OC_LOG_DEBUG("StandaloneGlobalHandlerAssembly: view_switcher_handler");
         view_switcher_handler_ = core::app::makeExtmemUnique<core::handler::ViewSwitcherHandler>(
             core::handler::ViewSwitcherHandler::StateRefs{
@@ -49,13 +47,14 @@ public:
                 state.macroUi.pageSelection,
                 state.sequencer.structureUi.pageSelection,
             },
-            overlayCtx,
+            overlays,
             encoders,
             buttons,
             core::handler::ViewSwitcherHandler::ViewScopes{
                 macroViewScope,
                 sequencerViewScope,
-            }
+            },
+            viewSelectorScope
         );
         OC_LOG_DEBUG("StandaloneGlobalHandlerAssembly: ready");
     }
