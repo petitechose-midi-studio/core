@@ -32,6 +32,43 @@ if (-not (Test-Path -LiteralPath $Exe)) {
 $ResolvedOutputRoot = [System.IO.Path]::GetFullPath((Join-Path $CoreRoot $OutputRoot))
 New-Item -ItemType Directory -Force -Path $ResolvedOutputRoot | Out-Null
 
+function Get-WorkflowExpectations {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $Expectations = @()
+    foreach ($Match in Select-String -LiteralPath $Path -Pattern "^\s*#\s*Expect:\s*(.+)$") {
+        foreach ($Expectation in ($Match.Matches[0].Groups[1].Value -split ",")) {
+            $Text = $Expectation.Trim().ToLowerInvariant()
+            if ($Text.Length -gt 0) {
+                $Expectations += $Text
+            }
+        }
+    }
+    return @($Expectations | Sort-Object -Unique)
+}
+
+function Test-PlayheadProgress {
+    param([Parameter(Mandatory = $true)][string]$TracePath)
+
+    if (-not (Test-Path -LiteralPath $TracePath)) {
+        return $false
+    }
+
+    $Rows = @()
+    foreach ($Line in Get-Content -LiteralPath $TracePath) {
+        if (-not [string]::IsNullOrWhiteSpace($Line)) {
+            $Rows += ($Line | ConvertFrom-Json)
+        }
+    }
+
+    $DistinctPlayingSteps = @($Rows |
+        Where-Object { $_.event -eq "action" -and $_.playing -eq $true -and $null -ne $_.playhead_step } |
+        ForEach-Object { [int]$_.playhead_step } |
+        Where-Object { $_ -ge 0 } |
+        Sort-Object -Unique)
+    return $DistinctPlayingSteps.Count -gt 1
+}
+
 $Workflows = Get-ChildItem -LiteralPath $WorkflowDir -Filter "*.ux" | Sort-Object Name
 if ($Workflows.Count -eq 0) {
     throw "No UX workflow scripts found in $WorkflowDir"
@@ -63,24 +100,34 @@ foreach ($Workflow in $Workflows) {
     $BindingTracePath = Join-Path $ResolvedOutDir "binding-trace.ndjson"
     $CaptureCount = @(Get-ChildItem -LiteralPath $ResolvedOutDir -Filter "*.bmp" -ErrorAction SilentlyContinue).Count
     $ExpectedCaptureCount = @(Select-String -LiteralPath $Workflow.FullName -Pattern "^\s*\d+\s+capture\s+" -CaseSensitive:$false).Count
+    $Expectations = @(Get-WorkflowExpectations -Path $Workflow.FullName)
+    $ExpectationFailures = @()
 
     $RunEnded = (Test-Path -LiteralPath $TracePath) -and
         [bool](Select-String -LiteralPath $TracePath -Pattern '"event":"run_end"' -Quiet)
     $HasDispatch = (Test-Path -LiteralPath $BindingTracePath) -and
         [bool](Select-String -LiteralPath $BindingTracePath -Pattern '"stage":"dispatch"' -Quiet)
 
+    if ($Expectations -contains "playhead_progress") {
+        if (-not (Test-PlayheadProgress -TracePath $TracePath)) {
+            $ExpectationFailures += "playhead_progress"
+        }
+    }
+
     $Ok = ($ExitCode -eq 0) -and
         (Test-Path -LiteralPath $TracePath) -and
         (Test-Path -LiteralPath $BindingTracePath) -and
         $RunEnded -and
         $HasDispatch -and
-        ($CaptureCount -ge $ExpectedCaptureCount)
+        ($CaptureCount -ge $ExpectedCaptureCount) -and
+        ($ExpectationFailures.Count -eq 0)
 
     if ($Ok) {
-        Write-Host ("OK   {0} captures={1}/{2}" -f $Workflow.Name, $CaptureCount, $ExpectedCaptureCount)
+        $ExpectationText = if ($Expectations.Count -gt 0) { " expects=" + ($Expectations -join ",") } else { "" }
+        Write-Host ("OK   {0} captures={1}/{2}{3}" -f $Workflow.Name, $CaptureCount, $ExpectedCaptureCount, $ExpectationText)
     } else {
-        $Failures += ("FAIL {0} exit={1} captures={2}/{3} run_end={4} dispatch={5}" -f
-            $Workflow.Name, $ExitCode, $CaptureCount, $ExpectedCaptureCount, $RunEnded, $HasDispatch)
+        $Failures += ("FAIL {0} exit={1} captures={2}/{3} run_end={4} dispatch={5} expectation_failures={6}" -f
+            $Workflow.Name, $ExitCode, $CaptureCount, $ExpectedCaptureCount, $RunEnded, $HasDispatch, ($ExpectationFailures -join ","))
     }
 }
 

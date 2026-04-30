@@ -92,6 +92,21 @@ function Get-WorkflowDoc {
     }
 }
 
+function Get-WorkflowExpectations {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $Expectations = @()
+    foreach ($Match in Select-String -LiteralPath $Path -Pattern "^\s*#\s*Expect:\s*(.+)$") {
+        foreach ($Expectation in ($Match.Matches[0].Groups[1].Value -split ",")) {
+            $Text = $Expectation.Trim().ToLowerInvariant()
+            if ($Text.Length -gt 0) {
+                $Expectations += $Text
+            }
+        }
+    }
+    return @($Expectations | Sort-Object -Unique)
+}
+
 function Get-CaptureDeclarations {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -211,6 +226,19 @@ function Get-TraceSummary {
                 "button:$($_.id):$($_.value)"
             }
         } | Sort-Object -Unique)
+    $PlayingPlayheadSteps = @($Actions |
+        Where-Object { $_.playing -eq $true -and $null -ne $_.playhead_step } |
+        ForEach-Object { [int]$_.playhead_step } |
+        Where-Object { $_ -ge 0 })
+    $DistinctPlayingPlayheadSteps = @($PlayingPlayheadSteps | Sort-Object -Unique)
+    $ChronologicalDistinctPlayheadSteps = @()
+    foreach ($Step in $PlayingPlayheadSteps) {
+        if ($ChronologicalDistinctPlayheadSteps -notcontains $Step) {
+            $ChronologicalDistinctPlayheadSteps += $Step
+        }
+    }
+    $PlayheadFirst = if ($PlayingPlayheadSteps.Count -gt 0) { $PlayingPlayheadSteps[0] } else { $null }
+    $PlayheadLast = if ($PlayingPlayheadSteps.Count -gt 0) { $PlayingPlayheadSteps[$PlayingPlayheadSteps.Count - 1] } else { $null }
 
     return [pscustomobject]@{
         ActionCount = $Actions.Count
@@ -221,6 +249,11 @@ function Get-TraceSummary {
         DispatchCount = $Dispatches.Count
         NoDispatchCount = $NoDispatches.Count
         Inputs = $Inputs
+        PlayheadFirst = $PlayheadFirst
+        PlayheadLast = $PlayheadLast
+        PlayheadProgress = $DistinctPlayingPlayheadSteps.Count -gt 1
+        PlayheadDistinctCount = $DistinctPlayingPlayheadSteps.Count
+        PlayheadSequence = ($ChronologicalDistinctPlayheadSteps -join "->")
     }
 }
 
@@ -254,8 +287,8 @@ $Lines += "This report is derived from UX scripts, replay traces, binding traces
 $Lines += ""
 $Lines += "## Summary"
 $Lines += ""
-$Lines += "| Workflow | Result | Captures | Dispatches | Max Drift | Duration |"
-$Lines += "|---|---:|---:|---:|---:|---:|"
+$Lines += "| Workflow | Result | Captures | Dispatches | Playhead | Max Drift | Duration |"
+$Lines += "|---|---:|---:|---:|---:|---:|---:|"
 
 $WorkflowSections = @()
 foreach ($Workflow in $Workflows) {
@@ -266,13 +299,23 @@ foreach ($Workflow in $Workflows) {
     $TraceRows = @(Read-Ndjson -Path $TracePath)
     $BindingRows = @(Read-Ndjson -Path $BindingTracePath)
     $Doc = Get-WorkflowDoc -Path $Workflow.FullName
+    $Expectations = @(Get-WorkflowExpectations -Path $Workflow.FullName)
     $DeclaredCaptures = @(Get-CaptureDeclarations -Path $Workflow.FullName)
     $Summary = Get-TraceSummary -TraceRows $TraceRows -BindingRows $BindingRows
     $CaptureRows = @($TraceRows | Where-Object { $_.event -eq "action" -and $_.action -eq "capture" })
 
     $CaptureOk = $CaptureRows.Count -ge $DeclaredCaptures.Count
-    $Result = if ($Summary.RunEnd -and $Summary.DispatchCount -gt 0 -and $CaptureOk) { "OK" } else { "CHECK" }
-    $Lines += "| $Name | $Result | $($CaptureRows.Count)/$($DeclaredCaptures.Count) | $($Summary.DispatchCount) | $($Summary.MaxDriftMs)ms | $($Summary.ActualMs)ms |"
+    $ExpectationsOk = $true
+    if ($Expectations -contains "playhead_progress" -and -not $Summary.PlayheadProgress) {
+        $ExpectationsOk = $false
+    }
+    $Result = if ($Summary.RunEnd -and $Summary.DispatchCount -gt 0 -and $CaptureOk -and $ExpectationsOk) { "OK" } else { "CHECK" }
+    $PlayheadCell = if ($Summary.PlayheadSequence) {
+        "{0} ({1})" -f $Summary.PlayheadSequence, $Summary.PlayheadDistinctCount
+    } else {
+        "-"
+    }
+    $Lines += "| $Name | $Result | $($CaptureRows.Count)/$($DeclaredCaptures.Count) | $($Summary.DispatchCount) | $PlayheadCell | $($Summary.MaxDriftMs)ms | $($Summary.ActualMs)ms |"
 
     $Section = @()
     $Section += "## $Name"
@@ -291,6 +334,10 @@ foreach ($Workflow in $Workflows) {
     $Section += "- Inputs: $($Summary.Inputs -join ', ')"
     $Section += "- Binding dispatches: $($Summary.DispatchCount)"
     $Section += "- No-dispatch rows: $($Summary.NoDispatchCount)"
+    if ($Expectations.Count -gt 0) {
+        $Section += "- Expectations: $($Expectations -join ', ')"
+    }
+    $Section += "- Playhead while playing: $PlayheadCell; progress=$($Summary.PlayheadProgress)"
     $Section += "- Max timing drift: $($Summary.MaxDriftMs)ms"
     $Section += ""
     $Section += "### Capture Timeline"
@@ -342,10 +389,12 @@ foreach ($Workflow in $Workflows) {
     $Section += ""
     $Section += "### Replay Trace"
     $Section += ""
-    $Section += "| Due | Actual | Drift | Action | Id | Value |"
-    $Section += "|---:|---:|---:|---|---|---|"
+    $Section += "| Due | Actual | Drift | Action | Id | Value | Playing | Playhead |"
+    $Section += "|---:|---:|---:|---|---|---|---:|---:|"
     foreach ($Action in @($TraceRows | Where-Object { $_.event -eq "action" })) {
-        $Section += "| $($Action.due_ms)ms | $($Action.actual_ms)ms | $($Action.drift_ms)ms | $($Action.action) | $($Action.id) | $($Action.value) |"
+        $Playing = if ($null -ne $Action.playing) { $Action.playing } else { "-" }
+        $Playhead = if ($null -ne $Action.playhead_step) { $Action.playhead_step } else { "-" }
+        $Section += "| $($Action.due_ms)ms | $($Action.actual_ms)ms | $($Action.drift_ms)ms | $($Action.action) | $($Action.id) | $($Action.value) | $Playing | $Playhead |"
     }
 
     $WorkflowSections += ,($Section -join "`n")

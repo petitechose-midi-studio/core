@@ -178,7 +178,10 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
               << "\",\"id\":\"" << jsonEscape(action.id)
               << "\",\"value\":\"" << jsonEscape(action.value)
               << "\",\"scope\":\"" << uxScopeName(action.scope)
-              << "\",\"capture\":\"" << jsonEscape(capturePath) << "\"}\n";
+              << "\",\"playing\":" << (state.statusBar.playing.get() ? "true" : "false")
+              << ",\"playhead_step\":" << state.sequencer.playheadStep.get()
+              << ",\"sequencer_page\":" << static_cast<int>(state.sequencer.page.get())
+              << ",\"capture\":\"" << jsonEscape(capturePath) << "\"}\n";
     }
 
     trace << "{\"event\":\"run_end\",\"actual_ms\":" << elapsedSince(start) << "}\n";

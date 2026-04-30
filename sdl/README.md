@@ -112,6 +112,7 @@ plain `.ux` scripts with comments documenting intent:
 | `macro-edit-adjust.ux` | Macro performance value, long-press edit, field adjust, close. |
 | `sequencer-step-edit.ux` | Step toggle, long-press step edit, value adjust, close. |
 | `sequencer-quick-controls.ux` | Held quick controls, NAV selection, OPT edit, release apply. |
+| `sequencer-playhead.ux` | Transport start/stop and SDL playhead progression telemetry. |
 | `data-manager-dialog.ux` | Data Manager navigation, command palette dialog, clean close. |
 | `overlay-priority-recovery.ux` | Overlay authority, unrelated input isolation, recovery after close. |
 
@@ -141,7 +142,8 @@ sdl\integration\generate-ux-report.ps1
 
 The verifier fails if a workflow does not exit cleanly, misses `trace.ndjson`,
 misses `binding-trace.ndjson`, does not write `run_end`, has no dispatched
-binding, or produces fewer BMP captures than declared in the script.
+binding, produces fewer BMP captures than declared in the script, or violates a
+declared `# Expect:` semantic assertion.
 
 The report is derived from the `.ux` scripts, `trace.ndjson`,
 `binding-trace.ndjson`, and BMP files. It intentionally avoids a separate
@@ -157,6 +159,14 @@ Script lines use absolute milliseconds from scenario start:
 
 Blank lines are ignored. Full-line and inline comments are supported with `#`
 or `//`, so scripts can document user intent beside the replayed action.
+Full-line comments can also declare verifier expectations:
+
+```text
+# Expect: playhead_progress
+```
+
+`playhead_progress` requires at least two distinct non-negative `playhead_step`
+values while the trace reports `playing=true`.
 
 Supported commands:
 
@@ -176,8 +186,9 @@ Supported button names are `LEFT_TOP`, `LEFT_CENTER`, `LEFT_BOTTOM`,
 `MACRO_8`. Supported encoder names are `NAV`, `OPT`, and `MACRO_1` through
 `MACRO_8`.
 
-`trace.ndjson` records replay timing and capture artifacts. `binding-trace.ndjson`
-records the binding resolution stream:
+`trace.ndjson` records replay timing, capture artifacts, and selected UI/runtime
+state snapshots including `playing`, `playhead_step`, and `sequencer_page`.
+`binding-trace.ndjson` records the binding resolution stream:
 
 | Field | Meaning |
 |---|---|

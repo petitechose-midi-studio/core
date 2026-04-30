@@ -7,16 +7,18 @@ changing UI rendering code further.
 
 ## Current Status
 
-Status as of 2026-04-30: capture, UX replay, binding trace, and workflow smoke
-suite are implemented. Visual baseline reporting and richer semantic assertions
-remain future work.
+Status as of 2026-04-30: capture, UX replay, binding trace, derived UX report,
+workflow smoke suite, and the SDL playhead-progression guard are implemented.
+Future work should focus on stable visual comparison contracts rather than more
+capture plumbing.
 
 The native SDL app now supports two validation paths:
 
 - a direct capture mode that renders a named scenario for a fixed number of
   frames and writes a BMP artifact;
 - a timestamped UX scenario runner that injects logical `ButtonID`/`EncoderID`
-  events, captures selected moments, and writes a replay trace.
+  events, captures selected moments, and writes a replay trace with runtime/UI
+  state snapshots.
 
 ## Entry Points
 
@@ -94,15 +96,38 @@ Native capture smoke result on 2026-04-29:
   predicate result, authority result, required-button result, and dispatched
   binding rows.
 - `sdl/integration/workflows/` now covers view switching, macro edit, sequencer
-  step edit, sequencer quick controls, Data Manager dialog flow, and overlay
-  priority/recovery.
+  step edit, sequencer quick controls, sequencer playhead progression, Data
+  Manager dialog flow, and overlay priority/recovery.
 - `sdl/integration/run-ux-workflows.ps1` verifies each workflow exits cleanly,
   writes `trace.ndjson` and `binding-trace.ndjson`, reaches `run_end`, dispatches
-  at least one binding, and produces the declared capture artifacts.
+  at least one binding, produces the declared capture artifacts, and enforces
+  declared `# Expect:` assertions such as `playhead_progress`.
 - `sdl/integration/generate-ux-report.ps1` derives a Markdown report from the
   workflow scripts, replay traces, binding traces, and BMP files. The `.ux`
   script remains the source of truth for workflow intent, timing, and capture
   names.
+- `sdl/integration/workflows/sequencer-playhead.ux` proves the SDL simulator
+  advances the playhead through the same standalone runtime service used by the
+  firmware path. On the 2026-04-30 local run, the workflow reported
+  `playing=true` with playhead values `1 -> 7 -> 0` before stop.
+
+## SDL/Teensy Playhead Runtime Map
+
+The playhead owner is intentionally singular:
+
+- Teensy entry point: `main.cpp` creates `SequencerRuntimeService` and registers
+  it through `OpenControlApp::registerPreContextUpdateHook(...)`.
+- SDL native entry point: `sdl/main-native.cpp` now creates the same
+  `SequencerRuntimeService` with the same `StateRefs` and registers it through
+  the same pre-context hook.
+- Runtime gate: both paths use
+  `context/standalone/StandaloneSequencerRuntimeGate.hpp` to update only while
+  the standalone context is active and stop when leaving it.
+- UI path: `StandaloneContext` and sequencer handlers remain UI/input owners;
+  they do not tick playback runtime.
+- Evidence path: `UxScenarioRunner` writes `playing` and `playhead_step` into
+  `trace.ndjson`; `run-ux-workflows.ps1` enforces
+  `# Expect: playhead_progress` without hardcoding a specific step number.
 
 ## Fragility Points To Watch
 
@@ -123,7 +148,8 @@ Native capture smoke result on 2026-04-29:
 
 ## Next Actions
 
-- Review and curate the derived UX report as the first visual reference report.
+- Review and curate the derived UX report as the first visual reference report
+  for human UI review.
 - Decide which visual contracts are stable enough for automated comparison.
 - Add only focused assertions after manual baselines exist, for example image
   dimensions, non-empty frame, and selected scenario visibility.
@@ -134,6 +160,6 @@ Native capture smoke result on 2026-04-29:
 
 ## Exit Signal
 
-Sprint 5 is complete when main screens and overlays have a repeatable capture
-path, a checked visual reference report, and at least one automated smoke guard
-that fails on blank or missing UI output.
+Sprint 5 is complete for capture/replay/report plumbing and semantic runtime
+telemetry. The remaining follow-up is to choose stable visual comparison
+contracts from the generated report instead of expanding infrastructure.

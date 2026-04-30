@@ -67,10 +67,9 @@ Code seams checked during this review:
 
 ### Needs Verification Before Being Treated As Fact
 
-- Whether a live integration test currently proves:
-  standalone play toggle -> runtime update -> playhead progression.
-  The runtime gate test exists, but the full playhead-progression test was not
-  confirmed during this pass.
+- Whether hardware timing under load matches the now-confirmed SDL/native
+  runtime path. The SDL workflow proves standalone play toggle -> runtime update
+  -> playhead progression; Teensy still needs measured timing/counter evidence.
 - Whether every remaining `CoreState&` dependency outside composition/state
   code is justified, or whether some should become narrower `StateRefs` or
   domain services.
@@ -101,10 +100,11 @@ Status as of 2026-04-30:
 - Sprint 4 is complete for the software compatibility/failure-semantics and
   Teensy main-loop recovery-wiring tranche; hardware SD hot-swap validation
   remains future work.
-- Sprint 5 is partially complete: the native SDL app has repeatable BMP capture
-  paths, timestamped UX workflow replay, binding-resolution traces, and a
-  curated smoke workflow suite. Visual baseline reporting and richer assertions
-  remain future work.
+- Sprint 5 is complete for capture/replay/report plumbing: the native SDL app
+  has repeatable BMP capture paths, timestamped UX workflow replay,
+  binding-resolution traces, a derived UX report, a curated smoke workflow
+  suite, and a semantic playhead-progression assertion. Stable pixel/layout
+  comparison contracts remain future work.
 
 | Todo | Sprint | Why it belongs there |
 |---|---|---|
@@ -120,8 +120,8 @@ Status as of 2026-04-30:
 | Inventory persistence formats and compatibility needs | Sprint 4 | Software tranche complete: active storage domains, versions, sizes, compatibility promises, and status semantics are documented. |
 | Decide SD failure/hot-swap policy | Sprint 4 | Software tranche complete: RAM-authoritative recovery is documented, covered by tests, and wired in the Teensy main loop; hardware validation remains future work. |
 | Capture SDL/LVGL screens and overlays | Sprint 5 | Complete for repeatable native captures and workflow replay; extend coverage as new UI surfaces stabilize. |
-| Produce a minimal UI visual reference report | Sprint 5 | Remaining; this makes UI regressions reviewable beyond smoke-level artifact checks. |
-| Verify standalone runtime playhead progression and hardware timing | Realtime validation | Runtime/hardware proof remains required, but it is not the current Sprint 1 scope. |
+| Produce a minimal UI visual reference report | Sprint 5 | Complete for generated Markdown report from workflows, traces, binding traces, and BMP artifacts; stable comparison thresholds remain future work. |
+| Verify standalone runtime playhead progression and hardware timing | Realtime validation | SDL/native playhead progression is now covered by `sequencer-playhead.ux`; Teensy timing and load counters remain future work. |
 | Audit only external dependencies traversed by `core` | Cross-sprint validation | This is targeted dependency validation after local contracts are clearer. |
 | Convert validated discoveries into implementation tickets | Cross-sprint closure | Tickets should be produced continuously after each sprint, then consolidated. |
 
@@ -365,9 +365,10 @@ Exit signal:
 
 Goal: make UI projection quality visible and keep rendering code readable.
 
-Current status: started. The native SDL app exposes `--capture-bmp`,
-`--capture-scenario`, and `--capture-frames`; use `ms build core --target native`
-first, then run the generated native binary from the workspace `bin` directory.
+Current status: complete for capture/replay/report plumbing. The native SDL app
+exposes direct captures and timed UX replay; the workflow suite verifies binding
+dispatch, declared captures, semantic expectations, and SDL playhead
+progression.
 See [Sprint 5: UI Visual Validation And Render Maintainability](sprint-5-ui-visual-validation.md).
 
 Why this is a good idea:
@@ -381,8 +382,8 @@ Evidence:
 - `lvgl-ui-lifetime-map.md` maps UI ownership, timers, overlays, and cleanup.
 - `domain-ui-rendering.md` identifies view-model builders and StepGrid render
   seams.
-- Remaining dark zones include visual overlap, clipping, frame pacing, and
-  display tearing.
+- Remaining dark zones include automated visual comparison thresholds, frame
+  pacing, display tearing, and hardware timing under load.
 
 Risks:
 
@@ -397,7 +398,8 @@ Mitigations:
 
 Exit signal:
 
-- Main screens and overlays have a repeatable visual validation path.
+- Main screens, overlays, report artifacts, and SDL playhead runtime telemetry
+  have a repeatable validation path.
 
 ### Realtime Validation: Runtime And Hardware Proof
 
@@ -416,6 +418,9 @@ Evidence:
   paths, but native tests do not prove timing under load.
 - `main.cpp` creates `SequencerRuntimeService` and registers the pre-context
   hook.
+- `sdl/main-native.cpp` creates the same `SequencerRuntimeService` and uses the
+  same standalone runtime gate; `sequencer-playhead.ux` proves native playhead
+  progression through this path.
 - `StandaloneContext::update()` is intentionally empty for runtime work.
 
 Risks:

@@ -1,0 +1,21 @@
+# UX workflow: start sequencer playback and observe playhead progression.
+# Purpose: validates SDL sequencer runtime parity with hardware by checking
+# transport dispatch, screen captures, and trace-level playhead telemetry.
+# Expect: playhead_progress
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable one visible step so playback has an audible/visible musical target.
+150 tap MACRO_1 60
+300 capture screen step_enabled
+
+# Start transport and give the runtime enough time to advance at default tempo.
+400 tap BOTTOM_CENTER 60
+650 capture screen playing_early
+1400 tick
+1500 capture screen playing_late
+
+# Stop transport and capture the settled UI state.
+1650 tap BOTTOM_CENTER 60
+1850 capture screen stopped

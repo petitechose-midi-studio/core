@@ -18,6 +18,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include <SDL2/SDL.h>
@@ -28,6 +29,8 @@
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
+#include "context/standalone/StandaloneSequencerRuntimeGate.hpp"
+#include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
 int main(int argc, char** argv) {
@@ -90,6 +93,51 @@ int main(int argc, char** argv) {
         .inputTrace([&bindingTrace](const oc::core::input::InputBindingTraceEvent& event) {
             bindingTrace.write(event);
         });
+
+    if (!app.midiAPI()) {
+        std::fprintf(stderr, "Sequencer runtime init failed: MIDI API unavailable\n");
+        return 1;
+    }
+
+    auto standaloneSequencerRuntime =
+        std::make_unique<core::sequencer::SequencerRuntimeService>(
+            core::sequencer::SequencerRuntimeService::StateRefs{
+                coreState.sequencer,
+                coreState.sequencerTracks,
+                coreState.statusBar,
+                coreState.midiSync,
+            },
+            *app.midiAPI(),
+            app.eventBus()
+        );
+
+    bool wasStandaloneActive = false;
+    const bool runtimeHookRegistered = app.registerPreContextUpdateHook([&]() {
+        const bool isStandaloneActive =
+            app.contexts().activeId() == static_cast<uint8_t>(Config::ContextID::STANDALONE);
+        const auto runtimeDecision =
+            core::context::standalone::decideStandaloneSequencerRuntimeAction(
+                isStandaloneActive,
+                wasStandaloneActive
+            );
+        wasStandaloneActive = runtimeDecision.nextWasStandaloneActive;
+
+        switch (runtimeDecision.action) {
+            case core::context::standalone::StandaloneSequencerRuntimeAction::UPDATE:
+                standaloneSequencerRuntime->update();
+                return;
+            case core::context::standalone::StandaloneSequencerRuntimeAction::STOP:
+                standaloneSequencerRuntime->stop();
+                return;
+            case core::context::standalone::StandaloneSequencerRuntimeAction::NONE:
+            default:
+                return;
+        }
+    });
+    if (!runtimeHookRegistered) {
+        std::fprintf(stderr, "Sequencer runtime init failed: app pre-context hook registry full\n");
+        return 1;
+    }
 
     // 4. Register contexts and start
     // Note: Contexts use Screen::root() which is configured to HwSimulator's screenArea
