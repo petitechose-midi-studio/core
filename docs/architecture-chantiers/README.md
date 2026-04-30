@@ -92,7 +92,7 @@ state-surface reduction, modal workflow review, shared structure mechanics,
 persistence policy, and UI validation in a
 single change wave.
 
-Status as of 2026-04-29:
+Status as of 2026-04-30:
 
 - Sprint 0 is complete for the tracked documentation entry path.
 - Sprint 1 is complete for the scoped Gates 1-6 implementation tranche.
@@ -101,8 +101,10 @@ Status as of 2026-04-29:
 - Sprint 4 is complete for the software compatibility/failure-semantics and
   Teensy main-loop recovery-wiring tranche; hardware SD hot-swap validation
   remains future work.
-- Sprint 5 has started: the native SDL app has a repeatable BMP capture path
-  for main screens and high-risk overlays.
+- Sprint 5 is partially complete: the native SDL app has repeatable BMP capture
+  paths, timestamped UX workflow replay, binding-resolution traces, and a
+  curated smoke workflow suite. Visual baseline reporting and richer assertions
+  remain future work.
 
 | Todo | Sprint | Why it belongs there |
 |---|---|---|
@@ -117,8 +119,8 @@ Status as of 2026-04-29:
 | Review shared page/track structure mechanics | Sprint 3 | Complete for scoped tranche: shared slot primitives, duplicate, track copy/paste, and sequencer track creation helper are covered. |
 | Inventory persistence formats and compatibility needs | Sprint 4 | Software tranche complete: active storage domains, versions, sizes, compatibility promises, and status semantics are documented. |
 | Decide SD failure/hot-swap policy | Sprint 4 | Software tranche complete: RAM-authoritative recovery is documented, covered by tests, and wired in the Teensy main loop; hardware validation remains future work. |
-| Capture SDL/LVGL screens and overlays | Sprint 5 | This validates visual UI behavior. |
-| Produce a minimal UI visual reference report | Sprint 5 | This makes UI regressions reviewable. |
+| Capture SDL/LVGL screens and overlays | Sprint 5 | Complete for repeatable native captures and workflow replay; extend coverage as new UI surfaces stabilize. |
+| Produce a minimal UI visual reference report | Sprint 5 | Remaining; this makes UI regressions reviewable beyond smoke-level artifact checks. |
 | Verify standalone runtime playhead progression and hardware timing | Realtime validation | Runtime/hardware proof remains required, but it is not the current Sprint 1 scope. |
 | Audit only external dependencies traversed by `core` | Cross-sprint validation | This is targeted dependency validation after local contracts are clearer. |
 | Convert validated discoveries into implementation tickets | Cross-sprint closure | Tickets should be produced continuously after each sprint, then consolidated. |

@@ -7,7 +7,9 @@ changing UI rendering code further.
 
 ## Current Status
 
-Status as of 2026-04-29: recognition and capture entrypoint started.
+Status as of 2026-04-30: capture, UX replay, binding trace, and workflow smoke
+suite are implemented. Visual baseline reporting and richer semantic assertions
+remain future work.
 
 The native SDL app now supports two validation paths:
 
