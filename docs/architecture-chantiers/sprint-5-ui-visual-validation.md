@@ -46,6 +46,18 @@ Run the curated workflow suite:
 sdl\integration\run-ux-workflows.ps1
 ```
 
+Run the suite and generate the derived UX report:
+
+```powershell
+sdl\integration\run-ux-workflows.ps1 -Report
+```
+
+Regenerate only the report from existing artifacts:
+
+```powershell
+sdl\integration\generate-ux-report.ps1
+```
+
 The local `.captures/` directory is ignored by Git and is intended for review
 artifacts only.
 
@@ -87,6 +99,10 @@ Native capture smoke result on 2026-04-29:
 - `sdl/integration/run-ux-workflows.ps1` verifies each workflow exits cleanly,
   writes `trace.ndjson` and `binding-trace.ndjson`, reaches `run_end`, dispatches
   at least one binding, and produces the declared capture artifacts.
+- `sdl/integration/generate-ux-report.ps1` derives a Markdown report from the
+  workflow scripts, replay traces, binding traces, and BMP files. The `.ux`
+  script remains the source of truth for workflow intent, timing, and capture
+  names.
 
 ## Fragility Points To Watch
 
@@ -107,8 +123,7 @@ Native capture smoke result on 2026-04-29:
 
 ## Next Actions
 
-- Produce a small visual reference report from direct captures and UX scenario
-  captures.
+- Review and curate the derived UX report as the first visual reference report.
 - Decide which visual contracts are stable enough for automated comparison.
 - Add only focused assertions after manual baselines exist, for example image
   dimensions, non-empty frame, and selected scenario visibility.

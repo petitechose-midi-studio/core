@@ -1,7 +1,8 @@
 param(
     [string]$Exe,
     [string]$OutputRoot = ".captures/ux/workflows",
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$Report
 )
 
 $ErrorActionPreference = "Stop"
@@ -89,3 +90,7 @@ if ($Failures.Count -gt 0) {
 }
 
 Write-Host ("UX workflow verification OK: {0}/{0}" -f $Workflows.Count)
+
+if ($Report) {
+    & (Join-Path $ScriptDir "generate-ux-report.ps1") -OutputRoot $OutputRoot -WorkflowDir $WorkflowDir
+}

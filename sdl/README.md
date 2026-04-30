@@ -127,9 +127,25 @@ Or let the script build through the workspace `ms` entrypoint first:
 sdl\integration\run-ux-workflows.ps1
 ```
 
+Add `-Report` to write a Markdown UX report next to the workflow artifacts:
+
+```powershell
+sdl\integration\run-ux-workflows.ps1 -Report
+```
+
+To regenerate the report from existing workflow outputs without replaying:
+
+```powershell
+sdl\integration\generate-ux-report.ps1
+```
+
 The verifier fails if a workflow does not exit cleanly, misses `trace.ndjson`,
 misses `binding-trace.ndjson`, does not write `run_end`, has no dispatched
 binding, or produces fewer BMP captures than declared in the script.
+
+The report is derived from the `.ux` scripts, `trace.ndjson`,
+`binding-trace.ndjson`, and BMP files. It intentionally avoids a separate
+manifest so workflow intent, action timing, and capture names stay in one place.
 
 ### UX Script Semantics
 
