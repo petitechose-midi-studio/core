@@ -18,7 +18,7 @@
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
 #include "context/StandaloneContext.hpp"
-#include "context/standalone/StandaloneSequencerRuntimeGate.hpp"
+#include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
 #include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
@@ -343,33 +343,11 @@ static FLASHMEM void initApp() {
         while (true) {}
     }
 
-    const bool runtimeHookRegistered = app->registerPreContextUpdateHook([]() {
-        if (!app || !standaloneSequencerRuntime) return;
-
-        static bool wasStandaloneActive = false;
-
-        const bool isStandaloneActive =
-            app->contexts().activeId() == static_cast<uint8_t>(Config::ContextID::STANDALONE);
-        const auto runtimeDecision =
-            core::context::standalone::decideStandaloneSequencerRuntimeAction(
-                isStandaloneActive,
-                wasStandaloneActive
-            );
-        wasStandaloneActive = runtimeDecision.nextWasStandaloneActive;
-
-        switch (runtimeDecision.action) {
-            case core::context::standalone::StandaloneSequencerRuntimeAction::UPDATE:
-                // Authoritative standalone runtime lane: kept outside the context/UI update path.
-                standaloneSequencerRuntime->update();
-                return;
-            case core::context::standalone::StandaloneSequencerRuntimeAction::STOP:
-                standaloneSequencerRuntime->stop();
-                return;
-            case core::context::standalone::StandaloneSequencerRuntimeAction::NONE:
-            default:
-                return;
-        }
-    });
+    const bool runtimeHookRegistered =
+        core::context::standalone::registerStandaloneSequencerRuntimeHook(
+            *app,
+            standaloneSequencerRuntime
+        );
 
     if (!runtimeHookRegistered) {
         OC_LOG_ERROR("Sequencer runtime init failed: app pre-context hook registry full");

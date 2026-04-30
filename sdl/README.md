@@ -257,6 +257,31 @@ Native and WASM entrypoints both use `LibreMidiTransport`. The WASM entrypoint
 defaults its bridge URL to `ws://localhost:8100`; native bridge defaults are
 defined in the SDL entry helpers and command-line parsing.
 
+## Teensy Parity Notes
+
+The SDL entrypoints share the same application-level feature lane as the Teensy
+firmware where the HAL allows it:
+
+| Feature lane | Teensy | SDL native | SDL WASM |
+|---|---|---|---|
+| Standalone contexts and handlers | `registerContexts(...)` | Same | Same |
+| Sequencer runtime/playhead owner | `SequencerRuntimeService` pre-context hook | Same | Same |
+| Runtime context gate | `StandaloneSequencerRuntimeHook` | Same | Same |
+| MIDI transport | USB MIDI | libremidi native | libremidi WebMIDI |
+| Frame/control transport | USB serial frames | UDP frames to bridge | WebSocket frames to bridge |
+| Input source | Hardware mux/buttons/encoders | `InputMapper` keyboard/controller simulator | `InputMapper` browser SDL events |
+| Persistence storage | SD card backends with hot-swap recovery | File-backed storage | In-memory preview storage |
+| UX validation hooks | Hardware/log driven | Capture, replay, binding trace, UX report | Build/runtime parity only |
+
+Known intentional divergences:
+
+- SD-card recovery is Teensy-only because native SDL uses normal files and WASM
+  currently uses in-memory preview storage.
+- Native SDL has capture/replay/report tooling to validate UX workflows; this is
+  simulator instrumentation, not firmware behavior.
+- WASM does not currently expose the native UX replay CLI, but it installs the
+  same standalone sequencer runtime hook as native SDL and Teensy.
+
 ## Troubleshooting
 
 ### `emcc` not found

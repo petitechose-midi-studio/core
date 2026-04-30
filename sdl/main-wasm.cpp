@@ -16,12 +16,17 @@
 #include "entry/BridgeArgs.hpp"
 #include "entry/WasmArgs.hpp"
 
+#include <cstdio>
+#include <memory>
+
 #include <oc/hal/sdl/Sdl.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
 #include <oc/hal/net/WebSocketTransport.hpp>
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
+#include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
+#include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
 static void tick_core_state(void* user) {
@@ -42,6 +47,7 @@ int main(int argc, char** argv) {
                                             sequencerWorkspaceStorage,
                                             sequencerPatternLibraryStorage,
                                             sequencerSetLibraryStorage);
+    static std::unique_ptr<core::sequencer::SequencerRuntimeService> standaloneSequencerRuntime;
 
     if (!settingsStorage.init() ||
         !macroWorkspaceStorage.init() ||
@@ -68,6 +74,33 @@ int main(int argc, char** argv) {
             }))
         .controllers(env.inputMapper())
         .inputConfig(Config::Input::CONFIG);
+
+    if (!app.midiAPI()) {
+        std::fprintf(stderr, "Sequencer runtime init failed: MIDI API unavailable\n");
+        return 1;
+    }
+
+    standaloneSequencerRuntime =
+        std::make_unique<core::sequencer::SequencerRuntimeService>(
+            core::sequencer::SequencerRuntimeService::StateRefs{
+                coreState.sequencer,
+                coreState.sequencerTracks,
+                coreState.statusBar,
+                coreState.midiSync,
+            },
+            *app.midiAPI(),
+            app.eventBus()
+        );
+
+    const bool runtimeHookRegistered =
+        core::context::standalone::registerStandaloneSequencerRuntimeHook(
+            app,
+            standaloneSequencerRuntime
+        );
+    if (!runtimeHookRegistered) {
+        std::fprintf(stderr, "Sequencer runtime init failed: app pre-context hook registry full\n");
+        return 1;
+    }
 
     core::app::registerContexts(app, coreState);
     app.begin();

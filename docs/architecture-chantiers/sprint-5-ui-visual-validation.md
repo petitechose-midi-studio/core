@@ -116,18 +116,29 @@ Native capture smoke result on 2026-04-29:
 The playhead owner is intentionally singular:
 
 - Teensy entry point: `main.cpp` creates `SequencerRuntimeService` and registers
-  it through `OpenControlApp::registerPreContextUpdateHook(...)`.
-- SDL native entry point: `sdl/main-native.cpp` now creates the same
-  `SequencerRuntimeService` with the same `StateRefs` and registers it through
-  the same pre-context hook.
-- Runtime gate: both paths use
-  `context/standalone/StandaloneSequencerRuntimeGate.hpp` to update only while
+  it through `StandaloneSequencerRuntimeHook`.
+- SDL native and WASM entry points create the same `SequencerRuntimeService`
+  with the same `StateRefs` and register it through the same hook helper.
+- Runtime gate: all three entry points use the same hook to update only while
   the standalone context is active and stop when leaving it.
 - UI path: `StandaloneContext` and sequencer handlers remain UI/input owners;
   they do not tick playback runtime.
 - Evidence path: `UxScenarioRunner` writes `playing` and `playhead_step` into
   `trace.ndjson`; `run-ux-workflows.ps1` enforces
   `# Expect: playhead_progress` without hardcoding a specific step number.
+
+## SDL/Teensy Feature Parity Map
+
+| Feature lane | Teensy | SDL native | SDL WASM | Status |
+|---|---|---|---|---|
+| Context/handler assembly | `registerContexts(...)` | Same | Same | Aligned |
+| Sequencer runtime/playhead | `SequencerRuntimeService` hook | Same | Same | Aligned |
+| MIDI output/input | USB MIDI | libremidi native | libremidi WebMIDI | HAL-specific |
+| Frame/control transport | USB serial frames | UDP bridge transport | WebSocket bridge transport | HAL-specific |
+| Input source | Physical controls | SDL simulator mapper | SDL/browser mapper | HAL-specific |
+| Persistence | SD card backends | File storage | Memory storage | Intentionally different |
+| Storage recovery | SD hot-swap recovery | Not applicable | Not applicable | Teensy-only |
+| UX workflow capture/report | Hardware/log review | Native replay and BMP report | Not exposed | Simulator-only |
 
 ## Fragility Points To Watch
 

@@ -24,6 +24,7 @@ Current repo docs and source contracts:
 - [`docs/ARCHITECTURE_REVIEW_RULES.md`](../ARCHITECTURE_REVIEW_RULES.md)
 - [`src/context/StandaloneContext.hpp`](../../src/context/StandaloneContext.hpp)
 - [`src/context/standalone/StandaloneSequencerRuntimeGate.hpp`](../../src/context/standalone/StandaloneSequencerRuntimeGate.hpp)
+- [`src/context/standalone/StandaloneSequencerRuntimeHook.hpp`](../../src/context/standalone/StandaloneSequencerRuntimeHook.hpp)
 - [`src/context/standalone/ActiveViewLifecyclePlan.hpp`](../../src/context/standalone/ActiveViewLifecyclePlan.hpp)
 - [`src/sequencer/SequencerRuntimeService.hpp`](../../src/sequencer/SequencerRuntimeService.hpp)
 
@@ -46,10 +47,12 @@ Code seams checked during this review:
   Evidence: `src/state/CoreState.hpp`, `src/state/CoreState.cpp`,
   `src/state/CoreStateLifecycle.cpp`, plus the include/fan-in maps.
 - The current standalone sequencer runtime owner is `main.cpp`, through a
-  pre-context update hook. `StandaloneContext::update()` does not tick it.
+  pre-context update hook shared with SDL native and WASM entrypoints.
+  `StandaloneContext::update()` does not tick it.
   Evidence: `main.cpp`, `src/context/StandaloneContext.cpp`,
   `src/context/StandaloneContext.hpp`,
-  `src/context/standalone/StandaloneSequencerRuntimeGate.hpp`, and
+  `src/context/standalone/StandaloneSequencerRuntimeGate.hpp`,
+  `src/context/standalone/StandaloneSequencerRuntimeHook.hpp`, and
   `src/sequencer/SequencerRuntimeService.hpp`.
 - The main domains already have intended extension seams: macro workflows and
   services, sequencer snapshot/track-bank operations, Data Manager workflow,
@@ -418,9 +421,9 @@ Evidence:
   paths, but native tests do not prove timing under load.
 - `main.cpp` creates `SequencerRuntimeService` and registers the pre-context
   hook.
-- `sdl/main-native.cpp` creates the same `SequencerRuntimeService` and uses the
-  same standalone runtime gate; `sequencer-playhead.ux` proves native playhead
-  progression through this path.
+- `sdl/main-native.cpp` and `sdl/main-wasm.cpp` create the same
+  `SequencerRuntimeService` and use the same standalone runtime hook as Teensy;
+  `sequencer-playhead.ux` proves native playhead progression through this path.
 - `StandaloneContext::update()` is intentionally empty for runtime work.
 
 Risks:

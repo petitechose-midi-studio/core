@@ -29,7 +29,7 @@
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
-#include "context/standalone/StandaloneSequencerRuntimeGate.hpp"
+#include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
@@ -111,29 +111,11 @@ int main(int argc, char** argv) {
             app.eventBus()
         );
 
-    bool wasStandaloneActive = false;
-    const bool runtimeHookRegistered = app.registerPreContextUpdateHook([&]() {
-        const bool isStandaloneActive =
-            app.contexts().activeId() == static_cast<uint8_t>(Config::ContextID::STANDALONE);
-        const auto runtimeDecision =
-            core::context::standalone::decideStandaloneSequencerRuntimeAction(
-                isStandaloneActive,
-                wasStandaloneActive
-            );
-        wasStandaloneActive = runtimeDecision.nextWasStandaloneActive;
-
-        switch (runtimeDecision.action) {
-            case core::context::standalone::StandaloneSequencerRuntimeAction::UPDATE:
-                standaloneSequencerRuntime->update();
-                return;
-            case core::context::standalone::StandaloneSequencerRuntimeAction::STOP:
-                standaloneSequencerRuntime->stop();
-                return;
-            case core::context::standalone::StandaloneSequencerRuntimeAction::NONE:
-            default:
-                return;
-        }
-    });
+    const bool runtimeHookRegistered =
+        core::context::standalone::registerStandaloneSequencerRuntimeHook(
+            app,
+            standaloneSequencerRuntime
+        );
     if (!runtimeHookRegistered) {
         std::fprintf(stderr, "Sequencer runtime init failed: app pre-context hook registry full\n");
         return 1;
