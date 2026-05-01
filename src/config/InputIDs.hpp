@@ -89,4 +89,24 @@ inline constexpr std::array<ButtonID, MACRO_COUNT> MACRO_BUTTONS = {
     ButtonID::MACRO_7, ButtonID::MACRO_8
 };
 
+inline bool macroEncoderIndex(oc::type::EncoderID id, uint8_t& outIndex) {
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        if (static_cast<oc::type::EncoderID>(MACRO_ENCODERS[i]) == id) {
+            outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool macroButtonIndex(oc::type::ButtonID id, uint8_t& outIndex) {
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        if (static_cast<oc::type::ButtonID>(MACRO_BUTTONS[i]) == id) {
+            outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace Config

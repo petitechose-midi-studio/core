@@ -19,6 +19,11 @@
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
+#if defined(MS_UX_RECORDER)
+#include "context/standalone/ux/StandaloneUxSurfaces.hpp"
+#include "validation/ux/SemanticUxTraceState.hpp"
+#endif
+
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
 }
@@ -64,7 +69,12 @@ public:
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,
-                           lv_obj_t* sequencerViewScope);
+                           lv_obj_t* sequencerViewScope
+#if defined(MS_UX_RECORDER)
+                           ,
+                           core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+    );
     ~SequencerFeatureModule();
 
     SequencerFeatureModule(const SequencerFeatureModule&) = delete;
@@ -74,6 +84,16 @@ public:
     void syncEncodersNow();
 
 private:
+#if defined(MS_UX_RECORDER)
+    core::validation::ux::StructureUxTraceState structure_ux_trace_state_;
+    core::context::standalone::ux::SequencerPropertySelectorUxSurface
+        property_selector_ux_surface_;
+    core::context::standalone::ux::SequencerQuickControlsUxSurface quick_controls_ux_surface_;
+    core::context::standalone::ux::SequencerStructureUxSurface structure_ux_surface_;
+    core::context::standalone::ux::SequencerStepEditUxSurface step_edit_ux_surface_;
+    core::context::standalone::ux::SequencerStepGridUxSurface step_grid_ux_surface_;
+#endif
+
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerEncoderSyncCoordinator>
         encoder_sync_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;

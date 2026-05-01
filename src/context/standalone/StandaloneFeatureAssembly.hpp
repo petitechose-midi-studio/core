@@ -36,6 +36,14 @@ class MacroFeatureModule;
 class SequencerFeatureModule;
 class SettingsFeatureModule;
 
+}  // namespace core::context::standalone
+
+namespace core::validation::ux {
+class SemanticUxSurfaceRegistry;
+}
+
+namespace core::context::standalone {
+
 /**
  * Composes feature modules after UI and overlay assemblies exist.
  *
@@ -55,7 +63,12 @@ public:
                               core::ui::ContextSoftkeyBar& contextSoftkeyBar,
                               core::ui::TransportBar& transportBar,
                               oc::type::ScopeID macroViewScope,
-                              oc::type::ScopeID sequencerViewScope);
+                              oc::type::ScopeID sequencerViewScope
+#if defined(MS_UX_RECORDER)
+                              ,
+                              core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+    );
     ~StandaloneFeatureAssembly();
 
     StandaloneFeatureAssembly(const StandaloneFeatureAssembly&) = delete;

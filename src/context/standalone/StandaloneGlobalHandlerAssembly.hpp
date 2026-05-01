@@ -23,6 +23,10 @@ template <typename T>
 class OverlayManager;
 }  // namespace oc::context
 
+namespace core::validation::ux {
+class SemanticUxSurfaceRegistry;
+}
+
 namespace core::context::standalone {
 
 /**
@@ -40,7 +44,12 @@ public:
                                     oc::api::EncoderAPI& encoders,
                                     oc::api::ButtonAPI& buttons,
                                     oc::type::ScopeID macroViewScope,
-                                    oc::type::ScopeID sequencerViewScope);
+                                    oc::type::ScopeID sequencerViewScope
+#if defined(MS_UX_RECORDER)
+                                    ,
+                                    core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+    );
     ~StandaloneGlobalHandlerAssembly();
 
     StandaloneGlobalHandlerAssembly(const StandaloneGlobalHandlerAssembly&) = delete;

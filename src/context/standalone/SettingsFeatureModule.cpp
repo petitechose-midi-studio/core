@@ -24,7 +24,29 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     core::ui::ContextSoftkeyBar& softkeyBar,
     core::ui::TransportBar& transportBar,
     core::handler::DataManagerHandler::ViewScopes viewScopes
-) {
+#if defined(MS_UX_RECORDER)
+    ,
+    core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+)
+#if defined(MS_UX_RECORDER)
+    : global_settings_ux_surface_(stateRefs.globalSettings, stateRefs.midiSync),
+      data_manager_ux_surface_(stateRefs.dataManager)
+#endif
+{
+#if defined(MS_UX_RECORDER)
+    if (uxRegistry) {
+        uxRegistry->add(
+            global_settings_ux_surface_,
+            core::context::standalone::ux::priority::GLOBAL_SETTINGS
+        );
+        uxRegistry->add(
+            data_manager_ux_surface_,
+            core::context::standalone::ux::priority::DATA_MANAGER
+        );
+    }
+#endif
+
     global_settings_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
     overlays.registerCleanup(

@@ -24,7 +24,63 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
                                                 oc::api::ButtonAPI& buttons,
                                                 oc::api::MidiAPI& midi,
                                                 lv_obj_t* mainZone,
-                                                lv_obj_t* macroViewScope) {
+                                                lv_obj_t* macroViewScope
+#if defined(MS_UX_RECORDER)
+                                                ,
+                                                core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+)
+#if defined(MS_UX_RECORDER)
+    : macro_edit_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.macroEdit,
+          stateRefs.pages,
+          stateRefs.configRevision
+      ),
+      macro_structure_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.structureNavigationFocus,
+          stateRefs.trackNavigation,
+          stateRefs.structureClipboard,
+          stateRefs.macroUi,
+          stateRefs.pages,
+          stateRefs.macroEdit,
+          &structure_ux_trace_state_
+      ),
+      macro_performance_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.macroUi,
+          stateRefs.macroEdit
+      ),
+      macro_value_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.macros,
+          stateRefs.pages,
+          stateRefs.macroUi,
+          stateRefs.macroEdit
+      )
+#endif
+{
+#if defined(MS_UX_RECORDER)
+    if (uxRegistry) {
+        uxRegistry->add(
+            macro_edit_ux_surface_,
+            core::context::standalone::ux::priority::MACRO_EDIT
+        );
+        uxRegistry->add(
+            macro_structure_ux_surface_,
+            core::context::standalone::ux::priority::MACRO_STRUCTURE
+        );
+        uxRegistry->add(
+            macro_performance_ux_surface_,
+            core::context::standalone::ux::priority::MACRO_PERFORMANCE
+        );
+        uxRegistry->add(
+            macro_value_ux_surface_,
+            core::context::standalone::ux::priority::MACRO_VALUE
+        );
+    }
+#endif
     edit_overlay_ = core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
     overlays.registerCleanup(
         core::ui::OverlayType::MACRO_EDIT,
@@ -97,6 +153,10 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         encoders,
         buttons,
         macroViewScopeId
+#if defined(MS_UX_RECORDER)
+        ,
+        &structure_ux_trace_state_
+#endif
     );
     midi_handler_ = std::make_unique<core::handler::MacroMidiHandler>(
         core::handler::MacroMidiHandler::StateRefs{stateRefs.activeView},

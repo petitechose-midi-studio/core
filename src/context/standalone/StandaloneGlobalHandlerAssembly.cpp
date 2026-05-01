@@ -12,6 +12,9 @@
 #include "handler/transport/TransportHandler.hpp"
 #include "handler/view/ViewSwitcherHandler.hpp"
 #include "state/CoreState.hpp"
+#if defined(MS_UX_RECORDER)
+#include "context/standalone/ux/StandaloneUxSurfaces.hpp"
+#endif
 
 namespace core::context::standalone {
 
@@ -23,7 +26,30 @@ public:
          oc::api::EncoderAPI& encoders,
          oc::api::ButtonAPI& buttons,
          oc::type::ScopeID macroViewScope,
-         oc::type::ScopeID sequencerViewScope) {
+         oc::type::ScopeID sequencerViewScope
+#if defined(MS_UX_RECORDER)
+         ,
+         core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+    )
+#if defined(MS_UX_RECORDER)
+        : view_selector_ux_surface_(state.activeView, state.viewSelector),
+          transport_ux_surface_(state.statusBar)
+#endif
+    {
+#if defined(MS_UX_RECORDER)
+        if (uxRegistry) {
+            uxRegistry->add(
+                view_selector_ux_surface_,
+                core::context::standalone::ux::priority::VIEW_SELECTOR
+            );
+            uxRegistry->add(
+                transport_ux_surface_,
+                core::context::standalone::ux::priority::TRANSPORT
+            );
+        }
+#endif
+
         OC_LOG_DEBUG("StandaloneGlobalHandlerAssembly: transport_handler");
         transport_handler_ = core::app::makeExtmemUnique<core::handler::TransportHandler>(
             core::handler::TransportHandler::StateRefs{state.statusBar},
@@ -60,6 +86,11 @@ public:
     }
 
 private:
+#if defined(MS_UX_RECORDER)
+    core::context::standalone::ux::ViewSelectorUxSurface view_selector_ux_surface_;
+    core::context::standalone::ux::TransportUxSurface transport_ux_surface_;
+#endif
+
     core::app::ExtmemUniquePtr<core::handler::TransportHandler> transport_handler_;
     core::app::ExtmemUniquePtr<core::handler::ViewSwitcherHandler> view_switcher_handler_;
 };
@@ -72,6 +103,10 @@ FLASHMEM StandaloneGlobalHandlerAssembly::StandaloneGlobalHandlerAssembly(
     oc::api::ButtonAPI& buttons,
     oc::type::ScopeID macroViewScope,
     oc::type::ScopeID sequencerViewScope
+#if defined(MS_UX_RECORDER)
+    ,
+    core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
 )
     : impl_(core::app::makeExtmemUnique<Impl>(
           state,
@@ -81,6 +116,10 @@ FLASHMEM StandaloneGlobalHandlerAssembly::StandaloneGlobalHandlerAssembly(
           buttons,
           macroViewScope,
           sequencerViewScope
+#if defined(MS_UX_RECORDER)
+          ,
+          uxRegistry
+#endif
       )) {
 }
 

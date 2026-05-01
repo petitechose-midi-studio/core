@@ -23,6 +23,9 @@
 #include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
+#if defined(MS_UX_RECORDER)
+#include "validation/ux/SemanticUxRecorder.hpp"
+#endif
 
 // =============================================================================
 // Static Objects
@@ -161,6 +164,27 @@ private:
 StorageRecoveryRuntimeManager storageRecovery;
 
 }  // namespace
+
+#if defined(MS_UX_RECORDER)
+namespace {
+
+class SerialSemanticUxSink : public core::validation::ux::SemanticUxLineSink {
+public:
+    void writeLine(const char* line) override {
+        OC_LOG_INFO("{}", line);
+    }
+};
+
+SerialSemanticUxSink semanticUxSink;
+core::validation::ux::SemanticUxRecorder semanticUxRecorder{
+    core::validation::ux::SemanticUxRecorderOptions{
+        .sink = &semanticUxSink,
+        .enabled = true,
+    }
+};
+
+}  // namespace
+#endif
 
 #if defined(PERF_LOG)
 namespace {
@@ -315,12 +339,27 @@ static FLASHMEM void initApp() {
                       sequencerPatternLibraryStorage,
                       sequencerSetLibraryStorage);
 
-    app = oc::hal::teensy::AppBuilder()
-              .midi()
-              .frames()
-              .encoders(Hardware::Encoder::ENCODERS)
-              .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
-              .inputConfig(Config::Input::CONFIG);
+    oc::hal::teensy::AppBuilder appBuilder;
+    appBuilder.midi()
+        .frames()
+        .encoders(Hardware::Encoder::ENCODERS)
+        .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
+        .inputConfig(Config::Input::CONFIG);
+
+#if defined(MS_UX_RECORDER)
+    appBuilder.inputTrace([](const oc::core::input::InputBindingTraceEvent& event) {
+        if (!coreState) {
+            semanticUxRecorder.onBindingTrace(event);
+            return;
+        }
+        semanticUxRecorder.onBindingTrace(
+            event,
+            core::validation::ux::makeSemanticUxSnapshot(*coreState)
+        );
+    });
+#endif
+
+    app = appBuilder;
 
     if (!app->midiAPI()) {
         OC_LOG_ERROR("Sequencer runtime init failed: MIDI API unavailable");
@@ -378,6 +417,10 @@ FLASHMEM void setup() {
     initStorage();
     initApp();
 
+#if defined(MS_UX_RECORDER)
+    semanticUxSink.writeLine("UXR {\"kind\":\"session\",\"event\":\"boot\",\"enabled\":1}");
+#endif
+
     OC_LOG_INFO("Ready");
 }
 
@@ -420,6 +463,10 @@ void loop() {
         g_loopPerfWindow.stateUpdateMaxUs,
         micros() - stateUpdateStartUs
     );
+#endif
+
+#if defined(MS_UX_RECORDER)
+    semanticUxRecorder.flush(millis(), *coreState);
 #endif
 
     // Refresh LVGL at lower frequency to reduce CPU load

@@ -23,7 +23,52 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* sequencerViewScope
-) {
+#if defined(MS_UX_RECORDER)
+    ,
+    core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+)
+#if defined(MS_UX_RECORDER)
+    : property_selector_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
+      quick_controls_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
+      structure_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.structureNavigationFocus,
+          stateRefs.trackNavigation,
+          stateRefs.structureClipboard,
+          stateRefs.sequencer,
+          stateRefs.sequencerTracks,
+          &structure_ux_trace_state_
+      ),
+      step_edit_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
+      step_grid_ux_surface_(stateRefs.activeView, stateRefs.sequencer)
+#endif
+{
+#if defined(MS_UX_RECORDER)
+    if (uxRegistry) {
+        uxRegistry->add(
+            step_edit_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_STEP_EDIT
+        );
+        uxRegistry->add(
+            property_selector_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_PROPERTY_SELECTOR
+        );
+        uxRegistry->add(
+            quick_controls_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_QUICK_CONTROLS
+        );
+        uxRegistry->add(
+            structure_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_STRUCTURE
+        );
+        uxRegistry->add(
+            step_grid_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_STEP_GRID
+        );
+    }
+#endif
+
     const auto sequencerViewScopeId = oc::ui::lvgl::scopeID(sequencerViewScope);
     encoder_sync_ = core::app::makeExtmemUnique<SequencerEncoderSyncCoordinator>(
         SequencerEncoderSyncCoordinator::StateRefs{
@@ -62,6 +107,10 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         encoders,
         buttons,
         sequencerViewScopeId
+#if defined(MS_UX_RECORDER)
+        ,
+        &structure_ux_trace_state_
+#endif
     );
     quick_controls_handler_ =
         std::make_unique<core::handler::SequencerPatternQuickControlsHandler>(

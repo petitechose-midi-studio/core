@@ -4,12 +4,21 @@
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 
+#if defined(MS_UX_RECORDER)
+#include "validation/ux/SemanticUxTraceState.hpp"
+#endif
+
 namespace core::handler {
 
 SequencerStepHandler::SequencerStepHandler(StateRefs state,
                                            oc::api::EncoderAPI& encoders,
                                            oc::api::ButtonAPI& buttons,
-                                           oc::type::ScopeID scopeId)
+                                           oc::type::ScopeID scopeId
+#if defined(MS_UX_RECORDER)
+                                           ,
+                                           core::validation::ux::StructureUxTraceState* uxTraceState
+#endif
+)
     : sequencer_(state.sequencer)
     , navigation_workflow_(
           SequencerStructureNavigationWorkflow::StateRefs{
@@ -29,10 +38,14 @@ SequencerStepHandler::SequencerStepHandler(StateRefs state,
               state.structureClipboard,
               state.sharedTracks,
           }
-      )
+    )
     , encoders_(encoders)
     , buttons_(buttons)
-    , scope_id_(scopeId) {
+    , scope_id_(scopeId)
+#if defined(MS_UX_RECORDER)
+    , ux_trace_state_(uxTraceState)
+#endif
+{
     setupBindings();
 }
 
@@ -105,6 +118,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.allowsMainBindings(); })
         .then([this]() {
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
+#endif
             if (edit_workflow_.canRemoveCurrentStructure()) {
                 edit_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
             }
@@ -124,6 +140,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             edit_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
                 ignore_next_bottom_left_release_ = false;
+#if defined(MS_UX_RECORDER)
+                if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
+#endif
                 return;
             }
             edit_workflow_.eraseCurrentStructure();
@@ -136,6 +155,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .then([this]() {
             edit_workflow_.clearHoldAction();
             ignore_next_bottom_left_release_ = true;
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
+#endif
             edit_workflow_.removeCurrentStructure();
         });
 
@@ -144,6 +166,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.allowsMainBindings(); })
         .then([this]() {
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
+#endif
             if (edit_workflow_.canPasteCurrentStructure()) {
                 edit_workflow_.beginHoldAction(core::state::StructureHoldAction::PASTE);
             }
@@ -163,6 +188,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             edit_workflow_.clearHoldAction();
             if (ignore_next_bottom_right_release_) {
                 ignore_next_bottom_right_release_ = false;
+#if defined(MS_UX_RECORDER)
+                if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
+#endif
                 return;
             }
             edit_workflow_.copyCurrentStructure();
@@ -175,6 +203,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .then([this]() {
             edit_workflow_.clearHoldAction();
             ignore_next_bottom_right_release_ = true;
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
+#endif
             edit_workflow_.pasteCurrentStructure();
         });
 }

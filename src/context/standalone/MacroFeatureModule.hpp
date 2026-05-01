@@ -15,12 +15,18 @@
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "state/MacroEditState.hpp"
+#include "state/MacroState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
+
+#if defined(MS_UX_RECORDER)
+#include "context/standalone/ux/StandaloneUxSurfaces.hpp"
+#include "validation/ux/SemanticUxTraceState.hpp"
+#endif
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -52,6 +58,7 @@ class MacroFeatureModule {
 public:
     struct StateRefs {
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
+        core::state::MacroState& macros;
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
@@ -73,7 +80,12 @@ public:
                        oc::api::ButtonAPI& buttons,
                        oc::api::MidiAPI& midi,
                        lv_obj_t* mainZone,
-                       lv_obj_t* macroViewScope);
+                       lv_obj_t* macroViewScope
+#if defined(MS_UX_RECORDER)
+                       ,
+                       core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+    );
     ~MacroFeatureModule();
 
     MacroFeatureModule(const MacroFeatureModule&) = delete;
@@ -83,6 +95,14 @@ public:
     void onNoteIn();
 
 private:
+#if defined(MS_UX_RECORDER)
+    core::validation::ux::StructureUxTraceState structure_ux_trace_state_;
+    core::context::standalone::ux::MacroEditUxSurface macro_edit_ux_surface_;
+    core::context::standalone::ux::MacroStructureUxSurface macro_structure_ux_surface_;
+    core::context::standalone::ux::MacroPerformanceUxSurface macro_performance_ux_surface_;
+    core::context::standalone::ux::MacroValueUxSurface macro_value_ux_surface_;
+#endif
+
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> edit_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> edit_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> page_selector_overlay_;

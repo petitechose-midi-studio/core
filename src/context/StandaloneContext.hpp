@@ -30,6 +30,10 @@
 #include <oc/context/Requirements.hpp>
 #include <oc/state/SignalWatcher.hpp>
 
+#if defined(MS_UX_RECORDER)
+#include "validation/ux/SemanticUxSurface.hpp"
+#endif
+
 namespace core::state {
 struct CoreState;
 }
@@ -101,6 +105,10 @@ private:
     oc::type::ScopeID activeViewScopeId() const;
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
+
+#if defined(MS_UX_RECORDER)
+    core::validation::ux::SemanticUxSurfaceRegistry ux_surface_registry_;
+#endif
 
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneUiAssembly> ui_assembly_;
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneOverlayAssembly> overlay_assembly_;

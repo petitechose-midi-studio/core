@@ -33,11 +33,16 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     core::ui::TransportBar& transportBar,
     oc::type::ScopeID macroViewScope,
     oc::type::ScopeID sequencerViewScope
+#if defined(MS_UX_RECORDER)
+    ,
+    core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
 ) {
     OC_LOG_DEBUG("StandaloneFeatureAssembly: macro_feature");
     macro_feature_ = core::app::makeExtmemUnique<core::context::standalone::MacroFeatureModule>(
         core::context::standalone::MacroFeatureModule::StateRefs{
             state.activeView,
+            state.macros,
             state.macroEdit,
             state.pages,
             state.macroUi,
@@ -56,6 +61,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         midi,
         mainZone,
         macroViewElement
+#if defined(MS_UX_RECORDER)
+        ,
+        uxRegistry
+#endif
     );
     OC_LOG_DEBUG("StandaloneFeatureAssembly: sequencer_feature");
     sequencer_feature_ = core::app::makeExtmemUnique<core::context::standalone::SequencerFeatureModule>(
@@ -73,6 +82,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         encoders,
         buttons,
         sequencerViewElement
+#if defined(MS_UX_RECORDER)
+        ,
+        uxRegistry
+#endif
     );
     OC_LOG_DEBUG("StandaloneFeatureAssembly: settings_feature");
     settings_feature_ = core::app::makeExtmemUnique<core::context::standalone::SettingsFeatureModule>(
@@ -100,6 +113,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             macroViewScope,
             sequencerViewScope,
         }
+#if defined(MS_UX_RECORDER)
+        ,
+        uxRegistry
+#endif
     );
     OC_LOG_DEBUG("StandaloneFeatureAssembly: ready");
 }

@@ -30,18 +30,25 @@ It is not a generic plugin SDK, and the repository structure should be read as a
 The main PlatformIO environments are defined in [platformio.ini](platformio.ini):
 
 - `dev`: local symlinked `open-control` dependencies
+- `dev_ux_recorder`: explicit validation build with Teensy semantic UX logs
 - `release`: pinned remote dependencies
 
 Typical development build:
 
 ```powershell
-pio run -e dev
+ms build core --target teensy --env dev
+```
+
+Validation build with semantic UX recorder:
+
+```powershell
+ms build core --target teensy --env dev_ux_recorder
 ```
 
 Upload to hardware:
 
 ```powershell
-pio run -e dev -t upload
+ms upload core --env dev
 ```
 
 ## Unit Tests

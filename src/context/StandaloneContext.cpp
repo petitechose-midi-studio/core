@@ -23,7 +23,8 @@ namespace core::context {
 namespace input_utils = core::handler::sequencer::input_utils;
 
 // Constructor and destructor must be in .cpp where handler types are complete
-StandaloneContext::StandaloneContext(core::state::CoreState& state) : core_state_(state) {}
+StandaloneContext::StandaloneContext(core::state::CoreState& state)
+    : core_state_(state) {}
 
 StandaloneContext::~StandaloneContext() = default;
 
@@ -33,6 +34,11 @@ StandaloneContext::~StandaloneContext() = default;
 
 FLASHMEM oc::type::Result<void> StandaloneContext::init() {
     OC_LOG_INFO("StandaloneContext::initialize()");
+
+#if defined(MS_UX_RECORDER)
+    ux_surface_registry_.clear();
+    core::validation::ux::setCurrentSemanticUxContextProvider(&ux_surface_registry_);
+#endif
 
     oc::ui::lvgl::font::load(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
     oc::ui::lvgl::font::load(STANDALONE_FONT_ENTRIES, STANDALONE_FONT_COUNT);
@@ -63,6 +69,11 @@ void StandaloneContext::update() {
 }
 
 FLASHMEM void StandaloneContext::onCleanup() {
+#if defined(MS_UX_RECORDER)
+    core::validation::ux::clearCurrentSemanticUxContextProvider(&ux_surface_registry_);
+    ux_surface_registry_.clear();
+#endif
+
     // Ensure overlay stack is reset while UI objects are still alive.
     // CoreState survives context switches.
     if (overlay_assembly_) {
@@ -133,6 +144,10 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         ui_assembly_->transportBar(),
         ui_assembly_->macroViewScope(),
         ui_assembly_->sequencerViewScope()
+#if defined(MS_UX_RECORDER)
+        ,
+        &ux_surface_registry_
+#endif
     );
 }
 
@@ -147,6 +162,10 @@ FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
             buttons(),
             ui_assembly_->macroViewScope(),
             ui_assembly_->sequencerViewScope()
+#if defined(MS_UX_RECORDER)
+            ,
+            &ux_surface_registry_
+#endif
         );
     OC_LOG_INFO("Input bindings buttons={}/{} encoders={}/{}",
                 static_cast<unsigned>(buttons().bindingCount()),

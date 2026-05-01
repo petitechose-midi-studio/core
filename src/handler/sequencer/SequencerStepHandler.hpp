@@ -15,6 +15,10 @@
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
+namespace core::validation::ux {
+struct StructureUxTraceState;
+}
+
 namespace core::handler {
 
 /**
@@ -39,7 +43,12 @@ public:
     SequencerStepHandler(StateRefs state,
                         oc::api::EncoderAPI& encoders,
                         oc::api::ButtonAPI& buttons,
-                        oc::type::ScopeID scopeId);
+                        oc::type::ScopeID scopeId
+#if defined(MS_UX_RECORDER)
+                        ,
+                        core::validation::ux::StructureUxTraceState* uxTraceState = nullptr
+#endif
+    );
 
     ~SequencerStepHandler() = default;
 
@@ -62,6 +71,9 @@ private:
     bool nav_long_press_used_ = false;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
+#if defined(MS_UX_RECORDER)
+    core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
+#endif
 };
 
 }  // namespace core::handler

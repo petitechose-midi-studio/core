@@ -2,6 +2,10 @@
 
 #include <config/PlatformCompat.hpp>
 
+#if defined(MS_UX_RECORDER)
+#include "validation/ux/SemanticUxTraceState.hpp"
+#endif
+
 namespace core::handler {
 
 FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
@@ -11,7 +15,12 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
-    oc::type::ScopeID scopeId)
+    oc::type::ScopeID scopeId
+#if defined(MS_UX_RECORDER)
+    ,
+    core::validation::ux::StructureUxTraceState* uxTraceState
+#endif
+)
     : structure_workflow_(
           MacroStructureWorkflow::StateRefs{
               state.macroUi,
@@ -36,7 +45,11 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
-    , scope_id_(scopeId) {
+    , scope_id_(scopeId)
+#if defined(MS_UX_RECORDER)
+    , ux_trace_state_(uxTraceState)
+#endif
+{
     setupBindings();
 }
 
@@ -173,6 +186,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return performance_workflow_.clutchInactive(); })
         .then([this]() {
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
+#endif
             if (structure_workflow_.canRemoveCurrentStructure()) {
                 structure_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
             }
@@ -195,6 +211,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
                 ignore_next_bottom_left_release_ = false;
+#if defined(MS_UX_RECORDER)
+                if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
+#endif
                 return;
             }
             structure_workflow_.eraseCurrentStructure();
@@ -208,6 +227,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .then([this]() {
             structure_workflow_.clearHoldAction();
             ignore_next_bottom_left_release_ = true;
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
+#endif
             structure_workflow_.removeCurrentStructure();
             performance_workflow_.refreshEncoders();
         });
@@ -217,6 +239,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return performance_workflow_.clutchInactive(); })
         .then([this]() {
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
+#endif
             if (structure_workflow_.canPasteCurrentStructure()) {
                 structure_workflow_.beginHoldAction(core::state::StructureHoldAction::PASTE);
             }
@@ -239,6 +264,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_right_release_) {
                 ignore_next_bottom_right_release_ = false;
+#if defined(MS_UX_RECORDER)
+                if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
+#endif
                 return;
             }
             structure_workflow_.copyCurrentStructure();
@@ -251,6 +279,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .then([this]() {
             structure_workflow_.clearHoldAction();
             ignore_next_bottom_right_release_ = true;
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
+#endif
             structure_workflow_.pasteCurrentStructure();
             performance_workflow_.refreshEncoders();
         });

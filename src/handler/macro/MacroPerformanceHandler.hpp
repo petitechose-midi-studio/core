@@ -17,6 +17,10 @@
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
 
+namespace core::validation::ux {
+struct StructureUxTraceState;
+}
+
 namespace core::handler {
 
 /**
@@ -45,7 +49,12 @@ public:
                             oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                             oc::api::EncoderAPI& encoders,
                             oc::api::ButtonAPI& buttons,
-                            oc::type::ScopeID scopeId);
+                            oc::type::ScopeID scopeId
+#if defined(MS_UX_RECORDER)
+                            ,
+                            core::validation::ux::StructureUxTraceState* uxTraceState = nullptr
+#endif
+    );
 
     ~MacroPerformanceHandler() = default;
 
@@ -67,6 +76,9 @@ private:
     bool left_bottom_held_ = false;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
+#if defined(MS_UX_RECORDER)
+    core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
+#endif
 };
 
 }  // namespace core::handler

@@ -20,6 +20,10 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 
+#if defined(MS_UX_RECORDER)
+#include "context/standalone/ux/StandaloneUxSurfaces.hpp"
+#endif
+
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
 class VirtualListSelectorOverlay;
@@ -67,13 +71,23 @@ public:
                           lv_obj_t* mainZone,
                           core::ui::ContextSoftkeyBar& softkeyBar,
                           core::ui::TransportBar& transportBar,
-                          core::handler::DataManagerHandler::ViewScopes viewScopes);
+                          core::handler::DataManagerHandler::ViewScopes viewScopes
+#if defined(MS_UX_RECORDER)
+                          ,
+                          core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+    );
     ~SettingsFeatureModule();
 
     SettingsFeatureModule(const SettingsFeatureModule&) = delete;
     SettingsFeatureModule& operator=(const SettingsFeatureModule&) = delete;
 
 private:
+#if defined(MS_UX_RECORDER)
+    core::context::standalone::ux::GlobalSettingsUxSurface global_settings_ux_surface_;
+    core::context::standalone::ux::DataManagerUxSurface data_manager_ux_surface_;
+#endif
+
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> global_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         global_settings_selector_overlay_;
