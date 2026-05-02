@@ -19,6 +19,12 @@ env:
   MS_DEV_ENV_SHA: 2d185972e5e8a76ad25ead9ee314c045fbf6ec9e
   OPEN_CONTROL_FRAMEWORK_SHA: 526f885af007dff32615af8bf8ab915127235d5e
   OPEN_CONTROL_NOTE_SHA: ee78b68b99d510a0db7d276848bc53e5ab10743a
+  OPEN_CONTROL_HAL_MIDI_SHA: f1f080449cc37378977a30aa344a7a6b4b209c27
+  OPEN_CONTROL_HAL_NET_SHA: 4499f3121fec0be1b849ca4d131c5f10a85c6531
+  OPEN_CONTROL_HAL_SDL_SHA: adeb3728aaaa92bbb2823fb84ebad495b983e986
+  OPEN_CONTROL_UI_LVGL_SHA: 4bab2f0ddf90ae20909e4befaaec352b254b4a10
+  OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA: 30bd0fc972d3b724066a3fcd243e2440fbb32615
+  MIDI_STUDIO_UI_SHA: 3616985cb2d37724d089be7c2b817712b2f910a4
 
 jobs:
   firmware_release:
@@ -113,3 +119,144 @@ jobs:
       - name: Test
         working-directory: workspace
         run: uv run ms test core
+
+  ux_overlay_workflow:
+    name: ux overlay workflow
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.MS_DEV_ENV_REPOSITORY }}
+          ref: ${{ env.MS_DEV_ENV_SHA }}
+          path: workspace
+          persist-credentials: false
+
+      - name: Checkout framework
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/framework
+          ref: ${{ env.OPEN_CONTROL_FRAMEWORK_SHA }}
+          path: workspace/open-control/framework
+          persist-credentials: false
+
+      - name: Checkout note
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/note
+          ref: ${{ env.OPEN_CONTROL_NOTE_SHA }}
+          path: workspace/open-control/note
+          persist-credentials: false
+
+      - name: Checkout HAL MIDI
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-midi
+          ref: ${{ env.OPEN_CONTROL_HAL_MIDI_SHA }}
+          path: workspace/open-control/hal-midi
+          persist-credentials: false
+
+      - name: Checkout HAL net
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-net
+          ref: ${{ env.OPEN_CONTROL_HAL_NET_SHA }}
+          path: workspace/open-control/hal-net
+          persist-credentials: false
+
+      - name: Checkout HAL SDL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-sdl
+          ref: ${{ env.OPEN_CONTROL_HAL_SDL_SHA }}
+          path: workspace/open-control/hal-sdl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_SHA }}
+          path: workspace/open-control/ui-lvgl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL components
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl-components
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA }}
+          path: workspace/open-control/ui-lvgl-components
+          persist-credentials: false
+
+      - name: Checkout MIDI Studio UI
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ui
+          ref: ${{ env.MIDI_STUDIO_UI_SHA }}
+          path: workspace/midi-studio/ui
+          persist-credentials: false
+
+      - name: Checkout core
+        uses: actions/checkout@v6
+        with:
+          path: workspace/midi-studio/core
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
+
+      - name: Install native system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libasound2-dev \
+            libudev-dev \
+            libsdl2-dev \
+            pkg-config \
+            xvfb
+
+      - name: Install PlatformIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "platformio==${PLATFORMIO_VERSION}"
+
+      - name: Cache native tools and PlatformIO
+        uses: actions/cache@v5
+        with:
+          path: |
+            workspace/tools
+            workspace/.ms/cache/downloads
+            workspace/midi-studio/core/.pio
+            ~/.platformio
+          key: ${{ runner.os }}-ux-native-${{ env.MS_DEV_ENV_SHA }}-${{ hashFiles('workspace/ms/data/toolchains.toml', 'workspace/midi-studio/core/platformio.ini', 'workspace/midi-studio/core/oc-sdk.ini', 'workspace/midi-studio/core/oc-native-sdk.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-ux-native-${{ env.MS_DEV_ENV_SHA }}-
+
+      - name: Sync native tools
+        working-directory: workspace
+        run: uv run ms sync --test-tools
+
+      - name: Install PlatformIO library dependencies
+        working-directory: workspace/midi-studio/core
+        run: python -m platformio pkg install -e release
+
+      - name: Build native simulator
+        working-directory: workspace
+        run: uv run ms build core --target native
+
+      - name: Run overlay exclusivity workflow
+        working-directory: workspace/midi-studio/core
+        run: xvfb-run -a python script/ux_workflows.py run overlay-exclusivity --skip-build
