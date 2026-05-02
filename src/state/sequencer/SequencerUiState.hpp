@@ -33,7 +33,7 @@ enum class PatternQuickControlItem : uint8_t {
 };
 
 struct SequencerStepEditOverlayState {
-    Signal<bool> visible{false};
+    Signal<bool, 8> visible{false};
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
 

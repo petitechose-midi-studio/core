@@ -2,10 +2,11 @@
 
 #if defined(MS_UX_RECORDER)
 
-#include <cstdio>
+#include <config/PlatformCompat.hpp>
 
 #include "config/InputIDs.hpp"
 #include "context/standalone/GlobalSettingsOverlayPresenterFormatters.hpp"
+#include "context/standalone/ux/StandaloneUxSurfaceUtils.hpp"
 #include "state/GlobalSettingsState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
@@ -15,32 +16,18 @@
 namespace core::context::standalone::ux {
 namespace {
 
-bool isButton(const oc::core::input::InputBindingTraceEvent& event,
-              Config::ButtonID button,
-              oc::core::input::ButtonBindingType type) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonId == static_cast<oc::type::ButtonID>(button) &&
-           event.buttonType == type;
-}
-
-bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
-           event.encoderId == static_cast<oc::type::EncoderID>(encoder);
-}
-
-void copyValueLabel(char (&out)[16], const char* value) {
-    if (!value) return;
-    std::snprintf(out, sizeof(out), "%s", value);
-}
+using detail::copyValueLabel;
+using detail::isButton;
+using detail::isEncoder;
 
 }  // namespace
 
-ViewSelectorUxSurface::ViewSelectorUxSurface(
+FLASHMEM ViewSelectorUxSurface::ViewSelectorUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::ViewSelectorState& viewSelector
 ) : active_view_(activeView), view_selector_(viewSelector) {}
 
-bool ViewSelectorUxSurface::captureSemanticUxContext(
+FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -73,12 +60,12 @@ bool ViewSelectorUxSurface::captureSemanticUxContext(
     return true;
 }
 
-GlobalSettingsUxSurface::GlobalSettingsUxSurface(
+FLASHMEM GlobalSettingsUxSurface::GlobalSettingsUxSurface(
     core::state::GlobalSettingsState& globalSettings,
     core::state::MidiSyncState& midiSync
 ) : global_settings_(globalSettings), midi_sync_(midiSync) {}
 
-bool GlobalSettingsUxSurface::captureSemanticUxContext(
+FLASHMEM bool GlobalSettingsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -139,10 +126,10 @@ bool GlobalSettingsUxSurface::captureSemanticUxContext(
     return false;
 }
 
-TransportUxSurface::TransportUxSurface(core::state::StatusBarState& statusBar)
+FLASHMEM TransportUxSurface::TransportUxSurface(core::state::StatusBarState& statusBar)
     : status_bar_(statusBar) {}
 
-bool TransportUxSurface::captureSemanticUxContext(
+FLASHMEM bool TransportUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {

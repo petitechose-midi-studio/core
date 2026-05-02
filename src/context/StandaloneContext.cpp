@@ -36,8 +36,16 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
     OC_LOG_INFO("StandaloneContext::initialize()");
 
 #if defined(MS_UX_RECORDER)
-    ux_surface_registry_.clear();
-    core::validation::ux::setCurrentSemanticUxContextProvider(&ux_surface_registry_);
+    if (!ux_surface_registry_) {
+        ux_surface_registry_ =
+            core::app::makeExtmemUnique<core::validation::ux::SemanticUxSurfaceRegistry>();
+    }
+    if (ux_surface_registry_) {
+        ux_surface_registry_->clear();
+        core::validation::ux::setCurrentSemanticUxContextProvider(ux_surface_registry_.get());
+    } else {
+        OC_LOG_WARN("StandaloneContext: UX surface registry allocation failed");
+    }
 #endif
 
     oc::ui::lvgl::font::load(CORE_FONT_ENTRIES, CORE_FONT_COUNT);
@@ -70,8 +78,10 @@ void StandaloneContext::update() {
 
 FLASHMEM void StandaloneContext::onCleanup() {
 #if defined(MS_UX_RECORDER)
-    core::validation::ux::clearCurrentSemanticUxContextProvider(&ux_surface_registry_);
-    ux_surface_registry_.clear();
+    if (ux_surface_registry_) {
+        core::validation::ux::clearCurrentSemanticUxContextProvider(ux_surface_registry_.get());
+        ux_surface_registry_->clear();
+    }
 #endif
 
     // Ensure overlay stack is reset while UI objects are still alive.
@@ -115,7 +125,7 @@ FLASHMEM void StandaloneContext::createOverlayAssembly() {
         core::app::makeExtmemUnique<core::context::standalone::StandaloneOverlayAssembly>(
             core_state_,
             buttons(),
-            ui_assembly_->mainZone(),
+            ui_assembly_->overlayRoot(),
             [this]() -> oc::type::ScopeID { return activeViewScopeId(); }
         );
     setupViewSelectorRendering();
@@ -137,7 +147,7 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         encoders(),
         buttons(),
         midi(),
-        ui_assembly_->mainZone(),
+        ui_assembly_->overlayRoot(),
         ui_assembly_->macroViewElement(),
         ui_assembly_->sequencerViewElement(),
         ui_assembly_->contextSoftkeyBar(),
@@ -146,7 +156,7 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         ui_assembly_->sequencerViewScope()
 #if defined(MS_UX_RECORDER)
         ,
-        &ux_surface_registry_
+        ux_surface_registry_.get()
 #endif
     );
 }
@@ -164,7 +174,7 @@ FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
             ui_assembly_->sequencerViewScope()
 #if defined(MS_UX_RECORDER)
             ,
-            &ux_surface_registry_
+            ux_surface_registry_.get()
 #endif
         );
     OC_LOG_INFO("Input bindings buttons={}/{} encoders={}/{}",

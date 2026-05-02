@@ -11,7 +11,7 @@ namespace core::state {
  */
 struct ViewSelectorState {
     oc::state::Signal<int, 4> selectedIndex{0};
-    oc::state::Signal<bool, 4> visible{false};
+    oc::state::Signal<bool, 8> visible{false};
 
     void reset() {
         selectedIndex.set(0);

@@ -2,34 +2,21 @@
 
 #if defined(MS_UX_RECORDER)
 
-#include <cstdio>
+#include <config/PlatformCompat.hpp>
 
 #include "config/InputIDs.hpp"
 #include "context/standalone/DataManagerPresenterFormatters.hpp"
+#include "context/standalone/ux/StandaloneUxSurfaceUtils.hpp"
 #include "state/DataManagerState.hpp"
 
 namespace core::context::standalone::ux {
 namespace {
 
-bool isButton(const oc::core::input::InputBindingTraceEvent& event,
-              Config::ButtonID button,
-              oc::core::input::ButtonBindingType type) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonId == static_cast<oc::type::ButtonID>(button) &&
-           event.buttonType == type;
-}
+using detail::copyValueLabel;
+using detail::isButton;
+using detail::isEncoder;
 
-bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
-           event.encoderId == static_cast<oc::type::EncoderID>(encoder);
-}
-
-void copyValueLabel(char (&out)[16], const char* value) {
-    if (!value) return;
-    std::snprintf(out, sizeof(out), "%s", value);
-}
-
-const char* dialogTarget(core::state::DataManagerFlowPhase phase) {
+FLASHMEM const char* dialogTarget(core::state::DataManagerFlowPhase phase) {
     switch (phase) {
         case core::state::DataManagerFlowPhase::ASSIGN_SHORTCUT:
             return "shortcut_command";
@@ -50,10 +37,10 @@ const char* dialogTarget(core::state::DataManagerFlowPhase phase) {
 
 }  // namespace
 
-DataManagerUxSurface::DataManagerUxSurface(core::state::DataManagerState& dataManager)
+FLASHMEM DataManagerUxSurface::DataManagerUxSurface(core::state::DataManagerState& dataManager)
     : data_manager_(dataManager) {}
 
-bool DataManagerUxSurface::captureSemanticUxContext(
+FLASHMEM bool DataManagerUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {

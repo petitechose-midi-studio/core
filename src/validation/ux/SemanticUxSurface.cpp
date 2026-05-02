@@ -1,8 +1,10 @@
 #include "validation/ux/SemanticUxSurface.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::validation::ux {
 
-bool SemanticUxSurfaceRegistry::add(const SemanticUxSurface& surface, uint8_t priority) {
+FLASHMEM bool SemanticUxSurfaceRegistry::add(const SemanticUxSurface& surface, uint8_t priority) {
     if (count_ >= CAPACITY) {
         return false;
     }
@@ -18,18 +20,18 @@ bool SemanticUxSurfaceRegistry::add(const SemanticUxSurface& surface, uint8_t pr
     return true;
 }
 
-void SemanticUxSurfaceRegistry::clear() {
+FLASHMEM void SemanticUxSurfaceRegistry::clear() {
     for (std::size_t i = 0; i < count_; ++i) {
         entries_[i] = Entry{};
     }
     count_ = 0;
 }
 
-std::size_t SemanticUxSurfaceRegistry::count() const {
+FLASHMEM std::size_t SemanticUxSurfaceRegistry::count() const {
     return count_;
 }
 
-void SemanticUxSurfaceRegistry::captureSemanticUxContext(
+FLASHMEM void SemanticUxSurfaceRegistry::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     SemanticUxContext& out
 ) const {

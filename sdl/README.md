@@ -115,6 +115,25 @@ plain `.ux` scripts with comments documenting intent:
 | `sequencer-playhead.ux` | Transport start/stop and SDL playhead progression telemetry. |
 | `data-manager-dialog.ux` | Data Manager navigation, command palette dialog, clean close. |
 | `overlay-priority-recovery.ux` | Overlay authority, unrelated input isolation, recovery after close. |
+| `overlay-exclusivity.ux` | Opaque exclusive overlay rendering while playback continues underneath. |
+
+The portable runner is the preferred command line on Linux, macOS, and Windows:
+
+```bash
+python script/ux_workflows.py run --report
+```
+
+Run a single workflow directly:
+
+```bash
+python script/ux_workflows.py run overlay-exclusivity --skip-build --report
+```
+
+Use the interactive selector:
+
+```bash
+python script/ux_workflows.py run --interactive
+```
 
 Run the full suite from anywhere in the repo after a native build:
 

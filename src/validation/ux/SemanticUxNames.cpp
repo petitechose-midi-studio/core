@@ -1,10 +1,12 @@
 #include "validation/ux/SemanticUxNames.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 #include "config/InputIDs.hpp"
 
 namespace core::validation::ux {
 
-const char* buttonName(oc::type::ButtonID id) {
+FLASHMEM const char* buttonName(oc::type::ButtonID id) {
     switch (static_cast<Config::ButtonID>(id)) {
         case Config::ButtonID::LEFT_TOP:
             return "LEFT_TOP";
@@ -41,7 +43,7 @@ const char* buttonName(oc::type::ButtonID id) {
     }
 }
 
-const char* encoderName(oc::type::EncoderID id) {
+FLASHMEM const char* encoderName(oc::type::EncoderID id) {
     switch (static_cast<Config::EncoderID>(id)) {
         case Config::EncoderID::MACRO_1:
             return "MACRO_1";
@@ -68,7 +70,7 @@ const char* encoderName(oc::type::EncoderID id) {
     }
 }
 
-const char* buttonGestureName(oc::core::input::ButtonBindingType type) {
+FLASHMEM const char* buttonGestureName(oc::core::input::ButtonBindingType type) {
     switch (type) {
         case oc::core::input::ButtonBindingType::PRESS:
             return "press";
@@ -85,7 +87,7 @@ const char* buttonGestureName(oc::core::input::ButtonBindingType type) {
     }
 }
 
-const char* encoderGestureName(oc::core::input::EncoderBindingType type) {
+FLASHMEM const char* encoderGestureName(oc::core::input::EncoderBindingType type) {
     switch (type) {
         case oc::core::input::EncoderBindingType::TURN:
             return "turn";
@@ -96,7 +98,7 @@ const char* encoderGestureName(oc::core::input::EncoderBindingType type) {
     }
 }
 
-const char* viewName(core::ui::ViewType view) {
+FLASHMEM const char* viewName(core::ui::ViewType view) {
     switch (view) {
         case core::ui::ViewType::MACRO:
             return "macro";
@@ -107,7 +109,7 @@ const char* viewName(core::ui::ViewType view) {
     }
 }
 
-const char* overlayName(core::ui::OverlayType overlay) {
+FLASHMEM const char* overlayName(core::ui::OverlayType overlay) {
     switch (overlay) {
         case core::ui::OverlayType::NONE:
             return "none";

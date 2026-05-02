@@ -19,7 +19,7 @@ enum class GlobalSettingsFlowPhase : uint8_t {
 };
 
 struct GlobalSettingsValueSelectorState {
-    oc::state::Signal<bool, 4> visible{false};
+    oc::state::Signal<bool, 8> visible{false};
     oc::state::Signal<int, 4> selectedIndex{0};
     oc::state::Signal<uint8_t, 4> editingRow{0};
 
@@ -31,7 +31,7 @@ struct GlobalSettingsValueSelectorState {
 };
 
 struct GlobalSettingsState {
-    oc::state::Signal<bool> visible{false};
+    oc::state::Signal<bool, 8> visible{false};
     oc::state::Signal<uint8_t> focusedRow{0};
     oc::state::Signal<GlobalSettingsFlowPhase, 4> flowPhase{
         GlobalSettingsFlowPhase::CLOSED

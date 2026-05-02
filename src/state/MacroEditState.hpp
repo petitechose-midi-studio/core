@@ -32,7 +32,7 @@ enum class MacroEditFlowPhase : uint8_t {
  */
 struct MacroEditState {
     /// Overlay visibility (owned by ExclusiveVisibilityStack)
-    oc::state::Signal<bool> visible{false};
+    oc::state::Signal<bool, 8> visible{false};
     oc::state::Signal<MacroEditFlowPhase, 4> flowPhase{MacroEditFlowPhase::CLOSED};
 
     /// Which macro is being edited (0-7)
@@ -48,7 +48,7 @@ struct MacroEditState {
     oc::state::Signal<uint8_t> focusedRow{0};
 
     struct ValueSelectorState {
-        oc::state::Signal<bool, 4> visible{false};
+        oc::state::Signal<bool, 8> visible{false};
         oc::state::Signal<uint8_t, 4> editingRow{0};
         oc::state::Signal<int, 4> selectedIndex{0};
 
@@ -60,7 +60,7 @@ struct MacroEditState {
     };
 
     struct MacroSelectorState {
-        oc::state::Signal<bool, 4> visible{false};
+        oc::state::Signal<bool, 8> visible{false};
         oc::state::Signal<int, 4> selectedIndex{0};
 
         void reset() {

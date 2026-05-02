@@ -368,6 +368,21 @@ FLASHMEM void MacroView::bindToState() {
         })
     );
     subscriptions_.push_back(
+        state_refs_.macroEdit.selector.visible.subscribe([this](bool) {
+            handleOverlayVisibilityChanged();
+        })
+    );
+    subscriptions_.push_back(
+        state_refs_.macroEdit.macroSelector.visible.subscribe([this](bool) {
+            handleOverlayVisibilityChanged();
+        })
+    );
+    subscriptions_.push_back(
+        state_refs_.pages.selector.visible.subscribe([this](bool) {
+            handleOverlayVisibilityChanged();
+        })
+    );
+    subscriptions_.push_back(
         state_refs_.viewSelector.visible.subscribe([this](bool) {
             handleOverlayVisibilityChanged();
         })
@@ -515,6 +530,9 @@ FLASHMEM void MacroView::requestPropertyStripRender() {
 
 FLASHMEM bool MacroView::hasBlockingOverlay() const {
     return state_refs_.macroEdit.visible.get() ||
+           state_refs_.macroEdit.selector.visible.get() ||
+           state_refs_.macroEdit.macroSelector.visible.get() ||
+           state_refs_.pages.selector.visible.get() ||
            state_refs_.viewSelector.visible.get() ||
            state_refs_.globalSettings.visible.get() ||
            state_refs_.globalSettings.selector.visible.get() ||

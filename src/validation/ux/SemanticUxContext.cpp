@@ -1,21 +1,23 @@
 #include "validation/ux/SemanticUxContext.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::validation::ux {
 namespace {
 SemanticUxContextProvider* currentProvider = nullptr;
 }
 
-void setCurrentSemanticUxContextProvider(SemanticUxContextProvider* provider) {
+FLASHMEM void setCurrentSemanticUxContextProvider(SemanticUxContextProvider* provider) {
     currentProvider = provider;
 }
 
-void clearCurrentSemanticUxContextProvider(SemanticUxContextProvider* provider) {
+FLASHMEM void clearCurrentSemanticUxContextProvider(SemanticUxContextProvider* provider) {
     if (currentProvider == provider) {
         currentProvider = nullptr;
     }
 }
 
-SemanticUxContextProvider* currentSemanticUxContextProvider() {
+FLASHMEM SemanticUxContextProvider* currentSemanticUxContextProvider() {
     return currentProvider;
 }
 

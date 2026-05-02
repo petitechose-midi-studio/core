@@ -176,12 +176,23 @@ public:
 };
 
 SerialSemanticUxSink semanticUxSink;
-core::validation::ux::SemanticUxRecorder semanticUxRecorder{
-    core::validation::ux::SemanticUxRecorderOptions{
-        .sink = &semanticUxSink,
-        .enabled = true,
+core::app::ExtmemUniquePtr<core::validation::ux::SemanticUxRecorder> semanticUxRecorder;
+
+FLASHMEM core::validation::ux::SemanticUxRecorder* initSemanticUxRecorder() {
+    if (!semanticUxRecorder) {
+        semanticUxRecorder =
+            core::app::makeExtmemUnique<core::validation::ux::SemanticUxRecorder>(
+                core::validation::ux::SemanticUxRecorderOptions{
+                    .sink = &semanticUxSink,
+                    .enabled = true,
+                }
+            );
     }
-};
+    if (!semanticUxRecorder) {
+        OC_LOG_WARN("UX recorder allocation failed");
+    }
+    return semanticUxRecorder.get();
+}
 
 }  // namespace
 #endif
@@ -347,12 +358,16 @@ static FLASHMEM void initApp() {
         .inputConfig(Config::Input::CONFIG);
 
 #if defined(MS_UX_RECORDER)
+    initSemanticUxRecorder();
     appBuilder.inputTrace([](const oc::core::input::InputBindingTraceEvent& event) {
-        if (!coreState) {
-            semanticUxRecorder.onBindingTrace(event);
+        if (!semanticUxRecorder) {
             return;
         }
-        semanticUxRecorder.onBindingTrace(
+        if (!coreState) {
+            semanticUxRecorder->onBindingTrace(event);
+            return;
+        }
+        semanticUxRecorder->onBindingTrace(
             event,
             core::validation::ux::makeSemanticUxSnapshot(*coreState)
         );
@@ -418,7 +433,9 @@ FLASHMEM void setup() {
     initApp();
 
 #if defined(MS_UX_RECORDER)
-    semanticUxSink.writeLine("UXR {\"kind\":\"session\",\"event\":\"boot\",\"enabled\":1}");
+    if (semanticUxRecorder) {
+        semanticUxSink.writeLine("UXR {\"kind\":\"session\",\"event\":\"boot\",\"enabled\":1}");
+    }
 #endif
 
     OC_LOG_INFO("Ready");
@@ -466,7 +483,9 @@ void loop() {
 #endif
 
 #if defined(MS_UX_RECORDER)
-    semanticUxRecorder.flush(millis(), *coreState);
+    if (semanticUxRecorder) {
+        semanticUxRecorder->flush(millis(), *coreState);
+    }
 #endif
 
     // Refresh LVGL at lower frequency to reduce CPU load

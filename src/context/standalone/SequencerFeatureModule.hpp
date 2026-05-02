@@ -69,7 +69,8 @@ public:
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,
-                           lv_obj_t* sequencerViewScope
+                           lv_obj_t* sequencerViewScope,
+                           lv_obj_t* overlayRoot
 #if defined(MS_UX_RECORDER)
                            ,
                            core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry

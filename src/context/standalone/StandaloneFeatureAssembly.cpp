@@ -26,7 +26,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     oc::api::MidiAPI& midi,
-    lv_obj_t* mainZone,
+    lv_obj_t* overlayRoot,
     lv_obj_t* macroViewElement,
     lv_obj_t* sequencerViewElement,
     core::ui::ContextSoftkeyBar& contextSoftkeyBar,
@@ -59,7 +59,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         encoders,
         buttons,
         midi,
-        mainZone,
+        overlayRoot,
         macroViewElement
 #if defined(MS_UX_RECORDER)
         ,
@@ -81,7 +81,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         overlays,
         encoders,
         buttons,
-        sequencerViewElement
+        sequencerViewElement,
+        overlayRoot
 #if defined(MS_UX_RECORDER)
         ,
         uxRegistry
@@ -106,7 +107,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         overlays,
         encoders,
         buttons,
-        mainZone,
+        overlayRoot,
         contextSoftkeyBar,
         transportBar,
         core::handler::DataManagerHandler::ViewScopes{

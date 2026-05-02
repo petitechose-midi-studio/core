@@ -22,7 +22,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
-    lv_obj_t* sequencerViewScope
+    lv_obj_t* sequencerViewScope,
+    lv_obj_t* overlayRoot
 #if defined(MS_UX_RECORDER)
     ,
     core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
@@ -79,7 +80,9 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         encoders
     );
     step_edit_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(sequencerViewScope);
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(
+            overlayRoot ? overlayRoot : sequencerViewScope
+        );
     overlays.registerCleanup(
         core::ui::OverlayType::SEQ_STEP_EDIT,
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),

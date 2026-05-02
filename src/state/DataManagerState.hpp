@@ -58,7 +58,7 @@ inline constexpr bool dataManagerFlowShowsDialog(DataManagerFlowPhase phase) {
 }
 
 struct DataManagerDialogState {
-    oc::state::Signal<bool, 4> visible{false};
+    oc::state::Signal<bool, 8> visible{false};
     oc::state::Signal<DataManagerDialogMode, 4> mode{
         DataManagerDialogMode::ASSIGN_SHORTCUT
     };
@@ -74,7 +74,7 @@ struct DataManagerDialogState {
 };
 
 struct DataManagerState {
-    oc::state::Signal<bool> visible{false};
+    oc::state::Signal<bool, 8> visible{false};
     oc::state::Signal<uint8_t> focusedRow{0};
     oc::state::Signal<DataManagerContext, 4> context{DataManagerContext::MACRO};
     oc::state::Signal<DataManagerFlowPhase, 4> flowPhase{DataManagerFlowPhase::CLOSED};

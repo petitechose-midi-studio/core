@@ -8,6 +8,7 @@ Utility scripts for asset conversion and build configuration.
 |--------|---------|-------------|
 | [lvgl/font/](lvgl/font/) | Convert TTF/OTF to LVGL binary fonts | Manual, when adding fonts |
 | [lvgl/img/](lvgl/img/) | Convert PNG to LVGL C arrays | Manual, when adding images |
+| [ux_workflows.py](ux_workflows.py) | Run and report SDL UX workflows on Linux, macOS, or Windows | UX regression checks |
 
 ## Usage
 
@@ -33,6 +34,7 @@ Batch converts all PNG files from configured source directory.
 |--------|--------------|
 | Font converter | Node.js, `lv_font_conv` installed globally with `npm i -g lv_font_conv` |
 | Image converter | Python 3.8+, [uv](https://github.com/astral-sh/uv) |
+| UX workflow runner | Python 3.8+, native SDL build toolchain |
 
 ## Configuration Files
 

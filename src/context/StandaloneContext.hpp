@@ -107,7 +107,8 @@ private:
     core::state::CoreState& core_state_;  // External reference (survives context switches)
 
 #if defined(MS_UX_RECORDER)
-    core::validation::ux::SemanticUxSurfaceRegistry ux_surface_registry_;
+    core::app::ExtmemUniquePtr<core::validation::ux::SemanticUxSurfaceRegistry>
+        ux_surface_registry_;
 #endif
 
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneUiAssembly> ui_assembly_;

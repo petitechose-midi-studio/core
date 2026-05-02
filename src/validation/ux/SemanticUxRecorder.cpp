@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include <config/PlatformCompat.hpp>
+
 #include "config/InputIDs.hpp"
 #include "state/CoreState.hpp"
 #include "validation/ux/SemanticUxContext.hpp"
@@ -11,18 +13,18 @@
 namespace core::validation::ux {
 namespace {
 
-int32_t milliFromFloat(float value) {
+FLASHMEM int32_t milliFromFloat(float value) {
     const float scaled = value * 1000.0f;
     return static_cast<int32_t>(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
 }
 
-EncoderValueKind valueKindForEncoder(oc::type::EncoderID id) {
+FLASHMEM EncoderValueKind valueKindForEncoder(oc::type::EncoderID id) {
     return id == static_cast<oc::type::EncoderID>(Config::EncoderID::NAV)
                ? EncoderValueKind::Delta
                : EncoderValueKind::Absolute;
 }
 
-const char* valueKindName(EncoderValueKind kind) {
+FLASHMEM const char* valueKindName(EncoderValueKind kind) {
     switch (kind) {
         case EncoderValueKind::Delta:
             return "delta";
@@ -32,29 +34,29 @@ const char* valueKindName(EncoderValueKind kind) {
     return "absolute";
 }
 
-void appendField(char* out, std::size_t size, const char* key, const char* value) {
+FLASHMEM void appendField(char* out, std::size_t size, const char* key, const char* value) {
     if (!value || value[0] == '\0') return;
     const std::size_t used = std::strlen(out);
     if (used >= size) return;
     std::snprintf(out + used, size - used, ",\"%s\":\"%s\"", key, value);
 }
 
-void appendIntField(char* out, std::size_t size, const char* key, int value) {
+FLASHMEM void appendIntField(char* out, std::size_t size, const char* key, int value) {
     const std::size_t used = std::strlen(out);
     if (used >= size) return;
     std::snprintf(out + used, size - used, ",\"%s\":%d", key, value);
 }
 
-void appendBoolField(char* out, std::size_t size, const char* key, bool value) {
+FLASHMEM void appendBoolField(char* out, std::size_t size, const char* key, bool value) {
     const std::size_t used = std::strlen(out);
     if (used >= size) return;
     std::snprintf(out + used, size - used, ",\"%s\":%u", key, value ? 1U : 0U);
 }
 
-void formatContextFields(char* out,
-                         std::size_t size,
-                         const SemanticUxContext& pre,
-                         const SemanticUxContext& post) {
+FLASHMEM void formatContextFields(char* out,
+                                  std::size_t size,
+                                  const SemanticUxContext& pre,
+                                  const SemanticUxContext& post) {
     if (!out || size == 0) return;
     out[0] = '\0';
 
@@ -106,7 +108,7 @@ void formatContextFields(char* out,
 
 }  // namespace
 
-SemanticUxSnapshot makeSemanticUxSnapshot(const core::state::CoreState& state) {
+FLASHMEM SemanticUxSnapshot makeSemanticUxSnapshot(const core::state::CoreState& state) {
     return SemanticUxSnapshot{
         .view = state.activeView.get(),
         .overlay = state.overlays.current(),
@@ -118,29 +120,31 @@ SemanticUxSnapshot makeSemanticUxSnapshot(const core::state::CoreState& state) {
     };
 }
 
-SemanticUxRecorder::SemanticUxRecorder(SemanticUxRecorderOptions options) {
+FLASHMEM SemanticUxRecorder::SemanticUxRecorder(SemanticUxRecorderOptions options) {
     configure(options);
 }
 
-void SemanticUxRecorder::configure(SemanticUxRecorderOptions options) {
+FLASHMEM void SemanticUxRecorder::configure(SemanticUxRecorderOptions options) {
     sink_ = options.sink;
     enabled_ = options.enabled;
 }
 
-void SemanticUxRecorder::setEnabled(bool enabled) {
+FLASHMEM void SemanticUxRecorder::setEnabled(bool enabled) {
     enabled_ = enabled;
 }
 
-bool SemanticUxRecorder::enabled() const {
+FLASHMEM bool SemanticUxRecorder::enabled() const {
     return enabled_;
 }
 
-void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTraceEvent& event) {
+FLASHMEM void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTraceEvent& event) {
     onBindingTrace(event, SemanticUxSnapshot{});
 }
 
-void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTraceEvent& event,
-                                        const SemanticUxSnapshot& preSnapshot) {
+FLASHMEM void SemanticUxRecorder::onBindingTrace(
+    const oc::core::input::InputBindingTraceEvent& event,
+    const SemanticUxSnapshot& preSnapshot
+) {
     if (!enabled_ || sink_ == nullptr) {
         return;
     }
@@ -176,11 +180,11 @@ void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTrace
     enqueue_(record);
 }
 
-void SemanticUxRecorder::flush(uint32_t nowMs, const core::state::CoreState& state) {
+FLASHMEM void SemanticUxRecorder::flush(uint32_t nowMs, const core::state::CoreState& state) {
     flush(nowMs, makeSemanticUxSnapshot(state));
 }
 
-void SemanticUxRecorder::flush(uint32_t nowMs, const SemanticUxSnapshot& snapshot) {
+FLASHMEM void SemanticUxRecorder::flush(uint32_t nowMs, const SemanticUxSnapshot& snapshot) {
     if (!enabled_ || sink_ == nullptr) {
         return;
     }
@@ -196,15 +200,15 @@ void SemanticUxRecorder::flush(uint32_t nowMs, const SemanticUxSnapshot& snapsho
     }
 }
 
-std::size_t SemanticUxRecorder::pendingCount() const {
+FLASHMEM std::size_t SemanticUxRecorder::pendingCount() const {
     return count_;
 }
 
-uint32_t SemanticUxRecorder::droppedCount() const {
+FLASHMEM uint32_t SemanticUxRecorder::droppedCount() const {
     return dropped_count_;
 }
 
-bool SemanticUxRecorder::enqueue_(const PendingRecord& record) {
+FLASHMEM bool SemanticUxRecorder::enqueue_(const PendingRecord& record) {
     if (count_ == CAPACITY) {
         ++dropped_count_;
         return false;
@@ -216,7 +220,7 @@ bool SemanticUxRecorder::enqueue_(const PendingRecord& record) {
     return true;
 }
 
-bool SemanticUxRecorder::pop_(PendingRecord& record) {
+FLASHMEM bool SemanticUxRecorder::pop_(PendingRecord& record) {
     if (count_ == 0) {
         return false;
     }
@@ -227,9 +231,9 @@ bool SemanticUxRecorder::pop_(PendingRecord& record) {
     return true;
 }
 
-void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
-                                      const PendingRecord& record,
-                                      const SemanticUxSnapshot& postSnapshot) {
+FLASHMEM void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
+                                               const PendingRecord& record,
+                                               const SemanticUxSnapshot& postSnapshot) {
     SemanticUxContext postContext{};
     if (auto* provider = currentSemanticUxContextProvider()) {
         provider->captureSemanticUxContext(record.traceEvent, postContext);
@@ -318,7 +322,7 @@ void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
     sink_->writeLine(line);
 }
 
-void SemanticUxRecorder::writeDropReport_(uint32_t nowMs) {
+FLASHMEM void SemanticUxRecorder::writeDropReport_(uint32_t nowMs) {
     char line[96];
     std::snprintf(
         line,

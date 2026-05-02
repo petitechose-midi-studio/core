@@ -28,6 +28,7 @@ FLASHMEM StandaloneUiAssembly::StandaloneUiAssembly(core::state::CoreState& stat
     createViews();
     createBottomBar();
     bindGlobalTrackStrip();
+    bindOverlayExclusivity();
     scheduleGlobalTrackStripRender(true);
 }
 
@@ -42,10 +43,15 @@ FLASHMEM StandaloneUiAssembly::~StandaloneUiAssembly() {
 
 FLASHMEM void StandaloneUiAssembly::show() {
     view_container_->show();
+    applyOverlayExclusivity();
 }
 
 FLASHMEM lv_obj_t* StandaloneUiAssembly::mainZone() const {
     return view_container_->getMainZone();
+}
+
+FLASHMEM lv_obj_t* StandaloneUiAssembly::overlayRoot() const {
+    return view_container_->getContainer();
 }
 
 FLASHMEM oc::type::ScopeID StandaloneUiAssembly::macroViewScope() const {
@@ -221,6 +227,44 @@ FLASHMEM void StandaloneUiAssembly::bindGlobalTrackStrip() {
         core_state_.statusBar.trackNoteActivity[15]
     );
 
+}
+
+FLASHMEM void StandaloneUiAssembly::bindOverlayExclusivity() {
+    overlay_exclusivity_watcher_.watchAll(
+        [this]() { applyOverlayExclusivity(); },
+        core_state_.pages.selector.visible,
+        core_state_.macroEdit.visible,
+        core_state_.macroEdit.selector.visible,
+        core_state_.macroEdit.macroSelector.visible,
+        core_state_.viewSelector.visible,
+        core_state_.sequencer.stepEdit.visible,
+        core_state_.globalSettings.visible,
+        core_state_.globalSettings.selector.visible,
+        core_state_.dataManager.visible,
+        core_state_.dataManager.dialog.visible
+    );
+
+    applyOverlayExclusivity();
+}
+
+FLASHMEM void StandaloneUiAssembly::applyOverlayExclusivity() {
+    const bool hasOverlay = core_state_.overlays.hasVisible();
+    if (overlay_exclusive_mode_ == hasOverlay) return;
+
+    overlay_exclusive_mode_ = hasOverlay;
+    lv_obj_t* mainZone = view_container_ ? view_container_->getMainZone() : nullptr;
+    lv_obj_t* bottomZone = view_container_ ? view_container_->getBottomZone() : nullptr;
+
+    if (hasOverlay) {
+        if (mainZone) lv_obj_add_flag(mainZone, LV_OBJ_FLAG_HIDDEN);
+        if (bottomZone) lv_obj_add_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+        global_track_strip_dirty_ = true;
+        return;
+    }
+
+    if (mainZone) lv_obj_clear_flag(mainZone, LV_OBJ_FLAG_HIDDEN);
+    if (bottomZone) lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+    scheduleGlobalTrackStripRender(true);
 }
 
 FLASHMEM void StandaloneUiAssembly::scheduleGlobalTrackStripRender(bool ready) {

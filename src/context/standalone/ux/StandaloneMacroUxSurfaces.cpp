@@ -3,10 +3,12 @@
 #if defined(MS_UX_RECORDER)
 
 #include <cstdio>
-#include <cstring>
+
+#include <config/PlatformCompat.hpp>
 
 #include "config/InputIDs.hpp"
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
+#include "context/standalone/ux/StandaloneUxSurfaceUtils.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/StructureClipboardState.hpp"
@@ -19,46 +21,21 @@
 namespace core::context::standalone::ux {
 namespace {
 
-bool isMacroEncoderTurn(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
-           Config::macroEncoderIndex(event.encoderId, index);
-}
+using detail::copyIndexLabel;
+using detail::copyValueLabel;
+using detail::isAddSlot;
+using detail::isButton;
+using detail::isEncoder;
+using detail::isMacroButtonLongPress;
+using detail::isMacroButtonRelease;
+using detail::isMacroEncoderTurn;
+using detail::markIgnored;
+using detail::markNoop;
+using detail::structureTarget;
 
-bool isMacroButtonLongPress(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonType == oc::core::input::ButtonBindingType::LONG_PRESS &&
-           Config::macroButtonIndex(event.buttonId, index);
-}
-
-bool isMacroButtonRelease(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonType == oc::core::input::ButtonBindingType::RELEASE &&
-           Config::macroButtonIndex(event.buttonId, index);
-}
-
-bool isButton(const oc::core::input::InputBindingTraceEvent& event,
-              Config::ButtonID button,
-              oc::core::input::ButtonBindingType type) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonId == static_cast<oc::type::ButtonID>(button) &&
-           event.buttonType == type;
-}
-
-bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
-           event.encoderId == static_cast<oc::type::EncoderID>(encoder);
-}
-
-void copyValueLabel(char (&out)[16], const char* value) {
-    if (!value) return;
-    std::snprintf(out, sizeof(out), "%s", value);
-}
-
-void copyIndexLabel(char (&out)[16], unsigned value) {
-    std::snprintf(out, sizeof(out), "%u", value + 1U);
-}
-
-const char* macroPerformancePropertyName(core::state::macro::MacroPerformanceProperty property) {
+FLASHMEM const char* macroPerformancePropertyName(
+    core::state::macro::MacroPerformanceProperty property
+) {
     switch (property) {
         case core::state::macro::MacroPerformanceProperty::CC:
             return "CC";
@@ -70,7 +47,9 @@ const char* macroPerformancePropertyName(core::state::macro::MacroPerformancePro
     }
 }
 
-const char* macroPerformanceEffect(core::state::macro::MacroPerformanceProperty property) {
+FLASHMEM const char* macroPerformanceEffect(
+    core::state::macro::MacroPerformanceProperty property
+) {
     switch (property) {
         case core::state::macro::MacroPerformanceProperty::CC:
             return "edit_macro_cc";
@@ -82,7 +61,7 @@ const char* macroPerformanceEffect(core::state::macro::MacroPerformanceProperty 
     }
 }
 
-const char* macroQuickControlName(core::state::macro::MacroQuickControlItem item) {
+FLASHMEM const char* macroQuickControlName(core::state::macro::MacroQuickControlItem item) {
     switch (item) {
         case core::state::macro::MacroQuickControlItem::CC_OFFSET:
             return "CC Offset";
@@ -92,9 +71,9 @@ const char* macroQuickControlName(core::state::macro::MacroQuickControlItem item
     }
 }
 
-void fillMacroQuickControlValueLabel(core::state::macro::MacroUiState& macroUi,
-                                     core::state::macro::MacroQuickControlItem item,
-                                     char (&out)[16]) {
+FLASHMEM void fillMacroQuickControlValueLabel(core::state::macro::MacroUiState& macroUi,
+                                              core::state::macro::MacroQuickControlItem item,
+                                              char (&out)[16]) {
     switch (item) {
         case core::state::macro::MacroQuickControlItem::CC_OFFSET:
             std::snprintf(out, sizeof(out), "%+d", static_cast<int>(macroUi.ccOffset.get()));
@@ -106,28 +85,10 @@ void fillMacroQuickControlValueLabel(core::state::macro::MacroUiState& macroUi,
     }
 }
 
-const char* structureTarget(core::state::StructureNavigationFocus focus) {
-    switch (focus) {
-        case core::state::StructureNavigationFocus::TRACK:
-            return "track";
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
-            return "page";
-    }
-}
-
-const char* structureTarget(core::state::StructureSelectionScope scope) {
-    switch (scope) {
-        case core::state::StructureSelectionScope::TRACK:
-            return "track";
-        case core::state::StructureSelectionScope::PAGE:
-        default:
-            return "page";
-    }
-}
-
-void fillSelectedItem(core::validation::ux::SemanticUxContext& out,
-                      const core::context::standalone::macro_overlay_presenter::SelectorRenderData& data) {
+FLASHMEM void fillSelectedItem(
+    core::validation::ux::SemanticUxContext& out,
+    const core::context::standalone::macro_overlay_presenter::SelectorRenderData& data
+) {
     out.targetIndex = static_cast<int16_t>(data.selectedIndex);
     if (data.items && data.selectedIndex >= 0 && data.selectedIndex < data.itemCount) {
         out.property = data.items[data.selectedIndex];
@@ -135,24 +96,9 @@ void fillSelectedItem(core::validation::ux::SemanticUxContext& out,
     }
 }
 
-bool isAddSlot(const core::validation::ux::SemanticUxContext& out) {
-    return out.property && std::strcmp(out.property, "add_slot") == 0;
-}
-
-void markNoop(core::validation::ux::SemanticUxContext& out, const char* reason) {
-    out.outcome = "noop";
-    out.reason = reason;
-}
-
-void markIgnored(core::validation::ux::SemanticUxContext& out, const char* reason) {
-    out.effect = "release_ignored";
-    out.outcome = "ignored";
-    out.reason = reason;
-}
-
 }  // namespace
 
-MacroValueUxSurface::MacroValueUxSurface(
+FLASHMEM MacroValueUxSurface::MacroValueUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::MacroState& macros,
     core::state::macro::MacroPagesState& pages,
@@ -164,7 +110,7 @@ MacroValueUxSurface::MacroValueUxSurface(
     macro_ui_(macroUi),
     macro_edit_(macroEdit) {}
 
-bool MacroValueUxSurface::captureSemanticUxContext(
+FLASHMEM bool MacroValueUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -207,13 +153,13 @@ bool MacroValueUxSurface::captureSemanticUxContext(
     return true;
 }
 
-MacroPerformanceUxSurface::MacroPerformanceUxSurface(
+FLASHMEM MacroPerformanceUxSurface::MacroPerformanceUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::macro::MacroUiState& macroUi,
     core::state::MacroEditState& macroEdit
 ) : active_view_(activeView), macro_ui_(macroUi), macro_edit_(macroEdit) {}
 
-bool MacroPerformanceUxSurface::captureSemanticUxContext(
+FLASHMEM bool MacroPerformanceUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -266,7 +212,7 @@ bool MacroPerformanceUxSurface::captureSemanticUxContext(
     return true;
 }
 
-MacroStructureUxSurface::MacroStructureUxSurface(
+FLASHMEM MacroStructureUxSurface::MacroStructureUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     oc::state::Signal<
         core::state::StructureNavigationFocus,
@@ -286,7 +232,7 @@ MacroStructureUxSurface::MacroStructureUxSurface(
     macro_edit_(macroEdit),
     trace_state_(traceState) {}
 
-bool MacroStructureUxSurface::captureSemanticUxContext(
+FLASHMEM bool MacroStructureUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -425,7 +371,7 @@ bool MacroStructureUxSurface::captureSemanticUxContext(
     return true;
 }
 
-MacroEditUxSurface::MacroEditUxSurface(
+FLASHMEM MacroEditUxSurface::MacroEditUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::MacroEditState& macroEdit,
     core::state::macro::MacroPagesState& pages,
@@ -437,7 +383,7 @@ MacroEditUxSurface::MacroEditUxSurface(
     core::context::standalone::macro_overlay_presenter::initializeStaticItems(static_items_);
 }
 
-bool MacroEditUxSurface::captureSemanticUxContext(
+FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {

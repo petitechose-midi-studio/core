@@ -3,10 +3,12 @@
 #if defined(MS_UX_RECORDER)
 
 #include <cstdio>
-#include <cstring>
+
+#include <config/PlatformCompat.hpp>
 
 #include "config/InputIDs.hpp"
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
+#include "context/standalone/ux/StandaloneUxSurfaceUtils.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
@@ -19,53 +21,16 @@
 namespace core::context::standalone::ux {
 namespace {
 
-bool isButton(const oc::core::input::InputBindingTraceEvent& event,
-              Config::ButtonID button,
-              oc::core::input::ButtonBindingType type) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonId == static_cast<oc::type::ButtonID>(button) &&
-           event.buttonType == type;
-}
-
-bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
-           event.encoderId == static_cast<oc::type::EncoderID>(encoder);
-}
-
-bool isMacroButtonRelease(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonType == oc::core::input::ButtonBindingType::RELEASE &&
-           Config::macroButtonIndex(event.buttonId, index);
-}
-
-bool isMacroEncoderTurn(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
-           Config::macroEncoderIndex(event.encoderId, index);
-}
-
-void copyIndexLabel(char (&out)[16], unsigned value) {
-    std::snprintf(out, sizeof(out), "%u", value + 1U);
-}
-
-void copyValueLabel(char (&out)[16], const char* value) {
-    if (!value) return;
-    std::snprintf(out, sizeof(out), "%s", value);
-}
-
-bool isAddSlot(const core::validation::ux::SemanticUxContext& out) {
-    return out.property && std::strcmp(out.property, "add_slot") == 0;
-}
-
-void markNoop(core::validation::ux::SemanticUxContext& out, const char* reason) {
-    out.outcome = "noop";
-    out.reason = reason;
-}
-
-void markIgnored(core::validation::ux::SemanticUxContext& out, const char* reason) {
-    out.effect = "release_ignored";
-    out.outcome = "ignored";
-    out.reason = reason;
-}
+using detail::copyIndexLabel;
+using detail::copyValueLabel;
+using detail::isAddSlot;
+using detail::isButton;
+using detail::isEncoder;
+using detail::isMacroButtonRelease;
+using detail::isMacroEncoderTurn;
+using detail::markIgnored;
+using detail::markNoop;
+using detail::structureTarget;
 
 uint16_t sequencerPageMask(const core::state::sequencer::SequencerState& sequencer) {
     const uint8_t count = sequencer.activePageCount();
@@ -73,29 +38,11 @@ uint16_t sequencerPageMask(const core::state::sequencer::SequencerState& sequenc
     return static_cast<uint16_t>((1U << count) - 1U);
 }
 
-const char* structureTarget(core::state::StructureNavigationFocus focus) {
-    switch (focus) {
-        case core::state::StructureNavigationFocus::TRACK:
-            return "track";
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
-            return "page";
-    }
-}
-
-const char* structureTarget(core::state::StructureSelectionScope scope) {
-    switch (scope) {
-        case core::state::StructureSelectionScope::TRACK:
-            return "track";
-        case core::state::StructureSelectionScope::PAGE:
-        default:
-            return "page";
-    }
-}
-
-void fillQuickControlValueLabel(const core::state::sequencer::SequencerState& sequencer,
-                                core::state::sequencer::PatternQuickControlItem item,
-                                char (&out)[16]) {
+FLASHMEM void fillQuickControlValueLabel(
+    const core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::PatternQuickControlItem item,
+    char (&out)[16]
+) {
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::OFFSET:
             std::snprintf(out, sizeof(out), "%d", static_cast<int>(sequencer.patternQuickControls.offsetSteps.get()));
@@ -110,10 +57,10 @@ void fillQuickControlValueLabel(const core::state::sequencer::SequencerState& se
     }
 }
 
-void fillStepValueLabel(const core::state::sequencer::SequencerState& sequencer,
-                        uint8_t step,
-                        core::state::sequencer::StepProperty property,
-                        char (&out)[16]) {
+FLASHMEM void fillStepValueLabel(const core::state::sequencer::SequencerState& sequencer,
+                                 uint8_t step,
+                                 core::state::sequencer::StepProperty property,
+                                 char (&out)[16]) {
     core::state::sequencer::formatStepPropertyValue(
         out,
         sizeof(out),
@@ -128,12 +75,12 @@ void fillStepValueLabel(const core::state::sequencer::SequencerState& sequencer,
 
 }  // namespace
 
-SequencerPropertySelectorUxSurface::SequencerPropertySelectorUxSurface(
+FLASHMEM SequencerPropertySelectorUxSurface::SequencerPropertySelectorUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::sequencer::SequencerState& sequencer
 ) : active_view_(activeView), sequencer_(sequencer) {}
 
-bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -159,12 +106,12 @@ bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerQuickControlsUxSurface::SequencerQuickControlsUxSurface(
+FLASHMEM SequencerQuickControlsUxSurface::SequencerQuickControlsUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::sequencer::SequencerState& sequencer
 ) : active_view_(activeView), sequencer_(sequencer) {}
 
-bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -198,7 +145,7 @@ bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerStructureUxSurface::SequencerStructureUxSurface(
+FLASHMEM SequencerStructureUxSurface::SequencerStructureUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     oc::state::Signal<
         core::state::StructureNavigationFocus,
@@ -216,7 +163,7 @@ SequencerStructureUxSurface::SequencerStructureUxSurface(
     tracks_(tracks),
     trace_state_(traceState) {}
 
-bool SequencerStructureUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -355,12 +302,12 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerStepGridUxSurface::SequencerStepGridUxSurface(
+FLASHMEM SequencerStepGridUxSurface::SequencerStepGridUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::sequencer::SequencerState& sequencer
 ) : active_view_(activeView), sequencer_(sequencer) {}
 
-bool SequencerStepGridUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerStepGridUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -401,12 +348,12 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerStepEditUxSurface::SequencerStepEditUxSurface(
+FLASHMEM SequencerStepEditUxSurface::SequencerStepEditUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::sequencer::SequencerState& sequencer
 ) : active_view_(activeView), sequencer_(sequencer) {}
 
-bool SequencerStepEditUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
