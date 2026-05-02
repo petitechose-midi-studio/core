@@ -70,9 +70,9 @@ struct MacroPerformanceHarness {
                   state.macroUi,
                   state.pages,
                   state.trackNavigation,
-              state.sharedTrackActive,
-              navigationFocus,
-              clipboard,
+                  state.sharedTrackActive,
+                  navigationFocus,
+                  clipboard,
               },
               performanceServices,
               structureServices,
@@ -83,6 +83,10 @@ struct MacroPerformanceHarness {
           ) {
         g_now_ms = 0;
         overlays.setActiveViewProvider([]() { return MACRO_VIEW_SCOPE; });
+    }
+
+    ~MacroPerformanceHarness() {
+        drainNotifications();
     }
 
     void tick(uint32_t nowMs) {
