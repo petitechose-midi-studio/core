@@ -103,7 +103,7 @@ struct SequencerDomainState {
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
-    std::unique_ptr<oc::state::AutoPersistIncremental<10>> autoPersist;
+    std::unique_ptr<oc::state::AutoPersistIncremental<11>> autoPersist;
 
     SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                          oc::interface::IStorage& patternLibraryStorage,

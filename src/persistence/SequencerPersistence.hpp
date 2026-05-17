@@ -28,8 +28,8 @@ public:
     static constexpr uint32_t WORKSPACE_MAGIC = 0x5357534B;         // "SWSK"
     static constexpr uint32_t PATTERN_LIBRARY_MAGIC = 0x53504C42;   // "SPLB"
     static constexpr uint32_t SET_LIBRARY_MAGIC = 0x53534554;       // "SSET"
-    static constexpr uint8_t WORKSPACE_DATA_VERSION = 2;
-    static constexpr uint8_t LIBRARY_DATA_VERSION = 1;
+    static constexpr uint8_t WORKSPACE_DATA_VERSION = 3;
+    static constexpr uint8_t LIBRARY_DATA_VERSION = 2;
 
     explicit SequencerPersistence(oc::interface::IStorage& workspaceStorage,
                                   oc::interface::IStorage& patternLibraryStorage,

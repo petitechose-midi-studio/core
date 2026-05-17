@@ -19,7 +19,11 @@ namespace core::ui {
 
 class StepGrid : public oc::ui::lvgl::IWidget {
 public:
-    explicit StepGrid(lv_obj_t* parent);
+    using GeometryInvalidatedCallback = void (*)(void* userData);
+
+    explicit StepGrid(lv_obj_t* parent,
+                      GeometryInvalidatedCallback geometryInvalidated = nullptr,
+                      void* geometryInvalidatedUserData = nullptr);
     ~StepGrid() override;
 
     StepGrid(const StepGrid&) = delete;
@@ -40,7 +44,7 @@ private:
     void createUI(lv_obj_t* parent);
     void createTiles();
     void invalidateTileCaches();
-    void refreshStaticGeometry();
+    bool refreshStaticGeometry();
     static void onGeometryChangedEvent(lv_event_t* event);
     static void onTileButtonDrawEvent(lv_event_t* event);
     void markGeometryDirty();
@@ -50,18 +54,13 @@ private:
                          lv_coord_t noteBaseX,
                          lv_coord_t noteBaseY,
                          lv_opa_t strokeOpa);
-    void renderTileMarker(uint8_t tileIndex,
-                          const TileRenderState& state,
-                          bool noteVisualChanged,
-                          lv_coord_t noteBaseX,
-                          lv_coord_t noteBaseY,
-                          lv_opa_t markerOpa);
     void renderTileBar(uint8_t tileIndex, bool visible);
     void renderTile(uint8_t tileIndex,
                     const TileRenderState& state,
                     const TileRenderDiff& diff,
                     bool propertyVisualChanged,
                     bool tileFeedbackChanged,
+                    bool geometryChanged,
                     const StepGridFrameState& frameState);
 
     struct TileButtonDrawContext {
@@ -96,13 +95,15 @@ private:
     lv_obj_t* container_ = nullptr;
     lv_obj_t* grid_ = nullptr;
     lv_obj_t* note_layer_ = nullptr;
+    GeometryInvalidatedCallback geometry_invalidated_ = nullptr;
+    void* geometry_invalidated_user_data_ = nullptr;
 
     std::array<lv_obj_t*, 8> tiles_{};
     std::array<lv_obj_t*, 8> note_labels_{};
+    std::array<lv_obj_t*, 8> original_note_labels_{};
     std::array<lv_obj_t*, 8> step_inline_icons_{};
     std::array<lv_obj_t*, 8> step_buttons_{};
     std::array<lv_obj_t*, 8> step_shapes_{};
-    std::array<lv_obj_t*, 8> step_markers_{};
     std::array<TileButtonDrawContext, 8> tile_button_draw_contexts_{};
     GeometryCacheState geometry_{};
     RenderCacheState render_cache_{};

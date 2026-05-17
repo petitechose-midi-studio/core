@@ -6,6 +6,7 @@
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
+#include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::handler {
 using ButtonID = Config::ButtonID;

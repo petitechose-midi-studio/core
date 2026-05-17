@@ -140,6 +140,9 @@ FLASHMEM void captureSnapshot(const SequencerState& source, SequencerPatternSnap
     out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
     out.enabledMask = source.enabledMask.get();
     out.stepDataRevision = source.stepDataRevision.get();
+    out.patternVariationRevision = source.patternVariationRevision.get();
+    out.variationRanges = source.variationRanges;
+    out.variationRanges.clamp();
 
     for (uint8_t i = 0; i < SequencerState::MAX_STEPS; ++i) {
         writeStep(out, i, readSanitizedStep(source, i));
@@ -154,6 +157,7 @@ FLASHMEM void applySnapshot(SequencerState& target, const SequencerPatternSnapsh
     target.stepsPerBeat.set(sanitizeStepsPerBeat(snapshot.stepsPerBeat));
     target.midiChannel.set(sanitizeMidiChannel(snapshot.midiChannel));
     target.enabledMask.set(snapshot.enabledMask & lengthMask(length));
+    target.setPatternVariationRanges(snapshot.variationRanges);
 
     for (uint8_t i = 0; i < SequencerState::MAX_STEPS; ++i) {
         writeStep(target, i, readSanitizedStep(snapshot, i));
@@ -186,6 +190,7 @@ FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPa
     }
 
     target.enabledMask.set(mergedMask);
+    target.setPatternVariationRanges(snapshot.variationRanges);
 
     const uint8_t focused =
         (focusedBefore >= mergedLength) ? static_cast<uint8_t>(mergedLength - 1U) : focusedBefore;

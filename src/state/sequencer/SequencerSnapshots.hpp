@@ -16,6 +16,8 @@ struct SequencerPatternSnapshot {
     uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
+    uint32_t patternVariationRevision = 0;
+    oc::note::sequencer::StepSequencerVariationRanges variationRanges{};
     std::array<uint8_t, SequencerState::MAX_STEPS> note{};
     std::array<uint8_t, SequencerState::MAX_STEPS> velocity{};
     std::array<uint16_t, SequencerState::MAX_STEPS> gate{};

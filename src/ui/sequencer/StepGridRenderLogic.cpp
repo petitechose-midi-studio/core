@@ -47,10 +47,6 @@ lv_color_t noteLabelColor(uint8_t note) {
     return lv_color_lighten(noteBaseColor(note), STEP_NOTE_LABEL_LIGHTEN);
 }
 
-lv_color_t velocityMarkerColor(uint8_t note, uint8_t velocity) {
-    return lv_color_lighten(velocityAccentColor(note, velocity), STEP_NOTE_MARKER_LIGHTEN);
-}
-
 lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability) {
     using namespace core::ui::sequencer::visual;
 
@@ -58,6 +54,50 @@ lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability) {
     const lv_color_t minColor = grayscaleColor(PROBABILITY_ICON_MIN_BRIGHTNESS);
     const uint8_t mix = mapToRangeU8(probability, 100, 0, LV_OPA_COVER);
     return lv_color_mix(fullColor, minColor, mix);
+}
+
+bool hasRuntimePitchFeedback(const TileRenderState& state) {
+    return state.variation.visible &&
+           state.variation.deltaVisible &&
+           state.variation.resolved.triggered &&
+           state.variation.resolved.ranges.pitchSemitones > 0;
+}
+
+uint8_t runtimePitchDisplayNote(const TileRenderState& state) {
+    return hasRuntimePitchFeedback(state)
+        ? state.variation.resolved.resolved.note
+        : state.note;
+}
+
+bool sameVariationState(const TileVariationRenderState& lhs,
+                        const TileVariationRenderState& rhs) {
+    if (lhs.visible != rhs.visible) return false;
+    if (!lhs.visible) return true;
+    if (lhs.rangeVisible != rhs.rangeVisible) return false;
+    if (lhs.deltaVisible != rhs.deltaVisible) return false;
+    if (lhs.rangeProperty != rhs.rangeProperty) return false;
+
+    const auto& a = lhs.resolved;
+    const auto& b = rhs.resolved;
+    return a.stepIndex == b.stepIndex &&
+           a.cycleIndex == b.cycleIndex &&
+           a.triggered == b.triggered &&
+           a.base.note == b.base.note &&
+           a.base.velocity == b.base.velocity &&
+           a.base.gate == b.base.gate &&
+           a.base.nudge == b.base.nudge &&
+           a.resolved.note == b.resolved.note &&
+           a.resolved.velocity == b.resolved.velocity &&
+           a.resolved.gate == b.resolved.gate &&
+           a.resolved.nudge == b.resolved.nudge &&
+           a.ranges.pitchSemitones == b.ranges.pitchSemitones &&
+           a.ranges.velocity == b.ranges.velocity &&
+           a.ranges.gatePercent == b.ranges.gatePercent &&
+           a.ranges.nudge == b.ranges.nudge &&
+           a.pitchDelta == b.pitchDelta &&
+           a.velocityDelta == b.velocityDelta &&
+           a.gateDelta == b.gateDelta &&
+           a.nudgeDelta == b.nudgeDelta;
 }
 
 StepVisualStyle buildStepVisualStyle(uint8_t note,
@@ -119,6 +159,7 @@ TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRende
         !diff.initialized || cache.probabilityCycleActive != state.probabilityCycleActive;
     diff.gateChanged = !diff.initialized || cache.gate != state.gate;
     diff.nudgeChanged = !diff.initialized || cache.nudge != state.nudge;
+    diff.variationChanged = !diff.initialized || !sameVariationState(cache.variation, state.variation);
     diff.velocityZeroChanged =
         !diff.initialized || ((cache.velocity == 0) != (state.velocity == 0));
     diff.probabilityMaskChanged =
@@ -129,8 +170,10 @@ TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRende
         baseChanged ||
         (state.inPattern &&
          (diff.noteChanged || diff.velocityChanged || diff.probabilityChanged ||
-          diff.gateChanged || diff.nudgeChanged));
-    diff.barChanged = !diff.initialized || diff.inPatternChanged || cache.playing != state.playing;
+          diff.gateChanged || diff.nudgeChanged || diff.variationChanged));
+    diff.barChanged =
+        !diff.initialized || diff.inPatternChanged || cache.playing != state.playing ||
+        diff.variationChanged;
     return diff;
 }
 

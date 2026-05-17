@@ -28,12 +28,12 @@ inline constexpr lv_opa_t STEP_SHAPE_OPA_VELOCITY_ZERO = LV_OPA_COVER;
 inline constexpr uint8_t SHAPE_DISABLED_FILL_BRIGHTNESS = 20;
 inline constexpr uint8_t VELOCITY_ZERO_FILL_BRIGHTNESS = 22;
 inline constexpr lv_opa_t STEP_NOTE_LABEL_LIGHTEN = static_cast<lv_opa_t>(48);
-inline constexpr lv_opa_t STEP_NOTE_MARKER_LIGHTEN = static_cast<lv_opa_t>(24);
 inline constexpr uint8_t PROBABILITY_ICON_MIN_BRIGHTNESS = 28;
 
 lv_color_t noteLabelColor(uint8_t note);
-lv_color_t velocityMarkerColor(uint8_t note, uint8_t velocity);
 lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability);
+bool hasRuntimePitchFeedback(const TileRenderState& state);
+uint8_t runtimePitchDisplayNote(const TileRenderState& state);
 StepVisualStyle buildStepVisualStyle(uint8_t note,
                                      uint8_t velocity,
                                      uint16_t gate,

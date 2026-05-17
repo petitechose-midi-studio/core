@@ -53,6 +53,7 @@ struct ContextActionStripSlotProps {
     standalone::icons::Size iconSize = standalone::icons::Size::M;
     bool showLabel = false;
     const char* label = nullptr;
+    std::array<char, 16> labelText{};
     bool holdActive = false;
     uint32_t holdStartedAtMs = 0;
     uint32_t holdDurationMs = 0;
@@ -89,7 +90,7 @@ private:
         bool hold_geometry_initialized = false;
         lv_coord_t indicator_long = -1;
         bool indicator_fill_mode = false;
-        std::array<char, 8> hold_text{};
+        std::array<char, 16> hold_text{};
         uint16_t hold_tenths = std::numeric_limits<uint16_t>::max();
         lv_opa_t indicator_opa = LV_OPA_TRANSP;
         const lv_font_t* label_font = nullptr;

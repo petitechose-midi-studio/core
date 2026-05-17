@@ -1,0 +1,17 @@
+# UX workflow: inspect pattern variation runtime feedback for each supported property.
+# Purpose: validates resolved pitch labels and minimal range/delta overlays.
+
+0 scenario seq-variation-pitch
+80 capture screen pitch_runtime_feedback
+
+200 scenario seq-variation-velocity
+280 capture screen velocity_runtime_feedback
+
+400 scenario seq-variation-gate
+480 capture screen gate_runtime_feedback
+
+600 scenario seq-variation-nudge
+680 capture screen nudge_runtime_feedback
+
+# Exercise one real sequencer binding so workflow verification records dispatch.
+760 tap MACRO_8 60

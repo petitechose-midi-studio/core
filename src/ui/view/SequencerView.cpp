@@ -70,7 +70,11 @@ FLASHMEM void SequencerView::createHeaderBar() {
 
 FLASHMEM void SequencerView::createGrid() {
     if (!center_column_) return;
-    step_grid_ = std::make_unique<StepGrid>(center_column_);
+    step_grid_ = std::make_unique<StepGrid>(
+        center_column_,
+        onStepGridGeometryInvalidated,
+        this
+    );
 }
 
 FLASHMEM void SequencerView::createPropertyStrip() {
@@ -103,6 +107,12 @@ FLASHMEM void SequencerView::createActionStrips() {
     );
 }
 
+FLASHMEM void SequencerView::onStepGridGeometryInvalidated(void* userData) {
+    auto* self = static_cast<SequencerView*>(userData);
+    if (!self) return;
+    self->requestGridRender();
+}
+
 FLASHMEM void SequencerView::bindToState() {
     bindBottomControlsState();
     bindHeaderState();
@@ -112,7 +122,6 @@ FLASHMEM void SequencerView::bindToState() {
     bindOverlayVisibilityState();
     bindLeftActionStripState();
     bindBottomActionStripState();
-    bindQuickControlsState();
 
     markAllDirty();
     render();
@@ -126,6 +135,8 @@ FLASHMEM void SequencerView::bindBottomControlsState() {
             requestBottomControlsRender();
         },
         state_refs_.sequencer.stepsPerBeat,
+        state_refs_.sequencer.patternQuickControls.selecting,
+        state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.offsetSteps,
         state_refs_.sequencer.length
     );
@@ -192,10 +203,15 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.playheadStep,
         state_refs_.sequencer.stepDataRevision,
         state_refs_.sequencer.probabilityCycleRevision,
+        state_refs_.sequencer.variationTelemetryRevision,
+        state_refs_.sequencer.patternVariationRevision,
         state_refs_.sequencer.activeStepProperty,
+        state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.stepInlineFeedback.visible,
         state_refs_.sequencer.stepInlineFeedback.touchedMask,
-        state_refs_.sequencer.stepInlineFeedback.property
+        state_refs_.sequencer.stepInlineFeedback.property,
+        state_refs_.sequencer.patternVariationFeedback.visible,
+        state_refs_.sequencer.patternVariationFeedback.property
     );
 }
 
@@ -255,17 +271,11 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.trackNavigation.selection.active,
         state_refs_.trackNavigation.selection.selectedMask,
         state_refs_.sequencer.structureUi.pageSelection.active,
-        state_refs_.sequencer.structureUi.pageSelection.selectedMask
-    );
-}
-
-FLASHMEM void SequencerView::bindQuickControlsState() {
-    watcher_.watchAll(
-        [this]() {
-            requestBottomControlsRender();
-        },
+        state_refs_.sequencer.structureUi.pageSelection.selectedMask,
         state_refs_.sequencer.patternQuickControls.selecting,
-        state_refs_.sequencer.patternQuickControls.focusedItem
+        state_refs_.sequencer.stepPropertyInlineSelector.selecting,
+        state_refs_.sequencer.activeStepProperty,
+        state_refs_.sequencer.patternVariationRevision
     );
 }
 

@@ -17,6 +17,8 @@ namespace core::handler {
 
 class SequencerPropertySelectorHandler {
 public:
+    using NowProvider = uint32_t (*)();
+
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
@@ -27,7 +29,8 @@ public:
         StateRefs state,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
-        oc::type::ScopeID scopeId
+        oc::type::ScopeID scopeId,
+        NowProvider nowProvider
     );
 
     SequencerPropertySelectorHandler(const SequencerPropertySelectorHandler&) = delete;
@@ -41,12 +44,17 @@ private:
     void closeCancel();
 
     void navigate(float delta);
+    void setActiveVariationRange(float normalized);
+    void configureOptForSelectedProperty();
+
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::TrackNavigationState& track_ui_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
+    NowProvider now_provider_ = nullptr;
+    oc::note::sequencer::StepSequencerVariationRanges snapshot_variation_ranges_{};
 };
 
 }  // namespace core::handler

@@ -52,7 +52,7 @@ struct SequencerStepEditOverlayState {
 };
 
 struct SequencerStepPropertyInlineSelectorState {
-    Signal<bool, 4> selecting{false};
+    Signal<bool, 6> selecting{false};
     Signal<int, 4> selectedIndex{0};
 
     int snapshotIndex = 0;
@@ -116,9 +116,36 @@ struct SequencerStepInlineFeedbackState {
     }
 };
 
+struct SequencerPatternVariationFeedbackState {
+    static constexpr uint32_t DISPLAY_HOLD_MS = 700;
+
+    Signal<bool> visible{false};
+    Signal<StepProperty> property{StepProperty::NOTE};
+    uint32_t hideAtMs = 0;
+
+    void show(StepProperty stepProperty, uint32_t nowMs) {
+        property.set(stepProperty);
+        hideAtMs = nowMs + DISPLAY_HOLD_MS;
+        visible.set(true);
+    }
+
+    void update(uint32_t nowMs) {
+        if (!visible.get()) return;
+        if (nowMs < hideAtMs) return;
+        visible.set(false);
+        hideAtMs = 0;
+    }
+
+    void reset() {
+        visible.set(false);
+        property.set(StepProperty::NOTE);
+        hideAtMs = 0;
+    }
+};
+
 struct SequencerPatternQuickControlsState {
-    Signal<bool, 4> selecting{false};
-    Signal<PatternQuickControlItem, 4> focusedItem{
+    Signal<bool, 6> selecting{false};
+    Signal<PatternQuickControlItem, 6> focusedItem{
         PatternQuickControlItem::OFFSET
     };
     Signal<int8_t, 4> offsetSteps{0};

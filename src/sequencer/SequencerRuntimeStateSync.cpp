@@ -13,6 +13,7 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .midiChannel = source.midiChannel.get(),
         .enabledMask = source.enabledMask.get(),
         .stepDataRevision = source.stepDataRevision.get(),
+        .patternVariationRevision = source.patternVariationRevision.get(),
     };
 }
 
@@ -25,6 +26,7 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .midiChannel = source.midiChannel,
         .enabledMask = source.enabledMask,
         .stepDataRevision = source.stepDataRevision,
+        .patternVariationRevision = source.patternVariationRevision,
     };
 }
 
@@ -34,6 +36,8 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
     target.stepsPerBeat = source.stepsPerBeat.get();
     target.midiChannel = source.midiChannel.get();
     target.enabledMask = source.enabledMask.get();
+    target.variationRanges = source.variationRanges;
+    target.variationRanges.clamp();
 
     std::copy(source.note.begin(), source.note.end(), target.note.begin());
     std::copy(source.velocity.begin(), source.velocity.end(), target.velocity.begin());
@@ -48,6 +52,8 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
     target.stepsPerBeat = source.stepsPerBeat;
     target.midiChannel = source.midiChannel;
     target.enabledMask = source.enabledMask;
+    target.variationRanges = source.variationRanges;
+    target.variationRanges.clamp();
 
     std::copy(source.note.begin(), source.note.end(), target.note.begin());
     std::copy(source.velocity.begin(), source.velocity.end(), target.velocity.begin());
@@ -63,6 +69,9 @@ SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
         .playheadStep = runtimeState.playheadStep,
         .probabilityCycleIndex = runtimeState.probabilityCycleIndex,
         .probabilityCycleMask = runtimeState.probabilityCycleMask,
+        .variationTelemetryRevision = runtimeState.variationTelemetryRevision,
+        .lastResolvedVariation = runtimeState.lastResolvedVariation,
+        .cycleVariationTelemetry = runtimeState.cycleVariationTelemetry,
     };
 }
 
@@ -75,6 +84,12 @@ void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
         target.probabilityCycleIndex = telemetry.probabilityCycleIndex;
         target.probabilityCycleMask = telemetry.probabilityCycleMask;
         target.probabilityCycleRevision.set(target.probabilityCycleRevision.get() + 1U);
+    }
+
+    if (target.variationTelemetryRevision.get() != telemetry.variationTelemetryRevision) {
+        target.lastResolvedVariation = telemetry.lastResolvedVariation;
+        target.cycleVariationTelemetry = telemetry.cycleVariationTelemetry;
+        target.variationTelemetryRevision.set(telemetry.variationTelemetryRevision);
     }
 }
 

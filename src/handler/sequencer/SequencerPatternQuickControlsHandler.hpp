@@ -4,10 +4,10 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
-#include "state/TrackNavigationState.hpp"
-#include "state/sequencer/SequencerSnapshotOps.hpp"
-#include "state/sequencer/SequencerState.hpp"
 #include "app/OverlayTypes.hpp"
+#include "state/TrackNavigationState.hpp"
+#include "state/sequencer/SequencerSnapshots.hpp"
+#include "state/sequencer/SequencerState.hpp"
 
 namespace core::handler {
 

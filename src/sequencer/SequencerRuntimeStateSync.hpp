@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
@@ -23,13 +22,15 @@ struct SequencerRuntimeStateSignature {
     uint8_t midiChannel = 0;
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
+    uint32_t patternVariationRevision = 0;
 
     bool matches(const SequencerRuntimeStateSignature& other) const {
         return length == other.length &&
                stepsPerBeat == other.stepsPerBeat &&
                midiChannel == other.midiChannel &&
                enabledMask == other.enabledMask &&
-               stepDataRevision == other.stepDataRevision;
+               stepDataRevision == other.stepDataRevision &&
+               patternVariationRevision == other.patternVariationRevision;
     }
 };
 
@@ -44,6 +45,9 @@ struct SequencerRuntimeTelemetrySnapshot {
     int16_t playheadStep = -1;
     uint32_t probabilityCycleIndex = 0;
     oc::note::sequencer::StepBitMask128 probabilityCycleMask{};
+    uint32_t variationTelemetryRevision = 0;
+    oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
+    oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
 };
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(

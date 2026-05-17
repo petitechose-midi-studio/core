@@ -7,7 +7,7 @@
 namespace core::ui::sequencer::grid {
 
 /**
- * Pure geometry calculations for step-grid labels, markers, and guides.
+ * Pure geometry calculations for step-grid labels and guides.
  *
  * Functions consume LVGL areas and measured sizes but return layout values only;
  * callers apply positions to widgets.
@@ -40,7 +40,6 @@ StepTileGeometry buildTileGeometry(const lv_area_t& buttonArea,
                                    const lv_area_t& noteLayerArea,
                                    lv_coord_t railWidth,
                                    lv_coord_t buttonHeight);
-lv_point_t buildMarkerPosition(lv_coord_t noteBaseX, lv_coord_t noteBaseY);
 InlineLabelLayout buildInlineLabelLayout(lv_coord_t noteBaseX,
                                          lv_coord_t noteLabelBaselineY,
                                          lv_coord_t noteLabelHeight,

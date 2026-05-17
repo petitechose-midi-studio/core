@@ -19,17 +19,40 @@ constexpr lv_opa_t STEP_TEXT_DISABLED_OPA = static_cast<lv_opa_t>(theme::opacity
 constexpr lv_opa_t STEP_INLINE_NOTE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_INLINE_VALUE_OPA = LV_OPA_70;
 constexpr lv_opa_t STEP_PROBABILITY_MASKED_OPA = LV_OPA_30;
+constexpr lv_opa_t STEP_ORIGINAL_NOTE_OPA = LV_OPA_50;
+
+bool showsOriginalPitchReminder(const TileRenderState& state) {
+    return hasRuntimePitchFeedback(state) &&
+           runtimePitchDisplayNote(state) != state.note;
+}
+
+void formatNoteLabel(char* buffer, size_t size, uint8_t note, const TileRenderState& state) {
+    if (!buffer || size == 0) return;
+
+    core::state::sequencer::formatStepPropertyValue(
+        buffer,
+        size,
+        core::state::sequencer::StepProperty::NOTE,
+        note,
+        state.velocity,
+        state.gate,
+        state.nudge,
+        state.probability
+    );
+}
 
 }  // namespace
 
 void renderTileNoteLabel(uint8_t tileIndex,
                          TileRenderCache& cache,
                          lv_obj_t* noteLabel,
+                         lv_obj_t* originalNoteLabel,
                          lv_obj_t* inlineIcon,
                          const TileRenderState& state,
                          const TileRenderDiff& diff,
                          bool propertyVisualChanged,
                          bool tileFeedbackChanged,
+                         bool geometryChanged,
                          core::state::sequencer::StepProperty activeProperty,
                          const InlineFeedbackSnapshot& feedback,
                          const visual::StepPropertyVisualSpec& propertyVisual,
@@ -39,7 +62,7 @@ void renderTileNoteLabel(uint8_t tileIndex,
                          lv_coord_t inlineIconWidth,
                          lv_coord_t inlineIconHeight) {
     (void)tileIndex;
-    if (!noteLabel || !inlineIcon) return;
+    if (!noteLabel || !originalNoteLabel || !inlineIcon) return;
 
     const auto labelPresentation = buildNoteLabelPresentation(
         state,
@@ -53,6 +76,10 @@ void renderTileNoteLabel(uint8_t tileIndex,
             lv_obj_add_flag(noteLabel, LV_OBJ_FLAG_HIDDEN);
             cache.noteLabelVisible = false;
         }
+        if (cache.originalNoteLabelVisible) {
+            lv_obj_add_flag(originalNoteLabel, LV_OBJ_FLAG_HIDDEN);
+            cache.originalNoteLabelVisible = false;
+        }
         if (cache.inlineIconVisible) {
             lv_obj_add_flag(inlineIcon, LV_OBJ_FLAG_HIDDEN);
             cache.inlineIconVisible = false;
@@ -63,6 +90,17 @@ void renderTileNoteLabel(uint8_t tileIndex,
     if (!cache.noteLabelVisible) {
         lv_obj_clear_flag(noteLabel, LV_OBJ_FLAG_HIDDEN);
         cache.noteLabelVisible = true;
+    }
+
+    const bool showOriginalNoteLabel = showsOriginalPitchReminder(state);
+    if (showOriginalNoteLabel) {
+        if (!cache.originalNoteLabelVisible) {
+            lv_obj_clear_flag(originalNoteLabel, LV_OBJ_FLAG_HIDDEN);
+            cache.originalNoteLabelVisible = true;
+        }
+    } else if (cache.originalNoteLabelVisible) {
+        lv_obj_add_flag(originalNoteLabel, LV_OBJ_FLAG_HIDDEN);
+        cache.originalNoteLabelVisible = false;
     }
 
     if (labelPresentation.showInlineIcon) {
@@ -76,31 +114,48 @@ void renderTileNoteLabel(uint8_t tileIndex,
     }
 
     if (propertyVisualChanged || diff.noteChanged || diff.velocityChanged || diff.gateChanged ||
-        diff.nudgeChanged || diff.probabilityChanged) {
+        diff.nudgeChanged || diff.probabilityChanged || diff.variationChanged) {
         char buf[16];
-        core::state::sequencer::formatStepPropertyValue(
-            buf,
-            sizeof(buf),
-            labelPresentation.displayProperty,
-            state.note,
-            state.velocity,
-            state.gate,
-            state.nudge,
-            state.probability
-        );
+        if (hasRuntimePitchFeedback(state)) {
+            formatNoteLabel(buf, sizeof(buf), runtimePitchDisplayNote(state), state);
+        } else {
+            core::state::sequencer::formatStepPropertyValue(
+                buf,
+                sizeof(buf),
+                labelPresentation.displayProperty,
+                state.note,
+                state.velocity,
+                state.gate,
+                state.nudge,
+                state.probability
+            );
+        }
         if (std::strcmp(cache.noteLabelText, buf) != 0) {
             lv_label_set_text(noteLabel, buf);
             std::strncpy(cache.noteLabelText, buf, sizeof(cache.noteLabelText) - 1);
             cache.noteLabelText[sizeof(cache.noteLabelText) - 1] = '\0';
         }
         cache.noteLabelHeight = noteLabelHeight;
+
+        char originalBuf[8];
+        if (showOriginalNoteLabel) {
+            formatNoteLabel(originalBuf, sizeof(originalBuf), state.note, state);
+        } else {
+            originalBuf[0] = '\0';
+        }
+        if (std::strcmp(cache.originalNoteLabelText, originalBuf) != 0) {
+            lv_label_set_text(originalNoteLabel, originalBuf);
+            std::strncpy(cache.originalNoteLabelText, originalBuf, sizeof(cache.originalNoteLabelText) - 1);
+            cache.originalNoteLabelText[sizeof(cache.originalNoteLabelText) - 1] = '\0';
+        }
     }
 
     if (propertyVisualChanged || diff.noteChanged || diff.enabledChanged || diff.velocityChanged ||
-        diff.gateChanged || diff.nudgeChanged || diff.probabilityChanged ||
+        diff.gateChanged || diff.nudgeChanged || diff.probabilityChanged || diff.variationChanged ||
         diff.probabilityCycleActiveChanged) {
         const lv_color_t nextNoteLabelColor =
-            state.enabled ? noteLabelColor(state.note) : lv_color_hex(STEP_TEXT_DISABLED_COLOR);
+            state.enabled ? noteLabelColor(runtimePitchDisplayNote(state))
+                          : lv_color_hex(STEP_TEXT_DISABLED_COLOR);
         const lv_opa_t nextNoteLabelOpa =
             state.enabled
                 ? (labelPresentation.probabilityMasked
@@ -118,6 +173,13 @@ void renderTileNoteLabel(uint8_t tileIndex,
                 : STEP_TEXT_DISABLED_OPA;
 
         const uint32_t nextNoteLabelColorInt = lv_color_to_int(nextNoteLabelColor);
+        const lv_color_t nextOriginalNoteLabelColor = lv_color_hex(STEP_TEXT_DISABLED_COLOR);
+        const lv_opa_t nextOriginalNoteLabelOpa =
+            state.enabled
+                ? (labelPresentation.probabilityMasked ? STEP_PROBABILITY_MASKED_OPA
+                                                       : STEP_ORIGINAL_NOTE_OPA)
+                : STEP_TEXT_DISABLED_OPA;
+        const uint32_t nextOriginalNoteLabelColorInt = lv_color_to_int(nextOriginalNoteLabelColor);
         const uint32_t nextInlineIconColorInt = lv_color_to_int(nextInlineIconColor);
 
         if (cache.noteLabelColorFull != nextNoteLabelColorInt) {
@@ -127,6 +189,14 @@ void renderTileNoteLabel(uint8_t tileIndex,
         if (cache.noteLabelOpa != nextNoteLabelOpa) {
             lv_obj_set_style_text_opa(noteLabel, nextNoteLabelOpa, 0);
             cache.noteLabelOpa = nextNoteLabelOpa;
+        }
+        if (cache.originalNoteLabelColorFull != nextOriginalNoteLabelColorInt) {
+            lv_obj_set_style_text_color(originalNoteLabel, nextOriginalNoteLabelColor, 0);
+            cache.originalNoteLabelColorFull = nextOriginalNoteLabelColorInt;
+        }
+        if (cache.originalNoteLabelOpa != nextOriginalNoteLabelOpa) {
+            lv_obj_set_style_text_opa(originalNoteLabel, nextOriginalNoteLabelOpa, 0);
+            cache.originalNoteLabelOpa = nextOriginalNoteLabelOpa;
         }
 
         if (cache.inlineIconColorFull != nextInlineIconColorInt) {
@@ -145,7 +215,8 @@ void renderTileNoteLabel(uint8_t tileIndex,
         cache.noteLabelHeight = noteLabelHeight;
     }
 
-    if (propertyVisualChanged || tileFeedbackChanged || diff.inPatternChanged ||
+    if (geometryChanged || propertyVisualChanged || tileFeedbackChanged || diff.inPatternChanged ||
+        diff.noteChanged || diff.variationChanged ||
         cache.noteLabelHeight <= 0) {
         const lv_coord_t iconHeight = labelPresentation.showInlineIcon ? inlineIconHeight : 0;
         const lv_coord_t iconWidth = labelPresentation.showInlineIcon ? inlineIconWidth : 0;
@@ -171,6 +242,15 @@ void renderTileNoteLabel(uint8_t tileIndex,
             lv_obj_set_pos(noteLabel, layout.labelX, layout.labelY);
             cache.noteLabelX = layout.labelX;
             cache.noteLabelY = layout.labelY;
+        }
+
+        const lv_coord_t originalLabelY =
+            static_cast<lv_coord_t>(layout.labelY - cache.noteLabelHeight + 1);
+        if (cache.originalNoteLabelX != layout.labelX ||
+            cache.originalNoteLabelY != originalLabelY) {
+            lv_obj_set_pos(originalNoteLabel, layout.labelX, originalLabelY);
+            cache.originalNoteLabelX = layout.labelX;
+            cache.originalNoteLabelY = originalLabelY;
         }
     }
 }

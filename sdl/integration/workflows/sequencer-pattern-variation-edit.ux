@@ -1,0 +1,21 @@
+# UX workflow: edit pattern variation range from the property selector.
+# Purpose: validates LEFT_BOTTOM property selection owns OPT variation range edits.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable a step so range endpoints have a concrete active-step anchor.
+100 tap MACRO_1 60
+
+# Hold LEFT_BOTTOM to enter property selection.
+220 button LEFT_BOTTOM down
+360 capture screen property_selector_open
+
+# Select velocity and set its randomization range.
+460 encoder NAV 1
+560 encoder OPT 1.00
+710 capture screen velocity_range_adjusted
+
+# Release LEFT_BOTTOM to apply and close.
+810 button LEFT_BOTTOM up
+1010 capture screen variation_range_closed

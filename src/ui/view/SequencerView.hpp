@@ -64,6 +64,7 @@ private:
     void createBottomControls();
     void createPropertyStrip();
     void createActionStrips();
+    static void onStepGridGeometryInvalidated(void* userData);
     void bindToState();
     void bindBottomControlsState();
     void bindHeaderState();
@@ -73,7 +74,6 @@ private:
     void bindOverlayVisibilityState();
     void bindLeftActionStripState();
     void bindBottomActionStripState();
-    void bindQuickControlsState();
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
 

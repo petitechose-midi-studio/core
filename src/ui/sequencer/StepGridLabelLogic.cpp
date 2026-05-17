@@ -1,5 +1,7 @@
 #include "ui/sequencer/StepGridLabelLogic.hpp"
 
+#include "ui/sequencer/StepGridRenderLogic.hpp"
+
 namespace core::ui::sequencer::grid {
 
 core::state::sequencer::StepProperty displayPropertyForInlineLabelMode(
@@ -53,14 +55,17 @@ NoteLabelPresentation buildNoteLabelPresentation(
         feedback.visible &&
         feedback.touchedMask.test(state.absoluteStep);
     const bool isFeedbackProperty = feedback.property == activeProperty;
+    const bool showRuntimePitch = hasRuntimePitchFeedback(state);
 
-    presentation.showNoteStyle = isNoteMode;
+    presentation.showNoteStyle = isNoteMode || showRuntimePitch;
     presentation.probabilityMasked = state.enabled && !state.probabilityCycleActive;
-    presentation.showLabel = isNoteMode || (isFeedbackStep && isFeedbackProperty);
+    presentation.showLabel = showRuntimePitch || isNoteMode || (isFeedbackStep && isFeedbackProperty);
     presentation.showInlineIcon =
-        propertyVisual.showInlineIcon && isFeedbackStep && isFeedbackProperty;
+        !showRuntimePitch && propertyVisual.showInlineIcon && isFeedbackStep && isFeedbackProperty;
     presentation.displayProperty =
-        displayPropertyForInlineLabelMode(propertyVisual.inlineLabelMode);
+        showRuntimePitch
+            ? core::state::sequencer::StepProperty::NOTE
+            : displayPropertyForInlineLabelMode(propertyVisual.inlineLabelMode);
     return presentation;
 }
 

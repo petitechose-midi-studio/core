@@ -1,6 +1,6 @@
 #include "StepGrid.hpp"
 
-#include <array>
+#include <algorithm>
 #include <cmath>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
@@ -15,6 +15,7 @@
 #include "ui/sequencer/StepGridRenderPlanner.hpp"
 #include "ui/sequencer/StepGridWidgets.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
+#include "state/sequencer/SequencerState.hpp"
 
 namespace theme = oc::ui::lvgl::base_theme;
 namespace grid = core::ui::sequencer::grid;
@@ -26,8 +27,6 @@ namespace {
 constexpr uint32_t COLOR_STEP_PLAY_HEX = 0x5CA8EE;
 constexpr lv_coord_t STEP_BAR_HEIGHT = grid::STEP_BAR_HEIGHT;
 constexpr lv_opa_t STEP_BAR_ACTIVE_OPA = LV_OPA_COVER;
-constexpr uint32_t STEP_TEXT_DISABLED_COLOR = theme::color::INACTIVE_LIGHTER;
-constexpr lv_opa_t STEP_TEXT_DISABLED_OPA = static_cast<lv_opa_t>(theme::opacity::OPA_50);
 constexpr uint32_t STEP_INDEX_COLOR = theme::color::INACTIVE_LIGHTER;
 constexpr lv_opa_t STEP_INDEX_OPA = LV_OPA_60;
 constexpr lv_opa_t STEP_PROBABILITY_MASKED_OPA = LV_OPA_30;
@@ -37,10 +36,341 @@ constexpr lv_coord_t STEP_GUIDE_WIDTH = 1;
 constexpr uint8_t STEP_GUIDE_COUNT = 3;
 constexpr lv_coord_t STEP_INDEX_RIGHT_PAD = 4;
 constexpr lv_coord_t STEP_INDEX_TOP_PAD = 2;
+constexpr uint32_t VARIATION_RANGE_COLOR = theme::color::INACTIVE_LIGHTER;
+constexpr uint32_t VARIATION_DELTA_COLOR = COLOR_STEP_PLAY_HEX;
+constexpr lv_opa_t VARIATION_RANGE_OPA = LV_OPA_70;
+constexpr lv_opa_t VARIATION_DELTA_OPA = LV_OPA_COVER;
+constexpr lv_coord_t VARIATION_RANGE_TICK_LENGTH = 7;
+constexpr lv_coord_t VARIATION_RANGE_TICK_THICKNESS = 2;
+constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
+constexpr lv_coord_t VARIATION_DELTA_THICKNESS = STEP_SHAPE_STROKE_WIDTH;
+
+uint8_t clampMidiValue(int value) {
+    if (value < 0) return 0;
+    if (value > 127) return 127;
+    return static_cast<uint8_t>(value);
+}
+
+uint16_t clampGateValue(int value) {
+    if (value < 0) return 0;
+    if (value > static_cast<int>(core::state::sequencer::SequencerState::MAX_GATE_PERCENT)) {
+        return core::state::sequencer::SequencerState::MAX_GATE_PERCENT;
+    }
+    return static_cast<uint16_t>(value);
+}
+
+int8_t clampNudgeValue(int value) {
+    if (value < -50) return -50;
+    if (value > 50) return 50;
+    return static_cast<int8_t>(value);
+}
+
+void drawVariationRect(lv_layer_t* layer,
+                       lv_coord_t x,
+                       lv_coord_t y,
+                       lv_coord_t width,
+                       lv_coord_t height,
+                       uint32_t colorHex,
+                       lv_opa_t opa) {
+    if (!layer || width <= 0 || height <= 0 || opa == LV_OPA_TRANSP) return;
+
+    lv_draw_rect_dsc_t dsc;
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_color = lv_color_hex(colorHex);
+    dsc.bg_opa = opa;
+    dsc.radius = 0;
+    dsc.border_width = 0;
+
+    const lv_area_t area{
+        .x1 = x,
+        .y1 = y,
+        .x2 = static_cast<lv_coord_t>(x + width - 1),
+        .y2 = static_cast<lv_coord_t>(y + height - 1),
+    };
+    lv_draw_rect(layer, &dsc, &area);
+}
+
+void drawHorizontalRangeTick(lv_layer_t* layer, lv_coord_t centerX, lv_coord_t y) {
+    drawVariationRect(
+        layer,
+        static_cast<lv_coord_t>(centerX - VARIATION_RANGE_TICK_LENGTH / 2),
+        y,
+        VARIATION_RANGE_TICK_LENGTH,
+        VARIATION_RANGE_TICK_THICKNESS,
+        VARIATION_RANGE_COLOR,
+        VARIATION_RANGE_OPA
+    );
+}
+
+void drawVerticalRangeTick(lv_layer_t* layer, lv_coord_t x, lv_coord_t centerY) {
+    drawVariationRect(
+        layer,
+        x,
+        static_cast<lv_coord_t>(centerY - VARIATION_RANGE_TICK_LENGTH / 2),
+        VARIATION_RANGE_TICK_THICKNESS,
+        VARIATION_RANGE_TICK_LENGTH,
+        VARIATION_RANGE_COLOR,
+        VARIATION_RANGE_OPA
+    );
+}
+
+using ResolvedVariation = oc::note::sequencer::StepSequencerResolvedVariation;
+using StepProperty = core::state::sequencer::StepProperty;
+
+void drawVelocityVariation(lv_layer_t* layer,
+                           const lv_area_t& buttonArea,
+                           lv_coord_t railWidth,
+                           lv_coord_t buttonHeight,
+                           const ResolvedVariation& variation,
+                           bool rangeVisible,
+                           bool deltaVisible) {
+    if (variation.ranges.velocity == 0) return;
+
+    const auto base = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.base.velocity,
+        variation.base.gate,
+        variation.base.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto resolved = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.resolved.velocity,
+        variation.resolved.gate,
+        variation.resolved.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto low = grid::buildStepVisualStyle(
+        variation.base.note,
+        clampMidiValue(static_cast<int>(variation.base.velocity) - variation.ranges.velocity),
+        variation.base.gate,
+        variation.base.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto high = grid::buildStepVisualStyle(
+        variation.base.note,
+        clampMidiValue(static_cast<int>(variation.base.velocity) + variation.ranges.velocity),
+        variation.base.gate,
+        variation.base.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+
+    const lv_coord_t x = static_cast<lv_coord_t>(buttonArea.x1 + base.x);
+    const lv_coord_t rangeY = static_cast<lv_coord_t>(buttonArea.y1 + high.y);
+    const lv_coord_t rangeBottom = static_cast<lv_coord_t>(buttonArea.y1 + low.y + low.height - 1);
+    const lv_coord_t baseTop = static_cast<lv_coord_t>(buttonArea.y1 + base.y);
+    const lv_coord_t resolvedTop = static_cast<lv_coord_t>(buttonArea.y1 + resolved.y);
+
+    if (rangeVisible) {
+        drawHorizontalRangeTick(layer, x, rangeY);
+        drawHorizontalRangeTick(layer, x, rangeBottom);
+    }
+    if (deltaVisible && variation.velocityDelta != 0) {
+        drawVariationRect(
+            layer,
+            x,
+            std::min(baseTop, resolvedTop),
+            VARIATION_DELTA_THICKNESS,
+            static_cast<lv_coord_t>(std::abs(baseTop - resolvedTop) + 1),
+            VARIATION_DELTA_COLOR,
+            VARIATION_DELTA_OPA
+        );
+    }
+}
+
+void drawGateVariation(lv_layer_t* layer,
+                       const lv_area_t& buttonArea,
+                       lv_coord_t railWidth,
+                       lv_coord_t buttonHeight,
+                       const ResolvedVariation& variation,
+                       bool rangeVisible,
+                       bool deltaVisible) {
+    if (variation.ranges.gatePercent == 0) return;
+
+    const auto base = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.base.velocity,
+        variation.base.gate,
+        variation.base.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto resolved = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.resolved.velocity,
+        variation.resolved.gate,
+        variation.resolved.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto low = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.base.velocity,
+        clampGateValue(static_cast<int>(variation.base.gate) - variation.ranges.gatePercent),
+        variation.base.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto high = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.base.velocity,
+        clampGateValue(static_cast<int>(variation.base.gate) + variation.ranges.gatePercent),
+        variation.base.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+
+    const lv_coord_t y = static_cast<lv_coord_t>(
+        buttonArea.y1 + base.y + base.height - STEP_SHAPE_STROKE_WIDTH
+    );
+    const lv_coord_t lowRight = static_cast<lv_coord_t>(buttonArea.x1 + low.x + low.width - 1);
+    const lv_coord_t highRight = static_cast<lv_coord_t>(buttonArea.x1 + high.x + high.width - 1);
+    const lv_coord_t baseRight = static_cast<lv_coord_t>(buttonArea.x1 + base.x + base.width - 1);
+    const lv_coord_t resolvedRight =
+        static_cast<lv_coord_t>(buttonArea.x1 + resolved.x + resolved.width - 1);
+
+    if (rangeVisible) {
+        drawVerticalRangeTick(layer, lowRight, y);
+        drawVerticalRangeTick(layer, highRight, y);
+    }
+    if (deltaVisible && variation.gateDelta != 0) {
+        drawVariationRect(
+            layer,
+            std::min(baseRight, resolvedRight),
+            y,
+            static_cast<lv_coord_t>(std::abs(resolvedRight - baseRight) + 1),
+            VARIATION_DELTA_THICKNESS,
+            VARIATION_DELTA_COLOR,
+            VARIATION_DELTA_OPA
+        );
+    }
+}
+
+void drawNudgeVariation(lv_layer_t* layer,
+                        const lv_area_t& buttonArea,
+                        lv_coord_t railWidth,
+                        lv_coord_t buttonHeight,
+                        const ResolvedVariation& variation,
+                        bool rangeVisible,
+                        bool deltaVisible) {
+    if (variation.ranges.nudge == 0) return;
+
+    const auto base = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.base.velocity,
+        variation.base.gate,
+        variation.base.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto low = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.base.velocity,
+        variation.base.gate,
+        clampNudgeValue(static_cast<int>(variation.base.nudge) - variation.ranges.nudge),
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto high = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.base.velocity,
+        variation.base.gate,
+        clampNudgeValue(static_cast<int>(variation.base.nudge) + variation.ranges.nudge),
+        true,
+        railWidth,
+        buttonHeight
+    );
+    const auto resolved = grid::buildStepVisualStyle(
+        variation.base.note,
+        variation.resolved.velocity,
+        variation.resolved.gate,
+        variation.resolved.nudge,
+        true,
+        railWidth,
+        buttonHeight
+    );
+
+    const lv_coord_t y = static_cast<lv_coord_t>(
+        buttonArea.y1 + base.y + base.height - STEP_SHAPE_STROKE_WIDTH
+    );
+    const lv_coord_t lowX = static_cast<lv_coord_t>(buttonArea.x1 + low.x);
+    const lv_coord_t highX = static_cast<lv_coord_t>(buttonArea.x1 + high.x);
+    const lv_coord_t baseX = static_cast<lv_coord_t>(buttonArea.x1 + base.x);
+    const lv_coord_t resolvedX = static_cast<lv_coord_t>(buttonArea.x1 + resolved.x);
+
+    if (rangeVisible) {
+        drawVerticalRangeTick(layer, lowX, y);
+        drawVerticalRangeTick(layer, highX, y);
+    }
+    if (deltaVisible && variation.nudgeDelta != 0) {
+        drawVariationRect(
+            layer,
+            std::min(baseX, resolvedX),
+            y,
+            static_cast<lv_coord_t>(std::abs(resolvedX - baseX) + 1),
+            VARIATION_DELTA_THICKNESS,
+            VARIATION_DELTA_COLOR,
+            VARIATION_DELTA_OPA
+        );
+    }
+}
+
+void drawRuntimeVariation(lv_layer_t* layer,
+                          const lv_area_t& buttonArea,
+                          lv_coord_t railWidth,
+                          lv_coord_t buttonHeight,
+                          const grid::TileVariationRenderState& state) {
+    const auto& variation = state.resolved;
+    drawVelocityVariation(
+        layer,
+        buttonArea,
+        railWidth,
+        buttonHeight,
+        variation,
+        state.rangeVisible && state.rangeProperty == StepProperty::VELOCITY,
+        state.deltaVisible
+    );
+    drawGateVariation(
+        layer,
+        buttonArea,
+        railWidth,
+        buttonHeight,
+        variation,
+        state.rangeVisible && state.rangeProperty == StepProperty::GATE,
+        state.deltaVisible
+    );
+    drawNudgeVariation(
+        layer,
+        buttonArea,
+        railWidth,
+        buttonHeight,
+        variation,
+        state.rangeVisible && state.rangeProperty == StepProperty::NUDGE,
+        state.deltaVisible
+    );
+}
 
 }  // namespace
 
-StepGrid::StepGrid(lv_obj_t* parent) {
+StepGrid::StepGrid(lv_obj_t* parent,
+                   GeometryInvalidatedCallback geometryInvalidated,
+                   void* geometryInvalidatedUserData)
+    : geometry_invalidated_(geometryInvalidated)
+    , geometry_invalidated_user_data_(geometryInvalidatedUserData) {
     createUI(parent);
     createTiles();
 }
@@ -81,10 +411,10 @@ FLASHMEM void StepGrid::createTiles() {
             note_layer_,
             tiles_[i],
             note_labels_[i],
+            original_note_labels_[i],
             step_inline_icons_[i],
             step_buttons_[i],
             step_shapes_[i],
-            step_markers_[i],
             geometry_.inlineIconWidth[i],
             geometry_.inlineIconHeight[i],
             onGeometryChangedEvent,
@@ -96,6 +426,12 @@ FLASHMEM void StepGrid::createTiles() {
                 step_buttons_[i],
                 onTileButtonDrawEvent,
                 LV_EVENT_DRAW_MAIN,
+                &tile_button_draw_contexts_[i]
+            );
+            lv_obj_add_event_cb(
+                step_buttons_[i],
+                onTileButtonDrawEvent,
+                LV_EVENT_DRAW_POST,
                 &tile_button_draw_contexts_[i]
             );
         }
@@ -115,11 +451,15 @@ void StepGrid::onGeometryChangedEvent(lv_event_t* event) {
 }
 
 void StepGrid::markGeometryDirty() {
+    const bool wasDirty = geometry_.dirty;
     geometry_.dirty = true;
+    if (!wasDirty && geometry_invalidated_) {
+        geometry_invalidated_(geometry_invalidated_user_data_);
+    }
 }
 
-void StepGrid::refreshStaticGeometry() {
-    if (!note_layer_ || !container_) return;
+bool StepGrid::refreshStaticGeometry() {
+    if (!note_layer_ || !container_) return false;
 
     const lv_coord_t containerWidth = lv_obj_get_width(container_);
     const lv_coord_t containerHeight = lv_obj_get_height(container_);
@@ -136,6 +476,12 @@ void StepGrid::refreshStaticGeometry() {
     lv_area_t noteLayerArea{};
     lv_obj_get_coords(note_layer_, &noteLayerArea);
 
+    bool changed = !geometry_.initialized ||
+                   geometry_.containerWidth != containerWidth ||
+                   geometry_.containerHeight != containerHeight ||
+                   geometry_.noteLayerWidth != noteLayerWidth ||
+                   geometry_.noteLayerHeight != noteLayerHeight;
+
     for (uint8_t i = 0; i < step_buttons_.size(); ++i) {
         lv_obj_t* button = step_buttons_[i];
         if (!button) continue;
@@ -149,6 +495,12 @@ void StepGrid::refreshStaticGeometry() {
             grid::measureRailWidth(lv_obj_get_content_width(button)),
             grid::measureButtonHeight(lv_obj_get_content_height(button))
         );
+        changed = changed ||
+                  this->geometry_.railWidth[i] != geometry.railWidth ||
+                  this->geometry_.buttonHeight[i] != geometry.buttonHeight ||
+                  this->geometry_.noteBaseX[i] != geometry.noteBaseX ||
+                  this->geometry_.noteBaseY[i] != geometry.noteBaseY ||
+                  this->geometry_.noteLabelBaselineY[i] != geometry.noteLabelBaselineY;
         this->geometry_.railWidth[i] = geometry.railWidth;
         this->geometry_.buttonHeight[i] = geometry.buttonHeight;
         this->geometry_.noteBaseX[i] = geometry.noteBaseX;
@@ -162,6 +514,7 @@ void StepGrid::refreshStaticGeometry() {
     geometry_.noteLayerWidth = lv_obj_get_width(note_layer_);
     geometry_.noteLayerHeight = lv_obj_get_height(note_layer_);
     geometry_.dirty = false;
+    return changed;
 }
 
 void StepGrid::renderTileIndex(uint8_t tileIndex,
@@ -221,45 +574,6 @@ void StepGrid::renderTileShape(uint8_t tileIndex,
     }
 }
 
-void StepGrid::renderTileMarker(uint8_t tileIndex,
-                                const TileRenderState& state,
-                                bool noteVisualChanged,
-                                lv_coord_t noteBaseX,
-                                lv_coord_t noteBaseY,
-                                lv_opa_t markerOpa) {
-    auto& cache = render_cache_.tiles[tileIndex];
-    lv_obj_t* marker = step_markers_[tileIndex];
-    if (!marker) return;
-
-    if (!cache.markerVisible) {
-        lv_obj_clear_flag(marker, LV_OBJ_FLAG_HIDDEN);
-        cache.markerVisible = true;
-    }
-
-    if (noteVisualChanged) {
-        const lv_point_t markerPosition = grid::buildMarkerPosition(noteBaseX, noteBaseY);
-        if (cache.markerX != markerPosition.x || cache.markerY != markerPosition.y) {
-            lv_obj_set_pos(marker, markerPosition.x, markerPosition.y);
-            cache.markerX = markerPosition.x;
-            cache.markerY = markerPosition.y;
-        }
-    }
-
-    const lv_color_t nextMarkerColor =
-        state.enabled ? grid::velocityMarkerColor(state.note, state.velocity)
-                      : lv_color_hex(STEP_TEXT_DISABLED_COLOR);
-    const uint32_t nextMarkerColorInt = lv_color_to_int(nextMarkerColor);
-    if (cache.markerColor != nextMarkerColorInt) {
-        lv_obj_set_style_bg_color(marker, nextMarkerColor, 0);
-        cache.markerColor = nextMarkerColorInt;
-    }
-
-    if (cache.markerOpa != markerOpa) {
-        lv_obj_set_style_bg_opa(marker, markerOpa, 0);
-        cache.markerOpa = markerOpa;
-    }
-}
-
 void StepGrid::renderTileBar(uint8_t tileIndex, bool visible) {
     auto& cache = render_cache_.tiles[tileIndex];
     const lv_opa_t nextOpa = visible ? STEP_BAR_ACTIVE_OPA : LV_OPA_TRANSP;
@@ -293,6 +607,20 @@ void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
     const lv_coord_t contentHeight = lv_obj_get_content_height(button);
     const lv_coord_t railWidth = grid::measureRailWidth(contentWidth);
     const lv_coord_t buttonHeight = grid::measureButtonHeight(contentHeight);
+    const lv_event_code_t code = lv_event_get_code(event);
+
+    if (code == LV_EVENT_DRAW_POST) {
+        if (cache.inPattern && cache.enabled && cache.variation.visible) {
+            drawRuntimeVariation(
+                layer,
+                buttonArea,
+                railWidth,
+                buttonHeight,
+                cache.variation
+            );
+        }
+        return;
+    }
 
     if (cache.inPattern) {
         lv_draw_rect_dsc_t guideDsc;
@@ -353,6 +681,7 @@ void StepGrid::renderTile(
     const TileRenderDiff& diff,
     bool propertyVisualChanged,
     bool tileFeedbackChanged,
+    bool geometryChanged,
     const StepGridFrameState& frameState
 ) {
     auto& cache = render_cache_.tiles[tileIndex];
@@ -360,16 +689,9 @@ void StepGrid::renderTile(
         state.inPattern &&
         state.enabled &&
         !state.probabilityCycleActive;
-    const bool noteVisualChanged =
-        !cache.initialized ||
-        diff.inPatternChanged ||
-        diff.enabledChanged ||
-        diff.noteChanged ||
-        diff.velocityChanged ||
-        diff.gateChanged ||
-        diff.nudgeChanged;
     const bool noteLabelNeedsRender =
         !cache.initialized ||
+        geometryChanged ||
         propertyVisualChanged ||
         tileFeedbackChanged ||
         diff.inPatternChanged ||
@@ -379,21 +701,24 @@ void StepGrid::renderTile(
         diff.probabilityChanged ||
         diff.gateChanged ||
         diff.nudgeChanged ||
+        diff.variationChanged ||
         diff.probabilityCycleActiveChanged;
     const lv_coord_t noteLabelY = geometry_.noteLabelBaselineY[tileIndex];
     bool buttonOverlayDirty =
-        !cache.initialized || diff.absoluteStepChanged || diff.inPatternChanged || diff.barChanged;
+        !cache.initialized || diff.absoluteStepChanged || diff.inPatternChanged ||
+        diff.barChanged || diff.variationChanged || propertyVisualChanged || geometryChanged;
 
-    if (!diff.dataChanged && !diff.barChanged && !propertyVisualChanged && !tileFeedbackChanged &&
+    if (!geometryChanged &&
+        !diff.dataChanged && !diff.barChanged && !propertyVisualChanged && !tileFeedbackChanged &&
         !diff.probabilityMaskChanged) {
         return;
     }
 
     renderTileIndex(tileIndex, state, diff);
 
-    if (diff.dataChanged || diff.probabilityMaskChanged) {
+    if (geometryChanged || diff.dataChanged || diff.probabilityMaskChanged) {
         const auto visual = grid::buildStepVisualStyle(
-            state.note,
+            grid::runtimePitchDisplayNote(state),
             state.velocity,
             state.gate,
             state.nudge,
@@ -405,10 +730,6 @@ void StepGrid::renderTile(
         const lv_coord_t noteBaseY = static_cast<lv_coord_t>(geometry_.noteBaseY[tileIndex] + visual.y);
         const lv_opa_t shapeStrokeOpa =
             probabilityMasked ? STEP_PROBABILITY_MASKED_OPA : visual.strokeOpa;
-        const lv_opa_t markerOpa =
-            state.enabled
-                ? (probabilityMasked ? STEP_PROBABILITY_MASKED_OPA : LV_OPA_COVER)
-                : STEP_TEXT_DISABLED_OPA;
 
         if (step_shapes_[tileIndex]) {
             if (!state.inPattern) {
@@ -416,13 +737,8 @@ void StepGrid::renderTile(
                     lv_obj_add_flag(step_shapes_[tileIndex], LV_OBJ_FLAG_HIDDEN);
                     cache.shapeVisible = false;
                 }
-                if (step_markers_[tileIndex] && cache.markerVisible) {
-                    lv_obj_add_flag(step_markers_[tileIndex], LV_OBJ_FLAG_HIDDEN);
-                    cache.markerVisible = false;
-                }
             } else {
                 renderTileShape(tileIndex, visual, noteBaseX, noteBaseY, shapeStrokeOpa);
-                renderTileMarker(tileIndex, state, noteVisualChanged, noteBaseX, noteBaseY, markerOpa);
             }
         }
     }
@@ -437,11 +753,13 @@ void StepGrid::renderTile(
             tileIndex,
             render_cache_.tiles[tileIndex],
             note_labels_[tileIndex],
+            original_note_labels_[tileIndex],
             step_inline_icons_[tileIndex],
             state,
             diff,
             propertyVisualChanged,
             tileFeedbackChanged,
+            geometryChanged,
             frameState.activeProperty,
             render_cache_.feedback,
             propertyVisual,
@@ -468,6 +786,7 @@ void StepGrid::renderTile(
     cache.probability = state.probability;
     cache.gate = state.gate;
     cache.nudge = state.nudge;
+    cache.variation = state.variation;
 
     if (buttonOverlayDirty && step_buttons_[tileIndex]) {
         lv_obj_invalidate(step_buttons_[tileIndex]);
@@ -477,8 +796,9 @@ void StepGrid::renderTile(
 void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
 
+    bool geometryChanged = false;
     if (geometry_.dirty) {
-        refreshStaticGeometry();
+        geometryChanged = refreshStaticGeometry();
     }
 
     const auto plan = grid::buildFrameRenderPlan(
@@ -491,12 +811,12 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
     render_cache_.property = frameState.activeProperty;
     render_cache_.feedback = plan.nextFeedback;
 
-    if (!plan.anyDirty) {
+    if (!plan.anyDirty && !geometryChanged) {
         return;
     }
 
     for (uint8_t i = 0; i < tiles_.size(); ++i) {
-        if (!plan.tileDirty[i]) continue;
+        if (!plan.tileDirty[i] && !geometryChanged) continue;
         const TileRenderState state = frameState.tiles[i];
         renderTile(
             i,
@@ -504,6 +824,7 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
             plan.diffs[i],
             plan.propertyVisualChanged,
             plan.feedbackChanged[i],
+            geometryChanged,
             frameState
         );
     }

@@ -144,7 +144,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             },
             encoders,
             buttons,
-            sequencerViewScopeId
+            sequencerViewScopeId,
+            oc::time::millis
         );
     macro_property_handler_ =
         std::make_unique<core::handler::SequencerMacroPropertyHandler>(
