@@ -19,7 +19,6 @@ constexpr lv_coord_t STEP_SHAPE_RADIUS = 0;
 constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
 constexpr lv_coord_t STEP_SHAPE_MIN_WIDTH = grid::STEP_SHAPE_MIN_WIDTH;
 constexpr lv_coord_t STEP_SHAPE_MIN_HEIGHT = grid::STEP_SHAPE_MIN_HEIGHT;
-constexpr lv_coord_t STEP_MARKER_SIZE = 6;
 constexpr uint32_t STEP_INLINE_NOTE_COLOR = theme::color::TEXT_PRIMARY;
 constexpr lv_opa_t STEP_INLINE_NOTE_OPA = LV_OPA_COVER;
 constexpr lv_coord_t HORIZONTAL_INSET = 2;
@@ -78,10 +77,10 @@ FLASHMEM void createTile(uint8_t tileIndex,
                          lv_obj_t* noteLayer,
                          lv_obj_t*& tile,
                          lv_obj_t*& noteLabel,
+                         lv_obj_t*& originalNoteLabel,
                          lv_obj_t*& stepInlineIcon,
                          lv_obj_t*& stepButton,
                          lv_obj_t*& stepShape,
-                         lv_obj_t*& stepMarker,
                          lv_coord_t& inlineIconWidth,
                          lv_coord_t& inlineIconHeight,
                          lv_event_cb_t geometryEvent,
@@ -146,17 +145,6 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_set_style_bg_opa(stepShape, LV_OPA_TRANSP, 0);
     lv_obj_add_flag(stepShape, LV_OBJ_FLAG_HIDDEN);
 
-    stepMarker = lv_obj_create(noteLayer);
-    lv_obj_remove_style_all(stepMarker);
-    lv_obj_add_flag(stepMarker, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_clear_flag(stepMarker, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(stepMarker, STEP_MARKER_SIZE, STEP_MARKER_SIZE);
-    lv_obj_set_style_radius(stepMarker, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(stepMarker, 0, 0);
-    lv_obj_set_style_bg_color(stepMarker, lv_color_hex(theme::color::INACTIVE_LIGHTER), 0);
-    lv_obj_set_style_bg_opa(stepMarker, LV_OPA_COVER, 0);
-    lv_obj_add_flag(stepMarker, LV_OBJ_FLAG_HIDDEN);
-
     noteLabel = lv_label_create(noteLayer);
     lv_label_set_text(noteLabel, "");
     lv_obj_add_flag(noteLabel, LV_OBJ_FLAG_IGNORE_LAYOUT);
@@ -167,6 +155,17 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_set_style_text_opa(noteLabel, STEP_INLINE_NOTE_OPA, 0);
     lv_obj_set_style_pad_all(noteLabel, 0, 0);
     lv_obj_add_flag(noteLabel, LV_OBJ_FLAG_HIDDEN);
+
+    originalNoteLabel = lv_label_create(noteLayer);
+    lv_label_set_text(originalNoteLabel, "");
+    lv_obj_add_flag(originalNoteLabel, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_set_width(originalNoteLabel, LV_SIZE_CONTENT);
+    lv_obj_set_style_text_align(originalNoteLabel, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_font(originalNoteLabel, fonts.inter_13_bold, 0);
+    lv_obj_set_style_text_color(originalNoteLabel, lv_color_hex(theme::color::INACTIVE_LIGHTER), 0);
+    lv_obj_set_style_text_opa(originalNoteLabel, LV_OPA_50, 0);
+    lv_obj_set_style_pad_all(originalNoteLabel, 0, 0);
+    lv_obj_add_flag(originalNoteLabel, LV_OBJ_FLAG_HIDDEN);
 
     stepInlineIcon = lv_label_create(noteLayer);
     standalone::icons::set(

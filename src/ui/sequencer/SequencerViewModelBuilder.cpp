@@ -69,6 +69,54 @@ uint16_t activePageMask(uint8_t pageCount) {
     return static_cast<uint16_t>((1U << pageCount) - 1U);
 }
 
+const char* variationStatusPrefix(core::state::sequencer::StepProperty property) {
+    switch (property) {
+        case core::state::sequencer::StepProperty::NOTE:
+            return "PIT";
+        case core::state::sequencer::StepProperty::VELOCITY:
+            return "VEL";
+        case core::state::sequencer::StepProperty::GATE:
+            return "GAT";
+        case core::state::sequencer::StepProperty::NUDGE:
+            return "DLY";
+        case core::state::sequencer::StepProperty::PROBABILITY:
+            return "VAR";
+    }
+    return "VAR";
+}
+
+Tone variationStatusTone(core::state::sequencer::StepProperty property) {
+    switch (property) {
+        case core::state::sequencer::StepProperty::VELOCITY:
+            return Tone::WARNING;
+        case core::state::sequencer::StepProperty::GATE:
+            return Tone::POSITIVE;
+        case core::state::sequencer::StepProperty::NUDGE:
+            return Tone::CONSTRUCTIVE;
+        case core::state::sequencer::StepProperty::NOTE:
+        case core::state::sequencer::StepProperty::PROBABILITY:
+        default:
+            return Tone::NEUTRAL;
+    }
+}
+
+void formatVariationStatusLabel(std::array<char, 16>& out,
+                                core::state::sequencer::StepProperty property,
+                                uint8_t range) {
+    if (property == core::state::sequencer::StepProperty::PROBABILITY) {
+        std::snprintf(out.data(), out.size(), "VAR--");
+        return;
+    }
+
+    std::snprintf(
+        out.data(),
+        out.size(),
+        "%s+%u",
+        variationStatusPrefix(property),
+        static_cast<unsigned>(range)
+    );
+}
+
 }  // namespace
 
 SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source) {
@@ -295,9 +343,30 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const bool selectingTrack = source.trackNavigation.selection.active.get();
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
+    const bool selectingPatternVariation = source.sequencer.stepPropertyInlineSelector.selecting.get();
     const uint16_t selectionMask = selectingTrack
         ? source.trackNavigation.selection.selectedMask.get()
         : source.sequencer.structureUi.pageSelection.selectedMask.get();
+
+    if (selectingPatternVariation) {
+        const auto property = source.sequencer.activeStepProperty.get();
+        const uint8_t range = source.sequencer.variationRangeForProperty(property);
+
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1] = SlotProps{
+            .visualState = property == core::state::sequencer::StepProperty::PROBABILITY
+                ? Visual::DISABLED
+                : Visual::ACTIVE,
+            .tone = variationStatusTone(property),
+            .showIcon = false,
+            .icon = nullptr,
+            .showLabel = true,
+            .label = nullptr,
+        };
+        formatVariationStatusLabel(props.slots[1].labelText, property, range);
+        props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
 
     if (selectingTrack || selectingPage) {
         bool canDeleteSelection = false;

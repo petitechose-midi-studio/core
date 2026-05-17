@@ -133,7 +133,10 @@ inline float quickControlToNormalized(
         case core::state::sequencer::PatternQuickControlItem::OFFSET:
             return 0.5f;
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
-            return indexToNormalized(findStepsPerBeatChoiceIndex(state.stepsPerBeat.get()), static_cast<int>(STEPS_PER_BEAT_CHOICES.size()));
+            return indexToNormalized(
+                findStepsPerBeatChoiceIndex(state.stepsPerBeat.get()),
+                static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
+            );
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
             const uint8_t len = state.length.get();
@@ -166,7 +169,10 @@ inline void applyNormalizedToQuickControl(
     const float value = clampNormalized(normalized);
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::DIVISION: {
-            const int idx = normalizedToIndex(value, static_cast<int>(STEPS_PER_BEAT_CHOICES.size()));
+            const int idx = normalizedToIndex(
+                value,
+                static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
+            );
             state.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
             return;
         }
@@ -177,6 +183,42 @@ inline void applyNormalizedToQuickControl(
             return;
         }
     }
+}
+
+inline uint8_t variationRangeMaxForProperty(StepProperty property) {
+    using Ranges = oc::note::sequencer::StepSequencerVariationRanges;
+
+    switch (property) {
+        case StepProperty::NOTE:
+            return Ranges::MAX_PITCH_SEMITONES;
+        case StepProperty::VELOCITY:
+            return Ranges::MAX_VELOCITY;
+        case StepProperty::GATE:
+            return Ranges::MAX_GATE_PERCENT;
+        case StepProperty::NUDGE:
+            return Ranges::MAX_NUDGE;
+        case StepProperty::PROBABILITY:
+            return 0;
+    }
+
+    return 0;
+}
+
+inline uint8_t normalizedToVariationRange(StepProperty property, float normalized) {
+    return static_cast<uint8_t>(
+        normalizedToInclusiveInt(normalized, variationRangeMaxForProperty(property))
+    );
+}
+
+inline float variationRangeToNormalized(StepProperty property, uint8_t range) {
+    const uint8_t maxRange = variationRangeMaxForProperty(property);
+    return indexToNormalized(std::min<uint8_t>(range, maxRange), static_cast<int>(maxRange) + 1);
+}
+
+inline StepPropertyEncoderConfig encoderConfigForVariationRange(StepProperty property) {
+    StepPropertyEncoderConfig config;
+    config.discreteSteps = static_cast<uint8_t>(variationRangeMaxForProperty(property) + 1U);
+    return config;
 }
 
 inline uint8_t discreteStepsForProperty(StepProperty property) {

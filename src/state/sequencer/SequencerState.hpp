@@ -34,6 +34,14 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     /// Bumps when non-signal step arrays change (note/velocity/gate/nudge/probability)
     Signal<uint32_t> stepDataRevision{0};
 
+    /// Bumps when pattern-level variation ranges change.
+    Signal<uint32_t> patternVariationRevision{0};
+
+    /// Bumps when runtime publishes a new resolved variation observation.
+    Signal<uint32_t> variationTelemetryRevision{0};
+    oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
+    oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
+
     /// Active property edited by the 8 macro encoders in Sequencer view
     Signal<StepProperty, 6> activeStepProperty{StepProperty::NOTE};
 
@@ -41,6 +49,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     SequencerStepEditOverlayState stepEdit;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepInlineFeedbackState stepInlineFeedback;
+    SequencerPatternVariationFeedbackState patternVariationFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
     SequencerStructureUiState structureUi;
 
@@ -64,6 +73,75 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
 
     void bumpStepDataRevision() {
         stepDataRevision.set(stepDataRevision.get() + 1);
+    }
+
+    void bumpPatternVariationRevision() {
+        patternVariationRevision.set(patternVariationRevision.get() + 1);
+    }
+
+    uint8_t variationRangeForProperty(StepProperty property) const {
+        switch (property) {
+            case StepProperty::NOTE:
+                return variationRanges.pitchSemitones;
+            case StepProperty::VELOCITY:
+                return variationRanges.velocity;
+            case StepProperty::GATE:
+                return variationRanges.gatePercent;
+            case StepProperty::NUDGE:
+                return variationRanges.nudge;
+            case StepProperty::PROBABILITY:
+                return 0;
+        }
+
+        return 0;
+    }
+
+    bool setVariationRangeForProperty(StepProperty property, uint8_t range) {
+        auto next = variationRanges;
+        switch (property) {
+            case StepProperty::NOTE:
+                next.pitchSemitones = range;
+                break;
+            case StepProperty::VELOCITY:
+                next.velocity = range;
+                break;
+            case StepProperty::GATE:
+                next.gatePercent = range;
+                break;
+            case StepProperty::NUDGE:
+                next.nudge = range;
+                break;
+            case StepProperty::PROBABILITY:
+                return false;
+        }
+
+        next.clamp();
+        if (next.pitchSemitones == variationRanges.pitchSemitones &&
+            next.velocity == variationRanges.velocity &&
+            next.gatePercent == variationRanges.gatePercent &&
+            next.nudge == variationRanges.nudge) {
+            return false;
+        }
+
+        variationRanges = next;
+        bumpPatternVariationRevision();
+        return true;
+    }
+
+    bool setPatternVariationRanges(
+        oc::note::sequencer::StepSequencerVariationRanges ranges
+    ) {
+        ranges.clamp();
+        if (ranges.pitchSemitones == variationRanges.pitchSemitones &&
+            ranges.velocity == variationRanges.velocity &&
+            ranges.gatePercent == variationRanges.gatePercent &&
+            ranges.nudge == variationRanges.nudge) {
+            return false;
+        }
+
+        variationRanges = ranges;
+        bumpPatternVariationRevision();
+        return true;
     }
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
@@ -171,17 +249,24 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         page.set(0);
         focusedStep.set(0);
         bumpStepDataRevision();
+        variationRanges = {};
+        bumpPatternVariationRevision();
+        lastResolvedVariation = {};
+        cycleVariationTelemetry.reset();
+        variationTelemetryRevision.set(0);
         activeStepProperty.set(StepProperty::NOTE);
 
         stepEdit.reset();
         stepPropertyInlineSelector.reset();
         stepInlineFeedback.reset();
+        patternVariationFeedback.reset();
         patternQuickControls.reset();
         structureUi.reset();
     }
 
     void updateUi(uint32_t nowMs) {
         stepInlineFeedback.update(nowMs);
+        patternVariationFeedback.update(nowMs);
     }
 
     uint8_t activePageCount() const {

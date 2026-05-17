@@ -9,8 +9,8 @@
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
-#include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "state/shared/StructureSlotOps.hpp"
@@ -93,23 +93,6 @@ const char* structureTarget(core::state::StructureSelectionScope scope) {
     }
 }
 
-void fillQuickControlValueLabel(const core::state::sequencer::SequencerState& sequencer,
-                                core::state::sequencer::PatternQuickControlItem item,
-                                char (&out)[16]) {
-    switch (item) {
-        case core::state::sequencer::PatternQuickControlItem::OFFSET:
-            std::snprintf(out, sizeof(out), "%d", static_cast<int>(sequencer.patternQuickControls.offsetSteps.get()));
-            return;
-        case core::state::sequencer::PatternQuickControlItem::DIVISION:
-            std::snprintf(out, sizeof(out), "%u", static_cast<unsigned>(sequencer.stepsPerBeat.get()));
-            return;
-        case core::state::sequencer::PatternQuickControlItem::LENGTH:
-        default:
-            std::snprintf(out, sizeof(out), "%u", static_cast<unsigned>(sequencer.length.get()));
-            return;
-    }
-}
-
 void fillStepValueLabel(const core::state::sequencer::SequencerState& sequencer,
                         uint8_t step,
                         core::state::sequencer::StepProperty property,
@@ -147,10 +130,20 @@ bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     out.mode = "sequencer.property_selector";
     out.target = "property";
     out.property = core::state::sequencer::stepPropertyName(sequencer_.activeStepProperty.get());
+    std::snprintf(
+        out.valueLabel,
+        sizeof(out.valueLabel),
+        "%u",
+        static_cast<unsigned>(
+            sequencer_.variationRangeForProperty(sequencer_.activeStepProperty.get())
+        )
+    );
     if (opening) {
         out.effect = "open_property_selector";
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_property";
+    } else if (isEncoder(event, Config::EncoderID::OPT)) {
+        out.effect = "edit_variation_range";
     } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "apply_property";
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
@@ -179,10 +172,8 @@ bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
 
     const auto item = sequencer_.patternQuickControls.focusedItem.get();
     out.mode = "sequencer.quick_controls";
-    out.target = "quick_control";
-    out.targetIndex = static_cast<int16_t>(core::state::sequencer::quickControlOrderIndex(item));
+    out.target = "pattern";
     out.property = core::state::sequencer::quickControlLabel(item);
-    fillQuickControlValueLabel(sequencer_, item, out.valueLabel);
 
     if (opening) {
         out.effect = "open_quick_controls";

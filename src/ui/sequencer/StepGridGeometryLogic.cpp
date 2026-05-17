@@ -13,8 +13,6 @@ namespace {
 constexpr lv_coord_t STEP_NOTE_LABEL_PAD_X = 4;
 constexpr lv_coord_t STEP_NOTE_LABEL_PAD_BOTTOM = STEP_BAR_HEIGHT + 4;
 constexpr lv_coord_t STEP_INLINE_ICON_GAP = 3;
-constexpr lv_coord_t STEP_MARKER_SIZE = 6;
-constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
 constexpr lv_coord_t STEP_GUIDE_HEIGHT = 8;
 constexpr lv_coord_t STEP_GUIDE_BOTTOM = STEP_BAR_HEIGHT + 5;
 constexpr std::array<float, 3> STEP_GUIDE_POSITIONS = {
@@ -61,13 +59,6 @@ StepTileGeometry buildTileGeometry(const lv_area_t& buttonArea,
         .noteLabelBaselineY = static_cast<lv_coord_t>(
             buttonArea.y2 - noteLayerArea.y1 - STEP_NOTE_LABEL_PAD_BOTTOM
         ),
-    };
-}
-
-lv_point_t buildMarkerPosition(lv_coord_t noteBaseX, lv_coord_t noteBaseY) {
-    return {
-        .x = static_cast<lv_coord_t>(noteBaseX + STEP_SHAPE_STROKE_WIDTH / 2 - STEP_MARKER_SIZE / 2),
-        .y = static_cast<lv_coord_t>(noteBaseY - STEP_MARKER_SIZE / 2),
     };
 }
 

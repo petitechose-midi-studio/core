@@ -24,7 +24,6 @@ uint32_t mockTimeMs() {
 using test_support::TestButtonHardware;
 using test_support::TestEncoderHardware;
 
-using PatternItem = core::state::sequencer::PatternQuickControlItem;
 using StepProperty = core::state::sequencer::StepProperty;
 
 struct SequencerInlineHarness {
@@ -60,7 +59,8 @@ struct SequencerInlineHarness {
               },
               encoders,
               buttons,
-              SEQUENCER_SCOPE
+              SEQUENCER_SCOPE,
+              mockTimeMs
           )
         , patternQuickControlsHandler(
               core::handler::SequencerPatternQuickControlsHandler::StateRefs{
@@ -153,52 +153,69 @@ void test_property_selector_does_not_open_when_pattern_quick_controls_are_active
     std::cout << "[PASS] test_property_selector_does_not_open_when_pattern_quick_controls_are_active\n";
 }
 
-void test_pattern_quick_controls_length_apply_clamps_focus() {
+void test_property_selector_edits_active_property_variation_range() {
     SequencerInlineHarness h;
-    h.state.sequencer.length.set(16);
-    h.state.sequencer.focusedStep.set(10);
-    h.state.sequencer.page.set(1);
+    h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
 
-    openPatternQuickControls(h);
-    h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(h.state.sequencer.patternQuickControls.focusedItem.get() == PatternItem::LENGTH);
-
-    h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(h.state.sequencer.length.get() == 1);
-    assert(h.state.sequencer.focusedStep.get() == 0);
-    assert(h.state.sequencer.page.get() == 0);
-
-    h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(!h.state.sequencer.patternQuickControls.selecting.get());
-    assert(h.state.sequencer.length.get() == 1);
-
-    std::cout << "[PASS] test_pattern_quick_controls_length_apply_clamps_focus\n";
-}
-
-void test_pattern_quick_controls_cancel_restores_offset_snapshot() {
-    SequencerInlineHarness h;
-    h.state.sequencer.length.set(4);
-    for (uint8_t i = 0; i < 4; ++i) {
-        h.state.sequencer.note[i] = static_cast<uint8_t>(60 + i);
-        h.state.sequencer.setEnabled(i, true);
-    }
-
-    openPatternQuickControls(h);
-    assert(h.state.sequencer.patternQuickControls.focusedItem.get() == PatternItem::OFFSET);
+    openPropertySelector(h);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.patternQuickControls.offsetSteps.get() == 3);
-    assert(h.state.sequencer.note[0] != 60);
+    assert(h.state.sequencer.variationRanges.pitchSemitones == 36);
+
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.sequencer.variationRanges.pitchSemitones == 36);
+
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    openPropertySelector(h);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.variationRanges.velocity == 127);
+
+    std::cout << "[PASS] test_property_selector_edits_active_property_variation_range\n";
+}
+
+void test_property_selector_cancel_restores_variation_snapshot() {
+    SequencerInlineHarness h;
+    h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
+    h.state.sequencer.setVariationRangeForProperty(StepProperty::GATE, 12);
+
+    openPropertySelector(h);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.variationRanges.gatePercent == 100);
 
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(!h.state.sequencer.patternQuickControls.selecting.get());
-    assert(h.state.sequencer.patternQuickControls.offsetSteps.get() == 0);
-    for (uint8_t i = 0; i < 4; ++i) {
-        assert(h.state.sequencer.note[i] == static_cast<uint8_t>(60 + i));
-        assert(h.state.sequencer.isEnabled(i));
-    }
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.sequencer.variationRanges.gatePercent == 12);
 
-    std::cout << "[PASS] test_pattern_quick_controls_cancel_restores_offset_snapshot\n";
+    std::cout << "[PASS] test_property_selector_cancel_restores_variation_snapshot\n";
+}
+
+void test_property_selector_does_not_edit_probability_variation() {
+    SequencerInlineHarness h;
+    h.state.sequencer.activeStepProperty.set(StepProperty::PROBABILITY);
+
+    openPropertySelector(h);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.variationRanges.pitchSemitones == 0);
+    assert(h.state.sequencer.variationRanges.velocity == 0);
+    assert(h.state.sequencer.variationRanges.gatePercent == 0);
+    assert(h.state.sequencer.variationRanges.nudge == 0);
+
+    std::cout << "[PASS] test_property_selector_does_not_edit_probability_variation\n";
+}
+
+void test_pattern_quick_controls_do_not_edit_variation_range() {
+    SequencerInlineHarness h;
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+
+    openPatternQuickControls(h);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.variationRanges.velocity == 0);
+
+    std::cout << "[PASS] test_pattern_quick_controls_do_not_edit_variation_range\n";
 }
 
 void test_pattern_quick_controls_respect_blocking_states() {
@@ -227,8 +244,10 @@ int main() {
     test_property_selector_cancel_restores_snapshot();
     test_property_selector_apply_keeps_selected_property();
     test_property_selector_does_not_open_when_pattern_quick_controls_are_active();
-    test_pattern_quick_controls_length_apply_clamps_focus();
-    test_pattern_quick_controls_cancel_restores_offset_snapshot();
+    test_property_selector_edits_active_property_variation_range();
+    test_property_selector_cancel_restores_variation_snapshot();
+    test_property_selector_does_not_edit_probability_variation();
+    test_pattern_quick_controls_do_not_edit_variation_range();
     test_pattern_quick_controls_respect_blocking_states();
 
     std::cout << "\nAll SequencerInlineHandlers tests passed.\n";

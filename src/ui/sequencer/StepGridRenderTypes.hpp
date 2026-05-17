@@ -6,10 +6,20 @@
 
 #include <lvgl.h>
 #include <oc/note/sequencer/StepBitMask128.hpp>
+#include <oc/note/sequencer/StepSequencerVariation.hpp>
 
 #include "state/sequencer/SequencerUiState.hpp"
 
 namespace core::ui::sequencer::grid {
+
+struct TileVariationRenderState {
+    bool visible = false;
+    bool rangeVisible = false;
+    bool deltaVisible = false;
+    core::state::sequencer::StepProperty rangeProperty =
+        core::state::sequencer::StepProperty::NOTE;
+    oc::note::sequencer::StepSequencerResolvedVariation resolved{};
+};
 
 /**
  * Data exchanged between step-grid projection, planning, and rendering.
@@ -28,6 +38,7 @@ struct TileRenderState {
     uint8_t probability = 0;
     uint16_t gate = 0;
     int8_t nudge = 0;
+    TileVariationRenderState variation{};
 };
 
 struct TileRenderDiff {
@@ -41,6 +52,7 @@ struct TileRenderDiff {
     bool probabilityCycleActiveChanged = false;
     bool gateChanged = false;
     bool nudgeChanged = false;
+    bool variationChanged = false;
     bool velocityZeroChanged = false;
     bool probabilityMaskChanged = false;
     bool dataChanged = false;
@@ -59,18 +71,25 @@ struct TileRenderCache {
     uint8_t probability = 0;
     uint16_t gate = 0;
     int8_t nudge = 0;
+    TileVariationRenderState variation{};
     lv_coord_t noteLabelHeight = 0;
     bool noteLabelVisible = false;
+    bool originalNoteLabelVisible = false;
     bool inlineIconVisible = false;
     uint32_t noteLabelColorFull = 0;
     lv_opa_t noteLabelOpa = LV_OPA_TRANSP;
+    uint32_t originalNoteLabelColorFull = 0;
+    lv_opa_t originalNoteLabelOpa = LV_OPA_TRANSP;
     uint32_t inlineIconColorFull = 0;
     lv_opa_t inlineIconOpa = LV_OPA_TRANSP;
     lv_coord_t noteLabelX = 0;
     lv_coord_t noteLabelY = 0;
+    lv_coord_t originalNoteLabelX = 0;
+    lv_coord_t originalNoteLabelY = 0;
     lv_coord_t inlineIconX = 0;
     lv_coord_t inlineIconY = 0;
     char noteLabelText[16] = {0};
+    char originalNoteLabelText[8] = {0};
     bool shapeVisible = false;
     lv_coord_t shapeX = 0;
     lv_coord_t shapeY = 0;
@@ -78,11 +97,6 @@ struct TileRenderCache {
     lv_coord_t shapeHeight = 0;
     uint32_t shapeStrokeColor = 0;
     lv_opa_t shapeStrokeOpa = LV_OPA_TRANSP;
-    bool markerVisible = false;
-    lv_coord_t markerX = 0;
-    lv_coord_t markerY = 0;
-    uint32_t markerColor = 0;
-    lv_opa_t markerOpa = LV_OPA_TRANSP;
     bool indicatorVisible = false;
     lv_opa_t indicatorOpa = LV_OPA_TRANSP;
     char stepIndexText[4] = {0};

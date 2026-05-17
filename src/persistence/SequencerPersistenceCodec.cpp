@@ -44,6 +44,24 @@ uint8_t sanitizeProbability(uint8_t value) {
     return state::sequencer::SequencerState::clampProbability(value);
 }
 
+oc::note::sequencer::StepSequencerVariationRanges sanitizeVariationRanges(
+    oc::note::sequencer::StepSequencerVariationRanges ranges
+) {
+    ranges.clamp();
+    return ranges;
+}
+
+oc::note::sequencer::StepSequencerVariationRanges payloadVariationRanges(
+    const PatternPayload& payload
+) {
+    return sanitizeVariationRanges({
+        .pitchSemitones = payload.variationPitchSemitones,
+        .velocity = payload.variationVelocity,
+        .gatePercent = payload.variationGatePercent,
+        .nudge = payload.variationNudge,
+    });
+}
+
 state::sequencer::StepProperty sanitizeStepProperty(uint8_t value) {
     if (value > static_cast<uint8_t>(state::sequencer::StepProperty::PROBABILITY)) {
         return state::sequencer::StepProperty::NOTE;
@@ -63,6 +81,11 @@ FLASHMEM void fillPatternPayload(const state::sequencer::SequencerState& source,
     out.length = length;
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
     out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
+    const auto variationRanges = sanitizeVariationRanges(source.variationRanges);
+    out.variationPitchSemitones = variationRanges.pitchSemitones;
+    out.variationVelocity = variationRanges.velocity;
+    out.variationGatePercent = variationRanges.gatePercent;
+    out.variationNudge = variationRanges.nudge;
     const auto mask = source.enabledMask.get() & lengthMask(length);
     out.enabledMaskLow = mask.low;
     out.enabledMaskHigh = mask.high;
@@ -81,6 +104,7 @@ FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequence
     target.length.set(length);
     target.stepsPerBeat.set(sanitizeStepsPerBeat(payload.stepsPerBeat));
     target.midiChannel.set(sanitizeMidiChannel(payload.midiChannel));
+    target.setPatternVariationRanges(payloadVariationRanges(payload));
     target.enabledMask.set(
         oc::note::sequencer::StepBitMask128{payload.enabledMaskLow, payload.enabledMaskHigh} &
         lengthMask(length)

@@ -28,6 +28,10 @@ struct PatternPayload {
     uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
     uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
     uint8_t reserved0 = 0;
+    uint8_t variationPitchSemitones = 0;
+    uint8_t variationVelocity = 0;
+    uint8_t variationGatePercent = 0;
+    uint8_t variationNudge = 0;
     uint64_t enabledMaskLow = 0;
     uint64_t enabledMaskHigh = 0;
     std::array<uint8_t, PERSISTED_PATTERN_STEPS> note{};

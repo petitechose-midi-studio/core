@@ -79,9 +79,14 @@ lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     }
 }
 
+const char* slotLabel(const ContextActionStripSlotProps& props) {
+    if (props.label) return props.label;
+    return props.labelText[0] != '\0' ? props.labelText.data() : nullptr;
+}
+
 bool contentVisible(const ContextActionStripSlotProps& props) {
     return props.visualState != ContextActionStripVisualState::HIDDEN &&
-           ((props.showIcon && props.icon) || (props.showLabel && props.label));
+           ((props.showIcon && props.icon) || (props.showLabel && slotLabel(props)));
 }
 
 bool sameText(const char* lhs, const char* rhs) {
@@ -112,6 +117,7 @@ bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionSt
            lhs.iconSize == rhs.iconSize &&
            lhs.showLabel == rhs.showLabel &&
            sameText(lhs.label, rhs.label) &&
+           lhs.labelText == rhs.labelText &&
            lhs.holdActive == rhs.holdActive &&
            lhs.holdStartedAtMs == rhs.holdStartedAtMs &&
            lhs.holdDurationMs == rhs.holdDurationMs;
@@ -322,8 +328,8 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
         lv_obj_add_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (props.showLabel && props.label) {
-        setCachedText(slot.label, slot.hold_text, props.label);
+    if (props.showLabel && slotLabel(props)) {
+        setCachedText(slot.label, slot.hold_text, slotLabel(props));
         const lv_font_t* labelFont =
             (props.visualState == ContextActionStripVisualState::ACTIVE ||
              props.visualState == ContextActionStripVisualState::ARMED)
@@ -359,7 +365,7 @@ void ContextActionStrip::refreshHoldIndicators() {
         if (!slot.container || !slot.indicator || !slot.label) continue;
 
         if (!props.holdActive || props.holdDurationMs == 0) {
-            if (!props.showLabel || !props.label) {
+            if (!props.showLabel || !slotLabel(props)) {
                 lv_obj_add_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
             }
             slot.hold_tenths = std::numeric_limits<uint16_t>::max();

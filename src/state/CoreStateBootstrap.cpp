@@ -59,6 +59,8 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.patternQuickControls.selecting.setDebugLabel("core.sequencer.patternQuickControls.selecting");
     state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
     state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
+    state.sequencer.patternVariationRevision.setDebugLabel("core.sequencer.patternVariationRevision");
+    state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
 }
 }  // namespace
 
@@ -108,7 +110,7 @@ FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
 
 FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& state) {
     state.sequencerDomain_.autoPersist =
-        std::make_unique<oc::state::AutoPersistIncremental<10>>(
+        std::make_unique<oc::state::AutoPersistIncremental<11>>(
             [](uint8_t) {},
             [&state]() { state.persistSequencerWorkspace_(); },
             CoreSettings::VALUE_SAVE_DELAY_MS
@@ -124,6 +126,7 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
     state.sequencerDomain_.autoPersist->watchAt(7, state.sequencer.activeStepProperty);
     state.sequencerDomain_.autoPersist->watchAt(8, state.sequencerTracks.activeTrackSignal());
     state.sequencerDomain_.autoPersist->watchAt(9, state.sequencerTracks.enabledMaskSignal());
+    state.sequencerDomain_.autoPersist->watchAt(10, state.sequencer.patternVariationRevision);
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
