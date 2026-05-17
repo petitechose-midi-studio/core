@@ -38,6 +38,8 @@ uint32_t toneColor(ContextActionStripTone tone) {
         case ContextActionStripTone::CONSTRUCTIVE:
             return theme::color::MACRO_5;
         case ContextActionStripTone::DESTRUCTIVE:
+            return theme::color::MACRO_1;
+        case ContextActionStripTone::WARNING:
             return theme::color::MACRO_2;
         case ContextActionStripTone::POSITIVE:
             return theme::color::MACRO_4;

@@ -47,7 +47,6 @@ public:
     void duplicateSelection();
 
 private:
-    bool createPage();
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
     uint16_t currentTrackEnabledMask() const;

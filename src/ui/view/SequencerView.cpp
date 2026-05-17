@@ -164,6 +164,7 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.sharedTrackEnabledMask,
         state_refs_.sequencer.length,
         state_refs_.sequencer.page,
+        state_refs_.structureClipboard.revision,
         state_refs_.structureNavigationFocus,
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,

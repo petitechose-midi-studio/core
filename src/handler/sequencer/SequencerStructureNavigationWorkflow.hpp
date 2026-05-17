@@ -52,7 +52,6 @@ private:
     void bindStateSync();
     void movePage(float delta);
     void moveTrack(float delta);
-    bool createPage();
     void setPagePreview(uint8_t pageIndex, bool addSlot);
     void setTrackPreview(uint8_t trackIndex, bool addSlot);
     uint8_t cursorForSelectionScope(core::state::StructureSelectionScope scope) const;

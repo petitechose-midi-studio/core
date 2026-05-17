@@ -34,7 +34,9 @@ struct SequencerHeaderBarProps {
     bool selectingTrack = false;
     bool selectingPage = false;
     bool previewPageAddSlot = false;
-    uint16_t pageSelectedMask = 0;
+    uint16_t pageSourceMarkerMask = 0;
+    uint16_t pageDestinationPreviewMask = 0;
+    uint16_t pageDestinationOverwriteMask = 0;
     const char* leftText = "";
     std::array<char, 12> badgeText{};
 };
@@ -99,7 +101,9 @@ private:
     uint8_t strip_cached_preview_track_ = 0;
     uint8_t strip_cached_add_page_index_ = PAGE_COUNT;
     uint16_t strip_cached_enabled_mask_ = 0;
-    uint16_t strip_cached_page_selected_mask_ = 0;
+    uint16_t strip_cached_page_source_marker_mask_ = 0;
+    uint16_t strip_cached_page_destination_preview_mask_ = 0;
+    uint16_t strip_cached_page_destination_overwrite_mask_ = 0;
     bool strip_cached_preview_page_add_slot_ = false;
     lv_coord_t strip_cached_width_ = -1;
     bool strip_cursor_visible_cache_ = false;

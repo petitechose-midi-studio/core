@@ -17,6 +17,7 @@
 #include "integration/UxScenarioRunner.hpp"
 
 #include <cstdio>
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -33,6 +34,32 @@
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
+namespace {
+
+constexpr std::array<const char*, 6> kStorageFiles = {
+    "./macros.bin",
+    "./macro-workspace.bin",
+    "./macro-library.bin",
+    "./sequencer-workspace.bin",
+    "./sequencer-pattern-library.bin",
+    "./sequencer-set-library.bin",
+};
+
+bool removeStorageFilesForUxRun() {
+    bool ok = true;
+    for (const char* path : kStorageFiles) {
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        if (ec) {
+            std::fprintf(stderr, "Failed to reset UX storage file %s: %s\n", path, ec.message().c_str());
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     // 1. Initialize SDL environment (SDL, LVGL, HwSimulator, InputMapper)
     sdl::SdlEnvironment env;
@@ -40,13 +67,20 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const char* uxScript = ms::args::value(argc, argv, "--ux-script");
+    if (uxScript && !ms::args::has(argc, argv, "--ux-keep-storage")) {
+        if (!removeStorageFilesForUxRun()) {
+            return 1;
+        }
+    }
+
     // 2. Create storages and state (specific to core)
-    oc::impl::FileStorage settingsStorage("./macros.bin");
-    oc::impl::FileStorage macroWorkspaceStorage("./macro-workspace.bin");
-    oc::impl::FileStorage macroLibraryStorage("./macro-library.bin");
-    oc::impl::FileStorage sequencerWorkspaceStorage("./sequencer-workspace.bin");
-    oc::impl::FileStorage sequencerPatternLibraryStorage("./sequencer-pattern-library.bin");
-    oc::impl::FileStorage sequencerSetLibraryStorage("./sequencer-set-library.bin");
+    oc::impl::FileStorage settingsStorage(kStorageFiles[0]);
+    oc::impl::FileStorage macroWorkspaceStorage(kStorageFiles[1]);
+    oc::impl::FileStorage macroLibraryStorage(kStorageFiles[2]);
+    oc::impl::FileStorage sequencerWorkspaceStorage(kStorageFiles[3]);
+    oc::impl::FileStorage sequencerPatternLibraryStorage(kStorageFiles[4]);
+    oc::impl::FileStorage sequencerSetLibraryStorage(kStorageFiles[5]);
     if (!settingsStorage.init() ||
         !macroWorkspaceStorage.init() ||
         !macroLibraryStorage.init() ||
@@ -64,7 +98,6 @@ int main(int argc, char** argv) {
                                      sequencerSetLibraryStorage);
 
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
-    const char* uxScript = ms::args::value(argc, argv, "--ux-script");
     const char* uxOutputArg = ms::args::value(argc, argv, "--ux-output");
     const char* uxOutput = uxOutputArg ? uxOutputArg : ".captures/ux-run";
     std::string bindingTracePath;

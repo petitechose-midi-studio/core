@@ -5,6 +5,15 @@
 
 namespace ms::args {
 
+inline bool has(int argc, char** argv, const char* key) {
+    for (int i = 1; i < argc; ++i) {
+        if (::strcmp(argv[i], key) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline const char* value(int argc, char** argv, const char* key) {
     for (int i = 1; i + 1 < argc; ++i) {
         if (::strcmp(argv[i], key) == 0) {

@@ -101,6 +101,11 @@ It also writes `binding-trace.ndjson`, an opt-in trace emitted by
 `open-control::InputBinding` after scope, authority, predicate, latch, and
 gesture logic has evaluated each candidate binding.
 
+UX replay resets the native file-backed storage before each `--ux-script` run
+so workflows start from the controller default state. Pass `--ux-keep-storage`
+only when a workflow intentionally needs to inspect persisted state from a
+previous run.
+
 ### UX Workflow Suite
 
 Representative user journeys live under `sdl/integration/workflows/`. They are

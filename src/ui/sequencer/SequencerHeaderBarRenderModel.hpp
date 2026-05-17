@@ -23,9 +23,9 @@ constexpr lv_coord_t VIEW_CURSOR_WIDTH = 2;
 constexpr lv_opa_t VIEW_CURSOR_OPA = LV_OPA_80;
 constexpr lv_coord_t STRIP_CURSOR_HEIGHT = 2;
 constexpr lv_coord_t STRIP_CURSOR_OFFSET_Y = 2;
-constexpr lv_coord_t STRIP_ROW_HEIGHT = STRIP_HEIGHT + STRIP_CURSOR_OFFSET_Y + STRIP_CURSOR_HEIGHT;
-constexpr lv_coord_t PAGE_OUTLINE_WIDTH = 1;
-constexpr lv_opa_t PAGE_OUTLINE_OPA_SELECTED = LV_OPA_70;
+constexpr lv_coord_t MARKER_GAP = 2;
+constexpr lv_coord_t STRIP_ROW_HEIGHT =
+    STRIP_HEIGHT + STRIP_CURSOR_OFFSET_Y + STRIP_CURSOR_HEIGHT + MARKER_GAP + STRIP_CURSOR_HEIGHT;
 
 struct TopRowVisualState {
     uint32_t accentColor = 0;
@@ -51,7 +51,9 @@ struct StripSegmentVisual {
     bool visible = false;
     lv_area_t segmentArea{};
     lv_opa_t containerBgOpa = LV_OPA_TRANSP;
-    bool selected = false;
+    bool sourceMarker = false;
+    bool destinationPreview = false;
+    bool destinationOverwrite = false;
     bool drawValidFill = false;
     lv_area_t validArea{};
     lv_color_t validColor = lv_color_black();
