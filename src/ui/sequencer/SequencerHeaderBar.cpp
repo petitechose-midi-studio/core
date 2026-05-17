@@ -24,9 +24,12 @@ constexpr uint32_t COLOR_DIM_TEXT = theme::color::TEXT_PRIMARY;
 constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
 constexpr lv_coord_t ACCENT_WIDTH = 4;
 constexpr lv_coord_t LABEL_MAX_WIDTH = 46;
-constexpr lv_coord_t BADGE_WIDTH = 40;
+constexpr lv_coord_t BADGE_WIDTH = 52;
 constexpr lv_coord_t TITLE_SEPARATOR_WIDTH = 5;
 constexpr uint32_t PAGE_CURSOR_COLOR = theme::color::MACRO_1;
+constexpr uint32_t PAGE_SELECTION_COLOR = theme::color::MACRO_6;
+constexpr uint32_t PAGE_DUPLICATE_PREVIEW_COLOR = theme::color::MACRO_4;
+constexpr uint32_t PAGE_DUPLICATE_OVERWRITE_COLOR = 0xFFB000;
 
 template <size_t N>
 void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
@@ -61,6 +64,16 @@ void drawStripRect(lv_layer_t* layer,
     rectDsc.border_color = borderColor;
     rectDsc.border_opa = borderOpa;
     lv_draw_rect(layer, &rectDsc, &area);
+}
+
+lv_area_t markerArea(const lv_area_t& segmentArea, lv_coord_t y) {
+    constexpr lv_coord_t MARKER_INSET = 1;
+    return lv_area_t{
+        .x1 = static_cast<lv_coord_t>(segmentArea.x1 + MARKER_INSET),
+        .y1 = y,
+        .x2 = static_cast<lv_coord_t>(segmentArea.x2 - MARKER_INSET),
+        .y2 = static_cast<lv_coord_t>(y + header_model::STRIP_CURSOR_HEIGHT - 1),
+    };
 }
 
 }  // namespace
@@ -265,9 +278,9 @@ void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
                       stripState.disabledColor,
                       visual.containerBgOpa,
                       header_model::STRIP_RADIUS,
-                      visual.selected ? header_model::PAGE_OUTLINE_WIDTH : 0,
+                      0,
                       lv_color_hex(theme::color::TEXT_PRIMARY),
-                      visual.selected ? header_model::PAGE_OUTLINE_OPA_SELECTED : LV_OPA_TRANSP);
+                      LV_OPA_TRANSP);
 
         if (visual.drawValidFill) {
             drawStripRect(
@@ -286,6 +299,38 @@ void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
                 theme::color::TEXT_PRIMARY,
                 LV_OPA_COVER
             );
+        }
+
+        if (visual.sourceMarker) {
+            const auto area = markerArea(
+                visual.segmentArea,
+                static_cast<lv_coord_t>(
+                    stripCoords.y1 + header_model::STRIP_HEIGHT + header_model::STRIP_CURSOR_OFFSET_Y
+                )
+            );
+            drawStripRect(
+                layer,
+                area,
+                lv_color_hex(PAGE_SELECTION_COLOR),
+                LV_OPA_COVER,
+                1
+            );
+        }
+
+        if (visual.destinationPreview) {
+            const auto area = markerArea(
+                visual.segmentArea,
+                static_cast<lv_coord_t>(
+                    stripCoords.y1 + header_model::STRIP_HEIGHT +
+                    header_model::STRIP_CURSOR_OFFSET_Y +
+                    header_model::STRIP_CURSOR_HEIGHT +
+                    header_model::MARKER_GAP
+                )
+            );
+            const uint32_t color = visual.destinationOverwrite
+                ? PAGE_DUPLICATE_OVERWRITE_COLOR
+                : PAGE_DUPLICATE_PREVIEW_COLOR;
+            drawStripRect(layer, area, lv_color_hex(color), LV_OPA_COVER, 1);
         }
     }
 }
@@ -314,7 +359,12 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
                                    strip_cached_preview_track_ != props.previewTrack ||
                                    strip_cached_add_page_index_ != props.addPageIndex ||
                                    strip_cached_enabled_mask_ != props.enabledMask ||
-                                   strip_cached_page_selected_mask_ != props.pageSelectedMask ||
+                                   strip_cached_page_source_marker_mask_ !=
+                                       props.pageSourceMarkerMask ||
+                                   strip_cached_page_destination_preview_mask_ !=
+                                       props.pageDestinationPreviewMask ||
+                                   strip_cached_page_destination_overwrite_mask_ !=
+                                       props.pageDestinationOverwriteMask ||
                                    strip_cached_preview_page_add_slot_ != props.previewPageAddSlot;
 
     if (!stripStateChanged && !widthChanged) {
@@ -328,7 +378,9 @@ void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
     strip_cached_preview_track_ = props.previewTrack;
     strip_cached_add_page_index_ = props.addPageIndex;
     strip_cached_enabled_mask_ = props.enabledMask;
-    strip_cached_page_selected_mask_ = props.pageSelectedMask;
+    strip_cached_page_source_marker_mask_ = props.pageSourceMarkerMask;
+    strip_cached_page_destination_preview_mask_ = props.pageDestinationPreviewMask;
+    strip_cached_page_destination_overwrite_mask_ = props.pageDestinationOverwriteMask;
     strip_cached_preview_page_add_slot_ = props.previewPageAddSlot;
     strip_draw_props_ = props;
     lv_obj_invalidate(strip_row_);

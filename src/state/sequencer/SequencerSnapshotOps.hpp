@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "state/sequencer/SequencerPageSelectionPlan.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 
 namespace core::state::sequencer {
@@ -30,6 +31,6 @@ bool appendPage(SequencerState& target);
 bool insertPage(SequencerState& target, uint8_t pageIndex);
 bool ensurePageExists(SequencerState& target, uint8_t pageIndex);
 bool removePage(SequencerState& target, uint8_t pageIndex);
-bool duplicatePage(SequencerState& target, uint8_t pageIndex);
+bool duplicatePagesFromPlan(SequencerState& target, const SequencerPageDuplicatePlan& plan);
 
 }  // namespace core::state::sequencer

@@ -33,6 +33,7 @@ enum class ContextActionStripTone : uint8_t {
     CONSTRUCTIVE = 1,
     DESTRUCTIVE = 2,
     POSITIVE = 3,
+    WARNING = 4,
 };
 
 enum class ContextActionStripVisualState : uint8_t {

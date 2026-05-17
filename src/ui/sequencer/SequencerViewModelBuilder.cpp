@@ -3,6 +3,7 @@
 #include <oc/type/TextFormat.hpp>
 
 #include "config/Timing.hpp"
+#include "state/sequencer/SequencerPageSelectionPlan.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
@@ -54,6 +55,20 @@ const char* clipboardBadge(const core::state::StructureClipboardState& clipboard
     }
 }
 
+uint16_t pageBit(uint8_t page) {
+    if (page >= core::state::sequencer::SequencerState::PAGE_COUNT) return 0;
+    return static_cast<uint16_t>(1U << page);
+}
+
+uint16_t activePageMask(uint8_t pageCount) {
+    if (pageCount >= core::state::sequencer::SequencerState::PAGE_COUNT) {
+        return static_cast<uint16_t>(
+            (1U << core::state::sequencer::SequencerState::PAGE_COUNT) - 1U
+        );
+    }
+    return static_cast<uint16_t>((1U << pageCount) - 1U);
+}
+
 }  // namespace
 
 SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source) {
@@ -68,10 +83,10 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
     const bool selectingPage =
         sequencer.structureUi.pageSelection.active.get() &&
         sequencer.structureUi.pageSelection.scope.get() == core::state::StructureSelectionScope::PAGE;
-    const uint16_t pageSelectedMask = sequencer.structureUi.pageSelection.selectedMask.get();
+    const uint16_t pageSelectionMask = sequencer.structureUi.pageSelection.selectedMask.get();
     const uint16_t selectionMask = selectingTrack
         ? source.trackNavigation.selection.selectedMask.get()
-        : (selectingPage ? pageSelectedMask : 0U);
+        : (selectingPage ? pageSelectionMask : 0U);
     const uint8_t selectionCount = countSelectedItems(selectionMask);
     const bool previewAddTrackSlot =
         !source.trackNavigation.selection.active.get() && source.trackNavigation.previewAddSlot.get();
@@ -107,6 +122,29 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
         previewAddPageSlot &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
         addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT;
+    const auto pageDuplicatePlan = selectingPage
+        ? core::state::sequencer::buildPageDuplicatePlan(
+              sequencer,
+              pageSelectionMask,
+              viewedPage
+          )
+        : core::state::sequencer::SequencerPageDuplicatePlan{};
+    const bool pageDuplicateHasUsableDestination = pageDuplicatePlan.movesAnyPage();
+    const bool pageClipboardPreview =
+        !selectingPage &&
+        !selectingTrack &&
+        source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
+        source.structureClipboard.hasSequencerPage();
+    const uint16_t pageClipboardSourceMask = pageClipboardPreview
+        ? pageBit(source.structureClipboard.sequencerPage.sourcePage)
+        : 0U;
+    const uint16_t pageClipboardDestinationMask = pageClipboardPreview
+        ? pageBit(viewedPage)
+        : 0U;
+    const uint16_t pageClipboardOverwriteMask =
+        (pageClipboardPreview && viewedPage < sequencer.activePageCount())
+            ? pageClipboardDestinationMask
+            : 0U;
 
     const char* leftText = (selectingTrack || focusingTrack) ? "TRACKS" : "PAGES";
     std::array<char, 12> badgeText{};
@@ -136,8 +174,18 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
         .selectingTrack = selectingTrack,
         .selectingPage = selectingPage,
         .previewPageAddSlot = previewPageAddSlotActive,
-        .pageSelectedMask = static_cast<uint16_t>(
-            selectingPage ? pageSelectedMask : 0U
+        .pageSourceMarkerMask = static_cast<uint16_t>(
+            selectingPage ? pageSelectionMask : pageClipboardSourceMask
+        ),
+        .pageDestinationPreviewMask = static_cast<uint16_t>(
+            (selectingPage && pageDuplicateHasUsableDestination)
+                ? pageDuplicatePlan.destinationMask
+                : (selectingPage ? 0U : pageClipboardDestinationMask)
+        ),
+        .pageDestinationOverwriteMask = static_cast<uint16_t>(
+            (selectingPage && pageDuplicateHasUsableDestination)
+                ? pageDuplicatePlan.overwriteMask
+                : (selectingPage ? 0U : pageClipboardOverwriteMask)
         ),
         .leftText = leftText,
         .badgeText = badgeText,
@@ -245,17 +293,42 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     props.visible = true;
     const bool trackFocus =
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
-    const uint8_t selectionCount = countSelectedItems(
-        (source.trackNavigation.selection.active.get()
-             ? source.trackNavigation.selection.selectedMask.get()
-             : source.sequencer.structureUi.pageSelection.selectedMask.get())
-    );
+    const bool selectingTrack = source.trackNavigation.selection.active.get();
+    const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
+    const uint16_t selectionMask = selectingTrack
+        ? source.trackNavigation.selection.selectedMask.get()
+        : source.sequencer.structureUi.pageSelection.selectedMask.get();
 
-    if (source.trackNavigation.selection.active.get() ||
-        source.sequencer.structureUi.pageSelection.active.get()) {
+    if (selectingTrack || selectingPage) {
+        bool canDeleteSelection = false;
+        bool canDuplicateSelection = false;
+        if (selectingTrack) {
+            constexpr uint8_t TRACK_COUNT =
+                core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+            const uint16_t enabledMask = source.sharedTrackEnabledMask.get();
+            const uint16_t actionableMask = static_cast<uint16_t>(selectionMask & enabledMask);
+            const uint8_t actionableCount = countSelectedItems(actionableMask);
+            const uint8_t enabledCount = countSelectedItems(enabledMask);
+            canDeleteSelection = actionableCount > 0 && actionableCount < enabledCount;
+            canDuplicateSelection = actionableCount > 0 && enabledCount < TRACK_COUNT;
+        } else {
+            const uint8_t activePages = source.sequencer.activePageCount();
+            const uint16_t actionableMask = static_cast<uint16_t>(
+                selectionMask & activePageMask(activePages)
+            );
+            const uint8_t actionableCount = countSelectedItems(actionableMask);
+            const auto plan = core::state::sequencer::buildPageDuplicatePlan(
+                source.sequencer,
+                actionableMask,
+                source.sequencer.structureUi.pageSelection.cursorIndex.get()
+            );
+            canDeleteSelection = actionableCount > 0 && actionableCount < activePages;
+            canDuplicateSelection = plan.hasEntries() && plan.movesAnyPage();
+        }
+
         props.slots[0] = makeIconSlot(
             standalone::icons::ACTION_CLEAR,
-            Visual::ACTIVE,
+            canDeleteSelection ? Visual::ACTIVE : Visual::DISABLED,
             Tone::DESTRUCTIVE
         );
         props.slots[0].showLabel = true;
@@ -266,12 +339,12 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
             .showIcon = false,
             .icon = nullptr,
             .showLabel = true,
-            .label = selectionCount > 0 ? "SEL" : "",
+            .label = "SEL",
         };
         props.slots[2] = makeIconSlot(
             standalone::icons::ACTION_COPY,
-            Visual::ACTIVE,
-            Tone::CONSTRUCTIVE
+            canDuplicateSelection ? Visual::ACTIVE : Visual::DISABLED,
+            Tone::POSITIVE
         );
         props.slots[2].showLabel = true;
         props.slots[2].label = "DUP";
@@ -281,12 +354,12 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     const bool canPaste = trackFocus
         ? source.structureClipboard.hasSequencerTrack()
         : source.structureClipboard.hasSequencerPage();
-    const bool canRemove = trackFocus
-        ? source.trackNavigation.previewAddSlot.get() == false &&
-              (source.sharedTrackEnabledMask.get() &
-               (source.sharedTrackEnabledMask.get() - 1U)) != 0
-        : source.sequencer.structureUi.previewAddPageSlot.get() == false &&
-              source.sequencer.activePageCount() > 1U;
+    const bool previewingAddSlot = trackFocus
+        ? source.trackNavigation.previewAddSlot.get()
+        : source.sequencer.structureUi.previewAddPageSlot.get();
+    const bool canClear = !previewingAddSlot;
+    const bool pasteOverwritesDestination = canPaste && !previewingAddSlot;
+    const bool copyOrPasteAvailable = canClear || canPaste;
     const auto& holdState = trackFocus ? source.trackNavigation.hold : source.sequencer.structureUi.pageHold;
     const auto holdAction = holdState.action.get();
     const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
@@ -294,11 +367,11 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
 
     props.slots[0] = makeIconSlot(
         standalone::icons::ACTION_CLEAR,
-        removeHoldActive ? Visual::ARMED : Visual::ACTIVE,
-        Tone::DESTRUCTIVE
+        removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
+        removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
-    props.slots[0].showLabel = canRemove;
-    props.slots[0].label = canRemove ? "DEL" : nullptr;
+    props.slots[0].showLabel = canClear;
+    props.slots[0].label = removeHoldActive ? "DEL" : (canClear ? "CLR" : nullptr);
     props.slots[0].holdActive = removeHoldActive;
     props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
@@ -312,11 +385,15 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     };
     props.slots[2] = makeIconSlot(
         standalone::icons::ACTION_COPY,
-        pasteHoldActive ? Visual::ARMED : Visual::ACTIVE,
-        canPaste ? Tone::CONSTRUCTIVE : Tone::NEUTRAL
+        pasteHoldActive && canPaste
+            ? Visual::ARMED
+            : (copyOrPasteAvailable ? Visual::ACTIVE : Visual::DISABLED),
+        pasteHoldActive && canPaste
+            ? (pasteOverwritesDestination ? Tone::WARNING : Tone::POSITIVE)
+            : Tone::NEUTRAL
     );
-    props.slots[2].showLabel = canPaste;
-    props.slots[2].label = canPaste ? "PST" : nullptr;
+    props.slots[2].showLabel = pasteHoldActive && canPaste;
+    props.slots[2].label = pasteHoldActive && canPaste ? "PST" : nullptr;
     props.slots[2].holdActive = pasteHoldActive;
     props.slots[2].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;

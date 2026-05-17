@@ -129,6 +129,38 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
     std::cout << "[PASS] test_nav_selection_mode_deletes_selected_sequencer_page\n";
 }
 
+void test_page_selection_cursor_can_move_across_inactive_slots() {
+    SequencerStepHarness h;
+    h.state.sequencer.length.set(8);
+    h.state.sequencer.page.set(0);
+    h.state.sequencer.focusedStep.set(0);
+    h.state.sequencer.structureUi.pageSelection.active.set(true);
+    h.state.sequencer.structureUi.pageSelection.scope.set(core::state::StructureSelectionScope::PAGE);
+    h.state.sequencer.structureUi.pageSelection.cursorIndex.set(0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.structureUi.pageSelection.cursorIndex.get() == 1);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.sequencer.structureUi.pageSelection.selectedMask.get() == 0);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.sequencer.structureUi.pageSelection.cursorIndex.get() == 0);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.sequencer.structureUi.pageSelection.selectedMask.get() == 0x0001);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(
+        h.state.sequencer.structureUi.pageSelection.cursorIndex.get() ==
+        core::state::sequencer::SequencerState::PAGE_COUNT - 1
+    );
+
+    std::cout << "[PASS] test_page_selection_cursor_can_move_across_inactive_slots\n";
+}
+
 void test_sequencer_page_creation_extends_pattern_to_target_slot() {
     SequencerStepHarness h;
     h.state.sequencer.length.set(24);
@@ -221,6 +253,7 @@ void test_sequencer_page_copy_and_long_press_paste() {
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.structureClipboard.hasSequencerPage());
+    assert(h.state.structureClipboard.sequencerPage.sourcePage == 0);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.page.get() == 1);
@@ -242,16 +275,16 @@ void test_sequencer_page_copy_and_long_press_paste() {
 
 void test_sequencer_selection_duplicate_copies_page_payload() {
     SequencerStepHarness h;
-    h.state.sequencer.length.set(16);
-    h.state.sequencer.page.set(1);
-    h.state.sequencer.focusedStep.set(8);
+    h.state.sequencer.length.set(24);
+    h.state.sequencer.page.set(2);
+    h.state.sequencer.focusedStep.set(16);
     h.state.sequencer.note[8] = 75;
     h.state.sequencer.velocity[8] = 101;
     h.state.sequencer.setEnabled(8, true);
 
     h.state.sequencer.structureUi.pageSelection.active.set(true);
     h.state.sequencer.structureUi.pageSelection.scope.set(core::state::StructureSelectionScope::PAGE);
-    h.state.sequencer.structureUi.pageSelection.cursorIndex.set(1);
+    h.state.sequencer.structureUi.pageSelection.cursorIndex.set(2);
     h.state.sequencer.structureUi.pageSelection.selectedMask.set(0x0002);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -266,6 +299,29 @@ void test_sequencer_selection_duplicate_copies_page_payload() {
     assert(!h.state.sequencer.structureUi.pageSelection.active.get());
 
     std::cout << "[PASS] test_sequencer_selection_duplicate_copies_page_payload\n";
+}
+
+void test_sequencer_selection_duplicate_self_map_stays_in_selection() {
+    SequencerStepHarness h;
+    h.state.sequencer.length.set(16);
+    h.state.sequencer.page.set(0);
+    h.state.sequencer.focusedStep.set(0);
+
+    h.state.sequencer.structureUi.pageSelection.active.set(true);
+    h.state.sequencer.structureUi.pageSelection.scope.set(core::state::StructureSelectionScope::PAGE);
+    h.state.sequencer.structureUi.pageSelection.cursorIndex.set(0);
+    h.state.sequencer.structureUi.pageSelection.selectedMask.set(0x0001);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencer.length.get() == 16);
+    assert(h.state.sequencer.page.get() == 0);
+    assert(h.state.sequencer.focusedStep.get() == 0);
+    assert(h.state.sequencer.structureUi.pageSelection.active.get());
+    assert(h.state.sequencer.structureUi.pageSelection.selectedMask.get() == 0x0001);
+
+    std::cout << "[PASS] test_sequencer_selection_duplicate_self_map_stays_in_selection\n";
 }
 
 void test_sequencer_selection_duplicate_copies_track_payload() {
@@ -369,9 +425,11 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
 int main() {
     test_sequencer_page_creation_extends_pattern_to_target_slot();
     test_nav_selection_mode_deletes_selected_sequencer_page();
+    test_page_selection_cursor_can_move_across_inactive_slots();
     test_nav_selection_mode_deletes_selected_sequencer_track();
     test_sequencer_page_copy_and_long_press_paste();
     test_sequencer_selection_duplicate_copies_page_payload();
+    test_sequencer_selection_duplicate_self_map_stays_in_selection();
     test_sequencer_selection_duplicate_copies_track_payload();
     test_sequencer_track_copy_and_long_press_paste_to_add_slot();
     test_deleted_track_slot_can_be_recreated_at_any_gap();

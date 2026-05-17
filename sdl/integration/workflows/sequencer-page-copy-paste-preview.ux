@@ -1,0 +1,38 @@
+# UX workflow: copy one sequencer page and preview normal-mode paste targets.
+# Purpose: validates clipboard source marker plus overwrite/free paste previews
+# outside structure selection mode.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Create page 2 and copy it.
+150 encoder NAV 1
+250 capture screen page_2_add_preview
+350 tap NAV 60
+550 capture screen page_2_created
+650 tap BOTTOM_RIGHT 60
+850 capture screen page_2_copied
+
+# Move to active page 1. Paste preview should show source page 2 in blue and
+# overwrite target page 1 in amber. Holding paste should use the overwrite
+# warning tone.
+950 encoder NAV -1
+1150 capture screen paste_preview_overwrite_page_1
+1250 button BOTTOM_RIGHT down
+1800 tick
+1850 capture screen paste_hold_overwrite_armed
+2350 tick
+2400 button BOTTOM_RIGHT up
+2650 capture screen page_1_overwritten
+
+# Move to inactive page 3. Paste preview should show source page 2 in blue and
+# free target page 3 in green. Holding paste should use the constructive tone.
+2750 encoder NAV 1
+2850 encoder NAV 1
+3050 capture screen paste_preview_free_page_3
+3150 button BOTTOM_RIGHT down
+3700 tick
+3750 capture screen paste_hold_free_armed
+4250 tick
+4300 button BOTTOM_RIGHT up
+4550 capture screen page_3_pasted

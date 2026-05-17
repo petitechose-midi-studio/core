@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
@@ -37,17 +38,6 @@ uint8_t currentExistingPage(const core::state::sequencer::SequencerState& sequen
         sequencer.clampPage(sequencer.page.get()),
         static_cast<uint16_t>(pageCount - 1U)
     ));
-}
-
-uint8_t nextVisiblePage(const core::state::sequencer::SequencerState& sequencer,
-                        uint8_t current,
-                        int direction) {
-    const uint8_t pageCount = sequencer.activePageCount();
-    if (pageCount == 0) return 0;
-    const int next =
-        (static_cast<int>(current) + direction + static_cast<int>(pageCount)) %
-        static_cast<int>(pageCount);
-    return static_cast<uint8_t>(next);
 }
 
 }  // namespace
@@ -193,7 +183,11 @@ void SequencerStructureNavigationWorkflow::navigateSelection(float delta) {
             direction
         );
     } else {
-        next = nextVisiblePage(sequencer_, current, direction);
+        next = structure_slots::wrapIndex(
+            current,
+            direction,
+            core::state::sequencer::SequencerState::PAGE_COUNT
+        );
     }
 
     selection.cursorIndex.set(next);
@@ -207,7 +201,7 @@ void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
             break;
         case core::state::StructureNavigationFocus::PAGE:
         default:
-            createPage();
+            createSequencerStructurePage(sequencer_);
             break;
     }
 
@@ -255,13 +249,6 @@ void SequencerStructureNavigationWorkflow::moveTrack(float delta) {
     setTrackPreview(next, !enabled);
 }
 
-bool SequencerStructureNavigationWorkflow::createPage() {
-    const uint8_t targetPage = sequencer_.structureUi.previewAddPageSlot.get()
-        ? sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get())
-        : sequencer_.activePageCount();
-    return core::state::sequencer::ensurePageExists(sequencer_, targetPage);
-}
-
 void SequencerStructureNavigationWorkflow::setPagePreview(uint8_t pageIndex, bool addSlot) {
     const uint8_t clampedPage = sequencer_.clampPage(pageIndex);
     sequencer_.structureUi.syncPreviewPage(clampedPage);
@@ -294,9 +281,8 @@ void SequencerStructureNavigationWorkflow::syncPreviewToFocus(
     core::state::StructureNavigationFocus /*focus*/
 ) {
     track_ui_.previewAddSlot.set(false);
-    sequencer_.structureUi.previewAddPageSlot.set(false);
     track_ui_.syncPreviewTrack(currentActiveTrack());
-    sequencer_.structureUi.syncPreviewPage(sequencer_.visiblePage());
+    syncSequencerPagePreviewToVisible(sequencer_, false);
 }
 
 uint16_t SequencerStructureNavigationWorkflow::currentTrackEnabledMask() const {

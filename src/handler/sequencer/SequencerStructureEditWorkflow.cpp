@@ -4,6 +4,7 @@
 
 #include <config/TimeCompat.hpp>
 
+#include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
@@ -133,6 +134,7 @@ void SequencerStructureEditWorkflow::copyCurrentStructure() {
     if (count == 0) return;
 
     clipboard.valid = true;
+    clipboard.sourcePage = page;
     clipboard.count = count;
     for (uint8_t i = 0; i < count; ++i) {
         const uint8_t step = static_cast<uint8_t>(start + i);
@@ -165,7 +167,7 @@ void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     uint8_t targetPage = sequencer_.visiblePage();
     if (sequencer_.structureUi.previewAddPageSlot.get()) {
         targetPage = sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get());
-        if (!createPage()) return;
+        if (!createSequencerStructurePage(sequencer_)) return;
     }
 
     const auto& clipboard = structure_clipboard_.sequencerPage;
@@ -265,36 +267,26 @@ void SequencerStructureEditWorkflow::duplicateSelection() {
             changed = applyTrackState(result.nextMask, result.firstDuplicated);
         }
     } else {
-        const uint8_t pageCount = sequencer_.activePageCount();
-        for (uint8_t page = 0; page < pageCount; ++page) {
-            const uint16_t bit = static_cast<uint16_t>(1U << page);
-            if ((selectedMask & bit) == 0) continue;
-            changed = core::state::sequencer::duplicatePage(sequencer_, page) || changed;
-            if (sequencer_.activePageCount() >= core::state::sequencer::SequencerState::PAGE_COUNT) {
-                break;
-            }
-        }
+        const auto plan = core::state::sequencer::buildPageDuplicatePlan(
+            sequencer_,
+            selectedMask,
+            selection.cursorIndex.get()
+        );
+        if (!plan.movesAnyPage()) return;
+        changed = core::state::sequencer::duplicatePagesFromPlan(sequencer_, plan);
     }
 
     if (!changed) return;
     cancelSelectionMode();
 }
 
-bool SequencerStructureEditWorkflow::createPage() {
-    const uint8_t targetPage = sequencer_.structureUi.previewAddPageSlot.get()
-        ? sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get())
-        : sequencer_.activePageCount();
-    return core::state::sequencer::ensurePageExists(sequencer_, targetPage);
-}
-
 void SequencerStructureEditWorkflow::syncPreviewToFocus(core::state::StructureNavigationFocus focus) {
     track_ui_.previewAddSlot.set(false);
-    sequencer_.structureUi.previewAddPageSlot.set(false);
     track_ui_.syncPreviewTrack(currentActiveTrack());
-    sequencer_.structureUi.syncPreviewPage(sequencer_.visiblePage());
-    if (focus == core::state::StructureNavigationFocus::PAGE) {
-        sequencer_.focusedStep.set(sequencer_.pageStartStep(sequencer_.visiblePage()));
-    }
+    syncSequencerPagePreviewToVisible(
+        sequencer_,
+        focus == core::state::StructureNavigationFocus::PAGE
+    );
 }
 
 void SequencerStructureEditWorkflow::cancelSelectionMode() {

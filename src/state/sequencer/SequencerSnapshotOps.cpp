@@ -1,6 +1,7 @@
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 #include <algorithm>
+#include <array>
 
 #include <config/PlatformCompat.hpp>
 namespace core::state::sequencer {
@@ -39,6 +40,12 @@ struct StepPayload {
     uint8_t probability = SequencerState::DEFAULT_PROBABILITY;
 };
 
+struct PagePayload {
+    uint8_t count = 0;
+    std::array<StepPayload, SequencerState::STEPS_PER_PAGE> steps{};
+    uint8_t enabledMask = 0;
+};
+
 FLASHMEM StepPayload defaultStep() {
     return {};
 }
@@ -51,6 +58,30 @@ FLASHMEM StepPayload readStep(const SequencerState& source, uint8_t step) {
         source.nudge[step],
         source.probability[step],
     };
+}
+
+FLASHMEM PagePayload readPage(const SequencerState& source, uint8_t page) {
+    PagePayload payload{};
+    const uint8_t len = source.length.get();
+    const uint8_t start = static_cast<uint8_t>(page * SequencerState::STEPS_PER_PAGE);
+    if (start >= len || start >= SequencerState::MAX_STEPS) {
+        return payload;
+    }
+
+    payload.count = static_cast<uint8_t>(std::min<uint16_t>(
+        SequencerState::STEPS_PER_PAGE,
+        static_cast<uint16_t>(len - start)
+    ));
+
+    for (uint8_t i = 0; i < SequencerState::STEPS_PER_PAGE; ++i) {
+        const uint8_t step = static_cast<uint8_t>(start + i);
+        payload.steps[i] = (i < payload.count) ? readStep(source, step) : defaultStep();
+        if (i < payload.count && source.isEnabled(step)) {
+            payload.enabledMask = static_cast<uint8_t>(payload.enabledMask | (1U << i));
+        }
+    }
+
+    return payload;
 }
 
 FLASHMEM StepPayload readSanitizedStep(const SequencerState& source, uint8_t step) {
@@ -431,48 +462,92 @@ FLASHMEM bool removePage(SequencerState& target, uint8_t pageIndex) {
     return true;
 }
 
-FLASHMEM bool duplicatePage(SequencerState& target, uint8_t pageIndex) {
-    const uint8_t len = target.length.get();
-    const uint8_t pageCount = target.activePageCount();
-    if (len == 0 || pageIndex >= pageCount || pageCount >= SequencerState::PAGE_COUNT) {
-        return false;
+FLASHMEM bool duplicatePagesFromPlan(SequencerState& target, const SequencerPageDuplicatePlan& plan) {
+    if (!plan.hasEntries()) return false;
+
+    std::array<PagePayload, SequencerState::PAGE_COUNT> sourcePages{};
+    for (uint8_t i = 0; i < plan.entryCount; ++i) {
+        const auto& entry = plan.entries[i];
+        if (entry.sourcePage >= SequencerState::PAGE_COUNT) continue;
+        sourcePages[entry.sourcePage] = readPage(target, entry.sourcePage);
     }
 
-    const uint8_t srcStart = static_cast<uint8_t>(pageIndex * SequencerState::STEPS_PER_PAGE);
-    if (srcStart >= len) return false;
-
-    const uint8_t copyCount = static_cast<uint8_t>(std::min<uint16_t>(
-        SequencerState::STEPS_PER_PAGE,
-        static_cast<uint16_t>(len - srcStart)
-    ));
-    if (copyCount == 0) return false;
-
-    const uint8_t dstStart = static_cast<uint8_t>(pageCount * SequencerState::STEPS_PER_PAGE);
-    if (dstStart >= SequencerState::MAX_STEPS) return false;
-
     auto mask = target.enabledMask.get();
-    for (uint8_t i = 0; i < SequencerState::STEPS_PER_PAGE; ++i) {
-        const uint8_t dst = static_cast<uint8_t>(dstStart + i);
-        if (i < copyCount) {
-            const uint8_t src = static_cast<uint8_t>(srcStart + i);
-            writeStep(target, dst, readStep(target, src));
-            mask.setBit(dst, mask.test(src));
-        } else {
-            writeStep(target, dst, defaultStep());
-            mask.setBit(dst, false);
+    const uint8_t previousLength = target.length.get();
+    uint8_t requiredLength = previousLength;
+    std::array<bool, SequencerState::MAX_STEPS> writtenSteps{};
+    bool executed = false;
+    bool changed = false;
+
+    for (uint8_t entryIndex = 0; entryIndex < plan.entryCount; ++entryIndex) {
+        const auto& entry = plan.entries[entryIndex];
+        if (entry.sourcePage >= SequencerState::PAGE_COUNT ||
+            entry.destinationPage >= SequencerState::PAGE_COUNT) {
+            continue;
+        }
+        const auto& sourcePage = sourcePages[entry.sourcePage];
+        if (sourcePage.count == 0) continue;
+        executed = true;
+
+        const uint8_t destinationStart = static_cast<uint8_t>(
+            entry.destinationPage * SequencerState::STEPS_PER_PAGE
+        );
+        if (destinationStart >= SequencerState::MAX_STEPS) continue;
+
+        for (uint8_t i = 0; i < SequencerState::STEPS_PER_PAGE; ++i) {
+            const uint8_t destinationStep = static_cast<uint8_t>(destinationStart + i);
+            if (destinationStep >= SequencerState::MAX_STEPS) break;
+
+            const bool sourceHasStep = i < sourcePage.count;
+            const StepPayload nextStep = sourceHasStep ? sourcePage.steps[i] : defaultStep();
+            const bool nextEnabled =
+                sourceHasStep && ((sourcePage.enabledMask & static_cast<uint8_t>(1U << i)) != 0);
+
+            if (!sameStep(readStep(target, destinationStep), nextStep) ||
+                mask.test(destinationStep) != nextEnabled) {
+                changed = true;
+            }
+
+            writeStep(target, destinationStep, nextStep);
+            mask.setBit(destinationStep, nextEnabled);
+            writtenSteps[destinationStep] = true;
+        }
+
+        const uint8_t entryLength = static_cast<uint8_t>(std::min<uint16_t>(
+            SequencerState::MAX_STEPS,
+            static_cast<uint16_t>(destinationStart + sourcePage.count)
+        ));
+        if (entryLength > requiredLength) {
+            requiredLength = entryLength;
         }
     }
 
-    const uint8_t newLength = static_cast<uint8_t>(std::min<uint16_t>(
-        SequencerState::MAX_STEPS,
-        static_cast<uint16_t>(len + copyCount)
-    ));
-    target.length.set(newLength);
-    target.enabledMask.set(mask & lengthMask(newLength));
-    target.focusedStep.set(dstStart);
-    target.page.set(target.pageForStep(dstStart));
-    target.bumpStepDataRevision();
-    return true;
+    if (requiredLength > previousLength) {
+        for (uint8_t step = previousLength; step < requiredLength; ++step) {
+            if (writtenSteps[step]) continue;
+            if (!sameStep(readStep(target, step), defaultStep()) || mask.test(step)) {
+                changed = true;
+            }
+            writeStep(target, step, defaultStep());
+            mask.setBit(step, false);
+        }
+        target.length.set(requiredLength);
+        changed = true;
+    }
+
+    if (!executed) return false;
+
+    target.enabledMask.set(mask & lengthMask(target.length.get()));
+    const uint8_t focusedPage = plan.entries[0].destinationPage;
+    const uint8_t focusedStep = static_cast<uint8_t>(focusedPage * SequencerState::STEPS_PER_PAGE);
+    target.page.set(focusedPage);
+    target.focusedStep.set(focusedStep);
+
+    if (changed) {
+        target.bumpStepDataRevision();
+    }
+
+    return executed;
 }
 
 }  // namespace core::state::sequencer
