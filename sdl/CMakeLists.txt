@@ -204,12 +204,16 @@ else()
     set(SRC_SDL
         ${SDL_DIR}/SdlEnvironment.cpp
         ${SDL_DIR}/HwSimulator.cpp
-        ${SDL_DIR}/integration/CaptureScenarios.cpp
-        ${SDL_DIR}/integration/InputBindingTraceWriter.cpp
-        ${SDL_DIR}/integration/UxInputIds.cpp
-        ${SDL_DIR}/integration/UxScenarioRunner.cpp
-        ${SDL_DIR}/integration/UxScriptParser.cpp
         ${APP_MAIN_NATIVE})
+
+    if(APP_ID STREQUAL "core")
+        list(APPEND SRC_SDL
+            ${SDL_DIR}/integration/CaptureScenarios.cpp
+            ${SDL_DIR}/integration/InputBindingTraceWriter.cpp
+            ${SDL_DIR}/integration/UxInputIds.cpp
+            ${SDL_DIR}/integration/UxScenarioRunner.cpp
+            ${SDL_DIR}/integration/UxScriptParser.cpp)
+    endif()
 endif()
 
 # ==============================================================================
