@@ -444,14 +444,7 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     props.slots[0].holdActive = removeHoldActive;
     props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
-    props.slots[1] = SlotProps{
-        .visualState = Visual::DIM,
-        .tone = Tone::NEUTRAL,
-        .showIcon = false,
-        .icon = nullptr,
-        .showLabel = true,
-        .label = trackFocus ? "TRK" : "PG",
-    };
+    props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = makeIconSlot(
         standalone::icons::ACTION_COPY,
         pasteHoldActive && canPaste
