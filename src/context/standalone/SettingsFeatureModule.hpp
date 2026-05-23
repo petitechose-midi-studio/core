@@ -16,6 +16,8 @@
 #include "state/CoreSettings.hpp"
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
+#include "state/SequencerSettingsState.hpp"
+#include "state/ViewSelectorState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
@@ -37,11 +39,13 @@ class TransportBar;
 namespace core::context::standalone {
 class DataManagerPresenter;
 class GlobalSettingsOverlayPresenter;
+class SequencerSettingsOverlayPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
 class DataManagerHandler;
 class GlobalSettingsHandler;
+class SequencerSettingsHandler;
 }  // namespace core::handler
 
 namespace core::context::standalone {
@@ -56,6 +60,8 @@ class SettingsFeatureModule {
 public:
     struct StateRefs {
         core::state::GlobalSettingsState& globalSettings;
+        core::state::SequencerSettingsState& sequencerSettings;
+        core::state::ViewSelectorState& viewSelector;
         core::state::MidiSyncState& midiSync;
         core::state::CoreSettings& settings;
         core::state::DataManagerState& dataManager;
@@ -92,13 +98,17 @@ private:
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         global_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> sequencer_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> data_manager_dialog_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::GlobalSettingsOverlayPresenter>
         global_settings_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::DataManagerPresenter>
         data_manager_presenter_;
+    core::app::ExtmemUniquePtr<core::context::standalone::SequencerSettingsOverlayPresenter>
+        sequencer_settings_presenter_;
     std::unique_ptr<core::handler::GlobalSettingsHandler> global_settings_handler_;
     std::unique_ptr<core::handler::DataManagerHandler> data_manager_handler_;
+    std::unique_ptr<core::handler::SequencerSettingsHandler> sequencer_settings_handler_;
 };
 
 }  // namespace core::context::standalone

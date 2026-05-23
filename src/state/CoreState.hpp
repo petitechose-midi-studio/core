@@ -27,6 +27,7 @@
 #include "CoreSettings.hpp"
 #include "DataManagerState.hpp"
 #include "GlobalSettingsState.hpp"
+#include "SequencerSettingsState.hpp"
 #include "MidiSyncState.hpp"
 #include "MacroEditState.hpp"
 #include "MacroState.hpp"
@@ -138,6 +139,7 @@ struct UiSystemState {
     StatusBarState statusBar;
     MidiSyncState midiSync;
     GlobalSettingsState globalSettings;
+    SequencerSettingsState sequencerSettings;
     DataManagerState dataManager;
     MacroEditState macroEdit;
     macro::MacroUiState macroUi;
@@ -191,6 +193,7 @@ public:
     StatusBarState& statusBar;
     MidiSyncState& midiSync;
     GlobalSettingsState& globalSettings;
+    SequencerSettingsState& sequencerSettings;
     DataManagerState& dataManager;
     MacroEditState& macroEdit;
     macro::MacroUiState& macroUi;

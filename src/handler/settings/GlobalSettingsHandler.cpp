@@ -4,6 +4,7 @@
 #include <config/InputIDs.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/ViewSelectorItems.hpp"
 
 namespace core::handler {
 using ButtonID = Config::ButtonID;
@@ -17,6 +18,7 @@ FLASHMEM GlobalSettingsHandler::GlobalSettingsHandler(StateRefs state,
                                                       oc::type::ScopeID settingsOverlayScope,
                                                       oc::type::ScopeID selectorOverlayScope)
     : global_settings_(state.globalSettings)
+    , view_selector_(state.viewSelector)
     , services_(services)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -27,17 +29,6 @@ FLASHMEM GlobalSettingsHandler::GlobalSettingsHandler(StateRefs state,
 }
 
 FLASHMEM void GlobalSettingsHandler::setupBindings() {
-    buttons_.button(ButtonID::LEFT_TOP)
-        .longPress(SETTINGS_LONG_PRESS_MS)
-        .when([this]() {
-            if (global_settings_.visible.get() || global_settings_.selector.visible.get()) {
-                return false;
-            }
-            const auto current = overlays_.current();
-            return current == core::ui::OverlayType::NONE || current == core::ui::OverlayType::VIEW_SELECTOR;
-        })
-        .then([this]() { openSettings(); });
-
     encoders_.encoder(EncoderID::NAV)
         .turn()
         .scope(settings_overlay_scope_)
@@ -49,9 +40,15 @@ FLASHMEM void GlobalSettingsHandler::setupBindings() {
         .then([this]() { openValueSelector(); });
 
     buttons_.button(ButtonID::LEFT_TOP)
+        .press()
+        .scope(settings_overlay_scope_)
+        .then([this]() { armSettingsBack(); });
+
+    buttons_.button(ButtonID::LEFT_TOP)
         .release()
         .scope(settings_overlay_scope_)
-        .then([this]() { closeSettings(); });
+        .when([this]() { return left_top_pressed_in_settings_; })
+        .then([this]() { backToViewSelector(); });
 
     encoders_.encoder(EncoderID::NAV)
         .turn()
@@ -69,21 +66,22 @@ FLASHMEM void GlobalSettingsHandler::setupBindings() {
         .then([this]() { closeSelectorCancel(); });
 }
 
-FLASHMEM void GlobalSettingsHandler::openSettings() {
-    global_settings_.openOverlay();
-
-    ignore_open_release_ = true;
-    overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS, false);
-}
-
 FLASHMEM void GlobalSettingsHandler::closeSettings() {
-    if (ignore_open_release_) {
-        ignore_open_release_ = false;
-        return;
-    }
-
     overlays_.hide();
     global_settings_.closeOverlay();
+}
+
+FLASHMEM void GlobalSettingsHandler::armSettingsBack() {
+    left_top_pressed_in_settings_ = true;
+}
+
+FLASHMEM void GlobalSettingsHandler::backToViewSelector() {
+    left_top_pressed_in_settings_ = false;
+    closeSettings();
+    view_selector_.selectedIndex.set(
+        static_cast<int>(core::state::ViewSelectorItem::GLOBAL_SETTINGS)
+    );
+    overlays_.show(core::ui::OverlayType::VIEW_SELECTOR, false);
 }
 
 FLASHMEM void GlobalSettingsHandler::moveFocus(float delta) {

@@ -6,6 +6,7 @@
 
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "state/GlobalSettingsState.hpp"
+#include "state/ViewSelectorState.hpp"
 #include "app/OverlayTypes.hpp"
 
 namespace core::handler {
@@ -20,6 +21,7 @@ class GlobalSettingsHandler {
 public:
     struct StateRefs {
         core::state::GlobalSettingsState& globalSettings;
+        core::state::ViewSelectorState& viewSelector;
     };
 
     GlobalSettingsHandler(StateRefs state,
@@ -38,8 +40,9 @@ public:
 private:
     void setupBindings();
 
-    void openSettings();
     void closeSettings();
+    void armSettingsBack();
+    void backToViewSelector();
 
     void moveFocus(float delta);
     void openValueSelector();
@@ -49,17 +52,16 @@ private:
     void closeSelectorCancel();
 
     core::state::GlobalSettingsState& global_settings_;
+    core::state::ViewSelectorState& view_selector_;
     GlobalSettingsDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID settings_overlay_scope_ = 0;
     oc::type::ScopeID selector_overlay_scope_ = 0;
-
-    bool ignore_open_release_ = false;
+    bool left_top_pressed_in_settings_ = false;
 
     static constexpr uint8_t ROW_COUNT = 4;
-    static constexpr uint32_t SETTINGS_LONG_PRESS_MS = 2000;
 };
 
 }  // namespace core::handler

@@ -56,6 +56,8 @@ struct ViewSwitcherHarness {
                       state.overlays,
                       state.activeView,
                       state.viewSelector,
+                      state.globalSettings,
+                      state.sequencerSettings,
                       state.sequencer.patternQuickControls,
                       state.sequencer.stepPropertyInlineSelector,
                       state.trackNavigation.selection,
@@ -71,6 +73,8 @@ struct ViewSwitcherHarness {
                   },
                   VIEW_SELECTOR_SCOPE) {
         overlays.registerCleanup(core::ui::OverlayType::VIEW_SELECTOR, VIEW_SELECTOR_SCOPE);
+        overlays.registerCleanup(core::ui::OverlayType::GLOBAL_SETTINGS, VIEW_SELECTOR_SCOPE);
+        overlays.registerCleanup(core::ui::OverlayType::SEQUENCER_SETTINGS, VIEW_SELECTOR_SCOPE);
         overlays.setActiveViewProvider([this]() {
             return state.activeView.get() == core::ui::ViewType::SEQUENCER
                        ? SEQUENCER_VIEW_SCOPE
@@ -150,13 +154,48 @@ void test_selector_uses_active_view_scope() {
     openSelector(h);
     assert(h.state.viewSelector.selectedIndex.get() == 1);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, -1.0f);
     assert(h.state.viewSelector.selectedIndex.get() == 0);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
 
     std::cout << "[PASS] test_selector_uses_active_view_scope\n";
+}
+
+void test_global_settings_item_opens_settings_without_switching_view() {
+    ViewSwitcherHarness h;
+    h.state.activeView.set(core::ui::ViewType::MACRO);
+
+    openSelector(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.viewSelector.selectedIndex.get() == 2);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.viewSelector.visible.get());
+    assert(h.state.globalSettings.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::GLOBAL_SETTINGS);
+    assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
+
+    std::cout << "[PASS] test_global_settings_item_opens_settings_without_switching_view\n";
+}
+
+void test_sequencer_settings_action_opens_settings_and_targets_sequencer() {
+    ViewSwitcherHarness h;
+    h.state.activeView.set(core::ui::ViewType::MACRO);
+
+    openSelector(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.viewSelector.selectedIndex.get() == 1);
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(!h.state.viewSelector.visible.get());
+    assert(h.state.sequencerSettings.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::SEQUENCER_SETTINGS);
+    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+
+    std::cout << "[PASS] test_sequencer_settings_action_opens_settings_and_targets_sequencer\n";
 }
 
 void test_selector_does_not_open_when_overlay_or_structure_selection_is_active() {
@@ -219,6 +258,8 @@ int main() {
     test_view_selector_opens_navigates_and_confirms_on_close();
     test_nav_release_confirms_without_closing_selector();
     test_selector_uses_active_view_scope();
+    test_global_settings_item_opens_settings_without_switching_view();
+    test_sequencer_settings_action_opens_settings_and_targets_sequencer();
     test_selector_does_not_open_when_overlay_or_structure_selection_is_active();
     test_selector_does_not_open_while_sequencer_inline_modes_are_active();
 

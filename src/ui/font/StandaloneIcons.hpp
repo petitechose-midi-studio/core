@@ -1,4 +1,4 @@
-// Auto-generated | 18 icons | 2026-03-28
+// Auto-generated | 19 icons | 2026-05-23
 #pragma once
 #include "StandaloneFonts.hpp"
 
@@ -24,7 +24,8 @@ enum class Size : uint8_t { S = 12, M = 14, L = 16 };
     constexpr const char* NOTE_PROP_PITCH = "\xEE\x80\x8E";
     constexpr const char* NOTE_PROP_RANDOM = "\xEE\x80\x8F";
     constexpr const char* NOTE_PROP_VEL = "\xEE\x80\x90";
-    constexpr const char* TRANSPORT_PLAY = "\xEE\x80\x91";
+    constexpr const char* SETTINGS_GEAR = "\xEE\x80\x91";
+    constexpr const char* TRANSPORT_PLAY = "\xEE\x80\x92";
 
 inline void set(lv_obj_t* label, const char* icon, Size size = Size::M) {
     lv_font_t* font = (size == Size::S) ? standalone_fonts.icons_12
