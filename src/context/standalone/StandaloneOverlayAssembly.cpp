@@ -1,4 +1,3 @@
-#include <array>
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 
 #include <config/PlatformCompat.hpp>
@@ -9,12 +8,9 @@
 #include <ms/ui/widget/StringListSelector.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 #include "state/CoreState.hpp"
+#include "state/ViewSelectorItems.hpp"
 
 namespace core::context::standalone {
-
-namespace {
-constexpr std::array<const char*, 2> kViewNames = {"Macros", "Sequencer"};
-}  // namespace
 
 FLASHMEM StandaloneOverlayAssembly::StandaloneOverlayAssembly(
     core::state::CoreState& state,
@@ -48,8 +44,8 @@ FLASHMEM oc::type::ScopeID StandaloneOverlayAssembly::viewSelectorScope() const 
 
 FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, bool visible) {
     view_selector_->render({
-        .items = kViewNames.data(),
-        .itemCount = kViewNames.size(),
+        .items = core::state::VIEW_SELECTOR_ITEM_LABELS.data(),
+        .itemCount = core::state::VIEW_SELECTOR_ITEM_LABELS.size(),
         .selectedIndex = selectedIndex,
         .visible = visible,
     });

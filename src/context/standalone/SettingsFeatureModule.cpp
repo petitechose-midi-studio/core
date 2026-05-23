@@ -7,9 +7,11 @@
 
 #include "context/standalone/DataManagerPresenter.hpp"
 #include "context/standalone/GlobalSettingsOverlayPresenter.hpp"
+#include "context/standalone/SequencerSettingsOverlayPresenter.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/GlobalSettingsHandler.hpp"
+#include "handler/settings/SequencerSettingsHandler.hpp"
 
 namespace core::context::standalone {
 
@@ -79,6 +81,14 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         static_cast<oc::type::ButtonID>(0)
     );
 
+    sequencer_settings_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    overlays.registerCleanup(
+        core::ui::OverlayType::SEQUENCER_SETTINGS,
+        oc::ui::lvgl::scopeID(sequencer_settings_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
     global_settings_presenter_ =
         core::app::makeExtmemUnique<GlobalSettingsOverlayPresenter>(
             GlobalSettingsOverlayPresenter::StateRefs{
@@ -102,9 +112,19 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     data_manager_presenter_->bind();
     data_manager_presenter_->renderSoftkeyBar();
 
+    sequencer_settings_presenter_ =
+        core::app::makeExtmemUnique<SequencerSettingsOverlayPresenter>(
+            SequencerSettingsOverlayPresenter::StateRefs{
+                stateRefs.sequencerSettings,
+            },
+            *sequencer_settings_overlay_
+        );
+    sequencer_settings_presenter_->bind();
+
     global_settings_handler_ = std::make_unique<core::handler::GlobalSettingsHandler>(
         core::handler::GlobalSettingsHandler::StateRefs{
             stateRefs.globalSettings,
+            stateRefs.viewSelector,
         },
         globalSettingsServices,
         overlays,
@@ -126,6 +146,17 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         viewScopes,
         oc::ui::lvgl::scopeID(data_manager_overlay_->getElement()),
         oc::ui::lvgl::scopeID(data_manager_dialog_overlay_->getElement())
+    );
+
+    sequencer_settings_handler_ = std::make_unique<core::handler::SequencerSettingsHandler>(
+        core::handler::SequencerSettingsHandler::StateRefs{
+            stateRefs.sequencerSettings,
+            stateRefs.viewSelector,
+        },
+        overlays,
+        encoders,
+        buttons,
+        oc::ui::lvgl::scopeID(sequencer_settings_overlay_->getElement())
     );
 }
 

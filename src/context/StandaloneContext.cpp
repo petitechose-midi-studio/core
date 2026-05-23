@@ -15,8 +15,12 @@
 #include "context/standalone/StandaloneUiAssembly.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/CoreState.hpp"
+#include "state/ViewSelectorItems.hpp"
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneFonts.hpp"
+#include "ui/font/StandaloneIcons.hpp"
+#include "ui/transportbar/ContextSoftkeyBar.hpp"
+#include "ui/transportbar/TransportBar.hpp"
 
 namespace core::context {
 
@@ -236,6 +240,22 @@ FLASHMEM void StandaloneContext::setupViewSelectorRendering() {
                 core_state_.viewSelector.selectedIndex.get(),
                 core_state_.viewSelector.visible.get()
             );
+            if (!ui_assembly_) return;
+
+            const auto item = core::state::viewSelectorItemAt(
+                core_state_.viewSelector.selectedIndex.get()
+            );
+            const bool showSequencerSettingsAction =
+                core_state_.viewSelector.visible.get() &&
+                core::state::viewSelectorItemHasSettingsAction(item);
+            if (showSequencerSettingsAction) {
+                ui_assembly_->contextSoftkeyBar().setLeftIcon(::standalone::icons::SETTINGS_GEAR);
+                ui_assembly_->contextSoftkeyBar().show();
+                ui_assembly_->transportBar().hide();
+            } else {
+                ui_assembly_->contextSoftkeyBar().hide();
+                ui_assembly_->transportBar().show();
+            }
         },
         core_state_.viewSelector.visible,
         core_state_.viewSelector.selectedIndex

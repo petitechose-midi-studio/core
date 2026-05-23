@@ -15,6 +15,8 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/ViewSelectorState.hpp"
+#include "state/GlobalSettingsState.hpp"
+#include "state/SequencerSettingsState.hpp"
 #include "state/StructureSelectionState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -31,6 +33,8 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::ViewSelectorState& viewSelector;
+        core::state::GlobalSettingsState& globalSettings;
+        core::state::SequencerSettingsState& sequencerSettings;
         core::state::sequencer::SequencerPatternQuickControlsState& patternQuickControls;
         core::state::sequencer::SequencerStepPropertyInlineSelectorState&
             stepPropertyInlineSelector;
@@ -59,10 +63,13 @@ private:
     void navigate(float delta);
     void confirmSelection();
     void closeSelector();
+    void openSelectedItemSettings();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_state_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::ViewSelectorState& view_selector_;
+    core::state::GlobalSettingsState& global_settings_;
+    core::state::SequencerSettingsState& sequencer_settings_;
     core::state::sequencer::SequencerPatternQuickControlsState& pattern_quick_controls_;
     core::state::sequencer::SequencerStepPropertyInlineSelectorState&
         step_property_inline_selector_;
@@ -75,7 +82,6 @@ private:
     ViewScopes view_scopes_{};
     oc::type::ScopeID view_selector_scope_ = 0;
 
-    static constexpr int VIEW_COUNT = static_cast<int>(core::ui::ViewType::COUNT);
 };
 
 }  // namespace core::handler

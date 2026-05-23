@@ -31,6 +31,7 @@ FLASHMEM UiSystemState::UiSystemState()
       statusBar{},
       midiSync{},
       globalSettings{},
+      sequencerSettings{},
       dataManager{},
       macroEdit{} {}
 

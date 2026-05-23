@@ -19,6 +19,7 @@ public:
     ContextSoftkeyBar& operator=(const ContextSoftkeyBar&) = delete;
 
     void setLabels(const char* left, const char* center, const char* right);
+    void setLeftIcon(const char* icon);
 
     void show();
     void hide();

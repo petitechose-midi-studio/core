@@ -46,6 +46,9 @@ void configureDebugLabels_(CoreState& state) {
     state.globalSettings.selector.visible.setDebugLabel("core.globalSettings.selector.visible");
     state.globalSettings.selector.selectedIndex.setDebugLabel("core.globalSettings.selector.selectedIndex");
     state.globalSettings.selector.editingRow.setDebugLabel("core.globalSettings.selector.editingRow");
+    state.sequencerSettings.flowPhase.setDebugLabel("core.sequencerSettings.flowPhase");
+    state.sequencerSettings.visible.setDebugLabel("core.sequencerSettings.visible");
+    state.sequencerSettings.focusedRow.setDebugLabel("core.sequencerSettings.focusedRow");
 
     state.dataManager.context.setDebugLabel("core.dataManager.context");
     state.dataManager.flowPhase.setDebugLabel("core.dataManager.flowPhase");
@@ -139,6 +142,7 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, state.sequencer.stepEdit.visible);
     state.overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, state.globalSettings.visible);
     state.overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, state.globalSettings.selector.visible);
+    state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS, state.sequencerSettings.visible);
     state.overlays.registerItem(core::ui::OverlayType::DATA_MANAGER, state.dataManager.visible);
     state.overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_DIALOG, state.dataManager.dialog.visible);
 }

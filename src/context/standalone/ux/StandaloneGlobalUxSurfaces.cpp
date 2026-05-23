@@ -9,6 +9,7 @@
 #include "state/GlobalSettingsState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/ViewSelectorItems.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "validation/ux/SemanticUxNames.hpp"
 
@@ -50,25 +51,31 @@ bool ViewSelectorUxSurface::captureSemanticUxContext(
         return false;
     }
 
-    int selected = visible ? view_selector_.selectedIndex.get() : static_cast<int>(active_view_.get());
-    if (selected < 0 || selected >= static_cast<int>(core::ui::ViewType::COUNT)) {
-        selected = static_cast<int>(active_view_.get());
+    int selected = visible ? view_selector_.selectedIndex.get()
+                           : static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()));
+    if (selected < 0 || selected >= core::state::VIEW_SELECTOR_ITEM_COUNT) {
+        selected = static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()));
     }
 
-    const auto selectedView = static_cast<core::ui::ViewType>(selected);
+    const auto selectedItem = core::state::viewSelectorItemAt(selected);
     out.mode = "view_selector";
     out.target = "view";
     out.targetIndex = static_cast<int16_t>(selected);
-    out.property = core::validation::ux::viewName(selectedView);
+    out.property = core::state::viewSelectorItemLabel(selectedItem);
     copyValueLabel(out.valueLabel, out.property);
 
     if (opening) {
         out.effect = "open_view_selector";
+    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) &&
+               core::state::viewSelectorItemHasSettingsAction(selectedItem)) {
+        out.effect = "open_view_settings";
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_view";
     } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
                isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "apply_view";
+        out.effect = selectedItem == core::state::ViewSelectorItem::GLOBAL_SETTINGS
+                         ? "open_global_settings"
+                         : "apply_view";
     }
     return true;
 }
@@ -82,13 +89,6 @@ bool GlobalSettingsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-        out.mode = "global_settings";
-        out.target = "settings";
-        out.effect = "open_global_settings";
-        return true;
-    }
-
     const auto globalSettingsPhase = global_settings_.flowPhase.get();
     if (globalSettingsPhase == core::state::GlobalSettingsFlowPhase::OVERLAY) {
         auto data = core::context::standalone::global_settings_presenter::buildOverlayRenderData({
