@@ -49,6 +49,15 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencerSettings.flowPhase.setDebugLabel("core.sequencerSettings.flowPhase");
     state.sequencerSettings.visible.setDebugLabel("core.sequencerSettings.visible");
     state.sequencerSettings.focusedRow.setDebugLabel("core.sequencerSettings.focusedRow");
+    state.sequencerSettings.selector.visible.setDebugLabel("core.sequencerSettings.selector.visible");
+    state.sequencerSettings.selector.selectedIndex.setDebugLabel("core.sequencerSettings.selector.selectedIndex");
+    state.sequencerSettings.selector.editingRow.setDebugLabel("core.sequencerSettings.selector.editingRow");
+    state.patternPitchSettings.flowPhase.setDebugLabel("core.patternPitchSettings.flowPhase");
+    state.patternPitchSettings.visible.setDebugLabel("core.patternPitchSettings.visible");
+    state.patternPitchSettings.focusedRow.setDebugLabel("core.patternPitchSettings.focusedRow");
+    state.patternPitchSettings.selector.visible.setDebugLabel("core.patternPitchSettings.selector.visible");
+    state.patternPitchSettings.selector.selectedIndex.setDebugLabel("core.patternPitchSettings.selector.selectedIndex");
+    state.patternPitchSettings.selector.editingRow.setDebugLabel("core.patternPitchSettings.selector.editingRow");
 
     state.dataManager.context.setDebugLabel("core.dataManager.context");
     state.dataManager.flowPhase.setDebugLabel("core.dataManager.flowPhase");
@@ -63,6 +72,7 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
     state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
     state.sequencer.patternVariationRevision.setDebugLabel("core.sequencer.patternVariationRevision");
+    state.sequencer.patternScaleRevision.setDebugLabel("core.sequencer.patternScaleRevision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
 }
 }  // namespace
@@ -113,7 +123,7 @@ FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
 
 FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& state) {
     state.sequencerDomain_.autoPersist =
-        std::make_unique<oc::state::AutoPersistIncremental<11>>(
+        std::make_unique<oc::state::AutoPersistIncremental<13>>(
             [](uint8_t) {},
             [&state]() { state.persistSequencerWorkspace_(); },
             CoreSettings::VALUE_SAVE_DELAY_MS
@@ -130,6 +140,8 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
     state.sequencerDomain_.autoPersist->watchAt(8, state.sequencerTracks.activeTrackSignal());
     state.sequencerDomain_.autoPersist->watchAt(9, state.sequencerTracks.enabledMaskSignal());
     state.sequencerDomain_.autoPersist->watchAt(10, state.sequencer.patternVariationRevision);
+    state.sequencerDomain_.autoPersist->watchAt(11, state.sequencer.patternScaleRevision);
+    state.sequencerDomain_.autoPersist->watchAt(12, state.sequencerTracks.projectScaleRevisionSignal());
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
@@ -143,6 +155,9 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, state.globalSettings.visible);
     state.overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, state.globalSettings.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS, state.sequencerSettings.visible);
+    state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR, state.sequencerSettings.selector.visible);
+    state.overlays.registerItem(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, state.patternPitchSettings.visible);
+    state.overlays.registerItem(core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR, state.patternPitchSettings.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::DATA_MANAGER, state.dataManager.visible);
     state.overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_DIALOG, state.dataManager.dialog.visible);
 }

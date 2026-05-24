@@ -23,6 +23,8 @@ struct SequencerRuntimeStateSignature {
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
+    uint32_t patternScaleRevision = 0;
+    oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
 
     bool matches(const SequencerRuntimeStateSignature& other) const {
         return length == other.length &&
@@ -30,7 +32,11 @@ struct SequencerRuntimeStateSignature {
                midiChannel == other.midiChannel &&
                enabledMask == other.enabledMask &&
                stepDataRevision == other.stepDataRevision &&
-               patternVariationRevision == other.patternVariationRevision;
+               patternVariationRevision == other.patternVariationRevision &&
+               patternScaleRevision == other.patternScaleRevision &&
+               effectiveScaleSettings.root == other.effectiveScaleSettings.root &&
+               effectiveScaleSettings.type == other.effectiveScaleSettings.type &&
+               effectiveScaleSettings.mode == other.effectiveScaleSettings.mode;
     }
 };
 
@@ -51,15 +57,13 @@ struct SequencerRuntimeTelemetrySnapshot {
 };
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
-    const core::state::sequencer::SequencerState& source
+    const core::state::sequencer::SequencerState& source,
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
 );
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternSnapshot& source
 );
-
-void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
-                      const core::state::sequencer::SequencerState& source);
 
 void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
                       const core::state::sequencer::SequencerPatternSnapshot& source);

@@ -2,12 +2,16 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
+#include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 #include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 
+#include "context/standalone/PatternPitchSettingsOverlayPresenter.hpp"
 #include "context/standalone/SequencerEncoderSyncCoordinator.hpp"
 #include "context/standalone/SequencerOverlayPresenter.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/sequencer/PatternPitchSettingsDomainServices.hpp"
+#include "handler/sequencer/PatternPitchSettingsHandler.hpp"
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
@@ -75,6 +79,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.overlays,
             stateRefs.activeView,
             stateRefs.sequencer,
+            stateRefs.sequencerTracks,
         },
         encoders
     );
@@ -86,6 +91,22 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         static_cast<oc::type::ButtonID>(0)
     );
 
+    pattern_pitch_settings_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(sequencerViewScope);
+    overlays.registerCleanup(
+        core::ui::OverlayType::PATTERN_PITCH_SETTINGS,
+        oc::ui::lvgl::scopeID(pattern_pitch_settings_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
+    pattern_pitch_settings_selector_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(sequencerViewScope);
+    overlays.registerCleanup(
+        core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR,
+        oc::ui::lvgl::scopeID(pattern_pitch_settings_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
     presenter_ = core::app::makeExtmemUnique<SequencerOverlayPresenter>(
         SequencerOverlayPresenter::StateRefs{
             stateRefs.sequencer,
@@ -93,6 +114,17 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         *step_edit_overlay_
     );
     presenter_->bind();
+    pattern_pitch_settings_presenter_ =
+        core::app::makeExtmemUnique<PatternPitchSettingsOverlayPresenter>(
+            PatternPitchSettingsOverlayPresenter::StateRefs{
+                stateRefs.patternPitchSettings,
+                stateRefs.sequencer,
+                stateRefs.sequencerTracks,
+            },
+            *pattern_pitch_settings_overlay_,
+            *pattern_pitch_settings_selector_overlay_
+        );
+    pattern_pitch_settings_presenter_->bind();
     encoder_sync_->bind();
 
     step_handler_ = std::make_unique<core::handler::SequencerStepHandler>(
@@ -147,11 +179,31 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId,
             oc::time::millis
         );
+    pattern_pitch_settings_handler_ =
+        std::make_unique<core::handler::PatternPitchSettingsHandler>(
+            core::handler::PatternPitchSettingsHandler::StateRefs{
+                stateRefs.patternPitchSettings,
+                stateRefs.sequencer,
+            },
+            core::handler::PatternPitchSettingsDomainServices{
+                core::handler::PatternPitchSettingsDomainServices::StateRefs{
+                    stateRefs.sequencer,
+                    stateRefs.sequencerTracks,
+                }
+            },
+            overlays,
+            encoders,
+            buttons,
+            sequencerViewScopeId,
+            oc::ui::lvgl::scopeID(pattern_pitch_settings_overlay_->getElement()),
+            oc::ui::lvgl::scopeID(pattern_pitch_settings_selector_overlay_->getElement())
+        );
     macro_property_handler_ =
         std::make_unique<core::handler::SequencerMacroPropertyHandler>(
             core::handler::SequencerMacroPropertyHandler::StateRefs{
                 stateRefs.overlays,
                 stateRefs.sequencer,
+                stateRefs.sequencerTracks,
                 stateRefs.trackNavigation,
             },
             encoders,

@@ -11,6 +11,9 @@ namespace core::ui::sequencer::grid {
  * This function reads musical data, active property, inline feedback, and
  * playhead status; it does not plan diffs or touch LVGL widgets.
  */
-StepGridFrameState buildStepGridFrameState(const core::state::sequencer::SequencerState& sequencerState);
+StepGridFrameState buildStepGridFrameState(
+    const core::state::sequencer::SequencerState& sequencerState,
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings = {}
+);
 
 }  // namespace core::ui::sequencer::grid

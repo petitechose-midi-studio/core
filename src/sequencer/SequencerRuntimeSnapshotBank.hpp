@@ -37,6 +37,7 @@ private:
     std::array<Snapshot, 2> snapshots_{};
     std::array<SequencerRuntimeStateSignature, core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>
         track_signatures_{};
+    uint32_t project_scale_revision_ = UINT32_MAX;
     volatile uint8_t active_index_ = 0;
 };
 

@@ -14,6 +14,7 @@
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
+#include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/CoreState.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
@@ -74,6 +75,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.structureNavigationFocus,
             state.trackNavigation,
             state.structureClipboard,
+            state.patternPitchSettings,
             state.sequencer,
             state.sequencerTracks,
         },
@@ -97,11 +99,18 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.settings,
             state.dataManager,
             state.activeView,
+            state.sequencerTracks,
         },
         core::handler::GlobalSettingsDomainServices{
             core::handler::GlobalSettingsDomainServices::StateRefs{
                 state.midiSync,
                 state.settings,
+            }
+        },
+        core::handler::SequencerSettingsDomainServices{
+            core::handler::SequencerSettingsDomainServices::StateRefs{
+                state.sequencer,
+                state.sequencerTracks,
             }
         },
         core::handler::DataManagerDomainServices::fromCoreState(state),

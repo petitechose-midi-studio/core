@@ -4,7 +4,9 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
+#include <oc/note/sequencer/StepSequencerScale.hpp>
 
+#include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -17,7 +19,12 @@ struct SequencerPatternSnapshot {
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
+    uint32_t patternScaleRevision = 0;
     oc::note::sequencer::StepSequencerVariationRanges variationRanges{};
+    SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
+    oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
+    SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::CHROMATIC;
+    oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
     std::array<uint8_t, SequencerState::MAX_STEPS> note{};
     std::array<uint8_t, SequencerState::MAX_STEPS> velocity{};
     std::array<uint16_t, SequencerState::MAX_STEPS> gate{};
@@ -28,6 +35,8 @@ struct SequencerPatternSnapshot {
 struct SequencerTrackBankSnapshot {
     uint8_t activeTrack = 0;
     uint16_t enabledMask = 0x0001;
+    uint32_t projectScaleRevision = 0;
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings{};
     std::array<SequencerPatternSnapshot, SequencerTrackBankState::TRACK_COUNT> tracks{};
 };
 

@@ -3,10 +3,13 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
+#include "state/ViewSelectorItems.hpp"
+
 namespace core::context::standalone::global_settings_presenter {
 
 namespace {
 
+constexpr const char* const ROW_KEYS[] = {"Mode", "Follow", "Timeout", "Lock"};
 constexpr const char* const MODE_ITEMS[] = {"MASTER", "SLAVE", "AUTO"};
 constexpr const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
 constexpr const char* const FALLBACK_ITEMS[] = {"150 ms", "250 ms", "500 ms", "750 ms", "1000 ms", "1500 ms", "2000 ms"};
@@ -60,10 +63,10 @@ FLASHMEM OverlayRenderData buildOverlayRenderData(const Source& source) {
     oc::type::text::terminate(data.valueBuffers[1].data(), data.valueBuffers[1].size(), lockPos);
 
     data.rows = {{
-        {.key = "Mode", .value = modeLabel(mode)},
-        {.key = "Follow", .value = followTransport ? "ON" : "OFF"},
-        {.key = "Timeout", .value = data.valueBuffers[0].data()},
-        {.key = "Lock", .value = data.valueBuffers[1].data()},
+        {.key = ROW_KEYS[0], .value = modeLabel(mode)},
+        {.key = ROW_KEYS[1], .value = followTransport ? "ON" : "OFF"},
+        {.key = ROW_KEYS[2], .value = data.valueBuffers[0].data()},
+        {.key = ROW_KEYS[3], .value = data.valueBuffers[1].data()},
     }};
     data.selectedIndex = source.globalSettings.focusedRow.get();
     data.dataRevision =
@@ -84,30 +87,27 @@ FLASHMEM SelectorRenderData buildSelectorRenderData(const Source& source) {
 
     const uint8_t row = source.globalSettings.selector.editingRow.get();
     data.visible = true;
+    data.title = row < 4 ? ROW_KEYS[row] : "Value";
+    data.meta = core::state::viewSelectorItemLabel(core::state::ViewSelectorItem::GLOBAL_SETTINGS);
 
     switch (row) {
         case 0:
-            data.title = "SYNC MODE";
             data.items = MODE_ITEMS;
             data.itemCount = 3;
             break;
         case 1:
-            data.title = "FOLLOW";
             data.items = FOLLOW_ITEMS;
             data.itemCount = 2;
             break;
         case 2:
-            data.title = "AUTO TIMEOUT";
             data.items = FALLBACK_ITEMS;
             data.itemCount = 7;
             break;
         case 3:
-            data.title = "AUTO LOCK";
             data.items = LOCK_ITEMS;
             data.itemCount = 8;
             break;
         default:
-            data.title = "VALUE";
             data.items = MODE_ITEMS;
             data.itemCount = 3;
             break;

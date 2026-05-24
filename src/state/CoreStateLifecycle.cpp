@@ -121,6 +121,7 @@ void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.viewSelector.reset();
     state.globalSettings.reset();
     state.sequencerSettings.reset();
+    state.patternPitchSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
     state.dataManager.feedback.set("");
     state.macroUi.reset();

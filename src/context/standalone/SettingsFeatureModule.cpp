@@ -11,6 +11,7 @@
 #include "handler/settings/DataManagerHandler.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/GlobalSettingsHandler.hpp"
+#include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsHandler.hpp"
 
 namespace core::context::standalone {
@@ -18,6 +19,7 @@ namespace core::context::standalone {
 FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     StateRefs stateRefs,
     core::handler::GlobalSettingsDomainServices globalSettingsServices,
+    core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
     core::handler::DataManagerDomainServices dataManagerServices,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
@@ -89,6 +91,14 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         static_cast<oc::type::ButtonID>(0)
     );
 
+    sequencer_settings_selector_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
+    overlays.registerCleanup(
+        core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR,
+        oc::ui::lvgl::scopeID(sequencer_settings_selector_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
     global_settings_presenter_ =
         core::app::makeExtmemUnique<GlobalSettingsOverlayPresenter>(
             GlobalSettingsOverlayPresenter::StateRefs{
@@ -116,8 +126,10 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         core::app::makeExtmemUnique<SequencerSettingsOverlayPresenter>(
             SequencerSettingsOverlayPresenter::StateRefs{
                 stateRefs.sequencerSettings,
+                stateRefs.sequencerTracks,
             },
-            *sequencer_settings_overlay_
+            *sequencer_settings_overlay_,
+            *sequencer_settings_selector_overlay_
         );
     sequencer_settings_presenter_->bind();
 
@@ -153,10 +165,12 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
             stateRefs.sequencerSettings,
             stateRefs.viewSelector,
         },
+        sequencerSettingsServices,
         overlays,
         encoders,
         buttons,
-        oc::ui::lvgl::scopeID(sequencer_settings_overlay_->getElement())
+        oc::ui::lvgl::scopeID(sequencer_settings_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(sequencer_settings_selector_overlay_->getElement())
     );
 }
 

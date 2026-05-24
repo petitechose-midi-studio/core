@@ -7,6 +7,16 @@
 
 namespace {
 
+using oc::note::sequencer::StepSequencerScaleConstraintMode;
+using oc::note::sequencer::StepSequencerScaleSettings;
+using oc::note::sequencer::StepSequencerScaleType;
+
+bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSettings& rhs) {
+    return lhs.root == rhs.root &&
+           lhs.type == rhs.type &&
+           lhs.mode == rhs.mode;
+}
+
 void test_refresh_captures_active_editor_state() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
@@ -116,6 +126,58 @@ void test_refresh_switches_active_track_sources() {
     std::cout << "[PASS] test_refresh_switches_active_track_sources\n";
 }
 
+void test_refresh_resolves_project_and_pattern_scale() {
+    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerTrackBankState trackBank;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+
+    const StepSequencerScaleSettings projectScale{
+        .root = 2,
+        .type = StepSequencerScaleType::Major,
+        .mode = StepSequencerScaleConstraintMode::ConstrainNearest,
+    };
+    assert(trackBank.setProjectScaleSettings(projectScale));
+
+    uint8_t index = bank.refresh();
+    bank.commit(index);
+    assert(sameScale(bank.activeSnapshot().projectScaleSettings, projectScale));
+    assert(sameScale(bank.activeSnapshot().tracks[0].effectiveScaleSettings, projectScale));
+
+    const StepSequencerScaleSettings overrideScale{
+        .root = 9,
+        .type = StepSequencerScaleType::NaturalMinor,
+        .mode = StepSequencerScaleConstraintMode::ConstrainDown,
+    };
+    assert(sequencer.setPatternScalePolicy(
+        core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE
+    ));
+    assert(sequencer.setPatternScaleOverride(overrideScale));
+    assert(sequencer.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES));
+
+    index = bank.refresh();
+    bank.commit(index);
+    assert(sameScale(bank.activeSnapshot().tracks[0].effectiveScaleSettings, overrideScale));
+    assert(bank.activeSnapshot().tracks[0].pitchEditMode ==
+           core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+
+    const StepSequencerScaleSettings nextProjectScale{
+        .root = 5,
+        .type = StepSequencerScaleType::Dorian,
+        .mode = StepSequencerScaleConstraintMode::ConstrainUp,
+    };
+    assert(trackBank.setProjectScaleSettings(nextProjectScale));
+    assert(sequencer.setPatternScalePolicy(
+        core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT
+    ));
+
+    index = bank.refresh();
+    bank.commit(index);
+    assert(sameScale(bank.activeSnapshot().projectScaleSettings, nextProjectScale));
+    assert(sameScale(bank.activeSnapshot().tracks[0].effectiveScaleSettings, nextProjectScale));
+
+    std::cout << "[PASS] test_refresh_resolves_project_and_pattern_scale\n";
+}
+
 }  // namespace
 
 int main() {
@@ -123,6 +185,7 @@ int main() {
     test_refresh_preserves_active_snapshot_until_commit();
     test_refresh_captures_inactive_bank_track();
     test_refresh_switches_active_track_sources();
+    test_refresh_resolves_project_and_pattern_scale();
     std::cout << "All SequencerRuntimeSnapshotBank tests passed\n";
     return 0;
 }

@@ -14,6 +14,7 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "state/PatternPitchSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -26,14 +27,17 @@
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
+class VirtualListSelectorOverlay;
 }
 
 namespace core::context::standalone {
+class PatternPitchSettingsOverlayPresenter;
 class SequencerEncoderSyncCoordinator;
 class SequencerOverlayPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
+class PatternPitchSettingsHandler;
 class SequencerMacroPropertyHandler;
 class SequencerPatternQuickControlsHandler;
 class SequencerPropertySelectorHandler;
@@ -60,6 +64,7 @@ public:
             core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
         core::state::TrackNavigationState& trackNavigation;
         core::state::StructureClipboardState& structureClipboard;
+        core::state::PatternPitchSettingsState& patternPitchSettings;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
     };
@@ -97,11 +102,18 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerEncoderSyncCoordinator>
         encoder_sync_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
+        pattern_pitch_settings_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
+        pattern_pitch_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerOverlayPresenter> presenter_;
+    core::app::ExtmemUniquePtr<core::context::standalone::PatternPitchSettingsOverlayPresenter>
+        pattern_pitch_settings_presenter_;
     std::unique_ptr<core::handler::SequencerStepHandler> step_handler_;
     std::unique_ptr<core::handler::SequencerPatternQuickControlsHandler> quick_controls_handler_;
     std::unique_ptr<core::handler::SequencerStepEditHandler> step_edit_handler_;
     std::unique_ptr<core::handler::SequencerPropertySelectorHandler> property_selector_handler_;
+    std::unique_ptr<core::handler::PatternPitchSettingsHandler> pattern_pitch_settings_handler_;
     std::unique_ptr<core::handler::SequencerMacroPropertyHandler> macro_property_handler_;
 };
 

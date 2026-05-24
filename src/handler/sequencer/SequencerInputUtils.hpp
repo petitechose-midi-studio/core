@@ -118,6 +118,81 @@ inline StepPropertyEncoderConfig encoderConfigForProperty(StepProperty property)
     return config;
 }
 
+inline bool usesScaleDegreePitchEdit(
+    StepProperty property,
+    core::state::sequencer::SequencerPitchEditMode mode,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    scaleSettings.clamp();
+    return property == StepProperty::NOTE &&
+           (scaleSettings.isConstrained() ||
+            mode == core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES) &&
+           scaleSettings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic;
+}
+
+inline int countScaleNotes(oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {
+    scaleSettings.clamp();
+    int count = 0;
+    for (int note = 0; note <= 127; ++note) {
+        if (oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(note))) {
+            ++count;
+        }
+    }
+    return std::max(count, 1);
+}
+
+inline int scaleDegreeIndexForNote(
+    uint8_t note,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    scaleSettings.clamp();
+    const uint8_t resolved =
+        oc::note::sequencer::resolveScaleNote(note, scaleSettings).outputNote;
+    int index = 0;
+    for (int candidate = 0; candidate <= 127; ++candidate) {
+        if (!oc::note::sequencer::scaleContainsNote(
+                scaleSettings,
+                static_cast<uint8_t>(candidate)
+            )) {
+            continue;
+        }
+        if (candidate >= resolved) return index;
+        ++index;
+    }
+    return std::max(0, index - 1);
+}
+
+inline uint8_t scaleNoteForDegreeIndex(
+    int index,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    scaleSettings.clamp();
+    const int clampedIndex = std::clamp(index, 0, countScaleNotes(scaleSettings) - 1);
+    int current = 0;
+    for (int note = 0; note <= 127; ++note) {
+        if (!oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(note))) {
+            continue;
+        }
+        if (current == clampedIndex) return static_cast<uint8_t>(note);
+        ++current;
+    }
+    return 0;
+}
+
+inline StepPropertyEncoderConfig encoderConfigForProperty(
+    StepProperty property,
+    core::state::sequencer::SequencerPitchEditMode pitchEditMode,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    auto config = encoderConfigForProperty(property);
+    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+        config.discreteSteps = static_cast<uint8_t>(
+            std::min(countScaleNotes(scaleSettings), 255)
+        );
+    }
+    return config;
+}
+
 inline uint8_t findStepsPerBeatChoiceIndex(uint8_t stepsPerBeat) {
     for (uint8_t i = 0; i < static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size()); ++i) {
         if (STEPS_PER_BEAT_CHOICES[i] == stepsPerBeat) return i;
@@ -287,6 +362,25 @@ inline float stepPropertyToNormalized(const SequencerState& state, uint8_t step,
     );
 }
 
+inline float stepPropertyToNormalized(
+    const SequencerState& state,
+    uint8_t step,
+    StepProperty property,
+    core::state::sequencer::SequencerPitchEditMode pitchEditMode,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    if (step >= SequencerState::MAX_STEPS) return 0.0f;
+
+    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+        return indexToNormalized(
+            scaleDegreeIndexForNote(state.note[step], scaleSettings),
+            countScaleNotes(scaleSettings)
+        );
+    }
+
+    return stepPropertyToNormalized(state, step, property);
+}
+
 inline bool applyNormalizedToStep(
     SequencerState& state,
     uint8_t step,
@@ -309,6 +403,22 @@ inline bool applyNormalizedToStep(
     }
 
     return false;
+}
+
+inline bool applyNormalizedToStep(
+    SequencerState& state,
+    uint8_t step,
+    StepProperty property,
+    float normalized,
+    core::state::sequencer::SequencerPitchEditMode pitchEditMode,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+        const int index = normalizedToIndex(normalized, countScaleNotes(scaleSettings));
+        return state.setStepNoteAt(step, scaleNoteForDegreeIndex(index, scaleSettings));
+    }
+
+    return applyNormalizedToStep(state, step, property, normalized);
 }
 
 }  // namespace core::handler::sequencer::input_utils

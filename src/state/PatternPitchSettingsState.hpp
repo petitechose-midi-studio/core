@@ -6,13 +6,13 @@
 
 namespace core::state {
 
-enum class SequencerSettingsFlowPhase : uint8_t {
+enum class PatternPitchSettingsFlowPhase : uint8_t {
     CLOSED = 0,
     OVERLAY = 1,
     VALUE_SELECTOR = 2,
 };
 
-struct SequencerSettingsValueSelectorState {
+struct PatternPitchSettingsValueSelectorState {
     oc::state::Signal<bool> visible{false};
     oc::state::Signal<uint8_t> editingRow{0};
     oc::state::Signal<int> selectedIndex{0};
@@ -24,25 +24,25 @@ struct SequencerSettingsValueSelectorState {
     }
 };
 
-struct SequencerSettingsState {
+struct PatternPitchSettingsState {
     oc::state::Signal<bool> visible{false};
     oc::state::Signal<uint8_t> focusedRow{0};
-    oc::state::Signal<SequencerSettingsFlowPhase, 4> flowPhase{
-        SequencerSettingsFlowPhase::CLOSED
+    oc::state::Signal<PatternPitchSettingsFlowPhase, 4> flowPhase{
+        PatternPitchSettingsFlowPhase::CLOSED
     };
-    SequencerSettingsValueSelectorState selector;
+    PatternPitchSettingsValueSelectorState selector;
 
     void reset() {
         visible.set(false);
         focusedRow.set(0);
-        flowPhase.set(SequencerSettingsFlowPhase::CLOSED);
+        flowPhase.set(PatternPitchSettingsFlowPhase::CLOSED);
         selector.reset();
     }
 
     void openOverlay() {
         reset();
         visible.set(true);
-        flowPhase.set(SequencerSettingsFlowPhase::OVERLAY);
+        flowPhase.set(PatternPitchSettingsFlowPhase::OVERLAY);
     }
 
     void closeOverlay() {
@@ -53,13 +53,13 @@ struct SequencerSettingsState {
         selector.editingRow.set(row);
         selector.selectedIndex.set(selected);
         selector.visible.set(true);
-        flowPhase.set(SequencerSettingsFlowPhase::VALUE_SELECTOR);
+        flowPhase.set(PatternPitchSettingsFlowPhase::VALUE_SELECTOR);
     }
 
     void closeSelector() {
         selector.reset();
-        flowPhase.set(visible.get() ? SequencerSettingsFlowPhase::OVERLAY
-                                    : SequencerSettingsFlowPhase::CLOSED);
+        flowPhase.set(visible.get() ? PatternPitchSettingsFlowPhase::OVERLAY
+                                    : PatternPitchSettingsFlowPhase::CLOSED);
     }
 };
 

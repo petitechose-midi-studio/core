@@ -384,10 +384,9 @@ StepGrid::~StepGrid() {
     }
 }
 
-void StepGrid::forceRefresh() {
+void StepGrid::prepareForActivationLayoutRefresh() {
     geometry_.dirty = true;
-    render_cache_.feedback = {};
-    invalidateTileCaches();
+    geometry_.forceLayoutRefresh = true;
 }
 
 FLASHMEM void StepGrid::createUI(lv_obj_t* parent) {
@@ -465,7 +464,8 @@ bool StepGrid::refreshStaticGeometry() {
     const lv_coord_t containerHeight = lv_obj_get_height(container_);
     const lv_coord_t noteLayerWidth = lv_obj_get_width(note_layer_);
     const lv_coord_t noteLayerHeight = lv_obj_get_height(note_layer_);
-    if (!geometry_.initialized ||
+    if (geometry_.forceLayoutRefresh ||
+        !geometry_.initialized ||
         geometry_.containerWidth != containerWidth ||
         geometry_.containerHeight != containerHeight ||
         geometry_.noteLayerWidth != noteLayerWidth ||
@@ -514,6 +514,7 @@ bool StepGrid::refreshStaticGeometry() {
     geometry_.noteLayerWidth = lv_obj_get_width(note_layer_);
     geometry_.noteLayerHeight = lv_obj_get_height(note_layer_);
     geometry_.dirty = false;
+    geometry_.forceLayoutRefresh = false;
     return changed;
 }
 

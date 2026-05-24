@@ -202,6 +202,8 @@ void SequencerPlaybackService::syncRuntimeStates_(
     runtime_enabled_mask_ = snapshot.enabledMask;
 
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
+        track_runtime_states_[i].variationTelemetryEnabled = (i == runtime_active_track_);
+
         const auto trackSignature = captureRuntimeStateSignature(snapshot.tracks[i]);
         if (track_runtime_signatures_[i].matches(trackSignature)) {
             continue;

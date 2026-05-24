@@ -26,15 +26,31 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
 
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
+    runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
+    runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
+
+    const bool projectScaleChanged =
+        project_scale_revision_ != runtimeSnapshot.projectScaleRevision;
+    if (projectScaleChanged) {
+        project_scale_revision_ = runtimeSnapshot.projectScaleRevision;
+        track_signatures_.fill({});
+    }
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
         const auto& source = (i == activeTrack) ? sequencer_ : track_bank_.track(i);
-        const auto signature = captureRuntimeStateSignature(source);
+        const auto signature =
+            captureRuntimeStateSignature(source, runtimeSnapshot.projectScaleSettings);
         if (track_signatures_[i].matches(signature)) {
             continue;
         }
 
         core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
+        runtimeSnapshot.tracks[i].effectiveScaleSettings =
+            core::state::sequencer::resolveEffectiveScaleSettings(
+                runtimeSnapshot.projectScaleSettings,
+                runtimeSnapshot.tracks[i].scalePolicy,
+                runtimeSnapshot.tracks[i].scaleOverride
+            );
         track_signatures_[i] = signature;
     }
 

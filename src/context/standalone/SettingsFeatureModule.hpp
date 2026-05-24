@@ -13,12 +13,14 @@
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
+#include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/CoreSettings.hpp"
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
 #include "state/SequencerSettingsState.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "state/MidiSyncState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 
@@ -66,10 +68,12 @@ public:
         core::state::CoreSettings& settings;
         core::state::DataManagerState& dataManager;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
+        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
     };
 
     SettingsFeatureModule(StateRefs stateRefs,
                           core::handler::GlobalSettingsDomainServices globalSettingsServices,
+                          core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
                           core::handler::DataManagerDomainServices dataManagerServices,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           oc::api::EncoderAPI& encoders,
@@ -99,6 +103,8 @@ private:
         global_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> sequencer_settings_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
+        sequencer_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> data_manager_dialog_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::GlobalSettingsOverlayPresenter>
         global_settings_presenter_;

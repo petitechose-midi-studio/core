@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
+
 #include "ui/sequencer/StepVisualUtils.hpp"
 
 namespace core::ui::sequencer::grid {
@@ -24,15 +26,15 @@ constexpr uint32_t CHROMATIC_NOTE_BASE_PALETTE_HEX[] = {
     0xF3E5C4,
 };
 
-uint8_t chromaIndexForNote(uint8_t note) {
+FLASHMEM uint8_t chromaIndexForNote(uint8_t note) {
     return static_cast<uint8_t>(note % CHROMATIC_NOTE_COUNT);
 }
 
-lv_color_t noteBaseColor(uint8_t note) {
+FLASHMEM lv_color_t noteBaseColor(uint8_t note) {
     return lv_color_hex(CHROMATIC_NOTE_BASE_PALETTE_HEX[chromaIndexForNote(note)]);
 }
 
-lv_color_t velocityAccentColor(uint8_t note, uint8_t velocity) {
+FLASHMEM lv_color_t velocityAccentColor(uint8_t note, uint8_t velocity) {
     using namespace core::ui::sequencer::visual;
 
     const lv_color_t fullColor = noteLabelColor(note);
@@ -43,11 +45,11 @@ lv_color_t velocityAccentColor(uint8_t note, uint8_t velocity) {
 
 }  // namespace
 
-lv_color_t noteLabelColor(uint8_t note) {
+FLASHMEM lv_color_t noteLabelColor(uint8_t note) {
     return lv_color_lighten(noteBaseColor(note), STEP_NOTE_LABEL_LIGHTEN);
 }
 
-lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability) {
+FLASHMEM lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability) {
     using namespace core::ui::sequencer::visual;
 
     const lv_color_t fullColor = noteLabelColor(note);
@@ -56,20 +58,85 @@ lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability) {
     return lv_color_mix(fullColor, minColor, mix);
 }
 
-bool hasRuntimePitchFeedback(const TileRenderState& state) {
-    return state.variation.visible &&
-           state.variation.deltaVisible &&
-           state.variation.resolved.triggered &&
-           state.variation.resolved.ranges.pitchSemitones > 0;
+FLASHMEM int scaleDegreeIndex(const TileRenderState& state) {
+    auto settings = state.variation.resolved.scaleSettings;
+    settings.clamp();
+    const uint16_t mask = oc::note::sequencer::scaleMask(settings.type);
+    const uint8_t outputPc =
+        static_cast<uint8_t>(state.variation.resolved.resolved.note % CHROMATIC_NOTE_COUNT);
+    const uint8_t relative =
+        static_cast<uint8_t>((outputPc + CHROMATIC_NOTE_COUNT - settings.root) % CHROMATIC_NOTE_COUNT);
+    int degree = 0;
+    for (uint8_t pc = 0; pc < CHROMATIC_NOTE_COUNT; ++pc) {
+        if ((mask & static_cast<uint16_t>(1U << pc)) == 0) continue;
+        if (pc == relative) return degree;
+        ++degree;
+    }
+    return -1;
 }
 
-uint8_t runtimePitchDisplayNote(const TileRenderState& state) {
+FLASHMEM bool hasRuntimePitchFeedback(const TileRenderState& state) {
+    return state.variation.visible &&
+           state.variation.deltaVisible &&
+           (state.variation.resolved.ranges.pitchSemitones > 0 ||
+            state.variation.resolved.resolved.note != state.note ||
+            !state.variation.resolved.scale.inputInScale);
+}
+
+FLASHMEM bool hasOutOfScaleFeedback(const TileRenderState& state) {
+    return state.variation.visible &&
+           state.variation.deltaVisible &&
+           !state.variation.resolved.scale.inputInScale &&
+           !state.variation.resolved.scale.constrained;
+}
+
+FLASHMEM bool hasScaleDegreeFeedback(const TileRenderState& state) {
+    if (!state.variation.visible || !state.variation.deltaVisible) return false;
+    auto settings = state.variation.resolved.scaleSettings;
+    settings.clamp();
+    return settings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic &&
+           oc::note::sequencer::scaleContainsNote(
+               settings,
+               state.variation.resolved.resolved.note
+           ) &&
+           scaleDegreeIndex(state) >= 0;
+}
+
+FLASHMEM bool hasConstrainedScaleDegreeFeedback(const TileRenderState& state) {
+    if (!hasScaleDegreeFeedback(state)) return false;
+    auto settings = state.variation.resolved.scaleSettings;
+    settings.clamp();
+    return settings.isConstrained();
+}
+
+FLASHMEM uint8_t runtimePitchDisplayNote(const TileRenderState& state) {
     return hasRuntimePitchFeedback(state)
         ? state.variation.resolved.resolved.note
         : state.note;
 }
 
-bool sameVariationState(const TileVariationRenderState& lhs,
+FLASHMEM const char* runtimeScaleDegreeLabel(const TileRenderState& state) {
+    static constexpr const char* LABELS[] = {
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V",
+        "VI",
+        "VII",
+        "VIII",
+        "IX",
+        "X",
+        "XI",
+        "XII",
+    };
+    const int degree = scaleDegreeIndex(state);
+    return (degree >= 0 && degree < static_cast<int>(sizeof(LABELS) / sizeof(LABELS[0])))
+        ? LABELS[degree]
+        : "";
+}
+
+FLASHMEM bool sameVariationState(const TileVariationRenderState& lhs,
                         const TileVariationRenderState& rhs) {
     if (lhs.visible != rhs.visible) return false;
     if (!lhs.visible) return true;
@@ -94,13 +161,19 @@ bool sameVariationState(const TileVariationRenderState& lhs,
            a.ranges.velocity == b.ranges.velocity &&
            a.ranges.gatePercent == b.ranges.gatePercent &&
            a.ranges.nudge == b.ranges.nudge &&
+           a.scaleSettings.root == b.scaleSettings.root &&
+           a.scaleSettings.type == b.scaleSettings.type &&
+           a.scaleSettings.mode == b.scaleSettings.mode &&
+           a.scale.inputInScale == b.scale.inputInScale &&
+           a.scale.constrained == b.scale.constrained &&
+           a.scale.outputNote == b.scale.outputNote &&
            a.pitchDelta == b.pitchDelta &&
            a.velocityDelta == b.velocityDelta &&
            a.gateDelta == b.gateDelta &&
            a.nudgeDelta == b.nudgeDelta;
 }
 
-StepVisualStyle buildStepVisualStyle(uint8_t note,
+FLASHMEM StepVisualStyle buildStepVisualStyle(uint8_t note,
                                      uint8_t velocity,
                                      uint16_t gate,
                                      int8_t nudge,
@@ -146,7 +219,7 @@ StepVisualStyle buildStepVisualStyle(uint8_t note,
     return style;
 }
 
-TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRenderState& state) {
+FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRenderState& state) {
     TileRenderDiff diff;
     diff.initialized = cache.initialized;
     diff.absoluteStepChanged = !diff.initialized || cache.absoluteStep != state.absoluteStep;
