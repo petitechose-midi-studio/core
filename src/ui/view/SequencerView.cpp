@@ -39,10 +39,10 @@ FLASHMEM void SequencerView::onActivate() {
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
 
     if (step_grid_) {
-        step_grid_->forceRefresh();
+        step_grid_->prepareForActivationLayoutRefresh();
+        grid_dirty_ = true;
     }
-    markAllDirty();
-    scheduleRender();
+    scheduleRender(true);
 }
 
 FLASHMEM void SequencerView::onDeactivate() {
@@ -205,6 +205,8 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.probabilityCycleRevision,
         state_refs_.sequencer.variationTelemetryRevision,
         state_refs_.sequencer.patternVariationRevision,
+        state_refs_.sequencer.patternScaleRevision,
+        state_refs_.tracks.projectScaleRevisionSignal(),
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.stepInlineFeedback.visible,
@@ -235,6 +237,8 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.globalSettings.visible,
         state_refs_.globalSettings.selector.visible,
+        state_refs_.sequencerSettings.visible,
+        state_refs_.sequencerSettings.selector.visible,
         state_refs_.dataManager.visible,
         state_refs_.dataManager.dialog.visible
     );
@@ -289,6 +293,8 @@ FLASHMEM bool SequencerView::hasBlockingOverlay() const {
            state_refs_.sequencer.stepEdit.visible.get() ||
            state_refs_.globalSettings.visible.get() ||
            state_refs_.globalSettings.selector.visible.get() ||
+           state_refs_.sequencerSettings.visible.get() ||
+           state_refs_.sequencerSettings.selector.visible.get() ||
            state_refs_.dataManager.visible.get() ||
            state_refs_.dataManager.dialog.visible.get();
 }

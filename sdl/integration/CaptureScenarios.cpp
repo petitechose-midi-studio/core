@@ -15,6 +15,21 @@ namespace sdl::integration {
 
 namespace {
 
+void publishVariationTelemetry(
+    core::state::CoreState& state,
+    const oc::note::sequencer::StepSequencerResolvedVariation& variation
+) {
+    state.sequencer.lastResolvedVariation = variation;
+    state.sequencer.cycleVariationTelemetry.reset();
+    state.sequencer.cycleVariationTelemetry.cycleIndex = variation.cycleIndex;
+    state.sequencer.cycleVariationTelemetry.ranges = variation.ranges;
+    state.sequencer.cycleVariationTelemetry.scaleSettings = variation.scaleSettings;
+    state.sequencer.cycleVariationTelemetry.store(variation);
+    state.sequencer.variationTelemetryRevision.set(
+        state.sequencer.variationTelemetryRevision.get() + 1U
+    );
+}
+
 void prepareSequencerVariationScenario(core::state::CoreState& state,
                                        core::state::sequencer::StepProperty property) {
     state.activeView.set(core::ui::ViewType::SEQUENCER);
@@ -48,12 +63,45 @@ void prepareSequencerVariationScenario(core::state::CoreState& state,
     variation.resolved.gate = 93;
     variation.resolved.nudge = -8;
 
-    state.sequencer.lastResolvedVariation = variation;
-    state.sequencer.cycleVariationTelemetry.reset();
-    state.sequencer.cycleVariationTelemetry.cycleIndex = variation.cycleIndex;
-    state.sequencer.cycleVariationTelemetry.ranges = ranges;
-    state.sequencer.cycleVariationTelemetry.store(variation);
-    state.sequencer.variationTelemetryRevision.set(0);
+    publishVariationTelemetry(state, variation);
+}
+
+void prepareSequencerScaleScenario(
+    core::state::CoreState& state,
+    oc::note::sequencer::StepSequencerScaleConstraintMode mode
+) {
+    using namespace oc::note::sequencer;
+
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
+    state.sequencer.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+    state.sequencer.setStepDataAt(0, 61, 100, 75, 0);
+    if (!state.sequencer.isEnabled(0)) {
+        state.sequencer.toggle(0);
+    }
+
+    StepSequencerScaleSettings settings{
+        .root = 0,
+        .type = StepSequencerScaleType::Major,
+        .mode = mode,
+    };
+    state.sequencerTracks.setProjectScaleSettings(settings);
+    state.sequencer.setPatternScalePolicy(
+        core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT
+    );
+
+    const StepSequencerVariationRanges ranges{};
+    const auto variation = resolveStepVariation(
+        StepSequencerStepValues{.note = 61, .velocity = 100, .gate = 75, .nudge = 0},
+        ranges,
+        settings,
+        core::state::sequencer::SequencerState::MAX_GATE_PERCENT,
+        0U,
+        1U,
+        0U,
+        true
+    );
+    publishVariationTelemetry(state, variation);
 }
 
 }  // namespace
@@ -132,6 +180,22 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "seq-variation-nudge") == 0) {
         prepareSequencerVariationScenario(state, core::state::sequencer::StepProperty::NUDGE);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-scale-constrained-degree") == 0) {
+        prepareSequencerScaleScenario(
+            state,
+            oc::note::sequencer::StepSequencerScaleConstraintMode::ConstrainNearest
+        );
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-scale-free-out-of-scale") == 0) {
+        prepareSequencerScaleScenario(
+            state,
+            oc::note::sequencer::StepSequencerScaleConstraintMode::Free
+        );
         return true;
     }
 

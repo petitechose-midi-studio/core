@@ -71,6 +71,8 @@ FLASHMEM void captureTrackBankSnapshot(
     const uint8_t activeTrack = SequencerTrackBankState::clampTrackIndex(bank.activeTrackIndex());
     out.activeTrack = activeTrack;
     out.enabledMask = bank.currentEnabledMask();
+    out.projectScaleRevision = bank.projectScaleRevisionSignal().get();
+    out.projectScaleSettings = bank.projectScaleSettings();
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active : bank.track(i);
@@ -85,6 +87,7 @@ FLASHMEM void applyTrackBankSnapshot(
 ) {
     bank.reset();
     bank.syncSharedTrackState(snapshot.enabledMask, snapshot.activeTrack);
+    bank.setProjectScaleSettings(snapshot.projectScaleSettings);
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         applySnapshot(bank.track(i), snapshot.tracks[i]);

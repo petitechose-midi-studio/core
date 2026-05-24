@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerState.hpp>
+#include "SequencerScaleState.hpp"
 #include "SequencerUiState.hpp"
 
 namespace core::state::sequencer {
@@ -37,7 +38,13 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
     /// Bumps when pattern-level variation ranges change.
     Signal<uint32_t> patternVariationRevision{0};
 
-    /// Bumps when runtime publishes a new resolved variation observation.
+    /// Bumps when pattern scale inheritance or override settings change.
+    Signal<uint32_t, 8> patternScaleRevision{0};
+    SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
+    oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
+    SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::CHROMATIC;
+
+    /// Bumps when runtime publishes or editor mutations invalidate resolved variation observations.
     Signal<uint32_t> variationTelemetryRevision{0};
     oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
     oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
@@ -77,6 +84,33 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
 
     void bumpPatternVariationRevision() {
         patternVariationRevision.set(patternVariationRevision.get() + 1);
+    }
+
+    void bumpPatternScaleRevision() {
+        patternScaleRevision.set(patternScaleRevision.get() + 1);
+    }
+
+    void invalidateVariationTelemetry() {
+        lastResolvedVariation = {};
+        cycleVariationTelemetry.reset();
+        variationTelemetryRevision.set(variationTelemetryRevision.get() + 1);
+    }
+
+    void invalidateStepVariationTelemetry(uint8_t step) {
+        if (step >= MAX_STEPS) return;
+        if (!cycleVariationTelemetry.validMask.test(step) &&
+            lastResolvedVariation.stepIndex != step) {
+            return;
+        }
+
+        cycleVariationTelemetry.validMask.setBit(step, false);
+        cycleVariationTelemetry.triggeredMask.setBit(step, false);
+        cycleVariationTelemetry.scaleInMask.setBit(step, false);
+        cycleVariationTelemetry.scaleConstrainedMask.setBit(step, false);
+        if (lastResolvedVariation.stepIndex == step) {
+            lastResolvedVariation = {};
+        }
+        variationTelemetryRevision.set(variationTelemetryRevision.get() + 1);
     }
 
     uint8_t variationRangeForProperty(StepProperty property) const {
@@ -124,6 +158,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         }
 
         variationRanges = next;
+        invalidateVariationTelemetry();
         bumpPatternVariationRevision();
         return true;
     }
@@ -140,7 +175,40 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         }
 
         variationRanges = ranges;
+        invalidateVariationTelemetry();
         bumpPatternVariationRevision();
+        return true;
+    }
+
+    bool setPatternScalePolicy(SequencerPatternScalePolicy policy) {
+        if (scalePolicy == policy) return false;
+        scalePolicy = policy;
+        invalidateVariationTelemetry();
+        bumpPatternScaleRevision();
+        return true;
+    }
+
+    bool setPatternScaleOverride(oc::note::sequencer::StepSequencerScaleSettings settings) {
+        settings.clamp();
+        auto current = scaleOverride;
+        current.clamp();
+        if (current.root == settings.root &&
+            current.type == settings.type &&
+            current.mode == settings.mode) {
+            return false;
+        }
+
+        scaleOverride = settings;
+        invalidateVariationTelemetry();
+        bumpPatternScaleRevision();
+        return true;
+    }
+
+    bool setPitchEditMode(SequencerPitchEditMode mode) {
+        if (pitchEditMode == mode) return false;
+        pitchEditMode = mode;
+        invalidateVariationTelemetry();
+        bumpPatternScaleRevision();
         return true;
     }
 
@@ -149,6 +217,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         const uint8_t clamped = clampMidi7(noteValue);
         if (note[step] == clamped) return false;
         note[step] = clamped;
+        invalidateStepVariationTelemetry(step);
         bumpStepDataRevision();
         return true;
     }
@@ -158,6 +227,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         const uint8_t clamped = clampMidi7(velocityValue);
         if (velocity[step] == clamped) return false;
         velocity[step] = clamped;
+        invalidateStepVariationTelemetry(step);
         bumpStepDataRevision();
         return true;
     }
@@ -167,6 +237,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         const uint16_t clamped = clampGatePercent(gatePercent);
         if (gate[step] == clamped) return false;
         gate[step] = clamped;
+        invalidateStepVariationTelemetry(step);
         bumpStepDataRevision();
         return true;
     }
@@ -176,6 +247,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         const int8_t clamped = clampNudge(nudgeValue);
         if (nudge[step] == clamped) return false;
         nudge[step] = clamped;
+        invalidateStepVariationTelemetry(step);
         bumpStepDataRevision();
         return true;
     }
@@ -185,6 +257,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         const uint8_t clamped = clampProbability(probabilityValue);
         if (probability[step] == clamped) return false;
         probability[step] = clamped;
+        invalidateStepVariationTelemetry(step);
         bumpStepDataRevision();
         return true;
     }
@@ -240,6 +313,7 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         gate[step] = clampedGate;
         nudge[step] = clampedNudge;
         probability[step] = clampedProbability;
+        invalidateStepVariationTelemetry(step);
         bumpStepDataRevision();
         return true;
     }
@@ -251,6 +325,10 @@ struct SequencerState : public oc::note::sequencer::StepSequencerState {
         bumpStepDataRevision();
         variationRanges = {};
         bumpPatternVariationRevision();
+        scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
+        scaleOverride = {};
+        pitchEditMode = SequencerPitchEditMode::CHROMATIC;
+        bumpPatternScaleRevision();
         lastResolvedVariation = {};
         cycleVariationTelemetry.reset();
         variationTelemetryRevision.set(0);

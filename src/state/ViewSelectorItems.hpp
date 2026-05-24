@@ -23,6 +23,8 @@ inline constexpr std::array<const char*, VIEW_SELECTOR_ITEM_COUNT> VIEW_SELECTOR
     "Global Settings",
 };
 
+inline constexpr const char* SETTINGS_SECTION_LABEL = "Settings";
+
 inline ViewSelectorItem viewSelectorItemAt(int index) {
     if (index < 0 || index >= VIEW_SELECTOR_ITEM_COUNT) {
         return ViewSelectorItem::MACROS;

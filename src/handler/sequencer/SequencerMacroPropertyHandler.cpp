@@ -25,7 +25,7 @@ inline oc::type::IsActiveFn canEditSequencerProperty(
 
 }  // namespace
 
-SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
+FLASHMEM SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     StateRefs state,
     oc::api::EncoderAPI& encoders,
     oc::type::ScopeID scopeId,
@@ -33,6 +33,7 @@ SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
 )
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
+    , track_bank_(state.trackBank)
     , track_ui_(state.trackNavigation)
     , encoders_(encoders)
     , scope_id_(scopeId)
@@ -48,15 +49,9 @@ FLASHMEM void SequencerMacroPropertyHandler::setupBindings() {
             .when(canEditSequencerProperty(overlays_, sequencer_, track_ui_))
             .then([this, i](float value) { handleTurn(i, value); });
     }
-
-    encoders_.encoder(Config::EncoderID::OPT)
-        .turn()
-        .scope(scope_id_)
-        .when(canEditSequencerProperty(overlays_, sequencer_, track_ui_))
-        .then([this](float value) { handleFocusedTurn(value); });
 }
 
-void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
+FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
     uint8_t abs = 0;
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
     const auto property = sequencer_.activeStepProperty.get();
@@ -65,29 +60,15 @@ void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normal
         sequencer_,
         abs,
         property,
-        normalized
+        normalized,
+        sequencer_.pitchEditMode,
+        core::state::sequencer::resolveEffectiveScaleSettings(
+            track_bank_.projectScaleSettings(),
+            sequencer_.scalePolicy,
+            sequencer_.scaleOverride
+        )
     );
     sequencer_.stepInlineFeedback.show(abs, property, now_provider_ ? now_provider_() : 0);
-}
-
-void SequencerMacroPropertyHandler::handleFocusedTurn(float normalized) {
-    if (overlays_.hasVisible()) return;
-
-    const uint8_t len = sequencer_.length.get();
-    if (len == 0) return;
-
-    const uint8_t focused = sequencer_.focusedStep.get();
-    if (focused >= len) return;
-    if (focused >= core::state::sequencer::SequencerState::MAX_STEPS) return;
-    const auto property = sequencer_.activeStepProperty.get();
-
-    input_utils::applyNormalizedToStep(
-        sequencer_,
-        focused,
-        property,
-        normalized
-    );
-    sequencer_.stepInlineFeedback.show(focused, property, now_provider_ ? now_provider_() : 0);
 }
 
 }  // namespace core::handler

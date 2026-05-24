@@ -32,6 +32,13 @@ FLASHMEM uint8_t sanitizeMidi7(uint8_t value) {
     return (value > 127U) ? 127U : value;
 }
 
+FLASHMEM oc::note::sequencer::StepSequencerScaleSettings sanitizeScaleSettings(
+    oc::note::sequencer::StepSequencerScaleSettings settings
+) {
+    settings.clamp();
+    return settings;
+}
+
 struct StepPayload {
     uint8_t note = SequencerState::DEFAULT_NOTE;
     uint8_t velocity = SequencerState::DEFAULT_VELOCITY;
@@ -141,8 +148,17 @@ FLASHMEM void captureSnapshot(const SequencerState& source, SequencerPatternSnap
     out.enabledMask = source.enabledMask.get();
     out.stepDataRevision = source.stepDataRevision.get();
     out.patternVariationRevision = source.patternVariationRevision.get();
+    out.patternScaleRevision = source.patternScaleRevision.get();
     out.variationRanges = source.variationRanges;
     out.variationRanges.clamp();
+    out.scalePolicy = source.scalePolicy;
+    out.scaleOverride = sanitizeScaleSettings(source.scaleOverride);
+    out.pitchEditMode = source.pitchEditMode;
+    out.effectiveScaleSettings = resolveEffectiveScaleSettings(
+        {},
+        out.scalePolicy,
+        out.scaleOverride
+    );
 
     for (uint8_t i = 0; i < SequencerState::MAX_STEPS; ++i) {
         writeStep(out, i, readSanitizedStep(source, i));
@@ -158,6 +174,9 @@ FLASHMEM void applySnapshot(SequencerState& target, const SequencerPatternSnapsh
     target.midiChannel.set(sanitizeMidiChannel(snapshot.midiChannel));
     target.enabledMask.set(snapshot.enabledMask & lengthMask(length));
     target.setPatternVariationRanges(snapshot.variationRanges);
+    target.setPatternScalePolicy(snapshot.scalePolicy);
+    target.setPatternScaleOverride(snapshot.scaleOverride);
+    target.setPitchEditMode(snapshot.pitchEditMode);
 
     for (uint8_t i = 0; i < SequencerState::MAX_STEPS; ++i) {
         writeStep(target, i, readSanitizedStep(snapshot, i));
@@ -191,6 +210,9 @@ FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPa
 
     target.enabledMask.set(mergedMask);
     target.setPatternVariationRanges(snapshot.variationRanges);
+    target.setPatternScalePolicy(snapshot.scalePolicy);
+    target.setPatternScaleOverride(snapshot.scaleOverride);
+    target.setPitchEditMode(snapshot.pitchEditMode);
 
     const uint8_t focused =
         (focusedBefore >= mergedLength) ? static_cast<uint8_t>(mergedLength - 1U) : focusedBefore;

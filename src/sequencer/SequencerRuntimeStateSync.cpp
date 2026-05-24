@@ -5,7 +5,8 @@
 namespace core::sequencer {
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
-    const core::state::sequencer::SequencerState& source
+    const core::state::sequencer::SequencerState& source,
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
 ) {
     return {
         .length = source.length.get(),
@@ -14,6 +15,12 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .enabledMask = source.enabledMask.get(),
         .stepDataRevision = source.stepDataRevision.get(),
         .patternVariationRevision = source.patternVariationRevision.get(),
+        .patternScaleRevision = source.patternScaleRevision.get(),
+        .effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
+            projectScaleSettings,
+            source.scalePolicy,
+            source.scaleOverride
+        ),
     };
 }
 
@@ -27,23 +34,9 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .enabledMask = source.enabledMask,
         .stepDataRevision = source.stepDataRevision,
         .patternVariationRevision = source.patternVariationRevision,
+        .patternScaleRevision = source.patternScaleRevision,
+        .effectiveScaleSettings = source.effectiveScaleSettings,
     };
-}
-
-void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
-                      const core::state::sequencer::SequencerState& source) {
-    target.length = source.length.get();
-    target.stepsPerBeat = source.stepsPerBeat.get();
-    target.midiChannel = source.midiChannel.get();
-    target.enabledMask = source.enabledMask.get();
-    target.variationRanges = source.variationRanges;
-    target.variationRanges.clamp();
-
-    std::copy(source.note.begin(), source.note.end(), target.note.begin());
-    std::copy(source.velocity.begin(), source.velocity.end(), target.velocity.begin());
-    std::copy(source.gate.begin(), source.gate.end(), target.gate.begin());
-    std::copy(source.nudge.begin(), source.nudge.end(), target.nudge.begin());
-    std::copy(source.probability.begin(), source.probability.end(), target.probability.begin());
 }
 
 void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
@@ -52,6 +45,8 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
     target.stepsPerBeat = source.stepsPerBeat;
     target.midiChannel = source.midiChannel;
     target.enabledMask = source.enabledMask;
+    target.scaleSettings = source.effectiveScaleSettings;
+    target.scaleSettings.clamp();
     target.variationRanges = source.variationRanges;
     target.variationRanges.clamp();
 

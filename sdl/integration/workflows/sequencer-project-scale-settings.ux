@@ -1,0 +1,81 @@
+# UX workflow: configure project scale, then pattern pitch scale from pitch context.
+# Purpose: validates project-level scale access through Sequencer Settings and
+# pattern-level scale access through the pitch-property settings gear.
+
+0 capture screen boot
+
+# Open view selector and enter Sequencer project settings from the Sequencer item.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 capture screen sequencer_item_with_settings
+450 tap BOTTOM_LEFT 60
+620 button LEFT_TOP up
+760 capture screen project_scale_settings_default
+
+# Set project root to D.
+860 tap NAV 60
+960 encoder NAV 1
+1020 encoder NAV 1
+1080 capture screen project_root_d_selector
+1160 tap NAV 60
+1320 capture screen project_root_d_applied
+
+# Set project scale to Natural Minor.
+1420 encoder NAV 1
+1520 tap NAV 60
+1620 encoder NAV 1
+1680 encoder NAV 1
+1740 capture screen project_scale_minor_selector
+1820 tap NAV 60
+1980 capture screen project_scale_minor_applied
+
+# Set project constraint mode to Nearest.
+2080 encoder NAV 1
+2180 tap NAV 60
+2280 encoder NAV 1
+2400 capture screen project_mode_nearest_selector
+2480 tap NAV 60
+2640 capture screen project_mode_nearest_applied
+
+# Return to Sequencer and enable a note.
+2740 tap LEFT_TOP 60
+2920 capture screen back_to_selector
+3020 tap LEFT_TOP 60
+3200 capture screen sequencer_after_project_scale
+3300 tap MACRO_1 60
+3460 capture screen pattern_step_enabled
+
+# Hold LEFT_BOTTOM on pitch property and open pattern pitch settings with gear.
+3560 button LEFT_BOTTOM down
+3700 capture screen pitch_property_selector_open
+3800 tap BOTTOM_LEFT 60
+3920 button LEFT_BOTTOM up
+4080 capture screen pattern_pitch_settings_inherit
+
+# Switch the current pattern from inherit to override and keep the copied
+# project scale as its local starting point.
+4180 tap NAV 60
+4280 encoder NAV 1
+4400 capture screen pattern_pitch_override_selector
+4480 tap NAV 60
+4640 capture screen pattern_pitch_override_applied
+
+# Set pitch editing to scale degrees.
+4740 encoder NAV 1
+4840 encoder NAV 1
+4940 encoder NAV 1
+5040 tap NAV 60
+5140 encoder NAV 1
+5260 capture screen pitch_edit_scale_degrees_selector
+5340 tap NAV 60
+5500 capture screen pitch_edit_scale_degrees_applied
+
+# Return to Sequencer and edit pitch randomization range from the pitch property.
+5600 tap LEFT_TOP 60
+5780 capture screen sequencer_after_pattern_pitch_settings
+5880 button LEFT_BOTTOM down
+6020 encoder OPT 0.40
+6180 capture screen pitch_range_adjusted_under_pattern_scale
+6280 button LEFT_BOTTOM up
+6460 capture screen pitch_range_closed

@@ -114,6 +114,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , midiSync(systemUi_->midiSync)
     , globalSettings(systemUi_->globalSettings)
     , sequencerSettings(systemUi_->sequencerSettings)
+    , patternPitchSettings(systemUi_->patternPitchSettings)
     , dataManager(systemUi_->dataManager)
     , macroEdit(systemUi_->macroEdit)
     , macroUi(systemUi_->macroUi) {

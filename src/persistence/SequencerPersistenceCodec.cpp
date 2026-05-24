@@ -62,6 +62,23 @@ oc::note::sequencer::StepSequencerVariationRanges payloadVariationRanges(
     });
 }
 
+oc::note::sequencer::StepSequencerScaleSettings sanitizeScaleSettings(
+    oc::note::sequencer::StepSequencerScaleSettings settings
+) {
+    settings.clamp();
+    return settings;
+}
+
+oc::note::sequencer::StepSequencerScaleSettings payloadScaleSettings(uint8_t root,
+                                                                     uint8_t type,
+                                                                     uint8_t mode) {
+    return sanitizeScaleSettings({
+        .root = root,
+        .type = static_cast<oc::note::sequencer::StepSequencerScaleType>(type),
+        .mode = static_cast<oc::note::sequencer::StepSequencerScaleConstraintMode>(mode),
+    });
+}
+
 state::sequencer::StepProperty sanitizeStepProperty(uint8_t value) {
     if (value > static_cast<uint8_t>(state::sequencer::StepProperty::PROBABILITY)) {
         return state::sequencer::StepProperty::NOTE;
@@ -81,11 +98,17 @@ FLASHMEM void fillPatternPayload(const state::sequencer::SequencerState& source,
     out.length = length;
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
     out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
+    out.pitchEditMode = static_cast<uint8_t>(source.pitchEditMode);
     const auto variationRanges = sanitizeVariationRanges(source.variationRanges);
     out.variationPitchSemitones = variationRanges.pitchSemitones;
     out.variationVelocity = variationRanges.velocity;
     out.variationGatePercent = variationRanges.gatePercent;
     out.variationNudge = variationRanges.nudge;
+    const auto scaleOverride = sanitizeScaleSettings(source.scaleOverride);
+    out.scalePolicy = static_cast<uint8_t>(source.scalePolicy);
+    out.scaleRoot = scaleOverride.root;
+    out.scaleType = static_cast<uint8_t>(scaleOverride.type);
+    out.scaleConstraintMode = static_cast<uint8_t>(scaleOverride.mode);
     const auto mask = source.enabledMask.get() & lengthMask(length);
     out.enabledMaskLow = mask.low;
     out.enabledMaskHigh = mask.high;
@@ -104,7 +127,14 @@ FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequence
     target.length.set(length);
     target.stepsPerBeat.set(sanitizeStepsPerBeat(payload.stepsPerBeat));
     target.midiChannel.set(sanitizeMidiChannel(payload.midiChannel));
+    target.setPitchEditMode(state::sequencer::sanitizePitchEditMode(payload.pitchEditMode));
     target.setPatternVariationRanges(payloadVariationRanges(payload));
+    target.setPatternScalePolicy(state::sequencer::sanitizePatternScalePolicy(payload.scalePolicy));
+    target.setPatternScaleOverride(payloadScaleSettings(
+        payload.scaleRoot,
+        payload.scaleType,
+        payload.scaleConstraintMode
+    ));
     target.enabledMask.set(
         oc::note::sequencer::StepBitMask128{payload.enabledMaskLow, payload.enabledMaskHigh} &
         lengthMask(length)
@@ -129,6 +159,10 @@ FLASHMEM void fillWorkspacePayload(const state::sequencer::SequencerTrackBankSta
                                    WorkspacePayload& out) {
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
+    const auto projectScale = trackBank.projectScaleSettings();
+    out.projectScaleRoot = projectScale.root;
+    out.projectScaleType = static_cast<uint8_t>(projectScale.type);
+    out.projectScaleConstraintMode = static_cast<uint8_t>(projectScale.mode);
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active : trackBank.track(i);
@@ -148,6 +182,11 @@ FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
     trackBank.captureSharedTrackState(enabledMask, activeTrack);
     trackBank.reset();
     trackBank.syncSharedTrackState(enabledMask, activeTrack);
+    trackBank.setProjectScaleSettings(payloadScaleSettings(
+        payload.projectScaleRoot,
+        payload.projectScaleType,
+        payload.projectScaleConstraintMode
+    ));
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         applyPatternPayload(payload.tracks[i].pattern, trackBank.track(i));
@@ -184,6 +223,10 @@ FLASHMEM void fillSetPayload(const state::sequencer::SequencerTrackBankState& tr
     out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     out.activeTrack = activeTrack;
     out.enabledMask = trackBank.currentEnabledMask();
+    const auto projectScale = trackBank.projectScaleSettings();
+    out.projectScaleRoot = projectScale.root;
+    out.projectScaleType = static_cast<uint8_t>(projectScale.type);
+    out.projectScaleConstraintMode = static_cast<uint8_t>(projectScale.mode);
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active : trackBank.track(i);
@@ -196,6 +239,11 @@ FLASHMEM void applySetPayload(const SetPayload& payload,
                               state::sequencer::SequencerState& active) {
     trackBank.reset();
     trackBank.syncSharedTrackState(payload.enabledMask, 0);
+    trackBank.setProjectScaleSettings(payloadScaleSettings(
+        payload.projectScaleRoot,
+        payload.projectScaleType,
+        payload.projectScaleConstraintMode
+    ));
 
     const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
         payload.trackCount == 0 ? 1 : payload.trackCount,

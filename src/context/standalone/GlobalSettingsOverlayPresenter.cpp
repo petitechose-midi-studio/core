@@ -4,6 +4,8 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
+#include "state/ViewSelectorItems.hpp"
+
 namespace core::context::standalone {
 
 GlobalSettingsOverlayPresenter::GlobalSettingsOverlayPresenter(
@@ -49,8 +51,8 @@ FLASHMEM void GlobalSettingsOverlayPresenter::renderOverlay() {
     const auto data = global_settings_presenter::buildOverlayRenderData(state_refs_);
 
     overlay_.render({
-        .title = "SETTINGS",
-        .meta = data.meta.data(),
+        .title = core::state::viewSelectorItemLabel(core::state::ViewSelectorItem::GLOBAL_SETTINGS),
+        .meta = "",
         .rows = data.rows.data(),
         .rowCount = static_cast<int>(data.rows.size()),
         .selectedIndex = data.selectedIndex,

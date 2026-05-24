@@ -2,7 +2,8 @@
 
 #include <oc/state/SignalWatcher.hpp>
 
-#include "state/SequencerSettingsState.hpp"
+#include "state/PatternPitchSettingsState.hpp"
+#include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace ms::ui {
@@ -12,16 +13,17 @@ class VirtualListSelectorOverlay;
 
 namespace core::context::standalone {
 
-class SequencerSettingsOverlayPresenter {
+class PatternPitchSettingsOverlayPresenter {
 public:
     struct StateRefs {
-        core::state::SequencerSettingsState& sequencerSettings;
+        core::state::PatternPitchSettingsState& settings;
+        core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
     };
 
-    SequencerSettingsOverlayPresenter(StateRefs stateRefs,
-                                      ms::ui::VirtualListKeyValueOverlay& overlay,
-                                      ms::ui::VirtualListSelectorOverlay& selectorOverlay);
+    PatternPitchSettingsOverlayPresenter(StateRefs stateRefs,
+                                         ms::ui::VirtualListKeyValueOverlay& overlay,
+                                         ms::ui::VirtualListSelectorOverlay& selectorOverlay);
 
     void bind();
     void renderOverlay();

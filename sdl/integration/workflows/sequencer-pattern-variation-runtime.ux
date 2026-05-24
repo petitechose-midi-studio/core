@@ -4,14 +4,19 @@
 0 scenario seq-variation-pitch
 80 capture screen pitch_runtime_feedback
 
-200 scenario seq-variation-velocity
-280 capture screen velocity_runtime_feedback
+# Editing pitch while runtime telemetry exists must refresh the visual immediately,
+# without waiting for the next loop to republish resolved values.
+160 encoder MACRO_1 1.00
+240 capture screen pitch_runtime_edit_immediate
 
-400 scenario seq-variation-gate
-480 capture screen gate_runtime_feedback
+360 scenario seq-variation-velocity
+440 capture screen velocity_runtime_feedback
 
-600 scenario seq-variation-nudge
-680 capture screen nudge_runtime_feedback
+560 scenario seq-variation-gate
+640 capture screen gate_runtime_feedback
+
+760 scenario seq-variation-nudge
+840 capture screen nudge_runtime_feedback
 
 # Exercise one real sequencer binding so workflow verification records dispatch.
-760 tap MACRO_8 60
+920 tap MACRO_8 60

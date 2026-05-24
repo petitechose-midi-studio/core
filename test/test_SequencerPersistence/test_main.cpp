@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -12,6 +13,15 @@
 namespace {
 using test_support::MemoryStorage;
 using oc::note::sequencer::StepBitMask128;
+using oc::note::sequencer::StepSequencerScaleConstraintMode;
+using oc::note::sequencer::StepSequencerScaleSettings;
+using oc::note::sequencer::StepSequencerScaleType;
+
+bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSettings& rhs) {
+    return lhs.root == rhs.root &&
+           lhs.type == rhs.type &&
+           lhs.mode == rhs.mode;
+}
 
 #pragma pack(push, 1)
 struct SlotFileHeaderRaw {
@@ -210,7 +220,12 @@ void test_workspace_falls_back_when_latest_slot_is_corrupted() {
     assert(persistence.saveWorkspace(secondTrackBank, second));
 
     // Two-slot workspace journal: second save lands in slot 1.
-    const uint32_t latestPayloadAddress = workspaceSlotPayloadAddress(workspaceStorage, 1);
+    const uint32_t latestPayloadAddress =
+        workspaceSlotPayloadAddress(workspaceStorage, 1) +
+        static_cast<uint32_t>(offsetof(
+            core::persistence::sequencer_codec::WorkspacePayload,
+            tracks
+        ));
     const uint8_t badByte = 0x00;
     const size_t written = workspaceStorage.write(latestPayloadAddress, &badByte, 1);
     assert(written == 1);
@@ -391,6 +406,77 @@ void test_library_bounds() {
     std::cout << "[PASS] test_library_bounds\n";
 }
 
+void test_scale_settings_roundtrip_across_workspace_pattern_and_set() {
+    MemoryStorage workspaceStorage;
+    MemoryStorage patternStorage;
+    MemoryStorage setStorage;
+    workspaceStorage.init();
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    assert(persistence.init());
+
+    const StepSequencerScaleSettings projectScale{
+        .root = 3,
+        .type = StepSequencerScaleType::Major,
+        .mode = StepSequencerScaleConstraintMode::ConstrainNearest,
+    };
+    const StepSequencerScaleSettings overrideScale{
+        .root = 10,
+        .type = StepSequencerScaleType::NaturalMinor,
+        .mode = StepSequencerScaleConstraintMode::ConstrainDown,
+    };
+
+    core::state::sequencer::SequencerState source;
+    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
+    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    assert(source.setPatternScalePolicy(
+        core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE
+    ));
+    assert(source.setPatternScaleOverride(overrideScale));
+    assert(source.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES));
+    prepareTrackBank(sourceTrackBank, source);
+    assert(sourceTrackBank.setProjectScaleSettings(projectScale));
+
+    assert(persistence.saveWorkspace(sourceTrackBank, source));
+    assert(persistence.savePatternSlot(2, source));
+    assert(persistence.saveSetSlot(3, sourceTrackBank, source));
+
+    core::state::sequencer::SequencerState loadedWorkspace;
+    core::state::sequencer::SequencerTrackBankState loadedWorkspaceTrackBank;
+    loadedWorkspace.reset();
+    loadedWorkspaceTrackBank.reset();
+    assert(persistence.loadWorkspace(loadedWorkspaceTrackBank, loadedWorkspace));
+    assert(sameScale(loadedWorkspaceTrackBank.projectScaleSettings(), projectScale));
+    assert(loadedWorkspace.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+    assert(sameScale(loadedWorkspace.scaleOverride, overrideScale));
+    assert(loadedWorkspace.pitchEditMode ==
+           core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+
+    core::state::sequencer::SequencerState loadedPattern;
+    loadedPattern.reset();
+    assert(persistence.loadPatternSlot(2, loadedPattern) == core::persistence::SlotLoadStatus::OK);
+    assert(loadedPattern.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+    assert(sameScale(loadedPattern.scaleOverride, overrideScale));
+    assert(loadedPattern.pitchEditMode ==
+           core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+
+    core::state::sequencer::SequencerState loadedSet;
+    core::state::sequencer::SequencerTrackBankState loadedSetTrackBank;
+    loadedSet.reset();
+    loadedSetTrackBank.reset();
+    assert(persistence.loadSetSlot(3, loadedSetTrackBank, loadedSet) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(sameScale(loadedSetTrackBank.projectScaleSettings(), projectScale));
+    assert(loadedSet.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+    assert(sameScale(loadedSet.scaleOverride, overrideScale));
+    assert(loadedSet.pitchEditMode ==
+           core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+
+    std::cout << "[PASS] test_scale_settings_roundtrip_across_workspace_pattern_and_set\n";
+}
+
 void test_write_status_reports_commit_failure_and_out_of_range() {
     MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
@@ -435,6 +521,7 @@ int main() {
     test_pattern_library_masks_enabled_bits_outside_length();
     test_set_library_save_load_erase();
     test_library_bounds();
+    test_scale_settings_roundtrip_across_workspace_pattern_and_set();
     test_write_status_reports_commit_failure_and_out_of_range();
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

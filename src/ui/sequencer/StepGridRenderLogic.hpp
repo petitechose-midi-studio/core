@@ -33,7 +33,11 @@ inline constexpr uint8_t PROBABILITY_ICON_MIN_BRIGHTNESS = 28;
 lv_color_t noteLabelColor(uint8_t note);
 lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability);
 bool hasRuntimePitchFeedback(const TileRenderState& state);
+bool hasOutOfScaleFeedback(const TileRenderState& state);
+bool hasScaleDegreeFeedback(const TileRenderState& state);
+bool hasConstrainedScaleDegreeFeedback(const TileRenderState& state);
 uint8_t runtimePitchDisplayNote(const TileRenderState& state);
+const char* runtimeScaleDegreeLabel(const TileRenderState& state);
 StepVisualStyle buildStepVisualStyle(uint8_t note,
                                      uint8_t velocity,
                                      uint16_t gate,

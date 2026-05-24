@@ -2,6 +2,8 @@
 
 #include <oc/type/TextFormat.hpp>
 
+#include <config/PlatformCompat.hpp>
+
 #include "config/Timing.hpp"
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -69,22 +71,6 @@ uint16_t activePageMask(uint8_t pageCount) {
     return static_cast<uint16_t>((1U << pageCount) - 1U);
 }
 
-const char* variationStatusPrefix(core::state::sequencer::StepProperty property) {
-    switch (property) {
-        case core::state::sequencer::StepProperty::NOTE:
-            return "PIT";
-        case core::state::sequencer::StepProperty::VELOCITY:
-            return "VEL";
-        case core::state::sequencer::StepProperty::GATE:
-            return "GAT";
-        case core::state::sequencer::StepProperty::NUDGE:
-            return "DLY";
-        case core::state::sequencer::StepProperty::PROBABILITY:
-            return "VAR";
-    }
-    return "VAR";
-}
-
 Tone variationStatusTone(core::state::sequencer::StepProperty property) {
     switch (property) {
         case core::state::sequencer::StepProperty::VELOCITY:
@@ -103,23 +89,25 @@ Tone variationStatusTone(core::state::sequencer::StepProperty property) {
 void formatVariationStatusLabel(std::array<char, 16>& out,
                                 core::state::sequencer::StepProperty property,
                                 uint8_t range) {
+    constexpr const char* plusMinus = "\xC2\xB1";
+
     if (property == core::state::sequencer::StepProperty::PROBABILITY) {
-        std::snprintf(out.data(), out.size(), "VAR--");
+        std::snprintf(out.data(), out.size(), "--");
         return;
     }
 
     std::snprintf(
         out.data(),
         out.size(),
-        "%s+%u",
-        variationStatusPrefix(property),
+        "%s%u",
+        plusMinus,
         static_cast<unsigned>(range)
     );
 }
 
 }  // namespace
 
-SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source) {
+FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source) {
     const auto& sequencer = source.sequencer;
     const uint8_t activeTrack = source.sharedTrackActive.get();
     const bool focusingTrack =
@@ -240,7 +228,7 @@ SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& sour
     };
 }
 
-SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSource& source) {
+FLASHMEM SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSource& source) {
     const auto& sequencer = source.sequencer;
 
     return {
@@ -252,7 +240,7 @@ SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSo
     };
 }
 
-StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSource& source) {
+FLASHMEM StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSource& source) {
     const auto& sequencer = source.sequencer;
 
     return {
@@ -262,7 +250,7 @@ StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSourc
     };
 }
 
-ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource& source) {
+FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource& source) {
     const bool selectingTrack =
         source.trackNavigation.selection.active.get() &&
         source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
@@ -336,7 +324,7 @@ ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource
     return props;
 }
 
-ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSource& source) {
+FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSource& source) {
     StripProps props;
     props.visible = true;
     const bool trackFocus =
@@ -351,15 +339,23 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
     if (selectingPatternVariation) {
         const auto property = source.sequencer.activeStepProperty.get();
         const uint8_t range = source.sequencer.variationRangeForProperty(property);
+        const char* propertyIcon = visual::propertyIconGlyph(property);
+        const bool canOpenPitchSettings =
+            property == core::state::sequencer::StepProperty::NOTE;
 
-        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[0] = makeIconSlot(
+            standalone::icons::SETTINGS_GEAR,
+            canOpenPitchSettings ? Visual::ACTIVE : Visual::HIDDEN
+        );
         props.slots[1] = SlotProps{
             .visualState = property == core::state::sequencer::StepProperty::PROBABILITY
                 ? Visual::DISABLED
                 : Visual::ACTIVE,
             .tone = variationStatusTone(property),
-            .showIcon = false,
-            .icon = nullptr,
+            .showIcon = true,
+            .icon = propertyIcon,
+            .iconUsesStandaloneFont = true,
+            .iconSize = standalone::icons::Size::L,
             .showLabel = true,
             .label = nullptr,
         };
@@ -400,8 +396,6 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
             canDeleteSelection ? Visual::ACTIVE : Visual::DISABLED,
             Tone::DESTRUCTIVE
         );
-        props.slots[0].showLabel = true;
-        props.slots[0].label = "DEL";
         props.slots[1] = SlotProps{
             .visualState = Visual::ACTIVE,
             .tone = Tone::NEUTRAL,
@@ -415,8 +409,6 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
             canDuplicateSelection ? Visual::ACTIVE : Visual::DISABLED,
             Tone::POSITIVE
         );
-        props.slots[2].showLabel = true;
-        props.slots[2].label = "DUP";
         return props;
     }
 
@@ -439,14 +431,12 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
         removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
-    props.slots[0].showLabel = canClear;
-    props.slots[0].label = removeHoldActive ? "DEL" : (canClear ? "CLR" : nullptr);
     props.slots[0].holdActive = removeHoldActive;
     props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = makeIconSlot(
-        standalone::icons::ACTION_COPY,
+        canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY,
         pasteHoldActive && canPaste
             ? Visual::ARMED
             : (copyOrPasteAvailable ? Visual::ACTIVE : Visual::DISABLED),
@@ -454,16 +444,14 @@ ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSour
             ? (pasteOverwritesDestination ? Tone::WARNING : Tone::POSITIVE)
             : Tone::NEUTRAL
     );
-    props.slots[2].showLabel = pasteHoldActive && canPaste;
-    props.slots[2].label = pasteHoldActive && canPaste ? "PST" : nullptr;
     props.slots[2].holdActive = pasteHoldActive;
     props.slots[2].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     return props;
 }
 
-grid::StepGridFrameState buildStepGridProps(const SequencerViewModelSource& source) {
-    return grid::buildStepGridFrameState(source.sequencer);
+FLASHMEM grid::StepGridFrameState buildStepGridProps(const SequencerViewModelSource& source) {
+    return grid::buildStepGridFrameState(source.sequencer, source.tracks.projectScaleSettings());
 }
 
 }  // namespace core::ui::sequencer

@@ -27,6 +27,7 @@
 #include "CoreSettings.hpp"
 #include "DataManagerState.hpp"
 #include "GlobalSettingsState.hpp"
+#include "PatternPitchSettingsState.hpp"
 #include "SequencerSettingsState.hpp"
 #include "MidiSyncState.hpp"
 #include "MacroEditState.hpp"
@@ -104,7 +105,7 @@ struct SequencerDomainState {
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
-    std::unique_ptr<oc::state::AutoPersistIncremental<11>> autoPersist;
+    std::unique_ptr<oc::state::AutoPersistIncremental<13>> autoPersist;
 
     SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                          oc::interface::IStorage& patternLibraryStorage,
@@ -140,6 +141,7 @@ struct UiSystemState {
     MidiSyncState midiSync;
     GlobalSettingsState globalSettings;
     SequencerSettingsState sequencerSettings;
+    PatternPitchSettingsState patternPitchSettings;
     DataManagerState dataManager;
     MacroEditState macroEdit;
     macro::MacroUiState macroUi;
@@ -194,6 +196,7 @@ public:
     MidiSyncState& midiSync;
     GlobalSettingsState& globalSettings;
     SequencerSettingsState& sequencerSettings;
+    PatternPitchSettingsState& patternPitchSettings;
     DataManagerState& dataManager;
     MacroEditState& macroEdit;
     macro::MacroUiState& macroUi;

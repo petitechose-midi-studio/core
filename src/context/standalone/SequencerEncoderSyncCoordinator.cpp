@@ -32,13 +32,14 @@ inline void applySequencerEncoderConfig(
 
 }  // namespace
 
-SequencerEncoderSyncCoordinator::SequencerEncoderSyncCoordinator(
+FLASHMEM SequencerEncoderSyncCoordinator::SequencerEncoderSyncCoordinator(
     StateRefs state,
     oc::api::EncoderAPI& encoders
 )
     : overlays_(state.overlays)
     , active_view_(state.activeView)
     , sequencer_(state.sequencer)
+    , track_bank_(state.trackBank)
     , encoders_(encoders) {}
 
 FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
@@ -49,35 +50,26 @@ FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
         sequencer_.length,
         sequencer_.focusedStep,
         sequencer_.activeStepProperty,
+        sequencer_.patternScaleRevision,
+        track_bank_.projectScaleRevisionSignal(),
         sequencer_.stepEdit.visible,
         sequencer_.stepPropertyInlineSelector.selecting,
         sequencer_.patternQuickControls.selecting
     );
 }
 
-void SequencerEncoderSyncCoordinator::reset() {
+FLASHMEM void SequencerEncoderSyncCoordinator::reset() {
     macro_steps_configured_ = 0;
-    opt_steps_configured_ = 0;
     macro_ticks_per_step_configured_ = 0;
-    opt_ticks_per_step_configured_ = 0;
     macro_turns_configured_ = 0.0f;
-    opt_turns_configured_ = 0.0f;
     macro_position_valid_.fill(false);
-    opt_position_valid_ = false;
 }
 
-void SequencerEncoderSyncCoordinator::syncNow() {
+FLASHMEM void SequencerEncoderSyncCoordinator::syncNow() {
     syncPositions();
 }
 
-void SequencerEncoderSyncCoordinator::resetOptCache() {
-    opt_steps_configured_ = 0;
-    opt_ticks_per_step_configured_ = 0;
-    opt_turns_configured_ = 0.0f;
-    opt_position_valid_ = false;
-}
-
-void SequencerEncoderSyncCoordinator::ensureMacroEncoderConfig(
+FLASHMEM void SequencerEncoderSyncCoordinator::ensureMacroEncoderConfig(
     const input_utils::StepPropertyEncoderConfig& config
 ) {
     if (macro_steps_configured_ == config.discreteSteps &&
@@ -95,7 +87,7 @@ void SequencerEncoderSyncCoordinator::ensureMacroEncoderConfig(
     macro_turns_configured_ = config.normalizedTurns;
 }
 
-void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
+FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
     uint8_t page,
     core::state::sequencer::StepProperty property
 ) {
@@ -104,7 +96,17 @@ void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
         uint8_t abs = 0;
 
         if (sequencer_.resolveStepInPage(page, i, abs)) {
-            normalized = input_utils::stepPropertyToNormalized(sequencer_, abs, property);
+            normalized = input_utils::stepPropertyToNormalized(
+                sequencer_,
+                abs,
+                property,
+                sequencer_.pitchEditMode,
+                core::state::sequencer::resolveEffectiveScaleSettings(
+                    track_bank_.projectScaleSettings(),
+                    sequencer_.scalePolicy,
+                    sequencer_.scaleOverride
+                )
+            );
         }
 
         normalized = input_utils::clampNormalized(normalized);
@@ -118,65 +120,33 @@ void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
     }
 }
 
-void SequencerEncoderSyncCoordinator::ensureOptEncoderConfig(
-    const input_utils::StepPropertyEncoderConfig& config
-) {
-    if (opt_steps_configured_ == config.discreteSteps &&
-        opt_ticks_per_step_configured_ == config.discreteTicksPerStep &&
-        !hasMeaningfulEncoderDelta(opt_turns_configured_, config.normalizedTurns)) {
-        return;
-    }
-
-    applySequencerEncoderConfig(encoders_, Config::EncoderID::OPT, config);
-    opt_steps_configured_ = config.discreteSteps;
-    opt_ticks_per_step_configured_ = config.discreteTicksPerStep;
-    opt_turns_configured_ = config.normalizedTurns;
-}
-
-void SequencerEncoderSyncCoordinator::syncOptEncoderValue(
-    uint8_t length,
-    uint8_t focusedStep,
-    core::state::sequencer::StepProperty property
-) {
-    if (length == 0 ||
-        focusedStep >= length ||
-        focusedStep >= core::state::sequencer::SequencerState::MAX_STEPS) {
-        return;
-    }
-
-    const float optPosition =
-        input_utils::stepPropertyToNormalized(sequencer_, focusedStep, property);
-
-    if (!opt_position_valid_ || hasMeaningfulEncoderDelta(opt_position_cache_, optPosition)) {
-        encoders_.setPosition(Config::EncoderID::OPT, optPosition);
-        opt_position_cache_ = optPosition;
-        opt_position_valid_ = true;
-    }
-}
-
-void SequencerEncoderSyncCoordinator::syncPositions() {
+FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) return;
 
     if (overlays_.hasVisible()) {
-        resetOptCache();
         return;
     }
 
-    if (sequencer_.patternQuickControls.selecting.get()) {
-        resetOptCache();
+    if (sequencer_.stepPropertyInlineSelector.selecting.get() ||
+        sequencer_.patternQuickControls.selecting.get()) {
         return;
     }
 
-    const uint8_t len = sequencer_.length.get();
     const uint8_t page = sequencer_.normalizePage(sequencer_.page.get());
     const auto property = sequencer_.activeStepProperty.get();
-    const auto config = input_utils::encoderConfigForProperty(property);
+    const auto effectiveScale = core::state::sequencer::resolveEffectiveScaleSettings(
+        track_bank_.projectScaleSettings(),
+        sequencer_.scalePolicy,
+        sequencer_.scaleOverride
+    );
+    const auto config = input_utils::encoderConfigForProperty(
+        property,
+        sequencer_.pitchEditMode,
+        effectiveScale
+    );
 
     ensureMacroEncoderConfig(config);
     syncMacroEncoderValues(page, property);
-
-    ensureOptEncoderConfig(config);
-    syncOptEncoderValue(len, sequencer_.focusedStep.get(), property);
 }
 
 }  // namespace core::context::standalone

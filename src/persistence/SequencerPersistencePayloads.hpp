@@ -27,11 +27,23 @@ struct PatternPayload {
     uint8_t length = oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
     uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
     uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
-    uint8_t reserved0 = 0;
+    uint8_t pitchEditMode = static_cast<uint8_t>(
+        state::sequencer::SequencerPitchEditMode::CHROMATIC
+    );
     uint8_t variationPitchSemitones = 0;
     uint8_t variationVelocity = 0;
     uint8_t variationGatePercent = 0;
     uint8_t variationNudge = 0;
+    uint8_t scalePolicy = static_cast<uint8_t>(
+        state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT
+    );
+    uint8_t scaleRoot = 0;
+    uint8_t scaleType = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleType::Chromatic
+    );
+    uint8_t scaleConstraintMode = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleConstraintMode::Free
+    );
     uint64_t enabledMaskLow = 0;
     uint64_t enabledMaskHigh = 0;
     std::array<uint8_t, PERSISTED_PATTERN_STEPS> note{};
@@ -50,6 +62,14 @@ struct WorkspaceTrackPayload {
 };
 
 struct WorkspacePayload {
+    uint8_t projectScaleRoot = 0;
+    uint8_t projectScaleType = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleType::Chromatic
+    );
+    uint8_t projectScaleConstraintMode = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleConstraintMode::Free
+    );
+    uint8_t reserved0 = 0;
     std::array<WorkspaceTrackPayload, PERSISTED_TRACK_COUNT> tracks{};
 };
 
@@ -57,6 +77,14 @@ struct SetPayload {
     uint8_t trackCount = PERSISTED_TRACK_COUNT;
     uint8_t activeTrack = 0;
     uint16_t enabledMask = 0x0001;
+    uint8_t projectScaleRoot = 0;
+    uint8_t projectScaleType = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleType::Chromatic
+    );
+    uint8_t projectScaleConstraintMode = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleConstraintMode::Free
+    );
+    uint8_t reserved0 = 0;
     std::array<PatternPayload, PERSISTED_TRACK_COUNT> tracks{};
 };
 #pragma pack(pop)

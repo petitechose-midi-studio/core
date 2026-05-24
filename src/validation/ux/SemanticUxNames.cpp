@@ -129,6 +129,12 @@ const char* overlayName(core::ui::OverlayType overlay) {
             return "global_settings_selector";
         case core::ui::OverlayType::SEQUENCER_SETTINGS:
             return "sequencer_settings";
+        case core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR:
+            return "sequencer_settings_selector";
+        case core::ui::OverlayType::PATTERN_PITCH_SETTINGS:
+            return "pattern_pitch_settings";
+        case core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR:
+            return "pattern_pitch_settings_selector";
         case core::ui::OverlayType::DATA_MANAGER:
             return "data_manager";
         case core::ui::OverlayType::DATA_MANAGER_DIALOG:

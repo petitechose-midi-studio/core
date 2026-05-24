@@ -46,6 +46,34 @@ struct SequencerTrackBankState {
     const Signal<uint8_t, 8>& activeTrackSignal() const { return active_track_; }
     Signal<uint16_t, 16>& enabledMaskSignal() { return enabled_mask_; }
     const Signal<uint16_t, 16>& enabledMaskSignal() const { return enabled_mask_; }
+    Signal<uint32_t, 8>& projectScaleRevisionSignal() { return project_scale_revision_; }
+    const Signal<uint32_t, 8>& projectScaleRevisionSignal() const { return project_scale_revision_; }
+
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings() const {
+        auto settings = project_scale_settings_;
+        settings.clamp();
+        return settings;
+    }
+
+    bool setProjectScaleSettings(oc::note::sequencer::StepSequencerScaleSettings settings) {
+        settings.clamp();
+        auto current = project_scale_settings_;
+        current.clamp();
+        if (current.root == settings.root &&
+            current.type == settings.type &&
+            current.mode == settings.mode) {
+            return false;
+        }
+
+        project_scale_settings_ = settings;
+        project_scale_revision_.set(project_scale_revision_.get() + 1U);
+        for (auto& track : tracks_) {
+            if (!isPatternScaleOverride(track.scalePolicy)) {
+                track.invalidateVariationTelemetry();
+            }
+        }
+        return true;
+    }
 
     bool isTrackEnabled(uint8_t index) const {
         const uint8_t clamped = clampTrackIndex(index);
@@ -57,6 +85,8 @@ struct SequencerTrackBankState {
 private:
     Signal<uint8_t, 8> active_track_{0};
     Signal<uint16_t, 16> enabled_mask_{0x0001};
+    Signal<uint32_t, 8> project_scale_revision_{0};
+    oc::note::sequencer::StepSequencerScaleSettings project_scale_settings_{};
     std::array<SequencerState, TRACK_COUNT> tracks_{};
 };
 

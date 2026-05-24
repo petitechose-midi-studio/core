@@ -15,6 +15,7 @@
 #include "state/StatusBarState.hpp"
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
+#include "state/SequencerSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/ViewSelectorState.hpp"
@@ -46,6 +47,7 @@ public:
         core::state::StatusBarState& statusBar;
         core::state::ViewSelectorState& viewSelector;
         core::state::GlobalSettingsState& globalSettings;
+        core::state::SequencerSettingsState& sequencerSettings;
         core::state::DataManagerState& dataManager;
     };
 
