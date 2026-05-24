@@ -16,6 +16,7 @@
 #include "../../src/state/CoreSettings.hpp"
 #include "../../src/state/GlobalSettingsState.hpp"
 #include "../../src/state/MidiSyncState.hpp"
+#include "../../src/state/ViewSelectorState.hpp"
 #include "../../src/ui/OverlayTypes.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/MemoryStorage.hpp"
@@ -40,6 +41,7 @@ struct GlobalSettingsHarness {
     core::state::MidiSyncState midiSync;
     core::state::CoreSettings settings;
     core::state::GlobalSettingsState globalSettings;
+    core::state::ViewSelectorState viewSelector;
     core::handler::GlobalSettingsDomainServices services;
 
     oc::core::event::EventBus eventBus;
@@ -59,7 +61,10 @@ struct GlobalSettingsHarness {
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(overlayState, buttons)
-        , handler(core::handler::GlobalSettingsHandler::StateRefs{globalSettings},
+        , handler(core::handler::GlobalSettingsHandler::StateRefs{
+                      globalSettings,
+                      viewSelector,
+                  },
                   services,
                   overlays,
                   encoders,
@@ -67,6 +72,10 @@ struct GlobalSettingsHarness {
                   SETTINGS_SCOPE,
                   SELECTOR_SCOPE) {
         storage.init();
+        overlayState.registerItem(core::ui::OverlayType::VIEW_SELECTOR, viewSelector.visible);
+        overlayState.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, globalSettings.visible);
+        overlayState.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, globalSettings.selector.visible);
+        overlays.registerCleanup(core::ui::OverlayType::VIEW_SELECTOR, SELECTOR_SCOPE);
         overlays.registerCleanup(core::ui::OverlayType::GLOBAL_SETTINGS, SETTINGS_SCOPE);
         overlays.registerCleanup(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, SELECTOR_SCOPE);
     }
@@ -100,37 +109,34 @@ struct GlobalSettingsHarness {
     }
 };
 
-void openSettingsWithLongPress(GlobalSettingsHarness& h) {
-    h.tick(0);
-    h.press(Config::ButtonID::LEFT_TOP);
-    h.tick(1999);
-    assert(!h.globalSettings.visible.get());
-    h.tick(2000);
+void openSettings(GlobalSettingsHarness& h) {
+    h.globalSettings.openOverlay();
+    h.overlays.show(core::ui::OverlayType::GLOBAL_SETTINGS, false);
     assert(h.globalSettings.visible.get());
     assert(h.globalSettings.flowPhase.get() == core::state::GlobalSettingsFlowPhase::OVERLAY);
     assert(h.overlays.current() == core::ui::OverlayType::GLOBAL_SETTINGS);
 }
 
-void test_long_press_opens_settings_and_ignores_open_release() {
+void test_settings_back_returns_to_view_selector_on_single_press() {
     GlobalSettingsHarness h;
 
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
     assert(!h.globalSettings.visible.get());
 
-    openSettingsWithLongPress(h);
+    openSettings(h);
 
-    h.release(Config::ButtonID::LEFT_TOP);
-    assert(h.globalSettings.visible.get());
-    assert(h.globalSettings.flowPhase.get() == core::state::GlobalSettingsFlowPhase::OVERLAY);
-    assert(h.overlays.current() == core::ui::OverlayType::GLOBAL_SETTINGS);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.globalSettings.visible.get());
+    assert(h.viewSelector.visible.get());
+    assert(h.viewSelector.selectedIndex.get() == 2);
+    assert(h.overlays.current() == core::ui::OverlayType::VIEW_SELECTOR);
 
-    std::cout << "[PASS] test_long_press_opens_settings_and_ignores_open_release\n";
+    std::cout << "[PASS] test_settings_back_returns_to_view_selector_on_single_press\n";
 }
 
 void test_selector_navigation_and_apply_follow_real_bindings() {
     GlobalSettingsHarness h;
-    openSettingsWithLongPress(h);
-    h.release(Config::ButtonID::LEFT_TOP);
+    openSettings(h);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.globalSettings.focusedRow.get() == 1);
@@ -156,8 +162,7 @@ void test_selector_navigation_and_apply_follow_real_bindings() {
 
 void test_selector_cancel_restores_parent_overlay_without_applying() {
     GlobalSettingsHarness h;
-    openSettingsWithLongPress(h);
-    h.release(Config::ButtonID::LEFT_TOP);
+    openSettings(h);
 
     const auto beforeMode = h.midiSync.mode.get();
 
@@ -181,7 +186,7 @@ void test_selector_cancel_restores_parent_overlay_without_applying() {
 }  // namespace
 
 int main() {
-    test_long_press_opens_settings_and_ignores_open_release();
+    test_settings_back_returns_to_view_selector_on_single_press();
     test_selector_navigation_and_apply_follow_real_bindings();
     test_selector_cancel_restores_parent_overlay_without_applying();
     std::cout << "\nAll GlobalSettingsHandler tests passed.\n";

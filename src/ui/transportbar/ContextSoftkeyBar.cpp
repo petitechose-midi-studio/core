@@ -1,7 +1,9 @@
 #include "ContextSoftkeyBar.hpp"
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
+#include <ms/ui/font/CoreFonts.hpp>
 
+#include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
@@ -48,9 +50,20 @@ ContextSoftkeyBar::~ContextSoftkeyBar() {
 }
 
 void ContextSoftkeyBar::setLabels(const char* left, const char* center, const char* right) {
+    lv_obj_set_style_text_font(left_label_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_font(center_label_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_font(right_label_, fonts.inter_13_medium, 0);
     lv_label_set_text(left_label_, left ? left : "");
     lv_label_set_text(center_label_, center ? center : "");
     lv_label_set_text(right_label_, right ? right : "");
+}
+
+void ContextSoftkeyBar::setLeftIcon(const char* icon) {
+    standalone::icons::set(left_label_, icon ? icon : "", standalone::icons::Size::M);
+    lv_obj_set_style_text_font(center_label_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_font(right_label_, fonts.inter_13_medium, 0);
+    lv_label_set_text(center_label_, "");
+    lv_label_set_text(right_label_, "");
 }
 
 void ContextSoftkeyBar::show() {

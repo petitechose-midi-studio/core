@@ -91,6 +91,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     settings_feature_ = core::app::makeExtmemUnique<core::context::standalone::SettingsFeatureModule>(
         core::context::standalone::SettingsFeatureModule::StateRefs{
             state.globalSettings,
+            state.sequencerSettings,
+            state.viewSelector,
             state.midiSync,
             state.settings,
             state.dataManager,

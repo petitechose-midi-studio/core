@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
+#include "state/ViewSelectorItems.hpp"
 
 namespace core::handler {
 
@@ -18,6 +19,8 @@ ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     : overlays_state_(state.overlays)
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
+    , global_settings_(state.globalSettings)
+    , sequencer_settings_(state.sequencerSettings)
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
     , track_structure_selection_(state.trackStructureSelection)
@@ -64,6 +67,16 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
         .release()
         .scope(view_selector_scope_)
         .then([this]() { confirmSelection(); });
+
+    buttons_.button(ButtonID::BOTTOM_LEFT)
+        .release()
+        .scope(view_selector_scope_)
+        .when([this]() {
+            return core::state::viewSelectorItemHasSettingsAction(
+                core::state::viewSelectorItemAt(view_selector_.selectedIndex.get())
+            );
+        })
+        .then([this]() { openSelectedItemSettings(); });
 }
 
 bool ViewSwitcherHandler::canOpenSelector() const {
@@ -89,7 +102,9 @@ bool ViewSwitcherHandler::canOpenSelector() const {
 }
 
 void ViewSwitcherHandler::openSelector() {
-    view_selector_.selectedIndex.set(static_cast<int>(active_view_.get()));
+    view_selector_.selectedIndex.set(
+        static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()))
+    );
 
     if (!view_selector_.visible.get()) {
         overlays_.show(core::ui::OverlayType::VIEW_SELECTOR, false);
@@ -102,15 +117,25 @@ void ViewSwitcherHandler::navigate(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     int current = view_selector_.selectedIndex.get();
-    int next = nav::nextWrappedIndex(delta, current, VIEW_COUNT);
+    int next = nav::nextWrappedIndex(delta, current, core::state::VIEW_SELECTOR_ITEM_COUNT);
     view_selector_.selectedIndex.set(next);
 }
 
 void ViewSwitcherHandler::confirmSelection() {
     int index = view_selector_.selectedIndex.get();
-    if (index < 0 || index >= VIEW_COUNT) return;
+    if (index < 0 || index >= core::state::VIEW_SELECTOR_ITEM_COUNT) return;
 
-    auto type = static_cast<core::ui::ViewType>(index);
+    const auto item = core::state::viewSelectorItemAt(index);
+    if (item == core::state::ViewSelectorItem::GLOBAL_SETTINGS) {
+        view_selector_.visible.set(false);
+        global_settings_.openOverlay();
+        overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS, false);
+        return;
+    }
+
+    if (!core::state::viewSelectorItemHasView(item)) return;
+
+    auto type = core::state::viewForSelectorItem(item);
     if (active_view_.get() == type) return;
     active_view_.set(type);
 }
@@ -118,6 +143,17 @@ void ViewSwitcherHandler::confirmSelection() {
 void ViewSwitcherHandler::closeSelector() {
     overlays_.hide();
     confirmSelection();
+}
+
+void ViewSwitcherHandler::openSelectedItemSettings() {
+    const auto item = core::state::viewSelectorItemAt(view_selector_.selectedIndex.get());
+    if (item != core::state::ViewSelectorItem::SEQUENCER) return;
+
+    overlays_.hide();
+    view_selector_.visible.set(false);
+    active_view_.set(core::ui::ViewType::SEQUENCER);
+    sequencer_settings_.openOverlay();
+    overlays_.show(core::ui::OverlayType::SEQUENCER_SETTINGS, false);
 }
 
 }  // namespace core::handler

@@ -67,6 +67,8 @@ public:
                 state.overlays,
                 state.activeView,
                 state.viewSelector,
+                state.globalSettings,
+                state.sequencerSettings,
                 state.sequencer.patternQuickControls,
                 state.sequencer.stepPropertyInlineSelector,
                 state.trackNavigation.selection,

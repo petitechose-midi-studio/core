@@ -120,6 +120,7 @@ void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
 void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.viewSelector.reset();
     state.globalSettings.reset();
+    state.sequencerSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
     state.dataManager.feedback.set("");
     state.macroUi.reset();
@@ -164,6 +165,7 @@ void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
     state.globalSettings.reset();
+    state.sequencerSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
 }
 

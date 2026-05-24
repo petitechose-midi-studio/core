@@ -127,6 +127,8 @@ const char* overlayName(core::ui::OverlayType overlay) {
             return "global_settings";
         case core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR:
             return "global_settings_selector";
+        case core::ui::OverlayType::SEQUENCER_SETTINGS:
+            return "sequencer_settings";
         case core::ui::OverlayType::DATA_MANAGER:
             return "data_manager";
         case core::ui::OverlayType::DATA_MANAGER_DIALOG:
