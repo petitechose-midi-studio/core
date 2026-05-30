@@ -215,7 +215,7 @@ void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
 
     sequencer_.focusedStep.set(abs);
-    sequencer_.toggle(abs);
+    sequencer_.pattern.toggle(abs);
 }
 
 }  // namespace core::handler

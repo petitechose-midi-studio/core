@@ -123,11 +123,11 @@ void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
     o.reset();
     o.stepIndex.set(abs);
 
-    o.snapshotNote = sequencer_.note[abs];
-    o.snapshotVelocity = sequencer_.velocity[abs];
-    o.snapshotGate = sequencer_.gate[abs];
-    o.snapshotNudge = sequencer_.nudge[abs];
-    o.snapshotProbability = sequencer_.probability[abs];
+    o.snapshotNote = sequencer_.pattern.note[abs];
+    o.snapshotVelocity = sequencer_.pattern.velocity[abs];
+    o.snapshotGate = sequencer_.pattern.gate[abs];
+    o.snapshotNudge = sequencer_.pattern.nudge[abs];
+    o.snapshotProbability = sequencer_.pattern.probability[abs];
     o.snapshotValid = true;
 
     // longPress() fires while button is still pressed; don't immediately close on release.
@@ -176,7 +176,7 @@ void SequencerStepEditHandler::moveFocus(float delta) {
 }
 
 void SequencerStepEditHandler::setFocusedValue(float normalized) {
-    const uint8_t len = sequencer_.length.get();
+    const uint8_t len = sequencer_.pattern.length.get();
     if (len == 0) return;
 
     const uint8_t abs = sequencer_.stepEdit.stepIndex.get();
@@ -192,7 +192,7 @@ void SequencerStepEditHandler::setFocusedValue(float normalized) {
 }
 
 void SequencerStepEditHandler::configureOptForFocusedRow() {
-    const uint8_t len = sequencer_.length.get();
+    const uint8_t len = sequencer_.pattern.length.get();
     if (len == 0) return;
 
     const uint8_t abs = sequencer_.stepEdit.stepIndex.get();

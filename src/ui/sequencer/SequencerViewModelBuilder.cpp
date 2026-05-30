@@ -201,7 +201,7 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
     }
 
     return {
-        .length = sequencer.length.get(),
+        .length = sequencer.pattern.length.get(),
         .activePage = sequencer.pageForStep(sequencer.focusedStep.get()),
         .viewedPage = viewedPage,
         .previewTrack = previewTrack,
@@ -235,8 +235,8 @@ FLASHMEM SequencerBottomControlsProps buildBottomControlsProps(const SequencerVi
         .selectingQuickControls = sequencer.patternQuickControls.selecting.get(),
         .focusedQuickControl = sequencer.patternQuickControls.focusedItem.get(),
         .offsetSteps = sequencer.patternQuickControls.offsetSteps.get(),
-        .stepsPerBeat = sequencer.stepsPerBeat.get(),
-        .length = sequencer.length.get(),
+        .stepsPerBeat = sequencer.pattern.stepsPerBeat.get(),
+        .length = sequencer.pattern.length.get(),
     };
 }
 

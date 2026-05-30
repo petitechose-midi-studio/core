@@ -47,10 +47,10 @@ FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
         [this]() { syncPositions(); },
         active_view_,
         sequencer_.page,
-        sequencer_.length,
+        sequencer_.pattern.length,
         sequencer_.focusedStep,
         sequencer_.activeStepProperty,
-        sequencer_.patternScaleRevision,
+        sequencer_.pattern.patternScaleRevision,
         track_bank_.projectScaleRevisionSignal(),
         sequencer_.stepEdit.visible,
         sequencer_.stepPropertyInlineSelector.selecting,
@@ -100,11 +100,11 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
                 sequencer_,
                 abs,
                 property,
-                sequencer_.pitchEditMode,
+                sequencer_.pattern.pitchEditMode,
                 core::state::sequencer::resolveEffectiveScaleSettings(
                     track_bank_.projectScaleSettings(),
-                    sequencer_.scalePolicy,
-                    sequencer_.scaleOverride
+                    sequencer_.pattern.scalePolicy,
+                    sequencer_.pattern.scaleOverride
                 )
             );
         }
@@ -136,12 +136,12 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     const auto property = sequencer_.activeStepProperty.get();
     const auto effectiveScale = core::state::sequencer::resolveEffectiveScaleSettings(
         track_bank_.projectScaleSettings(),
-        sequencer_.scalePolicy,
-        sequencer_.scaleOverride
+        sequencer_.pattern.scalePolicy,
+        sequencer_.pattern.scaleOverride
     );
     const auto config = input_utils::encoderConfigForProperty(
         property,
-        sequencer_.pitchEditMode,
+        sequencer_.pattern.pitchEditMode,
         effectiveScale
     );
 

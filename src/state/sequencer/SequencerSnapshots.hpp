@@ -7,15 +7,15 @@
 #include <oc/note/sequencer/StepSequencerScale.hpp>
 
 #include "state/sequencer/SequencerScaleState.hpp"
-#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::state::sequencer {
 
 struct SequencerPatternSnapshot {
-    uint8_t length = oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
-    uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
-    uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
+    uint8_t length = SequencerPatternState::DEFAULT_LENGTH;
+    uint8_t stepsPerBeat = SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
+    uint8_t midiChannel = SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED;
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
@@ -25,11 +25,11 @@ struct SequencerPatternSnapshot {
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
     SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::CHROMATIC;
     oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
-    std::array<uint8_t, SequencerState::MAX_STEPS> note{};
-    std::array<uint8_t, SequencerState::MAX_STEPS> velocity{};
-    std::array<uint16_t, SequencerState::MAX_STEPS> gate{};
-    std::array<int8_t, SequencerState::MAX_STEPS> nudge{};
-    std::array<uint8_t, SequencerState::MAX_STEPS> probability{};
+    std::array<uint8_t, SequencerPatternState::MAX_STEPS> note{};
+    std::array<uint8_t, SequencerPatternState::MAX_STEPS> velocity{};
+    std::array<uint16_t, SequencerPatternState::MAX_STEPS> gate{};
+    std::array<int8_t, SequencerPatternState::MAX_STEPS> nudge{};
+    std::array<uint8_t, SequencerPatternState::MAX_STEPS> probability{};
 };
 
 struct SequencerTrackBankSnapshot {

@@ -71,8 +71,8 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.patternQuickControls.selecting.setDebugLabel("core.sequencer.patternQuickControls.selecting");
     state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
     state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
-    state.sequencer.patternVariationRevision.setDebugLabel("core.sequencer.patternVariationRevision");
-    state.sequencer.patternScaleRevision.setDebugLabel("core.sequencer.patternScaleRevision");
+    state.sequencer.pattern.patternVariationRevision.setDebugLabel("core.sequencer.pattern.patternVariationRevision");
+    state.sequencer.pattern.patternScaleRevision.setDebugLabel("core.sequencer.pattern.patternScaleRevision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
 }
 }  // namespace
@@ -129,18 +129,18 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
             CoreSettings::VALUE_SAVE_DELAY_MS
         );
 
-    state.sequencerDomain_.autoPersist->watchAt(0, state.sequencer.length);
-    state.sequencerDomain_.autoPersist->watchAt(1, state.sequencer.stepsPerBeat);
-    state.sequencerDomain_.autoPersist->watchAt(2, state.sequencer.midiChannel);
-    state.sequencerDomain_.autoPersist->watchAt(3, state.sequencer.enabledMask);
-    state.sequencerDomain_.autoPersist->watchAt(4, state.sequencer.stepDataRevision);
+    state.sequencerDomain_.autoPersist->watchAt(0, state.sequencer.pattern.length);
+    state.sequencerDomain_.autoPersist->watchAt(1, state.sequencer.pattern.stepsPerBeat);
+    state.sequencerDomain_.autoPersist->watchAt(2, state.sequencer.pattern.midiChannel);
+    state.sequencerDomain_.autoPersist->watchAt(3, state.sequencer.pattern.enabledMask);
+    state.sequencerDomain_.autoPersist->watchAt(4, state.sequencer.pattern.stepDataRevision);
     state.sequencerDomain_.autoPersist->watchAt(5, state.sequencer.page);
     state.sequencerDomain_.autoPersist->watchAt(6, state.sequencer.focusedStep);
     state.sequencerDomain_.autoPersist->watchAt(7, state.sequencer.activeStepProperty);
     state.sequencerDomain_.autoPersist->watchAt(8, state.sequencerTracks.activeTrackSignal());
     state.sequencerDomain_.autoPersist->watchAt(9, state.sequencerTracks.enabledMaskSignal());
-    state.sequencerDomain_.autoPersist->watchAt(10, state.sequencer.patternVariationRevision);
-    state.sequencerDomain_.autoPersist->watchAt(11, state.sequencer.patternScaleRevision);
+    state.sequencerDomain_.autoPersist->watchAt(10, state.sequencer.pattern.patternVariationRevision);
+    state.sequencerDomain_.autoPersist->watchAt(11, state.sequencer.pattern.patternScaleRevision);
     state.sequencerDomain_.autoPersist->watchAt(12, state.sequencerTracks.projectScaleRevisionSignal());
 }
 

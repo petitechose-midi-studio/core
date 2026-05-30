@@ -74,7 +74,7 @@ struct SequencerMacroPropertyHarness {
 
 void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.length.set(16);
+    h.state.sequencer.pattern.length.set(16);
     h.state.sequencer.page.set(1);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     g_now_ms = 1234;
@@ -82,7 +82,7 @@ void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     h.turn(Config::EncoderID::MACRO_3, 1.0f);
 
     const uint8_t step = 10;
-    assert(h.state.sequencer.velocity[step] == 127);
+    assert(h.state.sequencer.pattern.velocity[step] == 127);
     assert(h.state.sequencer.stepInlineFeedback.visible.get());
     assert(h.state.sequencer.stepInlineFeedback.touchedMask.get().test(step));
     assert(h.state.sequencer.stepInlineFeedback.property.get() == StepProperty::VELOCITY);
@@ -92,12 +92,12 @@ void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
 
 void test_opt_encoder_has_no_default_step_edit_binding() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.length.set(8);
+    h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.focusedStep.set(4);
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
 
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(h.state.sequencer.gate[4] == core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
+    assert(h.state.sequencer.pattern.gate[4] == core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
     assert(!h.state.sequencer.stepInlineFeedback.visible.get());
     assert(!h.state.sequencer.stepInlineFeedback.touchedMask.get().test(4));
 
@@ -106,7 +106,7 @@ void test_opt_encoder_has_no_default_step_edit_binding() {
 
 void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.length.set(8);
+    h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
 
     const uint8_t step = 2;
@@ -117,7 +117,7 @@ void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
 
     h.turn(Config::EncoderID::MACRO_3, 1.0f);
 
-    assert(h.state.sequencer.note[step] == 127);
+    assert(h.state.sequencer.pattern.note[step] == 127);
     assert(!h.state.sequencer.cycleVariationTelemetry.validMask.test(step));
     assert(!h.state.sequencer.cycleVariationTelemetry.triggeredMask.test(step));
     assert(h.state.sequencer.variationTelemetryRevision.get() == 11);
@@ -127,7 +127,7 @@ void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
 
 void test_constrained_scale_pitch_edit_writes_scale_degree_note() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.length.set(8);
+    h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
     h.state.sequencer.setStepNoteAt(0, 60);
 
@@ -149,7 +149,7 @@ void test_constrained_scale_pitch_edit_writes_scale_degree_note() {
 
     h.turn(Config::EncoderID::MACRO_1, b4AsScaleDegree);
 
-    assert(h.state.sequencer.note[0] == 71);
+    assert(h.state.sequencer.pattern.note[0] == 71);
 
     std::cout << "[PASS] test_constrained_scale_pitch_edit_writes_scale_degree_note\n";
 }
@@ -159,28 +159,28 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
         SequencerMacroPropertyHarness h;
         h.state.overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     {
         SequencerMacroPropertyHarness h;
         h.state.trackNavigation.selection.active.set(true);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     {
         SequencerMacroPropertyHarness h;
         h.state.sequencer.structureUi.pageSelection.active.set(true);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     {
         SequencerMacroPropertyHarness h;
         h.state.sequencer.patternQuickControls.selecting.set(true);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     std::cout << "[PASS] test_macro_property_edits_are_blocked_by_modal_states\n";

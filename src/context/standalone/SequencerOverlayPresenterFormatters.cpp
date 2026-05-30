@@ -44,7 +44,7 @@ StepEditRenderData buildStepEditRenderData(const Source& source) {
     data.stepIndex = step;
     data.selectedIndex = sequencer.stepEdit.focusedRow.get();
 
-    const uint8_t len = sequencer.length.get();
+    const uint8_t len = sequencer.pattern.length.get();
     size_t titlePos = oc::type::text::appendString(data.title.data(), data.title.size(), 0, "STEP ");
     titlePos = oc::type::text::appendUnsigned(
         data.title.data(),
@@ -65,11 +65,11 @@ StepEditRenderData buildStepEditRenderData(const Source& source) {
         oc::type::text::formatUnsigned(data.meta.data(), data.meta.size(), static_cast<unsigned>(step) + 1U);
     }
 
-    const uint8_t note = sequencer.note[step];
-    const uint8_t velocity = sequencer.velocity[step];
-    const uint16_t gate = sequencer.gate[step];
-    const int8_t nudge = sequencer.nudge[step];
-    const uint8_t probability = sequencer.probability[step];
+    const uint8_t note = sequencer.pattern.note[step];
+    const uint8_t velocity = sequencer.pattern.velocity[step];
+    const uint16_t gate = sequencer.pattern.gate[step];
+    const int8_t nudge = sequencer.pattern.nudge[step];
+    const uint8_t probability = sequencer.pattern.probability[step];
 
     for (size_t i = 0; i < data.rows.size(); ++i) {
         core::state::sequencer::formatStepPropertyValue(
@@ -89,7 +89,7 @@ StepEditRenderData buildStepEditRenderData(const Source& source) {
     }
 
     data.dataRevision =
-        sequencer.stepDataRevision.get() ^
+        sequencer.pattern.stepDataRevision.get() ^
         (static_cast<uint32_t>(step) << 16) ^
         (static_cast<uint32_t>(len) << 24);
     return data;

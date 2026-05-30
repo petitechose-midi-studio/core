@@ -9,20 +9,14 @@ namespace core::state::sequencer {
 
 namespace {
 
-FLASHMEM void copyPersistentState(SequencerState& target, const SequencerState& source) {
+FLASHMEM void copyPatternToEditor(SequencerState& target, const SequencerPatternState& source) {
     SequencerPatternSnapshot snapshot;
     captureSnapshot(source, snapshot);
-    applySnapshot(target, snapshot);
+    applySnapshotToEditor(target, snapshot);
+}
 
-    const uint8_t len = target.length.get();
-    const uint8_t focused =
-        (len == 0)
-            ? 0
-            : static_cast<uint8_t>(std::min<uint16_t>(source.focusedStep.get(), len - 1U));
-
-    target.focusedStep.set(focused);
-    target.page.set(target.pageForStep(focused));
-    target.activeStepProperty.set(source.activeStepProperty.get());
+FLASHMEM void copyEditorToPattern(SequencerPatternState& target, const SequencerState& source) {
+    copyPatternState(target, source.pattern);
 }
 
 FLASHMEM void resetTransientTrackState(SequencerState& state) {
@@ -36,12 +30,12 @@ FLASHMEM void resetTransientTrackState(SequencerState& state) {
 
 FLASHMEM void initializeTrackBankFromActive(SequencerTrackBankState& bank, const SequencerState& active) {
     bank.reset();
-    copyPersistentState(bank.track(0), active);
+    copyEditorToPattern(bank.track(0), active);
     bank.syncSharedTrackState(0x0001, 0);
 }
 
 FLASHMEM void storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active) {
-    copyPersistentState(bank.track(bank.activeTrackIndex()), active);
+    copyEditorToPattern(bank.track(bank.activeTrackIndex()), active);
 }
 
 FLASHMEM bool switchActiveTrack(
@@ -56,7 +50,7 @@ FLASHMEM bool switchActiveTrack(
     }
 
     storeActiveTrack(bank, active);
-    copyPersistentState(active, bank.track(clampedNext));
+    copyPatternToEditor(active, bank.track(clampedNext));
     resetTransientTrackState(active);
 
     bank.syncSharedTrackState(bank.currentEnabledMask(), clampedNext);
@@ -75,8 +69,7 @@ FLASHMEM void captureTrackBankSnapshot(
     out.projectScaleSettings = bank.projectScaleSettings();
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = (i == activeTrack) ? active : bank.track(i);
-        captureSnapshot(source, out.tracks[i]);
+        captureSnapshot((i == activeTrack) ? active.pattern : bank.track(i), out.tracks[i]);
     }
 }
 
@@ -94,7 +87,7 @@ FLASHMEM void applyTrackBankSnapshot(
     }
 
     const uint8_t activeTrack = bank.activeTrackIndex();
-    applySnapshot(active, snapshot.tracks[activeTrack]);
+    applySnapshotToEditor(active, snapshot.tracks[activeTrack]);
     resetTransientTrackState(active);
 }
 

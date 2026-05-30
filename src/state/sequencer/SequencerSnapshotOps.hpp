@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
+#include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 
 namespace core::state::sequencer {
@@ -15,9 +16,13 @@ namespace core::state::sequencer {
  */
 oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length);
 
-void captureSnapshot(const SequencerState& source, SequencerPatternSnapshot& out);
+void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out);
 
-void applySnapshot(SequencerState& target, const SequencerPatternSnapshot& snapshot);
+void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot);
+
+void copyPatternState(SequencerPatternState& target, const SequencerPatternState& source);
+
+void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot);
 
 void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot);
 

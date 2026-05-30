@@ -209,12 +209,12 @@ inline float quickControlToNormalized(
             return 0.5f;
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
             return indexToNormalized(
-                findStepsPerBeatChoiceIndex(state.stepsPerBeat.get()),
+                findStepsPerBeatChoiceIndex(state.pattern.stepsPerBeat.get()),
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
-            const uint8_t len = state.length.get();
+            const uint8_t len = state.pattern.length.get();
             const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
             return indexToNormalized(idx, static_cast<int>(SequencerState::MAX_STEPS));
         }
@@ -248,13 +248,13 @@ inline void applyNormalizedToQuickControl(
                 value,
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
-            state.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
+            state.pattern.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
             return;
         }
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
             const int idx = normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
-            state.length.set(static_cast<uint8_t>(idx + 1));
+            state.pattern.length.set(static_cast<uint8_t>(idx + 1));
             return;
         }
     }
@@ -354,11 +354,11 @@ inline float stepPropertyToNormalized(const SequencerState& state, uint8_t step,
 
     return stepPropertyToNormalized(
         property,
-        state.note[step],
-        state.velocity[step],
-        state.gate[step],
-        state.nudge[step],
-        state.probability[step]
+        state.pattern.note[step],
+        state.pattern.velocity[step],
+        state.pattern.gate[step],
+        state.pattern.nudge[step],
+        state.pattern.probability[step]
     );
 }
 
@@ -373,7 +373,7 @@ inline float stepPropertyToNormalized(
 
     if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
         return indexToNormalized(
-            scaleDegreeIndexForNote(state.note[step], scaleSettings),
+            scaleDegreeIndexForNote(state.pattern.note[step], scaleSettings),
             countScaleNotes(scaleSettings)
         );
     }

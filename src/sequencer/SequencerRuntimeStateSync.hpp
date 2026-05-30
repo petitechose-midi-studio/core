@@ -62,6 +62,11 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
 );
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
+    const core::state::sequencer::SequencerPatternState& source,
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
+);
+
+SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternSnapshot& source
 );
 

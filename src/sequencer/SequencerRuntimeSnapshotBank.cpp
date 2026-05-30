@@ -37,7 +37,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
     }
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
-        const auto& source = (i == activeTrack) ? sequencer_ : track_bank_.track(i);
+        const auto& source = (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
         const auto signature =
             captureRuntimeStateSignature(source, runtimeSnapshot.projectScaleSettings);
         if (track_signatures_[i].matches(signature)) {

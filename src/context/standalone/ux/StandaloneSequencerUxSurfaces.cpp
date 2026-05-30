@@ -101,11 +101,11 @@ void fillStepValueLabel(const core::state::sequencer::SequencerState& sequencer,
         out,
         sizeof(out),
         property,
-        sequencer.note[step],
-        sequencer.velocity[step],
-        sequencer.gate[step],
-        sequencer.nudge[step],
-        sequencer.probability[step]
+        sequencer.pattern.note[step],
+        sequencer.pattern.velocity[step],
+        sequencer.pattern.gate[step],
+        sequencer.pattern.nudge[step],
+        sequencer.pattern.probability[step]
     );
 }
 
@@ -369,7 +369,7 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
 
     uint8_t step = 0;
     if (focusedEncoder) {
-        const uint8_t len = sequencer_.length.get();
+        const uint8_t len = sequencer_.pattern.length.get();
         if (len == 0 || sequencer_.focusedStep.get() >= len) {
             return false;
         }
@@ -387,7 +387,7 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
     out.property = core::state::sequencer::stepPropertyName(property);
     out.effect = (macroEncoder || focusedEncoder) ? "edit_step_property" : "toggle_step";
     out.hasStepOn = true;
-    out.stepOn = sequencer_.isEnabled(step);
+    out.stepOn = sequencer_.pattern.isEnabled(step);
     fillStepValueLabel(sequencer_, step, property, out.valueLabel);
     return true;
 }

@@ -94,7 +94,7 @@ void SequencerPropertySelectorHandler::open() {
     o.snapshotIndex = active;
     o.snapshotValid = true;
     o.selectedIndex.set(active);
-    snapshot_variation_ranges_ = sequencer_.variationRanges;
+    snapshot_variation_ranges_ = sequencer_.pattern.variationRanges;
     sequencer_.patternVariationFeedback.show(
         sequencer_.activeStepProperty.get(),
         now_provider_ ? now_provider_() : 0

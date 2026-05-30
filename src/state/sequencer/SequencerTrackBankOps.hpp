@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "state/sequencer/SequencerSnapshots.hpp"
+#include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::state::sequencer {

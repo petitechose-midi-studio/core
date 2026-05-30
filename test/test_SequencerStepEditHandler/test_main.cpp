@@ -112,7 +112,7 @@ void openStepEdit(SequencerStepEditHarness& h, uint8_t indexInPage) {
 
 void test_long_press_opens_step_edit_and_ignores_open_release() {
     SequencerStepEditHarness h;
-    h.state.sequencer.length.set(16);
+    h.state.sequencer.pattern.length.set(16);
     h.state.sequencer.page.set(1);
 
     openStepEdit(h, 2);
@@ -133,8 +133,8 @@ void test_long_press_opens_step_edit_and_ignores_open_release() {
 
 void test_nav_and_opt_edit_then_nav_apply() {
     SequencerStepEditHarness h;
-    h.state.sequencer.length.set(8);
-    h.state.sequencer.velocity[3] = 64;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.velocity[3] = 64;
 
     openStepEdit(h, 3);
     h.release(Config::MACRO_BUTTONS[3]);
@@ -143,37 +143,37 @@ void test_nav_and_opt_edit_then_nav_apply() {
     assert(h.state.sequencer.stepEdit.focusedRow.get() == 1);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.velocity[3] == 127);
+    assert(h.state.sequencer.pattern.velocity[3] == 127);
 
     h.tap(Config::ButtonID::NAV);
     assert(!h.state.sequencer.stepEdit.visible.get());
-    assert(h.state.sequencer.velocity[3] == 127);
+    assert(h.state.sequencer.pattern.velocity[3] == 127);
 
     std::cout << "[PASS] test_nav_and_opt_edit_then_nav_apply\n";
 }
 
 void test_cancel_restores_snapshot() {
     SequencerStepEditHarness h;
-    h.state.sequencer.length.set(8);
-    h.state.sequencer.note[4] = 62;
-    h.state.sequencer.velocity[4] = 80;
-    h.state.sequencer.gate[4] = 70;
-    h.state.sequencer.nudge[4] = -5;
-    h.state.sequencer.probability[4] = 90;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.note[4] = 62;
+    h.state.sequencer.pattern.velocity[4] = 80;
+    h.state.sequencer.pattern.gate[4] = 70;
+    h.state.sequencer.pattern.nudge[4] = -5;
+    h.state.sequencer.pattern.probability[4] = 90;
 
     openStepEdit(h, 4);
     h.release(Config::MACRO_BUTTONS[4]);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.note[4] == 127);
+    assert(h.state.sequencer.pattern.note[4] == 127);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepEdit.visible.get());
-    assert(h.state.sequencer.note[4] == 62);
-    assert(h.state.sequencer.velocity[4] == 80);
-    assert(h.state.sequencer.gate[4] == 70);
-    assert(h.state.sequencer.nudge[4] == -5);
-    assert(h.state.sequencer.probability[4] == 90);
+    assert(h.state.sequencer.pattern.note[4] == 62);
+    assert(h.state.sequencer.pattern.velocity[4] == 80);
+    assert(h.state.sequencer.pattern.gate[4] == 70);
+    assert(h.state.sequencer.pattern.nudge[4] == -5);
+    assert(h.state.sequencer.pattern.probability[4] == 90);
 
     std::cout << "[PASS] test_cancel_restores_snapshot\n";
 }

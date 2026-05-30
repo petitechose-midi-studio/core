@@ -188,9 +188,9 @@ void test_macro_shortcut_save_then_confirm_cancel_flow() {
 void test_sequencer_command_palette_load_set_flow_uses_mode_selector() {
     DataManagerHarness h;
 
-    h.state.sequencer.length.set(8);
+    h.state.sequencer.pattern.length.set(8);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(h.state, 0));
-    h.state.sequencer.length.set(16);
+    h.state.sequencer.pattern.length.set(16);
 
     openManagerWithLongPress(h, core::ui::ViewType::SEQUENCER);
     h.release(Config::ButtonID::NAV);
@@ -213,7 +213,7 @@ void test_sequencer_command_palette_load_set_flow_uses_mode_selector() {
     assert(h.state.dataManager.dialog.mode.get() == core::state::DataManagerDialogMode::SET_LOAD_MODE);
 
     h.tap(Config::ButtonID::NAV);
-    assert(h.state.sequencer.length.get() == 8);
+    assert(h.state.sequencer.pattern.length.get() == 8);
     assert(std::strcmp(h.state.dataManager.feedback.get(), "Loaded S01 R") == 0);
     assert(h.state.dataManager.pendingCommand.get() == core::state::DataManagerCommand::NONE);
     assert(h.state.dataManager.flowPhase.get() == core::state::DataManagerFlowPhase::MANAGER);

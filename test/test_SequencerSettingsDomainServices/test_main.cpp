@@ -128,7 +128,7 @@ void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
     assert(patternServices.choiceCount(1) == 0);
 
     patternServices.applyChoice(0, 1);
-    assert(sequencer.scalePolicy ==
+    assert(sequencer.pattern.scalePolicy ==
            core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
     assert(patternServices.choiceCount(1) == 12);
     assert(patternServices.currentChoiceIndex(1) == 2);
@@ -136,15 +136,15 @@ void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
 
     patternServices.applyChoice(1, 9);
     patternServices.applyChoice(2, 13);
-    assert(sequencer.scaleOverride.root == 9);
-    assert(sequencer.scaleOverride.type == StepSequencerScaleType::WholeTone);
+    assert(sequencer.pattern.scaleOverride.root == 9);
+    assert(sequencer.pattern.scaleOverride.type == StepSequencerScaleType::WholeTone);
 
     patternServices.applyChoice(3, 1);
-    assert(sequencer.pitchEditMode ==
+    assert(sequencer.pattern.pitchEditMode ==
            core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
 
     patternServices.applyChoice(0, 0);
-    assert(sequencer.scalePolicy ==
+    assert(sequencer.pattern.scalePolicy ==
            core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT);
     assert(patternServices.choiceCount(1) == 0);
 

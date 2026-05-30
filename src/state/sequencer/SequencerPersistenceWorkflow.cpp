@@ -108,7 +108,7 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
     if (status == persistence::SlotLoadStatus::OK) {
         if (merge) {
             SequencerPatternSnapshot snapshot;
-            captureSnapshot(staged, snapshot);
+            captureSnapshot(staged.pattern, snapshot);
             mergeSnapshotIntoCurrent(state.sequencer, snapshot);
             storeActiveTrack(state.sequencerTracks, state.sequencer);
         } else {

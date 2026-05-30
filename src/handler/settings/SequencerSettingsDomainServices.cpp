@@ -66,7 +66,7 @@ FLASHMEM void SequencerSettingsDomainServices::applyChoice(uint8_t row, int choi
     }
 
     if (track_bank_->setProjectScaleSettings(settings) &&
-        !core::state::sequencer::isPatternScaleOverride(active_sequencer_->scalePolicy)) {
+        !core::state::sequencer::isPatternScaleOverride(active_sequencer_->pattern.scalePolicy)) {
         active_sequencer_->invalidateVariationTelemetry();
     }
 }

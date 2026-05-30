@@ -35,8 +35,8 @@ void prepareSequencerVariationScenario(core::state::CoreState& state,
     state.activeView.set(core::ui::ViewType::SEQUENCER);
     state.sequencer.activeStepProperty.set(property);
     state.sequencer.setStepDataAt(0, 60, 100, 75, 0);
-    if (!state.sequencer.isEnabled(0)) {
-        state.sequencer.toggle(0);
+    if (!state.sequencer.pattern.isEnabled(0)) {
+        state.sequencer.pattern.toggle(0);
     }
 
     oc::note::sequencer::StepSequencerVariationRanges ranges{
@@ -76,8 +76,8 @@ void prepareSequencerScaleScenario(
     state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
     state.sequencer.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
     state.sequencer.setStepDataAt(0, 61, 100, 75, 0);
-    if (!state.sequencer.isEnabled(0)) {
-        state.sequencer.toggle(0);
+    if (!state.sequencer.pattern.isEnabled(0)) {
+        state.sequencer.pattern.toggle(0);
     }
 
     StepSequencerScaleSettings settings{
@@ -138,8 +138,8 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     if (std::strcmp(scenario, "seq-step-edit") == 0) {
         state.activeView.set(core::ui::ViewType::SEQUENCER);
         state.sequencer.setStepDataAt(0, 60, 100, 75);
-        if (!state.sequencer.isEnabled(0)) {
-            state.sequencer.toggle(0);
+        if (!state.sequencer.pattern.isEnabled(0)) {
+            state.sequencer.pattern.toggle(0);
         }
         state.overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT, false);
         state.sequencer.stepEdit.stepIndex.set(0);

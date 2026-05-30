@@ -120,8 +120,8 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     projectScaleSettings.clamp();
     const auto effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
         projectScaleSettings,
-        sequencer.scalePolicy,
-        sequencer.scaleOverride
+        sequencer.pattern.scalePolicy,
+        sequencer.pattern.scaleOverride
     );
 
     frame.activeProperty = sequencer.activeStepProperty.get();
@@ -129,10 +129,10 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     frame.feedbackTouchedMask = sequencer.stepInlineFeedback.touchedMask.get();
     frame.feedbackProperty = sequencer.stepInlineFeedback.property.get();
 
-    const uint8_t length = sequencer.length.get();
+    const uint8_t length = sequencer.pattern.length.get();
     const uint8_t page = sequencer.visiblePage();
     const uint8_t pageStart = sequencer.pageStartStepClamped(page);
-    const auto enabledMask = sequencer.enabledMask.get();
+    const auto enabledMask = sequencer.pattern.enabledMask.get();
     const auto probabilityCycleMask = sequencer.probabilityCycleMask;
     const int16_t playhead = sequencer.playheadStep.get();
     const bool probabilityCycleMaskActive = playhead >= 0;
@@ -140,11 +140,11 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
         sequencer.stepPropertyInlineSelector.selecting.get() ||
         (sequencer.patternVariationFeedback.visible.get() &&
          sequencer.patternVariationFeedback.property.get() == frame.activeProperty);
-    const bool patternHasVariationRanges = hasAnyVariationRange(sequencer.variationRanges);
+    const bool patternHasVariationRanges = hasAnyVariationRange(sequencer.pattern.variationRanges);
     const bool effectiveScaleFeedbackRelevant = scaleFeedbackRelevant(effectiveScaleSettings);
     const bool activeRangeVisible =
         patternRangeFeedbackVisible &&
-        variationRangeForProperty(sequencer.variationRanges, frame.activeProperty) > 0;
+        variationRangeForProperty(sequencer.pattern.variationRanges, frame.activeProperty) > 0;
     const auto& telemetry = sequencer.cycleVariationTelemetry;
     const bool telemetryFeedbackRelevant =
         hasAnyVariationRange(telemetry.ranges) ||
@@ -165,11 +165,11 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
 
         tile.probabilityCycleActive =
             !probabilityCycleMaskActive || probabilityCycleMask.test(absoluteStep);
-        tile.note = sequencer.note[absoluteStep];
-        tile.velocity = sequencer.velocity[absoluteStep];
-        tile.probability = sequencer.probability[absoluteStep];
-        tile.gate = sequencer.gate[absoluteStep];
-        tile.nudge = sequencer.nudge[absoluteStep];
+        tile.note = sequencer.pattern.note[absoluteStep];
+        tile.velocity = sequencer.pattern.velocity[absoluteStep];
+        tile.probability = sequencer.pattern.probability[absoluteStep];
+        tile.gate = sequencer.pattern.gate[absoluteStep];
+        tile.nudge = sequencer.pattern.nudge[absoluteStep];
 
         const bool hasRuntimeVariation =
             tile.enabled &&
@@ -193,7 +193,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
                 tile.variation.resolved = buildPreviewVariation(
                     absoluteStep,
                     tile,
-                    sequencer.variationRanges,
+                    sequencer.pattern.variationRanges,
                     effectiveScaleSettings
                 );
             } else {
@@ -201,7 +201,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
                     buildBaseVariation(
                         absoluteStep,
                         tile,
-                        sequencer.variationRanges,
+                        sequencer.pattern.variationRanges,
                         effectiveScaleSettings
                     );
             }

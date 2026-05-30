@@ -59,10 +59,10 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
                       uint8_t focusedStep,
                       core::state::sequencer::StepProperty property) {
     sequencer.reset();
-    sequencer.length.set(length);
-    sequencer.stepsPerBeat.set(stepsPerBeat);
-    sequencer.midiChannel.set(midiChannel);
-    sequencer.enabledMask.set({});
+    sequencer.pattern.length.set(length);
+    sequencer.pattern.stepsPerBeat.set(stepsPerBeat);
+    sequencer.pattern.midiChannel.set(midiChannel);
+    sequencer.pattern.enabledMask.set({});
 
     sequencer.setStepDataAt(0, 60, 110, 95);
     sequencer.setStepDataAt(3, 72, 90, 60);
@@ -71,15 +71,15 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
     sequencer.setStepProbabilityAt(3, 65);
     sequencer.setStepProbabilityAt(7, 25);
 
-    sequencer.toggle(0);
-    sequencer.toggle(3);
-    sequencer.toggle(7);
+    sequencer.pattern.toggle(0);
+    sequencer.pattern.toggle(3);
+    sequencer.pattern.toggle(7);
 
     if (length > 64) {
         const uint8_t lastStep = static_cast<uint8_t>(length - 1);
         sequencer.setStepDataAt(lastStep, 50, 77, 33);
         sequencer.setStepProbabilityAt(lastStep, 88);
-        sequencer.toggle(lastStep);
+        sequencer.pattern.toggle(lastStep);
     }
 
     sequencer.focusedStep.set(focusedStep);
@@ -96,36 +96,36 @@ void assertPatternEquals(const core::state::sequencer::SequencerState& sequencer
                          uint8_t expectedLength,
                          uint8_t expectedSpb,
                          uint8_t expectedChannel) {
-    assert(sequencer.length.get() == expectedLength);
-    assert(sequencer.stepsPerBeat.get() == expectedSpb);
-    assert(sequencer.midiChannel.get() == expectedChannel);
+    assert(sequencer.pattern.length.get() == expectedLength);
+    assert(sequencer.pattern.stepsPerBeat.get() == expectedSpb);
+    assert(sequencer.pattern.midiChannel.get() == expectedChannel);
 
-    assert(sequencer.isEnabled(0));
-    assert(sequencer.isEnabled(3));
-    assert(sequencer.isEnabled(7));
+    assert(sequencer.pattern.isEnabled(0));
+    assert(sequencer.pattern.isEnabled(3));
+    assert(sequencer.pattern.isEnabled(7));
 
-    assert(sequencer.note[0] == 60);
-    assert(sequencer.velocity[0] == 110);
-    assert(sequencer.gate[0] == 95);
-    assert(sequencer.probability[0] == 100);
+    assert(sequencer.pattern.note[0] == 60);
+    assert(sequencer.pattern.velocity[0] == 110);
+    assert(sequencer.pattern.gate[0] == 95);
+    assert(sequencer.pattern.probability[0] == 100);
 
-    assert(sequencer.note[3] == 72);
-    assert(sequencer.velocity[3] == 90);
-    assert(sequencer.gate[3] == 60);
-    assert(sequencer.probability[3] == 65);
+    assert(sequencer.pattern.note[3] == 72);
+    assert(sequencer.pattern.velocity[3] == 90);
+    assert(sequencer.pattern.gate[3] == 60);
+    assert(sequencer.pattern.probability[3] == 65);
 
-    assert(sequencer.note[7] == 45);
-    assert(sequencer.velocity[7] == 127);
-    assert(sequencer.gate[7] == 120);
-    assert(sequencer.probability[7] == 25);
+    assert(sequencer.pattern.note[7] == 45);
+    assert(sequencer.pattern.velocity[7] == 127);
+    assert(sequencer.pattern.gate[7] == 120);
+    assert(sequencer.pattern.probability[7] == 25);
 
     if (expectedLength > 64) {
         const uint8_t lastStep = static_cast<uint8_t>(expectedLength - 1);
-        assert(sequencer.isEnabled(lastStep));
-        assert(sequencer.note[lastStep] == 50);
-        assert(sequencer.velocity[lastStep] == 77);
-        assert(sequencer.gate[lastStep] == 33);
-        assert(sequencer.probability[lastStep] == 88);
+        assert(sequencer.pattern.isEnabled(lastStep));
+        assert(sequencer.pattern.note[lastStep] == 50);
+        assert(sequencer.pattern.velocity[lastStep] == 77);
+        assert(sequencer.pattern.gate[lastStep] == 33);
+        assert(sequencer.pattern.probability[lastStep] == 88);
     }
 }
 
@@ -258,8 +258,8 @@ void test_workspace_masks_enabled_bits_outside_length() {
     core::state::sequencer::SequencerState source;
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
     source.reset();
-    source.length.set(8);
-    source.enabledMask.set(StepBitMask128::fromLower64(
+    source.pattern.length.set(8);
+    source.pattern.enabledMask.set(StepBitMask128::fromLower64(
         (1ULL << 0) | (1ULL << 7) | (1ULL << 9) | (1ULL << 15)
     ));
 
@@ -273,8 +273,8 @@ void test_workspace_masks_enabled_bits_outside_length() {
     assert(persistence.loadWorkspace(loadedTrackBank, loaded));
 
     const uint64_t expectedMask = (1ULL << 0) | (1ULL << 7);
-    assert(loaded.length.get() == 8);
-    assert(loaded.enabledMask.get().lower64() == expectedMask);
+    assert(loaded.pattern.length.get() == 8);
+    assert(loaded.pattern.enabledMask.get().lower64() == expectedMask);
 
     std::cout << "[PASS] test_workspace_masks_enabled_bits_outside_length\n";
 }
@@ -320,8 +320,8 @@ void test_pattern_library_masks_enabled_bits_outside_length() {
 
     core::state::sequencer::SequencerState source;
     source.reset();
-    source.length.set(16);
-    source.enabledMask.set(StepBitMask128::fromLower64(
+    source.pattern.length.set(16);
+    source.pattern.enabledMask.set(StepBitMask128::fromLower64(
         (1ULL << 0) | (1ULL << 5) | (1ULL << 20) | (1ULL << 63)
     ));
 
@@ -333,8 +333,8 @@ void test_pattern_library_masks_enabled_bits_outside_length() {
     assert(status == core::persistence::SlotLoadStatus::OK);
 
     const uint64_t expectedMask = (1ULL << 0) | (1ULL << 5);
-    assert(loaded.length.get() == 16);
-    assert(loaded.enabledMask.get().lower64() == expectedMask);
+    assert(loaded.pattern.length.get() == 16);
+    assert(loaded.pattern.enabledMask.get().lower64() == expectedMask);
 
     std::cout << "[PASS] test_pattern_library_masks_enabled_bits_outside_length\n";
 }
@@ -449,17 +449,17 @@ void test_scale_settings_roundtrip_across_workspace_pattern_and_set() {
     loadedWorkspaceTrackBank.reset();
     assert(persistence.loadWorkspace(loadedWorkspaceTrackBank, loadedWorkspace));
     assert(sameScale(loadedWorkspaceTrackBank.projectScaleSettings(), projectScale));
-    assert(loadedWorkspace.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
-    assert(sameScale(loadedWorkspace.scaleOverride, overrideScale));
-    assert(loadedWorkspace.pitchEditMode ==
+    assert(loadedWorkspace.pattern.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+    assert(sameScale(loadedWorkspace.pattern.scaleOverride, overrideScale));
+    assert(loadedWorkspace.pattern.pitchEditMode ==
            core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
 
     core::state::sequencer::SequencerState loadedPattern;
     loadedPattern.reset();
     assert(persistence.loadPatternSlot(2, loadedPattern) == core::persistence::SlotLoadStatus::OK);
-    assert(loadedPattern.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
-    assert(sameScale(loadedPattern.scaleOverride, overrideScale));
-    assert(loadedPattern.pitchEditMode ==
+    assert(loadedPattern.pattern.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+    assert(sameScale(loadedPattern.pattern.scaleOverride, overrideScale));
+    assert(loadedPattern.pattern.pitchEditMode ==
            core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
 
     core::state::sequencer::SequencerState loadedSet;
@@ -469,9 +469,9 @@ void test_scale_settings_roundtrip_across_workspace_pattern_and_set() {
     assert(persistence.loadSetSlot(3, loadedSetTrackBank, loadedSet) ==
            core::persistence::SlotLoadStatus::OK);
     assert(sameScale(loadedSetTrackBank.projectScaleSettings(), projectScale));
-    assert(loadedSet.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
-    assert(sameScale(loadedSet.scaleOverride, overrideScale));
-    assert(loadedSet.pitchEditMode ==
+    assert(loadedSet.pattern.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+    assert(sameScale(loadedSet.pattern.scaleOverride, overrideScale));
+    assert(loadedSet.pattern.pitchEditMode ==
            core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
 
     std::cout << "[PASS] test_scale_settings_roundtrip_across_workspace_pattern_and_set\n";

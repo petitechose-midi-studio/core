@@ -14,26 +14,6 @@ namespace core::handler {
 
 namespace structure_slots = core::state::shared;
 
-namespace {
-
-void copyPersistentTrackState(core::state::sequencer::SequencerState& target,
-                              const core::state::sequencer::SequencerState& source) {
-    core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::captureSnapshot(source, snapshot);
-    core::state::sequencer::applySnapshot(target, snapshot);
-
-    const uint8_t len = target.length.get();
-    const uint8_t focused =
-        (len == 0)
-            ? 0
-            : static_cast<uint8_t>(std::min<uint16_t>(source.focusedStep.get(), len - 1U));
-    target.focusedStep.set(focused);
-    target.page.set(target.pageForStep(focused));
-    target.activeStepProperty.set(source.activeStepProperty.get());
-}
-
-}  // namespace
-
 SequencerStructureEditWorkflow::SequencerStructureEditWorkflow(StateRefs state)
     : sequencer_(state.sequencer)
     , tracks_(state.tracks)
@@ -79,7 +59,7 @@ void SequencerStructureEditWorkflow::eraseCurrentStructure() {
         if (track_ui_.previewAddSlot.get()) return;
         const uint8_t activeTrack = currentActiveTrack();
         sequencer_.reset();
-        sequencer_.midiChannel.set(activeTrack);
+        sequencer_.pattern.midiChannel.set(activeTrack);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
         return;
     }
@@ -115,7 +95,7 @@ void SequencerStructureEditWorkflow::copyCurrentStructure() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         core::state::sequencer::SequencerPatternSnapshot snapshot;
-        core::state::sequencer::captureSnapshot(sequencer_, snapshot);
+        core::state::sequencer::captureSnapshot(sequencer_.pattern, snapshot);
         structure_clipboard_.storeSequencerTrack(snapshot);
         return;
     }
@@ -124,7 +104,7 @@ void SequencerStructureEditWorkflow::copyCurrentStructure() {
     core::state::SequencerPageClipboard clipboard;
     const uint8_t page = sequencer_.visiblePage();
     const uint8_t start = sequencer_.pageStartStepClamped(page);
-    const uint8_t len = sequencer_.length.get();
+    const uint8_t len = sequencer_.pattern.length.get();
     const uint8_t count = (start >= len)
         ? 0
         : static_cast<uint8_t>(std::min<uint16_t>(
@@ -138,12 +118,12 @@ void SequencerStructureEditWorkflow::copyCurrentStructure() {
     clipboard.count = count;
     for (uint8_t i = 0; i < count; ++i) {
         const uint8_t step = static_cast<uint8_t>(start + i);
-        clipboard.note[i] = sequencer_.note[step];
-        clipboard.velocity[i] = sequencer_.velocity[step];
-        clipboard.gate[i] = sequencer_.gate[step];
-        clipboard.nudge[i] = sequencer_.nudge[step];
-        clipboard.probability[i] = sequencer_.probability[step];
-        if (sequencer_.isEnabled(step)) {
+        clipboard.note[i] = sequencer_.pattern.note[step];
+        clipboard.velocity[i] = sequencer_.pattern.velocity[step];
+        clipboard.gate[i] = sequencer_.pattern.gate[step];
+        clipboard.nudge[i] = sequencer_.pattern.nudge[step];
+        clipboard.probability[i] = sequencer_.pattern.probability[step];
+        if (sequencer_.pattern.isEnabled(step)) {
             clipboard.enabledMask |= static_cast<uint8_t>(1U << i);
         }
     }
@@ -157,7 +137,7 @@ void SequencerStructureEditWorkflow::pasteCurrentStructure() {
             !createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_)) {
             return;
         }
-        core::state::sequencer::applySnapshot(sequencer_, structure_clipboard_.sequencerTrack);
+        core::state::sequencer::applySnapshotToEditor(sequencer_, structure_clipboard_.sequencerTrack);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
         syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
         return;
@@ -182,19 +162,19 @@ void SequencerStructureEditWorkflow::pasteCurrentStructure() {
         core::state::sequencer::SequencerState::MAX_STEPS,
         static_cast<uint16_t>(targetStart + std::max<uint8_t>(clipboard.count, 1))
     ));
-    if (sequencer_.length.get() < requiredLength) {
-        sequencer_.length.set(requiredLength);
+    if (sequencer_.pattern.length.get() < requiredLength) {
+        sequencer_.pattern.length.set(requiredLength);
     }
     for (uint8_t i = 0; i < clipboard.count; ++i) {
         const uint8_t step = static_cast<uint8_t>(targetStart + i);
-        sequencer_.note[step] = clipboard.note[i];
-        sequencer_.velocity[step] = clipboard.velocity[i];
-        sequencer_.gate[step] = clipboard.gate[i];
-        sequencer_.nudge[step] = clipboard.nudge[i];
-        sequencer_.probability[step] = clipboard.probability[i];
-        sequencer_.setEnabled(step, clipboard.isEnabled(i));
+        sequencer_.pattern.note[step] = clipboard.note[i];
+        sequencer_.pattern.velocity[step] = clipboard.velocity[i];
+        sequencer_.pattern.gate[step] = clipboard.gate[i];
+        sequencer_.pattern.nudge[step] = clipboard.nudge[i];
+        sequencer_.pattern.probability[step] = clipboard.probability[i];
+        sequencer_.pattern.setEnabled(step, clipboard.isEnabled(i));
     }
-    sequencer_.bumpStepDataRevision();
+    sequencer_.pattern.bumpStepDataRevision();
     sequencer_.structureUi.syncPreviewPage(targetPage);
     sequencer_.page.set(targetPage);
     sequencer_.structureUi.previewAddPageSlot.set(false);
@@ -258,8 +238,8 @@ void SequencerStructureEditWorkflow::duplicateSelection() {
             core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
             [this](uint8_t source, uint8_t dest) {
                 const auto& sourceTrack =
-                    (source == currentActiveTrack()) ? sequencer_ : tracks_.track(source);
-                copyPersistentTrackState(tracks_.track(dest), sourceTrack);
+                    (source == currentActiveTrack()) ? sequencer_.pattern : tracks_.track(source);
+                core::state::sequencer::copyPatternState(tracks_.track(dest), sourceTrack);
             }
         );
 

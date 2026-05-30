@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include <oc/interface/IStorage.hpp>
@@ -117,7 +118,7 @@ public:
         if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
         sequencer_codec::PatternPayload payload{};
-        sequencer_codec::fillPatternPayload(sequencer, payload);
+        sequencer_codec::fillPatternPayload(sequencer.pattern, payload);
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
         return pattern_library_store_.saveSlotStatus(
@@ -147,7 +148,14 @@ public:
             return SlotLoadStatus::HEADER_MISMATCH;
         }
 
-        sequencer_codec::applyPatternPayload(payload, sequencer);
+        sequencer_codec::applyPatternPayload(payload, sequencer.pattern);
+        const uint8_t len = sequencer.pattern.length.get();
+        const uint8_t focused =
+            (len == 0)
+                ? 0
+                : static_cast<uint8_t>(std::min<uint16_t>(sequencer.focusedStep.get(), len - 1U));
+        sequencer.focusedStep.set(focused);
+        sequencer.page.set(sequencer.pageForStep(sequencer.focusedStep.get()));
         return SlotLoadStatus::OK;
     }
 
