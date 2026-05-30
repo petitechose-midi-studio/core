@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "config/TimeCompat.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::sequencer {
@@ -89,6 +90,7 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     RealtimeMidiQueue& midiQueue
 )
     : sequencer_(sequencer)
+    , track_bank_(trackBank)
     , status_bar_(statusBar)
     , track_runtime_states_(
           std::make_unique<oc::note::sequencer::StepSequencerRuntimeState[]>(TRACK_COUNT)
@@ -210,8 +212,39 @@ void SequencerPlaybackService::syncRuntimeStates_(
         }
 
         syncRuntimeState(track_runtime_states_[i], snapshot.tracks[i]);
+        syncRuntimeGraph_(i, snapshot);
         track_runtime_signatures_[i] = trackSignature;
     }
+}
+
+void SequencerPlaybackService::syncRuntimeGraph_(
+    uint8_t trackIndex,
+    const core::state::sequencer::SequencerTrackBankSnapshot& snapshot
+) {
+    if (trackIndex >= TRACK_COUNT || !track_engines_[trackIndex]) return;
+
+    const auto* graphSource = (trackIndex == snapshot.activeTrack)
+                                  ? core::state::sequencer::graphView(sequencer_.pattern)
+                                  : core::state::sequencer::graphView(track_bank_.track(trackIndex));
+    if (graphSource == nullptr) {
+        track_runtime_graphs_[trackIndex].reset();
+        track_engines_[trackIndex]->setGraph(nullptr);
+        return;
+    }
+
+    if (!track_runtime_graphs_[trackIndex]) {
+        track_runtime_graphs_[trackIndex] =
+            std::make_unique<oc::note::sequencer::StepSequencerGraph>();
+    }
+    if (!track_runtime_graphs_[trackIndex]) {
+        track_engines_[trackIndex]->setGraph(nullptr);
+        return;
+    }
+
+    *track_runtime_graphs_[trackIndex] = *graphSource;
+    track_engines_[trackIndex]->setGraph(
+        track_runtime_graphs_[trackIndex]->enabled ? track_runtime_graphs_[trackIndex].get() : nullptr
+    );
 }
 
 void SequencerPlaybackService::collectUiProjection_() {

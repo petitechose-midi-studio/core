@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
+#include <oc/note/sequencer/StepSequencerGraph.hpp>
 
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerMidiEventSink.hpp"
@@ -97,10 +98,13 @@ private:
 
     void handleActiveTrackSwitch_();
     void syncRuntimeStates_(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot);
+    void syncRuntimeGraph_(uint8_t trackIndex,
+                           const core::state::sequencer::SequencerTrackBankSnapshot& snapshot);
     void recordProfiling_(uint32_t tick, bool playing, uint32_t updateUs, uint32_t nowMs);
     void collectUiProjection_();
 
     core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::StatusBarState& status_bar_;
     PendingNoteActivity pending_note_activity_{};
     PendingUiProjection pending_ui_projection_{};
@@ -109,6 +113,9 @@ private:
     // Keep the per-track runtime bank on the regular heap so the timer/playback
     // engines do not read their hottest state back from the PSRAM-backed parent.
     std::unique_ptr<oc::note::sequencer::StepSequencerRuntimeState[]> track_runtime_states_{};
+    // Runtime-owned graph copies keep engines away from double-buffered snapshots.
+    std::array<std::unique_ptr<oc::note::sequencer::StepSequencerGraph>, TRACK_COUNT>
+        track_runtime_graphs_{};
     std::array<SequencerRuntimeStateSignature, TRACK_COUNT> track_runtime_signatures_{};
     std::array<std::unique_ptr<SequencerMidiEventSink>, TRACK_COUNT> track_event_sinks_{};
     std::array<std::unique_ptr<oc::note::sequencer::StepSequencerEngine>, TRACK_COUNT> track_engines_{};

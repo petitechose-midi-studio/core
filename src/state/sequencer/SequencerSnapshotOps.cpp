@@ -4,6 +4,9 @@
 #include <array>
 
 #include <config/PlatformCompat.hpp>
+
+#include "state/sequencer/SequencerGraphOps.hpp"
+
 namespace core::state::sequencer {
 
 namespace {
@@ -149,6 +152,7 @@ FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatt
     out.stepDataRevision = source.stepDataRevision.get();
     out.patternVariationRevision = source.patternVariationRevision.get();
     out.patternScaleRevision = source.patternScaleRevision.get();
+    out.graphRevision = source.graphRevision.get();
     out.variationRanges = source.variationRanges;
     out.variationRanges.clamp();
     out.scalePolicy = source.scalePolicy;
@@ -176,6 +180,8 @@ FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatter
     target.setPatternScalePolicy(snapshot.scalePolicy);
     target.setPatternScaleOverride(snapshot.scaleOverride);
     target.setPitchEditMode(snapshot.pitchEditMode);
+    target.graph.reset();
+    target.graphRevision.set(snapshot.graphRevision);
 
     for (uint8_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
         writeStep(target, i, readSanitizedStep(snapshot, i));
@@ -188,6 +194,7 @@ FLASHMEM void copyPatternState(SequencerPatternState& target, const SequencerPat
     SequencerPatternSnapshot snapshot;
     captureSnapshot(source, snapshot);
     applySnapshot(target, snapshot);
+    copyGraph(target, source);
 }
 
 FLASHMEM void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
@@ -226,6 +233,8 @@ FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPa
     target.setPatternScalePolicy(snapshot.scalePolicy);
     target.setPatternScaleOverride(snapshot.scaleOverride);
     target.setPitchEditMode(snapshot.pitchEditMode);
+    target.pattern.graph.reset();
+    target.pattern.graphRevision.set(snapshot.graphRevision);
 
     const uint8_t focused =
         (focusedBefore >= mergedLength) ? static_cast<uint8_t>(mergedLength - 1U) : focusedBefore;

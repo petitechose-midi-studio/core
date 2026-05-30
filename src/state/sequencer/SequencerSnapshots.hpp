@@ -20,6 +20,7 @@ struct SequencerPatternSnapshot {
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
     uint32_t patternScaleRevision = 0;
+    uint32_t graphRevision = 0;
     oc::note::sequencer::StepSequencerVariationRanges variationRanges{};
     SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};

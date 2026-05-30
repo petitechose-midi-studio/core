@@ -24,6 +24,7 @@ struct SequencerRuntimeStateSignature {
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
     uint32_t patternScaleRevision = 0;
+    uint32_t graphRevision = 0;
     oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
 
     bool matches(const SequencerRuntimeStateSignature& other) const {
@@ -34,6 +35,7 @@ struct SequencerRuntimeStateSignature {
                stepDataRevision == other.stepDataRevision &&
                patternVariationRevision == other.patternVariationRevision &&
                patternScaleRevision == other.patternScaleRevision &&
+               graphRevision == other.graphRevision &&
                effectiveScaleSettings.root == other.effectiveScaleSettings.root &&
                effectiveScaleSettings.type == other.effectiveScaleSettings.type &&
                effectiveScaleSettings.mode == other.effectiveScaleSettings.mode;
