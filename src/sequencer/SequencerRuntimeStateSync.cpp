@@ -8,6 +8,13 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerState& source,
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
 ) {
+    return captureRuntimeStateSignature(source.pattern, projectScaleSettings);
+}
+
+SequencerRuntimeStateSignature captureRuntimeStateSignature(
+    const core::state::sequencer::SequencerPatternState& source,
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
+) {
     return {
         .length = source.length.get(),
         .stepsPerBeat = source.stepsPerBeat.get(),

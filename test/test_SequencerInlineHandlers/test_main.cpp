@@ -160,16 +160,16 @@ void test_property_selector_edits_active_property_variation_range() {
     openPropertySelector(h);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.variationRanges.pitchSemitones == 36);
+    assert(h.state.sequencer.pattern.variationRanges.pitchSemitones == 36);
 
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
-    assert(h.state.sequencer.variationRanges.pitchSemitones == 36);
+    assert(h.state.sequencer.pattern.variationRanges.pitchSemitones == 36);
 
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     openPropertySelector(h);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.variationRanges.velocity == 127);
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 127);
 
     std::cout << "[PASS] test_property_selector_edits_active_property_variation_range\n";
 }
@@ -182,11 +182,11 @@ void test_property_selector_cancel_restores_variation_snapshot() {
     openPropertySelector(h);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.variationRanges.gatePercent == 100);
+    assert(h.state.sequencer.pattern.variationRanges.gatePercent == 100);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
-    assert(h.state.sequencer.variationRanges.gatePercent == 12);
+    assert(h.state.sequencer.pattern.variationRanges.gatePercent == 12);
 
     std::cout << "[PASS] test_property_selector_cancel_restores_variation_snapshot\n";
 }
@@ -198,10 +198,10 @@ void test_property_selector_does_not_edit_probability_variation() {
     openPropertySelector(h);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.variationRanges.pitchSemitones == 0);
-    assert(h.state.sequencer.variationRanges.velocity == 0);
-    assert(h.state.sequencer.variationRanges.gatePercent == 0);
-    assert(h.state.sequencer.variationRanges.nudge == 0);
+    assert(h.state.sequencer.pattern.variationRanges.pitchSemitones == 0);
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
+    assert(h.state.sequencer.pattern.variationRanges.gatePercent == 0);
+    assert(h.state.sequencer.pattern.variationRanges.nudge == 0);
 
     std::cout << "[PASS] test_property_selector_does_not_edit_probability_variation\n";
 }
@@ -213,7 +213,7 @@ void test_pattern_quick_controls_do_not_edit_variation_range() {
     openPatternQuickControls(h);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.variationRanges.velocity == 0);
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
 
     std::cout << "[PASS] test_pattern_quick_controls_do_not_edit_variation_range\n";
 }

@@ -5,7 +5,7 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerPatternState.hpp"
 
 namespace core::state::sequencer {
 
@@ -26,11 +26,11 @@ struct SequencerTrackBankState {
         return (track >= TRACK_COUNT) ? static_cast<uint8_t>(TRACK_COUNT - 1) : track;
     }
 
-    SequencerState& track(uint8_t index) {
+    SequencerPatternState& track(uint8_t index) {
         return tracks_[clampTrackIndex(index)];
     }
 
-    const SequencerState& track(uint8_t index) const {
+    const SequencerPatternState& track(uint8_t index) const {
         return tracks_[clampTrackIndex(index)];
     }
 
@@ -69,7 +69,7 @@ struct SequencerTrackBankState {
         project_scale_revision_.set(project_scale_revision_.get() + 1U);
         for (auto& track : tracks_) {
             if (!isPatternScaleOverride(track.scalePolicy)) {
-                track.invalidateVariationTelemetry();
+                track.bumpPatternScaleRevision();
             }
         }
         return true;
@@ -87,7 +87,7 @@ private:
     Signal<uint16_t, 16> enabled_mask_{0x0001};
     Signal<uint32_t, 8> project_scale_revision_{0};
     oc::note::sequencer::StepSequencerScaleSettings project_scale_settings_{};
-    std::array<SequencerState, TRACK_COUNT> tracks_{};
+    std::array<SequencerPatternState, TRACK_COUNT> tracks_{};
 };
 
 }  // namespace core::state::sequencer

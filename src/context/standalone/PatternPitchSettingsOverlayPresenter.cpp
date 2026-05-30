@@ -34,7 +34,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::bind() {
         [this]() { renderOverlay(); },
         state_refs_.settings.visible,
         state_refs_.settings.focusedRow,
-        state_refs_.sequencer.patternScaleRevision,
+        state_refs_.sequencer.pattern.patternScaleRevision,
         state_refs_.trackBank.projectScaleRevisionSignal()
     );
 
@@ -44,7 +44,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::bind() {
         state_refs_.settings.selector.visible,
         state_refs_.settings.selector.editingRow,
         state_refs_.settings.selector.selectedIndex,
-        state_refs_.sequencer.patternScaleRevision,
+        state_refs_.sequencer.pattern.patternScaleRevision,
         state_refs_.trackBank.projectScaleRevisionSignal()
     );
 }
@@ -56,8 +56,8 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
     }
 
     const bool override =
-        core::state::sequencer::isPatternScaleOverride(state_refs_.sequencer.scalePolicy);
-    auto effectiveScale = override ? state_refs_.sequencer.scaleOverride
+        core::state::sequencer::isPatternScaleOverride(state_refs_.sequencer.pattern.scalePolicy);
+    auto effectiveScale = override ? state_refs_.sequencer.pattern.scaleOverride
                                    : state_refs_.trackBank.projectScaleSettings();
     effectiveScale.clamp();
 
@@ -66,7 +66,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
                                                 : catalog::PATTERN_SCALE_POLICY_LABELS[0]},
         {.key = ROW_KEYS[1], .value = catalog::rootLabel(effectiveScale.root)},
         {.key = ROW_KEYS[2], .value = catalog::scaleTypeLabel(effectiveScale.type)},
-        {.key = ROW_KEYS[3], .value = catalog::pitchEditModeLabel(state_refs_.sequencer.pitchEditMode)},
+        {.key = ROW_KEYS[3], .value = catalog::pitchEditModeLabel(state_refs_.sequencer.pattern.pitchEditMode)},
     }};
 
     overlay_.render({
@@ -77,7 +77,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
         .selectedIndex = state_refs_.settings.focusedRow.get(),
         .visible = true,
         .dataRevision = 1U |
-            (static_cast<uint32_t>(state_refs_.sequencer.patternScaleRevision.get()) << 8) |
+            (static_cast<uint32_t>(state_refs_.sequencer.pattern.patternScaleRevision.get()) << 8) |
             (static_cast<uint32_t>(state_refs_.trackBank.projectScaleRevisionSignal().get()) << 16),
     });
 }

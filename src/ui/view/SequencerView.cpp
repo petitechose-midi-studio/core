@@ -134,11 +134,11 @@ FLASHMEM void SequencerView::bindBottomControlsState() {
         [this]() {
             requestBottomControlsRender();
         },
-        state_refs_.sequencer.stepsPerBeat,
+        state_refs_.sequencer.pattern.stepsPerBeat,
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.offsetSteps,
-        state_refs_.sequencer.length
+        state_refs_.sequencer.pattern.length
     );
 }
 
@@ -173,7 +173,7 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         },
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
-        state_refs_.sequencer.length,
+        state_refs_.sequencer.pattern.length,
         state_refs_.sequencer.page,
         state_refs_.structureClipboard.revision,
         state_refs_.structureNavigationFocus,
@@ -197,15 +197,15 @@ FLASHMEM void SequencerView::bindGridState() {
         [this]() {
             requestGridRender();
         },
-        state_refs_.sequencer.length,
+        state_refs_.sequencer.pattern.length,
         state_refs_.sequencer.page,
-        state_refs_.sequencer.enabledMask,
+        state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.playheadStep,
-        state_refs_.sequencer.stepDataRevision,
+        state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.probabilityCycleRevision,
         state_refs_.sequencer.variationTelemetryRevision,
-        state_refs_.sequencer.patternVariationRevision,
-        state_refs_.sequencer.patternScaleRevision,
+        state_refs_.sequencer.pattern.patternVariationRevision,
+        state_refs_.sequencer.pattern.patternScaleRevision,
         state_refs_.tracks.projectScaleRevisionSignal(),
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
@@ -279,7 +279,7 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.activeStepProperty,
-        state_refs_.sequencer.patternVariationRevision
+        state_refs_.sequencer.pattern.patternVariationRevision
     );
 }
 

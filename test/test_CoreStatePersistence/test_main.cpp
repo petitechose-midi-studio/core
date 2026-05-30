@@ -276,9 +276,9 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
                                      storage.sequencerSetLibrary);
 
         core::state::macro::MacroWorkflow::setConfig(state, 0, 1, 10);
-        state.sequencer.length.set(8);
+        state.sequencer.pattern.length.set(8);
         state.sequencer.setStepDataAt(0, 60, 80, 50);
-        state.sequencer.toggle(0);
+        state.sequencer.pattern.toggle(0);
         drainNotifications();
         state.flush();
     }
@@ -300,10 +300,10 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
 
         assert(state.setSharedTrackState(0x0003, 1));
         assert(core::state::macro::MacroWorkflow::setConfig(state, 0, 3, 88));
-        state.sequencer.length.set(16);
+        state.sequencer.pattern.length.set(16);
         state.sequencer.setStepDataAt(0, 72, 111, 75);
-        if (!state.sequencer.isEnabled(0)) {
-            state.sequencer.toggle(0);
+        if (!state.sequencer.pattern.isEnabled(0)) {
+            state.sequencer.pattern.toggle(0);
         }
 
         core::state::DataManagerWorkflow::setShortcut(
@@ -334,11 +334,11 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
     const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
     assert(restoredConfig.channel == 3);
     assert(restoredConfig.cc == 88);
-    assert(restored.sequencer.length.get() == 16);
-    assert(restored.sequencer.note[0] == 72);
-    assert(restored.sequencer.velocity[0] == 111);
-    assert(restored.sequencer.gate[0] == 75);
-    assert(restored.sequencer.isEnabled(0));
+    assert(restored.sequencer.pattern.length.get() == 16);
+    assert(restored.sequencer.pattern.note[0] == 72);
+    assert(restored.sequencer.pattern.velocity[0] == 111);
+    assert(restored.sequencer.pattern.gate[0] == 75);
+    assert(restored.sequencer.pattern.isEnabled(0));
     assert(restored.currentSharedTrackEnabledMask() == 0x0003);
     assert(restored.currentSharedActiveTrack() == 1);
     assert(restored.dataManager.macroShortcutLeft.get() ==
@@ -496,10 +496,10 @@ void test_sequencer_workspace_and_library_roundtrip() {
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
-        state.sequencer.length.set(16);
-        state.sequencer.stepsPerBeat.set(4);
-        state.sequencer.midiChannel.set(3);
-        state.sequencer.toggle(0);
+        state.sequencer.pattern.length.set(16);
+        state.sequencer.pattern.stepsPerBeat.set(4);
+        state.sequencer.pattern.midiChannel.set(3);
+        state.sequencer.pattern.toggle(0);
         state.sequencer.setStepDataAt(0, 64, 120, 70);
         state.sequencer.setStepProbabilityAt(0, 42);
 
@@ -509,10 +509,10 @@ void test_sequencer_workspace_and_library_roundtrip() {
         assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 4));
         assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 2));
 
-        state.sequencer.length.set(8);
-        state.sequencer.stepsPerBeat.set(2);
-        state.sequencer.midiChannel.set(0);
-        state.sequencer.enabledMask.set({});
+        state.sequencer.pattern.length.set(8);
+        state.sequencer.pattern.stepsPerBeat.set(2);
+        state.sequencer.pattern.midiChannel.set(0);
+        state.sequencer.pattern.enabledMask.set({});
         state.sequencer.setStepDataAt(0, 40, 40, 40);
         oc::state::NotificationQueue::instance().flush();
         state.flush();
@@ -520,14 +520,14 @@ void test_sequencer_workspace_and_library_roundtrip() {
         const auto patternStatus =
             core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 4);
         assert(patternStatus == core::persistence::SlotLoadStatus::OK);
-        assert(state.sequencer.length.get() == 16);
-        assert(state.sequencer.stepsPerBeat.get() == 4);
-        assert(state.sequencer.midiChannel.get() == 3);
-        assert(state.sequencer.isEnabled(0));
-        assert(state.sequencer.note[0] == 64);
-        assert(state.sequencer.velocity[0] == 120);
-        assert(state.sequencer.gate[0] == 70);
-        assert(state.sequencer.probability[0] == 42);
+        assert(state.sequencer.pattern.length.get() == 16);
+        assert(state.sequencer.pattern.stepsPerBeat.get() == 4);
+        assert(state.sequencer.pattern.midiChannel.get() == 3);
+        assert(state.sequencer.pattern.isEnabled(0));
+        assert(state.sequencer.pattern.note[0] == 64);
+        assert(state.sequencer.pattern.velocity[0] == 120);
+        assert(state.sequencer.pattern.gate[0] == 70);
+        assert(state.sequencer.pattern.probability[0] == 42);
 
         assert(core::state::sequencer::SequencerPersistenceWorkflow::erasePatternSlot(state, 4));
         const auto erasedPatternStatus =
@@ -537,9 +537,9 @@ void test_sequencer_workspace_and_library_roundtrip() {
         const auto setStatus =
             core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 2);
         assert(setStatus == core::persistence::SlotLoadStatus::OK);
-        assert(state.sequencer.length.get() == 16);
-        assert(state.sequencer.stepsPerBeat.get() == 4);
-        assert(state.sequencer.midiChannel.get() == 3);
+        assert(state.sequencer.pattern.length.get() == 16);
+        assert(state.sequencer.pattern.stepsPerBeat.get() == 4);
+        assert(state.sequencer.pattern.midiChannel.get() == 3);
 
         assert(core::state::sequencer::SequencerPersistenceWorkflow::eraseSetSlot(state, 2));
         const auto erasedSetStatus =
@@ -556,14 +556,14 @@ void test_sequencer_workspace_and_library_roundtrip() {
                                     storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
-    assert(restored.sequencer.length.get() == 16);
-    assert(restored.sequencer.stepsPerBeat.get() == 4);
-    assert(restored.sequencer.midiChannel.get() == 3);
-    assert(restored.sequencer.isEnabled(0));
-    assert(restored.sequencer.note[0] == 64);
-    assert(restored.sequencer.velocity[0] == 120);
-    assert(restored.sequencer.gate[0] == 70);
-    assert(restored.sequencer.probability[0] == 42);
+    assert(restored.sequencer.pattern.length.get() == 16);
+    assert(restored.sequencer.pattern.stepsPerBeat.get() == 4);
+    assert(restored.sequencer.pattern.midiChannel.get() == 3);
+    assert(restored.sequencer.pattern.isEnabled(0));
+    assert(restored.sequencer.pattern.note[0] == 64);
+    assert(restored.sequencer.pattern.velocity[0] == 120);
+    assert(restored.sequencer.pattern.gate[0] == 70);
+    assert(restored.sequencer.pattern.probability[0] == 42);
 
     drainNotifications();
 
@@ -582,7 +582,7 @@ void test_sequencer_workspace_persists_navigation_context() {
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
-        state.sequencer.length.set(24);
+        state.sequencer.pattern.length.set(24);
         state.sequencer.focusedStep.set(10);
         state.sequencer.page.set(state.sequencer.pageForStep(10));
         state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::GATE);
@@ -598,7 +598,7 @@ void test_sequencer_workspace_persists_navigation_context() {
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
 
-    assert(restored.sequencer.length.get() == 24);
+    assert(restored.sequencer.pattern.length.get() == 24);
     assert(restored.sequencer.focusedStep.get() == 10);
     assert(restored.sequencer.page.get() == restored.sequencer.pageForStep(10));
     assert(restored.sequencer.activeStepProperty.get() == core::state::sequencer::StepProperty::GATE);
@@ -620,23 +620,23 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
                                  storage.sequencerSetLibrary);
 
     // Pattern A (will be saved and reloaded)
-    state.sequencer.length.set(8);
-    state.sequencer.stepsPerBeat.set(2);
-    state.sequencer.midiChannel.set(1);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.stepsPerBeat.set(2);
+    state.sequencer.pattern.midiChannel.set(1);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
-    state.sequencer.toggle(0);
+    state.sequencer.pattern.toggle(0);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 1));
 
     // Pattern B (current live state before queued load)
-    state.sequencer.length.set(16);
-    state.sequencer.stepsPerBeat.set(4);
-    state.sequencer.midiChannel.set(6);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.stepsPerBeat.set(4);
+    state.sequencer.pattern.midiChannel.set(6);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 40, 55, 30);
-    state.sequencer.toggle(0);
+    state.sequencer.pattern.toggle(0);
 
     state.statusBar.playing.set(true);
     state.sequencer.playheadStep.set(5);
@@ -646,40 +646,40 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     assert(queuedStatus == core::persistence::SlotLoadStatus::OK);
 
     // Load is deferred: no immediate replacement while still on same step.
-    assert(state.sequencer.length.get() == 16);
-    assert(state.sequencer.note[0] == 40);
+    assert(state.sequencer.pattern.length.get() == 16);
+    assert(state.sequencer.pattern.note[0] == 40);
 
     state.update();
-    assert(state.sequencer.length.get() == 16);
-    assert(state.sequencer.note[0] == 40);
+    assert(state.sequencer.pattern.length.get() == 16);
+    assert(state.sequencer.pattern.note[0] == 40);
 
     // Next step reached -> queued apply must happen.
     state.sequencer.playheadStep.set(6);
     state.update();
-    assert(state.sequencer.length.get() == 8);
-    assert(state.sequencer.stepsPerBeat.get() == 2);
-    assert(state.sequencer.midiChannel.get() == 1);
-    assert(state.sequencer.note[0] == 61);
-    assert(state.sequencer.velocity[0] == 101);
-    assert(state.sequencer.gate[0] == 80);
+    assert(state.sequencer.pattern.length.get() == 8);
+    assert(state.sequencer.pattern.stepsPerBeat.get() == 2);
+    assert(state.sequencer.pattern.midiChannel.get() == 1);
+    assert(state.sequencer.pattern.note[0] == 61);
+    assert(state.sequencer.pattern.velocity[0] == 101);
+    assert(state.sequencer.pattern.gate[0] == 80);
 
     // Same behavior for set library loads.
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 2));
 
-    state.sequencer.length.set(12);
+    state.sequencer.pattern.length.set(12);
     state.sequencer.setStepDataAt(0, 77, 77, 77);
     state.sequencer.playheadStep.set(9);
 
     const auto queuedSetStatus =
         core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 2);
     assert(queuedSetStatus == core::persistence::SlotLoadStatus::OK);
-    assert(state.sequencer.length.get() == 12);
-    assert(state.sequencer.note[0] == 77);
+    assert(state.sequencer.pattern.length.get() == 12);
+    assert(state.sequencer.pattern.note[0] == 77);
 
     state.sequencer.playheadStep.set(10);
     state.update();
-    assert(state.sequencer.length.get() == 8);
-    assert(state.sequencer.note[0] == 61);
+    assert(state.sequencer.pattern.length.get() == 8);
+    assert(state.sequencer.pattern.note[0] == 61);
 
     drainNotifications();
 
@@ -698,17 +698,17 @@ void test_direct_load_clears_stale_pending_quantized_apply() {
                                  storage.sequencerSetLibrary);
 
     // Slot 1: queued while playing.
-    state.sequencer.length.set(8);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
-    state.sequencer.toggle(0);
+    state.sequencer.pattern.toggle(0);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 1));
 
     // Slot 2: loaded explicitly after transport stops.
-    state.sequencer.length.set(12);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(12);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 72, 88, 44);
-    state.sequencer.toggle(0);
+    state.sequencer.pattern.toggle(0);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 2));
 
     // Queue slot 1 while transport is running.
@@ -721,15 +721,15 @@ void test_direct_load_clears_stale_pending_quantized_apply() {
     state.statusBar.playing.set(false);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 2) ==
            core::persistence::SlotLoadStatus::OK);
-    assert(state.sequencer.length.get() == 12);
-    assert(state.sequencer.note[0] == 72);
+    assert(state.sequencer.pattern.length.get() == 12);
+    assert(state.sequencer.pattern.note[0] == 72);
 
     // A later update must not replay the stale queued load from slot 1.
     state.update();
-    assert(state.sequencer.length.get() == 12);
-    assert(state.sequencer.note[0] == 72);
-    assert(state.sequencer.velocity[0] == 88);
-    assert(state.sequencer.gate[0] == 44);
+    assert(state.sequencer.pattern.length.get() == 12);
+    assert(state.sequencer.pattern.note[0] == 72);
+    assert(state.sequencer.pattern.velocity[0] == 88);
+    assert(state.sequencer.pattern.gate[0] == 44);
 
     drainNotifications();
 
@@ -748,49 +748,49 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
                                  storage.sequencerSetLibrary);
 
     // Incoming set snapshot: step 0 and step 3 enabled.
-    state.sequencer.length.set(8);
-    state.sequencer.stepsPerBeat.set(2);
-    state.sequencer.midiChannel.set(1);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.stepsPerBeat.set(2);
+    state.sequencer.pattern.midiChannel.set(1);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
-    state.sequencer.toggle(0);
+    state.sequencer.pattern.toggle(0);
     state.sequencer.setStepDataAt(3, 65, 99, 70);
-    state.sequencer.toggle(3);
+    state.sequencer.pattern.toggle(3);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 4));
 
     // Live pattern before merge: longer length + existing step 1 enabled.
-    state.sequencer.length.set(16);
-    state.sequencer.stepsPerBeat.set(4);
-    state.sequencer.midiChannel.set(6);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.stepsPerBeat.set(4);
+    state.sequencer.pattern.midiChannel.set(6);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 44, 55, 66);
-    state.sequencer.toggle(1);
+    state.sequencer.pattern.toggle(1);
 
     const auto status =
         core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 4, true);
     assert(status == core::persistence::SlotLoadStatus::OK);
 
     // Merge keeps current transport config and length, overlays incoming enabled steps only.
-    assert(state.sequencer.length.get() == 16);
-    assert(state.sequencer.stepsPerBeat.get() == 4);
-    assert(state.sequencer.midiChannel.get() == 6);
+    assert(state.sequencer.pattern.length.get() == 16);
+    assert(state.sequencer.pattern.stepsPerBeat.get() == 4);
+    assert(state.sequencer.pattern.midiChannel.get() == 6);
 
-    assert(state.sequencer.note[0] == 61);
-    assert(state.sequencer.velocity[0] == 101);
-    assert(state.sequencer.gate[0] == 80);
+    assert(state.sequencer.pattern.note[0] == 61);
+    assert(state.sequencer.pattern.velocity[0] == 101);
+    assert(state.sequencer.pattern.gate[0] == 80);
 
     // Existing enabled step remains untouched if incoming did not enable it.
-    assert(state.sequencer.note[1] == 44);
-    assert(state.sequencer.velocity[1] == 55);
-    assert(state.sequencer.gate[1] == 66);
+    assert(state.sequencer.pattern.note[1] == 44);
+    assert(state.sequencer.pattern.velocity[1] == 55);
+    assert(state.sequencer.pattern.gate[1] == 66);
 
-    assert(state.sequencer.note[3] == 65);
-    assert(state.sequencer.velocity[3] == 99);
-    assert(state.sequencer.gate[3] == 70);
+    assert(state.sequencer.pattern.note[3] == 65);
+    assert(state.sequencer.pattern.velocity[3] == 99);
+    assert(state.sequencer.pattern.gate[3] == 70);
 
-    assert(state.sequencer.enabledMask.get().test(0));
-    assert(state.sequencer.enabledMask.get().test(1));
-    assert(state.sequencer.enabledMask.get().test(3));
+    assert(state.sequencer.pattern.enabledMask.get().test(0));
+    assert(state.sequencer.pattern.enabledMask.get().test(1));
+    assert(state.sequencer.pattern.enabledMask.get().test(3));
 
     drainNotifications();
 
@@ -809,17 +809,17 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
                                  storage.sequencerSetLibrary);
 
     // Prepare incoming set with only step 2 enabled.
-    state.sequencer.length.set(8);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(2, 72, 110, 45);
-    state.sequencer.toggle(2);
+    state.sequencer.pattern.toggle(2);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 6));
 
     // Live state before queued merge.
-    state.sequencer.length.set(16);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 48, 64, 55);
-    state.sequencer.toggle(1);
+    state.sequencer.pattern.toggle(1);
     state.sequencer.playheadStep.set(7);
     state.statusBar.playing.set(true);
 
@@ -829,17 +829,17 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
 
     // Same-step update must stay deferred.
     state.update();
-    assert(state.sequencer.note[2] != 72 || !state.sequencer.enabledMask.get().test(2));
+    assert(state.sequencer.pattern.note[2] != 72 || !state.sequencer.pattern.enabledMask.get().test(2));
 
     // Next step triggers queued merge.
     state.sequencer.playheadStep.set(8);
     state.update();
-    assert(state.sequencer.length.get() == 16);
-    assert(state.sequencer.note[2] == 72);
-    assert(state.sequencer.velocity[2] == 110);
-    assert(state.sequencer.gate[2] == 45);
-    assert(state.sequencer.enabledMask.get().test(1));
-    assert(state.sequencer.enabledMask.get().test(2));
+    assert(state.sequencer.pattern.length.get() == 16);
+    assert(state.sequencer.pattern.note[2] == 72);
+    assert(state.sequencer.pattern.velocity[2] == 110);
+    assert(state.sequencer.pattern.gate[2] == 45);
+    assert(state.sequencer.pattern.enabledMask.get().test(1));
+    assert(state.sequencer.pattern.enabledMask.get().test(2));
 
     drainNotifications();
 

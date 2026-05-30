@@ -188,7 +188,7 @@ void CoreStateLifecycle::queuePendingSequencerApply(CoreState& state,
                                                     const sequencer::SequencerState& staged,
                                                     bool merge) {
     if (!state.sequencerDomain_.pendingApply) return;
-    sequencer::captureSnapshot(staged, state.sequencerDomain_.pendingApply->snapshot);
+    sequencer::captureSnapshot(staged.pattern, state.sequencerDomain_.pendingApply->snapshot);
     state.sequencerDomain_.pendingApply->anchorPlayhead = state.sequencer.playheadStep.get();
     state.sequencerDomain_.pendingApply->merge = merge;
     state.sequencerDomain_.pendingApply->fullBank = false;
@@ -222,7 +222,7 @@ void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
             state.sequencerDomain_.pendingApply->snapshot
         );
     } else {
-        sequencer::applySnapshot(state.sequencer, state.sequencerDomain_.pendingApply->snapshot);
+        sequencer::applySnapshotToEditor(state.sequencer, state.sequencerDomain_.pendingApply->snapshot);
     }
     sequencer::storeActiveTrack(state.sequencerTracks, state.sequencer);
     state.refreshSharedTrackStateFromSequencer();

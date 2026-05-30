@@ -4,8 +4,6 @@
 #include <cstdint>
 #include <type_traits>
 
-#include <oc/note/sequencer/StepSequencerState.hpp>
-
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::persistence::sequencer_codec {
@@ -18,15 +16,15 @@ namespace core::persistence::sequencer_codec {
  * must move in lockstep with data-version changes.
  */
 inline constexpr uint8_t PERSISTED_PATTERN_STEPS =
-    oc::note::sequencer::StepSequencerState::MAX_STEPS;
+    state::sequencer::SequencerPatternState::MAX_STEPS;
 inline constexpr uint8_t PERSISTED_TRACK_COUNT =
     state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 
 #pragma pack(push, 1)
 struct PatternPayload {
-    uint8_t length = oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
-    uint8_t stepsPerBeat = oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
-    uint8_t midiChannel = oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
+    uint8_t length = state::sequencer::SequencerPatternState::DEFAULT_LENGTH;
+    uint8_t stepsPerBeat = state::sequencer::SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
+    uint8_t midiChannel = state::sequencer::SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED;
     uint8_t pitchEditMode = static_cast<uint8_t>(
         state::sequencer::SequencerPitchEditMode::CHROMATIC
     );

@@ -9,8 +9,8 @@ namespace core::persistence::sequencer_codec {
 namespace {
 
 uint8_t sanitizeLength(uint8_t length) {
-    if (length == 0 || length > state::sequencer::SequencerState::MAX_STEPS) {
-        return oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
+    if (length == 0 || length > state::sequencer::SequencerPatternState::MAX_STEPS) {
+        return state::sequencer::SequencerPatternState::DEFAULT_LENGTH;
     }
     return length;
 }
@@ -21,14 +21,14 @@ oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length) {
 
 uint8_t sanitizeStepsPerBeat(uint8_t spb) {
     if (spb == 0) {
-        return oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
+        return state::sequencer::SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
     }
     return spb;
 }
 
 uint8_t sanitizeMidiChannel(uint8_t channel) {
     return (channel > 15U)
-               ? oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED
+               ? state::sequencer::SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED
                : channel;
 }
 
@@ -37,11 +37,11 @@ uint8_t sanitizeMidi7(uint8_t value) {
 }
 
 uint16_t sanitizeGate(uint16_t value) {
-    return state::sequencer::SequencerState::clampGatePercent(value);
+    return state::sequencer::SequencerPatternState::clampGatePercent(value);
 }
 
 uint8_t sanitizeProbability(uint8_t value) {
-    return state::sequencer::SequencerState::clampProbability(value);
+    return state::sequencer::SequencerPatternState::clampProbability(value);
 }
 
 oc::note::sequencer::StepSequencerVariationRanges sanitizeVariationRanges(
@@ -93,7 +93,7 @@ uint8_t sanitizeFocusedStep(uint8_t focused, uint8_t length) {
 
 }  // namespace
 
-FLASHMEM void fillPatternPayload(const state::sequencer::SequencerState& source, PatternPayload& out) {
+FLASHMEM void fillPatternPayload(const state::sequencer::SequencerPatternState& source, PatternPayload& out) {
     const uint8_t length = sanitizeLength(source.length.get());
     out.length = length;
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
@@ -122,7 +122,7 @@ FLASHMEM void fillPatternPayload(const state::sequencer::SequencerState& source,
     }
 }
 
-FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequencer::SequencerState& target) {
+FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequencer::SequencerPatternState& target) {
     const uint8_t length = sanitizeLength(payload.length);
     target.length.set(length);
     target.stepsPerBeat.set(sanitizeStepsPerBeat(payload.stepsPerBeat));
@@ -148,9 +148,6 @@ FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequence
         target.probability[i] = sanitizeProbability(payload.probability[i]);
     }
 
-    const uint8_t focused = sanitizeFocusedStep(target.focusedStep.get(), length);
-    target.focusedStep.set(focused);
-    target.page.set(target.pageForStep(focused));
     target.bumpStepDataRevision();
 }
 
@@ -165,12 +162,14 @@ FLASHMEM void fillWorkspacePayload(const state::sequencer::SequencerTrackBankSta
     out.projectScaleConstraintMode = static_cast<uint8_t>(projectScale.mode);
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = (i == activeTrack) ? active : trackBank.track(i);
+        const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
         fillPatternPayload(source, out.tracks[i].pattern);
-        out.tracks[i].focusedStep =
-            sanitizeFocusedStep(source.focusedStep.get(), out.tracks[i].pattern.length);
-        out.tracks[i].page = source.page.get();
-        out.tracks[i].activeStepProperty = static_cast<uint8_t>(source.activeStepProperty.get());
+        if (i == activeTrack) {
+            out.tracks[i].focusedStep =
+                sanitizeFocusedStep(active.focusedStep.get(), out.tracks[i].pattern.length);
+            out.tracks[i].page = active.page.get();
+            out.tracks[i].activeStepProperty = static_cast<uint8_t>(active.activeStepProperty.get());
+        }
     }
 }
 
@@ -190,21 +189,11 @@ FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         applyPatternPayload(payload.tracks[i].pattern, trackBank.track(i));
-        const uint8_t focused =
-            sanitizeFocusedStep(payload.tracks[i].focusedStep, trackBank.track(i).length.get());
-        trackBank.track(i).focusedStep.set(focused);
-        const uint8_t pageCount = trackBank.track(i).activePageCount();
-        const uint8_t safePage =
-            (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[i].page % pageCount);
-        trackBank.track(i).page.set(safePage);
-        trackBank.track(i).activeStepProperty.set(
-            sanitizeStepProperty(payload.tracks[i].activeStepProperty)
-        );
     }
 
-    applyPatternPayload(payload.tracks[activeTrack].pattern, active);
+    applyPatternPayload(payload.tracks[activeTrack].pattern, active.pattern);
     const uint8_t focused =
-        sanitizeFocusedStep(payload.tracks[activeTrack].focusedStep, active.length.get());
+        sanitizeFocusedStep(payload.tracks[activeTrack].focusedStep, active.pattern.length.get());
     active.focusedStep.set(focused);
     const uint8_t pageCount = active.activePageCount();
     const uint8_t safePage =
@@ -229,7 +218,7 @@ FLASHMEM void fillSetPayload(const state::sequencer::SequencerTrackBankState& tr
     out.projectScaleConstraintMode = static_cast<uint8_t>(projectScale.mode);
 
     for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = (i == activeTrack) ? active : trackBank.track(i);
+        const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
         fillPatternPayload(source, out.tracks[i]);
     }
 }
@@ -256,7 +245,10 @@ FLASHMEM void applySetPayload(const SetPayload& payload,
 
     const uint8_t activeTrack =
         std::min<uint8_t>(payload.activeTrack, static_cast<uint8_t>(trackCount - 1));
-    applyPatternPayload(payload.tracks[activeTrack], active);
+    applyPatternPayload(payload.tracks[activeTrack], active.pattern);
+    active.focusedStep.set(0);
+    active.page.set(0);
+    active.activeStepProperty.set(state::sequencer::StepProperty::NOTE);
     trackBank.syncSharedTrackState(trackBank.currentEnabledMask(), activeTrack);
 }
 

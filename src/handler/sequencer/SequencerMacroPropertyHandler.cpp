@@ -61,11 +61,11 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
         abs,
         property,
         normalized,
-        sequencer_.pitchEditMode,
+        sequencer_.pattern.pitchEditMode,
         core::state::sequencer::resolveEffectiveScaleSettings(
             track_bank_.projectScaleSettings(),
-            sequencer_.scalePolicy,
-            sequencer_.scaleOverride
+            sequencer_.pattern.scalePolicy,
+            sequencer_.pattern.scaleOverride
         )
     );
     sequencer_.stepInlineFeedback.show(abs, property, now_provider_ ? now_provider_() : 0);

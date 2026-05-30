@@ -2,11 +2,12 @@
 
 #include <cstdint>
 
-#include <oc/state/Signal.hpp>
-#include <oc/note/sequencer/StepSequencerState.hpp>
 #include <oc/note/sequencer/StepBitMask128.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "state/StructureSelectionState.hpp"
+#include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/StepProperty.hpp"
 
 namespace core::state::sequencer {
 
@@ -15,17 +16,9 @@ using oc::state::Signal;
 /**
  * Session-only sequencer UI state and quick-edit enums.
  *
- * Pattern data lives in SequencerState; these structs track overlays, inline
+ * Pattern data lives in SequencerPatternState; these structs track overlays, inline
  * selector focus, temporary feedback, and page-structure UI.
  */
-enum class StepProperty : uint8_t {
-    NOTE = 0,
-    VELOCITY = 1,
-    GATE = 2,
-    NUDGE = 3,
-    PROBABILITY = 4,
-};
-
 enum class PatternQuickControlItem : uint8_t {
     OFFSET = 0,
     DIVISION = 1,
@@ -67,7 +60,7 @@ struct SequencerStepPropertyInlineSelectorState {
 
 struct SequencerStepInlineFeedbackState {
     static constexpr uint32_t DISPLAY_HOLD_MS = 700;
-    static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
+    static constexpr uint8_t MAX_STEPS = SequencerPatternState::MAX_STEPS;
 
     Signal<bool> visible{false};
     Signal<oc::note::sequencer::StepBitMask128> touchedMask{};

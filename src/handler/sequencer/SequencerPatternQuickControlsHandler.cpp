@@ -89,8 +89,8 @@ void SequencerPatternQuickControlsHandler::open() {
     auto& quick = sequencer_.patternQuickControls;
     quick.reset();
     quick.selecting.set(true);
-    core::state::sequencer::captureSnapshot(sequencer_, cancel_snapshot_);
-    core::state::sequencer::captureSnapshot(sequencer_, offset_snapshot_);
+    core::state::sequencer::captureSnapshot(sequencer_.pattern, cancel_snapshot_);
+    core::state::sequencer::captureSnapshot(sequencer_.pattern, offset_snapshot_);
     configureOptForFocusedItem();
 }
 
@@ -104,7 +104,7 @@ void SequencerPatternQuickControlsHandler::closeCancel() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
 
-    core::state::sequencer::applySnapshot(sequencer_, cancel_snapshot_);
+    core::state::sequencer::applySnapshotToEditor(sequencer_, cancel_snapshot_);
     clampFocusToLength();
 
     quick.reset();
@@ -119,7 +119,7 @@ void SequencerPatternQuickControlsHandler::navigate(float delta) {
     const auto nextItem = core::state::sequencer::quickControlAtOrderIndex(static_cast<size_t>(next));
     setFocusedItemByOrderIndex(next);
     if (nextItem == Item::OFFSET) {
-        core::state::sequencer::captureSnapshot(sequencer_, offset_snapshot_);
+        core::state::sequencer::captureSnapshot(sequencer_.pattern, offset_snapshot_);
         sequencer_.patternQuickControls.offsetSteps.set(0);
     }
     configureOptForFocusedItem();
@@ -138,7 +138,7 @@ void SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
     }
 
     input_utils::applyNormalizedToQuickControl(sequencer_, item, normalized);
-    core::state::sequencer::captureSnapshot(sequencer_, offset_snapshot_);
+    core::state::sequencer::captureSnapshot(sequencer_.pattern, offset_snapshot_);
     sequencer_.patternQuickControls.offsetSteps.set(0);
     if (item == Item::LENGTH) {
         clampFocusToLength();
@@ -173,7 +173,7 @@ void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
 }
 
 void SequencerPatternQuickControlsHandler::clampFocusToLength() {
-    const uint8_t len = sequencer_.length.get();
+    const uint8_t len = sequencer_.pattern.length.get();
     if (len == 0) return;
 
     uint8_t focused = sequencer_.focusedStep.get();
@@ -198,7 +198,7 @@ void SequencerPatternQuickControlsHandler::setFocusedItemByOrderIndex(int index)
 }
 
 int SequencerPatternQuickControlsHandler::currentOffsetMax() const {
-    const uint8_t len = sequencer_.length.get();
+    const uint8_t len = sequencer_.pattern.length.get();
     return (len > 0) ? static_cast<int>(len - 1) : 0;
 }
 
@@ -218,7 +218,7 @@ int SequencerPatternQuickControlsHandler::normalizedToOffset(float normalized) c
 }
 
 void SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int offsetSteps) {
-    core::state::sequencer::applySnapshot(sequencer_, offset_snapshot_);
+    core::state::sequencer::applySnapshotToEditor(sequencer_, offset_snapshot_);
     if (offsetSteps != 0) {
         core::state::sequencer::rotatePattern(sequencer_, offsetSteps);
     }

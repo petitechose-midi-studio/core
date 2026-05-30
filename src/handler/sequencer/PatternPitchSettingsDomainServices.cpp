@@ -17,8 +17,8 @@ StepSequencerScaleSettings editableScaleSettings(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::sequencer::SequencerTrackBankState& trackBank
 ) {
-    auto settings = core::state::sequencer::isPatternScaleOverride(sequencer.scalePolicy)
-        ? sequencer.scaleOverride
+    auto settings = core::state::sequencer::isPatternScaleOverride(sequencer.pattern.scalePolicy)
+        ? sequencer.pattern.scaleOverride
         : trackBank.projectScaleSettings();
     settings.clamp();
     return settings;
@@ -35,13 +35,13 @@ FLASHMEM int PatternPitchSettingsDomainServices::currentChoiceIndex(uint8_t row)
 
     switch (row) {
         case 0:
-            return core::state::sequencer::isPatternScaleOverride(sequencer_->scalePolicy) ? 1 : 0;
+            return core::state::sequencer::isPatternScaleOverride(sequencer_->pattern.scalePolicy) ? 1 : 0;
         case 1:
             return std::clamp<int>(settings.root, 0, catalog::ROOT_COUNT - 1);
         case 2:
             return catalog::scaleTypeIndex(settings.type);
         case 3:
-            return catalog::pitchEditModeIndex(sequencer_->pitchEditMode);
+            return catalog::pitchEditModeIndex(sequencer_->pattern.pitchEditMode);
         default:
             return 0;
     }
@@ -52,11 +52,11 @@ FLASHMEM int PatternPitchSettingsDomainServices::choiceCount(uint8_t row) const 
         case 0:
             return catalog::PATTERN_SCALE_POLICY_COUNT;
         case 1:
-            return core::state::sequencer::isPatternScaleOverride(sequencer_->scalePolicy)
+            return core::state::sequencer::isPatternScaleOverride(sequencer_->pattern.scalePolicy)
                 ? catalog::ROOT_COUNT
                 : 0;
         case 2:
-            return core::state::sequencer::isPatternScaleOverride(sequencer_->scalePolicy)
+            return core::state::sequencer::isPatternScaleOverride(sequencer_->pattern.scalePolicy)
                 ? catalog::SCALE_TYPE_COUNT
                 : 0;
         case 3:
@@ -76,7 +76,7 @@ FLASHMEM void PatternPitchSettingsDomainServices::applyChoice(uint8_t row, int c
                 return;
             }
 
-            if (!core::state::sequencer::isPatternScaleOverride(sequencer_->scalePolicy)) {
+            if (!core::state::sequencer::isPatternScaleOverride(sequencer_->pattern.scalePolicy)) {
                 sequencer_->setPatternScaleOverride(track_bank_->projectScaleSettings());
             }
             sequencer_->setPatternScalePolicy(
@@ -85,7 +85,7 @@ FLASHMEM void PatternPitchSettingsDomainServices::applyChoice(uint8_t row, int c
             return;
 
         case 1: {
-            auto settings = sequencer_->scaleOverride;
+            auto settings = sequencer_->pattern.scaleOverride;
             settings.root = static_cast<uint8_t>(
                 std::clamp(choiceIndex, 0, catalog::ROOT_COUNT - 1)
             );
@@ -94,7 +94,7 @@ FLASHMEM void PatternPitchSettingsDomainServices::applyChoice(uint8_t row, int c
         }
 
         case 2: {
-            auto settings = sequencer_->scaleOverride;
+            auto settings = sequencer_->pattern.scaleOverride;
             settings.type = catalog::SCALE_TYPE_VALUES[
                 std::clamp(choiceIndex, 0, catalog::SCALE_TYPE_COUNT - 1)
             ];

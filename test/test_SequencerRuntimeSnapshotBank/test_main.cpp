@@ -22,10 +22,10 @@ void test_refresh_captures_active_editor_state() {
     core::state::sequencer::SequencerTrackBankState trackBank;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
 
-    sequencer.length.set(12);
-    sequencer.midiChannel.set(4);
-    sequencer.note[0] = 67;
-    sequencer.bumpStepDataRevision();
+    sequencer.pattern.length.set(12);
+    sequencer.pattern.midiChannel.set(4);
+    sequencer.pattern.note[0] = 67;
+    sequencer.pattern.bumpStepDataRevision();
 
     const uint8_t index = bank.refresh();
     bank.commit(index);
@@ -44,11 +44,11 @@ void test_refresh_preserves_active_snapshot_until_commit() {
     core::state::sequencer::SequencerTrackBankState trackBank;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
 
-    sequencer.length.set(8);
+    sequencer.pattern.length.set(8);
     uint8_t index = bank.refresh();
     bank.commit(index);
 
-    sequencer.length.set(16);
+    sequencer.pattern.length.set(16);
     index = bank.refresh();
 
     assert(bank.activeSnapshot().tracks[0].length == 8);
@@ -89,10 +89,10 @@ void test_refresh_switches_active_track_sources() {
     core::state::sequencer::SequencerTrackBankState trackBank;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
 
-    sequencer.length.set(12);
-    sequencer.midiChannel.set(4);
-    sequencer.note[0] = 67;
-    sequencer.bumpStepDataRevision();
+    sequencer.pattern.length.set(12);
+    sequencer.pattern.midiChannel.set(4);
+    sequencer.pattern.note[0] = 67;
+    sequencer.pattern.bumpStepDataRevision();
 
     trackBank.syncSharedTrackState(0x0005, 0);
     uint8_t index = bank.refresh();
@@ -104,10 +104,10 @@ void test_refresh_switches_active_track_sources() {
     inactiveTrack0.note[0] = 60;
     inactiveTrack0.bumpStepDataRevision();
 
-    sequencer.length.set(32);
-    sequencer.midiChannel.set(9);
-    sequencer.note[0] = 80;
-    sequencer.bumpStepDataRevision();
+    sequencer.pattern.length.set(32);
+    sequencer.pattern.midiChannel.set(9);
+    sequencer.pattern.note[0] = 80;
+    sequencer.pattern.bumpStepDataRevision();
 
     trackBank.syncSharedTrackState(0x0005, 2);
     index = bank.refresh();

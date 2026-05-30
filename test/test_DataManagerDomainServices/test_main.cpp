@@ -159,16 +159,16 @@ void test_sequencer_set_load_reports_deferred_apply() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
-    state.sequencer.length.set(8);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(2, 72, 110, 45);
-    state.sequencer.toggle(2);
+    state.sequencer.pattern.toggle(2);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 6));
 
-    state.sequencer.length.set(16);
-    state.sequencer.enabledMask.set({});
+    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 48, 64, 55);
-    state.sequencer.toggle(1);
+    state.sequencer.pattern.toggle(1);
     state.sequencer.playheadStep.set(7);
     state.statusBar.playing.set(true);
 
@@ -181,7 +181,7 @@ void test_sequencer_set_load_reports_deferred_apply() {
     assert(load.deferredApply);
     assert(load.loadStatus == core::persistence::SlotLoadStatus::OK);
     assert(state.hasPendingSequencerApply());
-    assert(state.sequencer.length.get() == 16);
+    assert(state.sequencer.pattern.length.get() == 16);
 
     drainNotifications();
 

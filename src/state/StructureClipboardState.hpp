@@ -25,10 +25,10 @@ enum class StructureClipboardKind : uint8_t {
 };
 
 struct SequencerPageClipboard {
-    static constexpr uint8_t STEP_COUNT = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
+    static constexpr uint8_t STEP_COUNT = core::state::sequencer::SequencerPatternState::STEPS_PER_PAGE;
 
     bool valid = false;
-    uint8_t sourcePage = core::state::sequencer::SequencerState::PAGE_COUNT;
+    uint8_t sourcePage = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
     uint8_t count = 0;
     uint8_t enabledMask = 0;
     std::array<uint8_t, STEP_COUNT> note{};
@@ -39,7 +39,7 @@ struct SequencerPageClipboard {
 
     void reset() {
         valid = false;
-        sourcePage = core::state::sequencer::SequencerState::PAGE_COUNT;
+        sourcePage = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
         count = 0;
         enabledMask = 0;
     }

@@ -96,12 +96,12 @@ struct SequencerStepHarness {
 
 void test_nav_selection_mode_deletes_selected_sequencer_page() {
     SequencerStepHarness h;
-    h.state.sequencer.length.set(16);
+    h.state.sequencer.pattern.length.set(16);
     h.state.sequencer.page.set(1);
     h.state.sequencer.focusedStep.set(8);
-    h.state.sequencer.note[8] = 72;
-    h.state.sequencer.velocity[8] = 90;
-    h.state.sequencer.setEnabled(8, true);
+    h.state.sequencer.pattern.note[8] = 72;
+    h.state.sequencer.pattern.velocity[8] = 90;
+    h.state.sequencer.pattern.setEnabled(8, true);
 
     h.press(Config::ButtonID::NAV);
     h.tick(0);
@@ -120,10 +120,10 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
-    assert(h.state.sequencer.length.get() == 8);
+    assert(h.state.sequencer.pattern.length.get() == 8);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() <= 7);
-    assert(!h.state.sequencer.enabledMask.get().test(8));
+    assert(!h.state.sequencer.pattern.enabledMask.get().test(8));
     assert(!h.state.sequencer.structureUi.pageSelection.active.get());
 
     std::cout << "[PASS] test_nav_selection_mode_deletes_selected_sequencer_page\n";
@@ -131,7 +131,7 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
 
 void test_page_selection_cursor_can_move_across_inactive_slots() {
     SequencerStepHarness h;
-    h.state.sequencer.length.set(8);
+    h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(0);
     h.state.sequencer.structureUi.pageSelection.active.set(true);
@@ -163,7 +163,7 @@ void test_page_selection_cursor_can_move_across_inactive_slots() {
 
 void test_sequencer_page_creation_extends_pattern_to_target_slot() {
     SequencerStepHarness h;
-    h.state.sequencer.length.set(24);
+    h.state.sequencer.pattern.length.set(24);
     h.state.sequencer.page.set(2);
     h.state.sequencer.focusedStep.set(16);
 
@@ -186,17 +186,17 @@ void test_sequencer_page_creation_extends_pattern_to_target_slot() {
     h.release(Config::ButtonID::NAV);
 
     assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(h.state.sequencer.length.get() == 48);
+    assert(h.state.sequencer.pattern.length.get() == 48);
     assert(h.state.sequencer.page.get() == 5);
     assert(h.state.sequencer.focusedStep.get() == 40);
 
     for (uint8_t step = 24; step < 48; ++step) {
-        assert(h.state.sequencer.note[step] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
-        assert(h.state.sequencer.velocity[step] == core::state::sequencer::SequencerState::DEFAULT_VELOCITY);
-        assert(h.state.sequencer.gate[step] == core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
-        assert(h.state.sequencer.nudge[step] == 0);
-        assert(h.state.sequencer.probability[step] == core::state::sequencer::SequencerState::DEFAULT_PROBABILITY);
-        assert(!h.state.sequencer.isEnabled(step));
+        assert(h.state.sequencer.pattern.note[step] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern.velocity[step] == core::state::sequencer::SequencerState::DEFAULT_VELOCITY);
+        assert(h.state.sequencer.pattern.gate[step] == core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
+        assert(h.state.sequencer.pattern.nudge[step] == 0);
+        assert(h.state.sequencer.pattern.probability[step] == core::state::sequencer::SequencerState::DEFAULT_PROBABILITY);
+        assert(!h.state.sequencer.pattern.isEnabled(step));
     }
 
     std::cout << "[PASS] test_sequencer_page_creation_extends_pattern_to_target_slot\n";
@@ -207,12 +207,12 @@ void test_nav_selection_mode_deletes_selected_sequencer_track() {
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
     h.state.sequencerTracks.track(1).midiChannel.set(5);
-    h.state.sequencer.midiChannel.set(0);
+    h.state.sequencer.pattern.midiChannel.set(0);
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.sequencer.midiChannel.get() == 5);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 5);
 
     h.press(Config::ButtonID::NAV);
     h.tick(0);
@@ -232,7 +232,7 @@ void test_nav_selection_mode_deletes_selected_sequencer_track() {
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0001);
     assert(h.state.sequencerTracks.activeTrackIndex() == 0);
-    assert(h.state.sequencer.midiChannel.get() == 0);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 0);
     assert(!h.state.trackNavigation.selection.active.get());
 
     std::cout << "[PASS] test_nav_selection_mode_deletes_selected_sequencer_track\n";
@@ -240,15 +240,15 @@ void test_nav_selection_mode_deletes_selected_sequencer_track() {
 
 void test_sequencer_page_copy_and_long_press_paste() {
     SequencerStepHarness h;
-    h.state.sequencer.length.set(16);
+    h.state.sequencer.pattern.length.set(16);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(0);
-    h.state.sequencer.note[0] = 72;
-    h.state.sequencer.velocity[0] = 99;
-    h.state.sequencer.gate[0] = 80;
-    h.state.sequencer.nudge[0] = 3;
-    h.state.sequencer.probability[0] = 87;
-    h.state.sequencer.setEnabled(0, true);
+    h.state.sequencer.pattern.note[0] = 72;
+    h.state.sequencer.pattern.velocity[0] = 99;
+    h.state.sequencer.pattern.gate[0] = 80;
+    h.state.sequencer.pattern.nudge[0] = 3;
+    h.state.sequencer.pattern.probability[0] = 87;
+    h.state.sequencer.pattern.setEnabled(0, true);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -263,24 +263,24 @@ void test_sequencer_page_copy_and_long_press_paste() {
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.note[8] == 72);
-    assert(h.state.sequencer.velocity[8] == 99);
-    assert(h.state.sequencer.gate[8] == 80);
-    assert(h.state.sequencer.nudge[8] == 3);
-    assert(h.state.sequencer.probability[8] == 87);
-    assert(h.state.sequencer.isEnabled(8));
+    assert(h.state.sequencer.pattern.note[8] == 72);
+    assert(h.state.sequencer.pattern.velocity[8] == 99);
+    assert(h.state.sequencer.pattern.gate[8] == 80);
+    assert(h.state.sequencer.pattern.nudge[8] == 3);
+    assert(h.state.sequencer.pattern.probability[8] == 87);
+    assert(h.state.sequencer.pattern.isEnabled(8));
 
     std::cout << "[PASS] test_sequencer_page_copy_and_long_press_paste\n";
 }
 
 void test_sequencer_selection_duplicate_copies_page_payload() {
     SequencerStepHarness h;
-    h.state.sequencer.length.set(24);
+    h.state.sequencer.pattern.length.set(24);
     h.state.sequencer.page.set(2);
     h.state.sequencer.focusedStep.set(16);
-    h.state.sequencer.note[8] = 75;
-    h.state.sequencer.velocity[8] = 101;
-    h.state.sequencer.setEnabled(8, true);
+    h.state.sequencer.pattern.note[8] = 75;
+    h.state.sequencer.pattern.velocity[8] = 101;
+    h.state.sequencer.pattern.setEnabled(8, true);
 
     h.state.sequencer.structureUi.pageSelection.active.set(true);
     h.state.sequencer.structureUi.pageSelection.scope.set(core::state::StructureSelectionScope::PAGE);
@@ -290,12 +290,12 @@ void test_sequencer_selection_duplicate_copies_page_payload() {
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.length.get() == 24);
+    assert(h.state.sequencer.pattern.length.get() == 24);
     assert(h.state.sequencer.page.get() == 2);
     assert(h.state.sequencer.focusedStep.get() == 16);
-    assert(h.state.sequencer.note[16] == 75);
-    assert(h.state.sequencer.velocity[16] == 101);
-    assert(h.state.sequencer.isEnabled(16));
+    assert(h.state.sequencer.pattern.note[16] == 75);
+    assert(h.state.sequencer.pattern.velocity[16] == 101);
+    assert(h.state.sequencer.pattern.isEnabled(16));
     assert(!h.state.sequencer.structureUi.pageSelection.active.get());
 
     std::cout << "[PASS] test_sequencer_selection_duplicate_copies_page_payload\n";
@@ -303,7 +303,7 @@ void test_sequencer_selection_duplicate_copies_page_payload() {
 
 void test_sequencer_selection_duplicate_self_map_stays_in_selection() {
     SequencerStepHarness h;
-    h.state.sequencer.length.set(16);
+    h.state.sequencer.pattern.length.set(16);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(0);
 
@@ -315,7 +315,7 @@ void test_sequencer_selection_duplicate_self_map_stays_in_selection() {
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.length.get() == 16);
+    assert(h.state.sequencer.pattern.length.get() == 16);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.state.sequencer.structureUi.pageSelection.active.get());
@@ -328,9 +328,9 @@ void test_sequencer_selection_duplicate_copies_track_payload() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 1);
-    h.state.sequencer.note[0] = 82;
-    h.state.sequencer.velocity[0] = 108;
-    h.state.sequencer.setEnabled(0, true);
+    h.state.sequencer.pattern.note[0] = 82;
+    h.state.sequencer.pattern.velocity[0] = 108;
+    h.state.sequencer.pattern.setEnabled(0, true);
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     h.state.trackNavigation.selection.active.set(true);
     h.state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
@@ -342,9 +342,9 @@ void test_sequencer_selection_duplicate_copies_track_payload() {
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007);
     assert(h.state.sequencerTracks.activeTrackIndex() == 2);
-    assert(h.state.sequencer.note[0] == 82);
-    assert(h.state.sequencer.velocity[0] == 108);
-    assert(h.state.sequencer.isEnabled(0));
+    assert(h.state.sequencer.pattern.note[0] == 82);
+    assert(h.state.sequencer.pattern.velocity[0] == 108);
+    assert(h.state.sequencer.pattern.isEnabled(0));
     assert(!h.state.trackNavigation.selection.active.get());
 
     std::cout << "[PASS] test_sequencer_selection_duplicate_copies_track_payload\n";
@@ -354,11 +354,11 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0001, 0);
-    h.state.sequencer.length.set(8);
-    h.state.sequencer.note[0] = 79;
-    h.state.sequencer.velocity[0] = 96;
-    h.state.sequencer.gate[0] = 72;
-    h.state.sequencer.setEnabled(0, true);
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.note[0] = 79;
+    h.state.sequencer.pattern.velocity[0] = 96;
+    h.state.sequencer.pattern.gate[0] = 72;
+    h.state.sequencer.pattern.setEnabled(0, true);
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -376,10 +376,10 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.sequencer.note[0] == 79);
-    assert(h.state.sequencer.velocity[0] == 96);
-    assert(h.state.sequencer.gate[0] == 72);
-    assert(h.state.sequencer.isEnabled(0));
+    assert(h.state.sequencer.pattern.note[0] == 79);
+    assert(h.state.sequencer.pattern.velocity[0] == 96);
+    assert(h.state.sequencer.pattern.gate[0] == 72);
+    assert(h.state.sequencer.pattern.isEnabled(0));
 
     std::cout << "[PASS] test_sequencer_track_copy_and_long_press_paste_to_add_slot\n";
 }
@@ -411,9 +411,9 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencerTracks.isTrackEnabled(1));
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.sequencer.midiChannel.get() == 1);
-    assert(h.state.sequencer.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    assert(!h.state.sequencer.isEnabled(0));
+    assert(h.state.sequencer.pattern.midiChannel.get() == 1);
+    assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    assert(!h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencerTracks.track(2).note[0] == 83);
     assert(h.state.sequencerTracks.track(2).isEnabled(0));
 
