@@ -4,6 +4,7 @@
 #include <oc/log/Log.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
@@ -90,9 +91,7 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
             if (merge) {
                 state.queuePendingSequencerApply(staged, true);
             } else {
-                SequencerTrackBankSnapshot snapshot;
-                captureTrackBankSnapshot(stagedBank, staged, snapshot);
-                state.queuePendingSequencerBankApply(snapshot);
+                state.queuePendingSequencerBankApply(stagedBank, staged);
             }
         }
         return status;
@@ -110,11 +109,16 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
             SequencerPatternSnapshot snapshot;
             captureSnapshot(staged.pattern, snapshot);
             mergeSnapshotIntoCurrent(state.sequencer, snapshot);
+            copyGraph(state.sequencer.pattern, staged.pattern);
             storeActiveTrack(state.sequencerTracks, state.sequencer);
         } else {
             SequencerTrackBankSnapshot snapshot;
             captureTrackBankSnapshot(stagedBank, staged, snapshot);
             applyTrackBankSnapshot(state.sequencerTracks, state.sequencer, snapshot);
+            for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+                copyGraph(state.sequencerTracks.track(i), stagedBank.track(i));
+            }
+            copyGraph(state.sequencer.pattern, staged.pattern);
         }
         state.setSharedTrackState(
             state.sequencerTracks.currentEnabledMask(),

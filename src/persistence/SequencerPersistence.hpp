@@ -5,8 +5,10 @@
 
 #include <oc/interface/IStorage.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
 #include "persistence/SequencerPersistenceCodec.hpp"
+#include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "persistence/SequencerPersistencePayloads.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -29,8 +31,8 @@ public:
     static constexpr uint32_t WORKSPACE_MAGIC = 0x5357534B;         // "SWSK"
     static constexpr uint32_t PATTERN_LIBRARY_MAGIC = 0x53504C42;   // "SPLB"
     static constexpr uint32_t SET_LIBRARY_MAGIC = 0x53534554;       // "SSET"
-    static constexpr uint8_t WORKSPACE_DATA_VERSION = 3;
-    static constexpr uint8_t LIBRARY_DATA_VERSION = 2;
+    static constexpr uint8_t WORKSPACE_DATA_VERSION = 4;
+    static constexpr uint8_t LIBRARY_DATA_VERSION = 3;
 
     explicit SequencerPersistence(oc::interface::IStorage& workspaceStorage,
                                   oc::interface::IStorage& patternLibraryStorage,
@@ -39,17 +41,17 @@ public:
                            {.fileMagic = WORKSPACE_MAGIC,
                             .domainVersion = WORKSPACE_DATA_VERSION,
                             .slotCount = WORKSPACE_SLOT_COUNT,
-                            .slotPayloadSize = sequencer_codec::WORKSPACE_PAYLOAD_SIZE})
+                            .slotPayloadSize = sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE})
         , pattern_library_store_(patternLibraryStorage,
                                  {.fileMagic = PATTERN_LIBRARY_MAGIC,
                                   .domainVersion = LIBRARY_DATA_VERSION,
                                   .slotCount = PATTERN_LIBRARY_SLOT_COUNT,
-                                  .slotPayloadSize = sequencer_codec::PATTERN_PAYLOAD_SIZE})
+                                  .slotPayloadSize = sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE})
         , set_library_store_(setLibraryStorage,
                              {.fileMagic = SET_LIBRARY_MAGIC,
                               .domainVersion = LIBRARY_DATA_VERSION,
                               .slotCount = SET_LIBRARY_SLOT_COUNT,
-                              .slotPayloadSize = sequencer_codec::SET_PAYLOAD_SIZE}) {}
+                              .slotPayloadSize = sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE}) {}
 
     bool init() {
         return initStatus() == PersistenceWriteStatus::OK;
@@ -64,16 +66,24 @@ public:
 
     bool loadWorkspace(state::sequencer::SequencerTrackBankState& trackBank,
                        state::sequencer::SequencerState& sequencer) {
-        sequencer_codec::WorkspacePayload snapshot{};
+        auto buffer = makeBuffer_();
+        if (!buffer) return false;
         const auto latest = workspace_store_.loadLatest(
-            reinterpret_cast<uint8_t*>(&snapshot),
-            sizeof(snapshot)
+            buffer->bytes.data(),
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
         );
         if (latest.status != SlotLoadStatus::OK) {
             return false;
         }
 
-        sequencer_codec::applyWorkspacePayload(snapshot, trackBank, sequencer);
+        if (!sequencer_codec::applyWorkspaceEnvelope(
+                buffer->bytes.data(),
+                latest.metadata.payloadSize,
+                trackBank,
+                sequencer
+            )) {
+            return false;
+        }
 
         next_workspace_counter_ = latest.metadata.saveCounter + 1;
         next_workspace_slot_ =
@@ -90,13 +100,20 @@ public:
         const state::sequencer::SequencerTrackBankState& trackBank,
         const state::sequencer::SequencerState& sequencer
     ) {
-        sequencer_codec::WorkspacePayload snapshot{};
-        sequencer_codec::fillWorkspacePayload(trackBank, sequencer, snapshot);
+        auto buffer = makeBuffer_();
+        if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
+        const auto encoded = sequencer_codec::fillWorkspaceEnvelope(
+            trackBank,
+            sequencer,
+            buffer->bytes.data(),
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        );
+        if (!encoded.ok) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
 
         const auto status = workspace_store_.saveSlotStatus(
             next_workspace_slot_,
-            reinterpret_cast<const uint8_t*>(&snapshot),
-            sizeof(snapshot),
+            buffer->bytes.data(),
+            encoded.size,
             next_workspace_counter_
         );
         if (status != PersistenceWriteStatus::OK) return status;
@@ -117,14 +134,20 @@ public:
     ) {
         if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
-        sequencer_codec::PatternPayload payload{};
-        sequencer_codec::fillPatternPayload(sequencer.pattern, payload);
+        auto buffer = makeBuffer_();
+        if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
+        const auto encoded = sequencer_codec::fillPatternEnvelope(
+            sequencer.pattern,
+            buffer->bytes.data(),
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        );
+        if (!encoded.ok) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
         return pattern_library_store_.saveSlotStatus(
             slotIndex,
-            reinterpret_cast<const uint8_t*>(&payload),
-            sizeof(payload),
+            buffer->bytes.data(),
+            encoded.size,
             counter
         );
     }
@@ -132,23 +155,27 @@ public:
     SlotLoadStatus loadPatternSlot(uint8_t slotIndex, state::sequencer::SequencerState& sequencer) {
         if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return SlotLoadStatus::OUT_OF_RANGE;
 
-        sequencer_codec::PatternPayload payload{};
+        auto buffer = makeBuffer_();
+        if (!buffer) return SlotLoadStatus::STORAGE_UNAVAILABLE;
         SlotMetadata metadata{};
         const SlotLoadStatus status = pattern_library_store_.loadSlot(
             slotIndex,
-            reinterpret_cast<uint8_t*>(&payload),
-            sizeof(payload),
+            buffer->bytes.data(),
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE,
             &metadata
         );
         if (status != SlotLoadStatus::OK) {
             return status;
         }
 
-        if (metadata.payloadSize != sizeof(payload)) {
+        if (!sequencer_codec::applyPatternEnvelope(
+                buffer->bytes.data(),
+                metadata.payloadSize,
+                sequencer.pattern
+            )) {
             return SlotLoadStatus::HEADER_MISMATCH;
         }
 
-        sequencer_codec::applyPatternPayload(payload, sequencer.pattern);
         const uint8_t len = sequencer.pattern.length.get();
         const uint8_t focused =
             (len == 0)
@@ -181,14 +208,21 @@ public:
     ) {
         if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
-        sequencer_codec::SetPayload payload{};
-        sequencer_codec::fillSetPayload(trackBank, sequencer, payload);
+        auto buffer = makeBuffer_();
+        if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
+        const auto encoded = sequencer_codec::fillSetEnvelope(
+            trackBank,
+            sequencer,
+            buffer->bytes.data(),
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        );
+        if (!encoded.ok) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
 
         const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
         return set_library_store_.saveSlotStatus(
             slotIndex,
-            reinterpret_cast<const uint8_t*>(&payload),
-            sizeof(payload),
+            buffer->bytes.data(),
+            encoded.size,
             counter
         );
     }
@@ -198,23 +232,28 @@ public:
                                state::sequencer::SequencerState& sequencer) {
         if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return SlotLoadStatus::OUT_OF_RANGE;
 
-        sequencer_codec::SetPayload payload{};
+        auto buffer = makeBuffer_();
+        if (!buffer) return SlotLoadStatus::STORAGE_UNAVAILABLE;
         SlotMetadata metadata{};
         const SlotLoadStatus status = set_library_store_.loadSlot(
             slotIndex,
-            reinterpret_cast<uint8_t*>(&payload),
-            sizeof(payload),
+            buffer->bytes.data(),
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE,
             &metadata
         );
         if (status != SlotLoadStatus::OK) {
             return status;
         }
 
-        if (metadata.payloadSize != sizeof(payload)) {
+        if (!sequencer_codec::applySetEnvelope(
+                buffer->bytes.data(),
+                metadata.payloadSize,
+                trackBank,
+                sequencer
+            )) {
             return SlotLoadStatus::HEADER_MISMATCH;
         }
 
-        sequencer_codec::applySetPayload(payload, trackBank, sequencer);
         return SlotLoadStatus::OK;
     }
 
@@ -228,11 +267,16 @@ public:
     }
 
 private:
+    static core::app::ExtmemUniquePtr<sequencer_codec::EnvelopeBuffer> makeBuffer_() {
+        return core::app::makeExtmemUnique<sequencer_codec::EnvelopeBuffer>();
+    }
+
     PersistenceWriteStatus syncWorkspaceJournal_() {
-        sequencer_codec::WorkspacePayload snapshot{};
+        auto buffer = makeBuffer_();
+        if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
         const auto latest = workspace_store_.loadLatest(
-            reinterpret_cast<uint8_t*>(&snapshot),
-            sizeof(snapshot)
+            buffer->bytes.data(),
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
         );
         if (latest.status == SlotLoadStatus::OK) {
             next_workspace_counter_ = latest.metadata.saveCounter + 1;
