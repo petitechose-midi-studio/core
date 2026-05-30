@@ -23,6 +23,7 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .stepDataRevision = source.stepDataRevision.get(),
         .patternVariationRevision = source.patternVariationRevision.get(),
         .patternScaleRevision = source.patternScaleRevision.get(),
+        .graphRevision = source.graphRevision.get(),
         .effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
             projectScaleSettings,
             source.scalePolicy,
@@ -42,6 +43,7 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .stepDataRevision = source.stepDataRevision,
         .patternVariationRevision = source.patternVariationRevision,
         .patternScaleRevision = source.patternScaleRevision,
+        .graphRevision = source.graphRevision,
         .effectiveScaleSettings = source.effectiveScaleSettings,
     };
 }

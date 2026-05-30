@@ -7,8 +7,10 @@
 
 #include <cstdint>
 
+#include <oc/note/sequencer/StepSequencerGraph.hpp>
 #include <oc/note/sequencer/StepSequencerState.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "SequencerScaleState.hpp"
 #include "StepProperty.hpp"
 
@@ -40,9 +42,13 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     /// Bumps when pattern scale inheritance or override settings change.
     Signal<uint32_t, 8> patternScaleRevision{0};
 
+    /// Bumps when hierarchical step content changes.
+    Signal<uint32_t> graphRevision{0};
+
     SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
     SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::CHROMATIC;
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
 
     static uint8_t clampMidi7(uint8_t value) {
         return (value > 127U) ? 127U : value;
@@ -72,6 +78,10 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
 
     void bumpPatternScaleRevision() {
         patternScaleRevision.set(patternScaleRevision.get() + 1);
+    }
+
+    void bumpGraphRevision() {
+        graphRevision.set(graphRevision.get() + 1);
     }
 
     uint8_t variationRangeForProperty(StepProperty property) const {
@@ -277,6 +287,8 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         scaleOverride = {};
         pitchEditMode = SequencerPitchEditMode::CHROMATIC;
         bumpPatternScaleRevision();
+        graph.reset();
+        bumpGraphRevision();
     }
 
     uint8_t activePageCount() const {

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <iostream>
 
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace {
@@ -210,6 +211,30 @@ void test_duplicate_pages_from_plan_extends_and_clips() {
     std::cout << "[PASS] test_duplicate_pages_from_plan_extends_and_clips\n";
 }
 
+void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
+    SequencerState source;
+    const auto sourceNode = core::state::sequencer::rootStepNodeId(0);
+    assert(core::state::sequencer::createMicroSequence(source.pattern, sourceNode, 2).ok);
+
+    core::state::sequencer::SequencerPatternSnapshot snapshot;
+    core::state::sequencer::captureSnapshot(source.pattern, snapshot);
+    assert(snapshot.graphRevision == source.pattern.graphRevision.get());
+
+    SequencerState applied;
+    assert(core::state::sequencer::createMicroSequence(applied.pattern, sourceNode, 2).ok);
+    core::state::sequencer::applySnapshot(applied.pattern, snapshot);
+    assert(applied.pattern.graph.get() == nullptr);
+    assert(applied.pattern.graphRevision.get() == snapshot.graphRevision);
+
+    SequencerState merged;
+    assert(core::state::sequencer::createCycleStateSet(merged.pattern, sourceNode, 2).ok);
+    core::state::sequencer::mergeSnapshotIntoCurrent(merged, snapshot);
+    assert(merged.pattern.graph.get() == nullptr);
+    assert(merged.pattern.graphRevision.get() == snapshot.graphRevision);
+
+    std::cout << "[PASS] test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision\n";
+}
+
 }  // namespace
 
 int main() {
@@ -221,6 +246,7 @@ int main() {
     test_page_duplicate_plan_clips_destinations_past_page_limit();
     test_duplicate_pages_from_plan_overwrites_from_snapshot();
     test_duplicate_pages_from_plan_extends_and_clips();
+    test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision();
 
     std::cout << "All SequencerSnapshotOps tests passed\n";
     return 0;
