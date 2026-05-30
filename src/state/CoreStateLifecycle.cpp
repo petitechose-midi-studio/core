@@ -6,10 +6,72 @@
 #include "state/CoreState.hpp"
 #include "state/DataManagerWorkflow.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
+
+namespace {
+
+using StepSequencerGraph = oc::note::sequencer::StepSequencerGraph;
+using GraphPtr = core::app::ExtmemUniquePtr<StepSequencerGraph>;
+
+void captureGraph(GraphPtr& target, const sequencer::SequencerPatternState& source) {
+    if (!source.graph || !source.graph->enabled) {
+        target.reset();
+        return;
+    }
+
+    target = core::app::makeExtmemUnique<StepSequencerGraph>();
+    if (target) {
+        *target = *source.graph;
+    }
+}
+
+void applyCapturedGraph(sequencer::SequencerPatternState& target,
+                        const GraphPtr& graph,
+                        uint32_t revision) {
+    if (!graph || !graph->enabled) {
+        target.graph.reset();
+        target.graphRevision.set(revision);
+        return;
+    }
+
+    if (!target.graph) {
+        target.graph = core::app::makeExtmemUnique<StepSequencerGraph>();
+    }
+    if (!target.graph) return;
+    *target.graph = *graph;
+    target.graphRevision.set(revision);
+}
+
+void captureTrackBankGraphs(SequencerDomainState::PendingApply& pending,
+                            const sequencer::SequencerTrackBankState& stagedBank) {
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        captureGraph(pending.bankGraphs[i], stagedBank.track(i));
+    }
+}
+
+void applyTrackBankGraphs(sequencer::SequencerTrackBankState& bank,
+                          SequencerDomainState::PendingApply& pending) {
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        applyCapturedGraph(
+            bank.track(i),
+            pending.bankGraphs[i],
+            pending.bankSnapshot.tracks[i].graphRevision
+        );
+    }
+}
+
+void clearCapturedGraphs(SequencerDomainState::PendingApply& pending) {
+    pending.patternGraph.reset();
+    for (auto& graph : pending.bankGraphs) {
+        graph.reset();
+    }
+}
+
+}  // namespace
 
 void CoreStateLifecycle::updateAutoPersist_(CoreState& state) {
     if (state.macroDomain_.autoPersist) {
@@ -113,6 +175,7 @@ void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
     sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer);
     if (state.sequencerDomain_.pendingApply) {
         state.sequencerDomain_.pendingApply->valid = false;
+        clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
     }
     state.persistSequencerWorkspace_();
 }
@@ -188,10 +251,32 @@ void CoreStateLifecycle::queuePendingSequencerApply(CoreState& state,
                                                     const sequencer::SequencerState& staged,
                                                     bool merge) {
     if (!state.sequencerDomain_.pendingApply) return;
+    clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
     sequencer::captureSnapshot(staged.pattern, state.sequencerDomain_.pendingApply->snapshot);
+    captureGraph(state.sequencerDomain_.pendingApply->patternGraph, staged.pattern);
     state.sequencerDomain_.pendingApply->anchorPlayhead = state.sequencer.playheadStep.get();
     state.sequencerDomain_.pendingApply->merge = merge;
     state.sequencerDomain_.pendingApply->fullBank = false;
+    state.sequencerDomain_.pendingApply->valid = true;
+}
+
+void CoreStateLifecycle::queuePendingSequencerBankApply(
+    CoreState& state,
+    const sequencer::SequencerTrackBankState& stagedBank,
+    const sequencer::SequencerState& staged
+) {
+    if (!state.sequencerDomain_.pendingApply) return;
+    clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
+    sequencer::captureTrackBankSnapshot(
+        stagedBank,
+        staged,
+        state.sequencerDomain_.pendingApply->bankSnapshot
+    );
+    captureTrackBankGraphs(*state.sequencerDomain_.pendingApply, stagedBank);
+    captureGraph(state.sequencerDomain_.pendingApply->patternGraph, staged.pattern);
+    state.sequencerDomain_.pendingApply->anchorPlayhead = state.sequencer.playheadStep.get();
+    state.sequencerDomain_.pendingApply->merge = false;
+    state.sequencerDomain_.pendingApply->fullBank = true;
     state.sequencerDomain_.pendingApply->valid = true;
 }
 
@@ -199,6 +284,7 @@ void CoreStateLifecycle::clearPendingSequencerApply(CoreState& state) {
     if (!state.sequencerDomain_.pendingApply) return;
     state.sequencerDomain_.pendingApply->valid = false;
     state.sequencerDomain_.pendingApply->fullBank = false;
+    clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
 }
 
 void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
@@ -216,17 +302,37 @@ void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
             state.sequencer,
             state.sequencerDomain_.pendingApply->bankSnapshot
         );
+        applyTrackBankGraphs(state.sequencerTracks, *state.sequencerDomain_.pendingApply);
+        applyCapturedGraph(
+            state.sequencer.pattern,
+            state.sequencerDomain_.pendingApply->patternGraph,
+            state.sequencerDomain_.pendingApply
+                ->bankSnapshot
+                .tracks[state.sequencerDomain_.pendingApply->bankSnapshot.activeTrack]
+                .graphRevision
+        );
     } else if (state.sequencerDomain_.pendingApply->merge) {
         sequencer::mergeSnapshotIntoCurrent(
             state.sequencer,
             state.sequencerDomain_.pendingApply->snapshot
         );
+        applyCapturedGraph(
+            state.sequencer.pattern,
+            state.sequencerDomain_.pendingApply->patternGraph,
+            state.sequencerDomain_.pendingApply->snapshot.graphRevision
+        );
     } else {
         sequencer::applySnapshotToEditor(state.sequencer, state.sequencerDomain_.pendingApply->snapshot);
+        applyCapturedGraph(
+            state.sequencer.pattern,
+            state.sequencerDomain_.pendingApply->patternGraph,
+            state.sequencerDomain_.pendingApply->snapshot.graphRevision
+        );
     }
     sequencer::storeActiveTrack(state.sequencerTracks, state.sequencer);
     state.refreshSharedTrackStateFromSequencer();
     state.sequencerDomain_.pendingApply->valid = false;
+    clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
     state.persistSequencerWorkspace_();
 }
 

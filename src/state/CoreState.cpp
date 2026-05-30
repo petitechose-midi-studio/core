@@ -179,9 +179,10 @@ void CoreState::queuePendingSequencerApply(const sequencer::SequencerState& stag
 }
 
 void CoreState::queuePendingSequencerBankApply(
-    const sequencer::SequencerTrackBankSnapshot& staged
+    const sequencer::SequencerTrackBankState& stagedBank,
+    const sequencer::SequencerState& staged
 ) {
-    queueSequencerBankApply_(staged);
+    queueSequencerBankApply_(stagedBank, staged);
 }
 
 void CoreState::clearPendingSequencerApply() {
@@ -272,13 +273,11 @@ void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bo
     CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
 }
 
-void CoreState::queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged) {
-    if (!sequencerDomain_.pendingApply) return;
-    sequencerDomain_.pendingApply->bankSnapshot = staged;
-    sequencerDomain_.pendingApply->anchorPlayhead = sequencer.playheadStep.get();
-    sequencerDomain_.pendingApply->merge = false;
-    sequencerDomain_.pendingApply->fullBank = true;
-    sequencerDomain_.pendingApply->valid = true;
+void CoreState::queueSequencerBankApply_(
+    const sequencer::SequencerTrackBankState& stagedBank,
+    const sequencer::SequencerState& staged
+) {
+    CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
 }
 
 void CoreState::requestMacroWorkspacePersist_() {

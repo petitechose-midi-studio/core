@@ -10,6 +10,7 @@
 #include "../../src/state/DataManagerWorkflow.hpp"
 #include "../../src/state/macro/MacroPersistenceWorkflow.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
@@ -17,6 +18,41 @@
 namespace {
 using test_support::CoreStorages;
 using test_support::drainNotifications;
+
+void addGraphContent(core::state::sequencer::SequencerPatternState& pattern,
+                     int8_t noteOffset = 7) {
+    using namespace core::state::sequencer;
+
+    const auto micro = createMicroSequence(pattern, rootStepNodeId(2), 3);
+    assert(micro.ok);
+    const auto* graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    assert(setNodeNoteOffset(
+        pattern,
+        static_cast<uint16_t>(sequence->firstStepNode + 1),
+        noteOffset
+    ));
+}
+
+bool hasGraphContent(const core::state::sequencer::SequencerPatternState& pattern,
+                     int8_t noteOffset = 7) {
+    using namespace core::state::sequencer;
+
+    const auto* graph = graphView(pattern);
+    if (graph == nullptr) return false;
+    const auto* root = graph->stepNode(rootStepNodeId(2));
+    if (root == nullptr || !root->has(oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE)) {
+        return false;
+    }
+    const auto* sequence = graph->sequence(root->childSequenceId);
+    if (sequence == nullptr || sequence->length != 3) return false;
+    const auto* child = graph->stepNode(static_cast<uint16_t>(sequence->firstStepNode + 1));
+    return child != nullptr &&
+           child->has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET) &&
+           child->noteOffset == noteOffset;
+}
 
 void test_workspace_survives_settings_storage_corruption() {
     CoreStorages storage;
@@ -686,6 +722,46 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     std::cout << "[PASS] test_sequencer_load_is_quantized_to_next_step_when_playing\n";
 }
 
+void test_sequencer_queued_pattern_load_preserves_graph_content() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.enabledMask.set({});
+    state.sequencer.setStepDataAt(0, 61, 101, 80);
+    state.sequencer.pattern.toggle(0);
+    addGraphContent(state.sequencer.pattern);
+    assert(hasGraphContent(state.sequencer.pattern));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 9));
+
+    core::state::sequencer::clearGraph(state.sequencer.pattern);
+    assert(!hasGraphContent(state.sequencer.pattern));
+
+    state.statusBar.playing.set(true);
+    state.sequencer.playheadStep.set(4);
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 9) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(!hasGraphContent(state.sequencer.pattern));
+
+    state.update();
+    assert(!hasGraphContent(state.sequencer.pattern));
+
+    state.sequencer.playheadStep.set(5);
+    state.update();
+    assert(hasGraphContent(state.sequencer.pattern));
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_queued_pattern_load_preserves_graph_content\n";
+}
+
 void test_direct_load_clears_stale_pending_quantized_apply() {
     CoreStorages storage;
     storage.initAll();
@@ -756,6 +832,7 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     state.sequencer.pattern.toggle(0);
     state.sequencer.setStepDataAt(3, 65, 99, 70);
     state.sequencer.pattern.toggle(3);
+    addGraphContent(state.sequencer.pattern, 9);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 4));
 
     // Live pattern before merge: longer length + existing step 1 enabled.
@@ -765,6 +842,7 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 44, 55, 66);
     state.sequencer.pattern.toggle(1);
+    addGraphContent(state.sequencer.pattern, -3);
 
     const auto status =
         core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 4, true);
@@ -791,6 +869,8 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     assert(state.sequencer.pattern.enabledMask.get().test(0));
     assert(state.sequencer.pattern.enabledMask.get().test(1));
     assert(state.sequencer.pattern.enabledMask.get().test(3));
+    assert(hasGraphContent(state.sequencer.pattern, 9));
+    assert(!hasGraphContent(state.sequencer.pattern, -3));
 
     drainNotifications();
 
@@ -865,6 +945,7 @@ int main() {
     test_sequencer_workspace_and_library_roundtrip();
     test_sequencer_workspace_persists_navigation_context();
     test_sequencer_load_is_quantized_to_next_step_when_playing();
+    test_sequencer_queued_pattern_load_preserves_graph_content();
     test_direct_load_clears_stale_pending_quantized_apply();
     test_sequencer_set_load_merge_preserves_existing_steps();
     test_sequencer_set_load_merge_is_quantized_when_playing();

@@ -15,10 +15,12 @@
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
+#include <array>
 #include <cstdint>
 #include <memory>
 
 #include <oc/interface/IStorage.hpp>
+#include <oc/note/sequencer/StepSequencerGraph.hpp>
 #include <oc/state/AutoPersistIncremental.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
@@ -92,6 +94,11 @@ struct SequencerDomainState {
         bool fullBank = false;
         sequencer::SequencerPatternSnapshot snapshot{};
         sequencer::SequencerTrackBankSnapshot bankSnapshot{};
+        core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> patternGraph;
+        std::array<
+            core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>,
+            sequencer::SequencerTrackBankState::TRACK_COUNT
+        > bankGraphs{};
     };
 
     struct PendingApplyDeleter {
@@ -249,7 +256,8 @@ public:
     void requestMacroWorkspacePersist();
     void persistSequencerWorkspace();
     void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false);
-    void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankSnapshot& staged);
+    void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankState& stagedBank,
+                                        const sequencer::SequencerState& staged);
     void clearPendingSequencerApply();
     bool hasPendingSequencerApply() const;
     uint16_t currentSharedTrackEnabledMask() const;
@@ -269,7 +277,8 @@ public:
 
 private:
     void queueSequencerApply_(const sequencer::SequencerState& staged, bool merge = false);
-    void queueSequencerBankApply_(const sequencer::SequencerTrackBankSnapshot& staged);
+    void queueSequencerBankApply_(const sequencer::SequencerTrackBankState& stagedBank,
+                                  const sequencer::SequencerState& staged);
     void requestMacroWorkspacePersist_();
     void requestSharedTrackPersist_();
     void persistMacroWorkspaceNow_();

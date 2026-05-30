@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sequencer/SequencerState.hpp"
+#include "sequencer/SequencerTrackBankState.hpp"
 
 namespace core::state {
 
@@ -23,6 +24,9 @@ struct CoreStateLifecycle {
     static void queuePendingSequencerApply(CoreState& state,
                                            const sequencer::SequencerState& staged,
                                            bool merge = false);
+    static void queuePendingSequencerBankApply(CoreState& state,
+                                               const sequencer::SequencerTrackBankState& stagedBank,
+                                               const sequencer::SequencerState& staged);
     static void clearPendingSequencerApply(CoreState& state);
 
 private:
