@@ -250,6 +250,7 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
             requestLeftActionStripRender();
         },
         state_refs_.sequencer.patternQuickControls.selecting,
+        state_refs_.sequencer.patternQuickControls.physicalHoldActive,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.trackNavigation.selection.active,

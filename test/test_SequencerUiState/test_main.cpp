@@ -53,11 +53,28 @@ void test_inline_feedback_reset_clears_state() {
     std::cout << "[PASS] test_inline_feedback_reset_clears_state\n";
 }
 
+void test_pattern_quick_controls_reset_clears_physical_hold_layer() {
+    core::state::sequencer::SequencerPatternQuickControlsState state;
+
+    state.selecting.set(true);
+    state.physicalHoldActive.set(true);
+    state.offsetSteps.set(3);
+
+    state.reset();
+
+    assert(!state.selecting.get());
+    assert(!state.physicalHoldActive.get());
+    assert(state.offsetSteps.get() == 0);
+
+    std::cout << "[PASS] test_pattern_quick_controls_reset_clears_physical_hold_layer\n";
+}
+
 }  // namespace
 
 int main() {
     test_inline_feedback_expires_steps_independently();
     test_inline_feedback_reset_clears_state();
+    test_pattern_quick_controls_reset_clears_physical_hold_layer();
 
     std::cout << "\nAll SequencerUiState tests passed.\n";
     return 0;

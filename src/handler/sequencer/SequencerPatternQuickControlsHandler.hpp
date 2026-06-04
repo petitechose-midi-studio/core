@@ -41,6 +41,9 @@ private:
     void open();
     void closeApply();
     void closeCancel();
+    void enterPhysicalHoldLayer();
+    void consumeUndoNoop();
+    void consumeRedoNoop();
     void navigate(float delta);
     void setFocusedValue(float normalized);
     void configureOptForFocusedItem();

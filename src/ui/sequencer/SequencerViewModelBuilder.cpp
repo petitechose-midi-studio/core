@@ -254,6 +254,8 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     const bool selectingTrack =
         source.trackNavigation.selection.active.get() &&
         source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
+    const bool physicalQuickControlHold =
+        source.sequencer.patternQuickControls.physicalHoldActive.get();
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
@@ -286,6 +288,22 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
                   .label = "PG",
               };
         props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
+
+    if (physicalQuickControlHold) {
+        props.slots[0] = makeIconSlot(
+            standalone::icons::ACTION_UNDO,
+            Visual::DIM
+        );
+        props.slots[1] = makeIconSlot(
+            standalone::icons::MIDI_CHANNEL,
+            Visual::ACTIVE
+        );
+        props.slots[2] = makeIconSlot(
+            standalone::icons::ACTION_REDO,
+            Visual::DIM
+        );
         return props;
     }
 
