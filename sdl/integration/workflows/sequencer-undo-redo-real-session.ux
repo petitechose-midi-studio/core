@@ -1,0 +1,131 @@
+# UX workflow: run a realistic sequencer edit session across several undoable
+# actions, then exercise undo, redo, redo invalidation after branching, and
+# redo again on the new branch.
+# Purpose: validates the user-facing history stack as a real editing sequence,
+# not as isolated single-action checks.
+# Expect: capture_match:after_step8_d4=after_undo_step1_edit_closed, capture_match:after_step8_c3=after_redo_step8_toggle_closed, capture_match:after_branch_step2_on=after_redo_attempt_cleared_closed
+
+0 scenario sequencer
+50 capture screen initial
+
+# Action A: set pattern Length from 8 to 15 through Quick Controls.
+150 button LEFT_CENTER down
+300 capture screen quick_controls_open
+400 encoder NAV -1
+500 encoder OPT 0.20
+700 button LEFT_CENTER up
+900 capture screen after_length_15
+
+# Action B: enable step 1 as C3.
+1000 tap MACRO_1 60
+1200 capture screen after_step1_on
+
+# Action C1: enable step 8 as C3.
+1300 tap MACRO_8 60
+1500 capture screen after_step8_c3
+
+# Action C2: edit step 8 note upward in Step Edit.
+1600 button MACRO_8 down
+2650 tick
+2700 capture screen step8_edit_open
+2750 button MACRO_8 up
+2850 encoder OPT 9.33
+3050 capture screen step8_note_raised_editing
+3150 tap NAV 60
+3350 capture screen after_step8_d4
+
+# Action D: edit step 1 note and gate in one Step Edit apply.
+3450 button MACRO_1 down
+4500 tick
+4550 capture screen step1_edit_open
+4600 button MACRO_1 up
+4700 encoder OPT 1.00
+4800 encoder NAV 1
+4900 encoder NAV 1
+5000 encoder OPT 1.00
+5150 capture screen step1_note_gate_editing
+5250 tap NAV 60
+5450 capture screen after_step1_edit
+
+# Undo D: step 1 edit should disappear, step 8 edit should remain.
+5550 button LEFT_CENTER down
+6550 tick
+6600 capture screen undo_layer_for_step1_edit
+6650 tap LEFT_TOP 60
+6850 capture screen after_undo_step1_edit
+6950 button LEFT_CENTER up
+7150 capture screen after_undo_step1_edit_closed
+
+# Undo C2: step 8 note edit should disappear, step 8 toggle should remain.
+7250 button LEFT_CENTER down
+8250 tick
+8300 capture screen undo_layer_for_step8_note
+8350 tap LEFT_TOP 60
+8550 capture screen after_undo_step8_note
+8650 button LEFT_CENTER up
+8850 capture screen after_undo_step8_note_closed
+
+# Undo C1: step 8 toggle should disappear.
+8950 button LEFT_CENTER down
+9950 tick
+10000 capture screen undo_layer_for_step8_toggle
+10050 tap LEFT_TOP 60
+10250 capture screen after_undo_step8_toggle
+10350 button LEFT_CENTER up
+10550 capture screen after_undo_step8_toggle_closed
+
+# Redo C1: step 8 comes back as C3.
+10650 button LEFT_CENTER down
+11650 tick
+11700 capture screen redo_layer_for_step8_toggle
+11750 tap LEFT_BOTTOM 60
+11950 capture screen after_redo_step8_toggle
+12050 button LEFT_CENTER up
+12250 capture screen after_redo_step8_toggle_closed
+
+# Branch: a new musical action after partial redo should clear remaining redo.
+12350 tap MACRO_2 60
+12550 capture screen after_branch_step2_on
+
+# Attempt redo after branching; expected no musical change.
+12650 button LEFT_CENTER down
+13650 tick
+13700 capture screen redo_layer_after_branch
+13750 tap LEFT_BOTTOM 60
+13950 capture screen after_redo_attempt_cleared
+14050 button LEFT_CENTER up
+14250 capture screen after_redo_attempt_cleared_closed
+
+# Undo the new branch action, then undo the redone step 8 toggle.
+14350 button LEFT_CENTER down
+15350 tick
+15400 capture screen undo_layer_for_branch_step2
+15450 tap LEFT_TOP 60
+15650 capture screen after_undo_branch_step2
+15750 button LEFT_CENTER up
+15950 capture screen after_undo_branch_step2_closed
+
+16050 button LEFT_CENTER down
+17050 tick
+17100 capture screen undo_layer_for_redone_step8
+17150 tap LEFT_TOP 60
+17350 capture screen after_undo_redone_step8
+17450 button LEFT_CENTER up
+17650 capture screen after_undo_redone_step8_closed
+
+# Redo on the new branch: step 8 returns, then step 2 returns.
+17750 button LEFT_CENTER down
+18750 tick
+18800 capture screen redo_layer_for_step8_again
+18850 tap LEFT_BOTTOM 60
+19050 capture screen after_redo_step8_again
+19150 button LEFT_CENTER up
+19350 capture screen after_redo_step8_again_closed
+
+19450 button LEFT_CENTER down
+20450 tick
+20500 capture screen redo_layer_for_step2_again
+20550 tap LEFT_BOTTOM 60
+20750 capture screen after_redo_step2_again
+20850 button LEFT_CENTER up
+21050 capture screen after_redo_step2_again_closed
