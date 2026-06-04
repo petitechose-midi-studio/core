@@ -92,11 +92,17 @@ struct SequencerInlineHarness {
         release(id);
     }
 
+    void advance(uint32_t ms) {
+        g_now_ms += ms;
+        inputBinding.processTick();
+    }
+
     void turn(Config::EncoderID id, float value) {
         const auto encoderId = static_cast<oc::type::EncoderID>(id);
         encoderHw.setPosition(encoderId, value);
         eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, value));
     }
+
 };
 
 void openPropertySelector(SequencerInlineHarness& h) {
@@ -218,6 +224,51 @@ void test_pattern_quick_controls_do_not_edit_variation_range() {
     std::cout << "[PASS] test_pattern_quick_controls_do_not_edit_variation_range\n";
 }
 
+void test_pattern_quick_controls_short_tap_does_not_arm_history_layer() {
+    SequencerInlineHarness h;
+
+    h.tap(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assert(!h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+
+    std::cout << "[PASS] test_pattern_quick_controls_short_tap_does_not_arm_history_layer\n";
+}
+
+void test_pattern_quick_controls_hold_arms_history_layer() {
+    SequencerInlineHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.advance(1000);
+
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+
+    std::cout << "[PASS] test_pattern_quick_controls_hold_arms_history_layer\n";
+}
+
+void test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector() {
+    SequencerInlineHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.advance(1000);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(!h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+
+    std::cout << "[PASS] test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector\n";
+}
+
 void test_pattern_quick_controls_respect_blocking_states() {
     SequencerInlineHarness h;
 
@@ -248,6 +299,9 @@ int main() {
     test_property_selector_cancel_restores_variation_snapshot();
     test_property_selector_does_not_edit_probability_variation();
     test_pattern_quick_controls_do_not_edit_variation_range();
+    test_pattern_quick_controls_short_tap_does_not_arm_history_layer();
+    test_pattern_quick_controls_hold_arms_history_layer();
+    test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector();
     test_pattern_quick_controls_respect_blocking_states();
 
     std::cout << "\nAll SequencerInlineHandlers tests passed.\n";

@@ -22,6 +22,21 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::Sequencer
     return [&sequencer]() { return sequencer.patternQuickControls.selecting.get(); };
 }
 
+inline oc::type::IsActiveFn selectingWithoutPhysicalHoldPredicate(
+    core::state::sequencer::SequencerState& sequencer
+) {
+    return [&sequencer]() {
+        const auto& quick = sequencer.patternQuickControls;
+        return quick.selecting.get() && !quick.physicalHoldActive.get();
+    };
+}
+
+inline oc::type::IsActiveFn physicalHoldPredicate(
+    core::state::sequencer::SequencerState& sequencer
+) {
+    return [&sequencer]() { return sequencer.patternQuickControls.physicalHoldActive.get(); };
+}
+
 inline oc::type::IsActiveFn canOpenQuickControls(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
@@ -66,6 +81,12 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
         .when(selectingPredicate(sequencer_))
         .then([this]() { closeApply(); });
 
+    buttons_.button(ButtonID::LEFT_CENTER)
+        .longPress()
+        .scope(scope_id_)
+        .when(selectingPredicate(sequencer_))
+        .then([this]() { enterPhysicalHoldLayer(); });
+
     encoders_.encoder(EncoderID::NAV)
         .turn()
         .scope(scope_id_)
@@ -81,7 +102,19 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when(selectingPredicate(sequencer_))
+        .when(physicalHoldPredicate(sequencer_))
+        .then([this]() { consumeUndoNoop(); });
+
+    buttons_.button(ButtonID::LEFT_BOTTOM)
+        .release()
+        .scope(scope_id_)
+        .when(physicalHoldPredicate(sequencer_))
+        .then([this]() { consumeRedoNoop(); });
+
+    buttons_.button(ButtonID::LEFT_TOP)
+        .release()
+        .scope(scope_id_)
+        .when(selectingWithoutPhysicalHoldPredicate(sequencer_))
         .then([this]() { closeCancel(); });
 }
 
@@ -108,6 +141,20 @@ void SequencerPatternQuickControlsHandler::closeCancel() {
     clampFocusToLength();
 
     quick.reset();
+}
+
+void SequencerPatternQuickControlsHandler::enterPhysicalHoldLayer() {
+    auto& quick = sequencer_.patternQuickControls;
+    if (!quick.selecting.get()) return;
+    quick.physicalHoldActive.set(true);
+}
+
+void SequencerPatternQuickControlsHandler::consumeUndoNoop() {
+    // Placeholder until the sequencer history service is wired.
+}
+
+void SequencerPatternQuickControlsHandler::consumeRedoNoop() {
+    // Placeholder until the sequencer history service is wired.
 }
 
 void SequencerPatternQuickControlsHandler::navigate(float delta) {

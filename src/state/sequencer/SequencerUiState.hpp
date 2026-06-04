@@ -138,6 +138,7 @@ struct SequencerPatternVariationFeedbackState {
 
 struct SequencerPatternQuickControlsState {
     Signal<bool, 6> selecting{false};
+    Signal<bool, 6> physicalHoldActive{false};
     Signal<PatternQuickControlItem, 6> focusedItem{
         PatternQuickControlItem::OFFSET
     };
@@ -145,6 +146,7 @@ struct SequencerPatternQuickControlsState {
 
     void reset() {
         selecting.set(false);
+        physicalHoldActive.set(false);
         offsetSteps.set(0);
     }
 };
