@@ -170,6 +170,7 @@ void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
 }
 
 void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
+    state.sequencerDomain_.coalescedPatternHistory.clear();
     state.sequencer.reset();
     state.sequencerTracks.reset();
     state.sequencerHistory.clear();
@@ -203,6 +204,7 @@ void CoreStateLifecycle::update(CoreState& state) {
     state.statusBar.updateTransient(nowMs);
     applyPendingSequencerApplyIfReady(state);
     state.sequencer.updateUi(nowMs);
+    state.updateSequencerPatternHistoryCoalescing(nowMs);
     updateAutoPersist_(state);
     updatePendingMacroWorkspacePersist_(state);
     updatePendingSharedTrackPersist_(state);

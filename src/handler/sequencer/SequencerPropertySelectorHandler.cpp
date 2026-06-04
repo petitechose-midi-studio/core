@@ -45,6 +45,7 @@ SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
     , track_ui_(state.trackNavigation)
+    , history_(state.history)
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId)
@@ -86,6 +87,8 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
 }
 
 void SequencerPropertySelectorHandler::open() {
+    history_.commitCoalescedPatternEdit();
+
     auto& o = sequencer_.stepPropertyInlineSelector;
     o.reset();
     o.selecting.set(true);

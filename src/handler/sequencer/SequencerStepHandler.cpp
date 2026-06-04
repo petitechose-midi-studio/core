@@ -71,13 +71,17 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.allowsMainBindings(); })
-        .then([this](float delta) { navigation_workflow_.moveByFocus(delta); });
+        .then([this](float delta) {
+            history_.commitCoalescedPatternEdit();
+            navigation_workflow_.moveByFocus(delta);
+        });
 
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.allowsMainBindings(); })
         .then([this]() {
+            history_.commitCoalescedPatternEdit();
             nav_long_press_used_ = true;
             navigation_workflow_.enterSelectionModeForCurrentFocus();
         });
@@ -104,6 +108,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 return;
             }
             if (navigation_workflow_.previewingAddSlot()) {
+                history_.commitCoalescedPatternEdit();
                 navigation_workflow_.createPreviewedStructure();
                 return;
             }
@@ -133,7 +138,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.selectionActive(); })
-        .then([this]() { edit_workflow_.deleteSelection(); });
+        .then([this]() {
+            history_.commitCoalescedPatternEdit();
+            edit_workflow_.deleteSelection();
+        });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
@@ -148,6 +156,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
 #endif
                 return;
             }
+            history_.commitCoalescedPatternEdit();
             edit_workflow_.eraseCurrentStructure();
         });
 
@@ -161,6 +170,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
 #endif
+            history_.commitCoalescedPatternEdit();
             edit_workflow_.removeCurrentStructure();
         });
 
@@ -181,7 +191,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.selectionActive(); })
-        .then([this]() { edit_workflow_.duplicateSelection(); });
+        .then([this]() {
+            history_.commitCoalescedPatternEdit();
+            edit_workflow_.duplicateSelection();
+        });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
@@ -209,11 +222,14 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
 #endif
+            history_.commitCoalescedPatternEdit();
             edit_workflow_.pasteCurrentStructure();
         });
 }
 
 void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
+    history_.commitCoalescedPatternEdit();
+
     uint8_t abs = 0;
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
 

@@ -35,6 +35,7 @@ FLASHMEM SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     , sequencer_(state.sequencer)
     , track_bank_(state.trackBank)
     , track_ui_(state.trackNavigation)
+    , history_(state.history)
     , encoders_(encoders)
     , scope_id_(scopeId)
     , now_provider_(nowProvider) {
@@ -55,6 +56,9 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
     uint8_t abs = 0;
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
     const auto property = sequencer_.activeStepProperty.get();
+    const uint32_t now = now_provider_ ? now_provider_() : 0;
+
+    history_.beginCoalescedPatternEdit(abs, property, now);
 
     input_utils::applyNormalizedToStep(
         sequencer_,
@@ -68,7 +72,7 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
             sequencer_.pattern.scaleOverride
         )
     );
-    sequencer_.stepInlineFeedback.show(abs, property, now_provider_ ? now_provider_() : 0);
+    sequencer_.stepInlineFeedback.show(abs, property, now);
 }
 
 }  // namespace core::handler

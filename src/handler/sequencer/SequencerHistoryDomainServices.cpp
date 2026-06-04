@@ -41,6 +41,29 @@ FLASHMEM bool redoFromCoreState(void* context) {
     return state->redoSequencerHistory();
 }
 
+FLASHMEM bool beginCoalescedPatternEditFromCoreState(
+    void* context,
+    uint8_t step,
+    core::state::sequencer::StepProperty property,
+    uint32_t nowMs
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->beginOrContinueSequencerPatternHistoryCoalescing(step, property, nowMs);
+}
+
+FLASHMEM bool commitCoalescedPatternEditFromCoreState(void* context) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->commitSequencerPatternHistoryCoalescing();
+}
+
 }  // namespace
 
 FLASHMEM SequencerHistoryDomainServices::SequencerHistoryDomainServices(Operations operations)
@@ -55,6 +78,8 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
             recordPatternFromCoreState,
             undoFromCoreState,
             redoFromCoreState,
+            beginCoalescedPatternEditFromCoreState,
+            commitCoalescedPatternEditFromCoreState,
         }
     };
 }
@@ -77,6 +102,25 @@ FLASHMEM bool SequencerHistoryDomainServices::undo() const {
 
 FLASHMEM bool SequencerHistoryDomainServices::redo() const {
     return operations_.redo != nullptr && operations_.redo(operations_.context);
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(
+    uint8_t step,
+    core::state::sequencer::StepProperty property,
+    uint32_t nowMs
+) const {
+    return operations_.beginCoalescedPatternEdit != nullptr &&
+           operations_.beginCoalescedPatternEdit(
+               operations_.context,
+               step,
+               property,
+               nowMs
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::commitCoalescedPatternEdit() const {
+    return operations_.commitCoalescedPatternEdit != nullptr &&
+           operations_.commitCoalescedPatternEdit(operations_.context);
 }
 
 }  // namespace core::handler

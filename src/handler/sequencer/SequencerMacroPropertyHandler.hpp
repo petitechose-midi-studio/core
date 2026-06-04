@@ -10,6 +10,7 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -26,6 +27,7 @@ public:
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
         core::state::TrackNavigationState& trackNavigation;
+        SequencerHistoryDomainServices history;
     };
 
     SequencerMacroPropertyHandler(
@@ -46,6 +48,7 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::TrackNavigationState& track_ui_;
+    SequencerHistoryDomainServices history_;
     oc::api::EncoderAPI& encoders_;
     oc::type::ScopeID scope_id_ = 0;
     NowProvider now_provider_ = nullptr;

@@ -123,6 +123,8 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
 }
 
 void SequencerPatternQuickControlsHandler::open() {
+    history_.commitCoalescedPatternEdit();
+
     auto& quick = sequencer_.patternQuickControls;
     quick.reset();
     quick.selecting.set(true);

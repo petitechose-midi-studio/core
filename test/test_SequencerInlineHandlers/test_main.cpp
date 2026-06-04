@@ -57,6 +57,7 @@ struct SequencerInlineHarness {
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
               buttons,

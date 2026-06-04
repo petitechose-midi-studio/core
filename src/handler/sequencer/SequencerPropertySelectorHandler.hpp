@@ -9,6 +9,7 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -23,6 +24,7 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
         core::state::TrackNavigationState& trackNavigation;
+        SequencerHistoryDomainServices history;
     };
 
     SequencerPropertySelectorHandler(
@@ -50,6 +52,7 @@ private:
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::TrackNavigationState& track_ui_;
+    SequencerHistoryDomainServices history_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;

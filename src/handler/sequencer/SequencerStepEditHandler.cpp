@@ -117,6 +117,8 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
 }
 
 void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
+    history_.commitCoalescedPatternEdit();
+
     uint8_t abs = 0;
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
 

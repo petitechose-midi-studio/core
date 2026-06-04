@@ -1,0 +1,37 @@
+# UX workflow: edit a step note directly with rapid macro-encoder movements,
+# let the coalesced history entry settle, then undo and redo it.
+# Purpose: validates that direct step-property edits behave like one user
+# action instead of one undoable entry per intermediate encoder value.
+# Expect: capture_match:step_enabled=note_undone_closed, capture_match:note_committed=note_redone_closed
+
+0 scenario sequencer
+50 capture screen initial
+
+# Create an enabled step so the direct note edit is clearly visible.
+150 tap MACRO_1 60
+350 capture screen step_enabled
+
+# One continuous direct edit gesture: several encoder values, one final note.
+450 encoder MACRO_1 1.00
+550 encoder MACRO_1 5.00
+650 encoder MACRO_1 9.33
+850 capture screen note_pending
+1250 capture screen note_committed
+
+# Undo the coalesced note edit. The step remains enabled, but returns to C3.
+1350 button LEFT_CENTER down
+2350 tick
+2400 capture screen undo_layer
+2450 tap LEFT_TOP 60
+2650 capture screen note_undone
+2750 button LEFT_CENTER up
+2950 capture screen note_undone_closed
+
+# Redo the coalesced note edit.
+3050 button LEFT_CENTER down
+4050 tick
+4100 capture screen redo_layer
+4150 tap LEFT_BOTTOM 60
+4350 capture screen note_redone
+4450 button LEFT_CENTER up
+4650 capture screen note_redone_closed

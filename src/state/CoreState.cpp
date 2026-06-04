@@ -149,6 +149,7 @@ void CoreState::factoryReset() {
 }
 
 void CoreState::flush() {
+    commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::flush(*this);
 }
 
@@ -157,6 +158,7 @@ void CoreState::flushAutoPersist() {
 }
 
 void CoreState::resetStandaloneTransientUi() {
+    commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::resetStandaloneTransientUi(*this);
 }
 
@@ -190,7 +192,77 @@ bool CoreState::recordSequencerPatternHistory(
     return true;
 }
 
+bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
+    uint8_t step,
+    sequencer::StepProperty property,
+    uint32_t nowMs
+) {
+    auto& pending = sequencerDomain_.coalescedPatternHistory;
+    const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
+
+    if (pending.matches(activeTrack, step, property)) {
+        pending.lastTouchedMs = nowMs;
+        return true;
+    }
+
+    if (pending.pending) {
+        commitSequencerPatternHistoryCoalescing();
+    }
+
+    sequencer::SequencerHistoryPatternSnapshot before;
+    if (!sequencer::captureHistorySnapshot(sequencer, before)) {
+        pending.clear();
+        return false;
+    }
+
+    pending.clear();
+    pending.pending = true;
+    pending.activeTrack = activeTrack;
+    pending.step = step;
+    pending.property = property;
+    pending.lastTouchedMs = nowMs;
+    pending.before = std::move(before);
+    return true;
+}
+
+bool CoreState::commitSequencerPatternHistoryCoalescing() {
+    auto& pending = sequencerDomain_.coalescedPatternHistory;
+    if (!pending.pending) {
+        return false;
+    }
+
+    sequencer::SequencerHistoryPatternSnapshot before = std::move(pending.before);
+    pending.clear();
+
+    sequencer::SequencerHistoryPatternSnapshot after;
+    if (!sequencer::captureHistorySnapshot(sequencer, after)) {
+        return false;
+    }
+
+    return recordSequencerPatternHistory(std::move(before), std::move(after));
+}
+
+bool CoreState::updateSequencerPatternHistoryCoalescing(uint32_t nowMs) {
+    const auto& pending = sequencerDomain_.coalescedPatternHistory;
+    if (!pending.pending) {
+        return false;
+    }
+
+    if (static_cast<uint32_t>(nowMs - pending.lastTouchedMs) <
+        SequencerDomainState::COALESCED_PATTERN_HISTORY_IDLE_MS) {
+        return false;
+    }
+
+    return commitSequencerPatternHistoryCoalescing();
+}
+
+bool CoreState::hasPendingSequencerPatternHistoryCoalescing() const {
+    return sequencerDomain_.coalescedPatternHistory.pending;
+}
+
 bool CoreState::undoSequencerHistory() {
+    commitSequencerPatternHistoryCoalescing();
+
     if (!sequencerHistory.undo(sequencerTracks, sequencer)) {
         return false;
     }
@@ -201,6 +273,8 @@ bool CoreState::undoSequencerHistory() {
 }
 
 bool CoreState::redoSequencerHistory() {
+    commitSequencerPatternHistoryCoalescing();
+
     if (!sequencerHistory.redo(sequencerTracks, sequencer)) {
         return false;
     }
@@ -306,6 +380,7 @@ persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRamAfterSto
 }
 
 void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bool merge) {
+    commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
 }
 
@@ -313,6 +388,7 @@ void CoreState::queueSequencerBankApply_(
     const sequencer::SequencerTrackBankState& stagedBank,
     const sequencer::SequencerState& staged
 ) {
+    commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
 }
 
@@ -415,6 +491,8 @@ bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
 }
 
 bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist) {
+    commitSequencerPatternHistoryCoalescing();
+
     const auto result = shared::SharedTrackCoordinator::apply(
         sharedTrackRefs(*this),
         enabledMask,

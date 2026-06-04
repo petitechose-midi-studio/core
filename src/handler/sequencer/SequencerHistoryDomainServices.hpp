@@ -16,12 +16,20 @@ public:
         core::state::sequencer::SequencerHistoryPatternSnapshot after
     );
     using CommandFn = bool (*)(void* context);
+    using BeginCoalescedPatternEditFn = bool (*)(
+        void* context,
+        uint8_t step,
+        core::state::sequencer::StepProperty property,
+        uint32_t nowMs
+    );
 
     struct Operations {
         void* context = nullptr;
         RecordPatternFn recordPattern = nullptr;
         CommandFn undo = nullptr;
         CommandFn redo = nullptr;
+        BeginCoalescedPatternEditFn beginCoalescedPatternEdit = nullptr;
+        CommandFn commitCoalescedPatternEdit = nullptr;
     };
 
     SequencerHistoryDomainServices() = default;
@@ -34,6 +42,12 @@ public:
     ) const;
     bool undo() const;
     bool redo() const;
+    bool beginCoalescedPatternEdit(
+        uint8_t step,
+        core::state::sequencer::StepProperty property,
+        uint32_t nowMs
+    ) const;
+    bool commitCoalescedPatternEdit() const;
 
 private:
     Operations operations_{};
