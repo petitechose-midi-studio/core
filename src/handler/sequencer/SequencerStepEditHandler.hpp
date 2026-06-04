@@ -10,6 +10,7 @@
 #include <oc/context/OverlayManager.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -22,6 +23,7 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
         core::state::TrackNavigationState& trackNavigation;
+        SequencerHistoryDomainServices history;
     };
 
     SequencerStepEditHandler(
@@ -54,10 +56,13 @@ private:
     // Long-press opens while still pressed; ignore the release that follows.
     bool ignore_open_release_ = false;
     uint8_t ignore_open_macro_index_in_page_ = 0;
+    core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
+    bool history_snapshot_valid_ = false;
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlay_state_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::TrackNavigationState& track_ui_;
+    SequencerHistoryDomainServices history_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

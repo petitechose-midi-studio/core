@@ -162,6 +162,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.overlays,
             stateRefs.sequencer,
             stateRefs.trackNavigation,
+            stateRefs.history,
         },
         overlays,
         encoders,

@@ -3,6 +3,8 @@
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 
+#include <utility>
+
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
 
@@ -56,6 +58,7 @@ SequencerStepEditHandler::SequencerStepEditHandler(
     : overlay_state_(state.overlays)
     , sequencer_(state.sequencer)
     , track_ui_(state.trackNavigation)
+    , history_(state.history)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -117,6 +120,9 @@ void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
     uint8_t abs = 0;
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
 
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+
     sequencer_.focusedStep.set(abs);
 
     auto& o = sequencer_.stepEdit;
@@ -140,6 +146,14 @@ void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
 }
 
 void SequencerStepEditHandler::closeApply() {
+    if (history_snapshot_valid_) {
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+            history_.recordPattern(std::move(history_snapshot_), std::move(after));
+        }
+    }
+
+    history_snapshot_valid_ = false;
     ignore_open_release_ = false;
     overlays_.hide();
     sequencer_.stepEdit.reset();
@@ -160,6 +174,7 @@ void SequencerStepEditHandler::closeCancel() {
         );
     }
 
+    history_snapshot_valid_ = false;
     ignore_open_release_ = false;
     overlays_.hide();
     o.reset();
