@@ -177,6 +177,8 @@ bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
 
     if (opening) {
         out.effect = "open_quick_controls";
+    } else if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+        out.effect = "open_history_layer";
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_quick_control";
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
@@ -184,7 +186,12 @@ bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
     } else if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "apply_quick_controls";
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "cancel_quick_controls";
+        out.effect = sequencer_.patternQuickControls.physicalHoldActive.get()
+            ? "undo_history"
+            : "cancel_quick_controls";
+    } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE) &&
+               sequencer_.patternQuickControls.physicalHoldActive.get()) {
+        out.effect = "redo_history";
     }
     return true;
 }

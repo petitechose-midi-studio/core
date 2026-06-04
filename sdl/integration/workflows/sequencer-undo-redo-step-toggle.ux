@@ -1,0 +1,30 @@
+# UX workflow: toggle a sequencer step, then undo and redo the toggle through
+# the held LEFT_CENTER history layer.
+# Purpose: validates step toggle history entry creation and transient undo/redo
+# routing from the sequencer grid.
+# Expect: capture_match:sequencer_ready=undo_layer_closed, capture_match:step_toggled_on=redo_layer_closed
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Toggle the first visible step on.
+150 tap MACRO_1 60
+350 capture screen step_toggled_on
+
+# Undo the toggle.
+450 button LEFT_CENTER down
+1450 tick
+1500 capture screen undo_layer
+1550 tap LEFT_TOP 60
+1750 capture screen step_toggle_undone
+1850 button LEFT_CENTER up
+2050 capture screen undo_layer_closed
+
+# Redo the toggle.
+2150 button LEFT_CENTER down
+3150 tick
+3200 capture screen redo_layer
+3250 tap LEFT_BOTTOM 60
+3450 capture screen step_toggle_redone
+3550 button LEFT_CENTER up
+3750 capture screen redo_layer_closed
