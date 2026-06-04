@@ -39,6 +39,8 @@ SequencerGraphCreateResult createCycleStateSet(
 );
 
 bool clearNodeChildren(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
+bool clearNodeChildSequence(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
+bool clearNodeCycleStateSet(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 
 bool setNodeEnabledOverride(SequencerPatternState& pattern,
                             SequencerGraphNodeId nodeId,

@@ -287,6 +287,42 @@ FLASHMEM bool clearNodeChildren(SequencerPatternState& pattern, SequencerGraphNo
     return changed;
 }
 
+FLASHMEM bool clearNodeChildSequence(SequencerPatternState& pattern,
+                                     SequencerGraphNodeId nodeId) {
+    if (!ensureGraphRoot(pattern)) return false;
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
+
+    auto& node = graph->stepNodes[nodeId];
+    bool changed = false;
+    if (node.childSequenceId != kInvalidId) {
+        node.childSequenceId = kInvalidId;
+        changed = true;
+    }
+    changed = assignFlag(node.flags, STEP_NODE_CHILD_SEQUENCE, false) || changed;
+
+    bump(pattern, changed);
+    return changed;
+}
+
+FLASHMEM bool clearNodeCycleStateSet(SequencerPatternState& pattern,
+                                     SequencerGraphNodeId nodeId) {
+    if (!ensureGraphRoot(pattern)) return false;
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
+
+    auto& node = graph->stepNodes[nodeId];
+    bool changed = false;
+    if (node.cycleSetId != kInvalidId) {
+        node.cycleSetId = kInvalidId;
+        changed = true;
+    }
+    changed = assignFlag(node.flags, STEP_NODE_CYCLE_SET, false) || changed;
+
+    bump(pattern, changed);
+    return changed;
+}
+
 FLASHMEM bool setNodeEnabledOverride(SequencerPatternState& pattern,
                                      SequencerGraphNodeId nodeId,
                                      bool enabled) {
