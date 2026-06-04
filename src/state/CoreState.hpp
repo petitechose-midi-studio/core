@@ -45,6 +45,7 @@
 #include "macro/MacroPagesState.hpp"
 #include "macro/MacroUiState.hpp"
 #include "sequencer/SequencerState.hpp"
+#include "sequencer/SequencerHistory.hpp"
 #include "sequencer/SequencerSnapshots.hpp"
 #include "sequencer/SequencerTrackBankState.hpp"
 
@@ -109,6 +110,7 @@ struct SequencerDomainState {
 
     core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
+    sequencer::SequencerHistoryService history;
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
@@ -187,6 +189,7 @@ public:
     /// Sequencer domain aliases
     sequencer::SequencerState& sequencer;
     sequencer::SequencerTrackBankState& sequencerTracks;
+    sequencer::SequencerHistoryService& sequencerHistory;
     persistence::SequencerPersistence& sequencerPersistence;
 
     /// Shared UI/system domain aliases
@@ -255,6 +258,10 @@ public:
     bool isSequencerPersistenceReady() const;
     void requestMacroWorkspacePersist();
     void persistSequencerWorkspace();
+    bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
+                                       sequencer::SequencerHistoryPatternSnapshot after);
+    bool undoSequencerHistory();
+    bool redoSequencerHistory();
     void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false);
     void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankState& stagedBank,
                                         const sequencer::SequencerState& staged);

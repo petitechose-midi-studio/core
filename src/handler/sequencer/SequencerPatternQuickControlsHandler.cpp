@@ -1,10 +1,13 @@
 #include "SequencerPatternQuickControlsHandler.hpp"
 
+#include <utility>
+
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
@@ -64,6 +67,7 @@ SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHandler(
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId) {
+    history_ = state.history;
     setupBindings();
 }
 
@@ -103,13 +107,13 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when(physicalHoldPredicate(sequencer_))
-        .then([this]() { consumeUndoNoop(); });
+        .then([this]() { consumeUndo(); });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .release()
         .scope(scope_id_)
         .when(physicalHoldPredicate(sequencer_))
-        .then([this]() { consumeRedoNoop(); });
+        .then([this]() { consumeRedo(); });
 
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
@@ -124,12 +128,23 @@ void SequencerPatternQuickControlsHandler::open() {
     quick.selecting.set(true);
     core::state::sequencer::captureSnapshot(sequencer_.pattern, cancel_snapshot_);
     core::state::sequencer::captureSnapshot(sequencer_.pattern, offset_snapshot_);
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+    history_command_consumed_ = false;
     configureOptForFocusedItem();
 }
 
 void SequencerPatternQuickControlsHandler::closeApply() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
+    if (history_snapshot_valid_ && !history_command_consumed_) {
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+            history_.recordPattern(std::move(history_snapshot_), std::move(after));
+        }
+    }
+    history_snapshot_valid_ = false;
+    history_command_consumed_ = false;
     quick.reset();
 }
 
@@ -141,6 +156,8 @@ void SequencerPatternQuickControlsHandler::closeCancel() {
     clampFocusToLength();
 
     quick.reset();
+    history_snapshot_valid_ = false;
+    history_command_consumed_ = false;
 }
 
 void SequencerPatternQuickControlsHandler::enterPhysicalHoldLayer() {
@@ -149,12 +166,22 @@ void SequencerPatternQuickControlsHandler::enterPhysicalHoldLayer() {
     quick.physicalHoldActive.set(true);
 }
 
-void SequencerPatternQuickControlsHandler::consumeUndoNoop() {
-    // Placeholder until the sequencer history service is wired.
+void SequencerPatternQuickControlsHandler::consumeUndo() {
+    if (history_.undo()) {
+        history_command_consumed_ = true;
+        core::state::sequencer::captureSnapshot(sequencer_.pattern, cancel_snapshot_);
+        core::state::sequencer::captureSnapshot(sequencer_.pattern, offset_snapshot_);
+        configureOptForFocusedItem();
+    }
 }
 
-void SequencerPatternQuickControlsHandler::consumeRedoNoop() {
-    // Placeholder until the sequencer history service is wired.
+void SequencerPatternQuickControlsHandler::consumeRedo() {
+    if (history_.redo()) {
+        history_command_consumed_ = true;
+        core::state::sequencer::captureSnapshot(sequencer_.pattern, cancel_snapshot_);
+        core::state::sequencer::captureSnapshot(sequencer_.pattern, offset_snapshot_);
+        configureOptForFocusedItem();
+    }
 }
 
 void SequencerPatternQuickControlsHandler::navigate(float delta) {

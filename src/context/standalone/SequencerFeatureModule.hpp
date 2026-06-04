@@ -14,6 +14,7 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/PatternPitchSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -67,6 +68,7 @@ public:
         core::state::PatternPitchSettingsState& patternPitchSettings;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        core::handler::SequencerHistoryDomainServices history;
     };
 
     SequencerFeatureModule(StateRefs stateRefs,

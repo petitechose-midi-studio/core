@@ -5,7 +5,9 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "app/OverlayTypes.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
@@ -24,6 +26,7 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
         core::state::TrackNavigationState& trackNavigation;
+        SequencerHistoryDomainServices history;
     };
 
     SequencerPatternQuickControlsHandler(
@@ -42,8 +45,8 @@ private:
     void closeApply();
     void closeCancel();
     void enterPhysicalHoldLayer();
-    void consumeUndoNoop();
-    void consumeRedoNoop();
+    void consumeUndo();
+    void consumeRedo();
     void navigate(float delta);
     void setFocusedValue(float normalized);
     void configureOptForFocusedItem();
@@ -63,6 +66,10 @@ private:
     oc::type::ScopeID scope_id_ = 0;
     core::state::sequencer::SequencerPatternSnapshot cancel_snapshot_{};
     core::state::sequencer::SequencerPatternSnapshot offset_snapshot_{};
+    core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
+    SequencerHistoryDomainServices history_;
+    bool history_snapshot_valid_ = false;
+    bool history_command_consumed_ = false;
 };
 
 }  // namespace core::handler

@@ -1,6 +1,7 @@
 #include "state/CoreState.hpp"
 
 #include <new>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
@@ -101,6 +102,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , macroPersistence(macroDomain_.persistence)
     , sequencer(*sequencerDomain_.editor)
     , sequencerTracks(*sequencerDomain_.tracks)
+    , sequencerHistory(sequencerDomain_.history)
     , sequencerPersistence(sequencerDomain_.persistence)
     , overlays(systemUi_->overlays)
     , activeView(systemUi_->activeView)
@@ -172,6 +174,40 @@ void CoreState::requestMacroWorkspacePersist() {
 
 void CoreState::persistSequencerWorkspace() {
     persistSequencerWorkspace_();
+}
+
+bool CoreState::recordSequencerPatternHistory(
+    sequencer::SequencerHistoryPatternSnapshot before,
+    sequencer::SequencerHistoryPatternSnapshot after
+) {
+    if (!sequencerHistory.recordPattern(std::move(before), std::move(after))) {
+        return false;
+    }
+
+    sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    refreshSharedTrackStateFromSequencer();
+    persistSequencerWorkspace_();
+    return true;
+}
+
+bool CoreState::undoSequencerHistory() {
+    if (!sequencerHistory.undo(sequencerTracks, sequencer)) {
+        return false;
+    }
+
+    refreshSharedTrackStateFromSequencer();
+    persistSequencerWorkspace_();
+    return true;
+}
+
+bool CoreState::redoSequencerHistory() {
+    if (!sequencerHistory.redo(sequencerTracks, sequencer)) {
+        return false;
+    }
+
+    refreshSharedTrackStateFromSequencer();
+    persistSequencerWorkspace_();
+    return true;
 }
 
 void CoreState::queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge) {

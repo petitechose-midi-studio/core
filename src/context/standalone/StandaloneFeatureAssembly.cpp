@@ -12,6 +12,7 @@
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
@@ -78,6 +79,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.patternPitchSettings,
             state.sequencer,
             state.sequencerTracks,
+            core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },
         core::handler::SharedTrackDomainServices::fromCoreState(state),
         overlays,
