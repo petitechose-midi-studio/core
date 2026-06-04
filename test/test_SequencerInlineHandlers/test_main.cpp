@@ -9,6 +9,7 @@
 
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPropertySelectorHandler.hpp"
+#include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -67,6 +68,7 @@ struct SequencerInlineHarness {
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
               buttons,
@@ -113,6 +115,13 @@ void openPropertySelector(SequencerInlineHarness& h) {
 void openPatternQuickControls(SequencerInlineHarness& h) {
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencer.patternQuickControls.selecting.get());
+}
+
+void holdPatternQuickControls(SequencerInlineHarness& h) {
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.advance(1000);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 }
 
 void test_property_selector_cancel_restores_snapshot() {
@@ -250,8 +259,7 @@ void test_pattern_quick_controls_hold_arms_history_layer() {
 void test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector() {
     SequencerInlineHarness h;
 
-    h.press(Config::ButtonID::LEFT_CENTER);
-    h.advance(1000);
+    holdPatternQuickControls(h);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.patternQuickControls.selecting.get());
@@ -267,6 +275,64 @@ void test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_se
     assert(!h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 
     std::cout << "[PASS] test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector\n";
+}
+
+void test_pattern_quick_controls_length_undo_redo_workflow() {
+    SequencerInlineHarness h;
+    h.state.sequencer.pattern.length.set(8);
+
+    holdPatternQuickControls(h);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::LENGTH
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    const uint8_t appliedLength = h.state.sequencer.pattern.length.get();
+    assert(appliedLength != 8);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.pattern.length.get() == 8);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.pattern.length.get() == appliedLength);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencerHistory.redoCount() == 0);
+
+    std::cout << "[PASS] test_pattern_quick_controls_length_undo_redo_workflow\n";
+}
+
+void test_pattern_quick_controls_undo_release_does_not_record_inverse_action() {
+    SequencerInlineHarness h;
+    h.state.sequencer.pattern.length.set(8);
+
+    holdPatternQuickControls(h);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    std::cout << "[PASS] test_pattern_quick_controls_undo_release_does_not_record_inverse_action\n";
 }
 
 void test_pattern_quick_controls_respect_blocking_states() {
@@ -302,6 +368,8 @@ int main() {
     test_pattern_quick_controls_short_tap_does_not_arm_history_layer();
     test_pattern_quick_controls_hold_arms_history_layer();
     test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector();
+    test_pattern_quick_controls_length_undo_redo_workflow();
+    test_pattern_quick_controls_undo_release_does_not_record_inverse_action();
     test_pattern_quick_controls_respect_blocking_states();
 
     std::cout << "\nAll SequencerInlineHandlers tests passed.\n";

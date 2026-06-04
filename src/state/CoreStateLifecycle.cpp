@@ -172,6 +172,7 @@ void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
 void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
+    state.sequencerHistory.clear();
     sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer);
     if (state.sequencerDomain_.pendingApply) {
         state.sequencerDomain_.pendingApply->valid = false;
