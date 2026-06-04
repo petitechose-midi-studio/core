@@ -11,6 +11,8 @@
 
 #include "../../src/handler/common/SharedTrackDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepHandler.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -42,6 +44,7 @@ struct SequencerStepHarness {
     oc::api::ButtonAPI buttons;
     oc::api::EncoderAPI encoders;
     core::handler::SequencerStepHandler handler;
+    core::handler::SequencerPatternQuickControlsHandler quickControlsHandler;
 
     SequencerStepHarness()
         : state(storages.settings,
@@ -62,6 +65,18 @@ struct SequencerStepHarness {
                   state.trackNavigation,
                   state.structureClipboard,
                   core::handler::SharedTrackDomainServices::fromCoreState(state),
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+              },
+              encoders,
+              buttons,
+              SEQUENCER_SCOPE
+          )
+        , quickControlsHandler(
+              core::handler::SequencerPatternQuickControlsHandler::StateRefs{
+                  state.overlays,
+                  state.sequencer,
+                  state.trackNavigation,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
               buttons,
@@ -87,12 +102,63 @@ struct SequencerStepHarness {
         eventBus.emit(oc::core::event::ButtonReleaseEvent(buttonId));
     }
 
+    void tap(Config::ButtonID id) {
+        press(id);
+        release(id);
+    }
+
+    void advance(uint32_t ms) {
+        g_now_ms += ms;
+        inputBinding.processTick();
+    }
+
     void turn(Config::EncoderID id, float value) {
         const auto encoderId = static_cast<oc::type::EncoderID>(id);
         encoderHw.setPosition(encoderId, value);
         eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, value));
     }
 };
+
+void holdPatternQuickControls(SequencerStepHarness& h) {
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.advance(1000);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+}
+
+void test_step_toggle_undo_redo_workflow() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.focusedStep.set(3);
+
+    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    h.tap(Config::MACRO_BUTTONS[0]);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.focusedStep.get() == 0);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.focusedStep.get() == 3);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.focusedStep.get() == 0);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencerHistory.redoCount() == 0);
+
+    std::cout << "[PASS] test_step_toggle_undo_redo_workflow\n";
+}
 
 void test_nav_selection_mode_deletes_selected_sequencer_page() {
     SequencerStepHarness h;
@@ -423,6 +489,7 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
 }  // namespace
 
 int main() {
+    test_step_toggle_undo_redo_workflow();
     test_sequencer_page_creation_extends_pattern_to_target_slot();
     test_nav_selection_mode_deletes_selected_sequencer_page();
     test_page_selection_cursor_can_move_across_inactive_slots();

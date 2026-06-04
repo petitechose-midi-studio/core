@@ -11,6 +11,7 @@
 #include <oc/api/EncoderAPI.hpp>
 
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerStructureEditWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -38,6 +39,7 @@ public:
         core::state::TrackNavigationState& trackNavigation;
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
+        SequencerHistoryDomainServices history;
     };
 
     SequencerStepHandler(StateRefs state,
@@ -65,6 +67,7 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     SequencerStructureNavigationWorkflow navigation_workflow_;
     SequencerStructureEditWorkflow edit_workflow_;
+    SequencerHistoryDomainServices history_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;

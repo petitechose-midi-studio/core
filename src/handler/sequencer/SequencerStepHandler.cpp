@@ -4,6 +4,8 @@
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 
+#include <utility>
+
 #if defined(MS_UX_RECORDER)
 #include "validation/ux/SemanticUxTraceState.hpp"
 #endif
@@ -39,6 +41,7 @@ SequencerStepHandler::SequencerStepHandler(StateRefs state,
               state.sharedTracks,
           }
     )
+    , history_(state.history)
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId)
@@ -214,8 +217,18 @@ void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
     uint8_t abs = 0;
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
 
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    const bool beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+
     sequencer_.focusedStep.set(abs);
     sequencer_.pattern.toggle(abs);
+
+    if (!beforeCaptured) return;
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+        history_.recordPattern(std::move(before), std::move(after));
+    }
 }
 
 }  // namespace core::handler
