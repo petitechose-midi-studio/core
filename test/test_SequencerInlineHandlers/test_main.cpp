@@ -314,6 +314,103 @@ void test_pattern_quick_controls_length_undo_redo_workflow() {
     std::cout << "[PASS] test_pattern_quick_controls_length_undo_redo_workflow\n";
 }
 
+void test_pattern_quick_controls_offset_undo_redo_workflow() {
+    SequencerInlineHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.note[0] = 60;
+    h.state.sequencer.pattern.note[1] = 62;
+    h.state.sequencer.pattern.note[7] = 67;
+    h.state.sequencer.pattern.velocity[0] = 80;
+    h.state.sequencer.pattern.velocity[1] = 91;
+    h.state.sequencer.pattern.velocity[7] = 103;
+    h.state.sequencer.pattern.setEnabled(0, true);
+    h.state.sequencer.pattern.setEnabled(1, true);
+    h.state.sequencer.pattern.setEnabled(7, true);
+
+    holdPatternQuickControls(h);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::OFFSET
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern.isEnabled(6));
+    assert(h.state.sequencer.pattern.isEnabled(7));
+    assert(h.state.sequencer.pattern.note[0] == 62);
+    assert(h.state.sequencer.pattern.note[6] == 67);
+    assert(h.state.sequencer.pattern.note[7] == 60);
+    assert(h.state.sequencer.pattern.velocity[0] == 91);
+    assert(h.state.sequencer.pattern.velocity[6] == 103);
+    assert(h.state.sequencer.pattern.velocity[7] == 80);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern.isEnabled(1));
+    assert(h.state.sequencer.pattern.isEnabled(7));
+    assert(!h.state.sequencer.pattern.isEnabled(6));
+    assert(h.state.sequencer.pattern.note[0] == 60);
+    assert(h.state.sequencer.pattern.note[1] == 62);
+    assert(h.state.sequencer.pattern.note[7] == 67);
+    assert(h.state.sequencer.pattern.velocity[0] == 80);
+    assert(h.state.sequencer.pattern.velocity[1] == 91);
+    assert(h.state.sequencer.pattern.velocity[7] == 103);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern.isEnabled(6));
+    assert(h.state.sequencer.pattern.isEnabled(7));
+    assert(!h.state.sequencer.pattern.isEnabled(1));
+    assert(h.state.sequencer.pattern.note[0] == 62);
+    assert(h.state.sequencer.pattern.note[6] == 67);
+    assert(h.state.sequencer.pattern.note[7] == 60);
+    assert(h.state.sequencer.pattern.velocity[0] == 91);
+    assert(h.state.sequencer.pattern.velocity[6] == 103);
+    assert(h.state.sequencer.pattern.velocity[7] == 80);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    std::cout << "[PASS] test_pattern_quick_controls_offset_undo_redo_workflow\n";
+}
+
+void test_pattern_quick_controls_division_undo_redo_workflow() {
+    SequencerInlineHarness h;
+    const uint8_t initialDivision = h.state.sequencer.pattern.stepsPerBeat.get();
+
+    holdPatternQuickControls(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::DIVISION
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    const uint8_t appliedDivision = h.state.sequencer.pattern.stepsPerBeat.get();
+    assert(appliedDivision != initialDivision);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.pattern.stepsPerBeat.get() == initialDivision);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.pattern.stepsPerBeat.get() == appliedDivision);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    std::cout << "[PASS] test_pattern_quick_controls_division_undo_redo_workflow\n";
+}
+
 void test_pattern_quick_controls_undo_release_does_not_record_inverse_action() {
     SequencerInlineHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -369,6 +466,8 @@ int main() {
     test_pattern_quick_controls_hold_arms_history_layer();
     test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector();
     test_pattern_quick_controls_length_undo_redo_workflow();
+    test_pattern_quick_controls_offset_undo_redo_workflow();
+    test_pattern_quick_controls_division_undo_redo_workflow();
     test_pattern_quick_controls_undo_release_does_not_record_inverse_action();
     test_pattern_quick_controls_respect_blocking_states();
 

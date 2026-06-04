@@ -135,6 +135,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.trackNavigation,
             stateRefs.structureClipboard,
             sharedTracks,
+            stateRefs.history,
         },
         encoders,
         buttons,
