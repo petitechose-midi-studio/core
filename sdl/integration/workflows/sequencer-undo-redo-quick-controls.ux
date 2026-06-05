@@ -21,15 +21,15 @@
 2050 tick
 2100 capture screen undo_layer
 2150 tap LEFT_TOP 60
-2300 capture screen length_undone
-2400 button LEFT_CENTER up
-2600 capture screen undo_layer_closed
+3600 capture screen length_undone
+3700 button LEFT_CENTER up
+3900 capture screen undo_layer_closed
 
 # Hold LEFT_CENTER again and redo from the transient history layer.
-2700 button LEFT_CENTER down
-3700 tick
-3750 capture screen redo_layer
-3800 tap LEFT_BOTTOM 60
-3950 capture screen length_redone
-4050 button LEFT_CENTER up
-4250 capture screen redo_layer_closed
+4000 button LEFT_CENTER down
+5000 tick
+5050 capture screen redo_layer
+5100 tap LEFT_BOTTOM 60
+6550 capture screen length_redone
+6650 button LEFT_CENTER up
+6850 capture screen redo_layer_closed

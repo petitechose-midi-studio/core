@@ -66,6 +66,7 @@ private:
     void createBottomControls();
     void createPropertyStrip();
     void createActionStrips();
+    void createHistoryToast();
     static void onStepGridGeometryInvalidated(void* userData);
     void bindToState();
     void bindBottomControlsState();
@@ -76,6 +77,7 @@ private:
     void bindOverlayVisibilityState();
     void bindLeftActionStripState();
     void bindBottomActionStripState();
+    void bindHistoryFeedbackState();
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
 
@@ -89,10 +91,12 @@ private:
     void requestPropertyStripRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
+    void requestHistoryFeedbackRender();
     void requestGridRender();
     static void onRenderTimer(lv_timer_t* timer);
     void markAllDirty();
     void render();
+    void renderHistoryToast();
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
@@ -105,6 +109,7 @@ private:
     bool property_strip_dirty_ = true;
     bool left_action_strip_dirty_ = true;
     bool bottom_action_strip_dirty_ = true;
+    bool history_feedback_dirty_ = true;
     bool grid_dirty_ = true;
     std::unique_ptr<PausableLvglTimer> render_timer_;
 
@@ -120,6 +125,10 @@ private:
     std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
     std::unique_ptr<core::ui::StepGrid> step_grid_;
+    lv_obj_t* history_toast_ = nullptr;
+    lv_obj_t* history_toast_line1_ = nullptr;
+    lv_obj_t* history_toast_line2_ = nullptr;
+    lv_obj_t* history_toast_line3_ = nullptr;
 };
 
 }  // namespace core::ui

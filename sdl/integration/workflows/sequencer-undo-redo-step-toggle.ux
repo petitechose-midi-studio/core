@@ -16,15 +16,15 @@
 1450 tick
 1500 capture screen undo_layer
 1550 tap LEFT_TOP 60
-1750 capture screen step_toggle_undone
-1850 button LEFT_CENTER up
-2050 capture screen undo_layer_closed
+3050 capture screen step_toggle_undone
+3150 button LEFT_CENTER up
+3350 capture screen undo_layer_closed
 
 # Redo the toggle.
-2150 button LEFT_CENTER down
-3150 tick
-3200 capture screen redo_layer
-3250 tap LEFT_BOTTOM 60
-3450 capture screen step_toggle_redone
-3550 button LEFT_CENTER up
-3750 capture screen redo_layer_closed
+3450 button LEFT_CENTER down
+4450 tick
+4500 capture screen redo_layer
+4550 tap LEFT_BOTTOM 60
+6050 capture screen step_toggle_redone
+6150 button LEFT_CENTER up
+6350 capture screen redo_layer_closed

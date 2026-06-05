@@ -289,7 +289,8 @@ public:
     void requestMacroWorkspacePersist();
     void persistSequencerWorkspace();
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
-                                       sequencer::SequencerHistoryPatternSnapshot after);
+                                       sequencer::SequencerHistoryPatternSnapshot after,
+                                       sequencer::SequencerHistoryDescriptor descriptor = {});
     bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
                                                           sequencer::StepProperty property,
                                                           uint32_t nowMs);

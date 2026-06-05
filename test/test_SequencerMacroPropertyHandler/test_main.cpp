@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -272,6 +273,11 @@ void test_macro_property_track_change_commits_pending_coalesced_edit() {
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.sequencerTracks.track(0).velocity[0] == 127);
 
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencerTracks.track(0).velocity[0] == 10);
+    assert(h.state.sequencer.pattern.velocity[0] != 10);
+
     std::cout << "[PASS] test_macro_property_track_change_commits_pending_coalesced_edit\n";
 }
 
@@ -293,6 +299,10 @@ void test_macro_property_pending_edit_undoes_with_single_command() {
     assert(h.state.sequencer.pattern.note[0] == 60);
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
+    assert(h.state.sequencer.historyFeedback.visible.get());
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T01") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Step 01 Note") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "G9 -> C4") == 0);
 
     std::cout << "[PASS] test_macro_property_pending_edit_undoes_with_single_command\n";
 }

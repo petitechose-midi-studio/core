@@ -1,6 +1,7 @@
 #include "state/CoreState.hpp"
 
 #include <new>
+#include <cstdio>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -16,6 +17,7 @@
 #include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroPersistenceWorkflow.hpp"
 #include "macro/MacroWorkflow.hpp"
+#include "midi/MidiUtils.hpp"
 #include "sequencer/SequencerPersistenceWorkflow.hpp"
 #include "sequencer/SequencerTrackBankOps.hpp"
 
@@ -43,6 +45,185 @@ core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState
 
 core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
     return core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
+}
+
+int32_t sequencerHistoryValueForProperty(
+    const sequencer::SequencerHistoryPatternSnapshot& snapshot,
+    uint8_t step,
+    sequencer::StepProperty property
+) {
+    if (step >= sequencer::SequencerPatternState::MAX_STEPS) {
+        return 0;
+    }
+
+    switch (property) {
+        case sequencer::StepProperty::NOTE:
+            return snapshot.flat.note[step];
+        case sequencer::StepProperty::VELOCITY:
+            return snapshot.flat.velocity[step];
+        case sequencer::StepProperty::GATE:
+            return snapshot.flat.gate[step];
+        case sequencer::StepProperty::NUDGE:
+            return snapshot.flat.nudge[step];
+        case sequencer::StepProperty::PROBABILITY:
+            return snapshot.flat.probability[step];
+        default:
+            return 0;
+    }
+}
+
+sequencer::SequencerHistoryDescriptor makeStepPropertyHistoryDescriptor(
+    uint8_t track,
+    uint8_t step,
+    sequencer::StepProperty property,
+    const sequencer::SequencerHistoryPatternSnapshot& before,
+    const sequencer::SequencerHistoryPatternSnapshot& after
+) {
+    return sequencer::SequencerHistoryDescriptor{
+        .kind = sequencer::SequencerHistoryActionKind::StepPropertyEdit,
+        .trackIndex = track,
+        .stepIndex = step,
+        .property = property,
+        .hasValue = true,
+        .beforeValue = sequencerHistoryValueForProperty(before, step, property),
+        .afterValue = sequencerHistoryValueForProperty(after, step, property),
+    };
+}
+
+const char* historyDirectionLabel(sequencer::SequencerHistoryDirection direction) {
+    return direction == sequencer::SequencerHistoryDirection::Redo ? "REDO" : "UNDO";
+}
+
+const char* historyPropertyLabel(sequencer::StepProperty property) {
+    switch (property) {
+        case sequencer::StepProperty::NOTE:
+            return "Note";
+        case sequencer::StepProperty::VELOCITY:
+            return "Velocity";
+        case sequencer::StepProperty::GATE:
+            return "Gate";
+        case sequencer::StepProperty::NUDGE:
+            return "Nudge";
+        case sequencer::StepProperty::PROBABILITY:
+            return "Probability";
+        default:
+            return "Property";
+    }
+}
+
+const char* historyActionLabel(sequencer::SequencerHistoryActionKind kind) {
+    switch (kind) {
+        case sequencer::SequencerHistoryActionKind::StepToggle:
+            return "Step Toggle";
+        case sequencer::SequencerHistoryActionKind::StepPropertyEdit:
+            return "Step Property";
+        case sequencer::SequencerHistoryActionKind::StepEdit:
+            return "Step Edit";
+        case sequencer::SequencerHistoryActionKind::QuickControls:
+            return "Quick Controls";
+        case sequencer::SequencerHistoryActionKind::FullBank:
+            return "Sequencer Set";
+        case sequencer::SequencerHistoryActionKind::PatternEdit:
+        default:
+            return "Pattern Edit";
+    }
+}
+
+void formatHistoryValue(
+    char* buffer,
+    size_t bufferSize,
+    sequencer::StepProperty property,
+    int32_t value
+) {
+    if (!buffer || bufferSize == 0) return;
+
+    if (property == sequencer::StepProperty::NOTE) {
+        core::midi::formatNoteName(
+            buffer,
+            bufferSize,
+            static_cast<uint8_t>(value < 0 ? 0 : (value > 127 ? 127 : value))
+        );
+        return;
+    }
+
+    if (property == sequencer::StepProperty::GATE) {
+        std::snprintf(buffer, bufferSize, "%ld%%", static_cast<long>(value));
+        return;
+    }
+
+    if (property == sequencer::StepProperty::NUDGE) {
+        std::snprintf(buffer, bufferSize, "%+ld", static_cast<long>(value));
+        return;
+    }
+
+    std::snprintf(buffer, bufferSize, "%ld", static_cast<long>(value));
+}
+
+void showSequencerHistoryFeedback(
+    sequencer::SequencerState& sequencerState,
+    const sequencer::SequencerHistoryApplyResult& result,
+    uint32_t nowMs
+) {
+    if (!result.applied) return;
+
+    const auto& descriptor = result.descriptor;
+    char line1[sequencer::SequencerHistoryFeedbackState::LINE_SIZE]{};
+    char line2[sequencer::SequencerHistoryFeedbackState::LINE_SIZE]{};
+    char line3[sequencer::SequencerHistoryFeedbackState::LINE_SIZE]{};
+
+    const char* direction = historyDirectionLabel(result.direction);
+    if (descriptor.trackIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+        std::snprintf(
+            line1,
+            sizeof(line1),
+            "%s T%02u",
+            direction,
+            static_cast<unsigned>(descriptor.trackIndex + 1U)
+        );
+    } else {
+        std::snprintf(line1, sizeof(line1), "%s", direction);
+    }
+
+    if (descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+        std::snprintf(
+            line2,
+            sizeof(line2),
+            "Step %02u %s",
+            static_cast<unsigned>(descriptor.stepIndex + 1U),
+            historyPropertyLabel(descriptor.property)
+        );
+    } else {
+        std::snprintf(line2, sizeof(line2), "%s", historyActionLabel(descriptor.kind));
+    }
+
+    if (descriptor.hasValue) {
+        const int32_t fromValue = result.direction == sequencer::SequencerHistoryDirection::Undo
+            ? descriptor.afterValue
+            : descriptor.beforeValue;
+        const int32_t toValue = result.direction == sequencer::SequencerHistoryDirection::Undo
+            ? descriptor.beforeValue
+            : descriptor.afterValue;
+
+        if (descriptor.kind == sequencer::SequencerHistoryActionKind::StepToggle) {
+            std::snprintf(
+                line3,
+                sizeof(line3),
+                "%s -> %s",
+                fromValue != 0 ? "On" : "Off",
+                toValue != 0 ? "On" : "Off"
+            );
+        } else {
+            char fromText[12]{};
+            char toText[12]{};
+            formatHistoryValue(fromText, sizeof(fromText), descriptor.property, fromValue);
+            formatHistoryValue(toText, sizeof(toText), descriptor.property, toValue);
+            std::snprintf(line3, sizeof(line3), "%s -> %s", fromText, toText);
+        }
+    } else {
+        std::snprintf(line3, sizeof(line3), "Applied");
+    }
+
+    sequencerState.historyFeedback.show(line1, line2, line3, nowMs);
 }
 
 shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& state) {
@@ -180,9 +361,24 @@ void CoreState::persistSequencerWorkspace() {
 
 bool CoreState::recordSequencerPatternHistory(
     sequencer::SequencerHistoryPatternSnapshot before,
-    sequencer::SequencerHistoryPatternSnapshot after
+    sequencer::SequencerHistoryPatternSnapshot after,
+    sequencer::SequencerHistoryDescriptor descriptor
 ) {
-    if (!sequencerHistory.recordPattern(std::move(before), std::move(after))) {
+    const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
+    uint8_t targetTrack = activeTrack;
+    if (descriptor.trackIndex == sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+        descriptor.trackIndex = activeTrack;
+    } else {
+        targetTrack = sequencer::SequencerTrackBankState::clampTrackIndex(descriptor.trackIndex);
+        descriptor.trackIndex = targetTrack;
+    }
+
+    if (!sequencerHistory.recordPattern(
+            targetTrack,
+            std::move(before),
+            std::move(after),
+            descriptor
+        )) {
         return false;
     }
 
@@ -231,15 +427,30 @@ bool CoreState::commitSequencerPatternHistoryCoalescing() {
         return false;
     }
 
+    const uint8_t targetTrack = pending.activeTrack;
+    const uint8_t targetStep = pending.step;
+    const auto targetProperty = pending.property;
     sequencer::SequencerHistoryPatternSnapshot before = std::move(pending.before);
     pending.clear();
 
     sequencer::SequencerHistoryPatternSnapshot after;
-    if (!sequencer::captureHistorySnapshot(sequencer, after)) {
+    if (!sequencer::captureHistorySnapshot(sequencerTracks, sequencer, targetTrack, after)) {
         return false;
     }
 
-    return recordSequencerPatternHistory(std::move(before), std::move(after));
+    auto descriptor = makeStepPropertyHistoryDescriptor(
+        targetTrack,
+        targetStep,
+        targetProperty,
+        before,
+        after
+    );
+
+    return recordSequencerPatternHistory(
+        std::move(before),
+        std::move(after),
+        descriptor
+    );
 }
 
 bool CoreState::updateSequencerPatternHistoryCoalescing(uint32_t nowMs) {
@@ -263,10 +474,12 @@ bool CoreState::hasPendingSequencerPatternHistoryCoalescing() const {
 bool CoreState::undoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
-    if (!sequencerHistory.undo(sequencerTracks, sequencer)) {
+    const auto result = sequencerHistory.undoWithResult(sequencerTracks, sequencer);
+    if (!result.applied) {
         return false;
     }
 
+    showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
     return true;
@@ -275,10 +488,12 @@ bool CoreState::undoSequencerHistory() {
 bool CoreState::redoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
-    if (!sequencerHistory.redo(sequencerTracks, sequencer)) {
+    const auto result = sequencerHistory.redoWithResult(sequencerTracks, sequencer);
+    if (!result.applied) {
         return false;
     }
 
+    showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
     return true;

@@ -52,80 +52,80 @@
 6550 tick
 6600 capture screen undo_layer_for_step1_edit
 6650 tap LEFT_TOP 60
-6850 capture screen after_undo_step1_edit
-6950 button LEFT_CENTER up
-7150 capture screen after_undo_step1_edit_closed
+8150 capture screen after_undo_step1_edit
+8250 button LEFT_CENTER up
+8450 capture screen after_undo_step1_edit_closed
 
 # Undo C2: step 8 note edit should disappear, step 8 toggle should remain.
-7250 button LEFT_CENTER down
-8250 tick
-8300 capture screen undo_layer_for_step8_note
-8350 tap LEFT_TOP 60
-8550 capture screen after_undo_step8_note
-8650 button LEFT_CENTER up
-8850 capture screen after_undo_step8_note_closed
+8550 button LEFT_CENTER down
+9550 tick
+9600 capture screen undo_layer_for_step8_note
+9650 tap LEFT_TOP 60
+11150 capture screen after_undo_step8_note
+11250 button LEFT_CENTER up
+11450 capture screen after_undo_step8_note_closed
 
 # Undo C1: step 8 toggle should disappear.
-8950 button LEFT_CENTER down
-9950 tick
-10000 capture screen undo_layer_for_step8_toggle
-10050 tap LEFT_TOP 60
-10250 capture screen after_undo_step8_toggle
-10350 button LEFT_CENTER up
-10550 capture screen after_undo_step8_toggle_closed
+11550 button LEFT_CENTER down
+12550 tick
+12600 capture screen undo_layer_for_step8_toggle
+12650 tap LEFT_TOP 60
+14150 capture screen after_undo_step8_toggle
+14250 button LEFT_CENTER up
+14450 capture screen after_undo_step8_toggle_closed
 
 # Redo C1: step 8 comes back as C3.
-10650 button LEFT_CENTER down
-11650 tick
-11700 capture screen redo_layer_for_step8_toggle
-11750 tap LEFT_BOTTOM 60
-11950 capture screen after_redo_step8_toggle
-12050 button LEFT_CENTER up
-12250 capture screen after_redo_step8_toggle_closed
+14550 button LEFT_CENTER down
+15550 tick
+15600 capture screen redo_layer_for_step8_toggle
+15650 tap LEFT_BOTTOM 60
+17150 capture screen after_redo_step8_toggle
+17250 button LEFT_CENTER up
+17450 capture screen after_redo_step8_toggle_closed
 
 # Branch: a new musical action after partial redo should clear remaining redo.
-12350 tap MACRO_2 60
-12550 capture screen after_branch_step2_on
+17550 tap MACRO_2 60
+17750 capture screen after_branch_step2_on
 
 # Attempt redo after branching; expected no musical change.
-12650 button LEFT_CENTER down
-13650 tick
-13700 capture screen redo_layer_after_branch
-13750 tap LEFT_BOTTOM 60
-13950 capture screen after_redo_attempt_cleared
-14050 button LEFT_CENTER up
-14250 capture screen after_redo_attempt_cleared_closed
+17850 button LEFT_CENTER down
+18850 tick
+18900 capture screen redo_layer_after_branch
+18950 tap LEFT_BOTTOM 60
+20450 capture screen after_redo_attempt_cleared
+20550 button LEFT_CENTER up
+20750 capture screen after_redo_attempt_cleared_closed
 
 # Undo the new branch action, then undo the redone step 8 toggle.
-14350 button LEFT_CENTER down
-15350 tick
-15400 capture screen undo_layer_for_branch_step2
-15450 tap LEFT_TOP 60
-15650 capture screen after_undo_branch_step2
-15750 button LEFT_CENTER up
-15950 capture screen after_undo_branch_step2_closed
+20850 button LEFT_CENTER down
+21850 tick
+21900 capture screen undo_layer_for_branch_step2
+21950 tap LEFT_TOP 60
+23450 capture screen after_undo_branch_step2
+23550 button LEFT_CENTER up
+23750 capture screen after_undo_branch_step2_closed
 
-16050 button LEFT_CENTER down
-17050 tick
-17100 capture screen undo_layer_for_redone_step8
-17150 tap LEFT_TOP 60
-17350 capture screen after_undo_redone_step8
-17450 button LEFT_CENTER up
-17650 capture screen after_undo_redone_step8_closed
+23850 button LEFT_CENTER down
+24850 tick
+24900 capture screen undo_layer_for_redone_step8
+24950 tap LEFT_TOP 60
+26450 capture screen after_undo_redone_step8
+26550 button LEFT_CENTER up
+26750 capture screen after_undo_redone_step8_closed
 
 # Redo on the new branch: step 8 returns, then step 2 returns.
-17750 button LEFT_CENTER down
-18750 tick
-18800 capture screen redo_layer_for_step8_again
-18850 tap LEFT_BOTTOM 60
-19050 capture screen after_redo_step8_again
-19150 button LEFT_CENTER up
-19350 capture screen after_redo_step8_again_closed
+26850 button LEFT_CENTER down
+27850 tick
+27900 capture screen redo_layer_for_step8_again
+27950 tap LEFT_BOTTOM 60
+29450 capture screen after_redo_step8_again
+29550 button LEFT_CENTER up
+29750 capture screen after_redo_step8_again_closed
 
-19450 button LEFT_CENTER down
-20450 tick
-20500 capture screen redo_layer_for_step2_again
-20550 tap LEFT_BOTTOM 60
-20750 capture screen after_redo_step2_again
-20850 button LEFT_CENTER up
-21050 capture screen after_redo_step2_again_closed
+29850 button LEFT_CENTER down
+30850 tick
+30900 capture screen redo_layer_for_step2_again
+30950 tap LEFT_BOTTOM 60
+32450 capture screen after_redo_step2_again
+32550 button LEFT_CENTER up
+32750 capture screen after_redo_step2_again_closed

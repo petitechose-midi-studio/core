@@ -53,6 +53,7 @@ struct SequencerState {
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepInlineFeedbackState stepInlineFeedback;
     SequencerPatternVariationFeedbackState patternVariationFeedback;
+    SequencerHistoryFeedbackState historyFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
     SequencerStructureUiState structureUi;
 
@@ -231,6 +232,7 @@ struct SequencerState {
         stepPropertyInlineSelector.reset();
         stepInlineFeedback.reset();
         patternVariationFeedback.reset();
+        historyFeedback.reset();
         patternQuickControls.reset();
         structureUi.reset();
     }
@@ -238,6 +240,7 @@ struct SequencerState {
     void updateUi(uint32_t nowMs) {
         stepInlineFeedback.update(nowMs);
         patternVariationFeedback.update(nowMs);
+        historyFeedback.update(nowMs);
     }
 
     uint8_t activePageCount() const {

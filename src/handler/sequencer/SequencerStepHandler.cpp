@@ -243,7 +243,20 @@ void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
 
     core::state::sequencer::SequencerHistoryPatternSnapshot after;
     if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-        history_.recordPattern(std::move(before), std::move(after));
+        const bool beforeEnabled = before.flat.enabledMask.test(abs);
+        const bool afterEnabled = after.flat.enabledMask.test(abs);
+        history_.recordPattern(
+            std::move(before),
+            std::move(after),
+            core::state::sequencer::SequencerHistoryDescriptor{
+                .kind = core::state::sequencer::SequencerHistoryActionKind::StepToggle,
+                .stepIndex = abs,
+                .property = core::state::sequencer::StepProperty::NOTE,
+                .hasValue = true,
+                .beforeValue = beforeEnabled ? 1 : 0,
+                .afterValue = afterEnabled ? 1 : 0,
+            }
+        );
     }
 }
 

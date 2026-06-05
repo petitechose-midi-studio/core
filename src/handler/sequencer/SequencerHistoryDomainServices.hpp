@@ -13,7 +13,8 @@ public:
     using RecordPatternFn = bool (*)(
         void* context,
         core::state::sequencer::SequencerHistoryPatternSnapshot before,
-        core::state::sequencer::SequencerHistoryPatternSnapshot after
+        core::state::sequencer::SequencerHistoryPatternSnapshot after,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor
     );
     using CommandFn = bool (*)(void* context);
     using BeginCoalescedPatternEditFn = bool (*)(
@@ -38,7 +39,8 @@ public:
 
     bool recordPattern(
         core::state::sequencer::SequencerHistoryPatternSnapshot before,
-        core::state::sequencer::SequencerHistoryPatternSnapshot after
+        core::state::sequencer::SequencerHistoryPatternSnapshot after,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
     ) const;
     bool undo() const;
     bool redo() const;

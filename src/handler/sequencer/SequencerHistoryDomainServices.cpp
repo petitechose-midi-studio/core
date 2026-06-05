@@ -13,14 +13,19 @@ namespace {
 FLASHMEM bool recordPatternFromCoreState(
     void* context,
     core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
 ) {
     if (context == nullptr) {
         return false;
     }
 
     auto* state = static_cast<core::state::CoreState*>(context);
-    return state->recordSequencerPatternHistory(std::move(before), std::move(after));
+    return state->recordSequencerPatternHistory(
+        std::move(before),
+        std::move(after),
+        descriptor
+    );
 }
 
 FLASHMEM bool undoFromCoreState(void* context) {
@@ -86,13 +91,15 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
 
 FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
     core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
 ) const {
     return operations_.recordPattern != nullptr &&
            operations_.recordPattern(
                operations_.context,
                std::move(before),
-               std::move(after)
+               std::move(after),
+               descriptor
            );
 }
 

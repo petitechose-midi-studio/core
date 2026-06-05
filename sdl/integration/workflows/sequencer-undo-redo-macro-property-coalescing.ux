@@ -23,15 +23,15 @@
 2350 tick
 2400 capture screen undo_layer
 2450 tap LEFT_TOP 60
-2650 capture screen note_undone
-2750 button LEFT_CENTER up
-2950 capture screen note_undone_closed
+3950 capture screen note_undone
+4050 button LEFT_CENTER up
+4250 capture screen note_undone_closed
 
 # Redo the coalesced note edit.
-3050 button LEFT_CENTER down
-4050 tick
-4100 capture screen redo_layer
-4150 tap LEFT_BOTTOM 60
-4350 capture screen note_redone
-4450 button LEFT_CENTER up
-4650 capture screen note_redone_closed
+4350 button LEFT_CENTER down
+5350 tick
+5400 capture screen redo_layer
+5450 tap LEFT_BOTTOM 60
+6950 capture screen note_redone
+7050 button LEFT_CENTER up
+7250 capture screen note_redone_closed

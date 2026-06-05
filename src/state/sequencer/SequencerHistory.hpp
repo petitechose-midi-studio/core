@@ -47,7 +47,41 @@ enum class SequencerHistoryScope : uint8_t {
     FullBank,
 };
 
+enum class SequencerHistoryDirection : uint8_t {
+    Undo = 0,
+    Redo,
+};
+
+enum class SequencerHistoryActionKind : uint8_t {
+    PatternEdit = 0,
+    StepToggle,
+    StepPropertyEdit,
+    StepEdit,
+    QuickControls,
+    FullBank,
+};
+
+struct SequencerHistoryDescriptor {
+    static constexpr uint8_t INVALID_INDEX = 0xFF;
+
+    SequencerHistoryActionKind kind = SequencerHistoryActionKind::PatternEdit;
+    uint8_t trackIndex = INVALID_INDEX;
+    uint8_t stepIndex = INVALID_INDEX;
+    StepProperty property = StepProperty::NOTE;
+    bool hasValue = false;
+    int32_t beforeValue = 0;
+    int32_t afterValue = 0;
+};
+
+struct SequencerHistoryApplyResult {
+    bool applied = false;
+    SequencerHistoryDirection direction = SequencerHistoryDirection::Undo;
+    SequencerHistoryDescriptor descriptor{};
+};
+
 struct SequencerHistoryPatternChange {
+    uint8_t trackIndex = 0;
+    SequencerHistoryDescriptor descriptor{};
     SequencerHistoryPatternSnapshot before;
     SequencerHistoryPatternSnapshot after;
 
@@ -94,12 +128,26 @@ bool captureHistorySnapshot(
 bool captureHistorySnapshot(
     const SequencerTrackBankState& bank,
     const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& out
+);
+
+bool captureHistorySnapshot(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
     SequencerHistoryTrackBankSnapshot& out
 );
 
 bool applyHistorySnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
+    const SequencerHistoryPatternSnapshot& snapshot
+);
+
+bool applyHistorySnapshotToTrack(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex,
     const SequencerHistoryPatternSnapshot& snapshot
 );
 
@@ -126,8 +174,16 @@ public:
     static constexpr uint8_t ENTRY_LIMIT = PATTERN_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT;
 
     bool recordPattern(
+        uint8_t trackIndex,
         SequencerHistoryPatternSnapshot before,
-        SequencerHistoryPatternSnapshot after
+        SequencerHistoryPatternSnapshot after,
+        SequencerHistoryDescriptor descriptor = {}
+    );
+
+    bool recordPattern(
+        SequencerHistoryPatternSnapshot before,
+        SequencerHistoryPatternSnapshot after,
+        SequencerHistoryDescriptor descriptor = {}
     );
 
     bool recordFullBank(
@@ -140,6 +196,10 @@ public:
 
     bool undo(SequencerTrackBankState& bank, SequencerState& active);
     bool redo(SequencerTrackBankState& bank, SequencerState& active);
+    SequencerHistoryApplyResult undoWithResult(SequencerTrackBankState& bank,
+                                               SequencerState& active);
+    SequencerHistoryApplyResult redoWithResult(SequencerTrackBankState& bank,
+                                               SequencerState& active);
 
     void clear();
 

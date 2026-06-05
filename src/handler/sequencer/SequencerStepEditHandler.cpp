@@ -151,7 +151,14 @@ void SequencerStepEditHandler::closeApply() {
     if (history_snapshot_valid_) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
         if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-            history_.recordPattern(std::move(history_snapshot_), std::move(after));
+            history_.recordPattern(
+                std::move(history_snapshot_),
+                std::move(after),
+                core::state::sequencer::SequencerHistoryDescriptor{
+                    .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+                    .stepIndex = sequencer_.stepEdit.stepIndex.get(),
+                }
+            );
         }
     }
 
