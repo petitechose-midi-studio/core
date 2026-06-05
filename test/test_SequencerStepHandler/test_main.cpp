@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -486,6 +487,77 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     std::cout << "[PASS] test_deleted_track_slot_can_be_recreated_at_any_gap\n";
 }
 
+void test_created_page_is_undoable_and_redoable() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.page.set(0);
+    h.state.sequencer.focusedStep.set(0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
+    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 1);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.page.get() == 1);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.page.get() == 0);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T01") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Page Structure") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "2 pages -> 1 page") == 0);
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.page.get() == 1);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "REDO T01") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "1 page -> 2 pages") == 0);
+
+    std::cout << "[PASS] test_created_page_is_undoable_and_redoable\n";
+}
+
+void test_created_track_is_undoable_and_redoable() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0001, 0);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 1);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0001);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 0);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T02") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Track Structure") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "2 tracks -> 1 track") == 0);
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 1);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "REDO T02") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "1 track -> 2 tracks") == 0);
+
+    std::cout << "[PASS] test_created_track_is_undoable_and_redoable\n";
+}
+
 }  // namespace
 
 int main() {
@@ -500,6 +572,8 @@ int main() {
     test_sequencer_selection_duplicate_copies_track_payload();
     test_sequencer_track_copy_and_long_press_paste_to_add_slot();
     test_deleted_track_slot_can_be_recreated_at_any_gap();
+    test_created_page_is_undoable_and_redoable();
+    test_created_track_is_undoable_and_redoable();
 
     std::cout << "\nAll SequencerStepHandler tests passed.\n";
     return 0;

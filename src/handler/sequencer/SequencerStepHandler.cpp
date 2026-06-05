@@ -29,6 +29,7 @@ SequencerStepHandler::SequencerStepHandler(StateRefs state,
               state.navigationFocus,
               state.trackNavigation,
               state.sharedTracks,
+              state.history,
           }
       )
     , edit_workflow_(
@@ -39,6 +40,7 @@ SequencerStepHandler::SequencerStepHandler(StateRefs state,
               state.trackNavigation,
               state.structureClipboard,
               state.sharedTracks,
+              state.history,
           }
     )
     , history_(state.history)

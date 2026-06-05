@@ -306,6 +306,11 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(
         return descriptor;
     }
 
+    if (entry.scope == SequencerHistoryScope::FullBank && entry.fullBank) {
+        descriptor = entry.fullBank->descriptor;
+        return descriptor;
+    }
+
     descriptor.kind = SequencerHistoryActionKind::FullBank;
     return descriptor;
 }
@@ -517,7 +522,8 @@ FLASHMEM bool SequencerHistoryService::recordPattern(
 
 FLASHMEM bool SequencerHistoryService::recordFullBank(
     SequencerHistoryTrackBankSnapshot before,
-    SequencerHistoryTrackBankSnapshot after
+    SequencerHistoryTrackBankSnapshot after,
+    SequencerHistoryDescriptor descriptor
 ) {
     if (sameMusicalHistorySnapshot(before, after)) {
         return false;
@@ -528,6 +534,11 @@ FLASHMEM bool SequencerHistoryService::recordFullBank(
         return false;
     }
 
+    if (descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
+        descriptor.kind = SequencerHistoryActionKind::FullBank;
+    }
+
+    change->descriptor = descriptor;
     change->before = std::move(before);
     change->after = std::move(after);
 

@@ -58,6 +58,8 @@ enum class SequencerHistoryActionKind : uint8_t {
     StepPropertyEdit,
     StepEdit,
     QuickControls,
+    PageStructure,
+    TrackStructure,
     FullBank,
 };
 
@@ -93,6 +95,7 @@ struct SequencerHistoryPatternChange {
 };
 
 struct SequencerHistoryFullBankChange {
+    SequencerHistoryDescriptor descriptor{};
     SequencerHistoryTrackBankSnapshot before;
     SequencerHistoryTrackBankSnapshot after;
 
@@ -188,7 +191,8 @@ public:
 
     bool recordFullBank(
         SequencerHistoryTrackBankSnapshot before,
-        SequencerHistoryTrackBankSnapshot after
+        SequencerHistoryTrackBankSnapshot after,
+        SequencerHistoryDescriptor descriptor = {}
     );
 
     bool canUndo() const { return undo_count_ > 0; }

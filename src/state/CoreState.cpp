@@ -121,6 +121,10 @@ const char* historyActionLabel(sequencer::SequencerHistoryActionKind kind) {
             return "Step Edit";
         case sequencer::SequencerHistoryActionKind::QuickControls:
             return "Quick Controls";
+        case sequencer::SequencerHistoryActionKind::PageStructure:
+            return "Page Structure";
+        case sequencer::SequencerHistoryActionKind::TrackStructure:
+            return "Track Structure";
         case sequencer::SequencerHistoryActionKind::FullBank:
             return "Sequencer Set";
         case sequencer::SequencerHistoryActionKind::PatternEdit:
@@ -157,6 +161,27 @@ void formatHistoryValue(
     }
 
     std::snprintf(buffer, bufferSize, "%ld", static_cast<long>(value));
+}
+
+void formatHistoryStructureValue(
+    char* buffer,
+    size_t bufferSize,
+    sequencer::SequencerHistoryActionKind kind,
+    int32_t value
+) {
+    if (!buffer || bufferSize == 0) return;
+
+    const char* unit = kind == sequencer::SequencerHistoryActionKind::TrackStructure
+        ? "track"
+        : "page";
+    std::snprintf(
+        buffer,
+        bufferSize,
+        "%ld %s%s",
+        static_cast<long>(value),
+        unit,
+        value == 1 ? "" : "s"
+    );
 }
 
 void showSequencerHistoryFeedback(
@@ -212,6 +237,23 @@ void showSequencerHistoryFeedback(
                 fromValue != 0 ? "On" : "Off",
                 toValue != 0 ? "On" : "Off"
             );
+        } else if (descriptor.kind == sequencer::SequencerHistoryActionKind::PageStructure ||
+                   descriptor.kind == sequencer::SequencerHistoryActionKind::TrackStructure) {
+            char fromText[14]{};
+            char toText[14]{};
+            formatHistoryStructureValue(
+                fromText,
+                sizeof(fromText),
+                descriptor.kind,
+                fromValue
+            );
+            formatHistoryStructureValue(
+                toText,
+                sizeof(toText),
+                descriptor.kind,
+                toValue
+            );
+            std::snprintf(line3, sizeof(line3), "%s -> %s", fromText, toText);
         } else {
             char fromText[12]{};
             char toText[12]{};
@@ -383,6 +425,24 @@ bool CoreState::recordSequencerPatternHistory(
     }
 
     sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    refreshSharedTrackStateFromSequencer();
+    persistSequencerWorkspace_();
+    return true;
+}
+
+bool CoreState::recordSequencerBankHistory(
+    sequencer::SequencerHistoryTrackBankSnapshot before,
+    sequencer::SequencerHistoryTrackBankSnapshot after,
+    sequencer::SequencerHistoryDescriptor descriptor
+) {
+    if (!sequencerHistory.recordFullBank(
+            std::move(before),
+            std::move(after),
+            descriptor
+        )) {
+        return false;
+    }
+
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
     return true;

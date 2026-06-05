@@ -3,6 +3,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -27,6 +28,7 @@ public:
         core::state::TrackNavigationState& trackNavigation;
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
+        SequencerHistoryDomainServices history;
     };
 
     explicit SequencerStructureEditWorkflow(StateRefs state);
@@ -47,6 +49,16 @@ public:
     void duplicateSelection();
 
 private:
+    using HistoryActionKind = core::state::sequencer::SequencerHistoryActionKind;
+
+    bool captureHistoryBefore(
+        core::state::sequencer::SequencerHistoryTrackBankSnapshot& before
+    ) const;
+    void recordHistoryAfter(
+        core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
+        HistoryActionKind kind,
+        bool beforeCaptured
+    );
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
     uint16_t currentTrackEnabledMask() const;
@@ -61,6 +73,7 @@ private:
     core::state::TrackNavigationState& track_ui_;
     core::state::StructureClipboardState& structure_clipboard_;
     SharedTrackDomainServices shared_tracks_;
+    SequencerHistoryDomainServices history_;
 };
 
 }  // namespace core::handler

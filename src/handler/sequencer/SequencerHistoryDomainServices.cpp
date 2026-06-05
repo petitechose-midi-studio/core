@@ -28,6 +28,24 @@ FLASHMEM bool recordPatternFromCoreState(
     );
 }
 
+FLASHMEM bool recordFullBankFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->recordSequencerBankHistory(
+        std::move(before),
+        std::move(after),
+        descriptor
+    );
+}
+
 FLASHMEM bool undoFromCoreState(void* context) {
     if (context == nullptr) {
         return false;
@@ -81,6 +99,7 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
         Operations{
             &state,
             recordPatternFromCoreState,
+            recordFullBankFromCoreState,
             undoFromCoreState,
             redoFromCoreState,
             beginCoalescedPatternEditFromCoreState,
@@ -96,6 +115,20 @@ FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
 ) const {
     return operations_.recordPattern != nullptr &&
            operations_.recordPattern(
+               operations_.context,
+               std::move(before),
+               std::move(after),
+               descriptor
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) const {
+    return operations_.recordFullBank != nullptr &&
+           operations_.recordFullBank(
                operations_.context,
                std::move(before),
                std::move(after),

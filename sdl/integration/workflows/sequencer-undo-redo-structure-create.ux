@@ -1,0 +1,42 @@
+# UX workflow: create sequencer pages/tracks and undo/redo structural history.
+# Purpose: validates full-bank history entries for structure creation and the
+# transient feedback toast for page/track structure changes.
+
+0 scenario sequencer
+50 capture screen initial
+
+# Create page 2 from the first add-slot preview.
+150 encoder NAV 1
+250 capture screen page_2_add_preview
+350 tap NAV 60
+550 capture screen page_2_created
+
+# Undo page creation. Toast should identify Page Structure.
+650 button LEFT_CENTER down
+1650 tick
+1700 tap LEFT_TOP 60
+1850 capture screen undo_page_toast
+1950 button LEFT_CENTER up
+3300 capture screen page_creation_undone
+
+# Redo page creation.
+3400 button LEFT_CENTER down
+4400 tick
+4450 tap LEFT_BOTTOM 60
+4600 capture screen redo_page_toast
+4700 button LEFT_CENTER up
+6050 capture screen page_creation_redone
+
+# Switch to track navigation, create track 2, then undo it.
+6150 tap NAV 60
+6350 encoder NAV 1
+6550 capture screen track_2_add_preview
+6650 tap NAV 60
+6850 capture screen track_2_created
+
+6950 button LEFT_CENTER down
+7950 tick
+8000 tap LEFT_TOP 60
+8150 capture screen undo_track_toast
+8250 button LEFT_CENTER up
+9600 capture screen track_creation_undone

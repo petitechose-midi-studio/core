@@ -5,6 +5,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -28,6 +29,7 @@ public:
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         core::state::TrackNavigationState& trackNavigation;
         SharedTrackDomainServices sharedTracks;
+        SequencerHistoryDomainServices history;
     };
 
     explicit SequencerStructureNavigationWorkflow(StateRefs state);
@@ -67,6 +69,7 @@ private:
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::TrackNavigationState& track_ui_;
     SharedTrackDomainServices shared_tracks_;
+    SequencerHistoryDomainServices history_;
     std::vector<oc::state::Subscription> subscriptions_;
 };
 

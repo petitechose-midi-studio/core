@@ -1,11 +1,14 @@
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::handler {
@@ -47,7 +50,8 @@ SequencerStructureNavigationWorkflow::SequencerStructureNavigationWorkflow(State
     , tracks_(state.tracks)
     , navigation_focus_(state.navigationFocus)
     , track_ui_(state.trackNavigation)
-    , shared_tracks_(state.sharedTracks) {
+    , shared_tracks_(state.sharedTracks)
+    , history_(state.history) {
     track_ui_.syncPreviewTrack(currentActiveTrack());
     sequencer_.structureUi.syncPreviewPage(sequencer_.visiblePage());
     bindStateSync();
@@ -195,14 +199,35 @@ void SequencerStructureNavigationWorkflow::navigateSelection(float delta) {
 
 void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
     const auto focus = navigation_focus_.get();
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot before;
+    const bool beforeCaptured =
+        core::state::sequencer::captureHistorySnapshot(tracks_, sequencer_, before);
+
+    bool changed = false;
+    core::state::sequencer::SequencerHistoryActionKind kind =
+        core::state::sequencer::SequencerHistoryActionKind::PageStructure;
+
     switch (focus) {
         case core::state::StructureNavigationFocus::TRACK:
-            createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_);
+            kind = core::state::sequencer::SequencerHistoryActionKind::TrackStructure;
+            changed = createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_);
             break;
         case core::state::StructureNavigationFocus::PAGE:
         default:
-            createSequencerStructurePage(sequencer_);
+            changed = createSequencerStructurePage(sequencer_);
             break;
+    }
+
+    if (changed && beforeCaptured) {
+        core::state::sequencer::SequencerHistoryTrackBankSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(tracks_, sequencer_, after)) {
+            auto descriptor = makeSequencerStructureHistoryDescriptor(kind, before, after);
+            history_.recordFullBank(
+                std::move(before),
+                std::move(after),
+                descriptor
+            );
+        }
     }
 
     syncPreviewToFocus(focus);
