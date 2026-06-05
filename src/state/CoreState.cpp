@@ -448,6 +448,18 @@ bool CoreState::recordSequencerBankHistory(
     return true;
 }
 
+bool CoreState::recordSequencerBankHistory(
+    sequencer::SequencerHistoryFullBankChangePtr change
+) {
+    if (!sequencerHistory.recordFullBank(std::move(change))) {
+        return false;
+    }
+
+    refreshSharedTrackStateFromSequencer();
+    persistSequencerWorkspace_();
+    return true;
+}
+
 bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step,
     sequencer::StepProperty property,

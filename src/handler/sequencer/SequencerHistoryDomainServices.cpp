@@ -30,20 +30,14 @@ FLASHMEM bool recordPatternFromCoreState(
 
 FLASHMEM bool recordFullBankFromCoreState(
     void* context,
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor
+    core::state::sequencer::SequencerHistoryFullBankChangePtr change
 ) {
     if (context == nullptr) {
         return false;
     }
 
     auto* state = static_cast<core::state::CoreState*>(context);
-    return state->recordSequencerBankHistory(
-        std::move(before),
-        std::move(after),
-        descriptor
-    );
+    return state->recordSequencerBankHistory(std::move(change));
 }
 
 FLASHMEM bool undoFromCoreState(void* context) {
@@ -123,16 +117,12 @@ FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor
+    core::state::sequencer::SequencerHistoryFullBankChangePtr change
 ) const {
     return operations_.recordFullBank != nullptr &&
            operations_.recordFullBank(
                operations_.context,
-               std::move(before),
-               std::move(after),
-               descriptor
+               std::move(change)
            );
 }
 

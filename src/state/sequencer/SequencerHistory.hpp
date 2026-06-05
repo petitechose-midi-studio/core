@@ -106,6 +106,9 @@ struct SequencerHistoryFullBankChange {
     SequencerHistoryFullBankChange& operator=(SequencerHistoryFullBankChange&&) noexcept = default;
 };
 
+using SequencerHistoryFullBankChangePtr =
+    core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange>;
+
 struct SequencerHistoryEntry {
     SequencerHistoryScope scope = SequencerHistoryScope::PatternOnly;
     core::app::ExtmemUniquePtr<SequencerHistoryPatternChange> pattern;
@@ -194,6 +197,7 @@ public:
         SequencerHistoryTrackBankSnapshot after,
         SequencerHistoryDescriptor descriptor = {}
     );
+    bool recordFullBank(SequencerHistoryFullBankChangePtr change);
 
     bool canUndo() const { return undo_count_ > 0; }
     bool canRedo() const { return redo_count_ > 0; }

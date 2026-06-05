@@ -18,9 +18,7 @@ public:
     );
     using RecordFullBankFn = bool (*)(
         void* context,
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
-        core::state::sequencer::SequencerHistoryDescriptor descriptor
+        core::state::sequencer::SequencerHistoryFullBankChangePtr change
     );
     using CommandFn = bool (*)(void* context);
     using BeginCoalescedPatternEditFn = bool (*)(
@@ -50,9 +48,7 @@ public:
         core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
     ) const;
     bool recordFullBank(
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
-        core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
+        core::state::sequencer::SequencerHistoryFullBankChangePtr change
     ) const;
     bool undo() const;
     bool redo() const;

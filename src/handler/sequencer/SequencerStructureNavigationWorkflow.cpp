@@ -199,9 +199,15 @@ void SequencerStructureNavigationWorkflow::navigateSelection(float delta) {
 
 void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
     const auto focus = navigation_focus_.get();
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot before;
-    const bool beforeCaptured =
-        core::state::sequencer::captureHistorySnapshot(tracks_, sequencer_, before);
+    auto change = core::app::makeExtmemUnique<
+        core::state::sequencer::SequencerHistoryFullBankChange
+    >();
+    const bool beforeCaptured = change &&
+        core::state::sequencer::captureHistorySnapshot(
+            tracks_,
+            sequencer_,
+            change->before
+        );
 
     bool changed = false;
     core::state::sequencer::SequencerHistoryActionKind kind =
@@ -219,14 +225,17 @@ void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
     }
 
     if (changed && beforeCaptured) {
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(tracks_, sequencer_, after)) {
-            auto descriptor = makeSequencerStructureHistoryDescriptor(kind, before, after);
-            history_.recordFullBank(
-                std::move(before),
-                std::move(after),
-                descriptor
+        if (core::state::sequencer::captureHistorySnapshot(
+                tracks_,
+                sequencer_,
+                change->after
+            )) {
+            change->descriptor = makeSequencerStructureHistoryDescriptor(
+                kind,
+                change->before,
+                change->after
             );
+            history_.recordFullBank(std::move(change));
         }
     }
 

@@ -50,15 +50,11 @@ public:
 
 private:
     using HistoryActionKind = core::state::sequencer::SequencerHistoryActionKind;
+    using HistoryFullBankChangePtr =
+        core::state::sequencer::SequencerHistoryFullBankChangePtr;
 
-    bool captureHistoryBefore(
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot& before
-    ) const;
-    void recordHistoryAfter(
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
-        HistoryActionKind kind,
-        bool beforeCaptured
-    );
+    HistoryFullBankChangePtr captureHistoryBefore() const;
+    void recordHistoryAfter(HistoryFullBankChangePtr change, HistoryActionKind kind);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
     uint16_t currentTrackEnabledMask() const;

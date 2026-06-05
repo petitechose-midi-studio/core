@@ -294,6 +294,7 @@ public:
     bool recordSequencerBankHistory(sequencer::SequencerHistoryTrackBankSnapshot before,
                                     sequencer::SequencerHistoryTrackBankSnapshot after,
                                     sequencer::SequencerHistoryDescriptor descriptor = {});
+    bool recordSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
                                                           sequencer::StepProperty property,
                                                           uint32_t nowMs);

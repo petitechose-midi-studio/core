@@ -525,22 +525,31 @@ FLASHMEM bool SequencerHistoryService::recordFullBank(
     SequencerHistoryTrackBankSnapshot after,
     SequencerHistoryDescriptor descriptor
 ) {
-    if (sameMusicalHistorySnapshot(before, after)) {
-        return false;
-    }
-
     auto change = core::app::makeExtmemUnique<SequencerHistoryFullBankChange>();
     if (!change) {
         return false;
     }
 
-    if (descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
-        descriptor.kind = SequencerHistoryActionKind::FullBank;
-    }
-
     change->descriptor = descriptor;
     change->before = std::move(before);
     change->after = std::move(after);
+    return recordFullBank(std::move(change));
+}
+
+FLASHMEM bool SequencerHistoryService::recordFullBank(
+    SequencerHistoryFullBankChangePtr change
+) {
+    if (!change) {
+        return false;
+    }
+
+    if (sameMusicalHistorySnapshot(change->before, change->after)) {
+        return false;
+    }
+
+    if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
+        change->descriptor.kind = SequencerHistoryActionKind::FullBank;
+    }
 
     SequencerHistoryEntry entry;
     entry.scope = SequencerHistoryScope::FullBank;
