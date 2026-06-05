@@ -11,6 +11,7 @@
 
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "app/OverlayTypes.hpp"
 
@@ -58,6 +59,8 @@ private:
     oc::type::ScopeID scope_id_ = 0;
     NowProvider now_provider_ = nullptr;
     oc::note::sequencer::StepSequencerVariationRanges snapshot_variation_ranges_{};
+    core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
+    bool history_snapshot_valid_ = false;
 };
 
 }  // namespace core::handler

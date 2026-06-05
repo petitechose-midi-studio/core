@@ -1,6 +1,7 @@
 #include "SequencerPropertySelectorHandler.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
@@ -11,6 +12,8 @@ namespace core::handler {
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;
+using Ranges = oc::note::sequencer::StepSequencerVariationRanges;
+using StepProperty = core::state::sequencer::StepProperty;
 
 namespace {
 constexpr int PROPERTY_COUNT =
@@ -31,6 +34,73 @@ inline oc::type::IsActiveFn canOpenPropertySelector(
                !trackUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get();
     };
+}
+
+uint8_t rangeForProperty(const Ranges& ranges, StepProperty property) {
+    switch (property) {
+        case StepProperty::NOTE:
+            return ranges.pitchSemitones;
+        case StepProperty::VELOCITY:
+            return ranges.velocity;
+        case StepProperty::GATE:
+            return ranges.gatePercent;
+        case StepProperty::NUDGE:
+            return ranges.nudge;
+        default:
+            return 0;
+    }
+}
+
+bool findSingleVariationRangeChange(
+    const Ranges& before,
+    const Ranges& after,
+    StepProperty& changedProperty,
+    int32_t& beforeValue,
+    int32_t& afterValue
+) {
+    constexpr StepProperty PROPERTIES[] = {
+        StepProperty::NOTE,
+        StepProperty::VELOCITY,
+        StepProperty::GATE,
+        StepProperty::NUDGE,
+    };
+
+    uint8_t changeCount = 0;
+    for (const auto property : PROPERTIES) {
+        const uint8_t beforeRange = rangeForProperty(before, property);
+        const uint8_t afterRange = rangeForProperty(after, property);
+        if (beforeRange == afterRange) continue;
+
+        ++changeCount;
+        changedProperty = property;
+        beforeValue = beforeRange;
+        afterValue = afterRange;
+    }
+
+    return changeCount == 1;
+}
+
+core::state::sequencer::SequencerHistoryDescriptor makeVariationHistoryDescriptor(
+    const Ranges& before,
+    const Ranges& after,
+    StepProperty fallbackProperty
+) {
+    auto descriptor = core::state::sequencer::SequencerHistoryDescriptor{
+        .kind = core::state::sequencer::SequencerHistoryActionKind::PatternVariation,
+        .property = fallbackProperty,
+    };
+
+    StepProperty changedProperty = fallbackProperty;
+    int32_t beforeValue = 0;
+    int32_t afterValue = 0;
+    if (findSingleVariationRangeChange(before, after, changedProperty, beforeValue, afterValue)) {
+        descriptor.property = changedProperty;
+        descriptor.hasValue = true;
+        descriptor.beforeValue = beforeValue;
+        descriptor.afterValue = afterValue;
+    }
+
+    return descriptor;
 }
 
 }  // namespace
@@ -98,6 +168,8 @@ void SequencerPropertySelectorHandler::open() {
     o.snapshotValid = true;
     o.selectedIndex.set(active);
     snapshot_variation_ranges_ = sequencer_.pattern.variationRanges;
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
     sequencer_.patternVariationFeedback.show(
         sequencer_.activeStepProperty.get(),
         now_provider_ ? now_provider_() : 0
@@ -124,10 +196,25 @@ void SequencerPropertySelectorHandler::navigate(float delta) {
 
 void SequencerPropertySelectorHandler::closeApply() {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
+    if (history_snapshot_valid_) {
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+            history_.recordPattern(
+                std::move(history_snapshot_),
+                std::move(after),
+                makeVariationHistoryDescriptor(
+                    snapshot_variation_ranges_,
+                    sequencer_.pattern.variationRanges,
+                    sequencer_.activeStepProperty.get()
+                )
+            );
+        }
+    }
     sequencer_.patternVariationFeedback.show(
         sequencer_.activeStepProperty.get(),
         now_provider_ ? now_provider_() : 0
     );
+    history_snapshot_valid_ = false;
     sequencer_.stepPropertyInlineSelector.reset();
 }
 
@@ -140,6 +227,7 @@ void SequencerPropertySelectorHandler::closeCancel() {
     }
     sequencer_.setPatternVariationRanges(snapshot_variation_ranges_);
     sequencer_.patternVariationFeedback.reset();
+    history_snapshot_valid_ = false;
     o.reset();
 }
 

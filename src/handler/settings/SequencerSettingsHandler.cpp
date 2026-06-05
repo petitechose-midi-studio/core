@@ -1,10 +1,14 @@
 #include "SequencerSettingsHandler.hpp"
 
+#include <utility>
+
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/ViewSelectorItems.hpp"
 
 namespace core::handler {
@@ -23,6 +27,9 @@ FLASHMEM SequencerSettingsHandler::SequencerSettingsHandler(
 )
     : sequencer_settings_(state.sequencerSettings)
     , view_selector_(state.viewSelector)
+    , sequencer_(state.sequencer)
+    , sequencer_tracks_(state.sequencerTracks)
+    , history_(state.history)
     , services_(services)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -129,11 +136,39 @@ FLASHMEM void SequencerSettingsHandler::navigateSelector(float delta) {
 }
 
 FLASHMEM void SequencerSettingsHandler::applySelectorAndClose() {
+    if (sequencer_settings_.flowPhase.get() !=
+        core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR) {
+        return;
+    }
+
     auto& selector = sequencer_settings_.selector;
     const uint8_t row = selector.editingRow.get();
     const int choice = selector.selectedIndex.get();
 
+    history_.commitCoalescedPatternEdit();
+
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot before;
+    const bool beforeValid =
+        core::state::sequencer::captureHistorySnapshot(sequencer_tracks_, sequencer_, before);
+
     services_.applyChoice(row, choice);
+
+    if (beforeValid) {
+        core::state::sequencer::SequencerHistoryTrackBankSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_tracks_, sequencer_, after)) {
+            auto change =
+                core::app::makeExtmemUnique<core::state::sequencer::SequencerHistoryFullBankChange>();
+            if (change) {
+                change->descriptor = core::state::sequencer::SequencerHistoryDescriptor{
+                    .kind =
+                        core::state::sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
+                };
+                change->before = std::move(before);
+                change->after = std::move(after);
+                history_.recordFullBank(std::move(change));
+            }
+        }
+    }
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR);
     sequencer_settings_.closeSelector();

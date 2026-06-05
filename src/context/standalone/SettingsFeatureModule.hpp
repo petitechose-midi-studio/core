@@ -13,6 +13,7 @@
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/GlobalSettingsDomainServices.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/CoreSettings.hpp"
 #include "state/DataManagerState.hpp"
@@ -20,6 +21,7 @@
 #include "state/SequencerSettingsState.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "state/MidiSyncState.hpp"
+#include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
@@ -68,7 +70,9 @@ public:
         core::state::CoreSettings& settings;
         core::state::DataManagerState& dataManager;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
+        core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        core::handler::SequencerHistoryDomainServices history;
     };
 
     SettingsFeatureModule(StateRefs stateRefs,

@@ -303,6 +303,7 @@ public:
     bool hasPendingSequencerPatternHistoryCoalescing() const;
     bool undoSequencerHistory();
     bool redoSequencerHistory();
+    void clearSequencerHistory();
     void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false);
     void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankState& stagedBank,
                                         const sequencer::SequencerState& staged);

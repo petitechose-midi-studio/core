@@ -101,7 +101,9 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.settings,
             state.dataManager,
             state.activeView,
+            state.sequencer,
             state.sequencerTracks,
+            core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },
         core::handler::GlobalSettingsDomainServices{
             core::handler::GlobalSettingsDomainServices::StateRefs{

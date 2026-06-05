@@ -188,6 +188,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             core::handler::PatternPitchSettingsHandler::StateRefs{
                 stateRefs.patternPitchSettings,
                 stateRefs.sequencer,
+                stateRefs.history,
             },
             core::handler::PatternPitchSettingsDomainServices{
                 core::handler::PatternPitchSettingsDomainServices::StateRefs{

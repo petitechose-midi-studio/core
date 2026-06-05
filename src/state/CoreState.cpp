@@ -121,6 +121,12 @@ const char* historyActionLabel(sequencer::SequencerHistoryActionKind kind) {
             return "Step Edit";
         case sequencer::SequencerHistoryActionKind::QuickControls:
             return "Quick Controls";
+        case sequencer::SequencerHistoryActionKind::PatternSettings:
+            return "Pattern Settings";
+        case sequencer::SequencerHistoryActionKind::PatternVariation:
+            return "Variation Range";
+        case sequencer::SequencerHistoryActionKind::ProjectScaleSettings:
+            return "Project Scale";
         case sequencer::SequencerHistoryActionKind::PageStructure:
             return "Page Structure";
         case sequencer::SequencerHistoryActionKind::TrackStructure:
@@ -161,6 +167,32 @@ void formatHistoryValue(
     }
 
     std::snprintf(buffer, bufferSize, "%ld", static_cast<long>(value));
+}
+
+void formatHistoryVariationValue(
+    char* buffer,
+    size_t bufferSize,
+    sequencer::StepProperty property,
+    int32_t value
+) {
+    if (!buffer || bufferSize == 0) return;
+
+    if (property == sequencer::StepProperty::NOTE) {
+        std::snprintf(buffer, bufferSize, "+/-%ldst", static_cast<long>(value));
+        return;
+    }
+
+    if (property == sequencer::StepProperty::GATE) {
+        std::snprintf(buffer, bufferSize, "+/-%ld%%", static_cast<long>(value));
+        return;
+    }
+
+    if (property == sequencer::StepProperty::NUDGE) {
+        std::snprintf(buffer, bufferSize, "+/-%ld", static_cast<long>(value));
+        return;
+    }
+
+    std::snprintf(buffer, bufferSize, "+/-%ld", static_cast<long>(value));
 }
 
 void formatHistoryStructureValue(
@@ -217,6 +249,13 @@ void showSequencerHistoryFeedback(
             static_cast<unsigned>(descriptor.stepIndex + 1U),
             historyPropertyLabel(descriptor.property)
         );
+    } else if (descriptor.kind == sequencer::SequencerHistoryActionKind::PatternVariation) {
+        std::snprintf(
+            line2,
+            sizeof(line2),
+            "Range %s",
+            historyPropertyLabel(descriptor.property)
+        );
     } else {
         std::snprintf(line2, sizeof(line2), "%s", historyActionLabel(descriptor.kind));
     }
@@ -253,6 +292,12 @@ void showSequencerHistoryFeedback(
                 descriptor.kind,
                 toValue
             );
+            std::snprintf(line3, sizeof(line3), "%s -> %s", fromText, toText);
+        } else if (descriptor.kind == sequencer::SequencerHistoryActionKind::PatternVariation) {
+            char fromText[12]{};
+            char toText[12]{};
+            formatHistoryVariationValue(fromText, sizeof(fromText), descriptor.property, fromValue);
+            formatHistoryVariationValue(toText, sizeof(toText), descriptor.property, toValue);
             std::snprintf(line3, sizeof(line3), "%s -> %s", fromText, toText);
         } else {
             char fromText[12]{};
@@ -569,6 +614,11 @@ bool CoreState::redoSequencerHistory() {
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
     return true;
+}
+
+void CoreState::clearSequencerHistory() {
+    sequencerDomain_.coalescedPatternHistory.clear();
+    sequencerHistory.clear();
 }
 
 void CoreState::queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge) {

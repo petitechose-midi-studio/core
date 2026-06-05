@@ -40,6 +40,7 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSl
         state.sequencerPersistence.loadPatternSlot(slotIndex, state.sequencer);
     if (status == persistence::SlotLoadStatus::OK) {
         storeActiveTrack(state.sequencerTracks, state.sequencer);
+        state.clearSequencerHistory();
         state.persistSequencerWorkspace();
     }
 
@@ -124,6 +125,7 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
             state.sequencerTracks.currentEnabledMask(),
             state.sequencerTracks.activeTrackIndex()
         );
+        state.clearSequencerHistory();
         state.persistSequencerWorkspace();
     }
 

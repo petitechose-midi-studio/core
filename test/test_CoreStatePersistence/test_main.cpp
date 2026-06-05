@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 #include "../../src/handler/settings/DataManagerDomainServices.hpp"
@@ -52,6 +53,23 @@ bool hasGraphContent(const core::state::sequencer::SequencerPatternState& patter
     return child != nullptr &&
            child->has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET) &&
            child->noteOffset == noteOffset;
+}
+
+void recordLengthHistory(core::state::CoreState& state, uint8_t nextLength) {
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    assert(core::state::sequencer::captureHistorySnapshot(state.sequencer, before));
+
+    state.sequencer.pattern.length.set(nextLength);
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    assert(core::state::sequencer::captureHistorySnapshot(state.sequencer, after));
+    assert(state.recordSequencerPatternHistory(
+        std::move(before),
+        std::move(after),
+        core::state::sequencer::SequencerHistoryDescriptor{
+            .kind = core::state::sequencer::SequencerHistoryActionKind::QuickControls,
+        }
+    ));
 }
 
 void test_workspace_survives_settings_storage_corruption() {
@@ -812,6 +830,115 @@ void test_direct_load_clears_stale_pending_quantized_apply() {
     std::cout << "[PASS] test_direct_load_clears_stale_pending_quantized_apply\n";
 }
 
+void test_sequencer_save_and_erase_keep_history() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    state.sequencer.pattern.length.set(8);
+    recordLengthHistory(state, 12);
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 10));
+    assert(state.sequencerHistory.undoCount() == 1);
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::erasePatternSlot(state, 10));
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 10));
+    assert(state.sequencerHistory.undoCount() == 1);
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::eraseSetSlot(state, 10));
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_save_and_erase_keep_history\n";
+}
+
+void test_sequencer_load_clears_history_after_apply() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    state.sequencer.pattern.length.set(8);
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 11));
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 11));
+
+    recordLengthHistory(state, 12);
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 11) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(state.sequencer.pattern.length.get() == 8);
+    assert(state.sequencerHistory.undoCount() == 0);
+    assert(state.sequencerHistory.redoCount() == 0);
+    assert(!state.undoSequencerHistory());
+
+    recordLengthHistory(state, 16);
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 11) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(state.sequencer.pattern.length.get() == 8);
+    assert(state.sequencerHistory.undoCount() == 0);
+    assert(state.sequencerHistory.redoCount() == 0);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_sequencer_load_clears_history_after_apply\n";
+}
+
+void test_queued_sequencer_load_clears_history_when_applied() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroWorkspace,
+                                 storage.macroLibrary,
+                                 storage.sequencerWorkspace,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    state.sequencer.pattern.length.set(8);
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 12));
+
+    recordLengthHistory(state, 16);
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    state.statusBar.playing.set(true);
+    state.sequencer.playheadStep.set(3);
+
+    assert(core::state::sequencer::SequencerPersistenceWorkflow::loadPatternSlot(state, 12) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(state.hasPendingSequencerApply());
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    state.update();
+    assert(state.sequencer.pattern.length.get() == 16);
+    assert(state.sequencerHistory.undoCount() == 1);
+
+    state.sequencer.playheadStep.set(4);
+    state.update();
+    assert(state.sequencer.pattern.length.get() == 8);
+    assert(state.sequencerHistory.undoCount() == 0);
+    assert(state.sequencerHistory.redoCount() == 0);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_queued_sequencer_load_clears_history_when_applied\n";
+}
+
 void test_sequencer_set_load_merge_preserves_existing_steps() {
     CoreStorages storage;
     storage.initAll();
@@ -947,6 +1074,9 @@ int main() {
     test_sequencer_load_is_quantized_to_next_step_when_playing();
     test_sequencer_queued_pattern_load_preserves_graph_content();
     test_direct_load_clears_stale_pending_quantized_apply();
+    test_sequencer_save_and_erase_keep_history();
+    test_sequencer_load_clears_history_after_apply();
+    test_queued_sequencer_load_clears_history_when_applied();
     test_sequencer_set_load_merge_preserves_existing_steps();
     test_sequencer_set_load_merge_is_quantized_when_playing();
 

@@ -6,7 +6,9 @@
 
 #include "app/OverlayTypes.hpp"
 #include "handler/sequencer/PatternPitchSettingsDomainServices.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/PatternPitchSettingsState.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::handler {
@@ -16,6 +18,7 @@ public:
     struct StateRefs {
         core::state::PatternPitchSettingsState& settings;
         core::state::sequencer::SequencerState& sequencer;
+        SequencerHistoryDomainServices history;
     };
 
     PatternPitchSettingsHandler(StateRefs state,
@@ -42,6 +45,7 @@ private:
 
     core::state::PatternPitchSettingsState& settings_;
     core::state::sequencer::SequencerState& sequencer_;
+    SequencerHistoryDomainServices history_;
     PatternPitchSettingsDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

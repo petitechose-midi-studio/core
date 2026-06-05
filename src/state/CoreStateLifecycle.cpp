@@ -334,6 +334,7 @@ void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
     }
     sequencer::storeActiveTrack(state.sequencerTracks, state.sequencer);
     state.refreshSharedTrackStateFromSequencer();
+    state.clearSequencerHistory();
     state.sequencerDomain_.pendingApply->valid = false;
     clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
     state.persistSequencerWorkspace_();

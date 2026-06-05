@@ -1,10 +1,13 @@
 #include "handler/sequencer/PatternPitchSettingsHandler.hpp"
 
+#include <utility>
+
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::handler {
 
@@ -32,6 +35,7 @@ FLASHMEM PatternPitchSettingsHandler::PatternPitchSettingsHandler(
 )
     : settings_(state.settings)
     , sequencer_(state.sequencer)
+    , history_(state.history)
     , services_(services)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -126,7 +130,31 @@ FLASHMEM void PatternPitchSettingsHandler::navigateSelector(float delta) {
 }
 
 FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
+    if (settings_.flowPhase.get() != core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR) {
+        return;
+    }
+
+    history_.commitCoalescedPatternEdit();
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    const bool beforeValid =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+
     services_.applyChoice(settings_.selector.editingRow.get(), settings_.selector.selectedIndex.get());
+
+    if (beforeValid) {
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+            history_.recordPattern(
+                std::move(before),
+                std::move(after),
+                core::state::sequencer::SequencerHistoryDescriptor{
+                    .kind = core::state::sequencer::SequencerHistoryActionKind::PatternSettings,
+                }
+            );
+        }
+    }
+
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR);
     settings_.closeSelector();
 }
