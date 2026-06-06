@@ -119,7 +119,7 @@ FLASHMEM void StandaloneContext::createOverlayAssembly() {
         core::app::makeExtmemUnique<core::context::standalone::StandaloneOverlayAssembly>(
             core_state_,
             buttons(),
-            ui_assembly_->mainZone(),
+            ui_assembly_->overlayRoot(),
             [this]() -> oc::type::ScopeID { return activeViewScopeId(); }
         );
     setupViewSelectorRendering();
@@ -141,7 +141,7 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         encoders(),
         buttons(),
         midi(),
-        ui_assembly_->mainZone(),
+        ui_assembly_->overlayRoot(),
         ui_assembly_->macroViewElement(),
         ui_assembly_->sequencerViewElement(),
         ui_assembly_->contextSoftkeyBar(),

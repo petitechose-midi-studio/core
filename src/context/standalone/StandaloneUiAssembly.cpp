@@ -42,10 +42,15 @@ FLASHMEM StandaloneUiAssembly::~StandaloneUiAssembly() {
 
 FLASHMEM void StandaloneUiAssembly::show() {
     view_container_->show();
+    applyOverlayExclusivity();
 }
 
 FLASHMEM lv_obj_t* StandaloneUiAssembly::mainZone() const {
     return view_container_->getMainZone();
+}
+
+FLASHMEM lv_obj_t* StandaloneUiAssembly::overlayRoot() const {
+    return view_container_->getContainer();
 }
 
 FLASHMEM oc::type::ScopeID StandaloneUiAssembly::macroViewScope() const {
@@ -224,6 +229,31 @@ FLASHMEM void StandaloneUiAssembly::bindGlobalTrackStrip() {
 
 }
 
+FLASHMEM void StandaloneUiAssembly::applyOverlayExclusivity() {
+    const bool hasOverlay = core_state_.overlays.hasVisible();
+    if (overlay_exclusive_mode_ == hasOverlay) return;
+
+    overlay_exclusive_mode_ = hasOverlay;
+    lv_obj_t* bottomZone = view_container_ ? view_container_->getBottomZone() : nullptr;
+
+    if (hasOverlay) {
+        if (views_host_) lv_obj_add_flag(views_host_, LV_OBJ_FLAG_HIDDEN);
+        if (global_track_strip_container_) {
+            lv_obj_add_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (bottomZone) {
+            lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(bottomZone);
+        }
+        global_track_strip_dirty_ = true;
+        return;
+    }
+
+    if (views_host_) lv_obj_clear_flag(views_host_, LV_OBJ_FLAG_HIDDEN);
+    if (bottomZone) lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+    global_track_strip_dirty_ = true;
+}
+
 FLASHMEM void StandaloneUiAssembly::scheduleGlobalTrackStripRender(bool ready) {
     global_track_strip_dirty_ = true;
     if (global_track_strip_timer_) {
@@ -234,8 +264,8 @@ FLASHMEM void StandaloneUiAssembly::scheduleGlobalTrackStripRender(bool ready) {
 FLASHMEM void StandaloneUiAssembly::renderGlobalTrackStrip() {
     if (!global_track_strip_) return;
 
-    const bool hasBlockingOverlay = core_state_.overlays.hasVisible();
-    if (hasBlockingOverlay) {
+    applyOverlayExclusivity();
+    if (overlay_exclusive_mode_) {
         if (global_track_strip_container_ &&
             !lv_obj_has_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN)) {
             lv_obj_add_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN);

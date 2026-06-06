@@ -1,0 +1,20 @@
+# UX workflow: validate exclusive overlay rendering during sequencer playback.
+# Purpose: open the global view selector while the sequencer is playing. The
+# overlay captures must remain stable while the hidden playhead advances below.
+# Expect: playhead_progress, overlay_exclusive
+
+0 scenario sequencer
+80 tap MACRO_1 60
+220 tap BOTTOM_CENTER 60
+520 capture screen playing_before_overlay
+
+620 button LEFT_TOP down
+1700 tick
+1760 capture screen selector_open_early
+2450 tick
+2520 capture screen selector_open_late
+2580 button LEFT_TOP up
+
+2660 tap NAV 60
+2840 tap BOTTOM_CENTER 60
+3040 capture screen overlay_closed

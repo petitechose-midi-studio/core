@@ -15,12 +15,12 @@ namespace core::context::standalone {
 FLASHMEM StandaloneOverlayAssembly::StandaloneOverlayAssembly(
     core::state::CoreState& state,
     oc::api::ButtonAPI& buttons,
-    lv_obj_t* mainZone,
+    lv_obj_t* overlayRoot,
     ActiveViewScopeProvider activeViewScopeProvider
 )
     : core_state_(state) {
     createOverlayController(buttons, std::move(activeViewScopeProvider));
-    createViewSelectorOverlay(mainZone);
+    createViewSelectorOverlay(overlayRoot);
 }
 
 FLASHMEM StandaloneOverlayAssembly::~StandaloneOverlayAssembly() = default;
@@ -62,8 +62,8 @@ FLASHMEM void StandaloneOverlayAssembly::createOverlayController(
     overlay_controller_->setActiveViewProvider(std::move(activeViewScopeProvider));
 }
 
-FLASHMEM void StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* mainZone) {
-    view_selector_ = core::app::makeExtmemUnique<ms::ui::StringListSelector>(mainZone);
+FLASHMEM void StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* overlayRoot) {
+    view_selector_ = core::app::makeExtmemUnique<ms::ui::StringListSelector>(overlayRoot);
     view_selector_->setTitle("Select View");
     view_selector_scope_ = oc::ui::lvgl::scopeID(view_selector_->getElement());
     overlay_controller_->registerCleanup(

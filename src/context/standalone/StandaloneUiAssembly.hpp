@@ -44,6 +44,7 @@ public:
 
     void show();
     lv_obj_t* mainZone() const;
+    lv_obj_t* overlayRoot() const;
     oc::type::ScopeID macroViewScope() const;
     oc::type::ScopeID sequencerViewScope() const;
     lv_obj_t* macroViewElement() const;
@@ -62,6 +63,7 @@ private:
     void createBottomBar();
     void cacheViewScopes();
     void bindGlobalTrackStrip();
+    void applyOverlayExclusivity();
     void scheduleGlobalTrackStripRender(bool ready = false);
     void renderGlobalTrackStrip();
     static void onGlobalTrackStripTimer(lv_timer_t* timer);
@@ -70,6 +72,7 @@ private:
     oc::type::ScopeID macro_view_scope_ = 0;
     oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::state::SignalWatcher global_track_strip_watcher_;
+    bool overlay_exclusive_mode_ = false;
     core::app::ExtmemUniquePtr<ms::ui::ViewContainer> view_container_;
     lv_obj_t* views_host_ = nullptr;
     lv_obj_t* global_track_strip_container_ = nullptr;

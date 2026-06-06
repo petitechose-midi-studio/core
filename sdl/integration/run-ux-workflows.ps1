@@ -100,6 +100,15 @@ function Test-CaptureMatch {
     return $LeftHash -eq $RightHash
 }
 
+function Test-OverlayExclusive {
+    param([Parameter(Mandatory = $true)][string]$OutDir)
+
+    return Test-CaptureMatch `
+        -OutDir $OutDir `
+        -LeftLabel "selector_open_early" `
+        -RightLabel "selector_open_late"
+}
+
 $Workflows = Get-ChildItem -LiteralPath $WorkflowDir -Filter "*.ux" | Sort-Object Name
 if ($Workflows.Count -eq 0) {
     throw "No UX workflow scripts found in $WorkflowDir"
@@ -142,6 +151,12 @@ foreach ($Workflow in $Workflows) {
     if ($Expectations -contains "playhead_progress") {
         if (-not (Test-PlayheadProgress -TracePath $TracePath)) {
             $ExpectationFailures += "playhead_progress"
+        }
+    }
+
+    if ($Expectations -contains "overlay_exclusive") {
+        if (-not (Test-OverlayExclusive -OutDir $ResolvedOutDir)) {
+            $ExpectationFailures += "overlay_exclusive"
         }
     }
 
