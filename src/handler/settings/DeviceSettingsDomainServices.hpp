@@ -8,19 +8,19 @@
 namespace core::handler {
 
 /**
- * Applies global settings choices to MidiSyncState and CoreSettings.
+ * Applies device settings choices to MidiSyncState and CoreSettings.
  *
  * The service owns row-to-choice mapping and persistence commits; UI handlers
  * only navigate/select rows.
  */
-class GlobalSettingsDomainServices {
+class DeviceSettingsDomainServices {
 public:
     struct StateRefs {
         core::state::MidiSyncState& midiSync;
         core::state::CoreSettings& settings;
     };
 
-    explicit GlobalSettingsDomainServices(StateRefs state);
+    explicit DeviceSettingsDomainServices(StateRefs state);
 
     int currentChoiceIndex(uint8_t row) const;
     int choiceCount(uint8_t row) const;

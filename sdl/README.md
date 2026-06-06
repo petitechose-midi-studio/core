@@ -82,7 +82,7 @@ Supported capture scenarios:
 | `seq-property-selector` | sequencer property inline selector |
 | `seq-quick-controls` | sequencer quick-control selector |
 | `view-selector` | active view selector overlay |
-| `settings` | global settings overlay |
+| `settings` | device settings view |
 | `data-manager` | Data Manager overlay |
 | `data-manager-dialog` | Data Manager command dialog |
 

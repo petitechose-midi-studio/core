@@ -1,0 +1,44 @@
+# UX workflow: reset the current musical project from Project Overview.
+# Purpose: validates that New Project is an enabled action and resets project
+# musical defaults without relying on save/load persistence.
+
+0 capture screen boot
+
+# Enter Project from the global selector.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 encoder NAV 1
+460 capture screen project_item_selected
+540 button LEFT_TOP up
+720 capture screen project_overview
+
+# Change the global project scale root from F to F#.
+820 button LEFT_CENTER down
+1420 encoder NAV 1
+1560 capture screen project_music_tab
+1640 button LEFT_CENTER up
+1740 tap NAV 60
+1960 capture screen music_scale_default
+2060 tap NAV 60
+2280 capture screen music_scale_changed
+
+# Go back to Overview and trigger New Project.
+2380 tap LEFT_TOP 60
+2600 capture screen music_root_after_scale_change
+2700 button LEFT_CENTER down
+3300 encoder NAV -1
+3460 capture screen overview_before_new_project
+3540 button LEFT_CENTER up
+3640 tap NAV 60
+3920 capture screen new_project_confirm
+4020 tap NAV 60
+4300 capture screen overview_after_new_project
+
+# Re-open Music > Scale and verify defaults are visible again.
+4400 button LEFT_CENTER down
+5000 encoder NAV 1
+5160 capture screen music_after_new_project
+5240 button LEFT_CENTER up
+5340 tap NAV 60
+5600 capture screen scale_defaults_after_new_project

@@ -34,6 +34,7 @@ public:
         RecordFullBankFn recordFullBank = nullptr;
         CommandFn undo = nullptr;
         CommandFn redo = nullptr;
+        CommandFn clear = nullptr;
         BeginCoalescedPatternEditFn beginCoalescedPatternEdit = nullptr;
         CommandFn commitCoalescedPatternEdit = nullptr;
     };
@@ -52,6 +53,7 @@ public:
     ) const;
     bool undo() const;
     bool redo() const;
+    bool clear() const;
     bool beginCoalescedPatternEdit(
         uint8_t step,
         core::state::sequencer::StepProperty property,

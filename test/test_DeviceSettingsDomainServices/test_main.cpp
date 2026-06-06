@@ -3,7 +3,7 @@
 #include <cstring>
 #include <vector>
 
-#include "../../src/handler/settings/GlobalSettingsDomainServices.hpp"
+#include "../../src/handler/settings/DeviceSettingsDomainServices.hpp"
 #include "../support/MemoryStorage.hpp"
 
 namespace {
@@ -17,8 +17,8 @@ int main() {
 
     core::state::MidiSyncState sync;
     core::state::CoreSettings settings(storage);
-    core::handler::GlobalSettingsDomainServices services(
-        core::handler::GlobalSettingsDomainServices::StateRefs{
+    core::handler::DeviceSettingsDomainServices services(
+        core::handler::DeviceSettingsDomainServices::StateRefs{
             sync,
             settings,
         }

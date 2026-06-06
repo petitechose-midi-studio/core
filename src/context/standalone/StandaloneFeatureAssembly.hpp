@@ -33,6 +33,7 @@ class OverlayManager;
 namespace core::context::standalone {
 
 class MacroFeatureModule;
+class ProjectFeatureModule;
 class SequencerFeatureModule;
 class SettingsFeatureModule;
 
@@ -60,10 +61,12 @@ public:
                               lv_obj_t* overlayRoot,
                               lv_obj_t* macroViewElement,
                               lv_obj_t* sequencerViewElement,
+                              lv_obj_t* projectViewElement,
                               core::ui::ContextSoftkeyBar& contextSoftkeyBar,
                               core::ui::TransportBar& transportBar,
                               oc::type::ScopeID macroViewScope,
-                              oc::type::ScopeID sequencerViewScope
+                              oc::type::ScopeID sequencerViewScope,
+                              oc::type::ScopeID deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
                               ,
                               core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
@@ -78,10 +81,12 @@ public:
     void onMacroNoteIn() const;
     void resetSequencerEncoderSync() const;
     void syncSequencerEncodersNow() const;
+    void syncProjectEncoderNow() const;
 
 private:
     core::app::ExtmemUniquePtr<core::context::standalone::MacroFeatureModule> macro_feature_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerFeatureModule> sequencer_feature_;
+    core::app::ExtmemUniquePtr<core::context::standalone::ProjectFeatureModule> project_feature_;
     core::app::ExtmemUniquePtr<core::context::standalone::SettingsFeatureModule> settings_feature_;
 };
 

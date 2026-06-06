@@ -26,7 +26,9 @@ public:
          oc::api::EncoderAPI& encoders,
          oc::api::ButtonAPI& buttons,
          oc::type::ScopeID macroViewScope,
-         oc::type::ScopeID sequencerViewScope
+         oc::type::ScopeID sequencerViewScope,
+         oc::type::ScopeID projectViewScope,
+         oc::type::ScopeID deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
          ,
          core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
@@ -57,6 +59,8 @@ public:
             core::handler::TransportHandler::ViewScopes{
                 macroViewScope,
                 sequencerViewScope,
+                projectViewScope,
+                deviceSettingsViewScope,
             }
         );
 
@@ -67,13 +71,13 @@ public:
                 state.overlays,
                 state.activeView,
                 state.viewSelector,
-                state.globalSettings,
                 state.sequencerSettings,
                 state.sequencer.patternQuickControls,
                 state.sequencer.stepPropertyInlineSelector,
                 state.trackNavigation.selection,
                 state.macroUi.pageSelection,
                 state.sequencer.structureUi.pageSelection,
+                state.projectNavigation,
             },
             overlays,
             encoders,
@@ -81,6 +85,8 @@ public:
             core::handler::ViewSwitcherHandler::ViewScopes{
                 macroViewScope,
                 sequencerViewScope,
+                projectViewScope,
+                deviceSettingsViewScope,
             },
             viewSelectorScope
         );
@@ -104,7 +110,9 @@ FLASHMEM StandaloneGlobalHandlerAssembly::StandaloneGlobalHandlerAssembly(
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     oc::type::ScopeID macroViewScope,
-    oc::type::ScopeID sequencerViewScope
+    oc::type::ScopeID sequencerViewScope,
+    oc::type::ScopeID projectViewScope,
+    oc::type::ScopeID deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
     ,
     core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
@@ -117,7 +125,9 @@ FLASHMEM StandaloneGlobalHandlerAssembly::StandaloneGlobalHandlerAssembly(
           encoders,
           buttons,
           macroViewScope,
-          sequencerViewScope
+          sequencerViewScope,
+          projectViewScope,
+          deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
           ,
           uxRegistry

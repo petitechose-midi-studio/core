@@ -5,12 +5,12 @@
 #include <cstdio>
 
 #include "config/InputIDs.hpp"
-#include "context/standalone/GlobalSettingsOverlayPresenterFormatters.hpp"
-#include "state/GlobalSettingsState.hpp"
+#include "state/DeviceSettingsState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/ViewSelectorItems.hpp"
 #include "state/ViewSelectorState.hpp"
+#include "state/settings/DeviceSettingsMenuModel.hpp"
 #include "validation/ux/SemanticUxNames.hpp"
 
 namespace core::context::standalone::ux {
@@ -32,6 +32,36 @@ bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::Enc
 void copyValueLabel(char (&out)[16], const char* value) {
     if (!value) return;
     std::snprintf(out, sizeof(out), "%s", value);
+}
+
+constexpr const char* const MODE_ITEMS[] = {"MASTER", "SLAVE", "AUTO"};
+constexpr const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
+constexpr const char* const FALLBACK_ITEMS[] = {"150 ms", "250 ms", "500 ms", "750 ms", "1000 ms", "1500 ms", "2000 ms"};
+constexpr const char* const LOCK_ITEMS[] = {"1", "2", "3", "4", "6", "8", "12", "24"};
+
+void selectorItemsForRow(uint8_t row, const char* const*& items, int& itemCount) {
+    switch (row) {
+        case 0:
+            items = MODE_ITEMS;
+            itemCount = 3;
+            break;
+        case 1:
+            items = FOLLOW_ITEMS;
+            itemCount = 2;
+            break;
+        case 2:
+            items = FALLBACK_ITEMS;
+            itemCount = 7;
+            break;
+        case 3:
+            items = LOCK_ITEMS;
+            itemCount = 8;
+            break;
+        default:
+            items = nullptr;
+            itemCount = 0;
+            break;
+    }
 }
 
 }  // namespace
@@ -73,57 +103,60 @@ bool ViewSelectorUxSurface::captureSemanticUxContext(
         out.effect = "select_view";
     } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
                isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = selectedItem == core::state::ViewSelectorItem::GLOBAL_SETTINGS
-                         ? "open_global_settings"
-                         : "apply_view";
+        out.effect = "apply_view";
     }
     return true;
 }
 
-GlobalSettingsUxSurface::GlobalSettingsUxSurface(
-    core::state::GlobalSettingsState& globalSettings,
+DeviceSettingsUxSurface::DeviceSettingsUxSurface(
+    core::state::DeviceSettingsState& deviceSettings,
     core::state::MidiSyncState& midiSync
-) : global_settings_(globalSettings), midi_sync_(midiSync) {}
+) : device_settings_(deviceSettings), midi_sync_(midiSync) {}
 
-bool GlobalSettingsUxSurface::captureSemanticUxContext(
+bool DeviceSettingsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    const auto globalSettingsPhase = global_settings_.flowPhase.get();
-    if (globalSettingsPhase == core::state::GlobalSettingsFlowPhase::OVERLAY) {
-        auto data = core::context::standalone::global_settings_presenter::buildOverlayRenderData({
-            global_settings_,
-            midi_sync_,
-        });
+    const auto deviceSettingsPhase = device_settings_.flowPhase.get();
+    if (deviceSettingsPhase == core::state::DeviceSettingsFlowPhase::VIEW) {
+        const auto data = core::state::settings::buildDeviceSettingsMenuPage(
+            device_settings_,
+            core::state::settings::DeviceSettingsMenuContext{
+                midi_sync_.mode.get(),
+                midi_sync_.followTransport.get(),
+                midi_sync_.autoFallbackMs.get(),
+                midi_sync_.autoLockClockCount.get(),
+                midi_sync_.activeSource.get(),
+                midi_sync_.externalClockPresent.get(),
+            }
+        );
         const int focused = data.selectedIndex;
-        out.mode = "global_settings";
+        out.mode = "device_settings";
         out.target = "setting";
         if (focused >= 0 && focused < static_cast<int>(data.rows.size())) {
-            out.property = data.rows[focused].key;
+            out.property = data.rows[focused].label;
             copyValueLabel(out.valueLabel, data.rows[focused].value);
         }
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "focus_setting";
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "open_setting_value";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "close_global_settings";
         }
         return true;
     }
 
-    if (globalSettingsPhase == core::state::GlobalSettingsFlowPhase::VALUE_SELECTOR) {
-        auto data = core::context::standalone::global_settings_presenter::buildSelectorRenderData({
-            global_settings_,
-            midi_sync_,
-        });
-        out.mode = "global_settings.selector";
+    if (deviceSettingsPhase == core::state::DeviceSettingsFlowPhase::VALUE_SELECTOR) {
+        const uint8_t row = device_settings_.selector.editingRow.get();
+        const char* const* items = nullptr;
+        int itemCount = 0;
+        selectorItemsForRow(row, items, itemCount);
+        out.mode = "device_settings.selector";
         out.target = "setting_value";
-        out.property = data.title;
-        if (data.items && data.itemCount > 0) {
-            const int selected = data.selectedIndex;
-            if (selected >= 0 && selected < data.itemCount) {
-                copyValueLabel(out.valueLabel, data.items[selected]);
+        out.property = core::state::settings::deviceSettingsRowLabel(row);
+        if (items && itemCount > 0) {
+            const int selected = device_settings_.selector.selectedIndex.get();
+            if (selected >= 0 && selected < itemCount) {
+                copyValueLabel(out.valueLabel, items[selected]);
             }
         }
         if (isEncoder(event, Config::EncoderID::NAV)) {

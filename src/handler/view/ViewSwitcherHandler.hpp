@@ -15,9 +15,9 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/ViewSelectorState.hpp"
-#include "state/GlobalSettingsState.hpp"
 #include "state/SequencerSettingsState.hpp"
 #include "state/StructureSelectionState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -33,7 +33,6 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::ViewSelectorState& viewSelector;
-        core::state::GlobalSettingsState& globalSettings;
         core::state::SequencerSettingsState& sequencerSettings;
         core::state::sequencer::SequencerPatternQuickControlsState& patternQuickControls;
         core::state::sequencer::SequencerStepPropertyInlineSelectorState&
@@ -41,6 +40,7 @@ public:
         core::state::StructureSelectionState& trackStructureSelection;
         core::state::StructureSelectionState& macroPageSelection;
         core::state::StructureSelectionState& sequencerPageSelection;
+        core::state::project::ProjectNavigationState& projectNavigation;
     };
 
     ViewSwitcherHandler(StateRefs state,
@@ -68,7 +68,6 @@ private:
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_state_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::ViewSelectorState& view_selector_;
-    core::state::GlobalSettingsState& global_settings_;
     core::state::SequencerSettingsState& sequencer_settings_;
     core::state::sequencer::SequencerPatternQuickControlsState& pattern_quick_controls_;
     core::state::sequencer::SequencerStepPropertyInlineSelectorState&
@@ -76,6 +75,7 @@ private:
     core::state::StructureSelectionState& track_structure_selection_;
     core::state::StructureSelectionState& macro_page_selection_;
     core::state::StructureSelectionState& sequencer_page_selection_;
+    core::state::project::ProjectNavigationState& project_navigation_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

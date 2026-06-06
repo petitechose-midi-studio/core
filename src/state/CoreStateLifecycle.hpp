@@ -20,6 +20,7 @@ struct CoreStateLifecycle {
     static void flushAutoPersist(CoreState& state);
     static void factoryReset(CoreState& state);
     static void resetStandaloneTransientUi(CoreState& state);
+    static void resetMusicalProject(CoreState& state);
 
     static void queuePendingSequencerApply(CoreState& state,
                                            const sequencer::SequencerState& staged,

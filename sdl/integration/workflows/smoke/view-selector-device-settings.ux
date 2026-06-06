@@ -1,0 +1,32 @@
+# UX workflow: route top-level navigation through the View Selector.
+# Purpose: validates selector hold behavior, absence of redundant Sequencer
+# settings action, and Device Settings as a real top-level view.
+
+0 capture screen boot
+
+# Hold LEFT_TOP to keep the selector visible while navigating.
+100 button LEFT_TOP down
+180 tick
+220 capture screen selector_open
+
+# Sequencer no longer exposes the settings gear action in the bottom strip.
+300 encoder NAV 1
+380 capture screen sequencer_item_without_settings
+450 tap BOTTOM_LEFT 60
+620 capture screen sequencer_settings_absent
+
+# Device Settings is an explicit selector item and switches active view.
+740 encoder NAV 1
+840 encoder NAV 1
+940 capture screen device_settings_item
+1040 button LEFT_TOP up
+1220 capture screen device_settings_open
+
+# LEFT_TOP hold from Device Settings reopens the same selector path as other views.
+1340 button LEFT_TOP down
+1420 tick
+1500 capture screen selector_from_device_settings
+2180 tick
+2260 capture screen selector_from_device_settings_scroll
+2360 button LEFT_TOP up
+2520 capture screen device_settings_after_selector_release

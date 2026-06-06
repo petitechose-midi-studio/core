@@ -22,7 +22,7 @@
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/DataManagerState.hpp"
-#include "state/GlobalSettingsState.hpp"
+#include "state/DeviceSettingsState.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -61,7 +61,7 @@ public:
         core::state::StatusBarState& statusBar;
         core::state::MacroEditState& macroEdit;
         core::state::ViewSelectorState& viewSelector;
-        core::state::GlobalSettingsState& globalSettings;
+        core::state::DeviceSettingsState& deviceSettings;
         core::state::DataManagerState& dataManager;
     };
 

@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
+#include "state/project/ProjectMenuModel.hpp"
 #include "state/ViewSelectorItems.hpp"
 
 namespace core::handler {
@@ -19,13 +20,13 @@ FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     : overlays_state_(state.overlays)
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
-    , global_settings_(state.globalSettings)
     , sequencer_settings_(state.sequencerSettings)
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
     , track_structure_selection_(state.trackStructureSelection)
     , macro_page_selection_(state.macroPageSelection)
     , sequencer_page_selection_(state.sequencerPageSelection)
+    , project_navigation_(state.projectNavigation)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -94,6 +95,10 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     }
 
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
+        if (active_view_.get() == core::ui::ViewType::PROJECT) {
+            return core::state::project::projectNavigationAtRoot(project_navigation_) &&
+                   !project_navigation_.physicalHoldActive.get();
+        }
         return true;
     }
 
@@ -126,13 +131,6 @@ FLASHMEM void ViewSwitcherHandler::confirmSelection() {
     if (index < 0 || index >= core::state::VIEW_SELECTOR_ITEM_COUNT) return;
 
     const auto item = core::state::viewSelectorItemAt(index);
-    if (item == core::state::ViewSelectorItem::GLOBAL_SETTINGS) {
-        view_selector_.visible.set(false);
-        global_settings_.openOverlay();
-        overlays_.show(core::ui::OverlayType::GLOBAL_SETTINGS, false);
-        return;
-    }
-
     if (!core::state::viewSelectorItemHasView(item)) return;
 
     auto type = core::state::viewForSelectorItem(item);

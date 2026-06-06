@@ -41,6 +41,14 @@ inline oc::note::sequencer::StepSequencerScaleSettings sanitizedScaleSettings(
     return settings;
 }
 
+constexpr oc::note::sequencer::StepSequencerScaleSettings defaultProjectScaleSettings() {
+    return oc::note::sequencer::StepSequencerScaleSettings{
+        .root = 5,
+        .type = oc::note::sequencer::StepSequencerScaleType::HarmonicMinor,
+        .mode = oc::note::sequencer::StepSequencerScaleConstraintMode::ConstrainNearest,
+    };
+}
+
 inline oc::note::sequencer::StepSequencerScaleSettings resolveEffectiveScaleSettings(
     oc::note::sequencer::StepSequencerScaleSettings projectScale,
     SequencerPatternScalePolicy policy,

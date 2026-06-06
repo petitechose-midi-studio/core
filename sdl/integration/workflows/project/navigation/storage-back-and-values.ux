@@ -1,0 +1,46 @@
+# UX workflow: navigate Project Storage placeholder values and back out.
+# Purpose: validates the hardware feedback path reported on Teensy: disabled rows
+# must show focus, enabled placeholder values must update, and LEFT_TOP must open
+# the global view selector again when Project is at a tab root.
+
+0 capture screen boot
+
+# Enter Project from the global selector.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 encoder NAV 1
+460 capture screen project_item_selected
+540 button LEFT_TOP up
+720 capture screen project_overview
+
+# Move to Storage using the first-level tab shortcut.
+820 button LEFT_CENTER down
+1420 encoder NAV 1
+1500 encoder NAV 1
+1580 encoder NAV 1
+1760 capture screen storage_tab
+1840 button LEFT_CENTER up
+2040 capture screen storage_save_disabled_focused
+
+# Disabled rows still show cursor feedback while remaining inert. New Project is
+# enabled now, so this workflow only focuses it and does not trigger it.
+2140 encoder NAV 1
+2260 capture screen storage_new_enabled_focused
+2340 encoder NAV 1
+2460 capture screen storage_load_disabled_focused
+
+# Enabled placeholder values are activable for UX validation.
+2540 encoder NAV 1
+2660 capture screen storage_slot_focused
+2740 tap NAV 60
+2960 capture screen storage_slot_changed
+3040 encoder NAV 1
+3160 capture screen storage_autosave_focused
+3240 tap NAV 60
+3460 capture screen storage_autosave_off
+
+# From a tab root, LEFT_TOP opens the global selector.
+3560 button LEFT_TOP down
+3740 capture screen selector_from_storage_root
+3820 button LEFT_TOP up

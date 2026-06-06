@@ -5,7 +5,6 @@
 #include <oc/context/OverlayManager.hpp>
 
 #include <config/App.hpp>
-#include <ms/ui/widget/StringListSelector.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 #include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
@@ -30,12 +29,8 @@ StandaloneOverlayAssembly::controller() const {
     return *overlay_controller_;
 }
 
-FLASHMEM ms::ui::StringListSelector& StandaloneOverlayAssembly::viewSelector() const {
-    return *view_selector_;
-}
-
 FLASHMEM lv_obj_t* StandaloneOverlayAssembly::viewSelectorElement() const {
-    return view_selector_->getElement();
+    return view_selector_ ? view_selector_->getElement() : nullptr;
 }
 
 FLASHMEM oc::type::ScopeID StandaloneOverlayAssembly::viewSelectorScope() const {
@@ -43,11 +38,32 @@ FLASHMEM oc::type::ScopeID StandaloneOverlayAssembly::viewSelectorScope() const 
 }
 
 FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, bool visible) {
+    if (!view_selector_) return;
+    if (!visible) {
+        view_selector_->hide();
+        return;
+    }
+
+    for (int i = 0; i < core::state::VIEW_SELECTOR_ITEM_COUNT && i < static_cast<int>(view_selector_rows_.size()); ++i) {
+        const auto item = core::state::viewSelectorItemAt(i);
+        view_selector_rows_[static_cast<std::size_t>(i)] = ms::ui::MenuRow{
+            .label = core::state::viewSelectorItemLabel(item),
+            .value = core::state::viewSelectorItemDescription(item),
+            .kind = ms::ui::MenuRowKind::Folder,
+            .enabled = true,
+            .valueAutoScroll = true,
+            .valueRole = ms::ui::MenuRowValueRole::Description,
+        };
+    }
+
+    view_selector_->show();
     view_selector_->render({
-        .items = core::state::VIEW_SELECTOR_ITEM_LABELS.data(),
-        .itemCount = core::state::VIEW_SELECTOR_ITEM_LABELS.size(),
+        .title = "Select View",
+        .meta = "Hold Back + Nav",
+        .rows = view_selector_rows_.data(),
+        .rowCount = core::state::VIEW_SELECTOR_ITEM_COUNT,
         .selectedIndex = selectedIndex,
-        .visible = visible,
+        .dataRevision = 1,
     });
 }
 
@@ -63,8 +79,8 @@ FLASHMEM void StandaloneOverlayAssembly::createOverlayController(
 }
 
 FLASHMEM void StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* overlayRoot) {
-    view_selector_ = core::app::makeExtmemUnique<ms::ui::StringListSelector>(overlayRoot);
-    view_selector_->setTitle("Select View");
+    view_selector_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(overlayRoot);
+    view_selector_->hide();
     view_selector_scope_ = oc::ui::lvgl::scopeID(view_selector_->getElement());
     overlay_controller_->registerCleanup(
         core::ui::OverlayType::VIEW_SELECTOR,

@@ -144,10 +144,12 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         ui_assembly_->overlayRoot(),
         ui_assembly_->macroViewElement(),
         ui_assembly_->sequencerViewElement(),
+        ui_assembly_->projectViewElement(),
         ui_assembly_->contextSoftkeyBar(),
         ui_assembly_->transportBar(),
         ui_assembly_->macroViewScope(),
-        ui_assembly_->sequencerViewScope()
+        ui_assembly_->sequencerViewScope(),
+        ui_assembly_->deviceSettingsViewScope()
 #if defined(MS_UX_RECORDER)
         ,
         &ux_surface_registry_
@@ -165,7 +167,9 @@ FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
             encoders(),
             buttons(),
             ui_assembly_->macroViewScope(),
-            ui_assembly_->sequencerViewScope()
+            ui_assembly_->sequencerViewScope(),
+            ui_assembly_->projectViewScope(),
+            ui_assembly_->deviceSettingsViewScope()
 #if defined(MS_UX_RECORDER)
             ,
             &ux_surface_registry_
@@ -275,6 +279,10 @@ FLASHMEM oc::type::ScopeID StandaloneContext::activeViewScopeId() const {
     switch (core_state_.activeView.get()) {
         case core::ui::ViewType::SEQUENCER:
             return ui_assembly_->sequencerViewScope();
+        case core::ui::ViewType::PROJECT:
+            return ui_assembly_->projectViewScope();
+        case core::ui::ViewType::DEVICE_SETTINGS:
+            return ui_assembly_->deviceSettingsViewScope();
         case core::ui::ViewType::MACRO:
         default:
             return ui_assembly_->macroViewScope();
@@ -291,12 +299,24 @@ FLASHMEM void StandaloneContext::applyActiveView() {
             case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER:
                 if (ui_assembly_) ui_assembly_->deactivateSequencerView();
                 break;
+            case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_PROJECT:
+                if (ui_assembly_) ui_assembly_->deactivateProjectView();
+                break;
+            case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS:
+                if (ui_assembly_) ui_assembly_->deactivateDeviceSettingsView();
+                break;
             case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_MACRO:
                 core::context::standalone::prepareMacroViewActivation(core_state_);
                 if (ui_assembly_) ui_assembly_->activateMacroView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_SEQUENCER:
                 if (ui_assembly_) ui_assembly_->activateSequencerView();
+                break;
+            case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_PROJECT:
+                if (ui_assembly_) ui_assembly_->activateProjectView();
+                break;
+            case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_DEVICE_SETTINGS:
+                if (ui_assembly_) ui_assembly_->activateDeviceSettingsView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::SYNC_MACRO_ENCODERS:
                 syncEncodersFromState();
@@ -305,6 +325,13 @@ FLASHMEM void StandaloneContext::applyActiveView() {
                 if (feature_assembly_) {
                     feature_assembly_->syncSequencerEncodersNow();
                 }
+                break;
+            case core::context::standalone::ActiveViewLifecycleStep::SYNC_PROJECT_ENCODER:
+                if (feature_assembly_) {
+                    feature_assembly_->syncProjectEncoderNow();
+                }
+                break;
+            case core::context::standalone::ActiveViewLifecycleStep::NONE:
                 break;
         }
     }

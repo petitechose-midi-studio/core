@@ -1,0 +1,47 @@
+# UX workflow: edit Project Routing one-to-one output channels.
+# Purpose: validates the V1 routing contract: all 16 tracks are listed and each
+# row can assign its output MIDI channel from Project > Routing.
+
+0 capture screen boot
+
+# Enter Project from the global selector.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 encoder NAV 1
+460 capture screen project_item_selected
+540 button LEFT_TOP up
+720 capture screen project_overview
+
+# Switch to Routing.
+820 button LEFT_CENTER down
+1420 encoder NAV 1
+1500 encoder NAV 1
+1580 encoder NAV 1
+1660 encoder NAV 1
+1840 capture screen project_routing_tab
+1920 button LEFT_CENTER up
+2120 capture screen routing_track_1_focused
+
+# NAV activation cycles Track 1 from MIDI Ch 1 to MIDI Ch 2.
+2220 tap NAV 60
+2440 capture screen routing_track_1_ch_2
+
+# OPT can directly edit another track channel.
+2540 encoder NAV 1
+2680 capture screen routing_track_2_focused
+2780 encoder OPT 1
+3020 capture screen routing_track_2_opt_changed
+
+# NAV activation keeps cycling the same focused output channel.
+3120 tap NAV 60
+3360 capture screen routing_track_2_nav_changed
+
+# The list exposes lower tracks through normal row navigation.
+3460 encoder NAV 1
+3540 encoder NAV 1
+3620 encoder NAV 1
+3700 encoder NAV 1
+3780 encoder NAV 1
+3860 encoder NAV 1
+4060 capture screen routing_track_8_visible

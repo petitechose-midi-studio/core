@@ -1,0 +1,22 @@
+# UX workflow: cancel the New Project confirmation without resetting musical state.
+# Purpose: validates that the confirmation screen is navigable and that Cancel
+# returns to the previous Project context.
+
+0 capture screen boot
+
+# Enter Project from the global selector.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 encoder NAV 1
+460 capture screen project_item_selected
+540 button LEFT_TOP up
+720 capture screen project_overview
+
+# Open New Project confirmation, move to Cancel, and apply it.
+820 tap NAV 60
+1080 capture screen new_project_confirm_default
+1180 encoder NAV 1
+1320 capture screen new_project_confirm_cancel_focused
+1400 tap NAV 60
+1680 capture screen project_overview_after_cancel

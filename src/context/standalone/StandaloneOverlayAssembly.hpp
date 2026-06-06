@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <functional>
 #include <memory>
 
@@ -7,16 +8,14 @@
 #include <lvgl.h>
 
 #include <oc/type/Ids.hpp>
+#include <ms/ui/widget/MenuListView.hpp>
 
 #include "app/OverlayTypes.hpp"
+#include "state/ViewSelectorItems.hpp"
 
 namespace core::state {
 struct CoreState;
 }
-
-namespace ms::ui {
-class StringListSelector;
-}  // namespace ms::ui
 
 namespace oc::api {
 class ButtonAPI;
@@ -49,7 +48,6 @@ public:
     StandaloneOverlayAssembly& operator=(const StandaloneOverlayAssembly&) = delete;
 
     oc::context::OverlayManager<core::ui::OverlayType>& controller() const;
-    ms::ui::StringListSelector& viewSelector() const;
     lv_obj_t* viewSelectorElement() const;
     oc::type::ScopeID viewSelectorScope() const;
     void renderViewSelector(int selectedIndex, bool visible);
@@ -61,7 +59,8 @@ private:
 
     core::state::CoreState& core_state_;
     core::app::ExtmemUniquePtr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
-    core::app::ExtmemUniquePtr<ms::ui::StringListSelector> view_selector_;
+    core::app::ExtmemUniquePtr<ms::ui::MenuListView> view_selector_;
+    std::array<ms::ui::MenuRow, core::state::VIEW_SELECTOR_ITEM_COUNT> view_selector_rows_{};
     oc::type::ScopeID view_selector_scope_ = 0;
 };
 

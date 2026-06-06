@@ -184,12 +184,13 @@ FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
 
 FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.viewSelector.reset();
-    state.globalSettings.reset();
+    state.deviceSettings.reset();
     state.sequencerSettings.reset();
     state.patternPitchSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
     state.dataManager.feedback.set("");
     state.macroUi.reset();
+    state.projectNavigation.reset();
     state.trackNavigation.reset();
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     state.structureClipboard.clear();
@@ -231,9 +232,51 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
-    state.globalSettings.reset();
+    state.projectNavigation.reset();
+    state.deviceSettings.reset();
     state.sequencerSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
+}
+
+FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
+    state.pages.initDefaults();
+
+    state.sequencerDomain_.coalescedPatternHistory.clear();
+    state.sequencer.reset();
+    state.sequencerTracks.reset();
+    state.sequencerHistory.clear();
+    sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer);
+    clearPendingSequencerApply(state);
+
+    state.setSharedTrackState_(macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK, 0, false);
+    macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+
+    state.statusBar.tempo.set(120.0f);
+    if (!state.statusBar.tempoLocked.get()) {
+        state.statusBar.tempoDisplay.set(120.0f);
+    }
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+
+    state.macroEdit.reset();
+    state.macroUi.reset();
+    state.trackNavigation.reset();
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    state.structureClipboard.clear();
+    state.sequencer.stepEdit.visible.set(false);
+    state.sequencer.stepEdit.reset();
+    state.sequencer.stepPropertyInlineSelector.reset();
+    state.sequencer.patternQuickControls.reset();
+    state.sequencer.structureUi.reset();
+    state.deviceSettings.reset();
+    state.sequencerSettings.reset();
+    state.patternPitchSettings.reset();
+    state.projectNavigation.reset();
+
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+
+    flushAutoPersist_(state);
+    state.persistMacroWorkspaceNow_();
+    state.persistSequencerWorkspace_();
 }
 
 FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {

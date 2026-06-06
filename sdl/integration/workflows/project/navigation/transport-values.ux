@@ -1,0 +1,40 @@
+# UX workflow: edit Project Transport values from the focused row.
+# Purpose: validates the immediate LEFT_CENTER tab hold, quick NAV tab movement,
+# direct OPT value editing, and NAV activation for focused transport values.
+
+0 capture screen boot
+
+# Enter Project from the global selector.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 encoder NAV 1
+460 capture screen project_item_selected
+540 button LEFT_TOP up
+720 capture screen project_overview
+
+# Two quick tab ticks to Transport while LEFT_CENTER is physically held.
+820 button LEFT_CENTER down
+900 encoder NAV 1
+960 encoder NAV 1
+1040 capture screen project_transport_tab
+1120 button LEFT_CENTER up
+1260 capture screen transport_tempo_focused
+
+# Tempo edits directly from the focused row with OPT normalized hardware state.
+1360 encoder OPT 1
+1540 capture screen transport_tempo_opt_up
+1640 encoder OPT -1
+1820 capture screen transport_tempo_opt_down
+
+# Swing placeholder is editable for current UX validation.
+1920 encoder NAV 1
+2040 capture screen transport_swing_focused
+2140 tap NAV 60
+2320 capture screen transport_swing_1
+
+# Clock cycles through the real MIDI sync mode state.
+2420 encoder NAV 1
+2540 capture screen transport_clock_focused
+2640 tap NAV 60
+2820 capture screen transport_clock_master
