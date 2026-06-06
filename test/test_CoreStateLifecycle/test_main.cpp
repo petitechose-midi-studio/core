@@ -71,8 +71,8 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     state.activeView.set(core::ui::ViewType::SEQUENCER);
     state.macroEdit.openEditor(1, 2, 10, 1000);
     state.macroEdit.openValueSelector(0, 2);
-    state.globalSettings.openOverlay();
-    state.globalSettings.openSelector(1, 1);
+    state.deviceSettings.openView();
+    state.deviceSettings.openSelector(1, 1);
     state.dataManager.openSession(core::state::DataManagerContext::SEQUENCER);
     state.dataManager.showDialog(core::state::DataManagerDialogMode::SET_LOAD_MODE, 1);
     state.dataManager.feedback.set("busy");
@@ -91,7 +91,7 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     assert(state.activeView.get() == core::ui::ViewType::MACRO);
     assert(state.overlays.current() == core::ui::OverlayType::NONE);
     assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
-    assert(state.globalSettings.flowPhase.get() == core::state::GlobalSettingsFlowPhase::CLOSED);
+    assert(state.deviceSettings.flowPhase.get() == core::state::DeviceSettingsFlowPhase::CLOSED);
     assert(!state.dataManager.visible.get());
     assert(!state.dataManager.dialog.visible.get());
     assert(state.dataManager.flowPhase.get() == core::state::DataManagerFlowPhase::CLOSED);
@@ -201,8 +201,8 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
 
     state.macroEdit.openEditor(2, 1, 64, 1500);
     state.macroEdit.openTargetSelector(4);
-    state.globalSettings.openOverlay();
-    state.globalSettings.openSelector(2, 3);
+    state.deviceSettings.openView();
+    state.deviceSettings.openSelector(2, 3);
     state.dataManager.openSession(core::state::DataManagerContext::SEQUENCER);
     state.dataManager.showDialog(core::state::DataManagerDialogMode::COMMAND_PALETTE, 0);
     state.sequencer.stepEdit.visible.set(true);
@@ -219,8 +219,8 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.macroEdit.visible.get());
     assert(!state.macroEdit.selector.visible.get());
     assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
-    assert(!state.globalSettings.visible.get());
-    assert(state.globalSettings.flowPhase.get() == core::state::GlobalSettingsFlowPhase::CLOSED);
+    assert(!state.deviceSettings.visible.get());
+    assert(state.deviceSettings.flowPhase.get() == core::state::DeviceSettingsFlowPhase::CLOSED);
     assert(!state.dataManager.visible.get());
     assert(state.dataManager.flowPhase.get() == core::state::DataManagerFlowPhase::CLOSED);
     assert(state.dataManager.context.get() == core::state::DataManagerContext::MACRO);

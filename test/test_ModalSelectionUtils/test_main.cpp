@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "../../src/handler/common/ModalSelectionUtils.hpp"
-#include "../../src/state/GlobalSettingsState.hpp"
+#include "../../src/state/DeviceSettingsState.hpp"
 
 namespace {
 
@@ -41,7 +41,7 @@ private:
 };
 
 void test_selector_navigation_uses_selector_state_contract() {
-    core::state::GlobalSettingsValueSelectorState selector;
+    core::state::DeviceSettingsValueSelectorState selector;
     selector.visible.set(true);
     selector.selectedIndex.set(1);
 
@@ -67,7 +67,7 @@ void test_selector_navigation_uses_selector_state_contract() {
 
 void test_open_selector_overlay_resets_then_initializes_state() {
     DummyOverlayManager overlays;
-    core::state::GlobalSettingsValueSelectorState selector;
+    core::state::DeviceSettingsValueSelectorState selector;
     selector.visible.set(true);
     selector.editingRow.set(3);
     selector.selectedIndex.set(9);
@@ -90,7 +90,7 @@ void test_open_selector_overlay_resets_then_initializes_state() {
 
 void test_hide_overlay_and_reset_selector_clears_state() {
     DummyOverlayManager overlays;
-    core::state::GlobalSettingsValueSelectorState selector;
+    core::state::DeviceSettingsValueSelectorState selector;
 
     overlays.show(DummyOverlay::SELECTOR, true);
     selector.visible.set(true);

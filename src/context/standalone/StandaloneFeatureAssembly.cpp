@@ -6,6 +6,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include "context/standalone/MacroFeatureModule.hpp"
+#include "context/standalone/ProjectFeatureModule.hpp"
 #include "context/standalone/SequencerFeatureModule.hpp"
 #include "context/standalone/SettingsFeatureModule.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
@@ -14,7 +15,7 @@
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/DataManagerDomainServices.hpp"
-#include "handler/settings/GlobalSettingsDomainServices.hpp"
+#include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/CoreState.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
@@ -31,10 +32,12 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     lv_obj_t* overlayRoot,
     lv_obj_t* macroViewElement,
     lv_obj_t* sequencerViewElement,
+    lv_obj_t* projectViewElement,
     core::ui::ContextSoftkeyBar& contextSoftkeyBar,
     core::ui::TransportBar& transportBar,
     oc::type::ScopeID macroViewScope,
-    oc::type::ScopeID sequencerViewScope
+    oc::type::ScopeID sequencerViewScope,
+    oc::type::ScopeID deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
     ,
     core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
@@ -92,10 +95,33 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         uxRegistry
 #endif
     );
+    OC_LOG_DEBUG("StandaloneFeatureAssembly: project_feature");
+    project_feature_ =
+        core::app::makeExtmemUnique<core::context::standalone::ProjectFeatureModule>(
+            core::context::standalone::ProjectFeatureModule::StateRefs{
+                state.overlays,
+                state.projectNavigation,
+                state.sequencer,
+                state.sequencerTracks,
+                state.statusBar,
+                state.midiSync,
+                core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+                core::handler::ProjectLifecycleDomainServices::fromCoreState(state),
+            },
+            core::handler::SequencerSettingsDomainServices{
+                core::handler::SequencerSettingsDomainServices::StateRefs{
+                    state.sequencer,
+                    state.sequencerTracks,
+                }
+            },
+            encoders,
+            buttons,
+            projectViewElement
+        );
     OC_LOG_DEBUG("StandaloneFeatureAssembly: settings_feature");
     settings_feature_ = core::app::makeExtmemUnique<core::context::standalone::SettingsFeatureModule>(
         core::context::standalone::SettingsFeatureModule::StateRefs{
-            state.globalSettings,
+            state.deviceSettings,
             state.sequencerSettings,
             state.viewSelector,
             state.midiSync,
@@ -106,8 +132,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.sequencerTracks,
             core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },
-        core::handler::GlobalSettingsDomainServices{
-            core::handler::GlobalSettingsDomainServices::StateRefs{
+        core::handler::DeviceSettingsDomainServices{
+            core::handler::DeviceSettingsDomainServices::StateRefs{
                 state.midiSync,
                 state.settings,
             }
@@ -125,6 +151,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         overlayRoot,
         contextSoftkeyBar,
         transportBar,
+        deviceSettingsViewScope,
         core::handler::DataManagerHandler::ViewScopes{
             macroViewScope,
             sequencerViewScope,
@@ -160,6 +187,12 @@ FLASHMEM void StandaloneFeatureAssembly::resetSequencerEncoderSync() const {
 FLASHMEM void StandaloneFeatureAssembly::syncSequencerEncodersNow() const {
     if (sequencer_feature_) {
         sequencer_feature_->syncEncodersNow();
+    }
+}
+
+FLASHMEM void StandaloneFeatureAssembly::syncProjectEncoderNow() const {
+    if (project_feature_) {
+        project_feature_->syncFocusedEncoder();
     }
 }
 

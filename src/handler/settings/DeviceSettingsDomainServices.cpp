@@ -1,4 +1,4 @@
-#include "handler/settings/GlobalSettingsDomainServices.hpp"
+#include "handler/settings/DeviceSettingsDomainServices.hpp"
 
 #include <algorithm>
 
@@ -35,11 +35,11 @@ int findChoiceIndex(const T& value, const T (&choices)[N], int fallback = 0) {
 
 }  // namespace
 
-FLASHMEM GlobalSettingsDomainServices::GlobalSettingsDomainServices(StateRefs state)
+FLASHMEM DeviceSettingsDomainServices::DeviceSettingsDomainServices(StateRefs state)
     : midi_sync_(&state.midiSync)
     , settings_(&state.settings) {}
 
-FLASHMEM int GlobalSettingsDomainServices::currentChoiceIndex(uint8_t row) const {
+FLASHMEM int DeviceSettingsDomainServices::currentChoiceIndex(uint8_t row) const {
     switch (row) {
         case 0:
             return findChoiceIndex(
@@ -66,7 +66,7 @@ FLASHMEM int GlobalSettingsDomainServices::currentChoiceIndex(uint8_t row) const
     }
 }
 
-FLASHMEM int GlobalSettingsDomainServices::choiceCount(uint8_t row) const {
+FLASHMEM int DeviceSettingsDomainServices::choiceCount(uint8_t row) const {
     switch (row) {
         case 0: return MODE_COUNT;
         case 1: return FOLLOW_COUNT;
@@ -76,7 +76,7 @@ FLASHMEM int GlobalSettingsDomainServices::choiceCount(uint8_t row) const {
     }
 }
 
-FLASHMEM void GlobalSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
+FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
     auto status = core::persistence::PersistenceWriteStatus::OK;
 
     switch (row) {
@@ -109,7 +109,7 @@ FLASHMEM void GlobalSettingsDomainServices::applyChoice(uint8_t row, int choiceI
     }
 
     if (status != core::persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[GlobalSettings] Failed to stage settings row {}: {}",
+        OC_LOG_WARN("[DeviceSettings] Failed to stage settings row {}: {}",
                     row,
                     core::persistence::persistenceWriteStatusLabel(status));
         return;
@@ -117,7 +117,7 @@ FLASHMEM void GlobalSettingsDomainServices::applyChoice(uint8_t row, int choiceI
 
     const auto commitStatus = settings_->commitStatus();
     if (commitStatus != core::persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[GlobalSettings] Failed to commit settings row {}: {}",
+        OC_LOG_WARN("[DeviceSettings] Failed to commit settings row {}: {}",
                     row,
                     core::persistence::persistenceWriteStatusLabel(commitStatus));
     }

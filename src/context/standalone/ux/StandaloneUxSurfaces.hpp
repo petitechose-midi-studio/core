@@ -12,7 +12,7 @@
 #include "validation/ux/SemanticUxSurface.hpp"
 
 namespace core::state {
-struct GlobalSettingsState;
+struct DeviceSettingsState;
 struct MacroEditState;
 struct MacroState;
 struct DataManagerState;
@@ -38,7 +38,7 @@ struct StructureUxTraceState;
 namespace core::context::standalone::ux {
 
 namespace priority {
-constexpr uint8_t GLOBAL_SETTINGS = 10;
+constexpr uint8_t DEVICE_SETTINGS = 10;
 constexpr uint8_t VIEW_SELECTOR = 15;
 constexpr uint8_t TRANSPORT = 20;
 constexpr uint8_t SEQUENCER_STEP_EDIT = 25;
@@ -68,9 +68,9 @@ private:
     core::state::ViewSelectorState& view_selector_;
 };
 
-class GlobalSettingsUxSurface final : public core::validation::ux::SemanticUxSurface {
+class DeviceSettingsUxSurface final : public core::validation::ux::SemanticUxSurface {
 public:
-    GlobalSettingsUxSurface(core::state::GlobalSettingsState& globalSettings,
+    DeviceSettingsUxSurface(core::state::DeviceSettingsState& deviceSettings,
                             core::state::MidiSyncState& midiSync);
 
     bool captureSemanticUxContext(
@@ -79,7 +79,7 @@ public:
     ) const override;
 
 private:
-    core::state::GlobalSettingsState& global_settings_;
+    core::state::DeviceSettingsState& device_settings_;
     core::state::MidiSyncState& midi_sync_;
 };
 

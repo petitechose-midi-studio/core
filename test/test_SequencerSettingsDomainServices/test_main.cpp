@@ -123,9 +123,9 @@ void test_project_scale_choices_update_track_bank() {
     assert(services.choiceCount(0) == 12);
     assert(services.choiceCount(1) == 14);
     assert(services.choiceCount(2) == 4);
-    assert(services.currentChoiceIndex(0) == 0);
-    assert(services.currentChoiceIndex(1) == 0);
-    assert(services.currentChoiceIndex(2) == 0);
+    assert(services.currentChoiceIndex(0) == 5);
+    assert(services.currentChoiceIndex(1) == 3);
+    assert(services.currentChoiceIndex(2) == 1);
 
     services.applyChoice(0, 9);
     services.applyChoice(1, 2);
@@ -265,17 +265,17 @@ void test_project_scale_settings_are_undoable_through_handler() {
     }
     h.tap(Config::ButtonID::NAV);
 
-    assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 10);
     assert(h.state.sequencerHistory.undoCount(core::state::sequencer::SequencerHistoryScope::FullBank) == 1);
 
     h.tap(Config::ButtonID::LEFT_TOP);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencerTracks.projectScaleSettings().root == 0);
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
     assert(h.state.sequencerHistory.redoCount(core::state::sequencer::SequencerHistoryScope::FullBank) == 1);
 
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 10);
 
     std::cout << "[PASS] test_project_scale_settings_are_undoable_through_handler\n";
 }

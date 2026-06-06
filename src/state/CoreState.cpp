@@ -386,12 +386,13 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , viewSelector(systemUi_->viewSelector)
     , statusBar(systemUi_->statusBar)
     , midiSync(systemUi_->midiSync)
-    , globalSettings(systemUi_->globalSettings)
+    , deviceSettings(systemUi_->deviceSettings)
     , sequencerSettings(systemUi_->sequencerSettings)
     , patternPitchSettings(systemUi_->patternPitchSettings)
     , dataManager(systemUi_->dataManager)
     , macroEdit(systemUi_->macroEdit)
-    , macroUi(systemUi_->macroUi) {
+    , macroUi(systemUi_->macroUi)
+    , projectNavigation(systemUi_->projectNavigation) {
     if (!macroDomain_.runtime) {
         OC_LOG_ERROR("[CoreState] Failed to allocate macro runtime state");
         while (true) {}
@@ -432,6 +433,11 @@ FLASHMEM void CoreState::flushAutoPersist() {
 FLASHMEM void CoreState::resetStandaloneTransientUi() {
     commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::resetStandaloneTransientUi(*this);
+}
+
+FLASHMEM void CoreState::resetMusicalProject() {
+    commitSequencerPatternHistoryCoalescing();
+    CoreStateLifecycle::resetMusicalProject(*this);
 }
 
 bool CoreState::isMacroPersistenceReady() const {

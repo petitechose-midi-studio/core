@@ -13,7 +13,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/DataManagerState.hpp"
-#include "state/GlobalSettingsState.hpp"
+#include "state/DeviceSettingsState.hpp"
 #include "state/SequencerSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -45,7 +45,7 @@ public:
         core::state::StructureClipboardState& structureClipboard;
         core::state::StatusBarState& statusBar;
         core::state::ViewSelectorState& viewSelector;
-        core::state::GlobalSettingsState& globalSettings;
+        core::state::DeviceSettingsState& deviceSettings;
         core::state::SequencerSettingsState& sequencerSettings;
         core::state::DataManagerState& dataManager;
     };

@@ -11,13 +11,13 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "handler/settings/DataManagerDomainServices.hpp"
-#include "handler/settings/GlobalSettingsDomainServices.hpp"
+#include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/CoreSettings.hpp"
 #include "state/DataManagerState.hpp"
-#include "state/GlobalSettingsState.hpp"
+#include "state/DeviceSettingsState.hpp"
 #include "state/SequencerSettingsState.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "state/MidiSyncState.hpp"
@@ -42,13 +42,13 @@ class TransportBar;
 
 namespace core::context::standalone {
 class DataManagerPresenter;
-class GlobalSettingsOverlayPresenter;
+class DeviceSettingsSelectorPresenter;
 class SequencerSettingsOverlayPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
 class DataManagerHandler;
-class GlobalSettingsHandler;
+class DeviceSettingsHandler;
 class SequencerSettingsHandler;
 }  // namespace core::handler
 
@@ -63,7 +63,7 @@ namespace core::context::standalone {
 class SettingsFeatureModule {
 public:
     struct StateRefs {
-        core::state::GlobalSettingsState& globalSettings;
+        core::state::DeviceSettingsState& deviceSettings;
         core::state::SequencerSettingsState& sequencerSettings;
         core::state::ViewSelectorState& viewSelector;
         core::state::MidiSyncState& midiSync;
@@ -76,7 +76,7 @@ public:
     };
 
     SettingsFeatureModule(StateRefs stateRefs,
-                          core::handler::GlobalSettingsDomainServices globalSettingsServices,
+                          core::handler::DeviceSettingsDomainServices deviceSettingsServices,
                           core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
                           core::handler::DataManagerDomainServices dataManagerServices,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
@@ -85,6 +85,7 @@ public:
                           lv_obj_t* mainZone,
                           core::ui::ContextSoftkeyBar& softkeyBar,
                           core::ui::TransportBar& transportBar,
+                          oc::type::ScopeID deviceSettingsViewScope,
                           core::handler::DataManagerHandler::ViewScopes viewScopes
 #if defined(MS_UX_RECORDER)
                           ,
@@ -98,25 +99,24 @@ public:
 
 private:
 #if defined(MS_UX_RECORDER)
-    core::context::standalone::ux::GlobalSettingsUxSurface global_settings_ux_surface_;
+    core::context::standalone::ux::DeviceSettingsUxSurface device_settings_ux_surface_;
     core::context::standalone::ux::DataManagerUxSurface data_manager_ux_surface_;
 #endif
 
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> global_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
-        global_settings_selector_overlay_;
+        device_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> sequencer_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         sequencer_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> data_manager_dialog_overlay_;
-    core::app::ExtmemUniquePtr<core::context::standalone::GlobalSettingsOverlayPresenter>
-        global_settings_presenter_;
+    core::app::ExtmemUniquePtr<core::context::standalone::DeviceSettingsSelectorPresenter>
+        device_settings_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::DataManagerPresenter>
         data_manager_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerSettingsOverlayPresenter>
         sequencer_settings_presenter_;
-    std::unique_ptr<core::handler::GlobalSettingsHandler> global_settings_handler_;
+    std::unique_ptr<core::handler::DeviceSettingsHandler> device_settings_handler_;
     std::unique_ptr<core::handler::DataManagerHandler> data_manager_handler_;
     std::unique_ptr<core::handler::SequencerSettingsHandler> sequencer_settings_handler_;
 };

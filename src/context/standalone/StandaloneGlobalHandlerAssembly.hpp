@@ -44,7 +44,9 @@ public:
                                     oc::api::EncoderAPI& encoders,
                                     oc::api::ButtonAPI& buttons,
                                     oc::type::ScopeID macroViewScope,
-                                    oc::type::ScopeID sequencerViewScope
+                                    oc::type::ScopeID sequencerViewScope,
+                                    oc::type::ScopeID projectViewScope,
+                                    oc::type::ScopeID deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
                                     ,
                                     core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry

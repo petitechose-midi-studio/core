@@ -36,11 +36,13 @@ FLASHMEM UiSystemState::UiSystemState()
       viewSelector{},
       statusBar{},
       midiSync{},
-      globalSettings{},
+      deviceSettings{},
       sequencerSettings{},
       patternPitchSettings{},
       dataManager{},
-      macroEdit{} {}
+      macroEdit{},
+      macroUi{},
+      projectNavigation{} {}
 
 FLASHMEM UiSystemState::~UiSystemState() = default;
 

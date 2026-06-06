@@ -85,6 +85,10 @@ struct MacroPerformanceHarness {
         overlays.setActiveViewProvider([]() { return MACRO_VIEW_SCOPE; });
     }
 
+    ~MacroPerformanceHarness() {
+        drainNotifications();
+    }
+
     void tick(uint32_t nowMs) {
         g_now_ms = nowMs;
         inputBinding.processTick();

@@ -42,10 +42,10 @@ void configureDebugLabels_(CoreState& state) {
     state.trackNavigation.previewAddSlot.setDebugLabel("core.trackNavigation.previewAddSlot");
     state.trackNavigation.previewTrackIndex.setDebugLabel("core.trackNavigation.previewTrackIndex");
 
-    state.globalSettings.flowPhase.setDebugLabel("core.globalSettings.flowPhase");
-    state.globalSettings.selector.visible.setDebugLabel("core.globalSettings.selector.visible");
-    state.globalSettings.selector.selectedIndex.setDebugLabel("core.globalSettings.selector.selectedIndex");
-    state.globalSettings.selector.editingRow.setDebugLabel("core.globalSettings.selector.editingRow");
+    state.deviceSettings.flowPhase.setDebugLabel("core.deviceSettings.flowPhase");
+    state.deviceSettings.selector.visible.setDebugLabel("core.deviceSettings.selector.visible");
+    state.deviceSettings.selector.selectedIndex.setDebugLabel("core.deviceSettings.selector.selectedIndex");
+    state.deviceSettings.selector.editingRow.setDebugLabel("core.deviceSettings.selector.editingRow");
     state.sequencerSettings.flowPhase.setDebugLabel("core.sequencerSettings.flowPhase");
     state.sequencerSettings.visible.setDebugLabel("core.sequencerSettings.visible");
     state.sequencerSettings.focusedRow.setDebugLabel("core.sequencerSettings.focusedRow");
@@ -75,6 +75,12 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.pattern.patternVariationRevision.setDebugLabel("core.sequencer.pattern.patternVariationRevision");
     state.sequencer.pattern.patternScaleRevision.setDebugLabel("core.sequencer.pattern.patternScaleRevision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
+
+    state.projectNavigation.activeTab.setDebugLabel("core.projectNavigation.activeTab");
+    state.projectNavigation.currentNode.setDebugLabel("core.projectNavigation.currentNode");
+    state.projectNavigation.depth.setDebugLabel("core.projectNavigation.depth");
+    state.projectNavigation.focusedRow.setDebugLabel("core.projectNavigation.focusedRow");
+    state.projectNavigation.physicalHoldActive.setDebugLabel("core.projectNavigation.physicalHoldActive");
 }
 }  // namespace
 
@@ -153,8 +159,10 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, state.viewSelector.visible);
 
     state.overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, state.sequencer.stepEdit.visible);
-    state.overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS, state.globalSettings.visible);
-    state.overlays.registerItem(core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR, state.globalSettings.selector.visible);
+    state.overlays.registerItem(
+        core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
+        state.deviceSettings.selector.visible
+    );
     state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS, state.sequencerSettings.visible);
     state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR, state.sequencerSettings.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, state.patternPitchSettings.visible);

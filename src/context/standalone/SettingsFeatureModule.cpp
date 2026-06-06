@@ -6,11 +6,11 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/DataManagerPresenter.hpp"
-#include "context/standalone/GlobalSettingsOverlayPresenter.hpp"
+#include "context/standalone/DeviceSettingsSelectorPresenter.hpp"
 #include "context/standalone/SequencerSettingsOverlayPresenter.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
-#include "handler/settings/GlobalSettingsDomainServices.hpp"
-#include "handler/settings/GlobalSettingsHandler.hpp"
+#include "handler/settings/DeviceSettingsDomainServices.hpp"
+#include "handler/settings/DeviceSettingsHandler.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsHandler.hpp"
 
@@ -18,7 +18,7 @@ namespace core::context::standalone {
 
 FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     StateRefs stateRefs,
-    core::handler::GlobalSettingsDomainServices globalSettingsServices,
+    core::handler::DeviceSettingsDomainServices deviceSettingsServices,
     core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
     core::handler::DataManagerDomainServices dataManagerServices,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
@@ -27,6 +27,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     lv_obj_t* mainZone,
     core::ui::ContextSoftkeyBar& softkeyBar,
     core::ui::TransportBar& transportBar,
+    oc::type::ScopeID deviceSettingsViewScope,
     core::handler::DataManagerHandler::ViewScopes viewScopes
 #if defined(MS_UX_RECORDER)
     ,
@@ -34,15 +35,15 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
 #endif
 )
 #if defined(MS_UX_RECORDER)
-    : global_settings_ux_surface_(stateRefs.globalSettings, stateRefs.midiSync),
+    : device_settings_ux_surface_(stateRefs.deviceSettings, stateRefs.midiSync),
       data_manager_ux_surface_(stateRefs.dataManager)
 #endif
 {
 #if defined(MS_UX_RECORDER)
     if (uxRegistry) {
         uxRegistry->add(
-            global_settings_ux_surface_,
-            core::context::standalone::ux::priority::GLOBAL_SETTINGS
+            device_settings_ux_surface_,
+            core::context::standalone::ux::priority::DEVICE_SETTINGS
         );
         uxRegistry->add(
             data_manager_ux_surface_,
@@ -51,19 +52,11 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     }
 #endif
 
-    global_settings_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
-    overlays.registerCleanup(
-        core::ui::OverlayType::GLOBAL_SETTINGS,
-        oc::ui::lvgl::scopeID(global_settings_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
-
-    global_settings_selector_overlay_ =
+    device_settings_selector_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlays.registerCleanup(
-        core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR,
-        oc::ui::lvgl::scopeID(global_settings_selector_overlay_->getElement()),
+        core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
+        oc::ui::lvgl::scopeID(device_settings_selector_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
@@ -99,16 +92,15 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         static_cast<oc::type::ButtonID>(0)
     );
 
-    global_settings_presenter_ =
-        core::app::makeExtmemUnique<GlobalSettingsOverlayPresenter>(
-            GlobalSettingsOverlayPresenter::StateRefs{
-                stateRefs.globalSettings,
+    device_settings_presenter_ =
+        core::app::makeExtmemUnique<DeviceSettingsSelectorPresenter>(
+            DeviceSettingsSelectorPresenter::StateRefs{
+                stateRefs.deviceSettings,
                 stateRefs.midiSync,
             },
-            *global_settings_overlay_,
-            *global_settings_selector_overlay_
+            *device_settings_selector_overlay_
         );
-    global_settings_presenter_->bind();
+    device_settings_presenter_->bind();
 
     data_manager_presenter_ = core::app::makeExtmemUnique<DataManagerPresenter>(
         DataManagerPresenter::StateRefs{
@@ -133,17 +125,16 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         );
     sequencer_settings_presenter_->bind();
 
-    global_settings_handler_ = std::make_unique<core::handler::GlobalSettingsHandler>(
-        core::handler::GlobalSettingsHandler::StateRefs{
-            stateRefs.globalSettings,
-            stateRefs.viewSelector,
+    device_settings_handler_ = std::make_unique<core::handler::DeviceSettingsHandler>(
+        core::handler::DeviceSettingsHandler::StateRefs{
+            stateRefs.deviceSettings,
         },
-        globalSettingsServices,
+        deviceSettingsServices,
         overlays,
         encoders,
         buttons,
-        oc::ui::lvgl::scopeID(global_settings_overlay_->getElement()),
-        oc::ui::lvgl::scopeID(global_settings_selector_overlay_->getElement())
+        deviceSettingsViewScope,
+        oc::ui::lvgl::scopeID(device_settings_selector_overlay_->getElement())
     );
 
     data_manager_handler_ = std::make_unique<core::handler::DataManagerHandler>(

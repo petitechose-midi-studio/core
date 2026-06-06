@@ -58,6 +58,16 @@ FLASHMEM bool redoFromCoreState(void* context) {
     return state->redoSequencerHistory();
 }
 
+FLASHMEM bool clearFromCoreState(void* context) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    state->clearSequencerHistory();
+    return true;
+}
+
 FLASHMEM bool beginCoalescedPatternEditFromCoreState(
     void* context,
     uint8_t step,
@@ -96,6 +106,7 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
             recordFullBankFromCoreState,
             undoFromCoreState,
             redoFromCoreState,
+            clearFromCoreState,
             beginCoalescedPatternEditFromCoreState,
             commitCoalescedPatternEditFromCoreState,
         }
@@ -132,6 +143,10 @@ FLASHMEM bool SequencerHistoryDomainServices::undo() const {
 
 FLASHMEM bool SequencerHistoryDomainServices::redo() const {
     return operations_.redo != nullptr && operations_.redo(operations_.context);
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::clear() const {
+    return operations_.clear != nullptr && operations_.clear(operations_.context);
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(

@@ -1,0 +1,38 @@
+# UX workflow: enter Project view, navigate first-level tabs and one nested folder.
+# Purpose: validates the ADR-0020 navigation contract without exercising save/load
+# persistence. LEFT_CENTER+NAV switches tabs; LEFT_TOP backs inside Project
+# folders, then opens the global view selector when Project is at any tab root.
+
+0 capture screen boot
+
+# Open the global view selector and enter Project.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 encoder NAV 1
+460 capture screen project_item_selected
+540 button LEFT_TOP up
+720 capture screen project_overview_tab
+
+# Switch to Music, then enter the Scale folder.
+820 button LEFT_CENTER down
+1420 encoder NAV 1
+1560 capture screen project_music_tab
+1640 button LEFT_CENTER up
+1740 tap NAV 60
+1960 capture screen project_music_scale
+
+# LEFT_TOP is a local back action while Project is nested.
+2060 tap LEFT_TOP 60
+2280 capture screen project_music_after_back
+
+# LEFT_CENTER held makes NAV switch first-level project sections.
+2380 button LEFT_CENTER down
+2980 encoder NAV 1
+3160 capture screen project_transport_tab
+3260 button LEFT_CENTER up
+
+# At a Project tab root, LEFT_TOP opens the global selector again.
+3360 button LEFT_TOP down
+3540 capture screen selector_from_project_root
+3620 button LEFT_TOP up

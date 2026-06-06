@@ -294,8 +294,8 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
         },
         state_refs_.viewSelector.visible,
         state_refs_.sequencer.stepEdit.visible,
-        state_refs_.globalSettings.visible,
-        state_refs_.globalSettings.selector.visible,
+        state_refs_.deviceSettings.visible,
+        state_refs_.deviceSettings.selector.visible,
         state_refs_.sequencerSettings.visible,
         state_refs_.sequencerSettings.selector.visible,
         state_refs_.dataManager.visible,
@@ -361,8 +361,8 @@ FLASHMEM void SequencerView::ensureRenderTimer() {
 FLASHMEM bool SequencerView::hasBlockingOverlay() const {
     return state_refs_.viewSelector.visible.get() ||
            state_refs_.sequencer.stepEdit.visible.get() ||
-           state_refs_.globalSettings.visible.get() ||
-           state_refs_.globalSettings.selector.visible.get() ||
+           state_refs_.deviceSettings.visible.get() ||
+           state_refs_.deviceSettings.selector.visible.get() ||
            state_refs_.sequencerSettings.visible.get() ||
            state_refs_.sequencerSettings.selector.visible.get() ||
            state_refs_.dataManager.visible.get() ||

@@ -12,8 +12,10 @@
 #include "ui/common/TrackNavigationStrip.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
+#include "ui/view/DeviceSettingsView.hpp"
 #include "ui/view/MacroView.hpp"
 #include "ui/view/PausableLvglTimer.hpp"
+#include "ui/view/ProjectView.hpp"
 #include "ui/view/SequencerView.hpp"
 #include <ms/ui/ViewContainer.hpp>
 
@@ -38,6 +40,12 @@ FLASHMEM StandaloneUiAssembly::~StandaloneUiAssembly() {
     if (sequencer_view_) {
         sequencer_view_->onDeactivate();
     }
+    if (project_view_) {
+        project_view_->onDeactivate();
+    }
+    if (device_settings_view_) {
+        device_settings_view_->onDeactivate();
+    }
 }
 
 FLASHMEM void StandaloneUiAssembly::show() {
@@ -61,12 +69,28 @@ FLASHMEM oc::type::ScopeID StandaloneUiAssembly::sequencerViewScope() const {
     return sequencer_view_scope_;
 }
 
+FLASHMEM oc::type::ScopeID StandaloneUiAssembly::projectViewScope() const {
+    return project_view_scope_;
+}
+
+FLASHMEM oc::type::ScopeID StandaloneUiAssembly::deviceSettingsViewScope() const {
+    return device_settings_view_scope_;
+}
+
 FLASHMEM lv_obj_t* StandaloneUiAssembly::macroViewElement() const {
     return macro_view_->getElement();
 }
 
 FLASHMEM lv_obj_t* StandaloneUiAssembly::sequencerViewElement() const {
     return sequencer_view_->getElement();
+}
+
+FLASHMEM lv_obj_t* StandaloneUiAssembly::projectViewElement() const {
+    return project_view_->getElement();
+}
+
+FLASHMEM lv_obj_t* StandaloneUiAssembly::deviceSettingsViewElement() const {
+    return device_settings_view_->getElement();
 }
 
 FLASHMEM core::ui::TransportBar& StandaloneUiAssembly::transportBar() const {
@@ -91,6 +115,22 @@ FLASHMEM void StandaloneUiAssembly::activateSequencerView() const {
 
 FLASHMEM void StandaloneUiAssembly::deactivateSequencerView() const {
     sequencer_view_->onDeactivate();
+}
+
+FLASHMEM void StandaloneUiAssembly::activateProjectView() const {
+    project_view_->onActivate();
+}
+
+FLASHMEM void StandaloneUiAssembly::deactivateProjectView() const {
+    project_view_->onDeactivate();
+}
+
+FLASHMEM void StandaloneUiAssembly::activateDeviceSettingsView() const {
+    device_settings_view_->onActivate();
+}
+
+FLASHMEM void StandaloneUiAssembly::deactivateDeviceSettingsView() const {
+    device_settings_view_->onDeactivate();
 }
 
 FLASHMEM void StandaloneUiAssembly::createViewContainer() {
@@ -146,7 +186,7 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
             core_state_.statusBar,
             core_state_.macroEdit,
             core_state_.viewSelector,
-            core_state_.globalSettings,
+            core_state_.deviceSettings,
             core_state_.dataManager,
         }
     );
@@ -162,9 +202,25 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
             core_state_.structureClipboard,
             core_state_.statusBar,
             core_state_.viewSelector,
-            core_state_.globalSettings,
+            core_state_.deviceSettings,
             core_state_.sequencerSettings,
             core_state_.dataManager,
+        }
+    );
+    project_view_ = core::app::makeExtmemUnique<core::ui::ProjectView>(
+        viewsHost,
+        core::ui::ProjectView::StateRefs{
+            core_state_.projectNavigation,
+            core_state_.sequencerTracks,
+            core_state_.statusBar,
+            core_state_.midiSync,
+        }
+    );
+    device_settings_view_ = core::app::makeExtmemUnique<core::ui::DeviceSettingsView>(
+        viewsHost,
+        core::ui::DeviceSettingsView::StateRefs{
+            core_state_.deviceSettings,
+            core_state_.midiSync,
         }
     );
     cacheViewScopes();
@@ -183,11 +239,15 @@ FLASHMEM void StandaloneUiAssembly::cacheViewScopes() {
     macro_view_scope_ = macro_view_ ? oc::ui::lvgl::scopeID(macro_view_->getElement()) : 0;
     sequencer_view_scope_ =
         sequencer_view_ ? oc::ui::lvgl::scopeID(sequencer_view_->getElement()) : 0;
+    project_view_scope_ = project_view_ ? oc::ui::lvgl::scopeID(project_view_->getElement()) : 0;
+    device_settings_view_scope_ =
+        device_settings_view_ ? oc::ui::lvgl::scopeID(device_settings_view_->getElement()) : 0;
 }
 
 FLASHMEM void StandaloneUiAssembly::bindGlobalTrackStrip() {
     global_track_strip_watcher_.watchAll(
         [this]() { scheduleGlobalTrackStripRender(true); },
+        core_state_.activeView,
         core_state_.structureNavigationFocus
     );
 
@@ -266,6 +326,15 @@ FLASHMEM void StandaloneUiAssembly::renderGlobalTrackStrip() {
 
     applyOverlayExclusivity();
     if (overlay_exclusive_mode_) {
+        if (global_track_strip_container_ &&
+            !lv_obj_has_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_add_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
+
+    if (core_state_.activeView.get() == core::ui::ViewType::PROJECT ||
+        core_state_.activeView.get() == core::ui::ViewType::DEVICE_SETTINGS) {
         if (global_track_strip_container_ &&
             !lv_obj_has_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN)) {
             lv_obj_add_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN);

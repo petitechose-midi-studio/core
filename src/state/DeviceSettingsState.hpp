@@ -7,18 +7,18 @@
 namespace core::state {
 
 /**
- * Session state for the global settings overlay.
+ * Session state for the device settings view.
  *
- * The overlay keeps selection/focus state here; durable settings live in the
+ * The view keeps selection/focus state here; durable settings live in the
  * domain states and CoreSettings-backed workflows.
  */
-enum class GlobalSettingsFlowPhase : uint8_t {
+enum class DeviceSettingsFlowPhase : uint8_t {
     CLOSED = 0,
-    OVERLAY = 1,
+    VIEW = 1,
     VALUE_SELECTOR = 2,
 };
 
-struct GlobalSettingsValueSelectorState {
+struct DeviceSettingsValueSelectorState {
     oc::state::Signal<bool, 4> visible{false};
     oc::state::Signal<int, 4> selectedIndex{0};
     oc::state::Signal<uint8_t, 4> editingRow{0};
@@ -30,29 +30,29 @@ struct GlobalSettingsValueSelectorState {
     }
 };
 
-struct GlobalSettingsState {
+struct DeviceSettingsState {
     oc::state::Signal<bool> visible{false};
     oc::state::Signal<uint8_t> focusedRow{0};
-    oc::state::Signal<GlobalSettingsFlowPhase, 4> flowPhase{
-        GlobalSettingsFlowPhase::CLOSED
+    oc::state::Signal<DeviceSettingsFlowPhase, 4> flowPhase{
+        DeviceSettingsFlowPhase::CLOSED
     };
 
-    GlobalSettingsValueSelectorState selector;
+    DeviceSettingsValueSelectorState selector;
 
     void reset() {
         visible.set(false);
         focusedRow.set(0);
-        flowPhase.set(GlobalSettingsFlowPhase::CLOSED);
+        flowPhase.set(DeviceSettingsFlowPhase::CLOSED);
         selector.reset();
     }
 
-    void openOverlay() {
+    void openView() {
         reset();
         visible.set(true);
-        flowPhase.set(GlobalSettingsFlowPhase::OVERLAY);
+        flowPhase.set(DeviceSettingsFlowPhase::VIEW);
     }
 
-    void closeOverlay() {
+    void closeView() {
         reset();
     }
 
@@ -61,13 +61,13 @@ struct GlobalSettingsState {
         selector.visible.set(true);
         selector.editingRow.set(row);
         selector.selectedIndex.set(selectedIndex);
-        flowPhase.set(GlobalSettingsFlowPhase::VALUE_SELECTOR);
+        flowPhase.set(DeviceSettingsFlowPhase::VALUE_SELECTOR);
     }
 
     void closeSelector() {
         selector.reset();
-        flowPhase.set(visible.get() ? GlobalSettingsFlowPhase::OVERLAY
-                                    : GlobalSettingsFlowPhase::CLOSED);
+        flowPhase.set(visible.get() ? DeviceSettingsFlowPhase::VIEW
+                                    : DeviceSettingsFlowPhase::CLOSED);
     }
 };
 

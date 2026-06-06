@@ -102,6 +102,10 @@ const char* viewName(core::ui::ViewType view) {
             return "macro";
         case core::ui::ViewType::SEQUENCER:
             return "sequencer";
+        case core::ui::ViewType::PROJECT:
+            return "project";
+        case core::ui::ViewType::DEVICE_SETTINGS:
+            return "device_settings";
         default:
             return "unknown_view";
     }
@@ -123,10 +127,8 @@ const char* overlayName(core::ui::OverlayType overlay) {
             return "view_selector";
         case core::ui::OverlayType::SEQ_STEP_EDIT:
             return "seq_step_edit";
-        case core::ui::OverlayType::GLOBAL_SETTINGS:
-            return "global_settings";
-        case core::ui::OverlayType::GLOBAL_SETTINGS_SELECTOR:
-            return "global_settings_selector";
+        case core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR:
+            return "device_settings_selector";
         case core::ui::OverlayType::SEQUENCER_SETTINGS:
             return "sequencer_settings";
         case core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR:

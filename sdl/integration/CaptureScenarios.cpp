@@ -200,8 +200,8 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     }
 
     if (std::strcmp(scenario, "settings") == 0) {
-        state.overlays.show(core::ui::OverlayType::GLOBAL_SETTINGS, false);
-        state.globalSettings.openOverlay();
+        state.activeView.set(core::ui::ViewType::DEVICE_SETTINGS);
+        state.deviceSettings.openView();
         return true;
     }
 

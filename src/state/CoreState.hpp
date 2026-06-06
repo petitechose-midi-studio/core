@@ -28,7 +28,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "CoreSettings.hpp"
 #include "DataManagerState.hpp"
-#include "GlobalSettingsState.hpp"
+#include "DeviceSettingsState.hpp"
 #include "PatternPitchSettingsState.hpp"
 #include "SequencerSettingsState.hpp"
 #include "MidiSyncState.hpp"
@@ -48,6 +48,7 @@
 #include "sequencer/SequencerHistory.hpp"
 #include "sequencer/SequencerSnapshots.hpp"
 #include "sequencer/SequencerTrackBankState.hpp"
+#include "project/ProjectNavigationState.hpp"
 
 namespace core::state {
 
@@ -180,12 +181,13 @@ struct UiSystemState {
     ViewSelectorState viewSelector;
     StatusBarState statusBar;
     MidiSyncState midiSync;
-    GlobalSettingsState globalSettings;
+    DeviceSettingsState deviceSettings;
     SequencerSettingsState sequencerSettings;
     PatternPitchSettingsState patternPitchSettings;
     DataManagerState dataManager;
     MacroEditState macroEdit;
     macro::MacroUiState macroUi;
+    project::ProjectNavigationState projectNavigation;
 
     UiSystemState();
     ~UiSystemState();
@@ -237,12 +239,13 @@ public:
     ViewSelectorState& viewSelector;
     StatusBarState& statusBar;
     MidiSyncState& midiSync;
-    GlobalSettingsState& globalSettings;
+    DeviceSettingsState& deviceSettings;
     SequencerSettingsState& sequencerSettings;
     PatternPitchSettingsState& patternPitchSettings;
     DataManagerState& dataManager;
     MacroEditState& macroEdit;
     macro::MacroUiState& macroUi;
+    project::ProjectNavigationState& projectNavigation;
 
     /**
      * @brief Construct with storage backend
@@ -286,6 +289,7 @@ public:
     void flush();
     void flushAutoPersist();
     void resetStandaloneTransientUi();
+    void resetMusicalProject();
 
     bool isMacroPersistenceReady() const;
     bool isSequencerPersistenceReady() const;
