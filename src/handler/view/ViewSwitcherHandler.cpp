@@ -10,12 +10,12 @@ namespace core::handler {
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
-ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
-                                         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-                                         oc::api::EncoderAPI& encoders,
-                                         oc::api::ButtonAPI& buttons,
-                                         ViewSwitcherHandler::ViewScopes viewScopes,
-                                         oc::type::ScopeID viewSelectorScope)
+FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
+                                                  oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                                                  oc::api::EncoderAPI& encoders,
+                                                  oc::api::ButtonAPI& buttons,
+                                                  ViewSwitcherHandler::ViewScopes viewScopes,
+                                                  oc::type::ScopeID viewSelectorScope)
     : overlays_state_(state.overlays)
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
@@ -79,7 +79,7 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
         .then([this]() { openSelectedItemSettings(); });
 }
 
-bool ViewSwitcherHandler::canOpenSelector() const {
+FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     if (overlays_state_.hasVisible()) return false;
     if (track_structure_selection_.active.get()) return false;
 
@@ -101,7 +101,7 @@ bool ViewSwitcherHandler::canOpenSelector() const {
            !step_property_inline_selector_.selecting.get();
 }
 
-void ViewSwitcherHandler::openSelector() {
+FLASHMEM void ViewSwitcherHandler::openSelector() {
     view_selector_.selectedIndex.set(
         static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()))
     );
@@ -113,7 +113,7 @@ void ViewSwitcherHandler::openSelector() {
     encoders_.setMode(EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
 }
 
-void ViewSwitcherHandler::navigate(float delta) {
+FLASHMEM void ViewSwitcherHandler::navigate(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     int current = view_selector_.selectedIndex.get();
@@ -121,7 +121,7 @@ void ViewSwitcherHandler::navigate(float delta) {
     view_selector_.selectedIndex.set(next);
 }
 
-void ViewSwitcherHandler::confirmSelection() {
+FLASHMEM void ViewSwitcherHandler::confirmSelection() {
     int index = view_selector_.selectedIndex.get();
     if (index < 0 || index >= core::state::VIEW_SELECTOR_ITEM_COUNT) return;
 
@@ -140,12 +140,12 @@ void ViewSwitcherHandler::confirmSelection() {
     active_view_.set(type);
 }
 
-void ViewSwitcherHandler::closeSelector() {
+FLASHMEM void ViewSwitcherHandler::closeSelector() {
     overlays_.hide();
     confirmSelection();
 }
 
-void ViewSwitcherHandler::openSelectedItemSettings() {
+FLASHMEM void ViewSwitcherHandler::openSelectedItemSettings() {
     const auto item = core::state::viewSelectorItemAt(view_selector_.selectedIndex.get());
     if (item != core::state::ViewSelectorItem::SEQUENCER) return;
 

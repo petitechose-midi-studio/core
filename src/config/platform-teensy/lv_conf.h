@@ -45,7 +45,7 @@
 // Cortex-M7 cache line alignment for optimal DMA/memory performance
 #define LV_DRAW_BUF_STRIDE_ALIGN 4
 #define LV_DRAW_BUF_ALIGN 32
-#define LV_DRAW_TRANSFORM_USE_MATRIX 1
+#define LV_DRAW_TRANSFORM_USE_MATRIX 0
 #define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (32 * 1024)
 #define LV_DRAW_LAYER_MAX_MEMORY (64 * 1024)
 
@@ -64,7 +64,7 @@
 #define LV_DRAW_SW_SUPPORT_I1 0
 #define LV_DRAW_SW_DRAW_UNIT_CNT 0
 #define LV_DRAW_SW_COMPLEX 1
-#define LV_DRAW_SW_SHADOW_CACHE_SIZE 32        // Cache shadows (32² = 1KB RAM)
+#define LV_DRAW_SW_SHADOW_CACHE_SIZE 0
 #define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE
 #define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 0
 #endif
@@ -91,8 +91,8 @@
 #define LV_USE_OBJ_ID 0
 #define LV_USE_OBJ_NAME 0
 #define LV_USE_OBJ_PROPERTY 0
-#define LV_USE_FLOAT 1
-#define LV_USE_MATRIX 1
+#define LV_USE_FLOAT 0
+#define LV_USE_MATRIX 0
 
 #define LV_BIG_ENDIAN_SYSTEM 0
 #define LV_ATTRIBUTE_TICK_INC

@@ -1,0 +1,47 @@
+# UX workflow: edit two Step Edit properties in one session, then undo and redo
+# the session through the held LEFT_CENTER history layer.
+# Purpose: validates that a Step Edit apply creates one undoable action covering
+# all musical edits made during the session.
+# Expect: capture_match:step_enabled=undo_layer_closed, capture_match:step_edit_applied=redo_layer_closed
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable the first step so the musical result is visible on the grid.
+150 tap MACRO_1 60
+350 capture screen step_enabled
+
+# Long-press the same step to open Step Edit.
+450 button MACRO_1 down
+1500 tick
+1550 capture screen step_edit_open
+1600 button MACRO_1 up
+
+# Edit Note, then move to Gate and edit Gate in the same session.
+1700 encoder OPT 1.00
+1800 encoder NAV 1
+1900 encoder NAV 1
+2000 encoder OPT 1.00
+2150 capture screen step_edit_note_gate_adjusted
+
+# Apply the session.
+2250 tap NAV 60
+2450 capture screen step_edit_applied
+
+# Undo the whole Step Edit session as one action.
+2550 button LEFT_CENTER down
+3550 tick
+3600 capture screen undo_layer
+3650 tap LEFT_TOP 60
+5150 capture screen step_edit_undone
+5250 button LEFT_CENTER up
+5450 capture screen undo_layer_closed
+
+# Redo the whole Step Edit session as one action.
+5550 button LEFT_CENTER down
+6550 tick
+6600 capture screen redo_layer
+6650 tap LEFT_BOTTOM 60
+8150 capture screen step_edit_redone
+8250 button LEFT_CENTER up
+8450 capture screen redo_layer_closed

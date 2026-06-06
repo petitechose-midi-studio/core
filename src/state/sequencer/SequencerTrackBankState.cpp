@@ -6,13 +6,13 @@ namespace core::state::sequencer {
 
 namespace {
 
-uint16_t sanitizeEnabledMask(uint16_t enabledMask) {
+FLASHMEM uint16_t sanitizeEnabledMask(uint16_t enabledMask) {
     const uint16_t availableMask = static_cast<uint16_t>((1U << SequencerTrackBankState::TRACK_COUNT) - 1U);
     const uint16_t sanitized = static_cast<uint16_t>(enabledMask & availableMask);
     return sanitized == 0 ? 0x0001 : sanitized;
 }
 
-uint8_t firstEnabledTrack(uint16_t enabledMask) {
+FLASHMEM uint8_t firstEnabledTrack(uint16_t enabledMask) {
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
             return i;
@@ -21,7 +21,7 @@ uint8_t firstEnabledTrack(uint16_t enabledMask) {
     return 0;
 }
 
-uint8_t sanitizeActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
+FLASHMEM uint8_t sanitizeActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
     const uint8_t clamped = SequencerTrackBankState::clampTrackIndex(activeTrack);
     return (enabledMask & static_cast<uint16_t>(1U << clamped)) != 0
         ? clamped
@@ -43,6 +43,28 @@ FLASHMEM void SequencerTrackBankState::syncSharedTrackState(uint16_t enabledMask
     if (active_track_.get() != sanitizedActive) {
         active_track_.set(sanitizedActive);
     }
+}
+
+FLASHMEM bool SequencerTrackBankState::setProjectScaleSettings(
+    oc::note::sequencer::StepSequencerScaleSettings settings
+) {
+    settings.clamp();
+    auto current = project_scale_settings_;
+    current.clamp();
+    if (current.root == settings.root &&
+        current.type == settings.type &&
+        current.mode == settings.mode) {
+        return false;
+    }
+
+    project_scale_settings_ = settings;
+    project_scale_revision_.set(project_scale_revision_.get() + 1U);
+    for (auto& track : tracks_) {
+        if (!isPatternScaleOverride(track.scalePolicy)) {
+            track.bumpPatternScaleRevision();
+        }
+    }
+    return true;
 }
 
 FLASHMEM void SequencerTrackBankState::reset() {

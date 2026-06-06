@@ -27,10 +27,10 @@ namespace core::context {
 namespace input_utils = core::handler::sequencer::input_utils;
 
 // Constructor and destructor must be in .cpp where handler types are complete
-StandaloneContext::StandaloneContext(core::state::CoreState& state)
+FLASHMEM StandaloneContext::StandaloneContext(core::state::CoreState& state)
     : core_state_(state) {}
 
-StandaloneContext::~StandaloneContext() = default;
+FLASHMEM StandaloneContext::~StandaloneContext() = default;
 
 // =============================================================================
 // IContext Lifecycle

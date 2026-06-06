@@ -125,7 +125,7 @@ bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionSt
 
 }  // namespace
 
-ContextActionStrip::ContextActionStrip(
+FLASHMEM ContextActionStrip::ContextActionStrip(
     lv_obj_t* parent,
     ContextActionStripOrientation orientation,
     ContextActionStripVerticalLayout verticalLayout
@@ -134,7 +134,7 @@ ContextActionStrip::ContextActionStrip(
     createUI(parent);
 }
 
-ContextActionStrip::~ContextActionStrip() {
+FLASHMEM ContextActionStrip::~ContextActionStrip() {
     if (hold_timer_) {
         lv_timer_del(hold_timer_);
         hold_timer_ = nullptr;

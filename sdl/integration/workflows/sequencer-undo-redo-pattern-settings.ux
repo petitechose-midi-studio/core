@@ -1,0 +1,41 @@
+# UX workflow: change pattern pitch settings, then undo and redo the change.
+# Purpose: validates pattern pitch settings participate in sequencer history.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Open the pitch property settings from the NOTE property selector.
+150 button LEFT_BOTTOM down
+300 capture screen pitch_property_selector_open
+400 tap BOTTOM_LEFT 60
+520 button LEFT_BOTTOM up
+700 capture screen pattern_pitch_settings_inherit
+
+# Switch the pattern from inherited project scale to local override.
+800 tap NAV 60
+900 encoder NAV 1
+1050 capture screen pattern_pitch_override_selector
+1150 tap NAV 60
+1350 capture screen pattern_pitch_override_applied
+
+# Return to the sequencer view.
+1450 tap LEFT_TOP 60
+1750 capture screen sequencer_after_pattern_settings
+
+# Undo the pattern setting.
+1850 button LEFT_CENTER down
+2850 tick
+2900 capture screen undo_layer
+2950 tap LEFT_TOP 60
+4450 capture screen pattern_settings_undone_toast
+4550 button LEFT_CENTER up
+5850 capture screen pattern_settings_undone_closed
+
+# Redo the pattern setting.
+5950 button LEFT_CENTER down
+6950 tick
+7000 capture screen redo_layer
+7050 tap LEFT_BOTTOM 60
+8550 capture screen pattern_settings_redone_toast
+8650 button LEFT_CENTER up
+9950 capture screen pattern_settings_redone_closed

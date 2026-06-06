@@ -53,8 +53,12 @@ struct SequencerState {
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepInlineFeedbackState stepInlineFeedback;
     SequencerPatternVariationFeedbackState patternVariationFeedback;
+    SequencerHistoryFeedbackState historyFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
     SequencerStructureUiState structureUi;
+
+    SequencerState();
+    ~SequencerState();
 
     static uint8_t clampMidi7(uint8_t value) {
         return SequencerPatternState::clampMidi7(value);
@@ -72,64 +76,18 @@ struct SequencerState {
         return SequencerPatternState::clampProbability(value);
     }
 
-    void invalidateVariationTelemetry() {
-        lastResolvedVariation = {};
-        cycleVariationTelemetry.reset();
-        variationTelemetryRevision.set(variationTelemetryRevision.get() + 1);
-    }
-
-    void invalidateStepVariationTelemetry(uint8_t step) {
-        if (step >= MAX_STEPS) return;
-        if (!cycleVariationTelemetry.validMask.test(step) &&
-            lastResolvedVariation.stepIndex != step) {
-            return;
-        }
-
-        cycleVariationTelemetry.validMask.setBit(step, false);
-        cycleVariationTelemetry.triggeredMask.setBit(step, false);
-        cycleVariationTelemetry.scaleInMask.setBit(step, false);
-        cycleVariationTelemetry.scaleConstrainedMask.setBit(step, false);
-        if (lastResolvedVariation.stepIndex == step) {
-            lastResolvedVariation = {};
-        }
-        variationTelemetryRevision.set(variationTelemetryRevision.get() + 1);
-    }
+    void invalidateVariationTelemetry();
+    void invalidateStepVariationTelemetry(uint8_t step);
 
     uint8_t variationRangeForProperty(StepProperty property) const {
         return pattern.variationRangeForProperty(property);
     }
 
-    bool setVariationRangeForProperty(StepProperty property, uint8_t range) {
-        if (!pattern.setVariationRangeForProperty(property, range)) return false;
-        invalidateVariationTelemetry();
-        return true;
-    }
-
-    bool setPatternVariationRanges(
-        oc::note::sequencer::StepSequencerVariationRanges ranges
-    ) {
-        if (!pattern.setPatternVariationRanges(ranges)) return false;
-        invalidateVariationTelemetry();
-        return true;
-    }
-
-    bool setPatternScalePolicy(SequencerPatternScalePolicy policy) {
-        if (!pattern.setPatternScalePolicy(policy)) return false;
-        invalidateVariationTelemetry();
-        return true;
-    }
-
-    bool setPatternScaleOverride(oc::note::sequencer::StepSequencerScaleSettings settings) {
-        if (!pattern.setPatternScaleOverride(settings)) return false;
-        invalidateVariationTelemetry();
-        return true;
-    }
-
-    bool setPitchEditMode(SequencerPitchEditMode mode) {
-        if (!pattern.setPitchEditMode(mode)) return false;
-        invalidateVariationTelemetry();
-        return true;
-    }
+    bool setVariationRangeForProperty(StepProperty property, uint8_t range);
+    bool setPatternVariationRanges(oc::note::sequencer::StepSequencerVariationRanges ranges);
+    bool setPatternScalePolicy(SequencerPatternScalePolicy policy);
+    bool setPatternScaleOverride(oc::note::sequencer::StepSequencerScaleSettings settings);
+    bool setPitchEditMode(SequencerPitchEditMode mode);
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
         if (!pattern.setStepNoteAt(step, noteValue)) return false;
@@ -214,30 +172,12 @@ struct SequencerState {
         return true;
     }
 
-    void reset() {
-        pattern.reset();
-        page.set(0);
-        focusedStep.set(0);
-        playheadStep.set(-1);
-        probabilityCycleRevision.set(0);
-        probabilityCycleMask = {};
-        probabilityCycleIndex = 0;
-        lastResolvedVariation = {};
-        cycleVariationTelemetry.reset();
-        variationTelemetryRevision.set(0);
-        activeStepProperty.set(StepProperty::NOTE);
-
-        stepEdit.reset();
-        stepPropertyInlineSelector.reset();
-        stepInlineFeedback.reset();
-        patternVariationFeedback.reset();
-        patternQuickControls.reset();
-        structureUi.reset();
-    }
+    void reset();
 
     void updateUi(uint32_t nowMs) {
         stepInlineFeedback.update(nowMs);
         patternVariationFeedback.update(nowMs);
+        historyFeedback.update(nowMs);
     }
 
     uint8_t activePageCount() const {

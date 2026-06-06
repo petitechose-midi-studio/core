@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroPersistenceWorkflow.hpp"
 #include "state/sequencer/SequencerPersistenceWorkflow.hpp"
@@ -15,28 +16,31 @@ FLASHMEM bool slotOccupied(CoreState& state, DataManagerCommand command, uint8_t
         case DataManagerSlotDomain::MACRO_LIBRARY: {
             if (!state.isMacroPersistenceReady()) return false;
 
-            macro::MacroPagesState probe;
-            probe.initDefaults();
-            return state.macroPersistence.loadLibrarySlot(slotIndex, probe) == SlotLoadStatus::OK;
+            auto probe = core::app::makeExtmemUnique<macro::MacroPagesState>();
+            if (!probe) return false;
+            probe->initDefaults();
+            return state.macroPersistence.loadLibrarySlot(slotIndex, *probe) == SlotLoadStatus::OK;
         }
 
         case DataManagerSlotDomain::SEQ_PATTERN_LIBRARY: {
             if (!state.isSequencerPersistenceReady()) return false;
 
-            sequencer::SequencerState probe;
-            probe.reset();
-            return state.sequencerPersistence.loadPatternSlot(slotIndex, probe) ==
+            auto probe = core::app::makeExtmemUnique<sequencer::SequencerState>();
+            if (!probe) return false;
+            probe->reset();
+            return state.sequencerPersistence.loadPatternSlot(slotIndex, *probe) ==
                    SlotLoadStatus::OK;
         }
 
         case DataManagerSlotDomain::SEQ_SET_LIBRARY: {
             if (!state.isSequencerPersistenceReady()) return false;
 
-            sequencer::SequencerTrackBankState probeBank;
-            sequencer::SequencerState probe;
-            probeBank.reset();
-            probe.reset();
-            return state.sequencerPersistence.loadSetSlot(slotIndex, probeBank, probe) ==
+            auto probeBank = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
+            auto probe = core::app::makeExtmemUnique<sequencer::SequencerState>();
+            if (!probeBank || !probe) return false;
+            probeBank->reset();
+            probe->reset();
+            return state.sequencerPersistence.loadSetSlot(slotIndex, *probeBank, *probe) ==
                    SlotLoadStatus::OK;
         }
 

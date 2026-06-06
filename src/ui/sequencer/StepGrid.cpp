@@ -366,16 +366,16 @@ void drawRuntimeVariation(lv_layer_t* layer,
 
 }  // namespace
 
-StepGrid::StepGrid(lv_obj_t* parent,
-                   GeometryInvalidatedCallback geometryInvalidated,
-                   void* geometryInvalidatedUserData)
+FLASHMEM StepGrid::StepGrid(lv_obj_t* parent,
+                            GeometryInvalidatedCallback geometryInvalidated,
+                            void* geometryInvalidatedUserData)
     : geometry_invalidated_(geometryInvalidated)
     , geometry_invalidated_user_data_(geometryInvalidatedUserData) {
     createUI(parent);
     createTiles();
 }
 
-StepGrid::~StepGrid() {
+FLASHMEM StepGrid::~StepGrid() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -384,7 +384,7 @@ StepGrid::~StepGrid() {
     }
 }
 
-void StepGrid::prepareForActivationLayoutRefresh() {
+FLASHMEM void StepGrid::prepareForActivationLayoutRefresh() {
     geometry_.dirty = true;
     geometry_.forceLayoutRefresh = true;
 }
@@ -437,19 +437,19 @@ FLASHMEM void StepGrid::createTiles() {
     }
 }
 
-void StepGrid::invalidateTileCaches() {
+FLASHMEM void StepGrid::invalidateTileCaches() {
     for (auto& cache : render_cache_.tiles) {
         cache.initialized = false;
     }
 }
 
-void StepGrid::onGeometryChangedEvent(lv_event_t* event) {
+FLASHMEM void StepGrid::onGeometryChangedEvent(lv_event_t* event) {
     auto* self = static_cast<StepGrid*>(lv_event_get_user_data(event));
     if (!self) return;
     self->markGeometryDirty();
 }
 
-void StepGrid::markGeometryDirty() {
+FLASHMEM void StepGrid::markGeometryDirty() {
     const bool wasDirty = geometry_.dirty;
     geometry_.dirty = true;
     if (!wasDirty && geometry_invalidated_) {
@@ -457,7 +457,7 @@ void StepGrid::markGeometryDirty() {
     }
 }
 
-bool StepGrid::refreshStaticGeometry() {
+FLASHMEM bool StepGrid::refreshStaticGeometry() {
     if (!note_layer_ || !container_) return false;
 
     const lv_coord_t containerWidth = lv_obj_get_width(container_);

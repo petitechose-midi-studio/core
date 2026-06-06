@@ -3,6 +3,8 @@
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 
+#include <utility>
+
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
 
@@ -15,7 +17,7 @@ constexpr uint8_t ROW_COUNT =
     static_cast<uint8_t>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
 
 template <typename EncoderIdT>
-void configureStepEditEncoder(
+FLASHMEM void configureStepEditEncoder(
     oc::api::EncoderAPI& encoders,
     EncoderIdT encoderId,
     core::state::sequencer::StepProperty property,
@@ -45,7 +47,7 @@ inline oc::type::IsActiveFn canOpenStepEdit(
 
 }  // namespace
 
-SequencerStepEditHandler::SequencerStepEditHandler(
+FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     StateRefs state,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
@@ -56,6 +58,7 @@ SequencerStepEditHandler::SequencerStepEditHandler(
     : overlay_state_(state.overlays)
     , sequencer_(state.sequencer)
     , track_ui_(state.trackNavigation)
+    , history_(state.history)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -113,9 +116,14 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
 
 }
 
-void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
+FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
+    history_.commitCoalescedPatternEdit();
+
     uint8_t abs = 0;
     if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
+
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
 
     sequencer_.focusedStep.set(abs);
 
@@ -139,13 +147,28 @@ void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
     configureOptForFocusedRow();
 }
 
-void SequencerStepEditHandler::closeApply() {
+FLASHMEM void SequencerStepEditHandler::closeApply() {
+    if (history_snapshot_valid_) {
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+            history_.recordPattern(
+                std::move(history_snapshot_),
+                std::move(after),
+                core::state::sequencer::SequencerHistoryDescriptor{
+                    .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+                    .stepIndex = sequencer_.stepEdit.stepIndex.get(),
+                }
+            );
+        }
+    }
+
+    history_snapshot_valid_ = false;
     ignore_open_release_ = false;
     overlays_.hide();
     sequencer_.stepEdit.reset();
 }
 
-void SequencerStepEditHandler::closeCancel() {
+FLASHMEM void SequencerStepEditHandler::closeCancel() {
     auto& o = sequencer_.stepEdit;
 
     const uint8_t abs = o.stepIndex.get();
@@ -160,12 +183,13 @@ void SequencerStepEditHandler::closeCancel() {
         );
     }
 
+    history_snapshot_valid_ = false;
     ignore_open_release_ = false;
     overlays_.hide();
     o.reset();
 }
 
-void SequencerStepEditHandler::moveFocus(float delta) {
+FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     const int current = static_cast<int>(sequencer_.stepEdit.focusedRow.get());
@@ -175,7 +199,7 @@ void SequencerStepEditHandler::moveFocus(float delta) {
     configureOptForFocusedRow();
 }
 
-void SequencerStepEditHandler::setFocusedValue(float normalized) {
+FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
     const uint8_t len = sequencer_.pattern.length.get();
     if (len == 0) return;
 
@@ -191,7 +215,7 @@ void SequencerStepEditHandler::setFocusedValue(float normalized) {
     );
 }
 
-void SequencerStepEditHandler::configureOptForFocusedRow() {
+FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
     const uint8_t len = sequencer_.pattern.length.get();
     if (len == 0) return;
 
@@ -208,7 +232,7 @@ void SequencerStepEditHandler::configureOptForFocusedRow() {
     );
 }
 
-void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexInPage) {
+FLASHMEM void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexInPage) {
     if (ignore_open_release_ && indexInPage == ignore_open_macro_index_in_page_) {
         ignore_open_release_ = false;
         return;

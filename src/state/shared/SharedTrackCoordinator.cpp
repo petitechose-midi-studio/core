@@ -1,5 +1,7 @@
 #include "state/shared/SharedTrackCoordinator.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state::shared {
@@ -9,7 +11,7 @@ namespace {
 constexpr uint16_t kSharedTrackMaskAll =
     static_cast<uint16_t>((1U << sequencer::SequencerTrackBankState::TRACK_COUNT) - 1U);
 
-uint8_t firstEnabledTrack(uint16_t enabledMask) {
+FLASHMEM uint8_t firstEnabledTrack(uint16_t enabledMask) {
     for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
             return i;
@@ -20,12 +22,12 @@ uint8_t firstEnabledTrack(uint16_t enabledMask) {
 
 }  // namespace
 
-uint16_t SharedTrackCoordinator::sanitizeEnabledMask(uint16_t enabledMask) {
+FLASHMEM uint16_t SharedTrackCoordinator::sanitizeEnabledMask(uint16_t enabledMask) {
     const uint16_t sanitized = static_cast<uint16_t>(enabledMask & kSharedTrackMaskAll);
     return sanitized == 0 ? 0x0001 : sanitized;
 }
 
-uint8_t SharedTrackCoordinator::sanitizeActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
+FLASHMEM uint8_t SharedTrackCoordinator::sanitizeActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
     const uint16_t sanitizedMask = sanitizeEnabledMask(enabledMask);
     const uint8_t clamped = sequencer::SequencerTrackBankState::clampTrackIndex(activeTrack);
     if ((sanitizedMask & static_cast<uint16_t>(1U << clamped)) != 0) {
@@ -34,7 +36,7 @@ uint8_t SharedTrackCoordinator::sanitizeActiveTrack(uint16_t enabledMask, uint8_
     return firstEnabledTrack(sanitizedMask);
 }
 
-SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
+FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
     StateRefs state,
     uint16_t enabledMask,
     uint8_t activeTrack
@@ -69,7 +71,7 @@ SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
     };
 }
 
-SharedTrackCoordinator::Result SharedTrackCoordinator::refreshFromMacroPages(StateRefs state) {
+FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::refreshFromMacroPages(StateRefs state) {
     return apply(
         state,
         state.macroPages.currentTrackEnabledMask(),
@@ -77,7 +79,7 @@ SharedTrackCoordinator::Result SharedTrackCoordinator::refreshFromMacroPages(Sta
     );
 }
 
-SharedTrackCoordinator::Result SharedTrackCoordinator::refreshFromSequencer(StateRefs state) {
+FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::refreshFromSequencer(StateRefs state) {
     return apply(
         state,
         state.sequencerTracks.currentEnabledMask(),

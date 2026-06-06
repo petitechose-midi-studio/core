@@ -164,6 +164,9 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         core::handler::SequencerSettingsHandler::StateRefs{
             stateRefs.sequencerSettings,
             stateRefs.viewSelector,
+            stateRefs.sequencer,
+            stateRefs.sequencerTracks,
+            stateRefs.history,
         },
         sequencerSettingsServices,
         overlays,
@@ -174,6 +177,6 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     );
 }
 
-SettingsFeatureModule::~SettingsFeatureModule() = default;
+FLASHMEM SettingsFeatureModule::~SettingsFeatureModule() = default;
 
 }  // namespace core::context::standalone

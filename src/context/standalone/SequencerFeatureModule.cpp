@@ -127,7 +127,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     pattern_pitch_settings_presenter_->bind();
     encoder_sync_->bind();
 
-    step_handler_ = std::make_unique<core::handler::SequencerStepHandler>(
+    step_handler_ = core::app::makeExtmemUnique<core::handler::SequencerStepHandler>(
         core::handler::SequencerStepHandler::StateRefs{
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
@@ -146,7 +146,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
 #endif
     );
     quick_controls_handler_ =
-        std::make_unique<core::handler::SequencerPatternQuickControlsHandler>(
+        core::app::makeExtmemUnique<core::handler::SequencerPatternQuickControlsHandler>(
             core::handler::SequencerPatternQuickControlsHandler::StateRefs{
                 stateRefs.overlays,
                 stateRefs.sequencer,
@@ -157,11 +157,12 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             buttons,
             sequencerViewScopeId
         );
-    step_edit_handler_ = std::make_unique<core::handler::SequencerStepEditHandler>(
+    step_edit_handler_ = core::app::makeExtmemUnique<core::handler::SequencerStepEditHandler>(
         core::handler::SequencerStepEditHandler::StateRefs{
             stateRefs.overlays,
             stateRefs.sequencer,
             stateRefs.trackNavigation,
+            stateRefs.history,
         },
         overlays,
         encoders,
@@ -170,11 +171,12 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement())
     );
     property_selector_handler_ =
-        std::make_unique<core::handler::SequencerPropertySelectorHandler>(
+        core::app::makeExtmemUnique<core::handler::SequencerPropertySelectorHandler>(
             core::handler::SequencerPropertySelectorHandler::StateRefs{
                 stateRefs.overlays,
                 stateRefs.sequencer,
                 stateRefs.trackNavigation,
+                stateRefs.history,
             },
             encoders,
             buttons,
@@ -182,10 +184,11 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             oc::time::millis
         );
     pattern_pitch_settings_handler_ =
-        std::make_unique<core::handler::PatternPitchSettingsHandler>(
+        core::app::makeExtmemUnique<core::handler::PatternPitchSettingsHandler>(
             core::handler::PatternPitchSettingsHandler::StateRefs{
                 stateRefs.patternPitchSettings,
                 stateRefs.sequencer,
+                stateRefs.history,
             },
             core::handler::PatternPitchSettingsDomainServices{
                 core::handler::PatternPitchSettingsDomainServices::StateRefs{
@@ -201,12 +204,13 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             oc::ui::lvgl::scopeID(pattern_pitch_settings_selector_overlay_->getElement())
         );
     macro_property_handler_ =
-        std::make_unique<core::handler::SequencerMacroPropertyHandler>(
+        core::app::makeExtmemUnique<core::handler::SequencerMacroPropertyHandler>(
             core::handler::SequencerMacroPropertyHandler::StateRefs{
                 stateRefs.overlays,
                 stateRefs.sequencer,
                 stateRefs.sequencerTracks,
                 stateRefs.trackNavigation,
+                stateRefs.history,
             },
             encoders,
             sequencerViewScopeId,
@@ -214,7 +218,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
 }
 
-SequencerFeatureModule::~SequencerFeatureModule() = default;
+FLASHMEM SequencerFeatureModule::~SequencerFeatureModule() = default;
 
 void SequencerFeatureModule::resetEncoderSync() {
     if (encoder_sync_) {

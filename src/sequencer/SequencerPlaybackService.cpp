@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "config/TimeCompat.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
@@ -108,9 +109,13 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     last_active_track_ = trackBank.activeTrackIndex();
     runtime_active_track_ = last_active_track_;
     runtime_enabled_mask_ = trackBank.currentEnabledMask();
-    core::state::sequencer::SequencerTrackBankSnapshot snapshot;
-    core::state::sequencer::captureTrackBankSnapshot(trackBank, sequencer, snapshot);
-    syncRuntimeStates_(snapshot);
+    auto snapshot = core::app::makeExtmemUnique<
+        core::state::sequencer::SequencerTrackBankSnapshot
+    >();
+    if (snapshot) {
+        core::state::sequencer::captureTrackBankSnapshot(trackBank, sequencer, *snapshot);
+        syncRuntimeStates_(*snapshot);
+    }
     publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
 }
 
@@ -234,7 +239,7 @@ void SequencerPlaybackService::syncRuntimeGraph_(
 
     if (!track_runtime_graphs_[trackIndex]) {
         track_runtime_graphs_[trackIndex] =
-            std::make_unique<oc::note::sequencer::StepSequencerGraph>();
+            core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
     }
     if (!track_runtime_graphs_[trackIndex]) {
         track_engines_[trackIndex]->setGraph(nullptr);
@@ -303,10 +308,10 @@ FLASHMEM bool SequencerPlaybackService::takeProfilingSnapshot(uint32_t nowMs, Pr
     return profiler_.takeSnapshot(nowMs, snapshot);
 }
 
-FLASHMEM void SequencerPlaybackService::recordProfiling_(uint32_t tick,
-                                                         bool playing,
-                                                         uint32_t updateUs,
-                                                         uint32_t nowMs) {
+void SequencerPlaybackService::recordProfiling_(uint32_t tick,
+                                                bool playing,
+                                                uint32_t updateUs,
+                                                uint32_t nowMs) {
     profiler_.record(tick, playing, updateUs, pending_note_activity_.snapshot(), nowMs);
 }
 

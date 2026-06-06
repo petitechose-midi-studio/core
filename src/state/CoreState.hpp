@@ -78,6 +78,7 @@ struct MacroDomainState {
         : runtime(core::app::makeExtmemUnique<MacroState>())
         , pages(core::app::makeExtmemUnique<macro::MacroPagesState>())
         , persistence(workspaceStorage, libraryStorage) {}
+    ~MacroDomainState();
 
     MacroDomainState(const MacroDomainState&) = delete;
     MacroDomainState& operator=(const MacroDomainState&) = delete;
@@ -88,6 +89,8 @@ struct MacroDomainState {
  * pending load snapshots staged while transport is playing.
  */
 struct SequencerDomainState {
+    static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
+
     struct PendingApply {
         bool valid = false;
         int16_t anchorPlayhead = -1;
@@ -108,17 +111,46 @@ struct SequencerDomainState {
 
     using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;
 
+    struct CoalescedPatternHistory {
+        bool pending = false;
+        uint8_t activeTrack = 0;
+        uint8_t step = 0;
+        sequencer::StepProperty property = sequencer::StepProperty::NOTE;
+        uint32_t lastTouchedMs = 0;
+        sequencer::SequencerHistoryPatternSnapshot before{};
+
+        bool matches(uint8_t nextActiveTrack,
+                     uint8_t nextStep,
+                     sequencer::StepProperty nextProperty) const {
+            return pending &&
+                   activeTrack == nextActiveTrack &&
+                   step == nextStep &&
+                   property == nextProperty;
+        }
+
+        void clear() {
+            pending = false;
+            activeTrack = 0;
+            step = 0;
+            property = sequencer::StepProperty::NOTE;
+            lastTouchedMs = 0;
+            before = sequencer::SequencerHistoryPatternSnapshot{};
+        }
+    };
+
     core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
     sequencer::SequencerHistoryService history;
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
+    CoalescedPatternHistory coalescedPatternHistory;
     std::unique_ptr<oc::state::AutoPersistIncremental<13>> autoPersist;
 
     SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                          oc::interface::IStorage& patternLibraryStorage,
                          oc::interface::IStorage& setLibraryStorage);
+    ~SequencerDomainState();
 
     SequencerDomainState(const SequencerDomainState&) = delete;
     SequencerDomainState& operator=(const SequencerDomainState&) = delete;
@@ -156,6 +188,7 @@ struct UiSystemState {
     macro::MacroUiState macroUi;
 
     UiSystemState();
+    ~UiSystemState();
 };
 
 /**
@@ -259,9 +292,21 @@ public:
     void requestMacroWorkspacePersist();
     void persistSequencerWorkspace();
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
-                                       sequencer::SequencerHistoryPatternSnapshot after);
+                                       sequencer::SequencerHistoryPatternSnapshot after,
+                                       sequencer::SequencerHistoryDescriptor descriptor = {});
+    bool recordSequencerBankHistory(sequencer::SequencerHistoryTrackBankSnapshot before,
+                                    sequencer::SequencerHistoryTrackBankSnapshot after,
+                                    sequencer::SequencerHistoryDescriptor descriptor = {});
+    bool recordSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
+    bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
+                                                          sequencer::StepProperty property,
+                                                          uint32_t nowMs);
+    bool commitSequencerPatternHistoryCoalescing();
+    bool updateSequencerPatternHistoryCoalescing(uint32_t nowMs);
+    bool hasPendingSequencerPatternHistoryCoalescing() const;
     bool undoSequencerHistory();
     bool redoSequencerHistory();
+    void clearSequencerHistory();
     void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false);
     void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankState& stagedBank,
                                         const sequencer::SequencerState& staged);

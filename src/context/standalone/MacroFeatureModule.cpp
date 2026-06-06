@@ -182,7 +182,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
     );
 }
 
-MacroFeatureModule::~MacroFeatureModule() = default;
+FLASHMEM MacroFeatureModule::~MacroFeatureModule() = default;
 
 void MacroFeatureModule::onCC(uint8_t channel, uint8_t cc, uint8_t value) {
     if (midi_handler_) {

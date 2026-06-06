@@ -2,6 +2,7 @@
 
 #include <array>
 
+#include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
 #include "state/sequencer/StepPropertyDisplay.hpp"
@@ -27,7 +28,7 @@ constexpr std::array<const char*, 5> STEP_EDIT_KEYS = {
 
 }  // namespace
 
-StepEditRenderData buildStepEditRenderData(const Source& source) {
+FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     StepEditRenderData data{};
     auto& sequencer = source.sequencer;
     data.visible = sequencer.stepEdit.visible.get();

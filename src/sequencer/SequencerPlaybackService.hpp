@@ -8,6 +8,7 @@
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerMidiEventSink.hpp"
 #include "sequencer/SequencerPlaybackProfiler.hpp"
@@ -114,7 +115,7 @@ private:
     // engines do not read their hottest state back from the PSRAM-backed parent.
     std::unique_ptr<oc::note::sequencer::StepSequencerRuntimeState[]> track_runtime_states_{};
     // Runtime-owned graph copies keep engines away from double-buffered snapshots.
-    std::array<std::unique_ptr<oc::note::sequencer::StepSequencerGraph>, TRACK_COUNT>
+    std::array<core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>, TRACK_COUNT>
         track_runtime_graphs_{};
     std::array<SequencerRuntimeStateSignature, TRACK_COUNT> track_runtime_signatures_{};
     std::array<std::unique_ptr<SequencerMidiEventSink>, TRACK_COUNT> track_event_sinks_{};

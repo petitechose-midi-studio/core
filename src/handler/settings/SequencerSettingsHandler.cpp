@@ -1,10 +1,14 @@
 #include "SequencerSettingsHandler.hpp"
 
+#include <utility>
+
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/ViewSelectorItems.hpp"
 
 namespace core::handler {
@@ -23,6 +27,9 @@ FLASHMEM SequencerSettingsHandler::SequencerSettingsHandler(
 )
     : sequencer_settings_(state.sequencerSettings)
     , view_selector_(state.viewSelector)
+    , sequencer_(state.sequencer)
+    , sequencer_tracks_(state.sequencerTracks)
+    , history_(state.history)
     , services_(services)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -129,11 +136,30 @@ FLASHMEM void SequencerSettingsHandler::navigateSelector(float delta) {
 }
 
 FLASHMEM void SequencerSettingsHandler::applySelectorAndClose() {
+    if (sequencer_settings_.flowPhase.get() !=
+        core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR) {
+        return;
+    }
+
     auto& selector = sequencer_settings_.selector;
     const uint8_t row = selector.editingRow.get();
     const int choice = selector.selectedIndex.get();
 
+    history_.commitCoalescedPatternEdit();
+
+    auto change = captureSequencerFullBankHistoryBefore(sequencer_tracks_, sequencer_);
+
     services_.applyChoice(row, choice);
+
+    if (change && captureSequencerFullBankHistoryAfter(sequencer_tracks_, sequencer_, *change)) {
+        recordSequencerFullBankHistoryChange(
+            history_,
+            std::move(change),
+            core::state::sequencer::SequencerHistoryDescriptor{
+                .kind = core::state::sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
+            }
+        );
+    }
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR);
     sequencer_settings_.closeSelector();

@@ -65,12 +65,7 @@ struct DataManagerDialogState {
     oc::state::Signal<int, 4> selectedIndex{0};
     oc::state::Signal<uint8_t, 4> editingShortcutRow{0};
 
-    void reset() {
-        visible.set(false);
-        mode.set(DataManagerDialogMode::ASSIGN_SHORTCUT);
-        selectedIndex.set(0);
-        editingShortcutRow.set(0);
-    }
+    void reset();
 };
 
 struct DataManagerState {
@@ -92,65 +87,18 @@ struct DataManagerState {
     DataManagerDialogState dialog;
 
     DataManagerState();
+    ~DataManagerState();
 
-    void resetSession(DataManagerContext activeContext) {
-        visible.set(false);
-        focusedRow.set(0);
-        context.set(activeContext);
-        flowPhase.set(DataManagerFlowPhase::CLOSED);
-        pendingCommand.set(DataManagerCommand::NONE);
-        pendingSlot.set(0);
-        pendingSetLoadMode.set(DataManagerSetLoadMode::REPLACE);
-        dialog.reset();
-    }
-
-    void openSession(DataManagerContext activeContext) {
-        resetSession(activeContext);
-        visible.set(true);
-        flowPhase.set(DataManagerFlowPhase::MANAGER);
-    }
-
-    void closeSession() {
-        visible.set(false);
-        flowPhase.set(DataManagerFlowPhase::CLOSED);
-        clearPendingCommand();
-        dialog.reset();
-        feedback.set("");
-    }
-
+    void resetSession(DataManagerContext activeContext);
+    void openSession(DataManagerContext activeContext);
+    void closeSession();
     void showDialog(DataManagerDialogMode mode,
                     int selectedIndex,
-                    uint8_t editingShortcutRow = 0) {
-        visible.set(true);
-        dialog.mode.set(mode);
-        dialog.selectedIndex.set(selectedIndex);
-        dialog.editingShortcutRow.set(editingShortcutRow);
-        dialog.visible.set(true);
-        flowPhase.set(dataManagerFlowPhaseForDialogMode(mode));
-    }
-
-    void closeDialog() {
-        dialog.reset();
-        flowPhase.set(visible.get() ? DataManagerFlowPhase::MANAGER : DataManagerFlowPhase::CLOSED);
-    }
-
-    void clearPendingCommand() {
-        pendingCommand.set(DataManagerCommand::NONE);
-        pendingSetLoadMode.set(DataManagerSetLoadMode::REPLACE);
-    }
-
-    DataManagerCommand shortcutForSide(DataManagerShortcutSide side) const {
-        const bool left = side == DataManagerShortcutSide::LEFT;
-        if (context.get() == DataManagerContext::MACRO) {
-            return left ? macroShortcutLeft.get() : macroShortcutRight.get();
-        }
-        return left ? seqShortcutLeft.get() : seqShortcutRight.get();
-    }
-
-    DataManagerCommand shortcutForRow(uint8_t row) const {
-        return shortcutForSide((row == 0U) ? DataManagerShortcutSide::LEFT
-                                           : DataManagerShortcutSide::RIGHT);
-    }
+                    uint8_t editingShortcutRow = 0);
+    void closeDialog();
+    void clearPendingCommand();
+    DataManagerCommand shortcutForSide(DataManagerShortcutSide side) const;
+    DataManagerCommand shortcutForRow(uint8_t row) const;
 
     uint8_t rowCount() const {
         return 2U;

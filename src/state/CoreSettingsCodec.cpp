@@ -1,33 +1,33 @@
 #include "state/CoreSettingsCodec.hpp"
 #include "state/CoreSettingsLayout.hpp"
 
-namespace layout = core::state::core_settings::layout;
+#include <config/PlatformCompat.hpp>
 
 namespace core::state::core_settings {
 
 using core::persistence::PersistenceWriteStatus;
 
-bool readExact(oc::interface::IStorage& backend, uint32_t address, uint8_t* buffer, size_t size) {
+FLASHMEM bool readExact(oc::interface::IStorage& backend, uint32_t address, uint8_t* buffer, size_t size) {
     if (!backend.available()) return false;
     return backend.read(address, buffer, size) == size;
 }
 
-bool writeExact(oc::interface::IStorage& backend, uint32_t address, const uint8_t* buffer, size_t size) {
+FLASHMEM bool writeExact(oc::interface::IStorage& backend, uint32_t address, const uint8_t* buffer, size_t size) {
     if (!backend.available()) return false;
     return backend.write(address, buffer, size) == size;
 }
 
-PersistenceWriteStatus writeExactStatus(oc::interface::IStorage& backend,
-                                        uint32_t address,
-                                        const uint8_t* buffer,
-                                        size_t size) {
+FLASHMEM PersistenceWriteStatus writeExactStatus(oc::interface::IStorage& backend,
+                                                 uint32_t address,
+                                                 const uint8_t* buffer,
+                                                 size_t size) {
     if (!backend.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     return writeExact(backend, address, buffer, size)
                ? PersistenceWriteStatus::OK
                : PersistenceWriteStatus::IO_ERROR;
 }
 
-PersistenceWriteStatus writeDefaultShortcuts(oc::interface::IStorage& backend) {
+FLASHMEM PersistenceWriteStatus writeDefaultShortcuts(oc::interface::IStorage& backend) {
     const uint8_t macroLeft = layout::DEFAULT_SHORTCUT_MACRO_LEFT;
     const uint8_t macroRight = layout::DEFAULT_SHORTCUT_MACRO_RIGHT;
     const uint8_t seqLeft = layout::DEFAULT_SHORTCUT_SEQ_LEFT;
@@ -48,10 +48,10 @@ PersistenceWriteStatus writeDefaultShortcuts(oc::interface::IStorage& backend) {
     return writeExactStatus(backend, layout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
 }
 
-PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
-                               const MidiSyncState& midiSync,
-                               uint16_t sharedTrackEnabledMask,
-                               uint8_t sharedTrackActive) {
+FLASHMEM PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
+                                        const MidiSyncState& midiSync,
+                                        uint16_t sharedTrackEnabledMask,
+                                        uint8_t sharedTrackActive) {
     const uint32_t magic = layout::MAGIC;
     const uint8_t version = layout::VERSION;
     const uint8_t mode = static_cast<uint8_t>(midiSync.mode.get());
@@ -126,7 +126,7 @@ PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
     return backend.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
 }
 
-bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midiSync) {
+FLASHMEM bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midiSync) {
     uint8_t rawMode = static_cast<uint8_t>(MidiSyncMode::AUTO);
     if (!readExact(backend, layout::ADDR_SYNC_MODE, &rawMode, 1)) {
         return false;
@@ -165,10 +165,10 @@ bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midiSync) {
     return true;
 }
 
-bool loadSharedTrackState(oc::interface::IStorage& backend,
-                          uint16_t& sharedTrackEnabledMask,
-                          uint8_t& sharedTrackActive,
-                          uint8_t version) {
+FLASHMEM bool loadSharedTrackState(oc::interface::IStorage& backend,
+                                   uint16_t& sharedTrackEnabledMask,
+                                   uint8_t& sharedTrackActive,
+                                   uint8_t version) {
     sharedTrackEnabledMask = layout::DEFAULT_SHARED_TRACK_ENABLED_MASK;
     sharedTrackActive = layout::DEFAULT_SHARED_TRACK_ACTIVE;
 
@@ -193,11 +193,11 @@ bool loadSharedTrackState(oc::interface::IStorage& backend,
     return true;
 }
 
-bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
-                              uint8_t& macroLeft,
-                              uint8_t& macroRight,
-                              uint8_t& seqLeft,
-                              uint8_t& seqRight) {
+FLASHMEM bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
+                                       uint8_t& macroLeft,
+                                       uint8_t& macroRight,
+                                       uint8_t& seqLeft,
+                                       uint8_t& seqRight) {
     macroLeft = layout::DEFAULT_SHORTCUT_MACRO_LEFT;
     macroRight = layout::DEFAULT_SHORTCUT_MACRO_RIGHT;
     seqLeft = layout::DEFAULT_SHORTCUT_SEQ_LEFT;

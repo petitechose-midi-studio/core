@@ -1,23 +1,23 @@
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
 
-#include <algorithm>
+#include <config/PlatformCompat.hpp>
 
 namespace core::state::sequencer {
 
 namespace {
 
-uint16_t pageBit(uint8_t page) {
+FLASHMEM uint16_t pageBit(uint8_t page) {
     return static_cast<uint16_t>(1U << page);
 }
 
-uint16_t activePageMask(uint8_t pageCount) {
+FLASHMEM uint16_t activePageMask(uint8_t pageCount) {
     if (pageCount >= SequencerState::PAGE_COUNT) {
         return static_cast<uint16_t>((1U << SequencerState::PAGE_COUNT) - 1U);
     }
     return static_cast<uint16_t>((1U << pageCount) - 1U);
 }
 
-uint8_t findFirstSelectedPage(uint16_t selectedMask) {
+FLASHMEM uint8_t findFirstSelectedPage(uint16_t selectedMask) {
     for (uint8_t page = 0; page < SequencerState::PAGE_COUNT; ++page) {
         if ((selectedMask & pageBit(page)) != 0) {
             return page;
@@ -28,7 +28,7 @@ uint8_t findFirstSelectedPage(uint16_t selectedMask) {
 
 }  // namespace
 
-SequencerPageDuplicatePlan buildPageDuplicatePlan(
+FLASHMEM SequencerPageDuplicatePlan buildPageDuplicatePlan(
     const SequencerState& sequencer,
     uint16_t selectedMask,
     uint8_t cursorPage

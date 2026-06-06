@@ -50,25 +50,10 @@ struct MacroPageData {
     std::array<uint8_t, MACRO_COUNT> cc;            ///< CC numbers (8 bytes)
     std::array<float, MACRO_COUNT> values;          ///< Last values (32 bytes)
 
-    MacroPageData() {
-        std::memset(name, 0, PAGE_NAME_SIZE);
-        std::strncpy(name, "Page 1", PAGE_NAME_SIZE - 1);
-        cc.fill(0);
-        values.fill(0.5f);
-    }
+    MacroPageData();
 
     /// Initialize with page number
-    void initDefault(uint8_t pageIndex) {
-        std::memset(name, 0, PAGE_NAME_SIZE);
-        size_t pos = oc::type::text::appendString(name, PAGE_NAME_SIZE, 0, "Page ");
-        pos = oc::type::text::appendUnsigned(name, PAGE_NAME_SIZE, pos, pageIndex + 1);
-        oc::type::text::terminate(name, PAGE_NAME_SIZE, pos);
-
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            cc[i] = static_cast<uint8_t>(pageIndex * MACRO_COUNT + i);
-            values[i] = 0.5f;
-        }
-    }
+    void initDefault(uint8_t pageIndex);
 
     /// Get config for a macro
     MacroConfig getConfig(uint8_t macroIndex, uint8_t trackChannel) const {
@@ -97,18 +82,9 @@ struct MacroTrackData {
     uint16_t enabledPageMask = 0x0001;  ///< Enabled macro pages for this track
     std::array<MacroPageData, PAGE_COUNT> pages{};
 
-    MacroTrackData() {
-        initDefaults(0);
-    }
+    MacroTrackData();
 
-    void initDefaults(uint8_t trackIndex) {
-        channel = static_cast<uint8_t>(trackIndex % 16U);
-        activePage = 0;
-        enabledPageMask = 0x0001;
-        for (uint8_t i = 0; i < PAGE_COUNT; ++i) {
-            pages[i].initDefault(i);
-        }
-    }
+    void initDefaults(uint8_t trackIndex);
 
     MacroPageData& activePageData() { return pages[activePage]; }
     const MacroPageData& activePageData() const { return pages[activePage]; }
@@ -148,73 +124,27 @@ public:
     /// Quick access to active page's configs (updated on page switch)
     std::array<MacroConfig, MACRO_COUNT> activeConfigs;
 
-    MacroPagesState() {
-        initDefaults();
-    }
+    MacroPagesState();
 
     static constexpr uint8_t clampTrackIndex(uint8_t index) {
         return (index >= TRACK_COUNT) ? static_cast<uint8_t>(TRACK_COUNT - 1U) : index;
     }
 
     /// Initialize all pages with defaults
-    void initDefaults() {
-        for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-            tracks[i].initDefaults(i);
-        }
-        active_track_ = 0;
-        active_page_ = 0;
-        track_enabled_mask_.set(DEFAULT_TRACK_ENABLED_MASK);
-        syncActiveTrackCache();
-        updateActiveConfigs();
-    }
-
-    void syncSharedTrackState(uint16_t enabledTrackMask, uint8_t trackIndex) {
-        const uint16_t sanitizedMask = sanitizeTrackEnabledMask(enabledTrackMask);
-        const uint8_t sanitizedTrack = sanitizeActiveTrack(sanitizedMask, trackIndex);
-
-        if (track_enabled_mask_.get() != sanitizedMask) {
-            track_enabled_mask_.set(sanitizedMask);
-        }
-
-        active_track_ = sanitizedTrack;
-        syncActiveTrackCache();
-        updateActiveConfigs();
-    }
-
-    void captureSharedTrackState(uint16_t& enabledTrackMaskOut, uint8_t& activeTrackOut) const {
-        enabledTrackMaskOut = track_enabled_mask_.get();
-        activeTrackOut = active_track_;
-    }
-
+    void initDefaults();
+    void syncSharedTrackState(uint16_t enabledTrackMask, uint8_t trackIndex);
+    void captureSharedTrackState(uint16_t& enabledTrackMaskOut, uint8_t& activeTrackOut) const;
     void restoreTracksPreservingSharedState(
         const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks
-    ) {
-        uint16_t enabledTrackMaskOut = DEFAULT_TRACK_ENABLED_MASK;
-        uint8_t activeTrackOut = 0;
-        captureSharedTrackState(enabledTrackMaskOut, activeTrackOut);
-        initDefaults();
-        tracks = persistedTracks;
-        syncSharedTrackState(enabledTrackMaskOut, activeTrackOut);
-    }
-
+    );
     void restoreTracksWithSharedState(
         const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks,
         uint16_t enabledTrackMaskIn,
         uint8_t activeTrackIn
-    ) {
-        initDefaults();
-        tracks = persistedTracks;
-        syncSharedTrackState(enabledTrackMaskIn, activeTrackIn);
-    }
+    );
 
     /// Switch to a different page
-    void setActivePage(uint8_t index) {
-        if (index >= PAGE_COUNT) return;
-        tracks[active_track_].activePage = index;
-        active_page_ = index;
-        active_page_index_.set(active_page_);
-        updateActiveConfigs();
-    }
+    void setActivePage(uint8_t index);
 
     uint8_t currentActiveTrack() const { return active_track_; }
     uint8_t currentActivePage() const { return active_page_; }
@@ -246,10 +176,7 @@ public:
         return activeTrackData().channel;
     }
 
-    void setActiveTrackChannel(uint8_t channel) {
-        activeTrackData().channel = static_cast<uint8_t>(channel % 16U);
-        updateActiveConfigs();
-    }
+    void setActiveTrackChannel(uint8_t channel);
 
     /// Get page name
     const char* pageName(uint8_t index) const {
@@ -275,20 +202,8 @@ public:
     }
 
     /// Update activeConfigs from current page
-    void updateActiveConfigs() {
-        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-            activeConfigs[i] = {
-                activePageData().cc[i],
-                activeTrackChannel(),
-            };
-        }
-    }
-
-    void syncActiveTrackCache() {
-        active_page_ = activeTrackData().activePage;
-        active_page_index_.set(active_page_);
-        enabled_mask_.set(activeTrackData().enabledPageMask);
-    }
+    void updateActiveConfigs();
+    void syncActiveTrackCache();
 
 private:
     /// Currently active track index.

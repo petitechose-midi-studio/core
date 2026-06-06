@@ -1,0 +1,46 @@
+# UX workflow: change the project scale root from Sequencer Settings, then undo
+# and redo it through the held LEFT_CENTER history layer.
+# Purpose: validates project scale settings create a FullBank sequencer history entry.
+
+0 capture screen boot
+
+# Open view selector and enter Sequencer settings.
+100 button LEFT_TOP down
+220 capture screen selector_open
+300 encoder NAV 1
+380 capture screen sequencer_item_with_settings
+450 tap BOTTOM_LEFT 60
+620 button LEFT_TOP up
+760 capture screen project_scale_settings_default
+
+# Set project root to D.
+860 tap NAV 60
+960 encoder NAV 1
+1020 encoder NAV 1
+1140 capture screen project_root_d_selector
+1240 tap NAV 60
+1450 capture screen project_root_d_applied
+
+# Return to the Sequencer view.
+1550 tap LEFT_TOP 60
+1730 capture screen back_to_selector
+1830 tap LEFT_TOP 60
+2050 capture screen sequencer_after_project_scale
+
+# Undo the project scale change.
+2150 button LEFT_CENTER down
+3150 tick
+3200 capture screen undo_layer
+3250 tap LEFT_TOP 60
+4750 capture screen project_scale_undone_toast
+4850 button LEFT_CENTER up
+6150 capture screen project_scale_undone_closed
+
+# Redo the project scale change.
+6250 button LEFT_CENTER down
+7250 tick
+7300 capture screen redo_layer
+7350 tap LEFT_BOTTOM 60
+8850 capture screen project_scale_redone_toast
+8950 button LEFT_CENTER up
+10250 capture screen project_scale_redone_closed

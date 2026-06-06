@@ -1,12 +1,12 @@
 #include "state/CoreStateLifecycle.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 #include <oc/time/Time.hpp>
 
 #include "state/CoreState.hpp"
 #include "state/DataManagerWorkflow.hpp"
 #include "state/macro/MacroWorkflow.hpp"
-#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
@@ -17,7 +17,7 @@ namespace {
 using StepSequencerGraph = oc::note::sequencer::StepSequencerGraph;
 using GraphPtr = core::app::ExtmemUniquePtr<StepSequencerGraph>;
 
-void captureGraph(GraphPtr& target, const sequencer::SequencerPatternState& source) {
+FLASHMEM void captureGraph(GraphPtr& target, const sequencer::SequencerPatternState& source) {
     if (!source.graph || !source.graph->enabled) {
         target.reset();
         return;
@@ -29,9 +29,9 @@ void captureGraph(GraphPtr& target, const sequencer::SequencerPatternState& sour
     }
 }
 
-void applyCapturedGraph(sequencer::SequencerPatternState& target,
-                        const GraphPtr& graph,
-                        uint32_t revision) {
+FLASHMEM void applyCapturedGraph(sequencer::SequencerPatternState& target,
+                                 const GraphPtr& graph,
+                                 uint32_t revision) {
     if (!graph || !graph->enabled) {
         target.graph.reset();
         target.graphRevision.set(revision);
@@ -46,15 +46,15 @@ void applyCapturedGraph(sequencer::SequencerPatternState& target,
     target.graphRevision.set(revision);
 }
 
-void captureTrackBankGraphs(SequencerDomainState::PendingApply& pending,
-                            const sequencer::SequencerTrackBankState& stagedBank) {
+FLASHMEM void captureTrackBankGraphs(SequencerDomainState::PendingApply& pending,
+                                     const sequencer::SequencerTrackBankState& stagedBank) {
     for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         captureGraph(pending.bankGraphs[i], stagedBank.track(i));
     }
 }
 
-void applyTrackBankGraphs(sequencer::SequencerTrackBankState& bank,
-                          SequencerDomainState::PendingApply& pending) {
+FLASHMEM void applyTrackBankGraphs(sequencer::SequencerTrackBankState& bank,
+                                   SequencerDomainState::PendingApply& pending) {
     for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         applyCapturedGraph(
             bank.track(i),
@@ -64,7 +64,7 @@ void applyTrackBankGraphs(sequencer::SequencerTrackBankState& bank,
     }
 }
 
-void clearCapturedGraphs(SequencerDomainState::PendingApply& pending) {
+FLASHMEM void clearCapturedGraphs(SequencerDomainState::PendingApply& pending) {
     pending.patternGraph.reset();
     for (auto& graph : pending.bankGraphs) {
         graph.reset();
@@ -116,7 +116,7 @@ void CoreStateLifecycle::updatePendingSharedTrackPersist_(CoreState& state) {
     state.persistSharedTrackState_();
 }
 
-void CoreStateLifecycle::flushAutoPersist_(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::flushAutoPersist_(CoreState& state) {
     if (state.macroDomain_.autoPersist) {
         state.macroDomain_.autoPersist->flush();
     }
@@ -125,17 +125,17 @@ void CoreStateLifecycle::flushAutoPersist_(CoreState& state) {
     }
 }
 
-void CoreStateLifecycle::flushPendingMacroWorkspacePersist_(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::flushPendingMacroWorkspacePersist_(CoreState& state) {
     if (!state.macroDomain_.workspacePersistPending) return;
     state.persistMacroWorkspaceNow_();
 }
 
-void CoreStateLifecycle::flushPendingSharedTrackPersist_(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::flushPendingSharedTrackPersist_(CoreState& state) {
     if (!state.sharedTrackPersistPending_) return;
     state.persistSharedTrackState_();
 }
 
-void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
     const auto saveStatus = state.settings.saveAllStatus(
         state.midiSync,
         state.sharedTrackEnabledMask.get(),
@@ -154,7 +154,7 @@ void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
     }
 }
 
-void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.pages.initDefaults();
     state.midiSync.reset();
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
@@ -169,7 +169,8 @@ void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.trackNavigation.reset();
 }
 
-void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
+    state.sequencerDomain_.coalescedPatternHistory.clear();
     state.sequencer.reset();
     state.sequencerTracks.reset();
     state.sequencerHistory.clear();
@@ -181,7 +182,7 @@ void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
     state.persistSequencerWorkspace_();
 }
 
-void CoreStateLifecycle::resetUiState_(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.viewSelector.reset();
     state.globalSettings.reset();
     state.sequencerSettings.reset();
@@ -203,22 +204,23 @@ void CoreStateLifecycle::update(CoreState& state) {
     state.statusBar.updateTransient(nowMs);
     applyPendingSequencerApplyIfReady(state);
     state.sequencer.updateUi(nowMs);
+    state.updateSequencerPatternHistoryCoalescing(nowMs);
     updateAutoPersist_(state);
     updatePendingMacroWorkspacePersist_(state);
     updatePendingSharedTrackPersist_(state);
 }
 
-void CoreStateLifecycle::flush(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::flush(CoreState& state) {
     flushAutoPersist_(state);
     flushPendingMacroWorkspacePersist_(state);
     flushPendingSharedTrackPersist_(state);
 }
 
-void CoreStateLifecycle::flushAutoPersist(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::flushAutoPersist(CoreState& state) {
     flushAutoPersist_(state);
 }
 
-void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.macroEdit.reset();
     state.macroUi.reset();
     state.trackNavigation.reset();
@@ -234,7 +236,7 @@ void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.dataManager.resetSession(DataManagerContext::MACRO);
 }
 
-void CoreStateLifecycle::factoryReset(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
     const auto resetStatus = state.settings.factoryResetStatus();
     if (resetStatus != persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[CoreState] CoreSettings factory reset failed: {}",
@@ -248,9 +250,11 @@ void CoreStateLifecycle::factoryReset(CoreState& state) {
     persistFactoryDefaults_(state);
 }
 
-void CoreStateLifecycle::queuePendingSequencerApply(CoreState& state,
-                                                    const sequencer::SequencerState& staged,
-                                                    bool merge) {
+FLASHMEM void CoreStateLifecycle::queuePendingSequencerApply(
+    CoreState& state,
+    const sequencer::SequencerState& staged,
+    bool merge
+) {
     if (!state.sequencerDomain_.pendingApply) return;
     clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
     sequencer::captureSnapshot(staged.pattern, state.sequencerDomain_.pendingApply->snapshot);
@@ -261,7 +265,7 @@ void CoreStateLifecycle::queuePendingSequencerApply(CoreState& state,
     state.sequencerDomain_.pendingApply->valid = true;
 }
 
-void CoreStateLifecycle::queuePendingSequencerBankApply(
+FLASHMEM void CoreStateLifecycle::queuePendingSequencerBankApply(
     CoreState& state,
     const sequencer::SequencerTrackBankState& stagedBank,
     const sequencer::SequencerState& staged
@@ -281,7 +285,7 @@ void CoreStateLifecycle::queuePendingSequencerBankApply(
     state.sequencerDomain_.pendingApply->valid = true;
 }
 
-void CoreStateLifecycle::clearPendingSequencerApply(CoreState& state) {
+FLASHMEM void CoreStateLifecycle::clearPendingSequencerApply(CoreState& state) {
     if (!state.sequencerDomain_.pendingApply) return;
     state.sequencerDomain_.pendingApply->valid = false;
     state.sequencerDomain_.pendingApply->fullBank = false;
@@ -332,6 +336,7 @@ void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
     }
     sequencer::storeActiveTrack(state.sequencerTracks, state.sequencer);
     state.refreshSharedTrackStateFromSequencer();
+    state.clearSequencerHistory();
     state.sequencerDomain_.pendingApply->valid = false;
     clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
     state.persistSequencerWorkspace_();

@@ -1,0 +1,43 @@
+# UX workflow: record undoable sequencer actions on two tracks, then undo them
+# while staying on the current track and showing the affected track in the
+# transient history toast.
+# Purpose: validates centralized sequencer history across tracks without
+# automatic navigation jumps.
+
+0 scenario sequencer
+50 capture screen initial_t01
+
+# Action A on Track 1: enable step 1.
+150 tap MACRO_1 60
+350 capture screen t01_step_on
+
+# Switch navigation focus from page to track, then create/select Track 2.
+450 tap NAV 60
+650 encoder NAV 1
+850 capture screen t02_add_preview
+950 tap NAV 60
+1250 capture screen t02_created
+
+# Action B on Track 2: enable step 1.
+1350 tap MACRO_1 60
+1550 capture screen t02_step_on
+
+# Undo B. The visible track stays T02 and the toast identifies T02.
+1650 button LEFT_CENTER down
+2650 tick
+2700 tap LEFT_TOP 60
+2850 capture screen undo_t02_toast
+2950 button LEFT_CENTER up
+4300 capture screen t02_step_off_after_toast
+
+# Undo A. The visible track still stays T02, but the toast identifies T01.
+4400 button LEFT_CENTER down
+5400 tick
+5450 tap LEFT_TOP 60
+5600 capture screen undo_t01_toast
+5700 button LEFT_CENTER up
+7050 capture screen still_t02_after_t01_undo
+
+# Navigate back to Track 1 to verify the hidden-track undo actually applied.
+7150 encoder NAV -1
+7350 capture screen t01_step_off_verified

@@ -10,6 +10,8 @@
 
 #include <config/Timing.hpp>
 
+#include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
@@ -41,6 +43,7 @@ struct SequencerStepEditHarness {
     oc::api::EncoderAPI encoders;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::handler::SequencerStepEditHandler handler;
+    core::handler::SequencerPatternQuickControlsHandler quickControlsHandler;
 
     SequencerStepEditHarness()
         : state(storages.settings,
@@ -57,12 +60,25 @@ struct SequencerStepEditHarness {
                       state.overlays,
                       state.sequencer,
                       state.trackNavigation,
+                      core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                   },
                   overlays,
                   encoders,
                   buttons,
                   SEQUENCER_SCOPE,
-                  OVERLAY_SCOPE) {
+                  OVERLAY_SCOPE)
+        , quickControlsHandler(
+              core::handler::SequencerPatternQuickControlsHandler::StateRefs{
+                  state.overlays,
+                  state.sequencer,
+                  state.trackNavigation,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+              },
+              encoders,
+              buttons,
+              SEQUENCER_SCOPE
+          ) {
+        overlays.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
         overlays.registerCleanup(core::ui::OverlayType::SEQ_STEP_EDIT, OVERLAY_SCOPE);
         g_now_ms = 0;
     }
@@ -89,6 +105,11 @@ struct SequencerStepEditHarness {
         release(id);
     }
 
+    void advance(uint32_t ms) {
+        g_now_ms += ms;
+        inputBinding.processTick();
+    }
+
     void turn(Config::EncoderID id, float value) {
         const auto encoderId = static_cast<oc::type::EncoderID>(id);
         encoderHw.setPosition(encoderId, value);
@@ -110,6 +131,13 @@ void openStepEdit(SequencerStepEditHarness& h, uint8_t indexInPage) {
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
 }
 
+void holdPatternQuickControls(SequencerStepEditHarness& h) {
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.advance(1000);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+}
+
 void test_long_press_opens_step_edit_and_ignores_open_release() {
     SequencerStepEditHarness h;
     h.state.sequencer.pattern.length.set(16);
@@ -127,6 +155,7 @@ void test_long_press_opens_step_edit_and_ignores_open_release() {
     h.tap(Config::MACRO_BUTTONS[2]);
     assert(!h.state.sequencer.stepEdit.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
+    assert(h.state.sequencerHistory.undoCount() == 0);
 
     std::cout << "[PASS] test_long_press_opens_step_edit_and_ignores_open_release\n";
 }
@@ -148,8 +177,66 @@ void test_nav_and_opt_edit_then_nav_apply() {
     h.tap(Config::ButtonID::NAV);
     assert(!h.state.sequencer.stepEdit.visible.get());
     assert(h.state.sequencer.pattern.velocity[3] == 127);
+    assert(h.state.sequencerHistory.undoCount() == 1);
 
     std::cout << "[PASS] test_nav_and_opt_edit_then_nav_apply\n";
+}
+
+void test_step_edit_session_undo_redo_workflow() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.focusedStep.set(6);
+    h.state.sequencer.pattern.note[2] = 61;
+    h.state.sequencer.pattern.gate[2] = 55;
+
+    openStepEdit(h, 2);
+    h.release(Config::MACRO_BUTTONS[2]);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.note[2] == 127);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 2);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(
+        h.state.sequencer.pattern.gate[2] ==
+        core::state::sequencer::SequencerState::MAX_GATE_PERCENT
+    );
+
+    h.tap(Config::ButtonID::NAV);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencer.pattern.note[2] == 127);
+    assert(
+        h.state.sequencer.pattern.gate[2] ==
+        core::state::sequencer::SequencerState::MAX_GATE_PERCENT
+    );
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.pattern.note[2] == 61);
+    assert(h.state.sequencer.pattern.gate[2] == 55);
+    assert(h.state.sequencer.focusedStep.get() == 6);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.pattern.note[2] == 127);
+    assert(
+        h.state.sequencer.pattern.gate[2] ==
+        core::state::sequencer::SequencerState::MAX_GATE_PERCENT
+    );
+    assert(h.state.sequencer.focusedStep.get() == 2);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencerHistory.redoCount() == 0);
+
+    std::cout << "[PASS] test_step_edit_session_undo_redo_workflow\n";
 }
 
 void test_cancel_restores_snapshot() {
@@ -174,6 +261,7 @@ void test_cancel_restores_snapshot() {
     assert(h.state.sequencer.pattern.gate[4] == 70);
     assert(h.state.sequencer.pattern.nudge[4] == -5);
     assert(h.state.sequencer.pattern.probability[4] == 90);
+    assert(h.state.sequencerHistory.undoCount() == 0);
 
     std::cout << "[PASS] test_cancel_restores_snapshot\n";
 }
@@ -222,6 +310,7 @@ void test_step_edit_does_not_open_when_blocked() {
 int main() {
     test_long_press_opens_step_edit_and_ignores_open_release();
     test_nav_and_opt_edit_then_nav_apply();
+    test_step_edit_session_undo_redo_workflow();
     test_cancel_restores_snapshot();
     test_step_edit_does_not_open_when_blocked();
 

@@ -50,6 +50,8 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::CHROMATIC;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
 
+    ~SequencerPatternState();
+
     static uint8_t clampMidi7(uint8_t value) {
         return (value > 127U) ? 127U : value;
     }
@@ -84,99 +86,12 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         graphRevision.set(graphRevision.get() + 1);
     }
 
-    uint8_t variationRangeForProperty(StepProperty property) const {
-        switch (property) {
-            case StepProperty::NOTE:
-                return variationRanges.pitchSemitones;
-            case StepProperty::VELOCITY:
-                return variationRanges.velocity;
-            case StepProperty::GATE:
-                return variationRanges.gatePercent;
-            case StepProperty::NUDGE:
-                return variationRanges.nudge;
-            case StepProperty::PROBABILITY:
-                return 0;
-        }
-
-        return 0;
-    }
-
-    bool setVariationRangeForProperty(StepProperty property, uint8_t range) {
-        auto next = variationRanges;
-        switch (property) {
-            case StepProperty::NOTE:
-                next.pitchSemitones = range;
-                break;
-            case StepProperty::VELOCITY:
-                next.velocity = range;
-                break;
-            case StepProperty::GATE:
-                next.gatePercent = range;
-                break;
-            case StepProperty::NUDGE:
-                next.nudge = range;
-                break;
-            case StepProperty::PROBABILITY:
-                return false;
-        }
-
-        next.clamp();
-        if (next.pitchSemitones == variationRanges.pitchSemitones &&
-            next.velocity == variationRanges.velocity &&
-            next.gatePercent == variationRanges.gatePercent &&
-            next.nudge == variationRanges.nudge) {
-            return false;
-        }
-
-        variationRanges = next;
-        bumpPatternVariationRevision();
-        return true;
-    }
-
-    bool setPatternVariationRanges(
-        oc::note::sequencer::StepSequencerVariationRanges ranges
-    ) {
-        ranges.clamp();
-        if (ranges.pitchSemitones == variationRanges.pitchSemitones &&
-            ranges.velocity == variationRanges.velocity &&
-            ranges.gatePercent == variationRanges.gatePercent &&
-            ranges.nudge == variationRanges.nudge) {
-            return false;
-        }
-
-        variationRanges = ranges;
-        bumpPatternVariationRevision();
-        return true;
-    }
-
-    bool setPatternScalePolicy(SequencerPatternScalePolicy policy) {
-        if (scalePolicy == policy) return false;
-        scalePolicy = policy;
-        bumpPatternScaleRevision();
-        return true;
-    }
-
-    bool setPatternScaleOverride(oc::note::sequencer::StepSequencerScaleSettings settings) {
-        settings.clamp();
-        auto current = scaleOverride;
-        current.clamp();
-        if (current.root == settings.root &&
-            current.type == settings.type &&
-            current.mode == settings.mode) {
-            return false;
-        }
-
-        scaleOverride = settings;
-        bumpPatternScaleRevision();
-        return true;
-    }
-
-    bool setPitchEditMode(SequencerPitchEditMode mode) {
-        if (pitchEditMode == mode) return false;
-        pitchEditMode = mode;
-        bumpPatternScaleRevision();
-        return true;
-    }
+    uint8_t variationRangeForProperty(StepProperty property) const;
+    bool setVariationRangeForProperty(StepProperty property, uint8_t range);
+    bool setPatternVariationRanges(oc::note::sequencer::StepSequencerVariationRanges ranges);
+    bool setPatternScalePolicy(SequencerPatternScalePolicy policy);
+    bool setPatternScaleOverride(oc::note::sequencer::StepSequencerScaleSettings settings);
+    bool setPitchEditMode(SequencerPitchEditMode mode);
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
         if (step >= MAX_STEPS) return false;
@@ -278,18 +193,7 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         return true;
     }
 
-    void reset() {
-        oc::note::sequencer::StepSequencerState::reset();
-        bumpStepDataRevision();
-        variationRanges = {};
-        bumpPatternVariationRevision();
-        scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
-        scaleOverride = {};
-        pitchEditMode = SequencerPitchEditMode::CHROMATIC;
-        bumpPatternScaleRevision();
-        graph.reset();
-        bumpGraphRevision();
-    }
+    void reset();
 
     uint8_t activePageCount() const {
         const uint8_t len = length.get();

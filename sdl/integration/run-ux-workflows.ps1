@@ -69,6 +69,37 @@ function Test-PlayheadProgress {
     return $DistinctPlayingSteps.Count -gt 1
 }
 
+function Get-CaptureForLabel {
+    param(
+        [Parameter(Mandatory = $true)][string]$OutDir,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $Matches = @(Get-ChildItem -LiteralPath $OutDir -Filter "*_${Label}_screen.bmp" -ErrorAction SilentlyContinue)
+    if ($Matches.Count -ne 1) {
+        return $null
+    }
+    return $Matches[0].FullName
+}
+
+function Test-CaptureMatch {
+    param(
+        [Parameter(Mandatory = $true)][string]$OutDir,
+        [Parameter(Mandatory = $true)][string]$LeftLabel,
+        [Parameter(Mandatory = $true)][string]$RightLabel
+    )
+
+    $LeftCapture = Get-CaptureForLabel -OutDir $OutDir -Label $LeftLabel
+    $RightCapture = Get-CaptureForLabel -OutDir $OutDir -Label $RightLabel
+    if (-not $LeftCapture -or -not $RightCapture) {
+        return $false
+    }
+
+    $LeftHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $LeftCapture).Hash
+    $RightHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $RightCapture).Hash
+    return $LeftHash -eq $RightHash
+}
+
 $Workflows = Get-ChildItem -LiteralPath $WorkflowDir -Filter "*.ux" | Sort-Object Name
 if ($Workflows.Count -eq 0) {
     throw "No UX workflow scripts found in $WorkflowDir"
@@ -111,6 +142,23 @@ foreach ($Workflow in $Workflows) {
     if ($Expectations -contains "playhead_progress") {
         if (-not (Test-PlayheadProgress -TracePath $TracePath)) {
             $ExpectationFailures += "playhead_progress"
+        }
+    }
+
+    foreach ($Expectation in $Expectations) {
+        if ($Expectation -notlike "capture_match:*") {
+            continue
+        }
+
+        $MatchSpec = $Expectation.Substring("capture_match:".Length)
+        $Labels = @($MatchSpec -split "=", 2)
+        if ($Labels.Count -ne 2 -or $Labels[0].Length -eq 0 -or $Labels[1].Length -eq 0) {
+            $ExpectationFailures += $Expectation
+            continue
+        }
+
+        if (-not (Test-CaptureMatch -OutDir $ResolvedOutDir -LeftLabel $Labels[0] -RightLabel $Labels[1])) {
+            $ExpectationFailures += $Expectation
         }
     }
 

@@ -11,6 +11,52 @@
 
 namespace core::state::sequencer {
 
+FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot() = default;
+FLASHMEM SequencerHistoryPatternSnapshot::~SequencerHistoryPatternSnapshot() = default;
+FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot(
+    SequencerHistoryPatternSnapshot&&
+) noexcept = default;
+FLASHMEM SequencerHistoryPatternSnapshot& SequencerHistoryPatternSnapshot::operator=(
+    SequencerHistoryPatternSnapshot&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryTrackBankSnapshot::SequencerHistoryTrackBankSnapshot() = default;
+FLASHMEM SequencerHistoryTrackBankSnapshot::~SequencerHistoryTrackBankSnapshot() = default;
+FLASHMEM SequencerHistoryTrackBankSnapshot::SequencerHistoryTrackBankSnapshot(
+    SequencerHistoryTrackBankSnapshot&&
+) noexcept = default;
+FLASHMEM SequencerHistoryTrackBankSnapshot& SequencerHistoryTrackBankSnapshot::operator=(
+    SequencerHistoryTrackBankSnapshot&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryPatternChange::SequencerHistoryPatternChange() = default;
+FLASHMEM SequencerHistoryPatternChange::~SequencerHistoryPatternChange() = default;
+FLASHMEM SequencerHistoryPatternChange::SequencerHistoryPatternChange(
+    SequencerHistoryPatternChange&&
+) noexcept = default;
+FLASHMEM SequencerHistoryPatternChange& SequencerHistoryPatternChange::operator=(
+    SequencerHistoryPatternChange&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryFullBankChange::SequencerHistoryFullBankChange() = default;
+FLASHMEM SequencerHistoryFullBankChange::~SequencerHistoryFullBankChange() = default;
+FLASHMEM SequencerHistoryFullBankChange::SequencerHistoryFullBankChange(
+    SequencerHistoryFullBankChange&&
+) noexcept = default;
+FLASHMEM SequencerHistoryFullBankChange& SequencerHistoryFullBankChange::operator=(
+    SequencerHistoryFullBankChange&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryEntry::SequencerHistoryEntry() = default;
+FLASHMEM SequencerHistoryEntry::~SequencerHistoryEntry() = default;
+FLASHMEM SequencerHistoryEntry::SequencerHistoryEntry(SequencerHistoryEntry&&) noexcept = default;
+FLASHMEM SequencerHistoryEntry& SequencerHistoryEntry::operator=(
+    SequencerHistoryEntry&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryService::SequencerHistoryService() = default;
+FLASHMEM SequencerHistoryService::~SequencerHistoryService() = default;
+
 namespace {
 
 using Graph = oc::note::sequencer::StepSequencerGraph;
@@ -284,11 +330,35 @@ FLASHMEM bool applyEntrySnapshot(
 ) {
     if (entry.scope == SequencerHistoryScope::PatternOnly) {
         if (!entry.pattern) return false;
-        return applyHistorySnapshot(bank, active, after ? entry.pattern->after : entry.pattern->before);
+        return applyHistorySnapshotToTrack(
+            bank,
+            active,
+            entry.pattern->trackIndex,
+            after ? entry.pattern->after : entry.pattern->before
+        );
     }
 
     if (!entry.fullBank) return false;
     return applyHistorySnapshot(bank, active, after ? entry.fullBank->after : entry.fullBank->before);
+}
+
+FLASHMEM SequencerHistoryDescriptor descriptorForEntry(
+    const SequencerHistoryEntry& entry
+) {
+    SequencerHistoryDescriptor descriptor{};
+    if (entry.scope == SequencerHistoryScope::PatternOnly && entry.pattern) {
+        descriptor = entry.pattern->descriptor;
+        descriptor.trackIndex = entry.pattern->trackIndex;
+        return descriptor;
+    }
+
+    if (entry.scope == SequencerHistoryScope::FullBank && entry.fullBank) {
+        descriptor = entry.fullBank->descriptor;
+        return descriptor;
+    }
+
+    descriptor.kind = SequencerHistoryActionKind::FullBank;
+    return descriptor;
 }
 
 }  // namespace
@@ -302,6 +372,25 @@ FLASHMEM bool captureHistorySnapshot(
     out.focusedStep = source.focusedStep.get();
     out.page = source.page.get();
     return cloneGraph(graphView(source.pattern), out.graph);
+}
+
+FLASHMEM bool captureHistorySnapshot(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& out
+) {
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    if (targetTrack == bank.activeTrackIndex()) {
+        return captureHistorySnapshot(active, out);
+    }
+
+    out = SequencerHistoryPatternSnapshot{};
+    const auto& source = bank.track(targetTrack);
+    captureSnapshot(source, out.flat);
+    out.focusedStep = active.focusedStep.get();
+    out.page = active.page.get();
+    return cloneGraph(graphView(source), out.graph);
 }
 
 FLASHMEM bool captureHistorySnapshot(
@@ -332,6 +421,29 @@ FLASHMEM bool applyHistorySnapshot(
     SequencerState& active,
     const SequencerHistoryPatternSnapshot& snapshot
 ) {
+    return applyHistorySnapshotToTrack(bank, active, bank.activeTrackIndex(), snapshot);
+}
+
+FLASHMEM bool applyHistorySnapshotToTrack(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex,
+    const SequencerHistoryPatternSnapshot& snapshot
+) {
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    const uint8_t activeTrack = bank.activeTrackIndex();
+
+    if (targetTrack != activeTrack) {
+        GraphPtr bankGraph;
+        if (!cloneGraph(snapshot.graph, bankGraph)) {
+            return false;
+        }
+
+        applySnapshot(bank.track(targetTrack), snapshot.flat);
+        installGraph(bank.track(targetTrack), std::move(bankGraph), snapshot.flat.graphRevision);
+        return true;
+    }
+
     GraphPtr editorGraph;
     GraphPtr bankGraph;
     if (!cloneGraph(snapshot.graph, editorGraph) ||
@@ -339,7 +451,6 @@ FLASHMEM bool applyHistorySnapshot(
         return false;
     }
 
-    const uint8_t activeTrack = bank.activeTrackIndex();
     applySnapshotToEditor(active, snapshot.flat);
     installGraph(active.pattern, std::move(editorGraph), snapshot.flat.graphRevision);
     applySnapshot(bank.track(activeTrack), snapshot.flat);
@@ -408,8 +519,10 @@ FLASHMEM bool sameMusicalHistorySnapshot(
 }
 
 FLASHMEM bool SequencerHistoryService::recordPattern(
+    uint8_t trackIndex,
     SequencerHistoryPatternSnapshot before,
-    SequencerHistoryPatternSnapshot after
+    SequencerHistoryPatternSnapshot after,
+    SequencerHistoryDescriptor descriptor
 ) {
     if (sameMusicalHistorySnapshot(before, after)) {
         return false;
@@ -420,6 +533,13 @@ FLASHMEM bool SequencerHistoryService::recordPattern(
         return false;
     }
 
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    if (descriptor.trackIndex == SequencerHistoryDescriptor::INVALID_INDEX) {
+        descriptor.trackIndex = targetTrack;
+    }
+
+    change->trackIndex = targetTrack;
+    change->descriptor = descriptor;
     change->before = std::move(before);
     change->after = std::move(after);
 
@@ -438,21 +558,44 @@ FLASHMEM bool SequencerHistoryService::recordPattern(
     return true;
 }
 
+FLASHMEM bool SequencerHistoryService::recordPattern(
+    SequencerHistoryPatternSnapshot before,
+    SequencerHistoryPatternSnapshot after,
+    SequencerHistoryDescriptor descriptor
+) {
+    return recordPattern(0, std::move(before), std::move(after), descriptor);
+}
+
 FLASHMEM bool SequencerHistoryService::recordFullBank(
     SequencerHistoryTrackBankSnapshot before,
-    SequencerHistoryTrackBankSnapshot after
+    SequencerHistoryTrackBankSnapshot after,
+    SequencerHistoryDescriptor descriptor
 ) {
-    if (sameMusicalHistorySnapshot(before, after)) {
-        return false;
-    }
-
     auto change = core::app::makeExtmemUnique<SequencerHistoryFullBankChange>();
     if (!change) {
         return false;
     }
 
+    change->descriptor = descriptor;
     change->before = std::move(before);
     change->after = std::move(after);
+    return recordFullBank(std::move(change));
+}
+
+FLASHMEM bool SequencerHistoryService::recordFullBank(
+    SequencerHistoryFullBankChangePtr change
+) {
+    if (!change) {
+        return false;
+    }
+
+    if (sameMusicalHistorySnapshot(change->before, change->after)) {
+        return false;
+    }
+
+    if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
+        change->descriptor.kind = SequencerHistoryActionKind::FullBank;
+    }
 
     SequencerHistoryEntry entry;
     entry.scope = SequencerHistoryScope::FullBank;
@@ -473,34 +616,58 @@ FLASHMEM bool SequencerHistoryService::undo(
     SequencerTrackBankState& bank,
     SequencerState& active
 ) {
+    return undoWithResult(bank, active).applied;
+}
+
+FLASHMEM SequencerHistoryApplyResult SequencerHistoryService::undoWithResult(
+    SequencerTrackBankState& bank,
+    SequencerState& active
+) {
+    SequencerHistoryApplyResult result;
+    result.direction = SequencerHistoryDirection::Undo;
+
     if (undo_count_ == 0) {
-        return false;
+        return result;
     }
 
     SequencerHistoryEntry& entry = undo_[undo_count_ - 1U];
+    result.descriptor = descriptorForEntry(entry);
     if (!applyEntrySnapshot(entry, false, bank, active)) {
-        return false;
+        return result;
     }
 
     auto moved = popBack(undo_, undo_count_);
-    return pushRedo(std::move(moved));
+    result.applied = pushRedo(std::move(moved));
+    return result;
 }
 
 FLASHMEM bool SequencerHistoryService::redo(
     SequencerTrackBankState& bank,
     SequencerState& active
 ) {
+    return redoWithResult(bank, active).applied;
+}
+
+FLASHMEM SequencerHistoryApplyResult SequencerHistoryService::redoWithResult(
+    SequencerTrackBankState& bank,
+    SequencerState& active
+) {
+    SequencerHistoryApplyResult result;
+    result.direction = SequencerHistoryDirection::Redo;
+
     if (redo_count_ == 0) {
-        return false;
+        return result;
     }
 
     SequencerHistoryEntry& entry = redo_[redo_count_ - 1U];
+    result.descriptor = descriptorForEntry(entry);
     if (!applyEntrySnapshot(entry, true, bank, active)) {
-        return false;
+        return result;
     }
 
     auto moved = popBack(redo_, redo_count_);
-    return pushUndo(std::move(moved));
+    result.applied = pushUndo(std::move(moved));
+    return result;
 }
 
 FLASHMEM void SequencerHistoryService::clear() {

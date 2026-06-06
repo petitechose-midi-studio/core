@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 #include <lvgl.h>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -111,12 +109,16 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerOverlayPresenter> presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::PatternPitchSettingsOverlayPresenter>
         pattern_pitch_settings_presenter_;
-    std::unique_ptr<core::handler::SequencerStepHandler> step_handler_;
-    std::unique_ptr<core::handler::SequencerPatternQuickControlsHandler> quick_controls_handler_;
-    std::unique_ptr<core::handler::SequencerStepEditHandler> step_edit_handler_;
-    std::unique_ptr<core::handler::SequencerPropertySelectorHandler> property_selector_handler_;
-    std::unique_ptr<core::handler::PatternPitchSettingsHandler> pattern_pitch_settings_handler_;
-    std::unique_ptr<core::handler::SequencerMacroPropertyHandler> macro_property_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerStepHandler> step_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerPatternQuickControlsHandler>
+        quick_controls_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerStepEditHandler> step_edit_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerPropertySelectorHandler>
+        property_selector_handler_;
+    core::app::ExtmemUniquePtr<core::handler::PatternPitchSettingsHandler>
+        pattern_pitch_settings_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerMacroPropertyHandler>
+        macro_property_handler_;
 };
 
 }  // namespace core::context::standalone

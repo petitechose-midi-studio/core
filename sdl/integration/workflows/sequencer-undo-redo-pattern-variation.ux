@@ -1,0 +1,37 @@
+# UX workflow: edit a pattern variation range, then undo and redo it through the
+# held LEFT_CENTER history layer.
+# Purpose: validates variation range changes create one undoable pattern entry.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Create an enabled step so the visible grid has a stable anchor.
+150 tap MACRO_1 60
+350 capture screen step_enabled
+
+# Hold LEFT_BOTTOM, select Velocity, and set its variation range.
+450 button LEFT_BOTTOM down
+600 capture screen property_selector_open
+700 encoder NAV 1
+800 encoder OPT 1.00
+950 capture screen velocity_range_adjusted
+1050 button LEFT_BOTTOM up
+1900 capture screen range_applied_closed
+
+# Undo the range change.
+2000 button LEFT_CENTER down
+3000 tick
+3050 capture screen undo_layer
+3100 tap LEFT_TOP 60
+4600 capture screen range_undone_toast
+4700 button LEFT_CENTER up
+6000 capture screen range_undone_closed
+
+# Redo the range change.
+6100 button LEFT_CENTER down
+7100 tick
+7150 capture screen redo_layer
+7200 tap LEFT_BOTTOM 60
+8700 capture screen range_redone_toast
+8800 button LEFT_CENTER up
+10100 capture screen range_redone_closed

@@ -49,11 +49,11 @@ bool sameProps(const StepPropertyStripProps& lhs, const StepPropertyStripProps& 
 
 }  // namespace
 
-StepPropertyStrip::StepPropertyStrip(lv_obj_t* parent) {
+FLASHMEM StepPropertyStrip::StepPropertyStrip(lv_obj_t* parent) {
     createUI(parent);
 }
 
-StepPropertyStrip::~StepPropertyStrip() {
+FLASHMEM StepPropertyStrip::~StepPropertyStrip() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -118,7 +118,7 @@ FLASHMEM void StepPropertyStrip::createUI(lv_obj_t* parent) {
     }
 }
 
-void StepPropertyStrip::ensureCursorGeometry() {
+FLASHMEM void StepPropertyStrip::ensureCursorGeometry() {
     if (!container_) return;
 
     const lv_coord_t width = lv_obj_get_width(container_);
@@ -148,7 +148,7 @@ void StepPropertyStrip::ensureCursorGeometry() {
     geometry_cache_initialized_ = true;
 }
 
-void StepPropertyStrip::render(const StepPropertyStripProps& props) {
+FLASHMEM void StepPropertyStrip::render(const StepPropertyStripProps& props) {
     if (!container_) return;
     if (has_rendered_ && sameProps(rendered_props_, props)) return;
 

@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <cstdint>
 #include <iostream>
 
@@ -69,12 +70,33 @@ void test_pattern_quick_controls_reset_clears_physical_hold_layer() {
     std::cout << "[PASS] test_pattern_quick_controls_reset_clears_physical_hold_layer\n";
 }
 
+void test_history_feedback_shows_and_expires() {
+    core::state::sequencer::SequencerHistoryFeedbackState state;
+
+    state.show("UNDO T01", "Step 01 Note", "D4 -> C3", 100);
+
+    assert(state.visible.get());
+    assert(std::strcmp(state.line1.data(), "UNDO T01") == 0);
+    assert(std::strcmp(state.line2.data(), "Step 01 Note") == 0);
+    assert(std::strcmp(state.line3.data(), "D4 -> C3") == 0);
+
+    state.update(100 + core::state::sequencer::SequencerHistoryFeedbackState::DISPLAY_HOLD_MS - 1);
+    assert(state.visible.get());
+
+    state.update(100 + core::state::sequencer::SequencerHistoryFeedbackState::DISPLAY_HOLD_MS);
+    assert(!state.visible.get());
+    assert(std::strcmp(state.line1.data(), "") == 0);
+
+    std::cout << "[PASS] test_history_feedback_shows_and_expires\n";
+}
+
 }  // namespace
 
 int main() {
     test_inline_feedback_expires_steps_independently();
     test_inline_feedback_reset_clears_state();
     test_pattern_quick_controls_reset_clears_physical_hold_layer();
+    test_history_feedback_shows_and_expires();
 
     std::cout << "\nAll SequencerUiState tests passed.\n";
     return 0;

@@ -15,9 +15,12 @@ using core::state::sequencer::SequencerHistoryPatternSnapshot;
 using core::state::sequencer::SequencerHistoryScope;
 using core::state::sequencer::SequencerHistoryService;
 using core::state::sequencer::SequencerHistoryTrackBankSnapshot;
+using core::state::sequencer::SequencerHistoryActionKind;
+using core::state::sequencer::SequencerHistoryDescriptor;
 using core::state::sequencer::SequencerPatternState;
 using core::state::sequencer::SequencerState;
 using core::state::sequencer::SequencerTrackBankState;
+using core::state::sequencer::StepProperty;
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 
@@ -40,6 +43,29 @@ bool hasCycleStateSet(const SequencerPatternState& pattern, uint8_t step) {
     const auto nodeId = core::state::sequencer::rootStepNodeId(step);
     if (nodeId >= graph->stepNodeCount) return false;
     return graph->stepNodes[nodeId].has(STEP_NODE_CYCLE_SET);
+}
+
+void test_pattern_snapshot_can_capture_inactive_track() {
+    SequencerTrackBankState bank;
+    SequencerState active;
+    core::state::sequencer::initializeTrackBankFromActive(bank, active);
+    bank.syncSharedTrackState(0x0003, 0);
+
+    setStep(active.pattern, 0, 60);
+    active.pattern.velocity[0] = 72;
+    core::state::sequencer::storeActiveTrack(bank, active);
+    assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
+
+    setStep(active.pattern, 0, 84);
+    active.pattern.velocity[0] = 99;
+    bank.track(0).velocity[0] = 77;
+
+    SequencerHistoryPatternSnapshot snapshot;
+    assert(core::state::sequencer::captureHistorySnapshot(bank, active, 0, snapshot));
+    assert(snapshot.flat.note[0] == 60);
+    assert(snapshot.flat.velocity[0] == 77);
+
+    std::cout << "[PASS] test_pattern_snapshot_can_capture_inactive_track\n";
 }
 
 void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
@@ -167,6 +193,65 @@ void test_redo_clears_after_new_record() {
     std::cout << "[PASS] test_redo_clears_after_new_record\n";
 }
 
+void test_pattern_history_undoes_previous_track_without_switching_active_track() {
+    SequencerTrackBankState bank;
+    SequencerState active;
+    core::state::sequencer::initializeTrackBankFromActive(bank, active);
+    bank.syncSharedTrackState(0x0003, 0);
+
+    setStep(active.pattern, 0, 60);
+    SequencerHistoryPatternSnapshot track0Before;
+    assert(core::state::sequencer::captureHistorySnapshot(active, track0Before));
+    setStep(active.pattern, 0, 61);
+    SequencerHistoryPatternSnapshot track0After;
+    assert(core::state::sequencer::captureHistorySnapshot(active, track0After));
+
+    SequencerHistoryService history;
+    assert(history.recordPattern(
+        0,
+        std::move(track0Before),
+        std::move(track0After),
+        SequencerHistoryDescriptor{
+            .kind = SequencerHistoryActionKind::StepPropertyEdit,
+            .trackIndex = 0,
+            .stepIndex = 0,
+            .property = StepProperty::NOTE,
+            .hasValue = true,
+            .beforeValue = 60,
+            .afterValue = 61,
+        }
+    ));
+
+    assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
+    setStep(active.pattern, 0, 72);
+    SequencerHistoryPatternSnapshot track1Before;
+    assert(core::state::sequencer::captureHistorySnapshot(active, track1Before));
+    setStep(active.pattern, 0, 73);
+    SequencerHistoryPatternSnapshot track1After;
+    assert(core::state::sequencer::captureHistorySnapshot(active, track1After));
+    assert(history.recordPattern(1, std::move(track1Before), std::move(track1After)));
+
+    assert(history.undo(bank, active));
+    assert(bank.activeTrackIndex() == 1);
+    assert(active.pattern.note[0] == 72);
+    assert(bank.track(1).note[0] == 72);
+    assert(bank.track(0).note[0] == 61);
+
+    const auto result = history.undoWithResult(bank, active);
+    assert(result.applied);
+    assert(result.descriptor.trackIndex == 0);
+    assert(result.descriptor.stepIndex == 0);
+    assert(result.descriptor.property == StepProperty::NOTE);
+    assert(result.descriptor.beforeValue == 60);
+    assert(result.descriptor.afterValue == 61);
+    assert(bank.activeTrackIndex() == 1);
+    assert(active.pattern.note[0] == 72);
+    assert(bank.track(1).note[0] == 72);
+    assert(bank.track(0).note[0] == 60);
+
+    std::cout << "[PASS] test_pattern_history_undoes_previous_track_without_switching_active_track\n";
+}
+
 void test_full_bank_history_restores_active_track_and_graphs() {
     SequencerTrackBankState bank;
     SequencerState active;
@@ -278,10 +363,12 @@ void test_clear_resets_stacks() {
 }  // namespace
 
 int main() {
+    test_pattern_snapshot_can_capture_inactive_track();
     test_pattern_history_undo_redo_restores_flat_data_and_focus();
     test_pattern_history_restores_graph_payload();
     test_pattern_noop_ignores_focus_only_change();
     test_redo_clears_after_new_record();
+    test_pattern_history_undoes_previous_track_without_switching_active_track();
     test_full_bank_history_restores_active_track_and_graphs();
     test_history_limits_prune_by_scope();
     test_clear_resets_stacks();

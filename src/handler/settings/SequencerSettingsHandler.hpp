@@ -5,9 +5,13 @@
 #include <oc/context/OverlayManager.hpp>
 
 #include "app/OverlayTypes.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/SequencerSettingsState.hpp"
 #include "state/ViewSelectorState.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
 
@@ -16,6 +20,9 @@ public:
     struct StateRefs {
         core::state::SequencerSettingsState& sequencerSettings;
         core::state::ViewSelectorState& viewSelector;
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        SequencerHistoryDomainServices history;
     };
 
     SequencerSettingsHandler(StateRefs state,
@@ -42,6 +49,9 @@ private:
 
     core::state::SequencerSettingsState& sequencer_settings_;
     core::state::ViewSelectorState& view_selector_;
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& sequencer_tracks_;
+    SequencerHistoryDomainServices history_;
     SequencerSettingsDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

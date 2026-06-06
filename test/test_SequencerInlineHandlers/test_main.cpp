@@ -3,10 +3,13 @@
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
+#include <oc/context/OverlayManager.hpp>
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
+#include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
+#include "../../src/handler/sequencer/PatternPitchSettingsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
@@ -29,6 +32,8 @@ using StepProperty = core::state::sequencer::StepProperty;
 
 struct SequencerInlineHarness {
     static constexpr oc::type::ScopeID SEQUENCER_SCOPE = 701;
+    static constexpr oc::type::ScopeID PITCH_SETTINGS_SCOPE = 702;
+    static constexpr oc::type::ScopeID PITCH_SELECTOR_SCOPE = 703;
 
     test_support::CoreStorages storages;
     core::state::CoreState state;
@@ -39,7 +44,9 @@ struct SequencerInlineHarness {
     TestEncoderHardware encoderHw;
     oc::api::ButtonAPI buttons;
     oc::api::EncoderAPI encoders;
+    oc::context::OverlayManager<core::ui::OverlayType> overlayManager;
     core::handler::SequencerPropertySelectorHandler propertySelectorHandler;
+    core::handler::PatternPitchSettingsHandler patternPitchSettingsHandler;
     core::handler::SequencerPatternQuickControlsHandler patternQuickControlsHandler;
 
     SequencerInlineHarness()
@@ -52,16 +59,37 @@ struct SequencerInlineHarness {
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
+        , overlayManager(state.overlays, buttons)
         , propertySelectorHandler(
               core::handler::SequencerPropertySelectorHandler::StateRefs{
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
               buttons,
               SEQUENCER_SCOPE,
               mockTimeMs
+          )
+        , patternPitchSettingsHandler(
+              core::handler::PatternPitchSettingsHandler::StateRefs{
+                  state.patternPitchSettings,
+                  state.sequencer,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+              },
+              core::handler::PatternPitchSettingsDomainServices{
+                  core::handler::PatternPitchSettingsDomainServices::StateRefs{
+                      state.sequencer,
+                      state.sequencerTracks,
+                  }
+              },
+              overlayManager,
+              encoders,
+              buttons,
+              SEQUENCER_SCOPE,
+              PITCH_SETTINGS_SCOPE,
+              PITCH_SELECTOR_SCOPE
           )
         , patternQuickControlsHandler(
               core::handler::SequencerPatternQuickControlsHandler::StateRefs{
@@ -74,6 +102,15 @@ struct SequencerInlineHarness {
               buttons,
               SEQUENCER_SCOPE
           ) {
+        overlayManager.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
+        overlayManager.registerCleanup(
+            core::ui::OverlayType::PATTERN_PITCH_SETTINGS,
+            PITCH_SETTINGS_SCOPE
+        );
+        overlayManager.registerCleanup(
+            core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR,
+            PITCH_SELECTOR_SCOPE
+        );
         g_now_ms = 0;
     }
 
@@ -115,6 +152,20 @@ void openPropertySelector(SequencerInlineHarness& h) {
 void openPatternQuickControls(SequencerInlineHarness& h) {
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencer.patternQuickControls.selecting.get());
+}
+
+void openPatternPitchSettings(SequencerInlineHarness& h) {
+    h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.patternPitchSettings.visible.get());
+    assert(h.state.patternPitchSettings.flowPhase.get() ==
+           core::state::PatternPitchSettingsFlowPhase::OVERLAY);
 }
 
 void holdPatternQuickControls(SequencerInlineHarness& h) {
@@ -180,6 +231,14 @@ void test_property_selector_edits_active_property_variation_range() {
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(h.state.sequencer.pattern.variationRanges.pitchSemitones == 36);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.pitchSemitones == 0);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.pitchSemitones == 36);
 
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     openPropertySelector(h);
@@ -202,6 +261,7 @@ void test_property_selector_cancel_restores_variation_snapshot() {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(h.state.sequencer.pattern.variationRanges.gatePercent == 12);
+    assert(h.state.sequencerHistory.undoCount() == 0);
 
     std::cout << "[PASS] test_property_selector_cancel_restores_variation_snapshot\n";
 }
@@ -231,6 +291,36 @@ void test_pattern_quick_controls_do_not_edit_variation_range() {
     assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
 
     std::cout << "[PASS] test_pattern_quick_controls_do_not_edit_variation_range\n";
+}
+
+void test_pattern_pitch_settings_are_undoable() {
+    SequencerInlineHarness h;
+
+    openPatternPitchSettings(h);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.patternPitchSettings.flowPhase.get() ==
+           core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+
+    assert(h.state.sequencer.pattern.scalePolicy ==
+           core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.patternPitchSettings.visible.get());
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.scalePolicy ==
+           core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT);
+    assert(h.state.sequencerHistory.redoCount() == 1);
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.scalePolicy ==
+           core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
+
+    std::cout << "[PASS] test_pattern_pitch_settings_are_undoable\n";
 }
 
 void test_pattern_quick_controls_short_tap_does_not_arm_history_layer() {
@@ -462,6 +552,7 @@ int main() {
     test_property_selector_cancel_restores_variation_snapshot();
     test_property_selector_does_not_edit_probability_variation();
     test_pattern_quick_controls_do_not_edit_variation_range();
+    test_pattern_pitch_settings_are_undoable();
     test_pattern_quick_controls_short_tap_does_not_arm_history_layer();
     test_pattern_quick_controls_hold_arms_history_layer();
     test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector();

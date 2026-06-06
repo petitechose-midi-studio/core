@@ -18,9 +18,15 @@ FLASHMEM DataManagerState::DataManagerState() {
     feedback.set("");
 }
 
+FLASHMEM DataManagerState::~DataManagerState() = default;
+
 FLASHMEM StatusBarState::StatusBarState() {
     pageName.set("Page 1");
 }
+
+FLASHMEM StatusBarState::~StatusBarState() = default;
+
+FLASHMEM MacroEditState::~MacroEditState() = default;
 
 FLASHMEM UiSystemState::UiSystemState()
     : overlays{},
@@ -35,5 +41,7 @@ FLASHMEM UiSystemState::UiSystemState()
       patternPitchSettings{},
       dataManager{},
       macroEdit{} {}
+
+FLASHMEM UiSystemState::~UiSystemState() = default;
 
 }  // namespace core::state

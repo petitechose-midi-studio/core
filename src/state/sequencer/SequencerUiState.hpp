@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <cstring>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
 #include <oc/state/Signal.hpp>
@@ -37,11 +39,7 @@ struct SequencerStepEditOverlayState {
     uint8_t snapshotProbability = 100;
     bool snapshotValid = false;
 
-    void reset() {
-        stepIndex.set(0);
-        focusedRow.set(0);
-        snapshotValid = false;
-    }
+    void reset();
 };
 
 struct SequencerStepPropertyInlineSelectorState {
@@ -51,11 +49,7 @@ struct SequencerStepPropertyInlineSelectorState {
     int snapshotIndex = 0;
     bool snapshotValid = false;
 
-    void reset() {
-        selecting.set(false);
-        selectedIndex.set(0);
-        snapshotValid = false;
-    }
+    void reset();
 };
 
 struct SequencerStepInlineFeedbackState {
@@ -68,16 +62,7 @@ struct SequencerStepInlineFeedbackState {
 
     uint32_t hideAtMs[MAX_STEPS]{};
 
-    void show(uint8_t step, StepProperty stepProperty, uint32_t nowMs) {
-        if (step >= MAX_STEPS) return;
-
-        auto mask = touchedMask.get();
-        mask.setBit(step, true);
-        touchedMask.set(mask);
-        property.set(stepProperty);
-        hideAtMs[step] = nowMs + DISPLAY_HOLD_MS;
-        visible.set(true);
-    }
+    void show(uint8_t step, StepProperty stepProperty, uint32_t nowMs);
 
     void update(uint32_t nowMs) {
         if (!visible.get()) return;
@@ -99,14 +84,7 @@ struct SequencerStepInlineFeedbackState {
         visible.set(nextMask.any());
     }
 
-    void reset() {
-        visible.set(false);
-        touchedMask.set({});
-        property.set(StepProperty::NOTE);
-        for (auto& value : hideAtMs) {
-            value = 0;
-        }
-    }
+    void reset();
 };
 
 struct SequencerPatternVariationFeedbackState {
@@ -116,11 +94,7 @@ struct SequencerPatternVariationFeedbackState {
     Signal<StepProperty> property{StepProperty::NOTE};
     uint32_t hideAtMs = 0;
 
-    void show(StepProperty stepProperty, uint32_t nowMs) {
-        property.set(stepProperty);
-        hideAtMs = nowMs + DISPLAY_HOLD_MS;
-        visible.set(true);
-    }
+    void show(StepProperty stepProperty, uint32_t nowMs);
 
     void update(uint32_t nowMs) {
         if (!visible.get()) return;
@@ -129,10 +103,35 @@ struct SequencerPatternVariationFeedbackState {
         hideAtMs = 0;
     }
 
-    void reset() {
-        visible.set(false);
-        property.set(StepProperty::NOTE);
-        hideAtMs = 0;
+    void reset();
+};
+
+struct SequencerHistoryFeedbackState {
+    static constexpr uint32_t DISPLAY_HOLD_MS = 1200;
+    static constexpr size_t LINE_SIZE = 32;
+
+    Signal<bool, 6> visible{false};
+    Signal<uint32_t, 6> revision{0};
+    std::array<char, LINE_SIZE> line1{};
+    std::array<char, LINE_SIZE> line2{};
+    std::array<char, LINE_SIZE> line3{};
+    uint32_t hideAtMs = 0;
+
+    void show(const char* nextLine1, const char* nextLine2, const char* nextLine3, uint32_t nowMs);
+
+    void update(uint32_t nowMs) {
+        if (!visible.get()) return;
+        if (nowMs < hideAtMs) return;
+        reset();
+    }
+
+    void reset();
+
+private:
+    static void copyLine(std::array<char, LINE_SIZE>& destination, const char* source) {
+        const char* text = source ? source : "";
+        std::strncpy(destination.data(), text, destination.size() - 1);
+        destination[destination.size() - 1] = '\0';
     }
 };
 
@@ -144,11 +143,9 @@ struct SequencerPatternQuickControlsState {
     };
     Signal<int8_t, 4> offsetSteps{0};
 
-    void reset() {
-        selecting.set(false);
-        physicalHoldActive.set(false);
-        offsetSteps.set(0);
-    }
+    SequencerPatternQuickControlsState();
+
+    void reset();
 };
 
 struct SequencerStructureUiState {
@@ -157,16 +154,14 @@ struct SequencerStructureUiState {
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
 
+    SequencerStructureUiState();
+    ~SequencerStructureUiState();
+
     void syncPreviewPage(uint8_t pageIndex) {
         previewPageIndex.set(pageIndex);
     }
 
-    void reset() {
-        previewAddPageSlot.set(false);
-        previewPageIndex.set(0);
-        pageHold.clear();
-        pageSelection.reset(core::state::StructureSelectionScope::PAGE);
-    }
+    void reset();
 };
 
 }  // namespace core::state::sequencer

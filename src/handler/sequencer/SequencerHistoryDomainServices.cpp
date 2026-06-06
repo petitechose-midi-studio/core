@@ -13,14 +13,31 @@ namespace {
 FLASHMEM bool recordPatternFromCoreState(
     void* context,
     core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
 ) {
     if (context == nullptr) {
         return false;
     }
 
     auto* state = static_cast<core::state::CoreState*>(context);
-    return state->recordSequencerPatternHistory(std::move(before), std::move(after));
+    return state->recordSequencerPatternHistory(
+        std::move(before),
+        std::move(after),
+        descriptor
+    );
+}
+
+FLASHMEM bool recordFullBankFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryFullBankChangePtr change
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->recordSequencerBankHistory(std::move(change));
 }
 
 FLASHMEM bool undoFromCoreState(void* context) {
@@ -41,6 +58,29 @@ FLASHMEM bool redoFromCoreState(void* context) {
     return state->redoSequencerHistory();
 }
 
+FLASHMEM bool beginCoalescedPatternEditFromCoreState(
+    void* context,
+    uint8_t step,
+    core::state::sequencer::StepProperty property,
+    uint32_t nowMs
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->beginOrContinueSequencerPatternHistoryCoalescing(step, property, nowMs);
+}
+
+FLASHMEM bool commitCoalescedPatternEditFromCoreState(void* context) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->commitSequencerPatternHistoryCoalescing();
+}
+
 }  // namespace
 
 FLASHMEM SequencerHistoryDomainServices::SequencerHistoryDomainServices(Operations operations)
@@ -53,21 +93,36 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
         Operations{
             &state,
             recordPatternFromCoreState,
+            recordFullBankFromCoreState,
             undoFromCoreState,
             redoFromCoreState,
+            beginCoalescedPatternEditFromCoreState,
+            commitCoalescedPatternEditFromCoreState,
         }
     };
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
     core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
 ) const {
     return operations_.recordPattern != nullptr &&
            operations_.recordPattern(
                operations_.context,
                std::move(before),
-               std::move(after)
+               std::move(after),
+               descriptor
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(
+    core::state::sequencer::SequencerHistoryFullBankChangePtr change
+) const {
+    return operations_.recordFullBank != nullptr &&
+           operations_.recordFullBank(
+               operations_.context,
+               std::move(change)
            );
 }
 
@@ -77,6 +132,25 @@ FLASHMEM bool SequencerHistoryDomainServices::undo() const {
 
 FLASHMEM bool SequencerHistoryDomainServices::redo() const {
     return operations_.redo != nullptr && operations_.redo(operations_.context);
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(
+    uint8_t step,
+    core::state::sequencer::StepProperty property,
+    uint32_t nowMs
+) const {
+    return operations_.beginCoalescedPatternEdit != nullptr &&
+           operations_.beginCoalescedPatternEdit(
+               operations_.context,
+               step,
+               property,
+               nowMs
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::commitCoalescedPatternEdit() const {
+    return operations_.commitCoalescedPatternEdit != nullptr &&
+           operations_.commitCoalescedPatternEdit(operations_.context);
 }
 
 }  // namespace core::handler

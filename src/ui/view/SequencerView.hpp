@@ -5,13 +5,12 @@
  * @brief Standalone sequencer view
  */
 
-#include <memory>
-
 #include <lvgl.h>
 
 #include <oc/state/SignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/DataManagerState.hpp"
 #include "state/GlobalSettingsState.hpp"
@@ -66,6 +65,7 @@ private:
     void createBottomControls();
     void createPropertyStrip();
     void createActionStrips();
+    void createHistoryToast();
     static void onStepGridGeometryInvalidated(void* userData);
     void bindToState();
     void bindBottomControlsState();
@@ -76,6 +76,7 @@ private:
     void bindOverlayVisibilityState();
     void bindLeftActionStripState();
     void bindBottomActionStripState();
+    void bindHistoryFeedbackState();
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
 
@@ -89,10 +90,12 @@ private:
     void requestPropertyStripRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
+    void requestHistoryFeedbackRender();
     void requestGridRender();
     static void onRenderTimer(lv_timer_t* timer);
     void markAllDirty();
     void render();
+    void renderHistoryToast();
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
@@ -105,21 +108,26 @@ private:
     bool property_strip_dirty_ = true;
     bool left_action_strip_dirty_ = true;
     bool bottom_action_strip_dirty_ = true;
+    bool history_feedback_dirty_ = true;
     bool grid_dirty_ = true;
-    std::unique_ptr<PausableLvglTimer> render_timer_;
+    core::app::ExtmemUniquePtr<PausableLvglTimer> render_timer_;
 
-    std::unique_ptr<core::ui::MainViewFrame> frame_;
+    core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
     lv_obj_t* interaction_container_ = nullptr;
     lv_obj_t* center_column_ = nullptr;
 
-    std::unique_ptr<core::ui::SequencerHeaderBar> header_bar_;
-    std::unique_ptr<core::ui::SequencerBottomControls> bottom_controls_;
-    std::unique_ptr<core::ui::StepPropertyStrip> property_strip_;
-    std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
-    std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
-    std::unique_ptr<core::ui::StepGrid> step_grid_;
+    core::app::ExtmemUniquePtr<core::ui::SequencerHeaderBar> header_bar_;
+    core::app::ExtmemUniquePtr<core::ui::SequencerBottomControls> bottom_controls_;
+    core::app::ExtmemUniquePtr<core::ui::StepPropertyStrip> property_strip_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::StepGrid> step_grid_;
+    lv_obj_t* history_toast_ = nullptr;
+    lv_obj_t* history_toast_line1_ = nullptr;
+    lv_obj_t* history_toast_line2_ = nullptr;
+    lv_obj_t* history_toast_line3_ = nullptr;
 };
 
 }  // namespace core::ui
