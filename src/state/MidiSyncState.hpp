@@ -34,14 +34,7 @@ struct MidiSyncState {
     oc::state::Signal<ClockSourceActive> activeSource{ClockSourceActive::INTERNAL};
     oc::state::Signal<bool> externalClockPresent{false};
 
-    void reset() {
-        mode.set(MidiSyncMode::AUTO);
-        followTransport.set(true);
-        autoFallbackMs.set(500);
-        autoLockClockCount.set(6);
-        activeSource.set(ClockSourceActive::INTERNAL);
-        externalClockPresent.set(false);
-    }
+    void reset();
 };
 
 }  // namespace core::state

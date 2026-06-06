@@ -1,7 +1,6 @@
 #include "BaseMacroWidget.hpp"
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
-#include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
@@ -11,15 +10,14 @@
 
 namespace core::ui {
 
-namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 namespace stheme = standalone::theme;
 namespace icons = standalone::icons;
 
-BaseMacroWidget::BaseMacroWidget(uint8_t index)
+FLASHMEM BaseMacroWidget::BaseMacroWidget(uint8_t index)
     : index_(index) {}
 
-BaseMacroWidget::~BaseMacroWidget() {
+FLASHMEM BaseMacroWidget::~BaseMacroWidget() {
     cc_value_.reset();
     cc_prefix_.reset();
     ch_value_.reset();

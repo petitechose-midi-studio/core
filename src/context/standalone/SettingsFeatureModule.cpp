@@ -177,6 +177,6 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     );
 }
 
-SettingsFeatureModule::~SettingsFeatureModule() = default;
+FLASHMEM SettingsFeatureModule::~SettingsFeatureModule() = default;
 
 }  // namespace core::context::standalone

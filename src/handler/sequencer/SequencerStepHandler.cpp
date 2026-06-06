@@ -12,10 +12,10 @@
 
 namespace core::handler {
 
-SequencerStepHandler::SequencerStepHandler(StateRefs state,
-                                           oc::api::EncoderAPI& encoders,
-                                           oc::api::ButtonAPI& buttons,
-                                           oc::type::ScopeID scopeId
+FLASHMEM SequencerStepHandler::SequencerStepHandler(StateRefs state,
+                                                    oc::api::EncoderAPI& encoders,
+                                                    oc::api::ButtonAPI& buttons,
+                                                    oc::type::ScopeID scopeId
 #if defined(MS_UX_RECORDER)
                                            ,
                                            core::validation::ux::StructureUxTraceState* uxTraceState
@@ -229,7 +229,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         });
 }
 
-void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
+FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
     history_.commitCoalescedPatternEdit();
 
     uint8_t abs = 0;

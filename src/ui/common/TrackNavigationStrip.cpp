@@ -30,17 +30,17 @@ constexpr lv_opa_t OUTLINE_OPA_SELECTED = LV_OPA_70;
 
 }  // namespace
 
-TrackNavigationStrip::TrackNavigationStrip(lv_obj_t* parent) {
+FLASHMEM TrackNavigationStrip::TrackNavigationStrip(lv_obj_t* parent) {
     createUI(parent);
 }
 
-TrackNavigationStrip::~TrackNavigationStrip() {
+FLASHMEM TrackNavigationStrip::~TrackNavigationStrip() {
     if (container_) {
         lv_obj_delete(container_);
     }
 }
 
-void TrackNavigationStrip::refreshItemGeometryCache_() {
+FLASHMEM void TrackNavigationStrip::refreshItemGeometryCache_() {
     if (!items_row_) return;
 
     for (uint8_t i = 0; i < items_.size(); ++i) {
@@ -111,7 +111,7 @@ FLASHMEM void TrackNavigationStrip::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(current_cursor_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void TrackNavigationStrip::render(const TrackNavigationStripProps& props) {
+FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& props) {
     if (!container_ || !items_row_) return;
 
     lv_coord_t rowWidth = lv_obj_get_width(items_row_);

@@ -32,7 +32,7 @@ constexpr uint32_t PAGE_DUPLICATE_PREVIEW_COLOR = theme::color::MACRO_4;
 constexpr uint32_t PAGE_DUPLICATE_OVERWRITE_COLOR = 0xFFB000;
 
 template <size_t N>
-void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
+FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
     if (!label) return;
 
     const char* next = (text && text[0]) ? text : "";
@@ -45,14 +45,14 @@ void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const ch
     lv_label_set_text(label, cache.data());
 }
 
-void drawStripRect(lv_layer_t* layer,
-                   const lv_area_t& area,
-                   lv_color_t color,
-                   lv_opa_t opa,
-                   lv_coord_t radius,
-                   lv_coord_t borderWidth = 0,
-                   lv_color_t borderColor = lv_color_black(),
-                   lv_opa_t borderOpa = LV_OPA_TRANSP) {
+FLASHMEM void drawStripRect(lv_layer_t* layer,
+                            const lv_area_t& area,
+                            lv_color_t color,
+                            lv_opa_t opa,
+                            lv_coord_t radius,
+                            lv_coord_t borderWidth = 0,
+                            lv_color_t borderColor = lv_color_black(),
+                            lv_opa_t borderOpa = LV_OPA_TRANSP) {
     if (!layer) return;
 
     lv_draw_rect_dsc_t rectDsc;
@@ -66,7 +66,7 @@ void drawStripRect(lv_layer_t* layer,
     lv_draw_rect(layer, &rectDsc, &area);
 }
 
-lv_area_t markerArea(const lv_area_t& segmentArea, lv_coord_t y) {
+FLASHMEM lv_area_t markerArea(const lv_area_t& segmentArea, lv_coord_t y) {
     constexpr lv_coord_t MARKER_INSET = 1;
     return lv_area_t{
         .x1 = static_cast<lv_coord_t>(segmentArea.x1 + MARKER_INSET),
@@ -78,11 +78,11 @@ lv_area_t markerArea(const lv_area_t& segmentArea, lv_coord_t y) {
 
 }  // namespace
 
-SequencerHeaderBar::SequencerHeaderBar(lv_obj_t* parent) {
+FLASHMEM SequencerHeaderBar::SequencerHeaderBar(lv_obj_t* parent) {
     createUI(parent);
 }
 
-SequencerHeaderBar::~SequencerHeaderBar() {
+FLASHMEM SequencerHeaderBar::~SequencerHeaderBar() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -185,20 +185,20 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(strip_cursor_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void SequencerHeaderBar::render(const SequencerHeaderBarProps& props) {
+FLASHMEM void SequencerHeaderBar::render(const SequencerHeaderBarProps& props) {
     renderTopRowOnly(props);
     renderStripOnly(props);
 }
 
-void SequencerHeaderBar::renderTopRowOnly(const SequencerHeaderBarProps& props) {
+FLASHMEM void SequencerHeaderBar::renderTopRowOnly(const SequencerHeaderBarProps& props) {
     renderTopRow(props);
 }
 
-void SequencerHeaderBar::renderStripOnly(const SequencerHeaderBarProps& props) {
+FLASHMEM void SequencerHeaderBar::renderStripOnly(const SequencerHeaderBarProps& props) {
     renderStrip(props);
 }
 
-void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
+FLASHMEM void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
     if (!container_ || !accent_ || !label_ || !badge_) return;
 
     setLabelTextIfChanged(label_, left_text_cache_, props.leftText);
@@ -250,7 +250,7 @@ void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
     badge_cache_initialized_ = true;
 }
 
-void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
+FLASHMEM void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
     auto* self = static_cast<SequencerHeaderBar*>(lv_event_get_user_data(event));
     if (!self || !self->strip_row_) return;
 
@@ -335,7 +335,7 @@ void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
     }
 }
 
-void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
+FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
     if (!strip_row_) return;
 
     const auto stripState = header_model::buildStripState(props);

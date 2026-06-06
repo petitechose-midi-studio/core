@@ -1,11 +1,13 @@
 #include "persistence/StorageRecoveryMachine.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::persistence {
 
-StorageRecoveryMachine::StorageRecoveryMachine(StorageRecoveryConfig config)
+FLASHMEM StorageRecoveryMachine::StorageRecoveryMachine(StorageRecoveryConfig config)
     : config_(config) {}
 
-StorageRecoveryAction StorageRecoveryMachine::update(StorageRecoveryInput input) {
+FLASHMEM StorageRecoveryAction StorageRecoveryMachine::update(StorageRecoveryInput input) {
     switch (state_) {
         case StorageRecoveryState::READY:
             if (!input.mediaPresent) {
@@ -67,7 +69,7 @@ StorageRecoveryAction StorageRecoveryMachine::update(StorageRecoveryInput input)
     }
 }
 
-StorageRecoveryAction StorageRecoveryMachine::completeReopen(bool success, uint32_t nowMs) {
+FLASHMEM StorageRecoveryAction StorageRecoveryMachine::completeReopen(bool success, uint32_t nowMs) {
     if (state_ != StorageRecoveryState::REOPENING) {
         return StorageRecoveryAction::NONE;
     }
@@ -75,7 +77,7 @@ StorageRecoveryAction StorageRecoveryMachine::completeReopen(bool success, uint3
     return success ? StorageRecoveryAction::ATTEMPT_REVALIDATE : StorageRecoveryAction::NONE;
 }
 
-StorageRecoveryAction StorageRecoveryMachine::completeRevalidation(bool success, uint32_t nowMs) {
+FLASHMEM StorageRecoveryAction StorageRecoveryMachine::completeRevalidation(bool success, uint32_t nowMs) {
     if (state_ != StorageRecoveryState::REVALIDATING) {
         return StorageRecoveryAction::NONE;
     }
@@ -83,16 +85,16 @@ StorageRecoveryAction StorageRecoveryMachine::completeRevalidation(bool success,
     return success ? StorageRecoveryAction::MARK_RECOVERED : StorageRecoveryAction::NONE;
 }
 
-void StorageRecoveryMachine::resetReady() {
+FLASHMEM void StorageRecoveryMachine::resetReady() {
     state_ = StorageRecoveryState::READY;
     state_since_ms_ = 0;
 }
 
-bool StorageRecoveryMachine::elapsed_(uint32_t nowMs, uint32_t sinceMs, uint32_t delayMs) {
+FLASHMEM bool StorageRecoveryMachine::elapsed_(uint32_t nowMs, uint32_t sinceMs, uint32_t delayMs) {
     return static_cast<uint32_t>(nowMs - sinceMs) >= delayMs;
 }
 
-void StorageRecoveryMachine::enter_(StorageRecoveryState state, uint32_t nowMs) {
+FLASHMEM void StorageRecoveryMachine::enter_(StorageRecoveryState state, uint32_t nowMs) {
     state_ = state;
     state_since_ms_ = nowMs;
 }

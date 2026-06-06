@@ -55,7 +55,7 @@ inline oc::type::IsActiveFn canOpenQuickControls(
 
 }  // namespace
 
-SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHandler(
+FLASHMEM SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHandler(
     StateRefs state,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -122,7 +122,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
         .then([this]() { closeCancel(); });
 }
 
-void SequencerPatternQuickControlsHandler::open() {
+FLASHMEM void SequencerPatternQuickControlsHandler::open() {
     history_.commitCoalescedPatternEdit();
 
     auto& quick = sequencer_.patternQuickControls;
@@ -136,7 +136,7 @@ void SequencerPatternQuickControlsHandler::open() {
     configureOptForFocusedItem();
 }
 
-void SequencerPatternQuickControlsHandler::closeApply() {
+FLASHMEM void SequencerPatternQuickControlsHandler::closeApply() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
     if (history_snapshot_valid_ && !history_command_consumed_) {
@@ -156,7 +156,7 @@ void SequencerPatternQuickControlsHandler::closeApply() {
     quick.reset();
 }
 
-void SequencerPatternQuickControlsHandler::closeCancel() {
+FLASHMEM void SequencerPatternQuickControlsHandler::closeCancel() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
 
@@ -168,13 +168,13 @@ void SequencerPatternQuickControlsHandler::closeCancel() {
     history_command_consumed_ = false;
 }
 
-void SequencerPatternQuickControlsHandler::enterPhysicalHoldLayer() {
+FLASHMEM void SequencerPatternQuickControlsHandler::enterPhysicalHoldLayer() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
     quick.physicalHoldActive.set(true);
 }
 
-void SequencerPatternQuickControlsHandler::consumeUndo() {
+FLASHMEM void SequencerPatternQuickControlsHandler::consumeUndo() {
     if (history_.undo()) {
         history_command_consumed_ = true;
         core::state::sequencer::captureSnapshot(sequencer_.pattern, cancel_snapshot_);
@@ -183,7 +183,7 @@ void SequencerPatternQuickControlsHandler::consumeUndo() {
     }
 }
 
-void SequencerPatternQuickControlsHandler::consumeRedo() {
+FLASHMEM void SequencerPatternQuickControlsHandler::consumeRedo() {
     if (history_.redo()) {
         history_command_consumed_ = true;
         core::state::sequencer::captureSnapshot(sequencer_.pattern, cancel_snapshot_);
@@ -192,7 +192,7 @@ void SequencerPatternQuickControlsHandler::consumeRedo() {
     }
 }
 
-void SequencerPatternQuickControlsHandler::navigate(float delta) {
+FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
     if (!sequencer_.patternQuickControls.selecting.get()) return;
     if (!nav::hasTurnDelta(delta)) return;
 
@@ -207,7 +207,7 @@ void SequencerPatternQuickControlsHandler::navigate(float delta) {
     configureOptForFocusedItem();
 }
 
-void SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
+FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
     auto item = sequencer_.patternQuickControls.focusedItem.get();
     if (item == Item::OFFSET) {
         const int offsetSteps = normalizedToOffset(normalized);
@@ -227,7 +227,7 @@ void SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
     }
 }
 
-void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
+FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
     const auto item = sequencer_.patternQuickControls.focusedItem.get();
     if (item == Item::OFFSET) {
         input_utils::StepPropertyEncoderConfig config;
@@ -254,7 +254,7 @@ void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
     );
 }
 
-void SequencerPatternQuickControlsHandler::clampFocusToLength() {
+FLASHMEM void SequencerPatternQuickControlsHandler::clampFocusToLength() {
     const uint8_t len = sequencer_.pattern.length.get();
     if (len == 0) return;
 
@@ -267,31 +267,31 @@ void SequencerPatternQuickControlsHandler::clampFocusToLength() {
     sequencer_.page.set(sequencer_.pageForStep(focused));
 }
 
-int SequencerPatternQuickControlsHandler::focusedItemOrderIndex() const {
+FLASHMEM int SequencerPatternQuickControlsHandler::focusedItemOrderIndex() const {
     const auto focused = sequencer_.patternQuickControls.focusedItem.get();
     return static_cast<int>(core::state::sequencer::quickControlOrderIndex(focused));
 }
 
-void SequencerPatternQuickControlsHandler::setFocusedItemByOrderIndex(int index) {
+FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedItemByOrderIndex(int index) {
     const int clamped = std::clamp(index, 0, ITEM_COUNT - 1);
     sequencer_.patternQuickControls.focusedItem.set(
         core::state::sequencer::quickControlAtOrderIndex(static_cast<size_t>(clamped))
     );
 }
 
-int SequencerPatternQuickControlsHandler::currentOffsetMax() const {
+FLASHMEM int SequencerPatternQuickControlsHandler::currentOffsetMax() const {
     const uint8_t len = sequencer_.pattern.length.get();
     return (len > 0) ? static_cast<int>(len - 1) : 0;
 }
 
-float SequencerPatternQuickControlsHandler::offsetToNormalized(int offsetSteps) const {
+FLASHMEM float SequencerPatternQuickControlsHandler::offsetToNormalized(int offsetSteps) const {
     const int maxOffset = currentOffsetMax();
     if (maxOffset <= 0) return 0.5f;
     const int clamped = std::clamp(offsetSteps, -maxOffset, maxOffset);
     return static_cast<float>(clamped + maxOffset) / static_cast<float>(maxOffset * 2);
 }
 
-int SequencerPatternQuickControlsHandler::normalizedToOffset(float normalized) const {
+FLASHMEM int SequencerPatternQuickControlsHandler::normalizedToOffset(float normalized) const {
     const int maxOffset = currentOffsetMax();
     if (maxOffset <= 0) return 0;
     const int itemCount = (maxOffset * 2) + 1;
@@ -299,7 +299,7 @@ int SequencerPatternQuickControlsHandler::normalizedToOffset(float normalized) c
     return index - maxOffset;
 }
 
-void SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int offsetSteps) {
+FLASHMEM void SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int offsetSteps) {
     core::state::sequencer::applySnapshotToEditor(sequencer_, offset_snapshot_);
     if (offsetSteps != 0) {
         core::state::sequencer::rotatePattern(sequencer_, offsetSteps);

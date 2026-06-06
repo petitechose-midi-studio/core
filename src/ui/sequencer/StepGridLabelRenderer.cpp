@@ -2,7 +2,6 @@
 
 #include <cstring>
 
-#include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
 #include "state/sequencer/StepPropertyDisplay.hpp"
@@ -26,41 +25,41 @@ constexpr uint32_t STEP_OUT_OF_SCALE_COLOR = 0xFF6B6B;
 constexpr const char* STEP_SCALE_SEPARATOR = ":";
 constexpr const char* STEP_OUT_OF_SCALE_MARKER = "!";
 
-FLASHMEM bool showsOriginalPitchReminder(const TileRenderState& state) {
+bool showsOriginalPitchReminder(const TileRenderState& state) {
     return hasRuntimePitchFeedback(state) &&
            runtimePitchDisplayNote(state) != state.note;
 }
 
-FLASHMEM bool showsSecondaryPitchLabel(const TileRenderState& state) {
+bool showsSecondaryPitchLabel(const TileRenderState& state) {
     return hasScaleDegreeFeedback(state) ||
            hasOutOfScaleFeedback(state) ||
            showsOriginalPitchReminder(state);
 }
 
-FLASHMEM bool primaryLabelShowsScaleDegree(const TileRenderState& state) {
+bool primaryLabelShowsScaleDegree(const TileRenderState& state) {
     return hasScaleDegreeFeedback(state);
 }
 
-FLASHMEM bool primaryLabelShowsOutOfScaleMarker(const TileRenderState& state) {
+bool primaryLabelShowsOutOfScaleMarker(const TileRenderState& state) {
     return !primaryLabelShowsScaleDegree(state) && hasOutOfScaleFeedback(state);
 }
 
-FLASHMEM bool primaryLabelShowsScalePrefix(const TileRenderState& state) {
+bool primaryLabelShowsScalePrefix(const TileRenderState& state) {
     return primaryLabelShowsScaleDegree(state) || primaryLabelShowsOutOfScaleMarker(state);
 }
 
-FLASHMEM bool secondaryLabelShowsCurrentNote(const TileRenderState& state) {
+bool secondaryLabelShowsCurrentNote(const TileRenderState& state) {
     return primaryLabelShowsScalePrefix(state);
 }
 
-FLASHMEM lv_color_t secondaryPitchLabelColor(const TileRenderState& state) {
+lv_color_t secondaryPitchLabelColor(const TileRenderState& state) {
     if (secondaryLabelShowsCurrentNote(state)) {
         return noteLabelColor(runtimePitchDisplayNote(state));
     }
     return lv_color_hex(STEP_TEXT_DISABLED_COLOR);
 }
 
-FLASHMEM lv_opa_t secondaryPitchLabelOpa(const TileRenderState& state,
+lv_opa_t secondaryPitchLabelOpa(const TileRenderState& state,
                                 bool probabilityMasked) {
     if (!state.enabled) return STEP_TEXT_DISABLED_OPA;
     if (probabilityMasked) return STEP_PROBABILITY_MASKED_OPA;
@@ -70,13 +69,13 @@ FLASHMEM lv_opa_t secondaryPitchLabelOpa(const TileRenderState& state,
     return STEP_SOURCE_NOTE_REMINDER_OPA;
 }
 
-FLASHMEM void appendScaleSeparator(char* buffer, size_t size) {
+void appendScaleSeparator(char* buffer, size_t size) {
     const size_t len = std::strlen(buffer);
     if (len + 1 >= size) return;
     std::strncat(buffer, STEP_SCALE_SEPARATOR, size - len - 1);
 }
 
-FLASHMEM void formatNoteLabel(char* buffer, size_t size, uint8_t note, const TileRenderState& state) {
+void formatNoteLabel(char* buffer, size_t size, uint8_t note, const TileRenderState& state) {
     if (!buffer || size == 0) return;
 
     core::state::sequencer::formatStepPropertyValue(
@@ -93,7 +92,7 @@ FLASHMEM void formatNoteLabel(char* buffer, size_t size, uint8_t note, const Til
 
 }  // namespace
 
-FLASHMEM void renderTileNoteLabel(uint8_t tileIndex,
+void renderTileNoteLabel(uint8_t tileIndex,
                          TileRenderCache& cache,
                          lv_obj_t* noteLabel,
                          lv_obj_t* originalNoteLabel,

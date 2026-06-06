@@ -5,9 +5,9 @@
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 
-#include "app/ExtmemAllocator.hpp"
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/ViewSelectorItems.hpp"
 
@@ -147,27 +147,18 @@ FLASHMEM void SequencerSettingsHandler::applySelectorAndClose() {
 
     history_.commitCoalescedPatternEdit();
 
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot before;
-    const bool beforeValid =
-        core::state::sequencer::captureHistorySnapshot(sequencer_tracks_, sequencer_, before);
+    auto change = captureSequencerFullBankHistoryBefore(sequencer_tracks_, sequencer_);
 
     services_.applyChoice(row, choice);
 
-    if (beforeValid) {
-        core::state::sequencer::SequencerHistoryTrackBankSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(sequencer_tracks_, sequencer_, after)) {
-            auto change =
-                core::app::makeExtmemUnique<core::state::sequencer::SequencerHistoryFullBankChange>();
-            if (change) {
-                change->descriptor = core::state::sequencer::SequencerHistoryDescriptor{
-                    .kind =
-                        core::state::sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
-                };
-                change->before = std::move(before);
-                change->after = std::move(after);
-                history_.recordFullBank(std::move(change));
+    if (change && captureSequencerFullBankHistoryAfter(sequencer_tracks_, sequencer_, *change)) {
+        recordSequencerFullBankHistoryChange(
+            history_,
+            std::move(change),
+            core::state::sequencer::SequencerHistoryDescriptor{
+                .kind = core::state::sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
             }
-        }
+        );
     }
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR);

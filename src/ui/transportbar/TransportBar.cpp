@@ -27,14 +27,14 @@ const lv_color_t COLOR_TEMPO_UNLOCKED = lv_color_hex(theme::color::TEXT_SECONDAR
 const lv_color_t COLOR_LOCK = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
 }  // namespace
 
-TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
+FLASHMEM TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
     : state_(state) {
     createLayout(parent);
     setupBindings();
     render();
 }
 
-TransportBar::~TransportBar() {
+FLASHMEM TransportBar::~TransportBar() {
     subs_.clear();
     if (container_) {
         lv_obj_delete(container_);

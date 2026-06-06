@@ -1,6 +1,5 @@
 #include "ui/macro/MacroBottomControls.hpp"
 
-#include <algorithm>
 #include <cstring>
 
 #include <oc/type/TextFormat.hpp>
@@ -98,11 +97,11 @@ size_t quickItemIndex(QuickItem item) {
 
 }  // namespace
 
-MacroBottomControls::MacroBottomControls(lv_obj_t* parent) {
+FLASHMEM MacroBottomControls::MacroBottomControls(lv_obj_t* parent) {
     createUI(parent);
 }
 
-MacroBottomControls::~MacroBottomControls() {
+FLASHMEM MacroBottomControls::~MacroBottomControls() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -171,7 +170,7 @@ FLASHMEM void MacroBottomControls::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void MacroBottomControls::createQuickControl(
+FLASHMEM void MacroBottomControls::createQuickControl(
     QuickControlWidgets& widgets,
     lv_obj_t* parent,
     QuickItem item,

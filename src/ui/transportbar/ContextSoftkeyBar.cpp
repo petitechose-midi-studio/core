@@ -1,5 +1,6 @@
 #include "ContextSoftkeyBar.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
@@ -11,7 +12,7 @@ namespace core::ui {
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
 
-ContextSoftkeyBar::ContextSoftkeyBar(lv_obj_t* parent) {
+FLASHMEM ContextSoftkeyBar::ContextSoftkeyBar(lv_obj_t* parent) {
     container_ = lv_obj_create(parent);
     lv_obj_remove_style_all(container_);
     lv_obj_set_size(container_, LV_PCT(100), theme::layout::TRANSPORT_BAR_HEIGHT);
@@ -39,7 +40,7 @@ ContextSoftkeyBar::ContextSoftkeyBar(lv_obj_t* parent) {
     hide();
 }
 
-ContextSoftkeyBar::~ContextSoftkeyBar() {
+FLASHMEM ContextSoftkeyBar::~ContextSoftkeyBar() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;

@@ -11,6 +11,52 @@
 
 namespace core::state::sequencer {
 
+FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot() = default;
+FLASHMEM SequencerHistoryPatternSnapshot::~SequencerHistoryPatternSnapshot() = default;
+FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot(
+    SequencerHistoryPatternSnapshot&&
+) noexcept = default;
+FLASHMEM SequencerHistoryPatternSnapshot& SequencerHistoryPatternSnapshot::operator=(
+    SequencerHistoryPatternSnapshot&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryTrackBankSnapshot::SequencerHistoryTrackBankSnapshot() = default;
+FLASHMEM SequencerHistoryTrackBankSnapshot::~SequencerHistoryTrackBankSnapshot() = default;
+FLASHMEM SequencerHistoryTrackBankSnapshot::SequencerHistoryTrackBankSnapshot(
+    SequencerHistoryTrackBankSnapshot&&
+) noexcept = default;
+FLASHMEM SequencerHistoryTrackBankSnapshot& SequencerHistoryTrackBankSnapshot::operator=(
+    SequencerHistoryTrackBankSnapshot&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryPatternChange::SequencerHistoryPatternChange() = default;
+FLASHMEM SequencerHistoryPatternChange::~SequencerHistoryPatternChange() = default;
+FLASHMEM SequencerHistoryPatternChange::SequencerHistoryPatternChange(
+    SequencerHistoryPatternChange&&
+) noexcept = default;
+FLASHMEM SequencerHistoryPatternChange& SequencerHistoryPatternChange::operator=(
+    SequencerHistoryPatternChange&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryFullBankChange::SequencerHistoryFullBankChange() = default;
+FLASHMEM SequencerHistoryFullBankChange::~SequencerHistoryFullBankChange() = default;
+FLASHMEM SequencerHistoryFullBankChange::SequencerHistoryFullBankChange(
+    SequencerHistoryFullBankChange&&
+) noexcept = default;
+FLASHMEM SequencerHistoryFullBankChange& SequencerHistoryFullBankChange::operator=(
+    SequencerHistoryFullBankChange&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryEntry::SequencerHistoryEntry() = default;
+FLASHMEM SequencerHistoryEntry::~SequencerHistoryEntry() = default;
+FLASHMEM SequencerHistoryEntry::SequencerHistoryEntry(SequencerHistoryEntry&&) noexcept = default;
+FLASHMEM SequencerHistoryEntry& SequencerHistoryEntry::operator=(
+    SequencerHistoryEntry&&
+) noexcept = default;
+
+FLASHMEM SequencerHistoryService::SequencerHistoryService() = default;
+FLASHMEM SequencerHistoryService::~SequencerHistoryService() = default;
+
 namespace {
 
 using Graph = oc::note::sequencer::StepSequencerGraph;

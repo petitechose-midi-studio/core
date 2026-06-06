@@ -55,25 +55,7 @@ struct SequencerTrackBankState {
         return settings;
     }
 
-    bool setProjectScaleSettings(oc::note::sequencer::StepSequencerScaleSettings settings) {
-        settings.clamp();
-        auto current = project_scale_settings_;
-        current.clamp();
-        if (current.root == settings.root &&
-            current.type == settings.type &&
-            current.mode == settings.mode) {
-            return false;
-        }
-
-        project_scale_settings_ = settings;
-        project_scale_revision_.set(project_scale_revision_.get() + 1U);
-        for (auto& track : tracks_) {
-            if (!isPatternScaleOverride(track.scalePolicy)) {
-                track.bumpPatternScaleRevision();
-            }
-        }
-        return true;
-    }
+    bool setProjectScaleSettings(oc::note::sequencer::StepSequencerScaleSettings settings);
 
     bool isTrackEnabled(uint8_t index) const {
         const uint8_t clamped = clampTrackIndex(index);

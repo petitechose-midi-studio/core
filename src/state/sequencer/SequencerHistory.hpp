@@ -21,11 +21,12 @@ struct SequencerHistoryPatternSnapshot {
     uint8_t page = 0;
     SequencerHistoryGraphPtr graph;
 
-    SequencerHistoryPatternSnapshot() = default;
+    SequencerHistoryPatternSnapshot();
+    ~SequencerHistoryPatternSnapshot();
     SequencerHistoryPatternSnapshot(const SequencerHistoryPatternSnapshot&) = delete;
     SequencerHistoryPatternSnapshot& operator=(const SequencerHistoryPatternSnapshot&) = delete;
-    SequencerHistoryPatternSnapshot(SequencerHistoryPatternSnapshot&&) noexcept = default;
-    SequencerHistoryPatternSnapshot& operator=(SequencerHistoryPatternSnapshot&&) noexcept = default;
+    SequencerHistoryPatternSnapshot(SequencerHistoryPatternSnapshot&&) noexcept;
+    SequencerHistoryPatternSnapshot& operator=(SequencerHistoryPatternSnapshot&&) noexcept;
 };
 
 struct SequencerHistoryTrackBankSnapshot {
@@ -35,11 +36,12 @@ struct SequencerHistoryTrackBankSnapshot {
     SequencerHistoryGraphPtr editorGraph;
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
 
-    SequencerHistoryTrackBankSnapshot() = default;
+    SequencerHistoryTrackBankSnapshot();
+    ~SequencerHistoryTrackBankSnapshot();
     SequencerHistoryTrackBankSnapshot(const SequencerHistoryTrackBankSnapshot&) = delete;
     SequencerHistoryTrackBankSnapshot& operator=(const SequencerHistoryTrackBankSnapshot&) = delete;
-    SequencerHistoryTrackBankSnapshot(SequencerHistoryTrackBankSnapshot&&) noexcept = default;
-    SequencerHistoryTrackBankSnapshot& operator=(SequencerHistoryTrackBankSnapshot&&) noexcept = default;
+    SequencerHistoryTrackBankSnapshot(SequencerHistoryTrackBankSnapshot&&) noexcept;
+    SequencerHistoryTrackBankSnapshot& operator=(SequencerHistoryTrackBankSnapshot&&) noexcept;
 };
 
 enum class SequencerHistoryScope : uint8_t {
@@ -90,11 +92,12 @@ struct SequencerHistoryPatternChange {
     SequencerHistoryPatternSnapshot before;
     SequencerHistoryPatternSnapshot after;
 
-    SequencerHistoryPatternChange() = default;
+    SequencerHistoryPatternChange();
+    ~SequencerHistoryPatternChange();
     SequencerHistoryPatternChange(const SequencerHistoryPatternChange&) = delete;
     SequencerHistoryPatternChange& operator=(const SequencerHistoryPatternChange&) = delete;
-    SequencerHistoryPatternChange(SequencerHistoryPatternChange&&) noexcept = default;
-    SequencerHistoryPatternChange& operator=(SequencerHistoryPatternChange&&) noexcept = default;
+    SequencerHistoryPatternChange(SequencerHistoryPatternChange&&) noexcept;
+    SequencerHistoryPatternChange& operator=(SequencerHistoryPatternChange&&) noexcept;
 };
 
 struct SequencerHistoryFullBankChange {
@@ -102,11 +105,12 @@ struct SequencerHistoryFullBankChange {
     SequencerHistoryTrackBankSnapshot before;
     SequencerHistoryTrackBankSnapshot after;
 
-    SequencerHistoryFullBankChange() = default;
+    SequencerHistoryFullBankChange();
+    ~SequencerHistoryFullBankChange();
     SequencerHistoryFullBankChange(const SequencerHistoryFullBankChange&) = delete;
     SequencerHistoryFullBankChange& operator=(const SequencerHistoryFullBankChange&) = delete;
-    SequencerHistoryFullBankChange(SequencerHistoryFullBankChange&&) noexcept = default;
-    SequencerHistoryFullBankChange& operator=(SequencerHistoryFullBankChange&&) noexcept = default;
+    SequencerHistoryFullBankChange(SequencerHistoryFullBankChange&&) noexcept;
+    SequencerHistoryFullBankChange& operator=(SequencerHistoryFullBankChange&&) noexcept;
 };
 
 using SequencerHistoryFullBankChangePtr =
@@ -117,11 +121,12 @@ struct SequencerHistoryEntry {
     core::app::ExtmemUniquePtr<SequencerHistoryPatternChange> pattern;
     core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange> fullBank;
 
-    SequencerHistoryEntry() = default;
+    SequencerHistoryEntry();
+    ~SequencerHistoryEntry();
     SequencerHistoryEntry(const SequencerHistoryEntry&) = delete;
     SequencerHistoryEntry& operator=(const SequencerHistoryEntry&) = delete;
-    SequencerHistoryEntry(SequencerHistoryEntry&&) noexcept = default;
-    SequencerHistoryEntry& operator=(SequencerHistoryEntry&&) noexcept = default;
+    SequencerHistoryEntry(SequencerHistoryEntry&&) noexcept;
+    SequencerHistoryEntry& operator=(SequencerHistoryEntry&&) noexcept;
 
     bool valid() const {
         return (scope == SequencerHistoryScope::PatternOnly && pattern.get() != nullptr) ||
@@ -181,6 +186,9 @@ public:
     static constexpr uint8_t PATTERN_ENTRY_LIMIT = 32;
     static constexpr uint8_t FULL_BANK_ENTRY_LIMIT = 4;
     static constexpr uint8_t ENTRY_LIMIT = PATTERN_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT;
+
+    SequencerHistoryService();
+    ~SequencerHistoryService();
 
     bool recordPattern(
         uint8_t trackIndex,

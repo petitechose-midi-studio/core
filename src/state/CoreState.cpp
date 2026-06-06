@@ -25,7 +25,7 @@ namespace core::state {
 
 namespace {
 
-SequencerDomainState::PendingApply* createPendingApply() {
+FLASHMEM SequencerDomainState::PendingApply* createPendingApply() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(SequencerDomainState::PendingApply));
     if (!memory) return nullptr;
@@ -35,19 +35,19 @@ SequencerDomainState::PendingApply* createPendingApply() {
 #endif
 }
 
-core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
+FLASHMEM core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
     return core::app::makeExtmemUnique<UiSystemState>();
 }
 
-core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState() {
+FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState() {
     return core::app::makeExtmemUnique<sequencer::SequencerState>();
 }
 
-core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
+FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
     return core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
 }
 
-int32_t sequencerHistoryValueForProperty(
+FLASHMEM int32_t sequencerHistoryValueForProperty(
     const sequencer::SequencerHistoryPatternSnapshot& snapshot,
     uint8_t step,
     sequencer::StepProperty property
@@ -72,7 +72,7 @@ int32_t sequencerHistoryValueForProperty(
     }
 }
 
-sequencer::SequencerHistoryDescriptor makeStepPropertyHistoryDescriptor(
+FLASHMEM sequencer::SequencerHistoryDescriptor makeStepPropertyHistoryDescriptor(
     uint8_t track,
     uint8_t step,
     sequencer::StepProperty property,
@@ -90,11 +90,11 @@ sequencer::SequencerHistoryDescriptor makeStepPropertyHistoryDescriptor(
     };
 }
 
-const char* historyDirectionLabel(sequencer::SequencerHistoryDirection direction) {
+FLASHMEM const char* historyDirectionLabel(sequencer::SequencerHistoryDirection direction) {
     return direction == sequencer::SequencerHistoryDirection::Redo ? "REDO" : "UNDO";
 }
 
-const char* historyPropertyLabel(sequencer::StepProperty property) {
+FLASHMEM const char* historyPropertyLabel(sequencer::StepProperty property) {
     switch (property) {
         case sequencer::StepProperty::NOTE:
             return "Note";
@@ -111,7 +111,7 @@ const char* historyPropertyLabel(sequencer::StepProperty property) {
     }
 }
 
-const char* historyActionLabel(sequencer::SequencerHistoryActionKind kind) {
+FLASHMEM const char* historyActionLabel(sequencer::SequencerHistoryActionKind kind) {
     switch (kind) {
         case sequencer::SequencerHistoryActionKind::StepToggle:
             return "Step Toggle";
@@ -139,7 +139,7 @@ const char* historyActionLabel(sequencer::SequencerHistoryActionKind kind) {
     }
 }
 
-void formatHistoryValue(
+FLASHMEM void formatHistoryValue(
     char* buffer,
     size_t bufferSize,
     sequencer::StepProperty property,
@@ -169,7 +169,7 @@ void formatHistoryValue(
     std::snprintf(buffer, bufferSize, "%ld", static_cast<long>(value));
 }
 
-void formatHistoryVariationValue(
+FLASHMEM void formatHistoryVariationValue(
     char* buffer,
     size_t bufferSize,
     sequencer::StepProperty property,
@@ -195,7 +195,7 @@ void formatHistoryVariationValue(
     std::snprintf(buffer, bufferSize, "+/-%ld", static_cast<long>(value));
 }
 
-void formatHistoryStructureValue(
+FLASHMEM void formatHistoryStructureValue(
     char* buffer,
     size_t bufferSize,
     sequencer::SequencerHistoryActionKind kind,
@@ -216,7 +216,7 @@ void formatHistoryStructureValue(
     );
 }
 
-void showSequencerHistoryFeedback(
+FLASHMEM void showSequencerHistoryFeedback(
     sequencer::SequencerState& sequencerState,
     const sequencer::SequencerHistoryApplyResult& result,
     uint32_t nowMs
@@ -313,7 +313,7 @@ void showSequencerHistoryFeedback(
     sequencerState.historyFeedback.show(line1, line2, line3, nowMs);
 }
 
-shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& state) {
+FLASHMEM shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& state) {
     return shared::SharedTrackCoordinator::StateRefs{
         state.sharedTrackActive,
         state.sharedTrackEnabledMask,
@@ -325,9 +325,11 @@ shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& state) {
 
 }  // namespace
 
-SequencerDomainState::SequencerDomainState(oc::interface::IStorage& workspaceStorage,
-                                           oc::interface::IStorage& patternLibraryStorage,
-                                           oc::interface::IStorage& setLibraryStorage)
+FLASHMEM MacroDomainState::~MacroDomainState() = default;
+
+FLASHMEM SequencerDomainState::SequencerDomainState(oc::interface::IStorage& workspaceStorage,
+                                                    oc::interface::IStorage& patternLibraryStorage,
+                                                    oc::interface::IStorage& setLibraryStorage)
     : editor(createSequencerEditorState())
     , tracks(createSequencerTrackBankState())
     , persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage)
@@ -342,7 +344,9 @@ SequencerDomainState::SequencerDomainState(oc::interface::IStorage& workspaceSto
     }
 }
 
-void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply* ptr) const noexcept {
+FLASHMEM SequencerDomainState::~SequencerDomainState() = default;
+
+FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply* ptr) const noexcept {
     if (!ptr) return;
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     ptr->~PendingApply();
@@ -412,20 +416,20 @@ void CoreState::update() {
     CoreStateLifecycle::update(*this);
 }
 
-void CoreState::factoryReset() {
+FLASHMEM void CoreState::factoryReset() {
     CoreStateLifecycle::factoryReset(*this);
 }
 
-void CoreState::flush() {
+FLASHMEM void CoreState::flush() {
     commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::flush(*this);
 }
 
-void CoreState::flushAutoPersist() {
+FLASHMEM void CoreState::flushAutoPersist() {
     CoreStateLifecycle::flushAutoPersist(*this);
 }
 
-void CoreState::resetStandaloneTransientUi() {
+FLASHMEM void CoreState::resetStandaloneTransientUi() {
     commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::resetStandaloneTransientUi(*this);
 }
@@ -438,15 +442,15 @@ bool CoreState::isSequencerPersistenceReady() const {
     return sequencerDomain_.persistenceReady;
 }
 
-void CoreState::requestMacroWorkspacePersist() {
+FLASHMEM void CoreState::requestMacroWorkspacePersist() {
     requestMacroWorkspacePersist_();
 }
 
-void CoreState::persistSequencerWorkspace() {
+FLASHMEM void CoreState::persistSequencerWorkspace() {
     persistSequencerWorkspace_();
 }
 
-bool CoreState::recordSequencerPatternHistory(
+FLASHMEM bool CoreState::recordSequencerPatternHistory(
     sequencer::SequencerHistoryPatternSnapshot before,
     sequencer::SequencerHistoryPatternSnapshot after,
     sequencer::SequencerHistoryDescriptor descriptor
@@ -475,7 +479,7 @@ bool CoreState::recordSequencerPatternHistory(
     return true;
 }
 
-bool CoreState::recordSequencerBankHistory(
+FLASHMEM bool CoreState::recordSequencerBankHistory(
     sequencer::SequencerHistoryTrackBankSnapshot before,
     sequencer::SequencerHistoryTrackBankSnapshot after,
     sequencer::SequencerHistoryDescriptor descriptor
@@ -493,7 +497,7 @@ bool CoreState::recordSequencerBankHistory(
     return true;
 }
 
-bool CoreState::recordSequencerBankHistory(
+FLASHMEM bool CoreState::recordSequencerBankHistory(
     sequencer::SequencerHistoryFullBankChangePtr change
 ) {
     if (!sequencerHistory.recordFullBank(std::move(change))) {
@@ -505,7 +509,7 @@ bool CoreState::recordSequencerBankHistory(
     return true;
 }
 
-bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
+FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step,
     sequencer::StepProperty property,
     uint32_t nowMs
@@ -538,7 +542,7 @@ bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     return true;
 }
 
-bool CoreState::commitSequencerPatternHistoryCoalescing() {
+FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     if (!pending.pending) {
         return false;
@@ -570,7 +574,7 @@ bool CoreState::commitSequencerPatternHistoryCoalescing() {
     );
 }
 
-bool CoreState::updateSequencerPatternHistoryCoalescing(uint32_t nowMs) {
+FLASHMEM bool CoreState::updateSequencerPatternHistoryCoalescing(uint32_t nowMs) {
     const auto& pending = sequencerDomain_.coalescedPatternHistory;
     if (!pending.pending) {
         return false;
@@ -588,7 +592,7 @@ bool CoreState::hasPendingSequencerPatternHistoryCoalescing() const {
     return sequencerDomain_.coalescedPatternHistory.pending;
 }
 
-bool CoreState::undoSequencerHistory() {
+FLASHMEM bool CoreState::undoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
     const auto result = sequencerHistory.undoWithResult(sequencerTracks, sequencer);
@@ -602,7 +606,7 @@ bool CoreState::undoSequencerHistory() {
     return true;
 }
 
-bool CoreState::redoSequencerHistory() {
+FLASHMEM bool CoreState::redoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
     const auto result = sequencerHistory.redoWithResult(sequencerTracks, sequencer);
@@ -616,23 +620,23 @@ bool CoreState::redoSequencerHistory() {
     return true;
 }
 
-void CoreState::clearSequencerHistory() {
+FLASHMEM void CoreState::clearSequencerHistory() {
     sequencerDomain_.coalescedPatternHistory.clear();
     sequencerHistory.clear();
 }
 
-void CoreState::queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge) {
+FLASHMEM void CoreState::queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge) {
     queueSequencerApply_(staged, merge);
 }
 
-void CoreState::queuePendingSequencerBankApply(
+FLASHMEM void CoreState::queuePendingSequencerBankApply(
     const sequencer::SequencerTrackBankState& stagedBank,
     const sequencer::SequencerState& staged
 ) {
     queueSequencerBankApply_(stagedBank, staged);
 }
 
-void CoreState::clearPendingSequencerApply() {
+FLASHMEM void CoreState::clearPendingSequencerApply() {
     clearPendingSequencerApply_();
 }
 
@@ -667,7 +671,7 @@ void CoreState::noteMacroInteraction() {
     }
 }
 
-persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRamAfterStorageReopen() {
+FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRamAfterStorageReopen() {
     auto status = settings.saveAllStatus(
         midiSync,
         sharedTrackEnabledMask.get(),
@@ -716,12 +720,12 @@ persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRamAfterSto
     return persistence::PersistenceWriteStatus::OK;
 }
 
-void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bool merge) {
+FLASHMEM void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bool merge) {
     commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
 }
 
-void CoreState::queueSequencerBankApply_(
+FLASHMEM void CoreState::queueSequencerBankApply_(
     const sequencer::SequencerTrackBankState& stagedBank,
     const sequencer::SequencerState& staged
 ) {
@@ -729,7 +733,7 @@ void CoreState::queueSequencerBankApply_(
     CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
 }
 
-void CoreState::requestMacroWorkspacePersist_() {
+FLASHMEM void CoreState::requestMacroWorkspacePersist_() {
     if (!macroDomain_.persistenceReady) return;
 
     macroDomain_.workspacePersistPending = true;
@@ -739,7 +743,7 @@ void CoreState::requestMacroWorkspacePersist_() {
     }
 }
 
-void CoreState::persistMacroWorkspaceNow_() {
+FLASHMEM void CoreState::persistMacroWorkspaceNow_() {
     if (!macroDomain_.persistenceReady) return;
     const auto status = macroPersistence.saveWorkspaceStatus(pages);
     if (status == persistence::PersistenceWriteStatus::OK) {
@@ -762,7 +766,7 @@ void CoreState::persistMacroWorkspaceNow_() {
     }
 }
 
-void CoreState::persistSequencerWorkspace_() {
+FLASHMEM void CoreState::persistSequencerWorkspace_() {
     if (!sequencerDomain_.persistenceReady) return;
     sequencer::storeActiveTrack(sequencerTracks, sequencer);
     const auto status = sequencerPersistence.saveWorkspaceStatus(sequencerTracks, sequencer);
@@ -772,7 +776,7 @@ void CoreState::persistSequencerWorkspace_() {
     }
 }
 
-void CoreState::requestSharedTrackPersist_() {
+FLASHMEM void CoreState::requestSharedTrackPersist_() {
     sharedTrackPersistPending_ = true;
     sharedTrackPersistTimestampMs_ = oc::time::millis();
     if (sharedTrackPersistTimestampMs_ == 0) {
@@ -780,7 +784,7 @@ void CoreState::requestSharedTrackPersist_() {
     }
 }
 
-void CoreState::persistSharedTrackState_() {
+FLASHMEM void CoreState::persistSharedTrackState_() {
     if (!sharedTrackPersistPending_) return;
 
     const auto persistStatus = settings.saveSharedTrackStateStatus(
@@ -807,11 +811,11 @@ void CoreState::persistSharedTrackState_() {
     }
 }
 
-void CoreState::clearPendingSequencerApply_() {
+FLASHMEM void CoreState::clearPendingSequencerApply_() {
     CoreStateLifecycle::clearPendingSequencerApply(*this);
 }
 
-bool CoreState::refreshSharedTrackStateFromMacroPages_(bool persist) {
+FLASHMEM bool CoreState::refreshSharedTrackStateFromMacroPages_(bool persist) {
     const auto result = shared::SharedTrackCoordinator::refreshFromMacroPages(sharedTrackRefs(*this));
     if (result.changed && persist) {
         requestSharedTrackPersist_();
@@ -819,7 +823,7 @@ bool CoreState::refreshSharedTrackStateFromMacroPages_(bool persist) {
     return result.changed;
 }
 
-bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
+FLASHMEM bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
     const auto result = shared::SharedTrackCoordinator::refreshFromSequencer(sharedTrackRefs(*this));
     if (result.changed && persist) {
         requestSharedTrackPersist_();
@@ -827,7 +831,7 @@ bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
     return result.changed;
 }
 
-bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist) {
+FLASHMEM bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist) {
     commitSequencerPatternHistoryCoalescing();
 
     const auto result = shared::SharedTrackCoordinator::apply(

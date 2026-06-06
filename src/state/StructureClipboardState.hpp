@@ -37,12 +37,7 @@ struct SequencerPageClipboard {
     std::array<int8_t, STEP_COUNT> nudge{};
     std::array<uint8_t, STEP_COUNT> probability{};
 
-    void reset() {
-        valid = false;
-        sourcePage = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
-        count = 0;
-        enabledMask = 0;
-    }
+    void reset();
 
     bool isEnabled(uint8_t index) const {
         if (index >= count) return false;
@@ -59,35 +54,15 @@ struct StructureClipboardState {
     core::state::SequencerPageClipboard sequencerPage{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
 
-    void clear() {
-        kind.set(StructureClipboardKind::NONE);
-        sequencerPage.reset();
-        revision.set(revision.get() + 1);
-    }
+    void clear();
 
-    void storeMacroPage(const core::state::macro::MacroPageData& page) {
-        macroPage = page;
-        kind.set(StructureClipboardKind::MACRO_PAGE);
-        revision.set(revision.get() + 1);
-    }
+    void storeMacroPage(const core::state::macro::MacroPageData& page);
 
-    void storeMacroTrack(const core::state::macro::MacroTrackData& track) {
-        macroTrack = track;
-        kind.set(StructureClipboardKind::MACRO_TRACK);
-        revision.set(revision.get() + 1);
-    }
+    void storeMacroTrack(const core::state::macro::MacroTrackData& track);
 
-    void storeSequencerPage(const core::state::SequencerPageClipboard& page) {
-        sequencerPage = page;
-        kind.set(StructureClipboardKind::SEQUENCER_PAGE);
-        revision.set(revision.get() + 1);
-    }
+    void storeSequencerPage(const core::state::SequencerPageClipboard& page);
 
-    void storeSequencerTrack(const core::state::sequencer::SequencerPatternSnapshot& track) {
-        sequencerTrack = track;
-        kind.set(StructureClipboardKind::SEQUENCER_TRACK);
-        revision.set(revision.get() + 1);
-    }
+    void storeSequencerTrack(const core::state::sequencer::SequencerPatternSnapshot& track);
 
     bool hasMacroPage() const { return kind.get() == StructureClipboardKind::MACRO_PAGE; }
     bool hasMacroTrack() const { return kind.get() == StructureClipboardKind::MACRO_TRACK; }

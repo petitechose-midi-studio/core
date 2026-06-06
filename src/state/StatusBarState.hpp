@@ -58,6 +58,7 @@ struct StatusBarState {
     std::array<Signal<uint8_t, 4>, TRACK_COUNT> trackNoteActivity{};
 
     StatusBarState();
+    ~StatusBarState();
 
     void pulseNoteIn() {
         pulseNoteIn(oc::time::millis());

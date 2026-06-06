@@ -44,11 +44,11 @@ bool sameProps(const MacroPropertyStripProps& lhs, const MacroPropertyStripProps
 
 }  // namespace
 
-MacroPropertyStrip::MacroPropertyStrip(lv_obj_t* parent) {
+FLASHMEM MacroPropertyStrip::MacroPropertyStrip(lv_obj_t* parent) {
     createUI(parent);
 }
 
-MacroPropertyStrip::~MacroPropertyStrip() {
+FLASHMEM MacroPropertyStrip::~MacroPropertyStrip() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -109,7 +109,7 @@ FLASHMEM void MacroPropertyStrip::createUI(lv_obj_t* parent) {
     }
 }
 
-void MacroPropertyStrip::ensureCursorGeometry() {
+FLASHMEM void MacroPropertyStrip::ensureCursorGeometry() {
     if (!container_) return;
 
     const lv_coord_t width = lv_obj_get_width(container_);
@@ -139,7 +139,7 @@ void MacroPropertyStrip::ensureCursorGeometry() {
     geometry_cache_initialized_ = true;
 }
 
-void MacroPropertyStrip::render(const MacroPropertyStripProps& props) {
+FLASHMEM void MacroPropertyStrip::render(const MacroPropertyStripProps& props) {
     if (!container_) return;
     if (has_rendered_ && sameProps(rendered_props_, props)) return;
 

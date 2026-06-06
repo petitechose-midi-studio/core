@@ -1,12 +1,13 @@
 #include "handler/settings/DataManagerFeedbackFormatter.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
 namespace core::handler {
 
 namespace {
 
-const char* slotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
+FLASHMEM const char* slotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
     using core::persistence::SlotLoadStatus;
     switch (status) {
         case SlotLoadStatus::OK: return "OK";
@@ -22,7 +23,7 @@ const char* slotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
     }
 }
 
-const char* dataManagerActionFailureLabel(core::state::DataManagerCommandAction action) {
+FLASHMEM const char* dataManagerActionFailureLabel(core::state::DataManagerCommandAction action) {
     switch (action) {
         case core::state::DataManagerCommandAction::SAVE:
             return "Save failed";
@@ -35,7 +36,7 @@ const char* dataManagerActionFailureLabel(core::state::DataManagerCommandAction 
     }
 }
 
-const char* dataManagerActionSuccessVerb(core::state::DataManagerCommandAction action) {
+FLASHMEM const char* dataManagerActionSuccessVerb(core::state::DataManagerCommandAction action) {
     switch (action) {
         case core::state::DataManagerCommandAction::SAVE:
             return "Saved";
@@ -51,7 +52,7 @@ const char* dataManagerActionSuccessVerb(core::state::DataManagerCommandAction a
 
 }  // namespace
 
-void formatDataManagerCommandExecutionFeedback(
+FLASHMEM void formatDataManagerCommandExecutionFeedback(
     char* message,
     size_t messageSize,
     core::state::DataManagerCommand command,

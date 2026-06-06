@@ -1,5 +1,6 @@
 #include "ui/view/MainViewFrame.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 namespace style = oc::ui::lvgl::style;
@@ -12,7 +13,7 @@ constexpr lv_coord_t STRUCTURE_ROW_HEIGHT = 12;
 
 }  // namespace
 
-MainViewFrame::MainViewFrame(lv_obj_t* parent) {
+FLASHMEM MainViewFrame::MainViewFrame(lv_obj_t* parent) {
     layout_ = std::make_unique<ms::ui::LayoutView>(parent);
     container_ = layout_->getElement();
     header_root_ = layout_->header();
@@ -43,7 +44,7 @@ MainViewFrame::MainViewFrame(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(body_, 0, 0);
 }
 
-void MainViewFrame::createInteractionRow() {
+FLASHMEM void MainViewFrame::createInteractionRow() {
     if (interaction_row_ || !body_) return;
 
     interaction_row_ = lv_obj_create(body_);
@@ -60,7 +61,7 @@ void MainViewFrame::createInteractionRow() {
     lv_obj_set_style_pad_column(interaction_row_, 0, 0);
 }
 
-void MainViewFrame::createCenterColumn() {
+FLASHMEM void MainViewFrame::createCenterColumn() {
     if (center_column_ || !interaction_row_) return;
 
     center_column_ = lv_obj_create(interaction_row_);
@@ -74,7 +75,7 @@ void MainViewFrame::createCenterColumn() {
     lv_obj_set_style_pad_row(center_column_, 0, 0);
 }
 
-void MainViewFrame::createStructureRow() {
+FLASHMEM void MainViewFrame::createStructureRow() {
     if (structure_row_ || !header_root_) return;
 
     structure_row_ = lv_obj_create(header_root_);

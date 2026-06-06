@@ -1,6 +1,7 @@
 #include "state/macro/MacroWorkflow.hpp"
 
 #include <algorithm>
+#include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
 #include "state/CoreState.hpp"
@@ -9,7 +10,7 @@ namespace core::state::macro {
 
 namespace {
 
-bool configsMatch(
+FLASHMEM bool configsMatch(
     const std::array<MacroConfig, MACRO_COUNT>& lhs,
     const std::array<MacroConfig, MACRO_COUNT>& rhs
 ) {
@@ -23,8 +24,8 @@ bool configsMatch(
 
 }  // namespace
 
-void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& macros,
-                                              const MacroPagesState& pages) {
+FLASHMEM void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& macros,
+                                                       const MacroPagesState& pages) {
     const auto& pageData = pages.activePageData();
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         char label[16];
@@ -36,15 +37,17 @@ void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& macros,
     }
 }
 
-void MacroWorkflow::syncActivePageValuesFromRuntime(MacroPagesState& pages,
-                                                    const core::state::MacroState& macros) {
+FLASHMEM void MacroWorkflow::syncActivePageValuesFromRuntime(
+    MacroPagesState& pages,
+    const core::state::MacroState& macros
+) {
     auto& page = pages.activePageData();
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         page.values[i] = std::clamp(macros.slots[i].value.get(), 0.0f, 1.0f);
     }
 }
 
-void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
+FLASHMEM void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     if (pageIndex >= PAGE_COUNT) return;
 
     const auto previousConfigs = state.pages.activeConfigs;
@@ -58,7 +61,7 @@ void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
-void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex) {
+FLASHMEM void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex) {
     if (trackIndex >= TRACK_COUNT) return;
 
     const auto previousConfigs = state.pages.activeConfigs;
@@ -72,7 +75,7 @@ void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex) {
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
-bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc) {
+FLASHMEM bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc) {
     if (index >= MACRO_COUNT) return false;
     if (channel > 15 || cc > 127) return false;
 
@@ -96,7 +99,7 @@ bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t channel, 
     return true;
 }
 
-bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) {
+FLASHMEM bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) {
     if (channel > 15) return false;
     if (state.pages.activeTrackChannel() == channel) return false;
 

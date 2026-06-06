@@ -78,6 +78,7 @@ struct MacroDomainState {
         : runtime(core::app::makeExtmemUnique<MacroState>())
         , pages(core::app::makeExtmemUnique<macro::MacroPagesState>())
         , persistence(workspaceStorage, libraryStorage) {}
+    ~MacroDomainState();
 
     MacroDomainState(const MacroDomainState&) = delete;
     MacroDomainState& operator=(const MacroDomainState&) = delete;
@@ -149,6 +150,7 @@ struct SequencerDomainState {
     SequencerDomainState(oc::interface::IStorage& workspaceStorage,
                          oc::interface::IStorage& patternLibraryStorage,
                          oc::interface::IStorage& setLibraryStorage);
+    ~SequencerDomainState();
 
     SequencerDomainState(const SequencerDomainState&) = delete;
     SequencerDomainState& operator=(const SequencerDomainState&) = delete;
@@ -186,6 +188,7 @@ struct UiSystemState {
     macro::MacroUiState macroUi;
 
     UiSystemState();
+    ~UiSystemState();
 };
 
 /**

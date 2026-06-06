@@ -65,7 +65,7 @@ FLASHMEM void SequencerView::onDeactivate() {
 }
 
 FLASHMEM void SequencerView::createLayout(lv_obj_t* parent) {
-    frame_ = std::make_unique<MainViewFrame>(parent);
+    frame_ = core::app::makeExtmemUnique<MainViewFrame>(parent);
     container_ = frame_->container();
     body_container_ = frame_->body();
     lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
@@ -74,12 +74,12 @@ FLASHMEM void SequencerView::createLayout(lv_obj_t* parent) {
 
 FLASHMEM void SequencerView::createHeaderBar() {
     if (!frame_) return;
-    header_bar_ = std::make_unique<SequencerHeaderBar>(frame_->header());
+    header_bar_ = core::app::makeExtmemUnique<SequencerHeaderBar>(frame_->header());
 }
 
 FLASHMEM void SequencerView::createGrid() {
     if (!center_column_) return;
-    step_grid_ = std::make_unique<StepGrid>(
+    step_grid_ = core::app::makeExtmemUnique<StepGrid>(
         center_column_,
         onStepGridGeometryInvalidated,
         this
@@ -88,12 +88,12 @@ FLASHMEM void SequencerView::createGrid() {
 
 FLASHMEM void SequencerView::createPropertyStrip() {
     if (!interaction_container_) return;
-    property_strip_ = std::make_unique<StepPropertyStrip>(interaction_container_);
+    property_strip_ = core::app::makeExtmemUnique<StepPropertyStrip>(interaction_container_);
 }
 
 FLASHMEM void SequencerView::createBottomControls() {
     if (!body_container_) return;
-    bottom_controls_ = std::make_unique<SequencerBottomControls>(body_container_);
+    bottom_controls_ = core::app::makeExtmemUnique<SequencerBottomControls>(body_container_);
 }
 
 FLASHMEM void SequencerView::createHistoryToast() {
@@ -150,7 +150,7 @@ FLASHMEM void SequencerView::createActionStrips() {
     frame_->createInteractionRow();
     interaction_container_ = frame_->interactionRow();
 
-    left_action_strip_ = std::make_unique<ContextActionStrip>(
+    left_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         interaction_container_,
         ContextActionStripOrientation::VERTICAL,
         ContextActionStripVerticalLayout::SPREAD
@@ -159,7 +159,7 @@ FLASHMEM void SequencerView::createActionStrips() {
     frame_->createCenterColumn();
     center_column_ = frame_->centerColumn();
 
-    bottom_action_strip_ = std::make_unique<ContextActionStrip>(
+    bottom_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         body_container_,
         ContextActionStripOrientation::HORIZONTAL
     );
@@ -355,7 +355,7 @@ FLASHMEM void SequencerView::bindHistoryFeedbackState() {
 
 FLASHMEM void SequencerView::ensureRenderTimer() {
     if (render_timer_) return;
-    render_timer_ = std::make_unique<PausableLvglTimer>(16, onRenderTimer, this);
+    render_timer_ = core::app::makeExtmemUnique<PausableLvglTimer>(16, onRenderTimer, this);
 }
 
 FLASHMEM bool SequencerView::hasBlockingOverlay() const {

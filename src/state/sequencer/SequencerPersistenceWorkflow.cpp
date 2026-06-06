@@ -3,12 +3,29 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/CoreState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::state::sequencer {
+
+namespace {
+
+FLASHMEM core::app::ExtmemUniquePtr<SequencerState> makeSequencerStateScratch() {
+    return core::app::makeExtmemUnique<SequencerState>();
+}
+
+FLASHMEM core::app::ExtmemUniquePtr<SequencerTrackBankState> makeTrackBankScratch() {
+    return core::app::makeExtmemUnique<SequencerTrackBankState>();
+}
+
+FLASHMEM core::app::ExtmemUniquePtr<SequencerTrackBankSnapshot> makeTrackBankSnapshotScratch() {
+    return core::app::makeExtmemUnique<SequencerTrackBankSnapshot>();
+}
+
+}  // namespace
 
 FLASHMEM bool SequencerPersistenceWorkflow::savePatternSlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return false;
@@ -26,11 +43,12 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSl
     if (!state.isSequencerPersistenceReady()) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
     if (state.statusBar.playing.get()) {
-        SequencerState staged;
+        auto staged = makeSequencerStateScratch();
+        if (!staged) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
         const persistence::SlotLoadStatus status =
-            state.sequencerPersistence.loadPatternSlot(slotIndex, staged);
+            state.sequencerPersistence.loadPatternSlot(slotIndex, *staged);
         if (status == persistence::SlotLoadStatus::OK) {
-            state.queuePendingSequencerApply(staged);
+            state.queuePendingSequencerApply(*staged);
         }
         return status;
     }
@@ -82,44 +100,47 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
     if (!state.isSequencerPersistenceReady()) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
     if (state.statusBar.playing.get()) {
-        SequencerTrackBankState stagedBank;
-        SequencerState staged;
-        stagedBank.reset();
-        staged.reset();
+        auto stagedBank = makeTrackBankScratch();
+        auto staged = makeSequencerStateScratch();
+        if (!stagedBank || !staged) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+        stagedBank->reset();
+        staged->reset();
         const persistence::SlotLoadStatus status =
-            state.sequencerPersistence.loadSetSlot(slotIndex, stagedBank, staged);
+            state.sequencerPersistence.loadSetSlot(slotIndex, *stagedBank, *staged);
         if (status == persistence::SlotLoadStatus::OK) {
             if (merge) {
-                state.queuePendingSequencerApply(staged, true);
+                state.queuePendingSequencerApply(*staged, true);
             } else {
-                state.queuePendingSequencerBankApply(stagedBank, staged);
+                state.queuePendingSequencerBankApply(*stagedBank, *staged);
             }
         }
         return status;
     }
 
     state.clearPendingSequencerApply();
-    SequencerTrackBankState stagedBank;
-    SequencerState staged;
-    stagedBank.reset();
-    staged.reset();
+    auto stagedBank = makeTrackBankScratch();
+    auto staged = makeSequencerStateScratch();
+    if (!stagedBank || !staged) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+    stagedBank->reset();
+    staged->reset();
     const persistence::SlotLoadStatus status =
-        state.sequencerPersistence.loadSetSlot(slotIndex, stagedBank, staged);
+        state.sequencerPersistence.loadSetSlot(slotIndex, *stagedBank, *staged);
     if (status == persistence::SlotLoadStatus::OK) {
         if (merge) {
             SequencerPatternSnapshot snapshot;
-            captureSnapshot(staged.pattern, snapshot);
+            captureSnapshot(staged->pattern, snapshot);
             mergeSnapshotIntoCurrent(state.sequencer, snapshot);
-            copyGraph(state.sequencer.pattern, staged.pattern);
+            copyGraph(state.sequencer.pattern, staged->pattern);
             storeActiveTrack(state.sequencerTracks, state.sequencer);
         } else {
-            SequencerTrackBankSnapshot snapshot;
-            captureTrackBankSnapshot(stagedBank, staged, snapshot);
-            applyTrackBankSnapshot(state.sequencerTracks, state.sequencer, snapshot);
+            auto snapshot = makeTrackBankSnapshotScratch();
+            if (!snapshot) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+            captureTrackBankSnapshot(*stagedBank, *staged, *snapshot);
+            applyTrackBankSnapshot(state.sequencerTracks, state.sequencer, *snapshot);
             for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-                copyGraph(state.sequencerTracks.track(i), stagedBank.track(i));
+                copyGraph(state.sequencerTracks.track(i), stagedBank->track(i));
             }
-            copyGraph(state.sequencer.pattern, staged.pattern);
+            copyGraph(state.sequencer.pattern, staged->pattern);
         }
         state.setSharedTrackState(
             state.sequencerTracks.currentEnabledMask(),

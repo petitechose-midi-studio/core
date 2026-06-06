@@ -22,16 +22,9 @@ struct TrackNavigationState {
     StructureHoldState hold;
     StructureSelectionState selection;
 
-    void syncPreviewTrack(uint8_t trackIndex) {
-        previewTrackIndex.set(trackIndex);
-    }
+    void syncPreviewTrack(uint8_t trackIndex);
 
-    void reset() {
-        previewAddSlot.set(false);
-        previewTrackIndex.set(0);
-        hold.clear();
-        selection.reset(StructureSelectionScope::TRACK);
-    }
+    void reset();
 };
 
 }  // namespace core::state

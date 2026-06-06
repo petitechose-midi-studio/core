@@ -31,7 +31,7 @@ constexpr lv_coord_t CURSOR_OFFSET_Y = 1;
 constexpr lv_opa_t ACTIVE_MIN_OPA = LV_OPA_70;
 
 template <size_t N>
-void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
+FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
     if (!label) return;
 
     const char* next = (text && text[0]) ? text : "";
@@ -46,11 +46,11 @@ void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const ch
 
 }  // namespace
 
-TrackHeaderRow::TrackHeaderRow(lv_obj_t* parent) {
+FLASHMEM TrackHeaderRow::TrackHeaderRow(lv_obj_t* parent) {
     createUI(parent);
 }
 
-TrackHeaderRow::~TrackHeaderRow() {
+FLASHMEM TrackHeaderRow::~TrackHeaderRow() {
     if (container_) {
         lv_obj_delete(container_);
     }
@@ -126,7 +126,7 @@ FLASHMEM void TrackHeaderRow::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
+FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
     if (!container_) return;
 
     setLabelTextIfChanged(label_, left_text_cache_, props.leftText);

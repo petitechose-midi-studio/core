@@ -36,7 +36,7 @@ inline oc::type::IsActiveFn canOpenPropertySelector(
     };
 }
 
-uint8_t rangeForProperty(const Ranges& ranges, StepProperty property) {
+FLASHMEM uint8_t rangeForProperty(const Ranges& ranges, StepProperty property) {
     switch (property) {
         case StepProperty::NOTE:
             return ranges.pitchSemitones;
@@ -51,7 +51,7 @@ uint8_t rangeForProperty(const Ranges& ranges, StepProperty property) {
     }
 }
 
-bool findSingleVariationRangeChange(
+FLASHMEM bool findSingleVariationRangeChange(
     const Ranges& before,
     const Ranges& after,
     StepProperty& changedProperty,
@@ -80,7 +80,7 @@ bool findSingleVariationRangeChange(
     return changeCount == 1;
 }
 
-core::state::sequencer::SequencerHistoryDescriptor makeVariationHistoryDescriptor(
+FLASHMEM core::state::sequencer::SequencerHistoryDescriptor makeVariationHistoryDescriptor(
     const Ranges& before,
     const Ranges& after,
     StepProperty fallbackProperty
@@ -105,7 +105,7 @@ core::state::sequencer::SequencerHistoryDescriptor makeVariationHistoryDescripto
 
 }  // namespace
 
-SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
+FLASHMEM SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     StateRefs state,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -156,7 +156,7 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
         .then([this]() { closeCancel(); });
 }
 
-void SequencerPropertySelectorHandler::open() {
+FLASHMEM void SequencerPropertySelectorHandler::open() {
     history_.commitCoalescedPatternEdit();
 
     auto& o = sequencer_.stepPropertyInlineSelector;
@@ -177,7 +177,7 @@ void SequencerPropertySelectorHandler::open() {
     configureOptForSelectedProperty();
 }
 
-void SequencerPropertySelectorHandler::navigate(float delta) {
+FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
     if (!nav::hasTurnDelta(delta)) return;
 
@@ -194,7 +194,7 @@ void SequencerPropertySelectorHandler::navigate(float delta) {
     configureOptForSelectedProperty();
 }
 
-void SequencerPropertySelectorHandler::closeApply() {
+FLASHMEM void SequencerPropertySelectorHandler::closeApply() {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
     if (history_snapshot_valid_) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
@@ -218,7 +218,7 @@ void SequencerPropertySelectorHandler::closeApply() {
     sequencer_.stepPropertyInlineSelector.reset();
 }
 
-void SequencerPropertySelectorHandler::closeCancel() {
+FLASHMEM void SequencerPropertySelectorHandler::closeCancel() {
     auto& o = sequencer_.stepPropertyInlineSelector;
     if (!o.selecting.get()) return;
     if (o.snapshotValid) {
@@ -231,7 +231,7 @@ void SequencerPropertySelectorHandler::closeCancel() {
     o.reset();
 }
 
-void SequencerPropertySelectorHandler::setActiveVariationRange(float normalized) {
+FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float normalized) {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
 
     const auto property = sequencer_.activeStepProperty.get();
@@ -241,7 +241,7 @@ void SequencerPropertySelectorHandler::setActiveVariationRange(float normalized)
     }
 }
 
-void SequencerPropertySelectorHandler::configureOptForSelectedProperty() {
+FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty() {
     const auto property = sequencer_.activeStepProperty.get();
     const auto config = input_utils::encoderConfigForVariationRange(property);
     encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);

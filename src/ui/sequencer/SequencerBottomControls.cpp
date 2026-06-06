@@ -1,6 +1,5 @@
 #include "SequencerBottomControls.hpp"
 
-#include <algorithm>
 #include <cstring>
 
 #include <oc/type/TextFormat.hpp>
@@ -110,11 +109,11 @@ size_t quickItemIndex(QuickItem item) {
 
 }  // namespace
 
-SequencerBottomControls::SequencerBottomControls(lv_obj_t* parent) {
+FLASHMEM SequencerBottomControls::SequencerBottomControls(lv_obj_t* parent) {
     createUI(parent);
 }
 
-SequencerBottomControls::~SequencerBottomControls() {
+FLASHMEM SequencerBottomControls::~SequencerBottomControls() {
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -192,7 +191,7 @@ FLASHMEM void SequencerBottomControls::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(quick_cursor_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void SequencerBottomControls::createQuickControl(
+FLASHMEM void SequencerBottomControls::createQuickControl(
     QuickControlWidgets& widgets,
     lv_obj_t* parent,
     QuickItem item,

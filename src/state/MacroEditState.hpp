@@ -52,21 +52,14 @@ struct MacroEditState {
         oc::state::Signal<uint8_t, 4> editingRow{0};
         oc::state::Signal<int, 4> selectedIndex{0};
 
-        void reset() {
-            visible.set(false);
-            editingRow.set(0);
-            selectedIndex.set(0);
-        }
+        void reset();
     };
 
     struct MacroSelectorState {
         oc::state::Signal<bool, 4> visible{false};
         oc::state::Signal<int, 4> selectedIndex{0};
 
-        void reset() {
-            visible.set(false);
-            selectedIndex.set(0);
-        }
+        void reset();
     };
 
     /// Value selector sub-state (CH/CC choices)
@@ -80,22 +73,12 @@ struct MacroEditState {
     uint32_t openedAtMs = 0;
     bool pendingOpenReleaseDecision = false;
 
+    ~MacroEditState();
+
     /**
      * @brief Reset to defaults
      */
-    void reset() {
-        visible.set(false);
-        flowPhase.set(MacroEditFlowPhase::CLOSED);
-        editingIndex.set(0);
-        tempChannel.set(0);
-        tempCC.set(0);
-        focusedRow.set(0);
-        selector.reset();
-        macroSelector.reset();
-        openedByMacroIndex = 0;
-        openedAtMs = 0;
-        pendingOpenReleaseDecision = false;
-    }
+    void reset();
 
     /**
      * @brief Start editing a macro
@@ -106,76 +89,27 @@ struct MacroEditState {
      * @param channel Current MIDI channel (0-15)
      * @param cc Current CC number (0-127)
      */
-    void openEditor(uint8_t index, uint8_t channel, uint8_t cc, uint32_t openedAt) {
-        reset();
-        visible.set(true);
-        flowPhase.set(MacroEditFlowPhase::EDIT);
-        editingIndex.set(index);
-        tempChannel.set(channel);
-        tempCC.set(cc);
-        focusedRow.set(0);  // Start on channel
-        openedByMacroIndex = index;
-        openedAtMs = openedAt;
-        pendingOpenReleaseDecision = true;
-    }
+    void openEditor(uint8_t index, uint8_t channel, uint8_t cc, uint32_t openedAt);
 
-    void closeEditor() {
-        reset();
-    }
+    void closeEditor();
 
-    void openValueSelector(uint8_t row, int selectedIndex) {
-        visible.set(true);
-        selector.visible.set(true);
-        selector.editingRow.set(row);
-        selector.selectedIndex.set(selectedIndex);
-        flowPhase.set(MacroEditFlowPhase::VALUE_SELECTOR);
-    }
+    void openValueSelector(uint8_t row, int selectedIndex);
 
-    void closeValueSelector() {
-        selector.reset();
-        flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
-                                    : MacroEditFlowPhase::CLOSED);
-    }
+    void closeValueSelector();
 
-    void openPageSelector() {
-        visible.set(true);
-        flowPhase.set(MacroEditFlowPhase::PAGE_SELECTOR);
-    }
+    void openPageSelector();
 
-    void closePageSelector() {
-        flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
-                                    : MacroEditFlowPhase::CLOSED);
-    }
+    void closePageSelector();
 
-    void openTargetSelector(int selectedIndex) {
-        visible.set(true);
-        macroSelector.visible.set(true);
-        macroSelector.selectedIndex.set(selectedIndex);
-        flowPhase.set(MacroEditFlowPhase::TARGET_SELECTOR);
-    }
+    void openTargetSelector(int selectedIndex);
 
-    void closeTargetSelector() {
-        macroSelector.reset();
-        flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
-                                    : MacroEditFlowPhase::CLOSED);
-    }
+    void closeTargetSelector();
 
-    void loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc) {
-        editingIndex.set(index);
-        tempChannel.set(channel);
-        tempCC.set(cc);
-    }
+    void loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc);
 
     bool consumeOpeningReleaseDecision(uint8_t macroIndex,
                                        uint32_t nowMs,
-                                       uint32_t quickReleaseWindowMs) {
-        if (!visible.get()) return false;
-        if (!pendingOpenReleaseDecision) return false;
-        if (macroIndex != openedByMacroIndex) return false;
-
-        pendingOpenReleaseDecision = false;
-        return (nowMs - openedAtMs) >= quickReleaseWindowMs;
-    }
+                                       uint32_t quickReleaseWindowMs);
 };
 
 }  // namespace core::state

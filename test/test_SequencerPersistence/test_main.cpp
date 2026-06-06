@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../../src/persistence/PersistenceSlotFileStore.hpp"
+#include "../../src/persistence/SequencerPersistenceEnvelope.hpp"
 #include "../../src/persistence/SequencerPersistence.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"

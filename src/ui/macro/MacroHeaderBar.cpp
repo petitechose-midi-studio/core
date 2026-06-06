@@ -49,11 +49,11 @@ const char* focusLabel(bool trackScope) {
 
 }  // namespace
 
-MacroHeaderBar::MacroHeaderBar(lv_obj_t* parent) {
+FLASHMEM MacroHeaderBar::MacroHeaderBar(lv_obj_t* parent) {
     createUI(parent);
 }
 
-MacroHeaderBar::~MacroHeaderBar() {
+FLASHMEM MacroHeaderBar::~MacroHeaderBar() {
     if (container_) {
         header_row_.reset();
         lv_obj_delete(container_);
@@ -76,7 +76,7 @@ FLASHMEM void MacroHeaderBar::createUI(lv_obj_t* parent) {
     header_row_ = std::make_unique<TrackHeaderRow>(container_);
 }
 
-void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
+FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     if (!container_ || !header_row_) return;
 
     const uint8_t displayTrack =
