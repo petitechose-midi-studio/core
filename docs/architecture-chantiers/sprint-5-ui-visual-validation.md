@@ -44,20 +44,20 @@ $exe = "C:\Users\simon\Documents\ms-dev-env\bin\core\native\midi_studio_core.exe
 
 Run the curated workflow suite:
 
-```powershell
-sdl\integration\run-ux-workflows.ps1
+```bash
+ms ux run core --all
 ```
 
 Run the suite and generate the derived UX report:
 
-```powershell
-sdl\integration\run-ux-workflows.ps1 -Report
+```bash
+ms ux run core --all --report
 ```
 
 Regenerate only the report from existing artifacts:
 
-```powershell
-sdl\integration\generate-ux-report.ps1
+```bash
+ms ux report core
 ```
 
 The local `.captures/` directory is ignored by Git and is intended for review
@@ -98,15 +98,15 @@ Native capture smoke result on 2026-04-29:
 - `sdl/integration/workflows/` now covers view switching, macro edit, sequencer
   step edit, sequencer quick controls, sequencer playhead progression, Data
   Manager dialog flow, and overlay priority/recovery.
-- `sdl/integration/run-ux-workflows.ps1` verifies each workflow exits cleanly,
+- `ms ux run core ...` verifies each workflow exits cleanly,
   writes `trace.ndjson` and `binding-trace.ndjson`, reaches `run_end`, dispatches
   at least one binding, produces the declared capture artifacts, and enforces
   declared `# Expect:` assertions such as `playhead_progress`.
-- `sdl/integration/generate-ux-report.ps1` derives a Markdown report from the
+- `ms ux report core` derives a Markdown report from the
   workflow scripts, replay traces, binding traces, and BMP files. The `.ux`
   script remains the source of truth for workflow intent, timing, and capture
   names.
-- `sdl/integration/workflows/sequencer-playhead.ux` proves the SDL simulator
+- `sdl/integration/workflows/sequencer/runtime/playhead.ux` proves the SDL simulator
   advances the playhead through the same standalone runtime service used by the
   firmware path. On the 2026-04-30 local run, the workflow reported
   `playing=true` with playhead values `1 -> 7 -> 0` before stop.
@@ -124,7 +124,7 @@ The playhead owner is intentionally singular:
 - UI path: `StandaloneContext` and sequencer handlers remain UI/input owners;
   they do not tick playback runtime.
 - Evidence path: `UxScenarioRunner` writes `playing` and `playhead_step` into
-  `trace.ndjson`; `run-ux-workflows.ps1` enforces
+  `trace.ndjson`; `ms ux run core ...` enforces
   `# Expect: playhead_progress` without hardcoding a specific step number.
 
 ## SDL/Teensy Feature Parity Map

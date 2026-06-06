@@ -109,40 +109,49 @@ previous run.
 ### UX Workflow Suite
 
 Representative user journeys live under `sdl/integration/workflows/`. They are
-plain `.ux` scripts with comments documenting intent:
+plain `.ux` scripts with comments documenting intent, grouped by feature area:
 
-| Workflow | User path covered |
+| Workflow group | User path covered |
 |---|---|
-| `view-selector-global.ux` | Global view selector open, navigation, confirm. |
-| `macro-edit-adjust.ux` | Macro performance value, long-press edit, field adjust, close. |
-| `sequencer-step-edit.ux` | Step toggle, long-press step edit, value adjust, close. |
-| `sequencer-quick-controls.ux` | Held quick controls, NAV selection, OPT edit, release apply. |
-| `sequencer-playhead.ux` | Transport start/stop and SDL playhead progression telemetry. |
-| `data-manager-dialog.ux` | Data Manager navigation, command palette dialog, clean close. |
-| `overlay-priority-recovery.ux` | Overlay authority, unrelated input isolation, recovery after close. |
+| `smoke/` | Global view selector and overlay exclusivity smoke checks. |
+| `overlays/` | Overlay authority and recovery. |
+| `macro/` | Macro performance and edit gestures. |
+| `data-manager/` | Data Manager dialogs and command palette flows. |
+| `sequencer/editing/` | Step editing, quick controls, and pattern variation editing. |
+| `sequencer/runtime/` | Playhead progression and runtime sequencer feedback. |
+| `sequencer/settings/` | Project/scale settings workflows. |
+| `sequencer/structure/` | Page structure and copy/paste flows. |
+| `sequencer/undo-redo/` | Sequencer undo/redo scenarios. |
 
-Run the full suite from anywhere in the repo after a native build:
+The canonical runner is the workspace `ms` CLI. List the workflow tree:
 
-```powershell
-sdl\integration\run-ux-workflows.ps1 -SkipBuild
+```bash
+ms ux list core
 ```
 
-Or let the script build through the workspace `ms` entrypoint first:
+Run the full suite:
 
-```powershell
-sdl\integration\run-ux-workflows.ps1
+```bash
+ms ux run core --all
 ```
 
-Add `-Report` to write a Markdown UX report next to the workflow artifacts:
+Run only a folder. This replays only the workflows inside the selected subtree:
 
-```powershell
-sdl\integration\run-ux-workflows.ps1 -Report
+```bash
+ms ux run core --select smoke
+ms ux run core --select sequencer/undo-redo
 ```
 
-To regenerate the report from existing workflow outputs without replaying:
+Run one workflow:
 
-```powershell
-sdl\integration\generate-ux-report.ps1
+```bash
+ms ux run core --select sequencer/undo-redo/step-toggle.ux
+```
+
+Regenerate the report from existing workflow outputs without replaying:
+
+```bash
+ms ux report core
 ```
 
 The verifier fails if a workflow does not exit cleanly, misses `trace.ndjson`,
