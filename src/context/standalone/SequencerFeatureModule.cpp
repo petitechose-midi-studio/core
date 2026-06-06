@@ -26,6 +26,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
+    lv_obj_t* overlayRoot,
     lv_obj_t* sequencerViewScope
 #if defined(MS_UX_RECORDER)
     ,
@@ -84,7 +85,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         encoders
     );
     step_edit_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(sequencerViewScope);
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(overlayRoot);
     overlays.registerCleanup(
         core::ui::OverlayType::SEQ_STEP_EDIT,
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
@@ -92,7 +93,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     );
 
     pattern_pitch_settings_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(sequencerViewScope);
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(overlayRoot);
     overlays.registerCleanup(
         core::ui::OverlayType::PATTERN_PITCH_SETTINGS,
         oc::ui::lvgl::scopeID(pattern_pitch_settings_overlay_->getElement()),
@@ -100,7 +101,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     );
 
     pattern_pitch_settings_selector_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(sequencerViewScope);
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(overlayRoot);
     overlays.registerCleanup(
         core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR,
         oc::ui::lvgl::scopeID(pattern_pitch_settings_selector_overlay_->getElement()),

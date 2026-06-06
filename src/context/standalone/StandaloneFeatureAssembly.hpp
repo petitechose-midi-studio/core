@@ -57,7 +57,7 @@ public:
                               oc::api::EncoderAPI& encoders,
                               oc::api::ButtonAPI& buttons,
                               oc::api::MidiAPI& midi,
-                              lv_obj_t* mainZone,
+                              lv_obj_t* overlayRoot,
                               lv_obj_t* macroViewElement,
                               lv_obj_t* sequencerViewElement,
                               core::ui::ContextSoftkeyBar& contextSoftkeyBar,

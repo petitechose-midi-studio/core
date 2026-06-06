@@ -74,6 +74,7 @@ public:
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,
+                           lv_obj_t* overlayRoot,
                            lv_obj_t* sequencerViewScope
 #if defined(MS_UX_RECORDER)
                            ,

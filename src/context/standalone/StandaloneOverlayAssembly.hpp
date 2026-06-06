@@ -41,7 +41,7 @@ public:
 
     StandaloneOverlayAssembly(core::state::CoreState& state,
                               oc::api::ButtonAPI& buttons,
-                              lv_obj_t* mainZone,
+                              lv_obj_t* overlayRoot,
                               ActiveViewScopeProvider activeViewScopeProvider);
     ~StandaloneOverlayAssembly();
 
@@ -57,7 +57,7 @@ public:
 private:
     void createOverlayController(oc::api::ButtonAPI& buttons,
                                  ActiveViewScopeProvider activeViewScopeProvider);
-    void createViewSelectorOverlay(lv_obj_t* mainZone);
+    void createViewSelectorOverlay(lv_obj_t* overlayRoot);
 
     core::state::CoreState& core_state_;
     core::app::ExtmemUniquePtr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
