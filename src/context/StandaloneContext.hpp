@@ -38,6 +38,14 @@ namespace core::state {
 struct CoreState;
 }
 
+namespace core::persistence {
+class ProductFileService;
+}
+
+namespace core::protocol::filesystem {
+class FileSystemRpcEndpoint;
+}
+
 namespace core::context::standalone {
 class StandaloneFeatureAssembly;
 class StandaloneGlobalHandlerAssembly;
@@ -61,14 +69,16 @@ public:
     static constexpr oc::context::Requirements REQUIRES{
         .button = true,
         .encoder = true,
-        .midi = true
+        .midi = true,
+        .frames = true
     };
 
     /**
      * @brief Construct with external CoreState reference
      * @param state Reference to global CoreState (owned by main.cpp)
      */
-    explicit StandaloneContext(core::state::CoreState& state);
+    StandaloneContext(core::state::CoreState& state,
+                      core::persistence::ProductFileService& productFiles);
 
     ~StandaloneContext() override;
 
@@ -92,7 +102,9 @@ private:
     void createOverlayAssembly();
     void createFeatureAssembly();
     void createGlobalHandlerAssembly();
+    bool createFileSystemRpcEndpoint();
     void registerMidiRouting();
+    void cleanupFileSystemRpcEndpoint();
     void cleanupGlobalHandlerAssembly();
     void cleanupFeatureAssembly();
     void cleanupOverlayAssembly();
@@ -105,6 +117,7 @@ private:
     oc::type::ScopeID activeViewScopeId() const;
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
+    core::persistence::ProductFileService& product_files_;
 
 #if defined(MS_UX_RECORDER)
     core::validation::ux::SemanticUxSurfaceRegistry ux_surface_registry_;
@@ -115,6 +128,8 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneFeatureAssembly> feature_assembly_;
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneGlobalHandlerAssembly>
         global_handler_assembly_;
+    core::app::ExtmemUniquePtr<core::protocol::filesystem::FileSystemRpcEndpoint>
+        filesystem_rpc_endpoint_;
     oc::state::SignalWatcher view_selector_watcher_;
     oc::state::SignalWatcher active_view_watcher_;
 };

@@ -14,6 +14,9 @@
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 #include "context/standalone/StandaloneUiAssembly.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "persistence/ProductFileService.hpp"
+#include "protocol/filesystem/FileSystemRpc.hpp"
+#include "config/TimeCompat.hpp"
 #include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
 #include <ms/ui/font/CoreFonts.hpp>
@@ -27,8 +30,10 @@ namespace core::context {
 namespace input_utils = core::handler::sequencer::input_utils;
 
 // Constructor and destructor must be in .cpp where handler types are complete
-FLASHMEM StandaloneContext::StandaloneContext(core::state::CoreState& state)
-    : core_state_(state) {}
+FLASHMEM StandaloneContext::StandaloneContext(
+    core::state::CoreState& state,
+    core::persistence::ProductFileService& productFiles
+) : core_state_(state), product_files_(productFiles) {}
 
 FLASHMEM StandaloneContext::~StandaloneContext() = default;
 
@@ -58,6 +63,12 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
     createFeatureAssembly();
     OC_LOG_DEBUG("StandaloneContext: createGlobalHandlerAssembly");
     createGlobalHandlerAssembly();
+    OC_LOG_DEBUG("StandaloneContext: createFileSystemRpcEndpoint");
+    if (!createFileSystemRpcEndpoint()) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::RESOURCE_EXHAUSTED, "filesystem rpc endpoint"}
+        );
+    }
 
     OC_LOG_DEBUG("StandaloneContext: show");
     ui_assembly_->show();
@@ -85,6 +96,7 @@ FLASHMEM void StandaloneContext::onCleanup() {
     } else {
         core_state_.overlays.hideAll();
     }
+    cleanupFileSystemRpcEndpoint();
     core_state_.resetStandaloneTransientUi();
     cleanupGlobalHandlerAssembly();
     cleanupFeatureAssembly();
@@ -182,6 +194,21 @@ FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
                 static_cast<unsigned>(encoders().bindingCapacity()));
 }
 
+FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
+    filesystem_rpc_endpoint_ =
+        core::app::makeExtmemUnique<core::protocol::filesystem::FileSystemRpcEndpoint>(
+            frames(),
+            product_files_,
+            &core::time_compat::millis
+        );
+    if (!filesystem_rpc_endpoint_) {
+        OC_LOG_ERROR("Filesystem RPC endpoint allocation failed");
+        return false;
+    }
+    filesystem_rpc_endpoint_->begin();
+    return true;
+}
+
 FLASHMEM void StandaloneContext::registerMidiRouting() {
     // MIDI input is routed through the framework EventBus (never via MidiAPI callbacks)
     onMidiCC([this](uint8_t ch, uint8_t cc, uint8_t val) {
@@ -197,6 +224,10 @@ FLASHMEM void StandaloneContext::registerMidiRouting() {
 
 FLASHMEM void StandaloneContext::cleanupGlobalHandlerAssembly() {
     global_handler_assembly_.reset();
+}
+
+FLASHMEM void StandaloneContext::cleanupFileSystemRpcEndpoint() {
+    filesystem_rpc_endpoint_.reset();
 }
 
 FLASHMEM void StandaloneContext::cleanupFeatureAssembly() {
