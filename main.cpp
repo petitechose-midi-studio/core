@@ -11,6 +11,7 @@
 #include <imxrt.h>
 
 #include <oc/hal/teensy/SDCardBackend.hpp>
+#include <oc/hal/teensy/SDFileSystemBackend.hpp>
 #include <oc/hal/teensy/Teensy.hpp>
 
 #include <config/App.hpp>
@@ -20,6 +21,7 @@
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
+#include "persistence/ProductFileService.hpp"
 #include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
@@ -40,6 +42,8 @@ static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
 static oc::hal::teensy::SDCardBackend sequencerWorkspaceStorage("/sequencer-workspace.bin");
 static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer-pattern-library.bin");
 static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
+static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
+static std::optional<core::persistence::ProductFileService> productFileService;
 static std::optional<core::state::CoreState> coreState;
 static std::optional<oc::app::OpenControlApp> app;
 static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService>
@@ -321,6 +325,14 @@ static FLASHMEM void initStorage() {
         initStorageBackend(*item.backend, item.label);
     }
 
+    productFileService.emplace(productFileSystemBackend);
+    const auto productFilesResult = productFileService->init();
+    if (!productFilesResult) {
+        OC_LOG_ERROR("Product file service init failed: {}",
+                     oc::type::errorCodeToString(productFilesResult.error().code));
+        while (true) {}
+    }
+
     OC_LOG_INFO("Storages ready settings={}B macroWs={}B macroLib={}B seqWs={}B seqPatternLib={}B seqSetLib={}B",
                 settingsStorage.capacity(),
                 macroWorkspaceStorage.capacity(),
@@ -397,7 +409,12 @@ static FLASHMEM void initApp() {
     app->registerContextWithFactory(
         Config::ContextID::STANDALONE,
         "Standalone",
-        [&]() { return std::make_unique<core::context::StandaloneContext>(*coreState); });
+        [&]() {
+            return std::make_unique<core::context::StandaloneContext>(
+                *coreState,
+                *productFileService
+            );
+        });
     app->begin();
 }
 

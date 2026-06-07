@@ -39,6 +39,7 @@ endif()
 
 file(GLOB_RECURSE MS_CORE_NATIVE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/state/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/protocol/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/persistence/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sequencer/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/validation/ux/*.cpp"
