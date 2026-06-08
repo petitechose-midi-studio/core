@@ -239,6 +239,7 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
 }
 
 FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
+    state.project.reset();
     state.pages.initDefaults();
 
     state.sequencerDomain_.coalescedPatternHistory.clear();
@@ -287,6 +288,7 @@ FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
     }
     resetMacroDomain_(state);
     resetSequencerDomain_(state);
+    state.project.reset();
     resetUiState_(state);
     state.sharedTrackPersistPending_ = false;
     state.sharedTrackPersistTimestampMs_ = 0;

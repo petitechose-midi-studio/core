@@ -51,6 +51,11 @@ public:
                                    const uint8_t* data,
                                    size_t size);
     oc::type::Result<void> flush(const char* productPath);
+    oc::type::Result<void> beginWrite(const char* productPath, uint32_t expectedSize);
+    oc::type::Result<size_t> appendWrite(const uint8_t* data, size_t size);
+    oc::type::Result<void> finishWrite();
+    void abortWrite();
+    bool writeSessionActive() const { return writeSessionActive_; }
 
 private:
     static constexpr size_t PATH_BUFFER_SIZE = oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1;
@@ -59,6 +64,7 @@ private:
     static bool isProductRootSegment_(const char* path, size_t offset);
 
     oc::interface::IFileSystem& filesystem_;
+    bool writeSessionActive_ = false;
 };
 
 }  // namespace core::persistence

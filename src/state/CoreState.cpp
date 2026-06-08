@@ -376,6 +376,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , sequencerTracks(*sequencerDomain_.tracks)
     , sequencerHistory(sequencerDomain_.history)
     , sequencerPersistence(sequencerDomain_.persistence)
+    , project(project_)
     , overlays(systemUi_->overlays)
     , activeView(systemUi_->activeView)
     , structureNavigationFocus(systemUi_->structureNavigationFocus)

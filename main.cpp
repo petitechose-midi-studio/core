@@ -16,8 +16,10 @@
 
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
+#if !defined(MS_PROJECT_STORE_SMOKE)
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
+#endif
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
@@ -25,6 +27,7 @@
 #include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
+#include "validation/project/ProjectStoreSmoke.hpp"
 #if defined(MS_UX_RECORDER)
 #include "validation/ux/SemanticUxRecorder.hpp"
 #endif
@@ -33,9 +36,11 @@
 // Static Objects
 // =============================================================================
 
+#if !defined(MS_PROJECT_STORE_SMOKE)
 static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
+#endif
 static oc::hal::teensy::SDCardBackend settingsStorage("/macros.bin");
 static oc::hal::teensy::SDCardBackend macroWorkspaceStorage("/macro-workspace.bin");
 static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
@@ -45,9 +50,11 @@ static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
 static std::optional<core::persistence::ProductFileService> productFileService;
 static std::optional<core::state::CoreState> coreState;
+#if !defined(MS_PROJECT_STORE_SMOKE)
 static std::optional<oc::app::OpenControlApp> app;
 static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService>
     standaloneSequencerRuntime;
+#endif
 
 namespace {
 
@@ -169,6 +176,15 @@ StorageRecoveryRuntimeManager storageRecovery;
 
 }  // namespace
 
+#if defined(MS_PROJECT_STORE_SMOKE)
+namespace {
+
+bool projectStoreSmokeResult = false;
+bool projectStoreSmokeCompleted = false;
+
+}  // namespace
+#endif
+
 #if defined(MS_UX_RECORDER)
 namespace {
 
@@ -269,6 +285,7 @@ void maybeLogLoopPerfWindow(uint32_t nowMs) {
 // =============================================================================
 
 /// Check result and halt on error (embedded systems have no recovery)
+#if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void checkOrHalt(const oc::type::Result<void>& result, const char* component) {
     if (!result) {
         OC_LOG_ERROR("{} init failed: {}", component,
@@ -294,6 +311,7 @@ static FLASHMEM void initMux() {
     mux = oc::hal::teensy::CD74HC4067(Hardware::Mux::CONFIG, oc::hal::teensy::gpio());
     checkOrHalt(mux->init(), "MUX");
 }
+#endif
 
 static FLASHMEM void initStorageBackend(oc::hal::teensy::SDCardBackend& backend,
                                         const char* label) {
@@ -342,6 +360,7 @@ static FLASHMEM void initStorage() {
                 sequencerSetLibraryStorage.capacity());
 }
 
+#if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void initApp() {
     // Create global state with dedicated storage domains (survives context switches)
     coreState.emplace(settingsStorage,
@@ -417,6 +436,7 @@ static FLASHMEM void initApp() {
         });
     app->begin();
 }
+#endif
 
 // =============================================================================
 // Arduino Entry Points
@@ -427,7 +447,29 @@ FLASHMEM void setup() {
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");
     OC_LOG_INFO("App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
-    
+
+#if defined(MS_PROJECT_STORE_SMOKE)
+    initStorage();
+    if (productFileService) {
+        coreState.emplace(settingsStorage,
+                          macroWorkspaceStorage,
+                          macroLibraryStorage,
+                          sequencerWorkspaceStorage,
+                          sequencerPatternLibraryStorage,
+                          sequencerSetLibraryStorage);
+        projectStoreSmokeResult =
+            core::validation::project::runProjectStoreSmoke(*productFileService, *coreState);
+    } else {
+        OC_LOG_ERROR("[project-store-smoke] ProductFileService unavailable");
+        projectStoreSmokeResult = false;
+    }
+    projectStoreSmokeCompleted = true;
+    OC_LOG_INFO("[project-store-smoke] done result={}", projectStoreSmokeResult ? "OK" : "FAIL");
+    Serial.println(projectStoreSmokeResult
+                       ? "[project-store-smoke] done result=OK"
+                       : "[project-store-smoke] done result=FAIL");
+    return;
+#else
     initDisplay();
     initLVGL();
     initMux();
@@ -439,12 +481,31 @@ FLASHMEM void setup() {
 #endif
 
     OC_LOG_INFO("Ready");
+#endif
 }
 
 // Timing constants for main loop
 constexpr uint32_t APP_PERIOD_US = 1'000'000 / Config::Timing::APP_HZ;
 constexpr uint32_t LVGL_PERIOD_US = 1'000'000 / Config::Timing::LVGL_HZ;
 void loop() {
+#if defined(MS_PROJECT_STORE_SMOKE)
+    static uint32_t lastHeartbeatMs = 0;
+    const uint32_t nowMs = millis();
+    if (lastHeartbeatMs == 0 || static_cast<uint32_t>(nowMs - lastHeartbeatMs) >= 2000U) {
+        lastHeartbeatMs = nowMs;
+        if (projectStoreSmokeCompleted) {
+            OC_LOG_INFO("[project-store-smoke] heartbeat result={}",
+                        projectStoreSmokeResult ? "OK" : "FAIL");
+            Serial.println(projectStoreSmokeResult
+                               ? "[project-store-smoke] heartbeat result=OK"
+                               : "[project-store-smoke] heartbeat result=FAIL");
+        } else {
+            OC_LOG_INFO("[project-store-smoke] heartbeat result=PENDING");
+            Serial.println("[project-store-smoke] heartbeat result=PENDING");
+        }
+    }
+    delay(25);
+#else
     static uint32_t lastMicros = 0;
     static uint32_t lvglAccumulator = 0;
 
@@ -466,20 +527,30 @@ void loop() {
     );
 #endif
 
-    storageRecovery.update(millis(), coreState->statusBar.playing.get());
+    const bool productFileWriteActive =
+        productFileService && productFileService->writeSessionActive();
+    // Product file sessions keep an SD handle open; avoid competing recovery
+    // and persistence paths while a PC/controller transfer is in flight.
+    if (!productFileWriteActive) {
+        storageRecovery.update(millis(), coreState->statusBar.playing.get());
+    }
 
     // Update persistence (handles delayed value saves)
 #if defined(PERF_LOG)
     const uint32_t stateUpdateStartUs = micros();
 #endif
-    coreState->update();
+    if (!productFileWriteActive) {
+        coreState->update();
+    }
 #if defined(PERF_LOG)
-    recordPerfSample(
-        g_loopPerfWindow.stateUpdateCount,
-        g_loopPerfWindow.stateUpdateTotalUs,
-        g_loopPerfWindow.stateUpdateMaxUs,
-        micros() - stateUpdateStartUs
-    );
+    if (!productFileWriteActive) {
+        recordPerfSample(
+            g_loopPerfWindow.stateUpdateCount,
+            g_loopPerfWindow.stateUpdateTotalUs,
+            g_loopPerfWindow.stateUpdateMaxUs,
+            micros() - stateUpdateStartUs
+        );
+    }
 #endif
 
 #if defined(MS_UX_RECORDER)
@@ -506,5 +577,6 @@ void loop() {
 
 #if defined(PERF_LOG)
     maybeLogLoopPerfWindow(millis());
+#endif
 #endif
 }
