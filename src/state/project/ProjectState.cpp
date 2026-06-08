@@ -1,0 +1,59 @@
+#include "state/project/ProjectState.hpp"
+
+#include <cstring>
+
+#include <config/PlatformCompat.hpp>
+
+namespace core::state::project {
+
+namespace {
+
+template <size_t Size>
+FLASHMEM void assignText(std::array<char, Size>& target, const char* source) {
+    target.fill('\0');
+    if (!source || Size == 0) return;
+    std::strncpy(target.data(), source, Size - 1);
+    target[Size - 1] = '\0';
+}
+
+}  // namespace
+
+FLASHMEM void ProjectMetadata::reset() {
+    assignText(id, "P001");
+    assignText(name, "Project 001");
+    modifiedCounter = 0;
+    dirty = false;
+    hasSavedIdentity = false;
+}
+
+FLASHMEM void ProjectTransportState::reset() {
+    tempoBpm = DEFAULT_TEMPO_BPM;
+    swingPercent = DEFAULT_SWING_PERCENT;
+    runMode = DEFAULT_RUN_MODE;
+}
+
+FLASHMEM void ProjectMusicalContext::reset() {
+    scale = core::state::sequencer::defaultProjectScaleSettings();
+    scale.clamp();
+    patternsInheritScale = true;
+    clipsInheritScale = true;
+}
+
+FLASHMEM void ProjectRoutingState::reset() {
+    for (uint8_t i = 0; i < outputMidiChannels.size(); ++i) {
+        outputMidiChannels[i] = static_cast<uint8_t>(i % 16U);
+    }
+}
+
+FLASHMEM ProjectState::ProjectState() {
+    reset();
+}
+
+FLASHMEM void ProjectState::reset() {
+    metadata.reset();
+    transport.reset();
+    musical.reset();
+    routing.reset();
+}
+
+}  // namespace core::state::project

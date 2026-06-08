@@ -13,11 +13,14 @@ namespace core::protocol::filesystem {
 
 inline constexpr uint8_t FILESYSTEM_RPC_SCHEMA = 1;
 inline constexpr uint8_t FILESYSTEM_RPC_ID_MIN = 0xE0;
-inline constexpr uint8_t FILESYSTEM_RPC_ID_MAX = 0xEF;
-inline constexpr size_t FILESYSTEM_RPC_MAX_CHUNK_SIZE = 512;
-inline constexpr size_t FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE = 1024;
+inline constexpr uint8_t FILESYSTEM_RPC_ID_MAX = 0xF7;
+inline constexpr size_t FILESYSTEM_RPC_MAX_CHUNK_SIZE = 30720;
+inline constexpr size_t FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE = 32512;
 inline constexpr uint8_t FILESYSTEM_RPC_MAX_LIST_ENTRIES = 8;
 inline constexpr uint32_t FILESYSTEM_RPC_DEFAULT_WRITE_TIMEOUT_MS = 30'000;
+inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_CAPABILITIES = 1u << 0;
+inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS = 1u << 1;
+inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT = 1u << 2;
 
 enum class FileSystemRpcMessageId : uint8_t {
     STAT_REQUEST = 0xE0,
@@ -35,6 +38,14 @@ enum class FileSystemRpcMessageId : uint8_t {
     WRITE_ABORT_REQUEST = 0xEC,
     WRITE_ABORT_RESPONSE = 0xED,
     ERROR_RESPONSE = 0xEF,
+    MKDIR_REQUEST = 0xF0,
+    MKDIR_RESPONSE = 0xF1,
+    DELETE_REQUEST = 0xF2,
+    DELETE_RESPONSE = 0xF3,
+    RENAME_REQUEST = 0xF4,
+    RENAME_RESPONSE = 0xF5,
+    CAPABILITIES_REQUEST = 0xF6,
+    CAPABILITIES_RESPONSE = 0xF7,
 };
 
 enum class FileSystemRpcStatus : uint8_t {
@@ -102,6 +113,23 @@ struct FileSystemRpcWriteResponse {
     uint16_t bytesWritten = 0;
 };
 
+struct FileSystemRpcStatusResponse {
+    uint16_t requestId = 0;
+    FileSystemRpcMessageId messageId = FileSystemRpcMessageId::ERROR_RESPONSE;
+    FileSystemRpcStatus status = FileSystemRpcStatus::INVALID_MESSAGE;
+};
+
+struct FileSystemRpcCapabilitiesResponse {
+    uint16_t requestId = 0;
+    FileSystemRpcStatus status = FileSystemRpcStatus::INVALID_MESSAGE;
+    uint8_t rpcSchema = 0;
+    uint16_t maxChunkSize = 0;
+    uint16_t responseBufferSize = 0;
+    uint8_t maxListEntries = 0;
+    uint16_t maxPathLength = 0;
+    uint32_t featureFlags = 0;
+};
+
 class FileSystemRpcCodec {
 public:
     static bool isFileSystemMessageId(uint8_t messageId);
@@ -114,6 +142,9 @@ public:
                                     const char* path,
                                     uint8_t* out,
                                     size_t outSize);
+    static size_t encodeCapabilitiesRequest(uint16_t requestId,
+                                            uint8_t* out,
+                                            size_t outSize);
     static size_t encodeListRequest(uint16_t requestId,
                                     const char* path,
                                     uint16_t startIndex,
@@ -147,6 +178,20 @@ public:
                                           uint16_t sessionId,
                                           uint8_t* out,
                                           size_t outSize);
+    static size_t encodeMkdirRequest(uint16_t requestId,
+                                     const char* path,
+                                     uint8_t* out,
+                                     size_t outSize);
+    static size_t encodeDeleteRequest(uint16_t requestId,
+                                      const char* path,
+                                      bool recursive,
+                                      uint8_t* out,
+                                      size_t outSize);
+    static size_t encodeRenameRequest(uint16_t requestId,
+                                      const char* fromPath,
+                                      const char* toPath,
+                                      uint8_t* out,
+                                      size_t outSize);
 
     static oc::type::Result<FileSystemRpcStatResponse> decodeStatResponse(const uint8_t* data,
                                                                           size_t size);
@@ -156,6 +201,12 @@ public:
                                                                           size_t size);
     static oc::type::Result<FileSystemRpcWriteResponse> decodeWriteResponse(const uint8_t* data,
                                                                             size_t size);
+    static oc::type::Result<FileSystemRpcStatusResponse> decodeStatusResponse(const uint8_t* data,
+                                                                              size_t size);
+    static oc::type::Result<FileSystemRpcCapabilitiesResponse> decodeCapabilitiesResponse(
+        const uint8_t* data,
+        size_t size
+    );
 };
 
 class FileSystemRpcHandler {
@@ -198,6 +249,9 @@ private:
     oc::type::Result<size_t> handleStat_(const FileSystemRpcFrame& frame,
                                          uint8_t* response,
                                          size_t responseSize);
+    oc::type::Result<size_t> handleCapabilities_(const FileSystemRpcFrame& frame,
+                                                 uint8_t* response,
+                                                 size_t responseSize);
     oc::type::Result<size_t> handleList_(const FileSystemRpcFrame& frame,
                                          uint8_t* response,
                                          size_t responseSize);
@@ -218,6 +272,15 @@ private:
     oc::type::Result<size_t> handleWriteAbort_(const FileSystemRpcFrame& frame,
                                                uint8_t* response,
                                                size_t responseSize);
+    oc::type::Result<size_t> handleMkdir_(const FileSystemRpcFrame& frame,
+                                          uint8_t* response,
+                                          size_t responseSize);
+    oc::type::Result<size_t> handleDelete_(const FileSystemRpcFrame& frame,
+                                           uint8_t* response,
+                                           size_t responseSize);
+    oc::type::Result<size_t> handleRename_(const FileSystemRpcFrame& frame,
+                                           uint8_t* response,
+                                           size_t responseSize);
     oc::type::Result<size_t> encodeError_(uint16_t requestId,
                                           FileSystemRpcStatus status,
                                           uint8_t* response,

@@ -310,12 +310,16 @@ FLASHMEM bool FileSystemRpcCodec::isFileSystemMessageId(uint8_t messageId) {
 FLASHMEM bool FileSystemRpcCodec::isFileSystemRequestId(uint8_t messageId) {
     switch (static_cast<FileSystemRpcMessageId>(messageId)) {
         case FileSystemRpcMessageId::STAT_REQUEST:
+        case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
         case FileSystemRpcMessageId::LIST_REQUEST:
         case FileSystemRpcMessageId::READ_REQUEST:
         case FileSystemRpcMessageId::WRITE_BEGIN_REQUEST:
         case FileSystemRpcMessageId::WRITE_CHUNK_REQUEST:
         case FileSystemRpcMessageId::WRITE_COMMIT_REQUEST:
         case FileSystemRpcMessageId::WRITE_ABORT_REQUEST:
+        case FileSystemRpcMessageId::MKDIR_REQUEST:
+        case FileSystemRpcMessageId::DELETE_REQUEST:
+        case FileSystemRpcMessageId::RENAME_REQUEST:
             return true;
         default:
             return false;
@@ -328,6 +332,10 @@ FLASHMEM const char* FileSystemRpcCodec::messageName(FileSystemRpcMessageId mess
             return "FsStatRequest";
         case FileSystemRpcMessageId::STAT_RESPONSE:
             return "FsStatResponse";
+        case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
+            return "FsCapabilitiesRequest";
+        case FileSystemRpcMessageId::CAPABILITIES_RESPONSE:
+            return "FsCapabilitiesResponse";
         case FileSystemRpcMessageId::LIST_REQUEST:
             return "FsListRequest";
         case FileSystemRpcMessageId::LIST_RESPONSE:
@@ -352,6 +360,18 @@ FLASHMEM const char* FileSystemRpcCodec::messageName(FileSystemRpcMessageId mess
             return "FsWriteAbortRequest";
         case FileSystemRpcMessageId::WRITE_ABORT_RESPONSE:
             return "FsWriteAbortResponse";
+        case FileSystemRpcMessageId::MKDIR_REQUEST:
+            return "FsMkdirRequest";
+        case FileSystemRpcMessageId::MKDIR_RESPONSE:
+            return "FsMkdirResponse";
+        case FileSystemRpcMessageId::DELETE_REQUEST:
+            return "FsDeleteRequest";
+        case FileSystemRpcMessageId::DELETE_RESPONSE:
+            return "FsDeleteResponse";
+        case FileSystemRpcMessageId::RENAME_REQUEST:
+            return "FsRenameRequest";
+        case FileSystemRpcMessageId::RENAME_RESPONSE:
+            return "FsRenameResponse";
         case FileSystemRpcMessageId::ERROR_RESPONSE:
         default:
             return "FsErrorResponse";
@@ -405,6 +425,18 @@ FLASHMEM size_t FileSystemRpcCodec::encodeStatRequest(
     ByteWriter writer(out, outSize);
     if (!writeFrameHeader(writer, FileSystemRpcMessageId::STAT_REQUEST, requestId) ||
         !writer.writeString(path, oc::interface::FILESYSTEM_MAX_PATH_LENGTH)) {
+        return 0;
+    }
+    return writer.position();
+}
+
+FLASHMEM size_t FileSystemRpcCodec::encodeCapabilitiesRequest(
+    uint16_t requestId,
+    uint8_t* out,
+    size_t outSize
+) {
+    ByteWriter writer(out, outSize);
+    if (!writeFrameHeader(writer, FileSystemRpcMessageId::CAPABILITIES_REQUEST, requestId)) {
         return 0;
     }
     return writer.position();
@@ -509,6 +541,52 @@ FLASHMEM size_t FileSystemRpcCodec::encodeWriteAbortRequest(
     ByteWriter writer(out, outSize);
     if (!writeFrameHeader(writer, FileSystemRpcMessageId::WRITE_ABORT_REQUEST, requestId) ||
         !writer.writeU16(sessionId)) {
+        return 0;
+    }
+    return writer.position();
+}
+
+FLASHMEM size_t FileSystemRpcCodec::encodeMkdirRequest(
+    uint16_t requestId,
+    const char* path,
+    uint8_t* out,
+    size_t outSize
+) {
+    ByteWriter writer(out, outSize);
+    if (!writeFrameHeader(writer, FileSystemRpcMessageId::MKDIR_REQUEST, requestId) ||
+        !writer.writeString(path, oc::interface::FILESYSTEM_MAX_PATH_LENGTH)) {
+        return 0;
+    }
+    return writer.position();
+}
+
+FLASHMEM size_t FileSystemRpcCodec::encodeDeleteRequest(
+    uint16_t requestId,
+    const char* path,
+    bool recursive,
+    uint8_t* out,
+    size_t outSize
+) {
+    ByteWriter writer(out, outSize);
+    if (!writeFrameHeader(writer, FileSystemRpcMessageId::DELETE_REQUEST, requestId) ||
+        !writer.writeBool(recursive) ||
+        !writer.writeString(path, oc::interface::FILESYSTEM_MAX_PATH_LENGTH)) {
+        return 0;
+    }
+    return writer.position();
+}
+
+FLASHMEM size_t FileSystemRpcCodec::encodeRenameRequest(
+    uint16_t requestId,
+    const char* fromPath,
+    const char* toPath,
+    uint8_t* out,
+    size_t outSize
+) {
+    ByteWriter writer(out, outSize);
+    if (!writeFrameHeader(writer, FileSystemRpcMessageId::RENAME_REQUEST, requestId) ||
+        !writer.writeString(fromPath, oc::interface::FILESYSTEM_MAX_PATH_LENGTH) ||
+        !writer.writeString(toPath, oc::interface::FILESYSTEM_MAX_PATH_LENGTH)) {
         return 0;
     }
     return writer.position();
@@ -656,6 +734,75 @@ FLASHMEM Result<FileSystemRpcWriteResponse> FileSystemRpcCodec::decodeWriteRespo
     return Result<FileSystemRpcWriteResponse>::ok(response);
 }
 
+FLASHMEM Result<FileSystemRpcStatusResponse> FileSystemRpcCodec::decodeStatusResponse(
+    const uint8_t* data,
+    size_t size
+) {
+    auto frame = decodeFrame(data, size);
+    if (!frame) {
+        return Result<FileSystemRpcStatusResponse>::err(frame.error());
+    }
+    switch (frame.value().messageId) {
+        case FileSystemRpcMessageId::MKDIR_RESPONSE:
+        case FileSystemRpcMessageId::DELETE_RESPONSE:
+        case FileSystemRpcMessageId::RENAME_RESPONSE:
+        case FileSystemRpcMessageId::ERROR_RESPONSE:
+            break;
+        default:
+            return Result<FileSystemRpcStatusResponse>::err({ErrorCode::INVALID_ARGUMENT, "not status response"});
+    }
+
+    ByteReader reader(frame.value().payload, frame.value().payloadSize);
+    uint8_t rawStatus = 0;
+    if (!reader.readU8(rawStatus) || reader.remaining() != 0) {
+        return Result<FileSystemRpcStatusResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad status response"});
+    }
+    return Result<FileSystemRpcStatusResponse>::ok(FileSystemRpcStatusResponse{
+        frame.value().requestId,
+        frame.value().messageId,
+        static_cast<FileSystemRpcStatus>(rawStatus),
+    });
+}
+
+FLASHMEM Result<FileSystemRpcCapabilitiesResponse> FileSystemRpcCodec::decodeCapabilitiesResponse(
+    const uint8_t* data,
+    size_t size
+) {
+    auto frame = decodeFrame(data, size);
+    if (!frame || frame.value().messageId != FileSystemRpcMessageId::CAPABILITIES_RESPONSE) {
+        return Result<FileSystemRpcCapabilitiesResponse>::err(
+            {ErrorCode::INVALID_ARGUMENT, "not capabilities response"}
+        );
+    }
+
+    ByteReader reader(frame.value().payload, frame.value().payloadSize);
+    uint8_t rawStatus = 0;
+    FileSystemRpcCapabilitiesResponse response{};
+    response.requestId = frame.value().requestId;
+    if (!reader.readU8(rawStatus)) {
+        return Result<FileSystemRpcCapabilitiesResponse>::err(
+            {ErrorCode::INVALID_ARGUMENT, "bad capabilities response"}
+        );
+    }
+    response.status = static_cast<FileSystemRpcStatus>(rawStatus);
+    if (response.status != FileSystemRpcStatus::OK) {
+        return Result<FileSystemRpcCapabilitiesResponse>::ok(response);
+    }
+
+    if (!reader.readU8(response.rpcSchema) ||
+        !reader.readU16(response.maxChunkSize) ||
+        !reader.readU16(response.responseBufferSize) ||
+        !reader.readU8(response.maxListEntries) ||
+        !reader.readU16(response.maxPathLength) ||
+        !reader.readU32(response.featureFlags) ||
+        reader.remaining() != 0) {
+        return Result<FileSystemRpcCapabilitiesResponse>::err(
+            {ErrorCode::INVALID_ARGUMENT, "bad capabilities payload"}
+        );
+    }
+    return Result<FileSystemRpcCapabilitiesResponse>::ok(response);
+}
+
 FLASHMEM FileSystemRpcHandler::FileSystemRpcHandler(
     core::persistence::ProductFileService& files
 ) : FileSystemRpcHandler(files, Config{}) {}
@@ -685,6 +832,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
     switch (frame.value().messageId) {
         case FileSystemRpcMessageId::STAT_REQUEST:
             return handleStat_(frame.value(), response, responseSize);
+        case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
+            return handleCapabilities_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::LIST_REQUEST:
             return handleList_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::READ_REQUEST:
@@ -697,6 +846,12 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
             return handleWriteCommit_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::WRITE_ABORT_REQUEST:
             return handleWriteAbort_(frame.value(), response, responseSize);
+        case FileSystemRpcMessageId::MKDIR_REQUEST:
+            return handleMkdir_(frame.value(), response, responseSize);
+        case FileSystemRpcMessageId::DELETE_REQUEST:
+            return handleDelete_(frame.value(), response, responseSize);
+        case FileSystemRpcMessageId::RENAME_REQUEST:
+            return handleRename_(frame.value(), response, responseSize);
         default:
             return encodeError_(frame.value().requestId, FileSystemRpcStatus::INVALID_MESSAGE, response, responseSize);
     }
@@ -712,9 +867,37 @@ FLASHMEM bool FileSystemRpcHandler::hasActiveWriteSession() const {
 
 FLASHMEM void FileSystemRpcHandler::abortWriteSession() {
     if (writeSession_.active) {
+        files_.abortWrite();
         (void)files_.remove(writeSession_.tmpPath);
     }
     clearWriteSession_();
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::handleCapabilities_(
+    const FileSystemRpcFrame& frame,
+    uint8_t* response,
+    size_t responseSize
+) {
+    if (frame.payloadSize != 0) {
+        return encodeError_(frame.requestId, FileSystemRpcStatus::INVALID_ARGUMENT, response, responseSize);
+    }
+
+    ByteWriter writer(response, responseSize);
+    constexpr uint32_t features =
+        FILESYSTEM_RPC_FEATURE_CAPABILITIES |
+        FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS |
+        FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT;
+    if (!writeFrameHeader(writer, FileSystemRpcMessageId::CAPABILITIES_RESPONSE, frame.requestId) ||
+        !writer.writeU8(static_cast<uint8_t>(FileSystemRpcStatus::OK)) ||
+        !writer.writeU8(FILESYSTEM_RPC_SCHEMA) ||
+        !writer.writeU16(static_cast<uint16_t>(FILESYSTEM_RPC_MAX_CHUNK_SIZE)) ||
+        !writer.writeU16(static_cast<uint16_t>(FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE)) ||
+        !writer.writeU8(FILESYSTEM_RPC_MAX_LIST_ENTRIES) ||
+        !writer.writeU16(static_cast<uint16_t>(oc::interface::FILESYSTEM_MAX_PATH_LENGTH)) ||
+        !writer.writeU32(features)) {
+        return bufferTooSmall();
+    }
+    return Result<size_t>::ok(writer.position());
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleStat_(
@@ -867,8 +1050,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
     if (!reader.readU16(sessionId) ||
         !reader.readU32(expectedSize) ||
         !readPath(reader, path, sizeof(path)) ||
-        reader.remaining() != 0 ||
-        expectedSize == 0) {
+        reader.remaining() != 0) {
         const size_t size = encodeWriteResponse(
             FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
             frame.requestId,
@@ -909,6 +1091,21 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
     }
 
     (void)files_.remove(writeSession_.tmpPath);
+    auto begin = files_.beginWrite(writeSession_.tmpPath, expectedSize);
+    if (!begin) {
+        const size_t size = encodeWriteResponse(
+            FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
+            frame.requestId,
+            mapError(begin.error()),
+            sessionId,
+            0,
+            response,
+            responseSize
+        );
+        clearWriteSession_();
+        return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+    }
+
     writeSession_.active = true;
     writeSession_.sessionId = sessionId;
     writeSession_.expectedSize = expectedSize;
@@ -965,9 +1162,12 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteChunk_(
                offset + size > writeSession_.expectedSize) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
-        auto written = files_.write(writeSession_.tmpPath, offset, chunk, size);
-        if (!written) {
-            status = mapError(written.error());
+        auto written = files_.appendWrite(chunk, size);
+        if (!written || written.value() != size) {
+            status = written ? FileSystemRpcStatus::STORAGE_ERROR : mapError(written.error());
+            files_.abortWrite();
+            (void)files_.remove(writeSession_.tmpPath);
+            clearWriteSession_();
         } else {
             bytesWritten = static_cast<uint16_t>(written.value());
             writeSession_.writtenBytes += bytesWritten;
@@ -1008,18 +1208,25 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
     }
 
     FileSystemRpcStatus status = FileSystemRpcStatus::OK;
+    bool writeFinished = false;
     if (!writeSession_.active || writeSession_.sessionId != sessionId) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else if (writeSession_.writtenBytes != writeSession_.expectedSize) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else {
-        auto flush = files_.flush(writeSession_.tmpPath);
-        if (!flush) {
-            status = mapError(flush.error());
+        auto finish = files_.finishWrite();
+        if (!finish) {
+            status = mapError(finish.error());
+            files_.abortWrite();
+            (void)files_.remove(writeSession_.tmpPath);
+            clearWriteSession_();
         } else {
+            writeFinished = true;
             bool targetWasBackedUp = false;
             auto existing = files_.stat(writeSession_.finalPath);
-            if (existing && existing.value().exists()) {
+            if (!existing && existing.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
+                status = mapError(existing.error());
+            } else if (existing && existing.value().exists()) {
                 (void)files_.remove(writeSession_.backupPath);
                 auto backup = files_.rename(writeSession_.finalPath, writeSession_.backupPath);
                 if (!backup) {
@@ -1043,6 +1250,10 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
     }
 
     if (status == FileSystemRpcStatus::OK) {
+        clearWriteSession_();
+    } else if (writeFinished) {
+        (void)files_.remove(writeSession_.tmpPath);
+        (void)files_.remove(writeSession_.backupPath);
         clearWriteSession_();
     }
 
@@ -1082,6 +1293,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteAbort_(
     if (!writeSession_.active || writeSession_.sessionId != sessionId) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else {
+        files_.abortWrite();
         (void)files_.remove(writeSession_.tmpPath);
         (void)files_.remove(writeSession_.backupPath);
         clearWriteSession_();
@@ -1093,6 +1305,96 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteAbort_(
         status,
         sessionId,
         0,
+        response,
+        responseSize
+    );
+    return encoded > 0 ? Result<size_t>::ok(encoded) : bufferTooSmall();
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::handleMkdir_(
+    const FileSystemRpcFrame& frame,
+    uint8_t* response,
+    size_t responseSize
+) {
+    char path[PATH_BUFFER_SIZE] = {};
+    ByteReader reader(frame.payload, frame.payloadSize);
+    FileSystemRpcStatus status = FileSystemRpcStatus::OK;
+    if (!readPath(reader, path, sizeof(path)) || reader.remaining() != 0) {
+        status = FileSystemRpcStatus::INVALID_ARGUMENT;
+    } else {
+        auto result = files_.createDirectory(path);
+        if (!result) {
+            status = mapError(result.error());
+        }
+    }
+
+    const size_t encoded = encodeStatusOnly(
+        FileSystemRpcMessageId::MKDIR_RESPONSE,
+        frame.requestId,
+        status,
+        response,
+        responseSize
+    );
+    return encoded > 0 ? Result<size_t>::ok(encoded) : bufferTooSmall();
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::handleDelete_(
+    const FileSystemRpcFrame& frame,
+    uint8_t* response,
+    size_t responseSize
+) {
+    bool recursive = false;
+    char path[PATH_BUFFER_SIZE] = {};
+    ByteReader reader(frame.payload, frame.payloadSize);
+    FileSystemRpcStatus status = FileSystemRpcStatus::OK;
+    if (!reader.readBool(recursive) ||
+        !readPath(reader, path, sizeof(path)) ||
+        reader.remaining() != 0) {
+        status = FileSystemRpcStatus::INVALID_ARGUMENT;
+    } else {
+        const auto mode = recursive
+            ? oc::interface::RemoveMode::RECURSIVE
+            : oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY;
+        auto result = files_.remove(path, mode);
+        if (!result) {
+            status = mapError(result.error());
+        }
+    }
+
+    const size_t encoded = encodeStatusOnly(
+        FileSystemRpcMessageId::DELETE_RESPONSE,
+        frame.requestId,
+        status,
+        response,
+        responseSize
+    );
+    return encoded > 0 ? Result<size_t>::ok(encoded) : bufferTooSmall();
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::handleRename_(
+    const FileSystemRpcFrame& frame,
+    uint8_t* response,
+    size_t responseSize
+) {
+    char fromPath[PATH_BUFFER_SIZE] = {};
+    char toPath[PATH_BUFFER_SIZE] = {};
+    ByteReader reader(frame.payload, frame.payloadSize);
+    FileSystemRpcStatus status = FileSystemRpcStatus::OK;
+    if (!readPath(reader, fromPath, sizeof(fromPath)) ||
+        !readPath(reader, toPath, sizeof(toPath)) ||
+        reader.remaining() != 0) {
+        status = FileSystemRpcStatus::INVALID_ARGUMENT;
+    } else {
+        auto result = files_.rename(fromPath, toPath);
+        if (!result) {
+            status = mapError(result.error());
+        }
+    }
+
+    const size_t encoded = encodeStatusOnly(
+        FileSystemRpcMessageId::RENAME_RESPONSE,
+        frame.requestId,
+        status,
         response,
         responseSize
     );

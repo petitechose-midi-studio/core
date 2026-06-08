@@ -48,7 +48,8 @@
 #include "sequencer/SequencerHistory.hpp"
 #include "sequencer/SequencerSnapshots.hpp"
 #include "sequencer/SequencerTrackBankState.hpp"
-#include "project/ProjectNavigationState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectState.hpp"
 
 namespace core::state {
 
@@ -207,6 +208,7 @@ struct CoreState {
 private:
     MacroDomainState macroDomain_;
     SequencerDomainState sequencerDomain_;
+    project::ProjectState project_;
     core::app::ExtmemUniquePtr<UiSystemState> systemUi_;
     bool sharedTrackPersistPending_ = false;
     uint32_t sharedTrackPersistTimestampMs_ = 0;
@@ -228,6 +230,7 @@ public:
     persistence::SequencerPersistence& sequencerPersistence;
 
     /// Shared UI/system domain aliases
+    project::ProjectState& project;
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
     oc::state::Signal<core::ui::ViewType, 8>& activeView;
     oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>&

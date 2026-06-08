@@ -231,6 +231,45 @@ FLASHMEM oc::type::Result<void> ProductFileService::flush(const char* productPat
     return filesystem_.flush(path);
 }
 
+FLASHMEM oc::type::Result<void> ProductFileService::beginWrite(
+    const char* productPath,
+    uint32_t expectedSize
+) {
+    char path[PATH_BUFFER_SIZE] = {};
+    auto pathResult = resolvePath(productPath, path, sizeof(path));
+    if (!pathResult) {
+        return pathResult;
+    }
+    if (isProductRootPath_(path)) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::INVALID_ARGUMENT, "cannot write product root"}
+        );
+    }
+    auto result = filesystem_.beginWrite(path, expectedSize);
+    if (result) {
+        writeSessionActive_ = true;
+    }
+    return result;
+}
+
+FLASHMEM oc::type::Result<size_t> ProductFileService::appendWrite(
+    const uint8_t* data,
+    size_t size
+) {
+    return filesystem_.appendWrite(data, size);
+}
+
+FLASHMEM oc::type::Result<void> ProductFileService::finishWrite() {
+    auto result = filesystem_.finishWrite();
+    writeSessionActive_ = false;
+    return result;
+}
+
+FLASHMEM void ProductFileService::abortWrite() {
+    filesystem_.abortWrite();
+    writeSessionActive_ = false;
+}
+
 FLASHMEM bool ProductFileService::isProductRootPath_(const char* resolvedPath) {
     return resolvedPath && std::strcmp(resolvedPath, PRODUCT_ROOT) == 0;
 }

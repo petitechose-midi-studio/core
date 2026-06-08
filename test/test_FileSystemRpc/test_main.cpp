@@ -14,7 +14,15 @@ namespace {
 
 using core::persistence::ProductFileService;
 using core::protocol::filesystem::FileSystemRpcCodec;
+using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CAPABILITIES;
+using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT;
+using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS;
+using core::protocol::filesystem::FILESYSTEM_RPC_MAX_CHUNK_SIZE;
+using core::protocol::filesystem::FILESYSTEM_RPC_MAX_LIST_ENTRIES;
+using core::protocol::filesystem::FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE;
+using core::protocol::filesystem::FILESYSTEM_RPC_SCHEMA;
 using core::protocol::filesystem::FileSystemRpcFileType;
+using core::protocol::filesystem::FileSystemRpcMessageId;
 using core::protocol::filesystem::FileSystemRpcEndpoint;
 using core::protocol::filesystem::FileSystemRpcHandler;
 using core::protocol::filesystem::FileSystemRpcStatus;
@@ -93,6 +101,85 @@ struct Harness {
     }
 };
 
+struct FaultInjectingFileSystem : oc::interface::IFileSystem {
+    explicit FaultInjectingFileSystem(const char* rootPath)
+        : delegate(rootPath) {}
+
+    oc::type::Result<void> init() override { return delegate.init(); }
+    bool available() const override { return delegate.available(); }
+    oc::type::Result<oc::interface::FileInfo> stat(const char* path) override {
+        if (failFinalStat && path &&
+            std::strcmp(path, "/midi-studio/projects/stat-fail.bin") == 0) {
+            return oc::type::Result<oc::interface::FileInfo>::err(
+                {oc::type::ErrorCode::STORAGE_READ_FAILED, "forced final stat failure"}
+            );
+        }
+        return delegate.stat(path);
+    }
+    oc::type::Result<void> list(
+        const char* path,
+        oc::interface::DirectoryEntryVisitor visitor,
+        void* context
+    ) override {
+        return delegate.list(path, visitor, context);
+    }
+    oc::type::Result<void> createDirectory(const char* path) override {
+        return delegate.createDirectory(path);
+    }
+    oc::type::Result<void> remove(
+        const char* path,
+        oc::interface::RemoveMode mode = oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY
+    ) override {
+        return delegate.remove(path, mode);
+    }
+    oc::type::Result<void> rename(const char* fromPath, const char* toPath) override {
+        return delegate.rename(fromPath, toPath);
+    }
+    oc::type::Result<size_t> read(
+        const char* path,
+        uint32_t offset,
+        uint8_t* buffer,
+        size_t size
+    ) override {
+        return delegate.read(path, offset, buffer, size);
+    }
+    oc::type::Result<size_t> write(
+        const char* path,
+        uint32_t offset,
+        const uint8_t* data,
+        size_t size
+    ) override {
+        return delegate.write(path, offset, data, size);
+    }
+    oc::type::Result<void> flush(const char* path) override {
+        return delegate.flush(path);
+    }
+    oc::type::Result<void> beginWrite(const char* path, uint32_t expectedSize) override {
+        return delegate.beginWrite(path, expectedSize);
+    }
+    oc::type::Result<size_t> appendWrite(const uint8_t* data, size_t size) override {
+        if (!shortAppend || size == 0) {
+            return delegate.appendWrite(data, size);
+        }
+        const size_t shortSize = size - 1U;
+        auto written = delegate.appendWrite(data, shortSize);
+        if (!written) {
+            return written;
+        }
+        return oc::type::Result<size_t>::ok(shortSize);
+    }
+    oc::type::Result<void> finishWrite() override {
+        return delegate.finishWrite();
+    }
+    void abortWrite() override {
+        delegate.abortWrite();
+    }
+
+    oc::impl::HostFileSystem delegate;
+    bool shortAppend = false;
+    bool failFinalStat = false;
+};
+
 bool listContains(const core::protocol::filesystem::FileSystemRpcListResponse& response,
                   const char* name) {
     for (uint8_t i = 0; i < response.entryCount; ++i) {
@@ -145,6 +232,33 @@ void test_stat_and_read_roundtrip() {
     assert(std::memcmp(read.value().data, "roje", 4) == 0);
 
     std::cout << "[PASS] test_stat_and_read_roundtrip\n";
+}
+
+void test_capabilities_roundtrip() {
+    resetTestRoot();
+    Harness h;
+
+    const size_t requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
+        9,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    const size_t responseSize = h.transact(requestSize);
+    auto caps = FileSystemRpcCodec::decodeCapabilitiesResponse(h.response, responseSize);
+    assert(caps);
+    assert(caps.value().requestId == 9);
+    assert(caps.value().status == FileSystemRpcStatus::OK);
+    assert(caps.value().rpcSchema == FILESYSTEM_RPC_SCHEMA);
+    assert(caps.value().maxChunkSize == FILESYSTEM_RPC_MAX_CHUNK_SIZE);
+    assert(caps.value().responseBufferSize == FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE);
+    assert(caps.value().maxListEntries == FILESYSTEM_RPC_MAX_LIST_ENTRIES);
+    assert(caps.value().maxPathLength == oc::interface::FILESYSTEM_MAX_PATH_LENGTH);
+    assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_CAPABILITIES) != 0);
+    assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS) != 0);
+    assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT) != 0);
+
+    std::cout << "[PASS] test_capabilities_roundtrip\n";
 }
 
 void test_list_is_paginated_and_bounded() {
@@ -296,6 +410,152 @@ void test_write_session_commits_atomically() {
     std::cout << "[PASS] test_write_session_commits_atomically\n";
 }
 
+void test_write_session_commits_empty_file() {
+    resetTestRoot();
+    Harness h;
+
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        28,
+        0x1236,
+        "projects/empty.bin",
+        0,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    size_t responseSize = h.transact(requestSize, 10);
+    auto write = FileSystemRpcCodec::decodeWriteResponse(h.response, responseSize);
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::OK);
+    assert(h.handler.hasActiveWriteSession());
+
+    requestSize = FileSystemRpcCodec::encodeWriteCommitRequest(
+        29,
+        0x1236,
+        h.request,
+        sizeof(h.request)
+    );
+    responseSize = h.transact(requestSize, 20);
+    write = FileSystemRpcCodec::decodeWriteResponse(h.response, responseSize);
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::OK);
+    assert(!h.handler.hasActiveWriteSession());
+
+    auto info = h.service.stat("projects/empty.bin");
+    assert(info);
+    assert(info.value().type == oc::interface::FileType::FILE);
+    assert(info.value().sizeBytes == 0);
+
+    std::cout << "[PASS] test_write_session_commits_empty_file\n";
+}
+
+void test_write_session_aborts_on_short_append() {
+    resetTestRoot();
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    filesystem.shortAppend = true;
+    ProductFileService service(filesystem);
+    assert(service.init());
+    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    uint8_t request[1024] = {};
+    uint8_t response[1024] = {};
+
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        30,
+        0x1237,
+        "projects/short.bin",
+        4,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0);
+    auto handled = handler.handleFrame(request, requestSize, 10, response, sizeof(response));
+    assert(handled);
+    auto write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::OK);
+    assert(handler.hasActiveWriteSession());
+
+    requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(
+        31,
+        0x1237,
+        0,
+        reinterpret_cast<const uint8_t*>("drop"),
+        4,
+        request,
+        sizeof(request)
+    );
+    handled = handler.handleFrame(request, requestSize, 20, response, sizeof(response));
+    assert(handled);
+    write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(!handler.hasActiveWriteSession());
+    assert(!service.stat("projects/short.bin"));
+    assert(!service.stat("tmp/rpc-write-1237.tmp"));
+
+    std::cout << "[PASS] test_write_session_aborts_on_short_append\n";
+}
+
+void test_write_commit_propagates_final_stat_error() {
+    resetTestRoot();
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    uint8_t request[1024] = {};
+    uint8_t response[1024] = {};
+
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        35,
+        0x1240,
+        "projects/stat-fail.bin",
+        4,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0);
+    auto handled = handler.handleFrame(request, requestSize, 10, response, sizeof(response));
+    assert(handled);
+    auto write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::OK);
+
+    requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(
+        36,
+        0x1240,
+        0,
+        reinterpret_cast<const uint8_t*>("data"),
+        4,
+        request,
+        sizeof(request)
+    );
+    handled = handler.handleFrame(request, requestSize, 20, response, sizeof(response));
+    assert(handled);
+    write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::OK);
+
+    filesystem.failFinalStat = true;
+    requestSize = FileSystemRpcCodec::encodeWriteCommitRequest(
+        37,
+        0x1240,
+        request,
+        sizeof(request)
+    );
+    handled = handler.handleFrame(request, requestSize, 30, response, sizeof(response));
+    assert(handled);
+    write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(!handler.hasActiveWriteSession());
+    assert(!service.stat("projects/stat-fail.bin"));
+    assert(!service.stat("tmp/rpc-write-1240.tmp"));
+
+    std::cout << "[PASS] test_write_commit_propagates_final_stat_error\n";
+}
+
 void test_write_session_abort_and_timeout_cleanup() {
     resetTestRoot();
     Harness h;
@@ -404,6 +664,83 @@ void test_read_error_response_is_decodable() {
     std::cout << "[PASS] test_read_error_response_is_decodable\n";
 }
 
+void test_file_management_operations() {
+    resetTestRoot();
+    Harness h;
+
+    size_t requestSize = FileSystemRpcCodec::encodeMkdirRequest(
+        47,
+        "projects/rpc-folder",
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    size_t responseSize = h.transact(requestSize);
+    auto status = FileSystemRpcCodec::decodeStatusResponse(h.response, responseSize);
+    assert(status);
+    assert(status.value().requestId == 47);
+    assert(status.value().messageId == FileSystemRpcMessageId::MKDIR_RESPONSE);
+    assert(status.value().status == FileSystemRpcStatus::OK);
+    auto folder = h.service.stat("projects/rpc-folder");
+    assert(folder);
+    assert(folder.value().type == oc::interface::FileType::DIRECTORY);
+
+    const uint8_t payload[] = {'r', 'p', 'c'};
+    assert(h.service.write("projects/rpc-folder/source.bin", 0, payload, sizeof(payload)));
+
+    requestSize = FileSystemRpcCodec::encodeRenameRequest(
+        48,
+        "projects/rpc-folder/source.bin",
+        "projects/rpc-folder/renamed.bin",
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    responseSize = h.transact(requestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, responseSize);
+    assert(status);
+    assert(status.value().requestId == 48);
+    assert(status.value().messageId == FileSystemRpcMessageId::RENAME_RESPONSE);
+    assert(status.value().status == FileSystemRpcStatus::OK);
+    assert(!h.service.stat("projects/rpc-folder/source.bin"));
+    auto renamed = h.service.stat("projects/rpc-folder/renamed.bin");
+    assert(renamed);
+    assert(renamed.value().type == oc::interface::FileType::FILE);
+
+    requestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        49,
+        "projects/rpc-folder/renamed.bin",
+        false,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    responseSize = h.transact(requestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, responseSize);
+    assert(status);
+    assert(status.value().requestId == 49);
+    assert(status.value().messageId == FileSystemRpcMessageId::DELETE_RESPONSE);
+    assert(status.value().status == FileSystemRpcStatus::OK);
+    assert(!h.service.stat("projects/rpc-folder/renamed.bin"));
+
+    requestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        50,
+        "projects/rpc-folder",
+        false,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    responseSize = h.transact(requestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, responseSize);
+    assert(status);
+    assert(status.value().requestId == 50);
+    assert(status.value().status == FileSystemRpcStatus::OK);
+    assert(!h.service.stat("projects/rpc-folder"));
+
+    std::cout << "[PASS] test_file_management_operations\n";
+}
+
 void test_endpoint_answers_only_filesystem_requests() {
     resetTestRoot();
 
@@ -456,11 +793,16 @@ int main() {
     std::cout << "==============================================\n\n";
 
     test_stat_and_read_roundtrip();
+    test_capabilities_roundtrip();
     test_list_is_paginated_and_bounded();
     test_write_session_commits_atomically();
+    test_write_session_commits_empty_file();
+    test_write_session_aborts_on_short_append();
+    test_write_commit_propagates_final_stat_error();
     test_write_session_abort_and_timeout_cleanup();
     test_invalid_path_maps_to_error_status();
     test_read_error_response_is_decodable();
+    test_file_management_operations();
     test_endpoint_answers_only_filesystem_requests();
 
     resetTestRoot();
