@@ -66,6 +66,7 @@ private:
     bool loadProjectWithFeedback(const char* projectId);
     bool saveCurrentAndLoadProjectWithFeedback(const char* projectId);
     bool saveAsAndLoadProjectWithFeedback(const char* projectId);
+    bool saveAndResetProjectWithFeedback(bool saveAsNew);
     void resetProject();
     void back();
     void consumeUndo();

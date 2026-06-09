@@ -208,8 +208,25 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page) {
     addRow(page, row("Save As", "P002", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT, false, false));
 }
 
-FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page) {
-    addRow(page, row("Save As New", "Later", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM, false, false));
+FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
+                                         ProjectMenuContext context) {
+    if (context.projectHasSavedIdentity) {
+        auto saveAndReset = row(
+            "Save & Reset",
+            "",
+            ProjectMenuRowKind::Action,
+            ProjectNodeId::NEW_PROJECT_CONFIRM
+        );
+        copyRowValue(saveAndReset, projectIdentityLabel(context));
+        addRow(page, saveAndReset);
+    } else {
+        addRow(page, row(
+            "Save As New",
+            "Next",
+            ProjectMenuRowKind::Action,
+            ProjectNodeId::NEW_PROJECT_CONFIRM
+        ));
+    }
     addRow(page, row("Don't Save", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
     addRow(page, row("Cancel", "Back", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
 }
@@ -569,7 +586,7 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
             buildRoutingRows(page, context);
             break;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
-            buildNewProjectConfirmRows(page);
+            buildNewProjectConfirmRows(page, context);
             break;
         case ProjectNodeId::LOAD_PROJECT:
             buildLoadProjectRows(page, navigation);
@@ -658,10 +675,10 @@ FLASHMEM bool openNewProjectConfirmation(ProjectNavigationState& navigation) {
     navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
     const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
     navigation.pathStack[nextDepth] = ProjectNodeId::NEW_PROJECT_CONFIRM;
-    navigation.focusedRowByDepth[nextDepth] = 1;
+    navigation.focusedRowByDepth[nextDepth] = 0;
     navigation.depth.set(nextDepth);
     navigation.currentNode.set(ProjectNodeId::NEW_PROJECT_CONFIRM);
-    navigation.focusedRow.set(1);
+    navigation.focusedRow.set(0);
     return true;
 }
 

@@ -649,12 +649,39 @@ FLASHMEM bool ProjectHandler::saveAsAndLoadProjectWithFeedback(const char* proje
     return loadProjectWithFeedback(projectId);
 }
 
+FLASHMEM bool ProjectHandler::saveAndResetProjectWithFeedback(bool saveAsNew) {
+    const auto saved = saveAsNew
+        ? lifecycle_.saveAsNextProject()
+        : lifecycle_.saveCurrentProject();
+    const char* savedProjectId = lifecycle_.currentProjectId();
+    char feedback[32] = {};
+    const char* verb = saved.success()
+        ? "Saved"
+        : projectLifecycleFailureLabel(saved.status, saveAsNew ? "Save As failed" : "Save failed");
+    formatProjectLifecycleFeedback(feedback, sizeof(feedback), verb, savedProjectId);
+
+    if (!saved.success()) {
+        navigation_.setLifecycleFeedback(feedback);
+        OC_LOG_WARN("[Project] save before reset failed status={}",
+                    static_cast<unsigned>(saved.status));
+        return false;
+    }
+
+    OC_LOG_INFO("[Project] save {} before reset bytes={}", savedProjectId, saved.bytes);
+    resetProject();
+    navigation_.setLifecycleFeedback(feedback);
+    return true;
+}
+
 FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
     using core::state::project::ProjectNodeId;
 
     const auto node = navigation_.currentNode.get();
     const uint8_t row = navigation_.focusedRow.get();
     if (node == ProjectNodeId::NEW_PROJECT_CONFIRM) {
+        if (row == 0) {
+            return saveAndResetProjectWithFeedback(!lifecycle_.currentProjectHasSavedIdentity());
+        }
         if (row == 1) {
             resetProject();
             return true;

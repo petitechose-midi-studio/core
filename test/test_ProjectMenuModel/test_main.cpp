@@ -108,20 +108,21 @@ void test_root_section_is_a_navigation_root() {
     std::cout << "[PASS] test_root_section_is_a_navigation_root\n";
 }
 
-void test_new_project_confirmation_page_defaults_to_destructive_choice() {
+void test_new_project_confirmation_page_defaults_to_save_choice() {
     core::state::project::ProjectNavigationState navigation;
 
     assert(core::state::project::openNewProjectConfirmation(navigation));
     assert(core::state::project::projectNavigationInNewProjectConfirmation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM);
     assert(navigation.depth.get() == 1);
-    assert(navigation.focusedRow.get() == 1);
+    assert(navigation.focusedRow.get() == 0);
 
     const auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 3);
     assert(std::string(page.meta) == "NEW PROJECT?");
     assert(std::string(page.rows[0].label) == "Save As New");
-    assert(!page.rows[0].enabled);
+    assert(page.rows[0].enabled);
+    assert(std::string(rowValue(page.rows[0])) == "Next");
     assert(std::string(page.rows[1].label) == "Don't Save");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "Reset");
@@ -132,7 +133,27 @@ void test_new_project_confirmation_page_defaults_to_destructive_choice() {
     assert(navigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
     assert(navigation.depth.get() == 0);
 
-    std::cout << "[PASS] test_new_project_confirmation_page_defaults_to_destructive_choice\n";
+    std::cout << "[PASS] test_new_project_confirmation_page_defaults_to_save_choice\n";
+}
+
+void test_new_project_confirmation_uses_current_project_identity() {
+    core::state::project::ProjectNavigationState navigation;
+
+    assert(core::state::project::openNewProjectConfirmation(navigation));
+    const auto page = core::state::project::buildProjectMenuPage(
+        navigation,
+        projectContext("P002", "Project 002", true, true)
+    );
+
+    assert(page.rowCount == 3);
+    assert(page.selectedIndex == 0);
+    assert(std::string(page.rows[0].label) == "Save & Reset");
+    assert(page.rows[0].enabled);
+    assert(std::string(rowValue(page.rows[0])) == "P002");
+    assert(std::string(page.rows[1].label) == "Don't Save");
+    assert(std::string(rowValue(page.rows[1])) == "Reset");
+
+    std::cout << "[PASS] test_new_project_confirmation_uses_current_project_identity\n";
 }
 
 void test_music_scale_rows_use_project_scale_context() {
@@ -173,7 +194,7 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     std::cout << "[PASS] test_music_root_scale_row_summarizes_key_and_folder_target\n";
 }
 
-void test_transport_rows_use_runtime_context_and_placeholders() {
+void test_transport_rows_use_runtime_context() {
     core::state::project::ProjectNavigationState navigation;
     core::state::project::switchProjectTab(navigation, 2);
     navigation.transportSwingPercent = 12;
@@ -190,7 +211,7 @@ void test_transport_rows_use_runtime_context_and_placeholders() {
     assert(std::string(rowValue(page.rows[2])) == "Master");
     assert(std::string(rowValue(page.rows[3])) == "Restart");
 
-    std::cout << "[PASS] test_transport_rows_use_runtime_context_and_placeholders\n";
+    std::cout << "[PASS] test_transport_rows_use_runtime_context\n";
 }
 
 void test_routing_rows_expose_all_track_output_channels() {
@@ -379,10 +400,11 @@ int main() {
     test_enter_music_then_scale_and_back();
     test_switch_tab_resets_to_target_tab_root();
     test_root_section_is_a_navigation_root();
-    test_new_project_confirmation_page_defaults_to_destructive_choice();
+    test_new_project_confirmation_page_defaults_to_save_choice();
+    test_new_project_confirmation_uses_current_project_identity();
     test_music_scale_rows_use_project_scale_context();
     test_music_root_scale_row_summarizes_key_and_folder_target();
-    test_transport_rows_use_runtime_context_and_placeholders();
+    test_transport_rows_use_runtime_context();
     test_routing_rows_expose_all_track_output_channels();
     test_storage_project_identity_is_read_only_and_autosave_is_activable();
     test_load_project_picker_shows_detected_projects();
