@@ -1,8 +1,34 @@
 #include "state/project/ProjectNavigationState.hpp"
 
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::state::project {
+
+FLASHMEM void ProjectBrowserState::clear() {
+    entries = {};
+    count = 0;
+    scanned = false;
+    truncated = false;
+}
+
+FLASHMEM bool ProjectBrowserState::add(const char* id, uint32_t sizeBytes) {
+    if (!id || id[0] == '\0') return false;
+    if (count >= entries.size()) {
+        truncated = true;
+        scanned = true;
+        return false;
+    }
+
+    auto& entry = entries[count++];
+    entry.id.fill('\0');
+    std::strncpy(entry.id.data(), id, entry.id.size() - 1U);
+    entry.id[entry.id.size() - 1U] = '\0';
+    entry.sizeBytes = sizeBytes;
+    scanned = true;
+    return true;
+}
 
 FLASHMEM void ProjectNavigationState::reset() {
     activeTab.set(ProjectTab::OVERVIEW);
@@ -11,13 +37,16 @@ FLASHMEM void ProjectNavigationState::reset() {
     focusedRow.set(0);
     physicalHoldActive.set(false);
     contentRevision.set(0);
+    lifecycleFeedback.set("");
     autosaveEnabled = true;
-    storageSlotIndex = 0;
     scaleConstrainEnabled = true;
     patternsInheritScale = true;
     clipsInheritScale = true;
     transportSwingPercent = 0;
     transportRunMode = 0;
+    pendingLoadProjectId = {};
+    pendingLoadCanSaveCurrent = false;
+    loadProjects.clear();
     pathStack = {
         ProjectNodeId::OVERVIEW_ROOT,
         ProjectNodeId::OVERVIEW_ROOT,
@@ -29,6 +58,17 @@ FLASHMEM void ProjectNavigationState::reset() {
 
 FLASHMEM void ProjectNavigationState::notifyContentChanged() {
     contentRevision.set(static_cast<uint8_t>(contentRevision.get() + 1));
+}
+
+FLASHMEM void ProjectNavigationState::setLifecycleFeedback(const char* message) {
+    lifecycleFeedback.set(message ? message : "");
+    notifyContentChanged();
+}
+
+FLASHMEM void ProjectNavigationState::clearLifecycleFeedback() {
+    if (lifecycleFeedback.empty()) return;
+    lifecycleFeedback.set("");
+    notifyContentChanged();
 }
 
 FLASHMEM ProjectNodeId rootNodeForTab(ProjectTab tab) {
@@ -55,6 +95,8 @@ FLASHMEM ProjectTab tabForRootNode(ProjectNodeId node) {
         case ProjectNodeId::TRANSPORT_ROOT:
             return ProjectTab::TRANSPORT;
         case ProjectNodeId::STORAGE_ROOT:
+        case ProjectNodeId::LOAD_PROJECT:
+        case ProjectNodeId::LOAD_PROJECT_CONFIRM:
             return ProjectTab::STORAGE;
         case ProjectNodeId::ROUTING_ROOT:
             return ProjectTab::ROUTING;

@@ -24,6 +24,8 @@
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
 #include "persistence/ProductFileService.hpp"
+#include "persistence/ProjectSessionAutosaveService.hpp"
+#include "persistence/ProjectSessionRestoreService.hpp"
 #include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
@@ -49,6 +51,8 @@ static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer
 static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
 static std::optional<core::persistence::ProductFileService> productFileService;
+static std::optional<core::persistence::ProjectSessionAutosaveService> projectSessionAutosaveService;
+static std::optional<core::persistence::ProjectSessionRestoreService> projectSessionRestoreService;
 static std::optional<core::state::CoreState> coreState;
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static std::optional<oc::app::OpenControlApp> app;
@@ -369,6 +373,25 @@ static FLASHMEM void initApp() {
                       sequencerWorkspaceStorage,
                       sequencerPatternLibraryStorage,
                       sequencerSetLibraryStorage);
+    projectSessionRestoreService.emplace(*productFileService);
+    const auto sessionRestore = projectSessionRestoreService->restore(*coreState);
+    switch (sessionRestore.status) {
+        case core::persistence::ProjectSessionRestoreService::Status::RESTORED:
+            OC_LOG_INFO("[ProjectSession] restored current.mspj bytes={}",
+                        sessionRestore.bytes);
+            break;
+        case core::persistence::ProjectSessionRestoreService::Status::MISSING:
+            OC_LOG_INFO("[ProjectSession] no current.mspj; using default session");
+            break;
+        case core::persistence::ProjectSessionRestoreService::Status::APPLY_FAILED:
+            OC_LOG_WARN("[ProjectSession] current.mspj apply failed; using default session");
+            break;
+        case core::persistence::ProjectSessionRestoreService::Status::DEGRADED:
+        default:
+            OC_LOG_WARN("[ProjectSession] current.mspj unavailable/corrupt; using default session");
+            break;
+    }
+    projectSessionAutosaveService.emplace(*productFileService);
 
     oc::hal::teensy::AppBuilder appBuilder;
     appBuilder.midi()
@@ -541,6 +564,9 @@ void loop() {
 #endif
     if (!productFileWriteActive) {
         coreState->update();
+        if (projectSessionAutosaveService) {
+            projectSessionAutosaveService->update(*coreState, millis());
+        }
     }
 #if defined(PERF_LOG)
     if (!productFileWriteActive) {

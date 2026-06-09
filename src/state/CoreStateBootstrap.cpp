@@ -132,7 +132,10 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
     state.sequencerDomain_.autoPersist =
         std::make_unique<oc::state::AutoPersistIncremental<13>>(
             [](uint8_t) {},
-            [&state]() { state.persistSequencerWorkspace_(); },
+            [&state]() {
+                state.markProjectMutated();
+                state.persistSequencerWorkspace_();
+            },
             CoreSettings::VALUE_SAVE_DELAY_MS
         );
 
@@ -206,6 +209,7 @@ FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     registerOverlaySignals_(state);
     setupAutoPersist_(state);
+    state.projectSessionTrackingEnabled_ = true;
 }
 
 }  // namespace core::state

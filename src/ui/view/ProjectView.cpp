@@ -220,6 +220,10 @@ FLASHMEM void ProjectView::render() {
                 state_refs_.statusBar.tempo.get(),
                 state_refs_.midiSync.mode.get()
             };
+            context.projectId = state_refs_.project.metadata.id;
+            context.projectName = state_refs_.project.metadata.name;
+            context.projectDirty = state_refs_.project.metadata.dirty;
+            context.projectHasSavedIdentity = state_refs_.project.metadata.hasSavedIdentity;
             for (uint8_t i = 0; i < context.outputMidiChannels.size(); ++i) {
                 context.outputMidiChannels[i] =
                     state_refs_.sequencerTracks.track(i).midiChannel.get();
@@ -239,7 +243,9 @@ FLASHMEM void ProjectView::render() {
 
     menu_->render(ms::ui::MenuListViewProps{
         .title = page.title,
-        .meta = page.meta,
+        .meta = state_refs_.navigation.lifecycleFeedback.empty()
+            ? page.displayMeta()
+            : state_refs_.navigation.lifecycleFeedback.get(),
         .rows = rows_.data(),
         .rowCount = page.rowCount,
         .selectedIndex = page.selectedIndex,

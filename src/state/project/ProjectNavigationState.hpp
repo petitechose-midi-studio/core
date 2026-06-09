@@ -4,6 +4,9 @@
 #include <cstdint>
 
 #include <oc/state/Signal.hpp>
+#include <oc/state/SignalString.hpp>
+
+#include "state/project/ProjectState.hpp"
 
 namespace core::state::project {
 
@@ -24,6 +27,25 @@ enum class ProjectNodeId : uint8_t {
     STORAGE_ROOT,
     ROUTING_ROOT,
     NEW_PROJECT_CONFIRM,
+    LOAD_PROJECT,
+    LOAD_PROJECT_CONFIRM,
+};
+
+struct ProjectBrowserEntry {
+    std::array<char, ProjectMetadata::ID_SIZE> id{};
+    uint32_t sizeBytes = 0;
+};
+
+struct ProjectBrowserState {
+    static constexpr uint8_t MAX_PROJECTS = 16;
+
+    std::array<ProjectBrowserEntry, MAX_PROJECTS> entries{};
+    uint8_t count = 0;
+    bool scanned = false;
+    bool truncated = false;
+
+    void clear();
+    bool add(const char* id, uint32_t sizeBytes);
 };
 
 struct ProjectNavigationState {
@@ -35,14 +57,17 @@ struct ProjectNavigationState {
     oc::state::Signal<uint8_t, 8> focusedRow{0};
     oc::state::Signal<bool, 8> physicalHoldActive{false};
     oc::state::Signal<uint8_t, 8> contentRevision{0};
+    oc::state::SignalLabel lifecycleFeedback;
 
     bool autosaveEnabled = true;
-    uint8_t storageSlotIndex = 0;
     bool scaleConstrainEnabled = true;
     bool patternsInheritScale = true;
     bool clipsInheritScale = true;
     uint8_t transportSwingPercent = 0;
     uint8_t transportRunMode = 0;
+    std::array<char, ProjectMetadata::ID_SIZE> pendingLoadProjectId{};
+    bool pendingLoadCanSaveCurrent = false;
+    ProjectBrowserState loadProjects;
 
     std::array<ProjectNodeId, MAX_DEPTH> pathStack{
         ProjectNodeId::OVERVIEW_ROOT,
@@ -54,6 +79,8 @@ struct ProjectNavigationState {
 
     void reset();
     void notifyContentChanged();
+    void setLifecycleFeedback(const char* message);
+    void clearLifecycleFeedback();
 };
 
 constexpr uint8_t projectTabCount() {

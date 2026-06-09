@@ -36,8 +36,8 @@ bool sameScale(const StepSequencerScaleSettings& lhs,
 void test_project_state_defaults_are_stable() {
     project::ProjectState state;
 
-    assert(std::strcmp(state.metadata.id.data(), "P001") == 0);
-    assert(std::strcmp(state.metadata.name.data(), "Project 001") == 0);
+    assert(state.metadata.id[0] == '\0');
+    assert(std::strcmp(state.metadata.name.data(), "Untitled") == 0);
     assert(!state.metadata.dirty);
     assert(!state.metadata.hasSavedIdentity);
     assert(state.transport.tempoBpm == 120.0f);

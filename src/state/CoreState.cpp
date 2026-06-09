@@ -441,6 +441,38 @@ FLASHMEM void CoreState::resetMusicalProject() {
     CoreStateLifecycle::resetMusicalProject(*this);
 }
 
+FLASHMEM void CoreState::markProjectMutated() {
+    ++project.metadata.modifiedCounter;
+    if (project.metadata.modifiedCounter == 0) {
+        project.metadata.modifiedCounter = 1;
+    }
+    project.metadata.dirty = true;
+    requestProjectSessionSave_();
+    projectNavigation.notifyContentChanged();
+}
+
+FLASHMEM void CoreState::requestProjectSessionSave() {
+    requestProjectSessionSave_();
+}
+
+FLASHMEM void CoreState::acknowledgeProjectSessionSave(uint32_t savedModifiedCounter) {
+    if (project.metadata.modifiedCounter != savedModifiedCounter) {
+        requestProjectSessionSave_();
+        return;
+    }
+
+    projectSessionSavePending_ = false;
+    projectSessionSaveTimestampMs_ = 0;
+}
+
+bool CoreState::hasPendingProjectSessionSave() const {
+    return projectSessionSavePending_;
+}
+
+uint32_t CoreState::projectSessionSaveTimestampMs() const {
+    return projectSessionSaveTimestampMs_;
+}
+
 bool CoreState::isMacroPersistenceReady() const {
     return macroDomain_.persistenceReady;
 }
@@ -454,6 +486,7 @@ FLASHMEM void CoreState::requestMacroWorkspacePersist() {
 }
 
 FLASHMEM void CoreState::persistSequencerWorkspace() {
+    markProjectMutated();
     persistSequencerWorkspace_();
 }
 
@@ -480,6 +513,7 @@ FLASHMEM bool CoreState::recordSequencerPatternHistory(
         return false;
     }
 
+    markProjectMutated();
     sequencer::storeActiveTrack(sequencerTracks, sequencer);
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
@@ -499,6 +533,7 @@ FLASHMEM bool CoreState::recordSequencerBankHistory(
         return false;
     }
 
+    markProjectMutated();
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
     return true;
@@ -511,6 +546,7 @@ FLASHMEM bool CoreState::recordSequencerBankHistory(
         return false;
     }
 
+    markProjectMutated();
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
     return true;
@@ -607,6 +643,7 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
         return false;
     }
 
+    markProjectMutated();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
@@ -621,6 +658,7 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
         return false;
     }
 
+    markProjectMutated();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
     persistSequencerWorkspace_();
@@ -743,10 +781,21 @@ FLASHMEM void CoreState::queueSequencerBankApply_(
 FLASHMEM void CoreState::requestMacroWorkspacePersist_() {
     if (!macroDomain_.persistenceReady) return;
 
+    markProjectMutated();
     macroDomain_.workspacePersistPending = true;
     macroDomain_.workspacePersistTimestampMs = oc::time::millis();
     if (macroDomain_.workspacePersistTimestampMs == 0) {
         macroDomain_.workspacePersistTimestampMs = 1;
+    }
+}
+
+FLASHMEM void CoreState::requestProjectSessionSave_() {
+    if (!projectSessionTrackingEnabled_) return;
+
+    projectSessionSavePending_ = true;
+    projectSessionSaveTimestampMs_ = oc::time::millis();
+    if (projectSessionSaveTimestampMs_ == 0) {
+        projectSessionSaveTimestampMs_ = 1;
     }
 }
 
@@ -775,6 +824,7 @@ FLASHMEM void CoreState::persistMacroWorkspaceNow_() {
 
 FLASHMEM void CoreState::persistSequencerWorkspace_() {
     if (!sequencerDomain_.persistenceReady) return;
+    requestProjectSessionSave_();
     sequencer::storeActiveTrack(sequencerTracks, sequencer);
     const auto status = sequencerPersistence.saveWorkspaceStatus(sequencerTracks, sequencer);
     if (status != persistence::PersistenceWriteStatus::OK) {

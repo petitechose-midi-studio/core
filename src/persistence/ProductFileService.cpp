@@ -10,6 +10,7 @@ namespace {
 
 constexpr const char* kLayoutDirectories[] = {
     ProductFileService::PRODUCT_ROOT,
+    ProductFileService::SESSION_DIR,
     ProductFileService::PROJECTS_DIR,
     ProductFileService::LIBRARY_DIR,
     ProductFileService::TMP_DIR,

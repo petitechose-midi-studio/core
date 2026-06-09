@@ -149,6 +149,7 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
     syncEncodersFromState();
     feature_assembly_ = core::app::makeExtmemUnique<core::context::standalone::StandaloneFeatureAssembly>(
         core_state_,
+        product_files_,
         overlay_assembly_->controller(),
         encoders(),
         buttons(),

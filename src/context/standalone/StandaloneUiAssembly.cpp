@@ -211,6 +211,7 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
         viewsHost,
         core::ui::ProjectView::StateRefs{
             core_state_.projectNavigation,
+            core_state_.project,
             core_state_.sequencerTracks,
             core_state_.statusBar,
             core_state_.midiSync,
