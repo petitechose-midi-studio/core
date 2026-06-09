@@ -17,6 +17,7 @@
 #include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
+#include "persistence/ProductFileService.hpp"
 #include "state/CoreState.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
@@ -25,6 +26,7 @@ namespace core::context::standalone {
 
 FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     core::state::CoreState& state,
+    core::persistence::ProductFileService& productFiles,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -106,7 +108,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 state.statusBar,
                 state.midiSync,
                 core::handler::SequencerHistoryDomainServices::fromCoreState(state),
-                core::handler::ProjectLifecycleDomainServices::fromCoreState(state),
+                core::handler::ProjectLifecycleDomainServices::fromCoreState(
+                    state,
+                    productFiles
+                ),
             },
             core::handler::SequencerSettingsDomainServices{
                 core::handler::SequencerSettingsDomainServices::StateRefs{

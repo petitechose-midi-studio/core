@@ -1,6 +1,7 @@
 #include "state/project/ProjectMenuModel.hpp"
 
 #include <cstddef>
+#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
@@ -29,7 +30,6 @@ constexpr ProjectMenuRow row(const char* label,
     };
 }
 
-constexpr uint8_t STORAGE_SLOT_COUNT = 3;
 constexpr uint8_t TRANSPORT_SWING_MAX = 75;
 constexpr uint8_t TRANSPORT_RUN_MODE_COUNT = 3;
 constexpr uint8_t MIDI_CHANNEL_COUNT = 16;
@@ -71,6 +71,14 @@ FLASHMEM int wrapIndex(int value, int count) {
 FLASHMEM void setRowValue(ProjectMenuRow& target, const char* value) {
     target.value = value ? value : "";
     target.valueText[0] = '\0';
+}
+
+FLASHMEM void copyRowValue(ProjectMenuRow& target, const char* value) {
+    auto* buffer = target.valueText.data();
+    const auto size = target.valueText.size();
+    size_t pos = oc::type::text::appendString(buffer, size, 0, value ? value : "");
+    oc::type::text::terminate(buffer, size, pos);
+    target.value = buffer;
 }
 
 FLASHMEM void setRowValue(ProjectMenuRow& target, unsigned value, const char* suffix) {
@@ -122,6 +130,43 @@ FLASHMEM void setMidiChannelValue(ProjectMenuRow& target, uint8_t channel0Based)
     target.value = buffer;
 }
 
+FLASHMEM const char* projectIdentityLabel(const ProjectMenuContext& context) {
+    if (context.projectHasSavedIdentity && context.projectId[0] != '\0') {
+        return context.projectId.data();
+    }
+    if (context.projectName[0] != '\0') {
+        return context.projectName.data();
+    }
+    return "Untitled";
+}
+
+FLASHMEM void setPageMeta(ProjectMenuPage& page,
+                          const char* section,
+                          const ProjectMenuContext& context) {
+    auto* buffer = page.metaText.data();
+    const auto size = page.metaText.size();
+    size_t pos = oc::type::text::appendString(buffer, size, 0, section ? section : "");
+    pos = oc::type::text::appendString(buffer, size, pos, "  ");
+    pos = oc::type::text::appendString(buffer, size, pos, projectIdentityLabel(context));
+    if (context.projectDirty) {
+        pos = oc::type::text::appendString(buffer, size, pos, "*");
+    }
+    oc::type::text::terminate(buffer, size, pos);
+    page.meta = buffer;
+}
+
+FLASHMEM void setTransitionValue(ProjectMenuRow& target,
+                                 const char* source,
+                                 const char* destination) {
+    auto* buffer = target.valueText.data();
+    const auto size = target.valueText.size();
+    size_t pos = oc::type::text::appendString(buffer, size, 0, source ? source : "");
+    pos = oc::type::text::appendString(buffer, size, pos, " > ");
+    pos = oc::type::text::appendString(buffer, size, pos, destination ? destination : "");
+    oc::type::text::terminate(buffer, size, pos);
+    target.value = buffer;
+}
+
 FLASHMEM const char* clockModeValue(core::state::MidiSyncMode mode) {
     switch (mode) {
         case core::state::MidiSyncMode::MASTER:
@@ -158,8 +203,8 @@ FLASHMEM void addRow(ProjectMenuPage& page, ProjectMenuRow next) {
 
 FLASHMEM void buildOverviewRows(ProjectMenuPage& page) {
     addRow(page, row("New Project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
-    addRow(page, row("Load Project", "3 slots", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT, false, false));
-    addRow(page, row("Save", "P001*", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT, false, false));
+    addRow(page, row("Load Project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
+    addRow(page, row("Save", "Current", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
     addRow(page, row("Save As", "P002", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT, false, false));
 }
 
@@ -167,6 +212,56 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page) {
     addRow(page, row("Save As New", "Later", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM, false, false));
     addRow(page, row("Don't Save", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
     addRow(page, row("Cancel", "Back", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
+}
+
+FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
+                                          const ProjectNavigationState& navigation,
+                                          ProjectMenuContext context) {
+    const char* projectId = navigation.pendingLoadProjectId.data();
+    if (navigation.pendingLoadCanSaveCurrent) {
+        auto saveAndLoad = row(
+            "Save & Load",
+            "",
+            ProjectMenuRowKind::Action,
+            ProjectNodeId::LOAD_PROJECT_CONFIRM
+        );
+        setTransitionValue(saveAndLoad, projectIdentityLabel(context), projectId);
+        addRow(page, saveAndLoad);
+    }
+    auto saveAsAndLoad = row(
+        "Save As & Load",
+        "",
+        ProjectMenuRowKind::Action,
+        ProjectNodeId::LOAD_PROJECT_CONFIRM
+    );
+    setTransitionValue(
+        saveAsAndLoad,
+        navigation.pendingLoadCanSaveCurrent ? "New" : projectIdentityLabel(context),
+        projectId
+    );
+    addRow(page, saveAsAndLoad);
+
+    auto dontSave = row(
+        "Don't Save",
+        "",
+        ProjectMenuRowKind::Action,
+        ProjectNodeId::LOAD_PROJECT_CONFIRM
+    );
+    {
+        auto* buffer = dontSave.valueText.data();
+        const auto size = dontSave.valueText.size();
+        size_t pos = oc::type::text::appendString(buffer, size, 0, "Load ");
+        pos = oc::type::text::appendString(buffer, size, pos, projectId);
+        oc::type::text::terminate(buffer, size, pos);
+        dontSave.value = buffer;
+    }
+    addRow(page, dontSave);
+    addRow(page, row(
+        "Cancel",
+        "Back",
+        ProjectMenuRowKind::Action,
+        ProjectNodeId::LOAD_PROJECT_CONFIRM
+    ));
 }
 
 FLASHMEM void buildMusicRootRows(ProjectMenuPage& page, ProjectMenuContext context) {
@@ -199,12 +294,38 @@ FLASHMEM void buildTransportRows(ProjectMenuPage& page, ProjectMenuContext conte
     }
 }
 
-FLASHMEM void buildStorageRows(ProjectMenuPage& page) {
-    addRow(page, row("Save Project", "P001*", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT, false, false));
+FLASHMEM void buildStorageRows(ProjectMenuPage& page, ProjectMenuContext context) {
+    addRow(page, row("Save Project", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
     addRow(page, row("New Project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("Load Project", "3 slots", ProjectMenuRowKind::Folder, ProjectNodeId::STORAGE_ROOT, false, false));
-    addRow(page, row("Slot", "Auto-001", ProjectMenuRowKind::Value, ProjectNodeId::STORAGE_ROOT));
+    addRow(page, row("Load Project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
+    auto projectRow = row("Project", "", ProjectMenuRowKind::Disabled, ProjectNodeId::STORAGE_ROOT, false, false);
+    copyRowValue(projectRow, projectIdentityLabel(context));
+    addRow(page, projectRow);
     addRow(page, row("Autosave", "On", ProjectMenuRowKind::Toggle, ProjectNodeId::STORAGE_ROOT));
+}
+
+FLASHMEM void buildLoadProjectRows(ProjectMenuPage& page,
+                                   const ProjectNavigationState& navigation) {
+    if (!navigation.loadProjects.scanned || navigation.loadProjects.count == 0) {
+        addRow(page, row(
+            "No projects",
+            "Save first",
+            ProjectMenuRowKind::Disabled,
+            ProjectNodeId::LOAD_PROJECT,
+            false,
+            false
+        ));
+        return;
+    }
+
+    for (uint8_t i = 0; i < navigation.loadProjects.count; ++i) {
+        addRow(page, row(
+            navigation.loadProjects.entries[i].id.data(),
+            "Load",
+            ProjectMenuRowKind::Action,
+            ProjectNodeId::LOAD_PROJECT
+        ));
+    }
 }
 
 FLASHMEM void buildRoutingRows(ProjectMenuPage& page, ProjectMenuContext context) {
@@ -220,23 +341,38 @@ FLASHMEM void buildRoutingRows(ProjectMenuPage& page, ProjectMenuContext context
     }
 }
 
-FLASHMEM const char* metaForNode(ProjectNodeId node) {
+FLASHMEM void applyPageMeta(ProjectMenuPage& page,
+                            ProjectNodeId node,
+                            const ProjectMenuContext& context) {
     switch (node) {
         case ProjectNodeId::MUSIC_ROOT:
-            return "MUSIC";
+            page.meta = "MUSIC";
+            return;
         case ProjectNodeId::MUSIC_SCALE:
-            return "MUSIC > SCALE";
+            page.meta = "MUSIC > SCALE";
+            return;
         case ProjectNodeId::TRANSPORT_ROOT:
-            return "TRANSPORT";
+            page.meta = "TRANSPORT";
+            return;
         case ProjectNodeId::STORAGE_ROOT:
-            return "STORAGE  P001*";
+            setPageMeta(page, "STORAGE", context);
+            return;
+        case ProjectNodeId::LOAD_PROJECT:
+            page.meta = "LOAD PROJECT";
+            return;
+        case ProjectNodeId::LOAD_PROJECT_CONFIRM:
+            page.meta = "LOAD DIRTY?";
+            return;
         case ProjectNodeId::ROUTING_ROOT:
-            return "ROUTING";
+            page.meta = "ROUTING";
+            return;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
-            return "NEW PROJECT?";
+            page.meta = "NEW PROJECT?";
+            return;
         case ProjectNodeId::OVERVIEW_ROOT:
         default:
-            return "OVERVIEW  P001*";
+            setPageMeta(page, "OVERVIEW", context);
+            return;
     }
 }
 
@@ -286,7 +422,8 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
         (navigation.scaleConstrainEnabled ? 0x02u : 0u) |
         (navigation.patternsInheritScale ? 0x04u : 0u) |
         (navigation.clipsInheritScale ? 0x08u : 0u) |
-        (static_cast<uint32_t>(navigation.storageSlotIndex & 0x03u) << 4);
+        (context.projectDirty ? 0x10u : 0u) |
+        (context.projectHasSavedIdentity ? 0x20u : 0u);
     const uint32_t scaleBits =
         (static_cast<uint32_t>(context.projectScale.root & 0x0FU) << 8) |
         ((static_cast<uint32_t>(context.projectScale.type) & 0x0FU) << 12) |
@@ -299,9 +436,24 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
         scaleBits |
         flags;
     revision ^= (roundedTempo(context.tempoBpm) & 0x03FFu) * 2654435761u;
+    revision ^= static_cast<uint32_t>(navigation.contentRevision.get()) * 2246822519u;
     revision ^= (static_cast<uint32_t>(context.clockMode) & 0x03u) << 14;
     revision ^= static_cast<uint32_t>(navigation.transportSwingPercent & 0x7Fu) << 2;
     revision ^= static_cast<uint32_t>(navigation.transportRunMode & 0x03u) << 10;
+    revision ^= static_cast<uint32_t>(navigation.loadProjects.count) << 16;
+    revision ^= navigation.loadProjects.truncated ? 0x40000000u : 0u;
+    for (uint8_t i = 0; i < context.projectId.size() && context.projectId[i] != '\0'; ++i) {
+        revision = (revision * 16777619u) ^ static_cast<uint8_t>(context.projectId[i]);
+    }
+    for (uint8_t i = 0; i < context.projectName.size() && context.projectName[i] != '\0'; ++i) {
+        revision = (revision * 16777619u) ^ static_cast<uint8_t>(context.projectName[i]);
+    }
+    for (uint8_t i = 0; i < navigation.loadProjects.count; ++i) {
+        const char* id = navigation.loadProjects.entries[i].id.data();
+        for (uint8_t c = 0; id[c] != '\0'; ++c) {
+            revision = (revision * 16777619u) ^ static_cast<uint8_t>(id[c]);
+        }
+    }
     for (uint8_t i = 0; i < context.outputMidiChannels.size(); ++i) {
         revision = (revision * 16777619u) ^
                    static_cast<uint32_t>((context.outputMidiChannels[i] & 0x0FU) + i + 1U);
@@ -317,18 +469,6 @@ FLASHMEM const char* inheritValue(bool inherit) {
     return inherit ? "Inherit" : "Override";
 }
 
-FLASHMEM const char* storageSlotValue(uint8_t index) {
-    switch (index % STORAGE_SLOT_COUNT) {
-        case 1:
-            return "Auto-002";
-        case 2:
-            return "Auto-003";
-        case 0:
-        default:
-            return "Auto-001";
-    }
-}
-
 FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
                                  const ProjectNavigationState& navigation) {
     switch (navigation.currentNode.get()) {
@@ -337,7 +477,6 @@ FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
             if (page.rowCount > 4) page.rows[4].value = inheritValue(navigation.clipsInheritScale);
             break;
         case ProjectNodeId::STORAGE_ROOT:
-            if (page.rowCount > 3) page.rows[3].value = storageSlotValue(navigation.storageSlotIndex);
             if (page.rowCount > 4) page.rows[4].value = boolValue(navigation.autosaveEnabled);
             break;
         case ProjectNodeId::TRANSPORT_ROOT:
@@ -367,14 +506,6 @@ FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
             return false;
         case ProjectNodeId::STORAGE_ROOT:
             if (rowIndex == 1) {
-                return true;
-            }
-            if (rowIndex == 3) {
-                const auto next = static_cast<uint8_t>(
-                    (navigation.storageSlotIndex + 1) % STORAGE_SLOT_COUNT
-                );
-                navigation.storageSlotIndex = next;
-                navigation.notifyContentChanged();
                 return true;
             }
             if (rowIndex == 4) {
@@ -417,7 +548,7 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
                                               ProjectMenuContext context) {
     ProjectMenuPage page{};
     page.title = "PROJECT";
-    page.meta = metaForNode(navigation.currentNode.get());
+    applyPageMeta(page, navigation.currentNode.get(), context);
     page.selectedIndex = navigation.focusedRow.get();
     page.dataRevision = revisionFor(navigation, context);
 
@@ -432,13 +563,19 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
             buildTransportRows(page, context);
             break;
         case ProjectNodeId::STORAGE_ROOT:
-            buildStorageRows(page);
+            buildStorageRows(page, context);
             break;
         case ProjectNodeId::ROUTING_ROOT:
             buildRoutingRows(page, context);
             break;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
             buildNewProjectConfirmRows(page);
+            break;
+        case ProjectNodeId::LOAD_PROJECT:
+            buildLoadProjectRows(page, navigation);
+            break;
+        case ProjectNodeId::LOAD_PROJECT_CONFIRM:
+            buildLoadProjectConfirmRows(page, navigation, context);
             break;
         case ProjectNodeId::OVERVIEW_ROOT:
         default:
@@ -528,8 +665,59 @@ FLASHMEM bool openNewProjectConfirmation(ProjectNavigationState& navigation) {
     return true;
 }
 
+FLASHMEM bool openProjectLoadPicker(ProjectNavigationState& navigation) {
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) {
+        return false;
+    }
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = ProjectNodeId::LOAD_PROJECT;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::LOAD_PROJECT);
+    navigation.focusedRow.set(0);
+    return true;
+}
+
+FLASHMEM bool openProjectLoadConfirmation(ProjectNavigationState& navigation,
+                                          const char* projectId,
+                                          bool canSaveCurrent) {
+    if (projectId == nullptr || projectId[0] == '\0') return false;
+
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) {
+        return false;
+    }
+
+    navigation.pendingLoadProjectId = {};
+    std::strncpy(
+        navigation.pendingLoadProjectId.data(),
+        projectId,
+        navigation.pendingLoadProjectId.size() - 1U
+    );
+    navigation.pendingLoadProjectId[navigation.pendingLoadProjectId.size() - 1U] = '\0';
+    navigation.pendingLoadCanSaveCurrent = canSaveCurrent;
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = ProjectNodeId::LOAD_PROJECT_CONFIRM;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::LOAD_PROJECT_CONFIRM);
+    navigation.activeTab.set(ProjectTab::STORAGE);
+    navigation.focusedRow.set(0);
+    return true;
+}
+
 FLASHMEM bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& navigation) {
     return navigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM;
+}
+
+FLASHMEM bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation) {
+    return navigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM ||
+           navigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM;
 }
 
 FLASHMEM void switchProjectTab(ProjectNavigationState& navigation, int delta) {

@@ -205,11 +205,17 @@ struct CoreState {
     friend struct CoreStateBootstrap;
     friend struct CoreStateLifecycle;
 
+public:
+    static constexpr uint32_t PROJECT_SESSION_AUTOSAVE_DELAY_MS = 2000;
+
 private:
     MacroDomainState macroDomain_;
     SequencerDomainState sequencerDomain_;
     project::ProjectState project_;
     core::app::ExtmemUniquePtr<UiSystemState> systemUi_;
+    bool projectSessionTrackingEnabled_ = false;
+    bool projectSessionSavePending_ = false;
+    uint32_t projectSessionSaveTimestampMs_ = 0;
     bool sharedTrackPersistPending_ = false;
     uint32_t sharedTrackPersistTimestampMs_ = 0;
 
@@ -293,6 +299,11 @@ public:
     void flushAutoPersist();
     void resetStandaloneTransientUi();
     void resetMusicalProject();
+    void markProjectMutated();
+    void requestProjectSessionSave();
+    void acknowledgeProjectSessionSave(uint32_t savedModifiedCounter);
+    bool hasPendingProjectSessionSave() const;
+    uint32_t projectSessionSaveTimestampMs() const;
 
     bool isMacroPersistenceReady() const;
     bool isSequencerPersistenceReady() const;
@@ -338,6 +349,7 @@ private:
     void queueSequencerApply_(const sequencer::SequencerState& staged, bool merge = false);
     void queueSequencerBankApply_(const sequencer::SequencerTrackBankState& stagedBank,
                                   const sequencer::SequencerState& staged);
+    void requestProjectSessionSave_();
     void requestMacroWorkspacePersist_();
     void requestSharedTrackPersist_();
     void persistMacroWorkspaceNow_();

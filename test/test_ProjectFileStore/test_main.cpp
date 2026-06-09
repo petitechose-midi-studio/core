@@ -108,8 +108,12 @@ struct CurrentStatFailureFileSystem : oc::interface::IFileSystem {
     bool failCurrentStat = false;
 };
 
-void configureProject(core::state::CoreState& state, const char* name, uint32_t modifiedCounter) {
-    std::strncpy(state.project.metadata.id.data(), "P321", state.project.metadata.id.size() - 1U);
+void configureProject(core::state::CoreState& state,
+                      const char* name,
+                      uint32_t modifiedCounter,
+                      const char* projectId = "P321") {
+    state.project.metadata.id.fill('\0');
+    std::strncpy(state.project.metadata.id.data(), projectId, state.project.metadata.id.size() - 1U);
     std::strncpy(state.project.metadata.name.data(), name, state.project.metadata.name.size() - 1U);
     state.project.metadata.modifiedCounter = modifiedCounter;
     state.project.metadata.hasSavedIdentity = true;
@@ -241,6 +245,30 @@ void test_stale_tmp_is_replaced_on_save() {
     std::cout << "[PASS] test_stale_tmp_is_replaced_on_save\n";
 }
 
+void test_load_recovers_interrupted_backup_commit() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    auto store = makeStore(files);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "Backup", 4);
+    assert(store.save(capture(state)));
+    assert(files.rename("projects/P321/project.mspj", "projects/P321/project.bak"));
+
+    assertLoadedProject(store, "Backup", 4);
+    assert(std::filesystem::is_regular_file(
+        testRoot() / "midi-studio" / "projects" / "P321" / "project.mspj"
+    ));
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "P321" / "project.bak"
+    ));
+
+    std::cout << "[PASS] test_load_recovers_interrupted_backup_commit\n";
+}
+
 void test_save_propagates_current_stat_error_before_commit() {
     resetTestRoot();
 
@@ -263,6 +291,66 @@ void test_save_propagates_current_stat_error_before_commit() {
     std::cout << "[PASS] test_save_propagates_current_stat_error_before_commit\n";
 }
 
+void test_list_projects_returns_saved_projects_sorted() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    auto store = makeStore(files);
+
+    test_support::CoreStorages storages;
+    auto p003 = makeCoreState(storages);
+    configureProject(p003, "Third", 3, "P003");
+    assert(store.save(capture(p003)));
+
+    auto p001 = makeCoreState(storages);
+    configureProject(p001, "First", 1, "P001");
+    assert(store.save(capture(p001)));
+
+    assert(files.createDirectory("projects/BROKEN"));
+    const uint8_t invalid[] = {'x'};
+    assert(files.write("projects/BROKEN/not-project.bin", 0, invalid, sizeof(invalid)));
+    assert(files.createDirectory("projects/P999"));
+
+    core::persistence::ProjectListEntry entries[4]{};
+    auto listed = store.listProjects(entries, 4);
+    assert(listed);
+    assert(listed.value().count == 2);
+    assert(!listed.value().truncated);
+    assert(std::strcmp(entries[0].id, "P001") == 0);
+    assert(std::strcmp(entries[1].id, "P003") == 0);
+    assert(entries[0].sizeBytes > 0);
+    assert(entries[1].sizeBytes > 0);
+
+    std::cout << "[PASS] test_list_projects_returns_saved_projects_sorted\n";
+}
+
+void test_list_projects_reports_truncation() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    auto store = makeStore(files);
+
+    test_support::CoreStorages storages;
+    auto p001 = makeCoreState(storages);
+    configureProject(p001, "First", 1, "P001");
+    assert(store.save(capture(p001)));
+
+    auto p002 = makeCoreState(storages);
+    configureProject(p002, "Second", 2, "P002");
+    assert(store.save(capture(p002)));
+
+    core::persistence::ProjectListEntry entries[1]{};
+    auto listed = store.listProjects(entries, 1);
+    assert(listed);
+    assert(listed.value().count == 1);
+    assert(listed.value().truncated);
+    assert(std::strcmp(entries[0].id, "P001") == 0);
+
+    std::cout << "[PASS] test_list_projects_reports_truncation\n";
+}
+
 }  // namespace
 
 int main() {
@@ -273,7 +361,10 @@ int main() {
     test_save_load_project_snapshot_roundtrip();
     test_save_overwrites_existing_project_through_backup_commit();
     test_stale_tmp_is_replaced_on_save();
+    test_load_recovers_interrupted_backup_commit();
     test_save_propagates_current_stat_error_before_commit();
+    test_list_projects_returns_saved_projects_sorted();
+    test_list_projects_reports_truncation();
 
     resetTestRoot();
 

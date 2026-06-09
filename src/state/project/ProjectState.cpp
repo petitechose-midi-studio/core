@@ -19,8 +19,8 @@ FLASHMEM void assignText(std::array<char, Size>& target, const char* source) {
 }  // namespace
 
 FLASHMEM void ProjectMetadata::reset() {
-    assignText(id, "P001");
-    assignText(name, "Project 001");
+    assignText(id, "");
+    assignText(name, "Untitled");
     modifiedCounter = 0;
     dirty = false;
     hasSavedIdentity = false;

@@ -24,6 +24,16 @@ struct ProjectLoadResult {
     char projectPath[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
 };
 
+struct ProjectListEntry {
+    char id[core::state::project::ProjectMetadata::ID_SIZE] = {};
+    uint32_t sizeBytes = 0;
+};
+
+struct ProjectListResult {
+    uint8_t count = 0;
+    bool truncated = false;
+};
+
 class ProjectFileStore {
 public:
     static constexpr uint32_t MAX_PROJECT_FILE_SIZE = 98304;
@@ -41,6 +51,9 @@ public:
         core::persistence::project_file::LoadReport* report = nullptr
     );
 
+    oc::type::Result<ProjectListResult> listProjects(ProjectListEntry* entries,
+                                                     uint8_t capacity);
+
 private:
     struct ProjectPaths {
         char directory[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
@@ -51,14 +64,9 @@ private:
 
     static bool buildPaths_(const char* projectId, ProjectPaths& out);
     static bool validProjectId_(const char* projectId);
-    static oc::type::Result<void> invalid_(const char* context);
-    static oc::type::Result<void> storageWriteFailed_(const char* context);
-    static oc::type::Result<void> storageReadFailed_(const char* context);
-    static oc::type::Result<void> resourceExhausted_(const char* context);
 
-    oc::type::Result<void> removeIfExists_(const char* path);
-    oc::type::Result<void> writeTmp_(const char* tmpPath, const uint8_t* data, uint32_t size);
-    oc::type::Result<void> commitTmp_(const ProjectPaths& paths);
+    static bool listProjectsVisitor_(const oc::interface::DirectoryEntry& entry,
+                                     void* context);
 
     ProductFileService& files_;
 };

@@ -43,7 +43,7 @@ public:
 private:
     void setupBindings();
     bool canHandleProjectInput() const;
-    bool newProjectConfirmationActive() const;
+    bool projectConfirmationActive() const;
     bool physicalHoldActive() const;
     bool regularProjectInputActive() const;
     void enterPhysicalHoldLayer();
@@ -63,6 +63,9 @@ private:
     bool setFocusedStorageValue(float normalized);
     bool setFocusedRoutingValue(float normalized);
     bool activateFocusedProjectAction();
+    bool loadProjectWithFeedback(const char* projectId);
+    bool saveCurrentAndLoadProjectWithFeedback(const char* projectId);
+    bool saveAsAndLoadProjectWithFeedback(const char* projectId);
     void resetProject();
     void back();
     void consumeUndo();

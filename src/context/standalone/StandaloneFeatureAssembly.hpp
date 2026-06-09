@@ -14,6 +14,10 @@ namespace core::state {
 struct CoreState;
 }
 
+namespace core::persistence {
+class ProductFileService;
+}
+
 namespace core::ui {
 class ContextSoftkeyBar;
 class TransportBar;
@@ -54,6 +58,7 @@ namespace core::context::standalone {
 class StandaloneFeatureAssembly {
 public:
     StandaloneFeatureAssembly(core::state::CoreState& state,
+                              core::persistence::ProductFileService& productFiles,
                               oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                               oc::api::EncoderAPI& encoders,
                               oc::api::ButtonAPI& buttons,

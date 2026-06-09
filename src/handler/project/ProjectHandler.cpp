@@ -5,6 +5,8 @@
 
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
+#include <oc/log/Log.hpp>
+#include <oc/type/TextFormat.hpp>
 
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
@@ -23,7 +25,6 @@ constexpr int TEMPO_RANGE_STEPS = TEMPO_MAX_BPM - TEMPO_MIN_BPM + 1;
 constexpr int TRANSPORT_SWING_MAX = 75;
 constexpr int TRANSPORT_SWING_STEPS = TRANSPORT_SWING_MAX + 1;
 constexpr int TRANSPORT_RUN_MODE_COUNT = 3;
-constexpr int STORAGE_SLOT_COUNT = 3;
 constexpr int MIDI_CHANNEL_COUNT = 16;
 constexpr uint16_t PROJECT_OPT_TICKS_PER_STEP =
     core::handler::sequencer::input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
@@ -116,6 +117,44 @@ FLASHMEM core::state::MidiSyncMode midiSyncModeAt(int index) {
     }
 }
 
+FLASHMEM const char* projectLifecycleFailureLabel(
+    ProjectLifecycleDomainServices::Status status,
+    const char* fallback
+) {
+    using Status = ProjectLifecycleDomainServices::Status;
+    switch (status) {
+        case Status::UNAVAILABLE:
+            return "Storage unavailable";
+        case Status::INVALID_ARGUMENT:
+            return "Invalid project";
+        case Status::SAVE_FAILED:
+            return "Save failed";
+        case Status::LOAD_FAILED:
+            return "Load failed";
+        case Status::LIST_FAILED:
+            return "List failed";
+        case Status::PARTIAL_LOAD:
+        case Status::OK:
+        default:
+            return fallback;
+    }
+}
+
+FLASHMEM void formatProjectLifecycleFeedback(
+    char* out,
+    size_t outSize,
+    const char* verb,
+    const char* projectId
+) {
+    if (!out || outSize == 0U) return;
+    size_t pos = oc::type::text::appendString(out, outSize, 0, verb);
+    if (projectId && projectId[0] != '\0') {
+        pos = oc::type::text::appendChar(out, outSize, pos, ' ');
+        pos = oc::type::text::appendString(out, outSize, pos, projectId);
+    }
+    oc::type::text::terminate(out, outSize, pos);
+}
+
 FLASHMEM void configureOptContinuous(oc::api::EncoderAPI& encoders,
                                      float position,
                                      float normalizedTurns = PROJECT_OPT_NORMALIZED_TURNS) {
@@ -187,7 +226,7 @@ FLASHMEM void ProjectHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_CENTER)
         .press()
         .scope(project_view_scope_)
-        .when([this]() { return canHandleProjectInput() && !newProjectConfirmationActive(); })
+        .when([this]() { return canHandleProjectInput() && !projectConfirmationActive(); })
         .then([this]() { enterPhysicalHoldLayer(); });
 
     buttons_.button(ButtonID::LEFT_CENTER)
@@ -225,12 +264,12 @@ FLASHMEM bool ProjectHandler::canHandleProjectInput() const {
     return !overlays_.hasVisible();
 }
 
-FLASHMEM bool ProjectHandler::newProjectConfirmationActive() const {
-    return core::state::project::projectNavigationInNewProjectConfirmation(navigation_);
+FLASHMEM bool ProjectHandler::projectConfirmationActive() const {
+    return core::state::project::projectNavigationInProjectConfirmation(navigation_);
 }
 
 FLASHMEM bool ProjectHandler::physicalHoldActive() const {
-    return canHandleProjectInput() && !newProjectConfirmationActive() &&
+    return canHandleProjectInput() && !projectConfirmationActive() &&
            navigation_.physicalHoldActive.get();
 }
 
@@ -248,12 +287,16 @@ FLASHMEM void ProjectHandler::leavePhysicalHoldLayer() {
 }
 
 FLASHMEM void ProjectHandler::navigate(float delta) {
+    if (delta != 0.0f) {
+        navigation_.clearLifecycleFeedback();
+    }
     core::state::project::navigateProjectRows(navigation_, delta);
     syncFocusedEncoder();
 }
 
 FLASHMEM void ProjectHandler::switchTab(float delta) {
     if (delta == 0.0f) return;
+    navigation_.clearLifecycleFeedback();
     core::state::project::switchProjectTab(navigation_, signedStepCount(delta));
     syncFocusedEncoder();
 }
@@ -272,13 +315,19 @@ FLASHMEM void ProjectHandler::enterFocused() {
 }
 
 FLASHMEM void ProjectHandler::setFocusedValue(float normalized) {
-    setFocusedProjectValue(normalized);
+    if (setFocusedProjectValue(normalized)) {
+        navigation_.clearLifecycleFeedback();
+    }
 }
 
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
-    return applyFocusedMusicScaleStep(steps) || applyFocusedTransportStep(steps) ||
-           applyFocusedStorageStep(steps) || applyFocusedRoutingStep(steps);
+    const bool applied = applyFocusedMusicScaleStep(steps) || applyFocusedTransportStep(steps) ||
+                         applyFocusedStorageStep(steps) || applyFocusedRoutingStep(steps);
+    if (applied) {
+        navigation_.clearLifecycleFeedback();
+    }
+    return applied;
 }
 
 FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
@@ -331,6 +380,7 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
             if (!status_bar_.tempoLocked.get()) {
                 status_bar_.tempoDisplay.set(nextTempo);
             }
+            lifecycle_.markProjectMutated();
             return true;
         }
         case 1: {
@@ -339,6 +389,7 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
             if (next == current) return true;
             navigation_.transportSwingPercent = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
+            lifecycle_.markProjectMutated();
             return true;
         }
         case 2: {
@@ -352,6 +403,7 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
             const int next = wrapIndex(current + steps, TRANSPORT_RUN_MODE_COUNT);
             navigation_.transportRunMode = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
+            lifecycle_.markProjectMutated();
             return true;
         }
         default:
@@ -368,11 +420,6 @@ FLASHMEM bool ProjectHandler::applyFocusedStorageStep(int steps) {
 
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
-        case 3:
-            navigation_.storageSlotIndex =
-                static_cast<uint8_t>(wrapIndex(navigation_.storageSlotIndex + steps, STORAGE_SLOT_COUNT));
-            navigation_.notifyContentChanged();
-            return true;
         case 4:
             navigation_.autosaveEnabled = !navigation_.autosaveEnabled;
             navigation_.notifyContentChanged();
@@ -406,6 +453,7 @@ FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
         sequencer_.pattern.midiChannel.set(next);
     }
     navigation_.notifyContentChanged();
+    lifecycle_.markProjectMutated();
     return true;
 }
 
@@ -462,6 +510,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             if (!status_bar_.tempoLocked.get()) {
                 status_bar_.tempoDisplay.set(nextTempo);
             }
+            lifecycle_.markProjectMutated();
             return true;
         }
         case 1: {
@@ -470,6 +519,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             if (next == current) return true;
             navigation_.transportSwingPercent = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
+            lifecycle_.markProjectMutated();
             return true;
         }
         case 2: {
@@ -485,6 +535,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             if (next == current) return true;
             navigation_.transportRunMode = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
+            lifecycle_.markProjectMutated();
             return true;
         }
         default:
@@ -499,13 +550,6 @@ FLASHMEM bool ProjectHandler::setFocusedStorageValue(float normalized) {
 
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
-        case 3: {
-            const auto next = static_cast<uint8_t>(normalizedToIndex(normalized, STORAGE_SLOT_COUNT));
-            if (next == navigation_.storageSlotIndex) return true;
-            navigation_.storageSlotIndex = next;
-            navigation_.notifyContentChanged();
-            return true;
-        }
         case 4: {
             const bool next = normalized >= 0.5f;
             if (next == navigation_.autosaveEnabled) return true;
@@ -540,7 +584,69 @@ FLASHMEM bool ProjectHandler::setFocusedRoutingValue(float normalized) {
         sequencer_.pattern.midiChannel.set(next);
     }
     navigation_.notifyContentChanged();
+    lifecycle_.markProjectMutated();
     return true;
+}
+
+FLASHMEM bool ProjectHandler::loadProjectWithFeedback(const char* projectId) {
+    const auto result = lifecycle_.loadProject(projectId);
+    char feedback[32] = {};
+    const char* verb = result.status == ProjectLifecycleDomainServices::Status::PARTIAL_LOAD
+        ? "Loaded partial"
+        : (result.success() ? "Loaded" : projectLifecycleFailureLabel(result.status, "Load failed"));
+    formatProjectLifecycleFeedback(feedback, sizeof(feedback), verb, projectId);
+    navigation_.setLifecycleFeedback(feedback);
+    if (result.success()) {
+        OC_LOG_INFO("[Project] load {} bytes={}", projectId, result.bytes);
+    } else {
+        OC_LOG_WARN("[Project] load {} failed status={}",
+                    projectId,
+                    static_cast<unsigned>(result.status));
+    }
+    return result.success();
+}
+
+FLASHMEM bool ProjectHandler::saveCurrentAndLoadProjectWithFeedback(const char* projectId) {
+    const char* currentProjectId = lifecycle_.currentProjectId();
+    const auto saved = lifecycle_.saveCurrentProject();
+    if (!saved.success()) {
+        char feedback[32] = {};
+        formatProjectLifecycleFeedback(
+            feedback,
+            sizeof(feedback),
+            projectLifecycleFailureLabel(saved.status, "Save failed"),
+            currentProjectId
+        );
+        navigation_.setLifecycleFeedback(feedback);
+        OC_LOG_WARN("[Project] save {} before load failed status={}",
+                    currentProjectId,
+                    static_cast<unsigned>(saved.status));
+        return false;
+    }
+
+    OC_LOG_INFO("[Project] save {} before load bytes={}", currentProjectId, saved.bytes);
+    return loadProjectWithFeedback(projectId);
+}
+
+FLASHMEM bool ProjectHandler::saveAsAndLoadProjectWithFeedback(const char* projectId) {
+    const auto saved = lifecycle_.saveAsNextProject();
+    const char* savedProjectId = lifecycle_.currentProjectId();
+    if (!saved.success()) {
+        char feedback[32] = {};
+        formatProjectLifecycleFeedback(
+            feedback,
+            sizeof(feedback),
+            projectLifecycleFailureLabel(saved.status, "Save As failed"),
+            savedProjectId
+        );
+        navigation_.setLifecycleFeedback(feedback);
+        OC_LOG_WARN("[Project] save-as before load failed status={}",
+                    static_cast<unsigned>(saved.status));
+        return false;
+    }
+
+    OC_LOG_INFO("[Project] save-as {} before load bytes={}", savedProjectId, saved.bytes);
+    return loadProjectWithFeedback(projectId);
 }
 
 FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
@@ -560,15 +666,116 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
         return false;
     }
 
+    if (node == ProjectNodeId::LOAD_PROJECT) {
+        if (row >= navigation_.loadProjects.count) return false;
+        const char* projectId = navigation_.loadProjects.entries[row].id.data();
+        if (lifecycle_.currentProjectDirty()) {
+            core::state::project::openProjectLoadConfirmation(
+                navigation_,
+                projectId,
+                lifecycle_.currentProjectHasSavedIdentity()
+            );
+            return true;
+        }
+        loadProjectWithFeedback(projectId);
+        return true;
+    }
+
+    if (node == ProjectNodeId::LOAD_PROJECT_CONFIRM) {
+        const char* projectId = navigation_.pendingLoadProjectId.data();
+        if (row == 0) {
+            const bool loaded = navigation_.pendingLoadCanSaveCurrent
+                ? saveCurrentAndLoadProjectWithFeedback(projectId)
+                : saveAsAndLoadProjectWithFeedback(projectId);
+            if (loaded) {
+                back();
+            }
+            return true;
+        }
+        if (row == 1) {
+            if (navigation_.pendingLoadCanSaveCurrent) {
+                if (saveAsAndLoadProjectWithFeedback(projectId)) {
+                    back();
+                }
+                return true;
+            }
+            if (loadProjectWithFeedback(projectId)) {
+                back();
+            }
+            return true;
+        }
+        if (row == 2) {
+            if (navigation_.pendingLoadCanSaveCurrent) {
+                if (loadProjectWithFeedback(projectId)) {
+                    back();
+                }
+                return true;
+            }
+            back();
+            return true;
+        }
+        if (row == 3) {
+            if (!navigation_.pendingLoadCanSaveCurrent) return false;
+            back();
+            return true;
+        }
+        return true;
+    }
+
     const bool newProjectAction =
         (node == ProjectNodeId::OVERVIEW_ROOT && row == 0) ||
         (node == ProjectNodeId::STORAGE_ROOT && row == 1);
-    if (!newProjectAction) {
-        return false;
+    if (newProjectAction) {
+        core::state::project::openNewProjectConfirmation(navigation_);
+        return true;
     }
 
-    core::state::project::openNewProjectConfirmation(navigation_);
-    return true;
+    const bool loadProjectAction =
+        (node == ProjectNodeId::OVERVIEW_ROOT && row == 1) ||
+        (node == ProjectNodeId::STORAGE_ROOT && row == 2);
+    if (loadProjectAction) {
+        navigation_.clearLifecycleFeedback();
+        const auto result = lifecycle_.refreshLoadableProjects();
+        if (!result.success()) {
+            navigation_.setLifecycleFeedback(projectLifecycleFailureLabel(result.status, "List failed"));
+            OC_LOG_WARN("[Project] list projects failed status={}",
+                        static_cast<unsigned>(result.status));
+            return true;
+        }
+        core::state::project::openProjectLoadPicker(navigation_);
+        if (navigation_.loadProjects.count == 0) {
+            navigation_.setLifecycleFeedback("No projects");
+        } else {
+            OC_LOG_INFO("[Project] list projects count={} truncated={}",
+                        static_cast<unsigned>(navigation_.loadProjects.count),
+                        navigation_.loadProjects.truncated ? 1 : 0);
+        }
+        return true;
+    }
+
+    const bool saveProjectAction =
+        (node == ProjectNodeId::OVERVIEW_ROOT && row == 2) ||
+        (node == ProjectNodeId::STORAGE_ROOT && row == 0);
+    if (saveProjectAction) {
+        const auto result = lifecycle_.saveCurrentProject();
+        const char* projectId = lifecycle_.currentProjectId();
+        char feedback[32] = {};
+        const char* verb = result.success()
+            ? "Saved"
+            : projectLifecycleFailureLabel(result.status, "Save failed");
+        formatProjectLifecycleFeedback(feedback, sizeof(feedback), verb, projectId);
+        navigation_.setLifecycleFeedback(feedback);
+        if (result.success()) {
+            OC_LOG_INFO("[Project] save {} bytes={}", projectId, result.bytes);
+        } else {
+            OC_LOG_WARN("[Project] save {} failed status={}",
+                        projectId,
+                        static_cast<unsigned>(result.status));
+        }
+        return true;
+    }
+
+    return false;
 }
 
 FLASHMEM void ProjectHandler::resetProject() {
@@ -634,13 +841,6 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
 
     if (node == ProjectNodeId::STORAGE_ROOT) {
         switch (row) {
-            case 3:
-                configureOptDiscrete(
-                    encoders_,
-                    STORAGE_SLOT_COUNT,
-                    indexToNormalized(navigation_.storageSlotIndex, STORAGE_SLOT_COUNT)
-                );
-                return;
             case 4:
                 configureOptDiscrete(encoders_, 2, navigation_.autosaveEnabled ? 1.0f : 0.0f);
                 return;

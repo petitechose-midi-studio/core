@@ -1,5 +1,7 @@
 #include <cassert>
 #include <cmath>
+#include <cstring>
+#include <filesystem>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -8,11 +10,16 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <oc/impl/HostFileSystem.hpp>
 
 #include "../../src/handler/project/ProjectHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
+#include "../../src/persistence/ProjectFileStore.hpp"
+#include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -28,6 +35,10 @@ bool near(float actual, float expected, float epsilon = 0.001f) {
     return std::fabs(actual - expected) <= epsilon;
 }
 
+std::filesystem::path projectHandlerFsRoot() {
+    return std::filesystem::temp_directory_path() / "midi-studio-core-project-handler-test";
+}
+
 using test_support::TestButtonHardware;
 using test_support::TestEncoderHardware;
 using core::state::project::ProjectNodeId;
@@ -37,6 +48,9 @@ using core::state::sequencer::SequencerHistoryScope;
 struct ProjectHandlerHarness {
     static constexpr oc::type::ScopeID PROJECT_SCOPE = 901;
 
+    std::string projectFsRootPath;
+    oc::impl::HostFileSystem projectFilesystem;
+    core::persistence::ProductFileService productFiles;
     test_support::CoreStorages storages;
     core::state::CoreState state;
 
@@ -51,7 +65,10 @@ struct ProjectHandlerHarness {
     core::handler::ProjectHandler handler;
 
     ProjectHandlerHarness()
-        : state(storages.settings,
+        : projectFsRootPath(projectHandlerFsRoot().string())
+        , projectFilesystem(projectFsRootPath.c_str())
+        , productFiles(projectFilesystem)
+        , state(storages.settings,
                 storages.macroWorkspace,
                 storages.macroLibrary,
                 storages.sequencerWorkspace,
@@ -73,12 +90,18 @@ struct ProjectHandlerHarness {
                       state.statusBar,
                       state.midiSync,
                       core::handler::SequencerHistoryDomainServices::fromCoreState(state),
-                      core::handler::ProjectLifecycleDomainServices::fromCoreState(state),
+                      core::handler::ProjectLifecycleDomainServices::fromCoreState(
+                          state,
+                          productFiles
+                      ),
                   },
                   sequencerSettings,
                   encoders,
                   buttons,
                   PROJECT_SCOPE) {
+        std::error_code ec;
+        std::filesystem::remove_all(projectHandlerFsRoot(), ec);
+        assert(productFiles.init());
         overlays.setActiveViewProvider([]() { return PROJECT_SCOPE; });
         g_now_ms = 0;
     }
@@ -111,6 +134,16 @@ struct ProjectHandlerHarness {
         eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, value));
     }
 };
+
+void saveCurrentProjectSnapshot(ProjectHandlerHarness& h, const char* id) {
+    h.state.project.metadata.id.fill('\0');
+    std::strncpy(h.state.project.metadata.id.data(), id, h.state.project.metadata.id.size() - 1U);
+    h.state.project.metadata.hasSavedIdentity = true;
+    core::state::project::ProjectSnapshot snapshot;
+    assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
+    core::persistence::ProjectFileStore store(h.productFiles);
+    assert(store.save(snapshot));
+}
 
 void test_nav_turn_on_overview_actions() {
     ProjectHandlerHarness h;
@@ -169,7 +202,7 @@ void test_left_top_does_not_back_at_project_tab_root() {
     std::cout << "[PASS] test_left_top_does_not_back_at_project_tab_root\n";
 }
 
-void test_nav_press_activates_storage_placeholder_values() {
+void test_nav_press_activates_storage_autosave_only() {
     ProjectHandlerHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -186,7 +219,8 @@ void test_nav_press_activates_storage_placeholder_values() {
     assert(h.state.projectNavigation.focusedRow.get() == 3);
 
     h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.storageSlotIndex == 1);
+    assert(h.state.projectNavigation.focusedRow.get() == 3);
+    assert(h.state.projectNavigation.autosaveEnabled);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 4);
@@ -194,7 +228,7 @@ void test_nav_press_activates_storage_placeholder_values() {
     h.tap(Config::ButtonID::NAV);
     assert(!h.state.projectNavigation.autosaveEnabled);
 
-    std::cout << "[PASS] test_nav_press_activates_storage_placeholder_values\n";
+    std::cout << "[PASS] test_nav_press_activates_storage_autosave_only\n";
 }
 
 void test_music_scale_root_is_wired_and_undoable() {
@@ -298,7 +332,7 @@ void test_transport_values_are_editable_from_project() {
     std::cout << "[PASS] test_transport_values_are_editable_from_project\n";
 }
 
-void test_storage_values_are_editable_with_opt() {
+void test_storage_autosave_is_editable_with_opt() {
     ProjectHandlerHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -310,7 +344,7 @@ void test_storage_values_are_editable_with_opt() {
     assert(h.state.projectNavigation.focusedRow.get() == 3);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.projectNavigation.storageSlotIndex == 2);
+    assert(h.state.projectNavigation.autosaveEnabled);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 4);
@@ -318,7 +352,7 @@ void test_storage_values_are_editable_with_opt() {
     h.turn(Config::EncoderID::OPT, 0.0f);
     assert(!h.state.projectNavigation.autosaveEnabled);
 
-    std::cout << "[PASS] test_storage_values_are_editable_with_opt\n";
+    std::cout << "[PASS] test_storage_autosave_is_editable_with_opt\n";
 }
 
 void test_new_project_resets_musical_project_state() {
@@ -422,21 +456,263 @@ void test_routing_output_channels_are_editable() {
     std::cout << "[PASS] test_routing_output_channels_are_editable\n";
 }
 
+void test_overview_save_and_load_roundtrip_project_file() {
+    ProjectHandlerHarness h;
+
+    std::strncpy(
+        h.state.project.metadata.name.data(),
+        "HandlerSave",
+        h.state.project.metadata.name.size() - 1U
+    );
+    h.state.statusBar.tempo.set(149.0f);
+    h.state.statusBar.tempoDisplay.set(149.0f);
+    h.state.projectNavigation.transportSwingPercent = 19;
+    h.state.sequencer.pattern.length.set(11);
+    h.state.sequencer.setStepDataAt(2, 67, 101, 75);
+    h.state.sequencer.pattern.toggle(2);
+    h.state.pages.activePageData().cc[0] = 81;
+    h.state.pages.activePageData().values[0] = 0.63f;
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
+
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.project.metadata.hasSavedIdentity);
+    assert(!h.state.project.metadata.dirty);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved P001") == 0);
+
+    h.state.statusBar.tempo.set(88.0f);
+    h.state.statusBar.tempoDisplay.set(88.0f);
+    h.state.projectNavigation.transportSwingPercent = 0;
+    h.state.sequencer.pattern.length.set(4);
+    h.state.sequencer.setStepDataAt(2, 40, 1, 1);
+    if (h.state.sequencer.pattern.isEnabled(2)) {
+        h.state.sequencer.pattern.toggle(2);
+    }
+    h.state.pages.activePageData().cc[0] = 1;
+    h.state.pages.activePageData().values[0] = 0.01f;
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    assert(h.state.projectNavigation.lifecycleFeedback.empty());
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.loadProjects.count == 1);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "P001") == 0);
+
+    h.tap(Config::ButtonID::NAV);
+
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P001") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "HandlerSave") == 0);
+    assert(h.state.statusBar.tempo.get() == 149.0f);
+    assert(h.state.projectNavigation.transportSwingPercent == 19);
+    assert(h.state.sequencer.pattern.length.get() == 11);
+    assert(h.state.sequencer.pattern.note[2] == 67);
+    assert(h.state.sequencer.pattern.velocity[2] == 101);
+    assert(h.state.sequencer.pattern.gate[2] == 75);
+    assert(h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.pages.activePageData().cc[0] == 81);
+    assert(near(h.state.macros.slots[0].value.get(), 0.63f));
+
+    std::cout << "[PASS] test_overview_save_and_load_roundtrip_project_file\n";
+}
+
+void test_overview_load_missing_project_reports_failure() {
+    ProjectHandlerHarness h;
+    h.state.statusBar.tempo.set(133.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    h.tap(Config::ButtonID::NAV);
+
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.loadProjects.count == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "No projects") == 0);
+    h.tap(Config::ButtonID::NAV);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "No projects") == 0);
+    assert(h.state.statusBar.tempo.get() == 133.0f);
+
+    std::cout << "[PASS] test_overview_load_missing_project_reports_failure\n";
+}
+
+void test_load_project_picker_selects_detected_project() {
+    ProjectHandlerHarness h;
+
+    h.state.statusBar.tempo.set(101.0f);
+    h.state.statusBar.tempoDisplay.set(101.0f);
+    saveCurrentProjectSnapshot(h, "P001");
+
+    h.state.statusBar.tempo.set(153.0f);
+    h.state.statusBar.tempoDisplay.set(153.0f);
+    saveCurrentProjectSnapshot(h, "P003");
+
+    h.state.statusBar.tempo.set(66.0f);
+    h.state.statusBar.tempoDisplay.set(66.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.loadProjects.count == 2);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "P001") == 0);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[1].id.data(), "P003") == 0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    h.tap(Config::ButtonID::NAV);
+
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P003") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "P003") == 0);
+    assert(h.state.statusBar.tempo.get() == 153.0f);
+
+    std::cout << "[PASS] test_load_project_picker_selects_detected_project\n";
+}
+
+void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
+    ProjectHandlerHarness h;
+
+    h.state.statusBar.tempo.set(121.0f);
+    h.state.statusBar.tempoDisplay.set(121.0f);
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.setStepDataAt(4, 60, 90, 70);
+    h.state.sequencer.pattern.toggle(4);
+
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2);
+    h.tap(Config::ButtonID::NAV);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved P001") == 0);
+    assert(h.state.project.metadata.hasSavedIdentity);
+    assert(!h.state.project.metadata.dirty);
+
+    h.state.statusBar.tempo.set(166.0f);
+    h.state.statusBar.tempoDisplay.set(166.0f);
+    h.state.sequencer.setStepDataAt(5, 74, 111, 82);
+    h.state.sequencer.pattern.toggle(5);
+    h.state.markProjectMutated();
+    assert(h.state.project.metadata.dirty);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.loadProjects.count == 1);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM);
+    assert(h.state.projectNavigation.focusedRow.get() == 0);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P001") == 0);
+    assert(!h.state.project.metadata.dirty);
+    assert(h.state.statusBar.tempo.get() == 166.0f);
+    assert(h.state.sequencer.pattern.isEnabled(5));
+    assert(h.state.sequencer.pattern.note[5] == 74);
+    assert(h.state.sequencer.pattern.velocity[5] == 111);
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot loaded;
+    assert(store.load("P001", loaded));
+
+    test_support::CoreStorages restoredStorages;
+    core::state::CoreState restored{
+        restoredStorages.settings,
+        restoredStorages.macroWorkspace,
+        restoredStorages.macroLibrary,
+        restoredStorages.sequencerWorkspace,
+        restoredStorages.sequencerPatternLibrary,
+        restoredStorages.sequencerSetLibrary,
+    };
+    assert(core::state::project::applyProjectSnapshot(restored, loaded));
+    assert(restored.statusBar.tempo.get() == 166.0f);
+    assert(restored.sequencer.pattern.isEnabled(5));
+    assert(restored.sequencer.pattern.note[5] == 74);
+    assert(restored.sequencer.pattern.velocity[5] == 111);
+
+    std::cout << "[PASS] test_dirty_project_load_prompts_save_and_preserves_latest_edits\n";
+}
+
+void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
+    ProjectHandlerHarness h;
+
+    h.state.statusBar.tempo.set(144.0f);
+    h.state.statusBar.tempoDisplay.set(144.0f);
+    saveCurrentProjectSnapshot(h, "P002");
+
+    h.state.resetMusicalProject();
+    assert(!h.state.project.metadata.hasSavedIdentity);
+    assert(h.state.project.metadata.id[0] == '\0');
+    assert(std::strcmp(h.state.project.metadata.name.data(), "Untitled") == 0);
+
+    h.state.statusBar.tempo.set(177.0f);
+    h.state.statusBar.tempoDisplay.set(177.0f);
+    h.state.sequencer.setStepDataAt(3, 71, 100, 76);
+    h.state.sequencer.pattern.toggle(3);
+    h.state.markProjectMutated();
+    assert(h.state.project.metadata.dirty);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.loadProjects.count == 1);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "P002") == 0);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM);
+    assert(h.state.projectNavigation.focusedRow.get() == 0);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P002") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "P002") == 0);
+    assert(h.state.statusBar.tempo.get() == 144.0f);
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot savedUntitled;
+    assert(store.load("P001", savedUntitled));
+
+    test_support::CoreStorages restoredStorages;
+    core::state::CoreState restored{
+        restoredStorages.settings,
+        restoredStorages.macroWorkspace,
+        restoredStorages.macroLibrary,
+        restoredStorages.sequencerWorkspace,
+        restoredStorages.sequencerPatternLibrary,
+        restoredStorages.sequencerSetLibrary,
+    };
+    assert(core::state::project::applyProjectSnapshot(restored, savedUntitled));
+    assert(std::strcmp(restored.project.metadata.id.data(), "P001") == 0);
+    assert(std::strcmp(restored.project.metadata.name.data(), "Project 001") == 0);
+    assert(!restored.project.metadata.dirty);
+    assert(restored.project.metadata.hasSavedIdentity);
+    assert(restored.statusBar.tempo.get() == 177.0f);
+    assert(restored.sequencer.pattern.isEnabled(3));
+    assert(restored.sequencer.pattern.note[3] == 71);
+
+    std::cout << "[PASS] test_untitled_dirty_load_prompts_save_as_and_then_loads_target\n";
+}
+
 }  // namespace
 
 int main() {
     test_nav_turn_on_overview_actions();
     test_left_top_backs_out_of_nested_project_folder();
     test_left_top_does_not_back_at_project_tab_root();
-    test_nav_press_activates_storage_placeholder_values();
+    test_nav_press_activates_storage_autosave_only();
     test_music_scale_root_is_wired_and_undoable();
     test_left_center_hold_switches_tabs();
     test_left_center_hold_respects_fast_tab_delta();
     test_transport_values_are_editable_from_project();
-    test_storage_values_are_editable_with_opt();
+    test_storage_autosave_is_editable_with_opt();
     test_new_project_resets_musical_project_state();
     test_new_project_confirmation_cancel_preserves_state();
     test_routing_output_channels_are_editable();
+    test_overview_save_and_load_roundtrip_project_file();
+    test_overview_load_missing_project_reports_failure();
+    test_load_project_picker_selects_detected_project();
+    test_dirty_project_load_prompts_save_and_preserves_latest_edits();
+    test_untitled_dirty_load_prompts_save_as_and_then_loads_target();
 
     std::cout << "\nAll ProjectHandler tests passed.\n";
     return 0;

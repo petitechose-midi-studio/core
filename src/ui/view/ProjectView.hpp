@@ -12,6 +12,7 @@
 #include "state/MidiSyncState.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
 #include "ui/view/MainViewFrame.hpp"
@@ -23,6 +24,7 @@ class ProjectView : public oc::ui::lvgl::IView {
 public:
     struct StateRefs {
         core::state::project::ProjectNavigationState& navigation;
+        core::state::project::ProjectState& project;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;

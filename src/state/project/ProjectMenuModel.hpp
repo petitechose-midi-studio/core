@@ -36,13 +36,19 @@ struct ProjectMenuRow {
 
 struct ProjectMenuPage {
     static constexpr uint8_t MAX_ROWS = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    static constexpr uint8_t META_TEXT_SIZE = 32;
 
     const char* title = "PROJECT";
     const char* meta = "";
+    std::array<char, META_TEXT_SIZE> metaText{};
     std::array<ProjectMenuRow, MAX_ROWS> rows{};
     uint8_t rowCount = 0;
     uint8_t selectedIndex = 0;
     uint32_t dataRevision = 0;
+
+    const char* displayMeta() const {
+        return metaText[0] != '\0' ? metaText.data() : meta;
+    }
 };
 
 struct ProjectMenuContext {
@@ -50,6 +56,10 @@ struct ProjectMenuContext {
         core::state::sequencer::defaultProjectScaleSettings();
     float tempoBpm = 120.0f;
     core::state::MidiSyncMode clockMode = core::state::MidiSyncMode::AUTO;
+    std::array<char, ProjectMetadata::ID_SIZE> projectId{};
+    std::array<char, ProjectMetadata::NAME_SIZE> projectName{};
+    bool projectDirty = false;
+    bool projectHasSavedIdentity = false;
     std::array<uint8_t, core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>
         outputMidiChannels{};
 };
@@ -62,7 +72,12 @@ void navigateProjectRows(ProjectNavigationState& navigation, float delta);
 bool enterFocusedProjectRow(ProjectNavigationState& navigation);
 bool backProjectNavigation(ProjectNavigationState& navigation);
 bool openNewProjectConfirmation(ProjectNavigationState& navigation);
+bool openProjectLoadPicker(ProjectNavigationState& navigation);
+bool openProjectLoadConfirmation(ProjectNavigationState& navigation,
+                                 const char* projectId,
+                                 bool canSaveCurrent);
 bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& navigation);
+bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation);
 void switchProjectTab(ProjectNavigationState& navigation, int delta);
 bool projectNavigationAtRoot(const ProjectNavigationState& navigation);
 uint8_t projectCurrentRowCount(const ProjectNavigationState& navigation);

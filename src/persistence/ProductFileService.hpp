@@ -18,6 +18,7 @@ namespace core::persistence {
 class ProductFileService {
 public:
     static constexpr const char* PRODUCT_ROOT = "/midi-studio";
+    static constexpr const char* SESSION_DIR = "/midi-studio/session";
     static constexpr const char* PROJECTS_DIR = "/midi-studio/projects";
     static constexpr const char* LIBRARY_DIR = "/midi-studio/library";
     static constexpr const char* TMP_DIR = "/midi-studio/tmp";
