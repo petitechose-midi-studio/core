@@ -9,6 +9,7 @@
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerScaleState.hpp"
 #include "../support/CoreStorages.hpp"
@@ -22,6 +23,15 @@ namespace snapshot_codec = core::persistence::project_snapshot_codec;
 using oc::note::sequencer::StepSequencerScaleConstraintMode;
 using oc::note::sequencer::StepSequencerScaleSettings;
 using oc::note::sequencer::StepSequencerScaleType;
+using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
+using oc::note::sequencer::STEP_NODE_CYCLE_SET;
+using oc::note::sequencer::STEP_NODE_ENABLED_OVERRIDE;
+using oc::note::sequencer::STEP_NODE_ENABLED_VALUE;
+using oc::note::sequencer::STEP_NODE_GATE_OFFSET;
+using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
+using oc::note::sequencer::STEP_NODE_NUDGE_OFFSET;
+using oc::note::sequencer::STEP_NODE_PROBABILITY_OFFSET;
+using oc::note::sequencer::STEP_NODE_VELOCITY_OFFSET;
 
 core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
     return core::state::CoreState{
@@ -42,6 +52,192 @@ bool reportHas(const project_file::LoadReport& report, project_file::LoadCode co
 bool sameScale(const StepSequencerScaleSettings& lhs,
                const StepSequencerScaleSettings& rhs) {
     return lhs.root == rhs.root && lhs.type == rhs.type && lhs.mode == rhs.mode;
+}
+
+void configureProjectGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
+    using namespace core::state::sequencer;
+
+    const auto rootZero = rootStepNodeId(0);
+    const auto rootFour = rootStepNodeId(4);
+
+    const auto defaultMicro = createMicroSequence(pattern, rootZero, 2);
+    assert(defaultMicro.ok);
+    const auto* graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* defaultMicroSequence = graph->sequence(defaultMicro.id);
+    assert(defaultMicroSequence != nullptr);
+    const auto defaultMicroNode = static_cast<uint16_t>(defaultMicroSequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(pattern, defaultMicroNode, 12));
+
+    const auto rootCycle = createCycleStateSet(pattern, rootZero, 3);
+    assert(rootCycle.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* rootCycleSet = graph->cycleSet(rootCycle.id);
+    assert(rootCycleSet != nullptr);
+    const auto rootCycleNode = static_cast<uint16_t>(rootCycleSet->firstStateNode + 1);
+    assert(setNodeEnabledOverride(pattern, rootCycleNode, true));
+    assert(setNodeNoteOffset(pattern, rootCycleNode, 7));
+    assert(setNodeVelocityOffset(pattern, rootCycleNode, -20));
+    assert(setNodeGateOffset(pattern, rootCycleNode, -15));
+    assert(setNodeNudgeOffset(pattern, rootCycleNode, 10));
+    assert(setNodeProbabilityOffset(pattern, rootCycleNode, -50));
+
+    const auto stateMicro = createMicroSequence(pattern, rootCycleNode, 2);
+    assert(stateMicro.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* stateMicroSequence = graph->sequence(stateMicro.id);
+    assert(stateMicroSequence != nullptr);
+    const auto stateMicroNode = static_cast<uint16_t>(stateMicroSequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(pattern, stateMicroNode, 5));
+
+    const auto stateCycle = createCycleStateSet(pattern, rootCycleNode, 5);
+    assert(stateCycle.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* stateCycleSet = graph->cycleSet(stateCycle.id);
+    assert(stateCycleSet != nullptr);
+    const auto stateCycleNode = static_cast<uint16_t>(stateCycleSet->firstStateNode + 2);
+    assert(setNodeNoteOffset(pattern, stateCycleNode, 3));
+
+    const auto rootMicro = createMicroSequence(pattern, rootFour, 2);
+    assert(rootMicro.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* rootMicroSequence = graph->sequence(rootMicro.id);
+    assert(rootMicroSequence != nullptr);
+    const auto microNode = static_cast<uint16_t>(rootMicroSequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(pattern, microNode, 5));
+    assert(setNodeVelocityOffset(pattern, microNode, -12));
+    assert(setNodeGateOffset(pattern, microNode, 25));
+    assert(setNodeNudgeOffset(pattern, microNode, -8));
+    assert(setNodeProbabilityOffset(pattern, microNode, -33));
+
+    const auto nestedMicro = createMicroSequence(pattern, microNode, 2);
+    assert(nestedMicro.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* nestedMicroSequence = graph->sequence(nestedMicro.id);
+    assert(nestedMicroSequence != nullptr);
+    const auto nestedMicroNode = static_cast<uint16_t>(nestedMicroSequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(pattern, nestedMicroNode, 9));
+
+    const auto nestedCycle = createCycleStateSet(pattern, microNode, 2);
+    assert(nestedCycle.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
+    assert(nestedCycleSet != nullptr);
+    const auto nestedCycleNode = static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1);
+    assert(setNodeNoteOffset(pattern, nestedCycleNode, 4));
+}
+
+void assertProjectGraphContent(const core::state::sequencer::SequencerPatternState& pattern) {
+    using namespace core::state::sequencer;
+
+    const auto* graph = graphView(pattern);
+    assert(graph != nullptr);
+
+    const auto* rootZero = graph->stepNode(rootStepNodeId(0));
+    assert(rootZero != nullptr);
+    assert(rootZero->has(STEP_NODE_CHILD_SEQUENCE));
+    assert(rootZero->has(STEP_NODE_CYCLE_SET));
+
+    const auto* defaultMicroSequence = graph->sequence(rootZero->childSequenceId);
+    assert(defaultMicroSequence != nullptr);
+    assert(defaultMicroSequence->length == 2);
+    const auto* defaultMicroNode = graph->stepNode(
+        static_cast<uint16_t>(defaultMicroSequence->firstStepNode + 1)
+    );
+    assert(defaultMicroNode != nullptr);
+    assert(defaultMicroNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(defaultMicroNode->noteOffset == 12);
+
+    const auto* rootCycleSet = graph->cycleSet(rootZero->cycleSetId);
+    assert(rootCycleSet != nullptr);
+    assert(rootCycleSet->length == 3);
+    const auto* rootCycleNode = graph->stepNode(
+        static_cast<uint16_t>(rootCycleSet->firstStateNode + 1)
+    );
+    assert(rootCycleNode != nullptr);
+    assert(rootCycleNode->has(STEP_NODE_ENABLED_OVERRIDE));
+    assert(rootCycleNode->has(STEP_NODE_ENABLED_VALUE));
+    assert(rootCycleNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(rootCycleNode->has(STEP_NODE_VELOCITY_OFFSET));
+    assert(rootCycleNode->has(STEP_NODE_GATE_OFFSET));
+    assert(rootCycleNode->has(STEP_NODE_NUDGE_OFFSET));
+    assert(rootCycleNode->has(STEP_NODE_PROBABILITY_OFFSET));
+    assert(rootCycleNode->has(STEP_NODE_CHILD_SEQUENCE));
+    assert(rootCycleNode->has(STEP_NODE_CYCLE_SET));
+    assert(rootCycleNode->noteOffset == 7);
+    assert(rootCycleNode->velocityOffset == -20);
+    assert(rootCycleNode->gateOffset == -15);
+    assert(rootCycleNode->nudgeOffset == 10);
+    assert(rootCycleNode->probabilityOffset == -50);
+
+    const auto* stateMicroSequence = graph->sequence(rootCycleNode->childSequenceId);
+    assert(stateMicroSequence != nullptr);
+    assert(stateMicroSequence->length == 2);
+    const auto* stateMicroNode = graph->stepNode(
+        static_cast<uint16_t>(stateMicroSequence->firstStepNode + 1)
+    );
+    assert(stateMicroNode != nullptr);
+    assert(stateMicroNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(stateMicroNode->noteOffset == 5);
+
+    const auto* stateCycleSet = graph->cycleSet(rootCycleNode->cycleSetId);
+    assert(stateCycleSet != nullptr);
+    assert(stateCycleSet->length == 5);
+    const auto* stateCycleNode = graph->stepNode(
+        static_cast<uint16_t>(stateCycleSet->firstStateNode + 2)
+    );
+    assert(stateCycleNode != nullptr);
+    assert(stateCycleNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(stateCycleNode->noteOffset == 3);
+
+    const auto* rootFour = graph->stepNode(rootStepNodeId(4));
+    assert(rootFour != nullptr);
+    assert(rootFour->has(STEP_NODE_CHILD_SEQUENCE));
+    const auto* microSequence = graph->sequence(rootFour->childSequenceId);
+    assert(microSequence != nullptr);
+    assert(microSequence->length == 2);
+    const auto* microNode = graph->stepNode(
+        static_cast<uint16_t>(microSequence->firstStepNode + 1)
+    );
+    assert(microNode != nullptr);
+    assert(microNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(microNode->has(STEP_NODE_VELOCITY_OFFSET));
+    assert(microNode->has(STEP_NODE_GATE_OFFSET));
+    assert(microNode->has(STEP_NODE_NUDGE_OFFSET));
+    assert(microNode->has(STEP_NODE_PROBABILITY_OFFSET));
+    assert(microNode->noteOffset == 5);
+    assert(microNode->velocityOffset == -12);
+    assert(microNode->gateOffset == 25);
+    assert(microNode->nudgeOffset == -8);
+    assert(microNode->probabilityOffset == -33);
+
+    assert(microNode->has(STEP_NODE_CHILD_SEQUENCE));
+    assert(microNode->has(STEP_NODE_CYCLE_SET));
+    const auto* nestedMicroSequence = graph->sequence(microNode->childSequenceId);
+    assert(nestedMicroSequence != nullptr);
+    assert(nestedMicroSequence->length == 2);
+    const auto* nestedMicroNode = graph->stepNode(
+        static_cast<uint16_t>(nestedMicroSequence->firstStepNode + 1)
+    );
+    assert(nestedMicroNode != nullptr);
+    assert(nestedMicroNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(nestedMicroNode->noteOffset == 9);
+
+    const auto* nestedCycleSet = graph->cycleSet(microNode->cycleSetId);
+    assert(nestedCycleSet != nullptr);
+    assert(nestedCycleSet->length == 2);
+    const auto* nestedCycleNode = graph->stepNode(
+        static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1)
+    );
+    assert(nestedCycleNode != nullptr);
+    assert(nestedCycleNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(nestedCycleNode->noteOffset == 4);
 }
 
 void configureProjectSession(core::state::CoreState& state) {
@@ -89,6 +285,7 @@ void configureProjectSession(core::state::CoreState& state) {
     state.sequencer.pattern.toggle(4);
     state.sequencer.focusedStep.set(4);
     state.sequencer.page.set(0);
+    configureProjectGraphContent(state.sequencer.pattern);
 }
 
 void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
@@ -125,6 +322,7 @@ void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
     assert(state.sequencer.pattern.note[0] == 64);
     assert(state.sequencer.pattern.note[4] == 67);
     assert(state.sequencer.focusedStep.get() == 4);
+    assertProjectGraphContent(state.sequencer.pattern);
 }
 
 void test_project_snapshot_roundtrip_restores_runtime_state() {

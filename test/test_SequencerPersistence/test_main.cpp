@@ -143,7 +143,24 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
-    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(sequence->firstStepNode + 1), 5));
+    const auto microNode = static_cast<uint16_t>(sequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(pattern, microNode, 5));
+
+    const auto nestedMicro = createMicroSequence(pattern, microNode, 2);
+    assert(nestedMicro.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* nestedSequence = graph->sequence(nestedMicro.id);
+    assert(nestedSequence != nullptr);
+    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(nestedSequence->firstStepNode + 1), 9));
+
+    const auto nestedCycle = createCycleStateSet(pattern, microNode, 2);
+    assert(nestedCycle.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
+    assert(nestedCycleSet != nullptr);
+    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1), 4));
 
     const auto cycle = createCycleStateSet(pattern, rootStepNodeId(4), 2);
     assert(cycle.ok);
@@ -151,6 +168,23 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     assert(setNodeEnabledOverride(pattern, cycleSet->firstStateNode, false));
+
+    const auto stateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 1);
+    const auto stateMicro = createMicroSequence(pattern, stateNode, 2);
+    assert(stateMicro.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* stateSequence = graph->sequence(stateMicro.id);
+    assert(stateSequence != nullptr);
+    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(stateSequence->firstStepNode + 1), 7));
+
+    const auto stateCycle = createCycleStateSet(pattern, stateNode, 3);
+    assert(stateCycle.ok);
+    graph = graphView(pattern);
+    assert(graph != nullptr);
+    const auto* stateCycleSet = graph->cycleSet(stateCycle.id);
+    assert(stateCycleSet != nullptr);
+    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(stateCycleSet->firstStateNode + 2), 3));
 }
 
 void assertGraphContent(const core::state::sequencer::SequencerPatternState& pattern) {
@@ -173,6 +207,25 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(childNode != nullptr);
     assert(childNode->has(STEP_NODE_NOTE_OFFSET));
     assert(childNode->noteOffset == 5);
+    assert(childNode->has(STEP_NODE_CHILD_SEQUENCE));
+    assert(childNode->has(STEP_NODE_CYCLE_SET));
+
+    const auto* nestedSequence = graph->sequence(childNode->childSequenceId);
+    assert(nestedSequence != nullptr);
+    assert(nestedSequence->length == 2);
+    const auto* nestedNode = graph->stepNode(static_cast<uint16_t>(nestedSequence->firstStepNode + 1));
+    assert(nestedNode != nullptr);
+    assert(nestedNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(nestedNode->noteOffset == 9);
+
+    const auto* nestedCycleSet = graph->cycleSet(childNode->cycleSetId);
+    assert(nestedCycleSet != nullptr);
+    assert(nestedCycleSet->length == 2);
+    const auto* nestedCycleNode =
+        graph->stepNode(static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1));
+    assert(nestedCycleNode != nullptr);
+    assert(nestedCycleNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(nestedCycleNode->noteOffset == 4);
 
     const auto* rootFour = graph->stepNode(rootStepNodeId(4));
     assert(rootFour != nullptr);
@@ -180,6 +233,29 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     const auto* cycleSet = graph->cycleSet(rootFour->cycleSetId);
     assert(cycleSet != nullptr);
     assert(cycleSet->length == 2);
+
+    const auto* stateNode = graph->stepNode(static_cast<uint16_t>(cycleSet->firstStateNode + 1));
+    assert(stateNode != nullptr);
+    assert(stateNode->has(STEP_NODE_CHILD_SEQUENCE));
+    assert(stateNode->has(STEP_NODE_CYCLE_SET));
+
+    const auto* stateSequence = graph->sequence(stateNode->childSequenceId);
+    assert(stateSequence != nullptr);
+    assert(stateSequence->length == 2);
+    const auto* stateMicroNode =
+        graph->stepNode(static_cast<uint16_t>(stateSequence->firstStepNode + 1));
+    assert(stateMicroNode != nullptr);
+    assert(stateMicroNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(stateMicroNode->noteOffset == 7);
+
+    const auto* stateCycleSet = graph->cycleSet(stateNode->cycleSetId);
+    assert(stateCycleSet != nullptr);
+    assert(stateCycleSet->length == 3);
+    const auto* stateCycleNode =
+        graph->stepNode(static_cast<uint16_t>(stateCycleSet->firstStateNode + 2));
+    assert(stateCycleNode != nullptr);
+    assert(stateCycleNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(stateCycleNode->noteOffset == 3);
 }
 
 const EnvelopeSectionHeaderRaw* findEnvelopeSection(const uint8_t* data,
