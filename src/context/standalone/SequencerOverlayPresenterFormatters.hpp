@@ -14,8 +14,10 @@ struct Source {
 };
 
 struct StepEditRenderData {
-    std::array<std::array<char, 12>, 5> valueBuffers{};
-    std::array<ms::ui::KeyValueRow, 5> rows{};
+    static constexpr size_t ROW_COUNT = 7;
+
+    std::array<std::array<char, 12>, ROW_COUNT> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, ROW_COUNT> rows{};
     std::array<char, 16> title{};
     std::array<char, 16> meta{};
     uint32_t dataRevision = 0;

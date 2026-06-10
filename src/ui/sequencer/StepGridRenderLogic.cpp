@@ -173,6 +173,12 @@ FLASHMEM bool sameVariationState(const TileVariationRenderState& lhs,
            a.nudgeDelta == b.nudgeDelta;
 }
 
+FLASHMEM bool sameContentBadges(const TileContentBadgeState& lhs,
+                                const TileContentBadgeState& rhs) {
+    return lhs.microSequence == rhs.microSequence &&
+           lhs.cycleStates == rhs.cycleStates;
+}
+
 FLASHMEM StepVisualStyle buildStepVisualStyle(uint8_t note,
                                      uint8_t velocity,
                                      uint16_t gate,
@@ -233,6 +239,8 @@ FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const 
     diff.gateChanged = !diff.initialized || cache.gate != state.gate;
     diff.nudgeChanged = !diff.initialized || cache.nudge != state.nudge;
     diff.variationChanged = !diff.initialized || !sameVariationState(cache.variation, state.variation);
+    diff.contentBadgesChanged =
+        !diff.initialized || !sameContentBadges(cache.contentBadges, state.contentBadges);
     diff.velocityZeroChanged =
         !diff.initialized || ((cache.velocity == 0) != (state.velocity == 0));
     diff.probabilityMaskChanged =

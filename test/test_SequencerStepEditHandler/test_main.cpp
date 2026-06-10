@@ -180,6 +180,45 @@ void test_nav_and_opt_edit_then_nav_apply() {
     std::cout << "[PASS] test_nav_and_opt_edit_then_nav_apply\n";
 }
 
+void test_context_rows_are_focusable_and_opt_noops_until_child_ux_gate() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.note[3] = 60;
+    h.state.sequencer.pattern.velocity[3] = 64;
+    h.state.sequencer.pattern.gate[3] = 70;
+    h.state.sequencer.pattern.nudge[3] = 0;
+    h.state.sequencer.pattern.probability[3] = 80;
+
+    openStepEdit(h, 3);
+    h.release(Config::MACRO_BUTTONS[3]);
+
+    for (uint8_t i = 0; i < 5; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 5);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.note[3] == 60);
+    assert(h.state.sequencer.pattern.velocity[3] == 64);
+    assert(h.state.sequencer.pattern.gate[3] == 70);
+    assert(h.state.sequencer.pattern.nudge[3] == 0);
+    assert(h.state.sequencer.pattern.probability[3] == 80);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 6);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.sequencer.pattern.note[3] == 60);
+    assert(h.state.sequencer.pattern.velocity[3] == 64);
+    assert(h.state.sequencer.pattern.gate[3] == 70);
+    assert(h.state.sequencer.pattern.nudge[3] == 0);
+    assert(h.state.sequencer.pattern.probability[3] == 80);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 0);
+
+    std::cout << "[PASS] test_context_rows_are_focusable_and_opt_noops_until_child_ux_gate\n";
+}
+
 void test_step_edit_session_undo_redo_workflow() {
     SequencerStepEditHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -308,6 +347,7 @@ void test_step_edit_does_not_open_when_blocked() {
 int main() {
     test_long_press_opens_step_edit_and_ignores_open_release();
     test_nav_and_opt_edit_then_nav_apply();
+    test_context_rows_are_focusable_and_opt_noops_until_child_ux_gate();
     test_step_edit_session_undo_redo_workflow();
     test_cancel_restores_snapshot();
     test_step_edit_does_not_open_when_blocked();

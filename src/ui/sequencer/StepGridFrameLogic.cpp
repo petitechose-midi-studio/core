@@ -2,6 +2,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "ui/sequencer/StepContentBadgeProjection.hpp"
+
 namespace core::ui::sequencer::grid {
 
 namespace {
@@ -170,6 +172,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
         tile.probability = sequencer.pattern.probability[absoluteStep];
         tile.gate = sequencer.pattern.gate[absoluteStep];
         tile.nudge = sequencer.pattern.nudge[absoluteStep];
+        tile.contentBadges = buildStepContentBadgeProjection(sequencer.pattern, absoluteStep);
 
         const bool hasRuntimeVariation =
             tile.enabled &&

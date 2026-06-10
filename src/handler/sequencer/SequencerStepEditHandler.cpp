@@ -13,8 +13,13 @@ namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
-constexpr uint8_t ROW_COUNT =
+constexpr uint8_t PROPERTY_ROW_COUNT =
     static_cast<uint8_t>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
+constexpr uint8_t ROW_COUNT = PROPERTY_ROW_COUNT + 2;
+
+FLASHMEM bool isPropertyRow(uint8_t row) {
+    return row < PROPERTY_ROW_COUNT;
+}
 
 template <typename EncoderIdT>
 FLASHMEM void configureStepEditEncoder(
@@ -207,10 +212,13 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
     if (abs >= len) return;
     if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
+    const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
+    if (!isPropertyRow(focusedRow)) return;
+
     input_utils::applyNormalizedToStep(
         sequencer_,
         abs,
-        input_utils::stepEditRowToProperty(sequencer_.stepEdit.focusedRow.get()),
+        input_utils::stepEditRowToProperty(focusedRow),
         normalized
     );
 }
@@ -223,10 +231,13 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
     if (abs >= len) return;
     if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
+    const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
+    if (!isPropertyRow(focusedRow)) return;
+
     configureStepEditEncoder(
         encoders_,
         Config::EncoderID::OPT,
-        input_utils::stepEditRowToProperty(sequencer_.stepEdit.focusedRow.get()),
+        input_utils::stepEditRowToProperty(focusedRow),
         sequencer_,
         abs
     );

@@ -44,6 +44,16 @@ constexpr lv_coord_t VARIATION_RANGE_TICK_LENGTH = 7;
 constexpr lv_coord_t VARIATION_RANGE_TICK_THICKNESS = 2;
 constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
 constexpr lv_coord_t VARIATION_DELTA_THICKNESS = STEP_SHAPE_STROKE_WIDTH;
+constexpr lv_coord_t CONTENT_BADGE_WIDTH = 10;
+constexpr lv_coord_t CONTENT_BADGE_HEIGHT = 9;
+constexpr lv_coord_t CONTENT_BADGE_GAP = 2;
+constexpr lv_coord_t CONTENT_BADGE_LEFT_PAD = 3;
+constexpr lv_coord_t CONTENT_BADGE_TOP_PAD = 3;
+constexpr uint32_t MICRO_SEQUENCE_BADGE_COLOR = 0x81B29A;
+constexpr uint32_t CYCLE_STATE_BADGE_COLOR = 0xF2CC8F;
+constexpr uint32_t CONTENT_BADGE_TEXT_COLOR = 0x10151A;
+constexpr lv_opa_t CONTENT_BADGE_OPA = LV_OPA_80;
+constexpr lv_opa_t CONTENT_BADGE_TEXT_OPA = LV_OPA_COVER;
 
 uint8_t clampMidiValue(int value) {
     if (value < 0) return 0;
@@ -88,6 +98,57 @@ void drawVariationRect(lv_layer_t* layer,
         .y2 = static_cast<lv_coord_t>(y + height - 1),
     };
     lv_draw_rect(layer, &dsc, &area);
+}
+
+void drawContentBadge(lv_layer_t* layer,
+                      lv_coord_t x,
+                      lv_coord_t y,
+                      const char* label,
+                      uint32_t colorHex) {
+    if (!layer || label == nullptr || label[0] == '\0') return;
+
+    const lv_area_t area{
+        .x1 = x,
+        .y1 = y,
+        .x2 = static_cast<lv_coord_t>(x + CONTENT_BADGE_WIDTH - 1),
+        .y2 = static_cast<lv_coord_t>(y + CONTENT_BADGE_HEIGHT - 1),
+    };
+
+    lv_draw_rect_dsc_t rectDsc;
+    lv_draw_rect_dsc_init(&rectDsc);
+    rectDsc.bg_color = lv_color_hex(colorHex);
+    rectDsc.bg_opa = CONTENT_BADGE_OPA;
+    rectDsc.radius = 2;
+    rectDsc.border_width = 0;
+    lv_draw_rect(layer, &rectDsc, &area);
+
+    lv_draw_label_dsc_t labelDsc;
+    lv_draw_label_dsc_init(&labelDsc);
+    labelDsc.text = label;
+    labelDsc.font = fonts.inter_12_medium;
+    labelDsc.color = lv_color_hex(CONTENT_BADGE_TEXT_COLOR);
+    labelDsc.opa = CONTENT_BADGE_TEXT_OPA;
+    labelDsc.align = LV_TEXT_ALIGN_CENTER;
+
+    lv_area_t labelArea = area;
+    labelArea.y1 = static_cast<lv_coord_t>(area.y1 - 1);
+    lv_draw_label(layer, &labelDsc, &labelArea);
+}
+
+void drawContentBadges(lv_layer_t* layer,
+                       const lv_area_t& buttonArea,
+                       const grid::TileContentBadgeState& badges) {
+    if (!badges.microSequence && !badges.cycleStates) return;
+
+    lv_coord_t x = static_cast<lv_coord_t>(buttonArea.x1 + CONTENT_BADGE_LEFT_PAD);
+    const lv_coord_t y = static_cast<lv_coord_t>(buttonArea.y1 + CONTENT_BADGE_TOP_PAD);
+    if (badges.microSequence) {
+        drawContentBadge(layer, x, y, "M", MICRO_SEQUENCE_BADGE_COLOR);
+        x = static_cast<lv_coord_t>(x + CONTENT_BADGE_WIDTH + CONTENT_BADGE_GAP);
+    }
+    if (badges.cycleStates) {
+        drawContentBadge(layer, x, y, "C", CYCLE_STATE_BADGE_COLOR);
+    }
 }
 
 void drawHorizontalRangeTick(lv_layer_t* layer, lv_coord_t centerX, lv_coord_t y) {
@@ -674,6 +735,10 @@ void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
         labelArea.y1 = static_cast<lv_coord_t>(buttonArea.y1 + STEP_INDEX_TOP_PAD);
         lv_draw_label(layer, &labelDsc, &labelArea);
     }
+
+    if (cache.inPattern) {
+        drawContentBadges(layer, buttonArea, cache.contentBadges);
+    }
 }
 
 void StepGrid::renderTile(
@@ -707,11 +772,12 @@ void StepGrid::renderTile(
     const lv_coord_t noteLabelY = geometry_.noteLabelBaselineY[tileIndex];
     bool buttonOverlayDirty =
         !cache.initialized || diff.absoluteStepChanged || diff.inPatternChanged ||
-        diff.barChanged || diff.variationChanged || propertyVisualChanged || geometryChanged;
+        diff.barChanged || diff.variationChanged || diff.contentBadgesChanged ||
+        propertyVisualChanged || geometryChanged;
 
     if (!geometryChanged &&
         !diff.dataChanged && !diff.barChanged && !propertyVisualChanged && !tileFeedbackChanged &&
-        !diff.probabilityMaskChanged) {
+        !diff.probabilityMaskChanged && !diff.contentBadgesChanged) {
         return;
     }
 
@@ -788,6 +854,7 @@ void StepGrid::renderTile(
     cache.gate = state.gate;
     cache.nudge = state.nudge;
     cache.variation = state.variation;
+    cache.contentBadges = state.contentBadges;
 
     if (buttonOverlayDirty && step_buttons_[tileIndex]) {
         lv_obj_invalidate(step_buttons_[tileIndex]);

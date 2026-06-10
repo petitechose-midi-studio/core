@@ -20,7 +20,8 @@ FLASHMEM void SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.sequencer.stepEdit.stepIndex,
         state_refs_.sequencer.stepEdit.focusedRow,
-        state_refs_.sequencer.pattern.stepDataRevision
+        state_refs_.sequencer.pattern.stepDataRevision,
+        state_refs_.sequencer.pattern.graphRevision
     );
 }
 

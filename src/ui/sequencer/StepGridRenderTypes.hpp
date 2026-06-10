@@ -9,6 +9,7 @@
 #include <oc/note/sequencer/StepSequencerVariation.hpp>
 
 #include "state/sequencer/SequencerUiState.hpp"
+#include "ui/sequencer/StepContentBadgeProjection.hpp"
 
 namespace core::ui::sequencer::grid {
 
@@ -20,6 +21,8 @@ struct TileVariationRenderState {
         core::state::sequencer::StepProperty::NOTE;
     oc::note::sequencer::StepSequencerResolvedVariation resolved{};
 };
+
+using TileContentBadgeState = StepContentBadgeProjection;
 
 /**
  * Data exchanged between step-grid projection, planning, and rendering.
@@ -39,6 +42,7 @@ struct TileRenderState {
     uint16_t gate = 0;
     int8_t nudge = 0;
     TileVariationRenderState variation{};
+    TileContentBadgeState contentBadges{};
 };
 
 struct TileRenderDiff {
@@ -53,6 +57,7 @@ struct TileRenderDiff {
     bool gateChanged = false;
     bool nudgeChanged = false;
     bool variationChanged = false;
+    bool contentBadgesChanged = false;
     bool velocityZeroChanged = false;
     bool probabilityMaskChanged = false;
     bool dataChanged = false;
@@ -72,6 +77,7 @@ struct TileRenderCache {
     uint16_t gate = 0;
     int8_t nudge = 0;
     TileVariationRenderState variation{};
+    TileContentBadgeState contentBadges{};
     lv_coord_t noteLabelHeight = 0;
     bool noteLabelVisible = false;
     bool originalNoteLabelVisible = false;

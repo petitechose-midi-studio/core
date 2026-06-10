@@ -1,10 +1,13 @@
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cstdio>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
+#include "state/sequencer/SequencerStepContentEditSession.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 
 namespace core::context::standalone::sequencer_overlay_presenter {
@@ -26,6 +29,32 @@ constexpr std::array<const char*, 5> STEP_EDIT_KEYS = {
     "Probability",
 };
 
+constexpr size_t MICRO_SEQUENCE_ROW = STEP_EDIT_PROPERTIES.size();
+constexpr size_t CYCLE_STATES_ROW = MICRO_SEQUENCE_ROW + 1U;
+
+FLASHMEM const char* availabilityLabel(
+    const core::state::sequencer::StepContentCreationAvailability& availability
+) {
+    using Reason = core::state::sequencer::StepContentCreationBlockReason;
+
+    if (availability.opensExisting) return "Edit";
+    if (availability.canCreateOrOpen) return "Create";
+
+    switch (availability.blockedReason) {
+        case Reason::MAX_DEPTH_REACHED:
+            return "Max depth";
+        case Reason::GRAPH_LIMIT_REACHED:
+            return "Limit";
+        case Reason::INVALID_FOCUSED_STEP:
+            return "Invalid";
+        case Reason::INACTIVE_CONTEXT:
+            return "Closed";
+        case Reason::NONE:
+        default:
+            return "Blocked";
+    }
+}
+
 }  // namespace
 
 FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
@@ -43,7 +72,10 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     }
 
     data.stepIndex = step;
-    data.selectedIndex = sequencer.stepEdit.focusedRow.get();
+    data.selectedIndex = std::min<int>(
+        sequencer.stepEdit.focusedRow.get(),
+        static_cast<int>(StepEditRenderData::ROW_COUNT) - 1
+    );
 
     const uint8_t len = sequencer.pattern.length.get();
     size_t titlePos = oc::type::text::appendString(data.title.data(), data.title.size(), 0, "STEP ");
@@ -72,7 +104,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     const int8_t nudge = sequencer.pattern.nudge[step];
     const uint8_t probability = sequencer.pattern.probability[step];
 
-    for (size_t i = 0; i < data.rows.size(); ++i) {
+    for (size_t i = 0; i < STEP_EDIT_PROPERTIES.size(); ++i) {
         core::state::sequencer::formatStepPropertyValue(
             data.valueBuffers[i].data(),
             data.valueBuffers[i].size(),
@@ -89,8 +121,46 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         };
     }
 
+    core::state::sequencer::SequencerStepContentEditSession editSession;
+    editSession.openRootStepContext(step);
+
+    const auto microAvailability = editSession.childCreationAvailability(
+        sequencer.pattern,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+        core::state::sequencer::SequencerStepContentEditSession::DEFAULT_MICRO_SEQUENCE_LENGTH
+    );
+    const auto cycleAvailability = editSession.childCreationAvailability(
+        sequencer.pattern,
+        core::state::sequencer::StepContentChildKind::CYCLE_STATES,
+        core::state::sequencer::SequencerStepContentEditSession::DEFAULT_CYCLE_STATE_COUNT
+    );
+
+    std::snprintf(
+        data.valueBuffers[MICRO_SEQUENCE_ROW].data(),
+        data.valueBuffers[MICRO_SEQUENCE_ROW].size(),
+        "%s",
+        availabilityLabel(microAvailability)
+    );
+    data.rows[MICRO_SEQUENCE_ROW] = {
+        .key = "Micro-seq",
+        .value = data.valueBuffers[MICRO_SEQUENCE_ROW].data(),
+    };
+
+    std::snprintf(
+        data.valueBuffers[CYCLE_STATES_ROW].data(),
+        data.valueBuffers[CYCLE_STATES_ROW].size(),
+        "%s",
+        availabilityLabel(cycleAvailability)
+    );
+    data.rows[CYCLE_STATES_ROW] = {
+        .key = "Cycle states",
+        .value = data.valueBuffers[CYCLE_STATES_ROW].data(),
+    };
+
     data.dataRevision =
         sequencer.pattern.stepDataRevision.get() ^
+        (sequencer.pattern.graphRevision.get() << 1) ^
+        (static_cast<uint32_t>(data.selectedIndex) << 8) ^
         (static_cast<uint32_t>(step) << 16) ^
         (static_cast<uint32_t>(len) << 24);
     return data;
