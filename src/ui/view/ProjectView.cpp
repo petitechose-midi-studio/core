@@ -395,6 +395,7 @@ FLASHMEM void ProjectView::render() {
             context.projectName = state_refs_.project.metadata.name;
             context.projectDirty = state_refs_.project.metadata.dirty;
             context.projectHasSavedIdentity = state_refs_.project.metadata.hasSavedIdentity;
+            context.projectOverwriteSafe = state_refs_.project.metadata.overwriteSafe;
             for (uint8_t i = 0; i < context.outputMidiChannels.size(); ++i) {
                 context.outputMidiChannels[i] =
                     state_refs_.sequencerTracks.track(i).midiChannel.get();

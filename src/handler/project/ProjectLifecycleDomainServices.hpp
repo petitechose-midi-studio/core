@@ -26,6 +26,7 @@ public:
         LOAD_FAILED,
         LIST_FAILED,
         PARTIAL_LOAD,
+        UNSAFE_OVERWRITE,
     };
 
     struct Result {
@@ -53,6 +54,7 @@ public:
     const char* currentProjectId() const;
     bool currentProjectDirty() const;
     bool currentProjectHasSavedIdentity() const;
+    bool currentProjectOverwriteSafe() const;
     Result markProjectMutated() const;
     Result saveCurrentProject() const;
     Result saveAsNextProject() const;

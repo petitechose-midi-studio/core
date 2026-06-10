@@ -11,6 +11,7 @@
 
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "persistence/ProjectLoadReport.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectSlug.hpp"
 
@@ -195,10 +196,34 @@ FLASHMEM const char* projectLifecycleFailureLabel(
             return "Load failed";
         case Status::LIST_FAILED:
             return "List failed";
+        case Status::UNSAFE_OVERWRITE:
+            return "Save As required";
         case Status::PARTIAL_LOAD:
         case Status::OK:
         default:
             return fallback;
+    }
+}
+
+FLASHMEM const char* projectLoadFeedbackLabel(
+    const ProjectLifecycleDomainServices::Result& result
+) {
+    namespace project_file = core::persistence::project_file;
+    if (!result.success()) {
+        return projectLifecycleFailureLabel(result.status, "Load failed");
+    }
+    if (!result.overwriteSafe) {
+        return "Loaded read-only";
+    }
+    switch (result.loadStatus) {
+        case project_file::LoadStatus::MIGRATED:
+            return "Loaded migrated";
+        case project_file::LoadStatus::PARTIAL:
+            return "Loaded partial";
+        case project_file::LoadStatus::OK:
+        case project_file::LoadStatus::FAILED:
+        default:
+            return "Loaded";
     }
 }
 
@@ -786,10 +811,12 @@ FLASHMEM bool ProjectHandler::setFocusedRoutingValue(float normalized) {
 FLASHMEM bool ProjectHandler::loadProjectWithFeedback(const char* projectId) {
     const auto result = lifecycle_.loadProject(projectId);
     char feedback[32] = {};
-    const char* verb = result.status == ProjectLifecycleDomainServices::Status::PARTIAL_LOAD
-        ? "Loaded partial"
-        : (result.success() ? "Loaded" : projectLifecycleFailureLabel(result.status, "Load failed"));
-    formatProjectLifecycleFeedback(feedback, sizeof(feedback), verb, projectId);
+    formatProjectLifecycleFeedback(
+        feedback,
+        sizeof(feedback),
+        projectLoadFeedbackLabel(result),
+        projectId
+    );
     navigation_.setLifecycleFeedback(feedback);
     if (result.success()) {
         OC_LOG_INFO("[Project] load {} bytes={}", projectId, result.bytes);
@@ -920,7 +947,10 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
 
     if (node == ProjectNodeId::NEW_PROJECT_CONFIRM) {
         if (row == 0) {
-            return saveAndResetProjectWithFeedback(!lifecycle_.currentProjectHasSavedIdentity());
+            return saveAndResetProjectWithFeedback(
+                !lifecycle_.currentProjectHasSavedIdentity() ||
+                    !lifecycle_.currentProjectOverwriteSafe()
+            );
         }
         if (row == 1) {
             resetProject();
@@ -940,7 +970,8 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
             core::state::project::openProjectLoadConfirmation(
                 navigation_,
                 projectId,
-                lifecycle_.currentProjectHasSavedIdentity()
+                lifecycle_.currentProjectHasSavedIdentity() &&
+                    lifecycle_.currentProjectOverwriteSafe()
             );
             return true;
         }

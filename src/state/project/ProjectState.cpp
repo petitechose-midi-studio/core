@@ -26,6 +26,7 @@ FLASHMEM void ProjectMetadata::reset() {
     modifiedCounter = 0;
     dirty = false;
     hasSavedIdentity = false;
+    overwriteSafe = true;
 }
 
 FLASHMEM void ProjectTransportState::reset() {

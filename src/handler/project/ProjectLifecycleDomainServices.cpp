@@ -150,6 +150,10 @@ FLASHMEM bool ProjectLifecycleDomainServices::currentProjectHasSavedIdentity() c
     return state_ != nullptr && state_->project.metadata.hasSavedIdentity;
 }
 
+FLASHMEM bool ProjectLifecycleDomainServices::currentProjectOverwriteSafe() const {
+    return state_ == nullptr || state_->project.metadata.overwriteSafe;
+}
+
 FLASHMEM ProjectLifecycleDomainServices::Result
 ProjectLifecycleDomainServices::markProjectMutated() const {
     if (state_ == nullptr) {
@@ -169,6 +173,11 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
     if (projectId == nullptr || projectId[0] == '\0') {
         return invalidArgument();
     }
+    if (state_->project.metadata.hasSavedIdentity &&
+        !state_->project.metadata.overwriteSafe &&
+        std::strcmp(state_->project.metadata.id.data(), projectId) == 0) {
+        return Result{.status = Status::UNSAFE_OVERWRITE};
+    }
 
     core::state::project::ProjectSnapshot snapshot;
     if (!core::state::project::captureProjectSnapshot(*state_, snapshot)) {
@@ -179,6 +188,7 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
     }
     snapshot.project.metadata.hasSavedIdentity = true;
     snapshot.project.metadata.dirty = false;
+    snapshot.project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
     auto saved = store.save(snapshot);
@@ -224,6 +234,7 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
     }
     snapshot.project.metadata.hasSavedIdentity = true;
     snapshot.project.metadata.dirty = false;
+    snapshot.project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
     auto saved = store.save(snapshot);
@@ -269,6 +280,9 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
     if (hasCurrentIdentity && std::strcmp(currentId, projectId) == 0) {
         return Result{.status = Status::OK};
     }
+    if (hasCurrentIdentity && !state_->project.metadata.overwriteSafe) {
+        return Result{.status = Status::UNSAFE_OVERWRITE};
+    }
 
     const auto available = ensureProjectDoesNotExist(*product_files_, projectId);
     if (!available.success()) {
@@ -289,6 +303,7 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
     }
     snapshot.project.metadata.hasSavedIdentity = true;
     snapshot.project.metadata.dirty = false;
+    snapshot.project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
     auto saved = store.save(snapshot);
@@ -333,6 +348,7 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
 
     const bool partial =
         loaded.value().loadStatus == core::persistence::project_file::LoadStatus::PARTIAL;
+    state_->project.metadata.overwriteSafe = loaded.value().overwriteSafe;
     state_->requestProjectSessionSave();
     state_->projectNavigation.notifyContentChanged();
     return Result{
