@@ -32,6 +32,16 @@ StepContentChildKind childKindForContext(StepContentContextKind kind) {
         : StepContentChildKind::MICRO_SEQUENCE;
 }
 
+FLASHMEM bool validChildExists(const oc::note::sequencer::StepSequencerGraph& graph,
+                               const oc::note::sequencer::StepSequencerStepNode& node,
+                               StepContentChildKind childKind) {
+    if (childKind == StepContentChildKind::MICRO_SEQUENCE) {
+        return node.has(STEP_NODE_CHILD_SEQUENCE) &&
+               graph.sequence(node.childSequenceId) != nullptr;
+    }
+    return node.has(STEP_NODE_CYCLE_SET) && graph.cycleSet(node.cycleSetId) != nullptr;
+}
+
 }  // namespace
 
 FLASHMEM void SequencerStepContentEditSession::reset() {
@@ -96,6 +106,12 @@ FLASHMEM StepContentContextView SequencerStepContentEditSession::current() const
 }
 
 FLASHMEM StepContentEditResult SequencerStepContentEditSession::createOrOpenMicroSequence(
+    SequencerPatternState& pattern
+) {
+    return createOrOpenMicroSequence(pattern, DEFAULT_MICRO_SEQUENCE_LENGTH);
+}
+
+FLASHMEM StepContentEditResult SequencerStepContentEditSession::createOrOpenMicroSequence(
     SequencerPatternState& pattern,
     uint8_t length
 ) {
@@ -141,6 +157,12 @@ FLASHMEM StepContentEditResult SequencerStepContentEditSession::createOrOpenMicr
 }
 
 FLASHMEM StepContentEditResult SequencerStepContentEditSession::createOrOpenCycleStates(
+    SequencerPatternState& pattern
+) {
+    return createOrOpenCycleStates(pattern, DEFAULT_CYCLE_STATE_COUNT);
+}
+
+FLASHMEM StepContentEditResult SequencerStepContentEditSession::createOrOpenCycleStates(
     SequencerPatternState& pattern,
     uint8_t length
 ) {
@@ -183,6 +205,160 @@ FLASHMEM StepContentEditResult SequencerStepContentEditSession::createOrOpenCycl
         .cycleSetId = result.id,
     };
     return {.ok = true, .limitReached = false, .openedExisting = openedExisting};
+}
+
+FLASHMEM bool SequencerStepContentEditSession::focusedStepHasMicroSequence(
+    const SequencerPatternState& pattern
+) const {
+    const auto nodeId = focusedNodeId_(pattern);
+    if (nodeId == kInvalidId) return false;
+
+    const auto* graph = graphView(pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    return node != nullptr && node->has(STEP_NODE_CHILD_SEQUENCE);
+}
+
+FLASHMEM bool SequencerStepContentEditSession::focusedStepHasCycleStates(
+    const SequencerPatternState& pattern
+) const {
+    const auto nodeId = focusedNodeId_(pattern);
+    if (nodeId == kInvalidId) return false;
+
+    const auto* graph = graphView(pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    return node != nullptr && node->has(STEP_NODE_CYCLE_SET);
+}
+
+FLASHMEM StepContentCreationAvailability
+SequencerStepContentEditSession::childCreationAvailability(
+    const SequencerPatternState& pattern,
+    StepContentChildKind childKind,
+    uint8_t length
+) const {
+    if (!active_) {
+        return {
+            .canCreateOrOpen = false,
+            .opensExisting = false,
+            .blockedReason = StepContentCreationBlockReason::INACTIVE_CONTEXT,
+        };
+    }
+    if (maxDepthReached()) {
+        return {
+            .canCreateOrOpen = false,
+            .opensExisting = false,
+            .blockedReason = StepContentCreationBlockReason::MAX_DEPTH_REACHED,
+        };
+    }
+
+    const auto nodeId = focusedNodeId_(pattern);
+    if (nodeId == kInvalidId) {
+        return {
+            .canCreateOrOpen = false,
+            .opensExisting = false,
+            .blockedReason = StepContentCreationBlockReason::INVALID_FOCUSED_STEP,
+        };
+    }
+
+    const auto* graph = graphView(pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    if (graph != nullptr && node != nullptr && validChildExists(*graph, *node, childKind)) {
+        return {
+            .canCreateOrOpen = true,
+            .opensExisting = true,
+            .blockedReason = StepContentCreationBlockReason::NONE,
+        };
+    }
+
+    if (length == 0) {
+        return {
+            .canCreateOrOpen = false,
+            .opensExisting = false,
+            .blockedReason = StepContentCreationBlockReason::GRAPH_LIMIT_REACHED,
+        };
+    }
+
+    const uint16_t stepNodeCount = graph ? graph->stepNodeCount : SequencerPatternState::MAX_STEPS;
+    if (static_cast<uint32_t>(stepNodeCount) + length > StepSequencerGraphLimits::MAX_STEP_NODES) {
+        return {
+            .canCreateOrOpen = false,
+            .opensExisting = false,
+            .blockedReason = StepContentCreationBlockReason::GRAPH_LIMIT_REACHED,
+        };
+    }
+
+    if (childKind == StepContentChildKind::MICRO_SEQUENCE) {
+        const uint16_t sequenceCount = graph ? graph->sequenceCount : 1U;
+        if (sequenceCount >= StepSequencerGraphLimits::MAX_SEQUENCES) {
+            return {
+                .canCreateOrOpen = false,
+                .opensExisting = false,
+                .blockedReason = StepContentCreationBlockReason::GRAPH_LIMIT_REACHED,
+            };
+        }
+    } else {
+        if (length > StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET) {
+            return {
+                .canCreateOrOpen = false,
+                .opensExisting = false,
+                .blockedReason = StepContentCreationBlockReason::GRAPH_LIMIT_REACHED,
+            };
+        }
+
+        const uint16_t cycleSetCount = graph ? graph->cycleSetCount : 0U;
+        if (cycleSetCount >= StepSequencerGraphLimits::MAX_CYCLE_SETS) {
+            return {
+                .canCreateOrOpen = false,
+                .opensExisting = false,
+                .blockedReason = StepContentCreationBlockReason::GRAPH_LIMIT_REACHED,
+            };
+        }
+    }
+
+    return {
+        .canCreateOrOpen = true,
+        .opensExisting = false,
+        .blockedReason = StepContentCreationBlockReason::NONE,
+    };
+}
+
+FLASHMEM bool SequencerStepContentEditSession::setFocusedNoteOffset(
+    SequencerPatternState& pattern,
+    int8_t offset
+) {
+    const auto nodeId = focusedNodeId_(pattern);
+    return nodeId != kInvalidId && setNodeNoteOffset(pattern, nodeId, offset);
+}
+
+FLASHMEM bool SequencerStepContentEditSession::setFocusedVelocityOffset(
+    SequencerPatternState& pattern,
+    int16_t offset
+) {
+    const auto nodeId = focusedNodeId_(pattern);
+    return nodeId != kInvalidId && setNodeVelocityOffset(pattern, nodeId, offset);
+}
+
+FLASHMEM bool SequencerStepContentEditSession::setFocusedGateOffset(
+    SequencerPatternState& pattern,
+    int16_t offset
+) {
+    const auto nodeId = focusedNodeId_(pattern);
+    return nodeId != kInvalidId && setNodeGateOffset(pattern, nodeId, offset);
+}
+
+FLASHMEM bool SequencerStepContentEditSession::setFocusedNudgeOffset(
+    SequencerPatternState& pattern,
+    int8_t offset
+) {
+    const auto nodeId = focusedNodeId_(pattern);
+    return nodeId != kInvalidId && setNodeNudgeOffset(pattern, nodeId, offset);
+}
+
+FLASHMEM bool SequencerStepContentEditSession::setFocusedProbabilityOffset(
+    SequencerPatternState& pattern,
+    int16_t offset
+) {
+    const auto nodeId = focusedNodeId_(pattern);
+    return nodeId != kInvalidId && setNodeProbabilityOffset(pattern, nodeId, offset);
 }
 
 FLASHMEM bool SequencerStepContentEditSession::removeFocusedChild(

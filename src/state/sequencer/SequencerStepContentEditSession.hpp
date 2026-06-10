@@ -27,6 +27,21 @@ struct StepContentEditResult {
     bool openedExisting = false;
 };
 
+enum class StepContentCreationBlockReason : uint8_t {
+    NONE = 0,
+    INACTIVE_CONTEXT,
+    MAX_DEPTH_REACHED,
+    INVALID_FOCUSED_STEP,
+    GRAPH_LIMIT_REACHED,
+};
+
+struct StepContentCreationAvailability {
+    bool canCreateOrOpen = false;
+    bool opensExisting = false;
+    StepContentCreationBlockReason blockedReason =
+        StepContentCreationBlockReason::INACTIVE_CONTEXT;
+};
+
 struct StepContentContextView {
     StepContentContextKind kind = StepContentContextKind::ROOT_STEP;
     uint8_t rootStep = 0;
@@ -40,6 +55,8 @@ class SequencerStepContentEditSession {
 public:
     static constexpr uint8_t MAX_CONTEXTS =
         oc::note::sequencer::StepSequencerGraphLimits::MAX_DEPTH + 1U;
+    static constexpr uint8_t DEFAULT_MICRO_SEQUENCE_LENGTH = 2;
+    static constexpr uint8_t DEFAULT_CYCLE_STATE_COUNT = 4;
 
     void reset();
 
@@ -51,10 +68,26 @@ public:
 
     StepContentContextView current() const;
 
+    StepContentEditResult createOrOpenMicroSequence(SequencerPatternState& pattern);
     StepContentEditResult createOrOpenMicroSequence(SequencerPatternState& pattern,
                                                     uint8_t length);
+    StepContentEditResult createOrOpenCycleStates(SequencerPatternState& pattern);
     StepContentEditResult createOrOpenCycleStates(SequencerPatternState& pattern,
                                                   uint8_t length);
+
+    bool focusedStepHasMicroSequence(const SequencerPatternState& pattern) const;
+    bool focusedStepHasCycleStates(const SequencerPatternState& pattern) const;
+    StepContentCreationAvailability childCreationAvailability(
+        const SequencerPatternState& pattern,
+        StepContentChildKind childKind,
+        uint8_t length
+    ) const;
+
+    bool setFocusedNoteOffset(SequencerPatternState& pattern, int8_t offset);
+    bool setFocusedVelocityOffset(SequencerPatternState& pattern, int16_t offset);
+    bool setFocusedGateOffset(SequencerPatternState& pattern, int16_t offset);
+    bool setFocusedNudgeOffset(SequencerPatternState& pattern, int8_t offset);
+    bool setFocusedProbabilityOffset(SequencerPatternState& pattern, int16_t offset);
 
     bool removeFocusedChild(SequencerPatternState& pattern, StepContentChildKind childKind);
     bool removeCurrentChildContext(SequencerPatternState& pattern);
