@@ -19,9 +19,7 @@ void test_prepare_macro_view_activation_syncs_runtime_and_status_from_active_pag
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 

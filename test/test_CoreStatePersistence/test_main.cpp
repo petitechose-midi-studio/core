@@ -72,14 +72,12 @@ void recordLengthHistory(core::state::CoreState& state, uint8_t nextLength) {
     ));
 }
 
-void test_workspace_survives_settings_storage_corruption() {
+void test_project_state_does_not_boot_restore_from_removed_domain_store() {
     CoreStorages storage;
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
         core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.13f);
@@ -92,17 +90,15 @@ void test_workspace_survives_settings_storage_corruption() {
     storage.settings.erase(0, storage.settings.capacity());
 
     core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
                                     storage.macroLibrary,
-                                    storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
-    assert(core::state::macro::MacroWorkflow::runtimeValue(restored.macros, 0) == 0.13f);
-    assert(core::state::macro::MacroWorkflow::runtimeValue(restored.macros, 1) == 0.87f);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(restored.macros, 0) != 0.13f);
+    assert(core::state::macro::MacroWorkflow::runtimeValue(restored.macros, 1) != 0.87f);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_workspace_survives_settings_storage_corruption\n";
+    std::cout << "[PASS] test_project_state_does_not_boot_restore_from_removed_domain_store\n";
 }
 
 void test_macro_library_roundtrip_and_erase() {
@@ -110,9 +106,7 @@ void test_macro_library_roundtrip_and_erase() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
     core::state::macro::MacroWorkflow::switchToPage(state, 2);
@@ -152,9 +146,7 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -178,109 +170,71 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
     std::cout << "[PASS] test_macro_library_save_snapshots_runtime_values_without_manual_flush\n";
 }
 
-void test_macro_config_changes_persist_after_flush_and_bump_revision() {
+void test_macro_config_changes_mark_project_dirty_and_bump_revision() {
     CoreStorages storage;
     storage.initAll();
 
-    uint8_t updatedChannel = 0;
-    uint8_t updatedCc = 0;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
 
-    {
-        core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
-                                     storage.macroLibrary,
-                                     storage.sequencerWorkspace,
-                                     storage.sequencerPatternLibrary,
-                                     storage.sequencerSetLibrary);
+    const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
+    const uint32_t initialRevision = state.configRevision.get();
 
-        const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
-        const uint32_t initialRevision = state.configRevision.get();
+    assert(!core::state::macro::MacroWorkflow::setConfig(
+        state,
+        0,
+        initialConfig.channel,
+        initialConfig.cc
+    ));
+    assert(state.configRevision.get() == initialRevision);
 
-        assert(!core::state::macro::MacroWorkflow::setConfig(
-            state,
-            0,
-            initialConfig.channel,
-            initialConfig.cc
-        ));
-        assert(state.configRevision.get() == initialRevision);
+    const uint8_t updatedChannel = static_cast<uint8_t>((initialConfig.channel + 1U) % 16U);
+    const uint8_t updatedCc = static_cast<uint8_t>((initialConfig.cc < 127U) ? (initialConfig.cc + 1U)
+                                                                            : (initialConfig.cc - 1U));
 
-        updatedChannel = static_cast<uint8_t>((initialConfig.channel + 1U) % 16U);
-        updatedCc = static_cast<uint8_t>((initialConfig.cc < 127U) ? (initialConfig.cc + 1U)
-                                                                   : (initialConfig.cc - 1U));
+    assert(core::state::macro::MacroWorkflow::setConfig(state, 0, updatedChannel, updatedCc));
+    assert(
+        state.configRevision.get() ==
+        core::state::macro::nextMacroConfigRevision(
+            initialRevision,
+            core::state::macro::kMacroConfigDirtyAll
+        )
+    );
+    assert(state.project.metadata.dirty);
+    assert(state.hasPendingProjectSessionSave());
 
-        assert(core::state::macro::MacroWorkflow::setConfig(state, 0, updatedChannel, updatedCc));
-        assert(
-            state.configRevision.get() ==
-            core::state::macro::nextMacroConfigRevision(
-                initialRevision,
-                core::state::macro::kMacroConfigDirtyAll
-            )
-        );
-
-        const auto& updatedConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
-        assert(updatedConfig.channel == updatedChannel);
-        assert(updatedConfig.cc == updatedCc);
-
-        drainNotifications();
-        state.flush();
-    }
-
-    core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
-                                    storage.macroLibrary,
-                                    storage.sequencerWorkspace,
-                                    storage.sequencerPatternLibrary,
-                                    storage.sequencerSetLibrary);
-    const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
-    assert(restoredConfig.channel == updatedChannel);
-    assert(restoredConfig.cc == updatedCc);
+    const auto& updatedConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
+    assert(updatedConfig.channel == updatedChannel);
+    assert(updatedConfig.cc == updatedCc);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_macro_config_changes_persist_after_flush_and_bump_revision\n";
+    std::cout << "[PASS] test_macro_config_changes_mark_project_dirty_and_bump_revision\n";
 }
 
-void test_macro_workspace_pending_save_survives_storage_unavailable() {
+void test_macro_config_changes_do_not_require_macro_library_storage() {
     CoreStorages storage;
     storage.initAll();
 
-    uint8_t updatedChannel = 0;
-    uint8_t updatedCc = 0;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
 
-    {
-        core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
-                                     storage.macroLibrary,
-                                     storage.sequencerWorkspace,
-                                     storage.sequencerPatternLibrary,
-                                     storage.sequencerSetLibrary);
+    const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
+    const uint8_t updatedChannel = static_cast<uint8_t>((initialConfig.channel + 2U) % 16U);
+    const uint8_t updatedCc = static_cast<uint8_t>((initialConfig.cc + 3U) % 128U);
 
-        const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
-        updatedChannel = static_cast<uint8_t>((initialConfig.channel + 2U) % 16U);
-        updatedCc = static_cast<uint8_t>((initialConfig.cc + 3U) % 128U);
-
-        storage.macroWorkspace.setAvailable(false);
-        assert(core::state::macro::MacroWorkflow::setConfig(state, 0, updatedChannel, updatedCc));
-        drainNotifications();
-        state.flush();
-
-        storage.macroWorkspace.setAvailable(true);
-        state.flush();
-    }
-
-    core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
-                                    storage.macroLibrary,
-                                    storage.sequencerWorkspace,
-                                    storage.sequencerPatternLibrary,
-                                    storage.sequencerSetLibrary);
-    const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
-    assert(restoredConfig.channel == updatedChannel);
-    assert(restoredConfig.cc == updatedCc);
+    storage.macroLibrary.setAvailable(false);
+    assert(core::state::macro::MacroWorkflow::setConfig(state, 0, updatedChannel, updatedCc));
+    assert(state.project.metadata.dirty);
+    assert(state.hasPendingProjectSessionSave());
 
     drainNotifications();
 
-    std::cout << "[PASS] test_macro_workspace_pending_save_survives_storage_unavailable\n";
+    std::cout << "[PASS] test_macro_config_changes_do_not_require_macro_library_storage\n";
 }
 
 void test_shared_track_pending_save_survives_settings_storage_unavailable() {
@@ -289,9 +243,7 @@ void test_shared_track_pending_save_survives_settings_storage_unavailable() {
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
@@ -304,9 +256,7 @@ void test_shared_track_pending_save_survives_settings_storage_unavailable() {
     }
 
     core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
                                     storage.macroLibrary,
-                                    storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
     assert(restored.currentSharedTrackEnabledMask() == 0x0003);
@@ -323,9 +273,7 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
@@ -339,16 +287,12 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
         storage.settings.setAvailable(false);
-        storage.macroWorkspace.setAvailable(false);
         storage.macroLibrary.setAvailable(false);
-        storage.sequencerWorkspace.setAvailable(false);
         storage.sequencerPatternLibrary.setAvailable(false);
         storage.sequencerSetLibrary.setAvailable(false);
 
@@ -368,9 +312,7 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
         );
 
         storage.settings.setAvailable(true);
-        storage.macroWorkspace.setAvailable(true);
         storage.macroLibrary.setAvailable(true);
-        storage.sequencerWorkspace.setAvailable(true);
         storage.sequencerPatternLibrary.setAvailable(true);
         storage.sequencerSetLibrary.setAvailable(true);
 
@@ -379,20 +321,16 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
     }
 
     core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
                                     storage.macroLibrary,
-                                    storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
 
     const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
-    assert(restoredConfig.channel == 3);
-    assert(restoredConfig.cc == 88);
-    assert(restored.sequencer.pattern.length.get() == 16);
-    assert(restored.sequencer.pattern.note[0] == 72);
-    assert(restored.sequencer.pattern.velocity[0] == 111);
-    assert(restored.sequencer.pattern.gate[0] == 75);
-    assert(restored.sequencer.pattern.isEnabled(0));
+    assert(restoredConfig.channel != 3 || restoredConfig.cc != 88);
+    assert(restored.sequencer.pattern.note[0] != 72 ||
+           restored.sequencer.pattern.velocity[0] != 111 ||
+           restored.sequencer.pattern.gate[0] != 75 ||
+           !restored.sequencer.pattern.isEnabled(0));
     assert(restored.currentSharedTrackEnabledMask() == 0x0003);
     assert(restored.currentSharedActiveTrack() == 1);
     assert(restored.dataManager.macroShortcutLeft.get() ==
@@ -409,9 +347,7 @@ void test_data_manager_shortcuts_persist_and_sanitize() {
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
@@ -447,9 +383,7 @@ void test_data_manager_shortcuts_persist_and_sanitize() {
     }
 
     core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
                                     storage.macroLibrary,
-                                    storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
 
@@ -468,9 +402,7 @@ void test_data_manager_command_execution_and_slot_probe() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
@@ -538,15 +470,13 @@ void test_data_manager_command_execution_and_slot_probe() {
     std::cout << "[PASS] test_data_manager_command_execution_and_slot_probe\n";
 }
 
-void test_sequencer_workspace_and_library_roundtrip() {
+void test_sequencer_library_roundtrip() {
     CoreStorages storage;
     storage.initAll();
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
@@ -601,38 +531,18 @@ void test_sequencer_workspace_and_library_roundtrip() {
         assert(erasedSetStatus == core::persistence::SlotLoadStatus::EMPTY);
     }
 
-    // Corrupt core settings storage only and verify sequencer workspace restores.
-    storage.settings.erase(0, storage.settings.capacity());
-
-    core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
-                                    storage.macroLibrary,
-                                    storage.sequencerWorkspace,
-                                    storage.sequencerPatternLibrary,
-                                    storage.sequencerSetLibrary);
-    assert(restored.sequencer.pattern.length.get() == 16);
-    assert(restored.sequencer.pattern.stepsPerBeat.get() == 4);
-    assert(restored.sequencer.pattern.midiChannel.get() == 3);
-    assert(restored.sequencer.pattern.isEnabled(0));
-    assert(restored.sequencer.pattern.note[0] == 64);
-    assert(restored.sequencer.pattern.velocity[0] == 120);
-    assert(restored.sequencer.pattern.gate[0] == 70);
-    assert(restored.sequencer.pattern.probability[0] == 42);
-
     drainNotifications();
 
-    std::cout << "[PASS] test_sequencer_workspace_and_library_roundtrip\n";
+    std::cout << "[PASS] test_sequencer_library_roundtrip\n";
 }
 
-void test_sequencer_workspace_persists_navigation_context() {
+void test_sequencer_navigation_context_does_not_boot_restore_without_session() {
     CoreStorages storage;
     storage.initAll();
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
@@ -646,20 +556,17 @@ void test_sequencer_workspace_persists_navigation_context() {
     }
 
     core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
                                     storage.macroLibrary,
-                                    storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
 
-    assert(restored.sequencer.pattern.length.get() == 24);
-    assert(restored.sequencer.focusedStep.get() == 10);
-    assert(restored.sequencer.page.get() == restored.sequencer.pageForStep(10));
-    assert(restored.sequencer.activeStepProperty.get() == core::state::sequencer::StepProperty::GATE);
+    assert(restored.sequencer.pattern.length.get() != 24);
+    assert(restored.sequencer.focusedStep.get() != 10 ||
+           restored.sequencer.activeStepProperty.get() != core::state::sequencer::StepProperty::GATE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_sequencer_workspace_persists_navigation_context\n";
+    std::cout << "[PASS] test_sequencer_navigation_context_does_not_boot_restore_without_session\n";
 }
 
 void test_sequencer_load_is_quantized_to_next_step_when_playing() {
@@ -667,9 +574,7 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -745,9 +650,7 @@ void test_sequencer_queued_pattern_load_preserves_graph_content() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -785,9 +688,7 @@ void test_direct_load_clears_stale_pending_quantized_apply() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -835,9 +736,7 @@ void test_sequencer_save_and_erase_keep_history() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -865,9 +764,7 @@ void test_sequencer_load_clears_history_after_apply() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -904,9 +801,7 @@ void test_queued_sequencer_load_clears_history_when_applied() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -944,9 +839,7 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -1009,9 +902,7 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -1060,17 +951,17 @@ int main() {
     std::cout << "CoreState persistence tests\n";
     std::cout << "==============================================\n\n";
 
-    test_workspace_survives_settings_storage_corruption();
+    test_project_state_does_not_boot_restore_from_removed_domain_store();
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_snapshots_runtime_values_without_manual_flush();
-    test_macro_config_changes_persist_after_flush_and_bump_revision();
-    test_macro_workspace_pending_save_survives_storage_unavailable();
+    test_macro_config_changes_mark_project_dirty_and_bump_revision();
+    test_macro_config_changes_do_not_require_macro_library_storage();
     test_shared_track_pending_save_survives_settings_storage_unavailable();
     test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data();
     test_data_manager_shortcuts_persist_and_sanitize();
     test_data_manager_command_execution_and_slot_probe();
-    test_sequencer_workspace_and_library_roundtrip();
-    test_sequencer_workspace_persists_navigation_context();
+    test_sequencer_library_roundtrip();
+    test_sequencer_navigation_context_does_not_boot_restore_without_session();
     test_sequencer_load_is_quantized_to_next_step_when_playing();
     test_sequencer_queued_pattern_load_preserves_graph_content();
     test_direct_load_clears_stale_pending_quantized_apply();

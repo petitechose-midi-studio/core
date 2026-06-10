@@ -250,7 +250,7 @@ Verified source seams:
 - `src/persistence/MacroPersistence.hpp:178-184` asserts macro payload layout.
 - `src/persistence/SequencerPersistence.hpp:15` defines sequencer persistence.
 - `src/persistence/SequencerPersistencePayloads.hpp:19` and `:41` define
-  pattern/workspace payloads.
+  pattern/project-sequencer payloads.
 - `src/persistence/StorageRecoveryMachine.hpp` defines the pure media recovery
   state machine. Platform code still owns backend reopen and hardware sampling.
 

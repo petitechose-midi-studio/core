@@ -24,9 +24,7 @@ void test_overlay_registration_supports_stacking_and_restore() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -62,9 +60,7 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -115,9 +111,7 @@ void test_core_state_update_expires_inline_feedback() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -145,9 +139,7 @@ void test_core_state_update_expires_status_bar_pulses() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -193,9 +185,7 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 

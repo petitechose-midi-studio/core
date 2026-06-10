@@ -84,9 +84,7 @@ struct MacroValueHarness {
 
     MacroValueHarness()
         : state(storages.settings,
-                storages.macroWorkspace,
                 storages.macroLibrary,
-                storages.sequencerWorkspace,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
         , inputBinding(eventBus, mockTimeMs)

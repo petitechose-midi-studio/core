@@ -53,9 +53,7 @@ struct MacroEditHarness {
 
     MacroEditHarness()
         : state(storage.settings,
-                storage.macroWorkspace,
                 storage.macroLibrary,
-                storage.sequencerWorkspace,
                 storage.sequencerPatternLibrary,
                 storage.sequencerSetLibrary)
         , services(core::handler::MacroEditDomainServices::fromCoreState(state))

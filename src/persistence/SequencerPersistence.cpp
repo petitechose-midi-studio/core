@@ -18,16 +18,10 @@ FLASHMEM core::app::ExtmemUniquePtr<sequencer_codec::EnvelopeBuffer> makeEnvelop
 }  // namespace
 
 FLASHMEM SequencerPersistence::SequencerPersistence(
-    oc::interface::IStorage& workspaceStorage,
     oc::interface::IStorage& patternLibraryStorage,
     oc::interface::IStorage& setLibraryStorage
 )
-    : workspace_store_(workspaceStorage,
-                       {.fileMagic = WORKSPACE_MAGIC,
-                        .domainVersion = WORKSPACE_DATA_VERSION,
-                        .slotCount = WORKSPACE_SLOT_COUNT,
-                        .slotPayloadSize = sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE})
-    , pattern_library_store_(patternLibraryStorage,
+    : pattern_library_store_(patternLibraryStorage,
                              {.fileMagic = PATTERN_LIBRARY_MAGIC,
                               .domainVersion = LIBRARY_DATA_VERSION,
                               .slotCount = PATTERN_LIBRARY_SLOT_COUNT,
@@ -43,73 +37,8 @@ FLASHMEM bool SequencerPersistence::init() {
 }
 
 FLASHMEM PersistenceWriteStatus SequencerPersistence::initStatus() {
-    if (!workspace_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
     if (!pattern_library_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
     if (!set_library_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
-    return syncWorkspaceJournal_();
-}
-
-FLASHMEM bool SequencerPersistence::loadWorkspace(
-    state::sequencer::SequencerTrackBankState& trackBank,
-    state::sequencer::SequencerState& sequencer
-) {
-    auto buffer = makeEnvelopeBuffer();
-    if (!buffer) return false;
-    const auto latest = workspace_store_.loadLatest(
-        buffer->bytes.data(),
-        sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
-    );
-    if (latest.status != SlotLoadStatus::OK) {
-        return false;
-    }
-
-    if (!sequencer_codec::applyWorkspaceEnvelope(
-            buffer->bytes.data(),
-            latest.metadata.payloadSize,
-            trackBank,
-            sequencer
-        )) {
-        return false;
-    }
-
-    next_workspace_counter_ = latest.metadata.saveCounter + 1;
-    next_workspace_slot_ =
-        static_cast<uint16_t>((latest.slotIndex + 1) % WORKSPACE_SLOT_COUNT);
-    return true;
-}
-
-FLASHMEM bool SequencerPersistence::saveWorkspace(
-    const state::sequencer::SequencerTrackBankState& trackBank,
-    const state::sequencer::SequencerState& sequencer
-) {
-    return saveWorkspaceStatus(trackBank, sequencer) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM PersistenceWriteStatus SequencerPersistence::saveWorkspaceStatus(
-    const state::sequencer::SequencerTrackBankState& trackBank,
-    const state::sequencer::SequencerState& sequencer
-) {
-    auto buffer = makeEnvelopeBuffer();
-    if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
-    const auto encoded = sequencer_codec::fillWorkspaceEnvelope(
-        trackBank,
-        sequencer,
-        buffer->bytes.data(),
-        sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
-    );
-    if (!encoded.ok) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
-
-    const auto status = workspace_store_.saveSlotStatus(
-        next_workspace_slot_,
-        buffer->bytes.data(),
-        encoded.size,
-        next_workspace_counter_
-    );
-    if (status != PersistenceWriteStatus::OK) return status;
-
-    next_workspace_counter_ += 1;
-    next_workspace_slot_ =
-        static_cast<uint16_t>((next_workspace_slot_ + 1) % WORKSPACE_SLOT_COUNT);
     return PersistenceWriteStatus::OK;
 }
 
@@ -263,24 +192,6 @@ FLASHMEM bool SequencerPersistence::eraseSetSlot(uint8_t slotIndex) {
 FLASHMEM PersistenceWriteStatus SequencerPersistence::eraseSetSlotStatus(uint8_t slotIndex) {
     if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
     return set_library_store_.eraseSlotStatus(slotIndex);
-}
-
-FLASHMEM PersistenceWriteStatus SequencerPersistence::syncWorkspaceJournal_() {
-    auto buffer = makeEnvelopeBuffer();
-    if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
-    const auto latest = workspace_store_.loadLatest(
-        buffer->bytes.data(),
-        sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
-    );
-    if (latest.status == SlotLoadStatus::OK) {
-        next_workspace_counter_ = latest.metadata.saveCounter + 1;
-        next_workspace_slot_ =
-            static_cast<uint16_t>((latest.slotIndex + 1) % WORKSPACE_SLOT_COUNT);
-    } else {
-        next_workspace_counter_ = 1;
-        next_workspace_slot_ = 0;
-    }
-    return PersistenceWriteStatus::OK;
 }
 
 }  // namespace core::persistence

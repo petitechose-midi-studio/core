@@ -82,27 +82,6 @@ void CoreStateLifecycle::updateAutoPersist_(CoreState& state) {
     }
 }
 
-void CoreStateLifecycle::updatePendingMacroWorkspacePersist_(CoreState& state) {
-    if (!state.macroDomain_.workspacePersistPending ||
-        state.macroDomain_.workspacePersistTimestampMs == 0) {
-        return;
-    }
-
-    const uint32_t nowMs = oc::time::millis();
-    if ((nowMs - state.macroDomain_.workspacePersistTimestampMs) <
-        MacroDomainState::WORKSPACE_MUTATION_SAVE_DELAY_MS) {
-        return;
-    }
-
-    if (state.macroDomain_.lastInteractionTimestampMs != 0 &&
-        (nowMs - state.macroDomain_.lastInteractionTimestampMs) <
-            MacroDomainState::WORKSPACE_MUTATION_SAVE_DELAY_MS) {
-        return;
-    }
-
-    state.persistMacroWorkspaceNow_();
-}
-
 void CoreStateLifecycle::updatePendingSharedTrackPersist_(CoreState& state) {
     if (!state.sharedTrackPersistPending_ || state.sharedTrackPersistTimestampMs_ == 0) {
         return;
@@ -123,11 +102,6 @@ FLASHMEM void CoreStateLifecycle::flushAutoPersist_(CoreState& state) {
     if (state.sequencerDomain_.autoPersist) {
         state.sequencerDomain_.autoPersist->flush();
     }
-}
-
-FLASHMEM void CoreStateLifecycle::flushPendingMacroWorkspacePersist_(CoreState& state) {
-    if (!state.macroDomain_.workspacePersistPending) return;
-    state.persistMacroWorkspaceNow_();
 }
 
 FLASHMEM void CoreStateLifecycle::flushPendingSharedTrackPersist_(CoreState& state) {
@@ -162,7 +136,6 @@ FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
         state.dataManager,
         state.settings,
     });
-    state.persistMacroWorkspaceNow_();
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroEdit.reset();
     state.macroUi.reset();
@@ -179,7 +152,6 @@ FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
         state.sequencerDomain_.pendingApply->valid = false;
         clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
     }
-    state.persistSequencerWorkspace_();
 }
 
 FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
@@ -207,13 +179,11 @@ void CoreStateLifecycle::update(CoreState& state) {
     state.sequencer.updateUi(nowMs);
     state.updateSequencerPatternHistoryCoalescing(nowMs);
     updateAutoPersist_(state);
-    updatePendingMacroWorkspacePersist_(state);
     updatePendingSharedTrackPersist_(state);
 }
 
 FLASHMEM void CoreStateLifecycle::flush(CoreState& state) {
     flushAutoPersist_(state);
-    flushPendingMacroWorkspacePersist_(state);
     flushPendingSharedTrackPersist_(state);
 }
 
@@ -276,8 +246,6 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 
     flushAutoPersist_(state);
-    state.persistMacroWorkspaceNow_();
-    state.persistSequencerWorkspace_();
 }
 
 FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
@@ -385,7 +353,6 @@ void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
     state.clearSequencerHistory();
     state.sequencerDomain_.pendingApply->valid = false;
     clearCapturedGraphs(*state.sequencerDomain_.pendingApply);
-    state.persistSequencerWorkspace_();
 }
 
 }  // namespace core::state

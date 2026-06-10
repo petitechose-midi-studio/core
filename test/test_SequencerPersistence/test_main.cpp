@@ -29,18 +29,6 @@ bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSe
 }
 
 #pragma pack(push, 1)
-struct SlotFileHeaderRaw {
-    uint32_t magic = 0;
-    uint8_t formatVersion = 0;
-    uint8_t domainVersion = 0;
-    uint16_t slotCount = 0;
-    uint16_t slotPayloadSize = 0;
-    uint16_t reserved0 = 0;
-    uint32_t layoutCrc32 = 0;
-    uint32_t reserved1 = 0;
-    uint32_t reserved2 = 0;
-};
-
 struct EnvelopeHeaderRaw {
     uint32_t magic = 0;
     uint8_t version = 0;
@@ -60,7 +48,6 @@ struct EnvelopeSectionHeaderRaw {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(SlotFileHeaderRaw) == 24, "Unexpected slot file header size");
 static_assert(sizeof(EnvelopeHeaderRaw) == 12, "Unexpected envelope header size");
 static_assert(sizeof(EnvelopeSectionHeaderRaw) == 10, "Unexpected envelope section header size");
 
@@ -69,19 +56,6 @@ constexpr uint16_t kEnvelopeSectionUnknownFuture = 0x7F00;
 constexpr uint16_t kStepNodeRecordSize = 14;
 constexpr uint16_t kStepNodeChildSequenceOffset = 10;
 constexpr uint16_t kStepNodeCycleSetOffset = 12;
-
-uint32_t workspaceSlotPayloadAddress(MemoryStorage& storage, uint16_t slotIndex) {
-    SlotFileHeaderRaw header{};
-    const size_t readBytes = storage.read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header));
-    assert(readBytes == sizeof(header));
-    assert(slotIndex < header.slotCount);
-
-    constexpr uint32_t SLOT_HEADER_SIZE = 16;
-    const uint32_t slotSize = SLOT_HEADER_SIZE + header.slotPayloadSize;
-    return static_cast<uint32_t>(sizeof(header)) +
-           static_cast<uint32_t>(slotIndex) * slotSize +
-           SLOT_HEADER_SIZE;
-}
 
 void configurePattern(core::state::sequencer::SequencerState& sequencer,
                       uint8_t length,
@@ -240,165 +214,13 @@ const EnvelopeSectionHeaderRaw* findEnvelopeSection(const uint8_t* data,
     return nullptr;
 }
 
-void test_workspace_roundtrip() {
-    MemoryStorage workspaceStorage;
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
-    workspaceStorage.init();
-    patternStorage.init();
-    setStorage.init();
-
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
-    assert(persistence.init());
-
-    core::state::sequencer::SequencerState source;
-    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 96, 4, 2, 73, core::state::sequencer::StepProperty::VELOCITY);
-    prepareTrackBank(sourceTrackBank, source);
-    assert(persistence.saveWorkspace(sourceTrackBank, source));
-
-    core::state::sequencer::SequencerState loaded;
-    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
-    loaded.reset();
-    loadedTrackBank.reset();
-    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
-
-    assertPatternEquals(loaded, 96, 4, 2);
-    assert(loaded.focusedStep.get() == 73);
-    assert(loaded.page.get() == loaded.pageForStep(73));
-    assert(loaded.activeStepProperty.get() == core::state::sequencer::StepProperty::VELOCITY);
-
-    std::cout << "[PASS] test_workspace_roundtrip\n";
-}
-
-void test_workspace_load_latest_after_multiple_saves() {
-    MemoryStorage workspaceStorage;
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
-    workspaceStorage.init();
-    patternStorage.init();
-    setStorage.init();
-
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
-    assert(persistence.init());
-
-    core::state::sequencer::SequencerState first;
-    core::state::sequencer::SequencerTrackBankState firstTrackBank;
-    configurePattern(first, 8, 2, 1, 3, core::state::sequencer::StepProperty::NOTE);
-    prepareTrackBank(firstTrackBank, first);
-    assert(persistence.saveWorkspace(firstTrackBank, first));
-
-    core::state::sequencer::SequencerState second;
-    core::state::sequencer::SequencerTrackBankState secondTrackBank;
-    configurePattern(second, 96, 8, 7, 70, core::state::sequencer::StepProperty::GATE);
-    prepareTrackBank(secondTrackBank, second);
-    assert(persistence.saveWorkspace(secondTrackBank, second));
-
-    core::state::sequencer::SequencerState loaded;
-    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
-    loaded.reset();
-    loadedTrackBank.reset();
-    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
-
-    assertPatternEquals(loaded, 96, 8, 7);
-    assert(loaded.focusedStep.get() == 70);
-    assert(loaded.activeStepProperty.get() == core::state::sequencer::StepProperty::GATE);
-
-    std::cout << "[PASS] test_workspace_load_latest_after_multiple_saves\n";
-}
-
-void test_workspace_falls_back_when_latest_slot_is_corrupted() {
-    MemoryStorage workspaceStorage;
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
-    workspaceStorage.init();
-    patternStorage.init();
-    setStorage.init();
-
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
-    assert(persistence.init());
-
-    core::state::sequencer::SequencerState first;
-    core::state::sequencer::SequencerTrackBankState firstTrackBank;
-    configurePattern(first, 8, 2, 1, 3, core::state::sequencer::StepProperty::NOTE);
-    prepareTrackBank(firstTrackBank, first);
-    assert(persistence.saveWorkspace(firstTrackBank, first));
-
-    core::state::sequencer::SequencerState second;
-    core::state::sequencer::SequencerTrackBankState secondTrackBank;
-    configurePattern(second, 96, 8, 7, 70, core::state::sequencer::StepProperty::GATE);
-    prepareTrackBank(secondTrackBank, second);
-    assert(persistence.saveWorkspace(secondTrackBank, second));
-
-    // Two-slot workspace journal: second save lands in slot 1.
-    const uint32_t latestPayloadAddress =
-        workspaceSlotPayloadAddress(workspaceStorage, 1) +
-        static_cast<uint32_t>(offsetof(
-            core::persistence::sequencer_codec::WorkspacePayload,
-            tracks
-        ));
-    const uint8_t badByte = 0x00;
-    const size_t written = workspaceStorage.write(latestPayloadAddress, &badByte, 1);
-    assert(written == 1);
-
-    core::state::sequencer::SequencerState loaded;
-    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
-    loaded.reset();
-    loadedTrackBank.reset();
-    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
-
-    // Must fall back to older valid slot (first save).
-    assertPatternEquals(loaded, 8, 2, 1);
-    assert(loaded.focusedStep.get() == 3);
-    assert(loaded.activeStepProperty.get() == core::state::sequencer::StepProperty::NOTE);
-
-    std::cout << "[PASS] test_workspace_falls_back_when_latest_slot_is_corrupted\n";
-}
-
-void test_workspace_masks_enabled_bits_outside_length() {
-    MemoryStorage workspaceStorage;
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
-    workspaceStorage.init();
-    patternStorage.init();
-    setStorage.init();
-
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
-    assert(persistence.init());
-
-    core::state::sequencer::SequencerState source;
-    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    source.reset();
-    source.pattern.length.set(8);
-    source.pattern.enabledMask.set(StepBitMask128::fromLower64(
-        (1ULL << 0) | (1ULL << 7) | (1ULL << 9) | (1ULL << 15)
-    ));
-
-    prepareTrackBank(sourceTrackBank, source);
-    assert(persistence.saveWorkspace(sourceTrackBank, source));
-
-    core::state::sequencer::SequencerState loaded;
-    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
-    loaded.reset();
-    loadedTrackBank.reset();
-    assert(persistence.loadWorkspace(loadedTrackBank, loaded));
-
-    const uint64_t expectedMask = (1ULL << 0) | (1ULL << 7);
-    assert(loaded.pattern.length.get() == 8);
-    assert(loaded.pattern.enabledMask.get().lower64() == expectedMask);
-
-    std::cout << "[PASS] test_workspace_masks_enabled_bits_outside_length\n";
-}
-
 void test_pattern_library_save_load_erase() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
@@ -419,14 +241,12 @@ void test_pattern_library_save_load_erase() {
 }
 
 void test_pattern_library_graph_roundtrip() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
@@ -444,14 +264,12 @@ void test_pattern_library_graph_roundtrip() {
 }
 
 void test_pattern_library_flat_pattern_does_not_allocate_graph() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
@@ -644,14 +462,12 @@ void test_pattern_envelope_sanitizes_broken_graph_links() {
 }
 
 void test_pattern_library_masks_enabled_bits_outside_length() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
@@ -676,14 +492,12 @@ void test_pattern_library_masks_enabled_bits_outside_length() {
 }
 
 void test_set_library_save_load_erase() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
@@ -708,14 +522,12 @@ void test_set_library_save_load_erase() {
 }
 
 void test_set_library_graph_roundtrip_for_active_and_bank_tracks() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
@@ -742,14 +554,12 @@ void test_set_library_graph_roundtrip_for_active_and_bank_tracks() {
 }
 
 void test_library_bounds() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     core::state::sequencer::SequencerState sequencer;
@@ -776,15 +586,13 @@ void test_library_bounds() {
     std::cout << "[PASS] test_library_bounds\n";
 }
 
-void test_scale_settings_roundtrip_across_workspace_pattern_and_set() {
-    MemoryStorage workspaceStorage;
+void test_scale_settings_roundtrip_across_pattern_and_set() {
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.init());
 
     const StepSequencerScaleSettings projectScale{
@@ -809,20 +617,8 @@ void test_scale_settings_roundtrip_across_workspace_pattern_and_set() {
     prepareTrackBank(sourceTrackBank, source);
     assert(sourceTrackBank.setProjectScaleSettings(projectScale));
 
-    assert(persistence.saveWorkspace(sourceTrackBank, source));
     assert(persistence.savePatternSlot(2, source));
     assert(persistence.saveSetSlot(3, sourceTrackBank, source));
-
-    core::state::sequencer::SequencerState loadedWorkspace;
-    core::state::sequencer::SequencerTrackBankState loadedWorkspaceTrackBank;
-    loadedWorkspace.reset();
-    loadedWorkspaceTrackBank.reset();
-    assert(persistence.loadWorkspace(loadedWorkspaceTrackBank, loadedWorkspace));
-    assert(sameScale(loadedWorkspaceTrackBank.projectScaleSettings(), projectScale));
-    assert(loadedWorkspace.pattern.scalePolicy == core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
-    assert(sameScale(loadedWorkspace.pattern.scaleOverride, overrideScale));
-    assert(loadedWorkspace.pattern.pitchEditMode ==
-           core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
 
     core::state::sequencer::SequencerState loadedPattern;
     loadedPattern.reset();
@@ -844,18 +640,16 @@ void test_scale_settings_roundtrip_across_workspace_pattern_and_set() {
     assert(loadedSet.pattern.pitchEditMode ==
            core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
 
-    std::cout << "[PASS] test_scale_settings_roundtrip_across_workspace_pattern_and_set\n";
+    std::cout << "[PASS] test_scale_settings_roundtrip_across_pattern_and_set\n";
 }
 
 void test_write_status_reports_commit_failure_and_out_of_range() {
-    MemoryStorage workspaceStorage;
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
-    workspaceStorage.init();
     patternStorage.init();
     setStorage.init();
 
-    core::persistence::SequencerPersistence persistence(workspaceStorage, patternStorage, setStorage);
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
     assert(persistence.initStatus() == core::persistence::PersistenceWriteStatus::OK);
 
     core::state::sequencer::SequencerState sequencer;
@@ -882,11 +676,6 @@ int main() {
     std::cout << "==============================================\n";
     std::cout << "SequencerPersistence tests\n";
     std::cout << "==============================================\n\n";
-
-    test_workspace_roundtrip();
-    test_workspace_load_latest_after_multiple_saves();
-    test_workspace_falls_back_when_latest_slot_is_corrupted();
-    test_workspace_masks_enabled_bits_outside_length();
     test_pattern_library_save_load_erase();
     test_pattern_library_graph_roundtrip();
     test_pattern_library_flat_pattern_does_not_allocate_graph();
@@ -898,7 +687,7 @@ int main() {
     test_set_library_save_load_erase();
     test_set_library_graph_roundtrip_for_active_and_bank_tracks();
     test_library_bounds();
-    test_scale_settings_roundtrip_across_workspace_pattern_and_set();
+    test_scale_settings_roundtrip_across_pattern_and_set();
     test_write_status_reports_commit_failure_and_out_of_range();
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

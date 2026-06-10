@@ -16,9 +16,9 @@ namespace core::state::macro {
  * Macro domain workflow for runtime/page synchronization and config edits.
  *
  * This is the mutation boundary for switching page/track, applying MIDI CC
- * config changes, and syncing runtime values before persistence. Narrow
+ * config changes, and syncing runtime values before project snapshots. Narrow
  * overloads are used for pure macro state projection; `CoreState` overloads are
- * kept only where the workflow coordinates flush, persistence, status,
+ * kept only where the workflow coordinates flush, project mutation, status,
  * revision, or shared-track side effects.
  */
 constexpr uint8_t kMacroConfigDirtyAll = 0xFF;

@@ -21,9 +21,9 @@ FLASHMEM void flushAutoPersist(Operations operations) {
     }
 }
 
-FLASHMEM void requestPersist(Operations operations) {
-    if (operations.requestPersist != nullptr) {
-        operations.requestPersist(operations.context);
+FLASHMEM void markProjectMutated(Operations operations) {
+    if (operations.markProjectMutated != nullptr) {
+        operations.markProjectMutated(operations.context);
     }
 }
 
@@ -40,7 +40,7 @@ FLASHMEM void syncActivePagePresentation(StateRefs state) {
 FLASHMEM void finalizeStructureChange(StateRefs state, Operations operations) {
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
     syncActivePagePresentation(state);
-    requestPersist(operations);
+    markProjectMutated(operations);
 }
 
 FLASHMEM void applyPageStructureMutation(StateRefs state,
@@ -73,7 +73,7 @@ FLASHMEM void applyTrackStructureState(StateRefs state,
 
 FLASHMEM void persistConfigChange(StateRefs state, Operations operations) {
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
-    requestPersist(operations);
+    markProjectMutated(operations);
 }
 
 FLASHMEM void flushAutoPersistFromCoreState(void* context) {
@@ -82,10 +82,10 @@ FLASHMEM void flushAutoPersistFromCoreState(void* context) {
     state->flushAutoPersist();
 }
 
-FLASHMEM void requestPersistFromCoreState(void* context) {
+FLASHMEM void markProjectMutatedFromCoreState(void* context) {
     auto* state = static_cast<core::state::CoreState*>(context);
     if (state == nullptr) return;
-    state->requestMacroWorkspacePersist();
+    state->markProjectMutated();
 }
 
 FLASHMEM bool setSharedTrackStateFromCoreState(void* context, uint16_t enabledMask, uint8_t activeTrack) {
@@ -134,7 +134,7 @@ FLASHMEM MacroStructureDomainServices MacroStructureDomainServices::fromCoreStat
         Operations{
             &state,
             flushAutoPersistFromCoreState,
-            requestPersistFromCoreState,
+            markProjectMutatedFromCoreState,
             setSharedTrackStateFromCoreState,
             switchToPageFromCoreState,
             switchToTrackFromCoreState,

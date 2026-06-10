@@ -14,14 +14,6 @@ namespace core::persistence {
  * store validates headers and CRCs, writes slots through a WRITING->VALID state
  * transition, and can recover the latest valid slot by save counter.
  */
-enum class PersistenceDomain : uint8_t {
-    MACRO_WORKSPACE = 1,
-    MACRO_LIBRARY = 2,
-    SEQUENCER_WORKSPACE = 3,
-    SEQUENCER_PATTERN_LIBRARY = 4,
-    SEQUENCER_SET_LIBRARY = 5,
-};
-
 enum class SlotLoadStatus : uint8_t {
     OK = 0,
     EMPTY,

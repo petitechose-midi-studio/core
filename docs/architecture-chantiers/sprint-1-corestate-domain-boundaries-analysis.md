@@ -85,7 +85,7 @@ Sprint 0 docs:
 Source checks used in this pass:
 
 - `rg -n "CoreState&|CoreState\\*|fromCoreState\\(|StateRefs" src test`
-- `rg -n "setSharedTrackState|requestMacroWorkspacePersist|persistSequencerWorkspace|queuePendingSequencer" src test`
+- `rg -n "setSharedTrackState|markProjectMutated|markSequencerProjectMutated|queuePendingSequencer" src test`
 - Targeted reads of `CoreState`, macro workflows, sequencer persistence, shared
   track services, standalone assembly, runtime, UI projection, and tests.
 - Current native verification entry point: `ms test core`.
@@ -148,7 +148,7 @@ verified access map instead of a vague "CoreState is broad" claim.
 | `src/state/CoreStateLifecycle.*` | Lifecycle authority | Legitimate privileged lifecycle path. | `src/state/CoreStateLifecycle.hpp:17-39`, `src/state/CoreStateLifecycle.cpp:14-198` |
 | `src/state/macro/MacroWorkflow.*` | Macro cross-domain workflow | Legitimate where it coordinates pages, status label, config revision, shared track, and persistence request. Pure runtime/page projection now uses narrow refs. | `src/state/macro/MacroWorkflow.hpp`, `src/state/macro/MacroWorkflow.cpp` |
 | `src/state/macro/MacroPersistenceWorkflow.*` | Persistence workflow | Legitimate persistence boundary. Defer structural changes to persistence sprint unless Sprint 1 only clarifies contracts. | `src/state/macro/MacroPersistenceWorkflow.hpp:21-23`, `src/state/macro/MacroPersistenceWorkflow.cpp:11-41` |
-| `src/state/sequencer/SequencerPersistenceWorkflow.*` | Persistence workflow / deferred apply | Legitimate broad workflow because it uses persistence readiness, playing state, pending apply, track bank snapshots, shared track state, and workspace persistence. | `src/state/sequencer/SequencerPersistenceWorkflow.hpp:21-31`, `src/state/sequencer/SequencerPersistenceWorkflow.cpp:12-138` |
+| `src/state/sequencer/SequencerPersistenceWorkflow.*` | Persistence workflow / deferred apply | Legitimate broad workflow because it uses persistence readiness, playing state, pending apply, track bank snapshots, shared track state, and project mutation. | `src/state/sequencer/SequencerPersistenceWorkflow.hpp:21-31`, `src/state/sequencer/SequencerPersistenceWorkflow.cpp:12-138` |
 | `src/state/DataManagerWorkflow.*` | Workflow facade | Positive pattern, now narrowed. It exposes `StateRefs` plus typed operations and has no `CoreState` overloads. | `src/state/DataManagerWorkflow.hpp`, `src/state/DataManagerWorkflow.cpp` |
 | `src/state/DataManagerCommandExecutor.*` | Persistence command bridge | Legitimate but broad. It dispatches Data Manager commands to macro/sequencer persistence workflows. | `src/state/DataManagerCommandExecutor.hpp:21-22`, `src/state/DataManagerCommandExecutor.cpp:25-140` |
 | `src/state/DataManagerShortcutPersistence.*` | Settings shortcut bridge | Narrowed. It persists shortcut refs through `ShortcutStateRefs`; `CoreState` overloads were removed. | `src/state/DataManagerShortcutPersistence.hpp`, `src/state/DataManagerShortcutPersistence.cpp` |
@@ -184,7 +184,7 @@ verified access map instead of a vague "CoreState is broad" claim.
 3. Domain services can be both clean facades and broad mutation bridges.
    Evidence: `MacroStructureDomainServices` owns structure commands but also
    flushes persistence, mutates pages, updates shared track, updates status
-   presentation, bumps config revision, and requests workspace persistence in
+   presentation, bumps config revision, and marks the project dirty in
    `src/handler/macro/MacroStructureDomainServices.cpp:18-52` and
    `src/handler/macro/MacroStructureDomainServices.cpp:85-271`.
    Risk: the label "domain service" can hide whether a service is pure domain
@@ -247,9 +247,9 @@ verified access map instead of a vague "CoreState is broad" claim.
 
 2. Persistence and SD writes should not be accidentally made more eager.
    Evidence: macro structure services call `flushAutoPersist`,
-   `requestMacroWorkspacePersist`, and shared-track persistence paths
-   (`src/handler/macro/MacroStructureDomainServices.cpp:24-52`,
-   `src/state/CoreState.cpp:233-289`).
+   project mutation hooks, and shared-track persistence paths
+   (`src/handler/macro/MacroStructureDomainServices.cpp`,
+   `src/state/CoreState.cpp`).
    Risk: moving code without preserving debounce boundaries can increase write
    pressure.
    Mitigation: treat persistence behavior as observable runtime behavior, even
@@ -281,8 +281,8 @@ verified access map instead of a vague "CoreState is broad" claim.
 These started as inventory candidates; the items below now reflect the current
 implementation status.
 
-- Multiple code paths request the same macro post-mutation effects: flush or
-  persist workspace, update active page presentation, sync runtime, and bump
+- Multiple code paths request the same macro post-mutation effects: flush,
+  mark the project dirty, update active page presentation, sync runtime, and bump
   config revision. Evidence: `MacroWorkflow::switchToPage`,
   `MacroWorkflow::switchToTrack`, and `MacroStructureDomainServices` helper
   functions.
@@ -419,7 +419,7 @@ Gate 5: workflow boundary review.
 
 - Status: complete for macro and Data Manager workflows. Persistence workflows
   remain broad by design because they coordinate storage readiness, save/load,
-  deferred sequencer apply, shared-track refresh, and workspace persistence.
+  deferred sequencer apply, shared-track refresh, and project mutation.
 - Keep broad workflow methods only when they coordinate a named invariant:
   persistence, shared track, deferred sequencer apply, status projection, config
   revision, or lifecycle.

@@ -53,9 +53,7 @@ struct MacroPerformanceHarness {
 
     MacroPerformanceHarness()
         : state(storage.settings,
-                storage.macroWorkspace,
                 storage.macroLibrary,
-                storage.sequencerWorkspace,
                 storage.sequencerPatternLibrary,
                 storage.sequencerSetLibrary)
         , performanceServices(core::handler::MacroPerformanceDomainServices::fromCoreState(state))

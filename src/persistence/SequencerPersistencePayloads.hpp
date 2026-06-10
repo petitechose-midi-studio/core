@@ -51,7 +51,7 @@ struct PatternPayload {
     std::array<uint8_t, PERSISTED_PATTERN_STEPS> probability{};
 };
 
-struct WorkspaceTrackPayload {
+struct ProjectSequencerTrackPayload {
     PatternPayload pattern{};
     uint8_t page = 0;
     uint8_t focusedStep = 0;
@@ -59,7 +59,7 @@ struct WorkspaceTrackPayload {
     uint8_t reserved0 = 0;
 };
 
-struct WorkspacePayload {
+struct ProjectSequencerPayload {
     uint8_t projectScaleRoot = 0;
     uint8_t projectScaleType = static_cast<uint8_t>(
         oc::note::sequencer::StepSequencerScaleType::Chromatic
@@ -68,7 +68,7 @@ struct WorkspacePayload {
         oc::note::sequencer::StepSequencerScaleConstraintMode::Free
     );
     uint8_t reserved0 = 0;
-    std::array<WorkspaceTrackPayload, PERSISTED_TRACK_COUNT> tracks{};
+    std::array<ProjectSequencerTrackPayload, PERSISTED_TRACK_COUNT> tracks{};
 };
 
 struct SetPayload {
@@ -89,15 +89,16 @@ struct SetPayload {
 
 static_assert(std::is_trivially_copyable_v<PatternPayload>,
               "PatternPayload must be trivially copyable");
-static_assert(std::is_trivially_copyable_v<WorkspaceTrackPayload>,
-              "WorkspaceTrackPayload must be trivially copyable");
-static_assert(std::is_trivially_copyable_v<WorkspacePayload>,
-              "WorkspacePayload must be trivially copyable");
+static_assert(std::is_trivially_copyable_v<ProjectSequencerTrackPayload>,
+              "ProjectSequencerTrackPayload must be trivially copyable");
+static_assert(std::is_trivially_copyable_v<ProjectSequencerPayload>,
+              "ProjectSequencerPayload must be trivially copyable");
 static_assert(std::is_trivially_copyable_v<SetPayload>,
               "SetPayload must be trivially copyable");
 
 inline constexpr uint16_t PATTERN_PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(PatternPayload));
-inline constexpr uint16_t WORKSPACE_PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(WorkspacePayload));
+inline constexpr uint16_t PROJECT_SEQUENCER_PAYLOAD_SIZE =
+    static_cast<uint16_t>(sizeof(ProjectSequencerPayload));
 inline constexpr uint16_t SET_PAYLOAD_SIZE = static_cast<uint16_t>(sizeof(SetPayload));
 
 }  // namespace core::persistence::sequencer_codec

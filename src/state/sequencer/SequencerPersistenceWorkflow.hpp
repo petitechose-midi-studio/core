@@ -14,8 +14,8 @@ namespace core::state::sequencer {
  * CoreState-facing sequencer persistence workflow.
  *
  * Loads while playing are staged through CoreState pending-apply snapshots.
- * Stopped loads apply immediately, sync the shared track state, and persist the
- * workspace.
+ * Stopped loads apply immediately, sync the shared track state, and mark the
+ * current project as mutated.
  */
 struct SequencerPersistenceWorkflow {
     static bool savePatternSlot(CoreState& state, uint8_t slotIndex);

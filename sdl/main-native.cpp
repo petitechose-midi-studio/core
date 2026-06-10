@@ -38,11 +38,9 @@
 
 namespace {
 
-constexpr std::array<const char*, 6> kStorageFiles = {
+constexpr std::array<const char*, 4> kStorageFiles = {
     "./macros.bin",
-    "./macro-workspace.bin",
     "./macro-library.bin",
-    "./sequencer-workspace.bin",
     "./sequencer-pattern-library.bin",
     "./sequencer-set-library.bin",
 };
@@ -81,24 +79,18 @@ int main(int argc, char** argv) {
 
     // 2. Create storages and state (specific to core)
     oc::impl::FileStorage settingsStorage(kStorageFiles[0]);
-    oc::impl::FileStorage macroWorkspaceStorage(kStorageFiles[1]);
-    oc::impl::FileStorage macroLibraryStorage(kStorageFiles[2]);
-    oc::impl::FileStorage sequencerWorkspaceStorage(kStorageFiles[3]);
-    oc::impl::FileStorage sequencerPatternLibraryStorage(kStorageFiles[4]);
-    oc::impl::FileStorage sequencerSetLibraryStorage(kStorageFiles[5]);
+    oc::impl::FileStorage macroLibraryStorage(kStorageFiles[1]);
+    oc::impl::FileStorage sequencerPatternLibraryStorage(kStorageFiles[2]);
+    oc::impl::FileStorage sequencerSetLibraryStorage(kStorageFiles[3]);
     if (!settingsStorage.init() ||
-        !macroWorkspaceStorage.init() ||
         !macroLibraryStorage.init() ||
-        !sequencerWorkspaceStorage.init() ||
         !sequencerPatternLibraryStorage.init() ||
         !sequencerSetLibraryStorage.init()) {
         fprintf(stderr, "Failed to open storage files\n");
         return 1;
     }
     core::state::CoreState coreState(settingsStorage,
-                                     macroWorkspaceStorage,
                                      macroLibraryStorage,
-                                     sequencerWorkspaceStorage,
                                      sequencerPatternLibraryStorage,
                                      sequencerSetLibraryStorage);
 

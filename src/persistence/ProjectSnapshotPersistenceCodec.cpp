@@ -123,7 +123,7 @@ FLASHMEM bool buildSequencerEnvelope(
         return false;
     }
 
-    const auto encoded = sequencer_codec::fillWorkspaceEnvelope(
+    const auto encoded = sequencer_codec::fillProjectSequencerEnvelope(
         *bank,
         *active,
         out.bytes.data(),
@@ -171,7 +171,7 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
 
     bank->syncSharedTrackState(target.sharedTrackEnabledMask, target.sharedTrackActive);
 
-    if (!sequencer_codec::applyWorkspaceEnvelope(
+    if (!sequencer_codec::applyProjectSequencerEnvelope(
             chunk->data,
             static_cast<uint16_t>(chunk->size),
             *bank,

@@ -42,22 +42,16 @@ bool setTrackConfigsImpl(
     state.configRevision.set(
         core::state::macro::nextMacroConfigRevision(state.configRevision.get())
     );
-    if (operations.requestPersist != nullptr) {
-        operations.requestPersist(operations.context);
+    if (operations.markProjectMutated != nullptr) {
+        operations.markProjectMutated(operations.context);
     }
     return true;
 }
 
-void noteInteractionFromCoreState(void* context) {
+void markProjectMutatedFromCoreState(void* context) {
     auto* state = static_cast<core::state::CoreState*>(context);
     if (state == nullptr) return;
-    state->noteMacroInteraction();
-}
-
-void requestPersistFromCoreState(void* context) {
-    auto* state = static_cast<core::state::CoreState*>(context);
-    if (state == nullptr) return;
-    state->requestMacroWorkspacePersist();
+    state->markProjectMutated();
 }
 
 bool setConfigFromCoreState(void* context, uint8_t index, uint8_t channel, uint8_t cc) {
@@ -101,8 +95,7 @@ MacroPerformanceDomainServices MacroPerformanceDomainServices::fromCoreState(
         },
         Operations{
             &state,
-            noteInteractionFromCoreState,
-            requestPersistFromCoreState,
+            markProjectMutatedFromCoreState,
             setConfigFromCoreState,
             setTrackChannelFromCoreState,
             switchToPageFromCoreState,
@@ -115,9 +108,6 @@ float MacroPerformanceDomainServices::runtimeValue(uint8_t index) const {
 }
 
 void MacroPerformanceDomainServices::setRuntimeValue(uint8_t index, float value) const {
-    if (operations_.noteInteraction != nullptr) {
-        operations_.noteInteraction(operations_.context);
-    }
     core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, value);
 }
 

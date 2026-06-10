@@ -327,12 +327,11 @@ FLASHMEM shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& st
 
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
-FLASHMEM SequencerDomainState::SequencerDomainState(oc::interface::IStorage& workspaceStorage,
-                                                    oc::interface::IStorage& patternLibraryStorage,
+FLASHMEM SequencerDomainState::SequencerDomainState(oc::interface::IStorage& patternLibraryStorage,
                                                     oc::interface::IStorage& setLibraryStorage)
     : editor(createSequencerEditorState())
     , tracks(createSequencerTrackBankState())
-    , persistence(workspaceStorage, patternLibraryStorage, setLibraryStorage)
+    , persistence(patternLibraryStorage, setLibraryStorage)
     , pendingApply(nullptr) {
     if (!editor) {
         OC_LOG_ERROR("[CoreState] Failed to allocate sequencer editor state");
@@ -357,14 +356,11 @@ FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply
 }
 
 FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
-                              oc::interface::IStorage& macroWorkspaceStorage,
                               oc::interface::IStorage& macroLibraryStorage,
-                              oc::interface::IStorage& sequencerWorkspaceStorage,
                               oc::interface::IStorage& sequencerPatternLibraryStorage,
                               oc::interface::IStorage& sequencerSetLibraryStorage)
-    : macroDomain_(macroWorkspaceStorage, macroLibraryStorage)
-    , sequencerDomain_(sequencerWorkspaceStorage,
-                       sequencerPatternLibraryStorage,
+    : macroDomain_(macroLibraryStorage)
+    , sequencerDomain_(sequencerPatternLibraryStorage,
                        sequencerSetLibraryStorage)
     , systemUi_(createUiSystemState())
     , settings(settingsStorage)
@@ -481,13 +477,8 @@ bool CoreState::isSequencerPersistenceReady() const {
     return sequencerDomain_.persistenceReady;
 }
 
-FLASHMEM void CoreState::requestMacroWorkspacePersist() {
-    requestMacroWorkspacePersist_();
-}
-
-FLASHMEM void CoreState::persistSequencerWorkspace() {
-    markProjectMutated();
-    persistSequencerWorkspace_();
+FLASHMEM void CoreState::markSequencerProjectMutated() {
+    markSequencerProjectMutated_();
 }
 
 FLASHMEM bool CoreState::recordSequencerPatternHistory(
@@ -513,10 +504,9 @@ FLASHMEM bool CoreState::recordSequencerPatternHistory(
         return false;
     }
 
-    markProjectMutated();
     sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    markProjectMutated();
     refreshSharedTrackStateFromSequencer();
-    persistSequencerWorkspace_();
     return true;
 }
 
@@ -533,9 +523,8 @@ FLASHMEM bool CoreState::recordSequencerBankHistory(
         return false;
     }
 
-    markProjectMutated();
+    markSequencerProjectMutated_();
     refreshSharedTrackStateFromSequencer();
-    persistSequencerWorkspace_();
     return true;
 }
 
@@ -546,9 +535,8 @@ FLASHMEM bool CoreState::recordSequencerBankHistory(
         return false;
     }
 
-    markProjectMutated();
+    markSequencerProjectMutated_();
     refreshSharedTrackStateFromSequencer();
-    persistSequencerWorkspace_();
     return true;
 }
 
@@ -643,10 +631,9 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
         return false;
     }
 
-    markProjectMutated();
+    markSequencerProjectMutated_();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
-    persistSequencerWorkspace_();
     return true;
 }
 
@@ -658,10 +645,9 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
         return false;
     }
 
-    markProjectMutated();
+    markSequencerProjectMutated_();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
-    persistSequencerWorkspace_();
     return true;
 }
 
@@ -709,13 +695,6 @@ bool CoreState::refreshSharedTrackStateFromSequencer() {
     return refreshSharedTrackStateFromSequencer_(true);
 }
 
-void CoreState::noteMacroInteraction() {
-    macroDomain_.lastInteractionTimestampMs = oc::time::millis();
-    if (macroDomain_.lastInteractionTimestampMs == 0) {
-        macroDomain_.lastInteractionTimestampMs = 1;
-    }
-}
-
 FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRamAfterStorageReopen() {
     auto status = settings.saveAllStatus(
         midiSync,
@@ -747,17 +726,8 @@ FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRa
     macroDomain_.persistenceReady = status == persistence::PersistenceWriteStatus::OK;
     if (status != persistence::PersistenceWriteStatus::OK) return status;
 
-    status = macroPersistence.saveWorkspaceStatus(pages);
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-    macroDomain_.workspacePersistPending = false;
-    macroDomain_.workspacePersistTimestampMs = 0;
-
     status = sequencerPersistence.initStatus();
     sequencerDomain_.persistenceReady = status == persistence::PersistenceWriteStatus::OK;
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-
-    sequencer::storeActiveTrack(sequencerTracks, sequencer);
-    status = sequencerPersistence.saveWorkspaceStatus(sequencerTracks, sequencer);
     if (status != persistence::PersistenceWriteStatus::OK) return status;
 
     sharedTrackPersistPending_ = false;
@@ -778,17 +748,6 @@ FLASHMEM void CoreState::queueSequencerBankApply_(
     CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
 }
 
-FLASHMEM void CoreState::requestMacroWorkspacePersist_() {
-    if (!macroDomain_.persistenceReady) return;
-
-    markProjectMutated();
-    macroDomain_.workspacePersistPending = true;
-    macroDomain_.workspacePersistTimestampMs = oc::time::millis();
-    if (macroDomain_.workspacePersistTimestampMs == 0) {
-        macroDomain_.workspacePersistTimestampMs = 1;
-    }
-}
-
 FLASHMEM void CoreState::requestProjectSessionSave_() {
     if (!projectSessionTrackingEnabled_) return;
 
@@ -799,38 +758,9 @@ FLASHMEM void CoreState::requestProjectSessionSave_() {
     }
 }
 
-FLASHMEM void CoreState::persistMacroWorkspaceNow_() {
-    if (!macroDomain_.persistenceReady) return;
-    const auto status = macroPersistence.saveWorkspaceStatus(pages);
-    if (status == persistence::PersistenceWriteStatus::OK) {
-        macroDomain_.workspacePersistPending = false;
-        macroDomain_.workspacePersistTimestampMs = 0;
-        return;
-    }
-
-    OC_LOG_WARN("[CoreState] Failed to persist macro workspace: {}",
-                persistence::persistenceWriteStatusLabel(status));
-    if (status == persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE) {
-        macroDomain_.workspacePersistPending = true;
-        macroDomain_.workspacePersistTimestampMs = oc::time::millis();
-        if (macroDomain_.workspacePersistTimestampMs == 0) {
-            macroDomain_.workspacePersistTimestampMs = 1;
-        }
-    } else {
-        macroDomain_.workspacePersistPending = false;
-        macroDomain_.workspacePersistTimestampMs = 0;
-    }
-}
-
-FLASHMEM void CoreState::persistSequencerWorkspace_() {
-    if (!sequencerDomain_.persistenceReady) return;
-    requestProjectSessionSave_();
+FLASHMEM void CoreState::markSequencerProjectMutated_() {
     sequencer::storeActiveTrack(sequencerTracks, sequencer);
-    const auto status = sequencerPersistence.saveWorkspaceStatus(sequencerTracks, sequencer);
-    if (status != persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreState] Failed to persist sequencer workspace: {}",
-                    persistence::persistenceWriteStatusLabel(status));
-    }
+    markProjectMutated();
 }
 
 FLASHMEM void CoreState::requestSharedTrackPersist_() {

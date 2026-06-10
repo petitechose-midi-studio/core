@@ -6,9 +6,7 @@ namespace test_support {
 
 struct CoreStorages {
     MemoryStorage settings;
-    MemoryStorage macroWorkspace;
     MemoryStorage macroLibrary;
-    MemoryStorage sequencerWorkspace;
     MemoryStorage sequencerPatternLibrary;
     MemoryStorage sequencerSetLibrary;
 
@@ -18,9 +16,7 @@ struct CoreStorages {
 
     void initAll() {
         settings.init();
-        macroWorkspace.init();
         macroLibrary.init();
-        sequencerWorkspace.init();
         sequencerPatternLibrary.init();
         sequencerSetLibrary.init();
     }

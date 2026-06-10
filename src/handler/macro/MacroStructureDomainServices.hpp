@@ -18,13 +18,13 @@ namespace core::handler {
  * Macro structure domain service boundary.
  *
  * It applies page/track mask changes, duplication, paste, erase, active
- * selection, workspace persistence, and presentation refresh through focused
- * state refs and typed operations.
+ * selection, project mutation, and presentation refresh through focused state
+ * refs and typed operations.
  */
 class MacroStructureDomainServices {
 public:
     using FlushAutoPersistFn = void (*)(void* context);
-    using RequestPersistFn = void (*)(void* context);
+    using MarkProjectMutatedFn = void (*)(void* context);
     using SetSharedTrackStateFn = bool (*)(void* context, uint16_t enabledMask, uint8_t activeTrack);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
     using SwitchToTrackFn = void (*)(void* context, uint8_t trackIndex);
@@ -41,7 +41,7 @@ public:
     struct Operations {
         void* context = nullptr;
         FlushAutoPersistFn flushAutoPersist = nullptr;
-        RequestPersistFn requestPersist = nullptr;
+        MarkProjectMutatedFn markProjectMutated = nullptr;
         SetSharedTrackStateFn setSharedTrackState = nullptr;
         SwitchToPageFn switchToPage = nullptr;
         SwitchToTrackFn switchToTrack = nullptr;

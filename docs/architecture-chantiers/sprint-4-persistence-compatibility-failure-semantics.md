@@ -56,20 +56,20 @@ Current verification:
 - `test_StorageRecoveryMachine` covers removal debounce, insertion debounce,
   play-safe recovery deferral, reopen failure backoff, and removed-during-pending
   recovery.
-- `test_MacroPersistence` and `test_SequencerPersistence` cover current
-  roundtrips, journal fallback, library bounds, erase, and sequencer mask
-  sanitization.
+- `test_MacroPersistence` and `test_SequencerPersistence` cover explicit
+  library roundtrips, library bounds, erase, and sequencer mask sanitization.
+- Current project/session state is stored through project `.mspj` snapshots.
+  Macro and sequencer domain persistence is reserved for explicit reusable
+  libraries, not automatic session recovery.
 
 ## Storage Domain Matrix
 
 | Domain | Runtime file | Owner | Format identity | Slots | Payload | Native coverage |
 |---|---|---|---|---:|---:|---|
 | Core settings | `/macros.bin` | `CoreSettingsLayout` / `CoreSettingsCodec` | magic `MCST`, version `2` | compact byte layout | `STORAGE_END = 17` bytes | `test_CoreSettings`, `test_CoreSettingsFailures` |
-| Macro workspace | `/macro-workspace.bin` | `MacroPersistence` | magic `MWSK`, domain version `2` | 2 rotating slots | 14400 bytes | `test_MacroPersistence` |
 | Macro library | `/macro-library.bin` | `MacroPersistence` | magic `MLIB`, domain version `1` | 16 direct slots | 14404 bytes | `test_MacroPersistence` |
-| Sequencer workspace | `/sequencer-workspace.bin` | `SequencerPersistence` / codec payloads | magic `SWSK`, domain version `2` | 2 rotating slots | 6336 bytes | `test_SequencerPersistence` |
-| Sequencer pattern library | `/sequencer-pattern-library.bin` | `SequencerPersistence` / codec payloads | magic `SPLB`, domain version `1` | 32 direct slots | 788 bytes | `test_SequencerPersistence` |
-| Sequencer set library | `/sequencer-set-library.bin` | `SequencerPersistence` / codec payloads | magic `SSET`, domain version `1` | 16 direct slots | 6308 bytes | `test_SequencerPersistence` |
+| Sequencer pattern library | `/sequencer-pattern-library.bin` | `SequencerPersistence` / codec payloads | magic `SPLB`, domain version `3` | 32 direct slots | envelope up to 65520 bytes | `test_SequencerPersistence` |
+| Sequencer set library | `/sequencer-set-library.bin` | `SequencerPersistence` / codec payloads | magic `SSET`, domain version `3` | 16 direct slots | envelope up to 65520 bytes | `test_SequencerPersistence` |
 
 Notes:
 
@@ -141,8 +141,8 @@ Core decision:
 
 - At runtime, RAM is authoritative.
 - After media removal/reinsert, do not load SD data into the live session.
-- Recovery should revalidate/reopen storage and then persist the current RAM
-  workspace/settings snapshot back to the recovered medium.
+- Recovery should revalidate/reopen storage and then preserve the current RAM
+  session as authoritative while restoring settings/library write readiness.
 - Library slots on the recovered card are left as card-owned content unless the
   user explicitly saves/erases/loads them through Data Manager.
 
@@ -160,8 +160,8 @@ Recommended owner:
 - A Teensy-only `StorageRecoveryManager` near `main.cpp`, because it owns
   `SDCardBackend::available()` / `reopen()` and the storage backend list.
 - `CoreState` should expose a narrow persistence-recovery operation, not direct
-  backend access. The operation should reinitialize domain stores and persist
-  the live settings/workspaces without loading them from storage.
+  backend access. The operation should reinitialize explicit domain stores and
+  persist live settings without loading retired domain stores from storage.
 
 Suggested state machine:
 
@@ -172,7 +172,7 @@ Suggested state machine:
 | `OFFLINE` | SD is absent/unusable. Persistence writes are suspended or retained for retry. | Media is present for N consecutive samples. |
 | `RECOVERY_PENDING` | Media looks present again, but recovery is not safe yet. | Playback is stopped or the app reaches the chosen recovery-safe point. |
 | `REOPENING` | Close/reopen all file handles. | All `reopen()` calls succeed or one fails. |
-| `REVALIDATING` | Re-init persistence domains and save RAM-authoritative snapshots. | All required init/save operations succeed or one fails. |
+| `REVALIDATING` | Re-init persistence domains and save RAM-authoritative settings. | All required init/save operations succeed or one fails. |
 | `READY_RECOVERED` | Storage is back online. Normal persistence resumes. | Fold back into `READY` after logging/UI feedback. |
 | `DEGRADED` | Recovery failed while media is present. | Backoff expires and recovery is retried, or media is removed again. |
 
@@ -184,10 +184,10 @@ Operational rules:
 - Prefer deferring recovery while transport is playing. Runtime playback should
   continue from RAM if storage disappears.
 - When storage is offline, persistence failures must not erase dirty intent.
-  Pending workspace/settings saves should remain pending or be requeued when the
+  Pending project/settings saves should remain pending or be requeued when the
   status is `STORAGE_UNAVAILABLE`.
-- On recovery success, save current settings, macro workspace, sequencer
-  workspace, and shared-track state. Do not auto-save every library slot.
+- On recovery success, save current settings/shared-track state and reinitialize
+  explicit library stores. Do not auto-save every library slot.
 - On recovery failure, stay degraded and retry with backoff; avoid log spam.
 
 Implementation sequence:
@@ -202,9 +202,9 @@ Implementation sequence:
    transient SD loss does not discard unsaved RAM changes.
 
 3. Complete: add a narrow CoreState recovery API.
-   `recoverPersistenceFromRamAfterStorageReopen()` re-inits settings,
-   macro/sequencer persistence stores and saves current
-   RAM snapshots without loading workspaces from storage.
+   `recoverPersistenceFromRamAfterStorageReopen()` re-inits settings and
+   macro/sequencer library stores, then saves current settings without loading
+   retired domain stores from storage.
 
 4. Complete: wire a Teensy-only recovery manager in `main.cpp`.
    It should own the backend list, sample cadence, reopen attempts, and logging.
@@ -235,11 +235,11 @@ Non-goals for the first implementation:
   `backend.available()` before reporting status.
 - Added `StorageRecoveryMachine` with native coverage for debounce, safe-point
   deferral, failed reopen backoff, and removed-during-pending transitions.
-- Updated macro workspace and shared-track pending saves so
+- Updated project/session and shared-track pending saves so
   `STORAGE_UNAVAILABLE` preserves dirty intent instead of clearing it.
 - Added `CoreState::recoverPersistenceFromRamAfterStorageReopen()` and native
-  coverage proving recovered storage is rewritten from RAM, not reloaded from a
-  stale card snapshot.
+  coverage proving recovered storage is revalidated from RAM authority, not
+  reloaded from a stale card snapshot.
 - Wired `main.cpp` to sample SD availability, reopen all storage backends, defer
   recovery while playing, and revalidate from live RAM.
 

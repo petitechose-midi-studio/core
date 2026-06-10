@@ -33,10 +33,8 @@ struct CoreStateLifecycle {
 private:
     static void applyPendingSequencerApplyIfReady(CoreState& state);
     static void updateAutoPersist_(CoreState& state);
-    static void updatePendingMacroWorkspacePersist_(CoreState& state);
     static void updatePendingSharedTrackPersist_(CoreState& state);
     static void flushAutoPersist_(CoreState& state);
-    static void flushPendingMacroWorkspacePersist_(CoreState& state);
     static void flushPendingSharedTrackPersist_(CoreState& state);
     static void persistFactoryDefaults_(CoreState& state);
     static void resetMacroDomain_(CoreState& state);

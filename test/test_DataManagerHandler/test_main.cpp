@@ -58,9 +58,7 @@ struct DataManagerHarness {
 
     DataManagerHarness()
         : state(storage.settings,
-                storage.macroWorkspace,
                 storage.macroLibrary,
-                storage.sequencerWorkspace,
                 storage.sequencerPatternLibrary,
                 storage.sequencerSetLibrary)
         , services(core::handler::DataManagerDomainServices::fromCoreState(state))

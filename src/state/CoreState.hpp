@@ -57,29 +57,23 @@ struct CoreStateBootstrap;
 struct CoreStateLifecycle;
 
 /**
- * Owns the macro runtime, page bank, persistence adapters, and delayed save state.
+ * Owns the macro runtime, page bank, persistence adapter, and projection state.
  *
  * CoreState exposes public references to the runtime/page state while this
  * domain struct remains the ownership boundary for allocation and persistence.
  */
 struct MacroDomainState {
-    static constexpr uint32_t WORKSPACE_MUTATION_SAVE_DELAY_MS = 1000;
-
     core::app::ExtmemUniquePtr<MacroState> runtime;
     core::app::ExtmemUniquePtr<macro::MacroPagesState> pages;
     oc::state::Signal<uint32_t> configRevision{0};
     persistence::MacroPersistence persistence;
     bool persistenceReady = false;
     std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> autoPersist;
-    bool workspacePersistPending = false;
-    uint32_t workspacePersistTimestampMs = 0;
-    uint32_t lastInteractionTimestampMs = 0;
 
-    MacroDomainState(oc::interface::IStorage& workspaceStorage,
-                     oc::interface::IStorage& libraryStorage)
+    explicit MacroDomainState(oc::interface::IStorage& libraryStorage)
         : runtime(core::app::makeExtmemUnique<MacroState>())
         , pages(core::app::makeExtmemUnique<macro::MacroPagesState>())
-        , persistence(workspaceStorage, libraryStorage) {}
+        , persistence(libraryStorage) {}
     ~MacroDomainState();
 
     MacroDomainState(const MacroDomainState&) = delete;
@@ -87,7 +81,7 @@ struct MacroDomainState {
 };
 
 /**
- * Owns the editable sequencer state, per-track bank, persistence adapters, and
+ * Owns the editable sequencer state, per-track bank, persistence adapter, and
  * pending load snapshots staged while transport is playing.
  */
 struct SequencerDomainState {
@@ -149,8 +143,7 @@ struct SequencerDomainState {
     CoalescedPatternHistory coalescedPatternHistory;
     std::unique_ptr<oc::state::AutoPersistIncremental<13>> autoPersist;
 
-    SequencerDomainState(oc::interface::IStorage& workspaceStorage,
-                         oc::interface::IStorage& patternLibraryStorage,
+    SequencerDomainState(oc::interface::IStorage& patternLibraryStorage,
                          oc::interface::IStorage& setLibraryStorage);
     ~SequencerDomainState();
 
@@ -259,16 +252,12 @@ public:
     /**
      * @brief Construct with storage backend
      * @param settingsStorage Core settings storage (midi sync + shortcuts)
-     * @param macroWorkspaceStorage Dedicated macro workspace storage
      * @param macroLibraryStorage Dedicated macro library storage
-     * @param sequencerWorkspaceStorage Dedicated sequencer workspace storage
      * @param sequencerPatternLibraryStorage Dedicated sequencer pattern library storage
      * @param sequencerSetLibraryStorage Dedicated sequencer set library storage
      */
     explicit CoreState(oc::interface::IStorage& settingsStorage,
-                       oc::interface::IStorage& macroWorkspaceStorage,
                        oc::interface::IStorage& macroLibraryStorage,
-                       oc::interface::IStorage& sequencerWorkspaceStorage,
                        oc::interface::IStorage& sequencerPatternLibraryStorage,
                        oc::interface::IStorage& sequencerSetLibraryStorage);
 
@@ -307,8 +296,7 @@ public:
 
     bool isMacroPersistenceReady() const;
     bool isSequencerPersistenceReady() const;
-    void requestMacroWorkspacePersist();
-    void persistSequencerWorkspace();
+    void markSequencerProjectMutated();
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
                                        sequencer::SequencerHistoryPatternSnapshot after,
                                        sequencer::SequencerHistoryDescriptor descriptor = {});
@@ -335,13 +323,12 @@ public:
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
     bool refreshSharedTrackStateFromMacroPages();
     bool refreshSharedTrackStateFromSequencer();
-    void noteMacroInteraction();
 
     /**
-     * @brief Reinitialize persistence domains and save current RAM to storage.
+     * @brief Reinitialize explicit persistence domains and save current RAM to storage.
      *
-     * Used after platform code has reopened storage. It intentionally does not
-     * load workspaces from storage; runtime state remains authoritative.
+     * Used after platform code has reopened storage. Retired macro/sequencer
+     * domain stores are not part of session recovery.
      */
     persistence::PersistenceWriteStatus recoverPersistenceFromRamAfterStorageReopen();
 
@@ -350,10 +337,8 @@ private:
     void queueSequencerBankApply_(const sequencer::SequencerTrackBankState& stagedBank,
                                   const sequencer::SequencerState& staged);
     void requestProjectSessionSave_();
-    void requestMacroWorkspacePersist_();
+    void markSequencerProjectMutated_();
     void requestSharedTrackPersist_();
-    void persistMacroWorkspaceNow_();
-    void persistSequencerWorkspace_();
     void persistSharedTrackState_();
     void clearPendingSequencerApply_();
     bool refreshSharedTrackStateFromMacroPages_(bool persist);
