@@ -204,6 +204,7 @@ FLASHMEM void SequencerState::reset() {
     patternVariationFeedback.reset();
     historyFeedback.reset();
     patternQuickControls.reset();
+    contentView.reset();
     structureUi.reset();
 }
 

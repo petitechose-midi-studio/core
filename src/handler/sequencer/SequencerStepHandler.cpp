@@ -6,6 +6,8 @@
 
 #include <utility>
 
+#include "state/sequencer/SequencerContentViewOps.hpp"
+
 #if defined(MS_UX_RECORDER)
 #include "validation/ux/SemanticUxTraceState.hpp"
 #endif
@@ -66,13 +68,41 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .when([this]() {
+            return core::state::sequencer::isMicroSequenceContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
+        .then([this](float delta) {
+            if (delta == 0.0f) return;
+            const uint8_t pages = core::state::sequencer::activeContentPageCount(sequencer_);
+            if (pages <= 1U) return;
+            const int direction = delta > 0.0f ? 1 : -1;
+            const int next = static_cast<int>(sequencer_.page.get()) + direction;
+            sequencer_.page.set(core::state::sequencer::normalizeActiveContentPage(
+                sequencer_,
+                static_cast<uint8_t>((next + pages) % pages)
+            ));
+            sequencer_.focusedStep.set(
+                core::state::sequencer::activeContentPageStartStep(sequencer_, sequencer_.page.get())
+            );
+        });
+
+    encoders_.encoder(Config::EncoderID::NAV)
+        .turn()
+        .scope(scope_id_)
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.selectionActive();
+        })
         .then([this](float delta) { navigation_workflow_.navigateSelection(delta); });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this](float delta) {
             history_.commitCoalescedPatternEdit();
             navigation_workflow_.moveByFocus(delta);
@@ -81,7 +111,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
             history_.commitCoalescedPatternEdit();
             nav_long_press_used_ = true;
@@ -91,7 +124,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.selectionActive();
+        })
         .then([this]() {
             if (nav_long_press_used_) {
                 nav_long_press_used_ = false;
@@ -103,7 +139,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
             if (nav_long_press_used_) {
                 nav_long_press_used_ = false;
@@ -120,13 +159,31 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .when([this]() {
+            return core::state::sequencer::isMicroSequenceContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
+        .then([this]() {
+            history_.commitCoalescedPatternEdit();
+            core::state::sequencer::leaveContentView(sequencer_);
+        });
+
+    buttons_.button(Config::ButtonID::LEFT_TOP)
+        .release()
+        .scope(scope_id_)
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.selectionActive();
+        })
         .then([this]() { navigation_workflow_.cancelSelectionMode(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
@@ -139,7 +196,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.selectionActive();
+        })
         .then([this]() {
             history_.commitCoalescedPatternEdit();
             edit_workflow_.deleteSelection();
@@ -148,7 +208,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
@@ -165,7 +228,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             ignore_next_bottom_left_release_ = true;
@@ -179,7 +245,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .press()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
@@ -192,7 +261,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.selectionActive();
+        })
         .then([this]() {
             history_.commitCoalescedPatternEdit();
             edit_workflow_.duplicateSelection();
@@ -201,7 +273,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             if (ignore_next_bottom_right_release_) {
@@ -217,7 +292,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return core::state::sequencer::isRootContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             ignore_next_bottom_right_release_ = true;
@@ -233,20 +311,28 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
     history_.commitCoalescedPatternEdit();
 
     uint8_t abs = 0;
-    if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
+    if (!core::state::sequencer::resolveActiveContentStepInPage(
+            sequencer_,
+            sequencer_.page.get(),
+            indexInPage,
+            abs
+        )) {
+        return;
+    }
 
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
     const bool beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
 
     sequencer_.focusedStep.set(abs);
-    sequencer_.pattern.toggle(abs);
+    core::state::sequencer::toggleActiveContentStep(sequencer_, abs);
 
     if (!beforeCaptured) return;
 
     core::state::sequencer::SequencerHistoryPatternSnapshot after;
     if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-        const bool beforeEnabled = before.flat.enabledMask.test(abs);
-        const bool afterEnabled = after.flat.enabledMask.test(abs);
+        const bool rootContext = core::state::sequencer::isRootContentView(sequencer_);
+        const bool beforeEnabled = rootContext ? before.flat.enabledMask.test(abs) : false;
+        const bool afterEnabled = rootContext ? after.flat.enabledMask.test(abs) : false;
         history_.recordPattern(
             std::move(before),
             std::move(after),
@@ -254,7 +340,7 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
                 .kind = core::state::sequencer::SequencerHistoryActionKind::StepToggle,
                 .stepIndex = abs,
                 .property = core::state::sequencer::StepProperty::NOTE,
-                .hasValue = true,
+                .hasValue = rootContext,
                 .beforeValue = beforeEnabled ? 1 : 0,
                 .afterValue = afterEnabled ? 1 : 0,
             }

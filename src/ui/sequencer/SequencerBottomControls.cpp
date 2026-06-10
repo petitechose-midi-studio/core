@@ -57,6 +57,10 @@ void formatQuickValue(
     QuickItem item
 ) {
     if (!buffer || size == 0) return;
+    if (props.microSequenceContext && item != QuickItem::LENGTH) {
+        buffer[0] = '\0';
+        return;
+    }
 
     switch (item) {
         case QuickItem::OFFSET:
@@ -77,6 +81,13 @@ void formatQuickValue(
     }
 }
 
+const char* quickLabel(const SequencerBottomControlsProps& props, QuickItem item) {
+    if (props.microSequenceContext) {
+        return item == QuickItem::LENGTH ? "Steps" : "";
+    }
+    return core::state::sequencer::quickControlLabel(item);
+}
+
 void applyValueStyle(lv_obj_t* label, bool highlighted) {
     if (!label) return;
     lv_obj_set_style_text_color(
@@ -92,7 +103,8 @@ bool sameProps(const SequencerBottomControlsProps& lhs, const SequencerBottomCon
            lhs.focusedQuickControl == rhs.focusedQuickControl &&
            lhs.offsetSteps == rhs.offsetSteps &&
            lhs.stepsPerBeat == rhs.stepsPerBeat &&
-           lhs.length == rhs.length;
+           lhs.length == rhs.length &&
+           lhs.microSequenceContext == rhs.microSequenceContext;
 }
 
 size_t quickItemIndex(QuickItem item) {
@@ -326,6 +338,15 @@ void SequencerBottomControls::renderQuickControl(
     QuickControlWidgets& widgets,
     const SequencerBottomControlsProps& props
 ) {
+    const char* label = quickLabel(props, widgets.item);
+    if (!widgets.labelInitialized ||
+        std::strcmp(widgets.renderedLabel.data(), label) != 0) {
+        lv_label_set_text(widgets.label, label);
+        std::strncpy(widgets.renderedLabel.data(), label, widgets.renderedLabel.size());
+        widgets.renderedLabel.back() = '\0';
+        widgets.labelInitialized = true;
+    }
+
     char buffer[16];
     formatQuickValue(buffer, sizeof(buffer), props, widgets.item);
     if (!widgets.valueInitialized ||

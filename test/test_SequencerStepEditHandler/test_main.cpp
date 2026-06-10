@@ -14,6 +14,7 @@
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -235,13 +236,14 @@ void test_create_edit_and_commit_micro_sequence_context() {
     assert(h.state.sequencer.stepEdit.focusedRow.get() == 5);
 
     h.tap(Config::ButtonID::NAV);
-    auto context = h.state.sequencer.stepEdit.contentSession.current();
-    assert(context.kind == core::state::sequencer::StepContentContextKind::MICRO_SEQUENCE);
-    assert(context.rootStep == 3);
-    assert(context.length == 2);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(core::state::sequencer::isMicroSequenceContentView(h.state.sequencer));
+    assert(h.state.sequencer.contentView.parentStep.get() == 3);
+    assert(h.state.sequencer.contentView.length.get() == 2);
+    assert(h.state.sequencer.page.get() == 0);
+    assert(h.state.sequencer.focusedStep.get() == 0);
     assert(core::state::sequencer::stepHasMicroSequence(h.state.sequencer.pattern, 3));
 
-    h.turn(Config::EncoderID::OPT, 1.0f);
     const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     assert(graph != nullptr);
     const auto* root = graph->stepNode(core::state::sequencer::rootStepNodeId(3));
@@ -250,44 +252,61 @@ void test_create_edit_and_commit_micro_sequence_context() {
     assert(sequence != nullptr);
     const auto* firstMicroStep = graph->stepNode(sequence->firstStepNode);
     assert(firstMicroStep != nullptr);
-    assert(firstMicroStep->noteOffset == 24);
+    assert(firstMicroStep->noteOffset == 0);
 
-    for (uint8_t i = 0; i < 6; ++i) {
-        h.turn(Config::EncoderID::NAV, 1.0f);
-    }
-    assert(h.state.sequencer.stepEdit.focusedRow.get() == 6);
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    context = h.state.sequencer.stepEdit.contentSession.current();
-    assert(context.length == 16);
+    assert(core::state::sequencer::setActiveContentStepFromNormalized(
+        h.state.sequencer,
+        0,
+        core::state::sequencer::StepProperty::NOTE,
+        62.0f / 127.0f,
+        h.state.sequencer.pattern.pitchEditMode,
+        {}
+    ));
 
-    h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(h.state.sequencer.stepEdit.focusedRow.get() == 5);
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    context = h.state.sequencer.stepEdit.contentSession.current();
-    assert(context.localIndex == 15);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    root = graph->stepNode(core::state::sequencer::rootStepNodeId(3));
+    sequence = graph->sequence(root->childSequenceId);
+    firstMicroStep = graph->stepNode(sequence->firstStepNode);
+    assert(firstMicroStep != nullptr);
+    assert(firstMicroStep->noteOffset == 2);
 
+    holdPatternQuickControls(h);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::LENGTH
+    );
     h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencer.stepEdit.focusedRow.get() == 0);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencer.stepEdit.focusedRow.get() == 1);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::LENGTH
+    );
     h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.contentView.length.get() == 16);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+
+    h.state.sequencer.focusedStep.set(15);
+    h.state.sequencer.page.set(1);
+    assert(core::state::sequencer::setActiveContentStepFromNormalized(
+        h.state.sequencer,
+        15,
+        core::state::sequencer::StepProperty::VELOCITY,
+        127.0f / 127.0f,
+        h.state.sequencer.pattern.pitchEditMode,
+        {}
+    ));
 
     graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     root = graph->stepNode(core::state::sequencer::rootStepNodeId(3));
     sequence = graph->sequence(root->childSequenceId);
     const auto* lastMicroStep = graph->stepNode(static_cast<uint16_t>(sequence->firstStepNode + 15U));
     assert(lastMicroStep != nullptr);
-    assert(lastMicroStep->velocityOffset == 127);
+    assert(lastMicroStep->velocityOffset == 63);
 
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.sequencer.stepEdit.contentSession.current().kind ==
-           core::state::sequencer::StepContentContextKind::ROOT_STEP);
-    assert(h.state.sequencer.stepEdit.visible.get());
-
-    h.tap(Config::ButtonID::NAV);
+    assert(core::state::sequencer::leaveContentView(h.state.sequencer));
+    assert(core::state::sequencer::isRootContentView(h.state.sequencer));
     assert(!h.state.sequencer.stepEdit.visible.get());
-    assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencerHistory.undoCount() == 2);
 
     std::cout << "[PASS] test_create_edit_and_commit_micro_sequence_context\n";
 }

@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
+#include <oc/note/sequencer/StepSequencerGraph.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "state/StructureSelectionState.hpp"
@@ -28,11 +29,39 @@ enum class PatternQuickControlItem : uint8_t {
     LENGTH = 2,
 };
 
+enum class SequencerContentViewKind : uint8_t {
+    ROOT = 0,
+    MICRO_SEQUENCE,
+};
+
+struct SequencerContentViewState {
+    using GraphLimits = oc::note::sequencer::StepSequencerGraphLimits;
+
+    Signal<SequencerContentViewKind, 8> kind{SequencerContentViewKind::ROOT};
+    Signal<uint8_t, 8> parentStep{0};
+    Signal<uint16_t, 8> sequenceId{GraphLimits::INVALID_ID};
+    Signal<uint8_t, 8> length{0};
+    Signal<uint32_t, 8> revision{0};
+
+    uint8_t rootPageSnapshot = 0;
+    uint8_t rootFocusSnapshot = 0;
+
+    bool isMicroSequence() const {
+        return kind.get() == SequencerContentViewKind::MICRO_SEQUENCE &&
+               sequenceId.get() != GraphLimits::INVALID_ID;
+    }
+
+    void bump() {
+        revision.set(revision.get() + 1U);
+    }
+
+    void reset();
+};
+
 struct SequencerStepEditOverlayState {
     Signal<bool> visible{false};
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
-    Signal<uint32_t> contentRevision{0};
     SequencerStepContentEditSession contentSession{};
 
     uint8_t snapshotNote = 0;

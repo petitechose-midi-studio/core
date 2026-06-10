@@ -55,6 +55,7 @@ struct SequencerState {
     SequencerPatternVariationFeedbackState patternVariationFeedback;
     SequencerHistoryFeedbackState historyFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
+    SequencerContentViewState contentView;
     SequencerStructureUiState structureUi;
 
     SequencerState();

@@ -101,6 +101,7 @@ FLASHMEM StepContentContextView SequencerStepContentEditSession::current() const
         .localIndex = context->localIndex,
         .length = context->length,
         .depth = context->depth,
+        .sequenceId = context->sequenceId,
         .active = true,
     };
 }

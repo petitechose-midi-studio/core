@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "config/Timing.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
@@ -182,7 +183,10 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
             ? pageClipboardDestinationMask
             : 0U;
 
-    const char* leftText = (selectingTrack || focusingTrack) ? "TRACKS" : "PAGES";
+    const bool microContext = core::state::sequencer::isMicroSequenceContentView(sequencer);
+    const char* leftText = microContext
+        ? "MICRO"
+        : ((selectingTrack || focusingTrack) ? "TRACKS" : "PAGES");
     std::array<char, 12> badgeText{};
     if (source.trackNavigation.selection.active.get() || sequencer.structureUi.pageSelection.active.get()) {
         std::snprintf(
@@ -201,8 +205,8 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
     }
 
     return {
-        .length = sequencer.pattern.length.get(),
-        .activePage = sequencer.pageForStep(sequencer.focusedStep.get()),
+        .length = core::state::sequencer::activeContentLength(sequencer),
+        .activePage = core::state::sequencer::activeContentPageForStep(sequencer.focusedStep.get()),
         .viewedPage = viewedPage,
         .previewTrack = previewTrack,
         .addPageIndex = addPageIndex,
@@ -236,7 +240,8 @@ FLASHMEM SequencerBottomControlsProps buildBottomControlsProps(const SequencerVi
         .focusedQuickControl = sequencer.patternQuickControls.focusedItem.get(),
         .offsetSteps = sequencer.patternQuickControls.offsetSteps.get(),
         .stepsPerBeat = sequencer.pattern.stepsPerBeat.get(),
-        .length = sequencer.pattern.length.get(),
+        .length = core::state::sequencer::activeContentLength(sequencer),
+        .microSequenceContext = core::state::sequencer::isMicroSequenceContentView(sequencer),
     };
 }
 

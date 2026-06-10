@@ -48,6 +48,8 @@ struct StepContentContextView {
     uint8_t localIndex = 0;
     uint8_t length = 0;
     uint8_t depth = 0;
+    SequencerGraphSequenceId sequenceId =
+        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     bool active = false;
 };
 

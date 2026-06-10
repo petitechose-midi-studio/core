@@ -7,6 +7,7 @@
 
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
@@ -20,6 +21,9 @@ using Item = core::state::sequencer::PatternQuickControlItem;
 namespace {
 
 constexpr int ITEM_COUNT = static_cast<int>(core::state::sequencer::QUICK_CONTROL_VISUAL_ORDER.size());
+constexpr uint8_t MICRO_LENGTH_MIN = 2;
+constexpr uint8_t MICRO_LENGTH_MAX =
+    oc::note::sequencer::StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP;
 
 inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::SequencerState& sequencer) {
     return [&sequencer]() { return sequencer.patternQuickControls.selecting.get(); };
@@ -51,6 +55,22 @@ inline oc::type::IsActiveFn canOpenQuickControls(
                !trackUi.selection.active.get() &&
                !sequencer.stepPropertyInlineSelector.selecting.get();
     };
+}
+
+FLASHMEM uint8_t normalizedToMicroLength(float normalized) {
+    const int idx = input_utils::normalizedToIndex(
+        normalized,
+        static_cast<int>((MICRO_LENGTH_MAX - MICRO_LENGTH_MIN) + 1U)
+    );
+    return static_cast<uint8_t>(MICRO_LENGTH_MIN + idx);
+}
+
+FLASHMEM float microLengthToNormalized(uint8_t length) {
+    const uint8_t clamped = std::clamp<uint8_t>(length, MICRO_LENGTH_MIN, MICRO_LENGTH_MAX);
+    return input_utils::indexToNormalized(
+        static_cast<int>(clamped - MICRO_LENGTH_MIN),
+        static_cast<int>((MICRO_LENGTH_MAX - MICRO_LENGTH_MIN) + 1U)
+    );
 }
 
 }  // namespace
@@ -128,6 +148,9 @@ FLASHMEM void SequencerPatternQuickControlsHandler::open() {
     auto& quick = sequencer_.patternQuickControls;
     quick.reset();
     quick.selecting.set(true);
+    if (core::state::sequencer::isMicroSequenceContentView(sequencer_)) {
+        quick.focusedItem.set(Item::LENGTH);
+    }
     core::state::sequencer::captureSnapshot(sequencer_.pattern, cancel_snapshot_);
     core::state::sequencer::captureSnapshot(sequencer_.pattern, offset_snapshot_);
     history_snapshot_valid_ =
@@ -161,6 +184,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::closeCancel() {
     if (!quick.selecting.get()) return;
 
     core::state::sequencer::applySnapshotToEditor(sequencer_, cancel_snapshot_);
+    core::state::sequencer::refreshContentView(sequencer_);
     clampFocusToLength();
 
     quick.reset();
@@ -196,6 +220,12 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
     if (!sequencer_.patternQuickControls.selecting.get()) return;
     if (!nav::hasTurnDelta(delta)) return;
 
+    if (core::state::sequencer::isMicroSequenceContentView(sequencer_)) {
+        sequencer_.patternQuickControls.focusedItem.set(Item::LENGTH);
+        configureOptForFocusedItem();
+        return;
+    }
+
     const int current = focusedItemOrderIndex();
     const int next = nav::nextWrappedIndex(delta, current, ITEM_COUNT);
     const auto nextItem = core::state::sequencer::quickControlAtOrderIndex(static_cast<size_t>(next));
@@ -209,6 +239,17 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
 
 FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
     auto item = sequencer_.patternQuickControls.focusedItem.get();
+    if (core::state::sequencer::isMicroSequenceContentView(sequencer_)) {
+        if (item == Item::LENGTH) {
+            core::state::sequencer::resizeActiveMicroSequenceContent(
+                sequencer_,
+                normalizedToMicroLength(normalized)
+            );
+            clampFocusToLength();
+        }
+        return;
+    }
+
     if (item == Item::OFFSET) {
         const int offsetSteps = normalizedToOffset(normalized);
         if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) {
@@ -229,6 +270,25 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValue(float normal
 
 FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
     const auto item = sequencer_.patternQuickControls.focusedItem.get();
+    if (core::state::sequencer::isMicroSequenceContentView(sequencer_)) {
+        input_utils::StepPropertyEncoderConfig config;
+        config.discreteTicksPerStep = input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
+        config.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+        config.discreteSteps = item == Item::LENGTH
+            ? static_cast<uint8_t>((MICRO_LENGTH_MAX - MICRO_LENGTH_MIN) + 1U)
+            : 1U;
+        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
+        encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            item == Item::LENGTH
+                ? microLengthToNormalized(core::state::sequencer::activeContentLength(sequencer_))
+                : 0.0f
+        );
+        return;
+    }
+
     if (item == Item::OFFSET) {
         input_utils::StepPropertyEncoderConfig config;
         config.discreteSteps = static_cast<uint8_t>((currentOffsetMax() * 2) + 1);
@@ -255,7 +315,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem()
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::clampFocusToLength() {
-    const uint8_t len = sequencer_.pattern.length.get();
+    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
     if (len == 0) return;
 
     uint8_t focused = sequencer_.focusedStep.get();
@@ -264,7 +324,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::clampFocusToLength() {
         sequencer_.focusedStep.set(focused);
     }
 
-    sequencer_.page.set(sequencer_.pageForStep(focused));
+    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(focused));
 }
 
 FLASHMEM int SequencerPatternQuickControlsHandler::focusedItemOrderIndex() const {
@@ -280,7 +340,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedItemByOrderIndex(i
 }
 
 FLASHMEM int SequencerPatternQuickControlsHandler::currentOffsetMax() const {
-    const uint8_t len = sequencer_.pattern.length.get();
+    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
     return (len > 0) ? static_cast<int>(len - 1) : 0;
 }
 

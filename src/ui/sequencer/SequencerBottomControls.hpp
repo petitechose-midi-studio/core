@@ -17,6 +17,7 @@ struct SequencerBottomControlsProps {
     int8_t offsetSteps = 0;
     uint8_t stepsPerBeat = 2;
     uint8_t length = 8;
+    bool microSequenceContext = false;
 };
 
 class SequencerBottomControls : public oc::ui::lvgl::IWidget {
@@ -40,7 +41,9 @@ private:
         lv_obj_t* content = nullptr;
         lv_obj_t* label = nullptr;
         lv_obj_t* value = nullptr;
+        std::array<char, 16> renderedLabel{};
         std::array<char, 16> renderedValue{};
+        bool labelInitialized = false;
         bool valueInitialized = false;
         bool highlightedInitialized = false;
         bool highlighted = false;

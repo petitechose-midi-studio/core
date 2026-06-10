@@ -6,10 +6,19 @@ namespace core::state::sequencer {
 
 FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState() = default;
 
+FLASHMEM void SequencerContentViewState::reset() {
+    kind.set(SequencerContentViewKind::ROOT);
+    parentStep.set(0);
+    sequenceId.set(GraphLimits::INVALID_ID);
+    length.set(0);
+    rootPageSnapshot = 0;
+    rootFocusSnapshot = 0;
+    bump();
+}
+
 FLASHMEM void SequencerStepEditOverlayState::reset() {
     stepIndex.set(0);
     focusedRow.set(0);
-    contentRevision.set(0);
     contentSession.reset();
     snapshotValid = false;
 }

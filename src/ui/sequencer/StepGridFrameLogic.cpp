@@ -2,6 +2,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "ui/sequencer/StepContentBadgeProjection.hpp"
 
 namespace core::ui::sequencer::grid {
@@ -112,6 +114,27 @@ FLASHMEM bool scaleFeedbackRelevant(oc::note::sequencer::StepSequencerScaleSetti
     return scaleSettings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic;
 }
 
+FLASHMEM const oc::note::sequencer::StepSequencerStepNode* microNode(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t localStep
+) {
+    if (!core::state::sequencer::isMicroSequenceContentView(sequencer)) return nullptr;
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    if (graph == nullptr) return nullptr;
+    const auto* sequence = graph->sequence(sequencer.contentView.sequenceId.get());
+    if (sequence == nullptr || localStep >= sequence->length) return nullptr;
+    return graph->stepNode(static_cast<uint16_t>(sequence->firstStepNode + localStep));
+}
+
+FLASHMEM bool microNodeEnabled(const oc::note::sequencer::StepSequencerStepNode& node) {
+    if (!node.has(oc::note::sequencer::STEP_NODE_ENABLED_OVERRIDE)) return true;
+    return node.has(oc::note::sequencer::STEP_NODE_ENABLED_VALUE);
+}
+
+FLASHMEM int clampInt(int value, int minValue, int maxValue) {
+    return std::clamp(value, minValue, maxValue);
+}
+
 }  // namespace
 
 FLASHMEM StepGridFrameState buildStepGridFrameState(
@@ -131,9 +154,13 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     frame.feedbackTouchedMask = sequencer.stepInlineFeedback.touchedMask.get();
     frame.feedbackProperty = sequencer.stepInlineFeedback.property.get();
 
-    const uint8_t length = sequencer.pattern.length.get();
-    const uint8_t page = sequencer.visiblePage();
-    const uint8_t pageStart = sequencer.pageStartStepClamped(page);
+    const bool microContext = core::state::sequencer::isMicroSequenceContentView(sequencer);
+    const uint8_t length = core::state::sequencer::activeContentLength(sequencer);
+    const uint8_t page = core::state::sequencer::normalizeActiveContentPage(
+        sequencer,
+        sequencer.page.get()
+    );
+    const uint8_t pageStart = core::state::sequencer::activeContentPageStartStep(sequencer, page);
     const auto enabledMask = sequencer.pattern.enabledMask.get();
     const auto probabilityCycleMask = sequencer.probabilityCycleMask;
     const int16_t playhead = sequencer.playheadStep.get();
@@ -159,22 +186,64 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
         tile.inPattern = absoluteStep < length;
         tile.enabled = tile.inPattern ? enabledMask.test(absoluteStep) : false;
         tile.playing =
-            tile.inPattern && (playhead >= 0) && (absoluteStep == static_cast<uint8_t>(playhead));
+            !microContext &&
+            tile.inPattern &&
+            (playhead >= 0) &&
+            (absoluteStep == static_cast<uint8_t>(playhead));
 
         if (!tile.inPattern) {
             continue;
         }
 
         tile.probabilityCycleActive =
-            !probabilityCycleMaskActive || probabilityCycleMask.test(absoluteStep);
-        tile.note = sequencer.pattern.note[absoluteStep];
-        tile.velocity = sequencer.pattern.velocity[absoluteStep];
-        tile.probability = sequencer.pattern.probability[absoluteStep];
-        tile.gate = sequencer.pattern.gate[absoluteStep];
-        tile.nudge = sequencer.pattern.nudge[absoluteStep];
-        tile.contentBadges = buildStepContentBadgeProjection(sequencer.pattern, absoluteStep);
+            microContext || !probabilityCycleMaskActive || probabilityCycleMask.test(absoluteStep);
+        if (microContext) {
+            const auto* node = microNode(sequencer, absoluteStep);
+            const uint8_t parentStep = sequencer.contentView.parentStep.get();
+            if (node == nullptr || parentStep >= core::state::sequencer::SequencerState::MAX_STEPS) {
+                tile.inPattern = false;
+                tile.enabled = false;
+                continue;
+            }
+            tile.enabled = microNodeEnabled(*node);
+            tile.note = static_cast<uint8_t>(clampInt(
+                static_cast<int>(sequencer.pattern.note[parentStep]) + node->noteOffset,
+                0,
+                127
+            ));
+            tile.velocity = static_cast<uint8_t>(clampInt(
+                static_cast<int>(sequencer.pattern.velocity[parentStep]) + node->velocityOffset,
+                0,
+                127
+            ));
+            tile.probability = static_cast<uint8_t>(clampInt(
+                static_cast<int>(sequencer.pattern.probability[parentStep]) + node->probabilityOffset,
+                0,
+                100
+            ));
+            tile.gate = static_cast<uint16_t>(clampInt(
+                static_cast<int>(sequencer.pattern.gate[parentStep]) + node->gateOffset,
+                0,
+                core::state::sequencer::SequencerState::MAX_GATE_PERCENT
+            ));
+            tile.nudge = static_cast<int8_t>(clampInt(
+                static_cast<int>(sequencer.pattern.nudge[parentStep]) + node->nudgeOffset,
+                -50,
+                50
+            ));
+            tile.contentBadges = {};
+        } else {
+            tile.enabled = tile.inPattern ? enabledMask.test(absoluteStep) : false;
+            tile.note = sequencer.pattern.note[absoluteStep];
+            tile.velocity = sequencer.pattern.velocity[absoluteStep];
+            tile.probability = sequencer.pattern.probability[absoluteStep];
+            tile.gate = sequencer.pattern.gate[absoluteStep];
+            tile.nudge = sequencer.pattern.nudge[absoluteStep];
+            tile.contentBadges = buildStepContentBadgeProjection(sequencer.pattern, absoluteStep);
+        }
 
         const bool hasRuntimeVariation =
+            !microContext &&
             tile.enabled &&
             telemetry.validMask.test(absoluteStep) &&
             telemetry.triggeredMask.test(absoluteStep) &&
