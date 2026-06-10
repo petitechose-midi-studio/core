@@ -4,6 +4,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/project/ProjectSlug.hpp"
+
 namespace core::state::project {
 
 namespace {
@@ -20,7 +22,7 @@ FLASHMEM void assignText(std::array<char, Size>& target, const char* source) {
 
 FLASHMEM void ProjectMetadata::reset() {
     assignText(id, "");
-    assignText(name, "Untitled");
+    assignText(name, DEFAULT_UNSAVED_PROJECT_SLUG);
     modifiedCounter = 0;
     dirty = false;
     hasSavedIdentity = false;

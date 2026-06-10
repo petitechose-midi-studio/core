@@ -1,5 +1,7 @@
 #include "ui/view/ProjectView.hpp"
 
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
 #include <config/Timing.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
@@ -18,8 +20,17 @@ namespace theme = standalone::theme;
 constexpr lv_coord_t TAB_STRIP_HEIGHT = 24;
 constexpr lv_coord_t TAB_ACTIVE_WIDTH = 92;
 constexpr lv_coord_t TAB_INACTIVE_WIDTH = 30;
+constexpr lv_coord_t KEYBOARD_KEY_W = 25;
+constexpr lv_coord_t KEYBOARD_KEY_H = 24;
+constexpr lv_coord_t KEYBOARD_KEY_GAP = 3;
+constexpr lv_coord_t KEYBOARD_GRID_X = 5;
+constexpr lv_coord_t KEYBOARD_GRID_Y = 38;
+constexpr lv_coord_t KEYBOARD_ROW_CENTER_OFFSET = (KEYBOARD_KEY_W + KEYBOARD_KEY_GAP) / 2;
+constexpr lv_coord_t KEYBOARD_LABEL_Y_OFFSET = 0;
 constexpr uint32_t RENDER_TIMER_PERIOD_MS =
-    (Config::Timing::LVGL_HZ > 1000) ? 1 : ((1000 + Config::Timing::LVGL_HZ - 1) / Config::Timing::LVGL_HZ);
+    (Config::Timing::LVGL_HZ > 1000)
+        ? 1
+        : ((1000 + Config::Timing::LVGL_HZ - 1) / Config::Timing::LVGL_HZ);
 
 FLASHMEM ms::ui::MenuRowKind toMenuRowKind(core::state::project::ProjectMenuRowKind kind) {
     switch (kind) {
@@ -39,6 +50,19 @@ FLASHMEM ms::ui::MenuRowKind toMenuRowKind(core::state::project::ProjectMenuRowK
 
 FLASHMEM core::state::project::ProjectTab tabAt(uint8_t index) {
     return static_cast<core::state::project::ProjectTab>(index);
+}
+
+FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) {
+    return node == core::state::project::ProjectNodeId::SAVE_AS_PROJECT_NAME ||
+           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME;
+}
+
+FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, const char* text) {
+    if (!label) return;
+    const char* next = text ? text : "";
+    const char* current = lv_label_get_text(label);
+    if (current && std::strcmp(current, next) == 0) return;
+    lv_label_set_text(label, next);
 }
 
 FLASHMEM const char* tabIcon(core::state::project::ProjectTab tab) {
@@ -73,6 +97,107 @@ FLASHMEM uint32_t tabAccentColor(core::state::project::ProjectTab tab) {
     }
 }
 
+FLASHMEM void configureKeyboardKeyLabel(
+    lv_obj_t* label,
+    const char* text
+) {
+    if (!label) return;
+
+    lv_obj_set_style_text_font(label, fonts.inter_13_bold, 0);
+    lv_label_set_text(label, text ? text : "");
+    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, KEYBOARD_LABEL_Y_OFFSET);
+}
+
+FLASHMEM bool isKeyboardLetter(char character) {
+    return character >= 'a' && character <= 'z';
+}
+
+FLASHMEM char shiftedKeyboardCharacter(char character) {
+    return isKeyboardLetter(character)
+        ? static_cast<char>(character - 'a' + 'A')
+        : character;
+}
+
+FLASHMEM void setKeyboardKeyTextStyle(lv_obj_t* label, bool selected) {
+    if (!label) return;
+    lv_obj_set_style_text_color(
+        label,
+        lv_color_hex(selected ? theme::color::TEXT_PRIMARY : theme::color::TEXT_SECONDARY),
+        0
+    );
+    lv_obj_set_style_text_opa(
+        label,
+        selected ? LV_OPA_COVER : LV_OPA_70,
+        0
+    );
+}
+
+FLASHMEM ContextActionStripSlotProps keyboardStandaloneIconSlot(
+    const char* icon,
+    ContextActionStripTone tone = ContextActionStripTone::NEUTRAL,
+    standalone::icons::Size iconSize = standalone::icons::Size::M,
+    ContextActionStripVisualState visualState = ContextActionStripVisualState::ACTIVE
+) {
+    return ContextActionStripSlotProps{
+        .visualState = visualState,
+        .tone = tone,
+        .showIcon = true,
+        .icon = icon,
+        .iconUsesStandaloneFont = true,
+        .iconSize = iconSize,
+    };
+}
+
+FLASHMEM ContextActionStripSlotProps keyboardLabelSlot(
+    const char* label,
+    ContextActionStripTone tone = ContextActionStripTone::NEUTRAL
+) {
+    return ContextActionStripSlotProps{
+        .visualState = ContextActionStripVisualState::ACTIVE,
+        .tone = tone,
+        .showLabel = true,
+        .label = label,
+    };
+}
+
+FLASHMEM ContextActionStripProps keyboardLeftActionStripProps(bool visible, bool shiftActive) {
+    ContextActionStripProps props;
+    props.visible = visible;
+    if (!visible) return props;
+    props.slots[1] = keyboardStandaloneIconSlot(
+        standalone::icons::MODIFIER_SHIFT,
+        ContextActionStripTone::NEUTRAL,
+        standalone::icons::Size::M,
+        shiftActive
+            ? ContextActionStripVisualState::ACTIVE
+            : ContextActionStripVisualState::DIM
+    );
+    props.slots[2] = keyboardStandaloneIconSlot(
+        standalone::icons::ACTION_CLEAR,
+        ContextActionStripTone::DESTRUCTIVE,
+        standalone::icons::Size::S
+    );
+    return props;
+}
+
+FLASHMEM ContextActionStripProps keyboardBottomActionStripProps(bool visible) {
+    ContextActionStripProps props;
+    props.visible = visible;
+    if (!visible) return props;
+    props.slots[0] = keyboardStandaloneIconSlot(
+        standalone::icons::ACTION_BACKWARD,
+        ContextActionStripTone::WARNING
+    );
+    props.slots[1] = keyboardLabelSlot("Space");
+    props.slots[2] = keyboardStandaloneIconSlot(
+        standalone::icons::ACTION_VALIDATE,
+        ContextActionStripTone::POSITIVE
+    );
+    return props;
+}
+
 }  // namespace
 
 FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
@@ -89,9 +214,19 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
 FLASHMEM ProjectView::~ProjectView() {
     render_timer_.reset();
     menu_.reset();
+    bottom_action_strip_.reset();
+    left_action_strip_.reset();
+    keyboard_container_ = nullptr;
+    keyboard_title_ = nullptr;
+    keyboard_meta_ = nullptr;
+    keyboard_name_box_ = nullptr;
+    keyboard_name_label_ = nullptr;
+    keyboard_keys_ = {};
     frame_.reset();
     container_ = nullptr;
     body_container_ = nullptr;
+    interaction_container_ = nullptr;
+    center_column_ = nullptr;
     tab_strip_ = nullptr;
     tab_widgets_ = {};
 }
@@ -164,11 +299,35 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     }
 
-    menu_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(body_container_);
+    frame_->createInteractionRow();
+    interaction_container_ = frame_->interactionRow();
+
+    left_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
+        interaction_container_,
+        ContextActionStripOrientation::VERTICAL,
+        ContextActionStripVerticalLayout::SPREAD
+    );
+    if (left_action_strip_ && left_action_strip_->getElement()) {
+        lv_obj_set_width(left_action_strip_->getElement(), 32);
+        lv_obj_set_style_pad_left(left_action_strip_->getElement(), 3, 0);
+        lv_obj_set_style_pad_right(left_action_strip_->getElement(), 1, 0);
+    }
+
+    frame_->createCenterColumn();
+    center_column_ = frame_->centerColumn();
+
+    menu_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(center_column_);
     if (menu_ && menu_->getElement()) {
         lv_obj_set_height(menu_->getElement(), 0);
         lv_obj_set_flex_grow(menu_->getElement(), 1);
     }
+
+    bottom_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
+        body_container_,
+        ContextActionStripOrientation::HORIZONTAL
+    );
+
+    createKeyboardLayout();
 }
 
 FLASHMEM void ProjectView::bindToState() {
@@ -212,6 +371,18 @@ FLASHMEM void ProjectView::render() {
 
     renderTabs();
 
+    const bool keyboardActive = isProjectNameEditorNode(state_refs_.navigation.currentNode.get());
+    renderKeyboardActionStrips(keyboardActive);
+
+    if (keyboardActive) {
+        if (menu_) menu_->hide();
+        setKeyboardVisible(true);
+        renderKeyboard();
+        dirty_ = false;
+        pauseRenderTimerIfIdle();
+        return;
+    }
+
     const auto page = core::state::project::buildProjectMenuPage(
         state_refs_.navigation,
         [this]() {
@@ -231,6 +402,10 @@ FLASHMEM void ProjectView::render() {
             return context;
         }()
     );
+
+    setKeyboardVisible(false);
+    if (menu_) menu_->show();
+
     for (uint8_t i = 0; i < page.rowCount && i < rows_.size(); ++i) {
         const auto& source = page.rows[i];
         rows_[i] = ms::ui::MenuRow{
@@ -253,6 +428,203 @@ FLASHMEM void ProjectView::render() {
     });
     dirty_ = false;
     pauseRenderTimerIfIdle();
+}
+
+FLASHMEM void ProjectView::renderKeyboardActionStrips(bool visible) {
+    if (left_action_strip_) {
+        left_action_strip_->render(
+            keyboardLeftActionStripProps(visible, state_refs_.navigation.projectNameShiftActive)
+        );
+    }
+    if (bottom_action_strip_) {
+        bottom_action_strip_->render(keyboardBottomActionStripProps(visible));
+    }
+}
+
+FLASHMEM void ProjectView::createKeyboardLayout() {
+    if (!center_column_) return;
+
+    keyboard_container_ = lv_obj_create(center_column_);
+    style::apply(keyboard_container_)
+        .size(LV_PCT(100), LV_PCT(100))
+        .transparent()
+        .noBorder()
+        .pad(0)
+        .noScroll();
+    lv_obj_set_height(keyboard_container_, 0);
+    lv_obj_set_flex_grow(keyboard_container_, 1);
+    lv_obj_add_flag(keyboard_container_, LV_OBJ_FLAG_HIDDEN);
+
+    keyboard_title_ = lv_label_create(keyboard_container_);
+    lv_label_set_text(keyboard_title_, "");
+    lv_obj_set_pos(keyboard_title_, 10, 4);
+    lv_obj_set_size(keyboard_title_, 78, 24);
+    lv_obj_set_style_text_font(keyboard_title_, fonts.inter_14_bold, 0);
+    lv_obj_set_style_text_color(keyboard_title_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
+    lv_label_set_long_mode(keyboard_title_, LV_LABEL_LONG_CLIP);
+
+    keyboard_meta_ = lv_label_create(keyboard_container_);
+    lv_label_set_text(keyboard_meta_, "");
+    lv_obj_set_pos(keyboard_meta_, 224, 5);
+    lv_obj_set_size(keyboard_meta_, 88, 20);
+    lv_obj_set_style_text_font(keyboard_meta_, fonts.inter_12_medium, 0);
+    lv_obj_set_style_text_color(keyboard_meta_, lv_color_hex(theme::color::MACRO_2), 0);
+    lv_obj_set_style_text_opa(keyboard_meta_, LV_OPA_90, 0);
+    lv_obj_set_style_text_align(keyboard_meta_, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(keyboard_meta_, LV_LABEL_LONG_DOT);
+
+    keyboard_name_box_ = lv_obj_create(keyboard_container_);
+    style::apply(keyboard_name_box_).transparent().noBorder().pad(0).noScroll();
+    lv_obj_set_pos(keyboard_name_box_, 90, 2);
+    lv_obj_set_size(keyboard_name_box_, 130, 26);
+    lv_obj_set_style_radius(keyboard_name_box_, 3, 0);
+    lv_obj_set_style_bg_color(keyboard_name_box_, lv_color_hex(theme::color::KNOB_BACKGROUND), 0);
+    lv_obj_set_style_bg_opa(keyboard_name_box_, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(keyboard_name_box_, 1, 0);
+    lv_obj_set_style_border_color(keyboard_name_box_, lv_color_hex(theme::color::INACTIVE), 0);
+    lv_obj_set_style_border_opa(keyboard_name_box_, LV_OPA_70, 0);
+
+    keyboard_name_label_ = lv_label_create(keyboard_name_box_);
+    lv_label_set_text(keyboard_name_label_, "");
+    lv_obj_set_pos(keyboard_name_label_, 6, 2);
+    lv_obj_set_size(keyboard_name_label_, 118, 18);
+    lv_obj_set_style_text_font(keyboard_name_label_, fonts.inter_14_semibold, 0);
+    lv_obj_set_style_text_color(keyboard_name_label_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
+    lv_label_set_long_mode(keyboard_name_label_, LV_LABEL_LONG_DOT);
+
+    for (uint8_t i = 0; i < keyboard_keys_.size(); ++i) {
+        const auto& cell = core::state::project::projectNameKeyboardCellAt(i);
+        const lv_coord_t centeredOffset =
+            (cell.row == 2 || cell.row == 3) ? KEYBOARD_ROW_CENTER_OFFSET : 0;
+        const lv_coord_t x = static_cast<lv_coord_t>(
+            KEYBOARD_GRID_X + centeredOffset + cell.column * (KEYBOARD_KEY_W + KEYBOARD_KEY_GAP)
+        );
+        const lv_coord_t y = static_cast<lv_coord_t>(
+            KEYBOARD_GRID_Y + cell.row * (KEYBOARD_KEY_H + KEYBOARD_KEY_GAP)
+        );
+        const lv_coord_t w = static_cast<lv_coord_t>(
+            cell.columnSpan * KEYBOARD_KEY_W + (cell.columnSpan - 1U) * KEYBOARD_KEY_GAP
+        );
+
+        auto& widgets = keyboard_keys_[i];
+        widgets.container = lv_obj_create(keyboard_container_);
+        style::apply(widgets.container).transparent().noBorder().pad(0).noScroll();
+        lv_obj_set_pos(widgets.container, x, y);
+        lv_obj_set_size(widgets.container, w, KEYBOARD_KEY_H);
+        lv_obj_set_style_radius(widgets.container, 3, 0);
+        lv_obj_set_style_border_width(widgets.container, 1, 0);
+
+        widgets.label = lv_label_create(widgets.container);
+        configureKeyboardKeyLabel(widgets.label, cell.label);
+        if (isKeyboardLetter(cell.character)) {
+            char shiftedText[2] = {shiftedKeyboardCharacter(cell.character), '\0'};
+            widgets.shiftLabel = lv_label_create(widgets.container);
+            configureKeyboardKeyLabel(widgets.shiftLabel, shiftedText);
+            lv_obj_add_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
+        }
+        renderKeyboardKey(i, false, true);
+    }
+}
+
+FLASHMEM void ProjectView::renderKeyboard() {
+    if (!keyboard_container_) return;
+
+    const auto node = state_refs_.navigation.currentNode.get();
+    setLabelTextIfChanged(
+        keyboard_title_,
+        node == core::state::project::ProjectNodeId::SAVE_AS_PROJECT_NAME
+            ? "SAVE AS"
+            : "RENAME"
+    );
+    setLabelTextIfChanged(
+        keyboard_meta_,
+        state_refs_.navigation.lifecycleFeedback.empty()
+            ? ""
+            : state_refs_.navigation.lifecycleFeedback.get()
+    );
+    setLabelTextIfChanged(
+        keyboard_name_label_,
+        state_refs_.navigation.editingProjectSlug.data()
+    );
+
+    const uint8_t selected = state_refs_.navigation.projectNameKeyIndex;
+    const bool shiftActive = state_refs_.navigation.projectNameShiftActive;
+    if (rendered_keyboard_shift_ != shiftActive) {
+        applyKeyboardShiftVisibility(shiftActive);
+        rendered_keyboard_shift_ = shiftActive;
+    }
+
+    if (rendered_keyboard_selected_ != selected) {
+        if (rendered_keyboard_selected_ < keyboard_keys_.size()) {
+            renderKeyboardKey(rendered_keyboard_selected_, false);
+        }
+        renderKeyboardKey(selected, true);
+        rendered_keyboard_selected_ = selected;
+    }
+}
+
+FLASHMEM void ProjectView::renderKeyboardKey(uint8_t index, bool selected, bool force) {
+    if (index >= keyboard_keys_.size()) return;
+
+    auto& widgets = keyboard_keys_[index];
+    if (!widgets.container || !widgets.label) return;
+    if (!force && widgets.styleInitialized && widgets.selected == selected) return;
+
+    const uint32_t accent = theme::color::MACRO_2;
+
+    lv_obj_set_style_bg_color(
+        widgets.container,
+        lv_color_hex(selected ? accent : theme::color::KNOB_BACKGROUND),
+        0
+    );
+    lv_obj_set_style_bg_opa(
+        widgets.container,
+        selected ? LV_OPA_80 : LV_OPA_20,
+        0
+    );
+    lv_obj_set_style_border_color(
+        widgets.container,
+        lv_color_hex(selected ? accent : theme::color::INACTIVE),
+        0
+    );
+    lv_obj_set_style_border_opa(
+        widgets.container,
+        selected ? LV_OPA_COVER : LV_OPA_40,
+        0
+    );
+    setKeyboardKeyTextStyle(widgets.label, selected);
+    setKeyboardKeyTextStyle(widgets.shiftLabel, selected);
+
+    widgets.selected = selected;
+    widgets.styleInitialized = true;
+}
+
+FLASHMEM void ProjectView::applyKeyboardShiftVisibility(bool shiftActive) {
+    for (auto& widgets : keyboard_keys_) {
+        if (!widgets.label || !widgets.shiftLabel || widgets.shiftVisible == shiftActive) continue;
+        if (shiftActive) {
+            lv_obj_add_flag(widgets.label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(widgets.label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
+        }
+        widgets.shiftVisible = shiftActive;
+    }
+}
+
+FLASHMEM void ProjectView::setKeyboardVisible(bool visible) {
+    if (!keyboard_container_ || keyboard_visible_ == visible) return;
+    keyboard_visible_ = visible;
+    if (visible) {
+        lv_obj_clear_flag(keyboard_container_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        applyKeyboardShiftVisibility(false);
+        lv_obj_add_flag(keyboard_container_, LV_OBJ_FLAG_HIDDEN);
+        rendered_keyboard_selected_ =
+            core::state::project::PROJECT_NAME_KEYBOARD_CELL_COUNT;
+        rendered_keyboard_shift_ = false;
+    }
 }
 
 FLASHMEM void ProjectView::renderTabs() {

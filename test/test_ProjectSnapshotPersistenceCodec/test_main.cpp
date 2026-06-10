@@ -49,12 +49,12 @@ bool sameScale(const StepSequencerScaleSettings& lhs,
 void configureProjectSession(core::state::CoreState& state) {
     std::strncpy(
         state.project.metadata.id.data(),
-        "P777",
+        "p777",
         state.project.metadata.id.size() - 1
     );
     std::strncpy(
         state.project.metadata.name.data(),
-        "Full Snapshot",
+        "p777",
         state.project.metadata.name.size() - 1
     );
     state.project.metadata.modifiedCounter = 77;
@@ -94,8 +94,8 @@ void configureProjectSession(core::state::CoreState& state) {
 }
 
 void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
-    assert(std::strcmp(state.project.metadata.id.data(), "P777") == 0);
-    assert(std::strcmp(state.project.metadata.name.data(), "Full Snapshot") == 0);
+    assert(std::strcmp(state.project.metadata.id.data(), "p777") == 0);
+    assert(std::strcmp(state.project.metadata.name.data(), "p777") == 0);
     assert(state.project.metadata.modifiedCounter == 77);
     assert(state.project.metadata.dirty);
     assert(state.project.metadata.hasSavedIdentity);
@@ -173,7 +173,8 @@ void test_project_snapshot_roundtrip_restores_runtime_state() {
 
 void test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks() {
     project::ProjectState state;
-    std::strncpy(state.metadata.id.data(), "P010", state.metadata.id.size() - 1);
+    std::strncpy(state.metadata.id.data(), "p010", state.metadata.id.size() - 1);
+    std::strncpy(state.metadata.name.data(), "p010", state.metadata.name.size() - 1);
 
     uint8_t bytes[512] = {};
     auto encodeResult = core::persistence::project_state_codec::encodeProjectState(
@@ -196,7 +197,8 @@ void test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks() 
     assert(report.ok());
     assert(reportHas(report, project_file::LoadCode::MISSING_OPTIONAL_CHUNK));
     assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
-    assert(std::strcmp(snapshot.project.metadata.id.data(), "P010") == 0);
+    assert(std::strcmp(snapshot.project.metadata.id.data(), "p010") == 0);
+    assert(std::strcmp(snapshot.project.metadata.name.data(), "p010") == 0);
     assert(snapshot.sharedTrackEnabledMask == core::state::macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK);
 
     std::cout << "[PASS] test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks\n";

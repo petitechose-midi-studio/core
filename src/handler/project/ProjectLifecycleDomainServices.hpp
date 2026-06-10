@@ -21,6 +21,7 @@ public:
         OK = 0,
         UNAVAILABLE,
         INVALID_ARGUMENT,
+        ALREADY_EXISTS,
         SAVE_FAILED,
         LOAD_FAILED,
         LIST_FAILED,
@@ -55,6 +56,8 @@ public:
     Result markProjectMutated() const;
     Result saveCurrentProject() const;
     Result saveAsNextProject() const;
+    Result saveAsProject(const char* projectId) const;
+    Result renameCurrentProject(const char* projectId) const;
     Result saveProject(const char* projectId) const;
     Result loadProject(const char* projectId) const;
     Result refreshLoadableProjects() const;

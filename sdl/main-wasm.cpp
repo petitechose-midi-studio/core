@@ -20,12 +20,14 @@
 #include <memory>
 
 #include <oc/hal/sdl/Sdl.hpp>
+#include <oc/impl/HostFileSystem.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
 #include <oc/hal/net/WebSocketTransport.hpp>
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
+#include "persistence/ProductFileService.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
@@ -47,6 +49,8 @@ int main(int argc, char** argv) {
                                             sequencerWorkspaceStorage,
                                             sequencerPatternLibraryStorage,
                                             sequencerSetLibraryStorage);
+    static oc::impl::HostFileSystem productFilesystem("/midi-studio-wasm");
+    static core::persistence::ProductFileService productFiles(productFilesystem);
     static std::unique_ptr<core::sequencer::SequencerRuntimeService> standaloneSequencerRuntime;
 
     if (!settingsStorage.init() ||
@@ -55,6 +59,9 @@ int main(int argc, char** argv) {
         !sequencerWorkspaceStorage.init() ||
         !sequencerPatternLibraryStorage.init() ||
         !sequencerSetLibraryStorage.init()) {
+        return 1;
+    }
+    if (!productFilesystem.init() || !productFiles.init()) {
         return 1;
     }
 
@@ -102,7 +109,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    core::app::registerContexts(app, coreState);
+    core::app::registerContexts(app, coreState, productFiles);
     app.begin();
 
     return ms::entry::run_wasm(env, app, &coreState, tick_core_state);

@@ -45,6 +45,11 @@ FLASHMEM void ProjectNavigationState::reset() {
     transportSwingPercent = 0;
     transportRunMode = 0;
     pendingLoadProjectId = {};
+    editingProjectSlug = {};
+    projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    projectNameOptRawPosition = 0.0f;
+    projectNameOptRowAccumulator = 0.0f;
+    projectNameShiftActive = false;
     pendingLoadCanSaveCurrent = false;
     loadProjects.clear();
     pathStack = {
@@ -97,6 +102,8 @@ FLASHMEM ProjectTab tabForRootNode(ProjectNodeId node) {
         case ProjectNodeId::STORAGE_ROOT:
         case ProjectNodeId::LOAD_PROJECT:
         case ProjectNodeId::LOAD_PROJECT_CONFIRM:
+        case ProjectNodeId::SAVE_AS_PROJECT_NAME:
+        case ProjectNodeId::RENAME_PROJECT_NAME:
             return ProjectTab::STORAGE;
         case ProjectNodeId::ROUTING_ROOT:
             return ProjectTab::ROUTING;

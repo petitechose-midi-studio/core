@@ -37,7 +37,7 @@ void test_project_state_defaults_are_stable() {
     project::ProjectState state;
 
     assert(state.metadata.id[0] == '\0');
-    assert(std::strcmp(state.metadata.name.data(), "Untitled") == 0);
+    assert(std::strcmp(state.metadata.name.data(), "untitled") == 0);
     assert(!state.metadata.dirty);
     assert(!state.metadata.hasSavedIdentity);
     assert(state.transport.tempoBpm == 120.0f);
@@ -57,12 +57,12 @@ void test_project_state_defaults_are_stable() {
 void configureProjectSession(core::state::CoreState& state) {
     std::strncpy(
         state.project.metadata.id.data(),
-        "P123",
+        "p123",
         state.project.metadata.id.size() - 1
     );
     std::strncpy(
         state.project.metadata.name.data(),
-        "Snapshot Test",
+        "p123",
         state.project.metadata.name.size() - 1
     );
     state.project.metadata.modifiedCounter = 42;
@@ -114,8 +114,8 @@ void test_snapshot_capture_apply_restores_project_session() {
 
     assert(project::applyProjectSnapshot(state, snapshot));
 
-    assert(std::strcmp(state.project.metadata.id.data(), "P123") == 0);
-    assert(std::strcmp(state.project.metadata.name.data(), "Snapshot Test") == 0);
+    assert(std::strcmp(state.project.metadata.id.data(), "p123") == 0);
+    assert(std::strcmp(state.project.metadata.name.data(), "p123") == 0);
     assert(state.project.metadata.modifiedCounter == 42);
     assert(state.project.metadata.dirty);
     assert(state.project.metadata.hasSavedIdentity);

@@ -6,6 +6,7 @@
 #include <oc/state/Signal.hpp>
 #include <oc/state/SignalString.hpp>
 
+#include "state/project/ProjectNameKeyboard.hpp"
 #include "state/project/ProjectState.hpp"
 
 namespace core::state::project {
@@ -29,6 +30,8 @@ enum class ProjectNodeId : uint8_t {
     NEW_PROJECT_CONFIRM,
     LOAD_PROJECT,
     LOAD_PROJECT_CONFIRM,
+    SAVE_AS_PROJECT_NAME,
+    RENAME_PROJECT_NAME,
 };
 
 struct ProjectBrowserEntry {
@@ -66,6 +69,11 @@ struct ProjectNavigationState {
     uint8_t transportSwingPercent = 0;
     uint8_t transportRunMode = 0;
     std::array<char, ProjectMetadata::ID_SIZE> pendingLoadProjectId{};
+    std::array<char, ProjectMetadata::ID_SIZE> editingProjectSlug{};
+    uint8_t projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    float projectNameOptRawPosition = 0.0f;
+    float projectNameOptRowAccumulator = 0.0f;
+    bool projectNameShiftActive = false;
     bool pendingLoadCanSaveCurrent = false;
     ProjectBrowserState loadProjects;
 

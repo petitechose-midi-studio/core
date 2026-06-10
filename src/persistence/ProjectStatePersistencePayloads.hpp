@@ -7,7 +7,7 @@
 namespace core::persistence::project_state_codec {
 
 inline constexpr uint8_t PROJECT_STATE_CHUNK_VERSION_MAJOR = 1;
-inline constexpr uint8_t PROJECT_STATE_CHUNK_VERSION_MINOR = 0;
+inline constexpr uint8_t PROJECT_STATE_CHUNK_VERSION_MINOR = 1;
 
 #pragma pack(push, 1)
 struct ProjectMetaPayload {
@@ -39,7 +39,7 @@ struct ProjectRoutingPayload {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(ProjectMetaPayload) == 48, "Unexpected ProjectMetaPayload size");
+static_assert(sizeof(ProjectMetaPayload) == 118, "Unexpected ProjectMetaPayload size");
 static_assert(sizeof(ProjectTransportPayload) == 8, "Unexpected ProjectTransportPayload size");
 static_assert(sizeof(ProjectMusicalContextPayload) == 8, "Unexpected ProjectMusicalContextPayload size");
 static_assert(sizeof(ProjectRoutingPayload) == 16, "Unexpected ProjectRoutingPayload size");

@@ -3,6 +3,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <string>
 
 #include <oc/impl/HostFileSystem.hpp>
 
@@ -11,6 +12,7 @@
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
+#include "../../src/state/project/ProjectSlug.hpp"
 #include "../support/CoreStorages.hpp"
 
 namespace {
@@ -38,6 +40,15 @@ core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
     };
 }
 
+std::array<char, project::PROJECT_SLUG_SIZE> maxLengthSlug() {
+    std::array<char, project::PROJECT_SLUG_SIZE> slug{};
+    for (size_t i = 0; i < project::PROJECT_SLUG_MAX_LENGTH; ++i) {
+        slug[i] = 'a';
+    }
+    slug[project::PROJECT_SLUG_MAX_LENGTH] = '\0';
+    return slug;
+}
+
 struct CurrentStatFailureFileSystem : oc::interface::IFileSystem {
     explicit CurrentStatFailureFileSystem(const char* rootPath)
         : delegate(rootPath) {}
@@ -46,7 +57,7 @@ struct CurrentStatFailureFileSystem : oc::interface::IFileSystem {
     bool available() const override { return delegate.available(); }
     oc::type::Result<oc::interface::FileInfo> stat(const char* path) override {
         if (failCurrentStat && path &&
-            std::strcmp(path, "/midi-studio/projects/P321/project.mspj") == 0) {
+            std::strcmp(path, "/midi-studio/projects/p321.mspj") == 0) {
             return oc::type::Result<oc::interface::FileInfo>::err(
                 {oc::type::ErrorCode::STORAGE_READ_FAILED, "forced current stat failure"}
             );
@@ -109,12 +120,13 @@ struct CurrentStatFailureFileSystem : oc::interface::IFileSystem {
 };
 
 void configureProject(core::state::CoreState& state,
-                      const char* name,
+                      const char* pageName,
                       uint32_t modifiedCounter,
-                      const char* projectId = "P321") {
+                      const char* projectId = "p321") {
     state.project.metadata.id.fill('\0');
     std::strncpy(state.project.metadata.id.data(), projectId, state.project.metadata.id.size() - 1U);
-    std::strncpy(state.project.metadata.name.data(), name, state.project.metadata.name.size() - 1U);
+    state.project.metadata.name.fill('\0');
+    std::strncpy(state.project.metadata.name.data(), projectId, state.project.metadata.name.size() - 1U);
     state.project.metadata.modifiedCounter = modifiedCounter;
     state.project.metadata.hasSavedIdentity = true;
     state.project.metadata.dirty = false;
@@ -123,7 +135,7 @@ void configureProject(core::state::CoreState& state,
     state.statusBar.tempoDisplay.set(state.statusBar.tempo.get());
 
     auto& page = state.pages.activePageData();
-    std::strncpy(page.name, name, sizeof(page.name) - 1U);
+    std::strncpy(page.name, pageName, sizeof(page.name) - 1U);
     page.cc[1] = static_cast<uint8_t>(70U + modifiedCounter);
     page.values[1] = 0.25f + static_cast<float>(modifiedCounter) * 0.01f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
@@ -151,7 +163,7 @@ void assertLoadedProject(core::persistence::ProjectFileStore& store,
                          uint32_t expectedCounter) {
     project::ProjectSnapshot loaded;
     project_file::LoadReport report{};
-    auto loadedResult = store.load("P321", loaded, &report);
+    auto loadedResult = store.load("p321", loaded, &report);
     assert(loadedResult);
     assert(loadedResult.value().loadStatus == project_file::LoadStatus::OK);
     assert(loadedResult.value().overwriteSafe);
@@ -161,8 +173,8 @@ void assertLoadedProject(core::persistence::ProjectFileStore& store,
     auto runtime = makeCoreState(storages);
     assert(project::applyProjectSnapshot(runtime, loaded));
 
-    assert(std::strcmp(runtime.project.metadata.id.data(), "P321") == 0);
-    assert(std::strcmp(runtime.project.metadata.name.data(), expectedName) == 0);
+    assert(std::strcmp(runtime.project.metadata.id.data(), "p321") == 0);
+    assert(std::strcmp(runtime.project.metadata.name.data(), "p321") == 0);
     assert(runtime.project.metadata.modifiedCounter == expectedCounter);
     assert(std::strcmp(runtime.pages.activePageData().name, expectedName) == 0);
     assert(runtime.pages.activePageData().cc[1] == 70U + expectedCounter);
@@ -185,12 +197,12 @@ void test_save_load_project_snapshot_roundtrip() {
     auto saved = store.save(snapshot);
     assert(saved);
     assert(saved.value().bytesWritten > 0);
-    assert(std::strcmp(saved.value().projectPath, "projects/P321/project.mspj") == 0);
+    assert(std::strcmp(saved.value().projectPath, "projects/p321.mspj") == 0);
     assert(std::filesystem::is_regular_file(
-        testRoot() / "midi-studio" / "projects" / "P321" / "project.mspj"
+        testRoot() / "midi-studio" / "projects" / "p321.mspj"
     ));
     assert(!std::filesystem::exists(
-        testRoot() / "midi-studio" / "tmp" / "P321.project.tmp"
+        testRoot() / "midi-studio" / "tmp" / "p321.mspj.tmp"
     ));
 
     assertLoadedProject(store, "ProjectFS", 1);
@@ -216,7 +228,7 @@ void test_save_overwrites_existing_project_through_backup_commit() {
 
     assertLoadedProject(store, "Second", 2);
     assert(!std::filesystem::exists(
-        testRoot() / "midi-studio" / "projects" / "P321" / "project.bak"
+        testRoot() / "midi-studio" / "projects" / "p321.mspj.bak"
     ));
 
     std::cout << "[PASS] test_save_overwrites_existing_project_through_backup_commit\n";
@@ -230,7 +242,7 @@ void test_stale_tmp_is_replaced_on_save() {
     auto store = makeStore(files);
 
     const uint8_t stale[] = {'s', 't', 'a', 'l', 'e'};
-    assert(files.write("tmp/P321.project.tmp", 0, stale, sizeof(stale)));
+    assert(files.write("tmp/p321.mspj.tmp", 0, stale, sizeof(stale)));
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -239,7 +251,7 @@ void test_stale_tmp_is_replaced_on_save() {
 
     assertLoadedProject(store, "TmpClean", 3);
     assert(!std::filesystem::exists(
-        testRoot() / "midi-studio" / "tmp" / "P321.project.tmp"
+        testRoot() / "midi-studio" / "tmp" / "p321.mspj.tmp"
     ));
 
     std::cout << "[PASS] test_stale_tmp_is_replaced_on_save\n";
@@ -256,14 +268,14 @@ void test_load_recovers_interrupted_backup_commit() {
     auto state = makeCoreState(storages);
     configureProject(state, "Backup", 4);
     assert(store.save(capture(state)));
-    assert(files.rename("projects/P321/project.mspj", "projects/P321/project.bak"));
+    assert(files.rename("projects/p321.mspj", "projects/p321.mspj.bak"));
 
     assertLoadedProject(store, "Backup", 4);
     assert(std::filesystem::is_regular_file(
-        testRoot() / "midi-studio" / "projects" / "P321" / "project.mspj"
+        testRoot() / "midi-studio" / "projects" / "p321.mspj"
     ));
     assert(!std::filesystem::exists(
-        testRoot() / "midi-studio" / "projects" / "P321" / "project.bak"
+        testRoot() / "midi-studio" / "projects" / "p321.mspj.bak"
     ));
 
     std::cout << "[PASS] test_load_recovers_interrupted_backup_commit\n";
@@ -285,7 +297,7 @@ void test_save_propagates_current_stat_error_before_commit() {
     assert(!saved);
     assert(saved.error().code == oc::type::ErrorCode::STORAGE_READ_FAILED);
     assert(!std::filesystem::exists(
-        testRoot() / "midi-studio" / "projects" / "P321" / "project.mspj"
+        testRoot() / "midi-studio" / "projects" / "p321.mspj"
     ));
 
     std::cout << "[PASS] test_save_propagates_current_stat_error_before_commit\n";
@@ -300,29 +312,61 @@ void test_list_projects_returns_saved_projects_sorted() {
 
     test_support::CoreStorages storages;
     auto p003 = makeCoreState(storages);
-    configureProject(p003, "Third", 3, "P003");
+    configureProject(p003, "Third", 3, "p003");
     assert(store.save(capture(p003)));
 
     auto p001 = makeCoreState(storages);
-    configureProject(p001, "First", 1, "P001");
+    configureProject(p001, "First", 1, "p001");
     assert(store.save(capture(p001)));
 
-    assert(files.createDirectory("projects/BROKEN"));
     const uint8_t invalid[] = {'x'};
-    assert(files.write("projects/BROKEN/not-project.bin", 0, invalid, sizeof(invalid)));
-    assert(files.createDirectory("projects/P999"));
+    assert(files.write("projects/BROKEN_.mspj", 0, invalid, sizeof(invalid)));
+    assert(files.write("projects/p999.bin", 0, invalid, sizeof(invalid)));
 
     core::persistence::ProjectListEntry entries[4]{};
     auto listed = store.listProjects(entries, 4);
     assert(listed);
     assert(listed.value().count == 2);
     assert(!listed.value().truncated);
-    assert(std::strcmp(entries[0].id, "P001") == 0);
-    assert(std::strcmp(entries[1].id, "P003") == 0);
+    assert(std::strcmp(entries[0].id, "p001") == 0);
+    assert(std::strcmp(entries[1].id, "p003") == 0);
     assert(entries[0].sizeBytes > 0);
     assert(entries[1].sizeBytes > 0);
 
     std::cout << "[PASS] test_list_projects_returns_saved_projects_sorted\n";
+}
+
+void test_save_load_and_list_max_length_project_slug() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    auto store = makeStore(files);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    auto slug = maxLengthSlug();
+    configureProject(state, "LongSlug", 5, slug.data());
+    auto saved = store.save(capture(state));
+    assert(saved);
+
+    const auto expectedPath =
+        testRoot() / "midi-studio" / "projects" / (std::string(slug.data()) + ".mspj");
+    assert(std::filesystem::exists(expectedPath));
+
+    project::ProjectSnapshot loaded;
+    auto loadedResult = store.load(slug.data(), loaded);
+    assert(loadedResult);
+    assert(std::strcmp(loaded.project.metadata.id.data(), slug.data()) == 0);
+    assert(std::strcmp(loaded.project.metadata.name.data(), slug.data()) == 0);
+
+    core::persistence::ProjectListEntry entries[1]{};
+    auto listed = store.listProjects(entries, 1);
+    assert(listed);
+    assert(listed.value().count == 1);
+    assert(std::strcmp(entries[0].id, slug.data()) == 0);
+
+    std::cout << "[PASS] test_save_load_and_list_max_length_project_slug\n";
 }
 
 void test_list_projects_reports_truncation() {
@@ -334,11 +378,11 @@ void test_list_projects_reports_truncation() {
 
     test_support::CoreStorages storages;
     auto p001 = makeCoreState(storages);
-    configureProject(p001, "First", 1, "P001");
+    configureProject(p001, "First", 1, "p001");
     assert(store.save(capture(p001)));
 
     auto p002 = makeCoreState(storages);
-    configureProject(p002, "Second", 2, "P002");
+    configureProject(p002, "Second", 2, "p002");
     assert(store.save(capture(p002)));
 
     core::persistence::ProjectListEntry entries[1]{};
@@ -346,7 +390,7 @@ void test_list_projects_reports_truncation() {
     assert(listed);
     assert(listed.value().count == 1);
     assert(listed.value().truncated);
-    assert(std::strcmp(entries[0].id, "P001") == 0);
+    assert(std::strcmp(entries[0].id, "p001") == 0);
 
     std::cout << "[PASS] test_list_projects_reports_truncation\n";
 }
@@ -364,6 +408,7 @@ int main() {
     test_load_recovers_interrupted_backup_commit();
     test_save_propagates_current_stat_error_before_commit();
     test_list_projects_returns_saved_projects_sorted();
+    test_save_load_and_list_max_length_project_slug();
     test_list_projects_reports_truncation();
 
     resetTestRoot();

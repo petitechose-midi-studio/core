@@ -48,6 +48,8 @@ private:
     bool regularProjectInputActive() const;
     void enterPhysicalHoldLayer();
     void leavePhysicalHoldLayer();
+    void enterProjectNameShift();
+    void leaveProjectNameShift();
     void navigate(float delta);
     void switchTab(float delta);
     void enterFocused();
@@ -57,16 +59,19 @@ private:
     bool applyFocusedTransportStep(int steps);
     bool applyFocusedStorageStep(int steps);
     bool applyFocusedRoutingStep(int steps);
+    bool applyFocusedNameEditorStep(int steps);
     bool setFocusedProjectValue(float normalized);
     bool setFocusedMusicScaleValue(float normalized);
     bool setFocusedTransportValue(float normalized);
     bool setFocusedStorageValue(float normalized);
     bool setFocusedRoutingValue(float normalized);
+    bool setFocusedNameEditorValue(float normalized);
     bool activateFocusedProjectAction();
     bool loadProjectWithFeedback(const char* projectId);
     bool saveCurrentAndLoadProjectWithFeedback(const char* projectId);
     bool saveAsAndLoadProjectWithFeedback(const char* projectId);
     bool saveAndResetProjectWithFeedback(bool saveAsNew);
+    bool commitProjectNameEditor();
     void resetProject();
     void back();
     void consumeUndo();

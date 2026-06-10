@@ -11,8 +11,8 @@
 namespace core::state::project {
 
 struct ProjectMetadata {
-    static constexpr uint8_t ID_SIZE = 16;
-    static constexpr uint8_t NAME_SIZE = 24;
+    static constexpr uint8_t ID_SIZE = 55;
+    static constexpr uint8_t NAME_SIZE = 55;
 
     std::array<char, ID_SIZE> id{};
     std::array<char, NAME_SIZE> name{};

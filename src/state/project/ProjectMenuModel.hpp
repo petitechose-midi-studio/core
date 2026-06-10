@@ -76,6 +76,9 @@ bool openProjectLoadPicker(ProjectNavigationState& navigation);
 bool openProjectLoadConfirmation(ProjectNavigationState& navigation,
                                  const char* projectId,
                                  bool canSaveCurrent);
+bool openProjectNameEditor(ProjectNavigationState& navigation,
+                           ProjectNodeId editorNode,
+                           const char* initialSlug);
 bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& navigation);
 bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation);
 void switchProjectTab(ProjectNavigationState& navigation, int delta);
