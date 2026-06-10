@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -15,7 +16,10 @@
 #include "../../src/handler/project/ProjectHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
+#include "../../src/persistence/ProjectFileContainer.hpp"
 #include "../../src/persistence/ProjectFileStore.hpp"
+#include "../../src/persistence/ProjectSnapshotPersistenceCodec.hpp"
+#include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
@@ -165,6 +169,63 @@ void saveCurrentProjectSnapshot(ProjectHandlerHarness& h, const char* id) {
     assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
     core::persistence::ProjectFileStore store(h.productFiles);
     assert(store.save(snapshot));
+}
+
+void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
+    namespace project_file = core::persistence::project_file;
+    namespace project_snapshot_codec = core::persistence::project_snapshot_codec;
+    namespace project_state_codec = core::persistence::project_state_codec;
+
+    core::state::project::ProjectMetadata metadata{};
+    metadata.id.fill('\0');
+    metadata.name.fill('\0');
+    std::strncpy(metadata.id.data(), id, metadata.id.size() - 1U);
+    std::strncpy(metadata.name.data(), id, metadata.name.size() - 1U);
+    metadata.hasSavedIdentity = true;
+    metadata.dirty = false;
+
+    project_state_codec::ProjectMetaPayload meta{};
+    project_state_codec::fillMetaPayload(metadata, meta);
+    const uint8_t futureSequencerPayload[] = {1, 2, 3};
+
+    const project_file::ChunkView chunks[] = {
+        {
+            .id = project_file::chunkIdValue(project_file::ChunkId::PROJECT_META),
+            .versionMajor = project_snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+            .versionMinor = project_snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = reinterpret_cast<const uint8_t*>(&meta),
+            .size = sizeof(meta),
+        },
+        {
+            .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
+            .versionMajor = static_cast<uint8_t>(
+                project_snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR + 1
+            ),
+            .versionMinor = 0,
+            .flags = 0,
+            .data = futureSequencerPayload,
+            .size = sizeof(futureSequencerPayload),
+        },
+    };
+
+    uint8_t bytes[512] = {};
+    const auto encoded = project_file::encode(
+        chunks,
+        static_cast<uint16_t>(sizeof(chunks) / sizeof(chunks[0])),
+        0,
+        bytes,
+        sizeof(bytes)
+    );
+    assert(encoded.status == project_file::Status::OK);
+
+    char path[96] = {};
+    const int pathLength = std::snprintf(path, sizeof(path), "projects/%s.mspj", id);
+    assert(pathLength > 0 && static_cast<size_t>(pathLength) < sizeof(path));
+    const auto written = h.productFiles.write(path, 0, bytes, encoded.bytesWritten);
+    assert(written);
+    assert(written.value() == encoded.bytesWritten);
+    assert(h.productFiles.flush(path));
 }
 
 void moveProjectNameKeyboardRows(ProjectHandlerHarness& h, int rowsDown) {
@@ -870,6 +931,112 @@ void test_load_project_picker_selects_detected_project() {
     std::cout << "[PASS] test_load_project_picker_selects_detected_project\n";
 }
 
+void test_future_project_load_reports_read_only_and_blocks_direct_save() {
+    using Status = core::handler::ProjectLifecycleDomainServices::Status;
+    ProjectHandlerHarness h;
+    writeFutureSequencerProjectFile(h, "future-project");
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.loadProjects.count == 1);
+    assert(std::strcmp(
+               h.state.projectNavigation.loadProjects.entries[0].id.data(),
+               "future-project"
+           ) == 0);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(std::strcmp(
+               h.state.projectNavigation.lifecycleFeedback.get(),
+               "Loaded read-only future-project"
+           ) == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "future-project") == 0);
+    assert(h.state.project.metadata.hasSavedIdentity);
+    assert(!h.state.project.metadata.overwriteSafe);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2);
+    h.tap(Config::ButtonID::NAV);
+    assert(std::strcmp(
+               h.state.projectNavigation.lifecycleFeedback.get(),
+               "Save As required future-project"
+           ) == 0);
+    assert(!h.state.project.metadata.overwriteSafe);
+
+    auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+    const auto directSave = lifecycle.saveCurrentProject();
+    assert(directSave.status == Status::UNSAFE_OVERWRITE);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "future-project") == 0);
+    assert(!h.state.project.metadata.overwriteSafe);
+
+    const auto saveAs = lifecycle.saveAsNextProject();
+    assert(saveAs.success());
+    assert(std::strcmp(h.state.project.metadata.id.data(), "p001") == 0);
+    assert(h.state.project.metadata.overwriteSafe);
+    assert(h.productFiles.stat("projects/future-project.mspj"));
+    assert(h.productFiles.stat("projects/p001.mspj"));
+
+    std::cout << "[PASS] test_future_project_load_reports_read_only_and_blocks_direct_save\n";
+}
+
+void test_dirty_read_only_project_load_confirmation_forces_save_as() {
+    ProjectHandlerHarness h;
+
+    h.state.statusBar.tempo.set(121.0f);
+    h.state.statusBar.tempoDisplay.set(121.0f);
+    saveCurrentProjectSnapshot(h, "p002");
+    writeFutureSequencerProjectFile(h, "future-project");
+
+    auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+    const auto loadedFuture = lifecycle.loadProject("future-project");
+    assert(loadedFuture.success());
+    assert(!h.state.project.metadata.overwriteSafe);
+
+    h.state.statusBar.tempo.set(199.0f);
+    h.state.statusBar.tempoDisplay.set(199.0f);
+    h.state.markProjectMutated();
+    assert(h.state.project.metadata.dirty);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.loadProjects.count == 2);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(std::strcmp(
+               h.state.projectNavigation.loadProjects.entries[
+                   h.state.projectNavigation.focusedRow.get()
+               ].id.data(),
+               "p002"
+           ) == 0);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM);
+    assert(!h.state.projectNavigation.pendingLoadCanSaveCurrent);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p002") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
+    assert(h.state.project.metadata.overwriteSafe);
+    assert(h.state.statusBar.tempo.get() == 121.0f);
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot savedReadOnlyAsNew;
+    assert(store.load("p001", savedReadOnlyAsNew));
+    RestoredProjectHarness restored{savedReadOnlyAsNew};
+    assert(restored.state.statusBar.tempo.get() == 199.0f);
+
+    std::cout << "[PASS] test_dirty_read_only_project_load_confirmation_forces_save_as\n";
+}
+
 void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     ProjectHandlerHarness h;
 
@@ -1105,6 +1272,8 @@ int main() {
     test_overview_save_and_load_roundtrip_project_file();
     test_overview_load_missing_project_reports_failure();
     test_load_project_picker_selects_detected_project();
+    test_future_project_load_reports_read_only_and_blocks_direct_save();
+    test_dirty_read_only_project_load_confirmation_forces_save_as();
     test_dirty_project_load_prompts_save_and_preserves_latest_edits();
     test_untitled_dirty_load_prompts_save_as_and_then_loads_target();
     test_manual_save_as_rejects_invalid_and_duplicate_slugs();

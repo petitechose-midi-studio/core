@@ -60,6 +60,7 @@ struct ProjectMenuContext {
     std::array<char, ProjectMetadata::NAME_SIZE> projectName{};
     bool projectDirty = false;
     bool projectHasSavedIdentity = false;
+    bool projectOverwriteSafe = true;
     std::array<uint8_t, core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>
         outputMidiChannels{};
 };
