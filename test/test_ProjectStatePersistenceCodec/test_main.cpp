@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
+#include "../../src/state/project/ProjectSlug.hpp"
 
 namespace {
 
@@ -19,9 +20,19 @@ struct TransportV0Fixture {
     uint8_t swingPercent = 0;
     uint8_t reserved0 = 0;
 };
+
+struct ProjectMetaV1_0Fixture {
+    char id[16] = {};
+    char name[24] = {};
+    uint32_t modifiedCounter = 0;
+    uint8_t flags = 0;
+    uint8_t reserved0 = 0;
+    uint16_t reserved1 = 0;
+};
 #pragma pack(pop)
 
 static_assert(sizeof(TransportV0Fixture) == 4, "Unexpected TransportV0Fixture size");
+static_assert(sizeof(ProjectMetaV1_0Fixture) == 48, "Unexpected ProjectMetaV1_0Fixture size");
 
 bool reportHas(const project_file::LoadReport& report, project_file::LoadCode code) {
     for (uint8_t i = 0; i < report.itemCount; ++i) {
@@ -54,8 +65,8 @@ bool sameProjectCore(const project::ProjectState& lhs, const project::ProjectSta
 
 project::ProjectState makeProject() {
     project::ProjectState state;
-    std::strncpy(state.metadata.id.data(), "P042", state.metadata.id.size() - 1);
-    std::strncpy(state.metadata.name.data(), "Codec Roundtrip", state.metadata.name.size() - 1);
+    std::strncpy(state.metadata.id.data(), "p042", state.metadata.id.size() - 1);
+    std::strncpy(state.metadata.name.data(), "p042", state.metadata.name.size() - 1);
     state.metadata.modifiedCounter = 1234;
     state.metadata.dirty = true;
     state.metadata.hasSavedIdentity = true;
@@ -98,6 +109,36 @@ void test_project_state_roundtrip_core_chunks() {
     assert(sameProjectCore(source, loaded));
 
     std::cout << "[PASS] test_project_state_roundtrip_core_chunks\n";
+}
+
+void test_project_state_roundtrip_long_slug() {
+    auto source = makeProject();
+    source.metadata.id.fill('\0');
+    source.metadata.name.fill('\0');
+    for (size_t i = 0; i < project::PROJECT_SLUG_MAX_LENGTH; ++i) {
+        source.metadata.id[i] = 'a';
+        source.metadata.name[i] = 'a';
+    }
+
+    uint8_t bytes[768] = {};
+    auto encodeResult = codec::encodeProjectState(source, bytes, sizeof(bytes));
+    assert(encodeResult.status == project_file::Status::OK);
+
+    project::ProjectState loaded;
+    project_file::LoadReport report{};
+    auto decodeResult = codec::decodeProjectState(
+        bytes,
+        encodeResult.bytesWritten,
+        loaded,
+        &report
+    );
+    assert(decodeResult.ok);
+    assert(decodeResult.loadStatus == project_file::LoadStatus::OK);
+    assert(decodeResult.overwriteSafe);
+    assert(report.ok());
+    assert(sameProjectCore(source, loaded));
+
+    std::cout << "[PASS] test_project_state_roundtrip_long_slug\n";
 }
 
 void test_missing_optional_chunks_default_and_report_without_blocking_overwrite() {
@@ -161,6 +202,47 @@ void test_transport_v0_chunk_migrates_to_current_payload() {
     assert(loaded.transport.runMode == project::ProjectTransportState::DEFAULT_RUN_MODE);
 
     std::cout << "[PASS] test_transport_v0_chunk_migrates_to_current_payload\n";
+}
+
+void test_project_meta_v1_0_chunk_migrates_generated_id_to_slug() {
+    ProjectMetaV1_0Fixture meta{};
+    std::strncpy(meta.id, "P042", sizeof(meta.id) - 1U);
+    std::strncpy(meta.name, "Project 042", sizeof(meta.name) - 1U);
+    meta.modifiedCounter = 42;
+    meta.flags = 0x03;
+
+    const project_file::ChunkView chunks[] = {{
+        .id = project_file::chunkIdValue(project_file::ChunkId::PROJECT_META),
+        .versionMajor = codec::PROJECT_STATE_CHUNK_VERSION_MAJOR,
+        .versionMinor = 0,
+        .flags = 0,
+        .data = reinterpret_cast<const uint8_t*>(&meta),
+        .size = sizeof(meta),
+    }};
+
+    uint8_t bytes[256] = {};
+    auto encodeResult = project_file::encode(chunks, 1, 0, bytes, sizeof(bytes));
+    assert(encodeResult.status == project_file::Status::OK);
+
+    project::ProjectState loaded;
+    project_file::LoadReport report{};
+    auto decodeResult = codec::decodeProjectState(
+        bytes,
+        encodeResult.bytesWritten,
+        loaded,
+        &report
+    );
+    assert(decodeResult.ok);
+    assert(decodeResult.overwriteSafe);
+    assert(report.status == project_file::LoadStatus::MIGRATED);
+    assert(reportHas(report, project_file::LoadCode::MIGRATED_CHUNK));
+    assert(std::strcmp(loaded.metadata.id.data(), "p042") == 0);
+    assert(std::strcmp(loaded.metadata.name.data(), "p042") == 0);
+    assert(loaded.metadata.modifiedCounter == 42);
+    assert(loaded.metadata.dirty);
+    assert(loaded.metadata.hasSavedIdentity);
+
+    std::cout << "[PASS] test_project_meta_v1_0_chunk_migrates_generated_id_to_slug\n";
 }
 
 void test_future_chunk_version_defaults_and_blocks_overwrite() {
@@ -239,8 +321,10 @@ int main() {
     std::cout << "==============================================\n\n";
 
     test_project_state_roundtrip_core_chunks();
+    test_project_state_roundtrip_long_slug();
     test_missing_optional_chunks_default_and_report_without_blocking_overwrite();
     test_transport_v0_chunk_migrates_to_current_payload();
+    test_project_meta_v1_0_chunk_migrates_generated_id_to_slug();
     test_future_chunk_version_defaults_and_blocks_overwrite();
     test_invalid_payload_size_defaults_and_reports_partial_load();
 

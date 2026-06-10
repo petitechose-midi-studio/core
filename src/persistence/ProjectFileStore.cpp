@@ -10,6 +10,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/ProjectSessionStore.hpp"
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
+#include "state/project/ProjectSlug.hpp"
 
 namespace core::persistence {
 
@@ -35,12 +36,13 @@ FLASHMEM bool pathWrite(char* out,
     return written > 0 && static_cast<size_t>(written) < outSize;
 }
 
-FLASHMEM bool isProjectIdChar(char c) {
-    return (c >= 'A' && c <= 'Z') ||
-           (c >= 'a' && c <= 'z') ||
-           (c >= '0' && c <= '9') ||
-           c == '-' ||
-           c == '_';
+FLASHMEM bool pathWriteLiteral(char* out, size_t outSize, const char* path) {
+    if (out == nullptr || outSize == 0 || path == nullptr) return false;
+    const size_t length = std::strlen(path);
+    if (length >= outSize) return false;
+    std::memcpy(out, path, length);
+    out[length] = '\0';
+    return true;
 }
 
 FLASHMEM bool isNotFound(const oc::type::Result<void>& result) {
@@ -296,11 +298,23 @@ FLASHMEM bool ProjectFileStore::listProjectsVisitor_(
 ) {
     auto* list = static_cast<ProjectListContext*>(context);
     if (!list || !list->store || !list->entries) return false;
-    if (entry.type != oc::interface::FileType::DIRECTORY || entry.nameTruncated) return true;
-    if (!validProjectId_(entry.name)) return true;
+    if (entry.type != oc::interface::FileType::FILE || entry.nameTruncated) return true;
+
+    constexpr const char* extension = core::state::project::PROJECT_FILE_EXTENSION;
+    constexpr size_t extensionLength = core::state::project::PROJECT_FILE_EXTENSION_LENGTH;
+    const size_t nameLength = std::strlen(entry.name);
+    if (nameLength <= extensionLength) return true;
+    if (std::strcmp(entry.name + nameLength - extensionLength, extension) != 0) return true;
+
+    char projectId[core::state::project::ProjectMetadata::ID_SIZE] = {};
+    const size_t slugLength = nameLength - extensionLength;
+    if (slugLength >= sizeof(projectId)) return true;
+    std::memcpy(projectId, entry.name, slugLength);
+    projectId[slugLength] = '\0';
+    if (!validProjectId_(projectId)) return true;
 
     ProjectPaths paths{};
-    if (!buildPaths_(entry.name, paths)) return true;
+    if (!buildPaths_(projectId, paths)) return true;
 
     auto info = list->store->files_.stat(paths.current);
     if (!info || info.value().type != oc::interface::FileType::FILE) return true;
@@ -314,35 +328,39 @@ FLASHMEM bool ProjectFileStore::listProjectsVisitor_(
     }
 
     auto& target = list->entries[list->result.count++];
-    std::strncpy(target.id, entry.name, sizeof(target.id) - 1U);
+    std::strncpy(target.id, projectId, sizeof(target.id) - 1U);
     target.id[sizeof(target.id) - 1U] = '\0';
     target.sizeBytes = info.value().sizeBytes;
     return true;
 }
 
 FLASHMEM bool ProjectFileStore::validProjectId_(const char* projectId) {
-    if (projectId == nullptr || projectId[0] == '\0') return false;
-
-    uint8_t length = 0;
-    while (projectId[length] != '\0') {
-        if (length >= core::state::project::ProjectMetadata::ID_SIZE - 1U) return false;
-        if (!isProjectIdChar(projectId[length])) return false;
-        ++length;
-    }
-    return length > 0;
+    return core::state::project::validProjectSlug(projectId);
 }
 
 FLASHMEM bool ProjectFileStore::buildPaths_(const char* projectId, ProjectPaths& out) {
     if (!validProjectId_(projectId)) return false;
-    return pathWrite(out.directory, sizeof(out.directory), "projects/%s", projectId) &&
-           pathWrite(out.current, sizeof(out.current), "projects/%s/project.mspj", projectId) &&
-           pathWrite(out.backup, sizeof(out.backup), "projects/%s/project.bak", projectId) &&
-           pathWrite(out.tmp, sizeof(out.tmp), "tmp/%s.project.tmp", projectId);
+    return pathWriteLiteral(out.directory, sizeof(out.directory), "projects") &&
+           pathWrite(out.current, sizeof(out.current), "projects/%s.mspj", projectId) &&
+           pathWrite(out.backup,
+                     sizeof(out.backup),
+                     "projects/%s.mspj.bak",
+                     projectId) &&
+           pathWrite(out.tmp, sizeof(out.tmp), "tmp/%s.mspj.tmp", projectId);
 }
 
 FLASHMEM oc::type::Result<ProjectSaveResult> ProjectFileStore::save(
     const core::state::project::ProjectSnapshot& snapshot
 ) {
+    if (std::strcmp(
+            snapshot.project.metadata.id.data(),
+            snapshot.project.metadata.name.data()
+        ) != 0) {
+        return oc::type::Result<ProjectSaveResult>::err(
+            {ErrorCode::INVALID_ARGUMENT, "project slug mismatch"}
+        );
+    }
+
     ProjectPaths paths{};
     if (!buildPaths_(snapshot.project.metadata.id.data(), paths)) {
         return oc::type::Result<ProjectSaveResult>::err(

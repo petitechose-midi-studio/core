@@ -41,6 +41,8 @@ core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
 void configureSession(core::state::CoreState& state, const char* id, uint8_t note) {
     state.project.metadata.id.fill('\0');
     std::strncpy(state.project.metadata.id.data(), id, state.project.metadata.id.size() - 1U);
+    state.project.metadata.name.fill('\0');
+    std::strncpy(state.project.metadata.name.data(), id, state.project.metadata.name.size() - 1U);
     state.project.metadata.hasSavedIdentity = true;
     state.project.metadata.modifiedCounter = 9;
     state.project.metadata.dirty = true;
@@ -81,7 +83,7 @@ void test_missing_session_is_non_fatal() {
     assert(result.status == core::persistence::ProjectSessionRestoreService::Status::MISSING);
     assert(!result.restored());
     assert(state.project.metadata.id[0] == '\0');
-    assert(std::strcmp(state.project.metadata.name.data(), "Untitled") == 0);
+    assert(std::strcmp(state.project.metadata.name.data(), "untitled") == 0);
     assert(!state.project.metadata.hasSavedIdentity);
     assert(!state.hasPendingProjectSessionSave());
 
@@ -97,21 +99,22 @@ void test_valid_session_restores_runtime_project() {
 
     test_support::CoreStorages sourceStorages;
     auto source = makeCoreState(sourceStorages);
-    configureSession(source, "P009", 70);
+    configureSession(source, "p009", 70);
     core::persistence::ProjectSessionStore store(files);
     assert(store.saveCurrent(capture(source)));
 
     test_support::CoreStorages runtimeStorages;
     auto runtime = makeCoreState(runtimeStorages);
     assert(runtime.project.metadata.id[0] == '\0');
-    assert(std::strcmp(runtime.project.metadata.name.data(), "Untitled") == 0);
+    assert(std::strcmp(runtime.project.metadata.name.data(), "untitled") == 0);
 
     core::persistence::ProjectSessionRestoreService restore(files);
     auto result = restore.restore(runtime);
     assert(result.restored());
     assert(result.bytes > 0);
 
-    assert(std::strcmp(runtime.project.metadata.id.data(), "P009") == 0);
+    assert(std::strcmp(runtime.project.metadata.id.data(), "p009") == 0);
+    assert(std::strcmp(runtime.project.metadata.name.data(), "p009") == 0);
     assert(runtime.project.metadata.modifiedCounter == 9);
     assert(runtime.project.metadata.dirty);
     assert(runtime.statusBar.tempo.get() == 141.0f);
@@ -144,7 +147,7 @@ void test_corrupt_session_reports_degraded_and_keeps_runtime() {
     assert(result.status == core::persistence::ProjectSessionRestoreService::Status::DEGRADED);
     assert(!result.restored());
     assert(state.project.metadata.id[0] == '\0');
-    assert(std::strcmp(state.project.metadata.name.data(), "Untitled") == 0);
+    assert(std::strcmp(state.project.metadata.name.data(), "untitled") == 0);
     assert(state.statusBar.tempo.get() == 123.0f);
     assert(!state.hasPendingProjectSessionSave());
 

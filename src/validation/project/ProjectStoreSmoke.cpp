@@ -16,8 +16,8 @@
 namespace core::validation::project {
 namespace {
 
-constexpr const char* PROJECT_STORE_SMOKE_ID = "SMK001";
-constexpr const char* PROJECT_STORE_SMOKE_NAME = "SdProjectSmoke";
+constexpr const char* PROJECT_STORE_SMOKE_ID = "smk001";
+constexpr const char* PROJECT_STORE_SMOKE_NAME = "sd-smoke";
 
 FLASHMEM void copySmokeText(char* target, size_t targetSize, const char* source) {
     if (targetSize == 0) return;
@@ -33,7 +33,7 @@ FLASHMEM void copySmokeText(std::array<char, N>& target, const char* source) {
 FLASHMEM void configureProjectStoreSmokeState(core::state::CoreState& state,
                                               uint32_t modifiedCounter) {
     copySmokeText(state.project.metadata.id, PROJECT_STORE_SMOKE_ID);
-    copySmokeText(state.project.metadata.name, PROJECT_STORE_SMOKE_NAME);
+    copySmokeText(state.project.metadata.name, PROJECT_STORE_SMOKE_ID);
     state.project.metadata.modifiedCounter = modifiedCounter;
     state.project.metadata.hasSavedIdentity = true;
     state.project.metadata.dirty = false;
@@ -60,7 +60,7 @@ FLASHMEM void configureProjectStoreSmokeState(core::state::CoreState& state,
 
 FLASHMEM void mutateProjectStoreSmokeState(core::state::CoreState& state) {
     copySmokeText(state.project.metadata.id, PROJECT_STORE_SMOKE_ID);
-    copySmokeText(state.project.metadata.name, "Mutated");
+    copySmokeText(state.project.metadata.name, PROJECT_STORE_SMOKE_ID);
     state.project.metadata.modifiedCounter = 999;
 
     state.statusBar.tempo.set(88.0f);
@@ -83,7 +83,7 @@ FLASHMEM void mutateProjectStoreSmokeState(core::state::CoreState& state) {
 FLASHMEM bool verifyProjectStoreSmokeState(const core::state::CoreState& state) {
     const auto& page = state.pages.activePageData();
     return std::strcmp(state.project.metadata.id.data(), PROJECT_STORE_SMOKE_ID) == 0 &&
-           std::strcmp(state.project.metadata.name.data(), PROJECT_STORE_SMOKE_NAME) == 0 &&
+           std::strcmp(state.project.metadata.name.data(), PROJECT_STORE_SMOKE_ID) == 0 &&
            state.project.metadata.modifiedCounter == 41U &&
            static_cast<int>(state.statusBar.tempo.get() + 0.5f) == 137 &&
            state.projectNavigation.transportSwingPercent == 17U &&

@@ -4,6 +4,7 @@
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include "context/StandaloneContext.hpp"
+#include "persistence/ProductFileService.hpp"
 
 namespace core::app {
 
@@ -14,12 +15,13 @@ namespace core::app {
  * Uses factory registration to inject CoreState reference.
  */
 inline FLASHMEM void registerContexts(oc::app::OpenControlApp& app,
-                                      core::state::CoreState& coreState) {
+                                      core::state::CoreState& coreState,
+                                      core::persistence::ProductFileService& productFiles) {
     app.registerContextWithFactory(
         Config::ContextID::STANDALONE,
         "Standalone",
-        [&coreState]() {
-            return std::make_unique<core::context::StandaloneContext>(coreState);
+        [&coreState, &productFiles]() {
+            return std::make_unique<core::context::StandaloneContext>(coreState, productFiles);
         });
 }
 

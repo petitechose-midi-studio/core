@@ -45,7 +45,8 @@ void configureSession(core::state::CoreState& state,
                       uint8_t sequencerNote) {
     state.project.metadata.id.fill('\0');
     std::strncpy(state.project.metadata.id.data(), projectId, state.project.metadata.id.size() - 1U);
-    std::strncpy(state.project.metadata.name.data(), name, state.project.metadata.name.size() - 1U);
+    state.project.metadata.name.fill('\0');
+    std::strncpy(state.project.metadata.name.data(), projectId, state.project.metadata.name.size() - 1U);
     state.project.metadata.modifiedCounter = modifiedCounter;
     state.project.metadata.hasSavedIdentity = true;
     state.project.metadata.dirty = true;
@@ -94,7 +95,7 @@ void assertLoadedSession(core::persistence::ProjectSessionStore& store,
     assert(project::applyProjectSnapshot(runtime, loaded));
 
     assert(std::strcmp(runtime.project.metadata.id.data(), expectedId) == 0);
-    assert(std::strcmp(runtime.project.metadata.name.data(), expectedName) == 0);
+    assert(std::strcmp(runtime.project.metadata.name.data(), expectedId) == 0);
     assert(runtime.project.metadata.modifiedCounter == expectedCounter);
     assert(runtime.project.metadata.dirty);
     assert(std::strcmp(runtime.pages.activePageData().name, expectedName) == 0);
@@ -112,7 +113,7 @@ void test_current_session_roundtrip_uses_session_path() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
-    configureSession(state, "P003", "Current", 3, 0.42f, 67);
+    configureSession(state, "p003", "Current", 3, 0.42f, 67);
 
     auto saved = store.saveCurrent(capture(state));
     assert(saved);
@@ -122,10 +123,10 @@ void test_current_session_roundtrip_uses_session_path() {
         testRoot() / "midi-studio" / "session" / "current.mspj"
     ));
     assert(!std::filesystem::exists(
-        testRoot() / "midi-studio" / "projects" / "P003" / "project.mspj"
+        testRoot() / "midi-studio" / "projects" / "p003.mspj"
     ));
 
-    assertLoadedSession(store, "P003", "Current", 3, 67);
+    assertLoadedSession(store, "p003", "Current", 3, 67);
 
     std::cout << "[PASS] test_current_session_roundtrip_uses_session_path\n";
 }
@@ -139,14 +140,14 @@ void test_current_session_overwrite_uses_backup_commit() {
 
     test_support::CoreStorages storages;
     auto first = makeCoreState(storages);
-    configureSession(first, "P001", "First", 1, 0.21f, 61);
+    configureSession(first, "p001", "First", 1, 0.21f, 61);
     assert(store.saveCurrent(capture(first)));
 
     auto second = makeCoreState(storages);
-    configureSession(second, "P002", "Second", 2, 0.72f, 72);
+    configureSession(second, "p002", "Second", 2, 0.72f, 72);
     assert(store.saveCurrent(capture(second)));
 
-    assertLoadedSession(store, "P002", "Second", 2, 72);
+    assertLoadedSession(store, "p002", "Second", 2, 72);
     assert(!std::filesystem::exists(
         testRoot() / "midi-studio" / "session" / "current.bak"
     ));
@@ -166,10 +167,10 @@ void test_stale_current_session_tmp_is_replaced() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
-    configureSession(state, "P004", "TmpClean", 4, 0.55f, 74);
+    configureSession(state, "p004", "TmpClean", 4, 0.55f, 74);
     assert(store.saveCurrent(capture(state)));
 
-    assertLoadedSession(store, "P004", "TmpClean", 4, 74);
+    assertLoadedSession(store, "p004", "TmpClean", 4, 74);
     assert(!std::filesystem::exists(
         testRoot() / "midi-studio" / "tmp" / "session.current.tmp"
     ));
@@ -186,11 +187,11 @@ void test_current_session_load_recovers_interrupted_backup_commit() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
-    configureSession(state, "P005", "Backup", 5, 0.64f, 76);
+    configureSession(state, "p005", "Backup", 5, 0.64f, 76);
     assert(store.saveCurrent(capture(state)));
     assert(files.rename("session/current.mspj", "session/current.bak"));
 
-    assertLoadedSession(store, "P005", "Backup", 5, 76);
+    assertLoadedSession(store, "p005", "Backup", 5, 76);
     assert(std::filesystem::is_regular_file(
         testRoot() / "midi-studio" / "session" / "current.mspj"
     ));

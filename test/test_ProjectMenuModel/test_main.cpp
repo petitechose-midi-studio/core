@@ -45,15 +45,19 @@ void test_overview_root_exposes_project_actions() {
 
     const auto page = core::state::project::buildProjectMenuPage(
         navigation,
-        projectContext("P002", "Project 002", true, true)
+        projectContext("p002", "p002", true, true)
     );
-    assert(page.rowCount == 4);
+    assert(page.rowCount == 5);
     assert(page.selectedIndex == 0);
-    assert(std::string(page.meta) == "OVERVIEW  P002*");
+    assert(std::string(page.meta) == "OVERVIEW  p002*");
     assert(std::string(page.rows[0].label) == "New Project");
     assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Action);
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "Reset");
+    assert(std::string(page.rows[3].label) == "Save As");
+    assert(std::string(rowValue(page.rows[3])) == "Name");
+    assert(std::string(page.rows[4].label) == "Rename");
+    assert(std::string(rowValue(page.rows[4])) == "Current");
 
     std::cout << "[PASS] test_overview_root_exposes_project_actions\n";
 }
@@ -142,14 +146,14 @@ void test_new_project_confirmation_uses_current_project_identity() {
     assert(core::state::project::openNewProjectConfirmation(navigation));
     const auto page = core::state::project::buildProjectMenuPage(
         navigation,
-        projectContext("P002", "Project 002", true, true)
+        projectContext("p002", "p002", true, true)
     );
 
     assert(page.rowCount == 3);
     assert(page.selectedIndex == 0);
     assert(std::string(page.rows[0].label) == "Save & Reset");
     assert(page.rows[0].enabled);
-    assert(std::string(rowValue(page.rows[0])) == "P002");
+    assert(std::string(rowValue(page.rows[0])) == "p002");
     assert(std::string(page.rows[1].label) == "Don't Save");
     assert(std::string(rowValue(page.rows[1])) == "Reset");
 
@@ -241,24 +245,51 @@ void test_storage_project_identity_is_read_only_and_autosave_is_activable() {
 
     switchToStorage(navigation);
 
-    navigation.focusedRow.set(3);
+    navigation.focusedRow.set(5);
     assert(!core::state::project::enterFocusedProjectRow(navigation));
     auto page = core::state::project::buildProjectMenuPage(
         navigation,
-        projectContext("P002", "Project 002", true, true)
+        projectContext("p002", "p002", true, true)
     );
-    assert(std::string(page.meta) == "STORAGE  P002*");
-    assert(std::string(page.rows[3].label) == "Project");
-    assert(page.rows[3].kind == core::state::project::ProjectMenuRowKind::Disabled);
-    assert(std::string(rowValue(page.rows[3])) == "P002");
+    assert(std::string(page.meta) == "STORAGE  p002*");
+    assert(std::string(page.rows[5].label) == "Project");
+    assert(page.rows[5].kind == core::state::project::ProjectMenuRowKind::Disabled);
+    assert(std::string(rowValue(page.rows[5])) == "p002");
 
-    navigation.focusedRow.set(4);
+    navigation.focusedRow.set(6);
     assert(core::state::project::enterFocusedProjectRow(navigation));
     assert(!navigation.autosaveEnabled);
     page = core::state::project::buildProjectMenuPage(navigation);
-    assert(std::string(rowValue(page.rows[4])) == "Off");
+    assert(std::string(rowValue(page.rows[6])) == "Off");
 
     std::cout << "[PASS] test_storage_project_identity_is_read_only_and_autosave_is_activable\n";
+}
+
+void test_project_name_editor_exposes_qwerty_entry_state() {
+    core::state::project::ProjectNavigationState navigation;
+
+    assert(core::state::project::openProjectNameEditor(
+        navigation,
+        ProjectNodeId::RENAME_PROJECT_NAME,
+        "p042"
+    ));
+    assert(navigation.currentNode.get() == ProjectNodeId::RENAME_PROJECT_NAME);
+    assert(navigation.activeTab.get() == ProjectTab::STORAGE);
+    assert(navigation.depth.get() == 1);
+    assert(navigation.focusedRow.get() == 1);
+    assert(core::state::project::projectNavigationInProjectConfirmation(navigation));
+
+    const auto page = core::state::project::buildProjectMenuPage(navigation);
+    assert(page.rowCount == 2);
+    assert(std::string(page.meta) == "RENAME");
+    assert(std::string(page.rows[0].label) == "Name");
+    assert(!page.rows[0].enabled);
+    assert(std::string(rowValue(page.rows[0])) == "p042");
+    assert(std::string(page.rows[1].label) == "Key");
+    assert(page.rows[1].kind == core::state::project::ProjectMenuRowKind::Value);
+    assert(std::string(rowValue(page.rows[1])) == "q");
+
+    std::cout << "[PASS] test_project_name_editor_exposes_qwerty_entry_state\n";
 }
 
 void test_load_project_picker_shows_detected_projects() {
@@ -266,8 +297,8 @@ void test_load_project_picker_shows_detected_projects() {
 
     navigation.loadProjects.clear();
     navigation.loadProjects.scanned = true;
-    assert(navigation.loadProjects.add("P001", 100));
-    assert(navigation.loadProjects.add("P003", 200));
+    assert(navigation.loadProjects.add("p001", 100));
+    assert(navigation.loadProjects.add("p003", 200));
 
     assert(core::state::project::openProjectLoadPicker(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
@@ -276,10 +307,10 @@ void test_load_project_picker_shows_detected_projects() {
     auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 2);
     assert(std::string(page.meta) == "LOAD PROJECT");
-    assert(std::string(page.rows[0].label) == "P001");
+    assert(std::string(page.rows[0].label) == "p001");
     assert(std::string(rowValue(page.rows[0])) == "Load");
     assert(page.rows[0].enabled);
-    assert(std::string(page.rows[1].label) == "P003");
+    assert(std::string(page.rows[1].label) == "p003");
 
     assert(core::state::project::backProjectNavigation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
@@ -292,28 +323,28 @@ void test_load_project_confirmation_prompts_dirty_session_choice() {
 
     navigation.loadProjects.clear();
     navigation.loadProjects.scanned = true;
-    assert(navigation.loadProjects.add("P003", 200));
+    assert(navigation.loadProjects.add("p003", 200));
     assert(core::state::project::openProjectLoadPicker(navigation));
-    assert(core::state::project::openProjectLoadConfirmation(navigation, "P003", true));
+    assert(core::state::project::openProjectLoadConfirmation(navigation, "p003", true));
     assert(navigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM);
     assert(navigation.activeTab.get() == ProjectTab::STORAGE);
     assert(navigation.focusedRow.get() == 0);
 
     const auto page = core::state::project::buildProjectMenuPage(
         navigation,
-        projectContext("P002", "Project 002", true, true)
+        projectContext("p002", "p002", true, true)
     );
     assert(page.rowCount == 4);
     assert(std::string(page.meta) == "LOAD DIRTY?");
     assert(std::string(page.rows[0].label) == "Save & Load");
     assert(page.rows[0].enabled);
-    assert(std::string(rowValue(page.rows[0])) == "P002 > P003");
+    assert(std::string(rowValue(page.rows[0])) == "p002 > p003");
     assert(std::string(page.rows[1].label) == "Save As & Load");
     assert(page.rows[1].enabled);
-    assert(std::string(rowValue(page.rows[1])) == "New > P003");
+    assert(std::string(rowValue(page.rows[1])) == "New > p003");
     assert(std::string(page.rows[2].label) == "Don't Save");
     assert(page.rows[2].enabled);
-    assert(std::string(rowValue(page.rows[2])) == "Load P003");
+    assert(std::string(rowValue(page.rows[2])) == "Load p003");
     assert(std::string(page.rows[3].label) == "Cancel");
 
     assert(core::state::project::backProjectNavigation(navigation));
@@ -327,20 +358,20 @@ void test_load_project_confirmation_without_saved_identity_disables_save_choice(
     core::state::project::ProjectNavigationState navigation;
 
     assert(core::state::project::openProjectLoadPicker(navigation));
-    assert(core::state::project::openProjectLoadConfirmation(navigation, "P004", false));
+    assert(core::state::project::openProjectLoadConfirmation(navigation, "p004", false));
     assert(navigation.focusedRow.get() == 0);
 
     const auto page = core::state::project::buildProjectMenuPage(
         navigation,
-        projectContext("", "Untitled", true, false)
+        projectContext("", "untitled", true, false)
     );
     assert(page.rowCount == 3);
     assert(std::string(page.rows[0].label) == "Save As & Load");
     assert(page.rows[0].enabled);
-    assert(std::string(rowValue(page.rows[0])) == "Untitled > P004");
+    assert(std::string(rowValue(page.rows[0])) == "untitled > p004");
     assert(std::string(page.rows[1].label) == "Don't Save");
     assert(page.rows[1].enabled);
-    assert(std::string(rowValue(page.rows[1])) == "Load P004");
+    assert(std::string(rowValue(page.rows[1])) == "Load p004");
     assert(std::string(page.rows[2].label) == "Cancel");
 
     std::cout << "[PASS] test_load_project_confirmation_without_saved_identity_disables_save_choice\n";
@@ -366,13 +397,13 @@ void test_navigation_wraps_rows() {
     core::state::project::ProjectNavigationState navigation;
 
     core::state::project::navigateProjectRows(navigation, -1.0f);
-    assert(navigation.focusedRow.get() == 3);
+    assert(navigation.focusedRow.get() == 4);
 
     core::state::project::navigateProjectRows(navigation, 2.0f);
     assert(navigation.focusedRow.get() == 1);
 
     core::state::project::navigateProjectRows(navigation, -3.0f);
-    assert(navigation.focusedRow.get() == 2);
+    assert(navigation.focusedRow.get() == 3);
 
     std::cout << "[PASS] test_navigation_wraps_rows\n";
 }
@@ -407,6 +438,7 @@ int main() {
     test_transport_rows_use_runtime_context();
     test_routing_rows_expose_all_track_output_channels();
     test_storage_project_identity_is_read_only_and_autosave_is_activable();
+    test_project_name_editor_exposes_qwerty_entry_state();
     test_load_project_picker_shows_detected_projects();
     test_load_project_confirmation_prompts_dirty_session_choice();
     test_load_project_confirmation_without_saved_identity_disables_save_choice();

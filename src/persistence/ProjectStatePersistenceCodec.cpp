@@ -98,7 +98,12 @@ FLASHMEM bool readPayload(const project_file::DecodedChunkView* chunk,
                   chunk->versionMinor);
         return false;
     }
-    if (chunk->versionMajor < PROJECT_STATE_CHUNK_VERSION_MAJOR) {
+    const bool needsMigration =
+        chunk->versionMajor < PROJECT_STATE_CHUNK_VERSION_MAJOR ||
+        (chunk->versionMajor == PROJECT_STATE_CHUNK_VERSION_MAJOR &&
+         chunk->versionMinor < PROJECT_STATE_CHUNK_VERSION_MINOR &&
+         chunk->size != sizeof(Payload));
+    if (needsMigration) {
         const auto migrated = migration::migrateToCurrent(
             *chunk,
             reinterpret_cast<uint8_t*>(&out),

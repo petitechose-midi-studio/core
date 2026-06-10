@@ -1,6 +1,7 @@
 #include "handler/project/ProjectHandler.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include <config/InputIDs.hpp>
@@ -11,6 +12,7 @@
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/project/ProjectMenuModel.hpp"
+#include "state/project/ProjectSlug.hpp"
 
 namespace core::handler {
 
@@ -32,6 +34,9 @@ constexpr float PROJECT_OPT_NORMALIZED_TURNS =
     core::handler::sequencer::input_utils::DEFAULT_NORMALIZED_TURNS;
 constexpr float PROJECT_OPT_TEMPO_STEPS_PER_TURN = 24.0f;
 constexpr float PROJECT_OPT_PERCENT_STEPS_PER_TURN = 18.0f;
+constexpr float PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW =
+    (600.0f * 4.0f) /
+    static_cast<float>(core::state::project::PROJECT_NAME_KEYBOARD_ROW_COUNT);
 
 FLASHMEM int signedStepCount(float delta) {
     if (delta == 0.0f) return 0;
@@ -72,6 +77,61 @@ FLASHMEM float indexToNormalized(int index, int count) {
     if (count <= 1) return 0.0f;
     const int clamped = clampInt(index, 0, count - 1);
     return static_cast<float>(clamped) / static_cast<float>(count - 1);
+}
+
+FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) {
+    return node == core::state::project::ProjectNodeId::SAVE_AS_PROJECT_NAME ||
+           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME;
+}
+
+FLASHMEM char selectedProjectNameKey(
+    const core::state::project::ProjectNavigationState& navigation
+) {
+    char key = core::state::project::projectNameKeyboardCellAt(
+        navigation.projectNameKeyIndex
+    ).character;
+    if (navigation.projectNameShiftActive && key >= 'a' && key <= 'z') {
+        key = static_cast<char>(key - 'a' + 'A');
+    }
+    return key;
+}
+
+FLASHMEM bool appendProjectNameChar(
+    core::state::project::ProjectNavigationState& navigation,
+    char character
+) {
+    if (character == '\0') return false;
+    char* buffer = navigation.editingProjectSlug.data();
+    const size_t length = std::strlen(buffer);
+    if (length >= core::state::project::PROJECT_SLUG_MAX_LENGTH) return false;
+    buffer[length] = character;
+    buffer[length + 1U] = '\0';
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool appendProjectNameKey(core::state::project::ProjectNavigationState& navigation) {
+    return appendProjectNameChar(navigation, selectedProjectNameKey(navigation));
+}
+
+FLASHMEM bool appendProjectNameSpace(core::state::project::ProjectNavigationState& navigation) {
+    return appendProjectNameChar(navigation, ' ');
+}
+
+FLASHMEM bool backspaceProjectName(core::state::project::ProjectNavigationState& navigation) {
+    char* buffer = navigation.editingProjectSlug.data();
+    const size_t length = std::strlen(buffer);
+    if (length == 0) return true;
+    buffer[length - 1U] = '\0';
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool clearProjectName(core::state::project::ProjectNavigationState& navigation) {
+    if (navigation.editingProjectSlug[0] == '\0') return true;
+    navigation.editingProjectSlug = {};
+    navigation.notifyContentChanged();
+    return true;
 }
 
 FLASHMEM int roundedTempo(float tempoBpm) {
@@ -127,6 +187,8 @@ FLASHMEM const char* projectLifecycleFailureLabel(
             return "Storage unavailable";
         case Status::INVALID_ARGUMENT:
             return "Invalid project";
+        case Status::ALREADY_EXISTS:
+            return "Name exists";
         case Status::SAVE_FAILED:
             return "Save failed";
         case Status::LOAD_FAILED:
@@ -163,6 +225,11 @@ FLASHMEM void configureOptContinuous(oc::api::EncoderAPI& encoders,
     encoders.setNormalizedTurns(EncoderID::OPT, normalizedTurns);
     encoders.setContinuous(EncoderID::OPT);
     encoders.setPosition(EncoderID::OPT, clampNormalized(position));
+}
+
+FLASHMEM void configureOptRaw(oc::api::EncoderAPI& encoders) {
+    encoders.setMode(EncoderID::OPT, oc::interface::EncoderMode::RAW);
+    encoders.setPosition(EncoderID::OPT, 0.0f);
 }
 
 FLASHMEM void configureOptDiscrete(oc::api::EncoderAPI& encoders,
@@ -226,8 +293,29 @@ FLASHMEM void ProjectHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_CENTER)
         .press()
         .scope(project_view_scope_)
-        .when([this]() { return canHandleProjectInput() && !projectConfirmationActive(); })
+        .when([this]() {
+            return canHandleProjectInput() &&
+                   !projectConfirmationActive() &&
+                   !isProjectNameEditorNode(navigation_.currentNode.get());
+        })
         .then([this]() { enterPhysicalHoldLayer(); });
+
+    buttons_.button(ButtonID::LEFT_CENTER)
+        .press()
+        .scope(project_view_scope_)
+        .when([this]() {
+            return regularProjectInputActive() &&
+                   isProjectNameEditorNode(navigation_.currentNode.get());
+        })
+        .then([this]() { enterProjectNameShift(); });
+
+    buttons_.button(ButtonID::LEFT_CENTER)
+        .release()
+        .scope(project_view_scope_)
+        .when([this]() {
+            return canHandleProjectInput() && navigation_.projectNameShiftActive;
+        })
+        .then([this]() { leaveProjectNameShift(); });
 
     buttons_.button(ButtonID::LEFT_CENTER)
         .release()
@@ -258,6 +346,46 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .scope(project_view_scope_)
         .when([this]() { return physicalHoldActive(); })
         .then([this]() { consumeRedo(); });
+
+    buttons_.button(ButtonID::BOTTOM_LEFT)
+        .release()
+        .scope(project_view_scope_)
+        .when([this]() {
+            return regularProjectInputActive() &&
+                   isProjectNameEditorNode(navigation_.currentNode.get());
+        })
+        .then([this]() { backspaceProjectName(navigation_); });
+
+    buttons_.button(ButtonID::LEFT_BOTTOM)
+        .release()
+        .scope(project_view_scope_)
+        .when([this]() {
+            return regularProjectInputActive() &&
+                   isProjectNameEditorNode(navigation_.currentNode.get());
+        })
+        .then([this]() { clearProjectName(navigation_); });
+
+    buttons_.button(ButtonID::BOTTOM_CENTER)
+        .release()
+        .scope(project_view_scope_)
+        .when([this]() {
+            return regularProjectInputActive() &&
+                   isProjectNameEditorNode(navigation_.currentNode.get());
+        })
+        .then([this]() {
+            if (!appendProjectNameSpace(navigation_)) {
+                navigation_.setLifecycleFeedback("Name too long");
+            }
+        });
+
+    buttons_.button(ButtonID::BOTTOM_RIGHT)
+        .release()
+        .scope(project_view_scope_)
+        .when([this]() {
+            return regularProjectInputActive() &&
+                   isProjectNameEditorNode(navigation_.currentNode.get());
+        })
+        .then([this]() { commitProjectNameEditor(); });
 }
 
 FLASHMEM bool ProjectHandler::canHandleProjectInput() const {
@@ -286,9 +414,29 @@ FLASHMEM void ProjectHandler::leavePhysicalHoldLayer() {
     syncFocusedEncoder();
 }
 
+FLASHMEM void ProjectHandler::enterProjectNameShift() {
+    if (navigation_.projectNameShiftActive) return;
+    navigation_.projectNameShiftActive = true;
+    navigation_.notifyContentChanged();
+}
+
+FLASHMEM void ProjectHandler::leaveProjectNameShift() {
+    if (!navigation_.projectNameShiftActive) return;
+    navigation_.projectNameShiftActive = false;
+    navigation_.notifyContentChanged();
+}
+
 FLASHMEM void ProjectHandler::navigate(float delta) {
     if (delta != 0.0f) {
         navigation_.clearLifecycleFeedback();
+    }
+    if (isProjectNameEditorNode(navigation_.currentNode.get())) {
+        navigation_.projectNameKeyIndex = core::state::project::projectNameKeyboardMoveColumn(
+            navigation_.projectNameKeyIndex,
+            signedStepCount(delta)
+        );
+        navigation_.notifyContentChanged();
+        return;
     }
     core::state::project::navigateProjectRows(navigation_, delta);
     syncFocusedEncoder();
@@ -323,7 +471,8 @@ FLASHMEM void ProjectHandler::setFocusedValue(float normalized) {
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
     const bool applied = applyFocusedMusicScaleStep(steps) || applyFocusedTransportStep(steps) ||
-                         applyFocusedStorageStep(steps) || applyFocusedRoutingStep(steps);
+                         applyFocusedStorageStep(steps) || applyFocusedRoutingStep(steps) ||
+                         applyFocusedNameEditorStep(steps);
     if (applied) {
         navigation_.clearLifecycleFeedback();
     }
@@ -420,13 +569,26 @@ FLASHMEM bool ProjectHandler::applyFocusedStorageStep(int steps) {
 
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
-        case 4:
+        case 6:
             navigation_.autosaveEnabled = !navigation_.autosaveEnabled;
             navigation_.notifyContentChanged();
             return true;
         default:
             return false;
     }
+}
+
+FLASHMEM bool ProjectHandler::applyFocusedNameEditorStep(int steps) {
+    if (!isProjectNameEditorNode(navigation_.currentNode.get()) || steps == 0) {
+        return false;
+    }
+
+    navigation_.projectNameKeyIndex = core::state::project::projectNameKeyboardMoveColumn(
+        navigation_.projectNameKeyIndex,
+        steps
+    );
+    navigation_.notifyContentChanged();
+    return true;
 }
 
 FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
@@ -459,7 +621,40 @@ FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
 
 FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
     return setFocusedMusicScaleValue(normalized) || setFocusedTransportValue(normalized) ||
-           setFocusedStorageValue(normalized) || setFocusedRoutingValue(normalized);
+           setFocusedStorageValue(normalized) || setFocusedRoutingValue(normalized) ||
+           setFocusedNameEditorValue(normalized);
+}
+
+FLASHMEM bool ProjectHandler::setFocusedNameEditorValue(float normalized) {
+    if (!isProjectNameEditorNode(navigation_.currentNode.get())) {
+        return false;
+    }
+
+    const float delta = normalized - navigation_.projectNameOptRawPosition;
+    navigation_.projectNameOptRawPosition = normalized;
+    if (delta == 0.0f) return true;
+
+    navigation_.projectNameOptRowAccumulator += delta / PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW;
+    const float absolute = std::fabs(navigation_.projectNameOptRowAccumulator);
+    if (absolute < 1.0f) return true;
+
+    const int steps = static_cast<int>(absolute);
+    const bool increasing = navigation_.projectNameOptRowAccumulator > 0.0f;
+    navigation_.projectNameOptRowAccumulator +=
+        increasing
+            ? -static_cast<float>(steps)
+            : static_cast<float>(steps);
+
+    const int rowDelta = increasing ? -steps : steps;
+    const auto next = core::state::project::projectNameKeyboardMoveRow(
+        navigation_.projectNameKeyIndex,
+        rowDelta
+    );
+    if (next == navigation_.projectNameKeyIndex) return true;
+
+    navigation_.projectNameKeyIndex = next;
+    navigation_.notifyContentChanged();
+    return true;
 }
 
 FLASHMEM bool ProjectHandler::setFocusedMusicScaleValue(float normalized) {
@@ -550,7 +745,7 @@ FLASHMEM bool ProjectHandler::setFocusedStorageValue(float normalized) {
 
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
-        case 4: {
+        case 6: {
             const bool next = normalized >= 0.5f;
             if (next == navigation_.autosaveEnabled) return true;
             navigation_.autosaveEnabled = next;
@@ -673,11 +868,56 @@ FLASHMEM bool ProjectHandler::saveAndResetProjectWithFeedback(bool saveAsNew) {
     return true;
 }
 
+FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
+    const auto node = navigation_.currentNode.get();
+    if (!isProjectNameEditorNode(node)) return false;
+
+    const char* slug = navigation_.editingProjectSlug.data();
+    if (!core::state::project::validProjectSlug(slug)) {
+        navigation_.setLifecycleFeedback("Invalid name");
+        return true;
+    }
+
+    const bool rename = node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME;
+    const auto result = rename
+        ? lifecycle_.renameCurrentProject(slug)
+        : lifecycle_.saveAsProject(slug);
+
+    char feedback[32] = {};
+    const char* verb = result.success()
+        ? (rename ? "Renamed" : "Saved")
+        : projectLifecycleFailureLabel(result.status, rename ? "Rename failed" : "Save As failed");
+    formatProjectLifecycleFeedback(feedback, sizeof(feedback), verb, slug);
+    navigation_.setLifecycleFeedback(feedback);
+
+    if (!result.success()) {
+        OC_LOG_WARN("[Project] {} {} failed status={}",
+                    rename ? "rename" : "save-as",
+                    slug,
+                    static_cast<unsigned>(result.status));
+        return true;
+    }
+
+    OC_LOG_INFO("[Project] {} {} bytes={}",
+                rename ? "rename" : "save-as",
+                slug,
+                result.bytes);
+    back();
+    return true;
+}
+
 FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
     using core::state::project::ProjectNodeId;
 
     const auto node = navigation_.currentNode.get();
     const uint8_t row = navigation_.focusedRow.get();
+    if (isProjectNameEditorNode(node)) {
+        if (!appendProjectNameKey(navigation_)) {
+            navigation_.setLifecycleFeedback("Name too long");
+        }
+        return true;
+    }
+
     if (node == ProjectNodeId::NEW_PROJECT_CONFIRM) {
         if (row == 0) {
             return saveAndResetProjectWithFeedback(!lifecycle_.currentProjectHasSavedIdentity());
@@ -751,7 +991,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
 
     const bool newProjectAction =
         (node == ProjectNodeId::OVERVIEW_ROOT && row == 0) ||
-        (node == ProjectNodeId::STORAGE_ROOT && row == 1);
+        (node == ProjectNodeId::STORAGE_ROOT && row == 3);
     if (newProjectAction) {
         core::state::project::openNewProjectConfirmation(navigation_);
         return true;
@@ -759,7 +999,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
 
     const bool loadProjectAction =
         (node == ProjectNodeId::OVERVIEW_ROOT && row == 1) ||
-        (node == ProjectNodeId::STORAGE_ROOT && row == 2);
+        (node == ProjectNodeId::STORAGE_ROOT && row == 4);
     if (loadProjectAction) {
         navigation_.clearLifecycleFeedback();
         const auto result = lifecycle_.refreshLoadableProjects();
@@ -799,6 +1039,32 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
                         projectId,
                         static_cast<unsigned>(result.status));
         }
+        return true;
+    }
+
+    const bool saveAsProjectAction =
+        (node == ProjectNodeId::OVERVIEW_ROOT && row == 3) ||
+        (node == ProjectNodeId::STORAGE_ROOT && row == 1);
+    if (saveAsProjectAction) {
+        navigation_.clearLifecycleFeedback();
+        core::state::project::openProjectNameEditor(
+            navigation_,
+            ProjectNodeId::SAVE_AS_PROJECT_NAME,
+            ""
+        );
+        return true;
+    }
+
+    const bool renameProjectAction =
+        (node == ProjectNodeId::OVERVIEW_ROOT && row == 4) ||
+        (node == ProjectNodeId::STORAGE_ROOT && row == 2);
+    if (renameProjectAction) {
+        navigation_.clearLifecycleFeedback();
+        core::state::project::openProjectNameEditor(
+            navigation_,
+            ProjectNodeId::RENAME_PROJECT_NAME,
+            lifecycle_.currentProjectHasSavedIdentity() ? lifecycle_.currentProjectId() : ""
+        );
         return true;
     }
 
@@ -868,7 +1134,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
 
     if (node == ProjectNodeId::STORAGE_ROOT) {
         switch (row) {
-            case 4:
+            case 6:
                 configureOptDiscrete(encoders_, 2, navigation_.autosaveEnabled ? 1.0f : 0.0f);
                 return;
             default:
@@ -887,6 +1153,13 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             MIDI_CHANNEL_COUNT,
             indexToNormalized(channel, MIDI_CHANNEL_COUNT)
         );
+        return;
+    }
+
+    if (isProjectNameEditorNode(node)) {
+        navigation_.projectNameOptRawPosition = 0.0f;
+        navigation_.projectNameOptRowAccumulator = 0.0f;
+        configureOptRaw(encoders_);
         return;
     }
 }

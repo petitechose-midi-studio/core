@@ -42,6 +42,8 @@ core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
 void configureProject(core::state::CoreState& state, const char* id, uint8_t note) {
     state.project.metadata.id.fill('\0');
     std::strncpy(state.project.metadata.id.data(), id, state.project.metadata.id.size() - 1U);
+    state.project.metadata.name.fill('\0');
+    std::strncpy(state.project.metadata.name.data(), id, state.project.metadata.name.size() - 1U);
     state.project.metadata.hasSavedIdentity = true;
 
     auto& page = state.pages.activePageData();
@@ -91,7 +93,7 @@ void test_waits_until_delay_before_saving() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
-    configureProject(state, "P002", 61);
+    configureProject(state, "p002", 61);
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
@@ -119,7 +121,7 @@ void test_coalesces_until_latest_request_timestamp() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
-    configureProject(state, "P003", 62);
+    configureProject(state, "p003", 62);
     state.markProjectMutated();
     const uint32_t firstRequestAt = state.projectSessionSaveTimestampMs();
 
@@ -152,7 +154,7 @@ void test_write_blocked_keeps_pending_session() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
-    configureProject(state, "P004", 63);
+    configureProject(state, "p004", 63);
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
@@ -178,7 +180,7 @@ void test_flush_writes_without_waiting() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
-    configureProject(state, "P005", 64);
+    configureProject(state, "p005", 64);
     state.markProjectMutated();
 
     auto saved = autosave.flush(state);

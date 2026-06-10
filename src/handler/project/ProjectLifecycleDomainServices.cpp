@@ -8,6 +8,7 @@
 #include "persistence/ProjectFileStore.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "state/CoreState.hpp"
+#include "state/project/ProjectSlug.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 
 namespace core::handler {
@@ -26,15 +27,8 @@ FLASHMEM Result invalidArgument() {
     return Result{.status = Status::INVALID_ARGUMENT};
 }
 
-FLASHMEM bool copyProjectId(core::state::project::ProjectMetadata& metadata,
-                            const char* projectId) {
-    if (projectId == nullptr || projectId[0] == '\0') return false;
-    const size_t length = std::strlen(projectId);
-    if (length >= metadata.id.size()) return false;
-    metadata.id.fill('\0');
-    std::memcpy(metadata.id.data(), projectId, length);
-    metadata.id[length] = '\0';
-    return true;
+FLASHMEM Result alreadyExists() {
+    return Result{.status = Status::ALREADY_EXISTS};
 }
 
 FLASHMEM bool assignText(char* target, size_t size, const char* source) {
@@ -48,45 +42,21 @@ FLASHMEM bool assignText(char* target, size_t size, const char* source) {
     return true;
 }
 
-FLASHMEM bool formatGeneratedProjectId(uint16_t index, char* out, size_t outSize) {
-    if (out == nullptr || outSize == 0 || index == 0 || index > 999) return false;
-    const int written = std::snprintf(out, outSize, "P%03u", static_cast<unsigned>(index));
-    return written > 0 && static_cast<size_t>(written) < outSize;
-}
-
-FLASHMEM bool formatGeneratedProjectName(uint16_t index, char* out, size_t outSize) {
-    if (out == nullptr || outSize == 0 || index == 0 || index > 999) return false;
-    const int written = std::snprintf(
-        out,
-        outSize,
-        "Project %03u",
-        static_cast<unsigned>(index)
-    );
-    return written > 0 && static_cast<size_t>(written) < outSize;
-}
-
-FLASHMEM bool shouldUseGeneratedProjectName(
-    const core::state::project::ProjectMetadata& metadata
-) {
-    return metadata.name[0] == '\0' || std::strcmp(metadata.name.data(), "Untitled") == 0;
-}
-
 FLASHMEM bool formatProjectFilePath(const char* projectId, char* out, size_t outSize) {
     if (out == nullptr || outSize == 0 || projectId == nullptr || projectId[0] == '\0') {
         return false;
     }
-    const int written = std::snprintf(out, outSize, "projects/%s/project.mspj", projectId);
+    const int written = std::snprintf(out, outSize, "projects/%s.mspj", projectId);
     return written > 0 && static_cast<size_t>(written) < outSize;
 }
 
 FLASHMEM Result findNextProjectId(core::persistence::ProductFileService& files,
                                   char* outId,
-                                  size_t outIdSize,
-                                  uint16_t& outIndex) {
+                                  size_t outIdSize) {
     char candidate[core::state::project::ProjectMetadata::ID_SIZE] = {};
     char path[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
     for (uint16_t i = 1; i <= 999; ++i) {
-        if (!formatGeneratedProjectId(i, candidate, sizeof(candidate)) ||
+        if (!core::state::project::formatGeneratedProjectSlug(i, candidate, sizeof(candidate)) ||
             !formatProjectFilePath(candidate, path, sizeof(path))) {
             return invalidArgument();
         }
@@ -94,12 +64,42 @@ FLASHMEM Result findNextProjectId(core::persistence::ProductFileService& files,
         auto info = files.stat(path);
         if (!info && info.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
             if (!assignText(outId, outIdSize, candidate)) return invalidArgument();
-            outIndex = i;
             return Result{.status = Status::OK};
         }
         if (!info) {
             return Result{.status = Status::LIST_FAILED};
         }
+    }
+    return Result{.status = Status::SAVE_FAILED};
+}
+
+FLASHMEM Result ensureProjectDoesNotExist(core::persistence::ProductFileService& files,
+                                          const char* projectId) {
+    char path[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
+    if (!formatProjectFilePath(projectId, path, sizeof(path))) {
+        return invalidArgument();
+    }
+
+    auto info = files.stat(path);
+    if (info) {
+        return alreadyExists();
+    }
+    if (info.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
+        return Result{.status = Status::OK};
+    }
+    return Result{.status = Status::LIST_FAILED};
+}
+
+FLASHMEM Result removeProjectFileIfExists(core::persistence::ProductFileService& files,
+                                          const char* projectId) {
+    char path[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
+    if (!formatProjectFilePath(projectId, path, sizeof(path))) {
+        return invalidArgument();
+    }
+
+    auto removed = files.remove(path);
+    if (removed || removed.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
+        return Result{.status = Status::OK};
     }
     return Result{.status = Status::SAVE_FAILED};
 }
@@ -174,7 +174,7 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
     if (!core::state::project::captureProjectSnapshot(*state_, snapshot)) {
         return Result{.status = Status::SAVE_FAILED};
     }
-    if (!copyProjectId(snapshot.project.metadata, projectId)) {
+    if (!core::state::project::assignProjectSlug(snapshot.project.metadata, projectId)) {
         return invalidArgument();
     }
     snapshot.project.metadata.hasSavedIdentity = true;
@@ -210,8 +210,7 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
     }
 
     char nextId[core::state::project::ProjectMetadata::ID_SIZE] = {};
-    uint16_t nextIndex = 0;
-    auto selected = findNextProjectId(*product_files_, nextId, sizeof(nextId), nextIndex);
+    auto selected = findNextProjectId(*product_files_, nextId, sizeof(nextId));
     if (!selected.success()) {
         return selected;
     }
@@ -220,17 +219,8 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
     if (!core::state::project::captureProjectSnapshot(*state_, snapshot)) {
         return Result{.status = Status::SAVE_FAILED};
     }
-    if (!copyProjectId(snapshot.project.metadata, nextId)) {
+    if (!core::state::project::assignProjectSlug(snapshot.project.metadata, nextId)) {
         return invalidArgument();
-    }
-    if (shouldUseGeneratedProjectName(snapshot.project.metadata)) {
-        if (!formatGeneratedProjectName(
-                nextIndex,
-                snapshot.project.metadata.name.data(),
-                snapshot.project.metadata.name.size()
-            )) {
-            return invalidArgument();
-        }
     }
     snapshot.project.metadata.hasSavedIdentity = true;
     snapshot.project.metadata.dirty = false;
@@ -239,6 +229,79 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
     auto saved = store.save(snapshot);
     if (!saved) {
         return Result{.status = Status::SAVE_FAILED};
+    }
+
+    state_->project.metadata = snapshot.project.metadata;
+    state_->requestProjectSessionSave();
+    state_->projectNavigation.notifyContentChanged();
+    return Result{.status = Status::OK, .bytes = saved.value().bytesWritten};
+}
+
+FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::saveAsProject(
+    const char* projectId
+) const {
+    if (state_ == nullptr || product_files_ == nullptr) {
+        return unavailable();
+    }
+    if (!core::state::project::validProjectSlug(projectId)) {
+        return invalidArgument();
+    }
+
+    const auto available = ensureProjectDoesNotExist(*product_files_, projectId);
+    if (!available.success()) {
+        return available;
+    }
+    return saveProject(projectId);
+}
+
+FLASHMEM ProjectLifecycleDomainServices::Result
+ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) const {
+    if (state_ == nullptr || product_files_ == nullptr) {
+        return unavailable();
+    }
+    if (!core::state::project::validProjectSlug(projectId)) {
+        return invalidArgument();
+    }
+
+    const char* currentId = state_->project.metadata.id.data();
+    const bool hasCurrentIdentity =
+        state_->project.metadata.hasSavedIdentity && currentId[0] != '\0';
+    if (hasCurrentIdentity && std::strcmp(currentId, projectId) == 0) {
+        return Result{.status = Status::OK};
+    }
+
+    const auto available = ensureProjectDoesNotExist(*product_files_, projectId);
+    if (!available.success()) {
+        return available;
+    }
+
+    char previousId[core::state::project::ProjectMetadata::ID_SIZE] = {};
+    if (hasCurrentIdentity && !assignText(previousId, sizeof(previousId), currentId)) {
+        return invalidArgument();
+    }
+
+    core::state::project::ProjectSnapshot snapshot;
+    if (!core::state::project::captureProjectSnapshot(*state_, snapshot)) {
+        return Result{.status = Status::SAVE_FAILED};
+    }
+    if (!core::state::project::assignProjectSlug(snapshot.project.metadata, projectId)) {
+        return invalidArgument();
+    }
+    snapshot.project.metadata.hasSavedIdentity = true;
+    snapshot.project.metadata.dirty = false;
+
+    core::persistence::ProjectFileStore store(*product_files_);
+    auto saved = store.save(snapshot);
+    if (!saved) {
+        return Result{.status = Status::SAVE_FAILED};
+    }
+
+    if (hasCurrentIdentity) {
+        const auto removed = removeProjectFileIfExists(*product_files_, previousId);
+        if (!removed.success()) {
+            removeProjectFileIfExists(*product_files_, projectId);
+            return removed;
+        }
     }
 
     state_->project.metadata = snapshot.project.metadata;

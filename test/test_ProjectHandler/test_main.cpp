@@ -19,6 +19,7 @@
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/project/ProjectNameKeyboard.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -44,6 +45,10 @@ using test_support::TestEncoderHardware;
 using core::state::project::ProjectNodeId;
 using core::state::project::ProjectTab;
 using core::state::sequencer::SequencerHistoryScope;
+
+constexpr float PROJECT_NAME_TEST_OPT_TICKS_PER_ROW =
+    (600.0f * 4.0f) /
+    static_cast<float>(core::state::project::PROJECT_NAME_KEYBOARD_ROW_COUNT);
 
 struct ProjectHandlerHarness {
     static constexpr oc::type::ScopeID PROJECT_SCOPE = 901;
@@ -153,11 +158,28 @@ struct RestoredProjectHarness {
 void saveCurrentProjectSnapshot(ProjectHandlerHarness& h, const char* id) {
     h.state.project.metadata.id.fill('\0');
     std::strncpy(h.state.project.metadata.id.data(), id, h.state.project.metadata.id.size() - 1U);
+    h.state.project.metadata.name.fill('\0');
+    std::strncpy(h.state.project.metadata.name.data(), id, h.state.project.metadata.name.size() - 1U);
     h.state.project.metadata.hasSavedIdentity = true;
     core::state::project::ProjectSnapshot snapshot;
     assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
     core::persistence::ProjectFileStore store(h.productFiles);
     assert(store.save(snapshot));
+}
+
+void moveProjectNameKeyboardRows(ProjectHandlerHarness& h, int rowsDown) {
+    const float raw =
+        h.state.projectNavigation.projectNameOptRawPosition -
+        static_cast<float>(rowsDown) * PROJECT_NAME_TEST_OPT_TICKS_PER_ROW;
+    h.turn(Config::EncoderID::OPT, raw);
+}
+
+void clearProjectNameEditor(ProjectHandlerHarness& h) {
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+}
+
+void validateProjectNameEditor(ProjectHandlerHarness& h) {
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
 }
 
 void test_nav_turn_on_overview_actions() {
@@ -228,20 +250,24 @@ void test_nav_press_activates_storage_autosave_only() {
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 3);
+    h.turn(Config::EncoderID::NAV, 5.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
 
     h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.focusedRow.get() == 3);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
     assert(h.state.projectNavigation.autosaveEnabled);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 4);
+    assert(h.state.projectNavigation.focusedRow.get() == 6);
 
     h.tap(Config::ButtonID::NAV);
     assert(!h.state.projectNavigation.autosaveEnabled);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 0);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
     std::cout << "[PASS] test_nav_press_activates_storage_autosave_only\n";
 }
@@ -355,19 +381,179 @@ void test_storage_autosave_is_editable_with_opt() {
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
-    h.turn(Config::EncoderID::NAV, 3.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 3);
+    h.turn(Config::EncoderID::NAV, 6.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 6);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.state.projectNavigation.autosaveEnabled);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 4);
-
     h.turn(Config::EncoderID::OPT, 0.0f);
     assert(!h.state.projectNavigation.autosaveEnabled);
 
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 0);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(!h.state.projectNavigation.autosaveEnabled);
+
     std::cout << "[PASS] test_storage_autosave_is_editable_with_opt\n";
+}
+
+void test_project_name_editor_uses_physical_action_buttons() {
+    ProjectHandlerHarness h;
+
+    h.turn(Config::EncoderID::NAV, 3.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
+
+    h.tap(Config::ButtonID::NAV);  // q
+    assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "q") == 0);
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.projectNavigation.editingProjectSlug[0] == '\0');
+    assert(!h.state.projectNavigation.physicalHoldActive.get());
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.projectNavigation.projectNameShiftActive);
+    h.tap(Config::ButtonID::NAV);  // shifted q
+    assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "Q") == 0);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.projectNavigation.projectNameShiftActive);
+
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "Q ") == 0);
+
+    h.tap(Config::ButtonID::NAV);  // q
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.projectNavigation.editingProjectSlug[0] == '\0');
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+
+    h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::NAV);  // q
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
+
+    std::cout << "[PASS] test_project_name_editor_uses_physical_action_buttons\n";
+}
+
+void test_overview_save_as_name_editor_persists_named_project() {
+    ProjectHandlerHarness h;
+
+    h.state.statusBar.tempo.set(151.0f);
+    h.state.statusBar.tempoDisplay.set(151.0f);
+    h.state.markProjectMutated();
+
+    h.turn(Config::EncoderID::NAV, 3.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 3);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
+    assert(h.state.projectNavigation.focusedRow.get() == 1);
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.tap(Config::ButtonID::NAV);  // shifted default key Q
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    h.tap(Config::ButtonID::NAV);  // q
+    assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "Q q") == 0);
+
+    validateProjectNameEditor(h);
+
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved Q q") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "Q q") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "Q q") == 0);
+    assert(h.state.project.metadata.hasSavedIdentity);
+    assert(!h.state.project.metadata.dirty);
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot saved;
+    assert(store.load("Q q", saved));
+    RestoredProjectHarness restored{saved};
+    assert(restored.state.statusBar.tempo.get() == 151.0f);
+
+    std::cout << "[PASS] test_overview_save_as_name_editor_persists_named_project\n";
+}
+
+void test_overview_save_as_name_editor_rejects_duplicate_project() {
+    ProjectHandlerHarness h;
+    saveCurrentProjectSnapshot(h, "q");
+
+    h.turn(Config::EncoderID::NAV, 3.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
+
+    h.tap(Config::ButtonID::NAV);  // q
+    validateProjectNameEditor(h);
+
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Name exists q") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
+
+    std::cout << "[PASS] test_overview_save_as_name_editor_rejects_duplicate_project\n";
+}
+
+void test_project_name_editor_opt_requires_full_row_threshold() {
+    ProjectHandlerHarness h;
+
+    h.turn(Config::EncoderID::NAV, 3.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
+    assert(std::strcmp(
+               core::state::project::projectNameKeyboardCellAt(
+                   h.state.projectNavigation.projectNameKeyIndex
+               ).label,
+               "q"
+           ) == 0);
+
+    h.turn(Config::EncoderID::OPT, -PROJECT_NAME_TEST_OPT_TICKS_PER_ROW * 0.5f);
+    assert(std::strcmp(
+               core::state::project::projectNameKeyboardCellAt(
+                   h.state.projectNavigation.projectNameKeyIndex
+               ).label,
+               "q"
+           ) == 0);
+
+    h.turn(Config::EncoderID::OPT, -PROJECT_NAME_TEST_OPT_TICKS_PER_ROW);
+    assert(std::strcmp(
+               core::state::project::projectNameKeyboardCellAt(
+                   h.state.projectNavigation.projectNameKeyIndex
+               ).label,
+               "a"
+           ) == 0);
+
+    std::cout << "[PASS] test_project_name_editor_opt_requires_full_row_threshold\n";
+}
+
+void test_overview_rename_name_editor_moves_project_file() {
+    ProjectHandlerHarness h;
+    saveCurrentProjectSnapshot(h, "p002");
+
+    h.turn(Config::EncoderID::NAV, 4.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 4);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::RENAME_PROJECT_NAME);
+    assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "p002") == 0);
+
+    clearProjectNameEditor(h);
+    assert(h.state.projectNavigation.editingProjectSlug[0] == '\0');
+
+    h.tap(Config::ButtonID::NAV);  // q
+    validateProjectNameEditor(h);
+
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Renamed q") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "q") == 0);
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot snapshot;
+    assert(store.load("q", snapshot));
+    assert(!store.load("p002", snapshot));
+
+    std::cout << "[PASS] test_overview_rename_name_editor_moves_project_file\n";
 }
 
 void test_new_project_resets_musical_project_state() {
@@ -466,10 +652,10 @@ void test_new_project_save_as_new_persists_then_resets() {
     h.tap(Config::ButtonID::NAV);
 
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved P001") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved p001") == 0);
     assert(!h.state.project.metadata.hasSavedIdentity);
     assert(h.state.project.metadata.id[0] == '\0');
-    assert(std::strcmp(h.state.project.metadata.name.data(), "Untitled") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "untitled") == 0);
     assert(h.state.statusBar.tempo.get() == 120.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
     assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
@@ -478,11 +664,11 @@ void test_new_project_save_as_new_persists_then_resets() {
 
     core::persistence::ProjectFileStore store(h.productFiles);
     core::state::project::ProjectSnapshot saved;
-    assert(store.load("P001", saved));
+    assert(store.load("p001", saved));
 
     RestoredProjectHarness restored{saved};
-    assert(std::strcmp(restored.state.project.metadata.id.data(), "P001") == 0);
-    assert(std::strcmp(restored.state.project.metadata.name.data(), "Project 001") == 0);
+    assert(std::strcmp(restored.state.project.metadata.id.data(), "p001") == 0);
+    assert(std::strcmp(restored.state.project.metadata.name.data(), "p001") == 0);
     assert(restored.state.project.metadata.hasSavedIdentity);
     assert(!restored.state.project.metadata.dirty);
     assert(restored.state.statusBar.tempo.get() == 171.0f);
@@ -503,9 +689,9 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
 
     h.state.statusBar.tempo.set(111.0f);
     h.state.statusBar.tempoDisplay.set(111.0f);
-    saveCurrentProjectSnapshot(h, "P002");
+    saveCurrentProjectSnapshot(h, "p002");
     assert(h.state.project.metadata.hasSavedIdentity);
-    assert(std::strcmp(h.state.project.metadata.id.data(), "P002") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
 
     h.state.statusBar.tempo.set(188.0f);
     h.state.statusBar.tempoDisplay.set(188.0f);
@@ -521,7 +707,7 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     h.tap(Config::ButtonID::NAV);
 
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved P002") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved p002") == 0);
     assert(!h.state.project.metadata.hasSavedIdentity);
     assert(h.state.project.metadata.id[0] == '\0');
     assert(h.state.statusBar.tempo.get() == 120.0f);
@@ -530,10 +716,10 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
 
     core::persistence::ProjectFileStore store(h.productFiles);
     core::state::project::ProjectSnapshot saved;
-    assert(store.load("P002", saved));
+    assert(store.load("p002", saved));
 
     RestoredProjectHarness restored{saved};
-    assert(std::strcmp(restored.state.project.metadata.id.data(), "P002") == 0);
+    assert(std::strcmp(restored.state.project.metadata.id.data(), "p002") == 0);
     assert(restored.state.statusBar.tempo.get() == 188.0f);
     assert(restored.state.sequencer.pattern.length.get() == 13);
     assert(restored.state.sequencer.pattern.isEnabled(7));
@@ -577,7 +763,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
 
     std::strncpy(
         h.state.project.metadata.name.data(),
-        "HandlerSave",
+        "draft",
         h.state.project.metadata.name.size() - 1U
     );
     h.state.statusBar.tempo.set(149.0f);
@@ -595,7 +781,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     h.tap(Config::ButtonID::NAV);
     assert(h.state.project.metadata.hasSavedIdentity);
     assert(!h.state.project.metadata.dirty);
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved P001") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved p001") == 0);
 
     h.state.statusBar.tempo.set(88.0f);
     h.state.statusBar.tempoDisplay.set(88.0f);
@@ -615,12 +801,12 @@ void test_overview_save_and_load_roundtrip_project_file() {
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
     assert(h.state.projectNavigation.loadProjects.count == 1);
-    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "P001") == 0);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "p001") == 0);
 
     h.tap(Config::ButtonID::NAV);
 
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P001") == 0);
-    assert(std::strcmp(h.state.project.metadata.name.data(), "HandlerSave") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p001") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "p001") == 0);
     assert(h.state.statusBar.tempo.get() == 149.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 19);
     assert(h.state.sequencer.pattern.length.get() == 11);
@@ -657,11 +843,11 @@ void test_load_project_picker_selects_detected_project() {
 
     h.state.statusBar.tempo.set(101.0f);
     h.state.statusBar.tempoDisplay.set(101.0f);
-    saveCurrentProjectSnapshot(h, "P001");
+    saveCurrentProjectSnapshot(h, "p001");
 
     h.state.statusBar.tempo.set(153.0f);
     h.state.statusBar.tempoDisplay.set(153.0f);
-    saveCurrentProjectSnapshot(h, "P003");
+    saveCurrentProjectSnapshot(h, "p003");
 
     h.state.statusBar.tempo.set(66.0f);
     h.state.statusBar.tempoDisplay.set(66.0f);
@@ -670,15 +856,15 @@ void test_load_project_picker_selects_detected_project() {
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
     assert(h.state.projectNavigation.loadProjects.count == 2);
-    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "P001") == 0);
-    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[1].id.data(), "P003") == 0);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "p001") == 0);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[1].id.data(), "p003") == 0);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 1);
     h.tap(Config::ButtonID::NAV);
 
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P003") == 0);
-    assert(std::strcmp(h.state.project.metadata.id.data(), "P003") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p003") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "p003") == 0);
     assert(h.state.statusBar.tempo.get() == 153.0f);
 
     std::cout << "[PASS] test_load_project_picker_selects_detected_project\n";
@@ -696,7 +882,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     h.turn(Config::EncoderID::NAV, 2.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 2);
     h.tap(Config::ButtonID::NAV);
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved P001") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved p001") == 0);
     assert(h.state.project.metadata.hasSavedIdentity);
     assert(!h.state.project.metadata.dirty);
 
@@ -719,7 +905,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P001") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p001") == 0);
     assert(!h.state.project.metadata.dirty);
     assert(h.state.statusBar.tempo.get() == 166.0f);
     assert(h.state.sequencer.pattern.isEnabled(5));
@@ -728,7 +914,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
 
     core::persistence::ProjectFileStore store(h.productFiles);
     core::state::project::ProjectSnapshot loaded;
-    assert(store.load("P001", loaded));
+    assert(store.load("p001", loaded));
 
     RestoredProjectHarness restored{loaded};
     assert(restored.state.statusBar.tempo.get() == 166.0f);
@@ -744,12 +930,12 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
 
     h.state.statusBar.tempo.set(144.0f);
     h.state.statusBar.tempoDisplay.set(144.0f);
-    saveCurrentProjectSnapshot(h, "P002");
+    saveCurrentProjectSnapshot(h, "p002");
 
     h.state.resetMusicalProject();
     assert(!h.state.project.metadata.hasSavedIdentity);
     assert(h.state.project.metadata.id[0] == '\0');
-    assert(std::strcmp(h.state.project.metadata.name.data(), "Untitled") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "untitled") == 0);
 
     h.state.statusBar.tempo.set(177.0f);
     h.state.statusBar.tempoDisplay.set(177.0f);
@@ -763,7 +949,7 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
     assert(h.state.projectNavigation.loadProjects.count == 1);
-    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "P002") == 0);
+    assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "p002") == 0);
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM);
@@ -771,17 +957,17 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded P002") == 0);
-    assert(std::strcmp(h.state.project.metadata.id.data(), "P002") == 0);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p002") == 0);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
     assert(h.state.statusBar.tempo.get() == 144.0f);
 
     core::persistence::ProjectFileStore store(h.productFiles);
-    core::state::project::ProjectSnapshot savedUntitled;
-    assert(store.load("P001", savedUntitled));
+    core::state::project::ProjectSnapshot saveduntitled;
+    assert(store.load("p001", saveduntitled));
 
-    RestoredProjectHarness restored{savedUntitled};
-    assert(std::strcmp(restored.state.project.metadata.id.data(), "P001") == 0);
-    assert(std::strcmp(restored.state.project.metadata.name.data(), "Project 001") == 0);
+    RestoredProjectHarness restored{saveduntitled};
+    assert(std::strcmp(restored.state.project.metadata.id.data(), "p001") == 0);
+    assert(std::strcmp(restored.state.project.metadata.name.data(), "p001") == 0);
     assert(!restored.state.project.metadata.dirty);
     assert(restored.state.project.metadata.hasSavedIdentity);
     assert(restored.state.statusBar.tempo.get() == 177.0f);
@@ -789,6 +975,109 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     assert(restored.state.sequencer.pattern.note[3] == 71);
 
     std::cout << "[PASS] test_untitled_dirty_load_prompts_save_as_and_then_loads_target\n";
+}
+
+void test_manual_save_as_rejects_invalid_and_duplicate_slugs() {
+    using Status = core::handler::ProjectLifecycleDomainServices::Status;
+    ProjectHandlerHarness h;
+    auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+
+    h.state.statusBar.tempo.set(132.0f);
+    h.state.statusBar.tempoDisplay.set(132.0f);
+    auto saved = lifecycle.saveAsProject("live-set.01");
+    assert(saved.success());
+    assert(std::strcmp(h.state.project.metadata.id.data(), "live-set.01") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "live-set.01") == 0);
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot snapshot;
+    assert(store.load("live-set.01", snapshot));
+    RestoredProjectHarness restored{snapshot};
+    assert(restored.state.statusBar.tempo.get() == 132.0f);
+
+    auto duplicate = lifecycle.saveAsProject("live-set.01");
+    assert(duplicate.status == Status::ALREADY_EXISTS);
+
+    auto invalid = lifecycle.saveAsProject("Live_Set");
+    assert(invalid.status == Status::INVALID_ARGUMENT);
+
+    std::cout << "[PASS] test_manual_save_as_rejects_invalid_and_duplicate_slugs\n";
+}
+
+void test_rename_current_project_moves_catalogue_file() {
+    using Status = core::handler::ProjectLifecycleDomainServices::Status;
+    ProjectHandlerHarness h;
+    auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+
+    h.state.statusBar.tempo.set(126.0f);
+    h.state.statusBar.tempoDisplay.set(126.0f);
+    assert(lifecycle.saveAsProject("original.project").success());
+
+    h.state.statusBar.tempo.set(158.0f);
+    h.state.statusBar.tempoDisplay.set(158.0f);
+    h.state.markProjectMutated();
+
+    auto renamed = lifecycle.renameCurrentProject("renamed-project");
+    assert(renamed.success());
+    assert(std::strcmp(h.state.project.metadata.id.data(), "renamed-project") == 0);
+    assert(std::strcmp(h.state.project.metadata.name.data(), "renamed-project") == 0);
+    assert(!h.state.project.metadata.dirty);
+
+    assert(!h.productFiles.stat("projects/original.project.mspj"));
+    assert(h.productFiles.stat("projects/renamed-project.mspj"));
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot snapshot;
+    assert(store.load("renamed-project", snapshot));
+    RestoredProjectHarness restored{snapshot};
+    assert(restored.state.statusBar.tempo.get() == 158.0f);
+
+    auto invalid = lifecycle.renameCurrentProject("bad_name");
+    assert(invalid.status == Status::INVALID_ARGUMENT);
+
+    std::cout << "[PASS] test_rename_current_project_moves_catalogue_file\n";
+}
+
+void test_rename_current_project_rejects_existing_target_without_mutating_state() {
+    using Status = core::handler::ProjectLifecycleDomainServices::Status;
+    ProjectHandlerHarness h;
+    auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+
+    assert(lifecycle.saveAsProject("p001").success());
+
+    h.state.resetMusicalProject();
+    h.state.statusBar.tempo.set(141.0f);
+    h.state.statusBar.tempoDisplay.set(141.0f);
+    assert(lifecycle.saveAsProject("p002").success());
+
+    h.state.statusBar.tempo.set(177.0f);
+    h.state.statusBar.tempoDisplay.set(177.0f);
+    h.state.markProjectMutated();
+
+    auto duplicate = lifecycle.renameCurrentProject("p001");
+    assert(duplicate.status == Status::ALREADY_EXISTS);
+    assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
+    assert(h.state.project.metadata.dirty);
+
+    assert(h.productFiles.stat("projects/p001.mspj"));
+    assert(h.productFiles.stat("projects/p002.mspj"));
+
+    core::persistence::ProjectFileStore store(h.productFiles);
+    core::state::project::ProjectSnapshot p002;
+    assert(store.load("p002", p002));
+    RestoredProjectHarness restored{p002};
+    assert(restored.state.statusBar.tempo.get() == 141.0f);
+
+    std::cout << "[PASS] test_rename_current_project_rejects_existing_target_without_mutating_state\n";
 }
 
 }  // namespace
@@ -803,6 +1092,11 @@ int main() {
     test_left_center_hold_respects_fast_tab_delta();
     test_transport_values_are_editable_from_project();
     test_storage_autosave_is_editable_with_opt();
+    test_project_name_editor_uses_physical_action_buttons();
+    test_overview_save_as_name_editor_persists_named_project();
+    test_overview_save_as_name_editor_rejects_duplicate_project();
+    test_project_name_editor_opt_requires_full_row_threshold();
+    test_overview_rename_name_editor_moves_project_file();
     test_new_project_resets_musical_project_state();
     test_new_project_confirmation_cancel_preserves_state();
     test_new_project_save_as_new_persists_then_resets();
@@ -813,6 +1107,9 @@ int main() {
     test_load_project_picker_selects_detected_project();
     test_dirty_project_load_prompts_save_and_preserves_latest_edits();
     test_untitled_dirty_load_prompts_save_as_and_then_loads_target();
+    test_manual_save_as_rejects_invalid_and_duplicate_slugs();
+    test_rename_current_project_moves_catalogue_file();
+    test_rename_current_project_rejects_existing_target_without_mutating_state();
 
     std::cout << "\nAll ProjectHandler tests passed.\n";
     return 0;

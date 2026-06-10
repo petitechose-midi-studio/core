@@ -137,7 +137,7 @@ FLASHMEM const char* projectIdentityLabel(const ProjectMenuContext& context) {
     if (context.projectName[0] != '\0') {
         return context.projectName.data();
     }
-    return "Untitled";
+    return "untitled";
 }
 
 FLASHMEM void setPageMeta(ProjectMenuPage& page,
@@ -205,7 +205,8 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page) {
     addRow(page, row("New Project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
     addRow(page, row("Load Project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
     addRow(page, row("Save", "Current", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
-    addRow(page, row("Save As", "P002", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT, false, false));
+    addRow(page, row("Save As", "Name", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
+    addRow(page, row("Rename", "Current", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
 }
 
 FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
@@ -313,12 +314,30 @@ FLASHMEM void buildTransportRows(ProjectMenuPage& page, ProjectMenuContext conte
 
 FLASHMEM void buildStorageRows(ProjectMenuPage& page, ProjectMenuContext context) {
     addRow(page, row("Save Project", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
+    addRow(page, row("Save As", "Name", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
+    addRow(page, row("Rename", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
     addRow(page, row("New Project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
     addRow(page, row("Load Project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
     auto projectRow = row("Project", "", ProjectMenuRowKind::Disabled, ProjectNodeId::STORAGE_ROOT, false, false);
     copyRowValue(projectRow, projectIdentityLabel(context));
     addRow(page, projectRow);
     addRow(page, row("Autosave", "On", ProjectMenuRowKind::Toggle, ProjectNodeId::STORAGE_ROOT));
+}
+
+FLASHMEM void buildProjectNameEditorRows(ProjectMenuPage& page,
+                                         const ProjectNavigationState& navigation) {
+    auto nameRow = row("Name", "", ProjectMenuRowKind::Disabled, navigation.currentNode.get(), false, false);
+    copyRowValue(nameRow, navigation.editingProjectSlug.data());
+    addRow(page, nameRow);
+
+    auto keyRow = row("Key", "", ProjectMenuRowKind::Value, navigation.currentNode.get());
+    const auto& key = projectNameKeyboardCellAt(navigation.projectNameKeyIndex);
+    char keyLabel[2] = {key.character, '\0'};
+    if (navigation.projectNameShiftActive && keyLabel[0] >= 'a' && keyLabel[0] <= 'z') {
+        keyLabel[0] = static_cast<char>(keyLabel[0] - 'a' + 'A');
+    }
+    copyRowValue(keyRow, keyLabel);
+    addRow(page, keyRow);
 }
 
 FLASHMEM void buildLoadProjectRows(ProjectMenuPage& page,
@@ -380,6 +399,12 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
         case ProjectNodeId::LOAD_PROJECT_CONFIRM:
             page.meta = "LOAD DIRTY?";
             return;
+        case ProjectNodeId::SAVE_AS_PROJECT_NAME:
+            page.meta = "SAVE AS";
+            return;
+        case ProjectNodeId::RENAME_PROJECT_NAME:
+            page.meta = "RENAME";
+            return;
         case ProjectNodeId::ROUTING_ROOT:
             page.meta = "ROUTING";
             return;
@@ -412,6 +437,8 @@ constexpr bool isRootNode(ProjectNodeId node) {
         case ProjectNodeId::ROUTING_ROOT:
             return true;
         case ProjectNodeId::MUSIC_SCALE:
+        case ProjectNodeId::SAVE_AS_PROJECT_NAME:
+        case ProjectNodeId::RENAME_PROJECT_NAME:
         default:
             return false;
     }
@@ -465,6 +492,13 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
     for (uint8_t i = 0; i < context.projectName.size() && context.projectName[i] != '\0'; ++i) {
         revision = (revision * 16777619u) ^ static_cast<uint8_t>(context.projectName[i]);
     }
+    for (uint8_t i = 0; i < navigation.editingProjectSlug.size() &&
+                        navigation.editingProjectSlug[i] != '\0'; ++i) {
+        revision = (revision * 16777619u) ^ static_cast<uint8_t>(navigation.editingProjectSlug[i]);
+    }
+    revision ^= static_cast<uint32_t>(navigation.projectNameKeyIndex) << 5;
+    revision = (revision * 16777619u) ^
+               static_cast<uint8_t>(navigation.projectNameShiftActive ? 'S' : 's');
     for (uint8_t i = 0; i < navigation.loadProjects.count; ++i) {
         const char* id = navigation.loadProjects.entries[i].id.data();
         for (uint8_t c = 0; id[c] != '\0'; ++c) {
@@ -494,7 +528,7 @@ FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
             if (page.rowCount > 4) page.rows[4].value = inheritValue(navigation.clipsInheritScale);
             break;
         case ProjectNodeId::STORAGE_ROOT:
-            if (page.rowCount > 4) page.rows[4].value = boolValue(navigation.autosaveEnabled);
+            if (page.rowCount > 6) page.rows[6].value = boolValue(navigation.autosaveEnabled);
             break;
         case ProjectNodeId::TRANSPORT_ROOT:
             if (page.rowCount > 1) setRowValue(page.rows[1], navigation.transportSwingPercent, "%");
@@ -522,10 +556,7 @@ FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
             }
             return false;
         case ProjectNodeId::STORAGE_ROOT:
-            if (rowIndex == 1) {
-                return true;
-            }
-            if (rowIndex == 4) {
+            if (rowIndex == 6) {
                 navigation.autosaveEnabled = !navigation.autosaveEnabled;
                 navigation.notifyContentChanged();
                 return true;
@@ -593,6 +624,10 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
             break;
         case ProjectNodeId::LOAD_PROJECT_CONFIRM:
             buildLoadProjectConfirmRows(page, navigation, context);
+            break;
+        case ProjectNodeId::SAVE_AS_PROJECT_NAME:
+        case ProjectNodeId::RENAME_PROJECT_NAME:
+            buildProjectNameEditorRows(page, navigation);
             break;
         case ProjectNodeId::OVERVIEW_ROOT:
         default:
@@ -663,6 +698,7 @@ FLASHMEM bool backProjectNavigation(ProjectNavigationState& navigation) {
     navigation.currentNode.set(nextNode);
     navigation.activeTab.set(tabForRootNode(nextNode));
     navigation.focusedRow.set(navigation.focusedRowByDepth[nextDepth]);
+    navigation.projectNameShiftActive = false;
     return true;
 }
 
@@ -728,13 +764,54 @@ FLASHMEM bool openProjectLoadConfirmation(ProjectNavigationState& navigation,
     return true;
 }
 
+FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
+                                    ProjectNodeId editorNode,
+                                    const char* initialSlug) {
+    if (editorNode != ProjectNodeId::SAVE_AS_PROJECT_NAME &&
+        editorNode != ProjectNodeId::RENAME_PROJECT_NAME) {
+        return false;
+    }
+
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) {
+        return false;
+    }
+
+    navigation.editingProjectSlug = {};
+    if (initialSlug != nullptr && initialSlug[0] != '\0') {
+        std::strncpy(
+            navigation.editingProjectSlug.data(),
+            initialSlug,
+            navigation.editingProjectSlug.size() - 1U
+        );
+        navigation.editingProjectSlug[navigation.editingProjectSlug.size() - 1U] = '\0';
+    }
+    navigation.projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    navigation.projectNameOptRawPosition = 0.0f;
+    navigation.projectNameOptRowAccumulator = 0.0f;
+    navigation.projectNameShiftActive = false;
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = editorNode;
+    navigation.focusedRowByDepth[nextDepth] = 1;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(editorNode);
+    navigation.activeTab.set(ProjectTab::STORAGE);
+    navigation.focusedRow.set(1);
+    navigation.notifyContentChanged();
+    return true;
+}
+
 FLASHMEM bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& navigation) {
     return navigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM;
 }
 
 FLASHMEM bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation) {
     return navigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM ||
-           navigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM;
+           navigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM ||
+           navigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME ||
+           navigation.currentNode.get() == ProjectNodeId::RENAME_PROJECT_NAME;
 }
 
 FLASHMEM void switchProjectTab(ProjectNavigationState& navigation, int delta) {

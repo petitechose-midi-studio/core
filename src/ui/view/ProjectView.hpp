@@ -11,10 +11,12 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/project/ProjectMenuModel.hpp"
+#include "state/project/ProjectNameKeyboard.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
 #include "ui/view/PausableLvglTimer.hpp"
 
@@ -46,6 +48,12 @@ private:
     void pauseRenderTimerIfIdle();
     void render();
     void renderTabs();
+    void renderKeyboardActionStrips(bool visible);
+    void createKeyboardLayout();
+    void renderKeyboard();
+    void renderKeyboardKey(uint8_t index, bool selected, bool force = false);
+    void applyKeyboardShiftVisibility(bool shiftActive);
+    void setKeyboardVisible(bool visible);
     static void onRenderTimer(lv_timer_t* timer);
 
     StateRefs state_refs_;
@@ -56,6 +64,8 @@ private:
     core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
+    lv_obj_t* interaction_container_ = nullptr;
+    lv_obj_t* center_column_ = nullptr;
     lv_obj_t* tab_strip_ = nullptr;
     struct TabWidgets {
         lv_obj_t* container = nullptr;
@@ -72,7 +82,30 @@ private:
         core::state::project::ProjectTab::COUNT;
     bool rendered_hold_active_ = false;
     core::app::ExtmemUniquePtr<ms::ui::MenuListView> menu_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     std::array<ms::ui::MenuRow, core::state::project::ProjectMenuPage::MAX_ROWS> rows_{};
+    lv_obj_t* keyboard_container_ = nullptr;
+    lv_obj_t* keyboard_title_ = nullptr;
+    lv_obj_t* keyboard_meta_ = nullptr;
+    lv_obj_t* keyboard_name_box_ = nullptr;
+    lv_obj_t* keyboard_name_label_ = nullptr;
+    struct KeyboardKeyWidgets {
+        lv_obj_t* container = nullptr;
+        lv_obj_t* label = nullptr;
+        lv_obj_t* shiftLabel = nullptr;
+        bool styleInitialized = false;
+        bool selected = false;
+        bool shiftVisible = false;
+    };
+    std::array<
+        KeyboardKeyWidgets,
+        core::state::project::PROJECT_NAME_KEYBOARD_CELL_COUNT
+    > keyboard_keys_{};
+    bool keyboard_visible_ = false;
+    uint8_t rendered_keyboard_selected_ =
+        core::state::project::PROJECT_NAME_KEYBOARD_CELL_COUNT;
+    bool rendered_keyboard_shift_ = false;
 };
 
 }  // namespace core::ui

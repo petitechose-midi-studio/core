@@ -25,12 +25,14 @@
 #include <SDL2/SDL.h>
 #include <oc/hal/sdl/Sdl.hpp>
 #include <oc/impl/FileStorage.hpp>
+#include <oc/impl/HostFileSystem.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
 #include <oc/hal/net/UdpTransport.hpp>
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
+#include "persistence/ProductFileService.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
@@ -68,7 +70,10 @@ int main(int argc, char** argv) {
     }
 
     const char* uxScript = ms::args::value(argc, argv, "--ux-script");
-    if (uxScript && !ms::args::has(argc, argv, "--ux-keep-storage")) {
+    const char* uxOutputArg = ms::args::value(argc, argv, "--ux-output");
+    const char* uxOutput = uxOutputArg ? uxOutputArg : ".captures/ux-run";
+    const bool resetUxStorage = uxScript && !ms::args::has(argc, argv, "--ux-keep-storage");
+    if (resetUxStorage) {
         if (!removeStorageFilesForUxRun()) {
             return 1;
         }
@@ -97,9 +102,32 @@ int main(int argc, char** argv) {
                                      sequencerPatternLibraryStorage,
                                      sequencerSetLibraryStorage);
 
+    std::filesystem::path productFileRoot = uxScript
+        ? std::filesystem::path(uxOutput) / "product-files"
+        : std::filesystem::path(".runtime") / "core-product-files";
+    if (resetUxStorage) {
+        std::error_code ec;
+        std::filesystem::remove_all(productFileRoot, ec);
+        if (ec) {
+            std::fprintf(stderr,
+                         "Failed to reset UX product file root %s: %s\n",
+                         productFileRoot.string().c_str(),
+                         ec.message().c_str());
+            return 1;
+        }
+    }
+    oc::impl::HostFileSystem productFilesystem(productFileRoot.string().c_str());
+    if (!productFilesystem.init()) {
+        std::fprintf(stderr, "Failed to initialize product filesystem\n");
+        return 1;
+    }
+    core::persistence::ProductFileService productFiles(productFilesystem);
+    if (!productFiles.init()) {
+        std::fprintf(stderr, "Failed to initialize product file service\n");
+        return 1;
+    }
+
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
-    const char* uxOutputArg = ms::args::value(argc, argv, "--ux-output");
-    const char* uxOutput = uxOutputArg ? uxOutputArg : ".captures/ux-run";
     std::string bindingTracePath;
     sdl::integration::InputBindingTraceWriter bindingTrace;
 
@@ -156,7 +184,7 @@ int main(int argc, char** argv) {
 
     // 4. Register contexts and start
     // Note: Contexts use Screen::root() which is configured to HwSimulator's screenArea
-    core::app::registerContexts(app, coreState);
+    core::app::registerContexts(app, coreState, productFiles);
     app.begin();
 
     if (uxScript) {
