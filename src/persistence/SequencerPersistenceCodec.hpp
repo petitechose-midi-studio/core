@@ -15,12 +15,12 @@ namespace core::persistence::sequencer_codec {
 void fillPatternPayload(const state::sequencer::SequencerPatternState& source, PatternPayload& out);
 void applyPatternPayload(const PatternPayload& payload, state::sequencer::SequencerPatternState& target);
 
-void fillWorkspacePayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                          const state::sequencer::SequencerState& active,
-                          WorkspacePayload& out);
-void applyWorkspacePayload(const WorkspacePayload& payload,
-                           state::sequencer::SequencerTrackBankState& trackBank,
-                           state::sequencer::SequencerState& active);
+void fillProjectSequencerPayload(const state::sequencer::SequencerTrackBankState& trackBank,
+                                 const state::sequencer::SequencerState& active,
+                                 ProjectSequencerPayload& out);
+void applyProjectSequencerPayload(const ProjectSequencerPayload& payload,
+                                  state::sequencer::SequencerTrackBankState& trackBank,
+                                  state::sequencer::SequencerState& active);
 
 void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
                     const state::sequencer::SequencerState& active,

@@ -16,9 +16,7 @@ void test_hide_all_invokes_cleanup_for_stacked_overlays() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
@@ -50,9 +48,7 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 

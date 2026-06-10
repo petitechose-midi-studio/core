@@ -86,8 +86,8 @@ Use this tracker for progress only. The rationale and prioritization live in
 | Priority | Domain | Header | Evidence | Needed contract | Status | Notes |
 |---|---|---|---|---|---|---|
 | P0 | persistence | `src/persistence/PersistenceSlotFileStore.hpp` | `domain-persistence.md`; store at line 74; format version at line 76 | Slot file layout, CRC/header, save-counter semantics | PATCHED | Store tests verified before patching. |
-| P0 | persistence | `src/persistence/MacroPersistence.hpp` | `domain-persistence.md`; payload asserts lines 178-184 | Macro workspace/library payload ownership | PATCHED | Payload/static assert contract verified. |
-| P0 | persistence | `src/persistence/SequencerPersistence.hpp` | `domain-persistence.md`; class at line 15 | Sequencer workspace/pattern/set storage boundary | PATCHED | Codec and workflow paths verified. |
+| P0 | persistence | `src/persistence/MacroPersistence.hpp` | `domain-persistence.md`; payload asserts lines 178-184 | Macro library payload ownership | PATCHED | Payload/static assert contract verified. |
+| P0 | persistence | `src/persistence/SequencerPersistence.hpp` | `domain-persistence.md`; class at line 15 | Sequencer pattern/set library storage boundary | PATCHED | Codec and workflow paths verified. |
 | P0 | persistence | `src/persistence/SequencerPersistenceCodec.hpp` | persistence map | Codec ownership vs workflow/handler | PATCHED | `.cpp` sanitizer/apply behavior verified. |
 | P0 | persistence | `src/persistence/SequencerPersistencePayloads.hpp` | payload structs at lines 19 and 41 | Binary layout compatibility warning | PATCHED | Packed payload/static assert contract added. |
 | P0 | persistence | `src/persistence/StorageRecoveryMachine.hpp` | Sprint 4 recovery strategy; native recovery tests | Pure SD recovery state machine boundary | PATCHED | Debounce, safe-point deferral, retry, and removed-during-pending behavior verified. |

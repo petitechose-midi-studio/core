@@ -151,9 +151,9 @@ FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequence
     target.bumpStepDataRevision();
 }
 
-FLASHMEM void fillWorkspacePayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                                   const state::sequencer::SequencerState& active,
-                                   WorkspacePayload& out) {
+FLASHMEM void fillProjectSequencerPayload(const state::sequencer::SequencerTrackBankState& trackBank,
+                                          const state::sequencer::SequencerState& active,
+                                          ProjectSequencerPayload& out) {
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
     const auto projectScale = trackBank.projectScaleSettings();
@@ -173,9 +173,9 @@ FLASHMEM void fillWorkspacePayload(const state::sequencer::SequencerTrackBankSta
     }
 }
 
-FLASHMEM void applyWorkspacePayload(const WorkspacePayload& payload,
-                                    state::sequencer::SequencerTrackBankState& trackBank,
-                                    state::sequencer::SequencerState& active) {
+FLASHMEM void applyProjectSequencerPayload(const ProjectSequencerPayload& payload,
+                                           state::sequencer::SequencerTrackBankState& trackBank,
+                                           state::sequencer::SequencerState& active) {
     uint16_t enabledMask = 0x0001;
     uint8_t activeTrack = 0;
     trackBank.captureSharedTrackState(enabledMask, activeTrack);

@@ -38,15 +38,11 @@ static void tick_core_state(void* user) {
 int main(int argc, char** argv) {
     static sdl::SdlEnvironment env;
     static desktop::MemoryStorage settingsStorage;
-    static desktop::MemoryStorage macroWorkspaceStorage;
     static desktop::MemoryStorage macroLibraryStorage;
-    static desktop::MemoryStorage sequencerWorkspaceStorage;
     static desktop::MemoryStorage sequencerPatternLibraryStorage;
     static desktop::MemoryStorage sequencerSetLibraryStorage;
     static core::state::CoreState coreState(settingsStorage,
-                                            macroWorkspaceStorage,
                                             macroLibraryStorage,
-                                            sequencerWorkspaceStorage,
                                             sequencerPatternLibraryStorage,
                                             sequencerSetLibraryStorage);
     static oc::impl::HostFileSystem productFilesystem("/midi-studio-wasm");
@@ -54,9 +50,7 @@ int main(int argc, char** argv) {
     static std::unique_ptr<core::sequencer::SequencerRuntimeService> standaloneSequencerRuntime;
 
     if (!settingsStorage.init() ||
-        !macroWorkspaceStorage.init() ||
         !macroLibraryStorage.init() ||
-        !sequencerWorkspaceStorage.init() ||
         !sequencerPatternLibraryStorage.init() ||
         !sequencerSetLibraryStorage.init()) {
         return 1;

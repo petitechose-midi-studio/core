@@ -49,9 +49,7 @@ struct SequencerStepHarness {
 
     SequencerStepHarness()
         : state(storages.settings,
-                storages.macroWorkspace,
                 storages.macroLibrary,
-                storages.sequencerWorkspace,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
         , navigationFocus(core::state::StructureNavigationFocus::PAGE)

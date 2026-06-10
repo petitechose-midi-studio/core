@@ -28,9 +28,7 @@ void test_slot_counts_match_persistence_domains() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
@@ -52,9 +50,7 @@ void test_shortcuts_persist_and_sanitize_through_domain_service() {
 
     {
         core::state::CoreState state(storage.settings,
-                                     storage.macroWorkspace,
                                      storage.macroLibrary,
-                                     storage.sequencerWorkspace,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
         const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
@@ -74,9 +70,7 @@ void test_shortcuts_persist_and_sanitize_through_domain_service() {
     }
 
     core::state::CoreState restored(storage.settings,
-                                    storage.macroWorkspace,
                                     storage.macroLibrary,
-                                    storage.sequencerWorkspace,
                                     storage.sequencerPatternLibrary,
                                     storage.sequencerSetLibrary);
     assert(restored.dataManager.macroShortcutLeft.get() ==
@@ -98,9 +92,7 @@ void test_macro_slot_execution_and_probe_roundtrip() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
@@ -152,9 +144,7 @@ void test_sequencer_set_load_reports_deferred_apply() {
     storage.initAll();
 
     core::state::CoreState state(storage.settings,
-                                 storage.macroWorkspace,
                                  storage.macroLibrary,
-                                 storage.sequencerWorkspace,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);

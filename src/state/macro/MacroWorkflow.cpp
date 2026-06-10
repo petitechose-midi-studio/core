@@ -53,7 +53,7 @@ FLASHMEM void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     const auto previousConfigs = state.pages.activeConfigs;
     state.flushAutoPersist();
     state.pages.setActivePage(pageIndex);
-    state.requestMacroWorkspacePersist();
+    state.markProjectMutated();
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
         state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
     }
@@ -67,7 +67,7 @@ FLASHMEM void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex)
     const auto previousConfigs = state.pages.activeConfigs;
     state.flushAutoPersist();
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), trackIndex);
-    state.requestMacroWorkspacePersist();
+    state.markProjectMutated();
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
         state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
     }
@@ -95,7 +95,7 @@ FLASHMEM bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t 
         state.configRevision.get(),
         channelChanged ? kMacroConfigDirtyAll : index
     ));
-    state.requestMacroWorkspacePersist();
+    state.markProjectMutated();
     return true;
 }
 
@@ -105,7 +105,7 @@ FLASHMEM bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) 
 
     state.pages.setActiveTrackChannel(channel);
     state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
-    state.requestMacroWorkspacePersist();
+    state.markProjectMutated();
     return true;
 }
 

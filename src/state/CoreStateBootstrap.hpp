@@ -7,7 +7,7 @@ struct CoreState;
 /**
  * Initializes CoreState once after construction.
  *
- * Bootstrap owns storage loading, default workspace creation, overlay signal
+ * Bootstrap owns settings/library initialization, overlay signal
  * registration, debug labels, and auto-persist wiring. Runtime mutation paths
  * belong to CoreStateLifecycle and workflow classes.
  */

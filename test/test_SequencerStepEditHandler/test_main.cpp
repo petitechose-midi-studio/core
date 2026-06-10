@@ -47,9 +47,7 @@ struct SequencerStepEditHarness {
 
     SequencerStepEditHarness()
         : state(storages.settings,
-                storages.macroWorkspace,
                 storages.macroLibrary,
-                storages.sequencerWorkspace,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
         , inputBinding(eventBus, mockTimeMs)

@@ -48,9 +48,7 @@ struct SequencerSettingsHandlerHarness {
 
     SequencerSettingsHandlerHarness()
         : state(storages.settings,
-                storages.macroWorkspace,
                 storages.macroLibrary,
-                storages.sequencerWorkspace,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
         , services(core::handler::SequencerSettingsDomainServices::StateRefs{

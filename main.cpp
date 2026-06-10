@@ -44,9 +44,7 @@ static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
 #endif
 static oc::hal::teensy::SDCardBackend settingsStorage("/macros.bin");
-static oc::hal::teensy::SDCardBackend macroWorkspaceStorage("/macro-workspace.bin");
 static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
-static oc::hal::teensy::SDCardBackend sequencerWorkspaceStorage("/sequencer-workspace.bin");
 static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer-pattern-library.bin");
 static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
@@ -71,9 +69,7 @@ struct StorageBackendRef {
 
 StorageBackendRef storageBackends[] = {
     {"Settings", &settingsStorage},
-    {"Macro workspace", &macroWorkspaceStorage},
     {"Macro library", &macroLibraryStorage},
-    {"Sequencer workspace", &sequencerWorkspaceStorage},
     {"Sequencer pattern library", &sequencerPatternLibraryStorage},
     {"Sequencer set library", &sequencerSetLibraryStorage},
 };
@@ -336,9 +332,7 @@ static FLASHMEM void initStorage() {
 
     const StorageInitItem items[] = {
         {"Settings", &settingsStorage},
-        {"Macro workspace", &macroWorkspaceStorage},
         {"Macro library", &macroLibraryStorage},
-        {"Sequencer workspace", &sequencerWorkspaceStorage},
         {"Sequencer pattern library", &sequencerPatternLibraryStorage},
         {"Sequencer set library", &sequencerSetLibraryStorage},
     };
@@ -355,11 +349,9 @@ static FLASHMEM void initStorage() {
         while (true) {}
     }
 
-    OC_LOG_INFO("Storages ready settings={}B macroWs={}B macroLib={}B seqWs={}B seqPatternLib={}B seqSetLib={}B",
+    OC_LOG_INFO("Storages ready settings={}B macroLib={}B seqPatternLib={}B seqSetLib={}B",
                 settingsStorage.capacity(),
-                macroWorkspaceStorage.capacity(),
                 macroLibraryStorage.capacity(),
-                sequencerWorkspaceStorage.capacity(),
                 sequencerPatternLibraryStorage.capacity(),
                 sequencerSetLibraryStorage.capacity());
 }
@@ -368,9 +360,7 @@ static FLASHMEM void initStorage() {
 static FLASHMEM void initApp() {
     // Create global state with dedicated storage domains (survives context switches)
     coreState.emplace(settingsStorage,
-                      macroWorkspaceStorage,
                       macroLibraryStorage,
-                      sequencerWorkspaceStorage,
                       sequencerPatternLibraryStorage,
                       sequencerSetLibraryStorage);
     projectSessionRestoreService.emplace(*productFileService);
@@ -475,9 +465,7 @@ FLASHMEM void setup() {
     initStorage();
     if (productFileService) {
         coreState.emplace(settingsStorage,
-                          macroWorkspaceStorage,
                           macroLibraryStorage,
-                          sequencerWorkspaceStorage,
                           sequencerPatternLibraryStorage,
                           sequencerSetLibraryStorage);
         projectStoreSmokeResult =

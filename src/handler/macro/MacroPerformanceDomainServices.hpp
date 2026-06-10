@@ -19,12 +19,11 @@ namespace core::handler {
  * Macro performance domain service boundary.
  *
  * Input code receives focused macro/status refs and typed operations for
- * cross-domain effects such as persistence requests and page/config workflows.
+ * cross-domain effects such as project mutation and page/config workflows.
  */
 class MacroPerformanceDomainServices {
 public:
-    using NoteInteractionFn = void (*)(void* context);
-    using RequestPersistFn = void (*)(void* context);
+    using MarkProjectMutatedFn = void (*)(void* context);
     using SetConfigFn = bool (*)(void* context, uint8_t index, uint8_t channel, uint8_t cc);
     using SetTrackChannelFn = bool (*)(void* context, uint8_t channel);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
@@ -38,8 +37,7 @@ public:
 
     struct Operations {
         void* context = nullptr;
-        NoteInteractionFn noteInteraction = nullptr;
-        RequestPersistFn requestPersist = nullptr;
+        MarkProjectMutatedFn markProjectMutated = nullptr;
         SetConfigFn setConfig = nullptr;
         SetTrackChannelFn setTrackChannel = nullptr;
         SwitchToPageFn switchToPage = nullptr;

@@ -14,10 +14,10 @@
 namespace core::state {
 
 namespace {
-// Macro workspace saves go through SD-backed persistence and can stall the UI
-// during active performance. Keep the debounce high enough that live movement
-// is not interrupted by periodic workspace flushes.
-constexpr uint32_t MACRO_WORKSPACE_SAVE_DELAY_MS = 5000;
+// Macro runtime values are projected back into the project snapshot after a
+// short idle window so live movement does not continuously enqueue session
+// saves.
+constexpr uint32_t MACRO_VALUE_PROJECT_SAVE_DELAY_MS = 5000;
 
 void configureDebugLabels_(CoreState& state) {
     state.activeView.setDebugLabel("core.activeView");
@@ -89,11 +89,6 @@ FLASHMEM void CoreStateBootstrap::initializeMacroPersistence_(CoreState& state) 
         state.macroPersistence.initStatus() == persistence::PersistenceWriteStatus::OK;
     if (!state.macroDomain_.persistenceReady) {
         OC_LOG_WARN("[CoreState] Macro persistence init failed");
-        return;
-    }
-
-    if (!state.macroPersistence.loadWorkspace(state.pages)) {
-        state.persistMacroWorkspaceNow_();
     }
 }
 
@@ -102,11 +97,6 @@ FLASHMEM void CoreStateBootstrap::initializeSequencerPersistence_(CoreState& sta
         state.sequencerPersistence.initStatus() == persistence::PersistenceWriteStatus::OK;
     if (!state.sequencerDomain_.persistenceReady) {
         OC_LOG_WARN("[CoreState] Sequencer persistence init failed");
-        return;
-    }
-
-    if (!state.sequencerPersistence.loadWorkspace(state.sequencerTracks, state.sequencer)) {
-        state.persistSequencerWorkspace_();
     }
 }
 
@@ -119,8 +109,8 @@ FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
                 if (page.values[i] == value) return;
                 page.values[i] = value;
             },
-            [&state]() { state.requestMacroWorkspacePersist(); },
-            MACRO_WORKSPACE_SAVE_DELAY_MS
+            [&state]() { state.markProjectMutated(); },
+            MACRO_VALUE_PROJECT_SAVE_DELAY_MS
         );
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
@@ -133,8 +123,7 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
         std::make_unique<oc::state::AutoPersistIncremental<13>>(
             [](uint8_t) {},
             [&state]() {
-                state.markProjectMutated();
-                state.persistSequencerWorkspace_();
+                state.markSequencerProjectMutated_();
             },
             CoreSettings::VALUE_SAVE_DELAY_MS
         );

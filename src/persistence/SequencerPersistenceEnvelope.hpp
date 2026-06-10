@@ -30,17 +30,17 @@ bool applyPatternEnvelope(const uint8_t* data,
                           uint16_t size,
                           state::sequencer::SequencerPatternState& target);
 
-EnvelopeEncodeResult fillWorkspaceEnvelope(
+EnvelopeEncodeResult fillProjectSequencerEnvelope(
     const state::sequencer::SequencerTrackBankState& trackBank,
     const state::sequencer::SequencerState& active,
     uint8_t* out,
     uint16_t capacity
 );
 
-bool applyWorkspaceEnvelope(const uint8_t* data,
-                            uint16_t size,
-                            state::sequencer::SequencerTrackBankState& trackBank,
-                            state::sequencer::SequencerState& active);
+bool applyProjectSequencerEnvelope(const uint8_t* data,
+                                   uint16_t size,
+                                   state::sequencer::SequencerTrackBankState& trackBank,
+                                   state::sequencer::SequencerState& active);
 
 EnvelopeEncodeResult fillSetEnvelope(
     const state::sequencer::SequencerTrackBankState& trackBank,

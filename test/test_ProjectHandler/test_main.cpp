@@ -78,9 +78,7 @@ struct ProjectHandlerHarness {
         , projectFilesystem(projectFsRootPath.c_str())
         , productFiles(projectFilesystem)
         , state(storages.settings,
-                storages.macroWorkspace,
                 storages.macroLibrary,
-                storages.sequencerWorkspace,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
         , inputBinding(eventBus, mockTimeMs)
@@ -150,9 +148,7 @@ struct RestoredProjectHarness {
 
     explicit RestoredProjectHarness(const core::state::project::ProjectSnapshot& snapshot)
         : state(storages.settings,
-                storages.macroWorkspace,
                 storages.macroLibrary,
-                storages.sequencerWorkspace,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary) {
         assert(core::state::project::applyProjectSnapshot(state, snapshot));

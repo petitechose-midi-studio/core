@@ -31,13 +31,13 @@ constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
 
 enum class EnvelopeKind : uint8_t {
     Pattern = 1,
-    Workspace = 2,
+    ProjectSequencer = 2,
     Set = 3,
 };
 
 enum class SectionId : uint16_t {
     FlatPattern = 1,
-    FlatWorkspace = 2,
+    FlatProjectSequencer = 2,
     FlatSet = 3,
     GraphSequences = 16,
     GraphStepNodes = 17,
@@ -519,18 +519,18 @@ FLASHMEM bool applyPatternEnvelope(const uint8_t* data,
     return applyGraphSections(graphs[0], target);
 }
 
-FLASHMEM EnvelopeEncodeResult fillWorkspaceEnvelope(
+FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
     const state::sequencer::SequencerTrackBankState& trackBank,
     const state::sequencer::SequencerState& active,
     uint8_t* out,
     uint16_t capacity
 ) {
-    EnvelopeWriter writer(out, capacity, EnvelopeKind::Workspace);
-    WorkspacePayload flat{};
-    fillWorkspacePayload(trackBank, active, flat);
-    writer.addSection(SectionId::FlatWorkspace,
+    EnvelopeWriter writer(out, capacity, EnvelopeKind::ProjectSequencer);
+    ProjectSequencerPayload flat{};
+    fillProjectSequencerPayload(trackBank, active, flat);
+    writer.addSection(SectionId::FlatProjectSequencer,
                       kNoTrack,
-                      sizeof(WorkspacePayload),
+                      sizeof(ProjectSequencerPayload),
                       1,
                       &flat,
                       sizeof(flat));
@@ -540,22 +540,27 @@ FLASHMEM EnvelopeEncodeResult fillWorkspaceEnvelope(
     return writer.finish();
 }
 
-FLASHMEM bool applyWorkspaceEnvelope(const uint8_t* data,
-                                     uint16_t size,
-                                     state::sequencer::SequencerTrackBankState& trackBank,
-                                     state::sequencer::SequencerState& active) {
+FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
+                                            uint16_t size,
+                                            state::sequencer::SequencerTrackBankState& trackBank,
+                                            state::sequencer::SequencerState& active) {
     SectionView flat{};
     std::array<GraphSectionViews, PERSISTED_TRACK_COUNT> graphs{};
-    if (!findSections(data, size, EnvelopeKind::Workspace, SectionId::FlatWorkspace, flat, &graphs)) {
+    if (!findSections(data,
+                      size,
+                      EnvelopeKind::ProjectSequencer,
+                      SectionId::FlatProjectSequencer,
+                      flat,
+                      &graphs)) {
         return false;
     }
-    if (!sectionHasExactRecordShape(flat, sizeof(WorkspacePayload)) || flat.count != 1) {
+    if (!sectionHasExactRecordShape(flat, sizeof(ProjectSequencerPayload)) || flat.count != 1) {
         return false;
     }
 
-    WorkspacePayload payload{};
+    ProjectSequencerPayload payload{};
     std::memcpy(&payload, flat.data, sizeof(payload));
-    applyWorkspacePayload(payload, trackBank, active);
+    applyProjectSequencerPayload(payload, trackBank, active);
 
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
