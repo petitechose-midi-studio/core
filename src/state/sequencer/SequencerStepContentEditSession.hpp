@@ -51,6 +51,15 @@ struct StepContentContextView {
     bool active = false;
 };
 
+struct StepContentFocusedValues {
+    bool valid = false;
+    int16_t noteOffset = 0;
+    int16_t velocityOffset = 0;
+    int16_t gateOffset = 0;
+    int16_t nudgeOffset = 0;
+    int16_t probabilityOffset = 0;
+};
+
 class SequencerStepContentEditSession {
 public:
     static constexpr uint8_t MAX_CONTEXTS =
@@ -77,11 +86,13 @@ public:
 
     bool focusedStepHasMicroSequence(const SequencerPatternState& pattern) const;
     bool focusedStepHasCycleStates(const SequencerPatternState& pattern) const;
+    StepContentFocusedValues focusedValues(const SequencerPatternState& pattern) const;
     StepContentCreationAvailability childCreationAvailability(
         const SequencerPatternState& pattern,
         StepContentChildKind childKind,
         uint8_t length
     ) const;
+    bool resizeCurrentMicroSequence(SequencerPatternState& pattern, uint8_t length);
 
     bool setFocusedNoteOffset(SequencerPatternState& pattern, int8_t offset);
     bool setFocusedVelocityOffset(SequencerPatternState& pattern, int16_t offset);

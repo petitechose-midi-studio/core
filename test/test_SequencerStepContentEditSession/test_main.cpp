@@ -230,6 +230,54 @@ void test_focused_property_edits_target_current_context_only() {
     std::cout << "[PASS] test_focused_property_edits_target_current_context_only\n";
 }
 
+void test_micro_sequence_resize_uses_reserved_capacity() {
+    SequencerState state;
+    SequencerStepContentEditSession session;
+    assert(session.openRootStepContext(9));
+    assert(session.createOrOpenMicroSequence(state.pattern).ok);
+    assert(session.current().length == SequencerStepContentEditSession::DEFAULT_MICRO_SEQUENCE_LENGTH);
+
+    const auto* graph = core::state::sequencer::graphView(state.pattern);
+    assert(graph != nullptr);
+    const auto* rootNode = graph->stepNode(core::state::sequencer::rootStepNodeId(9));
+    assert(rootNode != nullptr);
+    const auto* sequence = graph->sequence(rootNode->childSequenceId);
+    assert(sequence != nullptr);
+    const uint16_t firstNode = sequence->firstStepNode;
+    const uint16_t reservedEnd =
+        static_cast<uint16_t>(firstNode + StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
+    assert(graph->stepNodeCount >= reservedEnd);
+
+    assert(session.resizeCurrentMicroSequence(
+        state.pattern,
+        StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP
+    ));
+    assert(session.current().length == StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
+    assert(session.focusLocalStep(
+        static_cast<uint8_t>(StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP - 1U)
+    ));
+    assert(session.setFocusedNoteOffset(state.pattern, 11));
+
+    graph = core::state::sequencer::graphView(state.pattern);
+    sequence = graph->sequence(rootNode->childSequenceId);
+    assert(sequence != nullptr);
+    assert(sequence->length == StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
+    const auto* lastNode = graph->stepNode(
+        static_cast<uint16_t>(
+            sequence->firstStepNode + StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP - 1U
+        )
+    );
+    assert(lastNode != nullptr);
+    assert(lastNode->noteOffset == 11);
+
+    assert(!session.resizeCurrentMicroSequence(
+        state.pattern,
+        static_cast<uint8_t>(StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP + 1U)
+    ));
+
+    std::cout << "[PASS] test_micro_sequence_resize_uses_reserved_capacity\n";
+}
+
 void test_targeted_child_removal_keeps_sibling_content() {
     SequencerState state;
     SequencerStepContentEditSession session;
@@ -299,6 +347,7 @@ int main() {
     test_focused_child_queries_follow_current_context();
     test_child_creation_availability_reports_blocking_reason();
     test_focused_property_edits_target_current_context_only();
+    test_micro_sequence_resize_uses_reserved_capacity();
     test_targeted_child_removal_keeps_sibling_content();
     test_remove_current_child_context_returns_to_parent();
     test_max_depth_blocks_creation_before_graph_mutation();

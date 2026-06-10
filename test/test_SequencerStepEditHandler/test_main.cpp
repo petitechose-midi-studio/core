@@ -14,6 +14,7 @@
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -180,7 +181,7 @@ void test_nav_and_opt_edit_then_nav_apply() {
     std::cout << "[PASS] test_nav_and_opt_edit_then_nav_apply\n";
 }
 
-void test_context_rows_are_focusable_and_opt_noops_until_child_ux_gate() {
+void test_context_rows_are_focusable_and_root_action_rows_do_not_edit_properties() {
     SequencerStepEditHarness h;
     h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.pattern.note[3] = 60;
@@ -216,7 +217,79 @@ void test_context_rows_are_focusable_and_opt_noops_until_child_ux_gate() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.stepEdit.focusedRow.get() == 0);
 
-    std::cout << "[PASS] test_context_rows_are_focusable_and_opt_noops_until_child_ux_gate\n";
+    std::cout << "[PASS] test_context_rows_are_focusable_and_root_action_rows_do_not_edit_properties\n";
+}
+
+void test_create_edit_and_commit_micro_sequence_context() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.note[3] = 60;
+    h.state.sequencer.pattern.velocity[3] = 64;
+
+    openStepEdit(h, 3);
+    h.release(Config::MACRO_BUTTONS[3]);
+
+    for (uint8_t i = 0; i < 5; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 5);
+
+    h.tap(Config::ButtonID::NAV);
+    auto context = h.state.sequencer.stepEdit.contentSession.current();
+    assert(context.kind == core::state::sequencer::StepContentContextKind::MICRO_SEQUENCE);
+    assert(context.rootStep == 3);
+    assert(context.length == 2);
+    assert(core::state::sequencer::stepHasMicroSequence(h.state.sequencer.pattern, 3));
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* root = graph->stepNode(core::state::sequencer::rootStepNodeId(3));
+    assert(root != nullptr);
+    const auto* sequence = graph->sequence(root->childSequenceId);
+    assert(sequence != nullptr);
+    const auto* firstMicroStep = graph->stepNode(sequence->firstStepNode);
+    assert(firstMicroStep != nullptr);
+    assert(firstMicroStep->noteOffset == 24);
+
+    for (uint8_t i = 0; i < 6; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 6);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    context = h.state.sequencer.stepEdit.contentSession.current();
+    assert(context.length == 16);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 5);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    context = h.state.sequencer.stepEdit.contentSession.current();
+    assert(context.localIndex == 15);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 0);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == 1);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    root = graph->stepNode(core::state::sequencer::rootStepNodeId(3));
+    sequence = graph->sequence(root->childSequenceId);
+    const auto* lastMicroStep = graph->stepNode(static_cast<uint16_t>(sequence->firstStepNode + 15U));
+    assert(lastMicroStep != nullptr);
+    assert(lastMicroStep->velocityOffset == 127);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.stepEdit.contentSession.current().kind ==
+           core::state::sequencer::StepContentContextKind::ROOT_STEP);
+    assert(h.state.sequencer.stepEdit.visible.get());
+
+    h.tap(Config::ButtonID::NAV);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    std::cout << "[PASS] test_create_edit_and_commit_micro_sequence_context\n";
 }
 
 void test_step_edit_session_undo_redo_workflow() {
@@ -347,7 +420,8 @@ void test_step_edit_does_not_open_when_blocked() {
 int main() {
     test_long_press_opens_step_edit_and_ignores_open_release();
     test_nav_and_opt_edit_then_nav_apply();
-    test_context_rows_are_focusable_and_opt_noops_until_child_ux_gate();
+    test_context_rows_are_focusable_and_root_action_rows_do_not_edit_properties();
+    test_create_edit_and_commit_micro_sequence_context();
     test_step_edit_session_undo_redo_workflow();
     test_cancel_restores_snapshot();
     test_step_edit_does_not_open_when_blocked();

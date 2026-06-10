@@ -64,12 +64,15 @@ FLASHMEM uint16_t allocateStepNodes(StepSequencerGraph& graph, uint8_t count) {
 
 FLASHMEM uint16_t allocateSequence(StepSequencerGraph& graph,
                                    StepSequencerSequenceKind kind,
-                                   uint8_t length) {
-    if (length == 0 || graph.sequenceCount >= graph.sequences.size()) {
+                                   uint8_t length,
+                                   uint8_t reservedStepNodes) {
+    if (length == 0 ||
+        reservedStepNodes < length ||
+        graph.sequenceCount >= graph.sequences.size()) {
         return kInvalidId;
     }
 
-    const uint16_t firstNode = allocateStepNodes(graph, length);
+    const uint16_t firstNode = allocateStepNodes(graph, reservedStepNodes);
     if (firstNode == kInvalidId) return kInvalidId;
 
     const uint8_t id = graph.sequenceCount++;
@@ -80,6 +83,31 @@ FLASHMEM uint16_t allocateSequence(StepSequencerGraph& graph,
         .offset = 0,
     };
     return id;
+}
+
+FLASHMEM uint8_t sequenceReservedCapacity(const StepSequencerGraph& graph, uint16_t sequenceId) {
+    const auto* sequence = graph.sequence(sequenceId);
+    if (sequence == nullptr) return 0;
+
+    const uint16_t first = sequence->firstStepNode;
+    uint16_t next = graph.stepNodeCount;
+    for (uint16_t i = 0; i < graph.sequenceCount && i < graph.sequences.size(); ++i) {
+        if (i == sequenceId) continue;
+        const auto* candidate = graph.sequence(i);
+        if (candidate == nullptr) continue;
+        if (candidate->firstStepNode > first) {
+            next = std::min<uint16_t>(next, candidate->firstStepNode);
+        }
+    }
+    for (uint16_t i = 0; i < graph.cycleSetCount && i < graph.cycleSets.size(); ++i) {
+        const auto* candidate = graph.cycleSet(i);
+        if (candidate == nullptr) continue;
+        if (candidate->firstStateNode > first) {
+            next = std::min<uint16_t>(next, candidate->firstStateNode);
+        }
+    }
+
+    return next > first ? static_cast<uint8_t>(std::min<uint16_t>(next - first, 255U)) : 0;
 }
 
 FLASHMEM uint16_t allocateCycleSet(StepSequencerGraph& graph, uint8_t length) {
@@ -219,7 +247,8 @@ FLASHMEM SequencerGraphCreateResult createMicroSequence(
     const uint16_t sequenceId = allocateSequence(
         *graph,
         StepSequencerSequenceKind::MicroSequence,
-        length
+        length,
+        StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP
     );
     if (sequenceId == kInvalidId) {
         return {.ok = false, .limitReached = true};
@@ -229,6 +258,34 @@ FLASHMEM SequencerGraphCreateResult createMicroSequence(
     parent.flags = static_cast<uint16_t>(parent.flags | STEP_NODE_CHILD_SEQUENCE);
     pattern.bumpGraphRevision();
     return {.ok = true, .limitReached = false, .id = sequenceId};
+}
+
+FLASHMEM bool resizeMicroSequence(
+    SequencerPatternState& pattern,
+    SequencerGraphSequenceId sequenceId,
+    uint8_t length
+) {
+    if (length == 0 ||
+        length > StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP) {
+        return false;
+    }
+    if (!ensureGraphRoot(pattern)) return false;
+
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr) return false;
+    auto* sequence =
+        sequenceId < graph->sequenceCount && sequenceId < graph->sequences.size()
+            ? &graph->sequences[sequenceId]
+            : nullptr;
+    if (sequence == nullptr || sequence->kind != StepSequencerSequenceKind::MicroSequence) {
+        return false;
+    }
+    if (length > sequenceReservedCapacity(*graph, sequenceId)) return false;
+    if (sequence->length == length) return false;
+
+    sequence->length = length;
+    pattern.bumpGraphRevision();
+    return true;
 }
 
 FLASHMEM SequencerGraphCreateResult createCycleStateSet(

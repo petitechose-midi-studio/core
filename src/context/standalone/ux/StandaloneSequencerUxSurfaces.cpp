@@ -443,7 +443,7 @@ bool SequencerStepEditUxSurface::captureSemanticUxContext(
     out.mode = "sequencer.step_edit";
     out.target = "step";
     out.targetStep = static_cast<int16_t>(data.stepIndex);
-    if (data.selectedIndex >= 0 && data.selectedIndex < static_cast<int>(data.rows.size())) {
+    if (data.selectedIndex >= 0 && data.selectedIndex < data.rowCount) {
         out.property = data.rows[data.selectedIndex].key;
         copyValueLabel(out.valueLabel, data.rows[data.selectedIndex].value);
     }

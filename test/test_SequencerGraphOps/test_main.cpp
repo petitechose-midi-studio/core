@@ -253,18 +253,23 @@ void test_clear_graph_releases_allocation_and_bumps_revision_once() {
 void test_graph_limits_are_reported() {
     SequencerState state;
 
-    for (uint8_t i = 0; i < StepSequencerGraphLimits::MAX_SEQUENCES - 1; ++i) {
+    uint8_t created = 0;
+    for (; created < SequencerState::MAX_STEPS; ++created) {
         const auto result = core::state::sequencer::createMicroSequence(
             state.pattern,
-            core::state::sequencer::rootStepNodeId(i),
+            core::state::sequencer::rootStepNodeId(created),
             1
         );
-        assert(result.ok);
+        if (!result.ok) {
+            assert(result.limitReached);
+            break;
+        }
     }
+    assert(created > 0);
 
     const auto rejected = core::state::sequencer::createMicroSequence(
         state.pattern,
-        core::state::sequencer::rootStepNodeId(StepSequencerGraphLimits::MAX_SEQUENCES),
+        core::state::sequencer::rootStepNodeId(created),
         1
     );
     assert(!rejected.ok);

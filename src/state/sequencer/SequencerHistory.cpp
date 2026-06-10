@@ -424,6 +424,21 @@ FLASHMEM bool applyHistorySnapshot(
     return applyHistorySnapshotToTrack(bank, active, bank.activeTrackIndex(), snapshot);
 }
 
+FLASHMEM bool applyHistorySnapshotToEditor(
+    SequencerState& active,
+    const SequencerHistoryPatternSnapshot& snapshot
+) {
+    GraphPtr editorGraph;
+    if (!cloneGraph(snapshot.graph, editorGraph)) {
+        return false;
+    }
+
+    applySnapshotToEditor(active, snapshot.flat);
+    installGraph(active.pattern, std::move(editorGraph), snapshot.flat.graphRevision);
+    restoreFocus(active, snapshot.focusedStep);
+    return true;
+}
+
 FLASHMEM bool applyHistorySnapshotToTrack(
     SequencerTrackBankState& bank,
     SequencerState& active,

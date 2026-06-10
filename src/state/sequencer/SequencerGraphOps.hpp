@@ -31,6 +31,11 @@ SequencerGraphCreateResult createMicroSequence(
     SequencerGraphNodeId parentNodeId,
     uint8_t length
 );
+bool resizeMicroSequence(
+    SequencerPatternState& pattern,
+    SequencerGraphSequenceId sequenceId,
+    uint8_t length
+);
 
 SequencerGraphCreateResult createCycleStateSet(
     SequencerPatternState& pattern,

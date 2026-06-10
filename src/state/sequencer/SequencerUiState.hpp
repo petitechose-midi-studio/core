@@ -9,6 +9,7 @@
 
 #include "state/StructureSelectionState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/SequencerStepContentEditSession.hpp"
 #include "state/sequencer/StepProperty.hpp"
 
 namespace core::state::sequencer {
@@ -31,6 +32,8 @@ struct SequencerStepEditOverlayState {
     Signal<bool> visible{false};
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
+    Signal<uint32_t> contentRevision{0};
+    SequencerStepContentEditSession contentSession{};
 
     uint8_t snapshotNote = 0;
     uint8_t snapshotVelocity = 0;

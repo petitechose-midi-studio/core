@@ -9,6 +9,8 @@ FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState(
 FLASHMEM void SequencerStepEditOverlayState::reset() {
     stepIndex.set(0);
     focusedRow.set(0);
+    contentRevision.set(0);
+    contentSession.reset();
     snapshotValid = false;
 }
 

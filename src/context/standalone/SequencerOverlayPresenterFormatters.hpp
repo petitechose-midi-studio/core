@@ -16,13 +16,14 @@ struct Source {
 struct StepEditRenderData {
     static constexpr size_t ROW_COUNT = 7;
 
-    std::array<std::array<char, 12>, ROW_COUNT> valueBuffers{};
+    std::array<std::array<char, 16>, ROW_COUNT> valueBuffers{};
     std::array<ms::ui::KeyValueRow, ROW_COUNT> rows{};
     std::array<char, 16> title{};
     std::array<char, 16> meta{};
     uint32_t dataRevision = 0;
     uint8_t stepIndex = 0;
     int selectedIndex = 0;
+    int rowCount = 0;
     bool visible = false;
 };
 

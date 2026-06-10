@@ -229,6 +229,26 @@ FLASHMEM bool SequencerStepContentEditSession::focusedStepHasCycleStates(
     return node != nullptr && node->has(STEP_NODE_CYCLE_SET);
 }
 
+FLASHMEM StepContentFocusedValues SequencerStepContentEditSession::focusedValues(
+    const SequencerPatternState& pattern
+) const {
+    const auto nodeId = focusedNodeId_(pattern);
+    if (nodeId == kInvalidId) return {};
+
+    const auto* graph = graphView(pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    if (node == nullptr) return {};
+
+    return StepContentFocusedValues{
+        .valid = true,
+        .noteOffset = node->noteOffset,
+        .velocityOffset = node->velocityOffset,
+        .gateOffset = node->gateOffset,
+        .nudgeOffset = node->nudgeOffset,
+        .probabilityOffset = node->probabilityOffset,
+    };
+}
+
 FLASHMEM StepContentCreationAvailability
 SequencerStepContentEditSession::childCreationAvailability(
     const SequencerPatternState& pattern,
@@ -319,6 +339,29 @@ SequencerStepContentEditSession::childCreationAvailability(
         .opensExisting = false,
         .blockedReason = StepContentCreationBlockReason::NONE,
     };
+}
+
+FLASHMEM bool SequencerStepContentEditSession::resizeCurrentMicroSequence(
+    SequencerPatternState& pattern,
+    uint8_t length
+) {
+    auto* context = currentContext_();
+    if (context == nullptr || context->kind != StepContentContextKind::MICRO_SEQUENCE) {
+        return false;
+    }
+    if (!resizeMicroSequence(pattern, context->sequenceId, length)) {
+        return false;
+    }
+
+    const auto* graph = graphView(pattern);
+    const auto* sequence = graph ? graph->sequence(context->sequenceId) : nullptr;
+    if (sequence == nullptr) return false;
+
+    context->length = sequence->length;
+    if (context->localIndex >= context->length) {
+        context->localIndex = static_cast<uint8_t>(context->length - 1U);
+    }
+    return true;
 }
 
 FLASHMEM bool SequencerStepContentEditSession::setFocusedNoteOffset(

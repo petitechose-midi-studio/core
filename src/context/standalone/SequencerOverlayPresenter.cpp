@@ -20,6 +20,7 @@ FLASHMEM void SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.sequencer.stepEdit.stepIndex,
         state_refs_.sequencer.stepEdit.focusedRow,
+        state_refs_.sequencer.stepEdit.contentRevision,
         state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.pattern.graphRevision
     );
@@ -38,7 +39,7 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
         .title = data.title.data(),
         .meta = data.meta.data(),
         .rows = data.rows.data(),
-        .rowCount = static_cast<int>(data.rows.size()),
+        .rowCount = data.rowCount,
         .selectedIndex = data.selectedIndex,
         .visible = true,
         .dataRevision = data.dataRevision,

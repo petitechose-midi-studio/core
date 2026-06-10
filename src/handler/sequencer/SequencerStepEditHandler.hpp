@@ -49,9 +49,11 @@ private:
     void closeCancel();
 
     void moveFocus(float delta);
+    void activateFocusedRowOrApply();
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
     void maybeCloseApplyFromMacro(uint8_t indexInPage);
+    void bumpContentRevision();
 
     // Long-press opens while still pressed; ignore the release that follows.
     bool ignore_open_release_ = false;
