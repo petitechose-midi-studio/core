@@ -190,6 +190,8 @@ FLASHMEM void SequencerState::reset() {
     page.set(0);
     focusedStep.set(0);
     playheadStep.set(-1);
+    playheadStepTickOffset.set(0);
+    playheadStepTicks = 1;
     probabilityCycleRevision.set(0);
     probabilityCycleMask = {};
     probabilityCycleIndex = 0;
@@ -204,6 +206,7 @@ FLASHMEM void SequencerState::reset() {
     patternVariationFeedback.reset();
     historyFeedback.reset();
     patternQuickControls.reset();
+    contentView.reset();
     structureUi.reset();
 }
 

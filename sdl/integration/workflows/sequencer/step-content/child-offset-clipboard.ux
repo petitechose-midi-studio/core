@@ -1,0 +1,89 @@
+# UX workflow: child step wrap offset and typed step-content clipboard.
+# Purpose: validates that micro/cycle child contexts expose root-like step wrap
+# offset through quick controls and that row-level clipboard actions only paste
+# matching child kinds.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable root step 1 and create a micro-sequence child context.
+150 tap MACRO_1 60
+320 capture screen root_step_enabled
+420 button MACRO_1 down
+1480 tick
+1540 capture screen root_step_edit_open
+1600 button MACRO_1 up
+1700 encoder NAV 1
+1780 encoder NAV 1
+1860 encoder NAV 1
+1940 encoder NAV 1
+2020 encoder NAV 1
+2100 encoder NAV 1
+2260 capture screen micro_row_focused
+2360 tap NAV 60
+2660 capture screen micro_context_open
+
+# Give the first micro step an audible pitch offset so wrap movement is visible.
+2760 button MACRO_1 down
+3820 tick
+3880 capture screen micro_step_edit_open
+3940 button MACRO_1 up
+4040 encoder NAV 1
+4140 encoder OPT 0.72
+4360 capture screen micro_step_pitch_offset
+4460 tap NAV 60
+4700 capture screen micro_pitch_offset_applied
+
+# Quick controls in a child context must expose Length then Offset, no Division.
+4800 button LEFT_CENTER down
+5060 capture screen child_quick_length
+5160 encoder NAV 1
+5360 capture screen child_quick_offset
+5460 encoder OPT 1.00
+5680 capture screen child_offset_shifted
+5780 button LEFT_CENTER up
+6060 capture screen micro_offset_applied
+
+# Copy only the micro-sequence row from step 1.
+6160 tap LEFT_TOP 60
+6500 capture screen returned_root_with_micro_badge
+6600 button MACRO_1 down
+7660 tick
+7720 capture screen root_step_edit_for_copy
+7780 button MACRO_1 up
+7880 encoder NAV 1
+7960 encoder NAV 1
+8040 encoder NAV 1
+8120 encoder NAV 1
+8200 encoder NAV 1
+8280 encoder NAV 1
+8440 capture screen micro_row_copy_ready
+8540 tap BOTTOM_RIGHT 60
+8800 capture screen micro_row_copied
+8900 tap LEFT_TOP 60
+
+# A micro clipboard must not paste into the cycle-state row.
+9200 button MACRO_2 down
+10260 tick
+10320 capture screen step_2_edit_open
+10380 button MACRO_2 up
+10480 encoder NAV 1
+10560 encoder NAV 1
+10640 encoder NAV 1
+10720 encoder NAV 1
+10800 encoder NAV 1
+10880 encoder NAV 1
+10960 encoder NAV 1
+11120 capture screen cycle_row_paste_blocked
+11220 button BOTTOM_RIGHT down
+12440 tick
+12500 button BOTTOM_RIGHT up
+12800 capture screen cycle_row_after_wrong_paste
+
+# The same clipboard should paste into the micro-sequence row.
+12900 encoder NAV -1
+13100 capture screen micro_row_paste_ready
+13200 button BOTTOM_RIGHT down
+14420 tick
+14480 button BOTTOM_RIGHT up
+14820 capture screen micro_row_pasted

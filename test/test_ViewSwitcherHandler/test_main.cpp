@@ -57,6 +57,7 @@ struct ViewSwitcherHarness {
                       state.activeView,
                       state.viewSelector,
                       state.sequencerSettings,
+                      state.sequencer.contentView,
                       state.sequencer.patternQuickControls,
                       state.sequencer.stepPropertyInlineSelector,
                       state.trackNavigation.selection,
@@ -295,6 +296,23 @@ void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
     std::cout << "[PASS] test_selector_does_not_open_while_sequencer_inline_modes_are_active\n";
 }
 
+void test_selector_does_not_open_inside_sequencer_child_content() {
+    ViewSwitcherHarness h;
+    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.sequencer.contentView.kind.set(
+        core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE
+    );
+    h.state.sequencer.contentView.stackDepth = 1;
+    h.state.sequencer.contentView.sequenceId.set(1);
+    h.state.sequencer.contentView.depth.set(1);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.viewSelector.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
+
+    std::cout << "[PASS] test_selector_does_not_open_inside_sequencer_child_content\n";
+}
+
 void test_selector_does_not_open_inside_project_folder() {
     ViewSwitcherHarness h;
     h.state.activeView.set(core::ui::ViewType::PROJECT);
@@ -320,6 +338,7 @@ int main() {
     test_sequencer_item_no_longer_exposes_settings_action();
     test_selector_does_not_open_when_overlay_or_structure_selection_is_active();
     test_selector_does_not_open_while_sequencer_inline_modes_are_active();
+    test_selector_does_not_open_inside_sequencer_child_content();
     test_selector_does_not_open_inside_project_folder();
 
     std::cout << "\nAll ViewSwitcherHandler tests passed.\n";

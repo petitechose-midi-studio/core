@@ -1,20 +1,56 @@
 #include "SequencerStepEditHandler.hpp"
 
+#include <algorithm>
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 #include <utility>
 
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::handler {
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 
 namespace {
 
-constexpr uint8_t ROW_COUNT =
-    static_cast<uint8_t>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
+FLASHMEM bool isActivatedRow(uint8_t row) {
+    return step_edit_rows::isActivated(row);
+}
+
+FLASHMEM bool isPropertyRow(uint8_t row) {
+    return step_edit_rows::isProperty(row);
+}
+
+FLASHMEM core::state::SequencerStepContentClipboardKind clipboardKindForContextRow(uint8_t row) {
+    if (row == step_edit_rows::MICRO_SEQUENCE) {
+        return core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE;
+    }
+    if (row == step_edit_rows::CYCLE_STATES) {
+        return core::state::SequencerStepContentClipboardKind::CYCLE_STATES;
+    }
+    return core::state::SequencerStepContentClipboardKind::NONE;
+}
+
+FLASHMEM core::state::sequencer::StepProperty propertyForRow(uint8_t row) {
+    return step_edit_rows::propertyForRow(row);
+}
+
+FLASHMEM oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks
+) {
+    return core::state::sequencer::resolveEffectiveScaleSettings(
+        tracks.projectScaleSettings(),
+        sequencer.pattern.scalePolicy,
+        sequencer.pattern.scaleOverride
+    );
+}
 
 template <typename EncoderIdT>
 FLASHMEM void configureStepEditEncoder(
@@ -22,13 +58,27 @@ FLASHMEM void configureStepEditEncoder(
     EncoderIdT encoderId,
     core::state::sequencer::StepProperty property,
     const core::state::sequencer::SequencerState& sequencer,
-    uint8_t step
+    uint8_t step,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
-    const auto config = input_utils::encoderConfigForProperty(property);
+    const auto config = input_utils::encoderConfigForProperty(
+        property,
+        sequencer.pattern.pitchEditMode,
+        scaleSettings
+    );
     encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
     encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
     encoders.setDiscreteSteps(encoderId, config.discreteSteps);
-    encoders.setPosition(encoderId, input_utils::stepPropertyToNormalized(sequencer, step, property));
+    encoders.setPosition(
+        encoderId,
+        core::state::sequencer::activeContentStepPropertyToNormalized(
+            sequencer,
+            step,
+            property,
+            sequencer.pattern.pitchEditMode,
+            scaleSettings
+        )
+    );
 }
 
 inline oc::type::IsActiveFn canOpenStepEdit(
@@ -57,6 +107,8 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
 )
     : overlay_state_(state.overlays)
     , sequencer_(state.sequencer)
+    , tracks_(state.tracks)
+    , structure_clipboard_(state.structureClipboard)
     , track_ui_(state.trackNavigation)
     , history_(state.history)
     , overlays_(overlays)
@@ -106,7 +158,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(overlay_scope_)
-        .then([this]() { closeApply(); });
+        .then([this]() { activateFocusedRowOrApply(); });
 
     // Cancel + close
     buttons_.button(Config::ButtonID::LEFT_TOP)
@@ -114,13 +166,91 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .scope(overlay_scope_)
         .then([this]() { closeCancel(); });
 
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .press()
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowIsContextRow(); })
+        .then([this]() {
+            if (focusedContextHasChild()) {
+                sequencer_.stepEdit.contextHold.begin(
+                    core::state::StructureHoldAction::REMOVE,
+                    oc::time::millis()
+                );
+            }
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .release()
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowIsContextRow(); })
+        .then([this]() {
+            sequencer_.stepEdit.contextHold.clear();
+            if (ignore_next_context_left_release_) {
+                ignore_next_context_left_release_ = false;
+                return;
+            }
+            clearFocusedContextChild();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowIsContextRow() && focusedContextHasChild(); })
+        .then([this]() {
+            sequencer_.stepEdit.contextHold.clear();
+            ignore_next_context_left_release_ = true;
+            clearFocusedContextChild();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .press()
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowIsContextRow(); })
+        .then([this]() {
+            if (canPasteFocusedStepContent()) {
+                sequencer_.stepEdit.contextHold.begin(
+                    core::state::StructureHoldAction::PASTE,
+                    oc::time::millis()
+                );
+            }
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .release()
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowIsContextRow(); })
+        .then([this]() {
+            sequencer_.stepEdit.contextHold.clear();
+            if (ignore_next_context_right_release_) {
+                ignore_next_context_right_release_ = false;
+                return;
+            }
+            copyFocusedStepContent();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowIsContextRow() && canPasteFocusedStepContent(); })
+        .then([this]() {
+            sequencer_.stepEdit.contextHold.clear();
+            ignore_next_context_right_release_ = true;
+            pasteFocusedStepContent();
+        });
 }
 
 FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
     history_.commitCoalescedPatternEdit();
 
     uint8_t abs = 0;
-    if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
+    if (!core::state::sequencer::resolveActiveContentStepInPage(
+            sequencer_,
+            sequencer_.page.get(),
+            indexInPage,
+            abs
+        )) {
+        return;
+    }
 
     history_snapshot_valid_ =
         core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
@@ -130,13 +260,19 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
     auto& o = sequencer_.stepEdit;
     o.reset();
     o.stepIndex.set(abs);
-
-    o.snapshotNote = sequencer_.pattern.note[abs];
-    o.snapshotVelocity = sequencer_.pattern.velocity[abs];
-    o.snapshotGate = sequencer_.pattern.gate[abs];
-    o.snapshotNudge = sequencer_.pattern.nudge[abs];
-    o.snapshotProbability = sequencer_.pattern.probability[abs];
-    o.snapshotValid = true;
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer_,
+        abs,
+        effectiveScaleSettings(sequencer_, tracks_)
+    );
+    if (projection.valid) {
+        o.snapshotNote = projection.note;
+        o.snapshotVelocity = projection.velocity;
+        o.snapshotGate = projection.gate;
+        o.snapshotNudge = projection.nudge;
+        o.snapshotProbability = projection.probability;
+        o.snapshotValid = true;
+    }
 
     // longPress() fires while button is still pressed; don't immediately close on release.
     ignore_open_release_ = true;
@@ -164,6 +300,8 @@ FLASHMEM void SequencerStepEditHandler::closeApply() {
 
     history_snapshot_valid_ = false;
     ignore_open_release_ = false;
+    ignore_next_context_left_release_ = false;
+    ignore_next_context_right_release_ = false;
     overlays_.hide();
     sequencer_.stepEdit.reset();
 }
@@ -171,20 +309,28 @@ FLASHMEM void SequencerStepEditHandler::closeApply() {
 FLASHMEM void SequencerStepEditHandler::closeCancel() {
     auto& o = sequencer_.stepEdit;
 
-    const uint8_t abs = o.stepIndex.get();
-    if (o.snapshotValid && abs < core::state::sequencer::SequencerState::MAX_STEPS) {
-        sequencer_.setStepDataAt(
-            abs,
-            o.snapshotNote,
-            o.snapshotVelocity,
-            o.snapshotGate,
-            o.snapshotNudge,
-            o.snapshotProbability
-        );
+    if (history_snapshot_valid_) {
+        core::state::sequencer::applyHistorySnapshotToEditor(sequencer_, history_snapshot_);
+        core::state::sequencer::refreshContentView(sequencer_);
+        sequencer_.contentView.bump();
+    } else {
+        const uint8_t abs = o.stepIndex.get();
+        if (o.snapshotValid && abs < core::state::sequencer::SequencerState::MAX_STEPS) {
+            sequencer_.setStepDataAt(
+                abs,
+                o.snapshotNote,
+                o.snapshotVelocity,
+                o.snapshotGate,
+                o.snapshotNudge,
+                o.snapshotProbability
+            );
+        }
     }
 
     history_snapshot_valid_ = false;
     ignore_open_release_ = false;
+    ignore_next_context_left_release_ = false;
+    ignore_next_context_right_release_ = false;
     overlays_.hide();
     o.reset();
 }
@@ -193,42 +339,197 @@ FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     const int current = static_cast<int>(sequencer_.stepEdit.focusedRow.get());
-    const int next = nav::nextWrappedIndex(delta, current, ROW_COUNT);
+    const int next = nav::nextWrappedIndex(delta, current, step_edit_rows::COUNT);
+    sequencer_.stepEdit.contextHold.clear();
     sequencer_.stepEdit.focusedRow.set(static_cast<uint8_t>(next));
 
     configureOptForFocusedRow();
 }
 
+FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrApply() {
+    auto& edit = sequencer_.stepEdit;
+    const uint8_t focusedRow = edit.focusedRow.get();
+
+    if (isPropertyRow(focusedRow)) {
+        closeApply();
+        return;
+    }
+
+    if (isActivatedRow(focusedRow)) {
+        const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
+        const uint8_t abs = edit.stepIndex.get();
+        if (len == 0 || abs >= len) return;
+        if (core::state::sequencer::toggleActiveContentStep(sequencer_, abs)) {
+            configureOptForFocusedRow();
+        }
+        return;
+    }
+
+    if (focusedRow == step_edit_rows::MICRO_SEQUENCE) {
+        const auto availability = core::state::sequencer::activeContentChildCreationAvailability(
+            sequencer_,
+            edit.stepIndex.get(),
+            core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+            core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
+        );
+        if (!availability.canCreateOrOpen) return;
+        const auto ownerNodeId =
+            core::state::sequencer::activeContentStepNodeId(sequencer_, edit.stepIndex.get());
+        const auto result = core::state::sequencer::createMicroSequence(
+            sequencer_.pattern,
+            ownerNodeId,
+            core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
+        );
+        if (result.ok) {
+            if (history_snapshot_valid_) {
+                core::state::sequencer::SequencerHistoryPatternSnapshot after;
+                if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+                    history_.recordPattern(
+                        std::move(history_snapshot_),
+                        std::move(after),
+                        core::state::sequencer::SequencerHistoryDescriptor{
+                            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+                            .stepIndex = edit.stepIndex.get(),
+                            .property = core::state::sequencer::StepProperty::NOTE,
+                        }
+                    );
+                }
+                history_snapshot_valid_ = false;
+            }
+            core::state::sequencer::enterMicroSequenceContentView(
+                sequencer_,
+                ownerNodeId,
+                result.id
+            );
+            overlays_.hide();
+            edit.reset();
+        }
+        return;
+    }
+
+    if (focusedRow == step_edit_rows::CYCLE_STATES) {
+        const auto availability = core::state::sequencer::activeContentChildCreationAvailability(
+            sequencer_,
+            edit.stepIndex.get(),
+            core::state::sequencer::StepContentChildKind::CYCLE_STATES,
+            core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
+        );
+        if (!availability.canCreateOrOpen) return;
+        const auto ownerNodeId =
+            core::state::sequencer::activeContentStepNodeId(sequencer_, edit.stepIndex.get());
+        const auto result = core::state::sequencer::createCycleStateSet(
+            sequencer_.pattern,
+            ownerNodeId,
+            core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
+        );
+        if (result.ok) {
+            if (history_snapshot_valid_) {
+                core::state::sequencer::SequencerHistoryPatternSnapshot after;
+                if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+                    history_.recordPattern(
+                        std::move(history_snapshot_),
+                        std::move(after),
+                        core::state::sequencer::SequencerHistoryDescriptor{
+                            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+                            .stepIndex = edit.stepIndex.get(),
+                            .property = core::state::sequencer::StepProperty::NOTE,
+                        }
+                    );
+                }
+                history_snapshot_valid_ = false;
+            }
+            core::state::sequencer::enterCycleStatesContentView(
+                sequencer_,
+                ownerNodeId,
+                result.id
+            );
+            overlays_.hide();
+            edit.reset();
+        }
+        return;
+    }
+}
+
 FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
-    const uint8_t len = sequencer_.pattern.length.get();
+    auto& edit = sequencer_.stepEdit;
+    const uint8_t focusedRow = edit.focusedRow.get();
+
+    if (isActivatedRow(focusedRow)) {
+        const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
+        if (len == 0) return;
+
+        const uint8_t abs = edit.stepIndex.get();
+        if (abs >= len) return;
+
+        core::state::sequencer::setActiveContentStepEnabled(
+            sequencer_,
+            abs,
+            normalized >= 0.5f
+        );
+        return;
+    }
+
+    if (!isPropertyRow(focusedRow)) return;
+
+    const auto property = propertyForRow(focusedRow);
+
+    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
     if (len == 0) return;
 
-    const uint8_t abs = sequencer_.stepEdit.stepIndex.get();
+    const uint8_t abs = edit.stepIndex.get();
     if (abs >= len) return;
-    if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
-    input_utils::applyNormalizedToStep(
+    core::state::sequencer::setActiveContentStepFromNormalized(
         sequencer_,
         abs,
-        input_utils::stepEditRowToProperty(sequencer_.stepEdit.focusedRow.get()),
-        normalized
+        property,
+        normalized,
+        sequencer_.pattern.pitchEditMode,
+        effectiveScaleSettings(sequencer_, tracks_)
     );
 }
 
 FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
-    const uint8_t len = sequencer_.pattern.length.get();
+    auto& edit = sequencer_.stepEdit;
+    const uint8_t focusedRow = edit.focusedRow.get();
+
+    if (isActivatedRow(focusedRow)) {
+        const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
+        if (len == 0) return;
+
+        const uint8_t abs = edit.stepIndex.get();
+        if (abs >= len) return;
+
+        const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+            sequencer_,
+            abs,
+            effectiveScaleSettings(sequencer_, tracks_)
+        );
+        if (!projection.valid) return;
+        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, 8);
+        encoders_.setNormalizedTurns(Config::EncoderID::OPT, 0.25f);
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 2);
+        encoders_.setPosition(Config::EncoderID::OPT, projection.enabled ? 1.0f : 0.0f);
+        return;
+    }
+
+    if (!isPropertyRow(focusedRow)) return;
+
+    const auto property = propertyForRow(focusedRow);
+
+    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
     if (len == 0) return;
 
-    const uint8_t abs = sequencer_.stepEdit.stepIndex.get();
+    const uint8_t abs = edit.stepIndex.get();
     if (abs >= len) return;
-    if (abs >= core::state::sequencer::SequencerState::MAX_STEPS) return;
 
     configureStepEditEncoder(
         encoders_,
         Config::EncoderID::OPT,
-        input_utils::stepEditRowToProperty(sequencer_.stepEdit.focusedRow.get()),
+        property,
         sequencer_,
-        abs
+        abs,
+        effectiveScaleSettings(sequencer_, tracks_)
     );
 }
 
@@ -238,12 +539,164 @@ FLASHMEM void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexIn
         return;
     }
 
+    auto& edit = sequencer_.stepEdit;
     constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    const uint8_t abs = sequencer_.stepEdit.stepIndex.get();
+    const uint8_t abs = edit.stepIndex.get();
     const uint8_t currentIndexInPage = static_cast<uint8_t>(abs % stepsPerPage);
 
     if (indexInPage != currentIndexInPage) return;
     closeApply();
+}
+
+FLASHMEM bool SequencerStepEditHandler::focusedRowIsContextRow() const {
+    const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
+    return step_edit_rows::isContext(focusedRow);
+}
+
+FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {
+    if (!focusedRowIsContextRow()) return false;
+
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer_,
+        sequencer_.stepEdit.stepIndex.get(),
+        effectiveScaleSettings(sequencer_, tracks_)
+    );
+    if (!projection.valid) return false;
+
+    return core::state::sequencer::stepContentProjectionHasChild(
+        projection,
+        step_edit_rows::childKindForContextRow(sequencer_.stepEdit.focusedRow.get())
+    );
+}
+
+FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {
+    const auto clipboardKind = clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get());
+    return focusedRowIsContextRow() &&
+           structure_clipboard_.hasSequencerStepContent(clipboardKind) &&
+           core::state::sequencer::activeContentStepCanReceiveChildContent(
+               sequencer_,
+               sequencer_.stepEdit.stepIndex.get()
+           );
+}
+
+FLASHMEM void SequencerStepEditHandler::recordContextMutation(
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    bool beforeCaptured
+) {
+    if (!beforeCaptured) return;
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    if (!core::state::sequencer::captureHistorySnapshot(sequencer_, after)) return;
+    if (core::state::sequencer::sameMusicalHistorySnapshot(before, after)) return;
+
+    history_.recordPattern(
+        std::move(before),
+        std::move(after),
+        core::state::sequencer::SequencerHistoryDescriptor{
+            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+            .stepIndex = sequencer_.stepEdit.stepIndex.get(),
+            .property = core::state::sequencer::StepProperty::NOTE,
+            .hasValue = false,
+        }
+    );
+
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+}
+
+FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
+    if (!focusedContextHasChild()) return;
+    history_.commitCoalescedPatternEdit();
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    bool beforeCaptured = false;
+    if (history_snapshot_valid_) {
+        before = std::move(history_snapshot_);
+        beforeCaptured = true;
+        history_snapshot_valid_ = false;
+    } else {
+        beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+    }
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer_,
+        sequencer_.stepEdit.stepIndex.get()
+    );
+    const bool changed = sequencer_.stepEdit.focusedRow.get() == step_edit_rows::MICRO_SEQUENCE
+        ? core::state::sequencer::clearNodeChildSequence(sequencer_.pattern, nodeId)
+        : core::state::sequencer::clearNodeCycleStateSet(sequencer_.pattern, nodeId);
+    if (!changed) {
+        if (!history_snapshot_valid_ && beforeCaptured) {
+            history_snapshot_ = std::move(before);
+            history_snapshot_valid_ = true;
+        }
+        return;
+    }
+
+    core::state::sequencer::refreshContentView(sequencer_);
+    sequencer_.contentView.bump();
+    recordContextMutation(std::move(before), beforeCaptured);
+}
+
+FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
+    if (!focusedContextHasChild()) return;
+    const auto* graph = core::state::sequencer::graphView(sequencer_.pattern);
+    if (graph == nullptr) return;
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer_,
+        sequencer_.stepEdit.stepIndex.get()
+    );
+    structure_clipboard_.storeSequencerStepContent(
+        *graph,
+        nodeId,
+        clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get())
+    );
+}
+
+FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
+    if (!canPasteFocusedStepContent()) return;
+    history_.commitCoalescedPatternEdit();
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    bool beforeCaptured = false;
+    if (history_snapshot_valid_) {
+        before = std::move(history_snapshot_);
+        beforeCaptured = true;
+        history_snapshot_valid_ = false;
+    } else {
+        beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+    }
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer_,
+        sequencer_.stepEdit.stepIndex.get()
+    );
+    const auto clipboardKind = clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get());
+    const bool changed = clipboardKind == core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE
+        ? core::state::sequencer::copyNodeChildSequenceFromGraph(
+              sequencer_.pattern,
+              nodeId,
+              structure_clipboard_.sequencerStepContentGraph,
+              structure_clipboard_.sequencerStepContentNodeId
+          )
+        : core::state::sequencer::copyNodeCycleStateSetFromGraph(
+              sequencer_.pattern,
+              nodeId,
+              structure_clipboard_.sequencerStepContentGraph,
+              structure_clipboard_.sequencerStepContentNodeId
+          );
+    if (!changed) {
+        if (!history_snapshot_valid_ && beforeCaptured) {
+            history_snapshot_ = std::move(before);
+            history_snapshot_valid_ = true;
+        }
+        return;
+    }
+
+    core::state::sequencer::refreshContentView(sequencer_);
+    sequencer_.contentView.bump();
+    recordContextMutation(std::move(before), beforeCaptured);
 }
 
 }  // namespace core::handler

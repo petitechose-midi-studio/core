@@ -63,8 +63,18 @@ private:
     void setupBindings();
 
     void toggleStep(uint8_t indexInPage);
+    bool focusedStepHasChildContent() const;
+    bool canPasteFocusedStepContent() const;
+    void clearFocusedStepContent();
+    void copyFocusedStepContent();
+    void pasteFocusedStepContent();
+    void recordFocusedContentEdit(
+        core::state::sequencer::SequencerHistoryPatternSnapshot before,
+        bool beforeCaptured
+    );
 
     core::state::sequencer::SequencerState& sequencer_;
+    core::state::StructureClipboardState& structure_clipboard_;
     SequencerStructureNavigationWorkflow navigation_workflow_;
     SequencerStructureEditWorkflow edit_workflow_;
     SequencerHistoryDomainServices history_;

@@ -52,7 +52,8 @@ file(GLOB_RECURSE MS_CORE_NATIVE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/view/*.cpp")
 
 list(APPEND MS_CORE_NATIVE_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/common/GlobalTrackNavigationStripModel.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/common/GlobalTrackNavigationStripModel.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/sequencer/StepContentBadgeProjection.cpp")
 
 add_library(midi_studio_core_native STATIC ${MS_CORE_NATIVE_SOURCES})
 target_compile_definitions(midi_studio_core_native PUBLIC OC_LOG)

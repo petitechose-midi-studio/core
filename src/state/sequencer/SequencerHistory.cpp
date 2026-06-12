@@ -122,7 +122,8 @@ FLASHMEM bool sameCycleSet(
     const StepSequencerCycleStateSet& rhs
 ) {
     return lhs.firstStateNode == rhs.firstStateNode &&
-           lhs.length == rhs.length;
+           lhs.length == rhs.length &&
+           lhs.offset == rhs.offset;
 }
 
 FLASHMEM bool sameStepNode(
@@ -422,6 +423,21 @@ FLASHMEM bool applyHistorySnapshot(
     const SequencerHistoryPatternSnapshot& snapshot
 ) {
     return applyHistorySnapshotToTrack(bank, active, bank.activeTrackIndex(), snapshot);
+}
+
+FLASHMEM bool applyHistorySnapshotToEditor(
+    SequencerState& active,
+    const SequencerHistoryPatternSnapshot& snapshot
+) {
+    GraphPtr editorGraph;
+    if (!cloneGraph(snapshot.graph, editorGraph)) {
+        return false;
+    }
+
+    applySnapshotToEditor(active, snapshot.flat);
+    installGraph(active.pattern, std::move(editorGraph), snapshot.flat.graphRevision);
+    restoreFocus(active, snapshot.focusedStep);
+    return true;
 }
 
 FLASHMEM bool applyHistorySnapshotToTrack(

@@ -58,12 +58,12 @@ FLASHMEM lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability
     return lv_color_mix(fullColor, minColor, mix);
 }
 
-FLASHMEM int scaleDegreeIndex(const TileRenderState& state) {
-    auto settings = state.variation.resolved.scaleSettings;
+FLASHMEM int scaleDegreeIndexForNote(oc::note::sequencer::StepSequencerScaleSettings settings,
+                                     uint8_t note) {
     settings.clamp();
     const uint16_t mask = oc::note::sequencer::scaleMask(settings.type);
     const uint8_t outputPc =
-        static_cast<uint8_t>(state.variation.resolved.resolved.note % CHROMATIC_NOTE_COUNT);
+        static_cast<uint8_t>(note % CHROMATIC_NOTE_COUNT);
     const uint8_t relative =
         static_cast<uint8_t>((outputPc + CHROMATIC_NOTE_COUNT - settings.root) % CHROMATIC_NOTE_COUNT);
     int degree = 0;
@@ -75,11 +75,39 @@ FLASHMEM int scaleDegreeIndex(const TileRenderState& state) {
     return -1;
 }
 
+FLASHMEM const char* scaleDegreeLabel(int degree) {
+    static constexpr const char* LABELS[] = {
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V",
+        "VI",
+        "VII",
+        "VIII",
+        "IX",
+        "X",
+        "XI",
+        "XII",
+    };
+    return (degree >= 0 && degree < static_cast<int>(sizeof(LABELS) / sizeof(LABELS[0])))
+        ? LABELS[degree]
+        : "";
+}
+
+FLASHMEM int scaleDegreeIndex(const TileRenderState& state) {
+    return scaleDegreeIndexForNote(
+        state.variation.resolved.scaleSettings,
+        state.variation.resolved.resolved.note
+    );
+}
+
 FLASHMEM bool hasRuntimePitchFeedback(const TileRenderState& state) {
     return state.variation.visible &&
            state.variation.deltaVisible &&
            (state.variation.resolved.ranges.pitchSemitones > 0 ||
             state.variation.resolved.resolved.note != state.note ||
+            state.variation.resolved.resolved.note != state.variation.resolved.base.note ||
             !state.variation.resolved.scale.inputInScale);
 }
 
@@ -116,24 +144,8 @@ FLASHMEM uint8_t runtimePitchDisplayNote(const TileRenderState& state) {
 }
 
 FLASHMEM const char* runtimeScaleDegreeLabel(const TileRenderState& state) {
-    static constexpr const char* LABELS[] = {
-        "I",
-        "II",
-        "III",
-        "IV",
-        "V",
-        "VI",
-        "VII",
-        "VIII",
-        "IX",
-        "X",
-        "XI",
-        "XII",
-    };
     const int degree = scaleDegreeIndex(state);
-    return (degree >= 0 && degree < static_cast<int>(sizeof(LABELS) / sizeof(LABELS[0])))
-        ? LABELS[degree]
-        : "";
+    return scaleDegreeLabel(degree);
 }
 
 FLASHMEM bool sameVariationState(const TileVariationRenderState& lhs,
@@ -171,6 +183,12 @@ FLASHMEM bool sameVariationState(const TileVariationRenderState& lhs,
            a.velocityDelta == b.velocityDelta &&
            a.gateDelta == b.gateDelta &&
            a.nudgeDelta == b.nudgeDelta;
+}
+
+FLASHMEM bool sameContentBadges(const TileContentBadgeState& lhs,
+                                const TileContentBadgeState& rhs) {
+    return lhs.microSequence == rhs.microSequence &&
+           lhs.cycleStates == rhs.cycleStates;
 }
 
 FLASHMEM StepVisualStyle buildStepVisualStyle(uint8_t note,
@@ -225,6 +243,8 @@ FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const 
     diff.absoluteStepChanged = !diff.initialized || cache.absoluteStep != state.absoluteStep;
     diff.inPatternChanged = !diff.initialized || cache.inPattern != state.inPattern;
     diff.enabledChanged = !diff.initialized || cache.enabled != state.enabled;
+    diff.playheadVisibleChanged =
+        !diff.initialized || cache.playheadVisible != state.playheadVisible;
     diff.noteChanged = !diff.initialized || cache.note != state.note;
     diff.velocityChanged = !diff.initialized || cache.velocity != state.velocity;
     diff.probabilityChanged = !diff.initialized || cache.probability != state.probability;
@@ -232,7 +252,18 @@ FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const 
         !diff.initialized || cache.probabilityCycleActive != state.probabilityCycleActive;
     diff.gateChanged = !diff.initialized || cache.gate != state.gate;
     diff.nudgeChanged = !diff.initialized || cache.nudge != state.nudge;
+    diff.childContentChanged =
+        !diff.initialized ||
+        cache.childContentContext != state.childContentContext ||
+        cache.childContentOffset != state.childContentOffset ||
+        cache.childContentNoteOffsetUsesScaleDegrees != state.childContentNoteOffsetUsesScaleDegrees;
+    diff.childPitchSummaryChanged =
+        !diff.initialized ||
+        cache.childPitchSummaryVisible != state.childPitchSummaryVisible ||
+        cache.childPitchSummaryNote != state.childPitchSummaryNote;
     diff.variationChanged = !diff.initialized || !sameVariationState(cache.variation, state.variation);
+    diff.contentBadgesChanged =
+        !diff.initialized || !sameContentBadges(cache.contentBadges, state.contentBadges);
     diff.velocityZeroChanged =
         !diff.initialized || ((cache.velocity == 0) != (state.velocity == 0));
     diff.probabilityMaskChanged =
@@ -243,10 +274,11 @@ FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const 
         baseChanged ||
         (state.inPattern &&
          (diff.noteChanged || diff.velocityChanged || diff.probabilityChanged ||
-          diff.gateChanged || diff.nudgeChanged || diff.variationChanged));
+          diff.gateChanged || diff.nudgeChanged || diff.variationChanged ||
+          diff.childContentChanged || diff.childPitchSummaryChanged));
     diff.barChanged =
-        !diff.initialized || diff.inPatternChanged || cache.playing != state.playing ||
-        diff.variationChanged;
+        !diff.initialized || diff.inPatternChanged || diff.playheadVisibleChanged ||
+        cache.playing != state.playing || diff.variationChanged;
     return diff;
 }
 

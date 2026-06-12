@@ -9,6 +9,7 @@
 #include <oc/note/sequencer/StepSequencerVariation.hpp>
 
 #include "state/sequencer/SequencerUiState.hpp"
+#include "ui/sequencer/StepContentBadgeProjection.hpp"
 
 namespace core::ui::sequencer::grid {
 
@@ -21,6 +22,8 @@ struct TileVariationRenderState {
     oc::note::sequencer::StepSequencerResolvedVariation resolved{};
 };
 
+using TileContentBadgeState = StepContentBadgeProjection;
+
 /**
  * Data exchanged between step-grid projection, planning, and rendering.
  *
@@ -31,6 +34,7 @@ struct TileRenderState {
     uint8_t absoluteStep = 0;
     bool inPattern = false;
     bool enabled = false;
+    bool playheadVisible = false;
     bool playing = false;
     bool probabilityCycleActive = false;
     uint8_t note = 0;
@@ -38,7 +42,13 @@ struct TileRenderState {
     uint8_t probability = 0;
     uint16_t gate = 0;
     int8_t nudge = 0;
+    bool childContentContext = false;
+    int16_t childContentOffset = 0;
+    bool childContentNoteOffsetUsesScaleDegrees = false;
+    bool childPitchSummaryVisible = false;
+    uint8_t childPitchSummaryNote = 0;
     TileVariationRenderState variation{};
+    TileContentBadgeState contentBadges{};
 };
 
 struct TileRenderDiff {
@@ -46,13 +56,17 @@ struct TileRenderDiff {
     bool absoluteStepChanged = false;
     bool inPatternChanged = false;
     bool enabledChanged = false;
+    bool playheadVisibleChanged = false;
     bool noteChanged = false;
     bool velocityChanged = false;
     bool probabilityChanged = false;
     bool probabilityCycleActiveChanged = false;
     bool gateChanged = false;
     bool nudgeChanged = false;
+    bool childContentChanged = false;
+    bool childPitchSummaryChanged = false;
     bool variationChanged = false;
+    bool contentBadgesChanged = false;
     bool velocityZeroChanged = false;
     bool probabilityMaskChanged = false;
     bool dataChanged = false;
@@ -64,6 +78,7 @@ struct TileRenderCache {
     uint8_t absoluteStep = 0;
     bool inPattern = false;
     bool enabled = false;
+    bool playheadVisible = false;
     bool playing = false;
     bool probabilityCycleActive = false;
     uint8_t note = 0;
@@ -71,7 +86,13 @@ struct TileRenderCache {
     uint8_t probability = 0;
     uint16_t gate = 0;
     int8_t nudge = 0;
+    bool childContentContext = false;
+    int16_t childContentOffset = 0;
+    bool childContentNoteOffsetUsesScaleDegrees = false;
+    bool childPitchSummaryVisible = false;
+    uint8_t childPitchSummaryNote = 0;
     TileVariationRenderState variation{};
+    TileContentBadgeState contentBadges{};
     lv_coord_t noteLabelHeight = 0;
     bool noteLabelVisible = false;
     bool originalNoteLabelVisible = false;
@@ -89,7 +110,7 @@ struct TileRenderCache {
     lv_coord_t inlineIconX = 0;
     lv_coord_t inlineIconY = 0;
     char noteLabelText[16] = {0};
-    char originalNoteLabelText[8] = {0};
+    char originalNoteLabelText[12] = {0};
     bool shapeVisible = false;
     lv_coord_t shapeX = 0;
     lv_coord_t shapeY = 0;
@@ -98,6 +119,7 @@ struct TileRenderCache {
     uint32_t shapeStrokeColor = 0;
     lv_opa_t shapeStrokeOpa = LV_OPA_TRANSP;
     bool indicatorVisible = false;
+    uint32_t indicatorColorFull = 0;
     lv_opa_t indicatorOpa = LV_OPA_TRANSP;
     char stepIndexText[4] = {0};
 };

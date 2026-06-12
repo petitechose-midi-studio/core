@@ -4,6 +4,7 @@
 #include <config/InputIDs.hpp>
 
 #include "SequencerInputUtils.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 
 namespace core::handler {
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -54,13 +55,20 @@ FLASHMEM void SequencerMacroPropertyHandler::setupBindings() {
 
 FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
     uint8_t abs = 0;
-    if (!sequencer_.resolveStepInPage(sequencer_.page.get(), indexInPage, abs)) return;
+    if (!core::state::sequencer::resolveActiveContentStepInPage(
+            sequencer_,
+            sequencer_.page.get(),
+            indexInPage,
+            abs
+        )) {
+        return;
+    }
     const auto property = sequencer_.activeStepProperty.get();
     const uint32_t now = now_provider_ ? now_provider_() : 0;
 
     history_.beginCoalescedPatternEdit(abs, property, now);
 
-    input_utils::applyNormalizedToStep(
+    core::state::sequencer::setActiveContentStepFromNormalized(
         sequencer_,
         abs,
         property,

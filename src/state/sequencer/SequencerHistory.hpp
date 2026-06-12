@@ -157,6 +157,10 @@ bool applyHistorySnapshot(
     SequencerState& active,
     const SequencerHistoryPatternSnapshot& snapshot
 );
+bool applyHistorySnapshotToEditor(
+    SequencerState& active,
+    const SequencerHistoryPatternSnapshot& snapshot
+);
 
 bool applyHistorySnapshotToTrack(
     SequencerTrackBankState& bank,

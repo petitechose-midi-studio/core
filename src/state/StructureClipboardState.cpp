@@ -14,6 +14,9 @@ FLASHMEM void SequencerPageClipboard::reset() {
 FLASHMEM void StructureClipboardState::clear() {
     kind.set(StructureClipboardKind::NONE);
     sequencerPage.reset();
+    sequencerStepContentGraph.reset();
+    sequencerStepContentNodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    sequencerStepContentKind = SequencerStepContentClipboardKind::NONE;
     revision.set(revision.get() + 1);
 }
 
@@ -46,6 +49,18 @@ FLASHMEM void StructureClipboardState::storeSequencerTrack(
 ) {
     sequencerTrack = track;
     kind.set(StructureClipboardKind::SEQUENCER_TRACK);
+    revision.set(revision.get() + 1);
+}
+
+FLASHMEM void StructureClipboardState::storeSequencerStepContent(
+    const oc::note::sequencer::StepSequencerGraph& graph,
+    core::state::sequencer::SequencerGraphNodeId nodeId,
+    SequencerStepContentClipboardKind contentKind
+) {
+    sequencerStepContentGraph = graph;
+    sequencerStepContentNodeId = nodeId;
+    sequencerStepContentKind = contentKind;
+    kind.set(StructureClipboardKind::SEQUENCER_STEP_CONTENT);
     revision.set(revision.get() + 1);
 }
 

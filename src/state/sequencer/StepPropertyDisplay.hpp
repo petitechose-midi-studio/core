@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <oc/type/TextFormat.hpp>
 
 #include "midi/MidiUtils.hpp"
@@ -58,6 +59,29 @@ inline void formatStepPropertyValue(
 
     const uint16_t safeGate = std::min<uint16_t>(gate, SequencerState::MAX_GATE_PERCENT);
     oc::type::text::formatUnsignedPercent(buffer, bufferSize, static_cast<unsigned>(safeGate));
+}
+
+inline void formatStepPropertyResolvedOffsetValue(
+    char* buffer,
+    size_t bufferSize,
+    StepProperty property,
+    uint8_t note,
+    uint8_t velocity,
+    uint16_t gate,
+    int8_t nudge,
+    uint8_t probability,
+    int16_t offset,
+    bool noteOffsetUsesScaleDegrees
+) {
+    if (!buffer || bufferSize == 0) return;
+
+    char value[8] = {};
+    formatStepPropertyValue(value, sizeof(value), property, note, velocity, gate, nudge, probability);
+
+    const char sign = offset >= 0 ? '+' : '-';
+    const int magnitude = offset >= 0 ? offset : -offset;
+    const char* unit = (property == StepProperty::NOTE && noteOffsetUsesScaleDegrees) ? "d" : "";
+    std::snprintf(buffer, bufferSize, "%s %c%d%s", value, sign, magnitude, unit);
 }
 
 }  // namespace core::state::sequencer

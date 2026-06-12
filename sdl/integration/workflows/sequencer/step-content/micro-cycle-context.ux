@@ -1,0 +1,79 @@
+# UX workflow: create and inspect nested sequencer step content.
+# Purpose: validates micro-sequence/cycle-state entry points, resolved child
+# offset display, child back navigation, child content copy/clear/paste, and
+# parent badge visibility.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable root step 1, then open Step Edit.
+150 tap MACRO_1 60
+320 capture screen root_step_enabled
+420 button MACRO_1 down
+1480 tick
+1540 capture screen root_step_edit_open
+1600 button MACRO_1 up
+
+# Focus Micro-sequence row and enter the child context.
+1700 encoder NAV 1
+1780 encoder NAV 1
+1860 encoder NAV 1
+1940 encoder NAV 1
+2020 encoder NAV 1
+2100 encoder NAV 1
+2260 capture screen root_micro_row_focused
+2360 tap NAV 60
+2660 capture screen micro_context_open
+
+# Edit the first micro step note so the child overlay shows resolved + offset.
+2760 button MACRO_1 down
+3820 tick
+3880 capture screen micro_step_edit_open
+3940 button MACRO_1 up
+4040 encoder NAV 1
+4140 encoder OPT 0.65
+4360 capture screen micro_step_note_offset
+4460 tap NAV 60
+4700 capture screen micro_context_note_offset_applied
+
+# Start playback briefly to verify a child playhead marker is visible.
+4800 tap BOTTOM_CENTER 60
+5120 capture screen micro_playhead_visible
+5220 tap BOTTOM_CENTER 60
+5460 capture screen micro_playback_stopped
+
+# Create a cycle-state context from micro step 1.
+5560 button MACRO_1 down
+6620 tick
+6680 capture screen micro_step_edit_for_cycle
+6740 button MACRO_1 up
+6840 encoder NAV 1
+6920 encoder NAV 1
+7000 encoder NAV 1
+7080 encoder NAV 1
+7160 encoder NAV 1
+7240 encoder NAV 1
+7320 encoder NAV 1
+7480 capture screen micro_cycle_row_focused
+7580 tap NAV 60
+7880 capture screen cycle_context_open
+
+# LEFT_TOP must go back to the micro parent, not open the global view selector.
+7980 tap LEFT_TOP 60
+8300 capture screen returned_to_micro_parent
+
+# Copy the nested context from micro step 1, clear it, then paste it on step 2.
+8400 tap BOTTOM_RIGHT 60
+8640 capture screen micro_context_copied
+8740 tap BOTTOM_LEFT 60
+9000 capture screen micro_context_cleared
+9100 tap MACRO_2 60
+9300 capture screen micro_step_2_focused
+9400 button BOTTOM_RIGHT down
+10660 tick
+10720 button BOTTOM_RIGHT up
+11060 capture screen micro_context_pasted_to_step_2
+
+# Back to root: parent step should retain the micro badge.
+11160 tap LEFT_TOP 60
+11500 capture screen returned_to_root_parent_badge

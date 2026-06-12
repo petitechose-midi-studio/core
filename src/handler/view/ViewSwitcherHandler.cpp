@@ -21,6 +21,7 @@ FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
     , sequencer_settings_(state.sequencerSettings)
+    , sequencer_content_view_(state.sequencerContentView)
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
     , track_structure_selection_(state.trackStructureSelection)
@@ -100,6 +101,10 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
                    !project_navigation_.physicalHoldActive.get();
         }
         return true;
+    }
+
+    if (sequencer_content_view_.isChildContent()) {
+        return false;
     }
 
     return !pattern_quick_controls_.selecting.get() &&

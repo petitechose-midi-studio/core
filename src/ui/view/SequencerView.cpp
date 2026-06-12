@@ -197,7 +197,10 @@ FLASHMEM void SequencerView::bindBottomControlsState() {
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.offsetSteps,
-        state_refs_.sequencer.pattern.length
+        state_refs_.sequencer.pattern.length,
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.contentView.length,
+        state_refs_.sequencer.contentView.revision
     );
 }
 
@@ -221,7 +224,10 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.structureUi.pageSelection.active,
         state_refs_.sequencer.structureUi.pageSelection.scope,
         state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
-        state_refs_.sequencer.structureUi.pageSelection.selectedMask
+        state_refs_.sequencer.structureUi.pageSelection.selectedMask,
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.contentView.length,
+        state_refs_.sequencer.contentView.revision
     );
 }
 
@@ -247,7 +253,10 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.sequencer.structureUi.pageSelection.active,
         state_refs_.sequencer.structureUi.pageSelection.scope,
         state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
-        state_refs_.sequencer.structureUi.pageSelection.selectedMask
+        state_refs_.sequencer.structureUi.pageSelection.selectedMask,
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.contentView.length,
+        state_refs_.sequencer.contentView.revision
     );
 }
 
@@ -260,6 +269,7 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.page,
         state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.playheadStep,
+        state_refs_.sequencer.playheadStepTickOffset,
         state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.probabilityCycleRevision,
         state_refs_.sequencer.variationTelemetryRevision,
@@ -272,7 +282,15 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.stepInlineFeedback.touchedMask,
         state_refs_.sequencer.stepInlineFeedback.property,
         state_refs_.sequencer.patternVariationFeedback.visible,
-        state_refs_.sequencer.patternVariationFeedback.property
+        state_refs_.sequencer.patternVariationFeedback.property,
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.contentView.length,
+        state_refs_.sequencer.contentView.parentStep,
+        state_refs_.sequencer.contentView.ownerNodeId,
+        state_refs_.sequencer.contentView.sequenceId,
+        state_refs_.sequencer.contentView.cycleSetId,
+        state_refs_.sequencer.contentView.depth,
+        state_refs_.sequencer.contentView.revision
     );
 }
 
@@ -315,7 +333,8 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.trackNavigation.selection.active,
         state_refs_.trackNavigation.selection.scope,
         state_refs_.sequencer.structureUi.pageSelection.active,
-        state_refs_.sequencer.structureUi.pageSelection.scope
+        state_refs_.sequencer.structureUi.pageSelection.scope,
+        state_refs_.sequencer.contentView.kind
     );
 }
 
@@ -339,7 +358,9 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.activeStepProperty,
-        state_refs_.sequencer.pattern.patternVariationRevision
+        state_refs_.sequencer.pattern.patternVariationRevision,
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.contentView.revision
     );
 }
 

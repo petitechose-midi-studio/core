@@ -84,6 +84,7 @@ struct StepNodeRecord {
 struct CycleSetRecord {
     uint16_t firstStateNode = kInvalidId;
     uint8_t length = 0;
+    int8_t offset = 0;
 };
 #pragma pack(pop)
 
@@ -91,7 +92,9 @@ static_assert(sizeof(EnvelopeHeader) == 12, "Unexpected EnvelopeHeader size");
 static_assert(sizeof(SectionHeader) == 10, "Unexpected SectionHeader size");
 static_assert(sizeof(SequenceRecord) == 5, "Unexpected SequenceRecord size");
 static_assert(sizeof(StepNodeRecord) == 14, "Unexpected StepNodeRecord size");
-static_assert(sizeof(CycleSetRecord) == 3, "Unexpected CycleSetRecord size");
+static_assert(sizeof(CycleSetRecord) == 4, "Unexpected CycleSetRecord size");
+
+constexpr uint16_t kLegacyCycleSetRecordSize = 3;
 
 struct GraphRecordScratch {
     std::array<SequenceRecord, StepSequencerGraphLimits::MAX_SEQUENCES> sequences{};
@@ -240,6 +243,7 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
         scratch->cycleSets[i] = CycleSetRecord{
             .firstStateNode = source.firstStateNode,
             .length = source.length,
+            .offset = source.offset,
         };
     }
 
@@ -341,6 +345,11 @@ FLASHMEM bool sectionHasExactRecordShape(const SectionView& section, uint16_t re
            section.byteSize == static_cast<uint16_t>(section.count * recordSize);
 }
 
+FLASHMEM bool sectionHasCycleSetRecordShape(const SectionView& section) {
+    return sectionHasExactRecordShape(section, sizeof(CycleSetRecord)) ||
+           sectionHasExactRecordShape(section, kLegacyCycleSetRecordSize);
+}
+
 FLASHMEM bool linkSequenceValid(const StepSequencerGraph& graph, uint16_t id) {
     return graph.sequence(id) != nullptr;
 }
@@ -374,7 +383,7 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
         return true;
     }
     if (sections.cycleSets.data != nullptr &&
-        !sectionHasExactRecordShape(sections.cycleSets, sizeof(CycleSetRecord))) {
+        !sectionHasCycleSetRecordShape(sections.cycleSets)) {
         state::sequencer::clearGraph(target);
         return true;
     }
@@ -429,12 +438,17 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
 
     for (uint16_t i = 0; i < sections.cycleSets.count; ++i) {
         CycleSetRecord record{};
-        std::memcpy(&record,
-                    sections.cycleSets.data + i * sizeof(CycleSetRecord),
-                    sizeof(record));
+        const auto* source =
+            sections.cycleSets.data + static_cast<uint16_t>(i * sections.cycleSets.recordSize);
+        std::memcpy(
+            &record,
+            source,
+            std::min<uint16_t>(sections.cycleSets.recordSize, sizeof(record))
+        );
         graph->cycleSets[i] = StepSequencerCycleStateSet{
             .firstStateNode = record.firstStateNode,
             .length = record.length,
+            .offset = record.offset,
         };
     }
 

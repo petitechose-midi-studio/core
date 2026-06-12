@@ -7,6 +7,8 @@
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
+#include "state/sequencer/SequencerContentViewOps.hpp"
+
 namespace core::context::standalone {
 
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -48,10 +50,13 @@ FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
         active_view_,
         sequencer_.page,
         sequencer_.pattern.length,
+        sequencer_.pattern.graphRevision,
         sequencer_.focusedStep,
         sequencer_.activeStepProperty,
+        sequencer_.contentView.kind,
+        sequencer_.contentView.length,
+        sequencer_.contentView.revision,
         sequencer_.pattern.patternScaleRevision,
-        track_bank_.projectScaleRevisionSignal(),
         sequencer_.stepEdit.visible,
         sequencer_.stepPropertyInlineSelector.selecting,
         sequencer_.patternQuickControls.selecting
@@ -95,8 +100,8 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
         float normalized = 0.0f;
         uint8_t abs = 0;
 
-        if (sequencer_.resolveStepInPage(page, i, abs)) {
-            normalized = input_utils::stepPropertyToNormalized(
+        if (core::state::sequencer::resolveActiveContentStepInPage(sequencer_, page, i, abs)) {
+            normalized = core::state::sequencer::activeContentStepPropertyToNormalized(
                 sequencer_,
                 abs,
                 property,
@@ -132,7 +137,10 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
         return;
     }
 
-    const uint8_t page = sequencer_.normalizePage(sequencer_.page.get());
+    const uint8_t page = core::state::sequencer::normalizeActiveContentPage(
+        sequencer_,
+        sequencer_.page.get()
+    );
     const auto property = sequencer_.activeStepProperty.get();
     const auto effectiveScale = core::state::sequencer::resolveEffectiveScaleSettings(
         track_bank_.projectScaleSettings(),

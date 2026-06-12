@@ -72,6 +72,7 @@ public:
                 state.activeView,
                 state.viewSelector,
                 state.sequencerSettings,
+                state.sequencer.contentView,
                 state.sequencer.patternQuickControls,
                 state.sequencer.stepPropertyInlineSelector,
                 state.trackNavigation.selection,

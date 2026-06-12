@@ -18,6 +18,7 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
 
 #if defined(MS_UX_RECORDER)
 #include "context/standalone/ux/StandaloneUxSurfaces.hpp"
@@ -103,6 +104,7 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerEncoderSyncCoordinator>
         encoder_sync_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> step_edit_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         pattern_pitch_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>

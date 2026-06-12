@@ -64,6 +64,24 @@ struct ContextActionStripProps {
     std::array<ContextActionStripSlotProps, 3> slots{};
 };
 
+inline ContextActionStripSlotProps makeStandaloneIconStripSlot(
+    const char* icon,
+    ContextActionStripVisualState visual,
+    ContextActionStripTone tone = ContextActionStripTone::NEUTRAL,
+    standalone::icons::Size iconSize = standalone::icons::Size::M
+) {
+    return {
+        .visualState = visual,
+        .tone = tone,
+        .showIcon = true,
+        .icon = icon,
+        .iconUsesStandaloneFont = true,
+        .iconSize = iconSize,
+        .showLabel = false,
+        .label = nullptr,
+    };
+}
+
 class ContextActionStrip : public oc::ui::lvgl::IWidget {
 public:
     ContextActionStrip(

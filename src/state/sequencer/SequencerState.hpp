@@ -39,6 +39,8 @@ struct SequencerState {
     /// Bumps when runtime publishes or editor mutations invalidate resolved variation observations.
     Signal<uint32_t> variationTelemetryRevision{0};
     Signal<int16_t> playheadStep{-1};
+    Signal<uint16_t> playheadStepTickOffset{0};
+    uint16_t playheadStepTicks = 1;
     Signal<uint32_t> probabilityCycleRevision{0};
     oc::note::sequencer::StepBitMask128 probabilityCycleMask{};
     uint32_t probabilityCycleIndex = 0;
@@ -55,6 +57,7 @@ struct SequencerState {
     SequencerPatternVariationFeedbackState patternVariationFeedback;
     SequencerHistoryFeedbackState historyFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
+    SequencerContentViewState contentView;
     SequencerStructureUiState structureUi;
 
     SequencerState();

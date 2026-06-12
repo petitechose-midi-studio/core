@@ -6,6 +6,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/macro/MacroPagesState.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 
 namespace core::state {
@@ -22,6 +23,14 @@ enum class StructureClipboardKind : uint8_t {
     MACRO_TRACK = 2,
     SEQUENCER_PAGE = 3,
     SEQUENCER_TRACK = 4,
+    SEQUENCER_STEP_CONTENT = 5,
+};
+
+enum class SequencerStepContentClipboardKind : uint8_t {
+    NONE = 0,
+    ALL = 1,
+    MICRO_SEQUENCE = 2,
+    CYCLE_STATES = 3,
 };
 
 struct SequencerPageClipboard {
@@ -47,12 +56,17 @@ struct SequencerPageClipboard {
 
 struct StructureClipboardState {
     oc::state::Signal<StructureClipboardKind, 4> kind{StructureClipboardKind::NONE};
-    oc::state::Signal<uint32_t> revision{0};
+    oc::state::Signal<uint32_t, 8> revision{0};
 
     core::state::macro::MacroPageData macroPage{};
     core::state::macro::MacroTrackData macroTrack{};
     core::state::SequencerPageClipboard sequencerPage{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
+    oc::note::sequencer::StepSequencerGraph sequencerStepContentGraph{};
+    core::state::sequencer::SequencerGraphNodeId sequencerStepContentNodeId =
+        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    SequencerStepContentClipboardKind sequencerStepContentKind =
+        SequencerStepContentClipboardKind::NONE;
 
     void clear();
 
@@ -64,12 +78,26 @@ struct StructureClipboardState {
 
     void storeSequencerTrack(const core::state::sequencer::SequencerPatternSnapshot& track);
 
+    void storeSequencerStepContent(
+        const oc::note::sequencer::StepSequencerGraph& graph,
+        core::state::sequencer::SequencerGraphNodeId nodeId,
+        SequencerStepContentClipboardKind contentKind = SequencerStepContentClipboardKind::ALL
+    );
+
     bool hasMacroPage() const { return kind.get() == StructureClipboardKind::MACRO_PAGE; }
     bool hasMacroTrack() const { return kind.get() == StructureClipboardKind::MACRO_TRACK; }
     bool hasSequencerPage() const {
         return kind.get() == StructureClipboardKind::SEQUENCER_PAGE && sequencerPage.valid;
     }
     bool hasSequencerTrack() const { return kind.get() == StructureClipboardKind::SEQUENCER_TRACK; }
+    bool hasSequencerStepContent() const {
+        return kind.get() == StructureClipboardKind::SEQUENCER_STEP_CONTENT &&
+               sequencerStepContentNodeId !=
+                   oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    }
+    bool hasSequencerStepContent(SequencerStepContentClipboardKind requiredKind) const {
+        return hasSequencerStepContent() && sequencerStepContentKind == requiredKind;
+    }
 };
 
 }  // namespace core::state

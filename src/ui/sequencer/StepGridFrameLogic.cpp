@@ -1,6 +1,11 @@
 #include "ui/sequencer/StepGridFrameLogic.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
+
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "ui/sequencer/StepContentBadgeProjection.hpp"
 
 namespace core::ui::sequencer::grid {
 
@@ -31,6 +36,24 @@ FLASHMEM uint8_t variationRangeForProperty(
     }
 
     return 0;
+}
+
+FLASHMEM bool firstChildSummary(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerContentStepProjection& projection,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    core::state::sequencer::SequencerChildContentSummary& outSummary
+) {
+    if (!core::state::sequencer::stepContentProjectionHasAnyChild(projection)) {
+        return false;
+    }
+
+    return core::state::sequencer::resolveRepresentativeChildContentSummary(
+        sequencer,
+        projection,
+        scaleSettings,
+        outSummary
+    );
 }
 
 FLASHMEM oc::note::sequencer::StepSequencerResolvedVariation buildBaseVariation(
@@ -110,6 +133,107 @@ FLASHMEM bool scaleFeedbackRelevant(oc::note::sequencer::StepSequencerScaleSetti
     return scaleSettings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic;
 }
 
+FLASHMEM oc::note::sequencer::StepSequencerResolvedVariation buildChildContentVariation(
+    uint8_t stepIndex,
+    const core::state::sequencer::SequencerContentStepProjection& projection,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    oc::note::sequencer::StepSequencerResolvedVariation variation{};
+    variation.stepIndex = stepIndex;
+    variation.triggered = projection.enabled;
+    variation.base = {
+        .note = projection.parentNote,
+        .velocity = projection.parentVelocity,
+        .gate = projection.parentGate,
+        .nudge = projection.parentNudge,
+    };
+    variation.resolved = {
+        .note = projection.note,
+        .velocity = projection.velocity,
+        .gate = projection.gate,
+        .nudge = projection.nudge,
+    };
+    variation.scaleSettings = scaleSettings;
+    variation.scale = oc::note::sequencer::resolveScaleNote(projection.note, scaleSettings);
+    variation.scale.outputNote = projection.note;
+    variation.pitchDelta = static_cast<int8_t>(
+        std::clamp<int>(projection.noteOffset, -128, 127)
+    );
+    variation.velocityDelta = static_cast<int8_t>(
+        std::clamp<int>(projection.velocityOffset, -128, 127)
+    );
+    variation.gateDelta = static_cast<int8_t>(
+        std::clamp<int>(projection.gateOffset, -128, 127)
+    );
+    variation.nudgeDelta = static_cast<int8_t>(
+        std::clamp<int>(projection.nudgeOffset, -128, 127)
+    );
+    return variation;
+}
+
+FLASHMEM oc::note::sequencer::StepSequencerResolvedVariation buildChildSummaryVariation(
+    uint8_t stepIndex,
+    const core::state::sequencer::SequencerContentStepProjection& projection,
+    const core::state::sequencer::SequencerChildContentSummary& summary,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    oc::note::sequencer::StepSequencerResolvedVariation variation{};
+    variation.stepIndex = stepIndex;
+    variation.triggered = summary.enabled;
+    variation.base = {
+        .note = projection.note,
+        .velocity = projection.velocity,
+        .gate = projection.gate,
+        .nudge = projection.nudge,
+    };
+    variation.resolved = {
+        .note = summary.note,
+        .velocity = summary.velocity,
+        .gate = summary.gate,
+        .nudge = summary.nudge,
+    };
+    variation.scaleSettings = scaleSettings;
+    variation.scale = oc::note::sequencer::resolveScaleNote(summary.note, scaleSettings);
+    variation.scale.outputNote = summary.note;
+    variation.pitchDelta = static_cast<int8_t>(
+        std::clamp<int>(static_cast<int>(summary.note) - static_cast<int>(projection.note), -128, 127)
+    );
+    variation.velocityDelta = static_cast<int8_t>(
+        std::clamp<int>(
+            static_cast<int>(summary.velocity) - static_cast<int>(projection.velocity),
+            -128,
+            127
+        )
+    );
+    variation.gateDelta = static_cast<int8_t>(
+        std::clamp<int>(
+            static_cast<int>(summary.gate) - static_cast<int>(projection.gate),
+            -128,
+            127
+        )
+    );
+    variation.nudgeDelta = static_cast<int8_t>(
+        std::clamp<int>(
+            static_cast<int>(summary.nudge) - static_cast<int>(projection.nudge),
+            -128,
+            127
+        )
+    );
+    return variation;
+}
+
+FLASHMEM bool childSummaryDiffersFromProjection(
+    const core::state::sequencer::SequencerContentStepProjection& projection,
+    const core::state::sequencer::SequencerChildContentSummary& summary
+) {
+    return summary.enabled != projection.enabled ||
+           summary.note != projection.note ||
+           summary.velocity != projection.velocity ||
+           summary.gate != projection.gate ||
+           summary.nudge != projection.nudge ||
+           summary.probability != projection.probability;
+}
+
 }  // namespace
 
 FLASHMEM StepGridFrameState buildStepGridFrameState(
@@ -129,9 +253,13 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     frame.feedbackTouchedMask = sequencer.stepInlineFeedback.touchedMask.get();
     frame.feedbackProperty = sequencer.stepInlineFeedback.property.get();
 
-    const uint8_t length = sequencer.pattern.length.get();
-    const uint8_t page = sequencer.visiblePage();
-    const uint8_t pageStart = sequencer.pageStartStepClamped(page);
+    const bool childContext = core::state::sequencer::isChildContentView(sequencer);
+    const uint8_t length = core::state::sequencer::activeContentLength(sequencer);
+    const uint8_t page = core::state::sequencer::normalizeActiveContentPage(
+        sequencer,
+        sequencer.page.get()
+    );
+    const uint8_t pageStart = core::state::sequencer::activeContentPageStartStep(sequencer, page);
     const auto enabledMask = sequencer.pattern.enabledMask.get();
     const auto probabilityCycleMask = sequencer.probabilityCycleMask;
     const int16_t playhead = sequencer.playheadStep.get();
@@ -149,6 +277,12 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     const bool telemetryFeedbackRelevant =
         hasAnyVariationRange(telemetry.ranges) ||
         scaleFeedbackRelevant(telemetry.scaleSettings);
+    const auto contentPlayback = childContext
+        ? core::state::sequencer::resolveActiveContentPlaybackProjection(
+              sequencer,
+              effectiveScaleSettings
+          )
+        : core::state::sequencer::SequencerContentPlaybackProjection{};
 
     for (uint8_t i = 0; i < frame.tiles.size(); ++i) {
         const uint8_t absoluteStep = static_cast<uint8_t>(pageStart + i);
@@ -156,22 +290,81 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
         tile.absoluteStep = absoluteStep;
         tile.inPattern = absoluteStep < length;
         tile.enabled = tile.inPattern ? enabledMask.test(absoluteStep) : false;
+        tile.playheadVisible =
+            tile.inPattern &&
+            (playhead >= 0) &&
+            (childContext
+                 ? (contentPlayback.visible && absoluteStep == contentPlayback.step)
+                 : (absoluteStep == static_cast<uint8_t>(playhead)));
         tile.playing =
-            tile.inPattern && (playhead >= 0) && (absoluteStep == static_cast<uint8_t>(playhead));
+            tile.playheadVisible &&
+            (childContext ? contentPlayback.active : true);
 
         if (!tile.inPattern) {
             continue;
         }
 
         tile.probabilityCycleActive =
-            !probabilityCycleMaskActive || probabilityCycleMask.test(absoluteStep);
-        tile.note = sequencer.pattern.note[absoluteStep];
-        tile.velocity = sequencer.pattern.velocity[absoluteStep];
-        tile.probability = sequencer.pattern.probability[absoluteStep];
-        tile.gate = sequencer.pattern.gate[absoluteStep];
-        tile.nudge = sequencer.pattern.nudge[absoluteStep];
+            childContext || !probabilityCycleMaskActive || probabilityCycleMask.test(absoluteStep);
+        const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+            sequencer,
+            absoluteStep,
+            effectiveScaleSettings
+        );
+        if (!projection.valid) {
+            tile.inPattern = false;
+            tile.enabled = false;
+            continue;
+        }
+        tile.enabled = projection.enabled;
+        tile.note = projection.note;
+        tile.velocity = projection.velocity;
+        tile.probability = projection.probability;
+        tile.gate = projection.gate;
+        tile.nudge = projection.nudge;
+        tile.childContentContext = childContext;
+        tile.childContentOffset = childContext
+            ? core::state::sequencer::stepContentProjectionOffsetForProperty(
+                  projection,
+                  frame.activeProperty
+              )
+            : 0;
+        tile.childContentNoteOffsetUsesScaleDegrees =
+            childContext &&
+            frame.activeProperty == core::state::sequencer::StepProperty::NOTE &&
+            effectiveScaleSettings.isConstrained();
+        tile.contentBadges = buildStepContentBadgeProjectionForNode(
+            sequencer.pattern,
+            projection.nodeId
+        );
+        core::state::sequencer::SequencerChildContentSummary childSummary{};
+        const bool childSummaryTouched = firstChildSummary(
+                sequencer,
+                projection,
+                effectiveScaleSettings,
+                childSummary
+            );
+        const bool childSummaryChanged =
+            childSummaryTouched && childSummaryDiffersFromProjection(projection, childSummary);
+        if (childSummaryTouched) {
+            tile.probabilityCycleActive =
+                tile.probabilityCycleActive && childSummary.enabled;
+            if (childSummary.note != projection.note) {
+                tile.childPitchSummaryVisible = true;
+                tile.childPitchSummaryNote = childSummary.note;
+            }
+            tile.velocity = childSummary.velocity;
+            tile.probability = childSummary.probability;
+            tile.gate = childSummary.gate;
+            tile.nudge = childSummary.nudge;
+        }
+
+        if (!tile.enabled || !tile.probabilityCycleActive) {
+            tile.playing = false;
+        }
 
         const bool hasRuntimeVariation =
+            !childContext &&
             tile.enabled &&
             telemetry.validMask.test(absoluteStep) &&
             telemetry.triggeredMask.test(absoluteStep) &&
@@ -182,7 +375,28 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
         const bool stepInlineEditActive =
             frame.feedbackVisible && frame.feedbackTouchedMask.test(absoluteStep);
 
-        if (hasRuntimeVariation || hasPreviewFeedback || (tile.enabled && activeRangeVisible)) {
+        if (childSummaryChanged) {
+            tile.variation.visible = true;
+            tile.variation.rangeVisible = false;
+            tile.variation.deltaVisible = true;
+            tile.variation.rangeProperty = frame.activeProperty;
+            tile.variation.resolved = buildChildSummaryVariation(
+                absoluteStep,
+                projection,
+                childSummary,
+                effectiveScaleSettings
+            );
+        } else if (childContext && tile.enabled) {
+            tile.variation.visible = true;
+            tile.variation.rangeVisible = false;
+            tile.variation.deltaVisible = true;
+            tile.variation.rangeProperty = frame.activeProperty;
+            tile.variation.resolved = buildChildContentVariation(
+                absoluteStep,
+                projection,
+                effectiveScaleSettings
+            );
+        } else if (hasRuntimeVariation || hasPreviewFeedback || (tile.enabled && activeRangeVisible)) {
             tile.variation.visible = true;
             tile.variation.rangeVisible = tile.enabled && activeRangeVisible;
             tile.variation.deltaVisible = hasRuntimeVariation || hasPreviewFeedback;

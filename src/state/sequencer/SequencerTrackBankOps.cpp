@@ -10,9 +10,15 @@ namespace core::state::sequencer {
 namespace {
 
 FLASHMEM void copyPatternToEditor(SequencerState& target, const SequencerPatternState& source) {
-    SequencerPatternSnapshot snapshot;
-    captureSnapshot(source, snapshot);
-    applySnapshotToEditor(target, snapshot);
+    const uint8_t focusedBefore = target.focusedStep.get();
+
+    copyPatternState(target.pattern, source);
+
+    const uint8_t length = target.pattern.length.get();
+    const uint8_t focused =
+        (focusedBefore >= length) ? static_cast<uint8_t>(length - 1U) : focusedBefore;
+    target.focusedStep.set(focused);
+    target.page.set(target.pageForStep(focused));
 }
 
 FLASHMEM void copyEditorToPattern(SequencerPatternState& target, const SequencerState& source) {
@@ -24,6 +30,7 @@ FLASHMEM void resetTransientTrackState(SequencerState& state) {
     state.stepPropertyInlineSelector.reset();
     state.stepInlineFeedback.reset();
     state.patternQuickControls.reset();
+    state.contentView.reset();
 }
 
 }  // namespace

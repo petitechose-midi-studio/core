@@ -268,9 +268,10 @@ void ContextActionStrip::render(const ContextActionStripProps& props) {
     if (!props.visible) {
         if (!has_rendered_ || rendered_props_.visible) {
             lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-            rendered_props_ = props;
-            has_rendered_ = true;
         }
+        rendered_props_ = props;
+        has_rendered_ = true;
+        updateHoldTimer();
         return;
     }
 
