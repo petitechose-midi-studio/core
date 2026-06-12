@@ -122,7 +122,8 @@ FLASHMEM bool sameCycleSet(
     const StepSequencerCycleStateSet& rhs
 ) {
     return lhs.firstStateNode == rhs.firstStateNode &&
-           lhs.length == rhs.length;
+           lhs.length == rhs.length &&
+           lhs.offset == rhs.offset;
 }
 
 FLASHMEM bool sameStepNode(

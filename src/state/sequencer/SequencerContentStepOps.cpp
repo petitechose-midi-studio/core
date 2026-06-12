@@ -1,0 +1,173 @@
+#include "state/sequencer/SequencerContentViewOps.hpp"
+
+#include <algorithm>
+
+#include "state/sequencer/SequencerContentViewInternal.hpp"
+
+namespace core::state::sequencer {
+using namespace content_view_internal;
+
+FLASHMEM bool rotateActiveContentSteps(SequencerState& sequencer, int offsetSteps) {
+    if (!isChildContentView(sequencer)) return false;
+
+    bool changed = false;
+    if (isMicroSequenceContentView(sequencer)) {
+        changed = rotateMicroSequenceSteps(
+            sequencer.pattern,
+            sequencer.contentView.sequenceId.get(),
+            offsetSteps
+        );
+    } else if (isCycleStatesContentView(sequencer)) {
+        changed = rotateCycleStateSetSteps(
+            sequencer.pattern,
+            sequencer.contentView.cycleSetId.get(),
+            offsetSteps
+        );
+    }
+
+    if (!changed) return false;
+    refreshContentView(sequencer);
+    sequencer.contentView.bump();
+    return true;
+}
+
+FLASHMEM bool toggleActiveContentStep(SequencerState& sequencer, uint8_t step) {
+    if (isRootContentView(sequencer)) {
+        sequencer.pattern.toggle(step);
+        sequencer.invalidateStepVariationTelemetry(step);
+        return true;
+    }
+
+    const auto* node = graphNode(sequencer, activeContentStepNodeId(sequencer, step));
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (node == nullptr || nodeId == kInvalidId) return false;
+
+    const bool changed = nodeEnabled(*node)
+        ? setNodeEnabledOverride(sequencer.pattern, nodeId, false)
+        : clearNodeEnabledOverride(sequencer.pattern, nodeId);
+    if (changed) sequencer.contentView.bump();
+    return changed;
+}
+
+FLASHMEM bool setActiveContentStepEnabled(SequencerState& sequencer, uint8_t step, bool enabled) {
+    if (step >= activeContentLength(sequencer)) return false;
+
+    if (isRootContentView(sequencer)) {
+        const bool current = sequencer.pattern.isEnabled(step);
+        if (current == enabled) return false;
+        sequencer.pattern.setEnabled(step, enabled);
+        sequencer.invalidateStepVariationTelemetry(step);
+        return true;
+    }
+
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    const auto* node = graphNode(sequencer, nodeId);
+    if (node == nullptr || nodeId == kInvalidId) return false;
+
+    const bool current = nodeEnabled(*node);
+    if (current == enabled) return false;
+
+    const bool changed = setNodeEnabledOverride(sequencer.pattern, nodeId, enabled);
+    if (changed) sequencer.contentView.bump();
+    return changed;
+}
+
+FLASHMEM bool setActiveContentStepFromNormalized(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepProperty property,
+    float normalized,
+    SequencerPitchEditMode pitchEditMode,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    if (step >= activeContentLength(sequencer)) return false;
+
+    const int target = targetValueFromNormalized(property, normalized, pitchEditMode, scaleSettings);
+    if (isRootContentView(sequencer)) {
+        switch (property) {
+            case StepProperty::NOTE:
+                return sequencer.setStepNoteAt(step, static_cast<uint8_t>(target));
+            case StepProperty::VELOCITY:
+                return sequencer.setStepVelocityAt(step, static_cast<uint8_t>(target));
+            case StepProperty::GATE:
+                return sequencer.setStepGateAt(step, static_cast<uint16_t>(target));
+            case StepProperty::NUDGE:
+                return sequencer.setStepNudgeAt(step, static_cast<int8_t>(target));
+            case StepProperty::PROBABILITY:
+                return sequencer.setStepProbabilityAt(step, static_cast<uint8_t>(target));
+        }
+    }
+
+    const auto projection =
+        resolveActiveContentStepProjection(sequencer, step, scaleSettings);
+    if (!projection.valid) return false;
+
+    return setNodeProperty(
+        sequencer,
+        projection.nodeId,
+        property,
+        baseValueForProperty(projection, property),
+        target,
+        pitchEditMode,
+        scaleSettings
+    );
+}
+
+FLASHMEM float activeContentStepPropertyToNormalized(
+    const SequencerState& sequencer,
+    uint8_t step,
+    StepProperty property,
+    SequencerPitchEditMode pitchEditMode,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    const auto projection =
+        resolveActiveContentStepProjection(sequencer, step, scaleSettings);
+    if (!projection.valid) return 0.0f;
+    return valueToNormalized(
+        property,
+        resolvedValueForProperty(projection, property),
+        pitchEditMode,
+        scaleSettings
+    );
+}
+
+FLASHMEM bool resizeActiveMicroSequenceContent(SequencerState& sequencer, uint8_t length) {
+    if (!isMicroSequenceContentView(sequencer)) return false;
+    const uint8_t clamped = std::clamp<uint8_t>(length, MICRO_LENGTH_MIN, MICRO_LENGTH_MAX);
+    const bool changed = resizeMicroSequence(
+        sequencer.pattern,
+        sequencer.contentView.sequenceId.get(),
+        clamped
+    );
+    refreshContentView(sequencer);
+    const uint8_t nextLength = activeContentLength(sequencer);
+    if (nextLength == 0) return changed;
+    if (sequencer.focusedStep.get() >= nextLength) {
+        sequencer.focusedStep.set(static_cast<uint8_t>(nextLength - 1U));
+    }
+    sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
+    if (changed) sequencer.contentView.bump();
+    return changed;
+}
+
+FLASHMEM bool resizeActiveCycleStatesContent(SequencerState& sequencer, uint8_t length) {
+    if (!isCycleStatesContentView(sequencer)) return false;
+    const uint8_t clamped =
+        std::clamp<uint8_t>(length, CYCLE_STATE_LENGTH_MIN, CYCLE_STATE_LENGTH_MAX);
+    const bool changed = resizeCycleStateSet(
+        sequencer.pattern,
+        sequencer.contentView.cycleSetId.get(),
+        clamped
+    );
+    refreshContentView(sequencer);
+    const uint8_t nextLength = activeContentLength(sequencer);
+    if (nextLength == 0) return changed;
+    if (sequencer.focusedStep.get() >= nextLength) {
+        sequencer.focusedStep.set(static_cast<uint8_t>(nextLength - 1U));
+    }
+    sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
+    if (changed) sequencer.contentView.bump();
+    return changed;
+}
+
+}  // namespace core::state::sequencer

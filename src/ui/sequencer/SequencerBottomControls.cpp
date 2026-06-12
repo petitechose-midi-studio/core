@@ -57,7 +57,7 @@ void formatQuickValue(
     QuickItem item
 ) {
     if (!buffer || size == 0) return;
-    if (props.microSequenceContext && item != QuickItem::LENGTH) {
+    if (props.childContentContext && item == QuickItem::DIVISION) {
         buffer[0] = '\0';
         return;
     }
@@ -82,8 +82,9 @@ void formatQuickValue(
 }
 
 const char* quickLabel(const SequencerBottomControlsProps& props, QuickItem item) {
-    if (props.microSequenceContext) {
-        return item == QuickItem::LENGTH ? "Steps" : "";
+    if (props.childContentContext) {
+        if (item == QuickItem::LENGTH) return "Steps";
+        if (item == QuickItem::DIVISION) return "";
     }
     return core::state::sequencer::quickControlLabel(item);
 }
@@ -104,7 +105,7 @@ bool sameProps(const SequencerBottomControlsProps& lhs, const SequencerBottomCon
            lhs.offsetSteps == rhs.offsetSteps &&
            lhs.stepsPerBeat == rhs.stepsPerBeat &&
            lhs.length == rhs.length &&
-           lhs.microSequenceContext == rhs.microSequenceContext;
+           lhs.childContentContext == rhs.childContentContext;
 }
 
 size_t quickItemIndex(QuickItem item) {

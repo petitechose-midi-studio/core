@@ -24,6 +24,7 @@ FLASHMEM SequencerStepHandler::SequencerStepHandler(StateRefs state,
 #endif
 )
     : sequencer_(state.sequencer)
+    , structure_clipboard_(state.structureClipboard)
     , navigation_workflow_(
           SequencerStructureNavigationWorkflow::StateRefs{
               state.sequencer,
@@ -69,7 +70,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return core::state::sequencer::isMicroSequenceContentView(sequencer_) &&
+            return core::state::sequencer::isChildContentView(sequencer_) &&
                    navigation_workflow_.allowsMainBindings();
         })
         .then([this](float delta) {
@@ -160,12 +161,68 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return core::state::sequencer::isMicroSequenceContentView(sequencer_) &&
+            return core::state::sequencer::isChildContentView(sequencer_) &&
                    navigation_workflow_.allowsMainBindings();
         })
         .then([this]() {
             history_.commitCoalescedPatternEdit();
             core::state::sequencer::leaveContentView(sequencer_);
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .release()
+        .scope(scope_id_)
+        .when([this]() {
+            return core::state::sequencer::isChildContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
+        .then([this]() {
+            if (ignore_next_bottom_left_release_) {
+                ignore_next_bottom_left_release_ = false;
+                return;
+            }
+            clearFocusedStepContent();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .when([this]() {
+            return core::state::sequencer::isChildContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings() &&
+                   focusedStepHasChildContent();
+        })
+        .then([this]() {
+            ignore_next_bottom_left_release_ = true;
+            clearFocusedStepContent();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .release()
+        .scope(scope_id_)
+        .when([this]() {
+            return core::state::sequencer::isChildContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings();
+        })
+        .then([this]() {
+            if (ignore_next_bottom_right_release_) {
+                ignore_next_bottom_right_release_ = false;
+                return;
+            }
+            copyFocusedStepContent();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .when([this]() {
+            return core::state::sequencer::isChildContentView(sequencer_) &&
+                   navigation_workflow_.allowsMainBindings() &&
+                   canPasteFocusedStepContent();
+        })
+        .then([this]() {
+            ignore_next_bottom_right_release_ = true;
+            pasteFocusedStepContent();
         });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
@@ -346,6 +403,104 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
             }
         );
     }
+}
+
+FLASHMEM bool SequencerStepHandler::focusedStepHasChildContent() const {
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer_,
+        sequencer_.focusedStep.get(),
+        {}
+    );
+    return core::state::sequencer::stepContentProjectionHasAnyChild(projection);
+}
+
+FLASHMEM bool SequencerStepHandler::canPasteFocusedStepContent() const {
+    return structure_clipboard_.hasSequencerStepContent(
+               core::state::SequencerStepContentClipboardKind::ALL
+           ) &&
+           core::state::sequencer::activeContentStepCanReceiveChildContent(
+               sequencer_,
+               sequencer_.focusedStep.get()
+           );
+}
+
+FLASHMEM void SequencerStepHandler::recordFocusedContentEdit(
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    bool beforeCaptured
+) {
+    if (!beforeCaptured) return;
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    if (!core::state::sequencer::captureHistorySnapshot(sequencer_, after)) return;
+    if (core::state::sequencer::sameMusicalHistorySnapshot(before, after)) return;
+
+    history_.recordPattern(
+        std::move(before),
+        std::move(after),
+        core::state::sequencer::SequencerHistoryDescriptor{
+            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+            .stepIndex = sequencer_.focusedStep.get(),
+            .property = core::state::sequencer::StepProperty::NOTE,
+            .hasValue = false,
+        }
+    );
+}
+
+FLASHMEM void SequencerStepHandler::clearFocusedStepContent() {
+    if (!focusedStepHasChildContent()) return;
+    history_.commitCoalescedPatternEdit();
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    const bool beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer_,
+        sequencer_.focusedStep.get()
+    );
+    if (!core::state::sequencer::clearNodeChildren(sequencer_.pattern, nodeId)) return;
+    core::state::sequencer::refreshContentView(sequencer_);
+    sequencer_.contentView.bump();
+    recordFocusedContentEdit(std::move(before), beforeCaptured);
+}
+
+FLASHMEM void SequencerStepHandler::copyFocusedStepContent() {
+    if (!focusedStepHasChildContent()) return;
+    const auto* graph = core::state::sequencer::graphView(sequencer_.pattern);
+    if (graph == nullptr) return;
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer_,
+        sequencer_.focusedStep.get()
+    );
+    structure_clipboard_.storeSequencerStepContent(
+        *graph,
+        nodeId,
+        core::state::SequencerStepContentClipboardKind::ALL
+    );
+}
+
+FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
+    if (!canPasteFocusedStepContent()) return;
+    history_.commitCoalescedPatternEdit();
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    const bool beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer_,
+        sequencer_.focusedStep.get()
+    );
+    if (!core::state::sequencer::copyNodeChildrenFromGraph(
+            sequencer_.pattern,
+            nodeId,
+            structure_clipboard_.sequencerStepContentGraph,
+            structure_clipboard_.sequencerStepContentNodeId
+        )) {
+        return;
+    }
+    core::state::sequencer::refreshContentView(sequencer_);
+    sequencer_.contentView.bump();
+    recordFocusedContentEdit(std::move(before), beforeCaptured);
 }
 
 }  // namespace core::handler

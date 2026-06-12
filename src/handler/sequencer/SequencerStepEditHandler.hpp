@@ -11,8 +11,10 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
 
 namespace core::handler {
@@ -22,6 +24,8 @@ public:
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerTrackBankState& tracks;
+        core::state::StructureClipboardState& structureClipboard;
         core::state::TrackNavigationState& trackNavigation;
         SequencerHistoryDomainServices history;
     };
@@ -53,15 +57,29 @@ private:
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
     void maybeCloseApplyFromMacro(uint8_t indexInPage);
+    bool focusedRowIsContextRow() const;
+    bool focusedContextHasChild() const;
+    bool canPasteFocusedStepContent() const;
+    void clearFocusedContextChild();
+    void copyFocusedStepContent();
+    void pasteFocusedStepContent();
+    void recordContextMutation(
+        core::state::sequencer::SequencerHistoryPatternSnapshot before,
+        bool beforeCaptured
+    );
 
     // Long-press opens while still pressed; ignore the release that follows.
     bool ignore_open_release_ = false;
     uint8_t ignore_open_macro_index_in_page_ = 0;
+    bool ignore_next_context_left_release_ = false;
+    bool ignore_next_context_right_release_ = false;
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     bool history_snapshot_valid_ = false;
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlay_state_;
     core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
+    core::state::StructureClipboardState& structure_clipboard_;
     core::state::TrackNavigationState& track_ui_;
     SequencerHistoryDomainServices history_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;

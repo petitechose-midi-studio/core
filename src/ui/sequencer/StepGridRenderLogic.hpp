@@ -32,6 +32,9 @@ inline constexpr uint8_t PROBABILITY_ICON_MIN_BRIGHTNESS = 28;
 
 lv_color_t noteLabelColor(uint8_t note);
 lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability);
+int scaleDegreeIndexForNote(oc::note::sequencer::StepSequencerScaleSettings settings,
+                            uint8_t note);
+const char* scaleDegreeLabel(int degree);
 bool hasRuntimePitchFeedback(const TileRenderState& state);
 bool hasOutOfScaleFeedback(const TileRenderState& state);
 bool hasScaleDegreeFeedback(const TileRenderState& state);

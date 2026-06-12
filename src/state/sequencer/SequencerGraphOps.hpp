@@ -36,6 +36,32 @@ bool resizeMicroSequence(
     SequencerGraphSequenceId sequenceId,
     uint8_t length
 );
+bool resizeCycleStateSet(
+    SequencerPatternState& pattern,
+    SequencerGraphCycleSetId cycleSetId,
+    uint8_t length
+);
+bool setMicroSequenceOffset(
+    SequencerPatternState& pattern,
+    SequencerGraphSequenceId sequenceId,
+    int8_t offset
+);
+bool setCycleStateSetOffset(
+    SequencerPatternState& pattern,
+    SequencerGraphCycleSetId cycleSetId,
+    int8_t offset
+);
+bool rotateRootStepNodes(SequencerPatternState& pattern, int offsetSteps);
+bool rotateMicroSequenceSteps(
+    SequencerPatternState& pattern,
+    SequencerGraphSequenceId sequenceId,
+    int offsetSteps
+);
+bool rotateCycleStateSetSteps(
+    SequencerPatternState& pattern,
+    SequencerGraphCycleSetId cycleSetId,
+    int offsetSteps
+);
 
 SequencerGraphCreateResult createCycleStateSet(
     SequencerPatternState& pattern,
@@ -46,6 +72,24 @@ SequencerGraphCreateResult createCycleStateSet(
 bool clearNodeChildren(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 bool clearNodeChildSequence(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 bool clearNodeCycleStateSet(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
+bool copyNodeChildrenFromGraph(
+    SequencerPatternState& targetPattern,
+    SequencerGraphNodeId targetNodeId,
+    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+    SequencerGraphNodeId sourceNodeId
+);
+bool copyNodeChildSequenceFromGraph(
+    SequencerPatternState& targetPattern,
+    SequencerGraphNodeId targetNodeId,
+    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+    SequencerGraphNodeId sourceNodeId
+);
+bool copyNodeCycleStateSetFromGraph(
+    SequencerPatternState& targetPattern,
+    SequencerGraphNodeId targetNodeId,
+    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+    SequencerGraphNodeId sourceNodeId
+);
 
 bool setNodeEnabledOverride(SequencerPatternState& pattern,
                             SequencerGraphNodeId nodeId,

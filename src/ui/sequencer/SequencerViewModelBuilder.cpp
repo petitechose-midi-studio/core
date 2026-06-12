@@ -22,22 +22,6 @@ using SlotProps = core::ui::ContextActionStripSlotProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
 
-SlotProps makeIconSlot(const char* icon,
-                       Visual visual,
-                       Tone tone = Tone::NEUTRAL,
-                       standalone::icons::Size iconSize = standalone::icons::Size::M) {
-    return {
-        .visualState = visual,
-        .tone = tone,
-        .showIcon = true,
-        .icon = icon,
-        .iconUsesStandaloneFont = true,
-        .iconSize = iconSize,
-        .showLabel = false,
-        .label = nullptr,
-    };
-}
-
 uint8_t countSelectedItems(uint16_t mask) {
     uint8_t count = 0;
     while (mask != 0) {
@@ -53,6 +37,8 @@ const char* clipboardBadge(const core::state::StructureClipboardState& clipboard
             return "PG";
         case core::state::StructureClipboardKind::SEQUENCER_TRACK:
             return "TRK";
+        case core::state::StructureClipboardKind::SEQUENCER_STEP_CONTENT:
+            return "STEP";
         default:
             return "";
     }
@@ -85,6 +71,30 @@ Tone variationStatusTone(core::state::sequencer::StepProperty property) {
         default:
             return Tone::NEUTRAL;
     }
+}
+
+bool focusedStepHasChildContent(const SequencerViewModelSource& source) {
+    const auto& sequencer = source.sequencer;
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer,
+        sequencer.focusedStep.get(),
+        core::state::sequencer::resolveEffectiveScaleSettings(
+            source.tracks.projectScaleSettings(),
+            sequencer.pattern.scalePolicy,
+            sequencer.pattern.scaleOverride
+        )
+    );
+    return core::state::sequencer::stepContentProjectionHasAnyChild(projection);
+}
+
+bool canPasteStepContent(const SequencerViewModelSource& source) {
+    return source.structureClipboard.hasSequencerStepContent(
+               core::state::SequencerStepContentClipboardKind::ALL
+           ) &&
+           core::state::sequencer::activeContentStepCanReceiveChildContent(
+               source.sequencer,
+               source.sequencer.focusedStep.get()
+           );
 }
 
 void formatVariationStatusLabel(std::array<char, 16>& out,
@@ -184,9 +194,12 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
             : 0U;
 
     const bool microContext = core::state::sequencer::isMicroSequenceContentView(sequencer);
+    const bool cycleContext = core::state::sequencer::isCycleStatesContentView(sequencer);
     const char* leftText = microContext
         ? "MICRO"
-        : ((selectingTrack || focusingTrack) ? "TRACKS" : "PAGES");
+        : (cycleContext
+               ? "CYCLE"
+               : ((selectingTrack || focusingTrack) ? "TRACKS" : "PAGES"));
     std::array<char, 12> badgeText{};
     if (source.trackNavigation.selection.active.get() || sequencer.structureUi.pageSelection.active.get()) {
         std::snprintf(
@@ -241,7 +254,7 @@ FLASHMEM SequencerBottomControlsProps buildBottomControlsProps(const SequencerVi
         .offsetSteps = sequencer.patternQuickControls.offsetSteps.get(),
         .stepsPerBeat = sequencer.pattern.stepsPerBeat.get(),
         .length = core::state::sequencer::activeContentLength(sequencer),
-        .microSequenceContext = core::state::sequencer::isMicroSequenceContentView(sequencer),
+        .childContentContext = core::state::sequencer::isChildContentView(sequencer),
     };
 }
 
@@ -271,7 +284,7 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     props.visible = true;
 
     if (selectingStructure) {
-        props.slots[0] = makeIconSlot(
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
@@ -297,15 +310,15 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     }
 
     if (physicalQuickControlHold) {
-        props.slots[0] = makeIconSlot(
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_UNDO,
             Visual::DIM
         );
-        props.slots[1] = makeIconSlot(
+        props.slots[1] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::MIDI_CHANNEL,
             Visual::ACTIVE
         );
-        props.slots[2] = makeIconSlot(
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_REDO,
             Visual::DIM
         );
@@ -313,37 +326,37 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     }
 
     if (selectingPattern) {
-        props.slots[0] = makeIconSlot(
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        props.slots[1] = makeIconSlot(
+        props.slots[1] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::MIDI_CHANNEL,
             Visual::ACTIVE
         );
-        props.slots[2] = makeIconSlot(propertyIcon, Visual::DIM);
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::DIM);
         return props;
     }
 
     if (selectingProperty) {
-        props.slots[0] = makeIconSlot(
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        props.slots[1] = makeIconSlot(
+        props.slots[1] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::MIDI_CHANNEL,
             Visual::DIM
         );
-        props.slots[2] = makeIconSlot(propertyIcon, Visual::ACTIVE);
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::ACTIVE);
         return props;
     }
 
     props.slots[0].visualState = Visual::HIDDEN;
-    props.slots[1] = makeIconSlot(
+    props.slots[1] = core::ui::makeStandaloneIconStripSlot(
         standalone::icons::MIDI_CHANNEL,
         Visual::DIM
     );
-    props.slots[2] = makeIconSlot(propertyIcon, Visual::DIM);
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::DIM);
     return props;
 }
 
@@ -366,7 +379,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
         const bool canOpenPitchSettings =
             property == core::state::sequencer::StepProperty::NOTE;
 
-        props.slots[0] = makeIconSlot(
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::SETTINGS_GEAR,
             canOpenPitchSettings ? Visual::ACTIVE : Visual::HIDDEN
         );
@@ -384,6 +397,23 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
         };
         formatVariationStatusLabel(props.slots[1].labelText, property, range);
         props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
+
+    if (core::state::sequencer::isChildContentView(source.sequencer)) {
+        const bool hasChildContent = focusedStepHasChildContent(source);
+        const bool canPaste = canPasteStepContent(source);
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CLEAR,
+            hasChildContent ? Visual::ACTIVE : Visual::DISABLED,
+            Tone::DESTRUCTIVE
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY,
+            (hasChildContent || canPaste) ? Visual::ACTIVE : Visual::DISABLED,
+            canPaste ? Tone::POSITIVE : Tone::NEUTRAL
+        );
         return props;
     }
 
@@ -414,7 +444,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
             canDuplicateSelection = plan.hasEntries() && plan.movesAnyPage();
         }
 
-        props.slots[0] = makeIconSlot(
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CLEAR,
             canDeleteSelection ? Visual::ACTIVE : Visual::DISABLED,
             Tone::DESTRUCTIVE
@@ -427,7 +457,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
             .showLabel = true,
             .label = "SEL",
         };
-        props.slots[2] = makeIconSlot(
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_COPY,
             canDuplicateSelection ? Visual::ACTIVE : Visual::DISABLED,
             Tone::POSITIVE
@@ -449,7 +479,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
     const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
     const bool pasteHoldActive = holdAction == core::state::StructureHoldAction::PASTE;
 
-    props.slots[0] = makeIconSlot(
+    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
         standalone::icons::ACTION_CLEAR,
         removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
@@ -458,7 +488,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
     props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     props.slots[1].visualState = Visual::HIDDEN;
-    props.slots[2] = makeIconSlot(
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY,
         pasteHoldActive && canPaste
             ? Visual::ARMED

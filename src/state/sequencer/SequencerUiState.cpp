@@ -9,17 +9,22 @@ FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState(
 FLASHMEM void SequencerContentViewState::reset() {
     kind.set(SequencerContentViewKind::ROOT);
     parentStep.set(0);
+    ownerNodeId.set(GraphLimits::INVALID_ID);
     sequenceId.set(GraphLimits::INVALID_ID);
+    cycleSetId.set(GraphLimits::INVALID_ID);
     length.set(0);
+    depth.set(0);
     rootPageSnapshot = 0;
     rootFocusSnapshot = 0;
+    stackDepth = 0;
+    frames = {};
     bump();
 }
 
 FLASHMEM void SequencerStepEditOverlayState::reset() {
     stepIndex.set(0);
     focusedRow.set(0);
-    contentSession.reset();
+    contextHold.clear();
     snapshotValid = false;
 }
 

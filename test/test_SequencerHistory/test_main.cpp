@@ -7,6 +7,7 @@
 
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
+#include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace {
@@ -43,6 +44,35 @@ bool hasCycleStateSet(const SequencerPatternState& pattern, uint8_t step) {
     const auto nodeId = core::state::sequencer::rootStepNodeId(step);
     if (nodeId >= graph->stepNodeCount) return false;
     return graph->stepNodes[nodeId].has(STEP_NODE_CYCLE_SET);
+}
+
+bool hasNestedCycleStateSetWithOffset(
+    const SequencerPatternState& pattern,
+    uint8_t step,
+    uint8_t stateIndex,
+    int8_t offset
+) {
+    const auto* graph = core::state::sequencer::graphView(pattern);
+    if (graph == nullptr) return false;
+    const auto rootNodeId = core::state::sequencer::rootStepNodeId(step);
+    const auto* rootNode = graph->stepNode(rootNodeId);
+    if (rootNode == nullptr || !rootNode->has(STEP_NODE_CYCLE_SET)) return false;
+
+    const auto* cycleSet = graph->cycleSet(rootNode->cycleSetId);
+    if (cycleSet == nullptr || stateIndex >= cycleSet->length) return false;
+
+    const auto stateNodeId = static_cast<uint16_t>(cycleSet->firstStateNode + stateIndex);
+    const auto* stateNode = graph->stepNode(stateNodeId);
+    if (stateNode == nullptr || !stateNode->has(STEP_NODE_CYCLE_SET)) return false;
+
+    const auto* nestedCycleSet = graph->cycleSet(stateNode->cycleSetId);
+    if (nestedCycleSet == nullptr || nestedCycleSet->length < 2U) return false;
+
+    const auto nestedStateNodeId = static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1U);
+    const auto* nestedStateNode = graph->stepNode(nestedStateNodeId);
+    return nestedStateNode != nullptr &&
+           nestedStateNode->has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET) &&
+           nestedStateNode->noteOffset == offset;
 }
 
 void test_pattern_snapshot_can_capture_inactive_track() {
@@ -307,6 +337,61 @@ void test_full_bank_history_restores_active_track_and_graphs() {
     std::cout << "[PASS] test_full_bank_history_restores_active_track_and_graphs\n";
 }
 
+void test_track_switch_preserves_nested_graph_payload() {
+    SequencerTrackBankState bank;
+    SequencerState active;
+    core::state::sequencer::initializeTrackBankFromActive(bank, active);
+    bank.syncSharedTrackState(0x0003, 0);
+
+    setStep(active.pattern, 0, 60);
+    const auto rootCycle = core::state::sequencer::createCycleStateSet(
+        active.pattern,
+        core::state::sequencer::rootStepNodeId(0),
+        2
+    );
+    assert(rootCycle.ok);
+
+    auto* graph = active.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* rootCycleSet = graph->cycleSet(rootCycle.id);
+    assert(rootCycleSet != nullptr);
+    const auto secondStateNode = static_cast<uint16_t>(rootCycleSet->firstStateNode + 1U);
+
+    const auto nestedCycle = core::state::sequencer::createCycleStateSet(
+        active.pattern,
+        secondStateNode,
+        2
+    );
+    assert(nestedCycle.ok);
+    graph = active.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
+    assert(nestedCycleSet != nullptr);
+    assert(core::state::sequencer::setNodeNoteOffset(
+        active.pattern,
+        static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1U),
+        5
+    ));
+
+    active.focusedStep.set(0);
+    assert(core::state::sequencer::enterCycleStatesContentView(
+        active,
+        core::state::sequencer::rootStepNodeId(0),
+        rootCycle.id
+    ));
+    assert(!core::state::sequencer::isRootContentView(active));
+
+    assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
+    assert(core::state::sequencer::isRootContentView(active));
+    assert(core::state::sequencer::switchActiveTrack(bank, active, 0));
+    assert(core::state::sequencer::isRootContentView(active));
+
+    assert(hasCycleStateSet(active.pattern, 0));
+    assert(hasNestedCycleStateSetWithOffset(active.pattern, 0, 1, 5));
+
+    std::cout << "[PASS] test_track_switch_preserves_nested_graph_payload\n";
+}
+
 void test_history_limits_prune_by_scope() {
     SequencerTrackBankState bank;
     SequencerState state;
@@ -370,6 +455,7 @@ int main() {
     test_redo_clears_after_new_record();
     test_pattern_history_undoes_previous_track_without_switching_active_track();
     test_full_bank_history_restores_active_track_and_graphs();
+    test_track_switch_preserves_nested_graph_payload();
     test_history_limits_prune_by_scope();
     test_clear_resets_stacks();
 

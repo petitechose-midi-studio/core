@@ -45,8 +45,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
           stateRefs.sequencerTracks,
           &structure_ux_trace_state_
       ),
-      step_edit_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
-      step_grid_ux_surface_(stateRefs.activeView, stateRefs.sequencer)
+      step_edit_ux_surface_(stateRefs.activeView, stateRefs.sequencer, stateRefs.sequencerTracks),
+      step_grid_ux_surface_(stateRefs.activeView, stateRefs.sequencer, stateRefs.sequencerTracks)
 #endif
 {
 #if defined(MS_UX_RECORDER)
@@ -86,6 +86,15 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     );
     step_edit_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(overlayRoot);
+    step_edit_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
+        step_edit_overlay_->getElement(),
+        core::ui::ContextActionStripOrientation::HORIZONTAL
+    );
+    if (auto* strip = step_edit_action_strip_->getElement()) {
+        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
+        lv_obj_align(strip, LV_ALIGN_BOTTOM_MID, 0, -19);
+        lv_obj_move_foreground(strip);
+    }
     overlays.registerCleanup(
         core::ui::OverlayType::SEQ_STEP_EDIT,
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
@@ -111,8 +120,11 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     presenter_ = core::app::makeExtmemUnique<SequencerOverlayPresenter>(
         SequencerOverlayPresenter::StateRefs{
             stateRefs.sequencer,
+            stateRefs.sequencerTracks,
+            stateRefs.structureClipboard,
         },
-        *step_edit_overlay_
+        *step_edit_overlay_,
+        *step_edit_action_strip_
     );
     presenter_->bind();
     pattern_pitch_settings_presenter_ =
@@ -159,12 +171,14 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId
         );
     step_edit_handler_ = core::app::makeExtmemUnique<core::handler::SequencerStepEditHandler>(
-        core::handler::SequencerStepEditHandler::StateRefs{
-            stateRefs.overlays,
-            stateRefs.sequencer,
-            stateRefs.trackNavigation,
-            stateRefs.history,
-        },
+            core::handler::SequencerStepEditHandler::StateRefs{
+                stateRefs.overlays,
+                stateRefs.sequencer,
+                stateRefs.sequencerTracks,
+                stateRefs.structureClipboard,
+                stateRefs.trackNavigation,
+                stateRefs.history,
+            },
         overlays,
         encoders,
         buttons,

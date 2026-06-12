@@ -59,11 +59,21 @@ NoteLabelPresentation buildNoteLabelPresentation(
 
     presentation.showNoteStyle = isNoteMode || showRuntimePitch;
     presentation.probabilityMasked = state.enabled && !state.probabilityCycleActive;
-    presentation.showLabel = showRuntimePitch || isNoteMode || (isFeedbackStep && isFeedbackProperty);
+    presentation.showLabel =
+        state.childContentContext ||
+        showRuntimePitch ||
+        isNoteMode ||
+        (isFeedbackStep && isFeedbackProperty);
     presentation.showInlineIcon =
-        !showRuntimePitch && propertyVisual.showInlineIcon && isFeedbackStep && isFeedbackProperty;
+        !state.childContentContext &&
+        !showRuntimePitch &&
+        propertyVisual.showInlineIcon &&
+        isFeedbackStep &&
+        isFeedbackProperty;
     presentation.displayProperty =
-        showRuntimePitch
+        state.childContentContext
+            ? activeProperty
+            : showRuntimePitch
             ? core::state::sequencer::StepProperty::NOTE
             : displayPropertyForInlineLabelMode(propertyVisual.inlineLabelMode);
     return presentation;

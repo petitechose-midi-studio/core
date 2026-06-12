@@ -34,6 +34,7 @@ public:
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::ViewSelectorState& viewSelector;
         core::state::SequencerSettingsState& sequencerSettings;
+        core::state::sequencer::SequencerContentViewState& sequencerContentView;
         core::state::sequencer::SequencerPatternQuickControlsState& patternQuickControls;
         core::state::sequencer::SequencerStepPropertyInlineSelectorState&
             stepPropertyInlineSelector;
@@ -69,6 +70,7 @@ private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::ViewSelectorState& view_selector_;
     core::state::SequencerSettingsState& sequencer_settings_;
+    core::state::sequencer::SequencerContentViewState& sequencer_content_view_;
     core::state::sequencer::SequencerPatternQuickControlsState& pattern_quick_controls_;
     core::state::sequencer::SequencerStepPropertyInlineSelectorState&
         step_property_inline_selector_;

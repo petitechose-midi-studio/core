@@ -322,6 +322,7 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
     }
 
     target.pattern.enabledMask.set(nextMask);
+    rotateRootStepNodes(target.pattern, normalizedOffset);
     target.pattern.bumpStepDataRevision();
     return true;
 }

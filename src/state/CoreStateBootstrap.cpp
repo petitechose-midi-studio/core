@@ -41,6 +41,7 @@ void configureDebugLabels_(CoreState& state) {
     state.macroUi.ccOffset.setDebugLabel("core.macroUi.ccOffset");
     state.trackNavigation.previewAddSlot.setDebugLabel("core.trackNavigation.previewAddSlot");
     state.trackNavigation.previewTrackIndex.setDebugLabel("core.trackNavigation.previewTrackIndex");
+    state.structureClipboard.revision.setDebugLabel("core.structureClipboard.revision");
 
     state.deviceSettings.flowPhase.setDebugLabel("core.deviceSettings.flowPhase");
     state.deviceSettings.selector.visible.setDebugLabel("core.deviceSettings.selector.visible");
@@ -68,13 +69,17 @@ void configureDebugLabels_(CoreState& state) {
 
     state.sequencer.stepPropertyInlineSelector.selecting.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selecting");
     state.sequencer.stepPropertyInlineSelector.selectedIndex.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selectedIndex");
+    state.sequencer.stepEdit.contextHold.action.setDebugLabel("core.sequencer.stepEdit.contextHold.action");
+    state.sequencer.stepEdit.contextHold.startedAtMs.setDebugLabel("core.sequencer.stepEdit.contextHold.startedAtMs");
     state.sequencer.patternQuickControls.selecting.setDebugLabel("core.sequencer.patternQuickControls.selecting");
     state.sequencer.patternQuickControls.physicalHoldActive.setDebugLabel("core.sequencer.patternQuickControls.physicalHoldActive");
     state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
     state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
     state.sequencer.pattern.patternVariationRevision.setDebugLabel("core.sequencer.pattern.patternVariationRevision");
     state.sequencer.pattern.patternScaleRevision.setDebugLabel("core.sequencer.pattern.patternScaleRevision");
+    state.sequencer.contentView.revision.setDebugLabel("core.sequencer.contentView.revision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
+    state.sequencerTracks.projectScaleRevisionSignal().setDebugLabel("core.sequencerTracks.projectScaleRevision");
 
     state.projectNavigation.activeTab.setDebugLabel("core.projectNavigation.activeTab");
     state.projectNavigation.currentNode.setDebugLabel("core.projectNavigation.currentNode");

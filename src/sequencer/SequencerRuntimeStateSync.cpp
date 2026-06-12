@@ -71,6 +71,8 @@ SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
 ) {
     return {
         .playheadStep = runtimeState.playheadStep,
+        .playheadStepTickOffset = runtimeState.playheadStepTickOffset,
+        .playheadStepTicks = runtimeState.playheadStepTicks,
         .probabilityCycleIndex = runtimeState.probabilityCycleIndex,
         .probabilityCycleMask = runtimeState.probabilityCycleMask,
         .variationTelemetryRevision = runtimeState.variationTelemetryRevision,
@@ -82,6 +84,12 @@ SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
 void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
                              const SequencerRuntimeTelemetrySnapshot& telemetry) {
     target.playheadStep.set(telemetry.playheadStep);
+    target.playheadStepTicks = telemetry.playheadStepTicks == 0 ? 1 : telemetry.playheadStepTicks;
+    if (target.contentView.isChildContent()) {
+        target.playheadStepTickOffset.set(telemetry.playheadStepTickOffset);
+    } else if (target.playheadStepTickOffset.get() != 0) {
+        target.playheadStepTickOffset.set(0);
+    }
 
     if (target.probabilityCycleIndex != telemetry.probabilityCycleIndex ||
         target.probabilityCycleMask != telemetry.probabilityCycleMask) {

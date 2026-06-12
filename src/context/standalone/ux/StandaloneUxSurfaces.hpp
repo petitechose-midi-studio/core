@@ -117,7 +117,8 @@ class SequencerStepGridUxSurface final : public core::validation::ux::SemanticUx
 public:
     SequencerStepGridUxSurface(
         oc::state::Signal<core::ui::ViewType, 8>& activeView,
-        core::state::sequencer::SequencerState& sequencer
+        core::state::sequencer::SequencerState& sequencer,
+        core::state::sequencer::SequencerTrackBankState& tracks
     );
 
     bool captureSemanticUxContext(
@@ -128,13 +129,15 @@ public:
 private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
 };
 
 class SequencerStepEditUxSurface final : public core::validation::ux::SemanticUxSurface {
 public:
     SequencerStepEditUxSurface(
         oc::state::Signal<core::ui::ViewType, 8>& activeView,
-        core::state::sequencer::SequencerState& sequencer
+        core::state::sequencer::SequencerState& sequencer,
+        core::state::sequencer::SequencerTrackBankState& tracks
     );
 
     bool captureSemanticUxContext(
@@ -145,6 +148,7 @@ public:
 private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
 };
 
 class SequencerQuickControlsUxSurface final : public core::validation::ux::SemanticUxSurface {

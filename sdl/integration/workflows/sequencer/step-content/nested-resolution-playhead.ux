@@ -1,0 +1,88 @@
+# UX workflow: nested child-content resolution and playhead display.
+# Purpose: validates that root and intermediate parents display the currently
+# resolved child pitch/properties while preserving child playhead semantics.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable root step 1 and create a cycle-state context.
+150 tap MACRO_1 60
+320 capture screen root_step_enabled
+420 button MACRO_1 down
+1480 tick
+1540 capture screen root_step_edit_open
+1600 button MACRO_1 up
+1700 encoder NAV 1
+1780 encoder NAV 1
+1860 encoder NAV 1
+1940 encoder NAV 1
+2020 encoder NAV 1
+2100 encoder NAV 1
+2180 encoder NAV 1
+2340 capture screen cycle_row_focused
+2440 tap NAV 60
+2740 capture screen cycle_context_open
+
+# Edit cycle state 1 across several properties: note, velocity, gate, nudge and probability.
+2840 button MACRO_1 down
+3900 tick
+3960 capture screen cycle_state_step_edit_open
+4020 button MACRO_1 up
+4120 encoder NAV 1
+4200 encoder OPT 0.72
+4360 capture screen cycle_state_note_shifted
+4440 encoder NAV 1
+4520 encoder OPT 0.90
+4680 capture screen cycle_state_velocity_shifted
+4760 encoder NAV 1
+4840 encoder OPT 0.35
+5000 capture screen cycle_state_gate_shifted
+5080 encoder NAV 1
+5160 encoder OPT 0.80
+5320 capture screen cycle_state_nudge_shifted
+5400 encoder NAV 1
+5480 encoder OPT 0.20
+5640 capture screen cycle_state_probability_shifted
+5740 tap NAV 60
+6040 capture screen cycle_context_props_applied
+
+# Create a nested cycle-state context on the same visible state and edit its pitch.
+6140 button MACRO_1 down
+7200 tick
+7260 capture screen cycle_state_edit_for_nested_cycle
+7320 button MACRO_1 up
+7420 encoder NAV 1
+7500 encoder NAV 1
+7580 encoder NAV 1
+7660 encoder NAV 1
+7740 encoder NAV 1
+7820 encoder NAV 1
+7900 encoder NAV 1
+8060 capture screen nested_cycle_row_focused
+8160 tap NAV 60
+8460 capture screen nested_cycle_context_open
+8560 button MACRO_1 down
+9620 tick
+9680 capture screen nested_cycle_step_edit_open
+9740 button MACRO_1 up
+9840 encoder NAV 1
+9920 encoder OPT 0.86
+10080 capture screen nested_cycle_note_shifted
+10180 tap NAV 60
+10480 capture screen nested_cycle_props_applied
+
+# Back to the intermediate cycle parent: it should display the resolved nested child.
+10580 tap LEFT_TOP 60
+10920 capture screen intermediate_parent_resolved_child
+
+# Back to root: root step should display the final child-resolved pitch/properties.
+11020 tap LEFT_TOP 60
+11360 capture screen root_parent_final_resolution
+
+# Playback should keep the parent playhead visible and show child playhead only on the active path.
+11460 tap BOTTOM_CENTER 60
+11860 capture screen playback_root_parent_resolution
+12600 tick
+12700 capture screen playback_late_resolution
+12800 tap BOTTOM_CENTER 60
+13120 capture screen playback_stopped

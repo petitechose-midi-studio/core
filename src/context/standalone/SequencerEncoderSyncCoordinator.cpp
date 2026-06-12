@@ -57,7 +57,6 @@ FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
         sequencer_.contentView.length,
         sequencer_.contentView.revision,
         sequencer_.pattern.patternScaleRevision,
-        track_bank_.projectScaleRevisionSignal(),
         sequencer_.stepEdit.visible,
         sequencer_.stepPropertyInlineSelector.selecting,
         sequencer_.patternQuickControls.selecting

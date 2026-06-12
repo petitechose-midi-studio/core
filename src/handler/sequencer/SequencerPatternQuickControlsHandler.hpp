@@ -64,8 +64,8 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
-    core::state::sequencer::SequencerPatternSnapshot cancel_snapshot_{};
-    core::state::sequencer::SequencerPatternSnapshot offset_snapshot_{};
+    core::state::sequencer::SequencerHistoryPatternSnapshot cancel_snapshot_{};
+    core::state::sequencer::SequencerHistoryPatternSnapshot offset_snapshot_{};
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     SequencerHistoryDomainServices history_;
     bool history_snapshot_valid_ = false;

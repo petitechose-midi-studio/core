@@ -5,16 +5,27 @@
 
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 
+#include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerStepEditRows.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
 
 namespace core::context::standalone::sequencer_overlay_presenter {
 
 struct Source {
     core::state::sequencer::SequencerState& sequencer;
+    core::state::sequencer::SequencerTrackBankState& tracks;
+};
+
+struct ActionSource {
+    core::state::sequencer::SequencerState& sequencer;
+    core::state::sequencer::SequencerTrackBankState& tracks;
+    core::state::StructureClipboardState& structureClipboard;
 };
 
 struct StepEditRenderData {
-    static constexpr size_t ROW_COUNT = 7;
+    static constexpr size_t ROW_COUNT = core::state::sequencer::step_edit_rows::COUNT;
 
     std::array<std::array<char, 16>, ROW_COUNT> valueBuffers{};
     std::array<ms::ui::KeyValueRow, ROW_COUNT> rows{};
@@ -28,5 +39,6 @@ struct StepEditRenderData {
 };
 
 StepEditRenderData buildStepEditRenderData(const Source& source);
+core::ui::ContextActionStripProps buildStepEditActionStripProps(const ActionSource& source);
 
 }  // namespace core::context::standalone::sequencer_overlay_presenter

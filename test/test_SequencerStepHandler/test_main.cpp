@@ -15,6 +15,8 @@
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepHandler.hpp"
+#include "../../src/state/sequencer/SequencerContentViewOps.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -338,6 +340,130 @@ void test_sequencer_page_copy_and_long_press_paste() {
     std::cout << "[PASS] test_sequencer_page_copy_and_long_press_paste\n";
 }
 
+void test_child_content_clear_copy_and_paste_are_undoable() {
+    SequencerStepHarness h;
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        rootNode,
+        2
+    );
+    assert(micro.ok);
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        h.state.sequencer,
+        rootNode,
+        micro.id
+    ));
+    h.state.sequencer.focusedStep.set(0);
+
+    const auto childNode0 = core::state::sequencer::activeContentStepNodeId(
+        h.state.sequencer,
+        0
+    );
+    const auto cycle = core::state::sequencer::createCycleStateSet(
+        h.state.sequencer.pattern,
+        childNode0,
+        2
+    );
+    assert(cycle.ok);
+    assert(core::state::sequencer::setNodeNoteOffset(
+        h.state.sequencer.pattern,
+        h.state.sequencer.pattern.graph->cycleSets[cycle.id].firstStateNode,
+        5
+    ));
+    h.state.sequencer.contentView.bump();
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerStepContent());
+
+    const uint8_t undoBeforeClear = h.state.sequencerHistory.undoCount();
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    const auto* graphAfterClear = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graphAfterClear != nullptr);
+    assert(!graphAfterClear->stepNodes[childNode0].has(
+        oc::note::sequencer::STEP_NODE_CYCLE_SET
+    ));
+    assert(h.state.sequencerHistory.undoCount() == undoBeforeClear + 1U);
+
+    h.press(Config::MACRO_BUTTONS[1]);
+    h.release(Config::MACRO_BUTTONS[1]);
+    assert(h.state.sequencer.focusedStep.get() == 1);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(0);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    const auto childNode1 = core::state::sequencer::activeContentStepNodeId(
+        h.state.sequencer,
+        1
+    );
+    const auto* graphAfterPaste = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graphAfterPaste != nullptr);
+    assert(graphAfterPaste->stepNodes[childNode1].has(
+        oc::note::sequencer::STEP_NODE_CYCLE_SET
+    ));
+    const auto* pastedCycle =
+        graphAfterPaste->cycleSet(graphAfterPaste->stepNodes[childNode1].cycleSetId);
+    assert(pastedCycle != nullptr);
+    assert(graphAfterPaste->stepNodes[pastedCycle->firstStateNode].noteOffset == 5);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    const auto* graphAfterUndo = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graphAfterUndo != nullptr);
+    assert(!graphAfterUndo->stepNodes[childNode1].has(
+        oc::note::sequencer::STEP_NODE_CYCLE_SET
+    ));
+
+    std::cout << "[PASS] test_child_content_clear_copy_and_paste_are_undoable\n";
+}
+
+void test_undo_removed_active_child_context_returns_to_root() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.focusedStep.set(0);
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    assert(core::state::sequencer::captureHistorySnapshot(h.state.sequencer, before));
+
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        rootNode,
+        2
+    );
+    assert(micro.ok);
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    assert(core::state::sequencer::captureHistorySnapshot(h.state.sequencer, after));
+    assert(h.state.recordSequencerPatternHistory(
+        std::move(before),
+        std::move(after),
+        core::state::sequencer::SequencerHistoryDescriptor{
+            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+            .stepIndex = 0,
+        }
+    ));
+
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        h.state.sequencer,
+        rootNode,
+        micro.id
+    ));
+    assert(core::state::sequencer::isMicroSequenceContentView(h.state.sequencer));
+
+    assert(h.state.undoSequencerHistory());
+    assert(core::state::sequencer::isRootContentView(h.state.sequencer));
+    assert(h.state.sequencer.contentView.depth.get() == 0);
+    assert(h.state.sequencer.contentView.ownerNodeId.get() ==
+           oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID);
+
+    std::cout << "[PASS] test_undo_removed_active_child_context_returns_to_root\n";
+}
+
 void test_sequencer_selection_duplicate_copies_page_payload() {
     SequencerStepHarness h;
     h.state.sequencer.pattern.length.set(24);
@@ -565,6 +691,8 @@ int main() {
     test_page_selection_cursor_can_move_across_inactive_slots();
     test_nav_selection_mode_deletes_selected_sequencer_track();
     test_sequencer_page_copy_and_long_press_paste();
+    test_child_content_clear_copy_and_paste_are_undoable();
+    test_undo_removed_active_child_context_returns_to_root();
     test_sequencer_selection_duplicate_copies_page_payload();
     test_sequencer_selection_duplicate_self_map_stays_in_selection();
     test_sequencer_selection_duplicate_copies_track_payload();

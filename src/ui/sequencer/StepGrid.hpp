@@ -54,7 +54,7 @@ private:
                          lv_coord_t noteBaseX,
                          lv_coord_t noteBaseY,
                          lv_opa_t strokeOpa);
-    void renderTileBar(uint8_t tileIndex, bool visible);
+    void renderTileBar(uint8_t tileIndex, bool visible, bool active);
     void renderTile(uint8_t tileIndex,
                     const TileRenderState& state,
                     const TileRenderDiff& diff,

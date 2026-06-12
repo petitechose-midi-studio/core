@@ -19,6 +19,7 @@
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
 #include "sequencer/SequencerPersistenceWorkflow.hpp"
+#include "sequencer/SequencerContentViewOps.hpp"
 #include "sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
@@ -632,6 +633,8 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
     }
 
     markSequencerProjectMutated_();
+    sequencer::refreshContentView(sequencer);
+    sequencer.contentView.bump();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
     return true;
@@ -646,6 +649,8 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
     }
 
     markSequencerProjectMutated_();
+    sequencer::refreshContentView(sequencer);
+    sequencer.contentView.bump();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
     return true;

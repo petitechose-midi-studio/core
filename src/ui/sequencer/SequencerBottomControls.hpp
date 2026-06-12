@@ -17,7 +17,7 @@ struct SequencerBottomControlsProps {
     int8_t offsetSteps = 0;
     uint8_t stepsPerBeat = 2;
     uint8_t length = 8;
-    bool microSequenceContext = false;
+    bool childContentContext = false;
 };
 
 class SequencerBottomControls : public oc::ui::lvgl::IWidget {

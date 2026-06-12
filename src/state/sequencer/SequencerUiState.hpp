@@ -10,7 +10,6 @@
 
 #include "state/StructureSelectionState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
-#include "state/sequencer/SequencerStepContentEditSession.hpp"
 #include "state/sequencer/StepProperty.hpp"
 
 namespace core::state::sequencer {
@@ -32,23 +31,63 @@ enum class PatternQuickControlItem : uint8_t {
 enum class SequencerContentViewKind : uint8_t {
     ROOT = 0,
     MICRO_SEQUENCE,
+    CYCLE_STATES,
+};
+
+struct SequencerContentViewFrame {
+    using GraphLimits = oc::note::sequencer::StepSequencerGraphLimits;
+
+    SequencerContentViewKind kind = SequencerContentViewKind::ROOT;
+    uint8_t ownerRootStep = 0;
+    uint8_t ownerLocalStep = 0;
+    uint8_t pageSnapshot = 0;
+    uint8_t focusSnapshot = 0;
+    uint16_t ownerNodeId = GraphLimits::INVALID_ID;
+    uint16_t sequenceId = GraphLimits::INVALID_ID;
+    uint16_t cycleSetId = GraphLimits::INVALID_ID;
+    uint8_t length = 0;
 };
 
 struct SequencerContentViewState {
     using GraphLimits = oc::note::sequencer::StepSequencerGraphLimits;
+    static constexpr uint8_t MAX_CHILD_DEPTH = GraphLimits::MAX_DEPTH;
 
     Signal<SequencerContentViewKind, 8> kind{SequencerContentViewKind::ROOT};
     Signal<uint8_t, 8> parentStep{0};
+    Signal<uint16_t, 8> ownerNodeId{GraphLimits::INVALID_ID};
     Signal<uint16_t, 8> sequenceId{GraphLimits::INVALID_ID};
+    Signal<uint16_t, 8> cycleSetId{GraphLimits::INVALID_ID};
     Signal<uint8_t, 8> length{0};
+    Signal<uint8_t, 8> depth{0};
     Signal<uint32_t, 8> revision{0};
 
     uint8_t rootPageSnapshot = 0;
     uint8_t rootFocusSnapshot = 0;
+    uint8_t stackDepth = 0;
+    std::array<SequencerContentViewFrame, MAX_CHILD_DEPTH> frames{};
 
     bool isMicroSequence() const {
         return kind.get() == SequencerContentViewKind::MICRO_SEQUENCE &&
                sequenceId.get() != GraphLimits::INVALID_ID;
+    }
+
+    bool isCycleStates() const {
+        return kind.get() == SequencerContentViewKind::CYCLE_STATES &&
+               cycleSetId.get() != GraphLimits::INVALID_ID;
+    }
+
+    bool isChildContent() const {
+        return stackDepth > 0 && (isMicroSequence() || isCycleStates());
+    }
+
+    const SequencerContentViewFrame* currentFrame() const {
+        if (stackDepth == 0 || stackDepth > frames.size()) return nullptr;
+        return &frames[stackDepth - 1U];
+    }
+
+    SequencerContentViewFrame* currentFrame() {
+        if (stackDepth == 0 || stackDepth > frames.size()) return nullptr;
+        return &frames[stackDepth - 1U];
     }
 
     void bump() {
@@ -62,7 +101,6 @@ struct SequencerStepEditOverlayState {
     Signal<bool> visible{false};
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
-    SequencerStepContentEditSession contentSession{};
 
     uint8_t snapshotNote = 0;
     uint8_t snapshotVelocity = 0;
@@ -70,6 +108,7 @@ struct SequencerStepEditOverlayState {
     int8_t snapshotNudge = 0;
     uint8_t snapshotProbability = 100;
     bool snapshotValid = false;
+    core::state::StructureHoldState contextHold;
 
     void reset();
 };

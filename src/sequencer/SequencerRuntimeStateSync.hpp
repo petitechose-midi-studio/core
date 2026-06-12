@@ -51,6 +51,8 @@ struct SequencerRuntimeStateSignature {
  */
 struct SequencerRuntimeTelemetrySnapshot {
     int16_t playheadStep = -1;
+    uint16_t playheadStepTickOffset = 0;
+    uint16_t playheadStepTicks = 1;
     uint32_t probabilityCycleIndex = 0;
     oc::note::sequencer::StepBitMask128 probabilityCycleMask{};
     uint32_t variationTelemetryRevision = 0;

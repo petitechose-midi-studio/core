@@ -18,12 +18,19 @@ FLASHMEM StepContentBadgeProjection buildStepContentBadgeProjection(
     const core::state::sequencer::SequencerPatternState& pattern,
     uint8_t absoluteStep
 ) {
+    const auto rootNodeId = core::state::sequencer::rootStepNodeId(absoluteStep);
+    return buildStepContentBadgeProjectionForNode(pattern, rootNodeId);
+}
+
+FLASHMEM StepContentBadgeProjection buildStepContentBadgeProjectionForNode(
+    const core::state::sequencer::SequencerPatternState& pattern,
+    core::state::sequencer::SequencerGraphNodeId nodeId
+) {
     StepContentBadgeProjection badges;
     const auto* graph = core::state::sequencer::graphView(pattern);
     if (graph == nullptr) return badges;
 
-    const auto rootNodeId = core::state::sequencer::rootStepNodeId(absoluteStep);
-    const auto* node = graph->stepNode(rootNodeId);
+    const auto* node = graph->stepNode(nodeId);
     if (node == nullptr) return badges;
 
     badges.microSequence =

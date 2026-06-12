@@ -160,6 +160,7 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     assert(graph != nullptr);
     const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
     assert(nestedCycleSet != nullptr);
+    assert(setCycleStateSetOffset(pattern, nestedCycle.id, 1));
     assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1), 4));
 
     const auto cycle = createCycleStateSet(pattern, rootStepNodeId(4), 2);
@@ -167,6 +168,7 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     graph = graphView(pattern);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
+    assert(setCycleStateSetOffset(pattern, cycle.id, -1));
     assert(setNodeEnabledOverride(pattern, cycleSet->firstStateNode, false));
 
     const auto stateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 1);
@@ -184,6 +186,7 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     assert(graph != nullptr);
     const auto* stateCycleSet = graph->cycleSet(stateCycle.id);
     assert(stateCycleSet != nullptr);
+    assert(setCycleStateSetOffset(pattern, stateCycle.id, 2));
     assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(stateCycleSet->firstStateNode + 2), 3));
 }
 
@@ -221,6 +224,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     const auto* nestedCycleSet = graph->cycleSet(childNode->cycleSetId);
     assert(nestedCycleSet != nullptr);
     assert(nestedCycleSet->length == 2);
+    assert(nestedCycleSet->offset == 1);
     const auto* nestedCycleNode =
         graph->stepNode(static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1));
     assert(nestedCycleNode != nullptr);
@@ -233,6 +237,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     const auto* cycleSet = graph->cycleSet(rootFour->cycleSetId);
     assert(cycleSet != nullptr);
     assert(cycleSet->length == 2);
+    assert(cycleSet->offset == -1);
 
     const auto* stateNode = graph->stepNode(static_cast<uint16_t>(cycleSet->firstStateNode + 1));
     assert(stateNode != nullptr);
@@ -251,6 +256,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     const auto* stateCycleSet = graph->cycleSet(stateNode->cycleSetId);
     assert(stateCycleSet != nullptr);
     assert(stateCycleSet->length == 3);
+    assert(stateCycleSet->offset == 2);
     const auto* stateCycleNode =
         graph->stepNode(static_cast<uint16_t>(stateCycleSet->firstStateNode + 2));
     assert(stateCycleNode != nullptr);
