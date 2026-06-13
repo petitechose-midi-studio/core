@@ -5,6 +5,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "app/ExtmemAllocator.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 
 namespace core::state::sequencer {
@@ -120,6 +122,45 @@ FLASHMEM bool sameStep(const StepPayload& lhs, const StepPayload& rhs) {
            lhs.gate == rhs.gate &&
            lhs.nudge == rhs.nudge &&
            lhs.probability == rhs.probability;
+}
+
+using StepNode = oc::note::sequencer::StepSequencerStepNode;
+
+FLASHMEM bool sameRootNode(const StepNode& lhs, const StepNode& rhs) {
+    return lhs.flags == rhs.flags &&
+           lhs.noteOffset == rhs.noteOffset &&
+           lhs.velocityOffset == rhs.velocityOffset &&
+           lhs.gateOffset == rhs.gateOffset &&
+           lhs.nudgeOffset == rhs.nudgeOffset &&
+           lhs.probabilityOffset == rhs.probabilityOffset &&
+           lhs.childSequenceId == rhs.childSequenceId &&
+           lhs.cycleSetId == rhs.cycleSetId;
+}
+
+FLASHMEM bool canEditRootNodes(const SequencerPatternState& pattern) {
+    const auto* graph = graphView(pattern);
+    return graph != nullptr &&
+           graph->stepNodeCount >= SequencerPatternState::MAX_STEPS;
+}
+
+FLASHMEM bool assignRootNode(SequencerPatternState& pattern,
+                             uint8_t step,
+                             const StepNode& node) {
+    if (!canEditRootNodes(pattern) || step >= SequencerPatternState::MAX_STEPS) {
+        return false;
+    }
+
+    auto& target = pattern.graph->stepNodes[step];
+    if (sameRootNode(target, node)) {
+        return false;
+    }
+
+    target = node;
+    return true;
+}
+
+FLASHMEM bool clearRootNode(SequencerPatternState& pattern, uint8_t step) {
+    return assignRootNode(pattern, step, StepNode{});
 }
 
 FLASHMEM void writeStep(SequencerPatternState& target, uint8_t step, const StepPayload& payload) {
@@ -339,6 +380,7 @@ FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t 
     auto mask = target.pattern.enabledMask.get();
     bool dataChanged = false;
     bool maskChanged = false;
+    bool graphChanged = false;
 
     for (uint8_t step = start; step <= clampedEnd; ++step) {
         if (mask.test(step)) {
@@ -350,6 +392,8 @@ FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t 
             writeStep(target.pattern, step, defaultStep());
             dataChanged = true;
         }
+
+        graphChanged = clearRootNode(target.pattern, step) || graphChanged;
     }
 
     if (maskChanged) {
@@ -363,7 +407,12 @@ FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t 
         target.pattern.bumpStepDataRevision();
     }
 
-    return dataChanged || maskChanged;
+    if (graphChanged) {
+        target.pattern.bumpGraphRevision();
+        compactSequencerGraph(target);
+    }
+
+    return dataChanged || maskChanged || graphChanged;
 }
 
 FLASHMEM bool appendPage(SequencerState& target) {
@@ -415,6 +464,7 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
     if (newLength <= len) return false;
 
     auto mask = target.pattern.enabledMask.get();
+    bool graphChanged = false;
 
     for (int dst = static_cast<int>(newLength) - 1;
          dst >= static_cast<int>(insertStart + SequencerState::STEPS_PER_PAGE);
@@ -424,6 +474,13 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
             static_cast<uint8_t>(dst - static_cast<int>(SequencerState::STEPS_PER_PAGE));
         writeStep(target.pattern, dstIndex, readStep(target.pattern, srcIndex));
         mask.setBit(dstIndex, mask.test(srcIndex));
+        if (canEditRootNodes(target.pattern)) {
+            graphChanged = assignRootNode(
+                target.pattern,
+                dstIndex,
+                target.pattern.graph->stepNodes[srcIndex]
+            ) || graphChanged;
+        }
     }
 
     const uint8_t clearEnd = static_cast<uint8_t>(std::min<uint16_t>(
@@ -433,6 +490,7 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
     for (uint8_t step = insertStart; step <= clearEnd; ++step) {
         writeStep(target.pattern, step, defaultStep());
         mask.setBit(step, false);
+        graphChanged = clearRootNode(target.pattern, step) || graphChanged;
     }
 
     target.pattern.length.set(newLength);
@@ -440,6 +498,10 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
     target.focusedStep.set(insertStart);
     target.page.set(pageIndex);
     target.pattern.bumpStepDataRevision();
+    if (graphChanged) {
+        target.pattern.bumpGraphRevision();
+        compactSequencerGraph(target);
+    }
     return true;
 }
 
@@ -487,16 +549,25 @@ FLASHMEM bool removePage(SequencerState& target, uint8_t pageIndex) {
     ));
     const uint8_t newLength = static_cast<uint8_t>(len - deleteSpan);
     auto mask = target.pattern.enabledMask.get();
+    bool graphChanged = false;
 
     for (uint8_t dst = pageStart; static_cast<uint16_t>(dst + deleteSpan) < len; ++dst) {
         const uint8_t src = static_cast<uint8_t>(dst + deleteSpan);
         writeStep(target.pattern, dst, readStep(target.pattern, src));
         mask.setBit(dst, mask.test(src));
+        if (canEditRootNodes(target.pattern)) {
+            graphChanged = assignRootNode(
+                target.pattern,
+                dst,
+                target.pattern.graph->stepNodes[src]
+            ) || graphChanged;
+        }
     }
 
     for (uint8_t step = newLength; step < SequencerState::MAX_STEPS; ++step) {
         writeStep(target.pattern, step, defaultStep());
         mask.setBit(step, false);
+        graphChanged = clearRootNode(target.pattern, step) || graphChanged;
     }
 
     target.pattern.length.set(newLength);
@@ -509,6 +580,10 @@ FLASHMEM bool removePage(SequencerState& target, uint8_t pageIndex) {
     target.focusedStep.set(focused);
     target.page.set(target.pageForStep(focused));
     target.pattern.bumpStepDataRevision();
+    if (graphChanged) {
+        target.pattern.bumpGraphRevision();
+        compactSequencerGraph(target);
+    }
     return true;
 }
 
@@ -522,12 +597,22 @@ FLASHMEM bool duplicatePagesFromPlan(SequencerState& target, const SequencerPage
         sourcePages[entry.sourcePage] = readPage(target.pattern, entry.sourcePage);
     }
 
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sourceGraph;
+    if (const auto* liveGraph = graphView(target.pattern)) {
+        sourceGraph = core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+        if (!sourceGraph) {
+            return false;
+        }
+        *sourceGraph = *liveGraph;
+    }
+
     auto mask = target.pattern.enabledMask.get();
     const uint8_t previousLength = target.pattern.length.get();
     uint8_t requiredLength = previousLength;
     std::array<bool, SequencerState::MAX_STEPS> writtenSteps{};
     bool executed = false;
     bool changed = false;
+    bool graphChanged = false;
 
     for (uint8_t entryIndex = 0; entryIndex < plan.entryCount; ++entryIndex) {
         const auto& entry = plan.entries[entryIndex];
@@ -561,6 +646,21 @@ FLASHMEM bool duplicatePagesFromPlan(SequencerState& target, const SequencerPage
             writeStep(target.pattern, destinationStep, nextStep);
             mask.setBit(destinationStep, nextEnabled);
             writtenSteps[destinationStep] = true;
+
+            if (sourceGraph) {
+                graphChanged = clearRootNode(target.pattern, destinationStep) || graphChanged;
+                if (sourceHasStep) {
+                    const uint8_t sourceStep = static_cast<uint8_t>(
+                        entry.sourcePage * SequencerState::STEPS_PER_PAGE + i
+                    );
+                    graphChanged = copyNodeChildrenFromGraph(
+                        target.pattern,
+                        rootStepNodeId(destinationStep),
+                        *sourceGraph,
+                        rootStepNodeId(sourceStep)
+                    ) || graphChanged;
+                }
+            }
         }
 
         const uint8_t entryLength = static_cast<uint8_t>(std::min<uint16_t>(
@@ -580,6 +680,7 @@ FLASHMEM bool duplicatePagesFromPlan(SequencerState& target, const SequencerPage
             }
             writeStep(target.pattern, step, defaultStep());
             mask.setBit(step, false);
+            graphChanged = clearRootNode(target.pattern, step) || graphChanged;
         }
         target.pattern.length.set(requiredLength);
         changed = true;
@@ -595,6 +696,10 @@ FLASHMEM bool duplicatePagesFromPlan(SequencerState& target, const SequencerPage
 
     if (changed) {
         target.pattern.bumpStepDataRevision();
+    }
+    if (graphChanged) {
+        target.pattern.bumpGraphRevision();
+        compactSequencerGraph(target);
     }
 
     return executed;

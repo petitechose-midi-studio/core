@@ -156,6 +156,7 @@ bool enterCycleStatesContentView(
 );
 bool leaveContentView(SequencerState& sequencer);
 void refreshContentView(SequencerState& sequencer);
+bool compactSequencerGraph(SequencerState& sequencer);
 
 uint8_t activeContentLength(const SequencerState& sequencer);
 uint8_t activeContentPageCount(const SequencerState& sequencer);

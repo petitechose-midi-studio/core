@@ -1,0 +1,288 @@
+#include "state/project/ProjectMenuModel.hpp"
+
+#include <cstring>
+
+#include <config/PlatformCompat.hpp>
+
+namespace core::state::project {
+
+namespace {
+
+FLASHMEM int signedStepCount(float delta) {
+    if (delta == 0.0f) return 0;
+    const float absolute = delta > 0.0f ? delta : -delta;
+    int magnitude = static_cast<int>(absolute);
+    if (magnitude < 1) magnitude = 1;
+    return delta > 0.0f ? magnitude : -magnitude;
+}
+
+FLASHMEM int wrapIndex(int value, int count) {
+    if (count <= 0) return 0;
+    int wrapped = value % count;
+    if (wrapped < 0) wrapped += count;
+    return wrapped;
+}
+
+constexpr bool isRootNode(ProjectNodeId node) {
+    switch (node) {
+        case ProjectNodeId::OVERVIEW_ROOT:
+        case ProjectNodeId::MUSIC_ROOT:
+        case ProjectNodeId::TRANSPORT_ROOT:
+        case ProjectNodeId::STORAGE_ROOT:
+        case ProjectNodeId::ROUTING_ROOT:
+            return true;
+        case ProjectNodeId::MUSIC_SCALE:
+        case ProjectNodeId::SAVE_AS_PROJECT_NAME:
+        case ProjectNodeId::RENAME_PROJECT_NAME:
+        default:
+            return false;
+    }
+}
+
+FLASHMEM void setNodeRoot(ProjectNavigationState& navigation, ProjectTab tab) {
+    const ProjectNodeId root = rootNodeForTab(tab);
+    navigation.pathStack[0] = root;
+    navigation.focusedRowByDepth = {};
+    navigation.activeTab.set(tab);
+    navigation.depth.set(0);
+    navigation.currentNode.set(root);
+    navigation.focusedRow.set(0);
+}
+
+FLASHMEM void pushNode(ProjectNavigationState& navigation, ProjectNodeId target) {
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) return;
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = target;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(target);
+    navigation.activeTab.set(tabForRootNode(target));
+    navigation.focusedRow.set(0);
+}
+
+FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
+                               ProjectNodeId node,
+                               uint8_t rowIndex) {
+    switch (node) {
+        case ProjectNodeId::MUSIC_SCALE:
+            if (rowIndex == 3) {
+                navigation.patternsInheritScale = !navigation.patternsInheritScale;
+                navigation.notifyContentChanged();
+                return true;
+            }
+            if (rowIndex == 4) {
+                navigation.clipsInheritScale = !navigation.clipsInheritScale;
+                navigation.notifyContentChanged();
+                return true;
+            }
+            return false;
+        case ProjectNodeId::STORAGE_ROOT:
+            if (rowIndex == 6) {
+                navigation.autosaveEnabled = !navigation.autosaveEnabled;
+                navigation.notifyContentChanged();
+                return true;
+            }
+            return false;
+        case ProjectNodeId::TRANSPORT_ROOT:
+            if (rowIndex == 1) {
+                navigation.transportSwingPercent = static_cast<uint8_t>(
+                    wrapIndex(navigation.transportSwingPercent + 1, PROJECT_SWING_STEPS)
+                );
+                navigation.notifyContentChanged();
+                return true;
+            }
+            if (rowIndex == 3) {
+                navigation.transportRunMode = static_cast<uint8_t>(
+                    wrapIndex(navigation.transportRunMode + 1, PROJECT_RUN_MODE_COUNT)
+                );
+                navigation.notifyContentChanged();
+                return true;
+            }
+            return false;
+        default:
+            return false;
+    }
+}
+
+}  // namespace
+
+FLASHMEM void navigateProjectRows(ProjectNavigationState& navigation, float delta) {
+    if (delta == 0.0f) return;
+
+    const uint8_t rowCount = projectCurrentRowCount(navigation);
+    if (rowCount == 0) {
+        navigation.focusedRow.set(0);
+        return;
+    }
+
+    const int current = navigation.focusedRow.get();
+    const int next = wrapIndex(current + signedStepCount(delta), rowCount);
+    navigation.focusedRow.set(static_cast<uint8_t>(next));
+}
+
+FLASHMEM bool enterFocusedProjectRow(ProjectNavigationState& navigation) {
+    const auto page = buildProjectMenuPage(navigation);
+    if (page.rowCount == 0 || page.selectedIndex >= page.rowCount) return false;
+
+    const auto& selected = page.rows[page.selectedIndex];
+    if (!selected.enabled) return false;
+
+    if (!selected.hasTarget) {
+        return activateValueRow(navigation, navigation.currentNode.get(), page.selectedIndex);
+    }
+
+    if (navigation.depth.get() == 0 && selected.target != navigation.currentNode.get() &&
+        isRootNode(selected.target)) {
+        setNodeRoot(navigation, tabForRootNode(selected.target));
+        return true;
+    }
+
+    pushNode(navigation, selected.target);
+    return true;
+}
+
+FLASHMEM bool backProjectNavigation(ProjectNavigationState& navigation) {
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth == 0) {
+        return false;
+    }
+
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth - 1);
+    const ProjectNodeId nextNode = navigation.pathStack[nextDepth];
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(nextNode);
+    navigation.activeTab.set(tabForRootNode(nextNode));
+    navigation.focusedRow.set(navigation.focusedRowByDepth[nextDepth]);
+    navigation.projectNameShiftActive = false;
+    return true;
+}
+
+FLASHMEM bool openNewProjectConfirmation(ProjectNavigationState& navigation) {
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) {
+        return false;
+    }
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = ProjectNodeId::NEW_PROJECT_CONFIRM;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::NEW_PROJECT_CONFIRM);
+    navigation.focusedRow.set(0);
+    return true;
+}
+
+FLASHMEM bool openProjectLoadPicker(ProjectNavigationState& navigation) {
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) {
+        return false;
+    }
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = ProjectNodeId::LOAD_PROJECT;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::LOAD_PROJECT);
+    navigation.focusedRow.set(0);
+    return true;
+}
+
+FLASHMEM bool openProjectLoadConfirmation(ProjectNavigationState& navigation,
+                                          const char* projectId,
+                                          bool canSaveCurrent) {
+    if (projectId == nullptr || projectId[0] == '\0') return false;
+
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) {
+        return false;
+    }
+
+    navigation.pendingLoadProjectId = {};
+    std::strncpy(
+        navigation.pendingLoadProjectId.data(),
+        projectId,
+        navigation.pendingLoadProjectId.size() - 1U
+    );
+    navigation.pendingLoadProjectId[navigation.pendingLoadProjectId.size() - 1U] = '\0';
+    navigation.pendingLoadCanSaveCurrent = canSaveCurrent;
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = ProjectNodeId::LOAD_PROJECT_CONFIRM;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::LOAD_PROJECT_CONFIRM);
+    navigation.activeTab.set(ProjectTab::STORAGE);
+    navigation.focusedRow.set(0);
+    return true;
+}
+
+FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
+                                    ProjectNodeId editorNode,
+                                    const char* initialSlug) {
+    if (editorNode != ProjectNodeId::SAVE_AS_PROJECT_NAME &&
+        editorNode != ProjectNodeId::RENAME_PROJECT_NAME) {
+        return false;
+    }
+
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1) {
+        return false;
+    }
+
+    navigation.editingProjectSlug = {};
+    if (initialSlug != nullptr && initialSlug[0] != '\0') {
+        std::strncpy(
+            navigation.editingProjectSlug.data(),
+            initialSlug,
+            navigation.editingProjectSlug.size() - 1U
+        );
+        navigation.editingProjectSlug[navigation.editingProjectSlug.size() - 1U] = '\0';
+    }
+    navigation.projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    navigation.projectNameOptRawPosition = 0.0f;
+    navigation.projectNameOptRowAccumulator = 0.0f;
+    navigation.projectNameShiftActive = false;
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1);
+    navigation.pathStack[nextDepth] = editorNode;
+    navigation.focusedRowByDepth[nextDepth] = 1;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(editorNode);
+    navigation.activeTab.set(ProjectTab::STORAGE);
+    navigation.focusedRow.set(1);
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& navigation) {
+    return navigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM;
+}
+
+FLASHMEM bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation) {
+    return navigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM ||
+           navigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM ||
+           navigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME ||
+           navigation.currentNode.get() == ProjectNodeId::RENAME_PROJECT_NAME;
+}
+
+FLASHMEM void switchProjectTab(ProjectNavigationState& navigation, int delta) {
+    if (delta == 0) return;
+
+    const int count = static_cast<int>(projectTabCount());
+    const int current = static_cast<int>(navigation.activeTab.get());
+    const int next = wrapIndex(current + delta, count);
+    setNodeRoot(navigation, static_cast<ProjectTab>(next));
+}
+
+FLASHMEM bool projectNavigationAtRoot(const ProjectNavigationState& navigation) {
+    return navigation.depth.get() == 0;
+}
+
+}  // namespace core::state::project

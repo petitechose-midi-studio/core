@@ -7,6 +7,7 @@
 
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state::sequencer {
@@ -153,15 +154,24 @@ FLASHMEM bool sameGraph(const Graph* lhs, const Graph* rhs) {
         return false;
     }
 
-    for (uint16_t i = 0; i < lhs->stepNodes.size(); ++i) {
+    if (lhs->stepNodeCount > lhs->stepNodes.size() ||
+        rhs->stepNodeCount > rhs->stepNodes.size() ||
+        lhs->sequenceCount > lhs->sequences.size() ||
+        rhs->sequenceCount > rhs->sequences.size() ||
+        lhs->cycleSetCount > lhs->cycleSets.size() ||
+        rhs->cycleSetCount > rhs->cycleSets.size()) {
+        return false;
+    }
+
+    for (uint16_t i = 0; i < lhs->stepNodeCount; ++i) {
         if (!sameStepNode(lhs->stepNodes[i], rhs->stepNodes[i])) return false;
     }
 
-    for (uint8_t i = 0; i < lhs->sequences.size(); ++i) {
+    for (uint8_t i = 0; i < lhs->sequenceCount; ++i) {
         if (!sameSequence(lhs->sequences[i], rhs->sequences[i])) return false;
     }
 
-    for (uint8_t i = 0; i < lhs->cycleSets.size(); ++i) {
+    for (uint8_t i = 0; i < lhs->cycleSetCount; ++i) {
         if (!sameCycleSet(lhs->cycleSets[i], rhs->cycleSets[i])) return false;
     }
 
@@ -238,9 +248,15 @@ FLASHMEM const Graph* effectiveTrackGraph(
 }
 
 FLASHMEM uint8_t scopeLimit(SequencerHistoryScope scope) {
-    return scope == SequencerHistoryScope::PatternOnly
-               ? SequencerHistoryService::PATTERN_ENTRY_LIMIT
-               : SequencerHistoryService::FULL_BANK_ENTRY_LIMIT;
+    switch (scope) {
+        case SequencerHistoryScope::PatternOnly:
+            return SequencerHistoryService::PATTERN_ENTRY_LIMIT;
+        case SequencerHistoryScope::Structure:
+            return SequencerHistoryService::STRUCTURE_ENTRY_LIMIT;
+        case SequencerHistoryScope::FullBank:
+        default:
+            return SequencerHistoryService::FULL_BANK_ENTRY_LIMIT;
+    }
 }
 
 FLASHMEM uint8_t countScope(
@@ -339,6 +355,15 @@ FLASHMEM bool applyEntrySnapshot(
         );
     }
 
+    if (entry.scope == SequencerHistoryScope::Structure) {
+        if (!entry.structure) return false;
+        return applyHistoryStructureSnapshot(
+            bank,
+            active,
+            after ? entry.structure->after : entry.structure->before
+        );
+    }
+
     if (!entry.fullBank) return false;
     return applyHistorySnapshot(bank, active, after ? entry.fullBank->after : entry.fullBank->before);
 }
@@ -350,6 +375,11 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(
     if (entry.scope == SequencerHistoryScope::PatternOnly && entry.pattern) {
         descriptor = entry.pattern->descriptor;
         descriptor.trackIndex = entry.pattern->trackIndex;
+        return descriptor;
+    }
+
+    if (entry.scope == SequencerHistoryScope::Structure && entry.structure) {
+        descriptor = entry.structure->descriptor;
         return descriptor;
     }
 
@@ -616,6 +646,36 @@ FLASHMEM bool SequencerHistoryService::recordFullBank(
     SequencerHistoryEntry entry;
     entry.scope = SequencerHistoryScope::FullBank;
     entry.fullBank = std::move(change);
+
+    if (!pushUndo(std::move(entry))) {
+        return false;
+    }
+
+    redo_count_ = 0;
+    for (auto& item : redo_) {
+        item = SequencerHistoryEntry{};
+    }
+    return true;
+}
+
+FLASHMEM bool SequencerHistoryService::recordStructure(
+    SequencerHistoryTrackStructureChangePtr change
+) {
+    if (!change) {
+        return false;
+    }
+
+    if (sameMusicalHistoryStructureSnapshot(change->before, change->after)) {
+        return false;
+    }
+
+    if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
+        change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
+    }
+
+    SequencerHistoryEntry entry;
+    entry.scope = SequencerHistoryScope::Structure;
+    entry.structure = std::move(change);
 
     if (!pushUndo(std::move(entry))) {
         return false;

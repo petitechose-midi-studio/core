@@ -1,12 +1,11 @@
 #include "persistence/ProjectStatePersistenceCodec.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/ProjectChunkMigration.hpp"
+#include "state/project/ProjectDomainRules.hpp"
 
 namespace core::persistence::project_state_codec {
 
@@ -19,34 +18,12 @@ constexpr uint8_t kMetaFlagDirty = 1U << 0U;
 constexpr uint8_t kMetaFlagHasSavedIdentity = 1U << 1U;
 constexpr uint8_t kMusicalFlagPatternsInheritScale = 1U << 0U;
 constexpr uint8_t kMusicalFlagClipsInheritScale = 1U << 1U;
-constexpr float kMinTempoBpm = 20.0f;
-constexpr float kMaxTempoBpm = 300.0f;
-
-FLASHMEM float sanitizeTempo(float tempoBpm) {
-    if (tempoBpm < kMinTempoBpm) return kMinTempoBpm;
-    if (tempoBpm > kMaxTempoBpm) return kMaxTempoBpm;
-    return tempoBpm;
-}
-
-FLASHMEM uint8_t sanitizeSwing(uint8_t swingPercent) {
-    return static_cast<uint8_t>(std::min<uint8_t>(swingPercent, 75));
-}
-
-FLASHMEM uint8_t sanitizeRunMode(uint8_t runMode) {
-    return static_cast<uint8_t>(runMode % 3U);
-}
-
-FLASHMEM uint8_t sanitizeMidiChannel(uint8_t channel) {
-    return static_cast<uint8_t>(channel % 16U);
-}
-
 FLASHMEM uint16_t tempoToCentiBpm(float tempoBpm) {
-    const float clamped = sanitizeTempo(tempoBpm);
-    return static_cast<uint16_t>(std::lround(clamped * 100.0f));
+    return core::state::project::projectTempoToCentiBpm(tempoBpm);
 }
 
 FLASHMEM float centiBpmToTempo(uint16_t centiBpm) {
-    return sanitizeTempo(static_cast<float>(centiBpm) / 100.0f);
+    return core::state::project::projectCentiBpmToTempo(centiBpm);
 }
 
 FLASHMEM void copyFixedText(const char* source, char* target, size_t size) {
@@ -229,15 +206,15 @@ FLASHMEM void applyMetaPayload(const ProjectMetaPayload& payload,
 FLASHMEM void fillTransportPayload(const core::state::project::ProjectTransportState& source,
                                    ProjectTransportPayload& out) {
     out.tempoCentiBpm = tempoToCentiBpm(source.tempoBpm);
-    out.swingPercent = sanitizeSwing(source.swingPercent);
-    out.runMode = sanitizeRunMode(source.runMode);
+    out.swingPercent = core::state::project::sanitizeProjectSwingPercent(source.swingPercent);
+    out.runMode = core::state::project::sanitizeProjectRunMode(source.runMode);
 }
 
 FLASHMEM void applyTransportPayload(const ProjectTransportPayload& payload,
                                     core::state::project::ProjectTransportState& target) {
     target.tempoBpm = centiBpmToTempo(payload.tempoCentiBpm);
-    target.swingPercent = sanitizeSwing(payload.swingPercent);
-    target.runMode = sanitizeRunMode(payload.runMode);
+    target.swingPercent = core::state::project::sanitizeProjectSwingPercent(payload.swingPercent);
+    target.runMode = core::state::project::sanitizeProjectRunMode(payload.runMode);
 }
 
 FLASHMEM void fillMusicalContextPayload(const core::state::project::ProjectMusicalContext& source,
@@ -269,14 +246,16 @@ FLASHMEM void applyMusicalContextPayload(const ProjectMusicalContextPayload& pay
 FLASHMEM void fillRoutingPayload(const core::state::project::ProjectRoutingState& source,
                                  ProjectRoutingPayload& out) {
     for (uint8_t i = 0; i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        out.outputMidiChannels[i] = sanitizeMidiChannel(source.outputMidiChannels[i]);
+        out.outputMidiChannels[i] =
+            core::state::project::sanitizeProjectMidiChannel(source.outputMidiChannels[i]);
     }
 }
 
 FLASHMEM void applyRoutingPayload(const ProjectRoutingPayload& payload,
                                   core::state::project::ProjectRoutingState& target) {
     for (uint8_t i = 0; i < target.outputMidiChannels.size(); ++i) {
-        target.outputMidiChannels[i] = sanitizeMidiChannel(payload.outputMidiChannels[i]);
+        target.outputMidiChannels[i] =
+            core::state::project::sanitizeProjectMidiChannel(payload.outputMidiChannels[i]);
     }
 }
 

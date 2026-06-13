@@ -4,9 +4,10 @@
 #include <cstdint>
 
 #include "state/MidiSyncState.hpp"
+#include "state/project/ProjectDomainRules.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "state/project/ProjectNavigationState.hpp"
 
 namespace core::state::project {
 
@@ -54,7 +55,7 @@ struct ProjectMenuPage {
 struct ProjectMenuContext {
     oc::note::sequencer::StepSequencerScaleSettings projectScale =
         core::state::sequencer::defaultProjectScaleSettings();
-    float tempoBpm = 120.0f;
+    float tempoBpm = PROJECT_TEMPO_DEFAULT_BPM;
     core::state::MidiSyncMode clockMode = core::state::MidiSyncMode::AUTO;
     std::array<char, ProjectMetadata::ID_SIZE> projectId{};
     std::array<char, ProjectMetadata::NAME_SIZE> projectName{};

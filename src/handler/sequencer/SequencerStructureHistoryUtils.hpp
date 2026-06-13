@@ -5,73 +5,25 @@
 #include "app/ExtmemAllocator.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
 
 namespace core::handler {
 
-inline core::state::sequencer::SequencerHistoryFullBankChangePtr
-captureSequencerFullBankHistoryBefore(
-    const core::state::sequencer::SequencerTrackBankState& tracks,
-    const core::state::sequencer::SequencerState& sequencer
-) {
-    auto change = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerHistoryFullBankChange
-    >();
-    if (!change) return nullptr;
-
-    if (!core::state::sequencer::captureHistorySnapshot(
-            tracks,
-            sequencer,
-            change->before
-        )) {
-        return nullptr;
-    }
-
-    return change;
+inline uint16_t sequencerStructureHistoryTrackBit(uint8_t trackIndex) {
+    return core::state::sequencer::sequencerHistoryTrackBit(trackIndex);
 }
 
-inline bool captureSequencerFullBankHistoryAfter(
-    const core::state::sequencer::SequencerTrackBankState& tracks,
+inline bool captureSequencerPageStructureHistory(
     const core::state::sequencer::SequencerState& sequencer,
-    core::state::sequencer::SequencerHistoryFullBankChange& change
+    core::state::sequencer::SequencerHistoryPatternSnapshot& out
 ) {
-    return core::state::sequencer::captureHistorySnapshot(
-        tracks,
-        sequencer,
-        change.after
-    );
-}
-
-inline bool recordSequencerFullBankHistoryChange(
-    SequencerHistoryDomainServices& history,
-    core::state::sequencer::SequencerHistoryFullBankChangePtr change,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor
-) {
-    if (!change) return false;
-    change->descriptor = descriptor;
-    return history.recordFullBank(std::move(change));
-}
-
-inline uint8_t sequencerHistoryTrackCount(
-    const core::state::sequencer::SequencerHistoryTrackBankSnapshot& snapshot
-) {
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const uint16_t bit = static_cast<uint16_t>(1U << i);
-        if ((snapshot.flat.enabledMask & bit) != 0) {
-            ++count;
-        }
-    }
-    return count;
+    return core::state::sequencer::captureHistorySnapshot(sequencer, out);
 }
 
 inline uint8_t sequencerHistoryPageCount(
-    const core::state::sequencer::SequencerHistoryTrackBankSnapshot& snapshot
+    const core::state::sequencer::SequencerHistoryPatternSnapshot& snapshot
 ) {
-    const uint8_t activeTrack =
-        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-            snapshot.flat.activeTrack
-        );
-    const uint8_t length = snapshot.flat.tracks[activeTrack].length;
+    const uint8_t length = snapshot.flat.length;
     if (length == 0) return 0;
     const uint8_t pages = static_cast<uint8_t>(
         (length + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U) /
@@ -82,31 +34,109 @@ inline uint8_t sequencerHistoryPageCount(
         : pages;
 }
 
-inline core::state::sequencer::SequencerHistoryDescriptor makeSequencerStructureHistoryDescriptor(
-    core::state::sequencer::SequencerHistoryActionKind kind,
-    const core::state::sequencer::SequencerHistoryTrackBankSnapshot& before,
-    const core::state::sequencer::SequencerHistoryTrackBankSnapshot& after
+inline core::state::sequencer::SequencerHistoryDescriptor makeSequencerPageStructureHistoryDescriptor(
+    const core::state::sequencer::SequencerHistoryPatternSnapshot& before,
+    const core::state::sequencer::SequencerHistoryPatternSnapshot& after,
+    uint8_t trackIndex
 ) {
-    int32_t beforeValue = 0;
-    int32_t afterValue = 0;
-
-    if (kind == core::state::sequencer::SequencerHistoryActionKind::TrackStructure) {
-        beforeValue = sequencerHistoryTrackCount(before);
-        afterValue = sequencerHistoryTrackCount(after);
-    } else if (kind == core::state::sequencer::SequencerHistoryActionKind::PageStructure) {
-        beforeValue = sequencerHistoryPageCount(before);
-        afterValue = sequencerHistoryPageCount(after);
-    }
+    const int32_t beforeValue = sequencerHistoryPageCount(before);
+    const int32_t afterValue = sequencerHistoryPageCount(after);
 
     return core::state::sequencer::SequencerHistoryDescriptor{
-        .kind = kind,
+        .kind = core::state::sequencer::SequencerHistoryActionKind::PageStructure,
+        .trackIndex = core::state::sequencer::SequencerTrackBankState::clampTrackIndex(trackIndex),
+        .hasValue = beforeValue != afterValue,
+        .beforeValue = beforeValue,
+        .afterValue = afterValue,
+    };
+}
+
+inline bool recordSequencerPageStructureHistoryChange(
+    SequencerHistoryDomainServices& history,
+    const core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    uint8_t trackIndex
+) {
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    if (!captureSequencerPageStructureHistory(sequencer, after)) {
+        return false;
+    }
+
+    const auto descriptor = makeSequencerPageStructureHistoryDescriptor(
+        before,
+        after,
+        trackIndex
+    );
+    return history.recordPattern(std::move(before), std::move(after), descriptor);
+}
+
+inline core::state::sequencer::SequencerHistoryTrackStructureChangePtr
+captureSequencerTrackStructureHistoryBefore(
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::sequencer::SequencerState& sequencer,
+    uint16_t trackMask
+) {
+    auto change = core::app::makeExtmemUnique<
+        core::state::sequencer::SequencerHistoryTrackStructureChange
+    >();
+    if (!change) return nullptr;
+
+    if (!core::state::sequencer::captureHistoryStructureSnapshot(
+            tracks,
+            sequencer,
+            trackMask,
+            change->before
+        )) {
+        return nullptr;
+    }
+
+    return change;
+}
+
+inline bool captureSequencerTrackStructureHistoryAfter(
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::sequencer::SequencerState& sequencer,
+    uint16_t trackMask,
+    core::state::sequencer::SequencerHistoryTrackStructureChange& change
+) {
+    return core::state::sequencer::captureHistoryStructureSnapshot(
+        tracks,
+        sequencer,
+        trackMask,
+        change.after
+    );
+}
+
+inline core::state::sequencer::SequencerHistoryDescriptor makeSequencerTrackStructureHistoryDescriptor(
+    const core::state::sequencer::SequencerHistoryTrackStructureSnapshot& before,
+    const core::state::sequencer::SequencerHistoryTrackStructureSnapshot& after
+) {
+    const int32_t beforeValue =
+        core::state::sequencer::sequencerHistoryEnabledTrackCount(before.enabledMask);
+    const int32_t afterValue =
+        core::state::sequencer::sequencerHistoryEnabledTrackCount(after.enabledMask);
+
+    return core::state::sequencer::SequencerHistoryDescriptor{
+        .kind = core::state::sequencer::SequencerHistoryActionKind::TrackStructure,
         .trackIndex = core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-            after.flat.activeTrack
+            after.activeTrack
         ),
         .hasValue = beforeValue != afterValue,
         .beforeValue = beforeValue,
         .afterValue = afterValue,
     };
+}
+
+inline bool recordSequencerTrackStructureHistoryChange(
+    SequencerHistoryDomainServices& history,
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) {
+    if (!change) return false;
+    change->descriptor = makeSequencerTrackStructureHistoryDescriptor(
+        change->before,
+        change->after
+    );
+    return history.recordStructure(std::move(change));
 }
 
 }  // namespace core::handler

@@ -29,6 +29,7 @@
 2650 tick
 2700 capture screen step8_edit_open
 2750 button MACRO_8 up
+2800 encoder NAV 1
 2850 encoder OPT 9.33
 3050 capture screen step8_note_raised_editing
 3150 tap NAV 60
@@ -39,6 +40,7 @@
 4500 tick
 4550 capture screen step1_edit_open
 4600 button MACRO_1 up
+4650 encoder NAV 1
 4700 encoder OPT 1.00
 4800 encoder NAV 1
 4900 encoder NAV 1

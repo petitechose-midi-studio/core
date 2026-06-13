@@ -240,6 +240,58 @@ FLASHMEM void refreshContentView(SequencerState& sequencer) {
     }
 }
 
+FLASHMEM bool compactSequencerGraph(SequencerState& sequencer) {
+    SequencerGraphCompactionRemap remap;
+    const auto result = compactGraph(sequencer.pattern, &remap);
+    if (!result.ok || !result.compacted) {
+        return false;
+    }
+
+    auto& view = sequencer.contentView;
+    if (view.stackDepth > view.frames.size()) {
+        view.reset();
+        return true;
+    }
+
+    uint8_t validDepth = view.stackDepth;
+    for (uint8_t i = 0; i < validDepth; ++i) {
+        auto& frame = view.frames[i];
+        const uint16_t ownerNodeId = remap.stepNode(frame.ownerNodeId);
+        if (ownerNodeId == kInvalidId) {
+            validDepth = i;
+            break;
+        }
+        frame.ownerNodeId = ownerNodeId;
+
+        if (frame.kind == SequencerContentViewKind::MICRO_SEQUENCE) {
+            const uint16_t sequenceId = remap.sequence(frame.sequenceId);
+            if (sequenceId == kInvalidId) {
+                validDepth = i;
+                break;
+            }
+            frame.sequenceId = sequenceId;
+        } else if (frame.kind == SequencerContentViewKind::CYCLE_STATES) {
+            const uint16_t cycleSetId = remap.cycleSet(frame.cycleSetId);
+            if (cycleSetId == kInvalidId) {
+                validDepth = i;
+                break;
+            }
+            frame.cycleSetId = cycleSetId;
+        } else {
+            validDepth = i;
+            break;
+        }
+    }
+
+    for (uint8_t i = validDepth; i < view.stackDepth && i < view.frames.size(); ++i) {
+        view.frames[i] = {};
+    }
+    view.stackDepth = validDepth;
+    refreshContentView(sequencer);
+    view.bump();
+    return true;
+}
+
 FLASHMEM uint8_t activeContentLength(const SequencerState& sequencer) {
     if (isRootContentView(sequencer)) {
         return sequencer.pattern.length.get();

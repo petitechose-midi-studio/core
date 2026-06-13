@@ -1,0 +1,81 @@
+# UX workflow: nested cycle runtime follows its direct parent owner.
+# Purpose: captures a root cycle containing a nested cycle, then starts
+# playback so the visible playhead/resolution can be inspected independently.
+# Expect: playhead_progress
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable root step 1 and create a cycle-state context.
+150 tap MACRO_1 60
+320 capture screen root_step_enabled
+420 button MACRO_1 down
+1480 tick
+1540 capture screen root_step_edit_open
+1600 button MACRO_1 up
+1700 encoder NAV 1
+1780 encoder NAV 1
+1860 encoder NAV 1
+1940 encoder NAV 1
+2020 encoder NAV 1
+2100 encoder NAV 1
+2180 encoder NAV 1
+2340 capture screen cycle_row_focused
+2440 tap NAV 60
+2740 capture screen cycle_context_open
+
+# Give state 1 a visible pitch offset and apply.
+2840 button MACRO_1 down
+3900 tick
+3960 capture screen cycle_state_edit_open
+4020 button MACRO_1 up
+4120 encoder NAV 1
+4200 encoder OPT 0.72
+4360 capture screen cycle_state_pitch_offset
+4460 tap NAV 60
+4760 capture screen cycle_state_pitch_applied
+
+# Create a nested cycle on the current cycle state and offset its second state.
+4860 button MACRO_1 down
+5920 tick
+5980 capture screen cycle_state_edit_for_nested
+6040 button MACRO_1 up
+6140 encoder NAV 1
+6220 encoder NAV 1
+6300 encoder NAV 1
+6380 encoder NAV 1
+6460 encoder NAV 1
+6540 encoder NAV 1
+6620 encoder NAV 1
+6780 capture screen nested_cycle_row_focused
+6880 tap NAV 60
+7180 capture screen nested_cycle_context_open
+7280 encoder NAV 1
+7480 capture screen nested_cycle_state_2_focused
+7580 button MACRO_2 down
+8640 tick
+8700 capture screen nested_state_2_edit_open
+8760 button MACRO_2 up
+8860 encoder NAV 1
+8940 encoder OPT 0.86
+9100 capture screen nested_state_2_pitch_offset
+9200 tap NAV 60
+9500 capture screen nested_state_2_pitch_applied
+
+# Return to the intermediate parent and root so the parent display can be
+# compared with the deepest resolved pitch.
+9600 tap LEFT_TOP 60
+9940 capture screen intermediate_cycle_parent_resolution
+10040 tap LEFT_TOP 60
+10380 capture screen root_parent_resolution
+
+# Start playback and capture several ticks. The deepest child playhead should
+# only progress when its direct parent state is the one being played.
+10480 tap BOTTOM_CENTER 60
+10880 capture screen playback_start_root_resolution
+11620 tick
+11720 capture screen playback_mid_root_resolution
+12460 tick
+12560 capture screen playback_late_root_resolution
+12660 tap BOTTOM_CENTER 60
+12980 capture screen playback_stopped

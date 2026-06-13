@@ -10,6 +10,7 @@
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
@@ -17,6 +18,81 @@
 namespace core::handler {
 
 namespace structure_slots = core::state::shared;
+
+namespace {
+
+FLASHMEM uint16_t duplicateTrackHistoryMask(
+    uint16_t enabledMask,
+    uint16_t selectedMask,
+    uint8_t activeTrack
+) {
+    uint16_t nextMask = enabledMask;
+    uint16_t historyMask = sequencerStructureHistoryTrackBit(activeTrack);
+
+    for (uint8_t source = 0;
+         source < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+         ++source) {
+        const uint16_t sourceBit = structure_slots::slotBit(source);
+        if ((selectedMask & sourceBit) == 0 || (enabledMask & sourceBit) == 0) {
+            continue;
+        }
+
+        const int dest = structure_slots::firstDisabledIndex(
+            nextMask,
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        );
+        if (dest < 0) {
+            break;
+        }
+
+        const auto destTrack = static_cast<uint8_t>(dest);
+        historyMask = static_cast<uint16_t>(
+            historyMask |
+            sequencerStructureHistoryTrackBit(source) |
+            sequencerStructureHistoryTrackBit(destTrack)
+        );
+        nextMask = static_cast<uint16_t>(nextMask | structure_slots::slotBit(destTrack));
+    }
+
+    return historyMask;
+}
+
+FLASHMEM void copyPageChildContentFromClipboard(
+    core::state::sequencer::SequencerState& sequencer,
+    const core::state::StructureClipboardState& clipboard,
+    uint8_t targetPage
+) {
+    if (!clipboard.sequencerGraph || !clipboard.sequencerGraph->enabled) return;
+
+    const uint8_t sourceStart = static_cast<uint8_t>(
+        clipboard.sequencerPage.sourcePage *
+        core::state::sequencer::SequencerState::STEPS_PER_PAGE
+    );
+    const uint8_t targetStart = static_cast<uint8_t>(
+        targetPage * core::state::sequencer::SequencerState::STEPS_PER_PAGE
+    );
+
+    for (uint8_t i = 0; i < clipboard.sequencerPage.count; ++i) {
+        const uint8_t sourceStep = static_cast<uint8_t>(sourceStart + i);
+        const uint8_t targetStep = static_cast<uint8_t>(targetStart + i);
+        if (sourceStep >= core::state::sequencer::SequencerState::MAX_STEPS ||
+            targetStep >= core::state::sequencer::SequencerState::MAX_STEPS) {
+            break;
+        }
+
+        const auto sourceNode = core::state::sequencer::rootStepNodeId(sourceStep);
+        const auto targetNode = core::state::sequencer::rootStepNodeId(targetStep);
+        core::state::sequencer::clearNodeChildren(sequencer.pattern, targetNode);
+        core::state::sequencer::copyNodeChildrenFromGraph(
+            sequencer.pattern,
+            targetNode,
+            *clipboard.sequencerGraph,
+            sourceNode
+        );
+    }
+}
+
+}  // namespace
 
 FLASHMEM SequencerStructureEditWorkflow::SequencerStructureEditWorkflow(StateRefs state)
     : sequencer_(state.sequencer)
@@ -62,37 +138,32 @@ FLASHMEM void SequencerStructureEditWorkflow::clearHoldAction() {
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::eraseCurrentStructure() {
-    auto change = captureHistoryBefore();
-
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         const uint8_t activeTrack = currentActiveTrack();
+        const uint16_t historyMask = sequencerStructureHistoryTrackBit(activeTrack);
+        auto change = captureTrackHistoryBefore(historyMask);
         sequencer_.reset();
         sequencer_.pattern.midiChannel.set(activeTrack);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
-        recordHistoryAfter(
-            std::move(change),
-            core::state::sequencer::SequencerHistoryActionKind::TrackStructure
-        );
+        recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
 
     if (sequencer_.structureUi.previewAddPageSlot.get()) return;
+    HistoryPatternSnapshot before;
+    if (!capturePageHistoryBefore(before)) return;
     const uint8_t start = sequencer_.pageStartStepClamped(sequencer_.visiblePage());
     const uint8_t end = static_cast<uint8_t>(std::min<uint16_t>(
         core::state::sequencer::SequencerState::MAX_STEPS - 1,
         static_cast<uint16_t>(start + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1)
     ));
-    core::state::sequencer::clearStepRange(sequencer_, start, end);
-    recordHistoryAfter(
-        std::move(change),
-        core::state::sequencer::SequencerHistoryActionKind::PageStructure
-    );
+    if (core::state::sequencer::clearStepRange(sequencer_, start, end)) {
+        recordPageHistoryAfter(std::move(before));
+    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
-    auto change = captureHistoryBefore();
-
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         const auto mutation = structure_slots::removeIndex(
@@ -101,21 +172,22 @@ FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
             core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
         );
         if (!mutation.changed) return;
-        applyTrackState(mutation.nextMask, mutation.nextActive);
-        recordHistoryAfter(
-            std::move(change),
-            core::state::sequencer::SequencerHistoryActionKind::TrackStructure
+        const uint16_t historyMask = static_cast<uint16_t>(
+            sequencerStructureHistoryTrackBit(currentActiveTrack()) |
+            sequencerStructureHistoryTrackBit(mutation.nextActive)
         );
+        auto change = captureTrackHistoryBefore(historyMask);
+        applyTrackState(mutation.nextMask, mutation.nextActive);
+        recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
 
     if (sequencer_.structureUi.previewAddPageSlot.get()) return;
+    HistoryPatternSnapshot before;
+    if (!capturePageHistoryBefore(before)) return;
     const uint8_t pageIndex = sequencer_.visiblePage();
     if (core::state::sequencer::removePage(sequencer_, pageIndex)) {
-        recordHistoryAfter(
-            std::move(change),
-            core::state::sequencer::SequencerHistoryActionKind::PageStructure
-        );
+        recordPageHistoryAfter(std::move(before));
     }
 }
 
@@ -124,7 +196,12 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
         if (track_ui_.previewAddSlot.get()) return;
         core::state::sequencer::SequencerPatternSnapshot snapshot;
         core::state::sequencer::captureSnapshot(sequencer_.pattern, snapshot);
-        structure_clipboard_.storeSequencerTrack(snapshot);
+        if (!structure_clipboard_.storeSequencerTrack(
+            snapshot,
+            core::state::sequencer::graphView(sequencer_.pattern)
+        )) {
+            return;
+        }
         return;
     }
 
@@ -155,29 +232,46 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
             clipboard.enabledMask |= static_cast<uint8_t>(1U << i);
         }
     }
-    structure_clipboard_.storeSequencerPage(clipboard);
+    if (!structure_clipboard_.storeSequencerPage(
+        clipboard,
+        core::state::sequencer::graphView(sequencer_.pattern)
+    )) {
+        return;
+    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
-    auto change = captureHistoryBefore();
-
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (!structure_clipboard_.hasSequencerTrack()) return;
+        const uint8_t targetTrack = track_ui_.previewAddSlot.get()
+            ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+                  track_ui_.previewTrackIndex.get()
+              )
+            : currentActiveTrack();
+        const uint16_t historyMask = static_cast<uint16_t>(
+            sequencerStructureHistoryTrackBit(currentActiveTrack()) |
+            sequencerStructureHistoryTrackBit(targetTrack)
+        );
+        auto change = captureTrackHistoryBefore(historyMask);
         if (track_ui_.previewAddSlot.get() &&
             !createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_)) {
             return;
         }
         core::state::sequencer::applySnapshotToEditor(sequencer_, structure_clipboard_.sequencerTrack);
+        core::state::sequencer::copyGraph(
+            sequencer_.pattern,
+            structure_clipboard_.sequencerGraph.get(),
+            structure_clipboard_.sequencerTrack.graphRevision
+        );
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
         syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
-        recordHistoryAfter(
-            std::move(change),
-            core::state::sequencer::SequencerHistoryActionKind::TrackStructure
-        );
+        recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
 
     if (!structure_clipboard_.hasSequencerPage()) return;
+    HistoryPatternSnapshot before;
+    if (!capturePageHistoryBefore(before)) return;
     uint8_t targetPage = sequencer_.visiblePage();
     if (sequencer_.structureUi.previewAddPageSlot.get()) {
         targetPage = sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get());
@@ -208,20 +302,16 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
         sequencer_.pattern.probability[step] = clipboard.probability[i];
         sequencer_.pattern.setEnabled(step, clipboard.isEnabled(i));
     }
+    copyPageChildContentFromClipboard(sequencer_, structure_clipboard_, targetPage);
     sequencer_.pattern.bumpStepDataRevision();
     sequencer_.structureUi.syncPreviewPage(targetPage);
     sequencer_.page.set(targetPage);
     sequencer_.structureUi.previewAddPageSlot.set(false);
     sequencer_.focusedStep.set(sequencer_.pageStartStep(targetPage));
-    recordHistoryAfter(
-        std::move(change),
-        core::state::sequencer::SequencerHistoryActionKind::PageStructure
-    );
+    recordPageHistoryAfter(std::move(before));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
-    auto change = captureHistoryBefore();
-
     auto& selection = track_ui_.selection.active.get() ? track_ui_.selection
                                                        : sequencer_.structureUi.pageSelection;
     if (!selection.active.get()) return;
@@ -238,10 +328,21 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
             currentActiveTrack(),
             core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
         );
-        if (mutation.changed) {
-            changed = applyTrackState(mutation.nextMask, mutation.nextActive);
-        }
+        if (!mutation.changed) return;
+        const uint16_t historyMask = static_cast<uint16_t>(
+            selectedMask |
+            sequencerStructureHistoryTrackBit(currentActiveTrack()) |
+            sequencerStructureHistoryTrackBit(mutation.nextActive)
+        );
+        auto change = captureTrackHistoryBefore(historyMask);
+        changed = applyTrackState(mutation.nextMask, mutation.nextActive);
+        if (!changed) return;
+        cancelSelectionMode();
+        recordTrackHistoryAfter(std::move(change), historyMask);
+        return;
     } else {
+        HistoryPatternSnapshot before;
+        if (!capturePageHistoryBefore(before)) return;
         const uint8_t pageCount = sequencer_.activePageCount();
         const uint8_t deleteCount = structure_slots::countEnabled(selectedMask, pageCount);
         if (deleteCount > 0 && deleteCount < pageCount) {
@@ -254,19 +355,14 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
                           ) || changed;
             }
         }
-    }
 
-    if (!changed) return;
-    const auto kind = selection.scope.get() == core::state::StructureSelectionScope::TRACK
-        ? core::state::sequencer::SequencerHistoryActionKind::TrackStructure
-        : core::state::sequencer::SequencerHistoryActionKind::PageStructure;
-    cancelSelectionMode();
-    recordHistoryAfter(std::move(change), kind);
+        if (!changed) return;
+        cancelSelectionMode();
+        recordPageHistoryAfter(std::move(before));
+    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::duplicateSelection() {
-    auto change = captureHistoryBefore();
-
     auto& selection = track_ui_.selection.active.get() ? track_ui_.selection
                                                        : sequencer_.structureUi.pageSelection;
     if (!selection.active.get()) return;
@@ -277,6 +373,12 @@ FLASHMEM void SequencerStructureEditWorkflow::duplicateSelection() {
     bool changed = false;
 
     if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
+        const uint16_t historyMask = duplicateTrackHistoryMask(
+            currentTrackEnabledMask(),
+            selectedMask,
+            currentActiveTrack()
+        );
+        auto change = captureTrackHistoryBefore(historyMask);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
         const auto result = structure_slots::duplicateSelectionIntoFreeSlots(
             currentTrackEnabledMask(),
@@ -292,7 +394,13 @@ FLASHMEM void SequencerStructureEditWorkflow::duplicateSelection() {
         if (result.firstDuplicated < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
             changed = applyTrackState(result.nextMask, result.firstDuplicated);
         }
+        if (!changed) return;
+        cancelSelectionMode();
+        recordTrackHistoryAfter(std::move(change), historyMask);
+        return;
     } else {
+        HistoryPatternSnapshot before;
+        if (!capturePageHistoryBefore(before)) return;
         const auto plan = core::state::sequencer::buildPageDuplicatePlan(
             sequencer_,
             selectedMask,
@@ -300,41 +408,50 @@ FLASHMEM void SequencerStructureEditWorkflow::duplicateSelection() {
         );
         if (!plan.movesAnyPage()) return;
         changed = core::state::sequencer::duplicatePagesFromPlan(sequencer_, plan);
+        if (!changed) return;
+        cancelSelectionMode();
+        recordPageHistoryAfter(std::move(before));
     }
-
-    if (!changed) return;
-    const auto kind = selection.scope.get() == core::state::StructureSelectionScope::TRACK
-        ? core::state::sequencer::SequencerHistoryActionKind::TrackStructure
-        : core::state::sequencer::SequencerHistoryActionKind::PageStructure;
-    cancelSelectionMode();
-    recordHistoryAfter(std::move(change), kind);
 }
 
-FLASHMEM SequencerStructureEditWorkflow::HistoryFullBankChangePtr
-SequencerStructureEditWorkflow::captureHistoryBefore() const {
-    return captureSequencerFullBankHistoryBefore(tracks_, sequencer_);
+FLASHMEM bool SequencerStructureEditWorkflow::capturePageHistoryBefore(
+    HistoryPatternSnapshot& before
+) const {
+    return captureSequencerPageStructureHistory(sequencer_, before);
 }
 
-FLASHMEM void SequencerStructureEditWorkflow::recordHistoryAfter(
-    HistoryFullBankChangePtr change,
-    HistoryActionKind kind
+FLASHMEM void SequencerStructureEditWorkflow::recordPageHistoryAfter(
+    HistoryPatternSnapshot before
+) {
+    recordSequencerPageStructureHistoryChange(
+        history_,
+        sequencer_,
+        std::move(before),
+        currentActiveTrack()
+    );
+}
+
+FLASHMEM SequencerStructureEditWorkflow::HistoryTrackStructureChangePtr
+SequencerStructureEditWorkflow::captureTrackHistoryBefore(uint16_t trackMask) const {
+    return captureSequencerTrackStructureHistoryBefore(tracks_, sequencer_, trackMask);
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::recordTrackHistoryAfter(
+    HistoryTrackStructureChangePtr change,
+    uint16_t trackMask
 ) {
     if (!change) return;
 
-    if (!captureSequencerFullBankHistoryAfter(tracks_, sequencer_, *change)) {
+    if (!captureSequencerTrackStructureHistoryAfter(
+            tracks_,
+            sequencer_,
+            trackMask,
+            *change
+        )) {
         return;
     }
 
-    const auto descriptor = makeSequencerStructureHistoryDescriptor(
-        kind,
-        change->before,
-        change->after
-    );
-    recordSequencerFullBankHistoryChange(
-        history_,
-        std::move(change),
-        descriptor
-    );
+    recordSequencerTrackStructureHistoryChange(history_, std::move(change));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::syncPreviewToFocus(

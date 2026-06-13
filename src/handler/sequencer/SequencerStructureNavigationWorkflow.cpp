@@ -205,30 +205,47 @@ FLASHMEM void SequencerStructureNavigationWorkflow::navigateSelection(float delt
 
 FLASHMEM void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
     const auto focus = navigation_focus_.get();
-    auto change = captureSequencerFullBankHistoryBefore(tracks_, sequencer_);
-
-    bool changed = false;
-    core::state::sequencer::SequencerHistoryActionKind kind =
-        core::state::sequencer::SequencerHistoryActionKind::PageStructure;
 
     switch (focus) {
-        case core::state::StructureNavigationFocus::TRACK:
-            kind = core::state::sequencer::SequencerHistoryActionKind::TrackStructure;
-            changed = createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_);
+        case core::state::StructureNavigationFocus::TRACK: {
+            const uint8_t targetTrack = currentTrackCursor(track_ui_);
+            const uint16_t historyMask = static_cast<uint16_t>(
+                sequencerStructureHistoryTrackBit(currentActiveTrack()) |
+                sequencerStructureHistoryTrackBit(targetTrack)
+            );
+            auto change = captureSequencerTrackStructureHistoryBefore(
+                tracks_,
+                sequencer_,
+                historyMask
+            );
+            const bool changed =
+                createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_);
+            if (changed && change &&
+                captureSequencerTrackStructureHistoryAfter(
+                    tracks_,
+                    sequencer_,
+                    historyMask,
+                    *change
+                )) {
+                recordSequencerTrackStructureHistoryChange(history_, std::move(change));
+            }
             break;
+        }
         case core::state::StructureNavigationFocus::PAGE:
-        default:
-            changed = createSequencerStructurePage(sequencer_);
+        default: {
+            core::state::sequencer::SequencerHistoryPatternSnapshot before;
+            const bool captured = captureSequencerPageStructureHistory(sequencer_, before);
+            const bool changed = createSequencerStructurePage(sequencer_);
+            if (changed && captured) {
+                recordSequencerPageStructureHistoryChange(
+                    history_,
+                    sequencer_,
+                    std::move(before),
+                    currentActiveTrack()
+                );
+            }
             break;
-    }
-
-    if (changed && change && captureSequencerFullBankHistoryAfter(tracks_, sequencer_, *change)) {
-        const auto descriptor = makeSequencerStructureHistoryDescriptor(
-            kind,
-            change->before,
-            change->after
-        );
-        recordSequencerFullBankHistoryChange(history_, std::move(change), descriptor);
+        }
     }
 
     syncPreviewToFocus(focus);

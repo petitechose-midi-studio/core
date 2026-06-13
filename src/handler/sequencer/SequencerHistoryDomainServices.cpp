@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
 
 namespace core::handler {
 
@@ -38,6 +39,18 @@ FLASHMEM bool recordFullBankFromCoreState(
 
     auto* state = static_cast<core::state::CoreState*>(context);
     return state->recordSequencerBankHistory(std::move(change));
+}
+
+FLASHMEM bool recordStructureFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->recordSequencerStructureHistory(std::move(change));
 }
 
 FLASHMEM bool undoFromCoreState(void* context) {
@@ -103,6 +116,7 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
         Operations{
             &state,
             recordPatternFromCoreState,
+            recordStructureFromCoreState,
             recordFullBankFromCoreState,
             undoFromCoreState,
             redoFromCoreState,
@@ -124,6 +138,16 @@ FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
                std::move(before),
                std::move(after),
                descriptor
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::recordStructure(
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) const {
+    return operations_.recordStructure != nullptr &&
+           operations_.recordStructure(
+               operations_.context,
+               std::move(change)
            );
 }
 

@@ -1,6 +1,7 @@
-# UX workflow: nested child-content resolution and playhead display.
+# UX workflow: nested child-content resolution and runtime playhead progress.
 # Purpose: validates that root and intermediate parents display the currently
-# resolved child pitch/properties while preserving child playhead semantics.
+# resolved child pitch/properties while the runtime playhead trace progresses.
+# Expect: playhead_progress
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -79,7 +80,8 @@
 11020 tap LEFT_TOP 60
 11360 capture screen root_parent_final_resolution
 
-# Playback should keep the parent playhead visible and show child playhead only on the active path.
+# Playback should advance the runtime playhead trace and keep the inactive
+# parent marker readable when the selected pass is not currently played.
 11460 tap BOTTOM_CENTER 60
 11860 capture screen playback_root_parent_resolution
 12600 tick

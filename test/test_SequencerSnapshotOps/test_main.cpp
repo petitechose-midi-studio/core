@@ -54,6 +54,24 @@ void assertStep(const SequencerState& sequencer,
     assert(sequencer.pattern.isEnabled(step) == enabled);
 }
 
+bool rootStepHasMicroSequence(const SequencerState& sequencer, uint8_t step) {
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    if (graph == nullptr) return false;
+    const auto nodeId = core::state::sequencer::rootStepNodeId(step);
+    if (nodeId >= graph->stepNodeCount) return false;
+    return graph->stepNodes[nodeId].has(oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE);
+}
+
+void createRootMicroSequence(SequencerState& sequencer, uint8_t step, uint8_t length) {
+    const auto nodeId = core::state::sequencer::rootStepNodeId(step);
+    const auto result = core::state::sequencer::createMicroSequence(
+        sequencer.pattern,
+        nodeId,
+        length
+    );
+    assert(result.ok);
+}
+
 void test_clear_step_range_resets_payload_and_mask() {
     SequencerState sequencer;
     sequencer.pattern.length.set(16);
@@ -72,6 +90,19 @@ void test_clear_step_range_resets_payload_and_mask() {
     std::cout << "[PASS] test_clear_step_range_resets_payload_and_mask\n";
 }
 
+void test_clear_step_range_clears_child_content() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(16);
+    createRootMicroSequence(sequencer, 2, 2);
+    assert(rootStepHasMicroSequence(sequencer, 2));
+
+    assert(core::state::sequencer::clearStepRange(sequencer, 2, 2));
+
+    assert(!rootStepHasMicroSequence(sequencer, 2));
+
+    std::cout << "[PASS] test_clear_step_range_clears_child_content\n";
+}
+
 void test_insert_page_shifts_payloads_and_clears_inserted_page() {
     SequencerState sequencer;
     sequencer.pattern.length.set(16);
@@ -88,6 +119,19 @@ void test_insert_page_shifts_payloads_and_clears_inserted_page() {
     std::cout << "[PASS] test_insert_page_shifts_payloads_and_clears_inserted_page\n";
 }
 
+void test_insert_page_shifts_child_content() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(16);
+    createRootMicroSequence(sequencer, 8, 2);
+
+    assert(core::state::sequencer::insertPage(sequencer, 1));
+
+    assert(!rootStepHasMicroSequence(sequencer, 8));
+    assert(rootStepHasMicroSequence(sequencer, 16));
+
+    std::cout << "[PASS] test_insert_page_shifts_child_content\n";
+}
+
 void test_remove_page_shifts_following_payloads() {
     SequencerState sequencer;
     sequencer.pattern.length.set(24);
@@ -102,6 +146,19 @@ void test_remove_page_shifts_following_payloads() {
     assert(sequencer.page.get() == 1);
 
     std::cout << "[PASS] test_remove_page_shifts_following_payloads\n";
+}
+
+void test_remove_page_shifts_child_content() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(24);
+    createRootMicroSequence(sequencer, 16, 2);
+
+    assert(core::state::sequencer::removePage(sequencer, 1));
+
+    assert(rootStepHasMicroSequence(sequencer, 8));
+    assert(!rootStepHasMicroSequence(sequencer, 16));
+
+    std::cout << "[PASS] test_remove_page_shifts_child_content\n";
 }
 
 void test_rotate_pattern_moves_payload_and_mask() {
@@ -187,6 +244,25 @@ void test_duplicate_pages_from_plan_overwrites_from_snapshot() {
     std::cout << "[PASS] test_duplicate_pages_from_plan_overwrites_from_snapshot\n";
 }
 
+void test_duplicate_pages_from_plan_copies_child_content() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(24);
+    setStep(sequencer, 0, 60, 90, 70, 0, 100, true);
+    createRootMicroSequence(sequencer, 0, 2);
+
+    const auto plan = core::state::sequencer::buildPageDuplicatePlan(
+        sequencer,
+        0x0001,
+        2
+    );
+    assert(core::state::sequencer::duplicatePagesFromPlan(sequencer, plan));
+
+    assert(rootStepHasMicroSequence(sequencer, 0));
+    assert(rootStepHasMicroSequence(sequencer, 16));
+
+    std::cout << "[PASS] test_duplicate_pages_from_plan_copies_child_content\n";
+}
+
 void test_duplicate_pages_from_plan_extends_and_clips() {
     SequencerState sequencer;
     sequencer.pattern.length.set(40);
@@ -239,12 +315,16 @@ void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
 
 int main() {
     test_clear_step_range_resets_payload_and_mask();
+    test_clear_step_range_clears_child_content();
     test_insert_page_shifts_payloads_and_clears_inserted_page();
+    test_insert_page_shifts_child_content();
     test_remove_page_shifts_following_payloads();
+    test_remove_page_shifts_child_content();
     test_rotate_pattern_moves_payload_and_mask();
     test_page_duplicate_plan_preserves_gaps_and_marks_overwrite();
     test_page_duplicate_plan_clips_destinations_past_page_limit();
     test_duplicate_pages_from_plan_overwrites_from_snapshot();
+    test_duplicate_pages_from_plan_copies_child_content();
     test_duplicate_pages_from_plan_extends_and_clips();
     test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision();
 

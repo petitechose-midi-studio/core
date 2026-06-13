@@ -683,6 +683,64 @@ void test_step_edit_context_rows_clear_selected_child_context() {
     std::cout << "[PASS] test_step_edit_context_rows_clear_selected_child_context\n";
 }
 
+void test_graph_compaction_remaps_or_closes_active_child_content_view() {
+    {
+        core::state::sequencer::SequencerState state;
+        const auto firstRoot = core::state::sequencer::rootStepNodeId(0);
+        const auto secondRoot = core::state::sequencer::rootStepNodeId(1);
+        const auto first = core::state::sequencer::createMicroSequence(
+            state.pattern,
+            firstRoot,
+            2
+        );
+        assert(first.ok);
+        const auto second = core::state::sequencer::createMicroSequence(
+            state.pattern,
+            secondRoot,
+            2
+        );
+        assert(second.ok);
+        assert(core::state::sequencer::enterMicroSequenceContentView(
+            state,
+            secondRoot,
+            second.id
+        ));
+
+        assert(core::state::sequencer::clearNodeChildSequence(state.pattern, firstRoot));
+        assert(core::state::sequencer::compactSequencerGraph(state));
+
+        assert(core::state::sequencer::isMicroSequenceContentView(state));
+        assert(state.contentView.ownerNodeId.get() == secondRoot);
+        assert(state.contentView.sequenceId.get() == 1);
+        assert(state.contentView.length.get() == 2);
+    }
+
+    {
+        core::state::sequencer::SequencerState state;
+        const auto root = core::state::sequencer::rootStepNodeId(0);
+        const auto micro = core::state::sequencer::createMicroSequence(
+            state.pattern,
+            root,
+            2
+        );
+        assert(micro.ok);
+        assert(core::state::sequencer::enterMicroSequenceContentView(
+            state,
+            root,
+            micro.id
+        ));
+
+        assert(core::state::sequencer::clearNodeChildSequence(state.pattern, root));
+        assert(core::state::sequencer::compactSequencerGraph(state));
+
+        assert(core::state::sequencer::isRootContentView(state));
+        assert(state.contentView.ownerNodeId.get() ==
+               oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID);
+    }
+
+    std::cout << "[PASS] test_graph_compaction_remaps_or_closes_active_child_content_view\n";
+}
+
 void test_step_edit_context_rows_copy_and_paste_step_content() {
     SequencerStepEditHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -922,6 +980,7 @@ int main() {
     test_micro_sequence_note_offsets_follow_parent_scale_degrees();
     test_cancel_restores_child_step_edit_snapshot();
     test_step_edit_context_rows_clear_selected_child_context();
+    test_graph_compaction_remaps_or_closes_active_child_content_view();
     test_step_edit_context_rows_copy_and_paste_step_content();
     test_step_edit_context_clipboard_requires_matching_child_kind();
     test_step_edit_session_undo_redo_workflow();

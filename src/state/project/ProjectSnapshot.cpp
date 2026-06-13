@@ -1,36 +1,25 @@
 #include "state/project/ProjectSnapshot.hpp"
 
-#include <algorithm>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
 
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::state::project {
 
 namespace {
 
-FLASHMEM float sanitizeTempo(float tempoBpm) {
-    if (tempoBpm < 20.0f) return 20.0f;
-    if (tempoBpm > 300.0f) return 300.0f;
-    return tempoBpm;
-}
-
-FLASHMEM uint8_t sanitizeMidiChannel(uint8_t channel) {
-    return static_cast<uint8_t>(channel % 16U);
-}
-
 FLASHMEM ProjectState projectStateFromRuntime(const core::state::CoreState& state) {
     ProjectState project = state.project;
 
-    project.transport.tempoBpm = sanitizeTempo(state.statusBar.tempo.get());
-    project.transport.swingPercent = static_cast<uint8_t>(
-        std::min<uint8_t>(state.projectNavigation.transportSwingPercent, 75)
-    );
-    project.transport.runMode = static_cast<uint8_t>(state.projectNavigation.transportRunMode % 3U);
+    project.transport.tempoBpm = sanitizeProjectTempoBpm(state.statusBar.tempo.get());
+    project.transport.swingPercent =
+        sanitizeProjectSwingPercent(state.projectNavigation.transportSwingPercent);
+    project.transport.runMode = sanitizeProjectRunMode(state.projectNavigation.transportRunMode);
 
     project.musical.scale = state.sequencerTracks.projectScaleSettings();
     project.musical.scale.clamp();
@@ -42,7 +31,7 @@ FLASHMEM ProjectState projectStateFromRuntime(const core::state::CoreState& stat
         const uint8_t channel = (i == activeTrack)
             ? state.sequencer.pattern.midiChannel.get()
             : state.sequencerTracks.track(i).midiChannel.get();
-        project.routing.outputMidiChannels[i] = sanitizeMidiChannel(channel);
+        project.routing.outputMidiChannels[i] = sanitizeProjectMidiChannel(channel);
     }
 
     return project;
@@ -50,15 +39,15 @@ FLASHMEM ProjectState projectStateFromRuntime(const core::state::CoreState& stat
 
 FLASHMEM void applyProjectTransport(core::state::CoreState& state,
                                     const ProjectTransportState& transport) {
-    const float tempo = sanitizeTempo(transport.tempoBpm);
+    const float tempo = sanitizeProjectTempoBpm(transport.tempoBpm);
     state.statusBar.tempo.set(tempo);
     if (!state.statusBar.tempoLocked.get()) {
         state.statusBar.tempoDisplay.set(tempo);
     }
 
     state.projectNavigation.transportSwingPercent =
-        static_cast<uint8_t>(std::min<uint8_t>(transport.swingPercent, 75));
-    state.projectNavigation.transportRunMode = static_cast<uint8_t>(transport.runMode % 3U);
+        sanitizeProjectSwingPercent(transport.swingPercent);
+    state.projectNavigation.transportRunMode = sanitizeProjectRunMode(transport.runMode);
 }
 
 FLASHMEM void applyProjectMusicalContext(core::state::CoreState& state,
@@ -73,13 +62,13 @@ FLASHMEM void applyProjectRouting(core::state::CoreState& state,
                                   const ProjectRoutingState& routing) {
     for (uint8_t i = 0; i < routing.outputMidiChannels.size(); ++i) {
         state.sequencerTracks.track(i).midiChannel.set(
-            sanitizeMidiChannel(routing.outputMidiChannels[i])
+            sanitizeProjectMidiChannel(routing.outputMidiChannels[i])
         );
     }
 
     const uint8_t activeTrack = state.sequencerTracks.activeTrackIndex();
     state.sequencer.pattern.midiChannel.set(
-        sanitizeMidiChannel(routing.outputMidiChannels[activeTrack])
+        sanitizeProjectMidiChannel(routing.outputMidiChannels[activeTrack])
     );
 }
 

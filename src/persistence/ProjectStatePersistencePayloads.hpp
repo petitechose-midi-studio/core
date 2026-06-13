@@ -20,9 +20,11 @@ struct ProjectMetaPayload {
 };
 
 struct ProjectTransportPayload {
-    uint16_t tempoCentiBpm = 12000;
-    uint8_t swingPercent = 0;
-    uint8_t runMode = 0;
+    uint16_t tempoCentiBpm = core::state::project::projectTempoToCentiBpm(
+        core::state::project::PROJECT_TEMPO_DEFAULT_BPM
+    );
+    uint8_t swingPercent = core::state::project::PROJECT_SWING_DEFAULT_PERCENT;
+    uint8_t runMode = core::state::project::PROJECT_RUN_MODE_DEFAULT;
     uint32_t reserved0 = 0;
 };
 

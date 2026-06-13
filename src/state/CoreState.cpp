@@ -20,6 +20,7 @@
 #include "midi/MidiUtils.hpp"
 #include "sequencer/SequencerPersistenceWorkflow.hpp"
 #include "sequencer/SequencerContentViewOps.hpp"
+#include "sequencer/SequencerStructureHistory.hpp"
 #include "sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
@@ -324,6 +325,14 @@ FLASHMEM shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& st
     };
 }
 
+FLASHMEM void syncSequencerStructureUiFromRestoredHistory(CoreState& state) {
+    state.trackNavigation.previewAddSlot.set(false);
+    state.trackNavigation.syncPreviewTrack(state.sharedTrackActive.get());
+
+    state.sequencer.structureUi.previewAddPageSlot.set(false);
+    state.sequencer.structureUi.syncPreviewPage(state.sequencer.visiblePage());
+}
+
 }  // namespace
 
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
@@ -541,6 +550,18 @@ FLASHMEM bool CoreState::recordSequencerBankHistory(
     return true;
 }
 
+FLASHMEM bool CoreState::recordSequencerStructureHistory(
+    sequencer::SequencerHistoryTrackStructureChangePtr change
+) {
+    if (!sequencerHistory.recordStructure(std::move(change))) {
+        return false;
+    }
+
+    markSequencerProjectMutated_();
+    refreshSharedTrackStateFromSequencer();
+    return true;
+}
+
 FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step,
     sequencer::StepProperty property,
@@ -637,6 +658,7 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
     sequencer.contentView.bump();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
+    syncSequencerStructureUiFromRestoredHistory(*this);
     return true;
 }
 
@@ -653,6 +675,7 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
     sequencer.contentView.bump();
     showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
     refreshSharedTrackStateFromSequencer();
+    syncSequencerStructureUiFromRestoredHistory(*this);
     return true;
 }
 
