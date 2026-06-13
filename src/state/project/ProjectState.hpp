@@ -5,6 +5,7 @@
 
 #include <oc/note/sequencer/StepSequencerScale.hpp>
 
+#include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -25,9 +26,9 @@ struct ProjectMetadata {
 };
 
 struct ProjectTransportState {
-    static constexpr float DEFAULT_TEMPO_BPM = 120.0f;
-    static constexpr uint8_t DEFAULT_SWING_PERCENT = 0;
-    static constexpr uint8_t DEFAULT_RUN_MODE = 0;
+    static constexpr float DEFAULT_TEMPO_BPM = PROJECT_TEMPO_DEFAULT_BPM;
+    static constexpr uint8_t DEFAULT_SWING_PERCENT = PROJECT_SWING_DEFAULT_PERCENT;
+    static constexpr uint8_t DEFAULT_RUN_MODE = PROJECT_RUN_MODE_DEFAULT;
 
     float tempoBpm = DEFAULT_TEMPO_BPM;
     uint8_t swingPercent = DEFAULT_SWING_PERCENT;

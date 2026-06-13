@@ -7,7 +7,7 @@
 
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
-#include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
+#include "handler/sequencer/SequencerFullBankHistoryUtils.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/ViewSelectorItems.hpp"
 

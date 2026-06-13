@@ -18,7 +18,8 @@
 1600 button MACRO_1 up
 
 # Edit Note, then move to Gate and edit Gate in the same session.
-1700 encoder OPT 1.00
+1650 encoder NAV 1
+1750 encoder OPT 1.00
 1800 encoder NAV 1
 1900 encoder NAV 1
 2000 encoder OPT 1.00

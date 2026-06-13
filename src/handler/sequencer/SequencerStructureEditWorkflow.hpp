@@ -49,12 +49,15 @@ public:
     void duplicateSelection();
 
 private:
-    using HistoryActionKind = core::state::sequencer::SequencerHistoryActionKind;
-    using HistoryFullBankChangePtr =
-        core::state::sequencer::SequencerHistoryFullBankChangePtr;
+    using HistoryPatternSnapshot =
+        core::state::sequencer::SequencerHistoryPatternSnapshot;
+    using HistoryTrackStructureChangePtr =
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr;
 
-    HistoryFullBankChangePtr captureHistoryBefore() const;
-    void recordHistoryAfter(HistoryFullBankChangePtr change, HistoryActionKind kind);
+    bool capturePageHistoryBefore(HistoryPatternSnapshot& before) const;
+    void recordPageHistoryAfter(HistoryPatternSnapshot before);
+    HistoryTrackStructureChangePtr captureTrackHistoryBefore(uint16_t trackMask) const;
+    void recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
     uint16_t currentTrackEnabledMask() const;

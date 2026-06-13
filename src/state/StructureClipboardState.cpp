@@ -1,8 +1,33 @@
 #include "state/StructureClipboardState.hpp"
 
+#include <utility>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::state {
+
+namespace {
+
+FLASHMEM bool storeSequencerGraph(
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>& target,
+    const oc::note::sequencer::StepSequencerGraph* source
+) {
+    if (source == nullptr || !source->enabled) {
+        target.reset();
+        return true;
+    }
+
+    auto graph = core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+    if (!graph) {
+        return false;
+    }
+
+    *graph = *source;
+    target = std::move(graph);
+    return true;
+}
+
+}  // namespace
 
 FLASHMEM void SequencerPageClipboard::reset() {
     valid = false;
@@ -14,7 +39,7 @@ FLASHMEM void SequencerPageClipboard::reset() {
 FLASHMEM void StructureClipboardState::clear() {
     kind.set(StructureClipboardKind::NONE);
     sequencerPage.reset();
-    sequencerStepContentGraph.reset();
+    sequencerGraph.reset();
     sequencerStepContentNodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     sequencerStepContentKind = SequencerStepContentClipboardKind::NONE;
     revision.set(revision.get() + 1);
@@ -36,32 +61,48 @@ FLASHMEM void StructureClipboardState::storeMacroTrack(
     revision.set(revision.get() + 1);
 }
 
-FLASHMEM void StructureClipboardState::storeSequencerPage(
-    const core::state::SequencerPageClipboard& page
+FLASHMEM bool StructureClipboardState::storeSequencerPage(
+    const core::state::SequencerPageClipboard& page,
+    const oc::note::sequencer::StepSequencerGraph* graph
 ) {
+    if (!storeSequencerGraph(sequencerGraph, graph)) {
+        return false;
+    }
+
     sequencerPage = page;
     kind.set(StructureClipboardKind::SEQUENCER_PAGE);
     revision.set(revision.get() + 1);
+    return true;
 }
 
-FLASHMEM void StructureClipboardState::storeSequencerTrack(
-    const core::state::sequencer::SequencerPatternSnapshot& track
+FLASHMEM bool StructureClipboardState::storeSequencerTrack(
+    const core::state::sequencer::SequencerPatternSnapshot& track,
+    const oc::note::sequencer::StepSequencerGraph* graph
 ) {
+    if (!storeSequencerGraph(sequencerGraph, graph)) {
+        return false;
+    }
+
     sequencerTrack = track;
     kind.set(StructureClipboardKind::SEQUENCER_TRACK);
     revision.set(revision.get() + 1);
+    return true;
 }
 
-FLASHMEM void StructureClipboardState::storeSequencerStepContent(
+FLASHMEM bool StructureClipboardState::storeSequencerStepContent(
     const oc::note::sequencer::StepSequencerGraph& graph,
     core::state::sequencer::SequencerGraphNodeId nodeId,
     SequencerStepContentClipboardKind contentKind
 ) {
-    sequencerStepContentGraph = graph;
+    if (!storeSequencerGraph(sequencerGraph, &graph)) {
+        return false;
+    }
+
     sequencerStepContentNodeId = nodeId;
     sequencerStepContentKind = contentKind;
     kind.set(StructureClipboardKind::SEQUENCER_STEP_CONTENT);
     revision.set(revision.get() + 1);
+    return true;
 }
 
 }  // namespace core::state

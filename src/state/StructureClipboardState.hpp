@@ -5,6 +5,7 @@
 
 #include <oc/state/Signal.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
@@ -62,7 +63,7 @@ struct StructureClipboardState {
     core::state::macro::MacroTrackData macroTrack{};
     core::state::SequencerPageClipboard sequencerPage{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
-    oc::note::sequencer::StepSequencerGraph sequencerStepContentGraph{};
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
     core::state::sequencer::SequencerGraphNodeId sequencerStepContentNodeId =
         oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     SequencerStepContentClipboardKind sequencerStepContentKind =
@@ -74,11 +75,17 @@ struct StructureClipboardState {
 
     void storeMacroTrack(const core::state::macro::MacroTrackData& track);
 
-    void storeSequencerPage(const core::state::SequencerPageClipboard& page);
+    bool storeSequencerPage(
+        const core::state::SequencerPageClipboard& page,
+        const oc::note::sequencer::StepSequencerGraph* graph
+    );
 
-    void storeSequencerTrack(const core::state::sequencer::SequencerPatternSnapshot& track);
+    bool storeSequencerTrack(
+        const core::state::sequencer::SequencerPatternSnapshot& track,
+        const oc::note::sequencer::StepSequencerGraph* graph
+    );
 
-    void storeSequencerStepContent(
+    bool storeSequencerStepContent(
         const oc::note::sequencer::StepSequencerGraph& graph,
         core::state::sequencer::SequencerGraphNodeId nodeId,
         SequencerStepContentClipboardKind contentKind = SequencerStepContentClipboardKind::ALL
@@ -92,6 +99,7 @@ struct StructureClipboardState {
     bool hasSequencerTrack() const { return kind.get() == StructureClipboardKind::SEQUENCER_TRACK; }
     bool hasSequencerStepContent() const {
         return kind.get() == StructureClipboardKind::SEQUENCER_STEP_CONTENT &&
+               sequencerGraph.get() != nullptr &&
                sequencerStepContentNodeId !=
                    oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     }

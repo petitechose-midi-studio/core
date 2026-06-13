@@ -17,7 +17,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
     const uint8_t currentIndex = active_index_;
     const uint8_t writeIndex = static_cast<uint8_t>(currentIndex ^ 0x1U);
     auto& runtimeSnapshot = snapshots_[writeIndex];
-    runtimeSnapshot = snapshots_[currentIndex];
+    auto& writeSignatures = track_signatures_[writeIndex];
 
     const uint8_t activeTrack =
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
@@ -29,18 +29,11 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
     runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
     runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
 
-    const bool projectScaleChanged =
-        project_scale_revision_ != runtimeSnapshot.projectScaleRevision;
-    if (projectScaleChanged) {
-        project_scale_revision_ = runtimeSnapshot.projectScaleRevision;
-        track_signatures_.fill({});
-    }
-
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
         const auto& source = (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
         const auto signature =
             captureRuntimeStateSignature(source, runtimeSnapshot.projectScaleSettings);
-        if (track_signatures_[i].matches(signature)) {
+        if (writeSignatures[i].matches(signature)) {
             continue;
         }
 
@@ -51,7 +44,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
                 runtimeSnapshot.tracks[i].scalePolicy,
                 runtimeSnapshot.tracks[i].scaleOverride
             );
-        track_signatures_[i] = signature;
+        writeSignatures[i] = signature;
     }
 
     return writeIndex;

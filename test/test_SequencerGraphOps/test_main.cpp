@@ -348,6 +348,68 @@ void test_clear_node_children_detaches_links_and_bumps_revision_once() {
     std::cout << "[PASS] test_clear_node_children_detaches_links_and_bumps_revision_once\n";
 }
 
+void test_compact_graph_reclaims_detached_child_content() {
+    SequencerState state;
+    const auto firstRoot = core::state::sequencer::rootStepNodeId(0);
+    const auto secondRoot = core::state::sequencer::rootStepNodeId(1);
+
+    const auto first = core::state::sequencer::createMicroSequence(
+        state.pattern,
+        firstRoot,
+        2
+    );
+    assert(first.ok);
+    const auto second = core::state::sequencer::createMicroSequence(
+        state.pattern,
+        secondRoot,
+        2
+    );
+    assert(second.ok);
+
+    auto* graph = state.pattern.graph.get();
+    assert(graph != nullptr);
+    const uint16_t expandedCount = graph->stepNodeCount;
+    assert(second.id > first.id);
+
+    const auto* secondSequence = graph->sequence(second.id);
+    assert(secondSequence != nullptr);
+    const uint16_t secondChildNode = secondSequence->firstStepNode;
+    assert(core::state::sequencer::setNodeNoteOffset(state.pattern, secondChildNode, 5));
+
+    assert(core::state::sequencer::clearNodeChildSequence(state.pattern, firstRoot));
+    graph = state.pattern.graph.get();
+    assert(graph != nullptr);
+    assert(graph->stepNodeCount == expandedCount);
+    assert(graph->sequenceCount == 3);
+
+    core::state::sequencer::SequencerGraphCompactionRemap remap;
+    const auto result = core::state::sequencer::compactGraph(state.pattern, &remap);
+    assert(result.ok);
+    assert(result.compacted);
+
+    graph = state.pattern.graph.get();
+    assert(graph != nullptr);
+    assert(graph->sequenceCount == 2);
+    assert(graph->stepNodeCount ==
+           SequencerState::MAX_STEPS +
+               StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
+    assert(remap.sequence(second.id) == 1);
+    assert(graph->stepNodes[secondRoot].childSequenceId == 1);
+
+    const auto* compactedSequence = graph->sequence(1);
+    assert(compactedSequence != nullptr);
+    const auto* compactedChild = graph->stepNode(compactedSequence->firstStepNode);
+    assert(compactedChild != nullptr);
+    assert(compactedChild->has(STEP_NODE_NOTE_OFFSET));
+    assert(compactedChild->noteOffset == 5);
+
+    const auto secondRun = core::state::sequencer::compactGraph(state.pattern);
+    assert(secondRun.ok);
+    assert(!secondRun.compacted);
+
+    std::cout << "[PASS] test_compact_graph_reclaims_detached_child_content\n";
+}
+
 void test_copy_node_children_remaps_nested_graph_content() {
     SequencerState source;
     const auto sourceRoot = core::state::sequencer::rootStepNodeId(0);
@@ -469,6 +531,7 @@ int main() {
     test_cycle_state_rotation_wraps_state_nodes();
     test_root_pattern_rotation_wraps_graph_step_nodes();
     test_clear_node_children_detaches_links_and_bumps_revision_once();
+    test_compact_graph_reclaims_detached_child_content();
     test_copy_node_children_remaps_nested_graph_content();
     test_clear_graph_releases_allocation_and_bumps_revision_once();
     test_graph_limits_are_reported();

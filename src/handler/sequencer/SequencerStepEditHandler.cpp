@@ -633,6 +633,7 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
         return;
     }
 
+    core::state::sequencer::compactSequencerGraph(sequencer_);
     core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.contentView.bump();
     recordContextMutation(std::move(before), beforeCaptured);
@@ -647,11 +648,13 @@ FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
         sequencer_,
         sequencer_.stepEdit.stepIndex.get()
     );
-    structure_clipboard_.storeSequencerStepContent(
+    if (!structure_clipboard_.storeSequencerStepContent(
         *graph,
         nodeId,
         clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get())
-    );
+    )) {
+        return;
+    }
 }
 
 FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
@@ -677,13 +680,13 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
         ? core::state::sequencer::copyNodeChildSequenceFromGraph(
               sequencer_.pattern,
               nodeId,
-              structure_clipboard_.sequencerStepContentGraph,
+              *structure_clipboard_.sequencerGraph,
               structure_clipboard_.sequencerStepContentNodeId
           )
         : core::state::sequencer::copyNodeCycleStateSetFromGraph(
               sequencer_.pattern,
               nodeId,
-              structure_clipboard_.sequencerStepContentGraph,
+              *structure_clipboard_.sequencerGraph,
               structure_clipboard_.sequencerStepContentNodeId
           );
     if (!changed) {
@@ -694,6 +697,7 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
         return;
     }
 
+    core::state::sequencer::compactSequencerGraph(sequencer_);
     core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.contentView.bump();
     recordContextMutation(std::move(before), beforeCaptured);

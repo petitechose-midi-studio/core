@@ -120,6 +120,24 @@ struct SequencerStepHarness {
     }
 };
 
+bool rootStepHasMicroSequence(const SequencerStepHarness& h, uint8_t step) {
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph == nullptr) return false;
+    const auto nodeId = core::state::sequencer::rootStepNodeId(step);
+    if (nodeId >= graph->stepNodeCount) return false;
+    return graph->stepNodes[nodeId].has(oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE);
+}
+
+void createRootMicroSequence(SequencerStepHarness& h, uint8_t step) {
+    const auto nodeId = core::state::sequencer::rootStepNodeId(step);
+    const auto result = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        nodeId,
+        2
+    );
+    assert(result.ok);
+}
+
 void holdPatternQuickControls(SequencerStepHarness& h) {
     h.press(Config::ButtonID::LEFT_CENTER);
     h.advance(1000);
@@ -316,6 +334,7 @@ void test_sequencer_page_copy_and_long_press_paste() {
     h.state.sequencer.pattern.nudge[0] = 3;
     h.state.sequencer.pattern.probability[0] = 87;
     h.state.sequencer.pattern.setEnabled(0, true);
+    createRootMicroSequence(h, 0);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -336,6 +355,7 @@ void test_sequencer_page_copy_and_long_press_paste() {
     assert(h.state.sequencer.pattern.nudge[8] == 3);
     assert(h.state.sequencer.pattern.probability[8] == 87);
     assert(h.state.sequencer.pattern.isEnabled(8));
+    assert(rootStepHasMicroSequence(h, 8));
 
     std::cout << "[PASS] test_sequencer_page_copy_and_long_press_paste\n";
 }
@@ -550,6 +570,7 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     h.state.sequencer.pattern.velocity[0] = 96;
     h.state.sequencer.pattern.gate[0] = 72;
     h.state.sequencer.pattern.setEnabled(0, true);
+    createRootMicroSequence(h, 0);
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -571,6 +592,7 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     assert(h.state.sequencer.pattern.velocity[0] == 96);
     assert(h.state.sequencer.pattern.gate[0] == 72);
     assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(rootStepHasMicroSequence(h, 0));
 
     std::cout << "[PASS] test_sequencer_track_copy_and_long_press_paste_to_add_slot\n";
 }
@@ -627,10 +649,18 @@ void test_created_page_is_undoable_and_redoable() {
     assert(h.state.sequencer.pattern.length.get() == 16);
     assert(h.state.sequencer.page.get() == 1);
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::PatternOnly
+    ) == 1);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::FullBank
+    ) == 0);
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.length.get() == 8);
     assert(h.state.sequencer.page.get() == 0);
+    assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
+    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T01") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Page Structure") == 0);
@@ -639,6 +669,8 @@ void test_created_page_is_undoable_and_redoable() {
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencer.pattern.length.get() == 16);
     assert(h.state.sequencer.page.get() == 1);
+    assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
+    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 1);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "REDO T01") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "1 page -> 2 pages") == 0);
 
@@ -662,10 +694,18 @@ void test_created_track_is_undoable_and_redoable() {
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.sequencer.pattern.midiChannel.get() == 1);
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 1);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::FullBank
+    ) == 0);
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0001);
     assert(h.state.sequencerTracks.activeTrackIndex() == 0);
+    assert(!h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 0);
     assert(h.state.sequencer.pattern.midiChannel.get() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T02") == 0);
@@ -675,6 +715,8 @@ void test_created_track_is_undoable_and_redoable() {
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(!h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.sequencer.pattern.midiChannel.get() == 1);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "REDO T02") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "1 track -> 2 tracks") == 0);

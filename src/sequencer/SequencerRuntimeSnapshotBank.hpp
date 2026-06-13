@@ -32,12 +32,15 @@ public:
     uint8_t activeIndex() const { return active_index_; }
 
 private:
+    using TrackSignatures = std::array<
+        SequencerRuntimeStateSignature,
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>;
+
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     std::array<Snapshot, 2> snapshots_{};
-    std::array<SequencerRuntimeStateSignature, core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>
-        track_signatures_{};
-    uint32_t project_scale_revision_ = UINT32_MAX;
+    // Each double-buffer slot can lag independently; signatures are per slot.
+    std::array<TrackSignatures, 2> track_signatures_{};
     volatile uint8_t active_index_ = 0;
 };
 

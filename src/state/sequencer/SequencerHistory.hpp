@@ -44,8 +44,11 @@ struct SequencerHistoryTrackBankSnapshot {
     SequencerHistoryTrackBankSnapshot& operator=(SequencerHistoryTrackBankSnapshot&&) noexcept;
 };
 
+struct SequencerHistoryTrackStructureChange;
+
 enum class SequencerHistoryScope : uint8_t {
     PatternOnly = 0,
+    Structure,
     FullBank,
 };
 
@@ -115,10 +118,13 @@ struct SequencerHistoryFullBankChange {
 
 using SequencerHistoryFullBankChangePtr =
     core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange>;
+using SequencerHistoryTrackStructureChangePtr =
+    core::app::ExtmemUniquePtr<SequencerHistoryTrackStructureChange>;
 
 struct SequencerHistoryEntry {
     SequencerHistoryScope scope = SequencerHistoryScope::PatternOnly;
     core::app::ExtmemUniquePtr<SequencerHistoryPatternChange> pattern;
+    SequencerHistoryTrackStructureChangePtr structure;
     core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange> fullBank;
 
     SequencerHistoryEntry();
@@ -130,6 +136,7 @@ struct SequencerHistoryEntry {
 
     bool valid() const {
         return (scope == SequencerHistoryScope::PatternOnly && pattern.get() != nullptr) ||
+               (scope == SequencerHistoryScope::Structure && structure.get() != nullptr) ||
                (scope == SequencerHistoryScope::FullBank && fullBank.get() != nullptr);
     }
 };
@@ -188,8 +195,10 @@ bool sameMusicalHistorySnapshot(
 class SequencerHistoryService {
 public:
     static constexpr uint8_t PATTERN_ENTRY_LIMIT = 32;
+    static constexpr uint8_t STRUCTURE_ENTRY_LIMIT = 8;
     static constexpr uint8_t FULL_BANK_ENTRY_LIMIT = 4;
-    static constexpr uint8_t ENTRY_LIMIT = PATTERN_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT;
+    static constexpr uint8_t ENTRY_LIMIT =
+        PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT;
 
     SequencerHistoryService();
     ~SequencerHistoryService();
@@ -213,6 +222,7 @@ public:
         SequencerHistoryDescriptor descriptor = {}
     );
     bool recordFullBank(SequencerHistoryFullBankChangePtr change);
+    bool recordStructure(SequencerHistoryTrackStructureChangePtr change);
 
     bool canUndo() const { return undo_count_ > 0; }
     bool canRedo() const { return redo_count_ > 0; }

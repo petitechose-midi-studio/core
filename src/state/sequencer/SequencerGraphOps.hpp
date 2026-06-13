@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
@@ -18,9 +19,34 @@ struct SequencerGraphCreateResult {
     uint16_t id = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
 };
 
+struct SequencerGraphCompactionRemap {
+    using Limits = oc::note::sequencer::StepSequencerGraphLimits;
+
+    std::array<uint16_t, Limits::MAX_STEP_NODES> stepNodes{};
+    std::array<uint16_t, Limits::MAX_SEQUENCES> sequences{};
+    std::array<uint16_t, Limits::MAX_CYCLE_SETS> cycleSets{};
+
+    void reset();
+    uint16_t stepNode(uint16_t id) const;
+    uint16_t sequence(uint16_t id) const;
+    uint16_t cycleSet(uint16_t id) const;
+};
+
+struct SequencerGraphCompactionResult {
+    bool ok = false;
+    bool compacted = false;
+};
+
 bool ensureGraphRoot(SequencerPatternState& pattern);
 void clearGraph(SequencerPatternState& pattern);
 void copyGraph(SequencerPatternState& target, const SequencerPatternState& source);
+void copyGraph(SequencerPatternState& target,
+               const oc::note::sequencer::StepSequencerGraph* source,
+               uint32_t revision);
+SequencerGraphCompactionResult compactGraph(
+    SequencerPatternState& pattern,
+    SequencerGraphCompactionRemap* remap = nullptr
+);
 
 const oc::note::sequencer::StepSequencerGraph* graphView(const SequencerPatternState& pattern);
 

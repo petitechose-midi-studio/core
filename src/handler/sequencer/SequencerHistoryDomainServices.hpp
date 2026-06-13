@@ -20,6 +20,10 @@ public:
         void* context,
         core::state::sequencer::SequencerHistoryFullBankChangePtr change
     );
+    using RecordStructureFn = bool (*)(
+        void* context,
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+    );
     using CommandFn = bool (*)(void* context);
     using BeginCoalescedPatternEditFn = bool (*)(
         void* context,
@@ -31,6 +35,7 @@ public:
     struct Operations {
         void* context = nullptr;
         RecordPatternFn recordPattern = nullptr;
+        RecordStructureFn recordStructure = nullptr;
         RecordFullBankFn recordFullBank = nullptr;
         CommandFn undo = nullptr;
         CommandFn redo = nullptr;
@@ -50,6 +55,9 @@ public:
     ) const;
     bool recordFullBank(
         core::state::sequencer::SequencerHistoryFullBankChangePtr change
+    ) const;
+    bool recordStructure(
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
     ) const;
     bool undo() const;
     bool redo() const;

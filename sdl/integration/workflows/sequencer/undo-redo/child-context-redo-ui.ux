@@ -1,0 +1,52 @@
+# UX workflow: child-content edit undo/redo keeps editor context readable.
+# Purpose: validates that a micro-sequence edit can be undone and redone from
+# the normal global history path while the visible child context remains synced.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable root step 1, open Step Edit, and enter Micro-sequence.
+150 tap MACRO_1 60
+320 capture screen root_step_enabled
+420 button MACRO_1 down
+1480 tick
+1540 capture screen root_step_edit_open
+1600 button MACRO_1 up
+1700 encoder NAV 1
+1780 encoder NAV 1
+1860 encoder NAV 1
+1940 encoder NAV 1
+2020 encoder NAV 1
+2100 encoder NAV 1
+2260 capture screen micro_row_focused
+2360 tap NAV 60
+2660 capture screen micro_context_open
+
+# Edit micro step 1 note offset, then apply.
+2760 button MACRO_1 down
+3820 tick
+3880 capture screen micro_step_edit_open
+3940 button MACRO_1 up
+4040 encoder NAV 1
+4140 encoder OPT 0.72
+4360 capture screen micro_step_note_offset_visible
+4460 tap NAV 60
+4760 capture screen micro_note_offset_applied
+
+# Undo the micro edit. The child grid should stay open and display the reverted
+# resolved child step.
+4860 button LEFT_CENTER down
+5860 tick
+5910 tap LEFT_TOP 60
+6090 capture screen undo_micro_note_toast
+6190 button LEFT_CENTER up
+7620 capture screen micro_note_offset_undone_ui
+
+# Redo the micro edit. The child grid should still be open and display the
+# restored offset/resolved note.
+7720 button LEFT_CENTER down
+8720 tick
+8770 tap LEFT_BOTTOM 60
+8950 capture screen redo_micro_note_toast
+9050 button LEFT_CENTER up
+10480 capture screen micro_note_offset_redone_ui

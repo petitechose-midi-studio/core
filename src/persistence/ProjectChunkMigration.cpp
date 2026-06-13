@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/ProjectStatePersistencePayloads.hpp"
+#include "state/project/ProjectDomainRules.hpp"
 #include "state/project/ProjectSlug.hpp"
 
 namespace core::persistence::project_migration {
@@ -35,16 +36,6 @@ static_assert(sizeof(TransportV0Payload) == 4, "Unexpected TransportV0Payload si
 static_assert(sizeof(ProjectMetaV1_0Payload) == 48, "Unexpected ProjectMetaV1_0Payload size");
 
 constexpr uint8_t kMetaFlagHasSavedIdentity = 1U << 1U;
-
-FLASHMEM uint16_t clampTempoBpm(uint16_t tempoBpm) {
-    if (tempoBpm < 20U) return 20U;
-    if (tempoBpm > 300U) return 300U;
-    return tempoBpm;
-}
-
-FLASHMEM uint8_t clampSwing(uint8_t swingPercent) {
-    return swingPercent > 75U ? 75U : swingPercent;
-}
 
 FLASHMEM size_t boundedLength(const char* text, size_t capacity) {
     if (text == nullptr || capacity == 0) return 0;
@@ -128,9 +119,10 @@ FLASHMEM Result migrateTransportV0(const project_file::DecodedChunkView& chunk,
     std::memcpy(&source, chunk.data, sizeof(source));
 
     state_codec::ProjectTransportPayload target{};
-    target.tempoCentiBpm = static_cast<uint16_t>(clampTempoBpm(source.tempoBpm) * 100U);
-    target.swingPercent = clampSwing(source.swingPercent);
-    target.runMode = core::state::project::ProjectTransportState::DEFAULT_RUN_MODE;
+    target.tempoCentiBpm =
+        core::state::project::projectTempoToCentiBpm(static_cast<float>(source.tempoBpm));
+    target.swingPercent = core::state::project::sanitizeProjectSwingPercent(source.swingPercent);
+    target.runMode = core::state::project::PROJECT_RUN_MODE_DEFAULT;
 
     std::memcpy(out, &target, sizeof(target));
     return {.status = Status::MIGRATED, .bytesWritten = sizeof(target)};

@@ -1,0 +1,34 @@
+# UX workflow: track structure redo restores the visible UI.
+# Purpose: isolates the hardware regression where redo restored the sequencer
+# track state musically but left the track strip/header on a stale UI preview.
+
+0 scenario sequencer
+50 capture screen initial
+
+# Switch structure navigation from pages to tracks.
+150 tap NAV 60
+350 capture screen track_navigation_focus
+
+# Create Track 2 from the add-slot preview.
+450 encoder NAV 1
+650 capture screen track_2_add_preview
+750 tap NAV 60
+1050 capture screen track_2_created
+
+# Undo Track 2 creation. The UI should return to Track 1 with no add-slot
+# preview left armed.
+1150 button LEFT_CENTER down
+2150 tick
+2200 tap LEFT_TOP 60
+2380 capture screen undo_track_toast
+2480 button LEFT_CENTER up
+3900 capture screen track_2_creation_undone_ui
+
+# Redo Track 2 creation. The UI must restore Track 2 as the focused/active
+# track rather than leaving the old add-slot preview or Track 1 focus visible.
+4000 button LEFT_CENTER down
+5000 tick
+5050 tap LEFT_BOTTOM 60
+5230 capture screen redo_track_toast
+5330 button LEFT_CENTER up
+6750 capture screen track_2_creation_redone_ui

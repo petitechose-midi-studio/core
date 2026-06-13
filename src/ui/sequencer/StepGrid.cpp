@@ -633,14 +633,22 @@ void StepGrid::renderTileBar(uint8_t tileIndex, bool visible, bool active) {
     const lv_opa_t nextOpa =
         visible ? (active ? STEP_BAR_ACTIVE_OPA : STEP_BAR_INACTIVE_OPA) : LV_OPA_TRANSP;
     const uint32_t nextColor = active ? COLOR_STEP_PLAY_HEX : COLOR_STEP_PLAY_INACTIVE_HEX;
-    cache.indicatorVisible = visible;
+    const bool changed =
+        cache.indicatorVisible != visible ||
+        cache.indicatorOpa != nextOpa ||
+        (visible && cache.indicatorColorFull != nextColor);
 
+    cache.indicatorVisible = visible;
     if (cache.indicatorColorFull != nextColor) {
         cache.indicatorColorFull = nextColor;
     }
 
     if (cache.indicatorOpa != nextOpa) {
         cache.indicatorOpa = nextOpa;
+    }
+
+    if (changed && tileIndex < step_buttons_.size() && step_buttons_[tileIndex] != nullptr) {
+        lv_obj_invalidate(step_buttons_[tileIndex]);
     }
 }
 

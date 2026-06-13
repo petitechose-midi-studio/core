@@ -1,0 +1,68 @@
+# UX workflow: ADR-0015/0016 closeout track-return persistence smoke.
+# Purpose: validates that child content remains visible after leaving the child
+# context, changing track, and returning to the original track. This guards the
+# regression where nested contexts disappeared after track navigation.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable Track 1 step 1, open its step editor, and create a micro-sequence.
+150 tap MACRO_1 60
+320 capture screen t01_step_enabled
+420 button MACRO_1 down
+1480 tick
+1540 capture screen t01_step_edit_open
+1600 button MACRO_1 up
+1700 encoder NAV 1
+1780 encoder NAV 1
+1860 encoder NAV 1
+1940 encoder NAV 1
+2020 encoder NAV 1
+2100 encoder NAV 1
+2260 capture screen t01_micro_row_focused
+2360 tap NAV 60
+2660 capture screen t01_micro_context_open
+
+# Edit micro step 1 so the child content is visibly non-empty.
+2760 button MACRO_1 down
+3820 tick
+3880 capture screen t01_micro_step_edit_open
+3940 button MACRO_1 up
+4040 encoder NAV 1
+4140 encoder OPT 0.72
+4360 capture screen t01_micro_step_note_offset
+4460 tap NAV 60
+4700 capture screen t01_micro_context_edited
+
+# Return to the root grid.
+4800 tap LEFT_TOP 60
+5140 capture screen t01_parent_after_micro
+5240 tap LEFT_TOP 60
+5580 capture screen t01_root_badge_before_track_switch
+
+# Switch navigation focus from page to track, create/select Track 2, then come
+# back to Track 1.
+5680 tap NAV 60
+5880 capture screen track_navigation_focus
+5980 encoder NAV 1
+6180 capture screen t02_add_preview
+6280 tap NAV 60
+6580 capture screen t02_created
+6680 encoder NAV -1
+6980 capture screen t01_returned_after_track_switch
+
+# Re-open Track 1 step 1. The micro-sequence row must still be present and
+# openable; the user should not have to recreate child content.
+7080 button MACRO_1 down
+8140 tick
+8200 capture screen t01_step_edit_after_return
+8260 button MACRO_1 up
+8360 encoder NAV 1
+8440 encoder NAV 1
+8520 encoder NAV 1
+8600 encoder NAV 1
+8680 encoder NAV 1
+8760 encoder NAV 1
+8920 capture screen t01_micro_row_still_present
+9020 tap NAV 60
+9320 capture screen t01_micro_context_reopened_after_return

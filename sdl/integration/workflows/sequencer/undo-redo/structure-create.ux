@@ -1,6 +1,6 @@
 # UX workflow: create sequencer pages/tracks and undo/redo structural history.
-# Purpose: validates full-bank history entries for structure creation and the
-# transient feedback toast for page/track structure changes.
+# Purpose: validates semantic structure-history entries for structure creation
+# and the transient feedback toast for page/track structure changes.
 
 0 scenario sequencer
 50 capture screen initial

@@ -472,11 +472,13 @@ FLASHMEM void SequencerStepHandler::copyFocusedStepContent() {
         sequencer_,
         sequencer_.focusedStep.get()
     );
-    structure_clipboard_.storeSequencerStepContent(
+    if (!structure_clipboard_.storeSequencerStepContent(
         *graph,
         nodeId,
         core::state::SequencerStepContentClipboardKind::ALL
-    );
+    )) {
+        return;
+    }
 }
 
 FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
@@ -493,7 +495,7 @@ FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
     if (!core::state::sequencer::copyNodeChildrenFromGraph(
             sequencer_.pattern,
             nodeId,
-            structure_clipboard_.sequencerStepContentGraph,
+            *structure_clipboard_.sequencerGraph,
             structure_clipboard_.sequencerStepContentNodeId
         )) {
         return;

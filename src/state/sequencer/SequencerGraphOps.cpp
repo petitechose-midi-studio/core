@@ -1,13 +1,34 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 
+#include "state/sequencer/SequencerGraphOpsInternal.hpp"
+
 #include <algorithm>
 #include <array>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 
 namespace core::state::sequencer {
 
-namespace {
+FLASHMEM void SequencerGraphCompactionRemap::reset() {
+    stepNodes.fill(Limits::INVALID_ID);
+    sequences.fill(Limits::INVALID_ID);
+    cycleSets.fill(Limits::INVALID_ID);
+}
+
+FLASHMEM uint16_t SequencerGraphCompactionRemap::stepNode(uint16_t id) const {
+    return id < stepNodes.size() ? stepNodes[id] : Limits::INVALID_ID;
+}
+
+FLASHMEM uint16_t SequencerGraphCompactionRemap::sequence(uint16_t id) const {
+    return id < sequences.size() ? sequences[id] : Limits::INVALID_ID;
+}
+
+FLASHMEM uint16_t SequencerGraphCompactionRemap::cycleSet(uint16_t id) const {
+    return id < cycleSets.size() ? cycleSets[id] : Limits::INVALID_ID;
+}
+
+namespace graph_ops_internal {
 
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
@@ -24,8 +45,6 @@ using oc::note::sequencer::StepSequencerGraphLimits;
 using oc::note::sequencer::StepSequencerSequence;
 using oc::note::sequencer::StepSequencerSequenceKind;
 using oc::note::sequencer::StepSequencerStepNode;
-
-constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
 
 FLASHMEM bool hasStepNode(const StepSequencerGraph& graph, uint16_t nodeId) {
     return nodeId < graph.stepNodeCount && nodeId < graph.stepNodes.size();
@@ -178,13 +197,6 @@ FLASHMEM uint16_t allocateCycleSet(StepSequencerGraph& graph, uint8_t length) {
     };
     return id;
 }
-
-struct GraphCopyBudget {
-    uint16_t stepNodes = 0;
-    uint8_t sequences = 0;
-    uint8_t cycleSets = 0;
-    bool valid = true;
-};
 
 FLASHMEM bool appendBudget(GraphCopyBudget& target, const GraphCopyBudget& source) {
     if (!source.valid) {
@@ -352,6 +364,143 @@ FLASHMEM void bump(SequencerPatternState& pattern, bool changed) {
     }
 }
 
+struct GraphCompactor {
+    const StepSequencerGraph& source;
+    StepSequencerGraph& target;
+    SequencerGraphCompactionRemap& remap;
+
+    bool copyNode(uint16_t sourceNodeId, uint16_t targetNodeId) {
+        if (!hasStepNode(source, sourceNodeId) || !hasStepNode(target, targetNodeId)) {
+            return false;
+        }
+
+        remap.stepNodes[sourceNodeId] = targetNodeId;
+        auto& targetNode = target.stepNodes[targetNodeId];
+        const auto& sourceNode = source.stepNodes[sourceNodeId];
+        copyStepNodeValuesWithoutChildren(targetNode, sourceNode);
+
+        if (sourceNode.has(STEP_NODE_CHILD_SEQUENCE)) {
+            const uint16_t targetSequenceId = copySequence(sourceNode.childSequenceId);
+            if (targetSequenceId == kInvalidId) return false;
+            targetNode.childSequenceId = targetSequenceId;
+            targetNode.flags = static_cast<uint16_t>(targetNode.flags | STEP_NODE_CHILD_SEQUENCE);
+        }
+
+        if (sourceNode.has(STEP_NODE_CYCLE_SET)) {
+            const uint16_t targetCycleSetId = copyCycleSet(sourceNode.cycleSetId);
+            if (targetCycleSetId == kInvalidId) return false;
+            targetNode.cycleSetId = targetCycleSetId;
+            targetNode.flags = static_cast<uint16_t>(targetNode.flags | STEP_NODE_CYCLE_SET);
+        }
+
+        return true;
+    }
+
+    uint16_t copySequence(uint16_t sourceSequenceId) {
+        const auto* sourceSequence = source.sequence(sourceSequenceId);
+        if (sourceSequence == nullptr ||
+            sourceSequence->kind != StepSequencerSequenceKind::MicroSequence) {
+            return kInvalidId;
+        }
+
+        const uint16_t targetSequenceId = allocateSequence(
+            target,
+            StepSequencerSequenceKind::MicroSequence,
+            sourceSequence->length,
+            StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP
+        );
+        if (targetSequenceId == kInvalidId) return kInvalidId;
+
+        remap.sequences[sourceSequenceId] = targetSequenceId;
+        auto& targetSequence = target.sequences[targetSequenceId];
+        targetSequence.offset = sourceSequence->offset;
+
+        for (uint8_t i = 0; i < sourceSequence->length; ++i) {
+            const uint16_t sourceNodeId =
+                static_cast<uint16_t>(sourceSequence->firstStepNode + i);
+            const uint16_t targetNodeId =
+                static_cast<uint16_t>(targetSequence.firstStepNode + i);
+            if (!copyNode(sourceNodeId, targetNodeId)) return kInvalidId;
+        }
+
+        return targetSequenceId;
+    }
+
+    uint16_t copyCycleSet(uint16_t sourceCycleSetId) {
+        const auto* sourceSet = source.cycleSet(sourceCycleSetId);
+        if (sourceSet == nullptr) return kInvalidId;
+
+        const uint16_t targetCycleSetId = allocateCycleSet(target, sourceSet->length);
+        if (targetCycleSetId == kInvalidId) return kInvalidId;
+
+        remap.cycleSets[sourceCycleSetId] = targetCycleSetId;
+        auto& targetSet = target.cycleSets[targetCycleSetId];
+        targetSet.offset = sourceSet->offset;
+
+        for (uint8_t i = 0; i < sourceSet->length; ++i) {
+            const uint16_t sourceNodeId =
+                static_cast<uint16_t>(sourceSet->firstStateNode + i);
+            const uint16_t targetNodeId =
+                static_cast<uint16_t>(targetSet.firstStateNode + i);
+            if (!copyNode(sourceNodeId, targetNodeId)) return kInvalidId;
+        }
+
+        return targetCycleSetId;
+    }
+
+    bool copyRoot() {
+        const auto* root = source.sequence(source.rootSequenceId);
+        if (root == nullptr ||
+            root->kind != StepSequencerSequenceKind::RootPattern ||
+            root->firstStepNode != 0 ||
+            root->length > SequencerPatternState::MAX_STEPS) {
+            return false;
+        }
+
+        target.enabled = true;
+        target.rootSequenceId = 0;
+        target.sequenceCount = 1;
+        target.stepNodeCount = SequencerPatternState::MAX_STEPS;
+        target.sequences[0] = StepSequencerSequence{
+            .kind = StepSequencerSequenceKind::RootPattern,
+            .firstStepNode = 0,
+            .length = SequencerPatternState::MAX_STEPS,
+            .offset = root->offset,
+        };
+        remap.sequences[source.rootSequenceId] = 0;
+
+        for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
+            if (!copyNode(i, i)) return false;
+        }
+        return true;
+    }
+};
+
+FLASHMEM bool remapChanged(const StepSequencerGraph& source,
+                           const StepSequencerGraph& target,
+                           const SequencerGraphCompactionRemap& remap) {
+    if (source.stepNodeCount != target.stepNodeCount ||
+        source.sequenceCount != target.sequenceCount ||
+        source.cycleSetCount != target.cycleSetCount) {
+        return true;
+    }
+
+    for (uint16_t i = 0; i < source.stepNodeCount && i < source.stepNodes.size(); ++i) {
+        const uint16_t mapped = remap.stepNode(i);
+        if (mapped != kInvalidId && mapped != i) return true;
+    }
+    for (uint16_t i = 0; i < source.sequenceCount && i < source.sequences.size(); ++i) {
+        const uint16_t mapped = remap.sequence(i);
+        if (mapped != kInvalidId && mapped != i) return true;
+    }
+    for (uint16_t i = 0; i < source.cycleSetCount && i < source.cycleSets.size(); ++i) {
+        const uint16_t mapped = remap.cycleSet(i);
+        if (mapped != kInvalidId && mapped != i) return true;
+    }
+
+    return false;
+}
+
 FLASHMEM bool setSignedOffset(SequencerPatternState& pattern,
                               uint16_t nodeId,
                               uint16_t flag,
@@ -447,7 +596,9 @@ FLASHMEM bool rotateStepNodeSegment(
     return true;
 }
 
-}  // namespace
+}  // namespace graph_ops_internal
+
+using namespace graph_ops_internal;
 
 FLASHMEM bool ensureGraphRoot(SequencerPatternState& pattern) {
     if (!ensureGraphAllocated(pattern)) return false;
@@ -488,16 +639,22 @@ FLASHMEM void clearGraph(SequencerPatternState& pattern) {
     pattern.bumpGraphRevision();
 }
 
-FLASHMEM void copyGraph(SequencerPatternState& target, const SequencerPatternState& source) {
-    if (!source.graph || !source.graph->enabled) {
+FLASHMEM void copyGraph(SequencerPatternState& target,
+                         const StepSequencerGraph* source,
+                         uint32_t revision) {
+    if (source == nullptr || !source->enabled) {
         target.graph.reset();
-        target.graphRevision.set(source.graphRevision.get());
+        target.graphRevision.set(revision);
         return;
     }
 
     if (!ensureGraphAllocated(target)) return;
-    *target.graph = *source.graph;
-    target.graphRevision.set(source.graphRevision.get());
+    *target.graph = *source;
+    target.graphRevision.set(revision);
+}
+
+FLASHMEM void copyGraph(SequencerPatternState& target, const SequencerPatternState& source) {
+    copyGraph(target, graphView(source), source.graphRevision.get());
 }
 
 FLASHMEM const StepSequencerGraph* graphView(const SequencerPatternState& pattern) {
@@ -505,553 +662,49 @@ FLASHMEM const StepSequencerGraph* graphView(const SequencerPatternState& patter
     return pattern.graph.get();
 }
 
+FLASHMEM SequencerGraphCompactionResult compactGraph(
+    SequencerPatternState& pattern,
+    SequencerGraphCompactionRemap* outRemap
+) {
+    SequencerGraphCompactionRemap localRemap;
+    auto& remap = outRemap ? *outRemap : localRemap;
+    remap.reset();
+
+    if (!pattern.graph || !pattern.graph->enabled) {
+        return {.ok = true, .compacted = false};
+    }
+    if (!ensureGraphRoot(pattern)) {
+        return {.ok = false, .compacted = false};
+    }
+
+    const auto* source = pattern.graph.get();
+    if (source == nullptr || !source->enabled) {
+        return {.ok = true, .compacted = false};
+    }
+
+    auto compactedGraph = core::app::makeExtmemUnique<StepSequencerGraph>();
+    if (!compactedGraph) {
+        return {.ok = false, .compacted = false};
+    }
+
+    compactedGraph->reset();
+    GraphCompactor compactor{*source, *compactedGraph, remap};
+    if (!compactor.copyRoot()) {
+        return {.ok = false, .compacted = false};
+    }
+
+    const bool compacted = remapChanged(*source, *compactedGraph, remap);
+    if (!compacted) {
+        return {.ok = true, .compacted = false};
+    }
+
+    pattern.graph = std::move(compactedGraph);
+    pattern.bumpGraphRevision();
+    return {.ok = true, .compacted = true};
+}
+
 FLASHMEM SequencerGraphNodeId rootStepNodeId(uint8_t step) {
     return (step < SequencerPatternState::MAX_STEPS) ? step : kInvalidId;
-}
-
-FLASHMEM SequencerGraphCreateResult createMicroSequence(
-    SequencerPatternState& pattern,
-    SequencerGraphNodeId parentNodeId,
-    uint8_t length
-) {
-    if (!ensureGraphRoot(pattern)) {
-        return {.ok = false, .limitReached = true};
-    }
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, parentNodeId)) {
-        return {.ok = false, .limitReached = true};
-    }
-
-    auto& parent = graph->stepNodes[parentNodeId];
-    if (parent.has(STEP_NODE_CHILD_SEQUENCE)) {
-        const auto* existing = graph->sequence(parent.childSequenceId);
-        if (existing != nullptr) {
-            return {.ok = true, .limitReached = false, .id = parent.childSequenceId};
-        }
-        parent.childSequenceId = kInvalidId;
-        assignFlag(parent.flags, STEP_NODE_CHILD_SEQUENCE, false);
-    }
-
-    const uint16_t sequenceId = allocateSequence(
-        *graph,
-        StepSequencerSequenceKind::MicroSequence,
-        length,
-        StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP
-    );
-    if (sequenceId == kInvalidId) {
-        return {.ok = false, .limitReached = true};
-    }
-
-    parent.childSequenceId = sequenceId;
-    parent.flags = static_cast<uint16_t>(parent.flags | STEP_NODE_CHILD_SEQUENCE);
-    pattern.bumpGraphRevision();
-    return {.ok = true, .limitReached = false, .id = sequenceId};
-}
-
-FLASHMEM bool resizeMicroSequence(
-    SequencerPatternState& pattern,
-    SequencerGraphSequenceId sequenceId,
-    uint8_t length
-) {
-    if (length == 0 ||
-        length > StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP) {
-        return false;
-    }
-    if (!ensureGraphRoot(pattern)) return false;
-
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr) return false;
-    auto* sequence = mutableMicroSequence(*graph, sequenceId);
-    if (sequence == nullptr) return false;
-    if (length > sequenceReservedCapacity(*graph, sequenceId)) return false;
-    if (sequence->length == length) return false;
-
-    sequence->length = length;
-    pattern.bumpGraphRevision();
-    return true;
-}
-
-FLASHMEM bool resizeCycleStateSet(
-    SequencerPatternState& pattern,
-    SequencerGraphCycleSetId cycleSetId,
-    uint8_t length
-) {
-    if (length == 0 ||
-        length > StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET) {
-        return false;
-    }
-    if (!ensureGraphRoot(pattern)) return false;
-
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr) return false;
-    auto* cycleSet = mutableCycleSet(*graph, cycleSetId);
-    if (cycleSet == nullptr) return false;
-    if (length > cycleSetReservedCapacity(*graph, cycleSetId)) return false;
-    if (cycleSet->length == length) return false;
-
-    cycleSet->length = length;
-    pattern.bumpGraphRevision();
-    return true;
-}
-
-FLASHMEM bool setMicroSequenceOffset(
-    SequencerPatternState& pattern,
-    SequencerGraphSequenceId sequenceId,
-    int8_t offset
-) {
-    if (!ensureGraphRoot(pattern)) return false;
-
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr) return false;
-    auto* sequence = mutableMicroSequence(*graph, sequenceId);
-    if (sequence == nullptr) return false;
-
-    const int8_t normalized = normalizeContentOffset(offset, sequence->length);
-    if (sequence->offset == normalized) return false;
-    sequence->offset = normalized;
-    pattern.bumpGraphRevision();
-    return true;
-}
-
-FLASHMEM bool setCycleStateSetOffset(
-    SequencerPatternState& pattern,
-    SequencerGraphCycleSetId cycleSetId,
-    int8_t offset
-) {
-    if (!ensureGraphRoot(pattern)) return false;
-
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr) return false;
-    auto* cycleSet = mutableCycleSet(*graph, cycleSetId);
-    if (cycleSet == nullptr) return false;
-
-    const int8_t normalized = normalizeContentOffset(offset, cycleSet->length);
-    if (cycleSet->offset == normalized) return false;
-    cycleSet->offset = normalized;
-    pattern.bumpGraphRevision();
-    return true;
-}
-
-FLASHMEM bool rotateRootStepNodes(SequencerPatternState& pattern, int offsetSteps) {
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !graph->enabled) return false;
-
-    const auto* root = graph->sequence(graph->rootSequenceId);
-    if (root == nullptr || root->kind != StepSequencerSequenceKind::RootPattern) {
-        return false;
-    }
-
-    const uint8_t length = std::min<uint8_t>(
-        pattern.length.get(),
-        SequencerPatternState::MAX_STEPS
-    );
-    const bool changed = rotateStepNodeSegment(
-        *graph,
-        root->firstStepNode,
-        length,
-        offsetSteps,
-        0
-    );
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool rotateMicroSequenceSteps(
-    SequencerPatternState& pattern,
-    SequencerGraphSequenceId sequenceId,
-    int offsetSteps
-) {
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !graph->enabled) return false;
-
-    auto* sequence = mutableMicroSequence(*graph, sequenceId);
-    if (sequence == nullptr) return false;
-
-    const bool changed = rotateStepNodeSegment(
-        *graph,
-        sequence->firstStepNode,
-        sequence->length,
-        offsetSteps,
-        sequence->offset
-    );
-    const bool offsetChanged = sequence->offset != 0;
-    if (sequence->offset != 0) {
-        sequence->offset = 0;
-    }
-    bump(pattern, changed || offsetChanged);
-    return changed || offsetChanged;
-}
-
-FLASHMEM bool rotateCycleStateSetSteps(
-    SequencerPatternState& pattern,
-    SequencerGraphCycleSetId cycleSetId,
-    int offsetSteps
-) {
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !graph->enabled) return false;
-
-    auto* cycleSet = mutableCycleSet(*graph, cycleSetId);
-    if (cycleSet == nullptr) {
-        return false;
-    }
-
-    const bool changed = rotateStepNodeSegment(
-        *graph,
-        cycleSet->firstStateNode,
-        cycleSet->length,
-        offsetSteps,
-        cycleSet->offset
-    );
-    const bool offsetChanged = cycleSet->offset != 0;
-    if (cycleSet->offset != 0) {
-        cycleSet->offset = 0;
-    }
-    bump(pattern, changed || offsetChanged);
-    return changed || offsetChanged;
-}
-
-FLASHMEM SequencerGraphCreateResult createCycleStateSet(
-    SequencerPatternState& pattern,
-    SequencerGraphNodeId parentNodeId,
-    uint8_t length
-) {
-    if (!ensureGraphRoot(pattern)) {
-        return {.ok = false, .limitReached = true};
-    }
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, parentNodeId)) {
-        return {.ok = false, .limitReached = true};
-    }
-
-    auto& parent = graph->stepNodes[parentNodeId];
-    if (parent.has(STEP_NODE_CYCLE_SET)) {
-        const auto* existing = graph->cycleSet(parent.cycleSetId);
-        if (existing != nullptr) {
-            return {.ok = true, .limitReached = false, .id = parent.cycleSetId};
-        }
-        parent.cycleSetId = kInvalidId;
-        assignFlag(parent.flags, STEP_NODE_CYCLE_SET, false);
-    }
-
-    const uint16_t setId = allocateCycleSet(*graph, length);
-    if (setId == kInvalidId) {
-        return {.ok = false, .limitReached = true};
-    }
-
-    parent.cycleSetId = setId;
-    parent.flags = static_cast<uint16_t>(parent.flags | STEP_NODE_CYCLE_SET);
-    pattern.bumpGraphRevision();
-    return {.ok = true, .limitReached = false, .id = setId};
-}
-
-FLASHMEM bool clearNodeChildren(SequencerPatternState& pattern, SequencerGraphNodeId nodeId) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-
-    auto& node = graph->stepNodes[nodeId];
-    bool changed = false;
-    if (node.childSequenceId != kInvalidId) {
-        node.childSequenceId = kInvalidId;
-        changed = true;
-    }
-    if (node.cycleSetId != kInvalidId) {
-        node.cycleSetId = kInvalidId;
-        changed = true;
-    }
-    changed = assignFlag(node.flags, STEP_NODE_CHILD_SEQUENCE, false) || changed;
-    changed = assignFlag(node.flags, STEP_NODE_CYCLE_SET, false) || changed;
-
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool clearNodeChildSequence(SequencerPatternState& pattern,
-                                     SequencerGraphNodeId nodeId) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-
-    auto& node = graph->stepNodes[nodeId];
-    bool changed = false;
-    if (node.childSequenceId != kInvalidId) {
-        node.childSequenceId = kInvalidId;
-        changed = true;
-    }
-    changed = assignFlag(node.flags, STEP_NODE_CHILD_SEQUENCE, false) || changed;
-
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool clearNodeCycleStateSet(SequencerPatternState& pattern,
-                                     SequencerGraphNodeId nodeId) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-
-    auto& node = graph->stepNodes[nodeId];
-    bool changed = false;
-    if (node.cycleSetId != kInvalidId) {
-        node.cycleSetId = kInvalidId;
-        changed = true;
-    }
-    changed = assignFlag(node.flags, STEP_NODE_CYCLE_SET, false) || changed;
-
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool copyNodeChildrenFromGraph(
-    SequencerPatternState& targetPattern,
-    SequencerGraphNodeId targetNodeId,
-    const StepSequencerGraph& sourceGraph,
-    SequencerGraphNodeId sourceNodeId
-) {
-    if (!ensureGraphRoot(targetPattern)) return false;
-    auto* targetGraph = mutableGraph(targetPattern);
-    if (targetGraph == nullptr ||
-        !hasStepNode(*targetGraph, targetNodeId) ||
-        !hasStepNode(sourceGraph, sourceNodeId)) {
-        return false;
-    }
-
-    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    const bool hasSourceChildren =
-        (sourceNode.has(STEP_NODE_CHILD_SEQUENCE) &&
-         sourceGraph.sequence(sourceNode.childSequenceId) != nullptr) ||
-        (sourceNode.has(STEP_NODE_CYCLE_SET) &&
-         sourceGraph.cycleSet(sourceNode.cycleSetId) != nullptr);
-    if (!hasSourceChildren) return false;
-
-    const GraphCopyBudget budget = childCopyBudget(sourceGraph, sourceNode);
-    if (!budget.valid) return false;
-    if (static_cast<uint32_t>(targetGraph->stepNodeCount) + budget.stepNodes >
-            targetGraph->stepNodes.size() ||
-        static_cast<uint32_t>(targetGraph->sequenceCount) + budget.sequences >
-            targetGraph->sequences.size() ||
-        static_cast<uint32_t>(targetGraph->cycleSetCount) + budget.cycleSets >
-            targetGraph->cycleSets.size()) {
-        return false;
-    }
-
-    auto& targetNode = targetGraph->stepNodes[targetNodeId];
-    targetNode.childSequenceId = kInvalidId;
-    targetNode.cycleSetId = kInvalidId;
-    targetNode.flags = static_cast<uint16_t>(
-        targetNode.flags & ~(STEP_NODE_CHILD_SEQUENCE | STEP_NODE_CYCLE_SET)
-    );
-
-    if (!copyChildrenIntoNode(*targetGraph, targetNode, sourceGraph, sourceNode)) {
-        return false;
-    }
-
-    targetPattern.bumpGraphRevision();
-    return true;
-}
-
-FLASHMEM bool copyNodeChildSequenceFromGraph(
-    SequencerPatternState& targetPattern,
-    SequencerGraphNodeId targetNodeId,
-    const StepSequencerGraph& sourceGraph,
-    SequencerGraphNodeId sourceNodeId
-) {
-    if (!ensureGraphRoot(targetPattern)) return false;
-    auto* targetGraph = mutableGraph(targetPattern);
-    if (targetGraph == nullptr ||
-        !hasStepNode(*targetGraph, targetNodeId) ||
-        !hasStepNode(sourceGraph, sourceNodeId)) {
-        return false;
-    }
-
-    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    if (!sourceNode.has(STEP_NODE_CHILD_SEQUENCE) ||
-        sourceGraph.sequence(sourceNode.childSequenceId) == nullptr) {
-        return false;
-    }
-
-    const GraphCopyBudget budget = sequenceCopyBudget(sourceGraph, sourceNode.childSequenceId);
-    if (!budget.valid) return false;
-    if (static_cast<uint32_t>(targetGraph->stepNodeCount) + budget.stepNodes >
-            targetGraph->stepNodes.size() ||
-        static_cast<uint32_t>(targetGraph->sequenceCount) + budget.sequences >
-            targetGraph->sequences.size() ||
-        static_cast<uint32_t>(targetGraph->cycleSetCount) + budget.cycleSets >
-            targetGraph->cycleSets.size()) {
-        return false;
-    }
-
-    auto& targetNode = targetGraph->stepNodes[targetNodeId];
-    targetNode.childSequenceId = kInvalidId;
-    targetNode.flags = static_cast<uint16_t>(targetNode.flags & ~STEP_NODE_CHILD_SEQUENCE);
-
-    if (!copySequenceIntoNode(*targetGraph, targetNode, sourceGraph, sourceNode.childSequenceId)) {
-        return false;
-    }
-
-    targetPattern.bumpGraphRevision();
-    return true;
-}
-
-FLASHMEM bool copyNodeCycleStateSetFromGraph(
-    SequencerPatternState& targetPattern,
-    SequencerGraphNodeId targetNodeId,
-    const StepSequencerGraph& sourceGraph,
-    SequencerGraphNodeId sourceNodeId
-) {
-    if (!ensureGraphRoot(targetPattern)) return false;
-    auto* targetGraph = mutableGraph(targetPattern);
-    if (targetGraph == nullptr ||
-        !hasStepNode(*targetGraph, targetNodeId) ||
-        !hasStepNode(sourceGraph, sourceNodeId)) {
-        return false;
-    }
-
-    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    if (!sourceNode.has(STEP_NODE_CYCLE_SET) ||
-        sourceGraph.cycleSet(sourceNode.cycleSetId) == nullptr) {
-        return false;
-    }
-
-    const GraphCopyBudget budget = cycleSetCopyBudget(sourceGraph, sourceNode.cycleSetId);
-    if (!budget.valid) return false;
-    if (static_cast<uint32_t>(targetGraph->stepNodeCount) + budget.stepNodes >
-            targetGraph->stepNodes.size() ||
-        static_cast<uint32_t>(targetGraph->sequenceCount) + budget.sequences >
-            targetGraph->sequences.size() ||
-        static_cast<uint32_t>(targetGraph->cycleSetCount) + budget.cycleSets >
-            targetGraph->cycleSets.size()) {
-        return false;
-    }
-
-    auto& targetNode = targetGraph->stepNodes[targetNodeId];
-    targetNode.cycleSetId = kInvalidId;
-    targetNode.flags = static_cast<uint16_t>(targetNode.flags & ~STEP_NODE_CYCLE_SET);
-
-    if (!copyCycleSetIntoNode(*targetGraph, targetNode, sourceGraph, sourceNode.cycleSetId)) {
-        return false;
-    }
-
-    targetPattern.bumpGraphRevision();
-    return true;
-}
-
-FLASHMEM bool setNodeEnabledOverride(SequencerPatternState& pattern,
-                                     SequencerGraphNodeId nodeId,
-                                     bool enabled) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-
-    auto& node = graph->stepNodes[nodeId];
-    bool changed = assignFlag(node.flags, STEP_NODE_ENABLED_OVERRIDE, true);
-    changed = assignFlag(node.flags, STEP_NODE_ENABLED_VALUE, enabled) || changed;
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool clearNodeEnabledOverride(SequencerPatternState& pattern,
-                                       SequencerGraphNodeId nodeId) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-
-    auto& node = graph->stepNodes[nodeId];
-    bool changed = assignFlag(node.flags, STEP_NODE_ENABLED_OVERRIDE, false);
-    changed = assignFlag(node.flags, STEP_NODE_ENABLED_VALUE, false) || changed;
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool setNodeNoteOffset(SequencerPatternState& pattern,
-                                SequencerGraphNodeId nodeId,
-                                int8_t offset) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-
-    auto& node = graph->stepNodes[nodeId];
-    bool changed = false;
-    if (offset == 0) {
-        changed = assignFlag(node.flags, STEP_NODE_NOTE_OFFSET, false);
-    } else {
-        if (node.noteOffset != offset) {
-            node.noteOffset = offset;
-            changed = true;
-        }
-        changed = assignFlag(node.flags, STEP_NODE_NOTE_OFFSET, true) || changed;
-    }
-
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool setNodeVelocityOffset(SequencerPatternState& pattern,
-                                    SequencerGraphNodeId nodeId,
-                                    int16_t offset) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-    return setSignedOffset(
-        pattern,
-        nodeId,
-        STEP_NODE_VELOCITY_OFFSET,
-        graph->stepNodes[nodeId].velocityOffset,
-        offset
-    );
-}
-
-FLASHMEM bool setNodeGateOffset(SequencerPatternState& pattern,
-                                SequencerGraphNodeId nodeId,
-                                int16_t offset) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-    return setSignedOffset(
-        pattern,
-        nodeId,
-        STEP_NODE_GATE_OFFSET,
-        graph->stepNodes[nodeId].gateOffset,
-        offset
-    );
-}
-
-FLASHMEM bool setNodeNudgeOffset(SequencerPatternState& pattern,
-                                 SequencerGraphNodeId nodeId,
-                                 int8_t offset) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-
-    auto& node = graph->stepNodes[nodeId];
-    bool changed = false;
-    if (offset == 0) {
-        changed = assignFlag(node.flags, STEP_NODE_NUDGE_OFFSET, false);
-    } else {
-        if (node.nudgeOffset != offset) {
-            node.nudgeOffset = offset;
-            changed = true;
-        }
-        changed = assignFlag(node.flags, STEP_NODE_NUDGE_OFFSET, true) || changed;
-    }
-
-    bump(pattern, changed);
-    return changed;
-}
-
-FLASHMEM bool setNodeProbabilityOffset(SequencerPatternState& pattern,
-                                       SequencerGraphNodeId nodeId,
-                                       int16_t offset) {
-    if (!ensureGraphRoot(pattern)) return false;
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
-    return setSignedOffset(
-        pattern,
-        nodeId,
-        STEP_NODE_PROBABILITY_OFFSET,
-        graph->stepNodes[nodeId].probabilityOffset,
-        offset
-    );
 }
 
 }  // namespace core::state::sequencer
