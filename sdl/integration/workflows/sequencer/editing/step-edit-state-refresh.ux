@@ -1,0 +1,22 @@
+# UX workflow: verify Step Editor State refreshes immediately.
+# Purpose: captures State On -> Off -> On without moving NAV focus between edits.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Toggle the first visible step on, then open its Step Editor.
+150 tap MACRO_1 60
+300 button MACRO_1 down
+1350 tick
+1400 capture screen state_on_initial
+1450 button MACRO_1 up
+
+# Edit State directly with OPT while focus remains on State.
+1550 encoder OPT -1
+1650 capture screen state_off_after_opt
+
+1750 encoder OPT 1
+1850 capture screen state_on_after_opt
+
+1950 tap LEFT_TOP 60
+2150 capture screen step_edit_closed

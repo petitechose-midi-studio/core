@@ -10,8 +10,7 @@
 # Hold LEFT_CENTER, focus Length, edit it, and release to apply.
 150 button LEFT_CENTER down
 300 capture screen quick_controls_open
-400 encoder NAV -1
-500 encoder OPT 0.20
+400 encoder OPT 0.20
 650 capture screen length_adjusted
 750 button LEFT_CENTER up
 950 capture screen length_applied

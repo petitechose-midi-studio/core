@@ -30,8 +30,9 @@
 3820 tick
 3880 capture screen micro_step_edit_open
 3940 button MACRO_1 up
-4040 encoder NAV 1
-4140 encoder OPT 0.65
+4060 encoder NAV 1
+4140 encoder NAV 1
+4220 encoder OPT 0.65
 4360 capture screen micro_step_note_offset
 4460 tap NAV 60
 4700 capture screen micro_context_note_offset_applied

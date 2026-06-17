@@ -1,0 +1,16 @@
+# UX workflow: nested local random runtime feedback.
+# Purpose: validates that a cycle-state step with local randomization projects
+# its resolved runtime pitch through an owned micro-sequence child.
+# Expect: playhead_progress
+
+0 scenario seq-local-random-nested-runtime
+80 capture screen nested_local_random_ready
+
+180 tap BOTTOM_CENTER 60
+620 capture screen nested_local_random_playing
+
+900 tick
+980 capture screen nested_local_random_late
+
+1080 tap BOTTOM_CENTER 60
+1280 capture screen nested_local_random_stopped

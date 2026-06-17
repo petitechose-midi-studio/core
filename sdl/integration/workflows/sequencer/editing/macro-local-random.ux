@@ -1,0 +1,25 @@
+# UX workflow: edit per-step local randomization from the sequencer grid with macros.
+# Purpose: validates LEFT_BOTTOM prop hold + macro encoder writes the local
+# variation range for the active property and previews it without editing the
+# deterministic step value.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable the first step so the local range has a visible anchor.
+120 tap MACRO_1 60
+
+# Hold LEFT_BOTTOM to enter the prop selector/local macro-random layer.
+220 button LEFT_BOTTOM down
+320 capture screen prop_selector_ready
+
+# Macro 1 edits step 1 local Pitch random range, because Pitch is active.
+520 encoder MACRO_1 1.00
+700 capture screen macro_local_random_pitch
+
+# Release LEFT_BOTTOM to commit and close the hold overlay.
+850 button LEFT_BOTTOM up
+1050 capture screen macro_local_random_closed
+
+# The resolved random preview must persist after the inline edit feedback timeout.
+1500 capture screen macro_local_random_persistent
