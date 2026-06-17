@@ -2,16 +2,19 @@
 
 #include <oc/realtime/InterruptGuard.hpp>
 
+#include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::sequencer {
 
 SequencerRuntimeSnapshotBank::SequencerRuntimeSnapshotBank(
     core::state::sequencer::SequencerState& sequencer,
-    core::state::sequencer::SequencerTrackBankState& trackBank
+    core::state::sequencer::SequencerTrackBankState& trackBank,
+    core::state::project::ProjectNavigationState& projectNavigation
 )
     : sequencer_(sequencer)
-    , track_bank_(trackBank) {}
+    , track_bank_(trackBank)
+    , project_navigation_(projectNavigation) {}
 
 uint8_t SequencerRuntimeSnapshotBank::refresh() {
     const uint8_t currentIndex = active_index_;
@@ -28,11 +31,20 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
     runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
     runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
+    runtimeSnapshot.projectSwingPercent =
+        core::state::project::sanitizeProjectSwingPercent(
+            project_navigation_.transportSwingPercent
+        );
+    const ProjectTimingContext projectTiming{runtimeSnapshot.projectSwingPercent};
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
         const auto& source = (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
         const auto signature =
-            captureRuntimeStateSignature(source, runtimeSnapshot.projectScaleSettings);
+            captureRuntimeStateSignature(
+                source,
+                runtimeSnapshot.projectScaleSettings,
+                projectTiming
+            );
         if (writeSignatures[i].matches(signature)) {
             continue;
         }
@@ -44,6 +56,8 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
                 runtimeSnapshot.tracks[i].scalePolicy,
                 runtimeSnapshot.tracks[i].scaleOverride
             );
+        runtimeSnapshot.tracks[i].effectiveSwingPercent =
+            source.effectiveSwingPercent(runtimeSnapshot.projectSwingPercent);
         writeSignatures[i] = signature;
     }
 

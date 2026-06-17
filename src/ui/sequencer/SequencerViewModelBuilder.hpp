@@ -6,12 +6,12 @@
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/common/TrackNavigationStrip.hpp"
-#include "ui/sequencer/SequencerBottomControls.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
-#include "ui/sequencer/StepPropertyStrip.hpp"
+#include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/sequencer/StepGridRenderTypes.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
@@ -35,11 +35,13 @@ struct SequencerViewModelSource {
     const oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
     const core::state::StructureClipboardState& structureClipboard;
     const core::state::StatusBarState& statusBar;
+    const core::state::project::ProjectNavigationState& projectNavigation;
 };
 
 SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source);
-SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSource& source);
-StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSource& source);
+StepPropertySelectionOverlayProps buildPropertySelectionOverlayProps(
+    const SequencerViewModelSource& source
+);
 ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource& source);
 ContextActionStripProps buildBottomActionStripProps(const SequencerViewModelSource& source);
 grid::StepGridFrameState buildStepGridProps(const SequencerViewModelSource& source);

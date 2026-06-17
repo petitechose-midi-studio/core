@@ -130,5 +130,11 @@ bool setNodeNudgeOffset(SequencerPatternState& pattern, SequencerGraphNodeId nod
 bool setNodeProbabilityOffset(SequencerPatternState& pattern,
                               SequencerGraphNodeId nodeId,
                               int16_t offset);
+uint8_t nodeLocalVariationRange(const oc::note::sequencer::StepSequencerStepNode& node,
+                                StepProperty property);
+bool setNodeLocalVariationRange(SequencerPatternState& pattern,
+                                SequencerGraphNodeId nodeId,
+                                StepProperty property,
+                                uint8_t range);
 
 }  // namespace core::state::sequencer

@@ -1,4 +1,9 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <cassert>
+#include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <utility>
@@ -191,9 +196,14 @@ void test_pattern_noop_ignores_unused_graph_capacity() {
 
     SequencerHistoryPatternSnapshot before;
     SequencerHistoryPatternSnapshot after;
-    assert(core::state::sequencer::captureHistorySnapshot(state, before));
-    assert(core::state::sequencer::captureHistorySnapshot(state, after));
+    const bool capturedBefore = core::state::sequencer::captureHistorySnapshot(state, before);
+    assert(capturedBefore);
+    const bool capturedAfter = core::state::sequencer::captureHistorySnapshot(state, after);
+    assert(capturedAfter);
     assert(after.graph != nullptr);
+    if (!capturedBefore || !capturedAfter || after.graph == nullptr) {
+        std::abort();
+    }
 
     auto& graph = *after.graph;
     assert(graph.stepNodeCount < graph.stepNodes.size());
@@ -580,6 +590,8 @@ void test_clear_resets_stacks() {
 }  // namespace
 
 int main() {
+    std::cout.setf(std::ios::unitbuf);
+
     test_pattern_snapshot_can_capture_inactive_track();
     test_pattern_history_undo_redo_restores_flat_data_and_focus();
     test_pattern_history_restores_graph_payload();

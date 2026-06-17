@@ -1,15 +1,16 @@
 #include "context/standalone/SequencerOverlayPresenter.hpp"
 
 #include <config/PlatformCompat.hpp>
-#include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
+#include "ui/sequencer/SequencerStepEditOverlay.hpp"
 
 namespace core::context::standalone {
+namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 
 SequencerOverlayPresenter::SequencerOverlayPresenter(
     StateRefs stateRefs,
-    ms::ui::VirtualListKeyValueOverlay& stepEditOverlay,
+    core::ui::SequencerStepEditOverlay& stepEditOverlay,
     core::ui::ContextActionStrip& stepEditActionStrip
 )
     : state_refs_(stateRefs)
@@ -22,8 +23,14 @@ FLASHMEM void SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.sequencer.stepEdit.stepIndex,
         state_refs_.sequencer.stepEdit.focusedRow,
+        state_refs_.sequencer.stepEdit.localVariationEditActive,
+        state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.pattern.graphRevision,
+        state_refs_.sequencer.contentView.revision
+    );
+    step_edit_action_watcher_.watchAll(
+        [this]() { renderStepEditActionStrip(); },
         state_refs_.structureClipboard.revision,
         state_refs_.sequencer.stepEdit.contextHold.action,
         state_refs_.sequencer.stepEdit.contextHold.startedAtMs
@@ -41,15 +48,17 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
         return;
     }
 
-    step_edit_overlay_.render({
-        .title = data.title.data(),
-        .meta = data.meta.data(),
-        .rows = data.rows.data(),
-        .rowCount = data.rowCount,
-        .selectedIndex = data.selectedIndex,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
+    step_edit_overlay_.render(data.overlayProps);
+    renderStepEditActionStrip();
+}
+
+FLASHMEM void SequencerOverlayPresenter::renderStepEditActionStrip() {
+    if (!state_refs_.sequencer.stepEdit.visible.get() ||
+        !step_edit_rows::isContext(state_refs_.sequencer.stepEdit.focusedRow.get())) {
+        step_edit_action_strip_.render({.visible = false});
+        return;
+    }
+
     step_edit_action_strip_.render(
         core::context::standalone::sequencer_overlay_presenter::buildStepEditActionStripProps({
             state_refs_.sequencer,

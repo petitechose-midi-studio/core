@@ -32,6 +32,11 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         oc::note::sequencer::StepSequencerState::MAX_GATE_PERCENT;
     static constexpr uint8_t DEFAULT_PROBABILITY =
         oc::note::sequencer::StepSequencerState::DEFAULT_PROBABILITY;
+    static constexpr int8_t MIN_PATTERN_SWING_OFFSET_PERCENT = -75;
+    static constexpr int8_t MAX_PATTERN_SWING_OFFSET_PERCENT = 75;
+    static constexpr uint8_t MAX_EFFECTIVE_SWING_PERCENT = 75;
+    static constexpr int8_t MIN_PATTERN_NUDGE_PERCENT = -50;
+    static constexpr int8_t MAX_PATTERN_NUDGE_PERCENT = 50;
 
     /// Bumps when non-signal step arrays change (note/velocity/gate/nudge/probability).
     Signal<uint32_t> stepDataRevision{0};
@@ -44,6 +49,15 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
 
     /// Bumps when hierarchical step content changes.
     Signal<uint32_t> graphRevision{0};
+
+    /// Signed delta added to the project swing for this pattern.
+    Signal<int8_t, 6> swingOffsetPercent{0};
+
+    /// Signed temporal offset applied to every step in this pattern.
+    Signal<int8_t, 6> patternNudgePercent{0};
+
+    /// Bumps when pattern timing context changes.
+    Signal<uint32_t> patternTimingRevision{0};
 
     SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
@@ -66,6 +80,24 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         return static_cast<int8_t>(value);
     }
 
+    static int8_t clampPatternSwingOffsetPercent(int value) {
+        if (value < MIN_PATTERN_SWING_OFFSET_PERCENT) return MIN_PATTERN_SWING_OFFSET_PERCENT;
+        if (value > MAX_PATTERN_SWING_OFFSET_PERCENT) return MAX_PATTERN_SWING_OFFSET_PERCENT;
+        return static_cast<int8_t>(value);
+    }
+
+    static int8_t clampPatternNudgePercent(int value) {
+        if (value < MIN_PATTERN_NUDGE_PERCENT) return MIN_PATTERN_NUDGE_PERCENT;
+        if (value > MAX_PATTERN_NUDGE_PERCENT) return MAX_PATTERN_NUDGE_PERCENT;
+        return static_cast<int8_t>(value);
+    }
+
+    static uint8_t clampEffectiveSwingPercent(int value) {
+        if (value < 0) return 0;
+        if (value > MAX_EFFECTIVE_SWING_PERCENT) return MAX_EFFECTIVE_SWING_PERCENT;
+        return static_cast<uint8_t>(value);
+    }
+
     static uint8_t clampProbability(uint8_t value) {
         return oc::note::sequencer::StepSequencerState::clampProbability(value);
     }
@@ -86,12 +118,24 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         graphRevision.set(graphRevision.get() + 1);
     }
 
+    void bumpPatternTimingRevision() {
+        patternTimingRevision.set(patternTimingRevision.get() + 1);
+    }
+
+    uint8_t effectiveSwingPercent(uint8_t projectSwingPercent) const {
+        return clampEffectiveSwingPercent(
+            static_cast<int>(projectSwingPercent) + static_cast<int>(swingOffsetPercent.get())
+        );
+    }
+
     uint8_t variationRangeForProperty(StepProperty property) const;
     bool setVariationRangeForProperty(StepProperty property, uint8_t range);
     bool setPatternVariationRanges(oc::note::sequencer::StepSequencerVariationRanges ranges);
     bool setPatternScalePolicy(SequencerPatternScalePolicy policy);
     bool setPatternScaleOverride(oc::note::sequencer::StepSequencerScaleSettings settings);
     bool setPitchEditMode(SequencerPitchEditMode mode);
+    bool setPatternSwingOffsetPercent(int value);
+    bool setPatternNudgePercent(int value);
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
         if (step >= MAX_STEPS) return false;

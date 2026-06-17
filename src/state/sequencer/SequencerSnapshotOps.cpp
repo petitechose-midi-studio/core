@@ -133,6 +133,10 @@ FLASHMEM bool sameRootNode(const StepNode& lhs, const StepNode& rhs) {
            lhs.gateOffset == rhs.gateOffset &&
            lhs.nudgeOffset == rhs.nudgeOffset &&
            lhs.probabilityOffset == rhs.probabilityOffset &&
+           lhs.localVariation.pitchSemitones == rhs.localVariation.pitchSemitones &&
+           lhs.localVariation.velocity == rhs.localVariation.velocity &&
+           lhs.localVariation.gatePercent == rhs.localVariation.gatePercent &&
+           lhs.localVariation.nudge == rhs.localVariation.nudge &&
            lhs.childSequenceId == rhs.childSequenceId &&
            lhs.cycleSetId == rhs.cycleSetId;
 }
@@ -193,7 +197,13 @@ FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatt
     out.stepDataRevision = source.stepDataRevision.get();
     out.patternVariationRevision = source.patternVariationRevision.get();
     out.patternScaleRevision = source.patternScaleRevision.get();
+    out.patternTimingRevision = source.patternTimingRevision.get();
     out.graphRevision = source.graphRevision.get();
+    out.swingOffsetPercent =
+        SequencerPatternState::clampPatternSwingOffsetPercent(source.swingOffsetPercent.get());
+    out.patternNudgePercent =
+        SequencerPatternState::clampPatternNudgePercent(source.patternNudgePercent.get());
+    out.effectiveSwingPercent = source.effectiveSwingPercent(0);
     out.variationRanges = source.variationRanges;
     out.variationRanges.clamp();
     out.scalePolicy = source.scalePolicy;
@@ -221,6 +231,9 @@ FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatter
     target.setPatternScalePolicy(snapshot.scalePolicy);
     target.setPatternScaleOverride(snapshot.scaleOverride);
     target.setPitchEditMode(snapshot.pitchEditMode);
+    target.setPatternSwingOffsetPercent(snapshot.swingOffsetPercent);
+    target.setPatternNudgePercent(snapshot.patternNudgePercent);
+    target.patternTimingRevision.set(snapshot.patternTimingRevision);
     target.graph.reset();
     target.graphRevision.set(snapshot.graphRevision);
 
@@ -274,6 +287,9 @@ FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPa
     target.setPatternScalePolicy(snapshot.scalePolicy);
     target.setPatternScaleOverride(snapshot.scaleOverride);
     target.setPitchEditMode(snapshot.pitchEditMode);
+    target.setPatternSwingOffsetPercent(snapshot.swingOffsetPercent);
+    target.setPatternNudgePercent(snapshot.patternNudgePercent);
+    target.pattern.patternTimingRevision.set(snapshot.patternTimingRevision);
     target.pattern.graph.reset();
     target.pattern.graphRevision.set(snapshot.graphRevision);
 

@@ -14,7 +14,10 @@ using core::state::sequencer::createMicroSequence;
 using core::state::sequencer::enterCycleStatesContentView;
 using core::state::sequencer::enterMicroSequenceContentView;
 using core::state::sequencer::rootStepNodeId;
+using core::state::sequencer::setNodeEnabledOverride;
 using core::state::sequencer::setNodeNoteOffset;
+using core::state::sequencer::setNodeLocalVariationRange;
+using core::state::sequencer::StepProperty;
 using core::ui::sequencer::grid::buildStepContentBadgeProjection;
 using core::ui::sequencer::grid::buildStepContentBadgeProjectionForNode;
 
@@ -298,6 +301,68 @@ void test_child_grid_summarizes_intermediate_child_pitch() {
     std::cout << "[PASS] test_child_grid_summarizes_intermediate_child_pitch\n";
 }
 
+void test_child_summary_reports_representative_local_variation() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(8);
+    sequencer.pattern.note[0] = 60;
+    sequencer.pattern.setEnabled(0, true);
+
+    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
+    assert(cycle.ok);
+    auto* graph = sequencer.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* cycleSet = graph->cycleSet(cycle.id);
+    assert(cycleSet != nullptr);
+    const auto stateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 1U);
+    assert(setNodeNoteOffset(sequencer.pattern, stateNode, 2));
+    assert(setNodeLocalVariationRange(sequencer.pattern, stateNode, StepProperty::NOTE, 5));
+
+    sequencer.probabilityCycleIndex = 1;
+    auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer,
+        0,
+        {}
+    );
+    core::state::sequencer::SequencerChildContentSummary summary{};
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
+        sequencer,
+        projection,
+        {},
+        summary
+    ));
+    assert(summary.nodeId == stateNode);
+    assert(summary.note == 62);
+    assert(summary.localVariation.pitchSemitones == 5);
+
+    const auto micro = createMicroSequence(sequencer.pattern, stateNode, 2);
+    assert(micro.ok);
+    graph = sequencer.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto microNode = sequence->firstStepNode;
+    assert(setNodeNoteOffset(sequencer.pattern, microNode, 3));
+    assert(setNodeLocalVariationRange(sequencer.pattern, microNode, StepProperty::VELOCITY, 12));
+
+    projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer,
+        0,
+        {}
+    );
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
+        sequencer,
+        projection,
+        {},
+        summary
+    ));
+    assert(summary.nodeId == microNode);
+    assert(summary.note == 65);
+    assert(summary.localVariation.pitchSemitones == 5);
+    assert(summary.localVariation.velocity == 12);
+
+    std::cout << "[PASS] test_child_summary_reports_representative_local_variation\n";
+}
+
 void test_intermediate_cycle_summary_uses_owner_activation_count() {
     SequencerState sequencer;
     sequencer.pattern.length.set(8);
@@ -494,6 +559,58 @@ void test_child_playhead_remains_visible_when_selected_state_is_disabled() {
     std::cout << "[PASS] test_child_playhead_remains_visible_when_selected_state_is_disabled\n";
 }
 
+void test_parent_summary_uses_current_micro_substep_runtime_note() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(8);
+    sequencer.pattern.note[0] = 60;
+    sequencer.pattern.setEnabled(0, true);
+    sequencer.probabilityCycleMask.setBit(0, true);
+    sequencer.playheadStep.set(0);
+    sequencer.playheadStepTicks = 24;
+
+    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    assert(micro.ok);
+    auto* graph = sequencer.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto firstNode = sequence->firstStepNode;
+    const auto secondNode = static_cast<uint16_t>(sequence->firstStepNode + 1U);
+    assert(setNodeEnabledOverride(sequencer.pattern, firstNode, false));
+    assert(setNodeNoteOffset(sequencer.pattern, secondNode, 7));
+
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer,
+        0,
+        {}
+    );
+    assert(projection.valid);
+
+    sequencer.playheadStepTickOffset.set(0);
+    core::state::sequencer::SequencerChildContentSummary summary{};
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
+        sequencer,
+        projection,
+        {},
+        summary
+    ));
+    assert(summary.nodeId == firstNode);
+    assert(!summary.enabled);
+
+    sequencer.playheadStepTickOffset.set(12);
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
+        sequencer,
+        projection,
+        {},
+        summary
+    ));
+    assert(summary.nodeId == secondNode);
+    assert(summary.enabled);
+    assert(summary.note == 67);
+
+    std::cout << "[PASS] test_parent_summary_uses_current_micro_substep_runtime_note\n";
+}
+
 void test_ui_allows_three_child_content_levels_when_engine_depth_is_four() {
     SequencerState sequencer;
     sequencer.pattern.length.set(8);
@@ -537,10 +654,12 @@ int main() {
     test_parent_grid_summarizes_final_child_pitch();
     test_parent_tile_displays_final_child_pitch_across_nested_cycles();
     test_child_grid_summarizes_intermediate_child_pitch();
+    test_child_summary_reports_representative_local_variation();
     test_intermediate_cycle_summary_uses_owner_activation_count();
     test_nested_child_playhead_follows_active_owner_path();
     test_child_disabled_state_is_reported_to_parent_summary();
     test_child_playhead_remains_visible_when_selected_state_is_disabled();
+    test_parent_summary_uses_current_micro_substep_runtime_note();
     test_ui_allows_three_child_content_levels_when_engine_depth_is_four();
 
     std::cout << "\nAll SequencerStepGridFrame tests passed.\n";

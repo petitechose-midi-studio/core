@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "ui/sequencer/StepContentBadgeProjection.hpp"
 
 namespace core::ui::sequencer::grid {
@@ -36,6 +37,78 @@ FLASHMEM uint8_t variationRangeForProperty(
     }
 
     return 0;
+}
+
+FLASHMEM oc::note::sequencer::StepSequencerVariationRanges combineVariationRanges(
+    oc::note::sequencer::StepSequencerVariationRanges global,
+    oc::note::sequencer::StepSequencerVariationRanges local
+) {
+    using Ranges = oc::note::sequencer::StepSequencerVariationRanges;
+
+    global.clamp();
+    local.clamp();
+    return {
+        .pitchSemitones = static_cast<uint8_t>(
+            std::min<uint16_t>(
+                static_cast<uint16_t>(global.pitchSemitones) + local.pitchSemitones,
+                Ranges::MAX_PITCH_SEMITONES
+            )
+        ),
+        .velocity = static_cast<uint8_t>(
+            std::min<uint16_t>(
+                static_cast<uint16_t>(global.velocity) + local.velocity,
+                Ranges::MAX_VELOCITY
+            )
+        ),
+        .gatePercent = static_cast<uint8_t>(
+            std::min<uint16_t>(
+                static_cast<uint16_t>(global.gatePercent) + local.gatePercent,
+                Ranges::MAX_GATE_PERCENT
+            )
+        ),
+        .nudge = static_cast<uint8_t>(
+            std::min<uint16_t>(
+                static_cast<uint16_t>(global.nudge) + local.nudge,
+                Ranges::MAX_NUDGE
+            )
+        ),
+    };
+}
+
+FLASHMEM oc::note::sequencer::StepSequencerVariationRanges localVariationForNode(
+    const oc::note::sequencer::StepSequencerGraph* graph,
+    core::state::sequencer::SequencerGraphNodeId nodeId
+) {
+    if (graph == nullptr) return {};
+    const auto* node = graph->stepNode(nodeId);
+    if (node == nullptr) return {};
+    auto ranges = node->localVariation;
+    ranges.clamp();
+    return ranges;
+}
+
+FLASHMEM oc::note::sequencer::StepSequencerVariationRanges inheritedLocalVariationForContentPath(
+    const core::state::sequencer::SequencerState& sequencer,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    oc::note::sequencer::StepSequencerVariationRanges ranges{};
+    if (graph == nullptr ||
+        !core::state::sequencer::isChildContentView(sequencer)) {
+        return ranges;
+    }
+
+    const auto& view = sequencer.contentView;
+    const uint8_t depth = std::min<uint8_t>(
+        view.stackDepth,
+        static_cast<uint8_t>(view.frames.size())
+    );
+    for (uint8_t i = 0; i < depth; ++i) {
+        ranges = combineVariationRanges(
+            ranges,
+            localVariationForNode(graph, view.frames[i].ownerNodeId)
+        );
+    }
+    return ranges;
 }
 
 FLASHMEM bool firstChildSummary(
@@ -105,13 +178,87 @@ FLASHMEM oc::note::sequencer::StepSequencerResolvedVariation buildTelemetryVaria
     return variation;
 }
 
+FLASHMEM bool expandedTelemetryVariationForNode(
+    const core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerGraphNodeId nodeId,
+    oc::note::sequencer::StepSequencerResolvedVariation& outVariation
+) {
+    const auto& telemetry = sequencer.expandedVariationTelemetry;
+    if (!telemetry.valid ||
+        nodeId == core::state::sequencer::SequencerContentStepProjection::INVALID_ID ||
+        sequencer.playheadStep.get() < 0 ||
+        telemetry.rootStepIndex != static_cast<uint8_t>(sequencer.playheadStep.get())) {
+        return false;
+    }
+
+    const uint32_t offset = sequencer.playheadStepTickOffset.get();
+    for (uint8_t i = 0; i < telemetry.count; ++i) {
+        if (telemetry.nodeId[i] != nodeId) continue;
+        const uint32_t start = telemetry.localTick[i];
+        const uint32_t end = start + static_cast<uint32_t>(telemetry.spanTicks[i]);
+        if (offset >= start && offset < end) {
+            outVariation = telemetry.variation[i];
+            return true;
+        }
+    }
+    return false;
+}
+
+FLASHMEM bool expandedTelemetryVariationAtCurrentOffset(
+    const core::state::sequencer::SequencerState& sequencer,
+    oc::note::sequencer::StepSequencerResolvedVariation& outVariation
+) {
+    const auto& telemetry = sequencer.expandedVariationTelemetry;
+    if (!telemetry.valid || sequencer.playheadStep.get() < 0) {
+        return false;
+    }
+    if (telemetry.rootStepIndex != static_cast<uint8_t>(sequencer.playheadStep.get())) {
+        return false;
+    }
+
+    const uint32_t offset = sequencer.playheadStepTickOffset.get();
+    for (uint8_t i = 0; i < telemetry.count; ++i) {
+        const uint32_t start = telemetry.localTick[i];
+        const uint32_t span = telemetry.spanTicks[i] == 0 ? 1U : telemetry.spanTicks[i];
+        const uint32_t end = start + span;
+        if (offset >= start && offset < end) {
+            outVariation = telemetry.variation[i];
+            return true;
+        }
+    }
+    return false;
+}
+
 FLASHMEM oc::note::sequencer::StepSequencerResolvedVariation buildPreviewVariation(
     uint8_t stepIndex,
-    const TileRenderState& tile,
+    uint32_t stepIdentity,
+    oc::note::sequencer::StepSequencerStepValues values,
     const oc::note::sequencer::StepSequencerVariationRanges& ranges,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
     return oc::note::sequencer::resolveStepVariation(
+        values,
+        ranges,
+        scaleSettings,
+        core::state::sequencer::SequencerState::MAX_GATE_PERCENT,
+        0U,
+        0U,
+        stepIndex,
+        true,
+        stepIdentity
+    );
+}
+
+FLASHMEM oc::note::sequencer::StepSequencerResolvedVariation buildPreviewVariation(
+    uint8_t stepIndex,
+    uint32_t stepIdentity,
+    const TileRenderState& tile,
+    const oc::note::sequencer::StepSequencerVariationRanges& ranges,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    return buildPreviewVariation(
+        stepIndex,
+        stepIdentity,
         oc::note::sequencer::StepSequencerStepValues{
             .note = tile.note,
             .velocity = tile.velocity,
@@ -119,12 +266,7 @@ FLASHMEM oc::note::sequencer::StepSequencerResolvedVariation buildPreviewVariati
             .nudge = tile.nudge,
         },
         ranges,
-        scaleSettings,
-        core::state::sequencer::SequencerState::MAX_GATE_PERCENT,
-        0U,
-        0U,
-        stepIndex,
-        true
+        scaleSettings
     );
 }
 
@@ -264,15 +406,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     const auto probabilityCycleMask = sequencer.probabilityCycleMask;
     const int16_t playhead = sequencer.playheadStep.get();
     const bool probabilityCycleMaskActive = playhead >= 0;
-    const bool patternRangeFeedbackVisible =
-        sequencer.stepPropertyInlineSelector.selecting.get() ||
-        (sequencer.patternVariationFeedback.visible.get() &&
-         sequencer.patternVariationFeedback.property.get() == frame.activeProperty);
-    const bool patternHasVariationRanges = hasAnyVariationRange(sequencer.pattern.variationRanges);
     const bool effectiveScaleFeedbackRelevant = scaleFeedbackRelevant(effectiveScaleSettings);
-    const bool activeRangeVisible =
-        patternRangeFeedbackVisible &&
-        variationRangeForProperty(sequencer.pattern.variationRanges, frame.activeProperty) > 0;
     const auto& telemetry = sequencer.cycleVariationTelemetry;
     const bool telemetryFeedbackRelevant =
         hasAnyVariationRange(telemetry.ranges) ||
@@ -283,6 +417,11 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
               effectiveScaleSettings
           )
         : core::state::sequencer::SequencerContentPlaybackProjection{};
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto inheritedLocalVariation = inheritedLocalVariationForContentPath(
+        sequencer,
+        graph
+    );
 
     for (uint8_t i = 0; i < frame.tiles.size(); ++i) {
         const uint8_t absoluteStep = static_cast<uint8_t>(pageStart + i);
@@ -316,6 +455,18 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
             tile.enabled = false;
             continue;
         }
+        const auto localVariation = combineVariationRanges(
+            inheritedLocalVariation,
+            localVariationForNode(graph, projection.nodeId)
+        );
+        const auto effectiveVariationRanges = combineVariationRanges(
+            sequencer.pattern.variationRanges,
+            localVariation
+        );
+        const bool effectiveHasVariationRanges = hasAnyVariationRange(effectiveVariationRanges);
+        const bool activeRangeVisible =
+            variationRangeForProperty(effectiveVariationRanges, frame.activeProperty) > 0;
+
         tile.enabled = projection.enabled;
         tile.note = projection.note;
         tile.velocity = projection.velocity;
@@ -346,6 +497,33 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
             );
         const bool childSummaryChanged =
             childSummaryTouched && childSummaryDiffersFromProjection(projection, childSummary);
+        const auto childSummaryEffectiveVariationRanges = childSummaryTouched
+            ? combineVariationRanges(effectiveVariationRanges, childSummary.localVariation)
+            : effectiveVariationRanges;
+        const bool childSummaryHasVariationRanges =
+            childSummaryTouched && hasAnyVariationRange(childSummaryEffectiveVariationRanges);
+        const bool childSummaryActiveRangeVisible =
+            childSummaryTouched &&
+            variationRangeForProperty(childSummaryEffectiveVariationRanges, frame.activeProperty) > 0;
+        const bool childSummaryPreviewRelevant =
+            childSummaryTouched &&
+            tile.enabled &&
+            (childSummaryHasVariationRanges || effectiveScaleFeedbackRelevant);
+        oc::note::sequencer::StepSequencerResolvedVariation expandedRuntimeVariation{};
+        const auto runtimeNodeId = childSummaryTouched
+            ? childSummary.nodeId
+            : projection.nodeId;
+        bool hasExpandedRuntimeVariation = expandedTelemetryVariationForNode(
+            sequencer,
+            runtimeNodeId,
+            expandedRuntimeVariation
+        );
+        if (!hasExpandedRuntimeVariation && tile.playheadVisible) {
+            hasExpandedRuntimeVariation = expandedTelemetryVariationAtCurrentOffset(
+                sequencer,
+                expandedRuntimeVariation
+            );
+        }
         if (childSummaryTouched) {
             tile.probabilityCycleActive =
                 tile.probabilityCycleActive && childSummary.enabled;
@@ -371,43 +549,88 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
             telemetryFeedbackRelevant;
         const bool hasPreviewFeedback =
             tile.enabled &&
-            (patternHasVariationRanges || effectiveScaleFeedbackRelevant);
+            (effectiveHasVariationRanges || effectiveScaleFeedbackRelevant);
         const bool stepInlineEditActive =
             frame.feedbackVisible && frame.feedbackTouchedMask.test(absoluteStep);
 
-        if (childSummaryChanged) {
+        if (hasExpandedRuntimeVariation && !stepInlineEditActive) {
+            if (tile.playheadVisible) {
+                tile.probabilityCycleActive = true;
+                tile.playing = tile.enabled;
+            }
             tile.variation.visible = true;
-            tile.variation.rangeVisible = false;
+            tile.variation.rangeVisible = childSummaryTouched
+                ? childSummaryActiveRangeVisible
+                : activeRangeVisible;
             tile.variation.deltaVisible = true;
             tile.variation.rangeProperty = frame.activeProperty;
-            tile.variation.resolved = buildChildSummaryVariation(
-                absoluteStep,
-                projection,
-                childSummary,
-                effectiveScaleSettings
-            );
+            tile.variation.resolved = expandedRuntimeVariation;
+        } else if (childSummaryChanged || childSummaryPreviewRelevant) {
+            tile.variation.visible = true;
+            tile.variation.rangeVisible =
+                childSummaryPreviewRelevant && childSummaryActiveRangeVisible;
+            tile.variation.deltaVisible = true;
+            tile.variation.rangeProperty = frame.activeProperty;
+            if (childSummaryPreviewRelevant) {
+                const uint32_t summaryIdentity =
+                    childSummary.nodeId !=
+                            core::state::sequencer::SequencerContentStepProjection::INVALID_ID
+                        ? childSummary.nodeId
+                        : projection.nodeId;
+                tile.variation.resolved = buildPreviewVariation(
+                    absoluteStep,
+                    summaryIdentity,
+                    oc::note::sequencer::StepSequencerStepValues{
+                        .note = childSummary.note,
+                        .velocity = childSummary.velocity,
+                        .gate = childSummary.gate,
+                        .nudge = childSummary.nudge,
+                    },
+                    childSummaryEffectiveVariationRanges,
+                    effectiveScaleSettings
+                );
+            } else {
+                tile.variation.resolved = buildChildSummaryVariation(
+                    absoluteStep,
+                    projection,
+                    childSummary,
+                    effectiveScaleSettings
+                );
+            }
         } else if (childContext && tile.enabled) {
             tile.variation.visible = true;
             tile.variation.rangeVisible = false;
             tile.variation.deltaVisible = true;
             tile.variation.rangeProperty = frame.activeProperty;
-            tile.variation.resolved = buildChildContentVariation(
-                absoluteStep,
-                projection,
-                effectiveScaleSettings
-            );
+            if (hasPreviewFeedback) {
+                tile.variation.rangeVisible = activeRangeVisible;
+                tile.variation.resolved = buildPreviewVariation(
+                    absoluteStep,
+                    projection.nodeId,
+                    tile,
+                    effectiveVariationRanges,
+                    effectiveScaleSettings
+                );
+            } else {
+                tile.variation.resolved = buildChildContentVariation(
+                    absoluteStep,
+                    projection,
+                    effectiveScaleSettings
+                );
+            }
         } else if (hasRuntimeVariation || hasPreviewFeedback || (tile.enabled && activeRangeVisible)) {
             tile.variation.visible = true;
             tile.variation.rangeVisible = tile.enabled && activeRangeVisible;
             tile.variation.deltaVisible = hasRuntimeVariation || hasPreviewFeedback;
             tile.variation.rangeProperty = frame.activeProperty;
-            if (telemetry.validMask.test(absoluteStep) && !stepInlineEditActive) {
+            if (hasRuntimeVariation && !stepInlineEditActive) {
                 tile.variation.resolved = buildTelemetryVariation(telemetry, absoluteStep, tile);
             } else if (hasPreviewFeedback) {
                 tile.variation.resolved = buildPreviewVariation(
                     absoluteStep,
+                    projection.nodeId,
                     tile,
-                    sequencer.pattern.variationRanges,
+                    effectiveVariationRanges,
                     effectiveScaleSettings
                 );
             } else {
@@ -415,7 +638,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
                     buildBaseVariation(
                         absoluteStep,
                         tile,
-                        sequencer.pattern.variationRanges,
+                        effectiveVariationRanges,
                         effectiveScaleSettings
                     );
             }

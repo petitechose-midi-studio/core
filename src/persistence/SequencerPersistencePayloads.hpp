@@ -32,6 +32,8 @@ struct PatternPayload {
     uint8_t variationVelocity = 0;
     uint8_t variationGatePercent = 0;
     uint8_t variationNudge = 0;
+    int8_t swingOffsetPercent = 0;
+    int8_t patternNudgePercent = 0;
     uint8_t scalePolicy = static_cast<uint8_t>(
         state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT
     );

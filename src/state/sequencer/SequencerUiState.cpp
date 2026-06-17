@@ -24,13 +24,15 @@ FLASHMEM void SequencerContentViewState::reset() {
 FLASHMEM void SequencerStepEditOverlayState::reset() {
     stepIndex.set(0);
     focusedRow.set(0);
+    localVariationEditActive.set(false);
     contextHold.clear();
-    snapshotValid = false;
 }
 
 FLASHMEM void SequencerStepPropertyInlineSelectorState::reset() {
     selecting.set(false);
+    macroLocalVariationEditActive.set(false);
     selectedIndex.set(0);
+    localVariationStepIndex = 0;
     snapshotValid = false;
 }
 
@@ -99,6 +101,7 @@ FLASHMEM void SequencerHistoryFeedbackState::reset() {
 FLASHMEM void SequencerPatternQuickControlsState::reset() {
     selecting.set(false);
     physicalHoldActive.set(false);
+    focusedItem.set(PatternQuickControlItem::LENGTH);
     offsetSteps.set(0);
 }
 

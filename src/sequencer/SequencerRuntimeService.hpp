@@ -14,6 +14,7 @@
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -35,6 +36,7 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
+        core::state::project::ProjectNavigationState& projectNavigation;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
     };
@@ -64,6 +66,7 @@ private:
     oc::interface::IEventBus& event_bus_;
     oc::api::MidiAPI& midi_;
     core::state::sequencer::SequencerState& sequencer_state_;
+    core::state::project::ProjectNavigationState& project_navigation_state_;
     core::state::StatusBarState& status_bar_state_;
     core::state::MidiSyncState& midi_sync_state_;
     MidiClockSyncService midi_clock_sync_;

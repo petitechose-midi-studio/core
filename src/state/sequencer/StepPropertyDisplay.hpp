@@ -14,7 +14,7 @@ namespace core::state::sequencer {
 inline const char* stepPropertyName(StepProperty property) {
     switch (property) {
         case StepProperty::NOTE:
-            return "Note";
+            return "Pitch";
         case StepProperty::VELOCITY:
             return "Velocity";
         case StepProperty::GATE:
@@ -22,9 +22,9 @@ inline const char* stepPropertyName(StepProperty property) {
         case StepProperty::NUDGE:
             return "Nudge";
         case StepProperty::PROBABILITY:
-            return "Probability";
+            return "Chance";
     }
-    return "Note";
+    return "Pitch";
 }
 
 inline void formatStepPropertyValue(
@@ -58,7 +58,32 @@ inline void formatStepPropertyValue(
     }
 
     const uint16_t safeGate = std::min<uint16_t>(gate, SequencerState::MAX_GATE_PERCENT);
-    oc::type::text::formatUnsignedPercent(buffer, bufferSize, static_cast<unsigned>(safeGate));
+    if (safeGate <= SequencerState::DEFAULT_GATE_PERCENT) {
+        oc::type::text::formatUnsignedPercent(buffer, bufferSize, static_cast<unsigned>(safeGate));
+        return;
+    }
+
+    if ((safeGate % 100U) == 0U) {
+        std::snprintf(buffer, bufferSize, "%ux", static_cast<unsigned>(safeGate / 100U));
+        return;
+    }
+    if ((safeGate % 10U) == 0U) {
+        std::snprintf(
+            buffer,
+            bufferSize,
+            "%u.%ux",
+            static_cast<unsigned>(safeGate / 100U),
+            static_cast<unsigned>((safeGate % 100U) / 10U)
+        );
+        return;
+    }
+    std::snprintf(
+        buffer,
+        bufferSize,
+        "%u.%02ux",
+        static_cast<unsigned>(safeGate / 100U),
+        static_cast<unsigned>(safeGate % 100U)
+    );
 }
 
 inline void formatStepPropertyResolvedOffsetValue(

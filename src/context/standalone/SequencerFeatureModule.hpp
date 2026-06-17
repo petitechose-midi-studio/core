@@ -30,6 +30,10 @@ class VirtualListKeyValueOverlay;
 class VirtualListSelectorOverlay;
 }
 
+namespace core::ui {
+class SequencerStepEditOverlay;
+}
+
 namespace core::context::standalone {
 class PatternPitchSettingsOverlayPresenter;
 class SequencerEncoderSyncCoordinator;
@@ -103,7 +107,7 @@ private:
 
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerEncoderSyncCoordinator>
         encoder_sync_;
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> step_edit_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::SequencerStepEditOverlay> step_edit_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> step_edit_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         pattern_pitch_settings_overlay_;

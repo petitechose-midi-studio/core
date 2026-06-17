@@ -1,3 +1,7 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -53,7 +57,7 @@ static_assert(sizeof(EnvelopeSectionHeaderRaw) == 10, "Unexpected envelope secti
 
 constexpr uint16_t kEnvelopeSectionGraphStepNodes = 17;
 constexpr uint16_t kEnvelopeSectionUnknownFuture = 0x7F00;
-constexpr uint16_t kStepNodeRecordSize = 14;
+constexpr uint16_t kStepNodeRecordSize = 18;
 constexpr uint16_t kStepNodeChildSequenceOffset = 10;
 constexpr uint16_t kStepNodeCycleSetOffset = 12;
 
@@ -71,7 +75,7 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
 
     sequencer.setStepDataAt(0, 60, 110, 95);
     sequencer.setStepDataAt(3, 72, 90, 60);
-    sequencer.setStepDataAt(7, 45, 127, 120);
+    sequencer.setStepDataAt(7, 45, 127, 1000);
     sequencer.setStepProbabilityAt(0, 100);
     sequencer.setStepProbabilityAt(3, 65);
     sequencer.setStepProbabilityAt(7, 25);
@@ -121,7 +125,7 @@ void assertPatternEquals(const core::state::sequencer::SequencerState& sequencer
 
     assert(sequencer.pattern.note[7] == 45);
     assert(sequencer.pattern.velocity[7] == 127);
-    assert(sequencer.pattern.gate[7] == 120);
+    assert(sequencer.pattern.gate[7] == 1000);
     assert(sequencer.pattern.probability[7] == 25);
 
     if (expectedLength > 64) {
@@ -144,7 +148,9 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const auto microNode = static_cast<uint16_t>(sequence->firstStepNode + 1);
+    assert(setNodeLocalVariationRange(pattern, rootStepNodeId(2), StepProperty::NOTE, 6));
     assert(setNodeNoteOffset(pattern, microNode, 5));
+    assert(setNodeLocalVariationRange(pattern, microNode, StepProperty::VELOCITY, 24));
 
     const auto nestedMicro = createMicroSequence(pattern, microNode, 2);
     assert(nestedMicro.ok);
@@ -152,7 +158,9 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     assert(graph != nullptr);
     const auto* nestedSequence = graph->sequence(nestedMicro.id);
     assert(nestedSequence != nullptr);
-    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(nestedSequence->firstStepNode + 1), 9));
+    const auto nestedMicroNode = static_cast<uint16_t>(nestedSequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(pattern, nestedMicroNode, 9));
+    assert(setNodeLocalVariationRange(pattern, nestedMicroNode, StepProperty::NUDGE, 5));
 
     const auto nestedCycle = createCycleStateSet(pattern, microNode, 2);
     assert(nestedCycle.ok);
@@ -161,7 +169,9 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
     assert(nestedCycleSet != nullptr);
     assert(setCycleStateSetOffset(pattern, nestedCycle.id, 1));
-    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1), 4));
+    const auto nestedCycleNode = static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1);
+    assert(setNodeNoteOffset(pattern, nestedCycleNode, 4));
+    assert(setNodeLocalVariationRange(pattern, nestedCycleNode, StepProperty::GATE, 30));
 
     const auto cycle = createCycleStateSet(pattern, rootStepNodeId(4), 2);
     assert(cycle.ok);
@@ -172,13 +182,16 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     assert(setNodeEnabledOverride(pattern, cycleSet->firstStateNode, false));
 
     const auto stateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 1);
+    assert(setNodeLocalVariationRange(pattern, stateNode, StepProperty::NOTE, 11));
     const auto stateMicro = createMicroSequence(pattern, stateNode, 2);
     assert(stateMicro.ok);
     graph = graphView(pattern);
     assert(graph != nullptr);
     const auto* stateSequence = graph->sequence(stateMicro.id);
     assert(stateSequence != nullptr);
-    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(stateSequence->firstStepNode + 1), 7));
+    const auto stateMicroNode = static_cast<uint16_t>(stateSequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(pattern, stateMicroNode, 7));
+    assert(setNodeLocalVariationRange(pattern, stateMicroNode, StepProperty::VELOCITY, 17));
 
     const auto stateCycle = createCycleStateSet(pattern, stateNode, 3);
     assert(stateCycle.ok);
@@ -187,7 +200,9 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     const auto* stateCycleSet = graph->cycleSet(stateCycle.id);
     assert(stateCycleSet != nullptr);
     assert(setCycleStateSetOffset(pattern, stateCycle.id, 2));
-    assert(setNodeNoteOffset(pattern, static_cast<uint16_t>(stateCycleSet->firstStateNode + 2), 3));
+    const auto stateCycleNode = static_cast<uint16_t>(stateCycleSet->firstStateNode + 2);
+    assert(setNodeNoteOffset(pattern, stateCycleNode, 3));
+    assert(setNodeLocalVariationRange(pattern, stateCycleNode, StepProperty::NUDGE, 6));
 }
 
 void assertGraphContent(const core::state::sequencer::SequencerPatternState& pattern) {
@@ -203,6 +218,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     const auto* rootTwo = graph->stepNode(rootStepNodeId(2));
     assert(rootTwo != nullptr);
     assert(rootTwo->has(STEP_NODE_CHILD_SEQUENCE));
+    assert(nodeLocalVariationRange(*rootTwo, StepProperty::NOTE) == 6);
     const auto* childSequence = graph->sequence(rootTwo->childSequenceId);
     assert(childSequence != nullptr);
     assert(childSequence->length == 3);
@@ -210,6 +226,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(childNode != nullptr);
     assert(childNode->has(STEP_NODE_NOTE_OFFSET));
     assert(childNode->noteOffset == 5);
+    assert(nodeLocalVariationRange(*childNode, StepProperty::VELOCITY) == 24);
     assert(childNode->has(STEP_NODE_CHILD_SEQUENCE));
     assert(childNode->has(STEP_NODE_CYCLE_SET));
 
@@ -220,6 +237,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(nestedNode != nullptr);
     assert(nestedNode->has(STEP_NODE_NOTE_OFFSET));
     assert(nestedNode->noteOffset == 9);
+    assert(nodeLocalVariationRange(*nestedNode, StepProperty::NUDGE) == 5);
 
     const auto* nestedCycleSet = graph->cycleSet(childNode->cycleSetId);
     assert(nestedCycleSet != nullptr);
@@ -230,6 +248,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(nestedCycleNode != nullptr);
     assert(nestedCycleNode->has(STEP_NODE_NOTE_OFFSET));
     assert(nestedCycleNode->noteOffset == 4);
+    assert(nodeLocalVariationRange(*nestedCycleNode, StepProperty::GATE) == 30);
 
     const auto* rootFour = graph->stepNode(rootStepNodeId(4));
     assert(rootFour != nullptr);
@@ -243,6 +262,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(stateNode != nullptr);
     assert(stateNode->has(STEP_NODE_CHILD_SEQUENCE));
     assert(stateNode->has(STEP_NODE_CYCLE_SET));
+    assert(nodeLocalVariationRange(*stateNode, StepProperty::NOTE) == 11);
 
     const auto* stateSequence = graph->sequence(stateNode->childSequenceId);
     assert(stateSequence != nullptr);
@@ -252,6 +272,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(stateMicroNode != nullptr);
     assert(stateMicroNode->has(STEP_NODE_NOTE_OFFSET));
     assert(stateMicroNode->noteOffset == 7);
+    assert(nodeLocalVariationRange(*stateMicroNode, StepProperty::VELOCITY) == 17);
 
     const auto* stateCycleSet = graph->cycleSet(stateNode->cycleSetId);
     assert(stateCycleSet != nullptr);
@@ -262,6 +283,7 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(stateCycleNode != nullptr);
     assert(stateCycleNode->has(STEP_NODE_NOTE_OFFSET));
     assert(stateCycleNode->noteOffset == 3);
+    assert(nodeLocalVariationRange(*stateCycleNode, StepProperty::NUDGE) == 6);
 }
 
 const EnvelopeSectionHeaderRaw* findEnvelopeSection(const uint8_t* data,
@@ -366,6 +388,43 @@ void test_pattern_library_flat_pattern_does_not_allocate_graph() {
     assert(core::state::sequencer::graphView(loaded.pattern) == nullptr);
 
     std::cout << "[PASS] test_pattern_library_flat_pattern_does_not_allocate_graph\n";
+}
+
+void test_pattern_library_local_variation_only_allocates_graph() {
+    MemoryStorage patternStorage;
+    MemoryStorage setStorage;
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
+    assert(persistence.init());
+
+    core::state::sequencer::SequencerState source;
+    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    assert(core::state::sequencer::setNodeLocalVariationRange(
+        source.pattern,
+        core::state::sequencer::rootStepNodeId(1),
+        core::state::sequencer::StepProperty::GATE,
+        42
+    ));
+
+    assert(persistence.savePatternSlot(12, source));
+
+    core::state::sequencer::SequencerState loaded;
+    loaded.reset();
+    assert(persistence.loadPatternSlot(12, loaded) == core::persistence::SlotLoadStatus::OK);
+    assertPatternEquals(loaded, 16, 4, 1);
+
+    const auto* graph = core::state::sequencer::graphView(loaded.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(1));
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(
+               *node,
+               core::state::sequencer::StepProperty::GATE
+           ) == 42);
+
+    std::cout << "[PASS] test_pattern_library_local_variation_only_allocates_graph\n";
 }
 
 void test_pattern_envelope_rejects_incompatible_header() {
@@ -761,6 +820,7 @@ int main() {
     test_pattern_library_save_load_erase();
     test_pattern_library_graph_roundtrip();
     test_pattern_library_flat_pattern_does_not_allocate_graph();
+    test_pattern_library_local_variation_only_allocates_graph();
     test_pattern_envelope_rejects_incompatible_header();
     test_pattern_envelope_ignores_unknown_future_section();
     test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern();

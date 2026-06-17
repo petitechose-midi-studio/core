@@ -49,15 +49,15 @@ private:
     void setupBindings();
 
     void openForMacroInPage(uint8_t indexInPage);
-    void closeApply();
-    void closeCancel();
+    void closeStepEdit();
 
     void moveFocus(float delta);
-    void activateFocusedRowOrApply();
+    void activateFocusedRowOrClose();
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
-    void maybeCloseApplyFromMacro(uint8_t indexInPage);
+    void maybeCloseFromMacro(uint8_t indexInPage);
     bool focusedRowIsContextRow() const;
+    bool focusedRowSupportsLocalVariation() const;
     bool focusedContextHasChild() const;
     bool canPasteFocusedStepContent() const;
     void clearFocusedContextChild();

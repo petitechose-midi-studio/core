@@ -109,12 +109,29 @@ FLASHMEM bool SequencerPatternState::setPitchEditMode(SequencerPitchEditMode mod
     return true;
 }
 
+FLASHMEM bool SequencerPatternState::setPatternSwingOffsetPercent(int value) {
+    const int8_t clamped = clampPatternSwingOffsetPercent(value);
+    if (swingOffsetPercent.get() == clamped) return false;
+    swingOffsetPercent.set(clamped);
+    bumpPatternTimingRevision();
+    return true;
+}
+
+FLASHMEM bool SequencerPatternState::setPatternNudgePercent(int value) {
+    const int8_t clamped = clampPatternNudgePercent(value);
+    if (patternNudgePercent.get() == clamped) return false;
+    patternNudgePercent.set(clamped);
+    bumpPatternTimingRevision();
+    return true;
+}
+
 FLASHMEM SequencerState::SequencerState() = default;
 FLASHMEM SequencerState::~SequencerState() = default;
 
 FLASHMEM void SequencerState::invalidateVariationTelemetry() {
     lastResolvedVariation = {};
     cycleVariationTelemetry.reset();
+    expandedVariationTelemetry.reset();
     variationTelemetryRevision.set(variationTelemetryRevision.get() + 1);
 }
 
@@ -131,6 +148,9 @@ FLASHMEM void SequencerState::invalidateStepVariationTelemetry(uint8_t step) {
     cycleVariationTelemetry.scaleConstrainedMask.setBit(step, false);
     if (lastResolvedVariation.stepIndex == step) {
         lastResolvedVariation = {};
+    }
+    if (expandedVariationTelemetry.rootStepIndex == step) {
+        expandedVariationTelemetry.reset();
     }
     variationTelemetryRevision.set(variationTelemetryRevision.get() + 1);
 }
@@ -172,6 +192,18 @@ FLASHMEM bool SequencerState::setPitchEditMode(SequencerPitchEditMode mode) {
     return true;
 }
 
+FLASHMEM bool SequencerState::setPatternSwingOffsetPercent(int value) {
+    if (!pattern.setPatternSwingOffsetPercent(value)) return false;
+    invalidateVariationTelemetry();
+    return true;
+}
+
+FLASHMEM bool SequencerState::setPatternNudgePercent(int value) {
+    if (!pattern.setPatternNudgePercent(value)) return false;
+    invalidateVariationTelemetry();
+    return true;
+}
+
 FLASHMEM void SequencerPatternState::reset() {
     oc::note::sequencer::StepSequencerState::reset();
     bumpStepDataRevision();
@@ -181,6 +213,9 @@ FLASHMEM void SequencerPatternState::reset() {
     scaleOverride = {};
     pitchEditMode = SequencerPitchEditMode::CHROMATIC;
     bumpPatternScaleRevision();
+    swingOffsetPercent.set(0);
+    patternNudgePercent.set(0);
+    bumpPatternTimingRevision();
     graph.reset();
     bumpGraphRevision();
 }
@@ -197,6 +232,7 @@ FLASHMEM void SequencerState::reset() {
     probabilityCycleIndex = 0;
     lastResolvedVariation = {};
     cycleVariationTelemetry.reset();
+    expandedVariationTelemetry.reset();
     variationTelemetryRevision.set(0);
     activeStepProperty.set(StepProperty::NOTE);
 

@@ -73,11 +73,11 @@ void test_pattern_quick_controls_reset_clears_physical_hold_layer() {
 void test_history_feedback_shows_and_expires() {
     core::state::sequencer::SequencerHistoryFeedbackState state;
 
-    state.show("UNDO T01", "Step 01 Note", "D4 -> C3", 100);
+    state.show("UNDO T01", "Step 01 Pitch", "D4 -> C3", 100);
 
     assert(state.visible.get());
     assert(std::strcmp(state.line1.data(), "UNDO T01") == 0);
-    assert(std::strcmp(state.line2.data(), "Step 01 Note") == 0);
+    assert(std::strcmp(state.line2.data(), "Step 01 Pitch") == 0);
     assert(std::strcmp(state.line3.data(), "D4 -> C3") == 0);
 
     state.update(100 + core::state::sequencer::SequencerHistoryFeedbackState::DISPLAY_HOLD_MS - 1);

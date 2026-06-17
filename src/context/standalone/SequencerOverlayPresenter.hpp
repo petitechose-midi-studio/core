@@ -11,6 +11,10 @@ namespace ms::ui {
 class VirtualListKeyValueOverlay;
 }
 
+namespace core::ui {
+class SequencerStepEditOverlay;
+}
+
 namespace core::context::standalone {
 
 /**
@@ -28,17 +32,19 @@ public:
     };
 
     SequencerOverlayPresenter(StateRefs stateRefs,
-                              ms::ui::VirtualListKeyValueOverlay& stepEditOverlay,
+                              core::ui::SequencerStepEditOverlay& stepEditOverlay,
                               core::ui::ContextActionStrip& stepEditActionStrip);
 
     void bind();
     void renderStepEdit();
+    void renderStepEditActionStrip();
 
 private:
     StateRefs state_refs_;
-    ms::ui::VirtualListKeyValueOverlay& step_edit_overlay_;
+    core::ui::SequencerStepEditOverlay& step_edit_overlay_;
     core::ui::ContextActionStrip& step_edit_action_strip_;
     oc::state::SignalWatcher step_edit_watcher_;
+    oc::state::SignalWatcher step_edit_action_watcher_;
 };
 
 }  // namespace core::context::standalone

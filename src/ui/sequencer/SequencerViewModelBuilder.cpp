@@ -6,14 +6,21 @@
 
 #include "config/Timing.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
+#include "state/sequencer/SequencerQuickControls.hpp"
+#include "state/sequencer/SequencerScaleState.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
+#include "ui/sequencer/StepSemanticVisuals.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 #include <cstdio>
 
 namespace core::ui::sequencer {
+
+namespace theme = standalone::theme;
 
 namespace {
 
@@ -114,6 +121,146 @@ void formatVariationStatusLabel(std::array<char, 16>& out,
         plusMinus,
         static_cast<unsigned>(range)
     );
+}
+
+using QuickItem = core::state::sequencer::PatternQuickControlItem;
+
+const char* quickControlIcon(QuickItem item) {
+    switch (item) {
+        case QuickItem::LENGTH:
+            return standalone::icons::LENGTH;
+        case QuickItem::DIVISION:
+            return standalone::icons::DIVISION;
+        case QuickItem::SWING:
+            return standalone::icons::SWING;
+        case QuickItem::NUDGE:
+            return standalone::icons::NOTE_PROP_NUDGE;
+        case QuickItem::OFFSET:
+        default:
+            return standalone::icons::OFFSET;
+    }
+}
+
+uint32_t quickControlColor(QuickItem item) {
+    switch (item) {
+        case QuickItem::LENGTH:
+            return theme::color::STEP_LENGTH;
+        case QuickItem::DIVISION:
+            return theme::color::STEP_DIVISION;
+        case QuickItem::SWING:
+            return theme::color::STEP_SWING;
+        case QuickItem::NUDGE:
+            return theme::color::STEP_PATTERN_NUDGE;
+        case QuickItem::OFFSET:
+        default:
+            return theme::color::STEP_OFFSET;
+    }
+}
+
+void formatQuickControlValue(
+    char* buffer,
+    size_t size,
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::project::ProjectNavigationState& projectNavigation,
+    QuickItem item
+) {
+    if (!buffer || size == 0) return;
+    if (core::state::sequencer::isChildContentView(sequencer) &&
+        item == QuickItem::DIVISION) {
+        buffer[0] = '\0';
+        return;
+    }
+
+    switch (item) {
+        case QuickItem::OFFSET:
+            oc::type::text::formatSigned(
+                buffer,
+                size,
+                sequencer.patternQuickControls.offsetSteps.get(),
+                true
+            );
+            return;
+        case QuickItem::DIVISION:
+            oc::type::text::formatFraction(
+                buffer,
+                size,
+                1U,
+                static_cast<unsigned>(
+                    4U * static_cast<uint16_t>(sequencer.pattern.stepsPerBeat.get())
+                )
+            );
+            return;
+        case QuickItem::SWING:
+            std::snprintf(
+                buffer,
+                size,
+                "%u%%",
+                static_cast<unsigned>(
+                    sequencer.pattern.effectiveSwingPercent(
+                        projectNavigation.transportSwingPercent
+                    )
+                )
+            );
+            return;
+        case QuickItem::NUDGE:
+            std::snprintf(
+                buffer,
+                size,
+                "%+d%%",
+                static_cast<int>(sequencer.pattern.patternNudgePercent.get())
+            );
+            return;
+        case QuickItem::LENGTH:
+        default:
+            oc::type::text::formatUnsigned(
+                buffer,
+                size,
+                static_cast<unsigned>(
+                    core::state::sequencer::activeContentLength(sequencer)
+                )
+            );
+            return;
+    }
+}
+
+uint8_t localVariationRangeForStep(
+    const core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::StepProperty property
+) {
+    if (property == core::state::sequencer::StepProperty::PROBABILITY) return 0;
+
+    const auto& selector = sequencer.stepPropertyInlineSelector;
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    if (graph == nullptr) return 0;
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer,
+        selector.localVariationStepIndex
+    );
+    const auto* node = graph->stepNode(nodeId);
+    return node ? core::state::sequencer::nodeLocalVariationRange(*node, property) : 0;
+}
+
+void formatLocalVariationOverlayValue(
+    char* buffer,
+    size_t size,
+    core::state::sequencer::StepProperty property,
+    uint8_t range,
+    bool pitchUsesScaleDegrees
+) {
+    if (!buffer || size == 0) return;
+
+    const char* unit = "";
+    if (property == core::state::sequencer::StepProperty::GATE) {
+        unit = "%";
+    } else if (property == core::state::sequencer::StepProperty::NOTE &&
+               pitchUsesScaleDegrees) {
+        unit = "d";
+    } else if (property == core::state::sequencer::StepProperty::NOTE) {
+        unit = "st";
+    }
+
+    std::snprintf(buffer, size, "±%u%s", static_cast<unsigned>(range), unit);
 }
 
 }  // namespace
@@ -245,27 +392,64 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
     };
 }
 
-FLASHMEM SequencerBottomControlsProps buildBottomControlsProps(const SequencerViewModelSource& source) {
+FLASHMEM StepPropertySelectionOverlayProps buildPropertySelectionOverlayProps(
+    const SequencerViewModelSource& source
+) {
     const auto& sequencer = source.sequencer;
 
-    return {
-        .selectingQuickControls = sequencer.patternQuickControls.selecting.get(),
-        .focusedQuickControl = sequencer.patternQuickControls.focusedItem.get(),
-        .offsetSteps = sequencer.patternQuickControls.offsetSteps.get(),
-        .stepsPerBeat = sequencer.pattern.stepsPerBeat.get(),
-        .length = core::state::sequencer::activeContentLength(sequencer),
-        .childContentContext = core::state::sequencer::isChildContentView(sequencer),
-    };
-}
+    if (sequencer.stepPropertyInlineSelector.selecting.get()) {
+        if (sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.get()) {
+            const auto property = sequencer.activeStepProperty.get();
+            StepPropertySelectionOverlayProps props{
+                .visible = true,
+                .property = property,
+                .customContent = true,
+                .icon = visual::propertyIconGlyph(property),
+                .label = semantic::labelForProperty(property),
+                .useValueText = true,
+                .color = semantic::colorForProperty(property),
+            };
+            formatLocalVariationOverlayValue(
+                props.valueText.data(),
+                props.valueText.size(),
+                property,
+                localVariationRangeForStep(sequencer, property),
+                core::state::sequencer::resolveEffectiveScaleSettings(
+                    source.tracks.projectScaleSettings(),
+                    sequencer.pattern.scalePolicy,
+                    sequencer.pattern.scaleOverride
+                ).isConstrained()
+            );
+            return props;
+        }
 
-FLASHMEM StepPropertyStripProps buildStepPropertyStripProps(const SequencerViewModelSource& source) {
-    const auto& sequencer = source.sequencer;
+        return {
+            .visible = true,
+            .property = sequencer.activeStepProperty.get(),
+        };
+    }
 
-    return {
-        .activeProperty = sequencer.activeStepProperty.get(),
-        .selecting = sequencer.stepPropertyInlineSelector.selecting.get(),
-        .selectedIndex = sequencer.stepPropertyInlineSelector.selectedIndex.get(),
-    };
+    if (sequencer.patternQuickControls.selecting.get()) {
+        const auto item = sequencer.patternQuickControls.focusedItem.get();
+        StepPropertySelectionOverlayProps props{
+            .visible = true,
+            .customContent = true,
+            .icon = quickControlIcon(item),
+            .label = core::state::sequencer::quickControlLabel(item),
+            .useValueText = true,
+            .color = quickControlColor(item),
+        };
+        formatQuickControlValue(
+            props.valueText.data(),
+            props.valueText.size(),
+            sequencer,
+            source.projectNavigation,
+            item
+        );
+        return props;
+    }
+
+    return {.visible = false};
 }
 
 FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewModelSource& source) {

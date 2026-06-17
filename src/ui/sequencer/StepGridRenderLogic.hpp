@@ -36,10 +36,20 @@ int scaleDegreeIndexForNote(oc::note::sequencer::StepSequencerScaleSettings sett
                             uint8_t note);
 const char* scaleDegreeLabel(int degree);
 bool hasRuntimePitchFeedback(const TileRenderState& state);
+bool hasRuntimeVelocityFeedback(const TileRenderState& state);
+bool hasRuntimeGateFeedback(const TileRenderState& state);
+bool hasRuntimeNudgeFeedback(const TileRenderState& state);
+bool hasRuntimePropertyFeedback(
+    const TileRenderState& state,
+    core::state::sequencer::StepProperty property
+);
 bool hasOutOfScaleFeedback(const TileRenderState& state);
 bool hasScaleDegreeFeedback(const TileRenderState& state);
 bool hasConstrainedScaleDegreeFeedback(const TileRenderState& state);
 uint8_t runtimePitchDisplayNote(const TileRenderState& state);
+uint8_t runtimeVelocityDisplayValue(const TileRenderState& state);
+uint16_t runtimeGateDisplayValue(const TileRenderState& state);
+int8_t runtimeNudgeDisplayValue(const TileRenderState& state);
 const char* runtimeScaleDegreeLabel(const TileRenderState& state);
 StepVisualStyle buildStepVisualStyle(uint8_t note,
                                      uint8_t velocity,

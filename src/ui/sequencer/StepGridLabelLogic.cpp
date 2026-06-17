@@ -56,11 +56,12 @@ NoteLabelPresentation buildNoteLabelPresentation(
         feedback.touchedMask.test(state.absoluteStep);
     const bool isFeedbackProperty = feedback.property == activeProperty;
     const bool showRuntimePitch = hasRuntimePitchFeedback(state);
+    const bool showRuntimeActiveProperty = hasRuntimePropertyFeedback(state, activeProperty);
 
-    presentation.showNoteStyle = isNoteMode || showRuntimePitch;
     presentation.probabilityMasked = state.enabled && !state.probabilityCycleActive;
     presentation.showLabel =
         state.childContentContext ||
+        showRuntimeActiveProperty ||
         showRuntimePitch ||
         isNoteMode ||
         (isFeedbackStep && isFeedbackProperty);
@@ -73,9 +74,14 @@ NoteLabelPresentation buildNoteLabelPresentation(
     presentation.displayProperty =
         state.childContentContext
             ? activeProperty
+            : showRuntimeActiveProperty
+            ? activeProperty
             : showRuntimePitch
             ? core::state::sequencer::StepProperty::NOTE
             : displayPropertyForInlineLabelMode(propertyVisual.inlineLabelMode);
+    presentation.showNoteStyle =
+        presentation.displayProperty == core::state::sequencer::StepProperty::NOTE &&
+        (isNoteMode || showRuntimePitch);
     return presentation;
 }
 

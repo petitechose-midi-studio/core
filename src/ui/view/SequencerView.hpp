@@ -18,12 +18,12 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/ViewSelectorState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "ui/sequencer/SequencerBottomControls.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
-#include "ui/sequencer/StepPropertyStrip.hpp"
+#include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/sequencer/StepGrid.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
@@ -48,6 +48,7 @@ public:
         core::state::DeviceSettingsState& deviceSettings;
         core::state::SequencerSettingsState& sequencerSettings;
         core::state::DataManagerState& dataManager;
+        core::state::project::ProjectNavigationState& projectNavigation;
     };
 
     explicit SequencerView(lv_obj_t* parent, StateRefs stateRefs);
@@ -62,17 +63,15 @@ private:
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
     void createGrid();
-    void createBottomControls();
-    void createPropertyStrip();
+    void createPropertySelectionOverlay();
     void createActionStrips();
     void createHistoryToast();
     static void onStepGridGeometryInvalidated(void* userData);
     void bindToState();
-    void bindBottomControlsState();
     void bindHeaderState();
     void bindHeaderStripState();
     void bindGridState();
-    void bindPropertyStripState();
+    void bindSelectorOverlayState();
     void bindOverlayVisibilityState();
     void bindLeftActionStripState();
     void bindBottomActionStripState();
@@ -86,8 +85,7 @@ private:
     void requestRender(bool& dirtyFlag);
     void requestHeaderTopRender();
     void requestHeaderStripRender();
-    void requestBottomControlsRender();
-    void requestPropertyStripRender();
+    void requestSelectorOverlayRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
     void requestHistoryFeedbackRender();
@@ -95,6 +93,7 @@ private:
     static void onRenderTimer(lv_timer_t* timer);
     void markAllDirty();
     void render();
+    void renderSelectorOverlay();
     void renderHistoryToast();
     sequencer::SequencerViewModelSource modelSource() const;
 
@@ -104,8 +103,7 @@ private:
     bool dirty_ = false;
     bool header_top_dirty_ = true;
     bool header_strip_dirty_ = true;
-    bool bottom_controls_dirty_ = true;
-    bool property_strip_dirty_ = true;
+    bool selector_overlay_dirty_ = true;
     bool left_action_strip_dirty_ = true;
     bool bottom_action_strip_dirty_ = true;
     bool history_feedback_dirty_ = true;
@@ -119,8 +117,8 @@ private:
     lv_obj_t* center_column_ = nullptr;
 
     core::app::ExtmemUniquePtr<core::ui::SequencerHeaderBar> header_bar_;
-    core::app::ExtmemUniquePtr<core::ui::SequencerBottomControls> bottom_controls_;
-    core::app::ExtmemUniquePtr<core::ui::StepPropertyStrip> property_strip_;
+    core::app::ExtmemUniquePtr<core::ui::StepPropertySelectionOverlay>
+        property_selection_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::StepGrid> step_grid_;

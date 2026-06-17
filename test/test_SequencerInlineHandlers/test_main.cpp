@@ -10,10 +10,12 @@
 
 #include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "../../src/handler/sequencer/PatternPitchSettingsHandler.hpp"
+#include "../../src/handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -48,6 +50,7 @@ struct SequencerInlineHarness {
     core::handler::SequencerPropertySelectorHandler propertySelectorHandler;
     core::handler::PatternPitchSettingsHandler patternPitchSettingsHandler;
     core::handler::SequencerPatternQuickControlsHandler patternQuickControlsHandler;
+    core::handler::SequencerMacroPropertyHandler macroPropertyHandler;
 
     SequencerInlineHarness()
         : state(storages.settings,
@@ -99,6 +102,19 @@ struct SequencerInlineHarness {
               encoders,
               buttons,
               SEQUENCER_SCOPE
+          )
+        , macroPropertyHandler(
+              core::handler::SequencerMacroPropertyHandler::StateRefs{
+                  state.overlays,
+                  state.sequencer,
+                  state.sequencerTracks,
+                  state.trackNavigation,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+              },
+              encoders,
+              buttons,
+              SEQUENCER_SCOPE,
+              mockTimeMs
           ) {
         overlayManager.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
         overlayManager.registerCleanup(
@@ -173,7 +189,7 @@ void holdPatternQuickControls(SequencerInlineHarness& h) {
     assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 }
 
-void test_property_selector_cancel_restores_snapshot() {
+void test_property_selector_left_top_closes_without_reverting_selected_property() {
     SequencerInlineHarness h;
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
 
@@ -185,9 +201,10 @@ void test_property_selector_cancel_restores_snapshot() {
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
-    assert(h.state.sequencer.activeStepProperty.get() == StepProperty::GATE);
+    assert(h.state.sequencer.activeStepProperty.get() == StepProperty::NUDGE);
+    assert(h.state.sequencerHistory.undoCount() == 0);
 
-    std::cout << "[PASS] test_property_selector_cancel_restores_snapshot\n";
+    std::cout << "[PASS] test_property_selector_left_top_closes_without_reverting_selected_property\n";
 }
 
 void test_property_selector_apply_keeps_selected_property() {
@@ -246,7 +263,7 @@ void test_property_selector_edits_active_property_variation_range() {
     std::cout << "[PASS] test_property_selector_edits_active_property_variation_range\n";
 }
 
-void test_property_selector_cancel_restores_variation_snapshot() {
+void test_property_selector_left_top_commits_live_variation_edit() {
     SequencerInlineHarness h;
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
     h.state.sequencer.setVariationRangeForProperty(StepProperty::GATE, 12);
@@ -258,10 +275,100 @@ void test_property_selector_cancel_restores_variation_snapshot() {
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.sequencer.pattern.variationRanges.gatePercent == 100);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.variationRanges.gatePercent == 12);
+
+    std::cout << "[PASS] test_property_selector_left_top_commits_live_variation_edit\n";
+}
+
+void test_property_selector_left_top_commits_live_local_random_edit() {
+    SequencerInlineHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    h.state.sequencer.pattern.velocity[2] = 64;
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_3, 1.0f);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0);
 
-    std::cout << "[PASS] test_property_selector_cancel_restores_variation_snapshot\n";
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(
+        core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) ==
+        127
+    );
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph != nullptr) {
+        node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+        assert(
+            node == nullptr ||
+            core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0
+        );
+    }
+
+    std::cout << "[PASS] test_property_selector_left_top_commits_live_local_random_edit\n";
+}
+
+void test_property_selector_global_and_local_random_have_separate_undo() {
+    SequencerInlineHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    h.state.sequencer.pattern.velocity[2] = 64;
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 127);
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_3, 1.0f);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.sequencerHistory.undoCount() == 2);
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
+
+    assert(h.state.undoSequencerHistory());
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph != nullptr) {
+        node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+        assert(
+            node == nullptr ||
+            core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0
+        );
+    }
+
+    std::cout << "[PASS] test_property_selector_global_and_local_random_have_separate_undo\n";
 }
 
 void test_property_selector_does_not_edit_probability_variation() {
@@ -344,6 +451,54 @@ void test_pattern_quick_controls_hold_arms_history_layer() {
     std::cout << "[PASS] test_pattern_quick_controls_hold_arms_history_layer\n";
 }
 
+void test_pattern_quick_controls_open_defaults_to_length_and_cycles_order() {
+    SequencerInlineHarness h;
+
+    openPatternQuickControls(h);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::LENGTH
+    );
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::DIVISION
+    );
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::OFFSET
+    );
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::SWING
+    );
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::NUDGE
+    );
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::LENGTH
+    );
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::NUDGE
+    );
+
+    std::cout << "[PASS] test_pattern_quick_controls_open_defaults_to_length_and_cycles_order\n";
+}
+
 void test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector() {
     SequencerInlineHarness h;
 
@@ -370,7 +525,6 @@ void test_pattern_quick_controls_length_undo_redo_workflow() {
     h.state.sequencer.pattern.length.set(8);
 
     holdPatternQuickControls(h);
-    h.turn(Config::EncoderID::NAV, -1.0f);
     assert(
         h.state.sequencer.patternQuickControls.focusedItem.get() ==
         core::state::sequencer::PatternQuickControlItem::LENGTH
@@ -416,6 +570,8 @@ void test_pattern_quick_controls_offset_undo_redo_workflow() {
     h.state.sequencer.pattern.setEnabled(7, true);
 
     holdPatternQuickControls(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
     assert(
         h.state.sequencer.patternQuickControls.focusedItem.get() ==
         core::state::sequencer::PatternQuickControlItem::OFFSET
@@ -499,12 +655,44 @@ void test_pattern_quick_controls_division_undo_redo_workflow() {
     std::cout << "[PASS] test_pattern_quick_controls_division_undo_redo_workflow\n";
 }
 
+void test_pattern_quick_controls_swing_and_nudge_workflow() {
+    SequencerInlineHarness h;
+
+    holdPatternQuickControls(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::SWING
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 75);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::NUDGE
+    );
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.sequencer.pattern.patternNudgePercent.get() == -50);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencerHistory.undoCount() == 2);
+
+    std::cout << "[PASS] test_pattern_quick_controls_swing_and_nudge_workflow\n";
+}
+
 void test_pattern_quick_controls_undo_release_does_not_record_inverse_action() {
     SequencerInlineHarness h;
     h.state.sequencer.pattern.length.set(8);
 
     holdPatternQuickControls(h);
-    h.turn(Config::EncoderID::NAV, -1.0f);
     h.turn(Config::EncoderID::OPT, 1.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencerHistory.undoCount() == 1);
@@ -543,20 +731,24 @@ void test_pattern_quick_controls_respect_blocking_states() {
 }  // namespace
 
 int main() {
-    test_property_selector_cancel_restores_snapshot();
+    test_property_selector_left_top_closes_without_reverting_selected_property();
     test_property_selector_apply_keeps_selected_property();
     test_property_selector_does_not_open_when_pattern_quick_controls_are_active();
     test_property_selector_edits_active_property_variation_range();
-    test_property_selector_cancel_restores_variation_snapshot();
+    test_property_selector_left_top_commits_live_variation_edit();
+    test_property_selector_left_top_commits_live_local_random_edit();
+    test_property_selector_global_and_local_random_have_separate_undo();
     test_property_selector_does_not_edit_probability_variation();
     test_pattern_quick_controls_do_not_edit_variation_range();
     test_pattern_pitch_settings_are_undoable();
     test_pattern_quick_controls_short_tap_does_not_arm_history_layer();
     test_pattern_quick_controls_hold_arms_history_layer();
+    test_pattern_quick_controls_open_defaults_to_length_and_cycles_order();
     test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector();
     test_pattern_quick_controls_length_undo_redo_workflow();
     test_pattern_quick_controls_offset_undo_redo_workflow();
     test_pattern_quick_controls_division_undo_redo_workflow();
+    test_pattern_quick_controls_swing_and_nudge_workflow();
     test_pattern_quick_controls_undo_release_does_not_record_inverse_action();
     test_pattern_quick_controls_respect_blocking_states();
 

@@ -1,0 +1,12 @@
+# UX workflow: local random visualization on the sequencer grid.
+# Purpose: captures simple, cycle-state, and micro-sequence steps whose
+# representative StepNode carries a local pitch random range.
+# Expect: playhead_progress
+
+0 scenario seq-local-random-grid
+80 capture screen local_random_grid_ready
+
+180 tap BOTTOM_CENTER 60
+520 capture screen local_random_grid_playing
+760 tap BOTTOM_CENTER 60
+960 capture screen local_random_grid_stopped

@@ -475,6 +475,7 @@ FLASHMEM bool resolveRepresentativeChildContentSummary(
     SequencerChildContentSummary& outSummary
 ) {
     scaleSettings.clamp();
+    outSummary = SequencerChildContentSummary{};
     if (!projection.valid ||
         (!projection.hasMicroSequence && !projection.hasCycleStates)) {
         return false;
@@ -507,7 +508,8 @@ FLASHMEM bool resolveRepresentativeChildContentSummary(
         projection.rootContext ? 0 : activeContentDepth(sequencer),
         runtimeCursor.cycleIndex,
         runtimeCursor.microPlayIndex,
-        scaleSettings
+        scaleSettings,
+        &outSummary
     );
 
     outSummary.enabled = current.enabled;

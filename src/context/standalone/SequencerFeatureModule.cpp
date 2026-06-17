@@ -17,6 +17,7 @@
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
+#include "ui/sequencer/SequencerStepEditOverlay.hpp"
 
 namespace core::context::standalone {
 
@@ -85,7 +86,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         encoders
     );
     step_edit_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(overlayRoot);
+        core::app::makeExtmemUnique<core::ui::SequencerStepEditOverlay>(overlayRoot);
     step_edit_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
         step_edit_overlay_->getElement(),
         core::ui::ContextActionStripOrientation::HORIZONTAL
@@ -228,6 +229,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.history,
             },
             encoders,
+            buttons,
             sequencerViewScopeId,
             oc::time::millis
         );

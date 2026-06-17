@@ -11,9 +11,8 @@
 # Action A: set pattern Length from 8 to 15 through Quick Controls.
 150 button LEFT_CENTER down
 300 capture screen quick_controls_open
-400 encoder NAV -1
 500 encoder OPT 0.20
-700 button LEFT_CENTER up
+580 button LEFT_CENTER up
 900 capture screen after_length_15
 
 # Action B: enable step 1 as C3.
@@ -30,7 +29,8 @@
 2700 capture screen step8_edit_open
 2750 button MACRO_8 up
 2800 encoder NAV 1
-2850 encoder OPT 9.33
+2850 encoder NAV 1
+2900 encoder OPT 9.33
 3050 capture screen step8_note_raised_editing
 3150 tap NAV 60
 3350 capture screen after_step8_d4

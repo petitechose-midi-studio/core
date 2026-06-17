@@ -1,3 +1,7 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <cassert>
 #include <array>
 #include <cstring>
@@ -68,6 +72,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     assert(defaultMicroSequence != nullptr);
     const auto defaultMicroNode = static_cast<uint16_t>(defaultMicroSequence->firstStepNode + 1);
     assert(setNodeNoteOffset(pattern, defaultMicroNode, 12));
+    assert(setNodeLocalVariationRange(pattern, defaultMicroNode, StepProperty::NOTE, 8));
 
     const auto rootCycle = createCycleStateSet(pattern, rootZero, 3);
     assert(rootCycle.ok);
@@ -82,6 +87,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     assert(setNodeGateOffset(pattern, rootCycleNode, -15));
     assert(setNodeNudgeOffset(pattern, rootCycleNode, 10));
     assert(setNodeProbabilityOffset(pattern, rootCycleNode, -50));
+    assert(setNodeLocalVariationRange(pattern, rootCycleNode, StepProperty::VELOCITY, 33));
 
     const auto stateMicro = createMicroSequence(pattern, rootCycleNode, 2);
     assert(stateMicro.ok);
@@ -91,6 +97,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     assert(stateMicroSequence != nullptr);
     const auto stateMicroNode = static_cast<uint16_t>(stateMicroSequence->firstStepNode + 1);
     assert(setNodeNoteOffset(pattern, stateMicroNode, 5));
+    assert(setNodeLocalVariationRange(pattern, stateMicroNode, StepProperty::GATE, 44));
 
     const auto stateCycle = createCycleStateSet(pattern, rootCycleNode, 5);
     assert(stateCycle.ok);
@@ -100,6 +107,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     assert(stateCycleSet != nullptr);
     const auto stateCycleNode = static_cast<uint16_t>(stateCycleSet->firstStateNode + 2);
     assert(setNodeNoteOffset(pattern, stateCycleNode, 3));
+    assert(setNodeLocalVariationRange(pattern, stateCycleNode, StepProperty::NUDGE, 12));
 
     const auto rootMicro = createMicroSequence(pattern, rootFour, 2);
     assert(rootMicro.ok);
@@ -113,6 +121,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     assert(setNodeGateOffset(pattern, microNode, 25));
     assert(setNodeNudgeOffset(pattern, microNode, -8));
     assert(setNodeProbabilityOffset(pattern, microNode, -33));
+    assert(setNodeLocalVariationRange(pattern, microNode, StepProperty::NOTE, 6));
 
     const auto nestedMicro = createMicroSequence(pattern, microNode, 2);
     assert(nestedMicro.ok);
@@ -122,6 +131,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     assert(nestedMicroSequence != nullptr);
     const auto nestedMicroNode = static_cast<uint16_t>(nestedMicroSequence->firstStepNode + 1);
     assert(setNodeNoteOffset(pattern, nestedMicroNode, 9));
+    assert(setNodeLocalVariationRange(pattern, nestedMicroNode, StepProperty::VELOCITY, 22));
 
     const auto nestedCycle = createCycleStateSet(pattern, microNode, 2);
     assert(nestedCycle.ok);
@@ -131,6 +141,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     assert(nestedCycleSet != nullptr);
     const auto nestedCycleNode = static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1);
     assert(setNodeNoteOffset(pattern, nestedCycleNode, 4));
+    assert(setNodeLocalVariationRange(pattern, nestedCycleNode, StepProperty::GATE, 18));
 }
 
 void assertProjectGraphContent(const core::state::sequencer::SequencerPatternState& pattern) {
@@ -153,6 +164,7 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(defaultMicroNode != nullptr);
     assert(defaultMicroNode->has(STEP_NODE_NOTE_OFFSET));
     assert(defaultMicroNode->noteOffset == 12);
+    assert(nodeLocalVariationRange(*defaultMicroNode, StepProperty::NOTE) == 8);
 
     const auto* rootCycleSet = graph->cycleSet(rootZero->cycleSetId);
     assert(rootCycleSet != nullptr);
@@ -175,6 +187,7 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(rootCycleNode->gateOffset == -15);
     assert(rootCycleNode->nudgeOffset == 10);
     assert(rootCycleNode->probabilityOffset == -50);
+    assert(nodeLocalVariationRange(*rootCycleNode, StepProperty::VELOCITY) == 33);
 
     const auto* stateMicroSequence = graph->sequence(rootCycleNode->childSequenceId);
     assert(stateMicroSequence != nullptr);
@@ -185,6 +198,7 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(stateMicroNode != nullptr);
     assert(stateMicroNode->has(STEP_NODE_NOTE_OFFSET));
     assert(stateMicroNode->noteOffset == 5);
+    assert(nodeLocalVariationRange(*stateMicroNode, StepProperty::GATE) == 44);
 
     const auto* stateCycleSet = graph->cycleSet(rootCycleNode->cycleSetId);
     assert(stateCycleSet != nullptr);
@@ -195,6 +209,7 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(stateCycleNode != nullptr);
     assert(stateCycleNode->has(STEP_NODE_NOTE_OFFSET));
     assert(stateCycleNode->noteOffset == 3);
+    assert(nodeLocalVariationRange(*stateCycleNode, StepProperty::NUDGE) == 12);
 
     const auto* rootFour = graph->stepNode(rootStepNodeId(4));
     assert(rootFour != nullptr);
@@ -216,6 +231,7 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(microNode->gateOffset == 25);
     assert(microNode->nudgeOffset == -8);
     assert(microNode->probabilityOffset == -33);
+    assert(nodeLocalVariationRange(*microNode, StepProperty::NOTE) == 6);
 
     assert(microNode->has(STEP_NODE_CHILD_SEQUENCE));
     assert(microNode->has(STEP_NODE_CYCLE_SET));
@@ -228,6 +244,7 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(nestedMicroNode != nullptr);
     assert(nestedMicroNode->has(STEP_NODE_NOTE_OFFSET));
     assert(nestedMicroNode->noteOffset == 9);
+    assert(nodeLocalVariationRange(*nestedMicroNode, StepProperty::VELOCITY) == 22);
 
     const auto* nestedCycleSet = graph->cycleSet(microNode->cycleSetId);
     assert(nestedCycleSet != nullptr);
@@ -238,6 +255,7 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(nestedCycleNode != nullptr);
     assert(nestedCycleNode->has(STEP_NODE_NOTE_OFFSET));
     assert(nestedCycleNode->noteOffset == 4);
+    assert(nodeLocalVariationRange(*nestedCycleNode, StepProperty::GATE) == 18);
 }
 
 void configureProjectSession(core::state::CoreState& state) {

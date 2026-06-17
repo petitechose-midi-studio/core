@@ -53,10 +53,11 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     : event_bus_(eventBus)
     , midi_(midi)
     , sequencer_state_(state.sequencer)
+    , project_navigation_state_(state.projectNavigation)
     , status_bar_state_(state.statusBar)
     , midi_sync_state_(state.midiSync)
     , midi_clock_sync_(midi)
-    , snapshot_bank_(state.sequencer, state.trackBank)
+    , snapshot_bank_(state.sequencer, state.trackBank, state.projectNavigation)
     , sequencer_playback_(state.sequencer, state.trackBank, state.statusBar, midi_event_queue_)
     , internal_timer_lane_(midi, midi_event_queue_, snapshot_bank_, sequencer_playback_) {
     const uint8_t initialSnapshotIndex = snapshot_bank_.refresh();

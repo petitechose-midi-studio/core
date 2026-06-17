@@ -1,0 +1,18 @@
+# UX workflow: inspect summed pattern + per-step local random previews.
+# Purpose: validates that resolved local step randomization is visually projected
+# like pattern randomization for every supported musical dimension.
+
+0 scenario seq-local-random-summed-pitch
+80 capture screen summed_pitch_preview
+
+180 scenario seq-local-random-summed-velocity
+260 capture screen summed_velocity_preview
+
+360 scenario seq-local-random-summed-gate
+440 capture screen summed_gate_preview
+
+540 scenario seq-local-random-summed-nudge
+620 capture screen summed_nudge_preview
+
+# Exercise one real sequencer binding so workflow verification records dispatch.
+720 tap MACRO_8 60

@@ -7,13 +7,15 @@
 
 # Hold LEFT_CENTER to enter quick controls.
 150 button LEFT_CENTER down
-300 capture screen quick_controls_open
+260 capture screen quick_controls_open
 
-# Navigate a quick-control row and change its value.
-400 encoder NAV 1
-500 encoder OPT 0.70
-650 capture screen quick_controls_adjusted
+# Navigate through Offset to Division and change its value.
+330 encoder NAV 1
+400 capture screen quick_controls_offset
+450 encoder NAV 1
+520 encoder OPT 0.70
+600 capture screen quick_controls_adjusted
 
 # Release LEFT_CENTER to apply and close.
-750 button LEFT_CENTER up
-950 capture screen quick_controls_closed
+620 button LEFT_CENTER up
+820 capture screen quick_controls_closed

@@ -104,6 +104,14 @@ FLASHMEM void fillPatternPayload(const state::sequencer::SequencerPatternState& 
     out.variationVelocity = variationRanges.velocity;
     out.variationGatePercent = variationRanges.gatePercent;
     out.variationNudge = variationRanges.nudge;
+    out.swingOffsetPercent =
+        state::sequencer::SequencerPatternState::clampPatternSwingOffsetPercent(
+            source.swingOffsetPercent.get()
+        );
+    out.patternNudgePercent =
+        state::sequencer::SequencerPatternState::clampPatternNudgePercent(
+            source.patternNudgePercent.get()
+        );
     const auto scaleOverride = sanitizeScaleSettings(source.scaleOverride);
     out.scalePolicy = static_cast<uint8_t>(source.scalePolicy);
     out.scaleRoot = scaleOverride.root;
@@ -129,6 +137,8 @@ FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequence
     target.midiChannel.set(sanitizeMidiChannel(payload.midiChannel));
     target.setPitchEditMode(state::sequencer::sanitizePitchEditMode(payload.pitchEditMode));
     target.setPatternVariationRanges(payloadVariationRanges(payload));
+    target.setPatternSwingOffsetPercent(payload.swingOffsetPercent);
+    target.setPatternNudgePercent(payload.patternNudgePercent);
     target.setPatternScalePolicy(state::sequencer::sanitizePatternScalePolicy(payload.scalePolicy));
     target.setPatternScaleOverride(payloadScaleSettings(
         payload.scaleRoot,

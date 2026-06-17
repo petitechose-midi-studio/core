@@ -1,0 +1,15 @@
+# UX workflow: visual semantics overview for the 8-step sequencer page.
+# Purpose: captures representative tile states on one page: plain note,
+# probability, micro-sequence, cycle-state, nested content, and playback.
+# Expect: playhead_progress
+
+0 scenario seq-semantic-grid
+80 capture screen semantic_grid_ready
+
+# Start playback so the same semantic markers can be checked with playhead state.
+180 tap BOTTOM_CENTER 60
+520 capture screen semantic_grid_playing_early
+900 tick
+980 capture screen semantic_grid_playing_late
+1080 tap BOTTOM_CENTER 60
+1300 capture screen semantic_grid_stopped

@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "../../src/sequencer/SequencerRuntimeSnapshotBank.hpp"
+#include "../../src/state/project/ProjectNavigationState.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankState.hpp"
 
@@ -20,7 +21,8 @@ bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSe
 void test_refresh_captures_active_editor_state() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     sequencer.pattern.length.set(12);
     sequencer.pattern.midiChannel.set(4);
@@ -42,7 +44,8 @@ void test_refresh_captures_active_editor_state() {
 void test_refresh_preserves_active_snapshot_until_commit() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     sequencer.pattern.length.set(8);
     uint8_t index = bank.refresh();
@@ -63,7 +66,8 @@ void test_refresh_preserves_active_snapshot_until_commit() {
 void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     sequencer.pattern.length.set(8);
     sequencer.pattern.note[0] = 60;
@@ -87,7 +91,8 @@ void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
 void test_refresh_captures_inactive_bank_track() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     auto& inactiveTrack = trackBank.track(2);
     inactiveTrack.length.set(24);
@@ -111,7 +116,8 @@ void test_refresh_captures_inactive_bank_track() {
 void test_refresh_switches_active_track_sources() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     sequencer.pattern.length.set(12);
     sequencer.pattern.midiChannel.set(4);
@@ -153,7 +159,8 @@ void test_refresh_switches_active_track_sources() {
 void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     trackBank.syncSharedTrackState(0x0003, 0);
     auto& staleTrack = trackBank.track(1);
@@ -196,7 +203,8 @@ void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
 void test_refresh_resolves_project_and_pattern_scale() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank};
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     const StepSequencerScaleSettings projectScale{
         .root = 2,
@@ -245,6 +253,34 @@ void test_refresh_resolves_project_and_pattern_scale() {
     std::cout << "[PASS] test_refresh_resolves_project_and_pattern_scale\n";
 }
 
+void test_refresh_resolves_project_and_pattern_swing() {
+    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
+
+    projectNavigation.transportSwingPercent = 20;
+    assert(sequencer.setPatternSwingOffsetPercent(12));
+    assert(sequencer.setPatternNudgePercent(-8));
+
+    uint8_t index = bank.refresh();
+    bank.commit(index);
+
+    const auto& snapshot = bank.activeSnapshot();
+    assert(snapshot.projectSwingPercent == 20);
+    assert(snapshot.tracks[0].swingOffsetPercent == 12);
+    assert(snapshot.tracks[0].effectiveSwingPercent == 32);
+    assert(snapshot.tracks[0].patternNudgePercent == -8);
+
+    projectNavigation.transportSwingPercent = 70;
+    assert(sequencer.setPatternSwingOffsetPercent(10));
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].effectiveSwingPercent == 75);
+
+    std::cout << "[PASS] test_refresh_resolves_project_and_pattern_swing\n";
+}
+
 }  // namespace
 
 int main() {
@@ -255,6 +291,7 @@ int main() {
     test_refresh_switches_active_track_sources();
     test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload();
     test_refresh_resolves_project_and_pattern_scale();
+    test_refresh_resolves_project_and_pattern_swing();
     std::cout << "All SequencerRuntimeSnapshotBank tests passed\n";
     return 0;
 }

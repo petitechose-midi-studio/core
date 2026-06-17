@@ -80,6 +80,13 @@ FLASHMEM bool findSingleVariationRangeChange(
     return changeCount == 1;
 }
 
+FLASHMEM bool sameVariationRanges(const Ranges& lhs, const Ranges& rhs) {
+    return lhs.pitchSemitones == rhs.pitchSemitones &&
+           lhs.velocity == rhs.velocity &&
+           lhs.gatePercent == rhs.gatePercent &&
+           lhs.nudge == rhs.nudge;
+}
+
 FLASHMEM core::state::sequencer::SequencerHistoryDescriptor makeVariationHistoryDescriptor(
     const Ranges& before,
     const Ranges& after,
@@ -101,6 +108,61 @@ FLASHMEM core::state::sequencer::SequencerHistoryDescriptor makeVariationHistory
     }
 
     return descriptor;
+}
+
+FLASHMEM void recordSelectorVariationHistoryIfChanged(
+    core::handler::SequencerHistoryDomainServices& history,
+    core::state::sequencer::SequencerState& sequencer,
+    bool& snapshotValid,
+    core::state::sequencer::SequencerHistoryPatternSnapshot& beforeSnapshot,
+    const Ranges& beforeRanges
+) {
+    if (!snapshotValid) {
+        return;
+    }
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    if (core::state::sequencer::captureHistorySnapshot(sequencer, after)) {
+        history.recordPattern(
+            std::move(beforeSnapshot),
+            std::move(after),
+            makeVariationHistoryDescriptor(
+                beforeRanges,
+                sequencer.pattern.variationRanges,
+                sequencer.activeStepProperty.get()
+            )
+        );
+    }
+
+    snapshotValid = false;
+}
+
+FLASHMEM void recordSelectorVariationHistoryFromCurrentStateIfChanged(
+    core::handler::SequencerHistoryDomainServices& history,
+    core::state::sequencer::SequencerState& sequencer,
+    const Ranges& beforeRanges
+) {
+    if (sameVariationRanges(beforeRanges, sequencer.pattern.variationRanges)) {
+        return;
+    }
+
+    core::state::sequencer::SequencerHistoryPatternSnapshot before;
+    core::state::sequencer::SequencerHistoryPatternSnapshot after;
+    if (!core::state::sequencer::captureHistorySnapshot(sequencer, before) ||
+        !core::state::sequencer::captureHistorySnapshot(sequencer, after)) {
+        return;
+    }
+
+    before.flat.variationRanges = beforeRanges;
+    history.recordPattern(
+        std::move(before),
+        std::move(after),
+        makeVariationHistoryDescriptor(
+            beforeRanges,
+            sequencer.pattern.variationRanges,
+            sequencer.activeStepProperty.get()
+        )
+    );
 }
 
 }  // namespace
@@ -196,19 +258,23 @@ FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
 
 FLASHMEM void SequencerPropertySelectorHandler::closeApply() {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
-    if (history_snapshot_valid_) {
-        core::state::sequencer::SequencerHistoryPatternSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-            history_.recordPattern(
-                std::move(history_snapshot_),
-                std::move(after),
-                makeVariationHistoryDescriptor(
-                    snapshot_variation_ranges_,
-                    sequencer_.pattern.variationRanges,
-                    sequencer_.activeStepProperty.get()
-                )
-            );
-        }
+    const bool localVariationEdit =
+        sequencer_.stepPropertyInlineSelector.macroLocalVariationEditActive.get();
+    if (localVariationEdit) {
+        history_.commitCoalescedPatternEdit();
+        recordSelectorVariationHistoryFromCurrentStateIfChanged(
+            history_,
+            sequencer_,
+            snapshot_variation_ranges_
+        );
+    } else {
+        recordSelectorVariationHistoryIfChanged(
+            history_,
+            sequencer_,
+            history_snapshot_valid_,
+            history_snapshot_,
+            snapshot_variation_ranges_
+        );
     }
     sequencer_.patternVariationFeedback.show(
         sequencer_.activeStepProperty.get(),
@@ -221,13 +287,27 @@ FLASHMEM void SequencerPropertySelectorHandler::closeApply() {
 FLASHMEM void SequencerPropertySelectorHandler::closeCancel() {
     auto& o = sequencer_.stepPropertyInlineSelector;
     if (!o.selecting.get()) return;
-    if (o.snapshotValid) {
-        const int restored = std::clamp(o.snapshotIndex, 0, PROPERTY_COUNT - 1);
-        sequencer_.activeStepProperty.set(static_cast<core::state::sequencer::StepProperty>(restored));
+    if (o.macroLocalVariationEditActive.get()) {
+        history_.commitCoalescedPatternEdit();
+        recordSelectorVariationHistoryFromCurrentStateIfChanged(
+            history_,
+            sequencer_,
+            snapshot_variation_ranges_
+        );
+    } else {
+        recordSelectorVariationHistoryIfChanged(
+            history_,
+            sequencer_,
+            history_snapshot_valid_,
+            history_snapshot_,
+            snapshot_variation_ranges_
+        );
     }
-    sequencer_.setPatternVariationRanges(snapshot_variation_ranges_);
-    sequencer_.patternVariationFeedback.reset();
     history_snapshot_valid_ = false;
+    sequencer_.patternVariationFeedback.show(
+        sequencer_.activeStepProperty.get(),
+        now_provider_ ? now_provider_() : 0
+    );
     o.reset();
 }
 

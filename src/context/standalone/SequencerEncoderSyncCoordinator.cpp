@@ -8,6 +8,7 @@
 #include <config/InputIDs.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 
 namespace core::context::standalone {
 
@@ -59,7 +60,9 @@ FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
         sequencer_.pattern.patternScaleRevision,
         sequencer_.stepEdit.visible,
         sequencer_.stepPropertyInlineSelector.selecting,
-        sequencer_.patternQuickControls.selecting
+        sequencer_.stepPropertyInlineSelector.macroLocalVariationEditActive,
+        sequencer_.patternQuickControls.selecting,
+        sequencer_.patternQuickControls.physicalHoldActive
     );
 }
 
@@ -125,15 +128,42 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
     }
 }
 
+FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroLocalVariationValues(
+    uint8_t page,
+    core::state::sequencer::StepProperty property
+) {
+    const auto* graph = core::state::sequencer::graphView(sequencer_.pattern);
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        float normalized = 0.0f;
+        uint8_t abs = 0;
+
+        if (graph != nullptr &&
+            core::state::sequencer::resolveActiveContentStepInPage(sequencer_, page, i, abs)) {
+            const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, abs);
+            const auto* node = graph->stepNode(nodeId);
+            if (node != nullptr) {
+                normalized = input_utils::variationRangeToNormalized(
+                    property,
+                    core::state::sequencer::nodeLocalVariationRange(*node, property)
+                );
+            }
+        }
+
+        normalized = input_utils::clampNormalized(normalized);
+
+        if (!macro_position_valid_[i] ||
+            hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
+            encoders_.setPosition(Config::MACRO_ENCODERS[i], normalized);
+            macro_position_cache_[i] = normalized;
+            macro_position_valid_[i] = true;
+        }
+    }
+}
+
 FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) return;
 
     if (overlays_.hasVisible()) {
-        return;
-    }
-
-    if (sequencer_.stepPropertyInlineSelector.selecting.get() ||
-        sequencer_.patternQuickControls.selecting.get()) {
         return;
     }
 
@@ -142,6 +172,21 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
         sequencer_.page.get()
     );
     const auto property = sequencer_.activeStepProperty.get();
+
+    if (sequencer_.stepPropertyInlineSelector.selecting.get()) {
+        if (property == core::state::sequencer::StepProperty::PROBABILITY) {
+            return;
+        }
+        const auto config = input_utils::encoderConfigForVariationRange(property);
+        ensureMacroEncoderConfig(config);
+        syncMacroLocalVariationValues(page, property);
+        return;
+    }
+
+    if (sequencer_.patternQuickControls.selecting.get()) {
+        return;
+    }
+
     const auto effectiveScale = core::state::sequencer::resolveEffectiveScaleSettings(
         track_bank_.projectScaleSettings(),
         sequencer_.pattern.scalePolicy,

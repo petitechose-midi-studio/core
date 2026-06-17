@@ -20,9 +20,15 @@ inline constexpr uint16_t DEFAULT_DISCRETE_TICKS_PER_STEP = 2;
 inline constexpr float DEFAULT_NORMALIZED_TURNS = 0.0f;
 // Matches the previous "16 ticks/step on macro encoders" feel, but in physical turns.
 inline constexpr float NOTE_NORMALIZED_TURNS = 64.0f / 3.0f;
+inline constexpr float GATE_NORMALIZED_TURNS = 4.0f;
+inline constexpr float GATE_UNIT_NORMALIZED_POINT = 0.5f;
 inline constexpr int PROBABILITY_MAX = 100;
 inline constexpr int NUDGE_MIN = -50;
 inline constexpr int NUDGE_MAX = 50;
+inline constexpr int SWING_OFFSET_MIN =
+    core::state::sequencer::SequencerPatternState::MIN_PATTERN_SWING_OFFSET_PERCENT;
+inline constexpr int SWING_OFFSET_MAX =
+    core::state::sequencer::SequencerPatternState::MAX_PATTERN_SWING_OFFSET_PERCENT;
 inline constexpr std::array<uint8_t, 6> STEPS_PER_BEAT_CHOICES = {1, 2, 3, 4, 6, 8};
 
 struct StepPropertyEncoderConfig {
@@ -60,9 +66,24 @@ inline uint8_t normalizedToMidi7(float normalized) {
 }
 
 inline uint16_t normalizedToGatePercent(float normalized) {
-    return static_cast<uint16_t>(
-        normalizedToInclusiveInt(normalized, SequencerState::MAX_GATE_PERCENT)
-    );
+    const float value = clampNormalized(normalized);
+    constexpr uint16_t unitGate = SequencerState::DEFAULT_GATE_PERCENT;
+    constexpr uint16_t maxGate = SequencerState::MAX_GATE_PERCENT;
+    if constexpr (maxGate <= unitGate) {
+        return static_cast<uint16_t>(normalizedToInclusiveInt(value, maxGate));
+    }
+
+    if (value <= GATE_UNIT_NORMALIZED_POINT) {
+        const float scaled = value / GATE_UNIT_NORMALIZED_POINT;
+        return static_cast<uint16_t>(normalizedToInclusiveInt(scaled, unitGate));
+    }
+
+    const float scaled =
+        (value - GATE_UNIT_NORMALIZED_POINT) / (1.0f - GATE_UNIT_NORMALIZED_POINT);
+    const int extended =
+        static_cast<int>(unitGate) +
+        normalizedToInclusiveInt(scaled, static_cast<int>(maxGate - unitGate));
+    return static_cast<uint16_t>(std::clamp(extended, 0, static_cast<int>(maxGate)));
 }
 
 inline uint8_t normalizedToProbability(float normalized) {
@@ -70,10 +91,20 @@ inline uint8_t normalizedToProbability(float normalized) {
 }
 
 inline float gatePercentToNormalized(uint16_t gatePercent) {
-    return indexToNormalized(
-        gatePercent,
-        static_cast<int>(SequencerState::MAX_GATE_PERCENT) + 1
-    );
+    constexpr uint16_t unitGate = SequencerState::DEFAULT_GATE_PERCENT;
+    constexpr uint16_t maxGate = SequencerState::MAX_GATE_PERCENT;
+    const uint16_t clamped = SequencerState::clampGatePercent(gatePercent);
+    if constexpr (maxGate <= unitGate) {
+        return indexToNormalized(clamped, static_cast<int>(maxGate) + 1);
+    }
+    if (clamped <= unitGate) {
+        return (static_cast<float>(clamped) / static_cast<float>(unitGate)) *
+               GATE_UNIT_NORMALIZED_POINT;
+    }
+    const float extended =
+        static_cast<float>(clamped - unitGate) / static_cast<float>(maxGate - unitGate);
+    return GATE_UNIT_NORMALIZED_POINT +
+           extended * (1.0f - GATE_UNIT_NORMALIZED_POINT);
 }
 
 inline float probabilityToNormalized(uint8_t probability) {
@@ -88,16 +119,30 @@ inline int8_t normalizedToNudge(float normalized) {
     return static_cast<int8_t>(NUDGE_MIN + index);
 }
 
+inline int8_t normalizedToSwingOffset(float normalized) {
+    const int index = normalizedToInclusiveInt(normalized, SWING_OFFSET_MAX - SWING_OFFSET_MIN);
+    return static_cast<int8_t>(SWING_OFFSET_MIN + index);
+}
+
 inline float nudgeToNormalized(int8_t nudge) {
     const int clamped = std::clamp<int>(nudge, NUDGE_MIN, NUDGE_MAX);
     return indexToNormalized(clamped - NUDGE_MIN, (NUDGE_MAX - NUDGE_MIN) + 1);
+}
+
+inline float swingOffsetToNormalized(int8_t offset) {
+    const int clamped = std::clamp<int>(offset, SWING_OFFSET_MIN, SWING_OFFSET_MAX);
+    return indexToNormalized(
+        clamped - SWING_OFFSET_MIN,
+        (SWING_OFFSET_MAX - SWING_OFFSET_MIN) + 1
+    );
 }
 
 inline StepPropertyEncoderConfig encoderConfigForProperty(StepProperty property) {
     StepPropertyEncoderConfig config;
 
     if (property == StepProperty::GATE) {
-        config.discreteSteps = static_cast<uint8_t>(SequencerState::MAX_GATE_PERCENT + 1);
+        config.discreteSteps = 0;
+        config.normalizedTurns = GATE_NORMALIZED_TURNS;
         return config;
     }
 
@@ -207,6 +252,10 @@ inline float quickControlToNormalized(
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::OFFSET:
             return 0.5f;
+        case core::state::sequencer::PatternQuickControlItem::SWING:
+            return swingOffsetToNormalized(state.pattern.swingOffsetPercent.get());
+        case core::state::sequencer::PatternQuickControlItem::NUDGE:
+            return nudgeToNormalized(state.pattern.patternNudgePercent.get());
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
             return indexToNormalized(
                 findStepsPerBeatChoiceIndex(state.pattern.stepsPerBeat.get()),
@@ -228,6 +277,12 @@ inline StepPropertyEncoderConfig encoderConfigForQuickControl(
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
             config.discreteSteps = static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size());
+            return config;
+        case core::state::sequencer::PatternQuickControlItem::SWING:
+            config.discreteSteps = static_cast<uint8_t>((SWING_OFFSET_MAX - SWING_OFFSET_MIN) + 1);
+            return config;
+        case core::state::sequencer::PatternQuickControlItem::NUDGE:
+            config.discreteSteps = static_cast<uint8_t>((NUDGE_MAX - NUDGE_MIN) + 1);
             return config;
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default:
@@ -251,6 +306,12 @@ inline void applyNormalizedToQuickControl(
             state.pattern.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
             return;
         }
+        case core::state::sequencer::PatternQuickControlItem::SWING:
+            state.setPatternSwingOffsetPercent(normalizedToSwingOffset(value));
+            return;
+        case core::state::sequencer::PatternQuickControlItem::NUDGE:
+            state.setPatternNudgePercent(normalizedToNudge(value));
+            return;
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
             const int idx = normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
