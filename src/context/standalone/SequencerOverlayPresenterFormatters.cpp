@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 #include <config/Timing.hpp>
@@ -12,16 +13,19 @@
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace core::context::standalone::sequencer_overlay_presenter {
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 namespace {
 
-constexpr uint32_t ACTIVATED_ICON_COLOR = 0x7DD3FC;
-constexpr uint32_t PROPERTY_ICON_COLOR = 0xB8C4D1;
-constexpr uint32_t MICRO_SEQUENCE_COLOR = 0x30F2B2;
-constexpr uint32_t CYCLE_STATE_COLOR = 0xFFD166;
+constexpr uint32_t ACTIVATED_ICON_COLOR =
+    core::ui::sequencer::semantic::color(core::ui::sequencer::semantic::Tone::STATE);
+constexpr uint32_t MICRO_SEQUENCE_COLOR =
+    core::ui::sequencer::semantic::color(core::ui::sequencer::semantic::Tone::MICRO_SEQUENCE);
+constexpr uint32_t CYCLE_STATE_COLOR =
+    core::ui::sequencer::semantic::color(core::ui::sequencer::semantic::Tone::CYCLE_STATE);
 
 using StripProps = core::ui::ContextActionStripProps;
 using Visual = core::ui::ContextActionStripVisualState;
@@ -114,6 +118,118 @@ FLASHMEM bool canPasteStepContent(const ActionSource& source) {
            );
 }
 
+FLASHMEM void copyText(char* out, size_t outSize, const char* text) {
+    if (!out || outSize == 0) return;
+    const char* source = text ? text : "";
+    std::strncpy(out, source, outSize - 1);
+    out[outSize - 1] = '\0';
+}
+
+FLASHMEM void formatNoteName(char* out, size_t outSize, uint8_t note) {
+    core::state::sequencer::formatStepPropertyValue(
+        out,
+        outSize,
+        core::state::sequencer::StepProperty::NOTE,
+        note,
+        0,
+        0
+    );
+}
+
+FLASHMEM void formatStepSummary(
+    char* out,
+    size_t outSize,
+    const core::state::sequencer::SequencerContentStepProjection& projection,
+    const core::state::sequencer::SequencerChildContentSummary* childSummary
+) {
+    if (!out || outSize == 0) return;
+
+    char from[8] = {};
+    char to[8] = {};
+    const bool childContextDiffers =
+        !projection.rootContext && projection.parentNote != projection.note;
+    const bool childNoteDiffers =
+        childSummary != nullptr && childSummary->note != projection.note;
+
+    if (childContextDiffers) {
+        formatNoteName(from, sizeof(from), projection.parentNote);
+        formatNoteName(to, sizeof(to), projection.note);
+        std::snprintf(out, outSize, "%s>%s", from, to);
+        return;
+    }
+
+    if (childNoteDiffers) {
+        formatNoteName(from, sizeof(from), projection.note);
+        formatNoteName(to, sizeof(to), childSummary->note);
+        std::snprintf(out, outSize, "%s>%s", from, to);
+        return;
+    }
+
+    formatNoteName(out, outSize, projection.note);
+}
+
+FLASHMEM void formatCompactOffset(
+    char* out,
+    size_t outSize,
+    core::state::sequencer::StepProperty property,
+    int16_t offset,
+    bool noteOffsetUsesScaleDegrees
+) {
+    if (!out || outSize == 0) return;
+
+    const char sign = offset >= 0 ? '+' : '-';
+    const int magnitude = offset >= 0 ? offset : -offset;
+    const char* unit = (property == core::state::sequencer::StepProperty::NOTE &&
+                        noteOffsetUsesScaleDegrees)
+                           ? "d"
+                           : "";
+    std::snprintf(out, outSize, "%c%d%s", sign, magnitude, unit);
+}
+
+FLASHMEM bool propertySupportsLocalVariation(core::state::sequencer::StepProperty property) {
+    return property != core::state::sequencer::StepProperty::PROBABILITY;
+}
+
+FLASHMEM void formatLocalVariationRange(
+    char* out,
+    size_t outSize,
+    core::state::sequencer::StepProperty property,
+    uint8_t range,
+    bool pitchUsesScaleDegrees
+) {
+    if (!out || outSize == 0) return;
+    if (!propertySupportsLocalVariation(property)) {
+        copyText(out, outSize, "--");
+        return;
+    }
+
+    const char* unit = "";
+    if (property == core::state::sequencer::StepProperty::GATE) {
+        unit = "%";
+    } else if (property == core::state::sequencer::StepProperty::NOTE &&
+               pitchUsesScaleDegrees) {
+        unit = "d";
+    }
+    std::snprintf(out, outSize, "±%u%s", static_cast<unsigned>(range), unit);
+}
+
+FLASHMEM const char* focusLabelForSelectedRow(int selectedIndex) {
+    using namespace core::state::sequencer::step_edit_rows;
+
+    if (selectedIndex == ACTIVATED) return "State";
+    if (selectedIndex == MICRO_SEQUENCE) return "Micro sequence";
+    if (selectedIndex == CYCLE_STATES) return "Cycle state";
+    if (isProperty(static_cast<uint8_t>(std::max(0, selectedIndex)))) {
+        const int index = selectedIndex - PROPERTY_OFFSET;
+        if (index >= 0 && index < static_cast<int>(PROPERTIES.size())) {
+            return core::ui::sequencer::semantic::labelForProperty(
+                PROPERTIES[static_cast<size_t>(index)]
+            );
+        }
+    }
+    return "Step";
+}
+
 }  // namespace
 
 FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
@@ -173,6 +289,31 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         return data;
     }
 
+    const bool selectedRowIsProperty =
+        step_edit_rows::isProperty(static_cast<uint8_t>(data.selectedIndex));
+    const auto selectedProperty = selectedRowIsProperty
+        ? step_edit_rows::propertyForRow(static_cast<uint8_t>(data.selectedIndex))
+        : core::state::sequencer::StepProperty::NOTE;
+    const bool localVariationMode =
+        sequencer.stepEdit.localVariationEditActive.get() &&
+        selectedRowIsProperty &&
+        propertySupportsLocalVariation(selectedProperty);
+
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+
+    core::state::sequencer::SequencerChildContentSummary childSummary{};
+    bool hasChildSummary = false;
+    if (projection.hasMicroSequence || projection.hasCycleStates) {
+        hasChildSummary = core::state::sequencer::resolveRepresentativeChildContentSummary(
+            sequencer,
+            projection,
+            effectiveScaleSettings,
+            childSummary
+        );
+    }
+
     std::snprintf(
         data.valueBuffers[step_edit_rows::ACTIVATED].data(),
         data.valueBuffers[step_edit_rows::ACTIVATED].size(),
@@ -180,30 +321,60 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         projection.enabled ? "On" : "Off"
     );
     data.rows[step_edit_rows::ACTIVATED] = makeIconRow(
-        "Activated",
+        "State",
         data.valueBuffers[step_edit_rows::ACTIVATED].data(),
         ::standalone::icons::ACTION_VALIDATE,
         ACTIVATED_ICON_COLOR
     );
+    data.overlayProps.state = core::ui::SequencerStepEditPropertyChip{
+        .key = core::ui::sequencer::semantic::label(
+            core::ui::sequencer::semantic::Tone::STATE
+        ),
+        .value = data.valueBuffers[step_edit_rows::ACTIVATED].data(),
+        .icon = ::standalone::icons::ACTION_VALIDATE,
+        .color = ACTIVATED_ICON_COLOR,
+    };
 
     for (size_t i = 0; i < step_edit_rows::PROPERTIES.size(); ++i) {
         const size_t rowIndex = step_edit_rows::PROPERTY_OFFSET + i;
-        if (projection.rootContext) {
+        const auto property = step_edit_rows::PROPERTIES[i];
+        if (localVariationMode) {
+            const uint8_t range = node
+                ? core::state::sequencer::nodeLocalVariationRange(*node, property)
+                : 0;
+            formatLocalVariationRange(
+                data.valueBuffers[rowIndex].data(),
+                data.valueBuffers[rowIndex].size(),
+                property,
+                range,
+                effectiveScaleSettings.isConstrained()
+            );
+            copyText(
+                data.compactValueBuffers[i].data(),
+                data.compactValueBuffers[i].size(),
+                data.valueBuffers[rowIndex].data()
+            );
+        } else if (projection.rootContext) {
             core::state::sequencer::formatStepPropertyValue(
                 data.valueBuffers[rowIndex].data(),
                 data.valueBuffers[rowIndex].size(),
-                step_edit_rows::PROPERTIES[i],
+                property,
                 projection.note,
                 projection.velocity,
                 projection.gate,
                 projection.nudge,
                 projection.probability
             );
+            copyText(
+                data.compactValueBuffers[i].data(),
+                data.compactValueBuffers[i].size(),
+                data.valueBuffers[rowIndex].data()
+            );
         } else {
             core::state::sequencer::formatStepPropertyResolvedOffsetValue(
                 data.valueBuffers[rowIndex].data(),
                 data.valueBuffers[rowIndex].size(),
-                step_edit_rows::PROPERTIES[i],
+                property,
                 projection.note,
                 projection.velocity,
                 projection.gate,
@@ -215,13 +386,30 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
                 ),
                 effectiveScaleSettings.isConstrained()
             );
+            formatCompactOffset(
+                data.compactValueBuffers[i].data(),
+                data.compactValueBuffers[i].size(),
+                property,
+                core::state::sequencer::stepContentProjectionOffsetForProperty(
+                    projection,
+                    property
+                ),
+                property == core::state::sequencer::StepProperty::NOTE &&
+                    effectiveScaleSettings.isConstrained()
+            );
         }
         data.rows[rowIndex] = makeIconRow(
             step_edit_rows::KEYS[i],
             data.valueBuffers[rowIndex].data(),
-            core::ui::sequencer::visual::propertyIconGlyph(step_edit_rows::PROPERTIES[i]),
-            PROPERTY_ICON_COLOR
+            core::ui::sequencer::visual::propertyIconGlyph(property),
+            core::ui::sequencer::semantic::colorForProperty(property)
         );
+        data.overlayProps.properties[i] = core::ui::SequencerStepEditPropertyChip{
+            .key = core::ui::sequencer::semantic::labelForProperty(property),
+            .value = data.compactValueBuffers[i].data(),
+            .icon = core::ui::sequencer::visual::propertyIconGlyph(property),
+            .color = core::ui::sequencer::semantic::colorForProperty(property),
+        };
     }
 
     const auto microAvailability = core::state::sequencer::activeContentChildCreationAvailability(
@@ -244,7 +432,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         availabilityLabel(microAvailability)
     );
     data.rows[step_edit_rows::MICRO_SEQUENCE] = makeIconRow(
-        "Micro-seq",
+        "Micro sequence",
         data.valueBuffers[step_edit_rows::MICRO_SEQUENCE].data(),
         ::standalone::icons::MICRO_SEQUENCE,
         MICRO_SEQUENCE_COLOR
@@ -257,19 +445,70 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         availabilityLabel(cycleAvailability)
     );
     data.rows[step_edit_rows::CYCLE_STATES] = makeIconRow(
-        "Cycle states",
+        "Cycle state",
         data.valueBuffers[step_edit_rows::CYCLE_STATES].data(),
         ::standalone::icons::CYCLE_STATE,
         CYCLE_STATE_COLOR
     );
 
+    std::snprintf(
+        data.stepBadge.data(),
+        data.stepBadge.size(),
+        "S%u",
+        static_cast<unsigned>(step) + 1U
+    );
+    formatStepSummary(
+        data.summary.data(),
+        data.summary.size(),
+        projection,
+        hasChildSummary ? &childSummary : nullptr
+    );
+    if (localVariationMode) {
+        copyText(
+            data.focusLabel.data(),
+            data.focusLabel.size(),
+            core::ui::sequencer::semantic::labelForProperty(selectedProperty)
+        );
+    } else {
+        copyText(
+            data.focusLabel.data(),
+            data.focusLabel.size(),
+            focusLabelForSelectedRow(data.selectedIndex)
+        );
+    }
+
+    data.overlayProps.visible = true;
+    data.overlayProps.stepBadge = data.stepBadge.data();
+    data.overlayProps.title = data.summary.data();
+    data.overlayProps.meta = data.meta.data();
+    data.overlayProps.focusLabel = data.focusLabel.data();
+    data.overlayProps.enabled = projection.enabled;
+    data.overlayProps.microSequence = projection.hasMicroSequence;
+    data.overlayProps.cycleStates = projection.hasCycleStates;
+    data.overlayProps.probabilityActive = projection.probability < 100;
+    data.overlayProps.selectedIndex = data.selectedIndex;
+    data.overlayProps.actions[0] = core::ui::SequencerStepEditActionChip{
+        .key = "Micro sequence",
+        .value = data.valueBuffers[step_edit_rows::MICRO_SEQUENCE].data(),
+        .icon = ::standalone::icons::MICRO_SEQUENCE,
+        .color = MICRO_SEQUENCE_COLOR,
+    };
+    data.overlayProps.actions[1] = core::ui::SequencerStepEditActionChip{
+        .key = "Cycle state",
+        .value = data.valueBuffers[step_edit_rows::CYCLE_STATES].data(),
+        .icon = ::standalone::icons::CYCLE_STATE,
+        .color = CYCLE_STATE_COLOR,
+    };
+
     uint32_t revision = 2166136261U;
     revision = mixRevision(revision, sequencer.pattern.stepDataRevision.get());
     revision = mixRevision(revision, sequencer.pattern.graphRevision.get());
     revision = mixRevision(revision, projection.enabled ? 1U : 0U);
+    revision = mixRevision(revision, localVariationMode ? 1U : 0U);
     revision = mixRevision(revision, static_cast<uint32_t>(step));
     revision = mixRevision(revision, static_cast<uint32_t>(len));
     data.dataRevision = revision;
+    data.overlayProps.dataRevision = revision;
     return data;
 }
 

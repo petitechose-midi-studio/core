@@ -26,6 +26,8 @@ enum class PatternQuickControlItem : uint8_t {
     OFFSET = 0,
     DIVISION = 1,
     LENGTH = 2,
+    SWING = 3,
+    NUDGE = 4,
 };
 
 enum class SequencerContentViewKind : uint8_t {
@@ -101,13 +103,8 @@ struct SequencerStepEditOverlayState {
     Signal<bool> visible{false};
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
+    Signal<bool> localVariationEditActive{false};
 
-    uint8_t snapshotNote = 0;
-    uint8_t snapshotVelocity = 0;
-    uint16_t snapshotGate = 0;
-    int8_t snapshotNudge = 0;
-    uint8_t snapshotProbability = 100;
-    bool snapshotValid = false;
     core::state::StructureHoldState contextHold;
 
     void reset();
@@ -115,9 +112,11 @@ struct SequencerStepEditOverlayState {
 
 struct SequencerStepPropertyInlineSelectorState {
     Signal<bool, 6> selecting{false};
+    Signal<bool, 6> macroLocalVariationEditActive{false};
     Signal<int, 4> selectedIndex{0};
 
     int snapshotIndex = 0;
+    uint8_t localVariationStepIndex = 0;
     bool snapshotValid = false;
 
     void reset();
@@ -210,7 +209,7 @@ struct SequencerPatternQuickControlsState {
     Signal<bool, 6> selecting{false};
     Signal<bool, 6> physicalHoldActive{false};
     Signal<PatternQuickControlItem, 6> focusedItem{
-        PatternQuickControlItem::OFFSET
+        PatternQuickControlItem::LENGTH
     };
     Signal<int8_t, 4> offsetSteps{0};
 

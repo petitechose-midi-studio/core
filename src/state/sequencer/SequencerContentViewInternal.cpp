@@ -87,10 +87,30 @@ FLASHMEM uint8_t normalizedToMidi7(float normalized) {
     return static_cast<uint8_t>(normalizedToInclusiveInt(normalized, 127));
 }
 
+FLASHMEM float clampNormalized(float value) {
+    return std::clamp(value, 0.0f, 1.0f);
+}
+
 FLASHMEM uint16_t normalizedToGate(float normalized) {
-    return static_cast<uint16_t>(
-        normalizedToInclusiveInt(normalized, SequencerState::MAX_GATE_PERCENT)
-    );
+    constexpr float unitPoint = 0.5f;
+    constexpr uint16_t unitGate = SequencerState::DEFAULT_GATE_PERCENT;
+    constexpr uint16_t maxGate = SequencerState::MAX_GATE_PERCENT;
+    const float value = clampNormalized(normalized);
+    if constexpr (maxGate <= unitGate) {
+        return static_cast<uint16_t>(normalizedToInclusiveInt(value, maxGate));
+    }
+
+    if (value <= unitPoint) {
+        return static_cast<uint16_t>(
+            normalizedToInclusiveInt(value / unitPoint, unitGate)
+        );
+    }
+
+    const float scaled = (value - unitPoint) / (1.0f - unitPoint);
+    const int extended =
+        static_cast<int>(unitGate) +
+        normalizedToInclusiveInt(scaled, static_cast<int>(maxGate - unitGate));
+    return static_cast<uint16_t>(std::clamp(extended, 0, static_cast<int>(maxGate)));
 }
 
 FLASHMEM int8_t normalizedToNudge(float normalized) {
@@ -147,10 +167,28 @@ FLASHMEM float valueToNormalized(
         case StepProperty::VELOCITY:
             return indexToNormalized(std::clamp(value, 0, 127), 128);
         case StepProperty::GATE:
-            return indexToNormalized(
-                std::clamp(value, 0, static_cast<int>(SequencerState::MAX_GATE_PERCENT)),
-                static_cast<int>(SequencerState::MAX_GATE_PERCENT) + 1
-            );
+            if (value <= static_cast<int>(SequencerState::DEFAULT_GATE_PERCENT)) {
+                constexpr int unitGate = static_cast<int>(SequencerState::DEFAULT_GATE_PERCENT);
+                return (static_cast<float>(std::clamp(value, 0, unitGate)) /
+                        static_cast<float>(unitGate)) *
+                       0.5f;
+            }
+            return 0.5f +
+                   (static_cast<float>(
+                        std::clamp(
+                            value - static_cast<int>(SequencerState::DEFAULT_GATE_PERCENT),
+                            0,
+                            static_cast<int>(
+                                SequencerState::MAX_GATE_PERCENT -
+                                SequencerState::DEFAULT_GATE_PERCENT
+                            )
+                        )
+                    ) /
+                    static_cast<float>(
+                        SequencerState::MAX_GATE_PERCENT -
+                        SequencerState::DEFAULT_GATE_PERCENT
+                    )) *
+                       0.5f;
         case StepProperty::NUDGE:
             return indexToNormalized(std::clamp(value, -50, 50) + 50, 101);
         case StepProperty::PROBABILITY:
@@ -310,6 +348,45 @@ FLASHMEM uint16_t selectCycleStateNode(
     return static_cast<uint16_t>(cycleSet->firstStateNode + stateIndex);
 }
 
+FLASHMEM void captureRepresentativeNode(
+    const Node& node,
+    SequencerGraphNodeId nodeId,
+    SequencerChildContentSummary* outSummary
+) {
+    if (outSummary == nullptr) return;
+
+    outSummary->nodeId = nodeId;
+    outSummary->localVariation.pitchSemitones = static_cast<uint8_t>(
+        std::min<uint16_t>(
+            static_cast<uint16_t>(outSummary->localVariation.pitchSemitones) +
+                node.localVariation.pitchSemitones,
+            oc::note::sequencer::StepSequencerVariationRanges::MAX_PITCH_SEMITONES
+        )
+    );
+    outSummary->localVariation.velocity = static_cast<uint8_t>(
+        std::min<uint16_t>(
+            static_cast<uint16_t>(outSummary->localVariation.velocity) +
+                node.localVariation.velocity,
+            oc::note::sequencer::StepSequencerVariationRanges::MAX_VELOCITY
+        )
+    );
+    outSummary->localVariation.gatePercent = static_cast<uint8_t>(
+        std::min<uint16_t>(
+            static_cast<uint16_t>(outSummary->localVariation.gatePercent) +
+                node.localVariation.gatePercent,
+            oc::note::sequencer::StepSequencerVariationRanges::MAX_GATE_PERCENT
+        )
+    );
+    outSummary->localVariation.nudge = static_cast<uint8_t>(
+        std::min<uint16_t>(
+            static_cast<uint16_t>(outSummary->localVariation.nudge) +
+                node.localVariation.nudge,
+            oc::note::sequencer::StepSequencerVariationRanges::MAX_NUDGE
+        )
+    );
+    outSummary->localVariation.clamp();
+}
+
 FLASHMEM bool resolveRepresentativeChildContentStep(
     const oc::note::sequencer::StepSequencerGraph& graph,
     const Node& node,
@@ -317,7 +394,8 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
     uint8_t depth,
     uint32_t localCycleIndex,
     uint8_t microPlayIndex,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    SequencerChildContentSummary* outSummary
 ) {
     if (!current.valid || depth >= GraphLimits::MAX_DEPTH) return false;
 
@@ -346,6 +424,7 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
 
         const uint32_t ownerActivationIndex = cycleCursor / cycleSet->length;
         touchedChild = true;
+        captureRepresentativeNode(*stateNode, stateNodeId, outSummary);
         if (ownsChildContent(*stateNode)) {
             childSequenceId = kInvalidId;
             childLocalCycleIndex = ownerActivationIndex;
@@ -378,8 +457,10 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
         static_cast<uint16_t>(sequence->firstStepNode + sourceIndex)
     );
     if (childNode == nullptr) return touchedChild;
+    const auto childNodeId = static_cast<uint16_t>(sequence->firstStepNode + sourceIndex);
 
     touchedChild = true;
+    captureRepresentativeNode(*childNode, childNodeId, outSummary);
     current = applyNode(contentBaseForKind(current, SequencerContentViewKind::MICRO_SEQUENCE),
                         *childNode,
                         scaleSettings);
@@ -390,7 +471,8 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
         static_cast<uint8_t>(depth + 1U),
         childLocalCycleIndex,
         0,
-        scaleSettings
+        scaleSettings,
+        outSummary
     );
     return touchedChild;
 }

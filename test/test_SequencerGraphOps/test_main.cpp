@@ -1,3 +1,7 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -517,6 +521,148 @@ void test_graph_limits_are_reported() {
     std::cout << "[PASS] test_graph_limits_are_reported\n";
 }
 
+void test_local_variation_ranges_are_per_node_and_clamped() {
+    SequencerState state;
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+
+    assert(core::state::sequencer::graphView(state.pattern) == nullptr);
+    assert(!core::state::sequencer::setNodeLocalVariationRange(
+        state.pattern,
+        rootNode,
+        core::state::sequencer::StepProperty::NOTE,
+        0
+    ));
+    assert(core::state::sequencer::graphView(state.pattern) == nullptr);
+
+    assert(core::state::sequencer::setNodeLocalVariationRange(
+        state.pattern,
+        rootNode,
+        core::state::sequencer::StepProperty::NOTE,
+        200
+    ));
+    const uint32_t revisionAfterPitch = state.pattern.graphRevision.get();
+    assert(!core::state::sequencer::setNodeLocalVariationRange(
+        state.pattern,
+        rootNode,
+        core::state::sequencer::StepProperty::NOTE,
+        255
+    ));
+    assert(state.pattern.graphRevision.get() == revisionAfterPitch);
+
+    assert(core::state::sequencer::setNodeLocalVariationRange(
+        state.pattern,
+        rootNode,
+        core::state::sequencer::StepProperty::VELOCITY,
+        250
+    ));
+    assert(core::state::sequencer::setNodeLocalVariationRange(
+        state.pattern,
+        rootNode,
+        core::state::sequencer::StepProperty::GATE,
+        150
+    ));
+    assert(core::state::sequencer::setNodeLocalVariationRange(
+        state.pattern,
+        rootNode,
+        core::state::sequencer::StepProperty::NUDGE,
+        90
+    ));
+    assert(!core::state::sequencer::setNodeLocalVariationRange(
+        state.pattern,
+        rootNode,
+        core::state::sequencer::StepProperty::PROBABILITY,
+        50
+    ));
+
+    const auto* graph = core::state::sequencer::graphView(state.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(rootNode);
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(
+               *node,
+               core::state::sequencer::StepProperty::NOTE
+           ) == 36);
+    assert(core::state::sequencer::nodeLocalVariationRange(
+               *node,
+               core::state::sequencer::StepProperty::VELOCITY
+           ) == 127);
+    assert(core::state::sequencer::nodeLocalVariationRange(
+               *node,
+               core::state::sequencer::StepProperty::GATE
+           ) == 100);
+    assert(core::state::sequencer::nodeLocalVariationRange(
+               *node,
+               core::state::sequencer::StepProperty::NUDGE
+           ) == 50);
+    assert(core::state::sequencer::nodeLocalVariationRange(
+               *node,
+               core::state::sequencer::StepProperty::PROBABILITY
+           ) == 0);
+
+    std::cout << "[PASS] test_local_variation_ranges_are_per_node_and_clamped\n";
+}
+
+void test_runtime_telemetry_sync_copies_expanded_variation() {
+    SequencerState target;
+    StepSequencerRuntimeState runtime;
+    oc::note::sequencer::StepSequencerResolvedVariation variation{};
+    variation.stepIndex = 2;
+    variation.triggered = true;
+    variation.resolved.note = 67;
+    variation.resolved.velocity = 91;
+    variation.resolved.gate = 80;
+    variation.resolved.nudge = 3;
+
+    runtime.expandedVariationTelemetry.valid = true;
+    runtime.expandedVariationTelemetry.rootStepIndex = 2;
+    runtime.expandedVariationTelemetry.cycleIndex = 5;
+    runtime.expandedVariationTelemetry.store(0, 42, 3, 6, variation);
+
+    core::sequencer::publishRuntimeTelemetry(target, runtime);
+
+    assert(target.expandedVariationTelemetry.valid);
+    assert(target.expandedVariationTelemetry.rootStepIndex == 2);
+    assert(target.expandedVariationTelemetry.cycleIndex == 5);
+    assert(target.expandedVariationTelemetry.count == 1);
+    assert(target.expandedVariationTelemetry.nodeId[0] == 42);
+    assert(target.expandedVariationTelemetry.localTick[0] == 3);
+    assert(target.expandedVariationTelemetry.spanTicks[0] == 6);
+    assert(target.expandedVariationTelemetry.variation[0].resolved.note == 67);
+    assert(target.expandedVariationTelemetry.variation[0].resolved.velocity == 91);
+
+    std::cout << "[PASS] test_runtime_telemetry_sync_copies_expanded_variation\n";
+}
+
+void test_runtime_telemetry_sync_publishes_root_offset_for_expanded_substeps() {
+    SequencerState target;
+    StepSequencerRuntimeState runtime;
+    oc::note::sequencer::StepSequencerResolvedVariation variation{};
+    variation.stepIndex = 0;
+    variation.triggered = true;
+    variation.resolved.note = 64;
+
+    runtime.playheadStep = 0;
+    runtime.playheadStepTicks = 24;
+    runtime.playheadStepTickOffset = 12;
+    runtime.expandedVariationTelemetry.valid = true;
+    runtime.expandedVariationTelemetry.rootStepIndex = 0;
+    runtime.expandedVariationTelemetry.store(0, 41, 12, 12, variation);
+
+    core::sequencer::publishRuntimeTelemetry(target, runtime);
+    assert(target.playheadStepTickOffset.get() == 12);
+
+    runtime.playheadStepTickOffset = 13;
+    core::sequencer::publishRuntimeTelemetry(target, runtime);
+    assert(target.playheadStepTickOffset.get() == 12);
+
+    runtime.playheadStepTickOffset = 7;
+    runtime.expandedVariationTelemetry.reset();
+    core::sequencer::publishRuntimeTelemetry(target, runtime);
+    assert(target.playheadStepTickOffset.get() == 0);
+
+    std::cout << "[PASS] test_runtime_telemetry_sync_publishes_root_offset_for_expanded_substeps\n";
+}
+
 }  // namespace
 
 int main() {
@@ -535,6 +681,9 @@ int main() {
     test_copy_node_children_remaps_nested_graph_content();
     test_clear_graph_releases_allocation_and_bumps_revision_once();
     test_graph_limits_are_reported();
+    test_local_variation_ranges_are_per_node_and_clamped();
+    test_runtime_telemetry_sync_copies_expanded_variation();
+    test_runtime_telemetry_sync_publishes_root_offset_for_expanded_substeps();
 
     std::cout << "All SequencerGraphOps tests passed\n";
     return 0;

@@ -97,6 +97,8 @@ FLASHMEM bool sameFlatPatternSnapshot(
            lhs.stepsPerBeat == rhs.stepsPerBeat &&
            lhs.midiChannel == rhs.midiChannel &&
            lhs.enabledMask == rhs.enabledMask &&
+           lhs.swingOffsetPercent == rhs.swingOffsetPercent &&
+           lhs.patternNudgePercent == rhs.patternNudgePercent &&
            sameVariationRanges(lhs.variationRanges, rhs.variationRanges) &&
            lhs.scalePolicy == rhs.scalePolicy &&
            sameScaleSettings(lhs.scaleOverride, rhs.scaleOverride) &&
@@ -137,6 +139,7 @@ FLASHMEM bool sameStepNode(
            lhs.gateOffset == rhs.gateOffset &&
            lhs.nudgeOffset == rhs.nudgeOffset &&
            lhs.probabilityOffset == rhs.probabilityOffset &&
+           sameVariationRanges(lhs.localVariation, rhs.localVariation) &&
            lhs.childSequenceId == rhs.childSequenceId &&
            lhs.cycleSetId == rhs.cycleSetId;
 }

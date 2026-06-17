@@ -68,6 +68,7 @@ void configureDebugLabels_(CoreState& state) {
     state.dataManager.dialog.editingShortcutRow.setDebugLabel("core.dataManager.dialog.editingShortcutRow");
 
     state.sequencer.stepPropertyInlineSelector.selecting.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selecting");
+    state.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.setDebugLabel("core.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive");
     state.sequencer.stepPropertyInlineSelector.selectedIndex.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selectedIndex");
     state.sequencer.stepEdit.contextHold.action.setDebugLabel("core.sequencer.stepEdit.contextHold.action");
     state.sequencer.stepEdit.contextHold.startedAtMs.setDebugLabel("core.sequencer.stepEdit.contextHold.startedAtMs");
@@ -77,6 +78,9 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
     state.sequencer.pattern.patternVariationRevision.setDebugLabel("core.sequencer.pattern.patternVariationRevision");
     state.sequencer.pattern.patternScaleRevision.setDebugLabel("core.sequencer.pattern.patternScaleRevision");
+    state.sequencer.pattern.patternTimingRevision.setDebugLabel("core.sequencer.pattern.patternTimingRevision");
+    state.sequencer.pattern.swingOffsetPercent.setDebugLabel("core.sequencer.pattern.swingOffsetPercent");
+    state.sequencer.pattern.patternNudgePercent.setDebugLabel("core.sequencer.pattern.patternNudgePercent");
     state.sequencer.contentView.revision.setDebugLabel("core.sequencer.contentView.revision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
     state.sequencerTracks.projectScaleRevisionSignal().setDebugLabel("core.sequencerTracks.projectScaleRevision");
@@ -125,7 +129,7 @@ FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
 
 FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& state) {
     state.sequencerDomain_.autoPersist =
-        std::make_unique<oc::state::AutoPersistIncremental<13>>(
+        std::make_unique<oc::state::AutoPersistIncremental<16>>(
             [](uint8_t) {},
             [&state]() {
                 state.markSequencerProjectMutated_();
@@ -146,6 +150,9 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
     state.sequencerDomain_.autoPersist->watchAt(10, state.sequencer.pattern.patternVariationRevision);
     state.sequencerDomain_.autoPersist->watchAt(11, state.sequencer.pattern.patternScaleRevision);
     state.sequencerDomain_.autoPersist->watchAt(12, state.sequencerTracks.projectScaleRevisionSignal());
+    state.sequencerDomain_.autoPersist->watchAt(13, state.sequencer.pattern.patternTimingRevision);
+    state.sequencerDomain_.autoPersist->watchAt(14, state.sequencer.pattern.swingOffsetPercent);
+    state.sequencerDomain_.autoPersist->watchAt(15, state.sequencer.pattern.patternNudgePercent);
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {

@@ -52,6 +52,23 @@ constexpr uint32_t PLAY_ACTIVE = MACRO_5;       // Cyan
 constexpr uint32_t PLAY_INACTIVE = INACTIVE;
 constexpr uint32_t BEAT_PULSE = 0x0088FF;       // Blue
 
+// Sequencer semantic palette.
+// Muted tones for persistent musical UI: use mostly as borders/icons/text,
+// with low-opacity fills only for selected or active states.
+constexpr uint32_t STEP_STATE = 0x7FA7C7;          // Blue-gray trigger state
+constexpr uint32_t STEP_CHANCE = 0xB886A8;         // Muted mauve trigger chance
+constexpr uint32_t STEP_PITCH = 0xD3B16E;          // Desaturated amber
+constexpr uint32_t STEP_VELOCITY = 0x6EAD9A;       // Soft teal-green
+constexpr uint32_t STEP_GATE = 0xB8AE63;           // Muted olive yellow
+constexpr uint32_t STEP_NUDGE = 0xBE8172;          // Desaturated coral
+constexpr uint32_t STEP_MICRO_SEQUENCE = 0x6FAE99; // Muted teal
+constexpr uint32_t STEP_CYCLE_STATE = 0xB99A58;    // Muted ochre
+constexpr uint32_t STEP_LENGTH = 0x8BA8BE;         // Muted steel blue
+constexpr uint32_t STEP_OFFSET = STEP_NUDGE;       // Shared with temporal displacement
+constexpr uint32_t STEP_DIVISION = 0xA8A66B;       // Muted clock olive
+constexpr uint32_t STEP_SWING = 0x9CA877;          // Soft desaturated swing olive
+constexpr uint32_t STEP_PATTERN_NUDGE = STEP_NUDGE;
+
 // Macro config labels (2 base colors, use opacity for prefix)
 constexpr uint32_t MACRO_CH_COLOR = 0xCC7777;    // Muted red
 constexpr uint32_t MACRO_CC_COLOR = 0x77CC77;    // Muted green

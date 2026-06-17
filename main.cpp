@@ -415,6 +415,7 @@ static FLASHMEM void initApp() {
         core::sequencer::SequencerRuntimeService::StateRefs{
             coreState->sequencer,
             coreState->sequencerTracks,
+            coreState->projectNavigation,
             coreState->statusBar,
             coreState->midiSync,
         },

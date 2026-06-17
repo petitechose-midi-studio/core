@@ -10,6 +10,7 @@
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/sequencer/SequencerStepEditOverlay.hpp"
 
 namespace core::context::standalone::sequencer_overlay_presenter {
 
@@ -26,9 +27,16 @@ struct ActionSource {
 
 struct StepEditRenderData {
     static constexpr size_t ROW_COUNT = core::state::sequencer::step_edit_rows::COUNT;
+    static constexpr size_t PROPERTY_COUNT =
+        core::state::sequencer::step_edit_rows::PROPERTIES.size();
 
     std::array<std::array<char, 16>, ROW_COUNT> valueBuffers{};
+    std::array<std::array<char, 12>, PROPERTY_COUNT> compactValueBuffers{};
     std::array<ms::ui::KeyValueRow, ROW_COUNT> rows{};
+    std::array<char, 8> stepBadge{};
+    std::array<char, 24> summary{};
+    std::array<char, 16> focusLabel{};
+    core::ui::SequencerStepEditOverlayProps overlayProps{};
     std::array<char, 16> title{};
     std::array<char, 16> meta{};
     uint32_t dataRevision = 0;

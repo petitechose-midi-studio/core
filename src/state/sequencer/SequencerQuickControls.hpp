@@ -18,12 +18,14 @@ struct PatternQuickControlSpec {
     const char* label;
 };
 
-using PatternQuickControlSpecs = std::array<PatternQuickControlSpec, 3>;
+using PatternQuickControlSpecs = std::array<PatternQuickControlSpec, 5>;
 
 inline constexpr PatternQuickControlSpecs QUICK_CONTROL_VISUAL_ORDER = {
     PatternQuickControlSpec{PatternQuickControlItem::LENGTH, "Length"},
-    PatternQuickControlSpec{PatternQuickControlItem::OFFSET, "Offset"},
     PatternQuickControlSpec{PatternQuickControlItem::DIVISION, "Division"},
+    PatternQuickControlSpec{PatternQuickControlItem::OFFSET, "Offset"},
+    PatternQuickControlSpec{PatternQuickControlItem::SWING, "Swing"},
+    PatternQuickControlSpec{PatternQuickControlItem::NUDGE, "Nudge"},
 };
 
 inline constexpr const char* quickControlLabel(PatternQuickControlItem item) {

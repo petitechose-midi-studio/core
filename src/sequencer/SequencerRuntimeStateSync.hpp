@@ -10,6 +10,10 @@
 
 namespace core::sequencer {
 
+struct ProjectTimingContext {
+    uint8_t swingPercent = 0;
+};
+
 /**
  * Lightweight signature for deciding whether runtime state must be resynced.
  *
@@ -24,7 +28,10 @@ struct SequencerRuntimeStateSignature {
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
     uint32_t patternScaleRevision = 0;
+    uint32_t patternTimingRevision = 0;
     uint32_t graphRevision = 0;
+    uint8_t effectiveSwingPercent = 0;
+    int8_t patternNudgePercent = 0;
     oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
 
     bool matches(const SequencerRuntimeStateSignature& other) const {
@@ -35,7 +42,10 @@ struct SequencerRuntimeStateSignature {
                stepDataRevision == other.stepDataRevision &&
                patternVariationRevision == other.patternVariationRevision &&
                patternScaleRevision == other.patternScaleRevision &&
+               patternTimingRevision == other.patternTimingRevision &&
                graphRevision == other.graphRevision &&
+               effectiveSwingPercent == other.effectiveSwingPercent &&
+               patternNudgePercent == other.patternNudgePercent &&
                effectiveScaleSettings.root == other.effectiveScaleSettings.root &&
                effectiveScaleSettings.type == other.effectiveScaleSettings.type &&
                effectiveScaleSettings.mode == other.effectiveScaleSettings.mode;
@@ -58,16 +68,19 @@ struct SequencerRuntimeTelemetrySnapshot {
     uint32_t variationTelemetryRevision = 0;
     oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
     oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
+    oc::note::sequencer::StepSequencerExpandedVariationTelemetry expandedVariationTelemetry{};
 };
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerState& source,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
+    ProjectTimingContext projectTiming
 );
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternState& source,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
+    ProjectTimingContext projectTiming
 );
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(

@@ -205,6 +205,7 @@ FLASHMEM void StandaloneUiAssembly::createViews() {
             core_state_.deviceSettings,
             core_state_.sequencerSettings,
             core_state_.dataManager,
+            core_state_.projectNavigation,
         }
     );
     project_view_ = core::app::makeExtmemUnique<core::ui::ProjectView>(

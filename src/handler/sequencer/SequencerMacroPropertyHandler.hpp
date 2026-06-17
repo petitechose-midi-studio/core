@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
@@ -33,6 +34,7 @@ public:
     SequencerMacroPropertyHandler(
         StateRefs state,
         oc::api::EncoderAPI& encoders,
+        oc::api::ButtonAPI& buttons,
         oc::type::ScopeID scopeId,
         NowProvider nowProvider
     );
@@ -50,6 +52,7 @@ private:
     core::state::TrackNavigationState& track_ui_;
     SequencerHistoryDomainServices history_;
     oc::api::EncoderAPI& encoders_;
+    oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
     NowProvider now_provider_ = nullptr;
 };

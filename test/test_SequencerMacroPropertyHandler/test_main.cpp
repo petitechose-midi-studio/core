@@ -13,6 +13,7 @@
 #include "../../src/handler/sequencer/SequencerInputUtils.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -61,9 +62,22 @@ struct SequencerMacroPropertyHarness {
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
                   encoders,
+                  buttons,
                   SEQUENCER_SCOPE,
                   mockTimeMs) {
         g_now_ms = 0;
+    }
+
+    void press(Config::ButtonID id) {
+        const auto buttonId = static_cast<oc::type::ButtonID>(id);
+        buttonHw.setPressed(buttonId, true);
+        eventBus.emit(oc::core::event::ButtonPressEvent(buttonId, true));
+    }
+
+    void release(Config::ButtonID id) {
+        const auto buttonId = static_cast<oc::type::ButtonID>(id);
+        buttonHw.setPressed(buttonId, false);
+        eventBus.emit(oc::core::event::ButtonReleaseEvent(buttonId));
     }
 
     void turn(Config::EncoderID id, float value) {
@@ -192,6 +206,96 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
     std::cout << "[PASS] test_macro_property_edits_are_blocked_by_modal_states\n";
 }
 
+void test_left_bottom_selector_macro_edits_local_variation_range() {
+    SequencerMacroPropertyHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
+    h.state.sequencer.pattern.note[2] = 60;
+    h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_3, 1.0f);
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::NOTE) == 36);
+    assert(h.state.sequencer.pattern.note[2] == 60);
+    assert(h.state.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.get());
+    assert(h.state.sequencer.stepPropertyInlineSelector.localVariationStepIndex == 2);
+    assert(h.state.sequencer.stepInlineFeedback.visible.get());
+    assert(h.state.sequencer.stepInlineFeedback.touchedMask.get().test(2));
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    h.advance(599);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    h.advance(600);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph != nullptr) {
+        node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+        assert(
+            node == nullptr ||
+            core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::NOTE) == 0
+        );
+    }
+    assert(h.state.sequencer.pattern.note[2] == 60);
+
+    std::cout << "[PASS] test_left_bottom_selector_macro_edits_local_variation_range\n";
+}
+
+void test_left_bottom_selector_does_not_randomize_probability() {
+    SequencerMacroPropertyHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::PROBABILITY);
+    h.state.sequencer.pattern.probability[0] = 64;
+    h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph == nullptr);
+    assert(h.state.sequencer.pattern.probability[0] == 64);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.get());
+
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    std::cout << "[PASS] test_left_bottom_selector_does_not_randomize_probability\n";
+}
+
+void test_left_center_quick_controls_do_not_randomize_step() {
+    SequencerMacroPropertyHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
+    h.state.sequencer.pattern.note[0] = 60;
+    h.state.sequencer.patternQuickControls.selecting.set(true);
+    h.state.sequencer.patternQuickControls.physicalHoldActive.set(true);
+    h.press(Config::ButtonID::LEFT_CENTER);
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph == nullptr);
+    assert(h.state.sequencer.pattern.note[0] == 60);
+
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    std::cout << "[PASS] test_left_center_quick_controls_do_not_randomize_step\n";
+}
+
 void test_macro_property_edits_coalesce_until_idle() {
     SequencerMacroPropertyHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -299,7 +403,7 @@ void test_macro_property_pending_edit_undoes_with_single_command() {
     assert(h.state.sequencerHistory.redoCount() == 1);
     assert(h.state.sequencer.historyFeedback.visible.get());
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T01") == 0);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Step 01 Note") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Step 01 Pitch") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "G9 -> C4") == 0);
 
     std::cout << "[PASS] test_macro_property_pending_edit_undoes_with_single_command\n";
@@ -343,6 +447,9 @@ int main() {
     test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step();
     test_constrained_scale_pitch_edit_writes_scale_degree_note();
     test_macro_property_edits_are_blocked_by_modal_states();
+    test_left_bottom_selector_macro_edits_local_variation_range();
+    test_left_bottom_selector_does_not_randomize_probability();
+    test_left_center_quick_controls_do_not_randomize_step();
     test_macro_property_edits_coalesce_until_idle();
     test_macro_property_step_change_commits_previous_coalesced_edit();
     test_macro_property_track_change_commits_pending_coalesced_edit();

@@ -4,8 +4,7 @@
  * @file MacroView.hpp
  * @brief 8-macro performance view for standalone mode
  *
- * Displays 8 macro widgets in a 4x2 grid framed by the standalone main-view layout:
- * header, reserved action strips, property strip and bottom controls.
+ * Displays 8 macro widgets in a 4x2 grid framed by the standalone main-view layout.
  * Subscribes to macro/page/UI state for reactive updates.
  */
 

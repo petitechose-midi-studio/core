@@ -190,7 +190,6 @@ FLASHMEM void SequencerPatternQuickControlsHandler::open() {
     quick.reset();
     quick.selecting.set(true);
     if (core::state::sequencer::isChildContentView(sequencer_)) {
-        quick.focusedItem.set(Item::LENGTH);
         quick.offsetSteps.set(0);
     }
     core::state::sequencer::captureHistorySnapshot(sequencer_, cancel_snapshot_);

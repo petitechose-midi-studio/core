@@ -15,6 +15,7 @@
 #include "ui/sequencer/StepGridRenderLogic.hpp"
 #include "ui/sequencer/StepGridRenderPlanner.hpp"
 #include "ui/sequencer/StepGridWidgets.hpp"
+#include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
@@ -47,14 +48,18 @@ constexpr lv_coord_t VARIATION_RANGE_TICK_LENGTH = 7;
 constexpr lv_coord_t VARIATION_RANGE_TICK_THICKNESS = 2;
 constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
 constexpr lv_coord_t VARIATION_DELTA_THICKNESS = STEP_SHAPE_STROKE_WIDTH;
-constexpr lv_coord_t CONTENT_BADGE_WIDTH = 16;
-constexpr lv_coord_t CONTENT_BADGE_HEIGHT = 14;
-constexpr lv_coord_t CONTENT_BADGE_GAP = 2;
-constexpr lv_coord_t CONTENT_BADGE_LEFT_PAD = 5;
-constexpr lv_coord_t CONTENT_BADGE_TOP_PAD = 4;
-constexpr uint32_t MICRO_SEQUENCE_BADGE_COLOR = 0x30F2B2;
-constexpr uint32_t CYCLE_STATE_BADGE_COLOR = 0xFFD166;
-constexpr lv_opa_t CONTENT_BADGE_TEXT_OPA = LV_OPA_COVER;
+constexpr lv_coord_t STEP_BADGE_SIZE = 12;
+constexpr lv_coord_t STEP_BADGE_GAP = 2;
+constexpr lv_coord_t STEP_BADGE_LEFT_PAD = 4;
+constexpr lv_coord_t STEP_BADGE_TOP_PAD = 3;
+constexpr uint32_t MICRO_SEQUENCE_BADGE_COLOR =
+    sequencer::semantic::color(sequencer::semantic::Tone::MICRO_SEQUENCE);
+constexpr uint32_t CYCLE_STATE_BADGE_COLOR =
+    sequencer::semantic::color(sequencer::semantic::Tone::CYCLE_STATE);
+constexpr uint32_t PROBABILITY_BADGE_COLOR =
+    sequencer::semantic::color(sequencer::semantic::Tone::CHANCE);
+constexpr lv_opa_t STEP_BADGE_OPA = LV_OPA_COVER;
+constexpr lv_opa_t STEP_BADGE_DISABLED_OPA = LV_OPA_50;
 
 uint8_t clampMidiValue(int value) {
     if (value < 0) return 0;
@@ -101,45 +106,73 @@ void drawVariationRect(lv_layer_t* layer,
     lv_draw_rect(layer, &dsc, &area);
 }
 
-void drawContentBadge(lv_layer_t* layer,
-                      lv_coord_t x,
-                      lv_coord_t y,
-                      const char* label,
-                      uint32_t colorHex) {
-    if (!layer || label == nullptr || label[0] == '\0') return;
+lv_coord_t drawStepBadgeGlyph(lv_layer_t* layer,
+                              lv_coord_t x,
+                              lv_coord_t y,
+                              const char* icon,
+                              uint32_t colorHex,
+                              bool enabled) {
+    if (!layer || icon == nullptr || icon[0] == '\0') return x;
 
     const lv_area_t area{
         .x1 = x,
         .y1 = y,
-        .x2 = static_cast<lv_coord_t>(x + CONTENT_BADGE_WIDTH - 1),
-        .y2 = static_cast<lv_coord_t>(y + CONTENT_BADGE_HEIGHT - 1),
+        .x2 = static_cast<lv_coord_t>(x + STEP_BADGE_SIZE - 1),
+        .y2 = static_cast<lv_coord_t>(y + STEP_BADGE_SIZE - 1),
     };
 
     lv_draw_label_dsc_t labelDsc;
     lv_draw_label_dsc_init(&labelDsc);
-    labelDsc.text = label;
-    labelDsc.font = standalone_fonts.icons_16;
+    labelDsc.text = icon;
+    labelDsc.font = standalone_fonts.icons_12;
     labelDsc.color = lv_color_hex(colorHex);
-    labelDsc.opa = CONTENT_BADGE_TEXT_OPA;
+    labelDsc.opa = enabled ? STEP_BADGE_OPA : STEP_BADGE_DISABLED_OPA;
     labelDsc.align = LV_TEXT_ALIGN_CENTER;
-
-    lv_area_t labelArea = area;
-    lv_draw_label(layer, &labelDsc, &labelArea);
+    lv_draw_label(layer, &labelDsc, &area);
+    return static_cast<lv_coord_t>(x + STEP_BADGE_SIZE + STEP_BADGE_GAP);
 }
 
-void drawContentBadges(lv_layer_t* layer,
-                       const lv_area_t& buttonArea,
-                       const grid::TileContentBadgeState& badges) {
-    if (!badges.microSequence && !badges.cycleStates) return;
-
-    lv_coord_t x = static_cast<lv_coord_t>(buttonArea.x1 + CONTENT_BADGE_LEFT_PAD);
-    const lv_coord_t y = static_cast<lv_coord_t>(buttonArea.y1 + CONTENT_BADGE_TOP_PAD);
-    if (badges.microSequence) {
-        drawContentBadge(layer, x, y, standalone::icons::MICRO_SEQUENCE, MICRO_SEQUENCE_BADGE_COLOR);
-        x = static_cast<lv_coord_t>(x + CONTENT_BADGE_WIDTH + CONTENT_BADGE_GAP);
+void drawSemanticBadges(lv_layer_t* layer,
+                        const lv_area_t& buttonArea,
+                        const grid::TileRenderCache& cache) {
+    const bool probabilityBadge = cache.enabled && cache.probability < 100;
+    if (!cache.contentBadges.microSequence &&
+        !cache.contentBadges.cycleStates &&
+        !probabilityBadge) {
+        return;
     }
-    if (badges.cycleStates) {
-        drawContentBadge(layer, x, y, standalone::icons::CYCLE_STATE, CYCLE_STATE_BADGE_COLOR);
+
+    lv_coord_t x = static_cast<lv_coord_t>(buttonArea.x1 + STEP_BADGE_LEFT_PAD);
+    const lv_coord_t y = static_cast<lv_coord_t>(buttonArea.y1 + STEP_BADGE_TOP_PAD);
+    if (cache.contentBadges.cycleStates) {
+        x = drawStepBadgeGlyph(
+            layer,
+            x,
+            y,
+            standalone::icons::CYCLE_STATE,
+            CYCLE_STATE_BADGE_COLOR,
+            cache.enabled
+        );
+    }
+    if (cache.contentBadges.microSequence) {
+        x = drawStepBadgeGlyph(
+            layer,
+            x,
+            y,
+            standalone::icons::MICRO_SEQUENCE,
+            MICRO_SEQUENCE_BADGE_COLOR,
+            cache.enabled
+        );
+    }
+    if (probabilityBadge) {
+        drawStepBadgeGlyph(
+            layer,
+            x,
+            y,
+            standalone::icons::NOTE_PROP_RANDOM,
+            PROBABILITY_BADGE_COLOR,
+            cache.enabled
+        );
     }
 }
 
@@ -743,7 +776,7 @@ void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
     }
 
     if (cache.inPattern) {
-        drawContentBadges(layer, buttonArea, cache.contentBadges);
+        drawSemanticBadges(layer, buttonArea, cache);
     }
 }
 
@@ -781,6 +814,7 @@ void StepGrid::renderTile(
     bool buttonOverlayDirty =
         !cache.initialized || diff.absoluteStepChanged || diff.inPatternChanged ||
         diff.barChanged || diff.variationChanged || diff.contentBadgesChanged ||
+        diff.enabledChanged || diff.probabilityChanged ||
         propertyVisualChanged || geometryChanged;
 
     if (!geometryChanged &&
@@ -795,9 +829,9 @@ void StepGrid::renderTile(
     if (geometryChanged || diff.dataChanged || diff.probabilityMaskChanged) {
         const auto visual = grid::buildStepVisualStyle(
             grid::runtimePitchDisplayNote(state),
-            state.velocity,
-            state.gate,
-            state.nudge,
+            grid::runtimeVelocityDisplayValue(state),
+            grid::runtimeGateDisplayValue(state),
+            grid::runtimeNudgeDisplayValue(state),
             state.enabled,
             geometry_.railWidth[tileIndex],
             geometry_.buttonHeight[tileIndex]

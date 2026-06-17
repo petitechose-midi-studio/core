@@ -23,7 +23,7 @@ public:
 
     static constexpr uint32_t PATTERN_LIBRARY_MAGIC = 0x53504C42;   // "SPLB"
     static constexpr uint32_t SET_LIBRARY_MAGIC = 0x53534554;       // "SSET"
-    static constexpr uint8_t LIBRARY_DATA_VERSION = 3;
+    static constexpr uint8_t LIBRARY_DATA_VERSION = 4;
 
     explicit SequencerPersistence(oc::interface::IStorage& patternLibraryStorage,
                                   oc::interface::IStorage& setLibraryStorage);

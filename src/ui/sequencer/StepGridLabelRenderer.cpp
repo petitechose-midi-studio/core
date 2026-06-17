@@ -8,6 +8,7 @@
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/sequencer/StepGridGeometryLogic.hpp"
 #include "ui/sequencer/StepGridRenderLogic.hpp"
+#include "ui/sequencer/StepSemanticVisuals.hpp"
 
 namespace theme = oc::ui::lvgl::base_theme;
 
@@ -21,9 +22,11 @@ constexpr lv_opa_t STEP_INLINE_NOTE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_INLINE_VALUE_OPA = LV_OPA_70;
 constexpr lv_opa_t STEP_PROBABILITY_MASKED_OPA = LV_OPA_30;
 constexpr lv_opa_t STEP_SOURCE_NOTE_REMINDER_OPA = LV_OPA_50;
-constexpr uint32_t STEP_SCALE_DEGREE_COLOR = theme::color::MACRO_5_CYAN;
+constexpr uint32_t STEP_SCALE_DEGREE_COLOR =
+    core::ui::sequencer::semantic::color(core::ui::sequencer::semantic::Tone::PITCH);
 constexpr uint32_t STEP_OUT_OF_SCALE_COLOR = 0xFF6B6B;
-constexpr uint32_t STEP_CHILD_OFFSET_COLOR = 0xF2CC8F;
+constexpr uint32_t STEP_CHILD_OFFSET_COLOR =
+    core::ui::sequencer::semantic::color(core::ui::sequencer::semantic::Tone::PITCH);
 constexpr const char* STEP_SCALE_SEPARATOR = ":";
 constexpr const char* STEP_OUT_OF_SCALE_MARKER = "!";
 
@@ -67,8 +70,11 @@ lv_color_t secondaryPitchLabelColor(const TileRenderState& state) {
     if (state.childContentContext) {
         return lv_color_hex(STEP_CHILD_OFFSET_COLOR);
     }
+    if (state.childPitchSummaryVisible && hasRuntimePitchFeedback(state)) {
+        return noteLabelColor(runtimePitchDisplayNote(state));
+    }
     if (state.childPitchSummaryVisible) {
-        return noteLabelColor(state.note);
+        return noteLabelColor(state.childPitchSummaryNote);
     }
     if (secondaryLabelShowsCurrentNote(state)) {
         return noteLabelColor(runtimePitchDisplayNote(state));
@@ -84,7 +90,7 @@ lv_opa_t secondaryPitchLabelOpa(const TileRenderState& state,
         return LV_OPA_COVER;
     }
     if (state.childPitchSummaryVisible) {
-        return LV_OPA_70;
+        return LV_OPA_COVER;
     }
     if (secondaryLabelShowsCurrentNote(state)) {
         return LV_OPA_COVER;
@@ -113,6 +119,24 @@ void formatNoteLabel(char* buffer, size_t size, uint8_t note, const TileRenderSt
     );
 }
 
+void formatResolvedPropertyLabel(char* buffer,
+                                 size_t size,
+                                 core::state::sequencer::StepProperty property,
+                                 const TileRenderState& state) {
+    if (!buffer || size == 0) return;
+
+    core::state::sequencer::formatStepPropertyValue(
+        buffer,
+        size,
+        property,
+        runtimePitchDisplayNote(state),
+        runtimeVelocityDisplayValue(state),
+        runtimeGateDisplayValue(state),
+        runtimeNudgeDisplayValue(state),
+        state.probability
+    );
+}
+
 int childSummaryScaleDegreeIndex(const TileRenderState& state) {
     if (!state.childPitchSummaryVisible) return -1;
 
@@ -129,6 +153,24 @@ bool childSummaryShowsScaleDegree(const TileRenderState& state) {
     return childSummaryScaleDegreeIndex(state) >= 0;
 }
 
+int runtimePitchScaleDegreeIndex(const TileRenderState& state) {
+    if (!hasRuntimePitchFeedback(state)) return -1;
+
+    auto settings = state.variation.resolved.scaleSettings;
+    settings.clamp();
+    if (settings.type == oc::note::sequencer::StepSequencerScaleType::Chromatic) return -1;
+
+    const uint8_t note = runtimePitchDisplayNote(state);
+    if (!oc::note::sequencer::scaleContainsNote(settings, note)) {
+        return -1;
+    }
+    return scaleDegreeIndexForNote(settings, note);
+}
+
+bool runtimePitchShowsScaleDegree(const TileRenderState& state) {
+    return runtimePitchScaleDegreeIndex(state) >= 0;
+}
+
 void formatChildSummaryPrimaryLabel(char* buffer,
                                     size_t size,
                                     const TileRenderState& state) {
@@ -143,13 +185,30 @@ void formatChildSummaryPrimaryLabel(char* buffer,
     std::strncpy(buffer, scaleDegreeLabel(degree), size - 1);
     buffer[size - 1] = '\0';
     appendScaleSeparator(buffer, size);
+}
 
-    char noteBuf[8];
-    formatNoteLabel(noteBuf, sizeof(noteBuf), state.childPitchSummaryNote, state);
-    const size_t len = std::strlen(buffer);
-    if (len + 1 < size) {
-        std::strncat(buffer, noteBuf, size - len - 1);
+void formatRuntimePitchPrimaryLabel(char* buffer,
+                                    size_t size,
+                                    const TileRenderState& state) {
+    if (!buffer || size == 0) return;
+
+    const uint8_t note = runtimePitchDisplayNote(state);
+    const int degree = runtimePitchScaleDegreeIndex(state);
+    if (degree < 0) {
+        formatNoteLabel(buffer, size, note, state);
+        return;
     }
+
+    std::strncpy(buffer, scaleDegreeLabel(degree), size - 1);
+    buffer[size - 1] = '\0';
+    appendScaleSeparator(buffer, size);
+}
+
+bool childPitchSummaryShowsScalePrefix(const TileRenderState& state) {
+    if (!state.childPitchSummaryVisible) return false;
+    return hasRuntimePitchFeedback(state)
+        ? runtimePitchShowsScaleDegree(state)
+        : childSummaryShowsScaleDegree(state);
 }
 
 void formatOffsetLabel(char* buffer,
@@ -243,40 +302,36 @@ void renderTileNoteLabel(uint8_t tileIndex,
     if (propertyVisualChanged || diff.noteChanged || diff.velocityChanged || diff.gateChanged ||
         diff.nudgeChanged || diff.probabilityChanged || diff.variationChanged ||
         diff.childContentChanged || diff.childPitchSummaryChanged) {
+        const bool labelDisplaysPitch =
+            labelPresentation.displayProperty == core::state::sequencer::StepProperty::NOTE;
         char buf[16];
-        if (state.childPitchSummaryVisible) {
+        if (state.childPitchSummaryVisible && hasRuntimePitchFeedback(state)) {
+            formatRuntimePitchPrimaryLabel(buf, sizeof(buf), state);
+        } else if (state.childPitchSummaryVisible) {
             formatChildSummaryPrimaryLabel(buf, sizeof(buf), state);
         } else if (state.childContentContext) {
-            core::state::sequencer::formatStepPropertyValue(
+            formatResolvedPropertyLabel(
                 buf,
                 sizeof(buf),
                 labelPresentation.displayProperty,
-                state.note,
-                state.velocity,
-                state.gate,
-                state.nudge,
-                state.probability
+                state
             );
-        } else if (primaryLabelShowsScaleDegree(state)) {
+        } else if (labelDisplaysPitch && primaryLabelShowsScaleDegree(state)) {
             std::strncpy(buf, runtimeScaleDegreeLabel(state), sizeof(buf) - 1);
             buf[sizeof(buf) - 1] = '\0';
             appendScaleSeparator(buf, sizeof(buf));
-        } else if (primaryLabelShowsOutOfScaleMarker(state)) {
+        } else if (labelDisplaysPitch && primaryLabelShowsOutOfScaleMarker(state)) {
             std::strncpy(buf, STEP_OUT_OF_SCALE_MARKER, sizeof(buf) - 1);
             buf[sizeof(buf) - 1] = '\0';
             appendScaleSeparator(buf, sizeof(buf));
-        } else if (hasRuntimePitchFeedback(state)) {
+        } else if (labelDisplaysPitch && hasRuntimePitchFeedback(state)) {
             formatNoteLabel(buf, sizeof(buf), runtimePitchDisplayNote(state), state);
         } else {
-            core::state::sequencer::formatStepPropertyValue(
+            formatResolvedPropertyLabel(
                 buf,
                 sizeof(buf),
                 labelPresentation.displayProperty,
-                state.note,
-                state.velocity,
-                state.gate,
-                state.nudge,
-                state.probability
+                state
             );
         }
         if (std::strcmp(cache.noteLabelText, buf) != 0) {
@@ -287,8 +342,23 @@ void renderTileNoteLabel(uint8_t tileIndex,
         cache.noteLabelHeight = noteLabelHeight;
 
         char originalBuf[12];
-        if (state.childPitchSummaryVisible) {
-            formatNoteLabel(originalBuf, sizeof(originalBuf), state.note, state);
+        if (state.childPitchSummaryVisible && hasRuntimePitchFeedback(state)) {
+            if (runtimePitchShowsScaleDegree(state)) {
+                formatNoteLabel(
+                    originalBuf,
+                    sizeof(originalBuf),
+                    runtimePitchDisplayNote(state),
+                    state
+                );
+            } else {
+                originalBuf[0] = '\0';
+            }
+        } else if (state.childPitchSummaryVisible) {
+            if (childSummaryShowsScaleDegree(state)) {
+                formatNoteLabel(originalBuf, sizeof(originalBuf), state.childPitchSummaryNote, state);
+            } else {
+                originalBuf[0] = '\0';
+            }
         } else if (state.childContentContext) {
             formatOffsetLabel(
                 originalBuf,
@@ -297,9 +367,9 @@ void renderTileNoteLabel(uint8_t tileIndex,
                 state.childContentOffset,
                 state.childContentNoteOffsetUsesScaleDegrees
             );
-        } else if (secondaryLabelShowsCurrentNote(state)) {
+        } else if (labelDisplaysPitch && secondaryLabelShowsCurrentNote(state)) {
             formatNoteLabel(originalBuf, sizeof(originalBuf), runtimePitchDisplayNote(state), state);
-        } else if (showsOriginalPitchReminder(state)) {
+        } else if (labelDisplaysPitch && showsOriginalPitchReminder(state)) {
             formatNoteLabel(originalBuf, sizeof(originalBuf), state.variation.resolved.base.note, state);
         } else {
             originalBuf[0] = '\0';
@@ -317,12 +387,18 @@ void renderTileNoteLabel(uint8_t tileIndex,
         const lv_color_t nextNoteLabelColor =
             state.enabled
                 ? (state.childPitchSummaryVisible
-                       ? (childSummaryShowsScaleDegree(state)
+                       ? (hasRuntimePitchFeedback(state)
+                              ? (runtimePitchShowsScaleDegree(state)
+                                     ? lv_color_hex(STEP_SCALE_DEGREE_COLOR)
+                                     : noteLabelColor(runtimePitchDisplayNote(state)))
+                              : childSummaryShowsScaleDegree(state)
                               ? lv_color_hex(STEP_SCALE_DEGREE_COLOR)
                               : noteLabelColor(state.childPitchSummaryNote))
-                       : primaryLabelShowsScaleDegree(state)
+                       : (labelPresentation.displayProperty == core::state::sequencer::StepProperty::NOTE &&
+                          primaryLabelShowsScaleDegree(state))
                        ? lv_color_hex(STEP_SCALE_DEGREE_COLOR)
-                       : (primaryLabelShowsOutOfScaleMarker(state)
+                       : ((labelPresentation.displayProperty == core::state::sequencer::StepProperty::NOTE &&
+                           primaryLabelShowsOutOfScaleMarker(state))
                               ? lv_color_hex(STEP_OUT_OF_SCALE_COLOR)
                               : noteLabelColor(runtimePitchDisplayNote(state))))
                 : lv_color_hex(STEP_TEXT_DISABLED_COLOR);
@@ -412,7 +488,9 @@ void renderTileNoteLabel(uint8_t tileIndex,
             cache.noteLabelY = layout.labelY;
         }
 
-        const bool inlineScaleStatus = primaryLabelShowsScalePrefix(state);
+        const bool inlineScaleStatus =
+            primaryLabelShowsScalePrefix(state) ||
+            childPitchSummaryShowsScalePrefix(state);
         if (inlineScaleStatus) {
             lv_obj_update_layout(noteLabel);
         }

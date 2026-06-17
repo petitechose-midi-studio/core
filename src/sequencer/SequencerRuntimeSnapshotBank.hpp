@@ -7,6 +7,7 @@
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 
 namespace core::sequencer {
 
@@ -22,7 +23,8 @@ public:
     using Snapshot = core::state::sequencer::SequencerTrackBankSnapshot;
 
     SequencerRuntimeSnapshotBank(core::state::sequencer::SequencerState& sequencer,
-                                 core::state::sequencer::SequencerTrackBankState& trackBank);
+                                 core::state::sequencer::SequencerTrackBankState& trackBank,
+                                 core::state::project::ProjectNavigationState& projectNavigation);
 
     uint8_t refresh();
     void commit(uint8_t snapshotIndex);
@@ -38,6 +40,7 @@ private:
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
+    core::state::project::ProjectNavigationState& project_navigation_;
     std::array<Snapshot, 2> snapshots_{};
     // Each double-buffer slot can lag independently; signatures are per slot.
     std::array<TrackSignatures, 2> track_signatures_{};

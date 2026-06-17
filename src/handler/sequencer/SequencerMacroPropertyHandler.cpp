@@ -5,6 +5,7 @@
 
 #include "SequencerInputUtils.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 
 namespace core::handler {
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -24,11 +25,35 @@ inline oc::type::IsActiveFn canEditSequencerProperty(
     };
 }
 
+FLASHMEM bool propertySupportsLocalVariation(core::state::sequencer::StepProperty property) {
+    return property != core::state::sequencer::StepProperty::PROBABILITY;
+}
+
+FLASHMEM uint8_t currentNodeLocalVariationRange(
+    core::state::sequencer::SequencerState& sequencer,
+    uint8_t step,
+    core::state::sequencer::StepProperty property
+) {
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    if (graph == nullptr) {
+        return 0;
+    }
+
+    const auto* node = graph->stepNode(nodeId);
+    if (node == nullptr) {
+        return 0;
+    }
+
+    return core::state::sequencer::nodeLocalVariationRange(*node, property);
+}
+
 }  // namespace
 
 FLASHMEM SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     StateRefs state,
     oc::api::EncoderAPI& encoders,
+    oc::api::ButtonAPI& buttons,
     oc::type::ScopeID scopeId,
     NowProvider nowProvider
 )
@@ -38,6 +63,7 @@ FLASHMEM SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     , track_ui_(state.trackNavigation)
     , history_(state.history)
     , encoders_(encoders)
+    , buttons_(buttons)
     , scope_id_(scopeId)
     , now_provider_(nowProvider) {
     setupBindings();
@@ -65,6 +91,40 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
     }
     const auto property = sequencer_.activeStepProperty.get();
     const uint32_t now = now_provider_ ? now_provider_() : 0;
+
+    const bool propertySelectorLocalVariationLayer =
+        sequencer_.stepPropertyInlineSelector.selecting.get() &&
+        buttons_.isPressed(Config::ButtonID::LEFT_BOTTOM);
+
+    if (propertySelectorLocalVariationLayer) {
+        if (!propertySupportsLocalVariation(property)) {
+            return;
+        }
+        const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, abs);
+        const uint8_t range = input_utils::normalizedToVariationRange(property, normalized);
+        if (currentNodeLocalVariationRange(sequencer_, abs, property) == range) {
+            return;
+        }
+
+        history_.beginCoalescedPatternEdit(abs, property, now);
+        if (core::state::sequencer::setNodeLocalVariationRange(
+                sequencer_.pattern,
+                nodeId,
+                property,
+                range
+            )) {
+            auto& selector = sequencer_.stepPropertyInlineSelector;
+            selector.macroLocalVariationEditActive.set(true);
+            selector.localVariationStepIndex = abs;
+            sequencer_.invalidateVariationTelemetry();
+            sequencer_.stepInlineFeedback.show(abs, property, now);
+        }
+        return;
+    }
+
+    if (sequencer_.stepPropertyInlineSelector.selecting.get()) {
+        return;
+    }
 
     history_.beginCoalescedPatternEdit(abs, property, now);
 

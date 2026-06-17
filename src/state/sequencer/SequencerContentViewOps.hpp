@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerScale.hpp>
+#include <oc/note/sequencer/StepSequencerVariation.hpp>
 
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -76,11 +77,13 @@ struct SequencerContentPlaybackProjection {
 
 struct SequencerChildContentSummary {
     bool enabled = true;
+    SequencerGraphNodeId nodeId = SequencerContentStepProjection::INVALID_ID;
     uint8_t note = 0;
     uint8_t velocity = 0;
     uint16_t gate = 0;
     int8_t nudge = 0;
     uint8_t probability = SequencerState::DEFAULT_PROBABILITY;
+    oc::note::sequencer::StepSequencerVariationRanges localVariation{};
 };
 
 SequencerGraphNodeId activeContentStepNodeId(

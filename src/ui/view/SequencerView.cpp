@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -14,9 +15,8 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     createLayout(parent);
     createHistoryToast();
     createHeaderBar();
-    createBottomControls();
     createActionStrips();
-    createPropertyStrip();
+    createPropertySelectionOverlay();
     createGrid();
     ensureRenderTimer();
     bindToState();
@@ -27,8 +27,7 @@ FLASHMEM SequencerView::~SequencerView() {
 
     step_grid_.reset();
     bottom_action_strip_.reset();
-    property_strip_.reset();
-    bottom_controls_.reset();
+    property_selection_overlay_.reset();
     left_action_strip_.reset();
     history_toast_ = nullptr;
     history_toast_line1_ = nullptr;
@@ -86,14 +85,10 @@ FLASHMEM void SequencerView::createGrid() {
     );
 }
 
-FLASHMEM void SequencerView::createPropertyStrip() {
-    if (!interaction_container_) return;
-    property_strip_ = core::app::makeExtmemUnique<StepPropertyStrip>(interaction_container_);
-}
-
-FLASHMEM void SequencerView::createBottomControls() {
-    if (!body_container_) return;
-    bottom_controls_ = core::app::makeExtmemUnique<SequencerBottomControls>(body_container_);
+FLASHMEM void SequencerView::createPropertySelectionOverlay() {
+    if (!container_) return;
+    property_selection_overlay_ =
+        core::app::makeExtmemUnique<StepPropertySelectionOverlay>(container_);
 }
 
 FLASHMEM void SequencerView::createHistoryToast() {
@@ -172,11 +167,10 @@ FLASHMEM void SequencerView::onStepGridGeometryInvalidated(void* userData) {
 }
 
 FLASHMEM void SequencerView::bindToState() {
-    bindBottomControlsState();
     bindHeaderState();
     bindHeaderStripState();
     bindGridState();
-    bindPropertyStripState();
+    bindSelectorOverlayState();
     bindOverlayVisibilityState();
     bindLeftActionStripState();
     bindBottomActionStripState();
@@ -186,22 +180,6 @@ FLASHMEM void SequencerView::bindToState() {
     render();
     dirty_ = false;
     pauseRenderTimerIfIdle();
-}
-
-FLASHMEM void SequencerView::bindBottomControlsState() {
-    watcher_.watchAll(
-        [this]() {
-            requestBottomControlsRender();
-        },
-        state_refs_.sequencer.pattern.stepsPerBeat,
-        state_refs_.sequencer.patternQuickControls.selecting,
-        state_refs_.sequencer.patternQuickControls.focusedItem,
-        state_refs_.sequencer.patternQuickControls.offsetSteps,
-        state_refs_.sequencer.pattern.length,
-        state_refs_.sequencer.contentView.kind,
-        state_refs_.sequencer.contentView.length,
-        state_refs_.sequencer.contentView.revision
-    );
 }
 
 FLASHMEM void SequencerView::bindHeaderState() {
@@ -294,14 +272,29 @@ FLASHMEM void SequencerView::bindGridState() {
     );
 }
 
-FLASHMEM void SequencerView::bindPropertyStripState() {
+FLASHMEM void SequencerView::bindSelectorOverlayState() {
     watcher_.watchAll(
         [this]() {
-            requestPropertyStripRender();
+            requestSelectorOverlayRender();
         },
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
-        state_refs_.sequencer.stepPropertyInlineSelector.selectedIndex
+        state_refs_.sequencer.stepPropertyInlineSelector.selectedIndex,
+        state_refs_.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive,
+        state_refs_.sequencer.pattern.graphRevision,
+        state_refs_.sequencer.patternQuickControls.selecting,
+        state_refs_.sequencer.patternQuickControls.focusedItem,
+        state_refs_.sequencer.patternQuickControls.offsetSteps,
+        state_refs_.sequencer.patternQuickControls.physicalHoldActive,
+        state_refs_.sequencer.pattern.stepsPerBeat,
+        state_refs_.sequencer.pattern.swingOffsetPercent,
+        state_refs_.sequencer.pattern.patternNudgePercent,
+        state_refs_.sequencer.pattern.patternTimingRevision,
+        state_refs_.projectNavigation.contentRevision,
+        state_refs_.sequencer.pattern.length,
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.contentView.length,
+        state_refs_.sequencer.contentView.revision
     );
 }
 
@@ -435,12 +428,8 @@ FLASHMEM void SequencerView::requestHeaderStripRender() {
     requestRender(header_strip_dirty_);
 }
 
-FLASHMEM void SequencerView::requestBottomControlsRender() {
-    requestRender(bottom_controls_dirty_);
-}
-
-FLASHMEM void SequencerView::requestPropertyStripRender() {
-    requestRender(property_strip_dirty_);
+FLASHMEM void SequencerView::requestSelectorOverlayRender() {
+    requestRender(selector_overlay_dirty_);
 }
 
 FLASHMEM void SequencerView::requestLeftActionStripRender() {
@@ -462,8 +451,7 @@ FLASHMEM void SequencerView::requestGridRender() {
 FLASHMEM void SequencerView::markAllDirty() {
     header_top_dirty_ = true;
     header_strip_dirty_ = true;
-    bottom_controls_dirty_ = true;
-    property_strip_dirty_ = true;
+    selector_overlay_dirty_ = true;
     left_action_strip_dirty_ = true;
     bottom_action_strip_dirty_ = true;
     history_feedback_dirty_ = true;
@@ -493,15 +481,14 @@ FLASHMEM void SequencerView::onRenderTimer(lv_timer_t* timer) {
 FLASHMEM void SequencerView::render() {
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN) || hasBlockingOverlay()) return;
 
-    const bool needsBottomControls = bottom_controls_dirty_ && bottom_controls_;
-    const bool needsPropertyStrip = property_strip_dirty_ && property_strip_;
+    const bool needsSelectorOverlay = selector_overlay_dirty_;
     const bool needsLeftActionStrip = left_action_strip_dirty_ && left_action_strip_;
     const bool needsBottomActionStrip = bottom_action_strip_dirty_ && bottom_action_strip_;
     const bool needsHistoryToast = history_feedback_dirty_ && history_toast_;
     const bool needsHeaderTop = header_top_dirty_ && header_bar_;
     const bool needsHeaderStrip = header_strip_dirty_ && header_bar_;
     const bool needsGrid = grid_dirty_ && step_grid_;
-    if (!needsBottomControls && !needsPropertyStrip && !needsLeftActionStrip &&
+    if (!needsSelectorOverlay && !needsLeftActionStrip &&
         !needsBottomActionStrip && !needsHistoryToast && !needsHeaderTop &&
         !needsHeaderStrip && !needsGrid) {
         return;
@@ -519,14 +506,11 @@ FLASHMEM void SequencerView::render() {
         bottom_action_strip_dirty_ = false;
     }
 
-    if (needsBottomControls) {
-        bottom_controls_->render(sequencer::buildBottomControlsProps(source));
-        bottom_controls_dirty_ = false;
-    }
-
-    if (needsPropertyStrip) {
-        property_strip_->render(sequencer::buildStepPropertyStripProps(source));
-        property_strip_dirty_ = false;
+    if (needsSelectorOverlay) {
+        if (property_selection_overlay_) {
+            renderSelectorOverlay();
+        }
+        selector_overlay_dirty_ = false;
     }
 
     if (needsHeaderTop || needsHeaderStrip) {
@@ -551,6 +535,14 @@ FLASHMEM void SequencerView::render() {
         renderHistoryToast();
         history_feedback_dirty_ = false;
     }
+}
+
+FLASHMEM void SequencerView::renderSelectorOverlay() {
+    if (!property_selection_overlay_) return;
+
+    property_selection_overlay_->render(
+        sequencer::buildPropertySelectionOverlayProps(modelSource())
+    );
 }
 
 FLASHMEM void SequencerView::renderHistoryToast() {
@@ -579,6 +571,7 @@ FLASHMEM sequencer::SequencerViewModelSource SequencerView::modelSource() const 
         .sharedTrackEnabledMask = state_refs_.sharedTrackEnabledMask,
         .structureClipboard = state_refs_.structureClipboard,
         .statusBar = state_refs_.statusBar,
+        .projectNavigation = state_refs_.projectNavigation,
     };
 }
 

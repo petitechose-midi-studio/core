@@ -81,14 +81,26 @@ FLASHMEM sequencer::SequencerHistoryDescriptor makeStepPropertyHistoryDescriptor
     const sequencer::SequencerHistoryPatternSnapshot& before,
     const sequencer::SequencerHistoryPatternSnapshot& after
 ) {
+    const int32_t beforeValue = sequencerHistoryValueForProperty(before, step, property);
+    const int32_t afterValue = sequencerHistoryValueForProperty(after, step, property);
+    if (beforeValue == afterValue) {
+        return sequencer::SequencerHistoryDescriptor{
+            .kind = sequencer::SequencerHistoryActionKind::StepEdit,
+            .trackIndex = track,
+            .stepIndex = step,
+            .property = property,
+            .hasValue = false,
+        };
+    }
+
     return sequencer::SequencerHistoryDescriptor{
         .kind = sequencer::SequencerHistoryActionKind::StepPropertyEdit,
         .trackIndex = track,
         .stepIndex = step,
         .property = property,
         .hasValue = true,
-        .beforeValue = sequencerHistoryValueForProperty(before, step, property),
-        .afterValue = sequencerHistoryValueForProperty(after, step, property),
+        .beforeValue = beforeValue,
+        .afterValue = afterValue,
     };
 }
 
@@ -99,7 +111,7 @@ FLASHMEM const char* historyDirectionLabel(sequencer::SequencerHistoryDirection 
 FLASHMEM const char* historyPropertyLabel(sequencer::StepProperty property) {
     switch (property) {
         case sequencer::StepProperty::NOTE:
-            return "Note";
+            return "Pitch";
         case sequencer::StepProperty::VELOCITY:
             return "Velocity";
         case sequencer::StepProperty::GATE:
@@ -107,7 +119,7 @@ FLASHMEM const char* historyPropertyLabel(sequencer::StepProperty property) {
         case sequencer::StepProperty::NUDGE:
             return "Nudge";
         case sequencer::StepProperty::PROBABILITY:
-            return "Probability";
+            return "Chance";
         default:
             return "Property";
     }

@@ -50,6 +50,10 @@ private:
         uint8_t page,
         core::state::sequencer::StepProperty property
     );
+    void syncMacroLocalVariationValues(
+        uint8_t page,
+        core::state::sequencer::StepProperty property
+    );
     void syncPositions();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;

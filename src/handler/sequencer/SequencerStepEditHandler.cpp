@@ -27,6 +27,10 @@ FLASHMEM bool isPropertyRow(uint8_t row) {
     return step_edit_rows::isProperty(row);
 }
 
+FLASHMEM bool propertySupportsLocalVariation(core::state::sequencer::StepProperty property) {
+    return property != core::state::sequencer::StepProperty::PROBABILITY;
+}
+
 FLASHMEM core::state::SequencerStepContentClipboardKind clipboardKindForContextRow(uint8_t row) {
     if (row == step_edit_rows::MICRO_SEQUENCE) {
         return core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE;
@@ -145,26 +149,44 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .scope(overlay_scope_)
         .then([this](float value) { setFocusedValue(value); });
 
-    // Pressing the currently edited step closes + applies
+    // Pressing the currently edited step closes; value edits are already live.
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         auto btn = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[i]);
         buttons_.button(btn)
             .release()
             .scope(overlay_scope_)
-            .then([this, i]() { maybeCloseApplyFromMacro(i); });
+            .then([this, i]() { maybeCloseFromMacro(i); });
     }
 
-    // Apply + close
+    // Close. Property edits are applied immediately while turning OPT.
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(overlay_scope_)
-        .then([this]() { activateFocusedRowOrApply(); });
+        .then([this]() { activateFocusedRowOrClose(); });
 
-    // Cancel + close
+    // Close without reverting live edits.
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(overlay_scope_)
-        .then([this]() { closeCancel(); });
+        .then([this]() { closeStepEdit(); });
+
+    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
+        .press()
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowSupportsLocalVariation(); })
+        .then([this]() {
+            sequencer_.stepEdit.localVariationEditActive.set(true);
+            configureOptForFocusedRow();
+        });
+
+    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
+        .release()
+        .scope(overlay_scope_)
+        .when([this]() { return sequencer_.stepEdit.localVariationEditActive.get(); })
+        .then([this]() {
+            sequencer_.stepEdit.localVariationEditActive.set(false);
+            configureOptForFocusedRow();
+        });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
@@ -259,20 +281,8 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
 
     auto& o = sequencer_.stepEdit;
     o.reset();
+    o.focusedRow.set(step_edit_rows::rowForNavigationIndex(0));
     o.stepIndex.set(abs);
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
-        sequencer_,
-        abs,
-        effectiveScaleSettings(sequencer_, tracks_)
-    );
-    if (projection.valid) {
-        o.snapshotNote = projection.note;
-        o.snapshotVelocity = projection.velocity;
-        o.snapshotGate = projection.gate;
-        o.snapshotNudge = projection.nudge;
-        o.snapshotProbability = projection.probability;
-        o.snapshotValid = true;
-    }
 
     // longPress() fires while button is still pressed; don't immediately close on release.
     ignore_open_release_ = true;
@@ -283,10 +293,11 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
     configureOptForFocusedRow();
 }
 
-FLASHMEM void SequencerStepEditHandler::closeApply() {
+FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
     if (history_snapshot_valid_) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after) &&
+            !core::state::sequencer::sameMusicalHistorySnapshot(history_snapshot_, after)) {
             history_.recordPattern(
                 std::move(history_snapshot_),
                 std::move(after),
@@ -306,52 +317,30 @@ FLASHMEM void SequencerStepEditHandler::closeApply() {
     sequencer_.stepEdit.reset();
 }
 
-FLASHMEM void SequencerStepEditHandler::closeCancel() {
-    auto& o = sequencer_.stepEdit;
-
-    if (history_snapshot_valid_) {
-        core::state::sequencer::applyHistorySnapshotToEditor(sequencer_, history_snapshot_);
-        core::state::sequencer::refreshContentView(sequencer_);
-        sequencer_.contentView.bump();
-    } else {
-        const uint8_t abs = o.stepIndex.get();
-        if (o.snapshotValid && abs < core::state::sequencer::SequencerState::MAX_STEPS) {
-            sequencer_.setStepDataAt(
-                abs,
-                o.snapshotNote,
-                o.snapshotVelocity,
-                o.snapshotGate,
-                o.snapshotNudge,
-                o.snapshotProbability
-            );
-        }
-    }
-
-    history_snapshot_valid_ = false;
-    ignore_open_release_ = false;
-    ignore_next_context_left_release_ = false;
-    ignore_next_context_right_release_ = false;
-    overlays_.hide();
-    o.reset();
-}
-
 FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
-    const int current = static_cast<int>(sequencer_.stepEdit.focusedRow.get());
-    const int next = nav::nextWrappedIndex(delta, current, step_edit_rows::COUNT);
+    const int current = step_edit_rows::navigationIndexForRow(
+        sequencer_.stepEdit.focusedRow.get()
+    );
+    const int next = nav::nextWrappedIndex(
+        delta,
+        current,
+        static_cast<int>(step_edit_rows::NAVIGATION_ORDER.size())
+    );
     sequencer_.stepEdit.contextHold.clear();
-    sequencer_.stepEdit.focusedRow.set(static_cast<uint8_t>(next));
+    sequencer_.stepEdit.localVariationEditActive.set(false);
+    sequencer_.stepEdit.focusedRow.set(step_edit_rows::rowForNavigationIndex(next));
 
     configureOptForFocusedRow();
 }
 
-FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrApply() {
+FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
     auto& edit = sequencer_.stepEdit;
     const uint8_t focusedRow = edit.focusedRow.get();
 
     if (isPropertyRow(focusedRow)) {
-        closeApply();
+        closeStepEdit();
         return;
     }
 
@@ -479,6 +468,20 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
     const uint8_t abs = edit.stepIndex.get();
     if (abs >= len) return;
 
+    if (edit.localVariationEditActive.get() && propertySupportsLocalVariation(property)) {
+        const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, abs);
+        const uint8_t range = input_utils::normalizedToVariationRange(property, normalized);
+        if (core::state::sequencer::setNodeLocalVariationRange(
+                sequencer_.pattern,
+                nodeId,
+                property,
+                range
+            )) {
+            sequencer_.invalidateVariationTelemetry();
+        }
+        return;
+    }
+
     core::state::sequencer::setActiveContentStepFromNormalized(
         sequencer_,
         abs,
@@ -523,6 +526,28 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
     const uint8_t abs = edit.stepIndex.get();
     if (abs >= len) return;
 
+    if (edit.localVariationEditActive.get() && propertySupportsLocalVariation(property)) {
+        const auto config = input_utils::encoderConfigForVariationRange(property);
+        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
+        encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
+
+        uint8_t range = 0;
+        const auto* graph = core::state::sequencer::graphView(sequencer_.pattern);
+        const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, abs);
+        if (graph != nullptr) {
+            const auto* node = graph->stepNode(nodeId);
+            if (node != nullptr) {
+                range = core::state::sequencer::nodeLocalVariationRange(*node, property);
+            }
+        }
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            input_utils::variationRangeToNormalized(property, range)
+        );
+        return;
+    }
+
     configureStepEditEncoder(
         encoders_,
         Config::EncoderID::OPT,
@@ -533,7 +558,7 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
     );
 }
 
-FLASHMEM void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexInPage) {
+FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
     if (ignore_open_release_ && indexInPage == ignore_open_macro_index_in_page_) {
         ignore_open_release_ = false;
         return;
@@ -545,12 +570,18 @@ FLASHMEM void SequencerStepEditHandler::maybeCloseApplyFromMacro(uint8_t indexIn
     const uint8_t currentIndexInPage = static_cast<uint8_t>(abs % stepsPerPage);
 
     if (indexInPage != currentIndexInPage) return;
-    closeApply();
+    closeStepEdit();
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsContextRow() const {
     const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
     return step_edit_rows::isContext(focusedRow);
+}
+
+FLASHMEM bool SequencerStepEditHandler::focusedRowSupportsLocalVariation() const {
+    const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
+    if (!isPropertyRow(focusedRow)) return false;
+    return propertySupportsLocalVariation(propertyForRow(focusedRow));
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {

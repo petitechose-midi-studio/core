@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
+#include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
 #include "SequencerPatternState.hpp"
 #include "SequencerUiState.hpp"
@@ -46,6 +47,7 @@ struct SequencerState {
     uint32_t probabilityCycleIndex = 0;
     oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
     oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
+    oc::note::sequencer::StepSequencerExpandedVariationTelemetry expandedVariationTelemetry{};
 
     /// Active property edited by the 8 macro encoders in Sequencer view
     Signal<StepProperty, 6> activeStepProperty{StepProperty::NOTE};
@@ -79,6 +81,14 @@ struct SequencerState {
         return SequencerPatternState::clampProbability(value);
     }
 
+    static int8_t clampPatternSwingOffsetPercent(int value) {
+        return SequencerPatternState::clampPatternSwingOffsetPercent(value);
+    }
+
+    static int8_t clampPatternNudgePercent(int value) {
+        return SequencerPatternState::clampPatternNudgePercent(value);
+    }
+
     void invalidateVariationTelemetry();
     void invalidateStepVariationTelemetry(uint8_t step);
 
@@ -91,6 +101,8 @@ struct SequencerState {
     bool setPatternScalePolicy(SequencerPatternScalePolicy policy);
     bool setPatternScaleOverride(oc::note::sequencer::StepSequencerScaleSettings settings);
     bool setPitchEditMode(SequencerPitchEditMode mode);
+    bool setPatternSwingOffsetPercent(int value);
+    bool setPatternNudgePercent(int value);
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
         if (!pattern.setStepNoteAt(step, noteValue)) return false;

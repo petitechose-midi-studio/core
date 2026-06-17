@@ -25,7 +25,7 @@ using oc::note::sequencer::StepSequencerSequenceKind;
 using oc::note::sequencer::StepSequencerStepNode;
 
 constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
-constexpr uint8_t kEnvelopeVersion = 1;
+constexpr uint8_t kEnvelopeVersion = 2;
 constexpr uint8_t kNoTrack = 0xFF;
 constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
 
@@ -79,6 +79,10 @@ struct StepNodeRecord {
     int16_t probabilityOffset = 0;
     uint16_t childSequenceId = kInvalidId;
     uint16_t cycleSetId = kInvalidId;
+    uint8_t localVariationPitchSemitones = 0;
+    uint8_t localVariationVelocity = 0;
+    uint8_t localVariationGatePercent = 0;
+    uint8_t localVariationNudge = 0;
 };
 
 struct CycleSetRecord {
@@ -91,10 +95,8 @@ struct CycleSetRecord {
 static_assert(sizeof(EnvelopeHeader) == 12, "Unexpected EnvelopeHeader size");
 static_assert(sizeof(SectionHeader) == 10, "Unexpected SectionHeader size");
 static_assert(sizeof(SequenceRecord) == 5, "Unexpected SequenceRecord size");
-static_assert(sizeof(StepNodeRecord) == 14, "Unexpected StepNodeRecord size");
+static_assert(sizeof(StepNodeRecord) == 18, "Unexpected StepNodeRecord size");
 static_assert(sizeof(CycleSetRecord) == 4, "Unexpected CycleSetRecord size");
-
-constexpr uint16_t kLegacyCycleSetRecordSize = 3;
 
 struct GraphRecordScratch {
     std::array<SequenceRecord, StepSequencerGraphLimits::MAX_SEQUENCES> sequences{};
@@ -191,7 +193,16 @@ FLASHMEM bool hasPersistableGraph(const StepSequencerGraph* graph) {
         std::min<uint16_t>(graph->stepNodeCount, graph->stepNodes.size())
     );
     for (uint16_t i = 0; i < count; ++i) {
-        if (graph->stepNodes[i].flags != 0) return true;
+        const auto& node = graph->stepNodes[i];
+        if (node.flags != 0) return true;
+        auto localVariation = node.localVariation;
+        localVariation.clamp();
+        if (localVariation.pitchSemitones != 0 ||
+            localVariation.velocity != 0 ||
+            localVariation.gatePercent != 0 ||
+            localVariation.nudge != 0) {
+            return true;
+        }
     }
     return false;
 }
@@ -235,6 +246,10 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
             .probabilityOffset = source.probabilityOffset,
             .childSequenceId = source.childSequenceId,
             .cycleSetId = source.cycleSetId,
+            .localVariationPitchSemitones = source.localVariation.pitchSemitones,
+            .localVariationVelocity = source.localVariation.velocity,
+            .localVariationGatePercent = source.localVariation.gatePercent,
+            .localVariationNudge = source.localVariation.nudge,
         };
     }
 
@@ -345,11 +360,6 @@ FLASHMEM bool sectionHasExactRecordShape(const SectionView& section, uint16_t re
            section.byteSize == static_cast<uint16_t>(section.count * recordSize);
 }
 
-FLASHMEM bool sectionHasCycleSetRecordShape(const SectionView& section) {
-    return sectionHasExactRecordShape(section, sizeof(CycleSetRecord)) ||
-           sectionHasExactRecordShape(section, kLegacyCycleSetRecordSize);
-}
-
 FLASHMEM bool linkSequenceValid(const StepSequencerGraph& graph, uint16_t id) {
     return graph.sequence(id) != nullptr;
 }
@@ -383,7 +393,7 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
         return true;
     }
     if (sections.cycleSets.data != nullptr &&
-        !sectionHasCycleSetRecordShape(sections.cycleSets)) {
+        !sectionHasExactRecordShape(sections.cycleSets, sizeof(CycleSetRecord))) {
         state::sequencer::clearGraph(target);
         return true;
     }
@@ -431,20 +441,23 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
             .gateOffset = record.gateOffset,
             .nudgeOffset = record.nudgeOffset,
             .probabilityOffset = record.probabilityOffset,
+            .localVariation = oc::note::sequencer::StepSequencerVariationRanges{
+                .pitchSemitones = record.localVariationPitchSemitones,
+                .velocity = record.localVariationVelocity,
+                .gatePercent = record.localVariationGatePercent,
+                .nudge = record.localVariationNudge,
+            },
             .childSequenceId = record.childSequenceId,
             .cycleSetId = record.cycleSetId,
         };
+        graph->stepNodes[i].localVariation.clamp();
     }
 
     for (uint16_t i = 0; i < sections.cycleSets.count; ++i) {
         CycleSetRecord record{};
-        const auto* source =
-            sections.cycleSets.data + static_cast<uint16_t>(i * sections.cycleSets.recordSize);
-        std::memcpy(
-            &record,
-            source,
-            std::min<uint16_t>(sections.cycleSets.recordSize, sizeof(record))
-        );
+        std::memcpy(&record,
+                    sections.cycleSets.data + i * sizeof(CycleSetRecord),
+                    sizeof(record));
         graph->cycleSets[i] = StepSequencerCycleStateSet{
             .firstStateNode = record.firstStateNode,
             .length = record.length,
@@ -505,13 +518,17 @@ FLASHMEM EnvelopeEncodeResult fillPatternEnvelope(
     EnvelopeWriter writer(out, capacity, EnvelopeKind::Pattern);
     PatternPayload flat{};
     fillPatternPayload(source, flat);
-    writer.addSection(SectionId::FlatPattern,
-                      kNoTrack,
-                      sizeof(PatternPayload),
-                      1,
-                      &flat,
-                      sizeof(flat));
-    addGraphSections(writer, state::sequencer::graphView(source), 0);
+    if (!writer.addSection(SectionId::FlatPattern,
+                           kNoTrack,
+                           sizeof(PatternPayload),
+                           1,
+                           &flat,
+                           sizeof(flat))) {
+        return {};
+    }
+    if (!addGraphSections(writer, state::sequencer::graphView(source), 0)) {
+        return {};
+    }
     return writer.finish();
 }
 
@@ -542,14 +559,22 @@ FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
     EnvelopeWriter writer(out, capacity, EnvelopeKind::ProjectSequencer);
     ProjectSequencerPayload flat{};
     fillProjectSequencerPayload(trackBank, active, flat);
-    writer.addSection(SectionId::FlatProjectSequencer,
-                      kNoTrack,
-                      sizeof(ProjectSequencerPayload),
-                      1,
-                      &flat,
-                      sizeof(flat));
+    if (!writer.addSection(SectionId::FlatProjectSequencer,
+                           kNoTrack,
+                           sizeof(ProjectSequencerPayload),
+                           1,
+                           &flat,
+                           sizeof(flat))) {
+        return {};
+    }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        addGraphSections(writer, state::sequencer::graphView(sourceTrack(trackBank, active, i)), i);
+        if (!addGraphSections(
+                writer,
+                state::sequencer::graphView(sourceTrack(trackBank, active, i)),
+                i
+            )) {
+            return {};
+        }
     }
     return writer.finish();
 }
@@ -594,14 +619,22 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
     EnvelopeWriter writer(out, capacity, EnvelopeKind::Set);
     SetPayload flat{};
     fillSetPayload(trackBank, active, flat);
-    writer.addSection(SectionId::FlatSet,
-                      kNoTrack,
-                      sizeof(SetPayload),
-                      1,
-                      &flat,
-                      sizeof(flat));
+    if (!writer.addSection(SectionId::FlatSet,
+                           kNoTrack,
+                           sizeof(SetPayload),
+                           1,
+                           &flat,
+                           sizeof(flat))) {
+        return {};
+    }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        addGraphSections(writer, state::sequencer::graphView(sourceTrack(trackBank, active, i)), i);
+        if (!addGraphSections(
+                writer,
+                state::sequencer::graphView(sourceTrack(trackBank, active, i)),
+                i
+            )) {
+            return {};
+        }
     }
     return writer.finish();
 }

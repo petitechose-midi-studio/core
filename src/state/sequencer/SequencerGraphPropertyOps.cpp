@@ -126,4 +126,73 @@ FLASHMEM bool setNodeProbabilityOffset(SequencerPatternState& pattern,
     );
 }
 
+FLASHMEM uint8_t nodeLocalVariationRange(
+    const oc::note::sequencer::StepSequencerStepNode& node,
+    StepProperty property
+) {
+    auto ranges = node.localVariation;
+    ranges.clamp();
+    switch (property) {
+        case StepProperty::NOTE:
+            return ranges.pitchSemitones;
+        case StepProperty::VELOCITY:
+            return ranges.velocity;
+        case StepProperty::GATE:
+            return ranges.gatePercent;
+        case StepProperty::NUDGE:
+            return ranges.nudge;
+        case StepProperty::PROBABILITY:
+            return 0;
+    }
+    return 0;
+}
+
+FLASHMEM bool setNodeLocalVariationRange(SequencerPatternState& pattern,
+                                         SequencerGraphNodeId nodeId,
+                                         StepProperty property,
+                                         uint8_t range) {
+    if (property == StepProperty::PROBABILITY) return false;
+
+    if (graphView(pattern) == nullptr && range == 0) {
+        return false;
+    }
+
+    if (!ensureGraphRoot(pattern)) return false;
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
+
+    auto next = graph->stepNodes[nodeId].localVariation;
+    switch (property) {
+        case StepProperty::NOTE:
+            next.pitchSemitones = range;
+            break;
+        case StepProperty::VELOCITY:
+            next.velocity = range;
+            break;
+        case StepProperty::GATE:
+            next.gatePercent = range;
+            break;
+        case StepProperty::NUDGE:
+            next.nudge = range;
+            break;
+        case StepProperty::PROBABILITY:
+            return false;
+    }
+    next.clamp();
+
+    auto& current = graph->stepNodes[nodeId].localVariation;
+    auto currentClamped = current;
+    currentClamped.clamp();
+    if (currentClamped.pitchSemitones == next.pitchSemitones &&
+        currentClamped.velocity == next.velocity &&
+        currentClamped.gatePercent == next.gatePercent &&
+        currentClamped.nudge == next.nudge) {
+        return false;
+    }
+
+    current = next;
+    bump(pattern, true);
+    return true;
+}
+
 }  // namespace core::state::sequencer

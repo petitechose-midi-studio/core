@@ -111,6 +111,51 @@ FLASHMEM bool hasRuntimePitchFeedback(const TileRenderState& state) {
             !state.variation.resolved.scale.inputInScale);
 }
 
+FLASHMEM bool hasRuntimeVelocityFeedback(const TileRenderState& state) {
+    return state.variation.visible &&
+           state.variation.deltaVisible &&
+           (state.variation.resolved.ranges.velocity > 0 ||
+            state.variation.resolved.resolved.velocity != state.velocity ||
+            state.variation.resolved.resolved.velocity != state.variation.resolved.base.velocity);
+}
+
+FLASHMEM bool hasRuntimeGateFeedback(const TileRenderState& state) {
+    return state.variation.visible &&
+           state.variation.deltaVisible &&
+           (state.variation.resolved.ranges.gatePercent > 0 ||
+            state.variation.resolved.resolved.gate != state.gate ||
+            state.variation.resolved.resolved.gate != state.variation.resolved.base.gate);
+}
+
+FLASHMEM bool hasRuntimeNudgeFeedback(const TileRenderState& state) {
+    return state.variation.visible &&
+           state.variation.deltaVisible &&
+           (state.variation.resolved.ranges.nudge > 0 ||
+            state.variation.resolved.resolved.nudge != state.nudge ||
+            state.variation.resolved.resolved.nudge != state.variation.resolved.base.nudge);
+}
+
+FLASHMEM bool hasRuntimePropertyFeedback(
+    const TileRenderState& state,
+    core::state::sequencer::StepProperty property
+) {
+    using core::state::sequencer::StepProperty;
+
+    switch (property) {
+        case StepProperty::NOTE:
+            return hasRuntimePitchFeedback(state);
+        case StepProperty::VELOCITY:
+            return hasRuntimeVelocityFeedback(state);
+        case StepProperty::GATE:
+            return hasRuntimeGateFeedback(state);
+        case StepProperty::NUDGE:
+            return hasRuntimeNudgeFeedback(state);
+        case StepProperty::PROBABILITY:
+            return false;
+    }
+    return false;
+}
+
 FLASHMEM bool hasOutOfScaleFeedback(const TileRenderState& state) {
     return state.variation.visible &&
            state.variation.deltaVisible &&
@@ -141,6 +186,24 @@ FLASHMEM uint8_t runtimePitchDisplayNote(const TileRenderState& state) {
     return hasRuntimePitchFeedback(state)
         ? state.variation.resolved.resolved.note
         : state.note;
+}
+
+FLASHMEM uint8_t runtimeVelocityDisplayValue(const TileRenderState& state) {
+    return hasRuntimeVelocityFeedback(state)
+        ? state.variation.resolved.resolved.velocity
+        : state.velocity;
+}
+
+FLASHMEM uint16_t runtimeGateDisplayValue(const TileRenderState& state) {
+    return hasRuntimeGateFeedback(state)
+        ? state.variation.resolved.resolved.gate
+        : state.gate;
+}
+
+FLASHMEM int8_t runtimeNudgeDisplayValue(const TileRenderState& state) {
+    return hasRuntimeNudgeFeedback(state)
+        ? state.variation.resolved.resolved.nudge
+        : state.nudge;
 }
 
 FLASHMEM const char* runtimeScaleDegreeLabel(const TileRenderState& state) {

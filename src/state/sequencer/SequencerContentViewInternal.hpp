@@ -73,7 +73,8 @@ bool resolveRepresentativeChildContentStep(
     uint8_t depth,
     uint32_t localCycleIndex,
     uint8_t microPlayIndex,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    SequencerChildContentSummary* outSummary = nullptr
 );
 
 bool ownsSequence(

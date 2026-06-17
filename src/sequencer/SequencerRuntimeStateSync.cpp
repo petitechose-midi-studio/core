@@ -3,17 +3,58 @@
 #include <algorithm>
 
 namespace core::sequencer {
+namespace {
+
+bool expandedTelemetryNeedsIntraStepOffset(
+    const oc::note::sequencer::StepSequencerExpandedVariationTelemetry& telemetry,
+    uint16_t playheadStepTicks
+) {
+    if (!telemetry.valid || telemetry.count == 0) return false;
+
+    const uint16_t stepTicks = playheadStepTicks == 0 ? 1 : playheadStepTicks;
+    if (telemetry.count > 1) return true;
+
+    for (uint8_t i = 0; i < telemetry.count; ++i) {
+        if (telemetry.localTick[i] != 0) return true;
+        if (telemetry.spanTicks[i] < stepTicks) return true;
+    }
+    return false;
+}
+
+uint16_t projectedExpandedTelemetryOffset(
+    const oc::note::sequencer::StepSequencerExpandedVariationTelemetry& telemetry,
+    uint16_t playheadStepTickOffset
+) {
+    uint32_t selectedOffset = 0;
+    const uint32_t currentOffset = playheadStepTickOffset;
+    for (uint8_t i = 0; i < telemetry.count; ++i) {
+        const uint32_t start = telemetry.localTick[i];
+        const uint32_t span = telemetry.spanTicks[i] == 0 ? 1U : telemetry.spanTicks[i];
+        const uint32_t end = start + span;
+        if (currentOffset >= start && currentOffset < end) {
+            return static_cast<uint16_t>(std::min<uint32_t>(start, UINT16_MAX));
+        }
+        if (start <= currentOffset && start >= selectedOffset) {
+            selectedOffset = start;
+        }
+    }
+    return static_cast<uint16_t>(std::min<uint32_t>(selectedOffset, UINT16_MAX));
+}
+
+}  // namespace
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerState& source,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
+    ProjectTimingContext projectTiming
 ) {
-    return captureRuntimeStateSignature(source.pattern, projectScaleSettings);
+    return captureRuntimeStateSignature(source.pattern, projectScaleSettings, projectTiming);
 }
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternState& source,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
+    ProjectTimingContext projectTiming
 ) {
     return {
         .length = source.length.get(),
@@ -23,7 +64,10 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .stepDataRevision = source.stepDataRevision.get(),
         .patternVariationRevision = source.patternVariationRevision.get(),
         .patternScaleRevision = source.patternScaleRevision.get(),
+        .patternTimingRevision = source.patternTimingRevision.get(),
         .graphRevision = source.graphRevision.get(),
+        .effectiveSwingPercent = source.effectiveSwingPercent(projectTiming.swingPercent),
+        .patternNudgePercent = source.patternNudgePercent.get(),
         .effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
             projectScaleSettings,
             source.scalePolicy,
@@ -43,7 +87,10 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .stepDataRevision = source.stepDataRevision,
         .patternVariationRevision = source.patternVariationRevision,
         .patternScaleRevision = source.patternScaleRevision,
+        .patternTimingRevision = source.patternTimingRevision,
         .graphRevision = source.graphRevision,
+        .effectiveSwingPercent = source.effectiveSwingPercent,
+        .patternNudgePercent = source.patternNudgePercent,
         .effectiveScaleSettings = source.effectiveScaleSettings,
     };
 }
@@ -53,6 +100,8 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
     target.length = source.length;
     target.stepsPerBeat = source.stepsPerBeat;
     target.midiChannel = source.midiChannel;
+    target.effectiveSwingPercent = source.effectiveSwingPercent;
+    target.patternNudgePercent = source.patternNudgePercent;
     target.enabledMask = source.enabledMask;
     target.scaleSettings = source.effectiveScaleSettings;
     target.scaleSettings.clamp();
@@ -78,15 +127,32 @@ SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
         .variationTelemetryRevision = runtimeState.variationTelemetryRevision,
         .lastResolvedVariation = runtimeState.lastResolvedVariation,
         .cycleVariationTelemetry = runtimeState.cycleVariationTelemetry,
+        .expandedVariationTelemetry = runtimeState.expandedVariationTelemetry,
     };
 }
 
 void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
                              const SequencerRuntimeTelemetrySnapshot& telemetry) {
+    target.expandedVariationTelemetry = telemetry.expandedVariationTelemetry;
+
     target.playheadStep.set(telemetry.playheadStep);
     target.playheadStepTicks = telemetry.playheadStepTicks == 0 ? 1 : telemetry.playheadStepTicks;
+
+    const bool needsIntraStepOffset =
+        target.contentView.isChildContent() ||
+        expandedTelemetryNeedsIntraStepOffset(
+            telemetry.expandedVariationTelemetry,
+            target.playheadStepTicks
+        );
     if (target.contentView.isChildContent()) {
         target.playheadStepTickOffset.set(telemetry.playheadStepTickOffset);
+    } else if (needsIntraStepOffset) {
+        target.playheadStepTickOffset.set(
+            projectedExpandedTelemetryOffset(
+                telemetry.expandedVariationTelemetry,
+                telemetry.playheadStepTickOffset
+            )
+        );
     } else if (target.playheadStepTickOffset.get() != 0) {
         target.playheadStepTickOffset.set(0);
     }
