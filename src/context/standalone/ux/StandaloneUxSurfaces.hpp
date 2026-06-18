@@ -117,6 +117,10 @@ class SequencerStepGridUxSurface final : public core::validation::ux::SemanticUx
 public:
     SequencerStepGridUxSurface(
         oc::state::Signal<core::ui::ViewType, 8>& activeView,
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+        core::state::TrackNavigationState& trackNavigation,
         core::state::sequencer::SequencerState& sequencer,
         core::state::sequencer::SequencerTrackBankState& tracks
     );
@@ -128,6 +132,10 @@ public:
 
 private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    core::state::TrackNavigationState& track_navigation_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
 };
@@ -136,6 +144,10 @@ class SequencerStepEditUxSurface final : public core::validation::ux::SemanticUx
 public:
     SequencerStepEditUxSurface(
         oc::state::Signal<core::ui::ViewType, 8>& activeView,
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+        core::state::TrackNavigationState& trackNavigation,
         core::state::sequencer::SequencerState& sequencer,
         core::state::sequencer::SequencerTrackBankState& tracks
     );
@@ -147,6 +159,10 @@ public:
 
 private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    core::state::TrackNavigationState& track_navigation_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
 };

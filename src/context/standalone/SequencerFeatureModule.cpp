@@ -46,8 +46,20 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
           stateRefs.sequencerTracks,
           &structure_ux_trace_state_
       ),
-      step_edit_ux_surface_(stateRefs.activeView, stateRefs.sequencer, stateRefs.sequencerTracks),
-      step_grid_ux_surface_(stateRefs.activeView, stateRefs.sequencer, stateRefs.sequencerTracks)
+      step_edit_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.structureNavigationFocus,
+          stateRefs.trackNavigation,
+          stateRefs.sequencer,
+          stateRefs.sequencerTracks
+      ),
+      step_grid_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.structureNavigationFocus,
+          stateRefs.trackNavigation,
+          stateRefs.sequencer,
+          stateRefs.sequencerTracks
+      )
 #endif
 {
 #if defined(MS_UX_RECORDER)
