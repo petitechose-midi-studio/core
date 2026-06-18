@@ -6,25 +6,35 @@
 #include <config/InputIDs.hpp>
 
 #include "SequencerInputUtils.hpp"
+#include "SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 
 namespace core::handler {
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace interaction_policy = core::handler::sequencer::interaction_policy;
 
 namespace {
 
 inline oc::type::IsActiveFn canEditSequencerProperty(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
-    core::state::TrackNavigationState& trackUi
+    core::state::TrackNavigationState& trackUi,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
 ) {
-    return [&overlays, &sequencer, &trackUi]() {
-        return !sequencer.structureUi.pageSelection.active.get() &&
-               !sequencer.structureUi.stepSelection.active.get() &&
-               !trackUi.selection.active.get() &&
-               !sequencer.patternQuickControls.selecting.get() &&
-               !overlays.hasVisible();
+    return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return policy.macroTurn ==
+                   core::state::sequencer::SequencerInteractionAction::EDIT_VISIBLE_STEP_PROPERTY ||
+               policy.macroTurn ==
+                   core::state::sequencer::SequencerInteractionAction::EDIT_MUSICAL_PROPERTY_VARIATION;
     };
 }
 
@@ -37,13 +47,14 @@ inline oc::type::IsActiveFn canQuickEditFocusedStep(
         core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
 ) {
     return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
-        return navigationFocus.get() == core::state::StructureNavigationFocus::STEP &&
-               !sequencer.structureUi.pageSelection.active.get() &&
-               !sequencer.structureUi.stepSelection.active.get() &&
-               !trackUi.selection.active.get() &&
-               !sequencer.stepPropertyInlineSelector.selecting.get() &&
-               !sequencer.patternQuickControls.selecting.get() &&
-               !overlays.hasVisible();
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return policy.optTurn ==
+               core::state::sequencer::SequencerInteractionAction::EDIT_STEP_PROPERTY;
     };
 }
 
@@ -97,7 +108,7 @@ FLASHMEM void SequencerMacroPropertyHandler::setupBindings() {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope_id_)
-            .when(canEditSequencerProperty(overlays_, sequencer_, track_ui_))
+            .when(canEditSequencerProperty(overlays_, sequencer_, track_ui_, navigation_focus_))
             .then([this, i](float value) { handleTurn(i, value); });
     }
 

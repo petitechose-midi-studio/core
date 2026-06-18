@@ -221,7 +221,21 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
 
     {
         SequencerMacroPropertyHarness h;
+        h.state.sequencer.structureUi.stepSelection.active.set(true);
+        h.turn(Config::EncoderID::MACRO_1, 1.0f);
+        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    }
+
+    {
+        SequencerMacroPropertyHarness h;
         h.state.sequencer.patternQuickControls.selecting.set(true);
+        h.turn(Config::EncoderID::MACRO_1, 1.0f);
+        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    }
+
+    {
+        SequencerMacroPropertyHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
         assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }

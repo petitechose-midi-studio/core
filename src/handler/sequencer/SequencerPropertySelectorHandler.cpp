@@ -6,12 +6,14 @@
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 
 namespace core::handler {
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace interaction_policy = core::handler::sequencer::interaction_policy;
 using Ranges = oc::note::sequencer::StepSequencerVariationRanges;
 using StepProperty = core::state::sequencer::StepProperty;
 
@@ -32,11 +34,14 @@ inline oc::type::IsActiveFn canOpenPropertySelector(
         core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
 ) {
     return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
-        return !overlays.hasVisible() &&
-               navigationFocus.get() != core::state::StructureNavigationFocus::TRACK &&
-               !sequencer.structureUi.pageSelection.active.get() &&
-               !trackUi.selection.active.get() &&
-               !sequencer.patternQuickControls.selecting.get();
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return policy.leftBottomPress ==
+               core::state::sequencer::SequencerInteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR;
     };
 }
 

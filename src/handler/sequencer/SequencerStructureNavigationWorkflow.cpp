@@ -6,6 +6,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
@@ -16,6 +17,7 @@
 namespace core::handler {
 
 namespace structure_slots = core::state::shared;
+namespace interaction_policy = core::handler::sequencer::interaction_policy;
 
 namespace {
 
@@ -65,17 +67,21 @@ FLASHMEM SequencerStructureNavigationWorkflow::SequencerStructureNavigationWorkf
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::allowsMainBindings() const {
-    return !sequencer_.structureUi.pageSelection.active.get() &&
-           !sequencer_.structureUi.stepSelection.active.get() &&
-           !track_ui_.selection.active.get() &&
-           !sequencer_.stepPropertyInlineSelector.selecting.get() &&
-           !sequencer_.patternQuickControls.selecting.get();
+    const auto context = interaction_policy::makeContext(
+        sequencer_,
+        track_ui_,
+        navigation_focus_.get()
+    );
+    return core::state::sequencer::sequencerInteractionMainSurfaceAvailable(context);
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::selectionActive() const {
-    return sequencer_.structureUi.pageSelection.active.get() ||
-           sequencer_.structureUi.stepSelection.active.get() ||
-           track_ui_.selection.active.get();
+    const auto context = interaction_policy::makeContext(
+        sequencer_,
+        track_ui_,
+        navigation_focus_.get()
+    );
+    return core::state::sequencer::sequencerInteractionSelectionActive(context);
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::stepFocusActive() const {
