@@ -221,8 +221,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    navigation_workflow_.allowsMainBindings();
         })
         .then([this]() {
-            if (ignore_next_bottom_left_release_) {
-                ignore_next_bottom_left_release_ = false;
+            if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
                 return;
             }
             clearFocusedStepContent();
@@ -237,7 +236,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    focusedStepHasChildContent();
         })
         .then([this]() {
-            ignore_next_bottom_left_release_ = true;
+            bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_LEFT);
             clearFocusedStepContent();
         });
 
@@ -249,8 +248,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    navigation_workflow_.allowsMainBindings();
         })
         .then([this]() {
-            if (ignore_next_bottom_right_release_) {
-                ignore_next_bottom_right_release_ = false;
+            if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
                 return;
             }
             copyFocusedStepContent();
@@ -265,7 +263,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    canPasteFocusedStepContent();
         })
         .then([this]() {
-            ignore_next_bottom_right_release_ = true;
+            bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
             pasteFocusedStepContent();
         });
 
@@ -313,8 +311,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();
-            if (ignore_next_bottom_left_release_) {
-                ignore_next_bottom_left_release_ = false;
+            if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
@@ -333,7 +330,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();
-            ignore_next_bottom_left_release_ = true;
+            bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_LEFT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
 #endif
@@ -380,8 +377,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             if (sequencer_.structureUi.stepSelection.active.get()) {
                 edit_workflow_.clearStepPastePreview();
                 edit_workflow_.clearHoldAction();
-                if (ignore_next_bottom_right_release_) {
-                    ignore_next_bottom_right_release_ = false;
+                if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
 #if defined(MS_UX_RECORDER)
                     if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
@@ -403,8 +399,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();
-            if (ignore_next_bottom_right_release_) {
-                ignore_next_bottom_right_release_ = false;
+            if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
@@ -420,7 +415,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .then([this]() {
             edit_workflow_.clearStepPastePreview();
             edit_workflow_.clearHoldAction();
-            ignore_next_bottom_right_release_ = true;
+            bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
 #endif
@@ -437,7 +432,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();
-            ignore_next_bottom_right_release_ = true;
+            bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
 #endif

@@ -215,8 +215,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .when([this]() { return focusedRowIsContextRow(); })
         .then([this]() {
             sequencer_.stepEdit.contextHold.clear();
-            if (ignore_next_context_left_release_) {
-                ignore_next_context_left_release_ = false;
+            if (context_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
                 return;
             }
             clearFocusedContextChild();
@@ -228,7 +227,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .when([this]() { return focusedRowIsContextRow() && focusedContextHasChild(); })
         .then([this]() {
             sequencer_.stepEdit.contextHold.clear();
-            ignore_next_context_left_release_ = true;
+            context_release_latch_.arm(Config::ButtonID::BOTTOM_LEFT);
             clearFocusedContextChild();
         });
 
@@ -251,8 +250,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .when([this]() { return focusedRowIsContextRow(); })
         .then([this]() {
             sequencer_.stepEdit.contextHold.clear();
-            if (ignore_next_context_right_release_) {
-                ignore_next_context_right_release_ = false;
+            if (context_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
                 return;
             }
             copyFocusedStepContent();
@@ -264,7 +262,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .when([this]() { return focusedRowIsContextRow() && canPasteFocusedStepContent(); })
         .then([this]() {
             sequencer_.stepEdit.contextHold.clear();
-            ignore_next_context_right_release_ = true;
+            context_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
             pasteFocusedStepContent();
         });
 }
@@ -293,8 +291,7 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
     o.stepIndex.set(abs);
 
     // longPress() fires while button is still pressed; don't immediately close on release.
-    ignore_open_release_ = true;
-    ignore_open_macro_index_in_page_ = indexInPage;
+    open_release_latch_.arm(Config::MACRO_BUTTONS[indexInPage]);
 
     overlays_.show(core::ui::OverlayType::SEQ_STEP_EDIT);
 
@@ -318,9 +315,8 @@ FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
     }
 
     history_snapshot_valid_ = false;
-    ignore_open_release_ = false;
-    ignore_next_context_left_release_ = false;
-    ignore_next_context_right_release_ = false;
+    open_release_latch_.clear();
+    context_release_latch_.clear();
     overlays_.hide();
     sequencer_.stepEdit.reset();
 }
@@ -567,8 +563,7 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
 }
 
 FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
-    if (ignore_open_release_ && indexInPage == ignore_open_macro_index_in_page_) {
-        ignore_open_release_ = false;
+    if (open_release_latch_.consume(Config::MACRO_BUTTONS[indexInPage])) {
         return;
     }
 

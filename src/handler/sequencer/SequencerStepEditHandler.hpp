@@ -11,6 +11,7 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "handler/common/ButtonReleaseLatch.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/StructureSelectionState.hpp"
@@ -74,10 +75,8 @@ private:
     );
 
     // Long-press opens while still pressed; ignore the release that follows.
-    bool ignore_open_release_ = false;
-    uint8_t ignore_open_macro_index_in_page_ = 0;
-    bool ignore_next_context_left_release_ = false;
-    bool ignore_next_context_right_release_ = false;
+    ButtonReleaseLatch<8> open_release_latch_;
+    ButtonReleaseLatch<2> context_release_latch_;
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     bool history_snapshot_valid_ = false;
 

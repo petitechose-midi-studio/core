@@ -87,8 +87,7 @@ private:
     oc::type::ScopeID scope_id_ = 0;
     ButtonReleaseLatch<1> nav_release_latch_;
     ButtonReleaseLatch<8> step_selection_macro_release_latch_;
-    bool ignore_next_bottom_left_release_ = false;
-    bool ignore_next_bottom_right_release_ = false;
+    ButtonReleaseLatch<2> bottom_action_release_latch_;
 #if defined(MS_UX_RECORDER)
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif
