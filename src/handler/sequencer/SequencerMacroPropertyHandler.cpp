@@ -31,10 +31,8 @@ inline oc::type::IsActiveFn canEditSequencerProperty(
             navigationFocus.get(),
             overlays.hasVisible()
         );
-        return policy.macroTurn ==
-                   core::state::sequencer::SequencerInteractionAction::EDIT_VISIBLE_STEP_PROPERTY ||
-               policy.macroTurn ==
-                   core::state::sequencer::SequencerInteractionAction::EDIT_MUSICAL_PROPERTY_VARIATION;
+        return interaction_policy::canEditVisibleStepProperty(policy) ||
+               interaction_policy::canEditMusicalPropertyVariation(policy);
     };
 }
 
@@ -53,8 +51,7 @@ inline oc::type::IsActiveFn canQuickEditFocusedStep(
             navigationFocus.get(),
             overlays.hasVisible()
         );
-        return policy.optTurn ==
-               core::state::sequencer::SequencerInteractionAction::EDIT_STEP_PROPERTY;
+        return interaction_policy::canEditStepProperty(policy);
     };
 }
 

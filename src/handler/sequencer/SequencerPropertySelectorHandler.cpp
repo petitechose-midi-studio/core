@@ -40,8 +40,7 @@ inline oc::type::IsActiveFn canOpenPropertySelector(
             navigationFocus.get(),
             overlays.hasVisible()
         );
-        return policy.leftBottomPress ==
-               core::state::sequencer::SequencerInteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR;
+        return interaction_policy::canOpenMusicalPropertySelector(policy);
     };
 }
 

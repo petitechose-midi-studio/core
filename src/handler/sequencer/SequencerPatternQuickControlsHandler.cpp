@@ -66,8 +66,7 @@ inline oc::type::IsActiveFn canOpenQuickControls(
             navigationFocus.get(),
             overlays.hasVisible()
         );
-        return policy.leftCenterPress ==
-               core::state::sequencer::SequencerInteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR;
+        return interaction_policy::canOpenPatternDimensionSelector(policy);
     };
 }
 
@@ -86,8 +85,7 @@ inline oc::type::IsActiveFn canDirectEditPatternQuickControl(
             navigationFocus.get(),
             overlays.hasVisible()
         );
-        return policy.optTurn ==
-               core::state::sequencer::SequencerInteractionAction::EDIT_PATTERN_DIMENSION;
+        return interaction_policy::canOptEditPatternDimension(policy);
     };
 }
 
