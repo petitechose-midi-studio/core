@@ -79,6 +79,7 @@ struct SequencerInteractionContext {
     bool compatibleClipboardAvailable = false;
     bool currentStructureCanClear = true;
     bool currentStructureCanRemove = true;
+    bool currentStructureCanCopy = true;
     bool currentStepHasChildContent = false;
     bool selectedItemsAvailable = false;
 };

@@ -68,6 +68,25 @@ void expectsChildContentBottomActions() {
     assert(policy.bottomRightTap == Action::COPY_STEP_CONTENT);
 }
 
+void expectsStructureCopyVisibleWithoutClipboard() {
+    auto context = baseContext(Focus::PAGE);
+    context.currentStructureCanCopy = true;
+    context.compatibleClipboardAvailable = false;
+
+    auto policy = buildSequencerInteractionPolicy(context);
+    assert(policy.bottomRightTap == Action::COPY_CURRENT_STRUCTURE);
+    assert(policy.bottomRightHold == Action::PASTE_CURRENT_STRUCTURE);
+    assert(policy.bottomRightVisibility == Visibility::ACTIVE);
+
+    context.currentStructureCanCopy = false;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.bottomRightVisibility == Visibility::DISABLED);
+
+    context.compatibleClipboardAvailable = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.bottomRightVisibility == Visibility::ACTIVE);
+}
+
 void expectsSelectorOverrides() {
     auto context = baseContext(Focus::STEP);
     context.patternQuickControlsActive = true;
@@ -176,6 +195,7 @@ void expectsOverlayBlocksMainSurfaceEditing() {
 int main() {
     expectsRootFocusMatrix();
     expectsChildContentBottomActions();
+    expectsStructureCopyVisibleWithoutClipboard();
     expectsSelectorOverrides();
     expectsSelectionOverrides();
     expectsStepEditorOverridesEverything();
