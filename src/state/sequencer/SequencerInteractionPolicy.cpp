@@ -45,7 +45,8 @@ void applyStructureBottomActions(SequencerInteractionPolicy& policy,
     policy.bottomRightHold = Action::PASTE_CURRENT_STRUCTURE;
     policy.bottomLeftVisibility =
         visibleIf(context.currentStructureCanClear || context.currentStructureCanRemove);
-    policy.bottomRightVisibility = visibleIf(context.compatibleClipboardAvailable);
+    policy.bottomRightVisibility =
+        visibleIf(context.currentStructureCanCopy || context.compatibleClipboardAvailable);
 }
 
 void applyStepContentBottomActions(SequencerInteractionPolicy& policy,
