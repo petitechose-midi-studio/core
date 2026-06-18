@@ -26,6 +26,9 @@ FLASHMEM ProjectState projectStateFromRuntime(const core::state::CoreState& stat
     project.musical.patternsInheritScale = state.projectNavigation.patternsInheritScale;
     project.musical.clipsInheritScale = state.projectNavigation.clipsInheritScale;
 
+    project.editing.stepPasteMode =
+        sanitizeProjectStepPasteMode(state.projectNavigation.stepPasteMode);
+
     const uint8_t activeTrack = state.sequencerTracks.activeTrackIndex();
     for (uint8_t i = 0; i < project.routing.outputMidiChannels.size(); ++i) {
         const uint8_t channel = (i == activeTrack)
@@ -56,6 +59,12 @@ FLASHMEM void applyProjectMusicalContext(core::state::CoreState& state,
     state.sequencerTracks.setProjectScaleSettings(musical.scale);
     state.projectNavigation.patternsInheritScale = musical.patternsInheritScale;
     state.projectNavigation.clipsInheritScale = musical.clipsInheritScale;
+}
+
+FLASHMEM void applyProjectEditing(core::state::CoreState& state,
+                                  ProjectEditingState editing) {
+    state.projectNavigation.stepPasteMode =
+        sanitizeProjectStepPasteMode(editing.stepPasteMode);
 }
 
 FLASHMEM void applyProjectRouting(core::state::CoreState& state,
@@ -110,6 +119,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     state.project = snapshot.project;
     applyProjectTransport(state, state.project.transport);
     applyProjectMusicalContext(state, state.project.musical);
+    applyProjectEditing(state, state.project.editing);
     applyProjectRouting(state, state.project.routing);
 
     state.pages.restoreTracksWithSharedState(

@@ -11,13 +11,34 @@ using namespace project_handler_internal;
 
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
-    const bool applied = applyFocusedMusicScaleStep(steps) || applyFocusedTransportStep(steps) ||
-                         applyFocusedStorageStep(steps) || applyFocusedRoutingStep(steps) ||
+    const bool applied = applyFocusedMusicRootStep(steps) ||
+                         applyFocusedMusicScaleStep(steps) ||
+                         applyFocusedTransportStep(steps) ||
+                         applyFocusedStorageStep(steps) ||
+                         applyFocusedRoutingStep(steps) ||
                          applyFocusedNameEditorStep(steps);
     if (applied) {
         navigation_.clearLifecycleFeedback();
     }
     return applied;
+}
+
+FLASHMEM bool ProjectHandler::applyFocusedMusicRootStep(int steps) {
+    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::MUSIC_ROOT) {
+        return false;
+    }
+
+    if (steps == 0 || navigation_.focusedRow.get() != 3) return false;
+
+    const int current = static_cast<int>(navigation_.stepPasteMode);
+    const int next = wrapIndex(current + steps, project::PROJECT_STEP_PASTE_MODE_COUNT);
+    if (next == current) return true;
+
+    navigation_.stepPasteMode =
+        project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
+    navigation_.notifyContentChanged();
+    lifecycle_.markProjectMutated();
+    return true;
 }
 
 FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
@@ -167,7 +188,9 @@ FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
 }
 
 FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
-    return setFocusedMusicScaleValue(normalized) || setFocusedTransportValue(normalized) ||
+    return setFocusedMusicRootValue(normalized) ||
+           setFocusedMusicScaleValue(normalized) ||
+           setFocusedTransportValue(normalized) ||
            setFocusedStorageValue(normalized) || setFocusedRoutingValue(normalized) ||
            setFocusedNameEditorValue(normalized);
 }
@@ -201,6 +224,24 @@ FLASHMEM bool ProjectHandler::setFocusedNameEditorValue(float normalized) {
 
     navigation_.projectNameKeyIndex = next;
     navigation_.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool ProjectHandler::setFocusedMusicRootValue(float normalized) {
+    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::MUSIC_ROOT) {
+        return false;
+    }
+
+    if (navigation_.focusedRow.get() != 3) return false;
+
+    const int current = static_cast<int>(navigation_.stepPasteMode);
+    const int next = normalizedToIndex(normalized, project::PROJECT_STEP_PASTE_MODE_COUNT);
+    if (next == current) return true;
+
+    navigation_.stepPasteMode =
+        project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
+    navigation_.notifyContentChanged();
+    lifecycle_.markProjectMutated();
     return true;
 }
 

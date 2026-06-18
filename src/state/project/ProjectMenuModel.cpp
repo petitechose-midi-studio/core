@@ -173,6 +173,18 @@ FLASHMEM const char* runModeValue(uint8_t index) {
     }
 }
 
+FLASHMEM const char* stepPasteModeValue(ProjectStepPasteMode mode) {
+    switch (sanitizeProjectStepPasteMode(mode)) {
+        case ProjectStepPasteMode::PAGE:
+            return "Page";
+        case ProjectStepPasteMode::WRAP:
+            return "Wrap";
+        case ProjectStepPasteMode::EXTEND:
+        default:
+            return "Extend";
+    }
+}
+
 FLASHMEM void addRow(ProjectMenuPage& page, ProjectMenuRow next) {
     if (page.rowCount >= page.rows.size()) return;
     page.rows[page.rowCount++] = next;
@@ -270,6 +282,7 @@ FLASHMEM void buildMusicRootRows(ProjectMenuPage& page, ProjectMenuContext conte
     addRow(page, scaleRow);
     addRow(page, row("Pattern Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
     addRow(page, row("Clip Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Step Paste", "Extend", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
 }
 
 FLASHMEM void buildMusicScaleRows(ProjectMenuPage& page, ProjectMenuContext context) {
@@ -431,6 +444,8 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
     revision ^= static_cast<uint32_t>(navigation.transportSwingPercent & 0x7Fu) << 2;
     revision ^= static_cast<uint32_t>(navigation.transportRunMode & 0x03u) << 10;
     revision ^= static_cast<uint32_t>(navigation.loadProjects.count) << 16;
+    revision = (revision * 16777619u) ^
+               static_cast<uint32_t>(navigation.stepPasteMode);
     revision ^= navigation.loadProjects.truncated ? 0x40000000u : 0u;
     for (uint8_t i = 0; i < context.projectId.size() && context.projectId[i] != '\0'; ++i) {
         revision = (revision * 16777619u) ^ static_cast<uint8_t>(context.projectId[i]);
@@ -469,6 +484,11 @@ FLASHMEM const char* inheritValue(bool inherit) {
 FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
                                  const ProjectNavigationState& navigation) {
     switch (navigation.currentNode.get()) {
+        case ProjectNodeId::MUSIC_ROOT:
+            if (page.rowCount > 3) {
+                setRowValue(page.rows[3], stepPasteModeValue(navigation.stepPasteMode));
+            }
+            break;
         case ProjectNodeId::MUSIC_SCALE:
             if (page.rowCount > 3) page.rows[3].value = inheritValue(navigation.patternsInheritScale);
             if (page.rowCount > 4) page.rows[4].value = inheritValue(navigation.clipsInheritScale);

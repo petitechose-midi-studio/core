@@ -38,6 +38,17 @@ constexpr uint32_t STEP_GUIDE_COLOR = theme::color::INACTIVE_LIGHTER;
 constexpr lv_opa_t STEP_GUIDE_OPA = LV_OPA_50;
 constexpr lv_coord_t STEP_GUIDE_WIDTH = 1;
 constexpr uint8_t STEP_GUIDE_COUNT = 3;
+constexpr uint32_t STEP_SELECTION_CURSOR_COLOR = 0xF4F1DE;
+constexpr uint32_t STEP_SELECTION_SELECTED_COLOR = COLOR_STEP_PLAY_HEX;
+constexpr uint32_t STEP_SELECTION_EMPTY_COLOR = 0x81B29A;
+constexpr uint32_t STEP_SELECTION_GHOST_COLOR = 0xF2CC8F;
+constexpr uint32_t STEP_SELECTION_OVERWRITE_COLOR = 0xEAB69E;
+constexpr uint32_t STEP_SELECTION_BLOCKED_COLOR = 0xE07A5F;
+constexpr lv_opa_t STEP_SELECTION_SELECTED_OPA = LV_OPA_20;
+constexpr lv_opa_t STEP_SELECTION_PREVIEW_OPA = LV_OPA_30;
+constexpr lv_coord_t STEP_SELECTION_CURSOR_BORDER = 2;
+constexpr lv_coord_t STEP_SELECTION_SELECTED_BORDER = 1;
+constexpr lv_coord_t STEP_SELECTION_BORDER_OUTSET = 2;
 constexpr lv_coord_t STEP_INDEX_RIGHT_PAD = 4;
 constexpr lv_coord_t STEP_INDEX_TOP_PAD = 2;
 constexpr uint32_t VARIATION_RANGE_COLOR = theme::color::INACTIVE_LIGHTER;
@@ -104,6 +115,87 @@ void drawVariationRect(lv_layer_t* layer,
         .y2 = static_cast<lv_coord_t>(y + height - 1),
     };
     lv_draw_rect(layer, &dsc, &area);
+}
+
+uint32_t stepPastePreviewColor(core::state::sequencer::SequencerStepPastePreview preview) {
+    switch (preview) {
+        case core::state::sequencer::SequencerStepPastePreview::EMPTY:
+            return STEP_SELECTION_EMPTY_COLOR;
+        case core::state::sequencer::SequencerStepPastePreview::GHOST:
+            return STEP_SELECTION_GHOST_COLOR;
+        case core::state::sequencer::SequencerStepPastePreview::OVERWRITE:
+            return STEP_SELECTION_OVERWRITE_COLOR;
+        case core::state::sequencer::SequencerStepPastePreview::BLOCKED:
+            return STEP_SELECTION_BLOCKED_COLOR;
+        case core::state::sequencer::SequencerStepPastePreview::NONE:
+        default:
+            return STEP_SELECTION_CURSOR_COLOR;
+    }
+}
+
+void drawSelectionOverlay(lv_layer_t* layer,
+                          const lv_area_t& buttonArea,
+                          const grid::TileRenderCache& cache) {
+    if (!layer || !cache.stepSelectionActive) return;
+
+    if (cache.stepPastePreviewActive) {
+        const uint32_t color = stepPastePreviewColor(cache.stepPastePreview);
+        lv_draw_rect_dsc_t fillDsc;
+        lv_draw_rect_dsc_init(&fillDsc);
+        fillDsc.bg_color = lv_color_hex(color);
+        fillDsc.bg_opa = STEP_SELECTION_PREVIEW_OPA;
+        fillDsc.radius = 0;
+        fillDsc.border_width = 0;
+        lv_draw_rect(layer, &fillDsc, &buttonArea);
+    } else if (cache.stepSelectionSelected) {
+        const uint32_t color = STEP_SELECTION_SELECTED_COLOR;
+        lv_draw_rect_dsc_t fillDsc;
+        lv_draw_rect_dsc_init(&fillDsc);
+        fillDsc.bg_color = lv_color_hex(color);
+        fillDsc.bg_opa = STEP_SELECTION_SELECTED_OPA;
+        fillDsc.radius = 0;
+        fillDsc.border_width = 0;
+        lv_draw_rect(layer, &fillDsc, &buttonArea);
+    }
+
+    lv_area_t borderArea = buttonArea;
+    borderArea.x1 = static_cast<lv_coord_t>(borderArea.x1 - STEP_SELECTION_BORDER_OUTSET);
+    borderArea.y1 = static_cast<lv_coord_t>(borderArea.y1 - STEP_SELECTION_BORDER_OUTSET);
+    borderArea.x2 = static_cast<lv_coord_t>(borderArea.x2 + STEP_SELECTION_BORDER_OUTSET);
+    borderArea.y2 = static_cast<lv_coord_t>(borderArea.y2 + STEP_SELECTION_BORDER_OUTSET);
+
+    if (cache.stepSelectionSelected) {
+        lv_draw_rect_dsc_t borderDsc;
+        lv_draw_rect_dsc_init(&borderDsc);
+        borderDsc.bg_opa = LV_OPA_TRANSP;
+        borderDsc.radius = 0;
+        borderDsc.border_width = STEP_SELECTION_SELECTED_BORDER;
+        borderDsc.border_color = lv_color_hex(STEP_SELECTION_SELECTED_COLOR);
+        borderDsc.border_opa = LV_OPA_80;
+        lv_draw_rect(layer, &borderDsc, &borderArea);
+    }
+
+    if (cache.stepSelectionCursor) {
+        const uint32_t color = cache.stepPastePreviewActive
+            ? stepPastePreviewColor(cache.stepPastePreview)
+            : STEP_SELECTION_CURSOR_COLOR;
+        lv_draw_rect_dsc_t borderDsc;
+        lv_draw_rect_dsc_init(&borderDsc);
+        borderDsc.bg_opa = LV_OPA_TRANSP;
+        borderDsc.radius = 0;
+        borderDsc.border_width = STEP_SELECTION_CURSOR_BORDER;
+        borderDsc.border_color = lv_color_hex(color);
+        borderDsc.border_opa = LV_OPA_COVER;
+
+        lv_area_t cursorArea = borderArea;
+        cursorArea.y2 = static_cast<lv_coord_t>(
+            std::max<lv_coord_t>(
+                cursorArea.y1,
+                static_cast<lv_coord_t>(buttonArea.y2 - STEP_BAR_HEIGHT - 1)
+            )
+        );
+        lv_draw_rect(layer, &borderDsc, &cursorArea);
+    }
 }
 
 lv_coord_t drawStepBadgeGlyph(lv_layer_t* layer,
@@ -759,6 +851,8 @@ void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
         lv_draw_rect(layer, &indicatorDsc, &indicatorArea);
     }
 
+    drawSelectionOverlay(layer, buttonArea, cache);
+
     if (cache.stepIndexText[0] != '\0') {
         lv_draw_label_dsc_t labelDsc;
         lv_draw_label_dsc_init(&labelDsc);
@@ -814,7 +908,7 @@ void StepGrid::renderTile(
     bool buttonOverlayDirty =
         !cache.initialized || diff.absoluteStepChanged || diff.inPatternChanged ||
         diff.barChanged || diff.variationChanged || diff.contentBadgesChanged ||
-        diff.enabledChanged || diff.probabilityChanged ||
+        diff.enabledChanged || diff.probabilityChanged || diff.stepSelectionChanged ||
         propertyVisualChanged || geometryChanged;
 
     if (!geometryChanged &&
@@ -889,6 +983,11 @@ void StepGrid::renderTile(
     cache.absoluteStep = state.absoluteStep;
     cache.inPattern = state.inPattern;
     cache.enabled = state.enabled;
+    cache.stepSelectionActive = state.stepSelectionActive;
+    cache.stepSelectionCursor = state.stepSelectionCursor;
+    cache.stepSelectionSelected = state.stepSelectionSelected;
+    cache.stepPastePreviewActive = state.stepPastePreviewActive;
+    cache.stepPastePreview = state.stepPastePreview;
     cache.playheadVisible = state.playheadVisible;
     cache.playing = state.playing;
     cache.probabilityCycleActive = state.probabilityCycleActive;

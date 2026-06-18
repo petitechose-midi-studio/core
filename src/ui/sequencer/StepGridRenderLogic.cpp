@@ -306,6 +306,13 @@ FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const 
     diff.absoluteStepChanged = !diff.initialized || cache.absoluteStep != state.absoluteStep;
     diff.inPatternChanged = !diff.initialized || cache.inPattern != state.inPattern;
     diff.enabledChanged = !diff.initialized || cache.enabled != state.enabled;
+    diff.stepSelectionChanged =
+        !diff.initialized ||
+        cache.stepSelectionActive != state.stepSelectionActive ||
+        cache.stepSelectionCursor != state.stepSelectionCursor ||
+        cache.stepSelectionSelected != state.stepSelectionSelected ||
+        cache.stepPastePreviewActive != state.stepPastePreviewActive ||
+        cache.stepPastePreview != state.stepPastePreview;
     diff.playheadVisibleChanged =
         !diff.initialized || cache.playheadVisible != state.playheadVisible;
     diff.noteChanged = !diff.initialized || cache.note != state.note;
@@ -335,6 +342,7 @@ FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const 
     const bool baseChanged = diff.absoluteStepChanged || diff.inPatternChanged || diff.enabledChanged;
     diff.dataChanged =
         baseChanged ||
+        diff.stepSelectionChanged ||
         (state.inPattern &&
          (diff.noteChanged || diff.velocityChanged || diff.probabilityChanged ||
           diff.gateChanged || diff.nudgeChanged || diff.variationChanged ||

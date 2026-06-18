@@ -53,11 +53,18 @@ struct ProjectRoutingState {
     void reset();
 };
 
+struct ProjectEditingState {
+    ProjectStepPasteMode stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+
+    void reset();
+};
+
 struct ProjectState {
     ProjectMetadata metadata{};
     ProjectTransportState transport{};
     ProjectMusicalContext musical{};
     ProjectRoutingState routing{};
+    ProjectEditingState editing{};
 
     ProjectState();
     void reset();

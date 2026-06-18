@@ -59,15 +59,39 @@ void test_pattern_quick_controls_reset_clears_physical_hold_layer() {
 
     state.selecting.set(true);
     state.physicalHoldActive.set(true);
+    state.feedbackVisible.set(true);
+    state.hideAtMs = 1234;
     state.offsetSteps.set(3);
 
     state.reset();
 
     assert(!state.selecting.get());
     assert(!state.physicalHoldActive.get());
+    assert(!state.feedbackVisible.get());
+    assert(state.hideAtMs == 0);
     assert(state.offsetSteps.get() == 0);
 
     std::cout << "[PASS] test_pattern_quick_controls_reset_clears_physical_hold_layer\n";
+}
+
+void test_pattern_quick_controls_feedback_shows_and_expires() {
+    core::state::sequencer::SequencerPatternQuickControlsState state;
+
+    state.showFeedback(100);
+    assert(state.feedbackVisible.get());
+
+    state.update(
+        100 + core::state::sequencer::SequencerPatternQuickControlsState::DISPLAY_HOLD_MS - 1
+    );
+    assert(state.feedbackVisible.get());
+
+    state.update(
+        100 + core::state::sequencer::SequencerPatternQuickControlsState::DISPLAY_HOLD_MS
+    );
+    assert(!state.feedbackVisible.get());
+    assert(state.hideAtMs == 0);
+
+    std::cout << "[PASS] test_pattern_quick_controls_feedback_shows_and_expires\n";
 }
 
 void test_history_feedback_shows_and_expires() {
@@ -96,6 +120,7 @@ int main() {
     test_inline_feedback_expires_steps_independently();
     test_inline_feedback_reset_clears_state();
     test_pattern_quick_controls_reset_clears_physical_hold_layer();
+    test_pattern_quick_controls_feedback_shows_and_expires();
     test_history_feedback_shows_and_expires();
 
     std::cout << "\nAll SequencerUiState tests passed.\n";

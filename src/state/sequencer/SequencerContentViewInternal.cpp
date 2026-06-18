@@ -576,6 +576,7 @@ FLASHMEM bool pushFrame(
     sequencer.focusedStep.set(0);
     sequencer.structureUi.previewAddPageSlot.set(false);
     sequencer.structureUi.pageSelection.reset(core::state::StructureSelectionScope::PAGE);
+    sequencer.structureUi.stepSelection.reset();
     view.bump();
     return true;
 }

@@ -66,6 +66,7 @@ struct ProjectNavigationState {
     bool scaleConstrainEnabled = true;
     bool patternsInheritScale = true;
     bool clipsInheritScale = true;
+    ProjectStepPasteMode stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
     uint8_t transportSwingPercent = 0;
     uint8_t transportRunMode = 0;
     std::array<char, ProjectMetadata::ID_SIZE> pendingLoadProjectId{};

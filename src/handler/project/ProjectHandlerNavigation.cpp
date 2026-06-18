@@ -64,6 +64,18 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         return;
     }
 
+    if (node == ProjectNodeId::MUSIC_ROOT && row == 3) {
+        configureOptDiscrete(
+            encoders_,
+            project::PROJECT_STEP_PASTE_MODE_COUNT,
+            indexToNormalized(
+                static_cast<int>(navigation_.stepPasteMode),
+                project::PROJECT_STEP_PASTE_MODE_COUNT
+            )
+        );
+        return;
+    }
+
     if (node == ProjectNodeId::TRANSPORT_ROOT) {
         switch (row) {
             case 0:

@@ -35,6 +35,9 @@ struct SequencerMacroPropertyHarness {
 
     test_support::CoreStorages storages;
     core::state::CoreState state;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers> navigationFocus;
 
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
@@ -50,6 +53,7 @@ struct SequencerMacroPropertyHarness {
                 storages.macroLibrary,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
+        , navigationFocus(core::state::StructureNavigationFocus::PAGE)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
@@ -59,6 +63,7 @@ struct SequencerMacroPropertyHarness {
                   state.sequencer,
                   state.sequencerTracks,
                   state.trackNavigation,
+                  navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
                   encoders,
@@ -110,7 +115,7 @@ void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     std::cout << "[PASS] test_macro_encoder_edits_step_in_current_page_and_shows_feedback\n";
 }
 
-void test_opt_encoder_has_no_default_step_edit_binding() {
+void test_opt_encoder_does_not_edit_without_step_focus() {
     SequencerMacroPropertyHarness h;
     h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.focusedStep.set(4);
@@ -121,7 +126,25 @@ void test_opt_encoder_has_no_default_step_edit_binding() {
     assert(!h.state.sequencer.stepInlineFeedback.visible.get());
     assert(!h.state.sequencer.stepInlineFeedback.touchedMask.get().test(4));
 
-    std::cout << "[PASS] test_opt_encoder_has_no_default_step_edit_binding\n";
+    std::cout << "[PASS] test_opt_encoder_does_not_edit_without_step_focus\n";
+}
+
+void test_opt_encoder_edits_focused_step_in_step_focus() {
+    SequencerMacroPropertyHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.focusedStep.set(4);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    g_now_ms = 2345;
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    assert(h.state.sequencer.pattern.velocity[4] == 127);
+    assert(h.state.sequencer.stepInlineFeedback.visible.get());
+    assert(h.state.sequencer.stepInlineFeedback.touchedMask.get().test(4));
+    assert(h.state.sequencer.stepInlineFeedback.property.get() == StepProperty::VELOCITY);
+
+    std::cout << "[PASS] test_opt_encoder_edits_focused_step_in_step_focus\n";
 }
 
 void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
@@ -443,7 +466,8 @@ void test_macro_property_new_pending_edit_invalidates_redo_on_commit() {
 
 int main() {
     test_macro_encoder_edits_step_in_current_page_and_shows_feedback();
-    test_opt_encoder_has_no_default_step_edit_binding();
+    test_opt_encoder_does_not_edit_without_step_focus();
+    test_opt_encoder_edits_focused_step_in_step_focus();
     test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step();
     test_constrained_scale_pitch_edit_writes_scale_degree_note();
     test_macro_property_edits_are_blocked_by_modal_states();

@@ -1,0 +1,51 @@
+# UX workflow: verify context-specific property-strip affordances.
+# Purpose: validates that Track reserves strip space without active property
+# icons, Pattern exposes pattern dimensions plus musical prop selection, and
+# Step keeps only the musical prop selector while OPT edits the focused step.
+
+0 scenario sequencer
+50 capture screen track_focus_strip_hidden
+
+# Pattern focus: both pattern quick controls and prop selector are available.
+150 tap NAV 60
+350 capture screen pattern_focus_strip
+450 button LEFT_CENTER down
+650 capture screen pattern_quick_selector_open
+700 button LEFT_CENTER up
+900 capture screen pattern_quick_selector_closed
+
+# Direct OPT in Pattern edits the selected pattern dimension and shows the same
+# transient quick-control overlay without holding LEFT_CENTER.
+1000 encoder OPT 0.25
+1150 capture screen pattern_direct_opt_feedback
+1900 tick
+1950 capture screen pattern_direct_feedback_expired
+
+# LEFT_BOTTOM remains the musical prop selector in Pattern.
+2050 button LEFT_BOTTOM down
+2250 capture screen pattern_property_selector_open
+2300 button LEFT_BOTTOM up
+2500 capture screen pattern_property_selector_closed
+
+# Step focus: no LEFT_CENTER/pattern icon; OPT edits the focused step property.
+2600 tap NAV 60
+2800 capture screen step_focus_property_only
+2900 button LEFT_CENTER down
+3150 capture screen step_left_center_no_pattern_overlay
+3200 button LEFT_CENTER up
+3300 encoder OPT 1.00
+3450 capture screen step_opt_edits_focused_property
+3550 button LEFT_BOTTOM down
+3750 capture screen step_property_selector_open
+3800 button LEFT_BOTTOM up
+
+# Track focus: strip space remains reserved but property-strip controls are not
+# active.
+4000 tap NAV 60
+4200 capture screen track_focus_strip_still_hidden
+4300 button LEFT_BOTTOM down
+4550 capture screen track_left_bottom_no_property_overlay
+4600 button LEFT_BOTTOM up
+4700 button LEFT_CENTER down
+4950 capture screen track_left_center_no_pattern_overlay
+5000 button LEFT_CENTER up

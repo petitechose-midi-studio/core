@@ -5,18 +5,22 @@
 #include <config/PlatformCompat.hpp>
 
 #include "config/Timing.hpp"
+#include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerScaleState.hpp"
+#include "state/sequencer/SequencerStepPastePlan.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 namespace core::ui::sequencer {
 
@@ -38,14 +42,94 @@ uint8_t countSelectedItems(uint16_t mask) {
     return count;
 }
 
+uint8_t countSelectedSteps(oc::note::sequencer::StepBitMask128 mask) {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < core::state::sequencer::SequencerState::MAX_STEPS; ++i) {
+        if (mask.test(i)) ++count;
+    }
+    return count;
+}
+
+void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
+    std::snprintf(
+        out.data(),
+        out.size(),
+        "SEL %u",
+        static_cast<unsigned>(count)
+    );
+}
+
+void applyStepPasteFootprint(
+    grid::StepGridFrameState& frame,
+    const SequencerViewModelSource& source
+) {
+    const auto& selection = source.sequencer.structureUi.stepSelection;
+    if (!selection.active.get() || !source.structureClipboard.hasSequencerSteps()) return;
+
+    if (source.structureClipboard.sequencerSteps.rootContext !=
+        core::state::sequencer::isRootContentView(source.sequencer)) {
+        for (auto& tile : frame.tiles) {
+            if (!tile.stepSelectionCursor) continue;
+            tile.stepPastePreviewActive = true;
+            tile.stepPastePreview = core::state::sequencer::SequencerStepPastePreview::BLOCKED;
+            return;
+        }
+        return;
+    }
+
+    const auto mode = core::state::project::sanitizeProjectStepPasteMode(
+        source.projectNavigation.stepPasteMode
+    );
+    const uint8_t activeLength = core::state::sequencer::activeContentLength(source.sequencer);
+    const uint8_t maxStep = core::state::sequencer::maxStepCursorForPaste(source.sequencer);
+
+    bool blocked = false;
+    for (uint8_t i = 0; i < source.structureClipboard.sequencerSteps.count; ++i) {
+        const auto& entry = source.structureClipboard.sequencerSteps.entries[i];
+        if (!entry.valid) continue;
+
+        uint8_t target = 0;
+        if (!core::state::sequencer::resolveStepPasteTarget(
+                mode,
+                selection.cursorStep.get(),
+                entry.offset,
+                activeLength,
+                maxStep,
+                target
+            )) {
+            blocked = true;
+            continue;
+        }
+
+        for (auto& tile : frame.tiles) {
+            if (tile.absoluteStep != target) continue;
+            tile.stepPastePreviewActive = true;
+            tile.stepPastePreview = target >= activeLength
+                ? core::state::sequencer::SequencerStepPastePreview::GHOST
+                : core::state::sequencer::SequencerStepPastePreview::OVERWRITE;
+            break;
+        }
+    }
+
+    if (!blocked) return;
+    for (auto& tile : frame.tiles) {
+        if (!tile.stepSelectionCursor) continue;
+        tile.stepPastePreviewActive = true;
+        tile.stepPastePreview = core::state::sequencer::SequencerStepPastePreview::BLOCKED;
+        return;
+    }
+}
+
 const char* clipboardBadge(const core::state::StructureClipboardState& clipboard) {
     switch (clipboard.kind.get()) {
         case core::state::StructureClipboardKind::SEQUENCER_PAGE:
-            return "PG";
+            return "Pattern";
         case core::state::StructureClipboardKind::SEQUENCER_TRACK:
-            return "TRK";
+            return "Track";
         case core::state::StructureClipboardKind::SEQUENCER_STEP_CONTENT:
-            return "STEP";
+            return "Step";
+        case core::state::StructureClipboardKind::SEQUENCER_STEPS:
+            return "Steps";
         default:
             return "";
     }
@@ -271,17 +355,19 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
     const bool focusingTrack =
         !source.trackNavigation.selection.active.get() &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
+    const bool focusingStep =
+        !source.trackNavigation.selection.active.get() &&
+        !sequencer.structureUi.pageSelection.active.get() &&
+        !sequencer.structureUi.stepSelection.active.get() &&
+        source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP;
     const bool selectingTrack =
         source.trackNavigation.selection.active.get() &&
         source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
     const bool selectingPage =
         sequencer.structureUi.pageSelection.active.get() &&
         sequencer.structureUi.pageSelection.scope.get() == core::state::StructureSelectionScope::PAGE;
+    const bool selectingStep = sequencer.structureUi.stepSelection.active.get();
     const uint16_t pageSelectionMask = sequencer.structureUi.pageSelection.selectedMask.get();
-    const uint16_t selectionMask = selectingTrack
-        ? source.trackNavigation.selection.selectedMask.get()
-        : (selectingPage ? pageSelectionMask : 0U);
-    const uint8_t selectionCount = countSelectedItems(selectionMask);
     const bool previewAddTrackSlot =
         !source.trackNavigation.selection.active.get() && source.trackNavigation.previewAddSlot.get();
     const bool previewAddPageSlot =
@@ -307,7 +393,12 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
             ? sequencer.clampPage(sequencer.structureUi.previewPageIndex.get())
             : core::state::sequencer::SequencerState::PAGE_COUNT;
     const uint8_t viewedPage =
-        selectingPage
+        selectingStep
+            ? std::min<uint8_t>(
+                  sequencer.page.get(),
+                  static_cast<uint8_t>(core::state::sequencer::SequencerState::PAGE_COUNT - 1U)
+              )
+        : selectingPage
             ? sequencer.structureUi.pageSelection.cursorIndex.get()
             : ((previewAddPageSlot && addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT)
                    ? addPageIndex
@@ -343,24 +434,25 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
     const bool microContext = core::state::sequencer::isMicroSequenceContentView(sequencer);
     const bool cycleContext = core::state::sequencer::isCycleStatesContentView(sequencer);
     const char* leftText = microContext
-        ? "MICRO"
+        ? "Micro"
         : (cycleContext
-               ? "CYCLE"
-               : ((selectingTrack || focusingTrack) ? "TRACKS" : "PAGES"));
+               ? "Cycle"
+               : ((selectingStep || focusingStep)
+                      ? "Step"
+                      : ((selectingTrack || focusingTrack) ? "Track" : "Pattern")));
     std::array<char, 12> badgeText{};
-    if (source.trackNavigation.selection.active.get() || sequencer.structureUi.pageSelection.active.get()) {
-        std::snprintf(
-            badgeText.data(),
-            badgeText.size(),
-            "SEL %u",
-            static_cast<unsigned>(selectionCount)
-        );
-    } else {
+    if (!source.trackNavigation.selection.active.get() &&
+        !sequencer.structureUi.pageSelection.active.get() &&
+        !sequencer.structureUi.stepSelection.active.get()) {
+        const char* badge = clipboardBadge(source.structureClipboard);
+        if (badge[0] != '\0' && std::strcmp(badge, leftText) == 0) {
+            badge = "Copied";
+        }
         std::snprintf(
             badgeText.data(),
             badgeText.size(),
             "%s",
-            clipboardBadge(source.structureClipboard)
+            badge
         );
     }
 
@@ -373,6 +465,7 @@ FLASHMEM SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSou
         .enabledMask = source.sharedTrackEnabledMask.get(),
         .selectingTrack = selectingTrack,
         .selectingPage = selectingPage,
+        .selectingStep = selectingStep,
         .previewPageAddSlot = previewPageAddSlotActive,
         .pageSourceMarkerMask = static_cast<uint16_t>(
             selectingPage ? pageSelectionMask : pageClipboardSourceMask
@@ -429,7 +522,8 @@ FLASHMEM StepPropertySelectionOverlayProps buildPropertySelectionOverlayProps(
         };
     }
 
-    if (sequencer.patternQuickControls.selecting.get()) {
+    if (sequencer.patternQuickControls.selecting.get() ||
+        sequencer.patternQuickControls.feedbackVisible.get()) {
         const auto item = sequencer.patternQuickControls.focusedItem.get();
         StepPropertySelectionOverlayProps props{
             .visible = true,
@@ -461,8 +555,12 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
-    const bool selectingStructure = selectingTrack || selectingPage;
+    const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
+    const bool selectingStructure = selectingTrack || selectingPage || selectingStep;
+    const auto navigationFocus = source.navigationFocus.get();
     const char* propertyIcon = visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
+    const char* patternIcon =
+        quickControlIcon(source.sequencer.patternQuickControls.focusedItem.get());
 
     StripProps props;
     props.visible = true;
@@ -472,23 +570,7 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        props.slots[1] = selectingTrack
-            ? SlotProps{
-                  .visualState = Visual::ACTIVE,
-                  .tone = Tone::NEUTRAL,
-                  .showIcon = false,
-                  .icon = nullptr,
-                  .showLabel = true,
-                  .label = "TRK",
-              }
-            : SlotProps{
-                  .visualState = Visual::ACTIVE,
-                  .tone = Tone::NEUTRAL,
-                  .showIcon = false,
-                  .icon = nullptr,
-                  .showLabel = true,
-                  .label = "PG",
-              };
+        props.slots[1].visualState = Visual::HIDDEN;
         props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
@@ -499,7 +581,7 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             Visual::DIM
         );
         props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::MIDI_CHANNEL,
+            patternIcon,
             Visual::ACTIVE
         );
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
@@ -515,7 +597,7 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             Visual::ACTIVE
         );
         props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::MIDI_CHANNEL,
+            patternIcon,
             Visual::ACTIVE
         );
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::DIM);
@@ -528,7 +610,7 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             Visual::ACTIVE
         );
         props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::MIDI_CHANNEL,
+            patternIcon,
             Visual::DIM
         );
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::ACTIVE);
@@ -536,11 +618,18 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     }
 
     props.slots[0].visualState = Visual::HIDDEN;
-    props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-        standalone::icons::MIDI_CHANNEL,
-        Visual::DIM
-    );
-    props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::DIM);
+    if (navigationFocus == core::state::StructureNavigationFocus::STEP) {
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::ACTIVE);
+        return props;
+    }
+    if (navigationFocus == core::state::StructureNavigationFocus::PAGE) {
+        props.slots[1] = core::ui::makeStandaloneIconStripSlot(patternIcon, Visual::ACTIVE);
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::ACTIVE);
+        return props;
+    }
+    props.slots[1].visualState = Visual::HIDDEN;
+    props.slots[2].visualState = Visual::HIDDEN;
     return props;
 }
 
@@ -551,6 +640,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const bool selectingTrack = source.trackNavigation.selection.active.get();
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
+    const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
     const bool selectingPatternVariation = source.sequencer.stepPropertyInlineSelector.selecting.get();
     const uint16_t selectionMask = selectingTrack
         ? source.trackNavigation.selection.selectedMask.get()
@@ -584,9 +674,61 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
         return props;
     }
 
+    if (selectingStep) {
+        const uint8_t selectedCount =
+            countSelectedSteps(source.sequencer.structureUi.stepSelection.selectedMask.get());
+        const bool canClear = selectedCount > 0;
+        const bool canPaste =
+            source.structureClipboard.hasSequencerSteps() &&
+            source.structureClipboard.sequencerSteps.rootContext ==
+                core::state::sequencer::isRootContentView(source.sequencer);
+        const bool canCopy = selectedCount > 0;
+        const bool pastePreviewActive =
+            source.sequencer.structureUi.stepSelection.pastePreviewActive.get() && canPaste;
+        const auto& holdState = source.sequencer.structureUi.pageHold;
+        const auto holdAction = holdState.action.get();
+        const bool removeHoldActive =
+            holdAction == core::state::StructureHoldAction::REMOVE && canClear;
+        const bool pasteHoldActive =
+            holdAction == core::state::StructureHoldAction::PASTE && canPaste;
+        const char* actionIcon = pasteHoldActive || pastePreviewActive || (!canCopy && canPaste)
+            ? standalone::icons::ACTION_PASTE
+            : standalone::icons::ACTION_COPY;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CLEAR,
+            removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
+            removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
+        );
+        props.slots[0].holdActive = removeHoldActive;
+        props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
+        props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        props.slots[1] = SlotProps{
+            .visualState = Visual::ACTIVE,
+            .tone = Tone::NEUTRAL,
+            .showIcon = false,
+            .icon = nullptr,
+            .showLabel = true,
+        };
+        formatSelectionLabel(props.slots[1].labelText, selectedCount);
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            actionIcon,
+            pasteHoldActive
+                ? Visual::ARMED
+                : ((canCopy || canPaste) ? Visual::ACTIVE : Visual::DISABLED),
+            (pasteHoldActive || pastePreviewActive) ? Tone::POSITIVE : Tone::NEUTRAL
+        );
+        props.slots[2].holdActive = pasteHoldActive;
+        props.slots[2].holdStartedAtMs = holdState.startedAtMs.get();
+        props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        return props;
+    }
+
     if (core::state::sequencer::isChildContentView(source.sequencer)) {
         const bool hasChildContent = focusedStepHasChildContent(source);
         const bool canPaste = canPasteStepContent(source);
+        const char* actionIcon = hasChildContent
+            ? standalone::icons::ACTION_COPY
+            : (canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY);
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CLEAR,
             hasChildContent ? Visual::ACTIVE : Visual::DISABLED,
@@ -594,9 +736,9 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
         );
         props.slots[1].visualState = Visual::HIDDEN;
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY,
+            actionIcon,
             (hasChildContent || canPaste) ? Visual::ACTIVE : Visual::DISABLED,
-            canPaste ? Tone::POSITIVE : Tone::NEUTRAL
+            (!hasChildContent && canPaste) ? Tone::POSITIVE : Tone::NEUTRAL
         );
         return props;
     }
@@ -639,8 +781,11 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
             .showIcon = false,
             .icon = nullptr,
             .showLabel = true,
-            .label = "SEL",
         };
+        formatSelectionLabel(
+            props.slots[1].labelText,
+            countSelectedItems(selectionMask)
+        );
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_COPY,
             canDuplicateSelection ? Visual::ACTIVE : Visual::DISABLED,
@@ -672,8 +817,11 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
     props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     props.slots[1].visualState = Visual::HIDDEN;
+    const char* actionIcon = pasteHoldActive && canPaste
+        ? standalone::icons::ACTION_PASTE
+        : standalone::icons::ACTION_COPY;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY,
+        actionIcon,
         pasteHoldActive && canPaste
             ? Visual::ARMED
             : (copyOrPasteAvailable ? Visual::ACTIVE : Visual::DISABLED),
@@ -688,7 +836,13 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
 }
 
 FLASHMEM grid::StepGridFrameState buildStepGridProps(const SequencerViewModelSource& source) {
-    return grid::buildStepGridFrameState(source.sequencer, source.tracks.projectScaleSettings());
+    auto frame = grid::buildStepGridFrameState(
+        source.sequencer,
+        source.tracks.projectScaleSettings(),
+        source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP
+    );
+    applyStepPasteFootprint(frame, source);
+    return frame;
 }
 
 }  // namespace core::ui::sequencer

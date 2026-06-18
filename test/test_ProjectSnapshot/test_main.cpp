@@ -44,6 +44,7 @@ void test_project_state_defaults_are_stable() {
     assert(sameScale(state.musical.scale, sequencer::defaultProjectScaleSettings()));
     assert(state.musical.patternsInheritScale);
     assert(state.musical.clipsInheritScale);
+    assert(state.editing.stepPasteMode == project::PROJECT_STEP_PASTE_MODE_DEFAULT);
 
     for (uint8_t i = 0; i < state.routing.outputMidiChannels.size(); ++i) {
         assert(state.routing.outputMidiChannels[i] == i);
@@ -73,6 +74,7 @@ void configureProjectSession(core::state::CoreState& state) {
     state.projectNavigation.transportRunMode = 2;
     state.projectNavigation.patternsInheritScale = false;
     state.projectNavigation.clipsInheritScale = true;
+    state.projectNavigation.stepPasteMode = project::ProjectStepPasteMode::PAGE;
 
     StepSequencerScaleSettings scale{
         .root = 2,
@@ -124,6 +126,7 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(state.projectNavigation.transportRunMode == 2);
     assert(!state.projectNavigation.patternsInheritScale);
     assert(state.projectNavigation.clipsInheritScale);
+    assert(state.projectNavigation.stepPasteMode == project::ProjectStepPasteMode::PAGE);
 
     StepSequencerScaleSettings expectedScale{
         .root = 2,

@@ -33,6 +33,7 @@ struct SequencerHeaderBarProps {
     uint16_t enabledMask = 0x0001;
     bool selectingTrack = false;
     bool selectingPage = false;
+    bool selectingStep = false;
     bool previewPageAddSlot = false;
     uint16_t pageSourceMarkerMask = 0;
     uint16_t pageDestinationPreviewMask = 0;

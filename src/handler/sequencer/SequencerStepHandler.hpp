@@ -14,6 +14,7 @@
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerStructureEditWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::validation::ux {
@@ -37,6 +38,7 @@ public:
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         core::state::TrackNavigationState& trackNavigation;
+        core::state::project::ProjectNavigationState& projectNavigation;
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
         SequencerHistoryDomainServices history;

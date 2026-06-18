@@ -34,6 +34,12 @@ struct TileRenderState {
     uint8_t absoluteStep = 0;
     bool inPattern = false;
     bool enabled = false;
+    bool stepSelectionActive = false;
+    bool stepSelectionCursor = false;
+    bool stepSelectionSelected = false;
+    bool stepPastePreviewActive = false;
+    core::state::sequencer::SequencerStepPastePreview stepPastePreview =
+        core::state::sequencer::SequencerStepPastePreview::NONE;
     bool playheadVisible = false;
     bool playing = false;
     bool probabilityCycleActive = false;
@@ -56,6 +62,7 @@ struct TileRenderDiff {
     bool absoluteStepChanged = false;
     bool inPatternChanged = false;
     bool enabledChanged = false;
+    bool stepSelectionChanged = false;
     bool playheadVisibleChanged = false;
     bool noteChanged = false;
     bool velocityChanged = false;
@@ -78,6 +85,12 @@ struct TileRenderCache {
     uint8_t absoluteStep = 0;
     bool inPattern = false;
     bool enabled = false;
+    bool stepSelectionActive = false;
+    bool stepSelectionCursor = false;
+    bool stepSelectionSelected = false;
+    bool stepPastePreviewActive = false;
+    core::state::sequencer::SequencerStepPastePreview stepPastePreview =
+        core::state::sequencer::SequencerStepPastePreview::NONE;
     bool playheadVisible = false;
     bool playing = false;
     bool probabilityCycleActive = false;

@@ -39,6 +39,9 @@ struct SequencerInlineHarness {
 
     test_support::CoreStorages storages;
     core::state::CoreState state;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers> navigationFocus;
 
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
@@ -57,6 +60,7 @@ struct SequencerInlineHarness {
                 storages.macroLibrary,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
+        , navigationFocus(core::state::StructureNavigationFocus::PAGE)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
@@ -66,6 +70,7 @@ struct SequencerInlineHarness {
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
+                  navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
@@ -97,6 +102,7 @@ struct SequencerInlineHarness {
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
+                  navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
@@ -109,6 +115,7 @@ struct SequencerInlineHarness {
                   state.sequencer,
                   state.sequencerTracks,
                   state.trackNavigation,
+                  navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
@@ -232,6 +239,20 @@ void test_property_selector_does_not_open_when_pattern_quick_controls_are_active
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
     std::cout << "[PASS] test_property_selector_does_not_open_when_pattern_quick_controls_are_active\n";
+}
+
+void test_property_selector_is_unavailable_in_track_focus() {
+    SequencerInlineHarness h;
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    std::cout << "[PASS] test_property_selector_is_unavailable_in_track_focus\n";
 }
 
 void test_property_selector_edits_active_property_variation_range() {
@@ -449,6 +470,29 @@ void test_pattern_quick_controls_hold_arms_history_layer() {
     assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 
     std::cout << "[PASS] test_pattern_quick_controls_hold_arms_history_layer\n";
+}
+
+void test_pattern_quick_controls_are_pattern_focus_only() {
+    SequencerInlineHarness h;
+    const auto initialLength = h.state.sequencer.pattern.length.get();
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.length.get() == initialLength);
+    assert(!h.state.sequencer.patternQuickControls.feedbackVisible.get());
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+
+    std::cout << "[PASS] test_pattern_quick_controls_are_pattern_focus_only\n";
 }
 
 void test_pattern_quick_controls_open_defaults_to_length_and_cycles_order() {
@@ -673,9 +717,6 @@ void test_pattern_quick_controls_swing_and_nudge_workflow() {
 
     holdPatternQuickControls(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
     assert(
         h.state.sequencer.patternQuickControls.focusedItem.get() ==
         core::state::sequencer::PatternQuickControlItem::NUDGE
@@ -686,6 +727,41 @@ void test_pattern_quick_controls_swing_and_nudge_workflow() {
     assert(h.state.sequencerHistory.undoCount() == 2);
 
     std::cout << "[PASS] test_pattern_quick_controls_swing_and_nudge_workflow\n";
+}
+
+void test_pattern_quick_controls_opt_edits_focused_pattern_prop_without_hold() {
+    SequencerInlineHarness h;
+
+    openPatternQuickControls(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::SWING
+    );
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(
+        h.state.sequencer.patternQuickControls.focusedItem.get() ==
+        core::state::sequencer::PatternQuickControlItem::SWING
+    );
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 75);
+    assert(h.state.sequencer.patternQuickControls.feedbackVisible.get());
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    assert(h.state.commitSequencerPatternHistoryCoalescing());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 0);
+
+    std::cout << "[PASS] test_pattern_quick_controls_opt_edits_focused_pattern_prop_without_hold\n";
 }
 
 void test_pattern_quick_controls_undo_release_does_not_record_inverse_action() {
@@ -734,6 +810,7 @@ int main() {
     test_property_selector_left_top_closes_without_reverting_selected_property();
     test_property_selector_apply_keeps_selected_property();
     test_property_selector_does_not_open_when_pattern_quick_controls_are_active();
+    test_property_selector_is_unavailable_in_track_focus();
     test_property_selector_edits_active_property_variation_range();
     test_property_selector_left_top_commits_live_variation_edit();
     test_property_selector_left_top_commits_live_local_random_edit();
@@ -743,12 +820,14 @@ int main() {
     test_pattern_pitch_settings_are_undoable();
     test_pattern_quick_controls_short_tap_does_not_arm_history_layer();
     test_pattern_quick_controls_hold_arms_history_layer();
+    test_pattern_quick_controls_are_pattern_focus_only();
     test_pattern_quick_controls_open_defaults_to_length_and_cycles_order();
     test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector();
     test_pattern_quick_controls_length_undo_redo_workflow();
     test_pattern_quick_controls_offset_undo_redo_workflow();
     test_pattern_quick_controls_division_undo_redo_workflow();
     test_pattern_quick_controls_swing_and_nudge_workflow();
+    test_pattern_quick_controls_opt_edits_focused_pattern_prop_without_hold();
     test_pattern_quick_controls_undo_release_does_not_record_inverse_action();
     test_pattern_quick_controls_respect_blocking_states();
 

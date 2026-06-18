@@ -76,11 +76,13 @@ private:
     void bindLeftActionStripState();
     void bindBottomActionStripState();
     void bindHistoryFeedbackState();
+    void bindTrackSwitchReadyState();
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
 
     void ensureRenderTimer();
     void scheduleRender(bool ready = false);
+    void readyRenderTimerIfDirty();
     void pauseRenderTimerIfIdle();
     void requestRender(bool& dirtyFlag);
     void requestHeaderTopRender();

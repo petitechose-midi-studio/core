@@ -26,10 +26,14 @@ inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::Sequencer
 inline oc::type::IsActiveFn canOpenPropertySelector(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
-    core::state::TrackNavigationState& trackUi
+    core::state::TrackNavigationState& trackUi,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
 ) {
-    return [&overlays, &sequencer, &trackUi]() {
+    return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
         return !overlays.hasVisible() &&
+               navigationFocus.get() != core::state::StructureNavigationFocus::TRACK &&
                !sequencer.structureUi.pageSelection.active.get() &&
                !trackUi.selection.active.get() &&
                !sequencer.patternQuickControls.selecting.get();
@@ -177,6 +181,7 @@ FLASHMEM SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
     , track_ui_(state.trackNavigation)
+    , navigation_focus_(state.navigationFocus)
     , history_(state.history)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -190,7 +195,7 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
         .press()
         .latch()
         .scope(scope_id_)
-        .when(canOpenPropertySelector(overlays_, sequencer_, track_ui_))
+        .when(canOpenPropertySelector(overlays_, sequencer_, track_ui_, navigation_focus_))
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)

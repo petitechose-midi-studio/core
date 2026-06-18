@@ -39,11 +39,20 @@ struct ProjectMusicalContextPayload {
 struct ProjectRoutingPayload {
     uint8_t outputMidiChannels[core::state::sequencer::SequencerTrackBankState::TRACK_COUNT] = {};
 };
+
+struct ProjectEditingPayload {
+    uint8_t stepPasteMode =
+        static_cast<uint8_t>(core::state::project::PROJECT_STEP_PASTE_MODE_DEFAULT);
+    uint8_t reserved0 = 0;
+    uint16_t reserved1 = 0;
+    uint32_t reserved2 = 0;
+};
 #pragma pack(pop)
 
 static_assert(sizeof(ProjectMetaPayload) == 118, "Unexpected ProjectMetaPayload size");
 static_assert(sizeof(ProjectTransportPayload) == 8, "Unexpected ProjectTransportPayload size");
 static_assert(sizeof(ProjectMusicalContextPayload) == 8, "Unexpected ProjectMusicalContextPayload size");
 static_assert(sizeof(ProjectRoutingPayload) == 16, "Unexpected ProjectRoutingPayload size");
+static_assert(sizeof(ProjectEditingPayload) == 8, "Unexpected ProjectEditingPayload size");
 
 }  // namespace core::persistence::project_state_codec

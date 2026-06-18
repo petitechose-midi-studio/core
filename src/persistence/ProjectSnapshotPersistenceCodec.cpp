@@ -202,10 +202,12 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     project_state_codec::ProjectTransportPayload transport{};
     project_state_codec::ProjectMusicalContextPayload musical{};
     project_state_codec::ProjectRoutingPayload routing{};
+    project_state_codec::ProjectEditingPayload editing{};
     project_state_codec::fillMetaPayload(snapshot.project.metadata, meta);
     project_state_codec::fillTransportPayload(snapshot.project.transport, transport);
     project_state_codec::fillMusicalContextPayload(snapshot.project.musical, musical);
     project_state_codec::fillRoutingPayload(snapshot.project.routing, routing);
+    project_state_codec::fillEditingPayload(snapshot.project.editing, editing);
 
     auto macro = core::app::makeExtmemUnique<ProjectMacroStatePayload>();
     auto sequencer = core::app::makeExtmemUnique<sequencer_codec::EnvelopeBuffer>();
@@ -251,6 +253,14 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .flags = 0,
             .data = reinterpret_cast<const uint8_t*>(&routing),
             .size = sizeof(routing),
+        },
+        {
+            .id = project_file::chunkIdValue(project_file::ChunkId::EDITING),
+            .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = reinterpret_cast<const uint8_t*>(&editing),
+            .size = sizeof(editing),
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_STATE),

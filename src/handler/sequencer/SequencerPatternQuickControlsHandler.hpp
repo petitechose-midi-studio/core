@@ -3,9 +3,11 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "app/OverlayTypes.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "state/StructureSelectionState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
@@ -26,6 +28,9 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
         core::state::TrackNavigationState& trackNavigation;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         SequencerHistoryDomainServices history;
     };
 
@@ -49,18 +54,25 @@ private:
     void consumeRedo();
     void navigate(float delta);
     void setFocusedValue(float normalized);
+    void setFocusedValueDirect(float normalized);
     void configureOptForFocusedItem();
     void clampFocusToLength();
+    void prepareQuickControlsForOpen();
+    void closeTransientQuickControlsState();
     int focusedItemOrderIndex() const;
     void setFocusedItemByOrderIndex(int index);
     int currentOffsetMax() const;
     float offsetToNormalized(int offsetSteps) const;
     int normalizedToOffset(float normalized) const;
     void applyOffsetFromSnapshot(int offsetSteps);
+    void applyOffsetDelta(int offsetSteps);
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::TrackNavigationState& track_ui_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;

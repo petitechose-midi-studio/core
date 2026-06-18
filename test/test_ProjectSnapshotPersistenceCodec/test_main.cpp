@@ -279,6 +279,8 @@ void configureProjectSession(core::state::CoreState& state) {
     state.projectNavigation.transportRunMode = 1;
     state.projectNavigation.patternsInheritScale = false;
     state.projectNavigation.clipsInheritScale = true;
+    state.projectNavigation.stepPasteMode =
+        core::state::project::ProjectStepPasteMode::WRAP;
 
     StepSequencerScaleSettings scale{
         .root = 2,
@@ -317,6 +319,10 @@ void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
     assert(state.projectNavigation.transportRunMode == 1);
     assert(!state.projectNavigation.patternsInheritScale);
     assert(state.projectNavigation.clipsInheritScale);
+    assert(
+        state.projectNavigation.stepPasteMode ==
+        core::state::project::ProjectStepPasteMode::WRAP
+    );
 
     StepSequencerScaleSettings expectedScale{
         .root = 2,

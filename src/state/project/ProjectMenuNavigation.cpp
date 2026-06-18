@@ -67,6 +67,15 @@ FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
                                ProjectNodeId node,
                                uint8_t rowIndex) {
     switch (node) {
+        case ProjectNodeId::MUSIC_ROOT:
+            if (rowIndex == 3) {
+                navigation.stepPasteMode = sanitizeProjectStepPasteMode(
+                    static_cast<uint8_t>(navigation.stepPasteMode) + 1U
+                );
+                navigation.notifyContentChanged();
+                return true;
+            }
+            return false;
         case ProjectNodeId::MUSIC_SCALE:
             if (rowIndex == 3) {
                 navigation.patternsInheritScale = !navigation.patternsInheritScale;

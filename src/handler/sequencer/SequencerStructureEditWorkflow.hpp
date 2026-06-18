@@ -6,6 +6,7 @@
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -26,6 +27,7 @@ public:
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         core::state::TrackNavigationState& trackNavigation;
+        core::state::project::ProjectNavigationState& projectNavigation;
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
         SequencerHistoryDomainServices history;
@@ -45,6 +47,11 @@ public:
     void removeCurrentStructure();
     void copyCurrentStructure();
     void pasteCurrentStructure();
+    void copyStepSelection();
+    void clearStepSelection();
+    void beginStepPastePreview();
+    void clearStepPastePreview();
+    void pasteStepSelection();
     void deleteSelection();
     void duplicateSelection();
 
@@ -70,6 +77,7 @@ private:
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::TrackNavigationState& track_ui_;
+    core::state::project::ProjectNavigationState& project_navigation_;
     core::state::StructureClipboardState& structure_clipboard_;
     SharedTrackDomainServices shared_tracks_;
     SequencerHistoryDomainServices history_;

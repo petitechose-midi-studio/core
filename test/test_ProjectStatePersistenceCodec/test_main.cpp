@@ -55,6 +55,7 @@ bool sameProjectCore(const project::ProjectState& lhs, const project::ProjectSta
     if (lhs.musical.scale.mode != rhs.musical.scale.mode) return false;
     if (lhs.musical.patternsInheritScale != rhs.musical.patternsInheritScale) return false;
     if (lhs.musical.clipsInheritScale != rhs.musical.clipsInheritScale) return false;
+    if (lhs.editing.stepPasteMode != rhs.editing.stepPasteMode) return false;
     for (uint8_t i = 0; i < lhs.routing.outputMidiChannels.size(); ++i) {
         if (lhs.routing.outputMidiChannels[i] != rhs.routing.outputMidiChannels[i]) {
             return false;
@@ -80,6 +81,7 @@ project::ProjectState makeProject() {
     };
     state.musical.patternsInheritScale = false;
     state.musical.clipsInheritScale = true;
+    state.editing.stepPasteMode = project::ProjectStepPasteMode::WRAP;
     for (uint8_t i = 0; i < state.routing.outputMidiChannels.size(); ++i) {
         state.routing.outputMidiChannels[i] = static_cast<uint8_t>(15U - i);
     }

@@ -13,7 +13,8 @@ namespace core::ui::sequencer::grid {
  */
 StepGridFrameState buildStepGridFrameState(
     const core::state::sequencer::SequencerState& sequencerState,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings = {}
+    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings = {},
+    bool stepFocusActive = false
 );
 
 }  // namespace core::ui::sequencer::grid

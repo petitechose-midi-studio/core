@@ -36,6 +36,11 @@ void fillRoutingPayload(const core::state::project::ProjectRoutingState& source,
 void applyRoutingPayload(const ProjectRoutingPayload& payload,
                          core::state::project::ProjectRoutingState& target);
 
+void fillEditingPayload(const core::state::project::ProjectEditingState& source,
+                        ProjectEditingPayload& out);
+void applyEditingPayload(const ProjectEditingPayload& payload,
+                         core::state::project::ProjectEditingState& target);
+
 core::persistence::project_file::EncodeResult encodeProjectState(
     const core::state::project::ProjectState& state,
     uint8_t* out,

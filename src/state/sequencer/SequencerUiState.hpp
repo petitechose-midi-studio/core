@@ -206,16 +206,54 @@ private:
 };
 
 struct SequencerPatternQuickControlsState {
+    static constexpr uint32_t DISPLAY_HOLD_MS = 700;
+
     Signal<bool, 6> selecting{false};
     Signal<bool, 6> physicalHoldActive{false};
+    Signal<bool, 6> feedbackVisible{false};
     Signal<PatternQuickControlItem, 6> focusedItem{
         PatternQuickControlItem::LENGTH
     };
     Signal<int8_t, 4> offsetSteps{0};
+    uint32_t hideAtMs = 0;
 
     SequencerPatternQuickControlsState();
 
+    void showFeedback(uint32_t nowMs);
+
+    void update(uint32_t nowMs) {
+        if (!feedbackVisible.get()) return;
+        if (selecting.get()) return;
+        if (nowMs < hideAtMs) return;
+        feedbackVisible.set(false);
+        hideAtMs = 0;
+    }
+
     void reset();
+};
+
+enum class SequencerStepPastePreview : uint8_t {
+    NONE = 0,
+    EMPTY,
+    OVERWRITE,
+    GHOST,
+    BLOCKED,
+};
+
+struct SequencerStepSelectionState {
+    Signal<bool, 8> active{false};
+    Signal<uint8_t, 8> cursorStep{0};
+    Signal<oc::note::sequencer::StepBitMask128, 8> selectedMask{};
+    Signal<bool, 8> pastePreviewActive{false};
+    Signal<SequencerStepPastePreview, 8> pastePreview{SequencerStepPastePreview::NONE};
+
+    void reset(uint8_t cursor = 0);
+
+    void setSelected(uint8_t step, bool selected);
+    bool selected(uint8_t step) const;
+    bool anySelected() const {
+        return selectedMask.get().any();
+    }
 };
 
 struct SequencerStructureUiState {
@@ -223,6 +261,7 @@ struct SequencerStructureUiState {
     Signal<uint8_t, 4> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
+    SequencerStepSelectionState stepSelection;
 
     SequencerStructureUiState();
     ~SequencerStructureUiState();

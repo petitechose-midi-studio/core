@@ -182,6 +182,11 @@ FLASHMEM void applyRoutingToProject(const ProjectRoutingPayload& payload,
     applyRoutingPayload(payload, target.routing);
 }
 
+FLASHMEM void applyEditingToProject(const ProjectEditingPayload& payload,
+                                    core::state::project::ProjectState& target) {
+    applyEditingPayload(payload, target.editing);
+}
+
 }  // namespace
 
 FLASHMEM void fillMetaPayload(const core::state::project::ProjectMetadata& source,
@@ -259,6 +264,19 @@ FLASHMEM void applyRoutingPayload(const ProjectRoutingPayload& payload,
     }
 }
 
+FLASHMEM void fillEditingPayload(const core::state::project::ProjectEditingState& source,
+                                 ProjectEditingPayload& out) {
+    out.stepPasteMode = static_cast<uint8_t>(
+        core::state::project::sanitizeProjectStepPasteMode(source.stepPasteMode)
+    );
+}
+
+FLASHMEM void applyEditingPayload(const ProjectEditingPayload& payload,
+                                  core::state::project::ProjectEditingState& target) {
+    target.stepPasteMode =
+        core::state::project::sanitizeProjectStepPasteMode(payload.stepPasteMode);
+}
+
 FLASHMEM project_file::EncodeResult encodeProjectState(
     const core::state::project::ProjectState& state,
     uint8_t* out,
@@ -268,11 +286,13 @@ FLASHMEM project_file::EncodeResult encodeProjectState(
     ProjectTransportPayload transport{};
     ProjectMusicalContextPayload musical{};
     ProjectRoutingPayload routing{};
+    ProjectEditingPayload editing{};
 
     fillMetaPayload(state.metadata, meta);
     fillTransportPayload(state.transport, transport);
     fillMusicalContextPayload(state.musical, musical);
     fillRoutingPayload(state.routing, routing);
+    fillEditingPayload(state.editing, editing);
 
     const project_file::ChunkView chunks[] = {
         {
@@ -306,6 +326,14 @@ FLASHMEM project_file::EncodeResult encodeProjectState(
             .flags = 0,
             .data = reinterpret_cast<const uint8_t*>(&routing),
             .size = sizeof(routing),
+        },
+        {
+            .id = project_file::chunkIdValue(project_file::ChunkId::EDITING),
+            .versionMajor = PROJECT_STATE_CHUNK_VERSION_MAJOR,
+            .versionMinor = PROJECT_STATE_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = reinterpret_cast<const uint8_t*>(&editing),
+            .size = sizeof(editing),
         },
     };
 
@@ -352,6 +380,14 @@ FLASHMEM void applyProjectStateChunks(const project_file::DecodedChunkView* chun
         project_file::ChunkId::ROUTING,
         report,
         applyRoutingToProject,
+        target
+    );
+    applyOptionalChunk<ProjectEditingPayload>(
+        chunks,
+        chunkCount,
+        project_file::ChunkId::EDITING,
+        report,
+        applyEditingToProject,
         target
     );
 }

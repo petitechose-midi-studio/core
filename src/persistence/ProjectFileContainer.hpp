@@ -18,6 +18,7 @@ enum class ChunkId : uint32_t {
     TRANSPORT = 0x54525054u,        // "TRPT"
     MUSICAL_CONTEXT = 0x4D555343u,  // "MUSC"
     ROUTING = 0x524F5554u,          // "ROUT"
+    EDITING = 0x45444954u,          // "EDIT"
     MACRO_STATE = 0x4D414352u,      // "MACR"
     SEQUENCER_STATE = 0x53455152u,  // "SEQR"
     HISTORY_JOURNAL = 0x48495354u,  // "HIST"
