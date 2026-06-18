@@ -8,6 +8,7 @@
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
@@ -51,28 +52,6 @@ uint8_t countSelectedSteps(oc::note::sequencer::StepBitMask128 mask) {
         if (mask.test(i)) ++count;
     }
     return count;
-}
-
-core::state::sequencer::SequencerInteractionContext makeInteractionContext(
-    const SequencerViewModelSource& source
-) {
-    const auto& sequencer = source.sequencer;
-    const auto navigationFocus = source.navigationFocus.get();
-    core::state::sequencer::SequencerInteractionContext context{};
-    context.navigationFocus = navigationFocus;
-    context.childContentView = core::state::sequencer::isChildContentView(sequencer);
-    context.previewingAddSlot = navigationFocus == core::state::StructureNavigationFocus::TRACK
-        ? source.trackNavigation.previewAddSlot.get()
-        : navigationFocus == core::state::StructureNavigationFocus::PAGE
-            ? sequencer.structureUi.previewAddPageSlot.get()
-            : false;
-    context.pageSelectionActive = sequencer.structureUi.pageSelection.active.get();
-    context.trackSelectionActive = source.trackNavigation.selection.active.get();
-    context.stepSelectionActive = sequencer.structureUi.stepSelection.active.get();
-    context.patternQuickControlsActive = sequencer.patternQuickControls.selecting.get();
-    context.propertySelectorActive = sequencer.stepPropertyInlineSelector.selecting.get();
-    context.stepEditorVisible = sequencer.stepEdit.visible.get();
-    return context;
 }
 
 Visual visualForInteractionVisibility(InteractionVisibility visibility) {
@@ -264,7 +243,11 @@ bool canPasteStepContent(const SequencerViewModelSource& source) {
 core::state::sequencer::SequencerInteractionContext makeBottomInteractionContext(
     const SequencerViewModelSource& source
 ) {
-    auto context = makeInteractionContext(source);
+    auto context = core::state::sequencer::makeSequencerInteractionContext(
+        source.sequencer,
+        source.trackNavigation,
+        source.navigationFocus.get()
+    );
     const bool trackFocus =
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
 
@@ -681,7 +664,11 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
     const bool selectingStructure = selectingTrack || selectingPage || selectingStep;
     const auto interaction = core::state::sequencer::buildSequencerInteractionPolicy(
-        makeInteractionContext(source)
+        core::state::sequencer::makeSequencerInteractionContext(
+            source.sequencer,
+            source.trackNavigation,
+            source.navigationFocus.get()
+        )
     );
     const char* propertyIcon = visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
     const char* patternIcon =
