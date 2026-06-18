@@ -9,6 +9,7 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/MacroState.hpp"
 #include "state/StructureSelectionState.hpp"
+#include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -36,6 +37,7 @@ public:
         oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+        core::state::TrackNavigationState& trackNavigation;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
     };
@@ -61,6 +63,7 @@ private:
         uint8_t page,
         core::state::sequencer::StepProperty property
     );
+    void invalidateOptEncoderCache();
     void syncOptPosition(float normalized);
     void syncFocusedStepOptValue(core::state::sequencer::StepProperty property);
     void syncPatternQuickControlOptValue();
@@ -71,6 +74,7 @@ private:
     oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    core::state::TrackNavigationState& track_ui_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     oc::api::EncoderAPI& encoders_;
