@@ -7,10 +7,12 @@
 
 #include "config/InputIDs.hpp"
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
+#include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
@@ -18,7 +20,11 @@
 #include "validation/ux/SemanticUxTraceState.hpp"
 
 namespace core::context::standalone::ux {
+namespace interaction_policy = core::handler::sequencer::interaction_policy;
 namespace {
+
+using SequencerAction = core::state::sequencer::SequencerInteractionAction;
+using SequencerScope = core::state::sequencer::SequencerInteractionScope;
 
 bool isButton(const oc::core::input::InputBindingTraceEvent& event,
               Config::ButtonID button,
@@ -66,6 +72,214 @@ void markIgnored(core::validation::ux::SemanticUxContext& out, const char* reaso
     out.effect = "release_ignored";
     out.outcome = "ignored";
     out.reason = reason;
+}
+
+const char* actionName(SequencerAction action) {
+    switch (action) {
+        case SequencerAction::MOVE_TRACK:
+            return "move_track";
+        case SequencerAction::MOVE_PATTERN:
+            return "move_pattern";
+        case SequencerAction::MOVE_STEP:
+            return "move_step";
+        case SequencerAction::MOVE_SELECTION_CURSOR:
+            return "move_selection_cursor";
+        case SequencerAction::SELECT_PATTERN_DIMENSION:
+            return "select_pattern_dimension";
+        case SequencerAction::SELECT_MUSICAL_PROPERTY:
+            return "select_musical_property";
+        case SequencerAction::SELECT_STEP_EDITOR_ROW:
+            return "select_step_editor_row";
+        case SequencerAction::CYCLE_SCOPE:
+            return "cycle_scope";
+        case SequencerAction::CREATE_PREVIEW_STRUCTURE:
+            return "create_preview_structure";
+        case SequencerAction::ENTER_SELECTION:
+            return "enter_selection";
+        case SequencerAction::TOGGLE_SELECTION:
+            return "toggle_selection";
+        case SequencerAction::OPEN_PATTERN_DIMENSION_SELECTOR:
+            return "open_pattern_dimension_selector";
+        case SequencerAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
+            return "open_musical_property_selector";
+        case SequencerAction::APPLY_PATTERN_DIMENSION_SELECTOR:
+            return "apply_pattern_dimension_selector";
+        case SequencerAction::APPLY_MUSICAL_PROPERTY_SELECTOR:
+            return "apply_musical_property_selector";
+        case SequencerAction::APPLY_STEP_EDITOR:
+            return "apply_step_editor";
+        case SequencerAction::CANCEL_TRANSIENT_CONTEXT:
+            return "cancel_transient_context";
+        case SequencerAction::EDIT_PATTERN_DIMENSION:
+            return "edit_pattern_dimension";
+        case SequencerAction::EDIT_MUSICAL_PROPERTY_VARIATION:
+            return "edit_musical_property_variation";
+        case SequencerAction::EDIT_STEP_PROPERTY:
+            return "edit_step_property";
+        case SequencerAction::EDIT_STEP_LOCAL_RANDOM:
+            return "edit_step_local_random";
+        case SequencerAction::EDIT_STEP_EDITOR_ROW:
+            return "edit_step_editor_row";
+        case SequencerAction::OPEN_STEP_EDITOR:
+            return "open_step_editor";
+        case SequencerAction::TOGGLE_VISIBLE_STEP:
+            return "toggle_visible_step";
+        case SequencerAction::EDIT_VISIBLE_STEP_PROPERTY:
+            return "edit_visible_step_property";
+        case SequencerAction::CLEAR_CURRENT_STRUCTURE:
+            return "clear_current_structure";
+        case SequencerAction::REMOVE_CURRENT_STRUCTURE:
+            return "remove_current_structure";
+        case SequencerAction::CLEAR_STEP_CONTENT:
+            return "clear_step_content";
+        case SequencerAction::COPY_CURRENT_STRUCTURE:
+            return "copy_current_structure";
+        case SequencerAction::PASTE_CURRENT_STRUCTURE:
+            return "paste_current_structure";
+        case SequencerAction::COPY_STEP_CONTENT:
+            return "copy_step_content";
+        case SequencerAction::PASTE_STEP_CONTENT:
+            return "paste_step_content";
+        case SequencerAction::CLEAR_SELECTION:
+            return "clear_selection";
+        case SequencerAction::DELETE_SELECTION:
+            return "delete_selection";
+        case SequencerAction::DUPLICATE_SELECTION:
+            return "duplicate_selection";
+        case SequencerAction::COPY_STEP_SELECTION:
+            return "copy_step_selection";
+        case SequencerAction::PASTE_STEP_SELECTION:
+            return "paste_step_selection";
+        case SequencerAction::NONE:
+        default:
+            return nullptr;
+    }
+}
+
+const char* armActionName(SequencerAction action) {
+    switch (action) {
+        case SequencerAction::REMOVE_CURRENT_STRUCTURE:
+            return "arm_remove_current_structure";
+        case SequencerAction::PASTE_CURRENT_STRUCTURE:
+            return "arm_paste_current_structure";
+        case SequencerAction::DELETE_SELECTION:
+            return "arm_delete_selection";
+        case SequencerAction::PASTE_STEP_SELECTION:
+            return "arm_paste_step_selection";
+        case SequencerAction::CLEAR_CURRENT_STRUCTURE:
+            return "arm_clear_current_structure";
+        case SequencerAction::COPY_CURRENT_STRUCTURE:
+            return "arm_copy_current_structure";
+        case SequencerAction::CLEAR_STEP_CONTENT:
+            return "arm_clear_step_content";
+        case SequencerAction::COPY_STEP_CONTENT:
+            return "arm_copy_step_content";
+        case SequencerAction::CLEAR_SELECTION:
+            return "arm_clear_selection";
+        case SequencerAction::COPY_STEP_SELECTION:
+            return "arm_copy_step_selection";
+        default:
+            return actionName(action);
+    }
+}
+
+bool isSelectionScope(SequencerScope scope) {
+    return scope == SequencerScope::TRACK_SELECTION ||
+           scope == SequencerScope::PATTERN_SELECTION ||
+           scope == SequencerScope::STEP_SELECTION;
+}
+
+const char* modeForScope(SequencerScope scope) {
+    switch (scope) {
+        case SequencerScope::TRACK_LEGACY:
+            return "sequencer.track_legacy";
+        case SequencerScope::PATTERN:
+            return "sequencer.pattern";
+        case SequencerScope::STEP:
+            return "sequencer.step";
+        case SequencerScope::CHILD_PATTERN:
+            return "sequencer.child_pattern";
+        case SequencerScope::PATTERN_DIMENSION_SELECTOR:
+            return "sequencer.quick_controls";
+        case SequencerScope::MUSICAL_PROPERTY_SELECTOR:
+            return "sequencer.property_selector";
+        case SequencerScope::TRACK_SELECTION:
+        case SequencerScope::PATTERN_SELECTION:
+            return "sequencer.structure_selection";
+        case SequencerScope::STEP_SELECTION:
+            return "sequencer.step_selection";
+        case SequencerScope::STEP_EDITOR:
+            return "sequencer.step_edit";
+    }
+    return "sequencer";
+}
+
+core::state::StructureSelectionScope selectionScopeForPolicyScope(SequencerScope scope) {
+    switch (scope) {
+        case SequencerScope::TRACK_SELECTION:
+            return core::state::StructureSelectionScope::TRACK;
+        case SequencerScope::STEP_SELECTION:
+            return core::state::StructureSelectionScope::STEP;
+        case SequencerScope::PATTERN_SELECTION:
+        default:
+            return core::state::StructureSelectionScope::PAGE;
+    }
+}
+
+bool policyScopeTargetsTrack(SequencerScope scope) {
+    return scope == SequencerScope::TRACK_LEGACY ||
+           scope == SequencerScope::TRACK_SELECTION;
+}
+
+bool policyScopeTargetsStep(SequencerScope scope) {
+    return scope == SequencerScope::STEP ||
+           scope == SequencerScope::STEP_SELECTION ||
+           scope == SequencerScope::STEP_EDITOR;
+}
+
+const char* targetForPolicyScope(SequencerScope scope) {
+    if (policyScopeTargetsTrack(scope)) return "track";
+    if (policyScopeTargetsStep(scope)) return "step";
+    return "pattern";
+}
+
+SequencerAction structureActionForEvent(
+    const core::state::sequencer::SequencerInteractionPolicy& policy,
+    const oc::core::input::InputBindingTraceEvent& event
+) {
+    if (isEncoder(event, Config::EncoderID::NAV)) return policy.navTurn;
+    if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
+        return policy.navTap;
+    }
+    if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+        return policy.navLongPress;
+    }
+    if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
+        return policy.leftTopTap;
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
+        return policy.bottomLeftHold != SequencerAction::NONE
+            ? policy.bottomLeftHold
+            : policy.bottomLeftTap;
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
+        return policy.bottomLeftTap;
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+        return policy.bottomLeftHold;
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
+        return policy.bottomRightHold != SequencerAction::NONE
+            ? policy.bottomRightHold
+            : policy.bottomRightTap;
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
+        return policy.bottomRightTap;
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+        return policy.bottomRightHold;
+    }
+    return SequencerAction::NONE;
 }
 
 uint16_t sequencerPageMask(const core::state::sequencer::SequencerState& sequencer) {
@@ -257,26 +471,28 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         return false;
     }
 
-    const bool selectionActive =
-        track_navigation_.selection.active.get() ||
-        sequencer_.structureUi.pageSelection.active.get() ||
-        sequencer_.structureUi.stepSelection.active.get();
-    if (leftTopRelease && !selectionActive) {
+    const auto policy = interaction_policy::build(
+        sequencer_,
+        track_navigation_,
+        navigation_focus_.get()
+    );
+    const auto action = structureActionForEvent(policy, event);
+    if (action == SequencerAction::NONE) {
         return false;
     }
 
-    const auto focus = navigation_focus_.get();
-    auto scope = core::state::selectionScopeForFocus(focus);
-    if (sequencer_.structureUi.stepSelection.active.get()) {
-        scope = core::state::StructureSelectionScope::STEP;
-    } else if (track_navigation_.selection.active.get()) {
+    const bool selectionActive = isSelectionScope(policy.scope);
+    auto scope = selectionActive
+        ? selectionScopeForPolicyScope(policy.scope)
+        : core::state::selectionScopeForFocus(navigation_focus_.get());
+    if (selectionActive && track_navigation_.selection.active.get()) {
         scope = track_navigation_.selection.scope.get();
-    } else if (sequencer_.structureUi.pageSelection.active.get()) {
+    } else if (selectionActive && sequencer_.structureUi.pageSelection.active.get()) {
         scope = sequencer_.structureUi.pageSelection.scope.get();
     }
 
-    out.mode = selectionActive ? "sequencer.structure_selection" : "sequencer.structure";
-    out.target = selectionActive ? structureTarget(scope) : structureTarget(focus);
+    out.mode = modeForScope(policy.scope);
+    out.target = selectionActive ? structureTarget(scope) : targetForPolicyScope(policy.scope);
 
     uint8_t index = 0;
     if (scope == core::state::StructureSelectionScope::STEP && selectionActive) {
@@ -288,27 +504,19 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         out.property = selection.selected(step) ? "selected" : "cursor";
         copyIndexLabel(out.valueLabel, step);
 
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "navigate_selection";
-        } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "toggle_selection";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "cancel_selection";
-        } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "clear_selection";
-        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
-            out.effect = "preview_paste";
-        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "copy_selection";
-        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-            out.effect = "paste_selection";
-        }
+        out.effect = isButton(
+            event,
+            Config::ButtonID::BOTTOM_RIGHT,
+            oc::core::input::ButtonBindingType::PRESS
+        )
+            ? armActionName(action)
+            : actionName(action);
         return true;
     }
 
     const bool targetTrack =
         selectionActive ? scope == core::state::StructureSelectionScope::TRACK
-                        : focus == core::state::StructureNavigationFocus::TRACK;
+                        : policyScopeTargetsTrack(policy.scope);
     const uint16_t targetMask = targetTrack ? tracks_.currentEnabledMask() : sequencerPageMask(sequencer_);
     const bool canPaste = targetTrack ? structure_clipboard_.hasSequencerTrack()
                                       : structure_clipboard_.hasSequencerPage();
@@ -333,33 +541,22 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
     copyIndexLabel(out.valueLabel, index);
 
     if (selectionActive) {
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "navigate_selection";
-        } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "toggle_selection";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "cancel_selection";
-        } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "delete_selection";
-        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "duplicate_selection";
-        }
+        out.effect = isButton(
+            event,
+            Config::ButtonID::BOTTOM_LEFT,
+            oc::core::input::ButtonBindingType::PRESS
+        ) || isButton(
+            event,
+            Config::ButtonID::BOTTOM_RIGHT,
+            oc::core::input::ButtonBindingType::PRESS
+        )
+            ? armActionName(action)
+            : actionName(action);
         return true;
     }
 
-    if (isEncoder(event, Config::EncoderID::NAV)) {
-        out.effect = "preview_structure";
-    } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-        out.effect = "enter_selection";
-    } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = (focus == core::state::StructureNavigationFocus::PAGE &&
-                      sequencer_.structureUi.previewAddPageSlot.get()) ||
-                             (focus == core::state::StructureNavigationFocus::TRACK &&
-                              track_navigation_.previewAddSlot.get())
-                         ? "create_structure"
-                         : "switch_structure_focus";
-    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
-        out.effect = "arm_remove";
+    if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
+        out.effect = armActionName(action);
         if (isAddSlot(out) ||
             core::state::shared::countEnabled(
                 targetMask,
@@ -370,43 +567,53 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
             markNoop(out, isAddSlot(out) ? "add_slot" : "single_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "erase_structure";
+        out.effect = actionName(action);
         if (trace_state_ && trace_state_->ignoreNextBottomLeftRelease) {
             markIgnored(out, "after_long_press");
         } else if (isAddSlot(out)) {
             markNoop(out, "add_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-        out.effect = "remove_structure";
+        out.effect = actionName(action);
         if (isAddSlot(out)) {
             markNoop(out, "add_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
-        out.effect = "arm_paste";
+        out.effect = armActionName(action);
         if (!canPaste) {
             markNoop(out, "clipboard_empty");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "copy_structure";
+        out.effect = actionName(action);
         if (trace_state_ && trace_state_->ignoreNextBottomRightRelease) {
             markIgnored(out, "after_long_press");
         } else if (isAddSlot(out)) {
             markNoop(out, "add_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-        out.effect = "paste_structure";
+        out.effect = actionName(action);
         if (!canPaste) {
             markNoop(out, "clipboard_empty");
         }
+    } else {
+        out.effect = actionName(action);
     }
     return true;
 }
 
 SequencerStepGridUxSurface::SequencerStepGridUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+    core::state::TrackNavigationState& trackNavigation,
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& tracks
-) : active_view_(activeView), sequencer_(sequencer), tracks_(tracks) {}
+) : active_view_(activeView),
+    navigation_focus_(navigationFocus),
+    track_navigation_(trackNavigation),
+    sequencer_(sequencer),
+    tracks_(tracks) {}
 
 bool SequencerStepGridUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
@@ -421,6 +628,21 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
     const bool macroEncoder = isMacroEncoderTurn(event, index);
     const bool focusedEncoder = isEncoder(event, Config::EncoderID::OPT);
     if (!macroButton && !macroEncoder && !focusedEncoder) {
+        return false;
+    }
+
+    const auto policy = interaction_policy::build(
+        sequencer_,
+        track_navigation_,
+        navigation_focus_.get()
+    );
+    const auto action = focusedEncoder
+        ? policy.optTurn
+        : (macroEncoder ? policy.macroTurn : policy.macroTap);
+    if (action != SequencerAction::EDIT_STEP_PROPERTY &&
+        action != SequencerAction::EDIT_VISIBLE_STEP_PROPERTY &&
+        action != SequencerAction::TOGGLE_VISIBLE_STEP &&
+        action != SequencerAction::TOGGLE_SELECTION) {
         return false;
     }
 
@@ -443,11 +665,13 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
     }
 
     const auto property = sequencer_.activeStepProperty.get();
-    out.mode = "sequencer.step_grid";
+    out.mode = modeForScope(policy.scope);
     out.target = "step";
     out.targetStep = static_cast<int16_t>(step);
-    out.property = core::state::sequencer::stepPropertyName(property);
-    out.effect = (macroEncoder || focusedEncoder) ? "edit_step_property" : "toggle_step";
+    out.property = action == SequencerAction::TOGGLE_SELECTION
+        ? (sequencer_.structureUi.stepSelection.selected(step) ? "selected" : "cursor")
+        : core::state::sequencer::stepPropertyName(property);
+    out.effect = actionName(action);
     out.hasStepOn = true;
     out.stepOn = core::state::sequencer::resolveActiveContentStepProjection(
         sequencer_,
@@ -464,9 +688,17 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
 
 SequencerStepEditUxSurface::SequencerStepEditUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+    core::state::TrackNavigationState& trackNavigation,
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& tracks
-) : active_view_(activeView), sequencer_(sequencer), tracks_(tracks) {}
+) : active_view_(activeView),
+    navigation_focus_(navigationFocus),
+    track_navigation_(trackNavigation),
+    sequencer_(sequencer),
+    tracks_(tracks) {}
 
 bool SequencerStepEditUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
@@ -484,7 +716,16 @@ bool SequencerStepEditUxSurface::captureSemanticUxContext(
         return false;
     }
 
+    const auto policy = interaction_policy::build(
+        sequencer_,
+        track_navigation_,
+        navigation_focus_.get()
+    );
+
     if (opening) {
+        if (policy.macroLongPress != SequencerAction::OPEN_STEP_EDITOR) {
+            return false;
+        }
         uint8_t step = 0;
         if (!core::state::sequencer::resolveActiveContentStepInPage(
                 sequencer_,
@@ -497,7 +738,7 @@ bool SequencerStepEditUxSurface::captureSemanticUxContext(
         out.mode = "sequencer.step_edit";
         out.target = "step";
         out.targetStep = static_cast<int16_t>(step);
-        out.effect = "open_step_edit";
+        out.effect = actionName(policy.macroLongPress);
         copyIndexLabel(out.valueLabel, step);
         return true;
     }
@@ -523,14 +764,14 @@ bool SequencerStepEditUxSurface::captureSemanticUxContext(
         isMacroButtonRelease(event, closeIndex) &&
         closeIndex == static_cast<uint8_t>(data.stepIndex % core::state::sequencer::SequencerState::STEPS_PER_PAGE);
     if (isEncoder(event, Config::EncoderID::NAV)) {
-        out.effect = "focus_step_edit_property";
+        out.effect = actionName(policy.navTurn);
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
-        out.effect = "edit_step_edit_property";
+        out.effect = actionName(policy.optTurn);
     } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
                macroClose) {
-        out.effect = "apply_step_edit";
+        out.effect = actionName(policy.navTap);
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "cancel_step_edit";
+        out.effect = actionName(policy.leftTopTap);
     }
     return true;
 }
