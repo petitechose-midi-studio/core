@@ -1,0 +1,25 @@
+# UX workflow: edit Pattern and Step directly with OPT.
+# Purpose: validates the canonical direct-OPT grammar outside held selector
+# overlays: Pattern focus edits the selected pattern dimension and Step focus
+# edits the selected musical property for the focused step.
+
+0 scenario sequencer
+50 capture screen sequencer_track_ready
+
+# Pattern focus: OPT edits the selected pattern dimension and shows transient
+# pattern-dimension feedback without holding LEFT_CENTER.
+150 tap NAV 60
+350 capture screen pattern_focus_ready
+450 encoder OPT 0.25
+600 capture screen pattern_direct_opt_feedback
+1450 tick
+1500 capture screen pattern_direct_opt_feedback_expired
+
+# Step focus: OPT edits the focused step property without exposing the Pattern
+# quick-control strip.
+1600 tap NAV 60
+1800 capture screen step_focus_ready
+1900 encoder OPT 1.00
+2050 capture screen step_direct_opt_feedback
+2900 tick
+2950 capture screen step_direct_opt_feedback_expired
