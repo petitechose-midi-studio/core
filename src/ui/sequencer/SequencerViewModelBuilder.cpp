@@ -8,6 +8,7 @@
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerPageSelectionPlan.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerScaleState.hpp"
@@ -32,6 +33,7 @@ using StripProps = core::ui::ContextActionStripProps;
 using SlotProps = core::ui::ContextActionStripSlotProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
+using InteractionVisibility = core::state::sequencer::SequencerInteractionVisibility;
 
 uint8_t countSelectedItems(uint16_t mask) {
     uint8_t count = 0;
@@ -48,6 +50,53 @@ uint8_t countSelectedSteps(oc::note::sequencer::StepBitMask128 mask) {
         if (mask.test(i)) ++count;
     }
     return count;
+}
+
+core::state::sequencer::SequencerInteractionContext makeInteractionContext(
+    const SequencerViewModelSource& source
+) {
+    const auto& sequencer = source.sequencer;
+    const auto navigationFocus = source.navigationFocus.get();
+    core::state::sequencer::SequencerInteractionContext context{};
+    context.navigationFocus = navigationFocus;
+    context.childContentView = core::state::sequencer::isChildContentView(sequencer);
+    context.previewingAddSlot = navigationFocus == core::state::StructureNavigationFocus::TRACK
+        ? source.trackNavigation.previewAddSlot.get()
+        : navigationFocus == core::state::StructureNavigationFocus::PAGE
+            ? sequencer.structureUi.previewAddPageSlot.get()
+            : false;
+    context.pageSelectionActive = sequencer.structureUi.pageSelection.active.get();
+    context.trackSelectionActive = source.trackNavigation.selection.active.get();
+    context.stepSelectionActive = sequencer.structureUi.stepSelection.active.get();
+    context.patternQuickControlsActive = sequencer.patternQuickControls.selecting.get();
+    context.propertySelectorActive = sequencer.stepPropertyInlineSelector.selecting.get();
+    context.stepEditorVisible = sequencer.stepEdit.visible.get();
+    return context;
+}
+
+Visual visualForInteractionVisibility(InteractionVisibility visibility) {
+    switch (visibility) {
+        case InteractionVisibility::ACTIVE:
+            return Visual::ACTIVE;
+        case InteractionVisibility::DISABLED:
+            return Visual::DISABLED;
+        case InteractionVisibility::HIDDEN:
+        default:
+            return Visual::HIDDEN;
+    }
+}
+
+void setStripIconFromVisibility(
+    SlotProps& slot,
+    const char* icon,
+    InteractionVisibility visibility
+) {
+    const auto visualState = visualForInteractionVisibility(visibility);
+    if (visualState == Visual::HIDDEN) {
+        slot.visualState = Visual::HIDDEN;
+        return;
+    }
+    slot = core::ui::makeStandaloneIconStripSlot(icon, visualState);
 }
 
 void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
@@ -557,7 +606,9 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
     const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
     const bool selectingStructure = selectingTrack || selectingPage || selectingStep;
-    const auto navigationFocus = source.navigationFocus.get();
+    const auto interaction = core::state::sequencer::buildSequencerInteractionPolicy(
+        makeInteractionContext(source)
+    );
     const char* propertyIcon = visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
     const char* patternIcon =
         quickControlIcon(source.sequencer.patternQuickControls.focusedItem.get());
@@ -596,11 +647,16 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+        setStripIconFromVisibility(
+            props.slots[1],
             patternIcon,
-            Visual::ACTIVE
+            interaction.leftCenterVisibility
         );
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::DIM);
+        setStripIconFromVisibility(
+            props.slots[2],
+            propertyIcon,
+            interaction.leftBottomVisibility
+        );
         return props;
     }
 
@@ -609,27 +665,30 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+        setStripIconFromVisibility(
+            props.slots[1],
             patternIcon,
-            Visual::DIM
+            interaction.leftCenterVisibility
         );
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::ACTIVE);
+        setStripIconFromVisibility(
+            props.slots[2],
+            propertyIcon,
+            interaction.leftBottomVisibility
+        );
         return props;
     }
 
     props.slots[0].visualState = Visual::HIDDEN;
-    if (navigationFocus == core::state::StructureNavigationFocus::STEP) {
-        props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::ACTIVE);
-        return props;
-    }
-    if (navigationFocus == core::state::StructureNavigationFocus::PAGE) {
-        props.slots[1] = core::ui::makeStandaloneIconStripSlot(patternIcon, Visual::ACTIVE);
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(propertyIcon, Visual::ACTIVE);
-        return props;
-    }
-    props.slots[1].visualState = Visual::HIDDEN;
-    props.slots[2].visualState = Visual::HIDDEN;
+    setStripIconFromVisibility(
+        props.slots[1],
+        patternIcon,
+        interaction.leftCenterVisibility
+    );
+    setStripIconFromVisibility(
+        props.slots[2],
+        propertyIcon,
+        interaction.leftBottomVisibility
+    );
     return props;
 }
 

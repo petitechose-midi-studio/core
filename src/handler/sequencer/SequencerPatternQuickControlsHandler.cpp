@@ -8,6 +8,7 @@
 
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
+#include "SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
@@ -17,6 +18,7 @@ namespace core::handler {
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace interaction_policy = core::handler::sequencer::interaction_policy;
 using Item = core::state::sequencer::PatternQuickControlItem;
 
 namespace {
@@ -58,12 +60,14 @@ inline oc::type::IsActiveFn canOpenQuickControls(
         core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
 ) {
     return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
-        return navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
-               !overlays.hasVisible() &&
-               !sequencer.structureUi.pageSelection.active.get() &&
-               !sequencer.structureUi.stepSelection.active.get() &&
-               !trackUi.selection.active.get() &&
-               !sequencer.stepPropertyInlineSelector.selecting.get();
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return policy.leftCenterPress ==
+               core::state::sequencer::SequencerInteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR;
     };
 }
 
@@ -76,13 +80,14 @@ inline oc::type::IsActiveFn canDirectEditPatternQuickControl(
         core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
 ) {
     return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
-        return navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
-               !overlays.hasVisible() &&
-               !sequencer.patternQuickControls.selecting.get() &&
-               !sequencer.structureUi.pageSelection.active.get() &&
-               !sequencer.structureUi.stepSelection.active.get() &&
-               !trackUi.selection.active.get() &&
-               !sequencer.stepPropertyInlineSelector.selecting.get();
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return policy.optTurn ==
+               core::state::sequencer::SequencerInteractionAction::EDIT_PATTERN_DIMENSION;
     };
 }
 
