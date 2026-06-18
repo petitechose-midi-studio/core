@@ -8,13 +8,16 @@
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
+#include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 
 namespace core::context::standalone {
 
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace interaction_policy = core::handler::sequencer::interaction_policy;
 
 namespace {
 
@@ -122,6 +125,7 @@ FLASHMEM SequencerEncoderSyncCoordinator::SequencerEncoderSyncCoordinator(
     : overlays_(state.overlays)
     , active_view_(state.activeView)
     , navigation_focus_(state.navigationFocus)
+    , track_ui_(state.trackNavigation)
     , sequencer_(state.sequencer)
     , track_bank_(state.trackBank)
     , encoders_(encoders) {}
@@ -141,6 +145,9 @@ FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
         sequencer_.contentView.revision,
         sequencer_.pattern.patternScaleRevision,
         track_bank_.projectScaleRevisionSignal(),
+        sequencer_.structureUi.pageSelection.active,
+        sequencer_.structureUi.stepSelection.active,
+        track_ui_.selection.active,
         sequencer_.stepEdit.visible,
         sequencer_.stepPropertyInlineSelector.selecting,
         sequencer_.stepPropertyInlineSelector.macroLocalVariationEditActive,
@@ -270,6 +277,13 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroLocalVariationValues(
     }
 }
 
+FLASHMEM void SequencerEncoderSyncCoordinator::invalidateOptEncoderCache() {
+    opt_steps_configured_ = 0;
+    opt_ticks_per_step_configured_ = 0;
+    opt_turns_configured_ = 0.0f;
+    opt_position_valid_ = false;
+}
+
 FLASHMEM void SequencerEncoderSyncCoordinator::syncOptPosition(float normalized) {
     normalized = input_utils::clampNormalized(normalized);
     if (!opt_position_valid_ ||
@@ -348,6 +362,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) return;
 
     if (overlays_.hasVisible()) {
+        invalidateOptEncoderCache();
         return;
     }
 
@@ -362,6 +377,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     const auto property = sequencer_.activeStepProperty.get();
 
     if (sequencer_.stepPropertyInlineSelector.selecting.get()) {
+        invalidateOptEncoderCache();
         if (property == core::state::sequencer::StepProperty::PROBABILITY) {
             return;
         }
@@ -372,9 +388,15 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     }
 
     if (sequencer_.patternQuickControls.selecting.get()) {
+        invalidateOptEncoderCache();
         return;
     }
 
+    const auto policy = interaction_policy::build(
+        sequencer_,
+        track_ui_,
+        navigation_focus_.get()
+    );
     const auto effectiveScale = core::state::sequencer::resolveEffectiveScaleSettings(
         track_bank_.projectScaleSettings(),
         sequencer_.pattern.scalePolicy,
@@ -389,17 +411,19 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     ensureMacroEncoderConfig(config);
     syncMacroEncoderValues(page, property);
 
-    if (navigation_focus_.get() == core::state::StructureNavigationFocus::PAGE &&
-        !sequencer_.structureUi.pageSelection.active.get() &&
-        !sequencer_.structureUi.stepSelection.active.get()) {
-        syncPatternQuickControlOptValue();
-        return;
-    }
+    switch (policy.optTurn) {
+        case core::state::sequencer::SequencerInteractionAction::EDIT_PATTERN_DIMENSION:
+            syncPatternQuickControlOptValue();
+            return;
 
-    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP &&
-        !sequencer_.structureUi.stepSelection.active.get()) {
-        ensureOptEncoderConfig(config);
-        syncFocusedStepOptValue(property);
+        case core::state::sequencer::SequencerInteractionAction::EDIT_STEP_PROPERTY:
+            ensureOptEncoderConfig(config);
+            syncFocusedStepOptValue(property);
+            return;
+
+        default:
+            invalidateOptEncoderCache();
+            return;
     }
 }
 

@@ -81,6 +81,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.overlays,
             stateRefs.activeView,
             stateRefs.structureNavigationFocus,
+            stateRefs.trackNavigation,
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
         },
