@@ -8,8 +8,10 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "state/StructureSelectionState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -25,6 +27,9 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
         core::state::TrackNavigationState& trackNavigation;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         SequencerHistoryDomainServices history;
     };
 
@@ -53,6 +58,9 @@ private:
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::TrackNavigationState& track_ui_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     SequencerHistoryDomainServices history_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

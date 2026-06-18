@@ -113,6 +113,7 @@ struct SequencerStepEditHarness {
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
+                  state.structureNavigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
@@ -121,6 +122,7 @@ struct SequencerStepEditHarness {
           ) {
         overlays.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
         overlays.registerCleanup(core::ui::OverlayType::SEQ_STEP_EDIT, OVERLAY_SCOPE);
+        state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
         g_now_ms = 0;
     }
 

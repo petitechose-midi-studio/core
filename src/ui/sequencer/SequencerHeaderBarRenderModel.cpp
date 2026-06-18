@@ -54,7 +54,7 @@ TopRowVisualState buildTopRowVisualState(const SequencerHeaderBarProps& props) {
             ? trackColor(props.previewTrack)
             : trackInactiveColor();
     const bool showBadge = props.badgeText[0] != '\0';
-    const bool selectionMode = props.selectingPage || props.selectingTrack;
+    const bool selectionMode = props.selectingPage || props.selectingTrack || props.selectingStep;
 
     state.accentColor = accentColor;
     state.accentOpa = props.selectingTrack ? LV_OPA_COVER : LV_OPA_80;

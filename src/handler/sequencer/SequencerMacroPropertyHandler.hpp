@@ -10,8 +10,10 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "state/StructureSelectionState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -28,6 +30,9 @@ public:
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
         core::state::TrackNavigationState& trackNavigation;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         SequencerHistoryDomainServices history;
     };
 
@@ -45,11 +50,15 @@ public:
 private:
     void setupBindings();
     void handleTurn(uint8_t indexInPage, float normalized);
+    void handleFocusedStepTurn(float normalized);
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::TrackNavigationState& track_ui_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     SequencerHistoryDomainServices history_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

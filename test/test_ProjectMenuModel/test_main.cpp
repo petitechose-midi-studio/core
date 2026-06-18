@@ -208,12 +208,15 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     context.projectScale.type = scale_catalog::StepSequencerScaleType::HarmonicMinor;
 
     const auto page = core::state::project::buildProjectMenuPage(navigation, context);
-    assert(page.rowCount == 3);
+    assert(page.rowCount == 4);
     assert(std::string(page.rows[0].label) == "Scale");
     assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[0].hasTarget);
     assert(page.rows[0].target == ProjectNodeId::MUSIC_SCALE);
     assert(std::string(rowValue(page.rows[0])) == "F Harm Minor >");
+    assert(std::string(page.rows[3].label) == "Step Paste");
+    assert(page.rows[3].kind == core::state::project::ProjectMenuRowKind::Value);
+    assert(std::string(rowValue(page.rows[3])) == "Extend");
 
     std::cout << "[PASS] test_music_root_scale_row_summarizes_key_and_folder_target\n";
 }

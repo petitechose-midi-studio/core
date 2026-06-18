@@ -334,12 +334,10 @@ FLASHMEM bool resolveActiveContentStepInPage(
     uint8_t& outStep
 ) {
     if (indexInPage >= SequencerState::STEPS_PER_PAGE) return false;
-    const uint8_t pages = activeContentPageCount(sequencer);
-    if (pages == 0) return false;
+    if (page >= SequencerState::PAGE_COUNT) return false;
 
     const uint16_t step =
-        static_cast<uint16_t>(normalizeActiveContentPage(sequencer, page)) *
-            SequencerState::STEPS_PER_PAGE +
+        static_cast<uint16_t>(page) * SequencerState::STEPS_PER_PAGE +
         indexInPage;
     if (step >= activeContentLength(sequencer)) return false;
     outStep = static_cast<uint8_t>(step);

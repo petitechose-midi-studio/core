@@ -42,6 +42,7 @@ FLASHMEM void ProjectNavigationState::reset() {
     scaleConstrainEnabled = true;
     patternsInheritScale = true;
     clipsInheritScale = true;
+    stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
     transportSwingPercent = 0;
     transportRunMode = 0;
     pendingLoadProjectId = {};

@@ -167,7 +167,7 @@ struct UiSystemState {
     oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
     oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>
         structureNavigationFocus{
-        core::state::StructureNavigationFocus::PAGE
+        core::state::StructureNavigationFocus::TRACK
     };
     SharedTrackState sharedTracks;
     TrackNavigationState trackNavigation;

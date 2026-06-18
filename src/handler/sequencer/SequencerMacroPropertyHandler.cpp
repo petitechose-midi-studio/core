@@ -1,5 +1,7 @@
 #include "SequencerMacroPropertyHandler.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 
@@ -19,7 +21,27 @@ inline oc::type::IsActiveFn canEditSequencerProperty(
 ) {
     return [&overlays, &sequencer, &trackUi]() {
         return !sequencer.structureUi.pageSelection.active.get() &&
+               !sequencer.structureUi.stepSelection.active.get() &&
                !trackUi.selection.active.get() &&
+               !sequencer.patternQuickControls.selecting.get() &&
+               !overlays.hasVisible();
+    };
+}
+
+inline oc::type::IsActiveFn canQuickEditFocusedStep(
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
+) {
+    return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
+        return navigationFocus.get() == core::state::StructureNavigationFocus::STEP &&
+               !sequencer.structureUi.pageSelection.active.get() &&
+               !sequencer.structureUi.stepSelection.active.get() &&
+               !trackUi.selection.active.get() &&
+               !sequencer.stepPropertyInlineSelector.selecting.get() &&
                !sequencer.patternQuickControls.selecting.get() &&
                !overlays.hasVisible();
     };
@@ -61,6 +83,7 @@ FLASHMEM SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
     , sequencer_(state.sequencer)
     , track_bank_(state.trackBank)
     , track_ui_(state.trackNavigation)
+    , navigation_focus_(state.navigationFocus)
     , history_(state.history)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -77,6 +100,12 @@ FLASHMEM void SequencerMacroPropertyHandler::setupBindings() {
             .when(canEditSequencerProperty(overlays_, sequencer_, track_ui_))
             .then([this, i](float value) { handleTurn(i, value); });
     }
+
+    encoders_.encoder(Config::EncoderID::OPT)
+        .turn()
+        .scope(scope_id_)
+        .when(canQuickEditFocusedStep(overlays_, sequencer_, track_ui_, navigation_focus_))
+        .then([this](float value) { handleFocusedStepTurn(value); });
 }
 
 FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, float normalized) {
@@ -125,6 +154,34 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
     if (sequencer_.stepPropertyInlineSelector.selecting.get()) {
         return;
     }
+
+    history_.beginCoalescedPatternEdit(abs, property, now);
+
+    core::state::sequencer::setActiveContentStepFromNormalized(
+        sequencer_,
+        abs,
+        property,
+        normalized,
+        sequencer_.pattern.pitchEditMode,
+        core::state::sequencer::resolveEffectiveScaleSettings(
+            track_bank_.projectScaleSettings(),
+            sequencer_.pattern.scalePolicy,
+            sequencer_.pattern.scaleOverride
+        )
+    );
+    sequencer_.stepInlineFeedback.show(abs, property, now);
+}
+
+FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normalized) {
+    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
+    if (len == 0) return;
+
+    const uint8_t abs = std::min<uint8_t>(
+        sequencer_.focusedStep.get(),
+        static_cast<uint8_t>(len - 1U)
+    );
+    const auto property = sequencer_.activeStepProperty.get();
+    const uint32_t now = now_provider_ ? now_provider_() : 0;
 
     history_.beginCoalescedPatternEdit(abs, property, now);
 

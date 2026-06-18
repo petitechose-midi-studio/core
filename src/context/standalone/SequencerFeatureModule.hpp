@@ -16,6 +16,7 @@
 #include "state/PatternPitchSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
@@ -67,6 +68,7 @@ public:
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
         core::state::TrackNavigationState& trackNavigation;
+        core::state::project::ProjectNavigationState& projectNavigation;
         core::state::StructureClipboardState& structureClipboard;
         core::state::PatternPitchSettingsState& patternPitchSettings;
         core::state::sequencer::SequencerState& sequencer;

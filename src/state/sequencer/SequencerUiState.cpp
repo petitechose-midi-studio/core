@@ -98,11 +98,36 @@ FLASHMEM void SequencerHistoryFeedbackState::reset() {
     revision.set(revision.get() + 1);
 }
 
+FLASHMEM void SequencerPatternQuickControlsState::showFeedback(uint32_t nowMs) {
+    hideAtMs = nowMs + DISPLAY_HOLD_MS;
+    feedbackVisible.set(true);
+}
+
 FLASHMEM void SequencerPatternQuickControlsState::reset() {
     selecting.set(false);
     physicalHoldActive.set(false);
+    feedbackVisible.set(false);
     focusedItem.set(PatternQuickControlItem::LENGTH);
     offsetSteps.set(0);
+    hideAtMs = 0;
+}
+
+FLASHMEM void SequencerStepSelectionState::reset(uint8_t cursor) {
+    active.set(false);
+    cursorStep.set(cursor);
+    selectedMask.set({});
+    pastePreviewActive.set(false);
+    pastePreview.set(SequencerStepPastePreview::NONE);
+}
+
+FLASHMEM void SequencerStepSelectionState::setSelected(uint8_t step, bool selected) {
+    auto mask = selectedMask.get();
+    mask.setBit(step, selected);
+    selectedMask.set(mask);
+}
+
+FLASHMEM bool SequencerStepSelectionState::selected(uint8_t step) const {
+    return selectedMask.get().test(step);
 }
 
 FLASHMEM SequencerStructureUiState::SequencerStructureUiState() = default;
@@ -113,6 +138,7 @@ FLASHMEM void SequencerStructureUiState::reset() {
     previewPageIndex.set(0);
     pageHold.clear();
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);
+    stepSelection.reset();
 }
 
 }  // namespace core::state::sequencer

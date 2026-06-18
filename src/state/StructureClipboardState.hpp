@@ -25,6 +25,7 @@ enum class StructureClipboardKind : uint8_t {
     SEQUENCER_PAGE = 3,
     SEQUENCER_TRACK = 4,
     SEQUENCER_STEP_CONTENT = 5,
+    SEQUENCER_STEPS = 6,
 };
 
 enum class SequencerStepContentClipboardKind : uint8_t {
@@ -55,6 +56,32 @@ struct SequencerPageClipboard {
     }
 };
 
+struct SequencerStepClipboardEntry {
+    bool valid = false;
+    uint8_t offset = 0;
+    bool enabled = false;
+    uint8_t note = core::state::sequencer::SequencerPatternState::DEFAULT_NOTE;
+    uint8_t velocity = core::state::sequencer::SequencerPatternState::DEFAULT_VELOCITY;
+    uint16_t gate = core::state::sequencer::SequencerPatternState::DEFAULT_GATE_PERCENT;
+    int8_t nudge = 0;
+    uint8_t probability = core::state::sequencer::SequencerPatternState::DEFAULT_PROBABILITY;
+    core::state::sequencer::SequencerGraphNodeId sourceNodeId =
+        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+};
+
+struct SequencerStepsClipboard {
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::sequencer::SequencerPatternState::MAX_STEPS;
+
+    bool valid = false;
+    bool rootContext = true;
+    uint8_t count = 0;
+    uint8_t span = 0;
+    std::array<SequencerStepClipboardEntry, MAX_ENTRIES> entries{};
+
+    void reset();
+};
+
 struct StructureClipboardState {
     oc::state::Signal<StructureClipboardKind, 4> kind{StructureClipboardKind::NONE};
     oc::state::Signal<uint32_t, 8> revision{0};
@@ -62,6 +89,7 @@ struct StructureClipboardState {
     core::state::macro::MacroPageData macroPage{};
     core::state::macro::MacroTrackData macroTrack{};
     core::state::SequencerPageClipboard sequencerPage{};
+    core::state::SequencerStepsClipboard sequencerSteps{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
     core::state::sequencer::SequencerGraphNodeId sequencerStepContentNodeId =
@@ -91,6 +119,11 @@ struct StructureClipboardState {
         SequencerStepContentClipboardKind contentKind = SequencerStepContentClipboardKind::ALL
     );
 
+    bool storeSequencerSteps(
+        const core::state::SequencerStepsClipboard& steps,
+        const oc::note::sequencer::StepSequencerGraph* graph
+    );
+
     bool hasMacroPage() const { return kind.get() == StructureClipboardKind::MACRO_PAGE; }
     bool hasMacroTrack() const { return kind.get() == StructureClipboardKind::MACRO_TRACK; }
     bool hasSequencerPage() const {
@@ -105,6 +138,11 @@ struct StructureClipboardState {
     }
     bool hasSequencerStepContent(SequencerStepContentClipboardKind requiredKind) const {
         return hasSequencerStepContent() && sequencerStepContentKind == requiredKind;
+    }
+    bool hasSequencerSteps() const {
+        return kind.get() == StructureClipboardKind::SEQUENCER_STEPS &&
+               sequencerSteps.valid &&
+               sequencerSteps.count > 0;
     }
 };
 

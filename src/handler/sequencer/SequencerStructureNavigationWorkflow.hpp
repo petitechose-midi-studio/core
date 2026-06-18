@@ -40,6 +40,7 @@ public:
 
     bool allowsMainBindings() const;
     bool selectionActive() const;
+    bool stepFocusActive() const;
     bool previewingAddSlot() const;
 
     void moveByFocus(float delta);
@@ -47,6 +48,7 @@ public:
     void enterSelectionModeForCurrentFocus();
     void cancelSelectionMode();
     void toggleSelectionAtCursor();
+    void toggleStepSelectionAtVisibleIndex(uint8_t indexInPage);
     void navigateSelection(float delta);
     void createPreviewedStructure();
 
@@ -54,9 +56,13 @@ private:
     void bindStateSync();
     void movePage(float delta);
     void moveTrack(float delta);
+    void moveStep(float delta);
     void setPagePreview(uint8_t pageIndex, bool addSlot);
     void setTrackPreview(uint8_t trackIndex, bool addSlot);
     uint8_t cursorForSelectionScope(core::state::StructureSelectionScope scope) const;
+    uint8_t maxStepCursor() const;
+    uint8_t maxStepPage() const;
+    bool stepSelectable(uint8_t step) const;
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;

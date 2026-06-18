@@ -8,6 +8,58 @@ namespace core::state::sequencer {
 
 using namespace graph_ops_internal;
 
+namespace {
+
+FLASHMEM bool sameLocalVariation(
+    const oc::note::sequencer::StepSequencerVariationRanges& lhs,
+    const oc::note::sequencer::StepSequencerVariationRanges& rhs
+) {
+    return lhs.pitchSemitones == rhs.pitchSemitones &&
+           lhs.velocity == rhs.velocity &&
+           lhs.gatePercent == rhs.gatePercent &&
+           lhs.nudge == rhs.nudge;
+}
+
+FLASHMEM bool sameStepNodePayload(
+    const StepSequencerStepNode& lhs,
+    const StepSequencerStepNode& rhs
+) {
+    return lhs.flags == rhs.flags &&
+           lhs.childSequenceId == rhs.childSequenceId &&
+           lhs.cycleSetId == rhs.cycleSetId &&
+           lhs.noteOffset == rhs.noteOffset &&
+           lhs.velocityOffset == rhs.velocityOffset &&
+           lhs.gateOffset == rhs.gateOffset &&
+           lhs.nudgeOffset == rhs.nudgeOffset &&
+           lhs.probabilityOffset == rhs.probabilityOffset &&
+           sameLocalVariation(lhs.localVariation, rhs.localVariation);
+}
+
+FLASHMEM bool hasValidChildren(
+    const StepSequencerGraph& graph,
+    const StepSequencerStepNode& node
+) {
+    return (node.has(STEP_NODE_CHILD_SEQUENCE) &&
+            graph.sequence(node.childSequenceId) != nullptr) ||
+           (node.has(STEP_NODE_CYCLE_SET) &&
+            graph.cycleSet(node.cycleSetId) != nullptr);
+}
+
+FLASHMEM bool graphHasBudgetFor(
+    const StepSequencerGraph& target,
+    const GraphCopyBudget& budget
+) {
+    return budget.valid &&
+           static_cast<uint32_t>(target.stepNodeCount) + budget.stepNodes <=
+               target.stepNodes.size() &&
+           static_cast<uint32_t>(target.sequenceCount) + budget.sequences <=
+               target.sequences.size() &&
+           static_cast<uint32_t>(target.cycleSetCount) + budget.cycleSets <=
+               target.cycleSets.size();
+}
+
+}  // namespace
+
 FLASHMEM bool clearNodeChildren(SequencerPatternState& pattern, SequencerGraphNodeId nodeId) {
     if (!ensureGraphRoot(pattern)) return false;
     auto* graph = mutableGraph(pattern);
@@ -66,6 +118,59 @@ FLASHMEM bool clearNodeCycleStateSet(SequencerPatternState& pattern,
     return changed;
 }
 
+FLASHMEM bool resetStepNodePayload(
+    SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId,
+    SequencerGraphNodeResetMode mode
+) {
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !graph->enabled || !hasStepNode(*graph, nodeId)) {
+        return false;
+    }
+
+    StepSequencerStepNode reset{};
+    if (mode == SequencerGraphNodeResetMode::DISABLED_OVERRIDE) {
+        reset.flags = STEP_NODE_ENABLED_OVERRIDE;
+    }
+
+    auto& node = graph->stepNodes[nodeId];
+    if (sameStepNodePayload(node, reset)) return false;
+
+    node = reset;
+    pattern.bumpGraphRevision();
+    return true;
+}
+
+FLASHMEM bool copyStepNodePayloadFromGraph(
+    SequencerPatternState& targetPattern,
+    SequencerGraphNodeId targetNodeId,
+    const StepSequencerGraph& sourceGraph,
+    SequencerGraphNodeId sourceNodeId
+) {
+    if (!ensureGraphRoot(targetPattern)) return false;
+    auto* targetGraph = mutableGraph(targetPattern);
+    if (targetGraph == nullptr ||
+        !hasStepNode(*targetGraph, targetNodeId) ||
+        !hasStepNode(sourceGraph, sourceNodeId)) {
+        return false;
+    }
+
+    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
+    if (hasValidChildren(sourceGraph, sourceNode)) {
+        const GraphCopyBudget budget = childCopyBudget(sourceGraph, sourceNode);
+        if (!graphHasBudgetFor(*targetGraph, budget)) return false;
+    }
+
+    auto& targetNode = targetGraph->stepNodes[targetNodeId];
+    copyStepNodeValuesWithoutChildren(targetNode, sourceNode);
+    if (!copyChildrenIntoNode(*targetGraph, targetNode, sourceGraph, sourceNode)) {
+        return false;
+    }
+
+    targetPattern.bumpGraphRevision();
+    return true;
+}
+
 FLASHMEM bool copyNodeChildrenFromGraph(
     SequencerPatternState& targetPattern,
     SequencerGraphNodeId targetNodeId,
@@ -81,23 +186,10 @@ FLASHMEM bool copyNodeChildrenFromGraph(
     }
 
     const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    const bool hasSourceChildren =
-        (sourceNode.has(STEP_NODE_CHILD_SEQUENCE) &&
-         sourceGraph.sequence(sourceNode.childSequenceId) != nullptr) ||
-        (sourceNode.has(STEP_NODE_CYCLE_SET) &&
-         sourceGraph.cycleSet(sourceNode.cycleSetId) != nullptr);
-    if (!hasSourceChildren) return false;
+    if (!hasValidChildren(sourceGraph, sourceNode)) return false;
 
     const GraphCopyBudget budget = childCopyBudget(sourceGraph, sourceNode);
-    if (!budget.valid) return false;
-    if (static_cast<uint32_t>(targetGraph->stepNodeCount) + budget.stepNodes >
-            targetGraph->stepNodes.size() ||
-        static_cast<uint32_t>(targetGraph->sequenceCount) + budget.sequences >
-            targetGraph->sequences.size() ||
-        static_cast<uint32_t>(targetGraph->cycleSetCount) + budget.cycleSets >
-            targetGraph->cycleSets.size()) {
-        return false;
-    }
+    if (!graphHasBudgetFor(*targetGraph, budget)) return false;
 
     auto& targetNode = targetGraph->stepNodes[targetNodeId];
     targetNode.childSequenceId = kInvalidId;

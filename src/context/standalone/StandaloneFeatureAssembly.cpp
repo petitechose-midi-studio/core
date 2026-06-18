@@ -80,6 +80,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.activeView,
             state.structureNavigationFocus,
             state.trackNavigation,
+            state.projectNavigation,
             state.structureClipboard,
             state.patternPitchSettings,
             state.sequencer,

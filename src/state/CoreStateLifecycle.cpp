@@ -164,7 +164,7 @@ FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.macroUi.reset();
     state.projectNavigation.reset();
     state.trackNavigation.reset();
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     state.structureClipboard.clear();
     state.activeView.set(core::ui::ViewType::MACRO);
     state.overlays.hideAll();
@@ -195,7 +195,7 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.macroEdit.reset();
     state.macroUi.reset();
     state.trackNavigation.reset();
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();
@@ -231,7 +231,7 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.macroEdit.reset();
     state.macroUi.reset();
     state.trackNavigation.reset();
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();

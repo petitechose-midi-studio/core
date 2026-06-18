@@ -48,6 +48,10 @@ FLASHMEM void ProjectRoutingState::reset() {
     }
 }
 
+FLASHMEM void ProjectEditingState::reset() {
+    stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+}
+
 FLASHMEM ProjectState::ProjectState() {
     reset();
 }
@@ -57,6 +61,7 @@ FLASHMEM void ProjectState::reset() {
     transport.reset();
     musical.reset();
     routing.reset();
+    editing.reset();
 }
 
 }  // namespace core::state::project

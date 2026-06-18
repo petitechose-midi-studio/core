@@ -17,6 +17,7 @@ inline constexpr unsigned int kStructureNavigationFocusMaxSubscribers = 8;
 enum class StructureNavigationFocus : uint8_t {
     PAGE = 0,
     TRACK = 1,
+    STEP = 2,
 };
 
 enum class StructureHoldAction : uint8_t {
@@ -28,12 +29,15 @@ enum class StructureHoldAction : uint8_t {
 enum class StructureSelectionScope : uint8_t {
     PAGE = 0,
     TRACK = 1,
+    STEP = 2,
 };
 
 inline constexpr StructureSelectionScope selectionScopeForFocus(StructureNavigationFocus focus) {
     switch (focus) {
         case StructureNavigationFocus::TRACK:
             return StructureSelectionScope::TRACK;
+        case StructureNavigationFocus::STEP:
+            return StructureSelectionScope::STEP;
         case StructureNavigationFocus::PAGE:
         default:
             return StructureSelectionScope::PAGE;

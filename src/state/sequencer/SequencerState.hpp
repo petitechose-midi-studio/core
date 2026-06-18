@@ -192,6 +192,7 @@ struct SequencerState {
     void updateUi(uint32_t nowMs) {
         stepInlineFeedback.update(nowMs);
         patternVariationFeedback.update(nowMs);
+        patternQuickControls.update(nowMs);
         historyFeedback.update(nowMs);
     }
 

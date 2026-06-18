@@ -76,6 +76,8 @@ uint16_t sequencerPageMask(const core::state::sequencer::SequencerState& sequenc
 
 const char* structureTarget(core::state::StructureNavigationFocus focus) {
     switch (focus) {
+        case core::state::StructureNavigationFocus::STEP:
+            return "step";
         case core::state::StructureNavigationFocus::TRACK:
             return "track";
         case core::state::StructureNavigationFocus::PAGE:
@@ -86,6 +88,8 @@ const char* structureTarget(core::state::StructureNavigationFocus focus) {
 
 const char* structureTarget(core::state::StructureSelectionScope scope) {
     switch (scope) {
+        case core::state::StructureSelectionScope::STEP:
+            return "step";
         case core::state::StructureSelectionScope::TRACK:
             return "track";
         case core::state::StructureSelectionScope::PAGE:
@@ -179,7 +183,8 @@ bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
     }
 
     const bool opening = isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::PRESS);
-    if (!opening && !sequencer_.patternQuickControls.selecting.get()) {
+    const bool feedbackVisible = sequencer_.patternQuickControls.feedbackVisible.get();
+    if (!opening && !sequencer_.patternQuickControls.selecting.get() && !feedbackVisible) {
         return false;
     }
 
@@ -253,14 +258,18 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
     }
 
     const bool selectionActive =
-        track_navigation_.selection.active.get() || sequencer_.structureUi.pageSelection.active.get();
+        track_navigation_.selection.active.get() ||
+        sequencer_.structureUi.pageSelection.active.get() ||
+        sequencer_.structureUi.stepSelection.active.get();
     if (leftTopRelease && !selectionActive) {
         return false;
     }
 
     const auto focus = navigation_focus_.get();
     auto scope = core::state::selectionScopeForFocus(focus);
-    if (track_navigation_.selection.active.get()) {
+    if (sequencer_.structureUi.stepSelection.active.get()) {
+        scope = core::state::StructureSelectionScope::STEP;
+    } else if (track_navigation_.selection.active.get()) {
         scope = track_navigation_.selection.scope.get();
     } else if (sequencer_.structureUi.pageSelection.active.get()) {
         scope = sequencer_.structureUi.pageSelection.scope.get();
@@ -270,6 +279,33 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
     out.target = selectionActive ? structureTarget(scope) : structureTarget(focus);
 
     uint8_t index = 0;
+    if (scope == core::state::StructureSelectionScope::STEP && selectionActive) {
+        const auto& selection = sequencer_.structureUi.stepSelection;
+        const uint8_t step = selection.cursorStep.get();
+        out.mode = "sequencer.step_selection";
+        out.target = "step";
+        out.targetStep = static_cast<int16_t>(step);
+        out.property = selection.selected(step) ? "selected" : "cursor";
+        copyIndexLabel(out.valueLabel, step);
+
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "navigate_selection";
+        } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
+            out.effect = "toggle_selection";
+        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
+            out.effect = "cancel_selection";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
+            out.effect = "clear_selection";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
+            out.effect = "preview_paste";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
+            out.effect = "copy_selection";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+            out.effect = "paste_selection";
+        }
+        return true;
+    }
+
     const bool targetTrack =
         selectionActive ? scope == core::state::StructureSelectionScope::TRACK
                         : focus == core::state::StructureNavigationFocus::TRACK;

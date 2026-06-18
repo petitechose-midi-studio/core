@@ -175,6 +175,7 @@ FLASHMEM void SequencerView::bindToState() {
     bindLeftActionStripState();
     bindBottomActionStripState();
     bindHistoryFeedbackState();
+    bindTrackSwitchReadyState();
 
     markAllDirty();
     render();
@@ -186,6 +187,7 @@ FLASHMEM void SequencerView::bindHeaderState() {
     watcher_.watchAll(
         [this]() {
             requestHeaderTopRender();
+            requestLeftActionStripRender();
         },
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
@@ -203,6 +205,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.structureUi.pageSelection.scope,
         state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
         state_refs_.sequencer.structureUi.pageSelection.selectedMask,
+        state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision
@@ -213,6 +217,7 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
     watcher_.watchAll(
         [this]() {
             requestHeaderStripRender();
+            requestLeftActionStripRender();
         },
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
@@ -232,6 +237,8 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.sequencer.structureUi.pageSelection.scope,
         state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
         state_refs_.sequencer.structureUi.pageSelection.selectedMask,
+        state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision
@@ -245,6 +252,7 @@ FLASHMEM void SequencerView::bindGridState() {
         },
         state_refs_.sequencer.pattern.length,
         state_refs_.sequencer.page,
+        state_refs_.sequencer.focusedStep,
         state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.playheadStep,
         state_refs_.sequencer.playheadStepTickOffset,
@@ -261,6 +269,14 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.stepInlineFeedback.property,
         state_refs_.sequencer.patternVariationFeedback.visible,
         state_refs_.sequencer.patternVariationFeedback.property,
+        state_refs_.structureNavigationFocus,
+        state_refs_.structureClipboard.revision,
+        state_refs_.projectNavigation.contentRevision,
+        state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.cursorStep,
+        state_refs_.sequencer.structureUi.stepSelection.selectedMask,
+        state_refs_.sequencer.structureUi.stepSelection.pastePreviewActive,
+        state_refs_.sequencer.structureUi.stepSelection.pastePreview,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.parentStep,
@@ -286,6 +302,7 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.offsetSteps,
         state_refs_.sequencer.patternQuickControls.physicalHoldActive,
+        state_refs_.sequencer.patternQuickControls.feedbackVisible,
         state_refs_.sequencer.pattern.stepsPerBeat,
         state_refs_.sequencer.pattern.swingOffsetPercent,
         state_refs_.sequencer.pattern.patternNudgePercent,
@@ -320,6 +337,7 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
             requestLeftActionStripRender();
         },
         state_refs_.sequencer.patternQuickControls.selecting,
+        state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.physicalHoldActive,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
@@ -327,6 +345,7 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.trackNavigation.selection.scope,
         state_refs_.sequencer.structureUi.pageSelection.active,
         state_refs_.sequencer.structureUi.pageSelection.scope,
+        state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.contentView.kind
     );
 }
@@ -348,6 +367,10 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.trackNavigation.selection.selectedMask,
         state_refs_.sequencer.structureUi.pageSelection.active,
         state_refs_.sequencer.structureUi.pageSelection.selectedMask,
+        state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.selectedMask,
+        state_refs_.sequencer.structureUi.stepSelection.pastePreviewActive,
+        state_refs_.sequencer.structureUi.stepSelection.pastePreview,
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.activeStepProperty,
@@ -364,6 +387,15 @@ FLASHMEM void SequencerView::bindHistoryFeedbackState() {
         },
         state_refs_.sequencer.historyFeedback.visible,
         state_refs_.sequencer.historyFeedback.revision
+    );
+}
+
+FLASHMEM void SequencerView::bindTrackSwitchReadyState() {
+    watcher_.watchAll(
+        [this]() {
+            readyRenderTimerIfDirty();
+        },
+        state_refs_.sharedTrackActive
     );
 }
 
@@ -407,6 +439,16 @@ FLASHMEM void SequencerView::scheduleRender(bool ready) {
         }
         render_timer_->resume(!wasDirty && ready);
     }
+}
+
+FLASHMEM void SequencerView::readyRenderTimerIfDirty() {
+    if (!dirty_) return;
+    ensureRenderTimer();
+    if (!render_timer_) return;
+    if ((container_ && lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) || hasBlockingOverlay()) {
+        return;
+    }
+    render_timer_->resume(true);
 }
 
 FLASHMEM void SequencerView::pauseRenderTimerIfIdle() {

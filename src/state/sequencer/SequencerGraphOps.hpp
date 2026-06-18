@@ -98,6 +98,23 @@ SequencerGraphCreateResult createCycleStateSet(
 bool clearNodeChildren(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 bool clearNodeChildSequence(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 bool clearNodeCycleStateSet(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
+
+enum class SequencerGraphNodeResetMode : uint8_t {
+    DEFAULT = 0,
+    DISABLED_OVERRIDE,
+};
+
+bool resetStepNodePayload(
+    SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId,
+    SequencerGraphNodeResetMode mode = SequencerGraphNodeResetMode::DEFAULT
+);
+bool copyStepNodePayloadFromGraph(
+    SequencerPatternState& targetPattern,
+    SequencerGraphNodeId targetNodeId,
+    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+    SequencerGraphNodeId sourceNodeId
+);
 bool copyNodeChildrenFromGraph(
     SequencerPatternState& targetPattern,
     SequencerGraphNodeId targetNodeId,

@@ -36,9 +36,18 @@ FLASHMEM void SequencerPageClipboard::reset() {
     enabledMask = 0;
 }
 
+FLASHMEM void SequencerStepsClipboard::reset() {
+    valid = false;
+    rootContext = true;
+    count = 0;
+    span = 0;
+    entries = {};
+}
+
 FLASHMEM void StructureClipboardState::clear() {
     kind.set(StructureClipboardKind::NONE);
     sequencerPage.reset();
+    sequencerSteps.reset();
     sequencerGraph.reset();
     sequencerStepContentNodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     sequencerStepContentKind = SequencerStepContentClipboardKind::NONE;
@@ -101,6 +110,23 @@ FLASHMEM bool StructureClipboardState::storeSequencerStepContent(
     sequencerStepContentNodeId = nodeId;
     sequencerStepContentKind = contentKind;
     kind.set(StructureClipboardKind::SEQUENCER_STEP_CONTENT);
+    revision.set(revision.get() + 1);
+    return true;
+}
+
+FLASHMEM bool StructureClipboardState::storeSequencerSteps(
+    const core::state::SequencerStepsClipboard& steps,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    if (!steps.valid || steps.count == 0) {
+        return false;
+    }
+    if (!storeSequencerGraph(sequencerGraph, graph)) {
+        return false;
+    }
+
+    sequencerSteps = steps;
+    kind.set(StructureClipboardKind::SEQUENCER_STEPS);
     revision.set(revision.get() + 1);
     return true;
 }

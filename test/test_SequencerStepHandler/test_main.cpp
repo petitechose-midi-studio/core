@@ -64,6 +64,7 @@ struct SequencerStepHarness {
                   state.sequencerTracks,
                   navigationFocus,
                   state.trackNavigation,
+                  state.projectNavigation,
                   state.structureClipboard,
                   core::handler::SharedTrackDomainServices::fromCoreState(state),
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
@@ -77,6 +78,7 @@ struct SequencerStepHarness {
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
+                  navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               encoders,
@@ -724,6 +726,239 @@ void test_created_track_is_undoable_and_redoable() {
     std::cout << "[PASS] test_created_track_is_undoable_and_redoable\n";
 }
 
+void test_step_selection_copy_paste_extends_sparse_root_steps() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.page.set(0);
+    h.state.sequencer.focusedStep.set(0);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+
+    h.state.sequencer.pattern.note[1] = 65;
+    h.state.sequencer.pattern.velocity[1] = 91;
+    h.state.sequencer.pattern.gate[1] = 130;
+    h.state.sequencer.pattern.nudge[1] = -2;
+    h.state.sequencer.pattern.probability[1] = 76;
+    h.state.sequencer.pattern.setEnabled(1, true);
+
+    h.state.sequencer.pattern.note[3] = 70;
+    h.state.sequencer.pattern.velocity[3] = 112;
+    h.state.sequencer.pattern.gate[3] = 180;
+    h.state.sequencer.pattern.nudge[3] = 4;
+    h.state.sequencer.pattern.probability[3] = 64;
+    h.state.sequencer.pattern.setEnabled(3, true);
+    createRootMicroSequence(h, 3);
+
+    h.press(Config::ButtonID::NAV);
+    h.tick(0);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.sequencer.structureUi.stepSelection.active.get());
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
+    h.release(Config::ButtonID::NAV);
+
+    h.tap(Config::MACRO_BUTTONS[1]);
+    h.tap(Config::MACRO_BUTTONS[3]);
+    assert(h.state.sequencer.structureUi.stepSelection.selected(1));
+    assert(h.state.sequencer.structureUi.stepSelection.selected(3));
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerSteps());
+    assert(h.state.structureClipboard.sequencerSteps.rootContext);
+    assert(h.state.structureClipboard.sequencerSteps.count == 2);
+    assert(h.state.structureClipboard.sequencerSteps.span == 3);
+    assert(h.state.sequencer.structureUi.stepSelection.active.get());
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.structureUi.stepSelection.cursorStep.get() == 6);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    assert(
+        h.state.sequencer.structureUi.pageHold.action.get() ==
+        core::state::StructureHoldAction::PASTE
+    );
+    h.advance(0);
+    assert(h.state.sequencer.structureUi.stepSelection.pastePreviewActive.get());
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(!h.state.sequencer.structureUi.stepSelection.active.get());
+    assert(
+        h.state.sequencer.structureUi.pageHold.action.get() ==
+        core::state::StructureHoldAction::NONE
+    );
+    assert(h.state.sequencer.pattern.length.get() == 9);
+    assert(h.state.sequencer.focusedStep.get() == 6);
+    assert(h.state.sequencer.pattern.note[6] == 65);
+    assert(h.state.sequencer.pattern.velocity[6] == 91);
+    assert(h.state.sequencer.pattern.gate[6] == 130);
+    assert(h.state.sequencer.pattern.nudge[6] == -2);
+    assert(h.state.sequencer.pattern.probability[6] == 76);
+    assert(h.state.sequencer.pattern.isEnabled(6));
+    assert(h.state.sequencer.pattern.note[8] == 70);
+    assert(h.state.sequencer.pattern.velocity[8] == 112);
+    assert(h.state.sequencer.pattern.gate[8] == 180);
+    assert(h.state.sequencer.pattern.nudge[8] == 4);
+    assert(h.state.sequencer.pattern.probability[8] == 64);
+    assert(h.state.sequencer.pattern.isEnabled(8));
+    assert(rootStepHasMicroSequence(h, 8));
+
+    std::cout << "[PASS] test_step_selection_copy_paste_extends_sparse_root_steps\n";
+}
+
+void test_macro_press_on_future_page_does_not_wrap_to_existing_step() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.page.set(1);
+    h.state.sequencer.focusedStep.set(0);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+
+    h.tap(Config::MACRO_BUTTONS[0]);
+
+    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.focusedStep.get() == 0);
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    std::cout << "[PASS] test_macro_press_on_future_page_does_not_wrap_to_existing_step\n";
+}
+
+void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.state.sequencer.pattern.note[2] = 74;
+    h.state.sequencer.pattern.velocity[2] = 105;
+    h.state.sequencer.pattern.setEnabled(2, true);
+    createRootMicroSequence(h, 2);
+
+    h.state.sequencer.structureUi.stepSelection.active.set(true);
+    h.state.sequencer.structureUi.stepSelection.cursorStep.set(2);
+    h.state.sequencer.structureUi.stepSelection.setSelected(2, true);
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(h.state.sequencer.structureUi.stepSelection.active.get());
+    assert(!h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern.note[2] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    assert(!rootStepHasMicroSequence(h, 2));
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern.note[2] == 74);
+    assert(h.state.sequencer.pattern.velocity[2] == 105);
+    assert(rootStepHasMicroSequence(h, 2));
+
+    std::cout << "[PASS] test_step_selection_clear_is_undoable_and_keeps_selection_active\n";
+}
+
+void test_step_selection_wrap_paste_overwrites_inside_pattern() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.state.projectNavigation.stepPasteMode =
+        core::state::project::ProjectStepPasteMode::WRAP;
+
+    h.state.sequencer.pattern.note[1] = 61;
+    h.state.sequencer.pattern.note[3] = 63;
+    h.state.sequencer.pattern.setEnabled(1, true);
+    h.state.sequencer.pattern.setEnabled(3, true);
+    h.state.sequencer.pattern.note[7] = 79;
+    h.state.sequencer.pattern.setEnabled(7, true);
+
+    h.state.sequencer.structureUi.stepSelection.active.set(true);
+    h.state.sequencer.structureUi.stepSelection.cursorStep.set(1);
+    h.state.sequencer.structureUi.stepSelection.setSelected(1, true);
+    h.state.sequencer.structureUi.stepSelection.setSelected(3, true);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerSteps());
+
+    h.state.sequencer.structureUi.stepSelection.cursorStep.set(7);
+    h.state.sequencer.focusedStep.set(7);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(0);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern.note[7] == 61);
+    assert(h.state.sequencer.pattern.isEnabled(7));
+    assert(h.state.sequencer.pattern.note[1] == 63);
+    assert(h.state.sequencer.pattern.isEnabled(1));
+
+    std::cout << "[PASS] test_step_selection_wrap_paste_overwrites_inside_pattern\n";
+}
+
+void test_child_content_nav_enters_step_selection_and_pastes_child_steps() {
+    SequencerStepHarness h;
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        rootNode,
+        2
+    );
+    assert(micro.ok);
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        h.state.sequencer,
+        rootNode,
+        micro.id
+    ));
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.state.sequencer.focusedStep.set(0);
+
+    const auto childNode0 = core::state::sequencer::activeContentStepNodeId(
+        h.state.sequencer,
+        0
+    );
+    assert(core::state::sequencer::setNodeNoteOffset(
+        h.state.sequencer.pattern,
+        childNode0,
+        4
+    ));
+    const auto cycle = core::state::sequencer::createCycleStateSet(
+        h.state.sequencer.pattern,
+        childNode0,
+        2
+    );
+    assert(cycle.ok);
+
+    h.press(Config::ButtonID::NAV);
+    h.tick(0);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.sequencer.structureUi.stepSelection.active.get());
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
+    h.release(Config::ButtonID::NAV);
+
+    h.tap(Config::MACRO_BUTTONS[0]);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerSteps());
+    assert(!h.state.structureClipboard.sequencerSteps.rootContext);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.structureUi.stepSelection.cursorStep.get() == 1);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(0);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    const auto childNode1 = core::state::sequencer::activeContentStepNodeId(
+        h.state.sequencer,
+        1
+    );
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    assert(graph->stepNodes[childNode1].noteOffset == 4);
+    assert(graph->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_CYCLE_SET));
+
+    std::cout << "[PASS] test_child_content_nav_enters_step_selection_and_pastes_child_steps\n";
+}
+
 }  // namespace
 
 int main() {
@@ -742,6 +977,11 @@ int main() {
     test_deleted_track_slot_can_be_recreated_at_any_gap();
     test_created_page_is_undoable_and_redoable();
     test_created_track_is_undoable_and_redoable();
+    test_macro_press_on_future_page_does_not_wrap_to_existing_step();
+    test_step_selection_copy_paste_extends_sparse_root_steps();
+    test_step_selection_clear_is_undoable_and_keeps_selection_active();
+    test_step_selection_wrap_paste_overwrites_inside_pattern();
+    test_child_content_nav_enters_step_selection_and_pastes_child_steps();
 
     std::cout << "\nAll SequencerStepHandler tests passed.\n";
     return 0;
