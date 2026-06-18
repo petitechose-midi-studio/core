@@ -1,0 +1,48 @@
+# UX workflow: validate canonical sequencer scope cycling.
+# Purpose: captures the global grammar root cycle `Track -> Pattern -> Step -> Track`,
+# confirms TrackLegacy does not expose musical property overlays, then validates the
+# child-context cycle `Pattern -> Step -> Pattern`.
+# Expect: capture_match:root_track_initial=root_track_after_cycle, capture_match:track_before_left_bottom=track_left_bottom_down, capture_match:child_pattern_focus=child_pattern_after_cycle
+
+0 scenario sequencer
+50 capture screen root_track_initial
+
+# Root scope cycle: Track -> Pattern -> Step -> Track.
+150 tap NAV 60
+350 capture screen root_pattern_focus
+450 tap NAV 60
+650 capture screen root_step_focus
+750 tap NAV 60
+950 capture screen root_track_after_cycle
+
+# TrackLegacy keeps the left property selectors inactive.
+1050 capture screen track_before_left_bottom
+1100 button LEFT_BOTTOM down
+1320 capture screen track_left_bottom_down
+1370 button LEFT_BOTTOM up
+
+# Move back into Pattern/Step, create a micro-sequence child context on step 1.
+1500 tap NAV 60
+1700 tap NAV 60
+1850 tap MACRO_1 60
+2050 button MACRO_1 down
+3110 tick
+3170 capture screen root_step_edit_for_micro
+3230 button MACRO_1 up
+
+# Focus Micro-sequence row and enter the child pattern context.
+3330 encoder NAV 1
+3410 encoder NAV 1
+3490 encoder NAV 1
+3570 encoder NAV 1
+3650 encoder NAV 1
+3730 encoder NAV 1
+3890 capture screen parent_micro_row_focused
+3990 tap NAV 60
+4290 capture screen child_pattern_focus
+
+# Child scope cycle: Pattern -> Step -> Pattern.
+4390 tap NAV 60
+4590 capture screen child_step_focus
+4690 tap NAV 60
+4890 capture screen child_pattern_after_cycle

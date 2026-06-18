@@ -2,6 +2,7 @@
 # Purpose: validates that Track reserves strip space without active property
 # icons, Pattern exposes pattern dimensions plus musical prop selection, and
 # Step keeps only the musical prop selector while OPT edits the focused step.
+# Expect: capture_match:step_focus_property_only=step_left_center_no_pattern_overlay, capture_match:track_focus_strip_still_hidden=track_left_bottom_no_property_overlay, capture_match:track_focus_strip_still_hidden=track_left_center_no_pattern_overlay
 
 0 scenario sequencer
 50 capture screen track_focus_strip_hidden
