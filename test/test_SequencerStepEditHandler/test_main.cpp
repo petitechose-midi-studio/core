@@ -101,6 +101,7 @@ struct SequencerStepEditHarness {
                       state.sequencerTracks,
                       state.structureClipboard,
                       state.trackNavigation,
+                      state.structureNavigationFocus,
                       core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                   },
                   overlays,
@@ -1081,6 +1082,13 @@ void test_step_edit_does_not_open_when_blocked() {
     {
         SequencerStepEditHarness h;
         h.state.sequencer.structureUi.pageSelection.active.set(true);
+        longPressMacro(h, 0);
+        assert(!h.state.sequencer.stepEdit.visible.get());
+    }
+
+    {
+        SequencerStepEditHarness h;
+        h.state.sequencer.structureUi.stepSelection.active.set(true);
         longPressMacro(h, 0);
         assert(!h.state.sequencer.stepEdit.visible.get());
     }

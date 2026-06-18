@@ -6,10 +6,12 @@
  */
 
 #include <cstdint>
+#include <cstddef>
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 
+#include "handler/common/ButtonReleaseLatch.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerStructureEditWorkflow.hpp"
@@ -83,7 +85,8 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
-    bool nav_long_press_used_ = false;
+    ButtonReleaseLatch<1> nav_release_latch_;
+    ButtonReleaseLatch<8> step_selection_macro_release_latch_;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
 #if defined(MS_UX_RECORDER)

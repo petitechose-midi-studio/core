@@ -28,6 +28,7 @@ void disableMainEditing(SequencerInteractionPolicy& policy) {
     policy.navLongPress = Action::NONE;
     policy.optTurn = Action::NONE;
     policy.macroTap = Action::NONE;
+    policy.macroLongPress = Action::NONE;
     policy.macroTurn = Action::NONE;
     policy.bottomLeftTap = Action::NONE;
     policy.bottomLeftHold = Action::NONE;
@@ -73,6 +74,7 @@ SequencerInteractionPolicy buildSelectorPolicy(bool patternSelector) {
     policy.leftCenterPress = patternSelector ? Action::APPLY_PATTERN_DIMENSION_SELECTOR : Action::NONE;
     policy.leftBottomPress = patternSelector ? Action::NONE : Action::APPLY_MUSICAL_PROPERTY_SELECTOR;
     policy.macroTap = Action::NONE;
+    policy.macroLongPress = Action::NONE;
     policy.macroTurn = patternSelector ? Action::EDIT_PATTERN_DIMENSION
                                        : Action::EDIT_MUSICAL_PROPERTY_VARIATION;
     policy.bottomLeftTap = Action::NONE;
@@ -114,6 +116,7 @@ SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContex
     policy.optTurn = Action::NONE;
     policy.leftTopTap = Action::CANCEL_TRANSIENT_CONTEXT;
     policy.macroTap = Action::TOGGLE_SELECTION;
+    policy.macroLongPress = Action::NONE;
     policy.macroTurn = Action::NONE;
     policy.bottomLeftVisibility = visibleIf(context.selectedItemsAvailable);
     policy.bottomRightVisibility =
@@ -133,6 +136,7 @@ SequencerInteractionPolicy buildStepEditorPolicy(const SequencerInteractionConte
     policy.leftCenterPress = Action::NONE;
     policy.leftBottomPress = Action::EDIT_STEP_LOCAL_RANDOM;
     policy.macroTap = Action::NONE;
+    policy.macroLongPress = Action::NONE;
     policy.macroTurn = Action::EDIT_STEP_EDITOR_ROW;
     policy.bottomLeftTap = Action::NONE;
     policy.bottomLeftHold = Action::NONE;
