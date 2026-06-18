@@ -28,17 +28,25 @@
 2800 tap MACRO_5 60
 3000 capture screen steps_3_5_selected
 
+# Long-pressing a macro while step selection is active must keep the selection
+# context; the Step Editor is opened only from the main sequencer surface.
+3100 button MACRO_3 down
+4200 tick
+4250 capture screen selection_blocks_step_edit_open
+4300 button MACRO_3 up
+4500 capture screen selection_still_active_after_macro_hold
+
 # Copy the selected steps.
-3100 tap BOTTOM_RIGHT 60
-3350 capture screen steps_copied
+4600 tap BOTTOM_RIGHT 60
+4850 capture screen steps_copied
 
 # Move to step 6: paste footprint should preserve the copied gap and preview
 # target steps 6 and 8 before paste is armed.
-3450 encoder NAV 1
-3650 capture screen paste_footprint_step_6
-3750 button BOTTOM_RIGHT down
-3950 capture screen paste_preview_step_6
-4900 tick
-4950 capture screen paste_hold_armed
-5000 button BOTTOM_RIGHT up
-5250 capture screen pasted_steps
+4950 encoder NAV 1
+5150 capture screen paste_footprint_step_6
+5250 button BOTTOM_RIGHT down
+5450 capture screen paste_preview_step_6
+6400 tick
+6450 capture screen paste_hold_armed
+6500 button BOTTOM_RIGHT up
+6750 capture screen pasted_steps

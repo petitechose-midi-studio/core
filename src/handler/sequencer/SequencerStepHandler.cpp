@@ -61,16 +61,34 @@ FLASHMEM SequencerStepHandler::SequencerStepHandler(StateRefs state,
 FLASHMEM void SequencerStepHandler::setupBindings() {
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         buttons_.button(Config::MACRO_BUTTONS[i])
+            .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+            .scope(scope_id_)
+            .when([this]() { return sequencer_.structureUi.stepSelection.active.get(); })
+            .then([this, i]() {
+                step_selection_macro_release_latch_.arm(Config::MACRO_BUTTONS[i]);
+            });
+
+        buttons_.button(Config::MACRO_BUTTONS[i])
             .release()
             .scope(scope_id_)
             .when([this]() { return sequencer_.structureUi.stepSelection.active.get(); })
-            .then([this, i]() { navigation_workflow_.toggleStepSelectionAtVisibleIndex(i); });
+            .then([this, i]() {
+                if (step_selection_macro_release_latch_.consume(Config::MACRO_BUTTONS[i])) {
+                    return;
+                }
+                navigation_workflow_.toggleStepSelectionAtVisibleIndex(i);
+            });
 
         buttons_.button(Config::MACRO_BUTTONS[i])
             .release()
             .scope(scope_id_)
             .when([this]() { return navigation_workflow_.allowsMainBindings(); })
-            .then([this, i]() { toggleStep(i); });
+            .then([this, i]() {
+                if (step_selection_macro_release_latch_.consume(Config::MACRO_BUTTONS[i])) {
+                    return;
+                }
+                toggleStep(i);
+            });
     }
 
     encoders_.encoder(Config::EncoderID::NAV)
@@ -135,7 +153,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .when([this]() { return navigation_workflow_.allowsMainBindings(); })
         .then([this]() {
             history_.commitCoalescedPatternEdit();
-            nav_long_press_used_ = true;
+            nav_release_latch_.arm(Config::ButtonID::NAV);
             navigation_workflow_.enterSelectionModeForCurrentFocus();
         });
 
@@ -144,8 +162,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.selectionActive(); })
         .then([this]() {
-            if (nav_long_press_used_) {
-                nav_long_press_used_ = false;
+            if (nav_release_latch_.consume(Config::ButtonID::NAV)) {
                 return;
             }
             navigation_workflow_.toggleSelectionAtCursor();
@@ -159,8 +176,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    navigation_workflow_.allowsMainBindings();
         })
         .then([this]() {
-            if (nav_long_press_used_) {
-                nav_long_press_used_ = false;
+            if (nav_release_latch_.consume(Config::ButtonID::NAV)) {
                 return;
             }
             if (navigation_workflow_.previewingAddSlot()) {
@@ -179,8 +195,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    navigation_workflow_.allowsMainBindings();
         })
         .then([this]() {
-            if (nav_long_press_used_) {
-                nav_long_press_used_ = false;
+            if (nav_release_latch_.consume(Config::ButtonID::NAV)) {
                 return;
             }
             navigation_workflow_.cycleNavigationFocus();

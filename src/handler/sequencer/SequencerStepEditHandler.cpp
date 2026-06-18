@@ -9,12 +9,14 @@
 
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
+#include "SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::handler {
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace interaction_policy = core::handler::sequencer::interaction_policy;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 
 namespace {
@@ -88,14 +90,20 @@ FLASHMEM void configureStepEditEncoder(
 inline oc::type::IsActiveFn canOpenStepEdit(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
-    core::state::TrackNavigationState& trackUi
+    core::state::TrackNavigationState& trackUi,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
 ) {
-    return [&overlays, &sequencer, &trackUi]() {
-        return !overlays.hasVisible() &&
-               !sequencer.structureUi.pageSelection.active.get() &&
-               !trackUi.selection.active.get() &&
-               !sequencer.patternQuickControls.selecting.get() &&
-               !sequencer.stepPropertyInlineSelector.selecting.get();
+    return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return policy.macroLongPress ==
+               core::state::sequencer::SequencerInteractionAction::OPEN_STEP_EDITOR;
     };
 }
 
@@ -114,6 +122,7 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     , tracks_(state.tracks)
     , structure_clipboard_(state.structureClipboard)
     , track_ui_(state.trackNavigation)
+    , navigation_focus_(state.navigationFocus)
     , history_(state.history)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -132,7 +141,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         buttons_.button(btn)
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(sequencer_view_scope_)
-            .when(canOpenStepEdit(overlay_state_, sequencer_, track_ui_))
+            .when(canOpenStepEdit(overlay_state_, sequencer_, track_ui_, navigation_focus_))
             .then([this, i]() { openForMacroInPage(i); });
     }
 

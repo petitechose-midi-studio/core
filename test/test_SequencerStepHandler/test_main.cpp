@@ -807,6 +807,31 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     std::cout << "[PASS] test_step_selection_copy_paste_extends_sparse_root_steps\n";
 }
 
+void test_step_selection_macro_long_press_consumes_release_without_toggling() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.state.sequencer.structureUi.stepSelection.active.set(true);
+    h.state.sequencer.structureUi.stepSelection.cursorStep.set(2);
+    h.state.sequencer.structureUi.stepSelection.setSelected(2, true);
+    h.state.sequencer.structureUi.stepSelection.setSelected(4, true);
+
+    h.press(Config::MACRO_BUTTONS[2]);
+    h.tick(0);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::MACRO_BUTTONS[2]);
+
+    assert(h.state.sequencer.structureUi.stepSelection.active.get());
+    assert(h.state.sequencer.structureUi.stepSelection.selected(2));
+    assert(h.state.sequencer.structureUi.stepSelection.selected(4));
+
+    h.tap(Config::MACRO_BUTTONS[2]);
+    assert(!h.state.sequencer.structureUi.stepSelection.selected(2));
+    assert(h.state.sequencer.structureUi.stepSelection.selected(4));
+
+    std::cout << "[PASS] test_step_selection_macro_long_press_consumes_release_without_toggling\n";
+}
+
 void test_macro_press_on_future_page_does_not_wrap_to_existing_step() {
     SequencerStepHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -979,6 +1004,7 @@ int main() {
     test_created_track_is_undoable_and_redoable();
     test_macro_press_on_future_page_does_not_wrap_to_existing_step();
     test_step_selection_copy_paste_extends_sparse_root_steps();
+    test_step_selection_macro_long_press_consumes_release_without_toggling();
     test_step_selection_clear_is_undoable_and_keeps_selection_active();
     test_step_selection_wrap_paste_overwrites_inside_pattern();
     test_child_content_nav_enters_step_selection_and_pastes_child_steps();

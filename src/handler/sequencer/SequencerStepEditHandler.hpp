@@ -9,9 +9,11 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/StructureSelectionState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -27,6 +29,9 @@ public:
         core::state::sequencer::SequencerTrackBankState& tracks;
         core::state::StructureClipboardState& structureClipboard;
         core::state::TrackNavigationState& trackNavigation;
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         SequencerHistoryDomainServices history;
     };
 
@@ -81,6 +86,9 @@ private:
     core::state::sequencer::SequencerTrackBankState& tracks_;
     core::state::StructureClipboardState& structure_clipboard_;
     core::state::TrackNavigationState& track_ui_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     SequencerHistoryDomainServices history_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

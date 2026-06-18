@@ -24,6 +24,7 @@ void expectsRootFocusMatrix() {
     assert(track.scope == Scope::TRACK_LEGACY);
     assert(track.navTurn == Action::MOVE_TRACK);
     assert(track.optTurn == Action::NONE);
+    assert(track.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(track.leftCenterVisibility == Visibility::HIDDEN);
     assert(track.leftBottomVisibility == Visibility::HIDDEN);
 
@@ -31,6 +32,7 @@ void expectsRootFocusMatrix() {
     assert(pattern.scope == Scope::PATTERN);
     assert(pattern.navTurn == Action::MOVE_PATTERN);
     assert(pattern.optTurn == Action::EDIT_PATTERN_DIMENSION);
+    assert(pattern.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(pattern.leftCenterPress == Action::OPEN_PATTERN_DIMENSION_SELECTOR);
     assert(pattern.leftBottomPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR);
     assert(pattern.leftCenterVisibility == Visibility::ACTIVE);
@@ -40,6 +42,7 @@ void expectsRootFocusMatrix() {
     assert(step.scope == Scope::STEP);
     assert(step.navTurn == Action::MOVE_STEP);
     assert(step.optTurn == Action::EDIT_STEP_PROPERTY);
+    assert(step.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(step.leftCenterPress == Action::NONE);
     assert(step.leftBottomPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR);
     assert(step.leftCenterVisibility == Visibility::HIDDEN);
@@ -54,6 +57,7 @@ void expectsChildContentBottomActions() {
 
     auto policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::CHILD_PATTERN);
+    assert(policy.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(policy.bottomLeftTap == Action::CLEAR_STEP_CONTENT);
     assert(policy.bottomRightTap == Action::COPY_STEP_CONTENT);
     assert(policy.bottomRightHold == Action::PASTE_STEP_CONTENT);
@@ -64,6 +68,7 @@ void expectsChildContentBottomActions() {
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::STEP);
     assert(policy.optTurn == Action::EDIT_STEP_PROPERTY);
+    assert(policy.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(policy.bottomLeftTap == Action::CLEAR_STEP_CONTENT);
     assert(policy.bottomRightTap == Action::COPY_STEP_CONTENT);
 }
@@ -96,6 +101,7 @@ void expectsSelectorOverrides() {
     assert(policy.navTurn == Action::SELECT_PATTERN_DIMENSION);
     assert(policy.navTap == Action::APPLY_PATTERN_DIMENSION_SELECTOR);
     assert(policy.optTurn == Action::EDIT_PATTERN_DIMENSION);
+    assert(policy.macroLongPress == Action::NONE);
     assert(policy.leftCenterVisibility == Visibility::ACTIVE);
     assert(policy.leftBottomVisibility == Visibility::HIDDEN);
 
@@ -106,6 +112,7 @@ void expectsSelectorOverrides() {
     assert(policy.navTurn == Action::SELECT_MUSICAL_PROPERTY);
     assert(policy.navTap == Action::APPLY_MUSICAL_PROPERTY_SELECTOR);
     assert(policy.optTurn == Action::EDIT_MUSICAL_PROPERTY_VARIATION);
+    assert(policy.macroLongPress == Action::NONE);
     assert(policy.leftCenterVisibility == Visibility::HIDDEN);
     assert(policy.leftBottomVisibility == Visibility::ACTIVE);
 }
@@ -121,6 +128,7 @@ void expectsSelectionOverrides() {
     assert(policy.navTurn == Action::MOVE_SELECTION_CURSOR);
     assert(policy.navTap == Action::TOGGLE_SELECTION);
     assert(policy.optTurn == Action::NONE);
+    assert(policy.macroLongPress == Action::NONE);
     assert(policy.bottomLeftTap == Action::CLEAR_SELECTION);
     assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
     assert(policy.bottomRightTap == Action::COPY_STEP_SELECTION);
@@ -154,6 +162,7 @@ void expectsStepEditorOverridesEverything() {
     assert(policy.navTurn == Action::SELECT_STEP_EDITOR_ROW);
     assert(policy.navTap == Action::APPLY_STEP_EDITOR);
     assert(policy.optTurn == Action::EDIT_STEP_EDITOR_ROW);
+    assert(policy.macroLongPress == Action::NONE);
     assert(policy.leftBottomPress == Action::EDIT_STEP_LOCAL_RANDOM);
     assert(policy.leftCenterVisibility == Visibility::HIDDEN);
     assert(policy.leftBottomVisibility == Visibility::ACTIVE);
@@ -184,6 +193,7 @@ void expectsOverlayBlocksMainSurfaceEditing() {
     assert(policy.navTurn == Action::MOVE_PATTERN);
     assert(policy.navTap == Action::NONE);
     assert(policy.optTurn == Action::NONE);
+    assert(policy.macroLongPress == Action::NONE);
     assert(policy.leftCenterVisibility == Visibility::HIDDEN);
     assert(policy.leftBottomVisibility == Visibility::HIDDEN);
     assert(policy.bottomLeftVisibility == Visibility::HIDDEN);

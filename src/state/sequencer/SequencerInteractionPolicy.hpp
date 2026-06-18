@@ -43,6 +43,7 @@ enum class SequencerInteractionAction : uint8_t {
     EDIT_STEP_PROPERTY,
     EDIT_STEP_LOCAL_RANDOM,
     EDIT_STEP_EDITOR_ROW,
+    OPEN_STEP_EDITOR,
     TOGGLE_VISIBLE_STEP,
     EDIT_VISIBLE_STEP_PROPERTY,
     CLEAR_CURRENT_STRUCTURE,
@@ -94,6 +95,7 @@ struct SequencerInteractionPolicy {
     SequencerInteractionAction leftCenterPress = SequencerInteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR;
     SequencerInteractionAction leftBottomPress = SequencerInteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR;
     SequencerInteractionAction macroTap = SequencerInteractionAction::TOGGLE_VISIBLE_STEP;
+    SequencerInteractionAction macroLongPress = SequencerInteractionAction::OPEN_STEP_EDITOR;
     SequencerInteractionAction macroTurn = SequencerInteractionAction::EDIT_VISIBLE_STEP_PROPERTY;
     SequencerInteractionAction bottomLeftTap = SequencerInteractionAction::CLEAR_CURRENT_STRUCTURE;
     SequencerInteractionAction bottomLeftHold = SequencerInteractionAction::REMOVE_CURRENT_STRUCTURE;
