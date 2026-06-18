@@ -102,8 +102,7 @@ inline oc::type::IsActiveFn canOpenStepEdit(
             navigationFocus.get(),
             overlays.hasVisible()
         );
-        return policy.macroLongPress ==
-               core::state::sequencer::SequencerInteractionAction::OPEN_STEP_EDITOR;
+        return interaction_policy::canOpenStepEditor(policy);
     };
 }
 

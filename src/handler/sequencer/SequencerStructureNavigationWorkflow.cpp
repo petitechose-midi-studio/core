@@ -67,21 +67,19 @@ FLASHMEM SequencerStructureNavigationWorkflow::SequencerStructureNavigationWorkf
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::allowsMainBindings() const {
-    const auto context = interaction_policy::makeContext(
+    return interaction_policy::allowsMainSurface(
         sequencer_,
         track_ui_,
         navigation_focus_.get()
     );
-    return core::state::sequencer::sequencerInteractionMainSurfaceAvailable(context);
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::selectionActive() const {
-    const auto context = interaction_policy::makeContext(
+    return interaction_policy::selectionActive(
         sequencer_,
         track_ui_,
         navigation_focus_.get()
     );
-    return core::state::sequencer::sequencerInteractionSelectionActive(context);
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::stepFocusActive() const {
