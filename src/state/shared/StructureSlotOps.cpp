@@ -8,6 +8,11 @@ FLASHMEM uint16_t slotBit(uint8_t index) {
     return static_cast<uint16_t>(1U << index);
 }
 
+FLASHMEM uint16_t prefixMask(uint8_t count) {
+    if (count >= 16U) return 0xFFFFU;
+    return static_cast<uint16_t>((1U << count) - 1U);
+}
+
 FLASHMEM bool isEnabled(uint16_t enabledMask, uint8_t index) {
     return (enabledMask & slotBit(index)) != 0;
 }

@@ -67,6 +67,7 @@ private:
     void setupBindings();
 
     void toggleStep(uint8_t indexInPage);
+    bool selectionHasItems() const;
     bool focusedStepHasChildContent() const;
     bool canPasteFocusedStepContent() const;
     void clearFocusedStepContent();

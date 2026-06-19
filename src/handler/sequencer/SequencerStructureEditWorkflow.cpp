@@ -9,6 +9,7 @@
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
+#include "state/StructureClipboardPastePlan.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -52,42 +53,6 @@ FLASHMEM oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings(
         sequencer.pattern.scalePolicy,
         sequencer.pattern.scaleOverride
     );
-}
-
-FLASHMEM uint16_t duplicateTrackHistoryMask(
-    uint16_t enabledMask,
-    uint16_t selectedMask,
-    uint8_t activeTrack
-) {
-    uint16_t nextMask = enabledMask;
-    uint16_t historyMask = sequencerStructureHistoryTrackBit(activeTrack);
-
-    for (uint8_t source = 0;
-         source < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++source) {
-        const uint16_t sourceBit = structure_slots::slotBit(source);
-        if ((selectedMask & sourceBit) == 0 || (enabledMask & sourceBit) == 0) {
-            continue;
-        }
-
-        const int dest = structure_slots::firstDisabledIndex(
-            nextMask,
-            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
-        );
-        if (dest < 0) {
-            break;
-        }
-
-        const auto destTrack = static_cast<uint8_t>(dest);
-        historyMask = static_cast<uint16_t>(
-            historyMask |
-            sequencerStructureHistoryTrackBit(source) |
-            sequencerStructureHistoryTrackBit(destTrack)
-        );
-        nextMask = static_cast<uint16_t>(nextMask | structure_slots::slotBit(destTrack));
-    }
-
-    return historyMask;
 }
 
 FLASHMEM bool clearActiveContentStep(
@@ -183,22 +148,67 @@ FLASHMEM bool writeChildStepFromClipboardEntry(
     return true;
 }
 
-FLASHMEM void copyPageChildContentFromClipboard(
+FLASHMEM uint8_t firstSelectedIndex(uint16_t mask, uint8_t limit) {
+    for (uint8_t index = 0; index < limit; ++index) {
+        if ((mask & structure_slots::slotBit(index)) != 0) return index;
+    }
+    return limit;
+}
+
+FLASHMEM bool capturePageClipboard(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t page,
+    core::state::SequencerPageClipboard& clipboard
+) {
+    clipboard.reset();
+    if (page >= core::state::sequencer::SequencerState::PAGE_COUNT) return false;
+
+    const uint8_t start = static_cast<uint8_t>(
+        page * core::state::sequencer::SequencerState::STEPS_PER_PAGE
+    );
+    const uint8_t len = sequencer.pattern.length.get();
+    const uint8_t count = (start >= len)
+        ? 0
+        : static_cast<uint8_t>(std::min<uint16_t>(
+              core::state::sequencer::SequencerState::STEPS_PER_PAGE,
+              static_cast<uint16_t>(len - start)
+          ));
+    if (count == 0) return false;
+
+    clipboard.valid = true;
+    clipboard.sourcePage = page;
+    clipboard.count = count;
+    for (uint8_t i = 0; i < count; ++i) {
+        const uint8_t step = static_cast<uint8_t>(start + i);
+        clipboard.note[i] = sequencer.pattern.note[step];
+        clipboard.velocity[i] = sequencer.pattern.velocity[step];
+        clipboard.gate[i] = sequencer.pattern.gate[step];
+        clipboard.nudge[i] = sequencer.pattern.nudge[step];
+        clipboard.probability[i] = sequencer.pattern.probability[step];
+        if (sequencer.pattern.isEnabled(step)) {
+            clipboard.enabledMask |= static_cast<uint8_t>(1U << i);
+        }
+    }
+    return true;
+}
+
+FLASHMEM void copyPageChildContentFromGraph(
     core::state::sequencer::SequencerState& sequencer,
-    const core::state::StructureClipboardState& clipboard,
+    const core::state::SequencerPageClipboard& clipboard,
+    const oc::note::sequencer::StepSequencerGraph* sourceGraph,
     uint8_t targetPage
 ) {
-    if (!clipboard.sequencerGraph || !clipboard.sequencerGraph->enabled) return;
+    if (sourceGraph == nullptr || !sourceGraph->enabled) return;
 
     const uint8_t sourceStart = static_cast<uint8_t>(
-        clipboard.sequencerPage.sourcePage *
+        clipboard.sourcePage *
         core::state::sequencer::SequencerState::STEPS_PER_PAGE
     );
     const uint8_t targetStart = static_cast<uint8_t>(
         targetPage * core::state::sequencer::SequencerState::STEPS_PER_PAGE
     );
 
-    for (uint8_t i = 0; i < clipboard.sequencerPage.count; ++i) {
+    for (uint8_t i = 0; i < clipboard.count; ++i) {
         const uint8_t sourceStep = static_cast<uint8_t>(sourceStart + i);
         const uint8_t targetStep = static_cast<uint8_t>(targetStart + i);
         if (sourceStep >= core::state::sequencer::SequencerState::MAX_STEPS ||
@@ -212,10 +222,47 @@ FLASHMEM void copyPageChildContentFromClipboard(
         core::state::sequencer::copyNodeChildrenFromGraph(
             sequencer.pattern,
             targetNode,
-            *clipboard.sequencerGraph,
+            *sourceGraph,
             sourceNode
         );
     }
+}
+
+FLASHMEM void pastePageClipboard(
+    core::state::sequencer::SequencerState& sequencer,
+    const core::state::SequencerPageClipboard& clipboard,
+    const oc::note::sequencer::StepSequencerGraph* sourceGraph,
+    uint8_t targetPage
+) {
+    const uint8_t targetStart =
+        static_cast<uint8_t>(targetPage * core::state::sequencer::SequencerState::STEPS_PER_PAGE);
+    const uint8_t targetEnd = static_cast<uint8_t>(std::min<uint16_t>(
+        core::state::sequencer::SequencerState::MAX_STEPS - 1,
+        static_cast<uint16_t>(
+            targetStart + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1
+        )
+    ));
+    core::state::sequencer::clearStepRange(sequencer, targetStart, targetEnd);
+
+    const uint8_t requiredLength = static_cast<uint8_t>(std::min<uint16_t>(
+        core::state::sequencer::SequencerState::MAX_STEPS,
+        static_cast<uint16_t>(targetStart + std::max<uint8_t>(clipboard.count, 1))
+    ));
+    if (sequencer.pattern.length.get() < requiredLength) {
+        sequencer.pattern.length.set(requiredLength);
+    }
+
+    for (uint8_t i = 0; i < clipboard.count; ++i) {
+        const uint8_t step = static_cast<uint8_t>(targetStart + i);
+        sequencer.pattern.note[step] = clipboard.note[i];
+        sequencer.pattern.velocity[step] = clipboard.velocity[i];
+        sequencer.pattern.gate[step] = clipboard.gate[i];
+        sequencer.pattern.nudge[step] = clipboard.nudge[i];
+        sequencer.pattern.probability[step] = clipboard.probability[i];
+        sequencer.pattern.setEnabled(step, clipboard.isEnabled(i));
+    }
+
+    copyPageChildContentFromGraph(sequencer, clipboard, sourceGraph, targetPage);
 }
 
 }  // namespace
@@ -238,6 +285,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const 
             core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
         ) > 1U;
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
+        return false;
+    }
     if (sequencer_.structureUi.previewAddPageSlot.get()) return false;
     return sequencer_.activePageCount() > 1U;
 }
@@ -245,6 +295,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const 
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteCurrentStructure() const {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         return structure_clipboard_.hasSequencerTrack();
+    }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
+        return false;
     }
     return structure_clipboard_.hasSequencerPage();
 }
@@ -276,6 +329,10 @@ FLASHMEM void SequencerStructureEditWorkflow::eraseCurrentStructure() {
         recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
+        eraseFocusedStep();
+        return;
+    }
 
     if (sequencer_.structureUi.previewAddPageSlot.get()) return;
     HistoryPatternSnapshot before;
@@ -288,6 +345,21 @@ FLASHMEM void SequencerStructureEditWorkflow::eraseCurrentStructure() {
     if (core::state::sequencer::clearStepRange(sequencer_, start, end)) {
         recordPageHistoryAfter(std::move(before));
     }
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::eraseFocusedStep() {
+    const uint8_t step = sequencer_.focusedStep.get();
+    if (step >= core::state::sequencer::activeContentLength(sequencer_)) return;
+
+    HistoryPatternSnapshot before;
+    if (!capturePageHistoryBefore(before)) return;
+
+    if (!clearActiveContentStep(sequencer_, step)) return;
+    core::state::sequencer::refreshContentView(sequencer_);
+    sequencer_.pattern.bumpStepDataRevision();
+    sequencer_.focusedStep.set(step);
+    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(step));
+    recordPageHistoryAfter(std::move(before));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
@@ -306,6 +378,9 @@ FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
         auto change = captureTrackHistoryBefore(historyMask);
         applyTrackState(mutation.nextMask, mutation.nextActive);
         recordTrackHistoryAfter(std::move(change), historyMask);
+        return;
+    }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
         return;
     }
 
@@ -335,30 +410,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
     if (sequencer_.structureUi.previewAddPageSlot.get()) return;
     core::state::SequencerPageClipboard clipboard;
     const uint8_t page = sequencer_.visiblePage();
-    const uint8_t start = sequencer_.pageStartStepClamped(page);
-    const uint8_t len = sequencer_.pattern.length.get();
-    const uint8_t count = (start >= len)
-        ? 0
-        : static_cast<uint8_t>(std::min<uint16_t>(
-              core::state::sequencer::SequencerState::STEPS_PER_PAGE,
-              static_cast<uint16_t>(len - start)
-          ));
-    if (count == 0) return;
-
-    clipboard.valid = true;
-    clipboard.sourcePage = page;
-    clipboard.count = count;
-    for (uint8_t i = 0; i < count; ++i) {
-        const uint8_t step = static_cast<uint8_t>(start + i);
-        clipboard.note[i] = sequencer_.pattern.note[step];
-        clipboard.velocity[i] = sequencer_.pattern.velocity[step];
-        clipboard.gate[i] = sequencer_.pattern.gate[step];
-        clipboard.nudge[i] = sequencer_.pattern.nudge[step];
-        clipboard.probability[i] = sequencer_.pattern.probability[step];
-        if (sequencer_.pattern.isEnabled(step)) {
-            clipboard.enabledMask |= static_cast<uint8_t>(1U << i);
-        }
-    }
+    if (!capturePageClipboard(sequencer_, page, clipboard)) return;
     if (!structure_clipboard_.storeSequencerPage(
         clipboard,
         core::state::sequencer::graphView(sequencer_.pattern)
@@ -406,36 +458,101 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     }
 
     const auto& clipboard = structure_clipboard_.sequencerPage;
-    const uint8_t targetStart =
-        static_cast<uint8_t>(targetPage * core::state::sequencer::SequencerState::STEPS_PER_PAGE);
-    const uint8_t targetEnd = static_cast<uint8_t>(std::min<uint16_t>(
-        core::state::sequencer::SequencerState::MAX_STEPS - 1,
-        static_cast<uint16_t>(targetStart + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1)
-    ));
-    core::state::sequencer::clearStepRange(sequencer_, targetStart, targetEnd);
-    const uint8_t requiredLength = static_cast<uint8_t>(std::min<uint16_t>(
-        core::state::sequencer::SequencerState::MAX_STEPS,
-        static_cast<uint16_t>(targetStart + std::max<uint8_t>(clipboard.count, 1))
-    ));
-    if (sequencer_.pattern.length.get() < requiredLength) {
-        sequencer_.pattern.length.set(requiredLength);
-    }
-    for (uint8_t i = 0; i < clipboard.count; ++i) {
-        const uint8_t step = static_cast<uint8_t>(targetStart + i);
-        sequencer_.pattern.note[step] = clipboard.note[i];
-        sequencer_.pattern.velocity[step] = clipboard.velocity[i];
-        sequencer_.pattern.gate[step] = clipboard.gate[i];
-        sequencer_.pattern.nudge[step] = clipboard.nudge[i];
-        sequencer_.pattern.probability[step] = clipboard.probability[i];
-        sequencer_.pattern.setEnabled(step, clipboard.isEnabled(i));
-    }
-    copyPageChildContentFromClipboard(sequencer_, structure_clipboard_, targetPage);
+    pastePageClipboard(
+        sequencer_,
+        clipboard,
+        structure_clipboard_.sequencerGraph.get(),
+        targetPage
+    );
     sequencer_.pattern.bumpStepDataRevision();
     sequencer_.structureUi.syncPreviewPage(targetPage);
     sequencer_.page.set(targetPage);
     sequencer_.structureUi.previewAddPageSlot.set(false);
     sequencer_.focusedStep.set(sequencer_.pageStartStep(targetPage));
     recordPageHistoryAfter(std::move(before));
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::canPasteSelection() const {
+    if (track_ui_.selection.active.get()) {
+        return structure_clipboard_.hasSequencerTrackSelection();
+    }
+    if (sequencer_.structureUi.pageSelection.active.get()) {
+        return structure_clipboard_.hasSequencerPageSelection();
+    }
+    return false;
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
+    if (track_ui_.selection.active.get()) {
+        const uint16_t selectedMask = static_cast<uint16_t>(
+            track_ui_.selection.selectedMask.get() & currentTrackEnabledMask()
+        );
+        const uint8_t firstTrack = firstSelectedIndex(
+            selectedMask,
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        );
+        if (firstTrack >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) return;
+
+        auto clipboard = core::app::makeExtmemUnique<core::state::SequencerTrackSelectionClipboard>();
+        if (!clipboard) return;
+        clipboard->valid = true;
+
+        core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
+        for (uint8_t track = firstTrack;
+             track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+             ++track) {
+            if ((selectedMask & structure_slots::slotBit(track)) == 0) continue;
+            if (clipboard->count >= clipboard->tracks.size()) break;
+
+            auto& entry = clipboard->tracks[clipboard->count++];
+            entry.valid = true;
+            entry.offset = static_cast<uint8_t>(track - firstTrack);
+            core::state::sequencer::captureSnapshot(tracks_.track(track), entry.snapshot);
+            if (!core::state::cloneSequencerGraph(
+                    entry.graph,
+                    core::state::sequencer::graphView(tracks_.track(track))
+                )) {
+                return;
+            }
+        }
+
+        if (clipboard->count == 0) return;
+        structure_clipboard_.storeSequencerTrackSelection(std::move(clipboard));
+        return;
+    }
+
+    auto& selection = sequencer_.structureUi.pageSelection;
+    if (!selection.active.get()) return;
+
+    const uint16_t selectedMask = static_cast<uint16_t>(
+        selection.selectedMask.get() & structure_slots::prefixMask(sequencer_.activePageCount())
+    );
+    const uint8_t firstPage = firstSelectedIndex(
+        selectedMask,
+        core::state::sequencer::SequencerState::PAGE_COUNT
+    );
+    if (firstPage >= core::state::sequencer::SequencerState::PAGE_COUNT) return;
+
+    core::state::SequencerPageSelectionClipboard clipboard;
+    clipboard.valid = true;
+    clipboard.sourceFirstPage = firstPage;
+
+    for (uint8_t page = firstPage;
+         page < core::state::sequencer::SequencerState::PAGE_COUNT;
+         ++page) {
+        if ((selectedMask & structure_slots::slotBit(page)) == 0) continue;
+        if (clipboard.count >= clipboard.pages.size()) break;
+
+        auto& entry = clipboard.pages[clipboard.count];
+        if (!capturePageClipboard(sequencer_, page, entry)) continue;
+        ++clipboard.count;
+    }
+
+    if (clipboard.count == 0) return;
+    structure_clipboard_.storeSequencerPageSelection(
+        clipboard,
+        core::state::sequencer::graphView(sequencer_.pattern)
+    );
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
@@ -661,6 +778,103 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
     recordPageHistoryAfter(std::move(before));
 }
 
+FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
+    if (track_ui_.selection.active.get()) {
+        if (!structure_clipboard_.hasSequencerTrackSelection()) return;
+        const auto* clipboard = structure_clipboard_.sequencerTrackSelection.get();
+        if (clipboard == nullptr) return;
+
+        const uint8_t cursorTrack =
+            core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+                track_ui_.selection.cursorIndex.get()
+            );
+        uint16_t targetMask = 0;
+        uint8_t firstTarget = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+        for (uint8_t i = 0; i < clipboard->count; ++i) {
+            const auto& entry = clipboard->tracks[i];
+            if (!entry.valid) continue;
+            const uint16_t target = static_cast<uint16_t>(cursorTrack) + entry.offset;
+            if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
+
+            const uint8_t targetTrack = static_cast<uint8_t>(target);
+            targetMask = static_cast<uint16_t>(
+                targetMask | structure_slots::slotBit(targetTrack)
+            );
+            firstTarget = std::min(firstTarget, targetTrack);
+        }
+        if (targetMask == 0) return;
+
+        const uint8_t previousActive = currentActiveTrack();
+        const uint16_t historyMask = static_cast<uint16_t>(
+            targetMask | sequencerStructureHistoryTrackBit(previousActive)
+        );
+        auto change = captureTrackHistoryBefore(historyMask);
+        core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
+
+        for (uint8_t i = 0; i < clipboard->count; ++i) {
+            const auto& entry = clipboard->tracks[i];
+            if (!entry.valid) continue;
+            const uint16_t target = static_cast<uint16_t>(cursorTrack) + entry.offset;
+            if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
+
+            const uint8_t targetTrack = static_cast<uint8_t>(target);
+            core::state::sequencer::applySnapshot(tracks_.track(targetTrack), entry.snapshot);
+            core::state::sequencer::copyGraph(
+                tracks_.track(targetTrack),
+                entry.graph.get(),
+                entry.snapshot.graphRevision
+            );
+            if (targetTrack == previousActive) {
+                core::state::sequencer::applySnapshotToEditor(sequencer_, entry.snapshot);
+                core::state::sequencer::copyGraph(
+                    sequencer_.pattern,
+                    entry.graph.get(),
+                    entry.snapshot.graphRevision
+                );
+            }
+        }
+
+        const uint16_t nextMask = static_cast<uint16_t>(currentTrackEnabledMask() | targetMask);
+        applyTrackState(nextMask, firstTarget);
+        cancelSelectionMode();
+        recordTrackHistoryAfter(std::move(change), historyMask);
+        return;
+    }
+
+    auto& selection = sequencer_.structureUi.pageSelection;
+    if (!selection.active.get() || !structure_clipboard_.hasSequencerPageSelection()) return;
+
+    const auto& clipboard = structure_clipboard_.sequencerPageSelection;
+    const auto plan = core::state::buildSequencerPageSelectionPastePlan(
+        clipboard,
+        selection.cursorIndex.get(),
+        sequencer_.activePageCount()
+    );
+    if (!plan.hasEntries()) return;
+
+    HistoryPatternSnapshot before;
+    if (!capturePageHistoryBefore(before)) return;
+
+    for (uint8_t i = 0; i < plan.count; ++i) {
+        const auto& target = plan.entries[i];
+        const auto& entry = clipboard.pages[target.clipboardIndex];
+        pastePageClipboard(
+            sequencer_,
+            entry,
+            structure_clipboard_.sequencerGraph.get(),
+            target.destinationPage
+        );
+    }
+
+    sequencer_.pattern.bumpStepDataRevision();
+    sequencer_.page.set(plan.firstDestinationPage);
+    sequencer_.focusedStep.set(sequencer_.pageStartStep(plan.firstDestinationPage));
+    sequencer_.structureUi.syncPreviewPage(plan.firstDestinationPage);
+    sequencer_.structureUi.previewAddPageSlot.set(false);
+    cancelSelectionMode();
+    recordPageHistoryAfter(std::move(before));
+}
+
 FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
     auto& selection = track_ui_.selection.active.get() ? track_ui_.selection
                                                        : sequencer_.structureUi.pageSelection;
@@ -706,58 +920,6 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
             }
         }
 
-        if (!changed) return;
-        cancelSelectionMode();
-        recordPageHistoryAfter(std::move(before));
-    }
-}
-
-FLASHMEM void SequencerStructureEditWorkflow::duplicateSelection() {
-    auto& selection = track_ui_.selection.active.get() ? track_ui_.selection
-                                                       : sequencer_.structureUi.pageSelection;
-    if (!selection.active.get()) return;
-
-    const uint16_t selectedMask = selection.selectedMask.get();
-    if (selectedMask == 0) return;
-
-    bool changed = false;
-
-    if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
-        const uint16_t historyMask = duplicateTrackHistoryMask(
-            currentTrackEnabledMask(),
-            selectedMask,
-            currentActiveTrack()
-        );
-        auto change = captureTrackHistoryBefore(historyMask);
-        core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
-        const auto result = structure_slots::duplicateSelectionIntoFreeSlots(
-            currentTrackEnabledMask(),
-            selectedMask,
-            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
-            [this](uint8_t source, uint8_t dest) {
-                const auto& sourceTrack =
-                    (source == currentActiveTrack()) ? sequencer_.pattern : tracks_.track(source);
-                core::state::sequencer::copyPatternState(tracks_.track(dest), sourceTrack);
-            }
-        );
-
-        if (result.firstDuplicated < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
-            changed = applyTrackState(result.nextMask, result.firstDuplicated);
-        }
-        if (!changed) return;
-        cancelSelectionMode();
-        recordTrackHistoryAfter(std::move(change), historyMask);
-        return;
-    } else {
-        HistoryPatternSnapshot before;
-        if (!capturePageHistoryBefore(before)) return;
-        const auto plan = core::state::sequencer::buildPageDuplicatePlan(
-            sequencer_,
-            selectedMask,
-            selection.cursorIndex.get()
-        );
-        if (!plan.movesAnyPage()) return;
-        changed = core::state::sequencer::duplicatePagesFromPlan(sequencer_, plan);
         if (!changed) return;
         cancelSelectionMode();
         recordPageHistoryAfter(std::move(before));

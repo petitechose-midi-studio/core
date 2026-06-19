@@ -178,115 +178,6 @@ void test_rotate_pattern_moves_payload_and_mask() {
     std::cout << "[PASS] test_rotate_pattern_moves_payload_and_mask\n";
 }
 
-void test_page_duplicate_plan_preserves_gaps_and_marks_overwrite() {
-    SequencerState sequencer;
-    sequencer.pattern.length.set(40);
-
-    const auto plan = core::state::sequencer::buildPageDuplicatePlan(
-        sequencer,
-        0x0015,
-        3
-    );
-
-    assert(plan.destinationMask == 0x00A8);
-    assert(plan.overwriteMask == 0x0008);
-    assert(plan.entryCount == 3);
-    assert(plan.entries[0].sourcePage == 0);
-    assert(plan.entries[0].destinationPage == 3);
-    assert(plan.entries[1].sourcePage == 2);
-    assert(plan.entries[1].destinationPage == 5);
-    assert(plan.entries[2].sourcePage == 4);
-    assert(plan.entries[2].destinationPage == 7);
-
-    std::cout << "[PASS] test_page_duplicate_plan_preserves_gaps_and_marks_overwrite\n";
-}
-
-void test_page_duplicate_plan_clips_destinations_past_page_limit() {
-    SequencerState sequencer;
-    sequencer.pattern.length.set(40);
-
-    const auto plan = core::state::sequencer::buildPageDuplicatePlan(
-        sequencer,
-        0x0015,
-        14
-    );
-
-    assert(plan.destinationMask == 0x4000);
-    assert(plan.overwriteMask == 0);
-    assert(plan.entryCount == 1);
-    assert(plan.entries[0].sourcePage == 0);
-    assert(plan.entries[0].destinationPage == 14);
-
-    std::cout << "[PASS] test_page_duplicate_plan_clips_destinations_past_page_limit\n";
-}
-
-void test_duplicate_pages_from_plan_overwrites_from_snapshot() {
-    SequencerState sequencer;
-    sequencer.pattern.length.set(40);
-    setStep(sequencer, 0, 60, 90, 70, 0, 100, true);
-    setStep(sequencer, 16, 72, 91, 71, 1, 80, true);
-    setStep(sequencer, 32, 84, 92, 72, 2, 70, true);
-    setStep(sequencer, 40, 96, 93, 73, 3, 60, true);
-
-    const auto plan = core::state::sequencer::buildPageDuplicatePlan(
-        sequencer,
-        0x0005,
-        2
-    );
-    assert(core::state::sequencer::duplicatePagesFromPlan(sequencer, plan));
-
-    assert(sequencer.pattern.length.get() == 40);
-    assertStep(sequencer, 16, 60, 90, 70, 0, 100, true);
-    assertStep(sequencer, 32, 72, 91, 71, 1, 80, true);
-    assert(sequencer.page.get() == 2);
-    assert(sequencer.focusedStep.get() == 16);
-
-    std::cout << "[PASS] test_duplicate_pages_from_plan_overwrites_from_snapshot\n";
-}
-
-void test_duplicate_pages_from_plan_copies_child_content() {
-    SequencerState sequencer;
-    sequencer.pattern.length.set(24);
-    setStep(sequencer, 0, 60, 90, 70, 0, 100, true);
-    createRootMicroSequence(sequencer, 0, 2);
-
-    const auto plan = core::state::sequencer::buildPageDuplicatePlan(
-        sequencer,
-        0x0001,
-        2
-    );
-    assert(core::state::sequencer::duplicatePagesFromPlan(sequencer, plan));
-
-    assert(rootStepHasMicroSequence(sequencer, 0));
-    assert(rootStepHasMicroSequence(sequencer, 16));
-
-    std::cout << "[PASS] test_duplicate_pages_from_plan_copies_child_content\n";
-}
-
-void test_duplicate_pages_from_plan_extends_and_clips() {
-    SequencerState sequencer;
-    sequencer.pattern.length.set(40);
-    setStep(sequencer, 0, 60, 90, 70, 0, 100, true);
-    setStep(sequencer, 16, 72, 91, 71, 1, 80, true);
-    setStep(sequencer, 32, 84, 92, 72, 2, 70, true);
-
-    const auto plan = core::state::sequencer::buildPageDuplicatePlan(
-        sequencer,
-        0x0015,
-        14
-    );
-    assert(core::state::sequencer::duplicatePagesFromPlan(sequencer, plan));
-
-    assert(sequencer.pattern.length.get() == 120);
-    assertDefaultStep(sequencer, 40);
-    assertStep(sequencer, 112, 60, 90, 70, 0, 100, true);
-    assertDefaultStep(sequencer, 120);
-    assert(sequencer.page.get() == 14);
-    assert(sequencer.focusedStep.get() == 112);
-
-    std::cout << "[PASS] test_duplicate_pages_from_plan_extends_and_clips\n";
-}
-
 void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
     SequencerState source;
     const auto sourceNode = core::state::sequencer::rootStepNodeId(0);
@@ -321,11 +212,6 @@ int main() {
     test_remove_page_shifts_following_payloads();
     test_remove_page_shifts_child_content();
     test_rotate_pattern_moves_payload_and_mask();
-    test_page_duplicate_plan_preserves_gaps_and_marks_overwrite();
-    test_page_duplicate_plan_clips_destinations_past_page_limit();
-    test_duplicate_pages_from_plan_overwrites_from_snapshot();
-    test_duplicate_pages_from_plan_copies_child_content();
-    test_duplicate_pages_from_plan_extends_and_clips();
     test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision();
 
     std::cout << "All SequencerSnapshotOps tests passed\n";

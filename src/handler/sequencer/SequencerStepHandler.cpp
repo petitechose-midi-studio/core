@@ -276,6 +276,36 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(scope_id_)
+        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .then([this]() {
+            if (selectionHasItems()) {
+                edit_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
+            }
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .when([this]() {
+            return navigation_workflow_.selectionActive() && selectionHasItems();
+        })
+        .then([this]() {
+            edit_workflow_.clearHoldAction();
+            bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_LEFT);
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
+#endif
+            history_.commitCoalescedPatternEdit();
+            if (sequencer_.structureUi.stepSelection.active.get()) {
+                edit_workflow_.clearStepSelection();
+            } else {
+                edit_workflow_.deleteSelection();
+            }
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .press()
+        .scope(scope_id_)
         .when([this]() {
             return core::state::sequencer::isRootContentView(sequencer_) &&
                    navigation_workflow_.allowsMainBindings();
@@ -294,11 +324,12 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.selectionActive(); })
         .then([this]() {
-            history_.commitCoalescedPatternEdit();
-            if (sequencer_.structureUi.stepSelection.active.get()) {
-                edit_workflow_.clearStepSelection();
-            } else {
-                edit_workflow_.deleteSelection();
+            edit_workflow_.clearHoldAction();
+            if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
+#if defined(MS_UX_RECORDER)
+                if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
+#endif
+                return;
             }
         });
 
@@ -326,7 +357,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   edit_workflow_.canRemoveCurrentStructure();
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();
@@ -357,8 +389,24 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .press()
         .scope(scope_id_)
         .when([this]() {
+            return navigation_workflow_.selectionActive() &&
+                   !sequencer_.structureUi.stepSelection.active.get() &&
+                   edit_workflow_.canPasteSelection();
+        })
+        .then([this]() {
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
+#endif
+            edit_workflow_.beginHoldAction(core::state::StructureHoldAction::PASTE);
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .press()
+        .scope(scope_id_)
+        .when([this]() {
             return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   !navigation_workflow_.stepFocusActive();
         })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
@@ -385,8 +433,14 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 }
                 edit_workflow_.copyStepSelection();
             } else {
-                history_.commitCoalescedPatternEdit();
-                edit_workflow_.duplicateSelection();
+                edit_workflow_.clearHoldAction();
+                if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
+#if defined(MS_UX_RECORDER)
+                    if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
+#endif
+                    return;
+                }
+                edit_workflow_.copySelection();
             }
         });
 
@@ -395,7 +449,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   !navigation_workflow_.stepFocusActive();
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();
@@ -427,8 +482,27 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() {
+            return navigation_workflow_.selectionActive() &&
+                   !sequencer_.structureUi.stepSelection.active.get() &&
+                   edit_workflow_.canPasteSelection();
+        })
+        .then([this]() {
+            edit_workflow_.clearHoldAction();
+            bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
+#if defined(MS_UX_RECORDER)
+            if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
+#endif
+            history_.commitCoalescedPatternEdit();
+            edit_workflow_.pasteSelection();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .when([this]() {
             return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   !navigation_workflow_.stepFocusActive();
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();
@@ -439,6 +513,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             history_.commitCoalescedPatternEdit();
             edit_workflow_.pasteCurrentStructure();
         });
+}
+
+FLASHMEM bool SequencerStepHandler::selectionHasItems() const {
+    return navigation_workflow_.selectedItemsAvailable();
 }
 
 FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {

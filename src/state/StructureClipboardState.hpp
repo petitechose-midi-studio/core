@@ -26,6 +26,8 @@ enum class StructureClipboardKind : uint8_t {
     SEQUENCER_TRACK = 4,
     SEQUENCER_STEP_CONTENT = 5,
     SEQUENCER_STEPS = 6,
+    SEQUENCER_PAGE_SELECTION = 7,
+    SEQUENCER_TRACK_SELECTION = 8,
 };
 
 enum class SequencerStepContentClipboardKind : uint8_t {
@@ -34,6 +36,11 @@ enum class SequencerStepContentClipboardKind : uint8_t {
     MICRO_SEQUENCE = 2,
     CYCLE_STATES = 3,
 };
+
+bool cloneSequencerGraph(
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>& target,
+    const oc::note::sequencer::StepSequencerGraph* source
+);
 
 struct SequencerPageClipboard {
     static constexpr uint8_t STEP_COUNT = core::state::sequencer::SequencerPatternState::STEPS_PER_PAGE;
@@ -82,6 +89,34 @@ struct SequencerStepsClipboard {
     void reset();
 };
 
+struct SequencerPageSelectionClipboard {
+    static constexpr uint8_t MAX_ENTRIES = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+
+    bool valid = false;
+    uint8_t sourceFirstPage = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+    uint8_t count = 0;
+    std::array<SequencerPageClipboard, MAX_ENTRIES> pages{};
+
+    void reset();
+};
+
+struct SequencerTrackSelectionClipboardEntry {
+    bool valid = false;
+    uint8_t offset = 0;
+    core::state::sequencer::SequencerPatternSnapshot snapshot{};
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
+};
+
+struct SequencerTrackSelectionClipboard {
+    static constexpr uint8_t MAX_ENTRIES = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+
+    bool valid = false;
+    uint8_t count = 0;
+    std::array<SequencerTrackSelectionClipboardEntry, MAX_ENTRIES> tracks{};
+
+    void reset();
+};
+
 struct StructureClipboardState {
     oc::state::Signal<StructureClipboardKind, 4> kind{StructureClipboardKind::NONE};
     oc::state::Signal<uint32_t, 8> revision{0};
@@ -90,7 +125,9 @@ struct StructureClipboardState {
     core::state::macro::MacroTrackData macroTrack{};
     core::state::SequencerPageClipboard sequencerPage{};
     core::state::SequencerStepsClipboard sequencerSteps{};
+    core::state::SequencerPageSelectionClipboard sequencerPageSelection{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
+    core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard> sequencerTrackSelection;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
     core::state::sequencer::SequencerGraphNodeId sequencerStepContentNodeId =
         oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
@@ -124,6 +161,15 @@ struct StructureClipboardState {
         const oc::note::sequencer::StepSequencerGraph* graph
     );
 
+    bool storeSequencerPageSelection(
+        const core::state::SequencerPageSelectionClipboard& pages,
+        const oc::note::sequencer::StepSequencerGraph* graph
+    );
+
+    bool storeSequencerTrackSelection(
+        core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard> tracks
+    );
+
     bool hasMacroPage() const { return kind.get() == StructureClipboardKind::MACRO_PAGE; }
     bool hasMacroTrack() const { return kind.get() == StructureClipboardKind::MACRO_TRACK; }
     bool hasSequencerPage() const {
@@ -143,6 +189,17 @@ struct StructureClipboardState {
         return kind.get() == StructureClipboardKind::SEQUENCER_STEPS &&
                sequencerSteps.valid &&
                sequencerSteps.count > 0;
+    }
+    bool hasSequencerPageSelection() const {
+        return kind.get() == StructureClipboardKind::SEQUENCER_PAGE_SELECTION &&
+               sequencerPageSelection.valid &&
+               sequencerPageSelection.count > 0;
+    }
+    bool hasSequencerTrackSelection() const {
+        return kind.get() == StructureClipboardKind::SEQUENCER_TRACK_SELECTION &&
+               sequencerTrackSelection &&
+               sequencerTrackSelection->valid &&
+               sequencerTrackSelection->count > 0;
     }
 };
 

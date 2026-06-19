@@ -6,9 +6,7 @@
 
 namespace core::state {
 
-namespace {
-
-FLASHMEM bool storeSequencerGraph(
+FLASHMEM bool cloneSequencerGraph(
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>& target,
     const oc::note::sequencer::StepSequencerGraph* source
 ) {
@@ -27,8 +25,6 @@ FLASHMEM bool storeSequencerGraph(
     return true;
 }
 
-}  // namespace
-
 FLASHMEM void SequencerPageClipboard::reset() {
     valid = false;
     sourcePage = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
@@ -44,10 +40,30 @@ FLASHMEM void SequencerStepsClipboard::reset() {
     entries = {};
 }
 
+FLASHMEM void SequencerPageSelectionClipboard::reset() {
+    valid = false;
+    sourceFirstPage = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+    count = 0;
+    pages = {};
+}
+
+FLASHMEM void SequencerTrackSelectionClipboard::reset() {
+    valid = false;
+    count = 0;
+    for (auto& entry : tracks) {
+        entry.valid = false;
+        entry.offset = 0;
+        entry.snapshot = {};
+        entry.graph.reset();
+    }
+}
+
 FLASHMEM void StructureClipboardState::clear() {
     kind.set(StructureClipboardKind::NONE);
     sequencerPage.reset();
     sequencerSteps.reset();
+    sequencerPageSelection.reset();
+    sequencerTrackSelection.reset();
     sequencerGraph.reset();
     sequencerStepContentNodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     sequencerStepContentKind = SequencerStepContentClipboardKind::NONE;
@@ -74,7 +90,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerPage(
     const core::state::SequencerPageClipboard& page,
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
-    if (!storeSequencerGraph(sequencerGraph, graph)) {
+    if (!cloneSequencerGraph(sequencerGraph, graph)) {
         return false;
     }
 
@@ -88,7 +104,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrack(
     const core::state::sequencer::SequencerPatternSnapshot& track,
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
-    if (!storeSequencerGraph(sequencerGraph, graph)) {
+    if (!cloneSequencerGraph(sequencerGraph, graph)) {
         return false;
     }
 
@@ -103,7 +119,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerStepContent(
     core::state::sequencer::SequencerGraphNodeId nodeId,
     SequencerStepContentClipboardKind contentKind
 ) {
-    if (!storeSequencerGraph(sequencerGraph, &graph)) {
+    if (!cloneSequencerGraph(sequencerGraph, &graph)) {
         return false;
     }
 
@@ -121,12 +137,43 @@ FLASHMEM bool StructureClipboardState::storeSequencerSteps(
     if (!steps.valid || steps.count == 0) {
         return false;
     }
-    if (!storeSequencerGraph(sequencerGraph, graph)) {
+    if (!cloneSequencerGraph(sequencerGraph, graph)) {
         return false;
     }
 
     sequencerSteps = steps;
     kind.set(StructureClipboardKind::SEQUENCER_STEPS);
+    revision.set(revision.get() + 1);
+    return true;
+}
+
+FLASHMEM bool StructureClipboardState::storeSequencerPageSelection(
+    const core::state::SequencerPageSelectionClipboard& pages,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    if (!pages.valid || pages.count == 0) {
+        return false;
+    }
+    if (!cloneSequencerGraph(sequencerGraph, graph)) {
+        return false;
+    }
+
+    sequencerPageSelection = pages;
+    kind.set(StructureClipboardKind::SEQUENCER_PAGE_SELECTION);
+    revision.set(revision.get() + 1);
+    return true;
+}
+
+FLASHMEM bool StructureClipboardState::storeSequencerTrackSelection(
+    core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard> tracks
+) {
+    if (!tracks || !tracks->valid || tracks->count == 0) {
+        return false;
+    }
+
+    sequencerTrackSelection = std::move(tracks);
+    sequencerGraph.reset();
+    kind.set(StructureClipboardKind::SEQUENCER_TRACK_SELECTION);
     revision.set(revision.get() + 1);
     return true;
 }

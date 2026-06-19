@@ -30,6 +30,8 @@ struct DuplicationResult {
 
 uint16_t slotBit(uint8_t index);
 
+uint16_t prefixMask(uint8_t count);
+
 bool isEnabled(uint16_t enabledMask, uint8_t index);
 
 uint8_t countEnabled(uint16_t enabledMask, uint8_t count);

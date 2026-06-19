@@ -129,7 +129,7 @@ void expectsSelectionOverrides() {
     assert(policy.navTap == Action::TOGGLE_SELECTION);
     assert(policy.optTurn == Action::NONE);
     assert(policy.macroLongPress == Action::NONE);
-    assert(policy.bottomLeftTap == Action::CLEAR_SELECTION);
+    assert(policy.bottomLeftTap == Action::NONE);
     assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
     assert(policy.bottomRightTap == Action::COPY_STEP_SELECTION);
     assert(policy.bottomRightHold == Action::PASTE_STEP_SELECTION);
@@ -140,14 +140,19 @@ void expectsSelectionOverrides() {
     context.trackSelectionActive = true;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::TRACK_SELECTION);
-    assert(policy.bottomRightTap == Action::DUPLICATE_SELECTION);
-    assert(policy.bottomRightHold == Action::NONE);
+    assert(policy.bottomLeftTap == Action::NONE);
+    assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
+    assert(policy.bottomRightTap == Action::COPY_SELECTION);
+    assert(policy.bottomRightHold == Action::PASTE_SELECTION);
 
     context.trackSelectionActive = false;
     context.pageSelectionActive = true;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::PATTERN_SELECTION);
-    assert(policy.bottomRightTap == Action::DUPLICATE_SELECTION);
+    assert(policy.bottomLeftTap == Action::NONE);
+    assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
+    assert(policy.bottomRightTap == Action::COPY_SELECTION);
+    assert(policy.bottomRightHold == Action::PASTE_SELECTION);
 }
 
 void expectsStepEditorOverridesEverything() {

@@ -92,22 +92,26 @@ SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContex
     SequencerInteractionPolicy policy{};
     if (context.stepSelectionActive) {
         policy.scope = Scope::STEP_SELECTION;
-        policy.bottomLeftTap = Action::CLEAR_SELECTION;
+        policy.bottomLeftTap = Action::NONE;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
         policy.bottomRightTap = Action::COPY_STEP_SELECTION;
         policy.bottomRightHold = Action::PASTE_STEP_SELECTION;
     } else if (context.trackSelectionActive) {
         policy.scope = Scope::TRACK_SELECTION;
-        policy.bottomLeftTap = Action::CLEAR_SELECTION;
+        policy.bottomLeftTap = Action::NONE;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
-        policy.bottomRightTap = Action::DUPLICATE_SELECTION;
-        policy.bottomRightHold = Action::NONE;
+        policy.bottomRightTap = Action::COPY_SELECTION;
+        policy.bottomRightHold = context.compatibleClipboardAvailable
+            ? Action::PASTE_SELECTION
+            : Action::NONE;
     } else {
         policy.scope = Scope::PATTERN_SELECTION;
-        policy.bottomLeftTap = Action::CLEAR_SELECTION;
+        policy.bottomLeftTap = Action::NONE;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
-        policy.bottomRightTap = Action::DUPLICATE_SELECTION;
-        policy.bottomRightHold = Action::NONE;
+        policy.bottomRightTap = Action::COPY_SELECTION;
+        policy.bottomRightHold = context.compatibleClipboardAvailable
+            ? Action::PASTE_SELECTION
+            : Action::NONE;
     }
 
     policy.navTurn = Action::MOVE_SELECTION_CURSOR;

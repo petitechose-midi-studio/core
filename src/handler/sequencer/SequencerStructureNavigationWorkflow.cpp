@@ -82,6 +82,26 @@ FLASHMEM bool SequencerStructureNavigationWorkflow::selectionActive() const {
     );
 }
 
+FLASHMEM bool SequencerStructureNavigationWorkflow::selectedItemsAvailable() const {
+    if (sequencer_.structureUi.stepSelection.active.get()) {
+        const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
+        for (uint8_t step = 0; step < length; ++step) {
+            if (sequencer_.structureUi.stepSelection.selected(step)) return true;
+        }
+        return false;
+    }
+    if (track_ui_.selection.active.get()) {
+        return (track_ui_.selection.selectedMask.get() & currentTrackEnabledMask()) != 0;
+    }
+    if (sequencer_.structureUi.pageSelection.active.get()) {
+        return (
+            sequencer_.structureUi.pageSelection.selectedMask.get() &
+            structure_slots::prefixMask(sequencer_.activePageCount())
+        ) != 0;
+    }
+    return false;
+}
+
 FLASHMEM bool SequencerStructureNavigationWorkflow::stepFocusActive() const {
     return navigation_focus_.get() == core::state::StructureNavigationFocus::STEP;
 }

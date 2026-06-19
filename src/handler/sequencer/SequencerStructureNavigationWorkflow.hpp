@@ -40,6 +40,7 @@ public:
 
     bool allowsMainBindings() const;
     bool selectionActive() const;
+    bool selectedItemsAvailable() const;
     bool stepFocusActive() const;
     bool previewingAddSlot() const;
 

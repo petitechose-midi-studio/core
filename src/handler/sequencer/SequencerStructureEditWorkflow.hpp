@@ -15,7 +15,7 @@ namespace core::handler {
 /**
  * Owns sequencer page/track structure edit actions.
  *
- * It applies erase/remove/copy/paste/delete/duplicate intent using snapshot ops,
+ * It applies erase/remove/copy/paste/delete intent using snapshot ops,
  * track-bank ops, shared track services, and the shared structure clipboard.
  */
 class SequencerStructureEditWorkflow {
@@ -44,16 +44,19 @@ public:
     void beginHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
     void eraseCurrentStructure();
+    void eraseFocusedStep();
     void removeCurrentStructure();
     void copyCurrentStructure();
     void pasteCurrentStructure();
+    bool canPasteSelection() const;
+    void copySelection();
     void copyStepSelection();
     void clearStepSelection();
     void beginStepPastePreview();
     void clearStepPastePreview();
     void pasteStepSelection();
+    void pasteSelection();
     void deleteSelection();
-    void duplicateSelection();
 
 private:
     using HistoryPatternSnapshot =

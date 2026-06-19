@@ -144,8 +144,10 @@ const char* actionName(SequencerAction action) {
             return "clear_selection";
         case SequencerAction::DELETE_SELECTION:
             return "delete_selection";
-        case SequencerAction::DUPLICATE_SELECTION:
-            return "duplicate_selection";
+        case SequencerAction::COPY_SELECTION:
+            return "copy_selection";
+        case SequencerAction::PASTE_SELECTION:
+            return "paste_selection";
         case SequencerAction::COPY_STEP_SELECTION:
             return "copy_step_selection";
         case SequencerAction::PASTE_STEP_SELECTION:
@@ -164,6 +166,8 @@ const char* armActionName(SequencerAction action) {
             return "arm_paste_current_structure";
         case SequencerAction::DELETE_SELECTION:
             return "arm_delete_selection";
+        case SequencerAction::PASTE_SELECTION:
+            return "arm_paste_selection";
         case SequencerAction::PASTE_STEP_SELECTION:
             return "arm_paste_step_selection";
         case SequencerAction::CLEAR_CURRENT_STRUCTURE:
@@ -176,6 +180,8 @@ const char* armActionName(SequencerAction action) {
             return "arm_copy_step_content";
         case SequencerAction::CLEAR_SELECTION:
             return "arm_clear_selection";
+        case SequencerAction::COPY_SELECTION:
+            return "arm_copy_selection";
         case SequencerAction::COPY_STEP_SELECTION:
             return "arm_copy_step_selection";
         default:
