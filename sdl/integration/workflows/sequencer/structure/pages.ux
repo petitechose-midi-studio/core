@@ -1,5 +1,7 @@
-# UX workflow: create sequencer pages, select non-contiguous pages, and preview
-# cursor-anchored duplication destinations.
+# UX workflow: create sequencer pages, select non-contiguous pages, copy, and
+# preview cursor-anchored paste destinations.
+# Purpose: validates the selection grammar `BOTTOM_RIGHT tap = copy selection`
+# and `BOTTOM_RIGHT hold = paste selection at cursor`.
 
 0 scenario sequencer
 50 capture screen track_focus
@@ -54,11 +56,19 @@
 5350 tap NAV 60
 5550 capture screen pages_1_3_5_selected
 
-# Move cursor to page 4. Preview should show page 4 as overwrite and pages 6/8
-# as free destinations.
-5650 encoder NAV 1
-5850 capture screen duplicate_preview_overwrite_and_free
+# Copy keeps selection active and stores the sparse page footprint.
+5650 tap BOTTOM_RIGHT 60
+5900 capture screen pages_selection_copied
 
-# Trigger duplicate selection.
-5950 tap BOTTOM_RIGHT 60
-6200 capture screen selection_duplicated
+# Move cursor to page 4. Paste preview should show page 4 as overwrite and
+# pages 6/8 as free destinations.
+6000 encoder NAV 1
+6200 capture screen paste_preview_overwrite_and_free
+
+# Hold paste applies the copied selection at the cursor.
+6300 button BOTTOM_RIGHT down
+6500 capture screen paste_selection_hold_started
+7400 tick
+7450 capture screen paste_selection_applied_by_hold
+7500 button BOTTOM_RIGHT up
+7750 capture screen paste_selection_released
