@@ -7,6 +7,7 @@ include(CTest)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 set(MS_CORE_OPEN_CONTROL_ROOT
     "${CMAKE_CURRENT_SOURCE_DIR}/../../open-control"
@@ -66,12 +67,8 @@ target_include_directories(midi_studio_core_native
         "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(midi_studio_core_native PUBLIC oc_note_native oc_framework_native)
 
-add_executable(ms-core-file-tool
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/ms_core_file_tool/main.cpp")
-target_link_libraries(ms-core-file-tool PRIVATE midi_studio_core_native)
-target_include_directories(ms-core-file-tool
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreProjectFileTool.cmake")
+ms_core_add_project_file_tool()
 
 set(MS_CORE_BUILD_TESTS_DEFAULT OFF)
 if(PROJECT_IS_TOP_LEVEL)

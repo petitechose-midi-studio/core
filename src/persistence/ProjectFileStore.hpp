@@ -6,6 +6,7 @@
 #include <oc/type/Result.hpp>
 
 #include "persistence/ProductFileService.hpp"
+#include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectLoadReport.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 
@@ -36,8 +37,8 @@ struct ProjectListResult {
 
 class ProjectFileStore {
 public:
-    static constexpr uint32_t MAX_PROJECT_FILE_SIZE = 98304;
-    static constexpr uint32_t WRITE_CHUNK_SIZE = 4096;
+    static constexpr uint32_t MAX_PROJECT_FILE_SIZE = PROJECT_FILE_MAX_SIZE;
+    static constexpr uint32_t WRITE_CHUNK_SIZE = PROJECT_FILE_WRITE_CHUNK_SIZE;
 
     explicit ProjectFileStore(ProductFileService& files);
 

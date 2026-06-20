@@ -83,11 +83,6 @@ FLASHMEM void applyProjectRouting(core::state::CoreState& state,
 
 }  // namespace
 
-ProjectSnapshot::ProjectSnapshot() = default;
-ProjectSnapshot::~ProjectSnapshot() = default;
-ProjectSnapshot::ProjectSnapshot(ProjectSnapshot&&) noexcept = default;
-ProjectSnapshot& ProjectSnapshot::operator=(ProjectSnapshot&&) noexcept = default;
-
 FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out) {
     ProjectSnapshot next;
     next.project = projectStateFromRuntime(state);

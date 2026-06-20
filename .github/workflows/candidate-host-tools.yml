@@ -320,10 +320,13 @@ jobs:
             --recipe-base-dir .. \
             --recipe-path .github/workflows/candidate-host-tools.yml \
             --recipe-path CMakeLists.txt \
+            --recipe-path cmake/MsCoreProjectFileTool.cmake \
             --recipe-path oc-sdk.ini \
             --recipe-path oc-native-sdk.ini \
             --recipe-path src/persistence/ProjectMigration.hpp \
             --recipe-path src/persistence/ProjectMigration.cpp \
+            --recipe-path src/persistence/ProjectFileLimits.hpp \
+            --recipe-path src/state/project/ProjectSnapshotLifecycle.cpp \
             --recipe-path tools/ms_core_file_tool/main.cpp \
             --recipe-path script/dev/validate-project-fixtures.py \
             --toolchain-json ../artifacts/toolchain.json

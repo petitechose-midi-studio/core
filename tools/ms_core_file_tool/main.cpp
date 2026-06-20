@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "persistence/ProjectFileStore.hpp"
+#include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectMigration.hpp"
 
 namespace {
@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
     project_file::LoadReport report{};
     migration::Result result{};
     if (args.command == "migrate") {
-        std::vector<uint8_t> output(core::persistence::ProjectFileStore::MAX_PROJECT_FILE_SIZE);
+        std::vector<uint8_t> output(core::persistence::PROJECT_FILE_MAX_SIZE);
         result = migration::migrateProjectBytesToCurrent(
             input.data(),
             static_cast<uint32_t>(input.size()),
