@@ -109,6 +109,11 @@ bool resetStepNodePayload(
     SequencerGraphNodeId nodeId,
     SequencerGraphNodeResetMode mode = SequencerGraphNodeResetMode::DEFAULT
 );
+bool resetStepNodePayloadPreservingChildren(
+    SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId,
+    SequencerGraphNodeResetMode mode = SequencerGraphNodeResetMode::DEFAULT
+);
 bool copyStepNodePayloadFromGraph(
     SequencerPatternState& targetPattern,
     SequencerGraphNodeId targetNodeId,

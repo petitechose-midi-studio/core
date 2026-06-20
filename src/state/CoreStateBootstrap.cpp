@@ -84,6 +84,7 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.contentView.revision.setDebugLabel("core.sequencer.contentView.revision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
     state.sequencerTracks.projectScaleRevisionSignal().setDebugLabel("core.sequencerTracks.projectScaleRevision");
+    state.sequencerTracks.mutedMaskSignal().setDebugLabel("core.sequencerTracks.mutedMask");
 
     state.projectNavigation.activeTab.setDebugLabel("core.projectNavigation.activeTab");
     state.projectNavigation.currentNode.setDebugLabel("core.projectNavigation.currentNode");
@@ -129,7 +130,7 @@ FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
 
 FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& state) {
     state.sequencerDomain_.autoPersist =
-        std::make_unique<oc::state::AutoPersistIncremental<16>>(
+        std::make_unique<oc::state::AutoPersistIncremental<17>>(
             [](uint8_t) {},
             [&state]() {
                 state.markSequencerProjectMutated_();
@@ -153,6 +154,7 @@ FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& stat
     state.sequencerDomain_.autoPersist->watchAt(13, state.sequencer.pattern.patternTimingRevision);
     state.sequencerDomain_.autoPersist->watchAt(14, state.sequencer.pattern.swingOffsetPercent);
     state.sequencerDomain_.autoPersist->watchAt(15, state.sequencer.pattern.patternNudgePercent);
+    state.sequencerDomain_.autoPersist->watchAt(16, state.sequencerTracks.mutedMaskSignal());
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {

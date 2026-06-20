@@ -46,15 +46,27 @@ enum class SequencerInteractionAction : uint8_t {
     OPEN_STEP_EDITOR,
     TOGGLE_VISIBLE_STEP,
     EDIT_VISIBLE_STEP_PROPERTY,
+    MUTE_CURRENT_TRACK,
     CLEAR_CURRENT_STRUCTURE,
     REMOVE_CURRENT_STRUCTURE,
+    RESET_CURRENT_STEP_SHALLOW,
+    RESET_CURRENT_STEP_DEEP,
+    COPY_CURRENT_STEP,
+    PASTE_CURRENT_STEP,
     CLEAR_STEP_CONTENT,
     COPY_CURRENT_STRUCTURE,
     PASTE_CURRENT_STRUCTURE,
     COPY_STEP_CONTENT,
     PASTE_STEP_CONTENT,
+    RESET_STEP_EDITOR_ROW,
+    REMOVE_STEP_EDITOR_CONTEXT,
+    COPY_STEP_EDITOR_CONTEXT,
+    PASTE_STEP_EDITOR_CONTEXT,
+    MUTE_TRACK_SELECTION,
     CLEAR_SELECTION,
     DELETE_SELECTION,
+    RESET_STEP_SELECTION_SHALLOW,
+    RESET_STEP_SELECTION_DEEP,
     COPY_SELECTION,
     PASTE_SELECTION,
     COPY_STEP_SELECTION,
@@ -84,6 +96,9 @@ struct SequencerInteractionContext {
     bool currentStructureCanCopy = true;
     bool currentStepHasChildContent = false;
     bool selectedItemsAvailable = false;
+    bool stepEditorValueRowFocused = false;
+    bool stepEditorContextRowFocused = false;
+    bool stepEditorContextHasChild = false;
 };
 
 struct SequencerInteractionPolicy {

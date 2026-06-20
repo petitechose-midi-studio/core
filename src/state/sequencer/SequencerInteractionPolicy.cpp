@@ -50,6 +50,12 @@ void applyStructureBottomActions(SequencerInteractionPolicy& policy,
         visibleIf(context.currentStructureCanCopy || context.compatibleClipboardAvailable);
 }
 
+void applyTrackBottomActions(SequencerInteractionPolicy& policy,
+                             const SequencerInteractionContext& context) {
+    applyStructureBottomActions(policy, context);
+    policy.bottomLeftTap = Action::MUTE_CURRENT_TRACK;
+}
+
 void applyStepContentBottomActions(SequencerInteractionPolicy& policy,
                                    const SequencerInteractionContext& context) {
     policy.bottomLeftTap = Action::CLEAR_STEP_CONTENT;
@@ -59,6 +65,17 @@ void applyStepContentBottomActions(SequencerInteractionPolicy& policy,
     policy.bottomLeftVisibility = visibleIf(context.currentStepHasChildContent);
     policy.bottomRightVisibility =
         visibleIf(context.currentStepHasChildContent || context.compatibleClipboardAvailable);
+}
+
+void applyStepBottomActions(SequencerInteractionPolicy& policy,
+                            const SequencerInteractionContext& context) {
+    (void)context;
+    policy.bottomLeftTap = Action::RESET_CURRENT_STEP_SHALLOW;
+    policy.bottomLeftHold = Action::RESET_CURRENT_STEP_DEEP;
+    policy.bottomRightTap = Action::COPY_CURRENT_STEP;
+    policy.bottomRightHold = Action::PASTE_CURRENT_STEP;
+    policy.bottomLeftVisibility = Visibility::ACTIVE;
+    policy.bottomRightVisibility = Visibility::ACTIVE;
 }
 
 SequencerInteractionPolicy buildSelectorPolicy(bool patternSelector) {
@@ -92,13 +109,13 @@ SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContex
     SequencerInteractionPolicy policy{};
     if (context.stepSelectionActive) {
         policy.scope = Scope::STEP_SELECTION;
-        policy.bottomLeftTap = Action::NONE;
-        policy.bottomLeftHold = Action::DELETE_SELECTION;
+        policy.bottomLeftTap = Action::RESET_STEP_SELECTION_SHALLOW;
+        policy.bottomLeftHold = Action::RESET_STEP_SELECTION_DEEP;
         policy.bottomRightTap = Action::COPY_STEP_SELECTION;
         policy.bottomRightHold = Action::PASTE_STEP_SELECTION;
     } else if (context.trackSelectionActive) {
         policy.scope = Scope::TRACK_SELECTION;
-        policy.bottomLeftTap = Action::NONE;
+        policy.bottomLeftTap = Action::MUTE_TRACK_SELECTION;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
         policy.bottomRightTap = Action::COPY_SELECTION;
         policy.bottomRightHold = context.compatibleClipboardAvailable
@@ -106,7 +123,7 @@ SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContex
             : Action::NONE;
     } else {
         policy.scope = Scope::PATTERN_SELECTION;
-        policy.bottomLeftTap = Action::NONE;
+        policy.bottomLeftTap = Action::CLEAR_SELECTION;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
         policy.bottomRightTap = Action::COPY_SELECTION;
         policy.bottomRightHold = context.compatibleClipboardAvailable
@@ -146,10 +163,23 @@ SequencerInteractionPolicy buildStepEditorPolicy(const SequencerInteractionConte
     policy.bottomLeftHold = Action::NONE;
     policy.bottomRightTap = Action::NONE;
     policy.bottomRightHold = Action::NONE;
+    policy.bottomLeftVisibility = Visibility::HIDDEN;
+    policy.bottomRightVisibility = Visibility::HIDDEN;
+
+    if (context.stepEditorValueRowFocused) {
+        policy.bottomLeftTap = Action::RESET_STEP_EDITOR_ROW;
+        policy.bottomLeftVisibility = Visibility::ACTIVE;
+    } else if (context.stepEditorContextRowFocused) {
+        policy.bottomLeftHold = Action::REMOVE_STEP_EDITOR_CONTEXT;
+        policy.bottomRightTap = Action::COPY_STEP_EDITOR_CONTEXT;
+        policy.bottomRightHold = Action::PASTE_STEP_EDITOR_CONTEXT;
+        policy.bottomLeftVisibility = visibleIf(context.stepEditorContextHasChild);
+        policy.bottomRightVisibility =
+            visibleIf(context.stepEditorContextHasChild || context.compatibleClipboardAvailable);
+    }
+
     policy.leftCenterVisibility = Visibility::HIDDEN;
     policy.leftBottomVisibility = Visibility::ACTIVE;
-    policy.bottomLeftVisibility = Visibility::HIDDEN;
-    policy.bottomRightVisibility = visibleIf(context.compatibleClipboardAvailable);
     return policy;
 }
 
@@ -167,7 +197,7 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
             policy.macroTap = Action::NONE;
             policy.macroTurn = Action::NONE;
             hideLeftSelectors(policy);
-            applyStructureBottomActions(policy, context);
+            applyTrackBottomActions(policy, context);
             break;
 
         case Focus::STEP:
@@ -180,11 +210,7 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
             policy.leftCenterVisibility = Visibility::HIDDEN;
             policy.leftBottomPress = Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
             policy.leftBottomVisibility = Visibility::ACTIVE;
-            if (childContentView) {
-                applyStepContentBottomActions(policy, context);
-            } else {
-                applyStructureBottomActions(policy, context);
-            }
+            applyStepBottomActions(policy, context);
             break;
 
         case Focus::PAGE:

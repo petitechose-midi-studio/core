@@ -9,7 +9,7 @@
 namespace core::persistence::project_snapshot_codec {
 
 inline constexpr uint8_t PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR = 1;
-inline constexpr uint8_t PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR = 0;
+inline constexpr uint8_t PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR = 1;
 
 #pragma pack(push, 1)
 struct ProjectMacroStatePayload {

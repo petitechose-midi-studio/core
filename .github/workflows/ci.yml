@@ -119,3 +119,13 @@ jobs:
       - name: Test
         working-directory: workspace
         run: uv run ms test core
+
+      - name: Build Core host file tool
+        working-directory: workspace/midi-studio/core
+        run: |
+          cmake -S . -B build/core-native -DMS_CORE_BUILD_TESTS=OFF
+          cmake --build build/core-native --target ms-core-file-tool --parallel
+
+      - name: Validate project migration fixtures with host file tool
+        working-directory: workspace/midi-studio/core
+        run: python script/dev/validate-project-fixtures.py

@@ -1,0 +1,328 @@
+name: Candidate Host Tools
+
+run-name: Host Tools Candidate ${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Source commit SHA to package"
+        required: true
+        type: string
+      tooling_sha:
+        description: "ms-dev-env tooling commit SHA used for candidate metadata"
+        required: true
+        type: string
+      request_id:
+        description: "Optional dispatch correlation id"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: candidate-host-tools-${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  resolve_inputs:
+    name: resolve candidate inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      tooling_sha: ${{ steps.resolve.outputs.tooling_sha }}
+      candidate_tag: ${{ steps.resolve.outputs.candidate_tag }}
+    steps:
+      - name: Checkout source ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve source SHA and tooling SHA
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            source_sha="${{ github.sha }}"
+            tooling_sha="$(python -c 'import json; from pathlib import Path; print(json.loads(Path(".github/release-tooling.json").read_text(encoding="utf-8"))["sha"])')"
+          else
+            source_sha="${{ inputs.source_sha }}"
+            tooling_sha="${{ inputs.tooling_sha }}"
+          fi
+          if ! [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "invalid source SHA: $source_sha" >&2
+            exit 1
+          fi
+          if ! [[ "$tooling_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "invalid tooling SHA: $tooling_sha" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          if ! git merge-base --is-ancestor "$source_sha" origin/main; then
+            echo "source SHA is not reachable from main: $source_sha" >&2
+            exit 1
+          fi
+          tooling_repo="$(mktemp -d)"
+          git -C "$tooling_repo" init -q
+          git -C "$tooling_repo" remote add origin https://github.com/petitechose-midi-studio/ms-dev-env.git
+          git -C "$tooling_repo" fetch --no-tags --filter=blob:none origin "+refs/heads/main:refs/remotes/origin/main"
+          if ! git -C "$tooling_repo" merge-base --is-ancestor "$tooling_sha" refs/remotes/origin/main; then
+            echo "tooling SHA is not reachable from ms-dev-env main: $tooling_sha" >&2
+            exit 1
+          fi
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "tooling_sha=$tooling_sha" >> "$GITHUB_OUTPUT"
+          echo "candidate_tag=rc-core-host-tools-${source_sha}-tooling-${tooling_sha}" >> "$GITHUB_OUTPUT"
+
+  dispatch_marker:
+    name: register dispatch
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.request_id != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write dispatch marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dispatch
+          cat > dispatch/marker.json <<'EOF'
+          {"request_id":"${{ inputs.request_id }}"}
+          EOF
+
+      - name: Upload dispatch marker
+        uses: actions/upload-artifact@v7
+        with:
+          name: dispatch-${{ inputs.request_id }}
+          path: dispatch/marker.json
+          retention-days: 1
+
+  build:
+    name: host file tool (${{ matrix.platform }})
+    needs: resolve_inputs
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-latest
+            filename: ms-core-file-tool-linux-x86_64
+            source: build/core-native/ms-core-file-tool
+          - platform: windows-latest
+            filename: ms-core-file-tool-windows-x86_64.exe
+            source: build/core-native/Release/ms-core-file-tool.exe
+          - platform: macos-15-intel
+            filename: ms-core-file-tool-macos-x86_64
+            source: build/core-native/ms-core-file-tool
+          - platform: macos-latest
+            filename: ms-core-file-tool-macos-arm64
+            source: build/core-native/ms-core-file-tool
+
+    steps:
+      - name: Checkout source SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_inputs.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          if [ "$sha" != "${{ needs.resolve_inputs.outputs.source_sha }}" ]; then
+            echo "Checked out SHA does not match input" >&2
+            echo "input=${{ needs.resolve_inputs.outputs.source_sha }}" >&2
+            echo "head=$sha" >&2
+            exit 1
+          fi
+
+      - name: Configure host file tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/core-native -DMS_CORE_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build host file tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/core-native --target ms-core-file-tool --config Release --parallel
+
+      - name: Validate project fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python script/dev/validate-project-fixtures.py --tool "${{ matrix.source }}"
+
+      - name: Collect host file tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "${{ matrix.source }}" "dist/${{ matrix.filename }}"
+
+      - name: Upload host file tool
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.filename }}
+          path: dist/${{ matrix.filename }}
+
+  metadata:
+    name: candidate metadata
+    needs:
+      - resolve_inputs
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout source SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_inputs.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: ${{ needs.resolve_inputs.outputs.tooling_sha }}
+          path: workspace
+          persist-credentials: false
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
+
+      - name: Download host file tools
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          pattern: ms-core-file-tool-*
+          merge-multiple: true
+
+      - name: Generate candidate metadata inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > artifacts/candidate-artifacts.json <<'EOF'
+          [
+            {
+              "id": "ms-core-file-tool-linux-x86_64",
+              "filename": "ms-core-file-tool-linux-x86_64",
+              "kind": "binary",
+              "os": "linux",
+              "arch": "x86_64"
+            },
+            {
+              "id": "ms-core-file-tool-windows-x86_64",
+              "filename": "ms-core-file-tool-windows-x86_64.exe",
+              "kind": "binary",
+              "os": "windows",
+              "arch": "x86_64"
+            },
+            {
+              "id": "ms-core-file-tool-macos-x86_64",
+              "filename": "ms-core-file-tool-macos-x86_64",
+              "kind": "binary",
+              "os": "macos",
+              "arch": "x86_64"
+            },
+            {
+              "id": "ms-core-file-tool-macos-arm64",
+              "filename": "ms-core-file-tool-macos-arm64",
+              "kind": "binary",
+              "os": "macos",
+              "arch": "arm64"
+            }
+          ]
+          EOF
+          cat > artifacts/input-repos.json <<'EOF'
+          [
+            {
+              "id": "core",
+              "repo": "petitechose-midi-studio/core",
+              "sha": "${{ needs.resolve_inputs.outputs.source_sha }}"
+            },
+            {
+              "id": "ms-dev-env",
+              "repo": "petitechose-midi-studio/ms-dev-env",
+              "sha": "${{ needs.resolve_inputs.outputs.tooling_sha }}"
+            }
+          ]
+          EOF
+          cat > artifacts/toolchain.json <<'EOF'
+          {
+            "python": "3.13",
+            "cmake": "system"
+          }
+          EOF
+          ls -la artifacts
+
+      - name: Write candidate manifest, checksums, and signature
+        shell: bash
+        working-directory: workspace
+        env:
+          MS_CANDIDATE_ED25519_SK: ${{ secrets.MS_CANDIDATE_ED25519_SK }}
+        run: |
+          set -euo pipefail
+          uv run ms release candidate write \
+            --artifacts-dir ../artifacts \
+            --artifacts-json ../artifacts/candidate-artifacts.json \
+            --input-repos-json ../artifacts/input-repos.json \
+            --producer-repo petitechose-midi-studio/core \
+            --producer-kind core-host-tools \
+            --workflow-file .github/workflows/candidate-host-tools.yml \
+            --run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --manifest-path ../artifacts/candidate.json \
+            --checksums-path ../artifacts/checksums.txt \
+            --sig-path ../artifacts/candidate.json.sig \
+            --recipe-base-dir .. \
+            --recipe-path .github/workflows/candidate-host-tools.yml \
+            --recipe-path CMakeLists.txt \
+            --recipe-path oc-sdk.ini \
+            --recipe-path oc-native-sdk.ini \
+            --recipe-path src/persistence/ProjectMigration.hpp \
+            --recipe-path src/persistence/ProjectMigration.cpp \
+            --recipe-path tools/ms_core_file_tool/main.cpp \
+            --recipe-path script/dev/validate-project-fixtures.py \
+            --toolchain-json ../artifacts/toolchain.json
+
+      - name: Publish signed candidate release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ needs.resolve_inputs.outputs.candidate_tag }}"
+          if gh release view "$tag" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "candidate release already exists: $tag" >&2
+            exit 1
+          fi
+          gh release create \
+            "$tag" \
+            artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "candidate $tag" \
+            --notes "Core host tools candidate artifacts for ${{ needs.resolve_inputs.outputs.source_sha }}" \
+            --prerelease
+          gh release edit \
+            "$tag" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --draft=false \
+            --prerelease

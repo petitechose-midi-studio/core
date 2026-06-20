@@ -52,12 +52,6 @@ struct StepPayload {
     uint8_t probability = SequencerPatternState::DEFAULT_PROBABILITY;
 };
 
-struct PagePayload {
-    uint8_t count = 0;
-    std::array<StepPayload, SequencerPatternState::STEPS_PER_PAGE> steps{};
-    uint8_t enabledMask = 0;
-};
-
 FLASHMEM StepPayload defaultStep() {
     return {};
 }
@@ -70,30 +64,6 @@ FLASHMEM StepPayload readStep(const SequencerPatternState& source, uint8_t step)
         source.nudge[step],
         source.probability[step],
     };
-}
-
-FLASHMEM PagePayload readPage(const SequencerPatternState& source, uint8_t page) {
-    PagePayload payload{};
-    const uint8_t len = source.length.get();
-    const uint8_t start = static_cast<uint8_t>(page * SequencerPatternState::STEPS_PER_PAGE);
-    if (start >= len || start >= SequencerPatternState::MAX_STEPS) {
-        return payload;
-    }
-
-    payload.count = static_cast<uint8_t>(std::min<uint16_t>(
-        SequencerPatternState::STEPS_PER_PAGE,
-        static_cast<uint16_t>(len - start)
-    ));
-
-    for (uint8_t i = 0; i < SequencerPatternState::STEPS_PER_PAGE; ++i) {
-        const uint8_t step = static_cast<uint8_t>(start + i);
-        payload.steps[i] = (i < payload.count) ? readStep(source, step) : defaultStep();
-        if (i < payload.count && source.isEnabled(step)) {
-            payload.enabledMask = static_cast<uint8_t>(payload.enabledMask | (1U << i));
-        }
-    }
-
-    return payload;
 }
 
 FLASHMEM StepPayload readSanitizedStep(const SequencerPatternState& source, uint8_t step) {

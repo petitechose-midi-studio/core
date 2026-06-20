@@ -83,21 +83,33 @@ void setStripIconFromVisibility(
 
 const char* bottomActionIcon(InteractionAction action) {
     switch (action) {
+        case InteractionAction::MUTE_CURRENT_TRACK:
+        case InteractionAction::MUTE_TRACK_SELECTION:
         case InteractionAction::CLEAR_CURRENT_STRUCTURE:
         case InteractionAction::REMOVE_CURRENT_STRUCTURE:
+        case InteractionAction::RESET_CURRENT_STEP_SHALLOW:
+        case InteractionAction::RESET_CURRENT_STEP_DEEP:
         case InteractionAction::CLEAR_STEP_CONTENT:
         case InteractionAction::CLEAR_SELECTION:
         case InteractionAction::DELETE_SELECTION:
+        case InteractionAction::RESET_STEP_SELECTION_SHALLOW:
+        case InteractionAction::RESET_STEP_SELECTION_DEEP:
+        case InteractionAction::RESET_STEP_EDITOR_ROW:
+        case InteractionAction::REMOVE_STEP_EDITOR_CONTEXT:
             return standalone::icons::ACTION_CLEAR;
+        case InteractionAction::COPY_CURRENT_STEP:
         case InteractionAction::COPY_CURRENT_STRUCTURE:
         case InteractionAction::COPY_STEP_CONTENT:
         case InteractionAction::COPY_STEP_SELECTION:
         case InteractionAction::COPY_SELECTION:
+        case InteractionAction::COPY_STEP_EDITOR_CONTEXT:
             return standalone::icons::ACTION_COPY;
+        case InteractionAction::PASTE_CURRENT_STEP:
         case InteractionAction::PASTE_CURRENT_STRUCTURE:
         case InteractionAction::PASTE_STEP_CONTENT:
         case InteractionAction::PASTE_STEP_SELECTION:
         case InteractionAction::PASTE_SELECTION:
+        case InteractionAction::PASTE_STEP_EDITOR_CONTEXT:
             return standalone::icons::ACTION_PASTE;
         case InteractionAction::NONE:
         default:
@@ -282,18 +294,26 @@ core::state::sequencer::SequencerInteractionContext makeBottomInteractionContext
         return context;
     }
 
-    if (context.childContentView) {
-        context.currentStepHasChildContent = focusedStepHasChildContent(source);
-        context.compatibleClipboardAvailable = canPasteStepContent(source);
+    if (source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP) {
+        const bool focusedStepValid =
+            source.sequencer.focusedStep.get() <
+            core::state::sequencer::activeContentLength(source.sequencer);
+        context.currentStructureCanClear = focusedStepValid;
+        context.currentStructureCanRemove = focusedStepValid;
+        context.currentStructureCanCopy = focusedStepValid;
+        context.compatibleClipboardAvailable =
+            source.structureClipboard.hasSequencerSteps() &&
+            source.structureClipboard.sequencerSteps.rootContext ==
+                core::state::sequencer::isRootContentView(source.sequencer);
         return context;
     }
 
     context.currentStructureCanClear = !context.previewingAddSlot;
     context.currentStructureCanCopy = !context.previewingAddSlot;
-    if (source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP) {
-        context.currentStructureCanRemove = false;
-        context.currentStructureCanCopy = false;
-        context.compatibleClipboardAvailable = false;
+
+    if (context.childContentView) {
+        context.currentStepHasChildContent = focusedStepHasChildContent(source);
+        context.compatibleClipboardAvailable = canPasteStepContent(source);
         return context;
     }
     if (trackFocus) {

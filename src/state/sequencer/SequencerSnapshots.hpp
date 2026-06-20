@@ -40,6 +40,7 @@ struct SequencerPatternSnapshot {
 struct SequencerTrackBankSnapshot {
     uint8_t activeTrack = 0;
     uint16_t enabledMask = 0x0001;
+    uint16_t mutedMask = 0;
     uint32_t projectScaleRevision = 0;
     uint8_t projectSwingPercent = 0;
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings{};

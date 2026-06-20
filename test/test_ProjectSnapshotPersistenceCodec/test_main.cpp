@@ -10,6 +10,7 @@
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/persistence/ProjectSnapshotPersistenceCodec.hpp"
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
+#include "../../src/persistence/SequencerPersistenceEnvelope.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
@@ -459,6 +460,64 @@ void test_project_snapshot_future_sequencer_chunk_blocks_overwrite() {
     std::cout << "[PASS] test_project_snapshot_future_sequencer_chunk_blocks_overwrite\n";
 }
 
+void test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite() {
+    test_support::CoreStorages sourceStorages;
+    auto sourceState = makeCoreState(sourceStorages);
+    configureProjectSession(sourceState);
+
+    auto envelope = core::app::makeExtmemUnique<core::persistence::sequencer_codec::EnvelopeBuffer>();
+    assert(envelope);
+    const auto encodedSequencer =
+        core::persistence::sequencer_codec::fillProjectSequencerEnvelope(
+            sourceState.sequencerTracks,
+            sourceState.sequencer,
+            envelope->bytes.data(),
+            static_cast<uint16_t>(envelope->bytes.size())
+        );
+    assert(encodedSequencer.ok);
+
+    const project_file::ChunkView chunks[] = {{
+        .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
+        .versionMajor = snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+        .versionMinor = static_cast<uint8_t>(
+            snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR - 1U
+        ),
+        .flags = 0,
+        .data = envelope->bytes.data(),
+        .size = encodedSequencer.size,
+    }};
+
+    auto buffer = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    assert(buffer);
+    auto encodeResult = project_file::encode(chunks, 1, 0, buffer->data(), buffer->size());
+    assert(encodeResult.status == project_file::Status::OK);
+
+    project::ProjectSnapshot snapshot;
+    project_file::LoadReport report{};
+    auto decodeResult = snapshot_codec::decodeProjectSnapshot(
+        buffer->data(),
+        encodeResult.bytesWritten,
+        snapshot,
+        &report
+    );
+    assert(decodeResult.ok);
+    assert(decodeResult.loadStatus == project_file::LoadStatus::PARTIAL);
+    assert(!decodeResult.overwriteSafe);
+    assert(report.hasUnknownUnsupportedData);
+    assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
+    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
+
+    test_support::CoreStorages targetStorages;
+    auto targetState = makeCoreState(targetStorages);
+    assert(project::applyProjectSnapshot(targetState, snapshot));
+    assert(targetState.sequencer.pattern.length.get() ==
+           core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(targetState.sequencer.pattern.length.get() != sourceState.sequencer.pattern.length.get());
+    assert(!targetState.sequencer.pattern.isEnabled(0));
+
+    std::cout << "[PASS] test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite\n";
+}
+
 }  // namespace
 
 int main() {
@@ -469,6 +528,7 @@ int main() {
     test_project_snapshot_roundtrip_restores_runtime_state();
     test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks();
     test_project_snapshot_future_sequencer_chunk_blocks_overwrite();
+    test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

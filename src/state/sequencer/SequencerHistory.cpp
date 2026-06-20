@@ -230,6 +230,7 @@ FLASHMEM bool sameFlatTrackBankSnapshot(
 ) {
     if (lhs.activeTrack != rhs.activeTrack ||
         lhs.enabledMask != rhs.enabledMask ||
+        lhs.mutedMask != rhs.mutedMask ||
         !sameScaleSettings(lhs.projectScaleSettings, rhs.projectScaleSettings)) {
         return false;
     }

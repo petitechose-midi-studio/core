@@ -29,7 +29,7 @@ namespace core::handler {
  * Sequencer view bindings:
  * - MACRO_1..MACRO_8 release: toggle step in current page
  * - NAV turn/release: structure navigation, add-slot preview, selection mode
- * - BOTTOM_LEFT / BOTTOM_RIGHT: structure erase/remove/copy/paste/duplicate
+ * - BOTTOM_LEFT / BOTTOM_RIGHT: focus and selection clear/remove/copy/paste
  */
 class SequencerStepHandler {
 public:
@@ -68,6 +68,8 @@ private:
 
     void toggleStep(uint8_t indexInPage);
     bool selectionHasItems() const;
+    bool childPatternContentActionsAvailable() const;
+    bool currentStructureBottomActionsAvailable() const;
     bool focusedStepHasChildContent() const;
     bool canPasteFocusedStepContent() const;
     void clearFocusedStepContent();

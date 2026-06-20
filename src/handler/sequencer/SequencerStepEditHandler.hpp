@@ -62,10 +62,12 @@ private:
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
     void maybeCloseFromMacro(uint8_t indexInPage);
+    bool focusedRowIsValueRow() const;
     bool focusedRowIsContextRow() const;
     bool focusedRowSupportsLocalVariation() const;
     bool focusedContextHasChild() const;
     bool canPasteFocusedStepContent() const;
+    void resetFocusedValueRowToDefault();
     void clearFocusedContextChild();
     void copyFocusedStepContent();
     void pasteFocusedStepContent();

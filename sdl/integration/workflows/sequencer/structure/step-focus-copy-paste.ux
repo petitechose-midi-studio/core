@@ -1,0 +1,30 @@
+# UX workflow: focused step copy/paste without selection.
+# Purpose: validates that a user can copy the focused step directly, move the
+# step cursor, then paste with a bottom-right hold without entering selection.
+
+0 scenario sequencer
+50 capture screen track_focus
+
+# Move to Step focus and create an edited source step.
+150 tap NAV 60
+350 capture screen pattern_focus
+450 tap NAV 60
+650 capture screen step_focus
+750 tap MACRO_2 60
+950 capture screen step_2_enabled
+1050 encoder OPT 0.58
+1250 capture screen step_2_pitch_edited
+
+# Copy focused step 2 directly.
+1350 tap BOTTOM_RIGHT 60
+1600 capture screen step_2_copied
+
+# Move focus to step 4 and paste the complete step payload.
+1700 encoder NAV 2
+1900 capture screen step_4_focus_paste_target
+2000 button BOTTOM_RIGHT down
+2200 capture screen step_4_paste_hold_started
+3050 tick
+3100 capture screen step_4_paste_applied
+3150 button BOTTOM_RIGHT up
+3400 capture screen step_4_pasted

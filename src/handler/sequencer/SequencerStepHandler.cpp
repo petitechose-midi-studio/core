@@ -216,10 +216,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isChildContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
-        })
+        .when([this]() { return childPatternContentActionsAvailable(); })
         .then([this]() {
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
                 return;
@@ -231,8 +228,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() {
-            return core::state::sequencer::isChildContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings() &&
+            return childPatternContentActionsAvailable() &&
                    focusedStepHasChildContent();
         })
         .then([this]() {
@@ -243,10 +239,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isChildContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
-        })
+        .when([this]() { return childPatternContentActionsAvailable(); })
         .then([this]() {
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
                 return;
@@ -258,8 +251,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() {
-            return core::state::sequencer::isChildContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings() &&
+            return childPatternContentActionsAvailable() &&
                    canPasteFocusedStepContent();
         })
         .then([this]() {
@@ -297,7 +289,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
 #endif
             history_.commitCoalescedPatternEdit();
             if (sequencer_.structureUi.stepSelection.active.get()) {
-                edit_workflow_.clearStepSelection();
+                edit_workflow_.resetStepSelectionDeep();
             } else {
                 edit_workflow_.deleteSelection();
             }
@@ -306,10 +298,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
-        })
+        .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
@@ -331,15 +320,22 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
 #endif
                 return;
             }
+            if (sequencer_.structureUi.stepSelection.active.get()) {
+                history_.commitCoalescedPatternEdit();
+                edit_workflow_.resetStepSelectionShallow();
+            } else if (!sequencer_.structureUi.pageSelection.active.get()) {
+                history_.commitCoalescedPatternEdit();
+                edit_workflow_.toggleTrackSelectionMute();
+            } else if (sequencer_.structureUi.pageSelection.active.get()) {
+                history_.commitCoalescedPatternEdit();
+                edit_workflow_.clearSelection();
+            }
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
-        })
+        .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
@@ -349,15 +345,14 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 return;
             }
             history_.commitCoalescedPatternEdit();
-            edit_workflow_.eraseCurrentStructure();
+            edit_workflow_.applyBottomLeftTapCurrentStructure();
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() {
-            return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings() &&
+            return currentStructureBottomActionsAvailable() &&
                    edit_workflow_.canRemoveCurrentStructure();
         })
         .then([this]() {
@@ -403,11 +398,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .press()
         .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings() &&
-                   !navigation_workflow_.stepFocusActive();
-        })
+        .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
@@ -447,11 +438,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings() &&
-                   !navigation_workflow_.stepFocusActive();
-        })
+        .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
@@ -499,11 +486,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings() &&
-                   !navigation_workflow_.stepFocusActive();
-        })
+        .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
@@ -517,6 +500,19 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
 
 FLASHMEM bool SequencerStepHandler::selectionHasItems() const {
     return navigation_workflow_.selectedItemsAvailable();
+}
+
+FLASHMEM bool SequencerStepHandler::childPatternContentActionsAvailable() const {
+    return core::state::sequencer::isChildContentView(sequencer_) &&
+           navigation_workflow_.allowsMainBindings() &&
+           !navigation_workflow_.stepFocusActive();
+}
+
+FLASHMEM bool SequencerStepHandler::currentStructureBottomActionsAvailable() const {
+    if (!navigation_workflow_.allowsMainBindings()) return false;
+    if (core::state::sequencer::isRootContentView(sequencer_)) return true;
+    return core::state::sequencer::isChildContentView(sequencer_) &&
+           navigation_workflow_.stepFocusActive();
 }
 
 FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {

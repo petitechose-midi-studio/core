@@ -142,7 +142,7 @@ void test_view_selector_opens_navigates_and_confirms_on_close() {
     std::cout << "[PASS] test_view_selector_opens_navigates_and_confirms_on_close\n";
 }
 
-void test_nav_release_confirms_without_closing_selector() {
+void test_nav_release_confirms_and_closes_selector() {
     ViewSwitcherHarness h;
     h.state.activeView.set(core::ui::ViewType::MACRO);
 
@@ -151,10 +151,10 @@ void test_nav_release_confirms_without_closing_selector() {
     h.tap(Config::ButtonID::NAV);
 
     assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
-    assert(h.state.viewSelector.visible.get());
-    assert(h.overlays.current() == core::ui::OverlayType::VIEW_SELECTOR);
+    assert(!h.state.viewSelector.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
 
-    std::cout << "[PASS] test_nav_release_confirms_without_closing_selector\n";
+    std::cout << "[PASS] test_nav_release_confirms_and_closes_selector\n";
 }
 
 void test_project_item_switches_to_project_view() {
@@ -330,7 +330,7 @@ void test_selector_does_not_open_inside_project_folder() {
 
 int main() {
     test_view_selector_opens_navigates_and_confirms_on_close();
-    test_nav_release_confirms_without_closing_selector();
+    test_nav_release_confirms_and_closes_selector();
     test_project_item_switches_to_project_view();
     test_selector_uses_active_view_scope();
     test_selector_uses_project_active_view_scope();

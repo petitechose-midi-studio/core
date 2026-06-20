@@ -167,6 +167,9 @@ FLASHMEM void fillProjectSequencerPayload(const state::sequencer::SequencerTrack
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
     const auto projectScale = trackBank.projectScaleSettings();
+    out.activeTrack = activeTrack;
+    out.enabledMask = trackBank.currentEnabledMask();
+    out.mutedMask = trackBank.currentMutedMask();
     out.projectScaleRoot = projectScale.root;
     out.projectScaleType = static_cast<uint8_t>(projectScale.type);
     out.projectScaleConstraintMode = static_cast<uint8_t>(projectScale.mode);
@@ -186,11 +189,14 @@ FLASHMEM void fillProjectSequencerPayload(const state::sequencer::SequencerTrack
 FLASHMEM void applyProjectSequencerPayload(const ProjectSequencerPayload& payload,
                                            state::sequencer::SequencerTrackBankState& trackBank,
                                            state::sequencer::SequencerState& active) {
-    uint16_t enabledMask = 0x0001;
-    uint8_t activeTrack = 0;
-    trackBank.captureSharedTrackState(enabledMask, activeTrack);
+    const uint16_t enabledMask = payload.enabledMask;
+    const uint16_t mutedMask = payload.mutedMask;
+    const uint8_t requestedActiveTrack =
+        state::sequencer::SequencerTrackBankState::clampTrackIndex(payload.activeTrack);
     trackBank.reset();
-    trackBank.syncSharedTrackState(enabledMask, activeTrack);
+    trackBank.syncSharedTrackState(enabledMask, requestedActiveTrack);
+    trackBank.setMutedMask(mutedMask);
+    const uint8_t activeTrack = trackBank.activeTrackIndex();
     trackBank.setProjectScaleSettings(payloadScaleSettings(
         payload.projectScaleRoot,
         payload.projectScaleType,
@@ -222,6 +228,7 @@ FLASHMEM void fillSetPayload(const state::sequencer::SequencerTrackBankState& tr
     out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     out.activeTrack = activeTrack;
     out.enabledMask = trackBank.currentEnabledMask();
+    out.mutedMask = trackBank.currentMutedMask();
     const auto projectScale = trackBank.projectScaleSettings();
     out.projectScaleRoot = projectScale.root;
     out.projectScaleType = static_cast<uint8_t>(projectScale.type);
@@ -238,6 +245,7 @@ FLASHMEM void applySetPayload(const SetPayload& payload,
                               state::sequencer::SequencerState& active) {
     trackBank.reset();
     trackBank.syncSharedTrackState(payload.enabledMask, 0);
+    trackBank.setMutedMask(payload.mutedMask);
     trackBank.setProjectScaleSettings(payloadScaleSettings(
         payload.projectScaleRoot,
         payload.projectScaleType,

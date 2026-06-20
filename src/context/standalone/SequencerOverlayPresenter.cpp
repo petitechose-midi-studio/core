@@ -6,7 +6,6 @@
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
 
 namespace core::context::standalone {
-namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 
 SequencerOverlayPresenter::SequencerOverlayPresenter(
     StateRefs stateRefs,
@@ -53,8 +52,7 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepEditActionStrip() {
-    if (!state_refs_.sequencer.stepEdit.visible.get() ||
-        !step_edit_rows::isContext(state_refs_.sequencer.stepEdit.focusedRow.get())) {
+    if (!state_refs_.sequencer.stepEdit.visible.get()) {
         step_edit_action_strip_.render({.visible = false});
         return;
     }

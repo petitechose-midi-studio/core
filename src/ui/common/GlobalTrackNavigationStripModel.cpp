@@ -23,6 +23,7 @@ TrackNavigationStripProps buildTrackNavigationStripProps(
     const bool focusingTrack = !trackNavigation.selection.active.get() &&
         source.structureNavigationFocus == core::state::StructureNavigationFocus::TRACK;
     const uint16_t enabledMask = source.sharedTrackEnabledMask;
+    const uint16_t mutedMask = static_cast<uint16_t>(source.sharedTrackMutedMask & enabledMask);
     const uint8_t activeTrack = source.sharedTrackActive;
     const uint8_t previewAddIndex =
         previewAddSlot && focusingTrack
@@ -37,6 +38,7 @@ TrackNavigationStripProps buildTrackNavigationStripProps(
                              : activeTrack);
     props.addTrackIndex = previewAddIndex;
     props.enabledMask = enabledMask;
+    props.mutedMask = mutedMask;
     props.selectedMask = selectingTrack ? trackNavigation.selection.selectedMask.get() : 0;
     props.focusingTrack = focusingTrack;
     props.selectingTrack = selectingTrack;
@@ -62,6 +64,7 @@ bool globalTrackNavigationStripPropsEqual(
            lhs.previewTrack == rhs.previewTrack &&
            lhs.addTrackIndex == rhs.addTrackIndex &&
            lhs.enabledMask == rhs.enabledMask &&
+           lhs.mutedMask == rhs.mutedMask &&
            lhs.selectedMask == rhs.selectedMask &&
            lhs.focusingTrack == rhs.focusingTrack &&
            lhs.selectingTrack == rhs.selectingTrack &&

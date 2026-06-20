@@ -257,6 +257,7 @@ FLASHMEM void StandaloneUiAssembly::bindGlobalTrackStrip() {
         [this]() { scheduleGlobalTrackStripRender(); },
         core_state_.sharedTrackActive,
         core_state_.sharedTrackEnabledMask,
+        core_state_.sequencerTracks.mutedMaskSignal(),
         core_state_.trackNavigation.previewAddSlot,
         core_state_.trackNavigation.previewTrackIndex,
         core_state_.trackNavigation.selection.active,
@@ -357,6 +358,7 @@ FLASHMEM void StandaloneUiAssembly::renderGlobalTrackStrip() {
             core_state_.trackNavigation,
             core_state_.structureNavigationFocus.get(),
             core_state_.sharedTrackEnabledMask.get(),
+            core_state_.sequencerTracks.currentMutedMask(),
             core_state_.sharedTrackActive.get(),
             core_state_.statusBar,
         }

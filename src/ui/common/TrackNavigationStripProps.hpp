@@ -20,6 +20,7 @@ struct TrackNavigationStripProps {
     uint8_t previewTrack = 0;
     uint8_t addTrackIndex = TRACK_COUNT;
     uint16_t enabledMask = 0x0001;
+    uint16_t mutedMask = 0;
     uint16_t selectedMask = 0;
     bool focusingTrack = false;
     bool selectingTrack = false;

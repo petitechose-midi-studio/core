@@ -197,6 +197,12 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .release()
+        .scope(overlay_scope_)
+        .when([this]() { return focusedRowIsValueRow(); })
+        .then([this]() { resetFocusedValueRowToDefault(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(overlay_scope_)
         .when([this]() { return focusedRowIsContextRow(); })
@@ -218,7 +224,6 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
             if (context_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
                 return;
             }
-            clearFocusedContextChild();
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
@@ -576,6 +581,11 @@ FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage)
     closeStepEdit();
 }
 
+FLASHMEM bool SequencerStepEditHandler::focusedRowIsValueRow() const {
+    const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
+    return isActivatedRow(focusedRow) || isPropertyRow(focusedRow);
+}
+
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsContextRow() const {
     const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
     return step_edit_rows::isContext(focusedRow);
@@ -611,6 +621,111 @@ FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {
                sequencer_,
                sequencer_.stepEdit.stepIndex.get()
            );
+}
+
+FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
+    if (!focusedRowIsValueRow()) return;
+
+    auto& edit = sequencer_.stepEdit;
+    const uint8_t step = edit.stepIndex.get();
+    if (step >= core::state::sequencer::activeContentLength(sequencer_)) return;
+
+    bool changed = false;
+    const uint8_t row = edit.focusedRow.get();
+    if (isActivatedRow(row)) {
+        changed = core::state::sequencer::setActiveContentStepEnabled(
+            sequencer_,
+            step,
+            false
+        );
+    } else if (isPropertyRow(row)) {
+        const auto property = propertyForRow(row);
+        if (core::state::sequencer::isRootContentView(sequencer_)) {
+            switch (property) {
+                case core::state::sequencer::StepProperty::NOTE:
+                    changed = sequencer_.setStepNoteAt(
+                        step,
+                        core::state::sequencer::SequencerState::DEFAULT_NOTE
+                    );
+                    break;
+                case core::state::sequencer::StepProperty::VELOCITY:
+                    changed = sequencer_.setStepVelocityAt(
+                        step,
+                        core::state::sequencer::SequencerState::DEFAULT_VELOCITY
+                    );
+                    break;
+                case core::state::sequencer::StepProperty::GATE:
+                    changed = sequencer_.setStepGateAt(
+                        step,
+                        core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT
+                    );
+                    break;
+                case core::state::sequencer::StepProperty::NUDGE:
+                    changed = sequencer_.setStepNudgeAt(step, 0);
+                    break;
+                case core::state::sequencer::StepProperty::PROBABILITY:
+                    changed = sequencer_.setStepProbabilityAt(
+                        step,
+                        core::state::sequencer::SequencerState::DEFAULT_PROBABILITY
+                    );
+                    break;
+            }
+        } else {
+            const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+                sequencer_,
+                step
+            );
+            switch (property) {
+                case core::state::sequencer::StepProperty::NOTE:
+                    changed = core::state::sequencer::setNodeNoteOffset(
+                        sequencer_.pattern,
+                        nodeId,
+                        0
+                    );
+                    break;
+                case core::state::sequencer::StepProperty::VELOCITY:
+                    changed = core::state::sequencer::setNodeVelocityOffset(
+                        sequencer_.pattern,
+                        nodeId,
+                        0
+                    );
+                    break;
+                case core::state::sequencer::StepProperty::GATE:
+                    changed = core::state::sequencer::setNodeGateOffset(
+                        sequencer_.pattern,
+                        nodeId,
+                        0
+                    );
+                    break;
+                case core::state::sequencer::StepProperty::NUDGE:
+                    changed = core::state::sequencer::setNodeNudgeOffset(
+                        sequencer_.pattern,
+                        nodeId,
+                        0
+                    );
+                    break;
+                case core::state::sequencer::StepProperty::PROBABILITY:
+                    changed = core::state::sequencer::setNodeProbabilityOffset(
+                        sequencer_.pattern,
+                        nodeId,
+                        0
+                    );
+                    break;
+            }
+            if (changed) sequencer_.contentView.bump();
+        }
+
+        changed = core::state::sequencer::setNodeLocalVariationRange(
+            sequencer_.pattern,
+            core::state::sequencer::activeContentStepNodeId(sequencer_, step),
+            property,
+            0
+        ) || changed;
+    }
+
+    if (!changed) return;
+    sequencer_.invalidateVariationTelemetry();
+    configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::recordContextMutation(

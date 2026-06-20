@@ -11,12 +11,14 @@ core::ui::GlobalTrackNavigationStripSource sourceFor(
     core::state::StatusBarState& status,
     core::state::StructureNavigationFocus focus,
     uint16_t enabledMask,
+    uint16_t mutedMask,
     uint8_t activeTrack
 ) {
     return core::ui::GlobalTrackNavigationStripSource{
         navigation,
         focus,
         enabledMask,
+        mutedMask,
         activeTrack,
         status,
     };
@@ -34,6 +36,7 @@ void test_uses_shared_track_state_when_not_focusing_or_selecting() {
             status,
             core::state::StructureNavigationFocus::PAGE,
             0x0005,
+            0x0004,
             2
         )
     );
@@ -42,6 +45,7 @@ void test_uses_shared_track_state_when_not_focusing_or_selecting() {
     assert(props.previewTrack == 2);
     assert(props.addTrackIndex == core::ui::TrackNavigationStripProps::TRACK_COUNT);
     assert(props.enabledMask == 0x0005);
+    assert(props.mutedMask == 0x0004);
     assert(props.selectedMask == 0);
     assert(!props.focusingTrack);
     assert(!props.selectingTrack);
@@ -63,6 +67,7 @@ void test_track_focus_uses_preview_and_add_slot() {
             status,
             core::state::StructureNavigationFocus::TRACK,
             0x0003,
+            0,
             0
         )
     );
@@ -94,6 +99,7 @@ void test_track_selection_takes_priority_over_preview() {
             status,
             core::state::StructureNavigationFocus::TRACK,
             0x03FF,
+            0xFFFF,
             1
         )
     );
@@ -102,6 +108,7 @@ void test_track_selection_takes_priority_over_preview() {
     assert(props.previewTrack == 9);
     assert(props.addTrackIndex == core::ui::TrackNavigationStripProps::TRACK_COUNT);
     assert(props.enabledMask == 0x03FF);
+    assert(props.mutedMask == 0x03FF);
     assert(props.selectedMask == 0x0201);
     assert(!props.focusingTrack);
     assert(props.selectingTrack);

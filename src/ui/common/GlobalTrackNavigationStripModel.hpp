@@ -19,6 +19,7 @@ struct GlobalTrackNavigationStripSource {
     core::state::StructureNavigationFocus structureNavigationFocus =
         core::state::StructureNavigationFocus::PAGE;
     uint16_t sharedTrackEnabledMask = 0x0001;
+    uint16_t sharedTrackMutedMask = 0;
     uint8_t sharedTrackActive = 0;
     const core::state::StatusBarState& statusBar;
 };

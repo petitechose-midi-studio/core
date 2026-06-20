@@ -1,0 +1,80 @@
+# UX workflow: Step Editor bottom actions.
+# Purpose: verifies that the Step Editor exposes row-scoped bottom actions:
+# musical rows reset to default, context rows copy/remove/paste child content.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Create and edit root step 1, then open Step Editor.
+150 tap NAV 60
+350 capture screen pattern_focus
+450 tap NAV 60
+650 capture screen step_focus
+750 tap MACRO_1 60
+950 capture screen step_1_enabled
+1050 encoder OPT 0.62
+1250 capture screen step_1_pitch_edited
+1350 button MACRO_1 down
+2400 tick
+2450 capture screen step_editor_open
+2500 button MACRO_1 up
+
+# Focus Pitch row and reset it from the bottom-left action.
+2600 encoder NAV 1
+2680 encoder NAV 1
+2880 capture screen pitch_row_focused
+2980 tap BOTTOM_LEFT 60
+3230 capture screen pitch_row_reset
+
+# Create a micro-sequence context from the context row.
+3330 encoder NAV 1
+3410 encoder NAV 1
+3490 encoder NAV 1
+3570 encoder NAV 1
+3770 capture screen micro_row_focused_empty
+3870 tap NAV 60
+4170 capture screen entered_micro_context
+4270 tap LEFT_TOP 60
+4570 capture screen returned_root_context
+
+# Reopen Step Editor, copy the micro context, then remove it with hold.
+4670 button MACRO_1 down
+5720 tick
+5770 capture screen step_editor_reopened
+5820 button MACRO_1 up
+5920 encoder NAV 1
+6000 encoder NAV 1
+6080 encoder NAV 1
+6160 encoder NAV 1
+6240 encoder NAV 1
+6320 encoder NAV 1
+6520 capture screen micro_row_focused_with_child
+6620 tap BOTTOM_RIGHT 60
+6870 capture screen micro_context_copied
+6970 button BOTTOM_LEFT down
+8020 tick
+8070 capture screen micro_context_remove_hold_applied
+8120 button BOTTOM_LEFT up
+8370 capture screen micro_context_removed
+
+# Paste the copied micro context onto step 2.
+8470 tap LEFT_TOP 60
+8770 capture screen step_editor_closed
+8870 encoder NAV 1
+9070 capture screen step_2_focus
+9170 button MACRO_2 down
+10220 tick
+10270 capture screen step_2_editor_open
+10320 button MACRO_2 up
+10420 encoder NAV 1
+10500 encoder NAV 1
+10580 encoder NAV 1
+10660 encoder NAV 1
+10740 encoder NAV 1
+10820 encoder NAV 1
+11020 capture screen step_2_micro_row_focused
+11120 button BOTTOM_RIGHT down
+12170 tick
+12220 capture screen micro_context_paste_hold_applied
+12270 button BOTTOM_RIGHT up
+12520 capture screen micro_context_pasted

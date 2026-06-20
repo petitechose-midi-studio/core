@@ -100,12 +100,37 @@ void test_noop_still_keeps_domain_caches_aligned() {
     std::cout << "[PASS] test_noop_still_keeps_domain_caches_aligned\n";
 }
 
+void test_apply_clears_muted_bits_for_disabled_sequencer_tracks() {
+    oc::state::Signal<uint8_t, 8> activeTrack{1};
+    oc::state::Signal<uint16_t, 16> enabledMask{0x0003};
+    auto pages = std::make_unique<core::state::macro::MacroPagesState>();
+    auto sequencerTracks = std::make_unique<core::state::sequencer::SequencerTrackBankState>();
+    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>();
+
+    sequencerTracks->syncSharedTrackState(0x0003, 1);
+    assert(sequencerTracks->setTrackMuted(1, true));
+
+    const auto result = core::state::shared::SharedTrackCoordinator::apply(
+        refsFor(activeTrack, enabledMask, *pages, *sequencerTracks, *sequencer),
+        0x0001,
+        0
+    );
+
+    assert(result.changed);
+    assert(sequencerTracks->currentEnabledMask() == 0x0001);
+    assert(sequencerTracks->currentMutedMask() == 0);
+    assert(sequencerTracks->activeTrackIndex() == 0);
+
+    std::cout << "[PASS] test_apply_clears_muted_bits_for_disabled_sequencer_tracks\n";
+}
+
 }  // namespace
 
 int main() {
     test_apply_sanitizes_and_syncs_all_domains();
     test_apply_switches_to_first_enabled_track_when_active_is_disabled();
     test_noop_still_keeps_domain_caches_aligned();
+    test_apply_clears_muted_bits_for_disabled_sequencer_tracks();
 
     std::cout << "All SharedTrackCoordinator tests passed\n";
     return 0;

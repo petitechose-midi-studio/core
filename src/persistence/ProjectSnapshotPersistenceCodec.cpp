@@ -58,6 +58,22 @@ FLASHMEM bool chunkVersionSupported(const project_file::DecodedChunkView& chunk,
     return false;
 }
 
+FLASHMEM bool sequencerChunkVersionSupported(const project_file::DecodedChunkView& chunk,
+                                             project_file::LoadReport* report) {
+    if (chunk.versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
+        chunk.versionMinor == PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR) {
+        return true;
+    }
+
+    addReport(report,
+              project_file::LoadSeverity::WARNING,
+              project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
+              chunk.id,
+              chunk.versionMajor,
+              chunk.versionMinor);
+    return false;
+}
+
 FLASHMEM void reportDefaulted(project_file::LoadReport* report, project_file::ChunkId id) {
     addReport(report,
               project_file::LoadSeverity::INFO,
@@ -141,7 +157,7 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
         reportMissingOptional(report, project_file::ChunkId::SEQUENCER_STATE);
         return true;
     }
-    if (!chunkVersionSupported(*chunk, report)) {
+    if (!sequencerChunkVersionSupported(*chunk, report)) {
         reportDefaulted(report, project_file::ChunkId::SEQUENCER_STATE);
         return false;
     }

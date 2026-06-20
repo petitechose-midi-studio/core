@@ -64,11 +64,11 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
         .scope(view_selector_scope_)
         .then([this](float delta) { navigate(delta); });
 
-    // Confirm selection on NAV button (without closing)
+    // Confirm selection on NAV button.
     buttons_.button(ButtonID::NAV)
         .release()
         .scope(view_selector_scope_)
-        .then([this]() { confirmSelection(); });
+        .then([this]() { closeSelector(); });
 
     buttons_.button(ButtonID::BOTTOM_LEFT)
         .release()

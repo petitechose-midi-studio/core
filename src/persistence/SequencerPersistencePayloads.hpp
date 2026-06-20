@@ -62,6 +62,9 @@ struct ProjectSequencerTrackPayload {
 };
 
 struct ProjectSequencerPayload {
+    uint8_t activeTrack = 0;
+    uint16_t enabledMask = 0x0001;
+    uint16_t mutedMask = 0;
     uint8_t projectScaleRoot = 0;
     uint8_t projectScaleType = static_cast<uint8_t>(
         oc::note::sequencer::StepSequencerScaleType::Chromatic
@@ -77,6 +80,7 @@ struct SetPayload {
     uint8_t trackCount = PERSISTED_TRACK_COUNT;
     uint8_t activeTrack = 0;
     uint16_t enabledMask = 0x0001;
+    uint16_t mutedMask = 0;
     uint8_t projectScaleRoot = 0;
     uint8_t projectScaleType = static_cast<uint8_t>(
         oc::note::sequencer::StepSequencerScaleType::Chromatic

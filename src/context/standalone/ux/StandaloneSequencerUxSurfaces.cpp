@@ -126,10 +126,20 @@ const char* actionName(SequencerAction action) {
             return "toggle_visible_step";
         case SequencerAction::EDIT_VISIBLE_STEP_PROPERTY:
             return "edit_visible_step_property";
+        case SequencerAction::MUTE_CURRENT_TRACK:
+            return "mute_current_track";
         case SequencerAction::CLEAR_CURRENT_STRUCTURE:
             return "clear_current_structure";
         case SequencerAction::REMOVE_CURRENT_STRUCTURE:
             return "remove_current_structure";
+        case SequencerAction::RESET_CURRENT_STEP_SHALLOW:
+            return "reset_current_step_shallow";
+        case SequencerAction::RESET_CURRENT_STEP_DEEP:
+            return "reset_current_step_deep";
+        case SequencerAction::COPY_CURRENT_STEP:
+            return "copy_current_step";
+        case SequencerAction::PASTE_CURRENT_STEP:
+            return "paste_current_step";
         case SequencerAction::CLEAR_STEP_CONTENT:
             return "clear_step_content";
         case SequencerAction::COPY_CURRENT_STRUCTURE:
@@ -140,10 +150,24 @@ const char* actionName(SequencerAction action) {
             return "copy_step_content";
         case SequencerAction::PASTE_STEP_CONTENT:
             return "paste_step_content";
+        case SequencerAction::RESET_STEP_EDITOR_ROW:
+            return "reset_step_editor_row";
+        case SequencerAction::REMOVE_STEP_EDITOR_CONTEXT:
+            return "remove_step_editor_context";
+        case SequencerAction::COPY_STEP_EDITOR_CONTEXT:
+            return "copy_step_editor_context";
+        case SequencerAction::PASTE_STEP_EDITOR_CONTEXT:
+            return "paste_step_editor_context";
+        case SequencerAction::MUTE_TRACK_SELECTION:
+            return "mute_track_selection";
         case SequencerAction::CLEAR_SELECTION:
             return "clear_selection";
         case SequencerAction::DELETE_SELECTION:
             return "delete_selection";
+        case SequencerAction::RESET_STEP_SELECTION_SHALLOW:
+            return "reset_step_selection_shallow";
+        case SequencerAction::RESET_STEP_SELECTION_DEEP:
+            return "reset_step_selection_deep";
         case SequencerAction::COPY_SELECTION:
             return "copy_selection";
         case SequencerAction::PASTE_SELECTION:
@@ -162,10 +186,16 @@ const char* armActionName(SequencerAction action) {
     switch (action) {
         case SequencerAction::REMOVE_CURRENT_STRUCTURE:
             return "arm_remove_current_structure";
+        case SequencerAction::RESET_CURRENT_STEP_DEEP:
+            return "arm_reset_current_step_deep";
         case SequencerAction::PASTE_CURRENT_STRUCTURE:
             return "arm_paste_current_structure";
+        case SequencerAction::PASTE_CURRENT_STEP:
+            return "arm_paste_current_step";
         case SequencerAction::DELETE_SELECTION:
             return "arm_delete_selection";
+        case SequencerAction::RESET_STEP_SELECTION_DEEP:
+            return "arm_reset_step_selection_deep";
         case SequencerAction::PASTE_SELECTION:
             return "arm_paste_selection";
         case SequencerAction::PASTE_STEP_SELECTION:
@@ -178,6 +208,16 @@ const char* armActionName(SequencerAction action) {
             return "arm_clear_step_content";
         case SequencerAction::COPY_STEP_CONTENT:
             return "arm_copy_step_content";
+        case SequencerAction::REMOVE_STEP_EDITOR_CONTEXT:
+            return "arm_remove_step_editor_context";
+        case SequencerAction::COPY_STEP_EDITOR_CONTEXT:
+            return "arm_copy_step_editor_context";
+        case SequencerAction::PASTE_STEP_EDITOR_CONTEXT:
+            return "arm_paste_step_editor_context";
+        case SequencerAction::MUTE_CURRENT_TRACK:
+            return "arm_mute_current_track";
+        case SequencerAction::MUTE_TRACK_SELECTION:
+            return "arm_mute_track_selection";
         case SequencerAction::CLEAR_SELECTION:
             return "arm_clear_selection";
         case SequencerAction::COPY_SELECTION:
@@ -563,13 +603,16 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
 
     if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
         out.effect = armActionName(action);
+        const bool mutableSingleTrack =
+            targetTrack && action == SequencerAction::MUTE_CURRENT_TRACK;
         if (isAddSlot(out) ||
-            core::state::shared::countEnabled(
-                targetMask,
-                targetTrack
-                    ? core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
-                    : core::state::sequencer::SequencerState::PAGE_COUNT
-            ) <= 1U) {
+            (!mutableSingleTrack &&
+             core::state::shared::countEnabled(
+                 targetMask,
+                 targetTrack
+                     ? core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+                     : core::state::sequencer::SequencerState::PAGE_COUNT
+             ) <= 1U)) {
             markNoop(out, isAddSlot(out) ? "add_slot" : "single_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
@@ -778,6 +821,30 @@ bool SequencerStepEditUxSurface::captureSemanticUxContext(
         out.effect = actionName(policy.navTap);
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = actionName(policy.leftTopTap);
+    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
+        const auto action = policy.bottomLeftHold != SequencerAction::NONE
+            ? policy.bottomLeftHold
+            : policy.bottomLeftTap;
+        if (action == SequencerAction::NONE) return false;
+        out.effect = armActionName(action);
+    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
+        if (policy.bottomLeftTap == SequencerAction::NONE) return false;
+        out.effect = actionName(policy.bottomLeftTap);
+    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+        if (policy.bottomLeftHold == SequencerAction::NONE) return false;
+        out.effect = actionName(policy.bottomLeftHold);
+    } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
+        const auto action = policy.bottomRightHold != SequencerAction::NONE
+            ? policy.bottomRightHold
+            : policy.bottomRightTap;
+        if (action == SequencerAction::NONE) return false;
+        out.effect = armActionName(action);
+    } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
+        if (policy.bottomRightTap == SequencerAction::NONE) return false;
+        out.effect = actionName(policy.bottomRightTap);
+    } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+        if (policy.bottomRightHold == SequencerAction::NONE) return false;
+        out.effect = actionName(policy.bottomRightHold);
     }
     return true;
 }

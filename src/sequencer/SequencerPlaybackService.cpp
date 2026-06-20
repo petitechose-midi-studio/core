@@ -109,6 +109,7 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     last_active_track_ = trackBank.activeTrackIndex();
     runtime_active_track_ = last_active_track_;
     runtime_enabled_mask_ = trackBank.currentEnabledMask();
+    runtime_muted_mask_ = trackBank.currentMutedMask();
     auto snapshot = core::app::makeExtmemUnique<
         core::state::sequencer::SequencerTrackBankSnapshot
     >();
@@ -162,9 +163,11 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
         if (track_event_sinks_[i]) {
             track_event_sinks_[i]->setTimeline(tick, nowUs, tickPeriodUs);
         }
+        const uint16_t trackBit = static_cast<uint16_t>(1U << i);
         trackEngine->update(
             tick,
-            (runtime_enabled_mask_ & static_cast<uint16_t>(1U << i)) != 0
+            (runtime_enabled_mask_ & trackBit) != 0 &&
+            (runtime_muted_mask_ & trackBit) == 0
         );
     }
 
@@ -207,6 +210,7 @@ void SequencerPlaybackService::syncRuntimeStates_(
     runtime_active_track_ =
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(snapshot.activeTrack);
     runtime_enabled_mask_ = snapshot.enabledMask;
+    runtime_muted_mask_ = snapshot.mutedMask;
 
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         track_runtime_states_[i].variationTelemetryEnabled = (i == runtime_active_track_);

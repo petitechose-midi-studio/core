@@ -122,6 +122,7 @@ private:
     std::array<std::unique_ptr<oc::note::sequencer::StepSequencerEngine>, TRACK_COUNT> track_engines_{};
     uint8_t runtime_active_track_ = 0;
     uint16_t runtime_enabled_mask_ = 0x0001;
+    uint16_t runtime_muted_mask_ = 0;
 
     int16_t last_playhead_ = -1;
     uint8_t last_active_track_ = 0;

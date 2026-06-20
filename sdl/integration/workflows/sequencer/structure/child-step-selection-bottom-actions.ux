@@ -1,0 +1,61 @@
+# UX workflow: child-context step selection bottom actions.
+# Purpose: verifies that step-selection copy/paste plus shallow/deep reset work
+# inside a micro-sequence content view, not only at root pattern level.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Create a micro-sequence child context on root step 1.
+150 tap MACRO_1 60
+350 capture screen root_step_enabled
+450 button MACRO_1 down
+1500 tick
+1550 capture screen root_step_editor_open
+1600 button MACRO_1 up
+1700 encoder NAV 1
+1780 encoder NAV 1
+1860 encoder NAV 1
+1940 encoder NAV 1
+2020 encoder NAV 1
+2100 encoder NAV 1
+2260 capture screen micro_row_focused
+2360 tap NAV 60
+2660 capture screen child_pattern_focus
+
+# Move to child Step context and enable two child steps.
+2760 tap NAV 60
+2960 capture screen child_step_focus
+3060 tap MACRO_1 60
+3310 capture screen child_step_1_enabled
+3410 tap MACRO_3 60
+3660 capture screen child_steps_1_3_enabled
+
+# Enter child step selection, select steps 1 and 3, copy, then clear via hold.
+3760 button NAV down
+4860 tick
+4910 capture screen child_step_selection_entered
+4960 button NAV up
+5060 tap MACRO_1 60
+5310 capture screen child_step_1_selected
+5410 encoder NAV 2
+5610 capture screen child_selection_cursor_3
+5710 tap MACRO_3 60
+5960 capture screen child_steps_1_3_selected
+6060 tap BOTTOM_RIGHT 60
+6310 capture screen child_step_selection_copied
+6410 tap BOTTOM_LEFT 60
+6660 capture screen child_selection_tap_shallow_reset
+6760 button BOTTOM_LEFT down
+7810 tick
+7860 capture screen child_selection_deep_reset_hold_applied
+7910 button BOTTOM_LEFT up
+8160 capture screen child_selection_deep_reset_released
+
+# Paste the copied footprint back from cursor step 2.
+8260 encoder NAV -1
+8460 capture screen child_paste_preview_cursor_2
+8560 button BOTTOM_RIGHT down
+9610 tick
+9660 capture screen child_paste_hold_applied
+9710 button BOTTOM_RIGHT up
+9960 capture screen child_selection_pasted

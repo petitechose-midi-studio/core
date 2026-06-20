@@ -101,11 +101,13 @@ void test_refresh_captures_inactive_bank_track() {
     inactiveTrack.bumpStepDataRevision();
 
     trackBank.syncSharedTrackState(0x0005, 0);
+    assert(trackBank.setTrackMuted(2, true));
     const uint8_t index = bank.refresh();
     bank.commit(index);
 
     const auto& snapshot = bank.activeSnapshot();
     assert(snapshot.enabledMask == 0x0005);
+    assert(snapshot.mutedMask == 0x0004);
     assert(snapshot.tracks[2].length == 24);
     assert(snapshot.tracks[2].midiChannel == 2);
     assert(snapshot.tracks[2].note[0] == 72);

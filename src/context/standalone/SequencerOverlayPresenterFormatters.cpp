@@ -77,6 +77,11 @@ FLASHMEM bool focusedRowIsContextRow(const core::state::sequencer::SequencerStat
     return step_edit_rows::isContext(sequencer.stepEdit.focusedRow.get());
 }
 
+FLASHMEM bool focusedRowIsValueRow(const core::state::sequencer::SequencerState& sequencer) {
+    const uint8_t row = sequencer.stepEdit.focusedRow.get();
+    return step_edit_rows::isActivated(row) || step_edit_rows::isProperty(row);
+}
+
 FLASHMEM core::state::sequencer::StepContentChildKind childKindForContextRow(size_t row) {
     return step_edit_rows::childKindForContextRow(static_cast<uint8_t>(row));
 }
@@ -516,7 +521,7 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     StripProps props;
 
     auto& sequencer = source.sequencer;
-    if (!sequencer.stepEdit.visible.get() || !focusedRowIsContextRow(sequencer)) {
+    if (!sequencer.stepEdit.visible.get()) {
         props.visible = false;
         return props;
     }
@@ -539,6 +544,23 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         effectiveScaleSettings
     );
     if (!projection.valid) {
+        props.visible = false;
+        return props;
+    }
+
+    if (focusedRowIsValueRow(sequencer)) {
+        props.visible = true;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::ACTION_CLEAR,
+            Visual::ACTIVE,
+            Tone::WARNING
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
+
+    if (!focusedRowIsContextRow(sequencer)) {
         props.visible = false;
         return props;
     }

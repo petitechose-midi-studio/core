@@ -89,10 +89,49 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
     std::cout << "[PASS] test_graph_revision_change_resyncs_playback_service_graph\n";
 }
 
+void test_muted_track_does_not_emit_note_events() {
+    SequencerState sequencer;
+    core::state::sequencer::SequencerTrackBankState bank;
+    core::state::StatusBarState status;
+    core::sequencer::RealtimeMidiQueue midiQueue;
+
+    sequencer.pattern.length.set(4);
+    sequencer.pattern.stepsPerBeat.set(4);
+    sequencer.pattern.note[0] = 60;
+    sequencer.pattern.velocity[0] = 96;
+    sequencer.pattern.gate[0] = 100;
+    enableStep(sequencer, 0);
+    assert(bank.setTrackMuted(0, true));
+
+    core::sequencer::SequencerPlaybackService service{
+        sequencer,
+        bank,
+        status,
+        midiQueue,
+    };
+
+    auto snapshot = captureSnapshot(bank, sequencer);
+    assert(snapshot.enabledMask == 0x0001);
+    assert(snapshot.mutedMask == 0x0001);
+    service.update(snapshot, 0, true, 0, 0, 1000, false, false);
+
+    auto counters = midiQueue.takeCounters();
+    assert(counters.pushed == 0);
+
+    assert(bank.setTrackMuted(0, false));
+    snapshot = captureSnapshot(bank, sequencer);
+    service.update(snapshot, 0, true, 1, 0, 1000, false, false);
+    counters = midiQueue.takeCounters();
+    assert(counters.pushed > 0);
+
+    std::cout << "[PASS] test_muted_track_does_not_emit_note_events\n";
+}
+
 }  // namespace
 
 int main() {
     test_graph_revision_change_resyncs_playback_service_graph();
+    test_muted_track_does_not_emit_note_events();
 
     std::cout << "All SequencerPlaybackService tests passed\n";
     return 0;

@@ -42,10 +42,13 @@ struct SequencerTrackBankState {
     void syncSharedTrackState(uint16_t enabledMaskIn, uint8_t activeTrackIn);
     uint8_t activeTrackIndex() const { return active_track_.get(); }
     uint16_t currentEnabledMask() const { return enabled_mask_.get(); }
+    uint16_t currentMutedMask() const { return muted_mask_.get(); }
     Signal<uint8_t, 8>& activeTrackSignal() { return active_track_; }
     const Signal<uint8_t, 8>& activeTrackSignal() const { return active_track_; }
     Signal<uint16_t, 16>& enabledMaskSignal() { return enabled_mask_; }
     const Signal<uint16_t, 16>& enabledMaskSignal() const { return enabled_mask_; }
+    Signal<uint16_t, 16>& mutedMaskSignal() { return muted_mask_; }
+    const Signal<uint16_t, 16>& mutedMaskSignal() const { return muted_mask_; }
     Signal<uint32_t, 8>& projectScaleRevisionSignal() { return project_scale_revision_; }
     const Signal<uint32_t, 8>& projectScaleRevisionSignal() const { return project_scale_revision_; }
 
@@ -62,11 +65,20 @@ struct SequencerTrackBankState {
         return (enabled_mask_.get() & static_cast<uint16_t>(1U << clamped)) != 0;
     }
 
+    bool isTrackMuted(uint8_t index) const {
+        const uint8_t clamped = clampTrackIndex(index);
+        return (muted_mask_.get() & static_cast<uint16_t>(1U << clamped)) != 0;
+    }
+
+    bool setMutedMask(uint16_t mutedMask);
+    bool setTrackMuted(uint8_t index, bool muted);
+
     void reset();
 
 private:
     Signal<uint8_t, 8> active_track_{0};
     Signal<uint16_t, 16> enabled_mask_{0x0001};
+    Signal<uint16_t, 16> muted_mask_{0};
     Signal<uint32_t, 8> project_scale_revision_{0};
     oc::note::sequencer::StepSequencerScaleSettings project_scale_settings_{};
     std::array<SequencerPatternState, TRACK_COUNT> tracks_{};

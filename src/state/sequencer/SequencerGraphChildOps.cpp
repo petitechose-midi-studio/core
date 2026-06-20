@@ -141,6 +141,34 @@ FLASHMEM bool resetStepNodePayload(
     return true;
 }
 
+FLASHMEM bool resetStepNodePayloadPreservingChildren(
+    SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId,
+    SequencerGraphNodeResetMode mode
+) {
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !graph->enabled || !hasStepNode(*graph, nodeId)) {
+        return false;
+    }
+
+    auto& node = graph->stepNodes[nodeId];
+    StepSequencerStepNode reset{};
+    if (mode == SequencerGraphNodeResetMode::DISABLED_OVERRIDE) {
+        reset.flags = STEP_NODE_ENABLED_OVERRIDE;
+    }
+    reset.flags = static_cast<uint16_t>(
+        reset.flags | (node.flags & (STEP_NODE_CHILD_SEQUENCE | STEP_NODE_CYCLE_SET))
+    );
+    reset.childSequenceId = node.childSequenceId;
+    reset.cycleSetId = node.cycleSetId;
+
+    if (sameStepNodePayload(node, reset)) return false;
+
+    node = reset;
+    pattern.bumpGraphRevision();
+    return true;
+}
+
 FLASHMEM bool copyStepNodePayloadFromGraph(
     SequencerPatternState& targetPattern,
     SequencerGraphNodeId targetNodeId,

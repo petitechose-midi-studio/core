@@ -20,6 +20,8 @@ constexpr lv_coord_t STRIP_HEIGHT = 12;
 constexpr lv_coord_t ITEM_MIN_SIZE = 11;
 constexpr lv_coord_t ITEM_GAP = 2;
 constexpr lv_opa_t ITEM_BASE_OPA = static_cast<lv_opa_t>(34);
+constexpr lv_opa_t ITEM_MUTED_OPA = static_cast<lv_opa_t>(18);
+constexpr lv_opa_t ITEM_MUTED_ACTIVE_MIN_OPA = LV_OPA_40;
 constexpr lv_opa_t ITEM_ACTIVE_MIN_OPA = LV_OPA_80;
 constexpr lv_opa_t ITEM_ACTIVITY_RANGE = static_cast<lv_opa_t>(42);
 constexpr lv_coord_t ACTIVE_CURSOR_HEIGHT = 2;
@@ -132,7 +134,9 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
 
     for (uint8_t i = 0; i < items_.size(); ++i) {
         auto& cache = item_cache_[i];
-        const bool enabled = (props.enabledMask & static_cast<uint16_t>(1U << i)) != 0;
+        const uint16_t trackBit = static_cast<uint16_t>(1U << i);
+        const bool enabled = (props.enabledMask & trackBit) != 0;
+        const bool muted = enabled && (props.mutedMask & trackBit) != 0;
         const bool addSlot = props.addTrackIndex == i && !enabled;
         const bool isActive = props.activeTrack == i;
         const bool isPreview = props.previewTrack == i;
@@ -149,13 +153,17 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
         }
         const lv_color_t baseColor = lv_color_hex(enabled ? theme::color::trackColor(i)
                                                           : theme::color::INACTIVE);
-        lv_color_t fillColor = baseColor;
+        lv_color_t fillColor = muted ? lv_color_darken(baseColor, LV_OPA_50) : baseColor;
         lv_opa_t fillOpa = static_cast<lv_opa_t>(
             ITEM_BASE_OPA +
             (static_cast<uint16_t>(props.activity[i]) * static_cast<uint16_t>(ITEM_ACTIVITY_RANGE) / 127U)
         );
+        if (muted) {
+            fillOpa = ITEM_MUTED_OPA;
+        }
         if (isActive) {
-            fillOpa = static_cast<lv_opa_t>(std::max<uint16_t>(fillOpa, ITEM_ACTIVE_MIN_OPA));
+            const lv_opa_t minOpa = muted ? ITEM_MUTED_ACTIVE_MIN_OPA : ITEM_ACTIVE_MIN_OPA;
+            fillOpa = static_cast<lv_opa_t>(std::max<uint16_t>(fillOpa, minOpa));
             fillColor = lv_color_lighten(fillColor, LV_OPA_20);
         }
 

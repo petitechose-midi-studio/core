@@ -1,6 +1,7 @@
-# UX workflow: verify bottom-left destructive action guardrails.
-# Purpose: Step focus allows direct single-step reset, while step selection
-# requires a long press before selected steps are reset.
+# UX workflow: verify bottom-left reset depth guardrails.
+# Purpose: Step focus and step selection expose the same shallow/deep model:
+# tap resets step values while preserving child content; hold performs the deep
+# reset that removes child content.
 
 0 scenario sequencer
 50 capture screen track_focus
@@ -27,14 +28,15 @@
 3000 tap MACRO_3 60
 3200 capture screen step_3_selected
 
-# A short press must only cancel the armed state; the selected step remains.
+# A short press applies the shallow selected-step reset and keeps selection
+# active so the user can see what changed.
 3300 tap BOTTOM_LEFT 60
-3500 capture screen selection_tap_does_not_reset
+3500 capture screen selection_tap_shallow_reset
 
-# Long press arms and applies the destructive selection reset.
+# Long press arms and applies the deep selected-step reset.
 3600 button BOTTOM_LEFT down
 3800 capture screen selection_reset_hold_started
 4700 tick
-4750 capture screen selection_reset_applied_by_hold
+4750 capture screen selection_deep_reset_applied_by_hold
 4800 button BOTTOM_LEFT up
 5050 capture screen selection_reset_released

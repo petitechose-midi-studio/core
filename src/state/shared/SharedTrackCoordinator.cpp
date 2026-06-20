@@ -54,6 +54,7 @@ FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
 
     if (state.sequencerTracks.currentEnabledMask() != sanitizedMask) {
         state.sequencerTracks.enabledMaskSignal().set(sanitizedMask);
+        state.sequencerTracks.setMutedMask(state.sequencerTracks.currentMutedMask());
     }
 
     if (state.sequencerTracks.activeTrackIndex() != sanitizedActive) {

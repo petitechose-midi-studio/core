@@ -64,6 +64,7 @@ FLASHMEM bool captureHistoryStructureSnapshot(
 ) {
     out = SequencerHistoryTrackStructureSnapshot{};
     out.enabledMask = bank.currentEnabledMask();
+    out.mutedMask = bank.currentMutedMask();
     out.activeTrack = bank.activeTrackIndex();
     out.focusedStep = active.focusedStep.get();
     out.page = active.page.get();
@@ -95,6 +96,7 @@ FLASHMEM bool applyHistoryStructureSnapshot(
 
     storeActiveTrack(bank, active);
     bank.syncSharedTrackState(snapshot.enabledMask, snapshot.activeTrack);
+    bank.setMutedMask(snapshot.mutedMask);
 
     bool restoredActiveTrack = false;
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
@@ -122,7 +124,9 @@ FLASHMEM bool sameMusicalHistoryStructureSnapshot(
     const SequencerHistoryTrackStructureSnapshot& lhs,
     const SequencerHistoryTrackStructureSnapshot& rhs
 ) {
-    if (lhs.enabledMask != rhs.enabledMask || lhs.activeTrack != rhs.activeTrack) {
+    if (lhs.enabledMask != rhs.enabledMask ||
+        lhs.mutedMask != rhs.mutedMask ||
+        lhs.activeTrack != rhs.activeTrack) {
         return false;
     }
 

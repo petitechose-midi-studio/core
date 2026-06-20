@@ -140,6 +140,12 @@ void createRootMicroSequence(SequencerStepHarness& h, uint8_t step) {
     assert(result.ok);
 }
 
+bool nodeHasCycleStates(const SequencerStepHarness& h, uint16_t nodeId) {
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph == nullptr || nodeId >= graph->stepNodeCount) return false;
+    return graph->stepNodes[nodeId].has(oc::note::sequencer::STEP_NODE_CYCLE_SET);
+}
+
 void holdPatternQuickControls(SequencerStepHarness& h) {
     h.press(Config::ButtonID::LEFT_CENTER);
     h.advance(1000);
@@ -208,6 +214,8 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.sequencer.pattern.length.get() == 16);
     assert(h.state.sequencer.structureUi.pageSelection.active.get());
+    assert(!h.state.sequencer.pattern.enabledMask.get().test(8));
+    assert(h.state.sequencer.pattern.note[8] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.advance(0);
@@ -296,7 +304,7 @@ void test_sequencer_page_creation_extends_pattern_to_target_slot() {
     std::cout << "[PASS] test_sequencer_page_creation_extends_pattern_to_target_slot\n";
 }
 
-void test_nav_selection_mode_deletes_selected_sequencer_track() {
+void test_nav_selection_mode_mutes_then_deletes_selected_sequencer_track() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
@@ -325,6 +333,13 @@ void test_nav_selection_mode_deletes_selected_sequencer_track() {
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
+    assert(h.state.sequencerTracks.currentMutedMask() == 0x0002);
+    assert(h.state.trackNavigation.selection.active.get());
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
+    assert(h.state.sequencerTracks.currentMutedMask() == 0);
     assert(h.state.trackNavigation.selection.active.get());
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -332,11 +347,48 @@ void test_nav_selection_mode_deletes_selected_sequencer_track() {
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0001);
+    assert(h.state.sequencerTracks.currentMutedMask() == 0);
     assert(h.state.sequencerTracks.activeTrackIndex() == 0);
     assert(h.state.sequencer.pattern.midiChannel.get() == 0);
     assert(!h.state.trackNavigation.selection.active.get());
 
-    std::cout << "[PASS] test_nav_selection_mode_deletes_selected_sequencer_track\n";
+    std::cout << "[PASS] test_nav_selection_mode_mutes_then_deletes_selected_sequencer_track\n";
+}
+
+void test_track_focus_bottom_left_mutes_without_clearing_payload() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 1);
+    h.state.sequencer.pattern.note[0] = 82;
+    h.state.sequencer.pattern.velocity[0] = 108;
+    h.state.sequencer.pattern.setEnabled(0, true);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
+    assert(h.state.sequencerTracks.currentMutedMask() == 0x0002);
+    assert(h.state.sequencer.pattern.note[0] == 82);
+    assert(h.state.sequencer.pattern.velocity[0] == 108);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerTracks.currentMutedMask() == 0);
+    assert(h.state.sequencer.pattern.note[0] == 82);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.sequencerTracks.currentMutedMask() == 0x0002);
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.sequencerTracks.currentMutedMask() == 0);
+
+    std::cout << "[PASS] test_track_focus_bottom_left_mutes_without_clearing_payload\n";
 }
 
 void test_sequencer_page_copy_and_long_press_paste() {
@@ -906,7 +958,7 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
     assert(h.state.sequencer.page.get() == 0);
     assert(!h.state.sequencer.pattern.isEnabled(3));
     assert(h.state.sequencer.pattern.note[3] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    assert(!rootStepHasMicroSequence(h, 3));
+    assert(rootStepHasMicroSequence(h, 3));
     assert(h.state.sequencer.pattern.isEnabled(8));
     assert(h.state.sequencer.pattern.note[8] == 81);
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
@@ -919,8 +971,50 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
     assert(h.state.sequencer.pattern.length.get() == 16);
     assert(h.state.sequencer.focusedStep.get() == 3);
     assert(h.state.sequencer.page.get() == 0);
+    assert(!rootStepHasMicroSequence(h, 3));
 
     std::cout << "[PASS] test_step_focus_bottom_left_resets_focused_step_only\n";
+}
+
+void test_step_focus_copy_paste_copies_complete_step_without_selection() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.page.set(0);
+    h.state.sequencer.focusedStep.set(1);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+
+    h.state.sequencer.pattern.note[1] = 76;
+    h.state.sequencer.pattern.velocity[1] = 112;
+    h.state.sequencer.pattern.gate[1] = 180;
+    h.state.sequencer.pattern.nudge[1] = 3;
+    h.state.sequencer.pattern.setEnabled(1, true);
+    createRootMicroSequence(h, 1);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.structureClipboard.hasSequencerSteps());
+    assert(h.state.structureClipboard.sequencerSteps.rootContext);
+    assert(h.state.structureClipboard.sequencerSteps.count == 1);
+    assert(!h.state.sequencer.structureUi.stepSelection.active.get());
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.focusedStep.get() == 2);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(0);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(!h.state.sequencer.structureUi.stepSelection.active.get());
+    assert(h.state.sequencer.focusedStep.get() == 2);
+    assert(h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern.note[2] == 76);
+    assert(h.state.sequencer.pattern.velocity[2] == 112);
+    assert(h.state.sequencer.pattern.gate[2] == 180);
+    assert(h.state.sequencer.pattern.nudge[2] == 3);
+    assert(rootStepHasMicroSequence(h, 2));
+
+    std::cout << "[PASS] test_step_focus_copy_paste_copies_complete_step_without_selection\n";
 }
 
 void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
@@ -939,9 +1033,19 @@ void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.structureUi.stepSelection.active.get());
+    assert(!h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern.note[2] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(rootStepHasMicroSequence(h, 2));
-    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern.note[2] == 74);
+    assert(h.state.sequencer.pattern.velocity[2] == 105);
+    assert(rootStepHasMicroSequence(h, 2));
+
+    const uint8_t undoBeforeDeepReset = h.state.sequencerHistory.undoCount();
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.advance(0);
@@ -952,7 +1056,7 @@ void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
     assert(!h.state.sequencer.pattern.isEnabled(2));
     assert(h.state.sequencer.pattern.note[2] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(!rootStepHasMicroSequence(h, 2));
-    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    assert(h.state.sequencerHistory.undoCount() == undoBeforeDeepReset + 1U);
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.isEnabled(2));
@@ -1067,6 +1171,84 @@ void test_child_content_nav_enters_step_selection_and_pastes_child_steps() {
     std::cout << "[PASS] test_child_content_nav_enters_step_selection_and_pastes_child_steps\n";
 }
 
+void test_child_step_focus_bottom_actions_use_local_step_payload() {
+    SequencerStepHarness h;
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        rootNode,
+        2
+    );
+    assert(micro.ok);
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        h.state.sequencer,
+        rootNode,
+        micro.id
+    ));
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.state.sequencer.focusedStep.set(0);
+
+    auto childNode0 = core::state::sequencer::activeContentStepNodeId(
+        h.state.sequencer,
+        0
+    );
+    assert(core::state::sequencer::setNodeNoteOffset(
+        h.state.sequencer.pattern,
+        childNode0,
+        4
+    ));
+    assert(core::state::sequencer::createCycleStateSet(
+        h.state.sequencer.pattern,
+        childNode0,
+        2
+    ).ok);
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    assert(graph->stepNodes[childNode0].noteOffset == 0);
+    assert(!graph->stepNodes[childNode0].has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
+    assert(nodeHasCycleStates(h, childNode0));
+
+    assert(core::state::sequencer::setNodeNoteOffset(
+        h.state.sequencer.pattern,
+        childNode0,
+        5
+    ));
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerSteps());
+    assert(!h.state.structureClipboard.sequencerSteps.rootContext);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.focusedStep.get() == 1);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(0);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    const auto childNode1 = core::state::sequencer::activeContentStepNodeId(
+        h.state.sequencer,
+        1
+    );
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    assert(graph->stepNodes[childNode1].noteOffset == 5);
+    assert(graph->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
+    assert(nodeHasCycleStates(h, childNode1));
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(0);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    assert(!graph->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
+    assert(!nodeHasCycleStates(h, childNode1));
+
+    std::cout << "[PASS] test_child_step_focus_bottom_actions_use_local_step_payload\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1074,7 +1256,8 @@ int main() {
     test_sequencer_page_creation_extends_pattern_to_target_slot();
     test_nav_selection_mode_deletes_selected_sequencer_page();
     test_page_selection_cursor_can_move_across_inactive_slots();
-    test_nav_selection_mode_deletes_selected_sequencer_track();
+    test_nav_selection_mode_mutes_then_deletes_selected_sequencer_track();
+    test_track_focus_bottom_left_mutes_without_clearing_payload();
     test_sequencer_page_copy_and_long_press_paste();
     test_child_content_clear_copy_and_paste_are_undoable();
     test_undo_removed_active_child_context_returns_to_root();
@@ -1087,11 +1270,13 @@ int main() {
     test_created_track_is_undoable_and_redoable();
     test_macro_press_on_future_page_does_not_wrap_to_existing_step();
     test_step_focus_bottom_left_resets_focused_step_only();
+    test_step_focus_copy_paste_copies_complete_step_without_selection();
     test_step_selection_copy_paste_extends_sparse_root_steps();
     test_step_selection_macro_long_press_consumes_release_without_toggling();
     test_step_selection_clear_is_undoable_and_keeps_selection_active();
     test_step_selection_wrap_paste_overwrites_inside_pattern();
     test_child_content_nav_enters_step_selection_and_pastes_child_steps();
+    test_child_step_focus_bottom_actions_use_local_step_payload();
 
     std::cout << "\nAll SequencerStepHandler tests passed.\n";
     return 0;

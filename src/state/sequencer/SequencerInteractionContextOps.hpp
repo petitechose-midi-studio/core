@@ -4,6 +4,7 @@
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::state::sequencer {
 
@@ -28,6 +29,25 @@ inline SequencerInteractionContext makeSequencerInteractionContext(
     context.patternQuickControlsActive = sequencer.patternQuickControls.selecting.get();
     context.propertySelectorActive = sequencer.stepPropertyInlineSelector.selecting.get();
     context.stepEditorVisible = sequencer.stepEdit.visible.get();
+    if (context.stepEditorVisible) {
+        const uint8_t row = sequencer.stepEdit.focusedRow.get();
+        context.stepEditorValueRowFocused =
+            step_edit_rows::isActivated(row) || step_edit_rows::isProperty(row);
+        context.stepEditorContextRowFocused = step_edit_rows::isContext(row);
+        if (context.stepEditorContextRowFocused) {
+            const auto projection = resolveActiveContentStepProjection(
+                sequencer,
+                sequencer.stepEdit.stepIndex.get(),
+                {}
+            );
+            context.stepEditorContextHasChild =
+                projection.valid &&
+                stepContentProjectionHasChild(
+                    projection,
+                    step_edit_rows::childKindForContextRow(row)
+                );
+        }
+    }
     return context;
 }
 

@@ -43,15 +43,21 @@ public:
 
     void beginHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
-    void eraseCurrentStructure();
+    void applyBottomLeftTapCurrentStructure();
     void eraseFocusedStep();
+    void toggleTrackSelectionMute();
     void removeCurrentStructure();
     void copyCurrentStructure();
     void pasteCurrentStructure();
     bool canPasteSelection() const;
+    bool canPasteFocusedStep() const;
+    void copyFocusedStep();
+    void pasteFocusedStep();
+    void clearSelection();
     void copySelection();
     void copyStepSelection();
-    void clearStepSelection();
+    void resetStepSelectionShallow();
+    void resetStepSelectionDeep();
     void beginStepPastePreview();
     void clearStepPastePreview();
     void pasteStepSelection();
@@ -70,6 +76,7 @@ private:
     void recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
+    void pasteStepClipboardAt(uint8_t cursorStep, bool resetSelection);
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
     bool applyTrackState(uint16_t enabledMask, uint8_t activeTrack);

@@ -694,6 +694,74 @@ void test_set_library_graph_roundtrip_for_active_and_bank_tracks() {
     std::cout << "[PASS] test_set_library_graph_roundtrip_for_active_and_bank_tracks\n";
 }
 
+void test_set_library_roundtrips_track_mute_mask() {
+    MemoryStorage patternStorage;
+    MemoryStorage setStorage;
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
+    assert(persistence.init());
+
+    core::state::sequencer::SequencerState source;
+    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
+    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    prepareTrackBank(sourceTrackBank, source);
+    sourceTrackBank.syncSharedTrackState(0x0007, 2);
+    assert(sourceTrackBank.setTrackMuted(1, true));
+
+    assert(persistence.saveSetSlot(4, sourceTrackBank, source));
+
+    core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
+    loaded.reset();
+    loadedTrackBank.reset();
+    assert(persistence.loadSetSlot(4, loadedTrackBank, loaded) ==
+           core::persistence::SlotLoadStatus::OK);
+
+    assert(loadedTrackBank.currentEnabledMask() == 0x0007);
+    assert(loadedTrackBank.currentMutedMask() == 0x0002);
+    assert(loadedTrackBank.activeTrackIndex() == 2);
+
+    std::cout << "[PASS] test_set_library_roundtrips_track_mute_mask\n";
+}
+
+void test_project_sequencer_envelope_roundtrips_track_masks() {
+    core::state::sequencer::SequencerState source;
+    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
+    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    prepareTrackBank(sourceTrackBank, source);
+    sourceTrackBank.syncSharedTrackState(0x000B, 3);
+    assert(sourceTrackBank.setTrackMuted(1, true));
+    assert(sourceTrackBank.setTrackMuted(3, true));
+
+    std::vector<uint8_t> buffer(32768);
+    const auto encoded = core::persistence::sequencer_codec::fillProjectSequencerEnvelope(
+        sourceTrackBank,
+        source,
+        buffer.data(),
+        static_cast<uint16_t>(buffer.size())
+    );
+    assert(encoded.ok);
+
+    core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
+    loaded.reset();
+    loadedTrackBank.reset();
+    assert(core::persistence::sequencer_codec::applyProjectSequencerEnvelope(
+        buffer.data(),
+        encoded.size,
+        loadedTrackBank,
+        loaded
+    ));
+
+    assert(loadedTrackBank.currentEnabledMask() == 0x000B);
+    assert(loadedTrackBank.currentMutedMask() == 0x000A);
+    assert(loadedTrackBank.activeTrackIndex() == 3);
+
+    std::cout << "[PASS] test_project_sequencer_envelope_roundtrips_track_masks\n";
+}
+
 void test_library_bounds() {
     MemoryStorage patternStorage;
     MemoryStorage setStorage;
@@ -828,6 +896,8 @@ int main() {
     test_pattern_library_masks_enabled_bits_outside_length();
     test_set_library_save_load_erase();
     test_set_library_graph_roundtrip_for_active_and_bank_tracks();
+    test_set_library_roundtrips_track_mute_mask();
+    test_project_sequencer_envelope_roundtrips_track_masks();
     test_library_bounds();
     test_scale_settings_roundtrip_across_pattern_and_set();
     test_write_status_reports_commit_failure_and_out_of_range();

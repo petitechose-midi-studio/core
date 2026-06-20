@@ -29,6 +29,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
 
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
+    runtimeSnapshot.mutedMask = track_bank_.currentMutedMask();
     runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
     runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
     runtimeSnapshot.projectSwingPercent =

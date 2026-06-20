@@ -25,6 +25,8 @@ void expectsRootFocusMatrix() {
     assert(track.navTurn == Action::MOVE_TRACK);
     assert(track.optTurn == Action::NONE);
     assert(track.macroLongPress == Action::OPEN_STEP_EDITOR);
+    assert(track.bottomLeftTap == Action::MUTE_CURRENT_TRACK);
+    assert(track.bottomLeftHold == Action::REMOVE_CURRENT_STRUCTURE);
     assert(track.leftCenterVisibility == Visibility::HIDDEN);
     assert(track.leftBottomVisibility == Visibility::HIDDEN);
 
@@ -69,8 +71,10 @@ void expectsChildContentBottomActions() {
     assert(policy.scope == Scope::STEP);
     assert(policy.optTurn == Action::EDIT_STEP_PROPERTY);
     assert(policy.macroLongPress == Action::OPEN_STEP_EDITOR);
-    assert(policy.bottomLeftTap == Action::CLEAR_STEP_CONTENT);
-    assert(policy.bottomRightTap == Action::COPY_STEP_CONTENT);
+    assert(policy.bottomLeftTap == Action::RESET_CURRENT_STEP_SHALLOW);
+    assert(policy.bottomLeftHold == Action::RESET_CURRENT_STEP_DEEP);
+    assert(policy.bottomRightTap == Action::COPY_CURRENT_STEP);
+    assert(policy.bottomRightHold == Action::PASTE_CURRENT_STEP);
 }
 
 void expectsStructureCopyVisibleWithoutClipboard() {
@@ -129,8 +133,8 @@ void expectsSelectionOverrides() {
     assert(policy.navTap == Action::TOGGLE_SELECTION);
     assert(policy.optTurn == Action::NONE);
     assert(policy.macroLongPress == Action::NONE);
-    assert(policy.bottomLeftTap == Action::NONE);
-    assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
+    assert(policy.bottomLeftTap == Action::RESET_STEP_SELECTION_SHALLOW);
+    assert(policy.bottomLeftHold == Action::RESET_STEP_SELECTION_DEEP);
     assert(policy.bottomRightTap == Action::COPY_STEP_SELECTION);
     assert(policy.bottomRightHold == Action::PASTE_STEP_SELECTION);
     assert(policy.leftCenterVisibility == Visibility::HIDDEN);
@@ -140,7 +144,7 @@ void expectsSelectionOverrides() {
     context.trackSelectionActive = true;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::TRACK_SELECTION);
-    assert(policy.bottomLeftTap == Action::NONE);
+    assert(policy.bottomLeftTap == Action::MUTE_TRACK_SELECTION);
     assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
     assert(policy.bottomRightTap == Action::COPY_SELECTION);
     assert(policy.bottomRightHold == Action::PASTE_SELECTION);
@@ -149,7 +153,7 @@ void expectsSelectionOverrides() {
     context.pageSelectionActive = true;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::PATTERN_SELECTION);
-    assert(policy.bottomLeftTap == Action::NONE);
+    assert(policy.bottomLeftTap == Action::CLEAR_SELECTION);
     assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
     assert(policy.bottomRightTap == Action::COPY_SELECTION);
     assert(policy.bottomRightHold == Action::PASTE_SELECTION);
@@ -171,6 +175,29 @@ void expectsStepEditorOverridesEverything() {
     assert(policy.leftBottomPress == Action::EDIT_STEP_LOCAL_RANDOM);
     assert(policy.leftCenterVisibility == Visibility::HIDDEN);
     assert(policy.leftBottomVisibility == Visibility::ACTIVE);
+    assert(policy.bottomLeftVisibility == Visibility::HIDDEN);
+    assert(policy.bottomRightVisibility == Visibility::HIDDEN);
+
+    context.stepEditorValueRowFocused = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.bottomLeftTap == Action::RESET_STEP_EDITOR_ROW);
+    assert(policy.bottomLeftHold == Action::NONE);
+    assert(policy.bottomRightTap == Action::NONE);
+    assert(policy.bottomRightHold == Action::NONE);
+    assert(policy.bottomLeftVisibility == Visibility::ACTIVE);
+    assert(policy.bottomRightVisibility == Visibility::HIDDEN);
+
+    context.stepEditorValueRowFocused = false;
+    context.stepEditorContextRowFocused = true;
+    context.stepEditorContextHasChild = true;
+    context.compatibleClipboardAvailable = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.bottomLeftTap == Action::NONE);
+    assert(policy.bottomLeftHold == Action::REMOVE_STEP_EDITOR_CONTEXT);
+    assert(policy.bottomRightTap == Action::COPY_STEP_EDITOR_CONTEXT);
+    assert(policy.bottomRightHold == Action::PASTE_STEP_EDITOR_CONTEXT);
+    assert(policy.bottomLeftVisibility == Visibility::ACTIVE);
+    assert(policy.bottomRightVisibility == Visibility::ACTIVE);
 }
 
 void expectsAvailabilityHelpers() {

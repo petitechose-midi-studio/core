@@ -800,12 +800,28 @@ void test_step_edit_context_rows_clear_selected_child_context() {
 
     focusStepEditRow(h, MICRO_SEQUENCE_ROW);
     h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(stepHasMicroSequence(h.state.sequencer.pattern, 0));
+    assert(stepHasCycleStates(h.state.sequencer.pattern, 0));
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(0);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(!stepHasMicroSequence(h.state.sequencer.pattern, 0));
     assert(stepHasCycleStates(h.state.sequencer.pattern, 0));
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     focusStepEditRow(h, CYCLE_STATES_ROW);
     h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(!stepHasMicroSequence(h.state.sequencer.pattern, 0));
+    assert(stepHasCycleStates(h.state.sequencer.pattern, 0));
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(0);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(!stepHasMicroSequence(h.state.sequencer.pattern, 0));
     assert(!stepHasCycleStates(h.state.sequencer.pattern, 0));
     assert(h.state.sequencerHistory.undoCount() == 2);
@@ -902,6 +918,47 @@ void test_step_edit_context_rows_copy_and_paste_step_content() {
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     std::cout << "[PASS] test_step_edit_context_rows_copy_and_paste_step_content\n";
+}
+
+void test_step_edit_musical_row_bottom_left_resets_row_to_default() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.note[2] = 74;
+    h.state.sequencer.pattern.velocity[2] = 105;
+    h.state.sequencer.pattern.setEnabled(2, true);
+    assert(core::state::sequencer::setNodeLocalVariationRange(
+        h.state.sequencer.pattern,
+        core::state::sequencer::rootStepNodeId(2),
+        core::state::sequencer::StepProperty::NOTE,
+        3
+    ));
+
+    openStepEdit(h, 2);
+    h.release(Config::MACRO_BUTTONS[2]);
+    focusStepEditRow(h, NOTE_ROW);
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencer.pattern.note[2] ==
+           core::state::sequencer::SequencerState::DEFAULT_NOTE);
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(
+        core::state::sequencer::nodeLocalVariationRange(
+            *node,
+            core::state::sequencer::StepProperty::NOTE
+        ) == 0
+    );
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    std::cout << "[PASS] test_step_edit_musical_row_bottom_left_resets_row_to_default\n";
 }
 
 void test_step_edit_context_clipboard_requires_matching_child_kind() {
@@ -1129,6 +1186,7 @@ int main() {
     test_step_edit_context_rows_clear_selected_child_context();
     test_graph_compaction_remaps_or_closes_active_child_content_view();
     test_step_edit_context_rows_copy_and_paste_step_content();
+    test_step_edit_musical_row_bottom_left_resets_row_to_default();
     test_step_edit_context_clipboard_requires_matching_child_kind();
     test_step_edit_session_undo_redo_workflow();
     test_left_top_close_keeps_live_edit_and_records_history();
