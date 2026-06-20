@@ -29,6 +29,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  OPEN_CONTROL_FRAMEWORK_SHA: e214a1f24f74075e253bd33b94b5f0398da07257
+  OPEN_CONTROL_NOTE_SHA: dc60c2a2632a9fac77f66dae946780c892c481d5
+
 jobs:
   resolve_inputs:
     name: resolve candidate inputs
@@ -147,11 +151,30 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout OpenControl framework
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/framework
+          ref: ${{ env.OPEN_CONTROL_FRAMEWORK_SHA }}
+          path: deps/open-control/framework
+          persist-credentials: false
+
+      - name: Checkout OpenControl note
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/note
+          ref: ${{ env.OPEN_CONTROL_NOTE_SHA }}
+          path: deps/open-control/note
+          persist-credentials: false
+
       - name: Configure host file tool
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S . -B build/core-native -DMS_CORE_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build/core-native \
+            -DMS_CORE_OPEN_CONTROL_ROOT="$PWD/deps/open-control" \
+            -DMS_CORE_BUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Build host file tool
         shell: bash
