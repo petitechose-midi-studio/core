@@ -127,7 +127,7 @@ jobs:
           - platform: macos-15-intel
             filename: ms-core-file-tool-macos-x86_64
             source: build/core-native/ms-core-file-tool
-          - platform: macos-15
+          - platform: macos-latest
             filename: ms-core-file-tool-macos-arm64
             source: build/core-native/ms-core-file-tool
 
