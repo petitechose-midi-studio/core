@@ -37,6 +37,9 @@ if(NOT TARGET oc_note_native)
         "${CMAKE_BINARY_DIR}/open-control-note")
 endif()
 
+target_compile_features(oc_framework_native PUBLIC cxx_std_20)
+target_compile_features(oc_note_native PUBLIC cxx_std_20)
+
 file(GLOB_RECURSE MS_CORE_NATIVE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/state/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/protocol/*.cpp"
