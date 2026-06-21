@@ -24,6 +24,7 @@ using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 using oc::note::sequencer::StepBitMask128;
 using oc::note::sequencer::StepSequencerChordMode;
+using oc::note::sequencer::StepSequencerChordSource;
 using oc::note::sequencer::StepSequencerChordSpec;
 using oc::note::sequencer::StepSequencerExpander;
 using oc::note::sequencer::StepSequencerGraphLimits;
@@ -673,7 +674,18 @@ void test_runtime_telemetry_sync_copies_expanded_variation() {
     runtime.expandedVariationTelemetry.valid = true;
     runtime.expandedVariationTelemetry.rootStepIndex = 2;
     runtime.expandedVariationTelemetry.cycleIndex = 5;
-    runtime.expandedVariationTelemetry.store(0, 42, 3, 6, variation);
+    runtime.expandedVariationTelemetry.store(
+        0,
+        42,
+        3,
+        6,
+        variation,
+        StepSequencerChordSource::Local,
+        1,
+        3,
+        4,
+        false
+    );
 
     core::sequencer::publishRuntimeTelemetry(target, runtime);
 
@@ -686,6 +698,11 @@ void test_runtime_telemetry_sync_copies_expanded_variation() {
     assert(target.expandedVariationTelemetry.spanTicks[0] == 6);
     assert(target.expandedVariationTelemetry.variation[0].resolved.note == 67);
     assert(target.expandedVariationTelemetry.variation[0].resolved.velocity == 91);
+    assert(target.expandedVariationTelemetry.chordSource[0] == StepSequencerChordSource::Local);
+    assert(target.expandedVariationTelemetry.chordVoiceIndex[0] == 1);
+    assert(target.expandedVariationTelemetry.chordVoiceCount[0] == 3);
+    assert(target.expandedVariationTelemetry.chordInterval[0] == 4);
+    assert(!target.expandedVariationTelemetry.chordIntervalUsesScaleDegrees[0]);
 
     std::cout << "[PASS] test_runtime_telemetry_sync_copies_expanded_variation\n";
 }
