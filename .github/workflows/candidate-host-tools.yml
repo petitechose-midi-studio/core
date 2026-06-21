@@ -320,6 +320,7 @@ jobs:
             --recipe-base-dir .. \
             --recipe-path .github/workflows/candidate-host-tools.yml \
             --recipe-path CMakeLists.txt \
+            --recipe-path cmake/MsCoreSources.cmake \
             --recipe-path cmake/MsCoreProjectFileTool.cmake \
             --recipe-path oc-sdk.ini \
             --recipe-path oc-native-sdk.ini \

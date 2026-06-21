@@ -41,24 +41,7 @@ endif()
 target_compile_features(oc_framework_native PUBLIC cxx_std_20)
 target_compile_features(oc_note_native PUBLIC cxx_std_20)
 
-file(GLOB_RECURSE MS_CORE_NATIVE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/state/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/protocol/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/persistence/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/sequencer/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/validation/ux/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/common/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/macro/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/project/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/sequencer/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/settings/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/transport/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/handler/view/*.cpp")
-
-list(APPEND MS_CORE_NATIVE_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/context/standalone/SequencerEncoderSyncCoordinator.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/common/GlobalTrackNavigationStripModel.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/sequencer/StepContentBadgeProjection.cpp")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreSources.cmake")
 
 add_library(midi_studio_core_native STATIC ${MS_CORE_NATIVE_SOURCES})
 target_compile_definitions(midi_studio_core_native PUBLIC OC_LOG)
