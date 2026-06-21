@@ -195,6 +195,132 @@ void test_all_notes_off_flushes_active_notes_at_current_time() {
     std::cout << "[PASS] test_all_notes_off_flushes_active_notes_at_current_time\n";
 }
 
+void test_all_notes_off_flushes_active_chord_voices() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    for (uint8_t i = 0; i < 8; ++i) {
+        assert(sink.emitSequencerEvent(
+            noteEvent(SequencerEventType::NoteOn, 4, 2, static_cast<uint8_t>(60 + i), 90)));
+    }
+
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 8);
+    for (uint8_t i = 0; i < 8; ++i) {
+        assert(transport.messages[i].type == RealtimeMidiEventType::NoteOn);
+        assert(transport.messages[i].channel == 2);
+        assert(transport.messages[i].note == static_cast<uint8_t>(60 + i));
+    }
+
+    assert(sink.emitSequencerEvent({.tick = 4, .type = SequencerEventType::AllNotesOff}));
+    drainDue(queue, midi, 4000);
+
+    assert(transport.messages.size() == 16);
+    for (uint8_t i = 0; i < 8; ++i) {
+        const auto& message = transport.messages[8 + i];
+        assert(message.type == RealtimeMidiEventType::NoteOff);
+        assert(message.channel == 2);
+        assert(message.note == static_cast<uint8_t>(60 + i));
+    }
+    assert(observer.noteOnCount == 8);
+    assert(observer.panicCount == 8);
+
+    std::cout << "[PASS] test_all_notes_off_flushes_active_chord_voices\n";
+}
+
+void test_all_notes_off_tracks_same_pitch_per_channel() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 4, 2, 60, 90)));
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 4, 3, 60, 91)));
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 2);
+
+    assert(sink.emitSequencerEvent({.tick = 4, .type = SequencerEventType::AllNotesOff}));
+    drainDue(queue, midi, 4000);
+
+    assert(transport.messages.size() == 4);
+    assert(transport.messages[2].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[2].channel == 2);
+    assert(transport.messages[2].note == 60);
+    assert(transport.messages[3].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[3].channel == 3);
+    assert(transport.messages[3].note == 60);
+    assert(observer.panicCount == 2);
+
+    std::cout << "[PASS] test_all_notes_off_tracks_same_pitch_per_channel\n";
+}
+
+void test_retrigger_same_pitch_keeps_latest_note_active() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 4, 2, 60, 90)));
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 1);
+
+    sink.setTimeline(5, 4025, 25);
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOff, 5, 2, 60, 0)));
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 5, 2, 60, 91)));
+    drainDue(queue, midi, 4025);
+
+    assert(transport.messages.size() == 3);
+    assert(transport.messages[1].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[1].note == 60);
+    assert(transport.messages[2].type == RealtimeMidiEventType::NoteOn);
+    assert(transport.messages[2].note == 60);
+    assert(transport.messages[2].velocity == 91);
+
+    assert(sink.emitSequencerEvent({.tick = 5, .type = SequencerEventType::AllNotesOff}));
+    drainDue(queue, midi, 4025);
+
+    assert(transport.messages.size() == 4);
+    assert(transport.messages[3].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[3].note == 60);
+    assert(observer.panicCount == 1);
+
+    std::cout << "[PASS] test_retrigger_same_pitch_keeps_latest_note_active\n";
+}
+
+void test_all_notes_off_releases_note_before_long_gate_note_off_arrives() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 4, 2, 72, 96)));
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 1);
+    assert(transport.messages[0].type == RealtimeMidiEventType::NoteOn);
+
+    sink.setTimeline(8, 4100, 25);
+    assert(sink.emitSequencerEvent({.tick = 8, .type = SequencerEventType::AllNotesOff}));
+    drainDue(queue, midi, 4100);
+
+    assert(transport.messages.size() == 2);
+    assert(transport.messages[1].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[1].channel == 2);
+    assert(transport.messages[1].note == 72);
+    assert(observer.panicCount == 1);
+
+    std::cout << "[PASS] test_all_notes_off_releases_note_before_long_gate_note_off_arrives\n";
+}
+
 void test_all_notes_off_cancels_only_own_track() {
     core::sequencer::RealtimeMidiQueue queue;
     Observer observer0;
@@ -254,6 +380,10 @@ int main() {
     test_note_on_uses_timeline_deadline_and_observer();
     test_note_off_marks_inactive_and_counts_observer();
     test_all_notes_off_flushes_active_notes_at_current_time();
+    test_all_notes_off_flushes_active_chord_voices();
+    test_all_notes_off_tracks_same_pitch_per_channel();
+    test_retrigger_same_pitch_keeps_latest_note_active();
+    test_all_notes_off_releases_note_before_long_gate_note_off_arrives();
     test_all_notes_off_cancels_only_own_track();
     test_past_tick_deadline_is_due_immediately();
 
