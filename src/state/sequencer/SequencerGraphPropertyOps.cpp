@@ -8,6 +8,20 @@ namespace core::state::sequencer {
 
 using namespace graph_ops_internal;
 
+namespace {
+
+FLASHMEM oc::note::sequencer::StepSequencerChordMode sanitizeChordMode(
+    oc::note::sequencer::StepSequencerChordMode mode
+) {
+    if (static_cast<uint8_t>(mode) >
+        static_cast<uint8_t>(oc::note::sequencer::StepSequencerChordMode::Local)) {
+        return oc::note::sequencer::StepSequencerChordMode::Single;
+    }
+    return mode;
+}
+
+}  // namespace
+
 FLASHMEM bool setNodeEnabledOverride(SequencerPatternState& pattern,
                                      SequencerGraphNodeId nodeId,
                                      bool enabled) {
@@ -124,6 +138,81 @@ FLASHMEM bool setNodeProbabilityOffset(SequencerPatternState& pattern,
         graph->stepNodes[nodeId].probabilityOffset,
         offset
     );
+}
+
+FLASHMEM bool setNodeChordMode(SequencerPatternState& pattern,
+                               SequencerGraphNodeId nodeId,
+                               oc::note::sequencer::StepSequencerChordMode mode) {
+    if (!ensureGraphRoot(pattern)) return false;
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
+
+    auto& node = graph->stepNodes[nodeId];
+    const auto nextMode = sanitizeChordMode(mode);
+    bool changed = false;
+    if (node.chordMode != nextMode) {
+        node.chordMode = nextMode;
+        changed = true;
+    }
+    changed = assignFlag(node.flags, STEP_NODE_CHORD_MODE, true) || changed;
+    bump(pattern, changed);
+    return changed;
+}
+
+FLASHMEM bool setNodeChordSpec(SequencerPatternState& pattern,
+                               SequencerGraphNodeId nodeId,
+                               oc::note::sequencer::StepSequencerChordSpec spec) {
+    if (!ensureGraphRoot(pattern)) return false;
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
+
+    spec.clamp();
+    auto& node = graph->stepNodes[nodeId];
+    bool changed = false;
+    if (node.chordMode != oc::note::sequencer::StepSequencerChordMode::Local) {
+        node.chordMode = oc::note::sequencer::StepSequencerChordMode::Local;
+        changed = true;
+    }
+    if (node.chordSpec.voiceCount != spec.voiceCount ||
+        node.chordSpec.color != spec.color ||
+        node.chordSpec.variant != spec.variant ||
+        node.chordSpec.spread != spec.spread ||
+        node.chordSpec.strum != spec.strum ||
+        node.chordSpec.velocityCurve != spec.velocityCurve) {
+        node.chordSpec = spec;
+        changed = true;
+    }
+    changed = assignFlag(node.flags, STEP_NODE_CHORD_MODE, true) || changed;
+    changed = assignFlag(node.flags, STEP_NODE_CHORD_LOCAL, true) || changed;
+    bump(pattern, changed);
+    return changed;
+}
+
+FLASHMEM bool clearNodeChordState(SequencerPatternState& pattern, SequencerGraphNodeId nodeId) {
+    if (!ensureGraphRoot(pattern)) return false;
+    auto* graph = mutableGraph(pattern);
+    if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
+
+    auto& node = graph->stepNodes[nodeId];
+    bool changed = false;
+    if (node.chordMode != oc::note::sequencer::StepSequencerChordMode::Single) {
+        node.chordMode = oc::note::sequencer::StepSequencerChordMode::Single;
+        changed = true;
+    }
+    const oc::note::sequencer::StepSequencerChordSpec defaultSpec{};
+    if (node.chordSpec.voiceCount != defaultSpec.voiceCount ||
+        node.chordSpec.color != defaultSpec.color ||
+        node.chordSpec.variant != defaultSpec.variant ||
+        node.chordSpec.spread != defaultSpec.spread ||
+        node.chordSpec.strum != defaultSpec.strum ||
+        node.chordSpec.velocityCurve != defaultSpec.velocityCurve) {
+        node.chordSpec = defaultSpec;
+        changed = true;
+    }
+    changed = assignFlag(node.flags, STEP_NODE_CHORD_MODE, false) || changed;
+    changed = assignFlag(node.flags, STEP_NODE_CHORD_LOCAL, false) || changed;
+    bump(pattern, changed);
+    return changed;
 }
 
 FLASHMEM uint8_t nodeLocalVariationRange(

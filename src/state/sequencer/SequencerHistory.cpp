@@ -5,6 +5,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerChordState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
@@ -140,6 +141,8 @@ FLASHMEM bool sameStepNode(
            lhs.nudgeOffset == rhs.nudgeOffset &&
            lhs.probabilityOffset == rhs.probabilityOffset &&
            sameVariationRanges(lhs.localVariation, rhs.localVariation) &&
+           lhs.chordMode == rhs.chordMode &&
+           chordSpecEqualsSanitized(lhs.chordSpec, rhs.chordSpec) &&
            lhs.childSequenceId == rhs.childSequenceId &&
            lhs.cycleSetId == rhs.cycleSetId;
 }

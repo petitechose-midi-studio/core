@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerChordState.hpp"
 #include "state/sequencer/SequencerGraphOpsInternal.hpp"
 
 namespace core::state::sequencer {
@@ -32,6 +33,8 @@ FLASHMEM bool sameStepNodePayload(
            lhs.gateOffset == rhs.gateOffset &&
            lhs.nudgeOffset == rhs.nudgeOffset &&
            lhs.probabilityOffset == rhs.probabilityOffset &&
+           lhs.chordMode == rhs.chordMode &&
+           chordSpecEqualsSanitized(lhs.chordSpec, rhs.chordSpec) &&
            sameLocalVariation(lhs.localVariation, rhs.localVariation);
 }
 

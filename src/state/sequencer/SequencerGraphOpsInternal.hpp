@@ -9,6 +9,8 @@
 namespace core::state::sequencer::graph_ops_internal {
 
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
+using oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
+using oc::note::sequencer::STEP_NODE_CHORD_MODE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 using oc::note::sequencer::STEP_NODE_ENABLED_OVERRIDE;
 using oc::note::sequencer::STEP_NODE_ENABLED_VALUE;

@@ -57,7 +57,7 @@ static_assert(sizeof(EnvelopeSectionHeaderRaw) == 10, "Unexpected envelope secti
 
 constexpr uint16_t kEnvelopeSectionGraphStepNodes = 17;
 constexpr uint16_t kEnvelopeSectionUnknownFuture = 0x7F00;
-constexpr uint16_t kStepNodeRecordSize = 18;
+constexpr uint16_t kStepNodeRecordSize = 25;
 constexpr uint16_t kStepNodeChildSequenceOffset = 10;
 constexpr uint16_t kStepNodeCycleSetOffset = 12;
 

@@ -18,9 +18,13 @@ namespace {
 using core::state::sequencer::SequencerPatternSnapshot;
 using core::state::sequencer::SequencerState;
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
+using oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
+using oc::note::sequencer::STEP_NODE_CHORD_MODE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 using oc::note::sequencer::StepBitMask128;
+using oc::note::sequencer::StepSequencerChordMode;
+using oc::note::sequencer::StepSequencerChordSpec;
 using oc::note::sequencer::StepSequencerExpander;
 using oc::note::sequencer::StepSequencerGraphLimits;
 using oc::note::sequencer::StepSequencerRuntimeState;
@@ -602,6 +606,59 @@ void test_local_variation_ranges_are_per_node_and_clamped() {
     std::cout << "[PASS] test_local_variation_ranges_are_per_node_and_clamped\n";
 }
 
+void test_chord_state_is_explicit_and_resettable_per_node() {
+    SequencerState state;
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+
+    StepSequencerChordSpec spec{};
+    spec.voiceCount = 99;
+    spec.color = 99;
+    spec.variant = 2;
+    spec.spread = 99;
+    spec.strum = 120;
+    spec.velocityCurve = -80;
+    assert(core::state::sequencer::setNodeChordSpec(state.pattern, rootNode, spec));
+
+    const auto* graph = core::state::sequencer::graphView(state.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(rootNode);
+    assert(node != nullptr);
+    assert(node->has(STEP_NODE_CHORD_MODE));
+    assert(node->has(STEP_NODE_CHORD_LOCAL));
+    assert(node->chordMode == StepSequencerChordMode::Local);
+    assert(node->chordSpec.voiceCount == StepSequencerChordSpec::MAX_VOICES);
+    assert(node->chordSpec.color == StepSequencerChordSpec::MAX_COLOR);
+    assert(node->chordSpec.variant == 2);
+    assert(node->chordSpec.spread == StepSequencerChordSpec::MAX_SPREAD);
+    assert(node->chordSpec.strum == StepSequencerChordSpec::MAX_STRUM);
+    assert(node->chordSpec.velocityCurve == StepSequencerChordSpec::MIN_VELOCITY_CURVE);
+
+    const uint32_t revisionAfterSpec = state.pattern.graphRevision.get();
+    assert(!core::state::sequencer::setNodeChordSpec(state.pattern, rootNode, node->chordSpec));
+    assert(state.pattern.graphRevision.get() == revisionAfterSpec);
+
+    assert(core::state::sequencer::setNodeChordMode(
+        state.pattern,
+        rootNode,
+        StepSequencerChordMode::Single
+    ));
+    graph = core::state::sequencer::graphView(state.pattern);
+    node = graph->stepNode(rootNode);
+    assert(node->has(STEP_NODE_CHORD_MODE));
+    assert(node->has(STEP_NODE_CHORD_LOCAL));
+    assert(node->chordMode == StepSequencerChordMode::Single);
+
+    assert(core::state::sequencer::clearNodeChordState(state.pattern, rootNode));
+    graph = core::state::sequencer::graphView(state.pattern);
+    node = graph->stepNode(rootNode);
+    assert(!node->has(STEP_NODE_CHORD_MODE));
+    assert(!node->has(STEP_NODE_CHORD_LOCAL));
+    assert(node->chordMode == StepSequencerChordMode::Single);
+    assert(node->chordSpec.voiceCount == 3);
+
+    std::cout << "[PASS] test_chord_state_is_explicit_and_resettable_per_node\n";
+}
+
 void test_runtime_telemetry_sync_copies_expanded_variation() {
     SequencerState target;
     StepSequencerRuntimeState runtime;
@@ -682,6 +739,7 @@ int main() {
     test_clear_graph_releases_allocation_and_bumps_revision_once();
     test_graph_limits_are_reported();
     test_local_variation_ranges_are_per_node_and_clamped();
+    test_chord_state_is_explicit_and_resettable_per_node();
     test_runtime_telemetry_sync_copies_expanded_variation();
     test_runtime_telemetry_sync_publishes_root_offset_for_expanded_substeps();
 

@@ -6,6 +6,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/sequencer/SequencerChordState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 
@@ -107,6 +108,8 @@ FLASHMEM bool sameRootNode(const StepNode& lhs, const StepNode& rhs) {
            lhs.localVariation.velocity == rhs.localVariation.velocity &&
            lhs.localVariation.gatePercent == rhs.localVariation.gatePercent &&
            lhs.localVariation.nudge == rhs.localVariation.nudge &&
+           lhs.chordMode == rhs.chordMode &&
+           chordSpecEqualsSanitized(lhs.chordSpec, rhs.chordSpec) &&
            lhs.childSequenceId == rhs.childSequenceId &&
            lhs.cycleSetId == rhs.cycleSetId;
 }

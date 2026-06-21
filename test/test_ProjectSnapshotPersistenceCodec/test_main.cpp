@@ -29,6 +29,8 @@ using oc::note::sequencer::StepSequencerScaleConstraintMode;
 using oc::note::sequencer::StepSequencerScaleSettings;
 using oc::note::sequencer::StepSequencerScaleType;
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
+using oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
+using oc::note::sequencer::STEP_NODE_CHORD_MODE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 using oc::note::sequencer::STEP_NODE_ENABLED_OVERRIDE;
 using oc::note::sequencer::STEP_NODE_ENABLED_VALUE;
@@ -37,6 +39,10 @@ using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 using oc::note::sequencer::STEP_NODE_NUDGE_OFFSET;
 using oc::note::sequencer::STEP_NODE_PROBABILITY_OFFSET;
 using oc::note::sequencer::STEP_NODE_VELOCITY_OFFSET;
+using oc::note::sequencer::StepSequencerChordMode;
+using oc::note::sequencer::StepSequencerChordSpec;
+
+constexpr size_t kProjectSnapshotScratchSize = 128U * 1024U;
 
 core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
     return core::state::CoreState{
@@ -74,6 +80,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     const auto defaultMicroNode = static_cast<uint16_t>(defaultMicroSequence->firstStepNode + 1);
     assert(setNodeNoteOffset(pattern, defaultMicroNode, 12));
     assert(setNodeLocalVariationRange(pattern, defaultMicroNode, StepProperty::NOTE, 8));
+    assert(setNodeChordMode(pattern, defaultMicroNode, StepSequencerChordMode::Single));
 
     const auto rootCycle = createCycleStateSet(pattern, rootZero, 3);
     assert(rootCycle.ok);
@@ -82,6 +89,14 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     const auto* rootCycleSet = graph->cycleSet(rootCycle.id);
     assert(rootCycleSet != nullptr);
     const auto rootCycleNode = static_cast<uint16_t>(rootCycleSet->firstStateNode + 1);
+    StepSequencerChordSpec rootCycleChord{};
+    rootCycleChord.voiceCount = 4;
+    rootCycleChord.color = 2;
+    rootCycleChord.variant = 1;
+    rootCycleChord.spread = 3;
+    rootCycleChord.strum = -25;
+    rootCycleChord.velocityCurve = 12;
+    assert(setNodeChordSpec(pattern, rootCycleNode, rootCycleChord));
     assert(setNodeEnabledOverride(pattern, rootCycleNode, true));
     assert(setNodeNoteOffset(pattern, rootCycleNode, 7));
     assert(setNodeVelocityOffset(pattern, rootCycleNode, -20));
@@ -99,6 +114,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     const auto stateMicroNode = static_cast<uint16_t>(stateMicroSequence->firstStepNode + 1);
     assert(setNodeNoteOffset(pattern, stateMicroNode, 5));
     assert(setNodeLocalVariationRange(pattern, stateMicroNode, StepProperty::GATE, 44));
+    assert(setNodeChordMode(pattern, stateMicroNode, StepSequencerChordMode::Inherit));
 
     const auto stateCycle = createCycleStateSet(pattern, rootCycleNode, 5);
     assert(stateCycle.ok);
@@ -117,6 +133,14 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     const auto* rootMicroSequence = graph->sequence(rootMicro.id);
     assert(rootMicroSequence != nullptr);
     const auto microNode = static_cast<uint16_t>(rootMicroSequence->firstStepNode + 1);
+    StepSequencerChordSpec microChord{};
+    microChord.voiceCount = 5;
+    microChord.color = 3;
+    microChord.variant = 2;
+    microChord.spread = 4;
+    microChord.strum = 18;
+    microChord.velocityCurve = -9;
+    assert(setNodeChordSpec(pattern, microNode, microChord));
     assert(setNodeNoteOffset(pattern, microNode, 5));
     assert(setNodeVelocityOffset(pattern, microNode, -12));
     assert(setNodeGateOffset(pattern, microNode, 25));
@@ -164,6 +188,8 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     );
     assert(defaultMicroNode != nullptr);
     assert(defaultMicroNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(defaultMicroNode->has(STEP_NODE_CHORD_MODE));
+    assert(defaultMicroNode->chordMode == StepSequencerChordMode::Single);
     assert(defaultMicroNode->noteOffset == 12);
     assert(nodeLocalVariationRange(*defaultMicroNode, StepProperty::NOTE) == 8);
 
@@ -183,6 +209,15 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(rootCycleNode->has(STEP_NODE_PROBABILITY_OFFSET));
     assert(rootCycleNode->has(STEP_NODE_CHILD_SEQUENCE));
     assert(rootCycleNode->has(STEP_NODE_CYCLE_SET));
+    assert(rootCycleNode->has(STEP_NODE_CHORD_MODE));
+    assert(rootCycleNode->has(STEP_NODE_CHORD_LOCAL));
+    assert(rootCycleNode->chordMode == StepSequencerChordMode::Local);
+    assert(rootCycleNode->chordSpec.voiceCount == 4);
+    assert(rootCycleNode->chordSpec.color == 2);
+    assert(rootCycleNode->chordSpec.variant == 1);
+    assert(rootCycleNode->chordSpec.spread == 3);
+    assert(rootCycleNode->chordSpec.strum == -25);
+    assert(rootCycleNode->chordSpec.velocityCurve == 12);
     assert(rootCycleNode->noteOffset == 7);
     assert(rootCycleNode->velocityOffset == -20);
     assert(rootCycleNode->gateOffset == -15);
@@ -198,6 +233,8 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     );
     assert(stateMicroNode != nullptr);
     assert(stateMicroNode->has(STEP_NODE_NOTE_OFFSET));
+    assert(stateMicroNode->has(STEP_NODE_CHORD_MODE));
+    assert(stateMicroNode->chordMode == StepSequencerChordMode::Inherit);
     assert(stateMicroNode->noteOffset == 5);
     assert(nodeLocalVariationRange(*stateMicroNode, StepProperty::GATE) == 44);
 
@@ -227,6 +264,15 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(microNode->has(STEP_NODE_GATE_OFFSET));
     assert(microNode->has(STEP_NODE_NUDGE_OFFSET));
     assert(microNode->has(STEP_NODE_PROBABILITY_OFFSET));
+    assert(microNode->has(STEP_NODE_CHORD_MODE));
+    assert(microNode->has(STEP_NODE_CHORD_LOCAL));
+    assert(microNode->chordMode == StepSequencerChordMode::Local);
+    assert(microNode->chordSpec.voiceCount == 5);
+    assert(microNode->chordSpec.color == 3);
+    assert(microNode->chordSpec.variant == 2);
+    assert(microNode->chordSpec.spread == 4);
+    assert(microNode->chordSpec.strum == 18);
+    assert(microNode->chordSpec.velocityCurve == -9);
     assert(microNode->noteOffset == 5);
     assert(microNode->velocityOffset == -12);
     assert(microNode->gateOffset == 25);
@@ -358,7 +404,7 @@ void test_project_snapshot_roundtrip_restores_runtime_state() {
     project::ProjectSnapshot sourceSnapshot;
     assert(project::captureProjectSnapshot(sourceState, sourceSnapshot));
 
-    auto buffer = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    auto buffer = core::app::makeExtmemUnique<std::array<uint8_t, kProjectSnapshotScratchSize>>();
     assert(buffer);
     auto encodeResult = snapshot_codec::encodeProjectSnapshot(
         sourceSnapshot,
@@ -487,7 +533,7 @@ void test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite()
         .size = encodedSequencer.size,
     }};
 
-    auto buffer = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    auto buffer = core::app::makeExtmemUnique<std::array<uint8_t, kProjectSnapshotScratchSize>>();
     assert(buffer);
     auto encodeResult = project_file::encode(chunks, 1, 0, buffer->data(), buffer->size());
     assert(encodeResult.status == project_file::Status::OK);

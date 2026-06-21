@@ -27,6 +27,7 @@ list(APPEND MS_CORE_NATIVE_SOURCES ${MS_CORE_NATIVE_EXTRA_SOURCES})
 
 set(MS_CORE_PROJECT_FILE_OPEN_CONTROL_SOURCES
     "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/state/NotificationQueue.cpp"
+    "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerChord.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerGraph.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerState.cpp")
 

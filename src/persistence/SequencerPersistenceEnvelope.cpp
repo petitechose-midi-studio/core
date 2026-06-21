@@ -17,6 +17,8 @@ namespace {
 
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
+using oc::note::sequencer::StepSequencerChordMode;
+using oc::note::sequencer::StepSequencerChordSpec;
 using oc::note::sequencer::StepSequencerCycleStateSet;
 using oc::note::sequencer::StepSequencerGraph;
 using oc::note::sequencer::StepSequencerGraphLimits;
@@ -25,7 +27,8 @@ using oc::note::sequencer::StepSequencerSequenceKind;
 using oc::note::sequencer::StepSequencerStepNode;
 
 constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
-constexpr uint8_t kEnvelopeVersion = 2;
+constexpr uint8_t kEnvelopeVersion = 3;
+constexpr uint8_t kLegacyEnvelopeVersion = 2;
 constexpr uint8_t kNoTrack = 0xFF;
 constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
 
@@ -83,6 +86,28 @@ struct StepNodeRecord {
     uint8_t localVariationVelocity = 0;
     uint8_t localVariationGatePercent = 0;
     uint8_t localVariationNudge = 0;
+    uint8_t chordMode = static_cast<uint8_t>(StepSequencerChordMode::Single);
+    uint8_t chordVoiceCount = 3;
+    uint8_t chordColor = 0;
+    uint8_t chordVariant = 0;
+    uint8_t chordSpread = 0;
+    int8_t chordStrum = 0;
+    int8_t chordVelocityCurve = 0;
+};
+
+struct StepNodeRecordV2 {
+    uint16_t flags = 0;
+    int8_t noteOffset = 0;
+    int16_t velocityOffset = 0;
+    int16_t gateOffset = 0;
+    int8_t nudgeOffset = 0;
+    int16_t probabilityOffset = 0;
+    uint16_t childSequenceId = kInvalidId;
+    uint16_t cycleSetId = kInvalidId;
+    uint8_t localVariationPitchSemitones = 0;
+    uint8_t localVariationVelocity = 0;
+    uint8_t localVariationGatePercent = 0;
+    uint8_t localVariationNudge = 0;
 };
 
 struct CycleSetRecord {
@@ -95,7 +120,8 @@ struct CycleSetRecord {
 static_assert(sizeof(EnvelopeHeader) == 12, "Unexpected EnvelopeHeader size");
 static_assert(sizeof(SectionHeader) == 10, "Unexpected SectionHeader size");
 static_assert(sizeof(SequenceRecord) == 5, "Unexpected SequenceRecord size");
-static_assert(sizeof(StepNodeRecord) == 18, "Unexpected StepNodeRecord size");
+static_assert(sizeof(StepNodeRecordV2) == 18, "Unexpected StepNodeRecordV2 size");
+static_assert(sizeof(StepNodeRecord) == 25, "Unexpected StepNodeRecord size");
 static_assert(sizeof(CycleSetRecord) == 4, "Unexpected CycleSetRecord size");
 
 struct GraphRecordScratch {
@@ -250,6 +276,13 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
             .localVariationVelocity = source.localVariation.velocity,
             .localVariationGatePercent = source.localVariation.gatePercent,
             .localVariationNudge = source.localVariation.nudge,
+            .chordMode = static_cast<uint8_t>(source.chordMode),
+            .chordVoiceCount = source.chordSpec.voiceCount,
+            .chordColor = source.chordSpec.color,
+            .chordVariant = source.chordSpec.variant,
+            .chordSpread = source.chordSpec.spread,
+            .chordStrum = source.chordSpec.strum,
+            .chordVelocityCurve = source.chordSpec.velocityCurve,
         };
     }
 
@@ -284,7 +317,7 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
 
 FLASHMEM bool isHeaderValid(const EnvelopeHeader& header, EnvelopeKind kind) {
     return header.magic == kEnvelopeMagic &&
-           header.version == kEnvelopeVersion &&
+           (header.version == kEnvelopeVersion || header.version == kLegacyEnvelopeVersion) &&
            header.kind == static_cast<uint8_t>(kind) &&
            header.headerSize == sizeof(EnvelopeHeader);
 }
@@ -360,6 +393,23 @@ FLASHMEM bool sectionHasExactRecordShape(const SectionView& section, uint16_t re
            section.byteSize == static_cast<uint16_t>(section.count * recordSize);
 }
 
+FLASHMEM bool sectionHasStepNodeRecordShape(const SectionView& section) {
+    return sectionHasExactRecordShape(section, sizeof(StepNodeRecord)) ||
+           sectionHasExactRecordShape(section, sizeof(StepNodeRecordV2));
+}
+
+FLASHMEM StepSequencerChordMode sanitizeChordMode(uint8_t mode) {
+    if (mode > static_cast<uint8_t>(StepSequencerChordMode::Local)) {
+        return StepSequencerChordMode::Single;
+    }
+    return static_cast<StepSequencerChordMode>(mode);
+}
+
+FLASHMEM StepSequencerChordSpec sanitizeChordSpec(StepSequencerChordSpec spec) {
+    spec.clamp();
+    return spec;
+}
+
 FLASHMEM bool linkSequenceValid(const StepSequencerGraph& graph, uint16_t id) {
     return graph.sequence(id) != nullptr;
 }
@@ -388,7 +438,7 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
         return true;
     }
     if (!sectionHasExactRecordShape(sections.sequences, sizeof(SequenceRecord)) ||
-        !sectionHasExactRecordShape(sections.stepNodes, sizeof(StepNodeRecord))) {
+        !sectionHasStepNodeRecordShape(sections.stepNodes)) {
         state::sequencer::clearGraph(target);
         return true;
     }
@@ -431,9 +481,36 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
 
     for (uint16_t i = 0; i < sections.stepNodes.count; ++i) {
         StepNodeRecord record{};
-        std::memcpy(&record,
-                    sections.stepNodes.data + i * sizeof(StepNodeRecord),
-                    sizeof(record));
+        if (sections.stepNodes.recordSize == sizeof(StepNodeRecord)) {
+            std::memcpy(&record,
+                        sections.stepNodes.data + i * sizeof(StepNodeRecord),
+                        sizeof(record));
+        } else {
+            StepNodeRecordV2 legacy{};
+            std::memcpy(&legacy,
+                        sections.stepNodes.data + i * sizeof(StepNodeRecordV2),
+                        sizeof(legacy));
+            record.flags = legacy.flags;
+            record.noteOffset = legacy.noteOffset;
+            record.velocityOffset = legacy.velocityOffset;
+            record.gateOffset = legacy.gateOffset;
+            record.nudgeOffset = legacy.nudgeOffset;
+            record.probabilityOffset = legacy.probabilityOffset;
+            record.childSequenceId = legacy.childSequenceId;
+            record.cycleSetId = legacy.cycleSetId;
+            record.localVariationPitchSemitones = legacy.localVariationPitchSemitones;
+            record.localVariationVelocity = legacy.localVariationVelocity;
+            record.localVariationGatePercent = legacy.localVariationGatePercent;
+            record.localVariationNudge = legacy.localVariationNudge;
+        }
+        const StepSequencerChordSpec chordSpec = sanitizeChordSpec({
+            .voiceCount = record.chordVoiceCount,
+            .color = record.chordColor,
+            .variant = record.chordVariant,
+            .spread = record.chordSpread,
+            .strum = record.chordStrum,
+            .velocityCurve = record.chordVelocityCurve,
+        });
         graph->stepNodes[i] = StepSequencerStepNode{
             .flags = record.flags,
             .noteOffset = record.noteOffset,
@@ -447,6 +524,8 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
                 .gatePercent = record.localVariationGatePercent,
                 .nudge = record.localVariationNudge,
             },
+            .chordMode = sanitizeChordMode(record.chordMode),
+            .chordSpec = chordSpec,
             .childSequenceId = record.childSequenceId,
             .cycleSetId = record.cycleSetId,
         };

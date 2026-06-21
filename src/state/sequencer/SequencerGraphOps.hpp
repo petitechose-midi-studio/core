@@ -152,6 +152,13 @@ bool setNodeNudgeOffset(SequencerPatternState& pattern, SequencerGraphNodeId nod
 bool setNodeProbabilityOffset(SequencerPatternState& pattern,
                               SequencerGraphNodeId nodeId,
                               int16_t offset);
+bool setNodeChordMode(SequencerPatternState& pattern,
+                      SequencerGraphNodeId nodeId,
+                      oc::note::sequencer::StepSequencerChordMode mode);
+bool setNodeChordSpec(SequencerPatternState& pattern,
+                      SequencerGraphNodeId nodeId,
+                      oc::note::sequencer::StepSequencerChordSpec spec);
+bool clearNodeChordState(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 uint8_t nodeLocalVariationRange(const oc::note::sequencer::StepSequencerStepNode& node,
                                 StepProperty property);
 bool setNodeLocalVariationRange(SequencerPatternState& pattern,
