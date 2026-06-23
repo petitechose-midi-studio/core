@@ -18,6 +18,7 @@
 1940 encoder NAV 1
 2020 encoder NAV 1
 2100 encoder NAV 1
+2180 encoder NAV 1
 2260 capture screen micro_row_focused
 2360 tap NAV 60
 2660 capture screen child_pattern_focus

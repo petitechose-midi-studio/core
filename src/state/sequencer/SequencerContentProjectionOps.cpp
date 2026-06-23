@@ -45,6 +45,7 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
         out.nudge = resolved.nudge;
         out.parentProbability = base.probability;
         out.probability = resolved.probability;
+        out.inheritedChord = resolved.inheritedChord;
         if (node != nullptr) {
             out.noteOffset = node->noteOffset;
             out.velocityOffset = node->velocityOffset;
@@ -65,7 +66,7 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     if (node == nullptr) return out;
 
     const ResolvedStep owner = resolveOwnerStep(sequencer, scaleSettings);
-    const ResolvedStep base = contentBaseForKind(owner, frame->kind);
+    const ResolvedStep base = contentBaseForKind(owner, frame->kind, scaleSettings);
     const ResolvedStep resolved = applyNode(base, *node, scaleSettings);
     if (!base.valid || !resolved.valid) return out;
 
@@ -86,6 +87,7 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     out.nudge = resolved.nudge;
     out.parentProbability = base.probability;
     out.probability = resolved.probability;
+    out.inheritedChord = resolved.inheritedChord;
     out.noteOffset = node->noteOffset;
     out.velocityOffset = node->velocityOffset;
     out.gateOffset = node->gateOffset;
@@ -130,6 +132,7 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentOwnerProjection(
     out.nudge = owner.nudge;
     out.parentProbability = owner.probability;
     out.probability = owner.probability;
+    out.inheritedChord = owner.inheritedChord;
 
     const auto* node = graph->stepNode(frame->ownerNodeId);
     if (node != nullptr) {
@@ -183,6 +186,7 @@ FLASHMEM SequencerContentStepProjection resolveContentFrameOwnerProjection(
     out.nudge = owner.nudge;
     out.parentProbability = owner.probability;
     out.probability = owner.probability;
+    out.inheritedChord = owner.inheritedChord;
 
     const auto* node = graph->stepNode(frame.ownerNodeId);
     if (node != nullptr) {

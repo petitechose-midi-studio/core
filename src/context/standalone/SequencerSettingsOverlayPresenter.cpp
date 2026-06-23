@@ -31,8 +31,7 @@ FLASHMEM void SequencerSettingsOverlayPresenter::bind() {
         state_refs_.sequencerSettings.flowPhase,
         state_refs_.sequencerSettings.selector.visible,
         state_refs_.sequencerSettings.selector.editingRow,
-        state_refs_.sequencerSettings.selector.selectedIndex,
-        state_refs_.trackBank.projectScaleRevisionSignal()
+        state_refs_.sequencerSettings.selector.selectedIndex
     );
 }
 

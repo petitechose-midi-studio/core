@@ -67,10 +67,22 @@ constexpr uint32_t MICRO_SEQUENCE_BADGE_COLOR =
     sequencer::semantic::color(sequencer::semantic::Tone::MICRO_SEQUENCE);
 constexpr uint32_t CYCLE_STATE_BADGE_COLOR =
     sequencer::semantic::color(sequencer::semantic::Tone::CYCLE_STATE);
+constexpr uint32_t CHORD_BADGE_COLOR =
+    sequencer::semantic::color(sequencer::semantic::Tone::CHORD);
 constexpr uint32_t PROBABILITY_BADGE_COLOR =
     sequencer::semantic::color(sequencer::semantic::Tone::CHANCE);
 constexpr lv_opa_t STEP_BADGE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_BADGE_DISABLED_OPA = LV_OPA_50;
+
+uint32_t chordBadgeColor(
+    oc::note::sequencer::StepSequencerChordSource source
+) {
+    using Source = oc::note::sequencer::StepSequencerChordSource;
+    if (source == Source::Inherited) {
+        return sequencer::semantic::color(sequencer::semantic::Tone::CHORD_MODE);
+    }
+    return CHORD_BADGE_COLOR;
+}
 
 uint8_t clampMidiValue(int value) {
     if (value < 0) return 0;
@@ -199,12 +211,14 @@ void drawSelectionOverlay(lv_layer_t* layer,
 }
 
 lv_coord_t drawStepBadgeGlyph(lv_layer_t* layer,
+                              const lv_area_t& buttonArea,
                               lv_coord_t x,
                               lv_coord_t y,
                               const char* icon,
                               uint32_t colorHex,
                               bool enabled) {
     if (!layer || icon == nullptr || icon[0] == '\0') return x;
+    if (x + STEP_BADGE_SIZE - 1 > buttonArea.x2) return x;
 
     const lv_area_t area{
         .x1 = x,
@@ -228,8 +242,11 @@ void drawSemanticBadges(lv_layer_t* layer,
                         const lv_area_t& buttonArea,
                         const grid::TileRenderCache& cache) {
     const bool probabilityBadge = cache.enabled && cache.probability < 100;
+    const bool chordBadge = cache.contentBadges.chord &&
+                            cache.contentBadges.chordVoiceCount > 1;
     if (!cache.contentBadges.microSequence &&
         !cache.contentBadges.cycleStates &&
+        !chordBadge &&
         !probabilityBadge) {
         return;
     }
@@ -239,6 +256,7 @@ void drawSemanticBadges(lv_layer_t* layer,
     if (cache.contentBadges.cycleStates) {
         x = drawStepBadgeGlyph(
             layer,
+            buttonArea,
             x,
             y,
             standalone::icons::CYCLE_STATE,
@@ -249,6 +267,7 @@ void drawSemanticBadges(lv_layer_t* layer,
     if (cache.contentBadges.microSequence) {
         x = drawStepBadgeGlyph(
             layer,
+            buttonArea,
             x,
             y,
             standalone::icons::MICRO_SEQUENCE,
@@ -256,9 +275,21 @@ void drawSemanticBadges(lv_layer_t* layer,
             cache.enabled
         );
     }
+    if (chordBadge) {
+        x = drawStepBadgeGlyph(
+            layer,
+            buttonArea,
+            x,
+            y,
+            standalone::icons::CHORD,
+            chordBadgeColor(cache.contentBadges.chordSource),
+            cache.enabled
+        );
+    }
     if (probabilityBadge) {
         drawStepBadgeGlyph(
             layer,
+            buttonArea,
             x,
             y,
             standalone::icons::NOTE_PROP_RANDOM,

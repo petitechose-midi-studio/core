@@ -1,6 +1,6 @@
 # UX workflow: validate canonical sequencer scope cycling.
 # Purpose: captures the global grammar root cycle `Track -> Pattern -> Step -> Track`,
-# confirms TrackLegacy does not expose musical property overlays, then validates the
+# confirms Track does not expose musical property overlays, then validates the
 # child-context cycle `Pattern -> Step -> Pattern`.
 # Expect: capture_match:root_track_initial=root_track_after_cycle, capture_match:track_before_left_bottom=track_left_bottom_down, capture_match:child_pattern_focus=child_pattern_after_cycle
 
@@ -15,7 +15,7 @@
 750 tap NAV 60
 950 capture screen root_track_after_cycle
 
-# TrackLegacy keeps the left property selectors inactive.
+# Track keeps the left property selectors inactive.
 1050 capture screen track_before_left_bottom
 1100 button LEFT_BOTTOM down
 1320 capture screen track_left_bottom_down
@@ -37,6 +37,7 @@
 3570 encoder NAV 1
 3650 encoder NAV 1
 3730 encoder NAV 1
+3810 encoder NAV 1
 3890 capture screen parent_micro_row_focused
 3990 tap NAV 60
 4290 capture screen child_pattern_focus

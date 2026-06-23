@@ -65,8 +65,7 @@ FLASHMEM SelectorRenderData buildSelectorRenderData(const Source& source) {
 
     data.selectedIndex = source.sequencerSettings.selector.selectedIndex.get();
     data.dataRevision = 1U |
-        (static_cast<uint32_t>(row) << 24) |
-        (static_cast<uint32_t>(source.trackBank.projectScaleRevisionSignal().get()) << 4);
+        (static_cast<uint32_t>(row) << 24);
 
     return data;
 }

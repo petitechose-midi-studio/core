@@ -197,7 +197,11 @@ FLASHMEM float valueToNormalized(
     return 0.0f;
 }
 
-FLASHMEM ResolvedStep contentBaseForKind(ResolvedStep owner, SequencerContentViewKind kind);
+FLASHMEM ResolvedStep contentBaseForKind(
+    ResolvedStep owner,
+    SequencerContentViewKind kind,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+);
 
 FLASHMEM uint8_t clampMidi7Offset(uint8_t base, int16_t offset) {
     const int value = static_cast<int>(base) + static_cast<int>(offset);
@@ -234,6 +238,25 @@ FLASHMEM uint8_t clampProbabilityOffset(uint8_t base, int16_t offset) {
     return static_cast<uint8_t>(std::clamp(value, 0, 100));
 }
 
+FLASHMEM oc::note::sequencer::StepSequencerInheritedChord activeChordForChildren(
+    const ResolvedStep& step,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    const oc::note::sequencer::StepSequencerStepValues values{
+        .note = step.note,
+        .velocity = step.velocity,
+        .gate = step.gate,
+        .nudge = step.nudge,
+    };
+    return oc::note::sequencer::resolveStepChord(
+        values,
+        scaleSettings,
+        step.chordState,
+        step.inheritedChord,
+        step.gate == 0 ? 1U : step.gate
+    ).activeForChildren;
+}
+
 FLASHMEM bool nodeEnabled(const Node& node) {
     if (!node.has(oc::note::sequencer::STEP_NODE_ENABLED_OVERRIDE)) return true;
     return node.has(oc::note::sequencer::STEP_NODE_ENABLED_VALUE);
@@ -264,10 +287,25 @@ FLASHMEM ResolvedStep applyNode(
     if (node.has(oc::note::sequencer::STEP_NODE_PROBABILITY_OFFSET)) {
         parent.probability = clampProbabilityOffset(parent.probability, node.probabilityOffset);
     }
+    if (node.has(oc::note::sequencer::STEP_NODE_CHORD_MODE)) {
+        parent.chordState.mode = node.chordMode;
+    }
+    if (node.has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL)) {
+        parent.chordState.local = node.chordSpec;
+    }
+    parent.chordState.local.clamp();
     return parent;
 }
 
-FLASHMEM ResolvedStep contentBaseForKind(ResolvedStep owner, SequencerContentViewKind kind) {
+FLASHMEM ResolvedStep contentBaseForKind(
+    ResolvedStep owner,
+    SequencerContentViewKind kind,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    if (!owner.valid) return owner;
+
+    owner.inheritedChord = activeChordForChildren(owner, scaleSettings);
+    owner.chordState = oc::note::sequencer::defaultChildChordState();
     if (owner.valid && kind == SequencerContentViewKind::MICRO_SEQUENCE) {
         owner.gate = SequencerState::DEFAULT_GATE_PERCENT;
     }
@@ -284,6 +322,8 @@ FLASHMEM ResolvedStep rootBase(const SequencerState& sequencer, uint8_t rootStep
         .gate = sequencer.pattern.gate[rootStep],
         .nudge = sequencer.pattern.nudge[rootStep],
         .probability = SequencerState::clampProbability(sequencer.pattern.probability[rootStep]),
+        .chordState = oc::note::sequencer::defaultRootChordState(),
+        .inheritedChord = {},
     };
 }
 
@@ -461,7 +501,11 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
 
     touchedChild = true;
     captureRepresentativeNode(*childNode, childNodeId, outSummary);
-    current = applyNode(contentBaseForKind(current, SequencerContentViewKind::MICRO_SEQUENCE),
+    current = applyNode(contentBaseForKind(
+                            current,
+                            SequencerContentViewKind::MICRO_SEQUENCE,
+                            scaleSettings
+                        ),
                         *childNode,
                         scaleSettings);
     resolveRepresentativeChildContentStep(
@@ -630,7 +674,11 @@ FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
         const auto& containingFrame = view.frames[i - 1U];
         const Node* ownerNode = graph->stepNode(frame.ownerNodeId);
         if (ownerNode == nullptr) return {};
-        current = applyNode(contentBaseForKind(current, containingFrame.kind), *ownerNode, scaleSettings);
+        current = applyNode(
+            contentBaseForKind(current, containingFrame.kind, scaleSettings),
+            *ownerNode,
+            scaleSettings
+        );
     }
     return current;
 }

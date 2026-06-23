@@ -568,6 +568,13 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
             runtimeNodeId,
             expandedRuntimeVariation
         );
+        mergeExpandedTelemetryChordBadgeForNode(
+            tile.contentBadges,
+            sequencer.expandedVariationTelemetry,
+            runtimeNodeId,
+            sequencer.playheadStep.get(),
+            sequencer.playheadStepTickOffset.get()
+        );
         if (!hasExpandedRuntimeVariation && tile.playheadVisible) {
             hasExpandedRuntimeVariation = expandedTelemetryVariationAtCurrentOffset(
                 sequencer,

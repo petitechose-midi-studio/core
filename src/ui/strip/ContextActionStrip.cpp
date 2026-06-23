@@ -19,7 +19,7 @@ namespace core::ui {
 
 namespace {
 
-constexpr lv_coord_t HORIZONTAL_STRIP_HEIGHT = 20;
+constexpr lv_coord_t HORIZONTAL_STRIP_HEIGHT = theme::layout::CONTEXT_ACTION_STRIP_HEIGHT;
 constexpr lv_coord_t VERTICAL_STRIP_WIDTH = 20;
 constexpr lv_coord_t SLOT_RADIUS = 0;
 constexpr lv_coord_t SLOT_PAD = 0;

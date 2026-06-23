@@ -61,6 +61,14 @@ constexpr uint32_t STEP_PITCH = 0xD3B16E;          // Desaturated amber
 constexpr uint32_t STEP_VELOCITY = 0x6EAD9A;       // Soft teal-green
 constexpr uint32_t STEP_GATE = 0xB8AE63;           // Muted olive yellow
 constexpr uint32_t STEP_NUDGE = 0xBE8172;          // Desaturated coral
+constexpr uint32_t STEP_CHORD = 0x9D8BC0;          // Muted lavender harmony layer
+constexpr uint32_t STEP_CHORD_MODE = 0xA393C5;     // Harmony source / inheritance
+constexpr uint32_t STEP_CHORD_VOICE = 0x8F9CC5;    // Harmony voice count
+constexpr uint32_t STEP_CHORD_COLOR = 0xB88EAD;    // Harmony tone color
+constexpr uint32_t STEP_CHORD_SHAPE = 0x9B86BD;    // Harmony voicing shape
+constexpr uint32_t STEP_CHORD_SPREAD = 0xA2A66E;   // Harmony voice spacing
+constexpr uint32_t STEP_CHORD_STRUM = 0x9CA877;    // Harmony voice timing
+constexpr uint32_t STEP_CHORD_VELOCITY = STEP_VELOCITY;  // Harmony voice dynamics
 constexpr uint32_t STEP_MICRO_SEQUENCE = 0x6FAE99; // Muted teal
 constexpr uint32_t STEP_CYCLE_STATE = 0xB99A58;    // Muted ochre
 constexpr uint32_t STEP_LENGTH = 0x8BA8BE;         // Muted steel blue
@@ -96,6 +104,7 @@ constexpr int16_t SCREEN_HEIGHT = 240;
 
 constexpr int16_t TOP_BAR_HEIGHT = 20;
 constexpr int16_t TRANSPORT_BAR_HEIGHT = 20;
+constexpr int16_t CONTEXT_ACTION_STRIP_HEIGHT = 20;
 
 constexpr int16_t PARAMETER_GRID_COLS = 4;
 constexpr int16_t PARAMETER_GRID_ROWS = 2;

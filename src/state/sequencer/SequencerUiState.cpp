@@ -21,10 +21,16 @@ FLASHMEM void SequencerContentViewState::reset() {
     bump();
 }
 
+FLASHMEM void SequencerChordEditorState::reset() {
+    active.set(false);
+    focusedField.set(SequencerChordEditField::MODE);
+}
+
 FLASHMEM void SequencerStepEditOverlayState::reset() {
     stepIndex.set(0);
     focusedRow.set(0);
     localVariationEditActive.set(false);
+    chordEditor.reset();
     contextHold.clear();
 }
 

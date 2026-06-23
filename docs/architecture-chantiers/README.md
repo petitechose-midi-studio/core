@@ -39,6 +39,10 @@ Code seams checked during this review:
 - [`src/sequencer/SequencerInternalTimerLane.cpp`](../../src/sequencer/SequencerInternalTimerLane.cpp)
 - [`src/sequencer/RealtimeMidiQueue.cpp`](../../src/sequencer/RealtimeMidiQueue.cpp)
 
+Feature cleanup audits:
+
+- [`Chord Step Editor Cleanup Audit - 2026-06-23`](2026-06-23-chord-step-editor-cleanup-audit.md)
+
 ## Certainty Levels
 
 ### Confirmed In Current Code

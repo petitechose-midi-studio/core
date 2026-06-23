@@ -23,10 +23,14 @@ FLASHMEM void SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepEdit.stepIndex,
         state_refs_.sequencer.stepEdit.focusedRow,
         state_refs_.sequencer.stepEdit.localVariationEditActive,
+        state_refs_.sequencer.stepEdit.chordEditor.active,
+        state_refs_.sequencer.stepEdit.chordEditor.focusedField,
         state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.pattern.stepDataRevision,
+        state_refs_.sequencer.pattern.patternScaleRevision,
         state_refs_.sequencer.pattern.graphRevision,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.tracks.projectScaleRevisionSignal()
     );
     step_edit_action_watcher_.watchAll(
         [this]() { renderStepEditActionStrip(); },

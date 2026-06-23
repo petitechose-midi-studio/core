@@ -15,11 +15,13 @@ using core::state::sequencer::enterCycleStatesContentView;
 using core::state::sequencer::enterMicroSequenceContentView;
 using core::state::sequencer::rootStepNodeId;
 using core::state::sequencer::setNodeEnabledOverride;
+using core::state::sequencer::setNodeChordSpec;
 using core::state::sequencer::setNodeNoteOffset;
 using core::state::sequencer::setNodeLocalVariationRange;
 using core::state::sequencer::StepProperty;
 using core::ui::sequencer::grid::buildStepContentBadgeProjection;
 using core::ui::sequencer::grid::buildStepContentBadgeProjectionForNode;
+using core::ui::sequencer::grid::mergeExpandedTelemetryChordBadgeForNode;
 
 void test_projects_root_step_content_badges() {
     core::state::sequencer::SequencerPatternState pattern;
@@ -32,18 +34,22 @@ void test_projects_root_step_content_badges() {
     auto badges = buildStepContentBadgeProjection(pattern, 0);
     assert(!badges.microSequence);
     assert(!badges.cycleStates);
+    assert(!badges.chord);
 
     badges = buildStepContentBadgeProjection(pattern, 1);
     assert(badges.microSequence);
     assert(!badges.cycleStates);
+    assert(!badges.chord);
 
     badges = buildStepContentBadgeProjection(pattern, 2);
     assert(!badges.microSequence);
     assert(badges.cycleStates);
+    assert(!badges.chord);
 
     badges = buildStepContentBadgeProjection(pattern, 3);
     assert(badges.microSequence);
     assert(badges.cycleStates);
+    assert(!badges.chord);
 
     std::cout << "[PASS] test_projects_root_step_content_badges\n";
 }
@@ -54,11 +60,13 @@ void test_invalid_or_missing_graph_has_no_badges() {
     auto badges = buildStepContentBadgeProjection(pattern, 1);
     assert(!badges.microSequence);
     assert(!badges.cycleStates);
+    assert(!badges.chord);
 
     assert(createMicroSequence(pattern, rootStepNodeId(1), 2).ok);
     badges = buildStepContentBadgeProjection(pattern, SequencerState::MAX_STEPS);
     assert(!badges.microSequence);
     assert(!badges.cycleStates);
+    assert(!badges.chord);
 
     std::cout << "[PASS] test_invalid_or_missing_graph_has_no_badges\n";
 }
@@ -96,8 +104,87 @@ void test_projects_child_context_resolved_values_and_badges() {
     );
     assert(badges.cycleStates);
     assert(!badges.microSequence);
+    assert(!badges.chord);
 
     std::cout << "[PASS] test_projects_child_context_resolved_values_and_badges\n";
+}
+
+void test_projects_chord_badge_for_local_chord_step() {
+    core::state::sequencer::SequencerPatternState pattern;
+
+    oc::note::sequencer::StepSequencerChordSpec spec{};
+    spec.voiceCount = 5;
+    assert(setNodeChordSpec(pattern, rootStepNodeId(0), spec));
+
+    auto badges = buildStepContentBadgeProjection(pattern, 0);
+    assert(badges.chord);
+    assert(badges.chordVoiceCount == 5);
+    assert(badges.chordSource == oc::note::sequencer::StepSequencerChordSource::Local);
+    assert(!badges.microSequence);
+    assert(!badges.cycleStates);
+
+    std::cout << "[PASS] test_projects_chord_badge_for_local_chord_step\n";
+}
+
+void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(8);
+    sequencer.pattern.note[0] = 60;
+    sequencer.pattern.setEnabled(0, true);
+    sequencer.probabilityCycleMask.setBit(0, true);
+    sequencer.playheadStep.set(0);
+    sequencer.playheadStepTickOffset.set(0);
+
+    oc::note::sequencer::StepSequencerChordSpec rootChord{};
+    rootChord.voiceCount = 4;
+    assert(setNodeChordSpec(sequencer.pattern, rootStepNodeId(0), rootChord));
+
+    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    assert(micro.ok);
+    const auto* graph = sequencer.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto childNode = sequence->firstStepNode;
+
+    assert(enterMicroSequenceContentView(sequencer, rootStepNodeId(0), micro.id));
+
+    oc::note::sequencer::StepSequencerResolvedVariation variation{};
+    variation.stepIndex = 0;
+    variation.triggered = true;
+    variation.base = {.note = 60, .velocity = 64, .gate = 100, .nudge = 0};
+    variation.resolved = variation.base;
+    sequencer.expandedVariationTelemetry.reset();
+    sequencer.expandedVariationTelemetry.valid = true;
+    sequencer.expandedVariationTelemetry.rootStepIndex = 0;
+    sequencer.expandedVariationTelemetry.store(
+        0,
+        childNode,
+        0,
+        24,
+        variation,
+        oc::note::sequencer::StepSequencerChordSource::Inherited,
+        0,
+        4,
+        0,
+        true
+    );
+
+    auto badges = buildStepContentBadgeProjectionForNode(sequencer.pattern, childNode);
+    assert(!badges.chord);
+    assert(mergeExpandedTelemetryChordBadgeForNode(
+        badges,
+        sequencer.expandedVariationTelemetry,
+        childNode,
+        sequencer.playheadStep.get(),
+        sequencer.playheadStepTickOffset.get()
+    ));
+    assert(badges.chord);
+    assert(badges.chordVoiceCount == 4);
+    assert(badges.chordSource ==
+           oc::note::sequencer::StepSequencerChordSource::Inherited);
+
+    std::cout << "[PASS] test_child_grid_uses_runtime_chord_badge_for_inherited_chord\n";
 }
 
 void test_parent_grid_summarizes_final_child_pitch() {
@@ -651,6 +738,8 @@ int main() {
     test_projects_root_step_content_badges();
     test_invalid_or_missing_graph_has_no_badges();
     test_projects_child_context_resolved_values_and_badges();
+    test_projects_chord_badge_for_local_chord_step();
+    test_child_grid_uses_runtime_chord_badge_for_inherited_chord();
     test_parent_grid_summarizes_final_child_pitch();
     test_parent_tile_displays_final_child_pitch_across_nested_cycles();
     test_child_grid_summarizes_intermediate_child_pitch();

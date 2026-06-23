@@ -167,14 +167,9 @@ FLASHMEM bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midi
 
 FLASHMEM bool loadSharedTrackState(oc::interface::IStorage& backend,
                                    uint16_t& sharedTrackEnabledMask,
-                                   uint8_t& sharedTrackActive,
-                                   uint8_t version) {
+                                   uint8_t& sharedTrackActive) {
     sharedTrackEnabledMask = layout::DEFAULT_SHARED_TRACK_ENABLED_MASK;
     sharedTrackActive = layout::DEFAULT_SHARED_TRACK_ACTIVE;
-
-    if (version < 2) {
-        return true;
-    }
 
     if (!readExact(backend,
                    layout::ADDR_SHARED_TRACK_ENABLED_MASK,
@@ -207,18 +202,14 @@ FLASHMEM bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
     if (!readExact(backend, layout::ADDR_VERSION, &version, 1)) {
         return false;
     }
-    if (version == 0 || version > layout::VERSION) {
+    if (version != layout::VERSION) {
         return true;
     }
-    const uint32_t macroLeftAddr = (version >= 2) ? layout::ADDR_SHORTCUT_MACRO_LEFT : 0x000A;
-    const uint32_t macroRightAddr = (version >= 2) ? layout::ADDR_SHORTCUT_MACRO_RIGHT : 0x000B;
-    const uint32_t seqLeftAddr = (version >= 2) ? layout::ADDR_SHORTCUT_SEQ_LEFT : 0x000C;
-    const uint32_t seqRightAddr = (version >= 2) ? layout::ADDR_SHORTCUT_SEQ_RIGHT : 0x000D;
 
-    return readExact(backend, macroLeftAddr, &macroLeft, 1) &&
-           readExact(backend, macroRightAddr, &macroRight, 1) &&
-           readExact(backend, seqLeftAddr, &seqLeft, 1) &&
-           readExact(backend, seqRightAddr, &seqRight, 1);
+    return readExact(backend, layout::ADDR_SHORTCUT_MACRO_LEFT, &macroLeft, 1) &&
+           readExact(backend, layout::ADDR_SHORTCUT_MACRO_RIGHT, &macroRight, 1) &&
+           readExact(backend, layout::ADDR_SHORTCUT_SEQ_LEFT, &seqLeft, 1) &&
+           readExact(backend, layout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
 }
 
 }  // namespace core::state::core_settings

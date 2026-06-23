@@ -130,6 +130,15 @@ bool rootStepHasMicroSequence(const SequencerStepHarness& h, uint8_t step) {
     return graph->stepNodes[nodeId].has(oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE);
 }
 
+const oc::note::sequencer::StepSequencerStepNode* rootStepNode(
+    const SequencerStepHarness& h,
+    uint8_t step
+) {
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph == nullptr) return nullptr;
+    return graph->stepNode(core::state::sequencer::rootStepNodeId(step));
+}
+
 void createRootMicroSequence(SequencerStepHarness& h, uint8_t step) {
     const auto nodeId = core::state::sequencer::rootStepNodeId(step);
     const auto result = core::state::sequencer::createMicroSequence(
@@ -834,6 +843,13 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     h.state.sequencer.pattern.probability[3] = 64;
     h.state.sequencer.pattern.setEnabled(3, true);
     createRootMicroSequence(h, 3);
+    oc::note::sequencer::StepSequencerChordSpec selectedChord{};
+    selectedChord.voiceCount = 5;
+    assert(core::state::sequencer::setNodeChordSpec(
+        h.state.sequencer.pattern,
+        core::state::sequencer::rootStepNodeId(3),
+        selectedChord
+    ));
 
     h.press(Config::ButtonID::NAV);
     h.tick(0);
@@ -890,6 +906,11 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     assert(h.state.sequencer.pattern.probability[8] == 64);
     assert(h.state.sequencer.pattern.isEnabled(8));
     assert(rootStepHasMicroSequence(h, 8));
+    const auto* pastedChordNode = rootStepNode(h, 8);
+    assert(pastedChordNode != nullptr);
+    assert(pastedChordNode->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
+    assert(pastedChordNode->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
+    assert(pastedChordNode->chordSpec.voiceCount == 5);
 
     std::cout << "[PASS] test_step_selection_copy_paste_extends_sparse_root_steps\n";
 }
@@ -946,6 +967,13 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
     h.state.sequencer.pattern.velocity[3] = 105;
     h.state.sequencer.pattern.setEnabled(3, true);
     createRootMicroSequence(h, 3);
+    oc::note::sequencer::StepSequencerChordSpec chord{};
+    chord.voiceCount = 6;
+    assert(core::state::sequencer::setNodeChordSpec(
+        h.state.sequencer.pattern,
+        core::state::sequencer::rootStepNodeId(3),
+        chord
+    ));
     h.state.sequencer.pattern.note[8] = 81;
     h.state.sequencer.pattern.setEnabled(8, true);
 
@@ -959,6 +987,9 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
     assert(!h.state.sequencer.pattern.isEnabled(3));
     assert(h.state.sequencer.pattern.note[3] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(rootStepHasMicroSequence(h, 3));
+    const auto* shallowResetNode = rootStepNode(h, 3);
+    assert(shallowResetNode != nullptr);
+    assert(!shallowResetNode->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
     assert(h.state.sequencer.pattern.isEnabled(8));
     assert(h.state.sequencer.pattern.note[8] == 81);
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
@@ -989,6 +1020,13 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     h.state.sequencer.pattern.nudge[1] = 3;
     h.state.sequencer.pattern.setEnabled(1, true);
     createRootMicroSequence(h, 1);
+    oc::note::sequencer::StepSequencerChordSpec chord{};
+    chord.voiceCount = 7;
+    assert(core::state::sequencer::setNodeChordSpec(
+        h.state.sequencer.pattern,
+        core::state::sequencer::rootStepNodeId(1),
+        chord
+    ));
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -1013,6 +1051,11 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     assert(h.state.sequencer.pattern.gate[2] == 180);
     assert(h.state.sequencer.pattern.nudge[2] == 3);
     assert(rootStepHasMicroSequence(h, 2));
+    const auto* pastedNode = rootStepNode(h, 2);
+    assert(pastedNode != nullptr);
+    assert(pastedNode->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
+    assert(pastedNode->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
+    assert(pastedNode->chordSpec.voiceCount == 7);
 
     std::cout << "[PASS] test_step_focus_copy_paste_copies_complete_step_without_selection\n";
 }

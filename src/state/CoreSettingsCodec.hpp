@@ -31,8 +31,7 @@ persistence::PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
 bool loadMidiSync(oc::interface::IStorage& backend, MidiSyncState& midiSync);
 bool loadSharedTrackState(oc::interface::IStorage& backend,
                           uint16_t& sharedTrackEnabledMask,
-                          uint8_t& sharedTrackActive,
-                          uint8_t version);
+                          uint8_t& sharedTrackActive);
 bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
                               uint8_t& macroLeft,
                               uint8_t& macroRight,

@@ -237,8 +237,8 @@ bool isSelectionScope(SequencerScope scope) {
 
 const char* modeForScope(SequencerScope scope) {
     switch (scope) {
-        case SequencerScope::TRACK_LEGACY:
-            return "sequencer.track_legacy";
+        case SequencerScope::TRACK:
+            return "sequencer.track";
         case SequencerScope::PATTERN:
             return "sequencer.pattern";
         case SequencerScope::STEP:
@@ -273,7 +273,7 @@ core::state::StructureSelectionScope selectionScopeForPolicyScope(SequencerScope
 }
 
 bool policyScopeTargetsTrack(SequencerScope scope) {
-    return scope == SequencerScope::TRACK_LEGACY ||
+    return scope == SequencerScope::TRACK ||
            scope == SequencerScope::TRACK_SELECTION;
 }
 

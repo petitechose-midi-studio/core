@@ -1,7 +1,6 @@
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -9,10 +8,16 @@
 #include <config/Timing.hpp>
 #include <oc/type/TextFormat.hpp>
 
+#include "context/standalone/SequencerChordOverlayFormatters.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerChordUiOps.hpp"
+#include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 
@@ -58,6 +63,30 @@ FLASHMEM uint32_t mixRevision(uint32_t seed, uint32_t value) {
     return (seed ^ value) * 16777619U;
 }
 
+FLASHMEM uint32_t buildStepEditDataRevision(const Source& source,
+                                            bool projectionEnabled,
+                                            bool localVariationMode,
+                                            bool chordDetailMode,
+                                            uint8_t step,
+                                            uint8_t len) {
+    const auto& sequencer = source.sequencer;
+    uint32_t revision = 2166136261U;
+    revision = mixRevision(revision, sequencer.pattern.stepDataRevision.get());
+    revision = mixRevision(revision, sequencer.pattern.graphRevision.get());
+    revision = mixRevision(revision, sequencer.pattern.patternScaleRevision.get());
+    revision = mixRevision(revision, source.tracks.projectScaleRevisionSignal().get());
+    revision = mixRevision(revision, projectionEnabled ? 1U : 0U);
+    revision = mixRevision(revision, localVariationMode ? 1U : 0U);
+    revision = mixRevision(revision, chordDetailMode ? 1U : 0U);
+    revision = mixRevision(
+        revision,
+        static_cast<uint32_t>(sequencer.stepEdit.chordEditor.focusedField.get())
+    );
+    revision = mixRevision(revision, static_cast<uint32_t>(step));
+    revision = mixRevision(revision, static_cast<uint32_t>(len));
+    return revision;
+}
+
 FLASHMEM ms::ui::KeyValueRow makeIconRow(
     const char* key,
     const char* value,
@@ -79,7 +108,9 @@ FLASHMEM bool focusedRowIsContextRow(const core::state::sequencer::SequencerStat
 
 FLASHMEM bool focusedRowIsValueRow(const core::state::sequencer::SequencerState& sequencer) {
     const uint8_t row = sequencer.stepEdit.focusedRow.get();
-    return step_edit_rows::isActivated(row) || step_edit_rows::isProperty(row);
+    return step_edit_rows::isActivated(row) ||
+           step_edit_rows::isProperty(row) ||
+           step_edit_rows::isChord(row);
 }
 
 FLASHMEM core::state::sequencer::StepContentChildKind childKindForContextRow(size_t row) {
@@ -222,6 +253,7 @@ FLASHMEM const char* focusLabelForSelectedRow(int selectedIndex) {
     using namespace core::state::sequencer::step_edit_rows;
 
     if (selectedIndex == ACTIVATED) return "State";
+    if (selectedIndex == CHORD) return "Chord";
     if (selectedIndex == MICRO_SEQUENCE) return "Micro sequence";
     if (selectedIndex == CYCLE_STATES) return "Cycle state";
     if (isProperty(static_cast<uint8_t>(std::max(0, selectedIndex)))) {
@@ -307,6 +339,41 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
     const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
     const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    auto chordUi = core::state::sequencer::resolveStepChordUiState(sequencer, step);
+    const bool chordDetailMode = sequencer.stepEdit.chordEditor.active.get();
+
+    std::snprintf(
+        data.stepBadge.data(),
+        data.stepBadge.size(),
+        "S%u",
+        static_cast<unsigned>(step) + 1U
+    );
+
+    if (chordDetailMode) {
+        core::state::sequencer::resolveStepChordPreview(
+            chordUi,
+            projection,
+            effectiveScaleSettings
+        );
+        populateChordDetailOverlay(
+            data,
+            chordUi,
+            sequencer.stepEdit.chordEditor.focusedField.get(),
+            projection.enabled
+        );
+
+        const uint32_t revision = buildStepEditDataRevision(
+            source,
+            projection.enabled,
+            false,
+            true,
+            step,
+            len
+        );
+        data.dataRevision = revision;
+        data.overlayProps.dataRevision = revision;
+        return data;
+    }
 
     core::state::sequencer::SequencerChildContentSummary childSummary{};
     bool hasChildSummary = false;
@@ -417,6 +484,18 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         };
     }
 
+    formatChordValue(
+        data.valueBuffers[step_edit_rows::CHORD].data(),
+        data.valueBuffers[step_edit_rows::CHORD].size(),
+        chordUi
+    );
+    data.rows[step_edit_rows::CHORD] = makeIconRow(
+        "Chord",
+        data.valueBuffers[step_edit_rows::CHORD].data(),
+        ::standalone::icons::CHORD,
+        chordColor()
+    );
+
     const auto microAvailability = core::state::sequencer::activeContentChildCreationAvailability(
         sequencer,
         step,
@@ -456,18 +535,13 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         CYCLE_STATE_COLOR
     );
 
-    std::snprintf(
-        data.stepBadge.data(),
-        data.stepBadge.size(),
-        "S%u",
-        static_cast<unsigned>(step) + 1U
-    );
     formatStepSummary(
         data.summary.data(),
         data.summary.size(),
         projection,
         hasChildSummary ? &childSummary : nullptr
     );
+
     if (localVariationMode) {
         copyText(
             data.focusLabel.data(),
@@ -493,25 +567,32 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     data.overlayProps.probabilityActive = projection.probability < 100;
     data.overlayProps.selectedIndex = data.selectedIndex;
     data.overlayProps.actions[0] = core::ui::SequencerStepEditActionChip{
+        .key = "Chord",
+        .value = data.valueBuffers[step_edit_rows::CHORD].data(),
+        .icon = ::standalone::icons::CHORD,
+        .color = chordColor(),
+    };
+    data.overlayProps.actions[1] = core::ui::SequencerStepEditActionChip{
         .key = "Micro sequence",
         .value = data.valueBuffers[step_edit_rows::MICRO_SEQUENCE].data(),
         .icon = ::standalone::icons::MICRO_SEQUENCE,
         .color = MICRO_SEQUENCE_COLOR,
     };
-    data.overlayProps.actions[1] = core::ui::SequencerStepEditActionChip{
+    data.overlayProps.actions[2] = core::ui::SequencerStepEditActionChip{
         .key = "Cycle state",
         .value = data.valueBuffers[step_edit_rows::CYCLE_STATES].data(),
         .icon = ::standalone::icons::CYCLE_STATE,
         .color = CYCLE_STATE_COLOR,
     };
 
-    uint32_t revision = 2166136261U;
-    revision = mixRevision(revision, sequencer.pattern.stepDataRevision.get());
-    revision = mixRevision(revision, sequencer.pattern.graphRevision.get());
-    revision = mixRevision(revision, projection.enabled ? 1U : 0U);
-    revision = mixRevision(revision, localVariationMode ? 1U : 0U);
-    revision = mixRevision(revision, static_cast<uint32_t>(step));
-    revision = mixRevision(revision, static_cast<uint32_t>(len));
+    const uint32_t revision = buildStepEditDataRevision(
+        source,
+        projection.enabled,
+        localVariationMode,
+        false,
+        step,
+        len
+    );
     data.dataRevision = revision;
     data.overlayProps.dataRevision = revision;
     return data;
@@ -519,6 +600,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
 
 FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const ActionSource& source) {
     StripProps props;
+    using Action = core::state::sequencer::SequencerInteractionAction;
 
     auto& sequencer = source.sequencer;
     if (!sequencer.stepEdit.visible.get()) {
@@ -549,13 +631,32 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     }
 
     if (focusedRowIsValueRow(sequencer)) {
+        constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
         props.visible = true;
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            ::standalone::icons::ACTION_CLEAR,
+            core::ui::sequencer::interactionActionIcon(resetAction),
             Visual::ACTIVE,
             Tone::WARNING
         );
-        props.slots[1].visualState = Visual::HIDDEN;
+        if (sequencer.stepEdit.chordEditor.active.get()) {
+            auto chordUi = core::state::sequencer::resolveStepChordUiState(sequencer, step);
+            core::state::sequencer::resolveStepChordPreview(
+                chordUi,
+                projection,
+                effectiveScaleSettings
+            );
+            formatChordPreviewNotes(
+                props.slots[1].labelText.data(),
+                props.slots[1].labelText.size(),
+                chordUi.preview
+            );
+            props.slots[1].visualState =
+                props.slots[1].labelText[0] != '\0' ? Visual::DIM : Visual::HIDDEN;
+            props.slots[1].tone = Tone::NEUTRAL;
+            props.slots[1].showLabel = props.slots[1].labelText[0] != '\0';
+        } else {
+            props.slots[1].visualState = Visual::HIDDEN;
+        }
         props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
@@ -574,16 +675,19 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     const auto holdAction = sequencer.stepEdit.contextHold.action.get();
     const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
     const bool pasteHoldActive = holdAction == core::state::StructureHoldAction::PASTE;
+    constexpr auto removeAction = Action::REMOVE_STEP_EDITOR_CONTEXT;
+    const auto rightAction =
+        canPaste ? Action::PASTE_STEP_EDITOR_CONTEXT : Action::COPY_STEP_EDITOR_CONTEXT;
 
     props.visible = true;
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::ACTION_CLEAR,
+        core::ui::sequencer::interactionActionIcon(removeAction),
         removeHoldActive ? Visual::ARMED : (hasChild ? Visual::ACTIVE : Visual::DISABLED),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
     props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        canPaste ? ::standalone::icons::ACTION_PASTE : ::standalone::icons::ACTION_COPY,
+        core::ui::sequencer::interactionActionIcon(rightAction),
         pasteHoldActive && canPaste
             ? Visual::ARMED
             : ((hasChild || canPaste) ? Visual::ACTIVE : Visual::DISABLED),

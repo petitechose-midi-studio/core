@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include <oc/note/sequencer/StepSequencerChord.hpp>
 #include <oc/note/sequencer/StepSequencerScale.hpp>
 #include <oc/note/sequencer/StepSequencerVariation.hpp>
 
@@ -65,6 +66,7 @@ struct SequencerContentStepProjection {
     int16_t gateOffset = 0;
     int16_t nudgeOffset = 0;
     int16_t probabilityOffset = 0;
+    oc::note::sequencer::StepSequencerInheritedChord inheritedChord{};
     bool hasMicroSequence = false;
     bool hasCycleStates = false;
 };

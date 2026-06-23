@@ -65,6 +65,31 @@ PlatformIO remains the firmware build/upload path; unit tests are run through CM
 local and CI execution use the same native test backend, workspace-pinned tools, and pinned
 test dependencies.
 
+## Validation Checklist
+
+For sequencer, state, UI, persistence, or `open-control` integration changes,
+validate the touched dependency repos before the Core firmware build:
+
+```powershell
+ms test open-control-framework
+ms test open-control-note
+ms test core
+ms build core --target teensy --env dev
+```
+
+For semantic UX coverage, run focused workflows through the workspace UX runner,
+for example:
+
+```powershell
+ms ux run core --select sequencer/editing/step-edit-chord.ux
+ms ux run core --select sequencer/editing/step-edit-chord-strum.ux
+```
+
+The `ms release dependencies --dry-run` command is an alignment/readiness check:
+it reports dirty repos and the dependency promotion plan, but does not run tests
+or mutate dependency pins. Once dependency repos are clean and merged, use the
+release helper to promote pins; do not edit dependency SHAs by hand.
+
 ## Repository Layout
 
 The main source tree is:
@@ -81,6 +106,20 @@ src/
 ```
 
 Development and architecture docs live in [docs/README.md](docs/README.md).
+
+## Generated Assets
+
+Icon sources live in [asset/icon](asset/icon). The standalone icon font and C++
+font data are generated artifacts that must be committed together with their
+source SVG changes:
+
+- [asset/font/standalone_icons.ttf](asset/font/standalone_icons.ttf)
+- `src/ui/font/data/standalone_icons_*.{hpp,c.inc}`
+- [src/ui/font/StandaloneIcons.hpp](src/ui/font/StandaloneIcons.hpp)
+
+Workspace-local build outputs, scratch directories, and generated binaries
+belong outside Core commits. In the shared `ms-dev-env` checkout, `.tmp/` and
+`bin-*/` are ignored at the workspace root.
 
 ## Architecture
 

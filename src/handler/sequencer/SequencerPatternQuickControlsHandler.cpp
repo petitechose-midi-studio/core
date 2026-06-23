@@ -51,6 +51,15 @@ inline oc::type::IsActiveFn physicalHoldPredicate(
     return [&sequencer]() { return sequencer.patternQuickControls.physicalHoldActive.get(); };
 }
 
+inline oc::type::IsActiveFn historyOnlyHoldPredicate(
+    core::state::sequencer::SequencerState& sequencer
+) {
+    return [&sequencer]() {
+        const auto& quick = sequencer.patternQuickControls;
+        return quick.physicalHoldActive.get() && !quick.selecting.get();
+    };
+}
+
 inline oc::type::IsActiveFn canOpenQuickControls(
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
     core::state::sequencer::SequencerState& sequencer,
@@ -67,6 +76,31 @@ inline oc::type::IsActiveFn canOpenQuickControls(
             overlays.hasVisible()
         );
         return interaction_policy::canOpenPatternDimensionSelector(policy);
+    };
+}
+
+inline oc::type::IsActiveFn canOpenHistoryOnlyHold(
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
+) {
+    return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return interaction_policy::allowsMainSurface(
+                   sequencer,
+                   trackUi,
+                   navigationFocus.get(),
+                   overlays.hasVisible()
+               ) &&
+               !interaction_policy::canOpenPatternDimensionSelector(policy);
     };
 }
 
@@ -170,10 +204,22 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_CENTER)
+        .longPress()
+        .scope(scope_id_)
+        .when(canOpenHistoryOnlyHold(overlays_, sequencer_, track_ui_, navigation_focus_))
+        .then([this]() { beginHistoryOnlyHold(); });
+
+    buttons_.button(ButtonID::LEFT_CENTER)
         .release()
         .scope(scope_id_)
         .when(selectingPredicate(sequencer_))
         .then([this]() { closeApply(); });
+
+    buttons_.button(ButtonID::LEFT_CENTER)
+        .release()
+        .scope(scope_id_)
+        .when(historyOnlyHoldPredicate(sequencer_))
+        .then([this]() { endHistoryOnlyHold(); });
 
     buttons_.button(ButtonID::LEFT_CENTER)
         .longPress()
@@ -262,6 +308,20 @@ FLASHMEM void SequencerPatternQuickControlsHandler::closeCancel() {
 
     closeTransientQuickControlsState();
     history_snapshot_valid_ = false;
+    history_command_consumed_ = false;
+}
+
+FLASHMEM void SequencerPatternQuickControlsHandler::beginHistoryOnlyHold() {
+    auto& quick = sequencer_.patternQuickControls;
+    if (quick.selecting.get()) return;
+    quick.physicalHoldActive.set(true);
+    history_command_consumed_ = false;
+}
+
+FLASHMEM void SequencerPatternQuickControlsHandler::endHistoryOnlyHold() {
+    auto& quick = sequencer_.patternQuickControls;
+    if (quick.selecting.get()) return;
+    quick.physicalHoldActive.set(false);
     history_command_consumed_ = false;
 }
 

@@ -1,0 +1,45 @@
+# UX workflow: verify chord strum preview uses step-relative timing.
+# Purpose: Strum 0 should show simultaneous voices; increasing Strum should
+# spread voice markers across the step proportionally to the edited value.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Move to Step focus, enable step 1, and open the Step Editor.
+150 tap NAV 60
+350 capture screen pattern_focus
+450 tap NAV 60
+650 capture screen step_focus
+750 tap MACRO_1 60
+950 capture screen step_1_enabled
+1050 button MACRO_1 down
+2100 tick
+2150 capture screen step_editor_open
+2200 button MACRO_1 up
+
+# Focus Chord, create a local chord, and open Chord detail.
+2300 encoder NAV 1
+2380 encoder NAV 1
+2460 encoder NAV 1
+2540 encoder NAV 1
+2620 encoder NAV 1
+2700 encoder NAV 1
+2850 encoder OPT 1.0
+3050 tap NAV 60
+
+# Move to Strum field: Mode -> Voices -> Color -> Shape -> Spread -> Strum.
+3150 encoder NAV 1
+3230 encoder NAV 1
+3310 encoder NAV 1
+3390 encoder NAV 1
+3470 encoder NAV 1
+3650 capture screen strum_zero
+3750 encoder OPT 1.0
+3950 capture screen strum_adjusted
+
+# Move to Velocity curve and verify it has distinct top-title feedback while
+# the chord map remains readable.
+4050 encoder NAV 1
+4250 capture screen velocity_curve_zero
+4350 encoder OPT 1.0
+4550 capture screen velocity_curve_adjusted
