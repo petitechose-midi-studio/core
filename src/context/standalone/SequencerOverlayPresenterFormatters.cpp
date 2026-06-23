@@ -638,25 +638,7 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
             Visual::ACTIVE,
             Tone::WARNING
         );
-        if (sequencer.stepEdit.chordEditor.active.get()) {
-            auto chordUi = core::state::sequencer::resolveStepChordUiState(sequencer, step);
-            core::state::sequencer::resolveStepChordPreview(
-                chordUi,
-                projection,
-                effectiveScaleSettings
-            );
-            formatChordPreviewNotes(
-                props.slots[1].labelText.data(),
-                props.slots[1].labelText.size(),
-                chordUi.preview
-            );
-            props.slots[1].visualState =
-                props.slots[1].labelText[0] != '\0' ? Visual::DIM : Visual::HIDDEN;
-            props.slots[1].tone = Tone::NEUTRAL;
-            props.slots[1].showLabel = props.slots[1].labelText[0] != '\0';
-        } else {
-            props.slots[1].visualState = Visual::HIDDEN;
-        }
+        props.slots[1].visualState = Visual::HIDDEN;
         props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }

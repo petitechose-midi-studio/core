@@ -26,8 +26,14 @@ constexpr lv_coord_t ACTION_TEXT_GAP = 1;
 constexpr lv_coord_t TRIGGER_PAD_V = theme::layout::PAD_MD;
 constexpr lv_coord_t STEP_BADGE_PAD_V = theme::layout::PAD_SM / 2;
 constexpr lv_coord_t CHIP_RADIUS = 3;
-constexpr lv_coord_t CHORD_MAP_WIDTH = 184;
-constexpr lv_coord_t CHORD_MAP_HEIGHT = 34;
+constexpr lv_coord_t CHORD_MAP_WIDTH = 196;
+constexpr lv_coord_t CHORD_MAP_HEIGHT = 44;
+constexpr lv_coord_t CHORD_MAP_RAIL_X = 5;
+constexpr lv_coord_t CHORD_MAP_RAIL_Y = 37;
+constexpr lv_coord_t CHORD_MAP_RAIL_WIDTH = CHORD_MAP_WIDTH - (CHORD_MAP_RAIL_X * 2);
+constexpr lv_coord_t CHORD_MAP_RAIL_HEIGHT = 2;
+constexpr lv_coord_t CHORD_MAP_NOTE_TOP = 3;
+constexpr lv_coord_t CHORD_MAP_NOTE_HEIGHT = 30;
 
 constexpr uint32_t BG_COLOR = theme::color::BACKGROUND;
 constexpr uint32_t TEXT_PRIMARY = theme::color::TEXT_PRIMARY;
@@ -125,6 +131,12 @@ lv_coord_t markerCoord(uint8_t normalized, lv_coord_t span, lv_coord_t size) {
     if (span <= size) return 0;
     return static_cast<lv_coord_t>(
         (static_cast<int32_t>(normalized) * static_cast<int32_t>(span - size)) / 100
+    );
+}
+
+lv_coord_t railCoord(uint8_t normalized) {
+    return static_cast<lv_coord_t>(
+        (static_cast<int32_t>(normalized) * static_cast<int32_t>(CHORD_MAP_RAIL_WIDTH)) / 100
     );
 }
 
@@ -319,10 +331,29 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_style_border_opa(chord_preview_map_, LV_OPA_20, 0);
     lv_obj_set_style_radius(chord_preview_map_, 4, 0);
     lv_obj_clear_flag(chord_preview_map_, LV_OBJ_FLAG_SCROLLABLE);
+
+    chord_preview_timing_rail_ = lv_obj_create(chord_preview_map_);
+    lv_obj_remove_style_all(chord_preview_timing_rail_);
+    lv_obj_set_pos(chord_preview_timing_rail_, CHORD_MAP_RAIL_X, CHORD_MAP_RAIL_Y);
+    lv_obj_set_size(chord_preview_timing_rail_, CHORD_MAP_RAIL_WIDTH, CHORD_MAP_RAIL_HEIGHT);
+    lv_obj_set_style_radius(chord_preview_timing_rail_, CHORD_MAP_RAIL_HEIGHT, 0);
+    lv_obj_set_style_bg_color(chord_preview_timing_rail_, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_bg_opa(chord_preview_timing_rail_, LV_OPA_30, 0);
+    lv_obj_add_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_SCROLLABLE);
+
+    chord_preview_timing_span_ = lv_obj_create(chord_preview_map_);
+    lv_obj_remove_style_all(chord_preview_timing_span_);
+    lv_obj_set_size(chord_preview_timing_span_, 2, CHORD_MAP_RAIL_HEIGHT);
+    lv_obj_set_style_radius(chord_preview_timing_span_, CHORD_MAP_RAIL_HEIGHT, 0);
+    lv_obj_set_style_bg_opa(chord_preview_timing_span_, LV_OPA_80, 0);
+    lv_obj_add_flag(chord_preview_timing_span_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(chord_preview_timing_span_, LV_OBJ_FLAG_SCROLLABLE);
+
     for (auto*& dot : chord_preview_voice_dots_) {
         dot = lv_obj_create(chord_preview_map_);
         lv_obj_remove_style_all(dot);
-        lv_obj_set_size(dot, 4, 4);
+        lv_obj_set_size(dot, 5, 5);
         lv_obj_set_style_radius(dot, 3, 0);
         lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
         lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN);
@@ -618,10 +649,20 @@ FLASHMEM void SequencerStepEditOverlay::resetRenderCaches() {
     }
     chord_preview_visible_cache_ = false;
     chord_preview_map_visible_cache_ = false;
+    chord_preview_timing_visible_cache_ = false;
     chord_preview_detail_visible_cache_ = false;
     chord_preview_color_cache_ = 0;
+    chord_preview_timing_x_cache_ = -1;
+    chord_preview_timing_width_cache_ = -1;
+    chord_preview_timing_color_cache_ = UINT32_MAX;
     if (chord_preview_map_) {
         lv_obj_add_flag(chord_preview_map_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (chord_preview_timing_rail_) {
+        lv_obj_add_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (chord_preview_timing_span_) {
+        lv_obj_add_flag(chord_preview_timing_span_, LV_OBJ_FLAG_HIDDEN);
     }
     for (auto* dot : chord_preview_voice_dots_) {
         if (dot) {
@@ -798,6 +839,60 @@ FLASHMEM void SequencerStepEditOverlay::render(
                     layoutDirty = true;
                 }
             }
+            const bool timingVisible =
+                props.chordPreview.mapVisible && props.chordPreview.timingVisible;
+            if (chord_preview_timing_visible_cache_ != timingVisible) {
+                if (chord_preview_timing_rail_) {
+                    if (timingVisible) {
+                        lv_obj_clear_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_HIDDEN);
+                    } else {
+                        lv_obj_add_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_HIDDEN);
+                    }
+                }
+                if (chord_preview_timing_span_) {
+                    if (timingVisible) {
+                        lv_obj_clear_flag(chord_preview_timing_span_, LV_OBJ_FLAG_HIDDEN);
+                    } else {
+                        lv_obj_add_flag(chord_preview_timing_span_, LV_OBJ_FLAG_HIDDEN);
+                    }
+                }
+                chord_preview_timing_visible_cache_ = timingVisible;
+            }
+            if (timingVisible && chord_preview_timing_span_) {
+                const uint8_t timingStart =
+                    std::min(props.chordPreview.timingStart, props.chordPreview.timingEnd);
+                const uint8_t timingEnd =
+                    std::max(props.chordPreview.timingStart, props.chordPreview.timingEnd);
+                const lv_coord_t startX = static_cast<lv_coord_t>(
+                    CHORD_MAP_RAIL_X + railCoord(timingStart)
+                );
+                const lv_coord_t endX = static_cast<lv_coord_t>(
+                    CHORD_MAP_RAIL_X + railCoord(timingEnd)
+                );
+                const lv_coord_t spanWidth = std::max<lv_coord_t>(2, endX - startX);
+                const uint32_t timingColor = props.chordPreview.timingColor == 0
+                    ? previewColor
+                    : props.chordPreview.timingColor;
+                if (chord_preview_timing_x_cache_ != startX ||
+                    chord_preview_timing_width_cache_ != spanWidth) {
+                    lv_obj_set_pos(chord_preview_timing_span_, startX, CHORD_MAP_RAIL_Y);
+                    lv_obj_set_size(
+                        chord_preview_timing_span_,
+                        spanWidth,
+                        CHORD_MAP_RAIL_HEIGHT
+                    );
+                    chord_preview_timing_x_cache_ = startX;
+                    chord_preview_timing_width_cache_ = spanWidth;
+                }
+                if (chord_preview_timing_color_cache_ != timingColor) {
+                    lv_obj_set_style_bg_color(
+                        chord_preview_timing_span_,
+                        lv_color_hex(timingColor),
+                        0
+                    );
+                    chord_preview_timing_color_cache_ = timingColor;
+                }
+            }
             for (size_t i = 0; i < chord_preview_voice_dots_.size(); ++i) {
                 auto* dot = chord_preview_voice_dots_[i];
                 if (!dot) continue;
@@ -810,18 +905,30 @@ FLASHMEM void SequencerStepEditOverlay::render(
                     }
                     continue;
                 }
-                const lv_coord_t size = std::max<lv_coord_t>(3, voice.size);
-                const lv_coord_t x = markerCoord(voice.x, CHORD_MAP_WIDTH, size);
-                const lv_coord_t y = markerCoord(voice.y, CHORD_MAP_HEIGHT, size);
+                const lv_coord_t width =
+                    std::max<lv_coord_t>(3, voice.width == 0 ? voice.size : voice.width);
+                const lv_coord_t height =
+                    std::max<lv_coord_t>(3, voice.height == 0 ? voice.size : voice.height);
+                const lv_coord_t x = static_cast<lv_coord_t>(
+                    CHORD_MAP_RAIL_X + markerCoord(voice.x, CHORD_MAP_RAIL_WIDTH, width)
+                );
+                const lv_coord_t y = static_cast<lv_coord_t>(
+                    CHORD_MAP_NOTE_TOP + markerCoord(voice.y, CHORD_MAP_NOTE_HEIGHT, height)
+                );
                 const uint32_t markerColor = voice.color == 0 ? previewColor : voice.color;
                 if (!cache.active) {
                     lv_obj_clear_flag(dot, LV_OBJ_FLAG_HIDDEN);
                     cache.active = true;
                 }
-                if (cache.size != size) {
-                    lv_obj_set_size(dot, size, size);
-                    lv_obj_set_style_radius(dot, static_cast<lv_coord_t>(size / 2 + 1), 0);
-                    cache.size = size;
+                if (cache.width != width || cache.height != height) {
+                    lv_obj_set_size(dot, width, height);
+                    lv_obj_set_style_radius(
+                        dot,
+                        static_cast<lv_coord_t>(std::max(width, height) / 2 + 1),
+                        0
+                    );
+                    cache.width = width;
+                    cache.height = height;
                 }
                 if (cache.x != x || cache.y != y) {
                     lv_obj_set_pos(dot, x, y);

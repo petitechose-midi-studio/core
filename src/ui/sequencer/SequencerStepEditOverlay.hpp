@@ -32,6 +32,8 @@ struct SequencerChordPreviewVoiceMarker {
     uint8_t x = 0;
     uint8_t y = 0;
     uint8_t size = 0;
+    uint8_t width = 0;
+    uint8_t height = 0;
     uint8_t opa = 0;
     uint32_t color = 0;
 };
@@ -44,6 +46,10 @@ struct SequencerChordPreviewProps {
     const char* detail = "";
     uint32_t color = 0;
     bool mapVisible = false;
+    bool timingVisible = false;
+    uint8_t timingStart = 0;
+    uint8_t timingEnd = 0;
+    uint32_t timingColor = 0;
     std::array<SequencerChordPreviewVoiceMarker, MAX_VOICES> voices{};
 };
 
@@ -158,6 +164,8 @@ private:
     lv_obj_t* chord_preview_ = nullptr;
     lv_obj_t* chord_preview_name_ = nullptr;
     lv_obj_t* chord_preview_map_ = nullptr;
+    lv_obj_t* chord_preview_timing_rail_ = nullptr;
+    lv_obj_t* chord_preview_timing_span_ = nullptr;
     lv_obj_t* chord_preview_detail_ = nullptr;
     lv_obj_t* trigger_row_ = nullptr;
     lv_obj_t* property_row_ = nullptr;
@@ -190,7 +198,8 @@ private:
         bool active = false;
         lv_coord_t x = -1;
         lv_coord_t y = -1;
-        lv_coord_t size = -1;
+        lv_coord_t width = -1;
+        lv_coord_t height = -1;
         uint32_t color = UINT32_MAX;
         int16_t opa = -1;
     };
@@ -214,8 +223,12 @@ private:
     LabelRenderCache chord_preview_detail_cache_{};
     bool chord_preview_visible_cache_ = false;
     bool chord_preview_map_visible_cache_ = false;
+    bool chord_preview_timing_visible_cache_ = false;
     bool chord_preview_detail_visible_cache_ = false;
     uint32_t chord_preview_color_cache_ = 0;
+    lv_coord_t chord_preview_timing_x_cache_ = -1;
+    lv_coord_t chord_preview_timing_width_cache_ = -1;
+    uint32_t chord_preview_timing_color_cache_ = UINT32_MAX;
     std::array<lv_obj_t*, SequencerChordPreviewProps::MAX_VOICES> chord_preview_voice_dots_{};
     std::array<ChordVoiceMarkerRenderCache, SequencerChordPreviewProps::MAX_VOICES>
         chord_preview_voice_cache_{};

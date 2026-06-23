@@ -11,6 +11,7 @@
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone::sequencer_overlay_presenter {
 namespace {
@@ -162,33 +163,19 @@ FLASHMEM void formatChordPreviewName(
     oc::type::text::terminate(out, outSize, pos);
 }
 
-FLASHMEM void formatChordPreviewIntervals(
-    char* out,
-    size_t outSize,
-    const core::state::sequencer::SequencerChordPreview& preview
-) {
-    if (!out || outSize == 0) return;
-    if (!preview.valid) {
-        copyText(out, outSize, "");
-        return;
-    }
-
-    size_t pos = 0;
-    for (uint8_t i = 0; i < preview.analysis.intervalCount; ++i) {
-        const uint8_t interval = preview.analysis.chromaticIntervals[i];
-        if (i > 0) pos = appendText(out, outSize, pos, " ");
-        if (interval == 0) {
-            pos = appendText(out, outSize, pos, "0");
-        } else {
-            pos = appendText(out, outSize, pos, "+");
-            pos = appendUnsignedText(out, outSize, pos, interval);
-        }
-    }
-    oc::type::text::terminate(out, outSize, pos);
-}
-
 FLASHMEM uint8_t clampPercent(int value) {
     return static_cast<uint8_t>(std::clamp(value, 0, 100));
+}
+
+FLASHMEM uint32_t mixColor(uint32_t from, uint32_t to, uint8_t amount) {
+    const uint32_t inv = static_cast<uint32_t>(255U - amount);
+    const uint32_t r =
+        (((from >> 16U) & 0xffU) * inv + ((to >> 16U) & 0xffU) * amount) / 255U;
+    const uint32_t g =
+        (((from >> 8U) & 0xffU) * inv + ((to >> 8U) & 0xffU) * amount) / 255U;
+    const uint32_t b =
+        ((from & 0xffU) * inv + (to & 0xffU) * amount) / 255U;
+    return (r << 16U) | (g << 8U) | b;
 }
 
 FLASHMEM void populateChordPreviewMarkers(
@@ -201,39 +188,57 @@ FLASHMEM void populateChordPreviewMarkers(
     uint8_t maxNote = 0;
     uint8_t minVelocity = 127;
     uint8_t maxVelocity = 0;
+    uint16_t minDelay = UINT16_MAX;
+    uint16_t maxDelay = 0;
     for (uint8_t i = 0; i < preview.voiceCount; ++i) {
         const auto& voice = preview.voices[i];
         minNote = std::min(minNote, voice.note);
         maxNote = std::max(maxNote, voice.note);
         minVelocity = std::min(minVelocity, voice.velocity);
         maxVelocity = std::max(maxVelocity, voice.velocity);
+        minDelay = std::min(minDelay, voice.delayTicks);
+        maxDelay = std::max(maxDelay, voice.delayTicks);
     }
 
     const int noteRange = std::max<int>(1, static_cast<int>(maxNote) - static_cast<int>(minNote));
     const int velocityRange =
         std::max<int>(1, static_cast<int>(maxVelocity) - static_cast<int>(minVelocity));
     const int spanTicks = std::max<int>(1, static_cast<int>(preview.spanTicks));
+    const uint32_t velocityLow = ::standalone::theme::color::TEXT_SECONDARY;
+    const uint32_t velocityHigh = core::ui::sequencer::semantic::color(
+        core::ui::sequencer::semantic::Tone::CHORD_VELOCITY
+    );
     props.mapVisible = true;
+    props.timingVisible = preview.voiceCount > 1;
+    props.timingStart = clampPercent((static_cast<int>(minDelay) * 100) / spanTicks);
+    props.timingEnd = clampPercent((static_cast<int>(maxDelay) * 100) / spanTicks);
+    props.timingColor = core::ui::sequencer::semantic::color(
+        core::ui::sequencer::semantic::Tone::CHORD_STRUM
+    );
 
     for (uint8_t i = 0; i < preview.voiceCount && i < props.voices.size(); ++i) {
         const auto& voice = preview.voices[i];
         const int x = (static_cast<int>(voice.delayTicks) * 100) / spanTicks;
         const int y =
             100 - ((static_cast<int>(voice.note) - static_cast<int>(minNote)) * 100) / noteRange;
-        const int velocityOpa = minVelocity == maxVelocity
-            ? 220
-            : 70 + ((static_cast<int>(voice.velocity) - static_cast<int>(minVelocity)) * 185) /
-                       velocityRange;
+        const uint8_t velocityMix = minVelocity == maxVelocity
+            ? 200
+            : static_cast<uint8_t>(
+                  90 +
+                  ((static_cast<int>(voice.velocity) - static_cast<int>(minVelocity)) * 165) /
+                      velocityRange
+              );
+        const uint8_t markerSize = i == 0 ? 6 : 5;
 
         props.voices[i] = core::ui::SequencerChordPreviewVoiceMarker{
             .active = true,
             .x = clampPercent(x),
             .y = clampPercent(y),
-            .size = 4,
-            .opa = static_cast<uint8_t>(std::clamp(velocityOpa, 70, 255)),
-            .color = core::ui::sequencer::semantic::color(
-                core::ui::sequencer::semantic::Tone::CHORD_VELOCITY
-            ),
+            .size = markerSize,
+            .width = markerSize,
+            .height = markerSize,
+            .opa = 245,
+            .color = mixColor(velocityLow, velocityHigh, velocityMix),
         };
     }
 }
@@ -550,7 +555,7 @@ FLASHMEM void populateChordDetailOverlay(
 
     if (chord.preview.valid) {
         formatChordPreviewName(data.chordName.data(), data.chordName.size(), chord.preview);
-        formatChordPreviewIntervals(data.chordDetail.data(), data.chordDetail.size(), chord.preview);
+        formatChordPreviewNotes(data.chordDetail.data(), data.chordDetail.size(), chord.preview);
     } else {
         copyText(data.chordName.data(), data.chordName.size(), chordModeLabel(chord.mode));
         copyText(data.chordDetail.data(), data.chordDetail.size(), "");
