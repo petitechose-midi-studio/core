@@ -5,6 +5,8 @@
  * @brief Input bindings for the sequencer STEP EDIT overlay
  */
 
+#include <cstdint>
+
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -19,6 +21,10 @@
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
+
+namespace core::state::sequencer {
+enum class StepContentChildKind : uint8_t;
+}
 
 namespace core::handler {
 
@@ -61,6 +67,18 @@ private:
     void activateFocusedRowOrClose();
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
+    void openChordEditor();
+    void closeChordEditor();
+    void moveChordEditorFocus(float delta);
+    void setFocusedChordFieldValue(float normalized);
+    void configureOptForFocusedChordField();
+    void resetFocusedChordFieldToDefault();
+    bool chordEditorActive() const;
+    bool editedStepInRange(uint8_t& step) const;
+    void activateFocusedContextRow(
+        core::state::sequencer::StepContentChildKind childKind,
+        uint8_t defaultLength
+    );
     void maybeCloseFromMacro(uint8_t indexInPage);
     bool focusedRowIsValueRow() const;
     bool focusedRowIsContextRow() const;

@@ -19,6 +19,7 @@
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/sequencer/SequencerChordUiOps.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerStepEditRows.hpp"
@@ -44,6 +45,7 @@ constexpr uint8_t VELOCITY_ROW = step_edit_rows::PROPERTY_OFFSET + 1U;
 constexpr uint8_t GATE_ROW = step_edit_rows::PROPERTY_OFFSET + 2U;
 constexpr uint8_t NUDGE_ROW = step_edit_rows::PROPERTY_OFFSET + 3U;
 constexpr uint8_t CHANCE_ROW = step_edit_rows::PROPERTY_OFFSET + 4U;
+constexpr uint8_t CHORD_ROW = step_edit_rows::CHORD;
 constexpr uint8_t MICRO_SEQUENCE_ROW = step_edit_rows::MICRO_SEQUENCE;
 constexpr uint8_t CYCLE_STATES_ROW = step_edit_rows::CYCLE_STATES;
 
@@ -176,9 +178,17 @@ void openStepEdit(SequencerStepEditHarness& h, uint8_t indexInPage) {
 }
 
 void focusStepEditRow(SequencerStepEditHarness& h, uint8_t row) {
-    while (h.state.sequencer.stepEdit.focusedRow.get() != row) {
+    for (uint8_t guard = 0;
+         h.state.sequencer.stepEdit.focusedRow.get() != row && guard < step_edit_rows::COUNT * 2U;
+         ++guard) {
         h.turn(Config::EncoderID::NAV, 1.0f);
     }
+    if (h.state.sequencer.stepEdit.focusedRow.get() != row) {
+        std::cerr << "Unable to focus row " << static_cast<int>(row)
+                  << ", current=" << static_cast<int>(h.state.sequencer.stepEdit.focusedRow.get())
+                  << "\n";
+    }
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == row);
 }
 
 float normalizedForScaleNote(
@@ -377,6 +387,15 @@ void test_context_rows_are_focusable_and_root_action_rows_do_not_edit_properties
     assert(h.state.sequencer.stepEdit.focusedRow.get() == GATE_ROW);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.stepEdit.focusedRow.get() == NUDGE_ROW);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == CHORD_ROW);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.note[3] == 60);
+    assert(h.state.sequencer.pattern.velocity[3] == 64);
+    assert(h.state.sequencer.pattern.gate[3] == 70);
+    assert(h.state.sequencer.pattern.nudge[3] == 0);
+    assert(h.state.sequencer.pattern.probability[3] == 80);
+
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.stepEdit.focusedRow.get() == MICRO_SEQUENCE_ROW);
 
@@ -961,6 +980,312 @@ void test_step_edit_musical_row_bottom_left_resets_row_to_default() {
     std::cout << "[PASS] test_step_edit_musical_row_bottom_left_resets_row_to_default\n";
 }
 
+void test_step_edit_chord_row_edits_root_chord_live_and_undoes_as_session() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+
+    openStepEdit(h, 2);
+    h.release(Config::MACRO_BUTTONS[2]);
+    focusStepEditRow(h, CHORD_ROW);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(node->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
+    assert(node->chordSpec.voiceCount == oc::note::sequencer::StepSequencerChordSpec::MAX_VOICES);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    node = graph ? graph->stepNode(core::state::sequencer::rootStepNodeId(2)) : nullptr;
+    assert(node == nullptr || !node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
+
+    std::cout << "[PASS] test_step_edit_chord_row_edits_root_chord_live_and_undoes_as_session\n";
+}
+
+void test_step_edit_chord_detail_edits_all_chord_fields() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+
+    openStepEdit(h, 1);
+    h.release(Config::MACRO_BUTTONS[1]);
+    focusStepEditRow(h, CHORD_ROW);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencer.stepEdit.chordEditor.active.get());
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::MODE
+    );
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(1));
+    assert(node != nullptr);
+    assert(node->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::VOICES
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::COLOR
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::VARIANT
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::SPREAD
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::STRUM
+    );
+    h.turn(Config::EncoderID::OPT, 0.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::VELOCITY_CURVE
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    node = graph ? graph->stepNode(core::state::sequencer::rootStepNodeId(1)) : nullptr;
+    assert(node != nullptr);
+    assert(node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL));
+    assert(node->chordSpec.voiceCount == oc::note::sequencer::StepSequencerChordSpec::MAX_VOICES);
+    assert(node->chordSpec.color == oc::note::sequencer::StepSequencerChordSpec::MAX_COLOR);
+    assert(node->chordSpec.variant == oc::note::sequencer::StepSequencerChordSpec::MAX_VARIANT);
+    assert(node->chordSpec.spread == oc::note::sequencer::StepSequencerChordSpec::MAX_SPREAD);
+    assert(node->chordSpec.strum == oc::note::sequencer::StepSequencerChordSpec::MIN_STRUM);
+    assert(
+        node->chordSpec.velocityCurve ==
+        oc::note::sequencer::StepSequencerChordSpec::MAX_VELOCITY_CURVE
+    );
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    node = graph ? graph->stepNode(core::state::sequencer::rootStepNodeId(1)) : nullptr;
+    assert(node != nullptr);
+    assert(node->chordSpec.velocityCurve == 0);
+    assert(node->chordSpec.strum == oc::note::sequencer::StepSequencerChordSpec::MIN_STRUM);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(!h.state.sequencer.stepEdit.chordEditor.active.get());
+    assert(h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == CHORD_ROW);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    holdPatternQuickControls(h);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    node = graph ? graph->stepNode(core::state::sequencer::rootStepNodeId(1)) : nullptr;
+    assert(node == nullptr || !node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
+
+    std::cout << "[PASS] test_step_edit_chord_detail_edits_all_chord_fields\n";
+}
+
+void test_child_chord_preview_resolves_inherited_parent_chord() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+    oc::note::sequencer::StepSequencerChordSpec parentChord{};
+    parentChord.voiceCount = 4;
+    assert(core::state::sequencer::setNodeChordSpec(
+        h.state.sequencer.pattern,
+        rootNode,
+        parentChord
+    ));
+
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        rootNode,
+        2
+    );
+    assert(micro.ok);
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        h.state.sequencer,
+        rootNode,
+        micro.id
+    ));
+
+    const oc::note::sequencer::StepSequencerScaleSettings scaleSettings{};
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        h.state.sequencer,
+        0,
+        scaleSettings
+    );
+    assert(projection.valid);
+    assert(projection.inheritedChord.valid);
+    assert(projection.inheritedChord.spec.voiceCount == 4);
+
+    auto chord = core::state::sequencer::resolveStepChordUiState(h.state.sequencer, 0);
+    assert(chord.valid);
+    assert(chord.mode == oc::note::sequencer::StepSequencerChordMode::Inherit);
+
+    core::state::sequencer::resolveStepChordPreview(chord, projection, scaleSettings);
+    assert(chord.preview.valid);
+    assert(chord.preview.source == oc::note::sequencer::StepSequencerChordSource::Inherited);
+    assert(chord.preview.voiceCount == 4);
+    assert(chord.effectiveVoiceCount == 4);
+    assert(chord.spec.voiceCount == 4);
+
+    std::cout << "[PASS] test_child_chord_preview_resolves_inherited_parent_chord\n";
+}
+
+void test_step_edit_child_chord_detail_localizes_from_inherited_spec() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+    oc::note::sequencer::StepSequencerChordSpec parentChord{};
+    parentChord.voiceCount = 4;
+    parentChord.color = 2;
+    parentChord.variant = 3;
+    parentChord.spread = 4;
+    parentChord.strum = 25;
+    parentChord.velocityCurve = -12;
+    assert(core::state::sequencer::setNodeChordSpec(
+        h.state.sequencer.pattern,
+        rootNode,
+        parentChord
+    ));
+
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        rootNode,
+        2
+    );
+    assert(micro.ok);
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        h.state.sequencer,
+        rootNode,
+        micro.id
+    ));
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    focusStepEditRow(h, CHORD_ROW);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencer.stepEdit.chordEditor.active.get());
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::COLOR
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto* child = graph->stepNode(sequence->firstStepNode);
+    assert(child != nullptr);
+    assert(child->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
+    assert(child->chordSpec.voiceCount == parentChord.voiceCount);
+    assert(child->chordSpec.color == oc::note::sequencer::StepSequencerChordSpec::MAX_COLOR);
+    assert(child->chordSpec.variant == parentChord.variant);
+    assert(child->chordSpec.spread == parentChord.spread);
+    assert(child->chordSpec.strum == parentChord.strum);
+    assert(child->chordSpec.velocityCurve == parentChord.velocityCurve);
+
+    std::cout << "[PASS] test_step_edit_child_chord_detail_localizes_from_inherited_spec\n";
+}
+
+void test_step_edit_child_chord_row_resets_to_inherit_default() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        rootNode,
+        2
+    );
+    assert(micro.ok);
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        h.state.sequencer,
+        rootNode,
+        micro.id
+    ));
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    focusStepEditRow(h, CHORD_ROW);
+
+    auto chord = core::state::sequencer::resolveStepChordUiState(h.state.sequencer, 0);
+    assert(chord.valid);
+    assert(chord.mode == oc::note::sequencer::StepSequencerChordMode::Inherit);
+
+    h.turn(
+        Config::EncoderID::OPT,
+        input_utils::indexToNormalized(
+            1,
+            oc::note::sequencer::StepSequencerChordSpec::MAX_VOICES + 1
+        )
+    );
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto* child = graph->stepNode(sequence->firstStepNode);
+    assert(child != nullptr);
+    assert(child->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
+    assert(child->chordMode == oc::note::sequencer::StepSequencerChordMode::Single);
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    sequence = graph->sequence(micro.id);
+    child = graph->stepNode(sequence->firstStepNode);
+    assert(child != nullptr);
+    assert(!child->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
+
+    chord = core::state::sequencer::resolveStepChordUiState(h.state.sequencer, 0);
+    assert(chord.valid);
+    assert(chord.mode == oc::note::sequencer::StepSequencerChordMode::Inherit);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    std::cout << "[PASS] test_step_edit_child_chord_row_resets_to_inherit_default\n";
+}
+
 void test_step_edit_context_clipboard_requires_matching_child_kind() {
     SequencerStepEditHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -1187,6 +1512,11 @@ int main() {
     test_graph_compaction_remaps_or_closes_active_child_content_view();
     test_step_edit_context_rows_copy_and_paste_step_content();
     test_step_edit_musical_row_bottom_left_resets_row_to_default();
+    test_step_edit_chord_row_edits_root_chord_live_and_undoes_as_session();
+    test_step_edit_chord_detail_edits_all_chord_fields();
+    test_child_chord_preview_resolves_inherited_parent_chord();
+    test_step_edit_child_chord_detail_localizes_from_inherited_spec();
+    test_step_edit_child_chord_row_resets_to_inherit_default();
     test_step_edit_context_clipboard_requires_matching_child_kind();
     test_step_edit_session_undo_redo_workflow();
     test_left_top_close_keeps_live_edit_and_records_history();

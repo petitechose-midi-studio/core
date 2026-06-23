@@ -1,6 +1,5 @@
 #include "SequencerStepEditHandler.hpp"
 
-#include <algorithm>
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include <oc/time/Time.hpp>
@@ -8,13 +7,16 @@
 #include <utility>
 
 #include "handler/common/NavigationUtils.hpp"
+#include "SequencerChordEditOps.hpp"
 #include "SequencerInputUtils.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
+#include "state/sequencer/SequencerChordUiOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::handler {
+namespace chord_edit_ops = core::handler::sequencer::chord_edit_ops;
 namespace input_utils = core::handler::sequencer::input_utils;
 namespace interaction_policy = core::handler::sequencer::interaction_policy;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
@@ -27,6 +29,10 @@ FLASHMEM bool isActivatedRow(uint8_t row) {
 
 FLASHMEM bool isPropertyRow(uint8_t row) {
     return step_edit_rows::isProperty(row);
+}
+
+FLASHMEM bool isChordRow(uint8_t row) {
+    return step_edit_rows::isChord(row);
 }
 
 FLASHMEM bool propertySupportsLocalVariation(core::state::sequencer::StepProperty property) {
@@ -329,6 +335,11 @@ FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
 FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
+    if (chordEditorActive()) {
+        moveChordEditorFocus(delta);
+        return;
+    }
+
     const int current = step_edit_rows::navigationIndexForRow(
         sequencer_.stepEdit.focusedRow.get()
     );
@@ -348,15 +359,24 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
     auto& edit = sequencer_.stepEdit;
     const uint8_t focusedRow = edit.focusedRow.get();
 
+    if (chordEditorActive()) {
+        closeChordEditor();
+        return;
+    }
+
     if (isPropertyRow(focusedRow)) {
         closeStepEdit();
         return;
     }
 
+    if (isChordRow(focusedRow)) {
+        openChordEditor();
+        return;
+    }
+
     if (isActivatedRow(focusedRow)) {
-        const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
-        const uint8_t abs = edit.stepIndex.get();
-        if (len == 0 || abs >= len) return;
+        uint8_t abs = 0;
+        if (!editedStepInRange(abs)) return;
         if (core::state::sequencer::toggleActiveContentStep(sequencer_, abs)) {
             configureOptForFocusedRow();
         }
@@ -364,100 +384,102 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
     }
 
     if (focusedRow == step_edit_rows::MICRO_SEQUENCE) {
-        const auto availability = core::state::sequencer::activeContentChildCreationAvailability(
-            sequencer_,
-            edit.stepIndex.get(),
+        activateFocusedContextRow(
             core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
             core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
         );
-        if (!availability.canCreateOrOpen) return;
-        const auto ownerNodeId =
-            core::state::sequencer::activeContentStepNodeId(sequencer_, edit.stepIndex.get());
-        const auto result = core::state::sequencer::createMicroSequence(
-            sequencer_.pattern,
-            ownerNodeId,
-            core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
-        );
-        if (result.ok) {
-            if (history_snapshot_valid_) {
-                core::state::sequencer::SequencerHistoryPatternSnapshot after;
-                if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-                    history_.recordPattern(
-                        std::move(history_snapshot_),
-                        std::move(after),
-                        core::state::sequencer::SequencerHistoryDescriptor{
-                            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-                            .stepIndex = edit.stepIndex.get(),
-                            .property = core::state::sequencer::StepProperty::NOTE,
-                        }
-                    );
-                }
-                history_snapshot_valid_ = false;
-            }
-            core::state::sequencer::enterMicroSequenceContentView(
-                sequencer_,
-                ownerNodeId,
-                result.id
-            );
-            overlays_.hide();
-            edit.reset();
-        }
         return;
     }
 
     if (focusedRow == step_edit_rows::CYCLE_STATES) {
-        const auto availability = core::state::sequencer::activeContentChildCreationAvailability(
-            sequencer_,
-            edit.stepIndex.get(),
+        activateFocusedContextRow(
             core::state::sequencer::StepContentChildKind::CYCLE_STATES,
             core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
         );
-        if (!availability.canCreateOrOpen) return;
-        const auto ownerNodeId =
-            core::state::sequencer::activeContentStepNodeId(sequencer_, edit.stepIndex.get());
-        const auto result = core::state::sequencer::createCycleStateSet(
-            sequencer_.pattern,
-            ownerNodeId,
-            core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
-        );
-        if (result.ok) {
-            if (history_snapshot_valid_) {
-                core::state::sequencer::SequencerHistoryPatternSnapshot after;
-                if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-                    history_.recordPattern(
-                        std::move(history_snapshot_),
-                        std::move(after),
-                        core::state::sequencer::SequencerHistoryDescriptor{
-                            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-                            .stepIndex = edit.stepIndex.get(),
-                            .property = core::state::sequencer::StepProperty::NOTE,
-                        }
-                    );
-                }
-                history_snapshot_valid_ = false;
-            }
-            core::state::sequencer::enterCycleStatesContentView(
-                sequencer_,
-                ownerNodeId,
-                result.id
-            );
-            overlays_.hide();
-            edit.reset();
-        }
         return;
     }
 }
 
+FLASHMEM void SequencerStepEditHandler::activateFocusedContextRow(
+    core::state::sequencer::StepContentChildKind childKind,
+    uint8_t defaultLength
+) {
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
+    const auto availability = core::state::sequencer::activeContentChildCreationAvailability(
+        sequencer_,
+        step,
+        childKind,
+        defaultLength
+    );
+    if (!availability.canCreateOrOpen) return;
+
+    const auto ownerNodeId = core::state::sequencer::activeContentStepNodeId(
+        sequencer_,
+        step
+    );
+    const auto result = childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+        ? core::state::sequencer::createMicroSequence(
+              sequencer_.pattern,
+              ownerNodeId,
+              defaultLength
+          )
+        : core::state::sequencer::createCycleStateSet(
+              sequencer_.pattern,
+              ownerNodeId,
+              defaultLength
+          );
+    if (!result.ok) return;
+
+    if (history_snapshot_valid_) {
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after) &&
+            !core::state::sequencer::sameMusicalHistorySnapshot(history_snapshot_, after)) {
+            history_.recordPattern(
+                std::move(history_snapshot_),
+                std::move(after),
+                core::state::sequencer::SequencerHistoryDescriptor{
+                    .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+                    .stepIndex = step,
+                    .property = core::state::sequencer::StepProperty::NOTE,
+                }
+            );
+        }
+        history_snapshot_valid_ = false;
+    }
+
+    if (childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE) {
+        core::state::sequencer::enterMicroSequenceContentView(
+            sequencer_,
+            ownerNodeId,
+            result.id
+        );
+    } else {
+        core::state::sequencer::enterCycleStatesContentView(
+            sequencer_,
+            ownerNodeId,
+            result.id
+        );
+    }
+
+    overlays_.hide();
+    sequencer_.stepEdit.reset();
+}
+
 FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
     auto& edit = sequencer_.stepEdit;
+
+    if (chordEditorActive()) {
+        setFocusedChordFieldValue(normalized);
+        return;
+    }
+
     const uint8_t focusedRow = edit.focusedRow.get();
 
+    uint8_t abs = 0;
     if (isActivatedRow(focusedRow)) {
-        const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
-        if (len == 0) return;
-
-        const uint8_t abs = edit.stepIndex.get();
-        if (abs >= len) return;
+        if (!editedStepInRange(abs)) return;
 
         core::state::sequencer::setActiveContentStepEnabled(
             sequencer_,
@@ -467,15 +489,21 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
         return;
     }
 
+    if (!editedStepInRange(abs)) return;
+
+    if (isChordRow(focusedRow)) {
+        const auto chord = core::state::sequencer::resolveStepChordUiState(sequencer_, abs);
+        const int choice = input_utils::normalizedToIndex(
+            normalized,
+            chord_edit_ops::quickChoiceCount(chord.rootContext)
+        );
+        chord_edit_ops::applyQuickChoice(sequencer_, abs, choice);
+        return;
+    }
+
     if (!isPropertyRow(focusedRow)) return;
 
     const auto property = propertyForRow(focusedRow);
-
-    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
-    if (len == 0) return;
-
-    const uint8_t abs = edit.stepIndex.get();
-    if (abs >= len) return;
 
     if (edit.localVariationEditActive.get() && propertySupportsLocalVariation(property)) {
         const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, abs);
@@ -503,14 +531,17 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
 
 FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
     auto& edit = sequencer_.stepEdit;
+
+    if (chordEditorActive()) {
+        configureOptForFocusedChordField();
+        return;
+    }
+
     const uint8_t focusedRow = edit.focusedRow.get();
 
+    uint8_t abs = 0;
     if (isActivatedRow(focusedRow)) {
-        const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
-        if (len == 0) return;
-
-        const uint8_t abs = edit.stepIndex.get();
-        if (abs >= len) return;
+        if (!editedStepInRange(abs)) return;
 
         const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
             sequencer_,
@@ -525,15 +556,31 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
         return;
     }
 
+    if (isChordRow(focusedRow)) {
+        if (!editedStepInRange(abs)) return;
+
+        const auto chord = core::state::sequencer::resolveStepChordUiState(sequencer_, abs);
+        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, 8);
+        encoders_.setNormalizedTurns(Config::EncoderID::OPT, 0.25f);
+        encoders_.setDiscreteSteps(
+            Config::EncoderID::OPT,
+            static_cast<uint8_t>(chord_edit_ops::quickChoiceCount(chord.rootContext))
+        );
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            input_utils::indexToNormalized(
+                chord_edit_ops::quickChoiceIndex(chord),
+                chord_edit_ops::quickChoiceCount(chord.rootContext)
+            )
+        );
+        return;
+    }
+
     if (!isPropertyRow(focusedRow)) return;
 
     const auto property = propertyForRow(focusedRow);
 
-    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
-    if (len == 0) return;
-
-    const uint8_t abs = edit.stepIndex.get();
-    if (abs >= len) return;
+    if (!editedStepInRange(abs)) return;
 
     if (edit.localVariationEditActive.get() && propertySupportsLocalVariation(property)) {
         const auto config = input_utils::encoderConfigForVariationRange(property);
@@ -567,6 +614,188 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
     );
 }
 
+FLASHMEM void SequencerStepEditHandler::openChordEditor() {
+    auto& edit = sequencer_.stepEdit;
+    edit.contextHold.clear();
+    edit.localVariationEditActive.set(false);
+    edit.chordEditor.active.set(true);
+    edit.chordEditor.focusedField.set(core::state::sequencer::SequencerChordEditField::MODE);
+    configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::closeChordEditor() {
+    sequencer_.stepEdit.chordEditor.reset();
+    configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::moveChordEditorFocus(float delta) {
+    auto& chordEditor = sequencer_.stepEdit.chordEditor;
+    const int current = static_cast<int>(chordEditor.focusedField.get());
+    const int next = nav::nextWrappedIndex(delta, current, chord_edit_ops::editFieldCount());
+    chordEditor.focusedField.set(
+        static_cast<core::state::sequencer::SequencerChordEditField>(next)
+    );
+    configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::setFocusedChordFieldValue(float normalized) {
+    using Field = core::state::sequencer::SequencerChordEditField;
+
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
+    const auto scaleSettings = effectiveScaleSettings(sequencer_, tracks_);
+    auto chord = core::state::sequencer::resolveStepChordUiState(sequencer_, step);
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer_,
+        step,
+        scaleSettings
+    );
+    if (projection.valid) {
+        core::state::sequencer::resolveStepChordPreview(chord, projection, scaleSettings);
+    }
+
+    const auto field = sequencer_.stepEdit.chordEditor.focusedField.get();
+    if (field == Field::MODE) {
+        const int choice = input_utils::normalizedToIndex(
+            normalized,
+            chord_edit_ops::modeChoiceCount(chord.rootContext)
+        );
+        chord_edit_ops::applyModeChoice(sequencer_, step, choice, chord.spec);
+        return;
+    }
+
+    chord_edit_ops::applySpecField(sequencer_, step, field, chord.spec, normalized);
+}
+
+FLASHMEM void SequencerStepEditHandler::configureOptForFocusedChordField() {
+    using Field = core::state::sequencer::SequencerChordEditField;
+    using Spec = oc::note::sequencer::StepSequencerChordSpec;
+
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
+    const auto scaleSettings = effectiveScaleSettings(sequencer_, tracks_);
+    auto chord = core::state::sequencer::resolveStepChordUiState(sequencer_, step);
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer_,
+        step,
+        scaleSettings
+    );
+    if (projection.valid) {
+        core::state::sequencer::resolveStepChordPreview(chord, projection, scaleSettings);
+    }
+    const auto field = sequencer_.stepEdit.chordEditor.focusedField.get();
+
+    encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, 4);
+    encoders_.setNormalizedTurns(Config::EncoderID::OPT, 0.5f);
+
+    switch (field) {
+        case Field::MODE:
+            encoders_.setDiscreteSteps(
+                Config::EncoderID::OPT,
+                static_cast<uint8_t>(chord_edit_ops::modeChoiceCount(chord.rootContext))
+            );
+            encoders_.setPosition(
+                Config::EncoderID::OPT,
+                input_utils::indexToNormalized(
+                    chord_edit_ops::modeChoiceIndex(chord.rootContext, chord.mode),
+                    chord_edit_ops::modeChoiceCount(chord.rootContext)
+                )
+            );
+            return;
+        case Field::VOICES:
+            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_VOICES - 1U);
+            encoders_.setPosition(
+                Config::EncoderID::OPT,
+                chord_edit_ops::voiceCountToNormalized(chord.spec.voiceCount)
+            );
+            return;
+        case Field::COLOR:
+            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_COLOR + 1U);
+            encoders_.setPosition(
+                Config::EncoderID::OPT,
+                input_utils::indexToNormalized(chord.spec.color, Spec::MAX_COLOR + 1)
+            );
+            return;
+        case Field::VARIANT:
+            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_VARIANT + 1U);
+            encoders_.setPosition(
+                Config::EncoderID::OPT,
+                input_utils::indexToNormalized(chord.spec.variant, Spec::MAX_VARIANT + 1)
+            );
+            return;
+        case Field::SPREAD:
+            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_SPREAD + 1U);
+            encoders_.setPosition(
+                Config::EncoderID::OPT,
+                input_utils::indexToNormalized(chord.spec.spread, Spec::MAX_SPREAD + 1)
+            );
+            return;
+        case Field::STRUM:
+            encoders_.setDiscreteSteps(
+                Config::EncoderID::OPT,
+                static_cast<uint8_t>((Spec::MAX_STRUM - Spec::MIN_STRUM) + 1)
+            );
+            encoders_.setNormalizedTurns(Config::EncoderID::OPT, 2.0f);
+            encoders_.setPosition(
+                Config::EncoderID::OPT,
+                chord_edit_ops::signedToNormalized(
+                    chord.spec.strum,
+                    Spec::MIN_STRUM,
+                    Spec::MAX_STRUM
+                )
+            );
+            return;
+        case Field::VELOCITY_CURVE:
+            encoders_.setDiscreteSteps(
+                Config::EncoderID::OPT,
+                static_cast<uint8_t>(
+                    (Spec::MAX_VELOCITY_CURVE - Spec::MIN_VELOCITY_CURVE) + 1
+                )
+            );
+            encoders_.setNormalizedTurns(Config::EncoderID::OPT, 2.0f);
+            encoders_.setPosition(
+                Config::EncoderID::OPT,
+                chord_edit_ops::signedToNormalized(
+                    chord.spec.velocityCurve,
+                    Spec::MIN_VELOCITY_CURVE,
+                    Spec::MAX_VELOCITY_CURVE
+                )
+            );
+            return;
+        case Field::COUNT:
+        default:
+            return;
+    }
+}
+
+FLASHMEM void SequencerStepEditHandler::resetFocusedChordFieldToDefault() {
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
+    if (!chord_edit_ops::resetSpecField(
+            sequencer_,
+            step,
+            sequencer_.stepEdit.chordEditor.focusedField.get()
+        )) {
+        return;
+    }
+    configureOptForFocusedRow();
+}
+
+FLASHMEM bool SequencerStepEditHandler::chordEditorActive() const {
+    return sequencer_.stepEdit.chordEditor.active.get();
+}
+
+FLASHMEM bool SequencerStepEditHandler::editedStepInRange(uint8_t& step) const {
+    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
+    if (len == 0) return false;
+
+    step = sequencer_.stepEdit.stepIndex.get();
+    return step < len;
+}
+
 FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
     if (open_release_latch_.consume(Config::MACRO_BUTTONS[indexInPage])) {
         return;
@@ -582,16 +811,19 @@ FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage)
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsValueRow() const {
+    if (chordEditorActive()) return true;
     const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
-    return isActivatedRow(focusedRow) || isPropertyRow(focusedRow);
+    return isActivatedRow(focusedRow) || isPropertyRow(focusedRow) || isChordRow(focusedRow);
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsContextRow() const {
+    if (chordEditorActive()) return false;
     const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
     return step_edit_rows::isContext(focusedRow);
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowSupportsLocalVariation() const {
+    if (chordEditorActive()) return false;
     const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
     if (!isPropertyRow(focusedRow)) return false;
     return propertySupportsLocalVariation(propertyForRow(focusedRow));
@@ -600,9 +832,12 @@ FLASHMEM bool SequencerStepEditHandler::focusedRowSupportsLocalVariation() const
 FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {
     if (!focusedRowIsContextRow()) return false;
 
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return false;
+
     const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
         sequencer_,
-        sequencer_.stepEdit.stepIndex.get(),
+        step,
         effectiveScaleSettings(sequencer_, tracks_)
     );
     if (!projection.valid) return false;
@@ -614,21 +849,29 @@ FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {
 }
 
 FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return false;
+
     const auto clipboardKind = clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get());
     return focusedRowIsContextRow() &&
            structure_clipboard_.hasSequencerStepContent(clipboardKind) &&
            core::state::sequencer::activeContentStepCanReceiveChildContent(
                sequencer_,
-               sequencer_.stepEdit.stepIndex.get()
+               step
            );
 }
 
 FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
     if (!focusedRowIsValueRow()) return;
 
+    if (chordEditorActive()) {
+        resetFocusedChordFieldToDefault();
+        return;
+    }
+
     auto& edit = sequencer_.stepEdit;
-    const uint8_t step = edit.stepIndex.get();
-    if (step >= core::state::sequencer::activeContentLength(sequencer_)) return;
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
 
     bool changed = false;
     const uint8_t row = edit.focusedRow.get();
@@ -637,6 +880,11 @@ FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
             sequencer_,
             step,
             false
+        );
+    } else if (isChordRow(row)) {
+        changed = core::state::sequencer::clearNodeChordState(
+            sequencer_.pattern,
+            core::state::sequencer::activeContentStepNodeId(sequencer_, step)
         );
     } else if (isPropertyRow(row)) {
         const auto property = propertyForRow(row);
@@ -755,6 +1003,9 @@ FLASHMEM void SequencerStepEditHandler::recordContextMutation(
 
 FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
     if (!focusedContextHasChild()) return;
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
     history_.commitCoalescedPatternEdit();
 
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
@@ -769,7 +1020,7 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(
         sequencer_,
-        sequencer_.stepEdit.stepIndex.get()
+        step
     );
     const bool changed = sequencer_.stepEdit.focusedRow.get() == step_edit_rows::MICRO_SEQUENCE
         ? core::state::sequencer::clearNodeChildSequence(sequencer_.pattern, nodeId)
@@ -790,12 +1041,15 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
 
 FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
     if (!focusedContextHasChild()) return;
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
     const auto* graph = core::state::sequencer::graphView(sequencer_.pattern);
     if (graph == nullptr) return;
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(
         sequencer_,
-        sequencer_.stepEdit.stepIndex.get()
+        step
     );
     if (!structure_clipboard_.storeSequencerStepContent(
         *graph,
@@ -808,6 +1062,9 @@ FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
 
 FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
     if (!canPasteFocusedStepContent()) return;
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
     history_.commitCoalescedPatternEdit();
 
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
@@ -822,7 +1079,7 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(
         sequencer_,
-        sequencer_.stepEdit.stepIndex.get()
+        step
     );
     const auto clipboardKind = clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get());
     const bool changed = clipboardKind == core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE

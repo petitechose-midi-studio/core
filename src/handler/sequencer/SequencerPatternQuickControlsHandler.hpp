@@ -49,6 +49,8 @@ private:
     void open();
     void closeApply();
     void closeCancel();
+    void beginHistoryOnlyHold();
+    void endHistoryOnlyHold();
     void enterPhysicalHoldLayer();
     void consumeUndo();
     void consumeRedo();

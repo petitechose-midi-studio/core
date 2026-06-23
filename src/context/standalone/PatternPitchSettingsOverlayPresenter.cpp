@@ -43,9 +43,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::bind() {
         state_refs_.settings.flowPhase,
         state_refs_.settings.selector.visible,
         state_refs_.settings.selector.editingRow,
-        state_refs_.settings.selector.selectedIndex,
-        state_refs_.sequencer.pattern.patternScaleRevision,
-        state_refs_.trackBank.projectScaleRevisionSignal()
+        state_refs_.settings.selector.selectedIndex
     );
 }
 

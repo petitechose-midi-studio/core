@@ -189,7 +189,7 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
 
     switch (context.navigationFocus) {
         case Focus::TRACK:
-            policy.scope = Scope::TRACK_LEGACY;
+            policy.scope = Scope::TRACK;
             policy.navTurn = Action::MOVE_TRACK;
             policy.navTap = cycleOrCreatePreview(context);
             policy.navLongPress = Action::ENTER_SELECTION;

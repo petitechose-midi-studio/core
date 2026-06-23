@@ -251,7 +251,10 @@ FLASHMEM bool sameVariationState(const TileVariationRenderState& lhs,
 FLASHMEM bool sameContentBadges(const TileContentBadgeState& lhs,
                                 const TileContentBadgeState& rhs) {
     return lhs.microSequence == rhs.microSequence &&
-           lhs.cycleStates == rhs.cycleStates;
+           lhs.cycleStates == rhs.cycleStates &&
+           lhs.chord == rhs.chord &&
+           lhs.chordVoiceCount == rhs.chordVoiceCount &&
+           lhs.chordSource == rhs.chordSource;
 }
 
 FLASHMEM StepVisualStyle buildStepVisualStyle(uint8_t note,

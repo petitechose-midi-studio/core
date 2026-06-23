@@ -21,7 +21,7 @@ SequencerInteractionContext baseContext(Focus focus = Focus::PAGE) {
 
 void expectsRootFocusMatrix() {
     auto track = buildSequencerInteractionPolicy(baseContext(Focus::TRACK));
-    assert(track.scope == Scope::TRACK_LEGACY);
+    assert(track.scope == Scope::TRACK);
     assert(track.navTurn == Action::MOVE_TRACK);
     assert(track.optTurn == Action::NONE);
     assert(track.macroLongPress == Action::OPEN_STEP_EDITOR);

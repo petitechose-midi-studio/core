@@ -18,6 +18,7 @@
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
 
@@ -107,7 +108,12 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     );
     if (auto* strip = step_edit_action_strip_->getElement()) {
         lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(strip, LV_ALIGN_BOTTOM_MID, 0, -19);
+        lv_obj_align(
+            strip,
+            LV_ALIGN_BOTTOM_MID,
+            0,
+            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
+        );
         lv_obj_move_foreground(strip);
     }
     overlays.registerCleanup(

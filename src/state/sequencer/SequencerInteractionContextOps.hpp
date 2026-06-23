@@ -32,7 +32,9 @@ inline SequencerInteractionContext makeSequencerInteractionContext(
     if (context.stepEditorVisible) {
         const uint8_t row = sequencer.stepEdit.focusedRow.get();
         context.stepEditorValueRowFocused =
-            step_edit_rows::isActivated(row) || step_edit_rows::isProperty(row);
+            step_edit_rows::isActivated(row) ||
+            step_edit_rows::isProperty(row) ||
+            step_edit_rows::isChord(row);
         context.stepEditorContextRowFocused = step_edit_rows::isContext(row);
         if (context.stepEditorContextRowFocused) {
             const auto projection = resolveActiveContentStepProjection(

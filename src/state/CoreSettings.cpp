@@ -82,7 +82,7 @@ FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync,
         );
     }
 
-    if (version == 0 || version > StorageLayout::VERSION) {
+    if (version != StorageLayout::VERSION) {
         OC_LOG_WARN("[CoreSettings] Version mismatch ({} vs {}), resetting defaults",
                     version,
                     StorageLayout::VERSION);
@@ -109,8 +109,7 @@ FLASHMEM bool CoreSettings::load(MidiSyncState& midiSync,
     if (!core_settings::loadSharedTrackState(
             backend_,
             sharedTrackEnabledMask,
-            sharedTrackActive,
-            version
+            sharedTrackActive
         )) {
         OC_LOG_WARN("[CoreSettings] Failed to read shared track state, using defaults");
         return resetToDefaultsAndPersist(

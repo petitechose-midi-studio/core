@@ -7,7 +7,7 @@
 namespace core::state::sequencer {
 
 enum class SequencerInteractionScope : uint8_t {
-    TRACK_LEGACY,
+    TRACK,
     PATTERN,
     STEP,
     CHILD_PATTERN,

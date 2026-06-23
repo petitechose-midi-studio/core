@@ -36,6 +36,24 @@ enum class SequencerContentViewKind : uint8_t {
     CYCLE_STATES,
 };
 
+enum class SequencerChordEditField : uint8_t {
+    MODE = 0,
+    VOICES,
+    COLOR,
+    VARIANT,
+    SPREAD,
+    STRUM,
+    VELOCITY_CURVE,
+    COUNT,
+};
+
+struct SequencerChordEditorState {
+    Signal<bool> active{false};
+    Signal<SequencerChordEditField> focusedField{SequencerChordEditField::MODE};
+
+    void reset();
+};
+
 struct SequencerContentViewFrame {
     using GraphLimits = oc::note::sequencer::StepSequencerGraphLimits;
 
@@ -104,6 +122,7 @@ struct SequencerStepEditOverlayState {
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
     Signal<bool> localVariationEditActive{false};
+    SequencerChordEditorState chordEditor;
 
     core::state::StructureHoldState contextHold;
 

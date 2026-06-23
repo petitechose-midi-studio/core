@@ -108,6 +108,7 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     }
 
     return !pattern_quick_controls_.selecting.get() &&
+           !pattern_quick_controls_.physicalHoldActive.get() &&
            !step_property_inline_selector_.selecting.get();
 }
 

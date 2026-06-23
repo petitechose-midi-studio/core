@@ -30,6 +30,9 @@ struct ResolvedStep {
     uint16_t gate = 0;
     int8_t nudge = 0;
     uint8_t probability = SequencerState::DEFAULT_PROBABILITY;
+    oc::note::sequencer::StepSequencerChordState chordState =
+        oc::note::sequencer::defaultRootChordState();
+    oc::note::sequencer::StepSequencerInheritedChord inheritedChord{};
 };
 
 int targetValueFromNormalized(
@@ -51,7 +54,11 @@ ResolvedStep applyNode(
     const Node& node,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 );
-ResolvedStep contentBaseForKind(ResolvedStep owner, SequencerContentViewKind kind);
+ResolvedStep contentBaseForKind(
+    ResolvedStep owner,
+    SequencerContentViewKind kind,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+);
 ResolvedStep rootBase(const SequencerState& sequencer, uint8_t rootStep);
 const Node* graphNode(const SequencerState& sequencer, SequencerGraphNodeId nodeId);
 bool nodeHasMicroSequence(

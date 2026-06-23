@@ -16,6 +16,7 @@
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerStepPastePlan.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
@@ -79,42 +80,6 @@ void setStripIconFromVisibility(
         return;
     }
     slot = core::ui::makeStandaloneIconStripSlot(icon, visualState);
-}
-
-const char* bottomActionIcon(InteractionAction action) {
-    switch (action) {
-        case InteractionAction::MUTE_CURRENT_TRACK:
-        case InteractionAction::MUTE_TRACK_SELECTION:
-        case InteractionAction::CLEAR_CURRENT_STRUCTURE:
-        case InteractionAction::REMOVE_CURRENT_STRUCTURE:
-        case InteractionAction::RESET_CURRENT_STEP_SHALLOW:
-        case InteractionAction::RESET_CURRENT_STEP_DEEP:
-        case InteractionAction::CLEAR_STEP_CONTENT:
-        case InteractionAction::CLEAR_SELECTION:
-        case InteractionAction::DELETE_SELECTION:
-        case InteractionAction::RESET_STEP_SELECTION_SHALLOW:
-        case InteractionAction::RESET_STEP_SELECTION_DEEP:
-        case InteractionAction::RESET_STEP_EDITOR_ROW:
-        case InteractionAction::REMOVE_STEP_EDITOR_CONTEXT:
-            return standalone::icons::ACTION_CLEAR;
-        case InteractionAction::COPY_CURRENT_STEP:
-        case InteractionAction::COPY_CURRENT_STRUCTURE:
-        case InteractionAction::COPY_STEP_CONTENT:
-        case InteractionAction::COPY_STEP_SELECTION:
-        case InteractionAction::COPY_SELECTION:
-        case InteractionAction::COPY_STEP_EDITOR_CONTEXT:
-            return standalone::icons::ACTION_COPY;
-        case InteractionAction::PASTE_CURRENT_STEP:
-        case InteractionAction::PASTE_CURRENT_STRUCTURE:
-        case InteractionAction::PASTE_STEP_CONTENT:
-        case InteractionAction::PASTE_STEP_SELECTION:
-        case InteractionAction::PASTE_SELECTION:
-        case InteractionAction::PASTE_STEP_EDITOR_CONTEXT:
-            return standalone::icons::ACTION_PASTE;
-        case InteractionAction::NONE:
-        default:
-            return nullptr;
-    }
 }
 
 void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
@@ -859,7 +824,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
             : interaction.bottomRightTap;
         const auto leftAction = interaction.bottomLeftHold;
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            bottomActionIcon(leftAction),
+            interactionActionIcon(leftAction),
             removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
             removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
         );
@@ -875,7 +840,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
         };
         formatSelectionLabel(props.slots[1].labelText, selectedCount);
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            bottomActionIcon(rightAction),
+            interactionActionIcon(rightAction),
             pasteHoldActive
                 ? Visual::ARMED
                 : ((canCopy || canPaste) ? Visual::ACTIVE : Visual::DISABLED),
@@ -894,13 +859,13 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
             ? interaction.bottomRightTap
             : interaction.bottomRightHold;
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            bottomActionIcon(interaction.bottomLeftTap),
+            interactionActionIcon(interaction.bottomLeftTap),
             hasChildContent ? Visual::ACTIVE : Visual::DISABLED,
             Tone::DESTRUCTIVE
         );
         props.slots[1].visualState = Visual::HIDDEN;
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            bottomActionIcon(rightAction),
+            interactionActionIcon(rightAction),
             (hasChildContent || canPaste) ? Visual::ACTIVE : Visual::DISABLED,
             (!hasChildContent && canPaste) ? Tone::POSITIVE : Tone::NEUTRAL
         );
@@ -942,7 +907,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
             ? interaction.bottomRightHold
             : interaction.bottomRightTap;
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            bottomActionIcon(interaction.bottomLeftHold),
+            interactionActionIcon(interaction.bottomLeftHold),
             deleteHoldActive ? Visual::ARMED : (canDeleteSelection ? Visual::ACTIVE : Visual::DISABLED),
             Tone::DESTRUCTIVE
         );
@@ -961,7 +926,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
             countSelectedItems(selectionMask)
         );
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            bottomActionIcon(rightAction),
+            interactionActionIcon(rightAction),
             pasteHoldActive
                 ? Visual::ARMED
                 : ((canCopySelection || canPasteSelection) ? Visual::ACTIVE : Visual::DISABLED),
@@ -1001,7 +966,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
         : interaction.bottomRightTap;
 
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        bottomActionIcon(leftAction),
+        interactionActionIcon(leftAction),
         leftAction == InteractionAction::NONE
             ? Visual::HIDDEN
             : (removeHoldActive
@@ -1014,7 +979,7 @@ FLASHMEM ContextActionStripProps buildBottomActionStripProps(const SequencerView
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        bottomActionIcon(rightAction),
+        interactionActionIcon(rightAction),
         rightAction == InteractionAction::NONE
             ? Visual::HIDDEN
             : (pasteHoldActive

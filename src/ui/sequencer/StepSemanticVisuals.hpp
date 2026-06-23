@@ -14,6 +14,14 @@ enum class Tone : uint8_t {
     VELOCITY,
     GATE,
     NUDGE,
+    CHORD,
+    CHORD_MODE,
+    CHORD_VOICE,
+    CHORD_COLOR,
+    CHORD_SHAPE,
+    CHORD_SPREAD,
+    CHORD_STRUM,
+    CHORD_VELOCITY,
     MICRO_SEQUENCE,
     CYCLE_STATE,
 };
@@ -32,6 +40,22 @@ inline constexpr uint32_t color(Tone tone) {
             return standalone::theme::color::STEP_GATE;
         case Tone::NUDGE:
             return standalone::theme::color::STEP_NUDGE;
+        case Tone::CHORD:
+            return standalone::theme::color::STEP_CHORD;
+        case Tone::CHORD_MODE:
+            return standalone::theme::color::STEP_CHORD_MODE;
+        case Tone::CHORD_VOICE:
+            return standalone::theme::color::STEP_CHORD_VOICE;
+        case Tone::CHORD_COLOR:
+            return standalone::theme::color::STEP_CHORD_COLOR;
+        case Tone::CHORD_SHAPE:
+            return standalone::theme::color::STEP_CHORD_SHAPE;
+        case Tone::CHORD_SPREAD:
+            return standalone::theme::color::STEP_CHORD_SPREAD;
+        case Tone::CHORD_STRUM:
+            return standalone::theme::color::STEP_CHORD_STRUM;
+        case Tone::CHORD_VELOCITY:
+            return standalone::theme::color::STEP_CHORD_VELOCITY;
         case Tone::MICRO_SEQUENCE:
             return standalone::theme::color::STEP_MICRO_SEQUENCE;
         case Tone::CYCLE_STATE:
@@ -54,6 +78,22 @@ inline constexpr const char* label(Tone tone) {
             return "Gate";
         case Tone::NUDGE:
             return "Nudge";
+        case Tone::CHORD:
+            return "Chord";
+        case Tone::CHORD_MODE:
+            return "Chord mode";
+        case Tone::CHORD_VOICE:
+            return "Chord voices";
+        case Tone::CHORD_COLOR:
+            return "Chord color";
+        case Tone::CHORD_SHAPE:
+            return "Chord shape";
+        case Tone::CHORD_SPREAD:
+            return "Chord spread";
+        case Tone::CHORD_STRUM:
+            return "Chord strum";
+        case Tone::CHORD_VELOCITY:
+            return "Chord velocity";
         case Tone::MICRO_SEQUENCE:
             return "Micro sequence";
         case Tone::CYCLE_STATE:

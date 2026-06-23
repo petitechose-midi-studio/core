@@ -26,7 +26,8 @@ inline constexpr std::array<const char*, PROPERTIES.size()> KEYS = {
 
 inline constexpr uint8_t ACTIVATED = 0;
 inline constexpr uint8_t PROPERTY_OFFSET = 1;
-inline constexpr uint8_t MICRO_SEQUENCE = PROPERTY_OFFSET + static_cast<uint8_t>(PROPERTIES.size());
+inline constexpr uint8_t CHORD = PROPERTY_OFFSET + static_cast<uint8_t>(PROPERTIES.size());
+inline constexpr uint8_t MICRO_SEQUENCE = CHORD + 1U;
 inline constexpr uint8_t CYCLE_STATES = MICRO_SEQUENCE + 1U;
 inline constexpr uint8_t COUNT = CYCLE_STATES + 1U;
 
@@ -37,6 +38,7 @@ inline constexpr std::array<uint8_t, COUNT> NAVIGATION_ORDER = {
     static_cast<uint8_t>(PROPERTY_OFFSET + 1U),
     static_cast<uint8_t>(PROPERTY_OFFSET + 2U),
     static_cast<uint8_t>(PROPERTY_OFFSET + 3U),
+    CHORD,
     MICRO_SEQUENCE,
     CYCLE_STATES,
 };
@@ -46,7 +48,11 @@ inline bool isActivated(uint8_t row) {
 }
 
 inline bool isProperty(uint8_t row) {
-    return row >= PROPERTY_OFFSET && row < MICRO_SEQUENCE;
+    return row >= PROPERTY_OFFSET && row < CHORD;
+}
+
+inline bool isChord(uint8_t row) {
+    return row == CHORD;
 }
 
 inline bool isContext(uint8_t row) {
