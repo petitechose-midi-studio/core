@@ -6,10 +6,11 @@
 namespace core::ui::sequencer::grid {
 
 /**
- * Builds a visible-page step-grid frame from SequencerState.
+ * Builds a visible-page step-grid frame from the resolved sequencer display
+ * projection.
  *
- * This function reads musical data, active property, inline feedback, and
- * playhead status; it does not plan diffs or touch LVGL widgets.
+ * This function adapts domain-level resolved musical facts to render state; it
+ * does not resolve music, plan diffs, or touch LVGL widgets.
  */
 StepGridFrameState buildStepGridFrameState(
     const core::state::sequencer::SequencerState& sequencerState,

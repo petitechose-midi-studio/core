@@ -3,6 +3,7 @@
 
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
+#include "../../src/state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 #include "../../src/ui/sequencer/StepContentBadgeProjection.hpp"
 
@@ -698,6 +699,156 @@ void test_parent_summary_uses_current_micro_substep_runtime_note() {
     std::cout << "[PASS] test_parent_summary_uses_current_micro_substep_runtime_note\n";
 }
 
+void test_resolved_projection_reports_current_child_runtime_note() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(8);
+    sequencer.pattern.note[0] = 60;
+    sequencer.pattern.setEnabled(0, true);
+    sequencer.probabilityCycleMask.setBit(0, true);
+    sequencer.playheadStep.set(0);
+    sequencer.playheadStepTicks = 24;
+
+    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    assert(micro.ok);
+    auto* graph = sequencer.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto firstNode = sequence->firstStepNode;
+    const auto secondNode = static_cast<uint16_t>(sequence->firstStepNode + 1U);
+    assert(setNodeEnabledOverride(sequencer.pattern, firstNode, false));
+    assert(setNodeNoteOffset(sequencer.pattern, secondNode, 7));
+
+    sequencer.playheadStepTickOffset.set(12);
+    const auto context =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            {},
+            StepProperty::NOTE
+        );
+    const auto step = core::state::sequencer::buildSequencerResolvedStepDisplayState(
+        context,
+        0,
+        false
+    );
+
+    assert(step.inPattern);
+    assert(step.enabled);
+    assert(step.childPitchSummaryVisible);
+    assert(step.childPitchSummaryNote == 67);
+    assert(step.variation.visible);
+    assert(step.variation.resolved.resolved.note == 67);
+
+    std::cout << "[PASS] test_resolved_projection_reports_current_child_runtime_note\n";
+}
+
+void test_resolved_projection_reports_runtime_inherited_chord_badge() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(8);
+    sequencer.pattern.note[0] = 60;
+    sequencer.pattern.setEnabled(0, true);
+    sequencer.probabilityCycleMask.setBit(0, true);
+    sequencer.playheadStep.set(0);
+    sequencer.playheadStepTickOffset.set(0);
+
+    oc::note::sequencer::StepSequencerChordSpec rootChord{};
+    rootChord.voiceCount = 4;
+    assert(setNodeChordSpec(sequencer.pattern, rootStepNodeId(0), rootChord));
+
+    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    assert(micro.ok);
+    const auto* graph = sequencer.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto childNode = sequence->firstStepNode;
+
+    assert(enterMicroSequenceContentView(sequencer, rootStepNodeId(0), micro.id));
+
+    oc::note::sequencer::StepSequencerResolvedVariation variation{};
+    variation.stepIndex = 0;
+    variation.triggered = true;
+    variation.base = {.note = 60, .velocity = 64, .gate = 100, .nudge = 0};
+    variation.resolved = variation.base;
+    sequencer.expandedVariationTelemetry.reset();
+    sequencer.expandedVariationTelemetry.valid = true;
+    sequencer.expandedVariationTelemetry.rootStepIndex = 0;
+    sequencer.expandedVariationTelemetry.store(
+        0,
+        childNode,
+        0,
+        24,
+        variation,
+        oc::note::sequencer::StepSequencerChordSource::Inherited,
+        0,
+        4,
+        0,
+        true
+    );
+
+    const auto context =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            {},
+            StepProperty::NOTE
+        );
+    const auto step = core::state::sequencer::buildSequencerResolvedStepDisplayState(
+        context,
+        0,
+        false
+    );
+    auto badges = buildStepContentBadgeProjectionForNode(sequencer.pattern, step.nodeId);
+    assert(mergeExpandedTelemetryChordBadgeForNode(
+        badges,
+        sequencer.expandedVariationTelemetry,
+        step.runtimeNodeId,
+        sequencer.playheadStep.get(),
+        sequencer.playheadStepTickOffset.get()
+    ));
+
+    assert(step.inPattern);
+    assert(badges.chord);
+    assert(badges.chordVoiceCount == 4);
+    assert(badges.chordSource ==
+           oc::note::sequencer::StepSequencerChordSource::Inherited);
+
+    std::cout << "[PASS] test_resolved_projection_reports_runtime_inherited_chord_badge\n";
+}
+
+void test_resolved_projection_sums_pattern_and_local_random_preview() {
+    SequencerState sequencer;
+    sequencer.pattern.length.set(8);
+    sequencer.pattern.note[0] = 60;
+    sequencer.pattern.setEnabled(0, true);
+    sequencer.activeStepProperty.set(StepProperty::NOTE);
+    assert(sequencer.setVariationRangeForProperty(StepProperty::NOTE, 2));
+    assert(setNodeLocalVariationRange(
+        sequencer.pattern,
+        rootStepNodeId(0),
+        StepProperty::NOTE,
+        3
+    ));
+
+    const auto context =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            {},
+            StepProperty::NOTE
+        );
+    const auto step = core::state::sequencer::buildSequencerResolvedStepDisplayState(
+        context,
+        0,
+        false
+    );
+
+    assert(step.inPattern);
+    assert(step.variation.visible);
+    assert(step.variation.rangeVisible);
+    assert(step.variation.resolved.ranges.pitchSemitones == 5);
+
+    std::cout << "[PASS] test_resolved_projection_sums_pattern_and_local_random_preview\n";
+}
+
 void test_ui_allows_three_child_content_levels_when_engine_depth_is_four() {
     SequencerState sequencer;
     sequencer.pattern.length.set(8);
@@ -749,6 +900,9 @@ int main() {
     test_child_disabled_state_is_reported_to_parent_summary();
     test_child_playhead_remains_visible_when_selected_state_is_disabled();
     test_parent_summary_uses_current_micro_substep_runtime_note();
+    test_resolved_projection_reports_current_child_runtime_note();
+    test_resolved_projection_reports_runtime_inherited_chord_badge();
+    test_resolved_projection_sums_pattern_and_local_random_preview();
     test_ui_allows_three_child_content_levels_when_engine_depth_is_four();
 
     std::cout << "\nAll SequencerStepGridFrame tests passed.\n";
