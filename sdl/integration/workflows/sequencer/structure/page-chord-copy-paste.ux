@@ -1,0 +1,44 @@
+# UX workflow: copy/paste page with chord step content.
+# Purpose: validates that page clipboard preserves the full root step-node
+# payload, including local chord state and nested step content.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enter Step focus, enable step 1, and create a local chord from the Step Editor.
+150 tap NAV 60
+350 capture screen pattern_focus
+450 tap NAV 60
+650 capture screen step_focus
+750 tap MACRO_1 60
+950 capture screen step_1_enabled
+1050 button MACRO_1 down
+2100 tick
+2150 capture screen step_editor_open
+2200 button MACRO_1 up
+2300 encoder NAV 1
+2380 encoder NAV 1
+2460 encoder NAV 1
+2540 encoder NAV 1
+2620 encoder NAV 1
+2700 encoder NAV 1
+2900 capture screen chord_row_single
+3000 encoder OPT 1.0
+3300 capture screen chord_row_local
+3400 tap LEFT_TOP 60
+3700 capture screen source_page_chord_badge
+
+# Return to Pattern focus, copy page 1, then paste it into the page 2 add slot.
+3800 tap NAV 60
+4000 capture screen track_focus_after_editor
+4100 tap NAV 60
+4300 capture screen page_focus_source
+4400 tap BOTTOM_RIGHT 60
+4650 capture screen page_1_chord_copied
+4750 encoder NAV 1
+4950 capture screen page_2_paste_preview
+5050 button BOTTOM_RIGHT down
+6100 tick
+6150 capture screen page_2_paste_hold_applied
+6200 button BOTTOM_RIGHT up
+6500 capture screen page_2_chord_pasted

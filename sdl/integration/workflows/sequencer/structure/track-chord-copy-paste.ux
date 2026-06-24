@@ -1,0 +1,42 @@
+# UX workflow: copy/paste a track containing chord step content.
+# Purpose: validates that track clipboard preserves the full sequencer graph,
+# including local chord state attached to root step nodes.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enter Step focus, enable step 1, and create a local chord from the Step Editor.
+150 tap NAV 60
+350 capture screen pattern_focus
+450 tap NAV 60
+650 capture screen step_focus
+750 tap MACRO_1 60
+950 capture screen step_1_enabled
+1050 button MACRO_1 down
+2100 tick
+2150 capture screen step_editor_open
+2200 button MACRO_1 up
+2300 encoder NAV 1
+2380 encoder NAV 1
+2460 encoder NAV 1
+2540 encoder NAV 1
+2620 encoder NAV 1
+2700 encoder NAV 1
+2900 capture screen chord_row_single
+3000 encoder OPT 1.0
+3300 capture screen chord_row_local
+3400 tap LEFT_TOP 60
+3700 capture screen source_track_chord_badge
+
+# Return to Track focus, copy track 1, then paste it into the track 2 add slot.
+3800 tap NAV 60
+4050 capture screen track_focus_source
+4150 tap BOTTOM_RIGHT 60
+4400 capture screen track_1_chord_copied
+4500 encoder NAV 1
+4750 capture screen track_2_paste_preview
+4850 button BOTTOM_RIGHT down
+5900 tick
+5950 capture screen track_2_paste_hold_applied
+6000 button BOTTOM_RIGHT up
+6300 capture screen track_2_chord_pasted

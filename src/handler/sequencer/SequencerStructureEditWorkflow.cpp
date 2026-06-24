@@ -246,7 +246,7 @@ FLASHMEM bool capturePageClipboard(
     return true;
 }
 
-FLASHMEM void copyPageChildContentFromGraph(
+FLASHMEM void copyPageStepContentFromGraph(
     core::state::sequencer::SequencerState& sequencer,
     const core::state::SequencerPageClipboard& clipboard,
     const oc::note::sequencer::StepSequencerGraph* sourceGraph,
@@ -272,8 +272,7 @@ FLASHMEM void copyPageChildContentFromGraph(
 
         const auto sourceNode = core::state::sequencer::rootStepNodeId(sourceStep);
         const auto targetNode = core::state::sequencer::rootStepNodeId(targetStep);
-        core::state::sequencer::clearNodeChildren(sequencer.pattern, targetNode);
-        core::state::sequencer::copyNodeChildrenFromGraph(
+        core::state::sequencer::copyStepNodePayloadFromGraph(
             sequencer.pattern,
             targetNode,
             *sourceGraph,
@@ -316,7 +315,7 @@ FLASHMEM void pastePageClipboard(
         sequencer.pattern.setEnabled(step, clipboard.isEnabled(i));
     }
 
-    copyPageChildContentFromGraph(sequencer, clipboard, sourceGraph, targetPage);
+    copyPageStepContentFromGraph(sequencer, clipboard, sourceGraph, targetPage);
 }
 
 }  // namespace
