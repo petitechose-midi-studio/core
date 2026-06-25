@@ -130,6 +130,42 @@ void test_micro_sequence_exports_to_open_control_graph() {
     std::cout << "[PASS] test_micro_sequence_exports_to_open_control_graph\n";
 }
 
+void test_step_node_child_presence_helpers_validate_targets() {
+    SequencerState state;
+    const auto rootNode = core::state::sequencer::rootStepNodeId(0);
+
+    assert(!core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
+    assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+
+    const auto sequence = core::state::sequencer::createMicroSequence(
+        state.pattern,
+        rootNode,
+        2
+    );
+    assert(sequence.ok);
+    assert(core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
+    assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+
+    const auto cycleSet = core::state::sequencer::createCycleStateSet(
+        state.pattern,
+        rootNode,
+        3
+    );
+    assert(cycleSet.ok);
+    assert(core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
+    assert(core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+
+    assert(core::state::sequencer::clearNodeChildSequence(state.pattern, rootNode));
+    assert(!core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
+    assert(core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+
+    assert(core::state::sequencer::clearNodeCycleStateSet(state.pattern, rootNode));
+    assert(!core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
+    assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+
+    std::cout << "[PASS] test_step_node_child_presence_helpers_validate_targets\n";
+}
+
 void test_pattern_copy_preserves_graph() {
     SequencerState source;
     const auto rootNode = core::state::sequencer::rootStepNodeId(3);
@@ -743,6 +779,7 @@ int main() {
     test_graph_root_is_allocated_once();
     test_pattern_without_graph_stays_unallocated_through_snapshot_copy();
     test_micro_sequence_exports_to_open_control_graph();
+    test_step_node_child_presence_helpers_validate_targets();
     test_pattern_copy_preserves_graph();
     test_runtime_signature_tracks_graph_revision();
     test_create_micro_sequence_reuses_existing_child();

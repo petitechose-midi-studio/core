@@ -707,4 +707,26 @@ FLASHMEM SequencerGraphNodeId rootStepNodeId(uint8_t step) {
     return (step < SequencerPatternState::MAX_STEPS) ? step : kInvalidId;
 }
 
+FLASHMEM bool stepNodeHasMicroSequence(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId
+) {
+    const auto* graph = graphView(pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    return node != nullptr &&
+           node->has(STEP_NODE_CHILD_SEQUENCE) &&
+           graph->sequence(node->childSequenceId) != nullptr;
+}
+
+FLASHMEM bool stepNodeHasCycleStateSet(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId
+) {
+    const auto* graph = graphView(pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    return node != nullptr &&
+           node->has(STEP_NODE_CYCLE_SET) &&
+           graph->cycleSet(node->cycleSetId) != nullptr;
+}
+
 }  // namespace core::state::sequencer

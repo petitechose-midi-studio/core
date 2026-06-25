@@ -51,6 +51,14 @@ SequencerGraphCompactionResult compactGraph(
 const oc::note::sequencer::StepSequencerGraph* graphView(const SequencerPatternState& pattern);
 
 SequencerGraphNodeId rootStepNodeId(uint8_t step);
+bool stepNodeHasMicroSequence(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId
+);
+bool stepNodeHasCycleStateSet(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId
+);
 
 SequencerGraphCreateResult createMicroSequence(
     SequencerPatternState& pattern,
