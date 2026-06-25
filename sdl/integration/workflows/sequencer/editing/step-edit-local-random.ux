@@ -1,7 +1,7 @@
 # UX workflow: edit local per-step randomization from the Step Edit overlay.
 # Purpose: validates the momentary LEFT_BOTTOM + OPT mode used to set local
-# random depth for the focused StepNode property without editing the deterministic value.
-# Expect: capture_match:pitch_focused=local_random_released
+# random depth for the focused StepNode property. Releasing LEFT_BOTTOM exits
+# range editing, while the resolved local-random value remains visible.
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -24,7 +24,7 @@
 1950 encoder OPT 1.00
 2150 capture screen local_random_pitch_max
 
-# Release returns the row to deterministic Pitch editing.
+# Release returns the row to Pitch editing with the resolved random value visible.
 2250 button LEFT_BOTTOM up
 2450 capture screen local_random_released
 2550 tap LEFT_TOP 60

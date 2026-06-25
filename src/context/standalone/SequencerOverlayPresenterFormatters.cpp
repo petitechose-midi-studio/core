@@ -259,10 +259,6 @@ FLASHMEM void formatCompactOffset(
     std::snprintf(out, outSize, "%c%d%s", sign, magnitude, unit);
 }
 
-FLASHMEM bool propertySupportsLocalVariation(core::state::sequencer::StepProperty property) {
-    return property != core::state::sequencer::StepProperty::PROBABILITY;
-}
-
 FLASHMEM void formatLocalVariationRange(
     char* out,
     size_t outSize,
@@ -271,7 +267,7 @@ FLASHMEM void formatLocalVariationRange(
     bool pitchUsesScaleDegrees
 ) {
     if (!out || outSize == 0) return;
-    if (!propertySupportsLocalVariation(property)) {
+    if (!core::state::sequencer::stepPropertySupportsLocalVariation(property)) {
         copyText(out, outSize, "--");
         return;
     }
@@ -389,7 +385,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     const bool localVariationMode =
         sequencer.stepEdit.localVariationEditActive.get() &&
         selectedRowIsProperty &&
-        propertySupportsLocalVariation(selectedProperty);
+        core::state::sequencer::stepPropertySupportsLocalVariation(selectedProperty);
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
     const auto* graph = core::state::sequencer::graphView(sequencer.pattern);

@@ -12,4 +12,8 @@ enum class StepProperty : uint8_t {
     PROBABILITY = 4,
 };
 
+inline constexpr bool stepPropertySupportsLocalVariation(StepProperty property) {
+    return property != StepProperty::PROBABILITY;
+}
+
 }  // namespace core::state::sequencer
