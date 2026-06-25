@@ -13,8 +13,10 @@
 #include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
+#include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerStepPastePlan.hpp"
+#include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
@@ -395,6 +397,11 @@ uint8_t localVariationRangeForStep(
     if (property == core::state::sequencer::StepProperty::PROBABILITY) return 0;
 
     const auto& selector = sequencer.stepPropertyInlineSelector;
+    if (selector.localVariationStepIndex >=
+        core::state::sequencer::activeContentLength(sequencer)) {
+        return 0;
+    }
+
     const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
     if (graph == nullptr) return 0;
 
@@ -406,7 +413,7 @@ uint8_t localVariationRangeForStep(
     return node ? core::state::sequencer::nodeLocalVariationRange(*node, property) : 0;
 }
 
-void formatLocalVariationOverlayValue(
+void formatLocalVariationRangeText(
     char* buffer,
     size_t size,
     core::state::sequencer::StepProperty property,
@@ -414,6 +421,10 @@ void formatLocalVariationOverlayValue(
     bool pitchUsesScaleDegrees
 ) {
     if (!buffer || size == 0) return;
+    if (!core::state::sequencer::stepPropertySupportsLocalVariation(property)) {
+        std::snprintf(buffer, size, "--");
+        return;
+    }
 
     const char* unit = "";
     if (property == core::state::sequencer::StepProperty::GATE) {
@@ -426,6 +437,66 @@ void formatLocalVariationOverlayValue(
     }
 
     std::snprintf(buffer, size, "±%u%s", static_cast<unsigned>(range), unit);
+}
+
+void formatLocalVariationOverlayValue(
+    char* buffer,
+    size_t size,
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    core::state::sequencer::StepProperty property,
+    uint8_t step,
+    uint8_t range
+) {
+    if (!buffer || size == 0) return;
+
+    const auto displayContext =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            tracks.projectScaleSettings(),
+            property
+        );
+    char rangeText[8] = {};
+    formatLocalVariationRangeText(
+        rangeText,
+        sizeof(rangeText),
+        property,
+        range,
+        displayContext.scaleSettings.isConstrained()
+    );
+    if (!core::state::sequencer::stepPropertySupportsLocalVariation(property)) {
+        std::snprintf(buffer, size, "%s", rangeText);
+        return;
+    }
+
+    const auto touchedMask = sequencer.stepInlineFeedback.touchedMask.get();
+    const bool stepInlineEditActive =
+        sequencer.stepInlineFeedback.visible.get() && touchedMask.test(step);
+    const auto resolved =
+        core::state::sequencer::buildSequencerResolvedStepDisplayState(
+            displayContext,
+            step,
+            stepInlineEditActive
+        );
+    if (!resolved.valid) {
+        std::snprintf(buffer, size, "%s", rangeText);
+        return;
+    }
+
+    const auto values =
+        core::state::sequencer::sequencerResolvedStepDisplayValues(resolved);
+    char valueText[8] = {};
+    core::state::sequencer::formatStepPropertyValue(
+        valueText,
+        sizeof(valueText),
+        property,
+        values.note,
+        values.velocity,
+        values.gate,
+        values.nudge,
+        resolved.probability
+    );
+    std::snprintf(buffer, size, "%s %s", valueText, rangeText);
 }
 
 }  // namespace
@@ -586,13 +657,11 @@ FLASHMEM StepPropertySelectionOverlayProps buildPropertySelectionOverlayProps(
             formatLocalVariationOverlayValue(
                 props.valueText.data(),
                 props.valueText.size(),
+                sequencer,
+                source.tracks,
                 property,
-                localVariationRangeForStep(sequencer, property),
-                core::state::sequencer::resolveEffectiveScaleSettings(
-                    source.tracks.projectScaleSettings(),
-                    sequencer.pattern.scalePolicy,
-                    sequencer.pattern.scaleOverride
-                ).isConstrained()
+                sequencer.stepPropertyInlineSelector.localVariationStepIndex,
+                localVariationRangeForStep(sequencer, property)
             );
             return props;
         }

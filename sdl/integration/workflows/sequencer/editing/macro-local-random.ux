@@ -6,20 +6,27 @@
 0 scenario sequencer
 50 capture screen sequencer_ready
 
+# Move to Step focus so LEFT_BOTTOM opens the musical prop/local-random layer.
+150 tap NAV 60
+350 capture screen pattern_focus
+450 tap NAV 60
+650 capture screen step_focus
+
 # Enable the first step so the local range has a visible anchor.
-120 tap MACRO_1 60
+750 tap MACRO_1 60
+950 capture screen step_enabled
 
 # Hold LEFT_BOTTOM to enter the prop selector/local macro-random layer.
-220 button LEFT_BOTTOM down
-320 capture screen prop_selector_ready
+1050 button LEFT_BOTTOM down
+1150 capture screen prop_selector_ready
 
 # Macro 1 edits step 1 local Pitch random range, because Pitch is active.
-520 encoder MACRO_1 1.00
-700 capture screen macro_local_random_pitch
+1350 encoder MACRO_1 1.00
+1500 capture screen macro_local_random_pitch
 
 # Release LEFT_BOTTOM to commit and close the hold overlay.
-850 button LEFT_BOTTOM up
-1050 capture screen macro_local_random_closed
+1650 button LEFT_BOTTOM up
+1850 capture screen macro_local_random_closed
 
 # The resolved random preview must persist after the inline edit feedback timeout.
-1500 capture screen macro_local_random_persistent
+2300 capture screen macro_local_random_persistent

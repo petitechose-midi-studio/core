@@ -35,10 +35,6 @@ FLASHMEM bool isChordRow(uint8_t row) {
     return step_edit_rows::isChord(row);
 }
 
-FLASHMEM bool propertySupportsLocalVariation(core::state::sequencer::StepProperty property) {
-    return property != core::state::sequencer::StepProperty::PROBABILITY;
-}
-
 FLASHMEM core::state::SequencerStepContentClipboardKind clipboardKindForContextRow(uint8_t row) {
     if (row == step_edit_rows::MICRO_SEQUENCE) {
         return core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE;
@@ -505,7 +501,8 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
 
     const auto property = propertyForRow(focusedRow);
 
-    if (edit.localVariationEditActive.get() && propertySupportsLocalVariation(property)) {
+    if (edit.localVariationEditActive.get() &&
+        core::state::sequencer::stepPropertySupportsLocalVariation(property)) {
         const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, abs);
         const uint8_t range = input_utils::normalizedToVariationRange(property, normalized);
         if (core::state::sequencer::setNodeLocalVariationRange(
@@ -582,7 +579,8 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
 
     if (!editedStepInRange(abs)) return;
 
-    if (edit.localVariationEditActive.get() && propertySupportsLocalVariation(property)) {
+    if (edit.localVariationEditActive.get() &&
+        core::state::sequencer::stepPropertySupportsLocalVariation(property)) {
         const auto config = input_utils::encoderConfigForVariationRange(property);
         encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
         encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
@@ -826,7 +824,9 @@ FLASHMEM bool SequencerStepEditHandler::focusedRowSupportsLocalVariation() const
     if (chordEditorActive()) return false;
     const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
     if (!isPropertyRow(focusedRow)) return false;
-    return propertySupportsLocalVariation(propertyForRow(focusedRow));
+    return core::state::sequencer::stepPropertySupportsLocalVariation(
+        propertyForRow(focusedRow)
+    );
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {

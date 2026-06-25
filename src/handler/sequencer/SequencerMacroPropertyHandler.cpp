@@ -55,10 +55,6 @@ inline oc::type::IsActiveFn canQuickEditFocusedStep(
     };
 }
 
-FLASHMEM bool propertySupportsLocalVariation(core::state::sequencer::StepProperty property) {
-    return property != core::state::sequencer::StepProperty::PROBABILITY;
-}
-
 FLASHMEM uint8_t currentNodeLocalVariationRange(
     core::state::sequencer::SequencerState& sequencer,
     uint8_t step,
@@ -134,7 +130,7 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
         buttons_.isPressed(Config::ButtonID::LEFT_BOTTOM);
 
     if (propertySelectorLocalVariationLayer) {
-        if (!propertySupportsLocalVariation(property)) {
+        if (!core::state::sequencer::stepPropertySupportsLocalVariation(property)) {
             return;
         }
         const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, abs);
