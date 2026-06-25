@@ -742,6 +742,35 @@ void test_resolved_projection_reports_current_child_runtime_note() {
     std::cout << "[PASS] test_resolved_projection_reports_current_child_runtime_note\n";
 }
 
+void test_resolved_step_display_values_follow_visible_variation() {
+    core::state::sequencer::SequencerResolvedStepDisplayState step{};
+    step.note = 60;
+    step.velocity = 70;
+    step.gate = 80;
+    step.nudge = -2;
+
+    auto values = core::state::sequencer::sequencerResolvedStepDisplayValues(step);
+    assert(values.note == 60);
+    assert(values.velocity == 70);
+    assert(values.gate == 80);
+    assert(values.nudge == -2);
+
+    step.variation.visible = true;
+    step.variation.resolved.resolved = {
+        .note = 67,
+        .velocity = 91,
+        .gate = 120,
+        .nudge = 3,
+    };
+    values = core::state::sequencer::sequencerResolvedStepDisplayValues(step);
+    assert(values.note == 67);
+    assert(values.velocity == 91);
+    assert(values.gate == 120);
+    assert(values.nudge == 3);
+
+    std::cout << "[PASS] test_resolved_step_display_values_follow_visible_variation\n";
+}
+
 void test_resolved_projection_reports_runtime_inherited_chord_badge() {
     SequencerState sequencer;
     sequencer.pattern.length.set(8);
@@ -901,6 +930,7 @@ int main() {
     test_child_playhead_remains_visible_when_selected_state_is_disabled();
     test_parent_summary_uses_current_micro_substep_runtime_note();
     test_resolved_projection_reports_current_child_runtime_note();
+    test_resolved_step_display_values_follow_visible_variation();
     test_resolved_projection_reports_runtime_inherited_chord_badge();
     test_resolved_projection_sums_pattern_and_local_random_preview();
     test_ui_allows_three_child_content_levels_when_engine_depth_is_four();

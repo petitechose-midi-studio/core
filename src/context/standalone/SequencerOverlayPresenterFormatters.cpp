@@ -383,13 +383,8 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         return data;
     }
 
-    const auto& variationValues = resolved.variation.resolved.resolved;
-    const bool useVariationValues = resolved.variation.visible;
-    const uint8_t displayNote = useVariationValues ? variationValues.note : resolved.note;
-    const uint8_t displayVelocity =
-        useVariationValues ? variationValues.velocity : resolved.velocity;
-    const uint16_t displayGate = useVariationValues ? variationValues.gate : resolved.gate;
-    const int8_t displayNudge = useVariationValues ? variationValues.nudge : resolved.nudge;
+    const auto displayValues =
+        core::state::sequencer::sequencerResolvedStepDisplayValues(resolved);
 
     const bool localVariationMode =
         sequencer.stepEdit.localVariationEditActive.get() &&
@@ -491,10 +486,10 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
                 data.valueBuffers[rowIndex].data(),
                 data.valueBuffers[rowIndex].size(),
                 property,
-                displayNote,
-                displayVelocity,
-                displayGate,
-                displayNudge,
+                displayValues.note,
+                displayValues.velocity,
+                displayValues.gate,
+                displayValues.nudge,
                 resolved.probability
             );
             copyText(
