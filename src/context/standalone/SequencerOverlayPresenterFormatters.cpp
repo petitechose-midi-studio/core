@@ -12,6 +12,8 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerChordUiOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -63,19 +65,54 @@ FLASHMEM uint32_t mixRevision(uint32_t seed, uint32_t value) {
     return (seed ^ value) * 16777619U;
 }
 
-FLASHMEM uint32_t buildStepEditDataRevision(const Source& source,
-                                            bool projectionEnabled,
-                                            bool localVariationMode,
-                                            bool chordDetailMode,
-                                            uint8_t step,
-                                            uint8_t len) {
+FLASHMEM uint32_t mixSignedRevision(uint32_t seed, int32_t value) {
+    return mixRevision(seed, static_cast<uint32_t>(value + 32768));
+}
+
+FLASHMEM uint32_t mixResolvedStepRevision(
+    uint32_t revision,
+    const core::state::sequencer::SequencerResolvedStepDisplayState& resolved
+) {
+    revision = mixRevision(revision, resolved.valid ? 1U : 0U);
+    revision = mixRevision(revision, resolved.enabled ? 1U : 0U);
+    revision = mixRevision(revision, resolved.probabilityCycleActive ? 1U : 0U);
+    revision = mixRevision(revision, resolved.note);
+    revision = mixRevision(revision, resolved.velocity);
+    revision = mixRevision(revision, resolved.gate);
+    revision = mixSignedRevision(revision, resolved.nudge);
+    revision = mixRevision(revision, resolved.probability);
+    revision = mixRevision(revision, resolved.childPitchSummaryVisible ? 1U : 0U);
+    revision = mixRevision(revision, resolved.childPitchSummaryNote);
+    revision = mixRevision(revision, resolved.runtimeNodeId);
+    revision = mixRevision(revision, resolved.variation.visible ? 1U : 0U);
+    revision = mixRevision(revision, resolved.variation.rangeVisible ? 1U : 0U);
+    revision = mixRevision(revision, resolved.variation.deltaVisible ? 1U : 0U);
+    revision = mixRevision(revision, resolved.variation.resolved.resolved.note);
+    revision = mixRevision(revision, resolved.variation.resolved.resolved.velocity);
+    revision = mixRevision(revision, resolved.variation.resolved.resolved.gate);
+    revision = mixSignedRevision(revision, resolved.variation.resolved.resolved.nudge);
+    revision = mixRevision(revision, resolved.variation.resolved.ranges.pitchSemitones);
+    revision = mixRevision(revision, resolved.variation.resolved.ranges.velocity);
+    revision = mixRevision(revision, resolved.variation.resolved.ranges.gatePercent);
+    revision = mixRevision(revision, resolved.variation.resolved.ranges.nudge);
+    return revision;
+}
+
+FLASHMEM uint32_t buildStepEditDataRevision(
+    const Source& source,
+    const core::state::sequencer::SequencerResolvedStepDisplayState& resolved,
+    bool localVariationMode,
+    bool chordDetailMode,
+    uint8_t step,
+    uint8_t len
+) {
     const auto& sequencer = source.sequencer;
     uint32_t revision = 2166136261U;
     revision = mixRevision(revision, sequencer.pattern.stepDataRevision.get());
     revision = mixRevision(revision, sequencer.pattern.graphRevision.get());
     revision = mixRevision(revision, sequencer.pattern.patternScaleRevision.get());
     revision = mixRevision(revision, source.tracks.projectScaleRevisionSignal().get());
-    revision = mixRevision(revision, projectionEnabled ? 1U : 0U);
+    revision = mixResolvedStepRevision(revision, resolved);
     revision = mixRevision(revision, localVariationMode ? 1U : 0U);
     revision = mixRevision(revision, chordDetailMode ? 1U : 0U);
     revision = mixRevision(
@@ -132,14 +169,14 @@ FLASHMEM core::state::SequencerStepContentClipboardKind clipboardKindForFocusedC
 
 FLASHMEM bool focusedContextHasChild(
     const core::state::sequencer::SequencerState& sequencer,
-    const core::state::sequencer::SequencerContentStepProjection& projection
+    core::state::sequencer::SequencerGraphNodeId nodeId
 ) {
     const auto row = static_cast<size_t>(sequencer.stepEdit.focusedRow.get());
     if (step_edit_rows::isContext(static_cast<uint8_t>(row))) {
-        return core::state::sequencer::stepContentProjectionHasChild(
-            projection,
-            childKindForContextRow(row)
-        );
+        const auto childKind = childKindForContextRow(row);
+        return childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+            ? core::state::sequencer::stepNodeHasMicroSequence(sequencer.pattern, nodeId)
+            : core::state::sequencer::stepNodeHasCycleStateSet(sequencer.pattern, nodeId);
     }
     return false;
 }
@@ -311,11 +348,31 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         oc::type::text::formatUnsigned(data.meta.data(), data.meta.size(), static_cast<unsigned>(step) + 1U);
     }
 
-    const auto effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
-        source.tracks.projectScaleSettings(),
-        sequencer.pattern.scalePolicy,
-        sequencer.pattern.scaleOverride
+    const bool selectedRowIsProperty =
+        step_edit_rows::isProperty(static_cast<uint8_t>(data.selectedIndex));
+    const auto selectedProperty = selectedRowIsProperty
+        ? step_edit_rows::propertyForRow(static_cast<uint8_t>(data.selectedIndex))
+        : sequencer.activeStepProperty.get();
+    const auto displayContext =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            source.tracks.projectScaleSettings(),
+            selectedProperty
+        );
+    const auto touchedMask = sequencer.stepInlineFeedback.touchedMask.get();
+    const bool stepInlineEditActive =
+        sequencer.stepInlineFeedback.visible.get() && touchedMask.test(step);
+    const auto resolved = core::state::sequencer::buildSequencerResolvedStepDisplayState(
+        displayContext,
+        step,
+        stepInlineEditActive
     );
+    if (!resolved.valid) {
+        data.visible = false;
+        return data;
+    }
+
+    const auto effectiveScaleSettings = displayContext.scaleSettings;
     const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
         sequencer,
         step,
@@ -326,11 +383,14 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         return data;
     }
 
-    const bool selectedRowIsProperty =
-        step_edit_rows::isProperty(static_cast<uint8_t>(data.selectedIndex));
-    const auto selectedProperty = selectedRowIsProperty
-        ? step_edit_rows::propertyForRow(static_cast<uint8_t>(data.selectedIndex))
-        : core::state::sequencer::StepProperty::NOTE;
+    const auto& variationValues = resolved.variation.resolved.resolved;
+    const bool useVariationValues = resolved.variation.visible;
+    const uint8_t displayNote = useVariationValues ? variationValues.note : resolved.note;
+    const uint8_t displayVelocity =
+        useVariationValues ? variationValues.velocity : resolved.velocity;
+    const uint16_t displayGate = useVariationValues ? variationValues.gate : resolved.gate;
+    const int8_t displayNudge = useVariationValues ? variationValues.nudge : resolved.nudge;
+
     const bool localVariationMode =
         sequencer.stepEdit.localVariationEditActive.get() &&
         selectedRowIsProperty &&
@@ -364,7 +424,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
 
         const uint32_t revision = buildStepEditDataRevision(
             source,
-            projection.enabled,
+            resolved,
             false,
             true,
             step,
@@ -431,11 +491,11 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
                 data.valueBuffers[rowIndex].data(),
                 data.valueBuffers[rowIndex].size(),
                 property,
-                projection.note,
-                projection.velocity,
-                projection.gate,
-                projection.nudge,
-                projection.probability
+                displayNote,
+                displayVelocity,
+                displayGate,
+                displayNudge,
+                resolved.probability
             );
             copyText(
                 data.compactValueBuffers[i].data(),
@@ -561,10 +621,10 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     data.overlayProps.title = data.summary.data();
     data.overlayProps.meta = data.meta.data();
     data.overlayProps.focusLabel = data.focusLabel.data();
-    data.overlayProps.enabled = projection.enabled;
+    data.overlayProps.enabled = resolved.enabled;
     data.overlayProps.microSequence = projection.hasMicroSequence;
     data.overlayProps.cycleStates = projection.hasCycleStates;
-    data.overlayProps.probabilityActive = projection.probability < 100;
+    data.overlayProps.probabilityActive = resolved.probability < 100;
     data.overlayProps.selectedIndex = data.selectedIndex;
     data.overlayProps.actions[0] = core::ui::SequencerStepEditActionChip{
         .key = "Chord",
@@ -587,7 +647,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
 
     const uint32_t revision = buildStepEditDataRevision(
         source,
-        projection.enabled,
+        resolved,
         localVariationMode,
         false,
         step,
@@ -615,21 +675,6 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         return props;
     }
 
-    const auto effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
-        source.tracks.projectScaleSettings(),
-        sequencer.pattern.scalePolicy,
-        sequencer.pattern.scaleOverride
-    );
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
-        sequencer,
-        step,
-        effectiveScaleSettings
-    );
-    if (!projection.valid) {
-        props.visible = false;
-        return props;
-    }
-
     if (focusedRowIsValueRow(sequencer)) {
         constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
         props.visible = true;
@@ -648,7 +693,8 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         return props;
     }
 
-    const bool hasChild = focusedContextHasChild(sequencer, projection);
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
+    const bool hasChild = focusedContextHasChild(sequencer, nodeId);
     const bool canPaste = canPasteStepContent(source);
     const auto row = static_cast<size_t>(sequencer.stepEdit.focusedRow.get());
     const Tone contextTone = row == step_edit_rows::MICRO_SEQUENCE

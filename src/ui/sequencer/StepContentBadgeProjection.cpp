@@ -11,10 +11,8 @@
 namespace core::ui::sequencer::grid {
 namespace {
 
-using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
 using oc::note::sequencer::STEP_NODE_CHORD_MODE;
-using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 using oc::note::sequencer::StepSequencerChordMode;
 using oc::note::sequencer::StepSequencerChordSource;
 
@@ -40,11 +38,9 @@ FLASHMEM StepContentBadgeProjection buildStepContentBadgeProjectionForNode(
     if (node == nullptr) return badges;
 
     badges.microSequence =
-        node->has(STEP_NODE_CHILD_SEQUENCE) &&
-        graph->sequence(node->childSequenceId) != nullptr;
+        core::state::sequencer::stepNodeHasMicroSequence(pattern, nodeId);
     badges.cycleStates =
-        node->has(STEP_NODE_CYCLE_SET) &&
-        graph->cycleSet(node->cycleSetId) != nullptr;
+        core::state::sequencer::stepNodeHasCycleStateSet(pattern, nodeId);
     const bool localChord =
         node->has(STEP_NODE_CHORD_MODE) &&
         node->chordMode == StepSequencerChordMode::Local &&
