@@ -37,17 +37,15 @@ inline SequencerInteractionContext makeSequencerInteractionContext(
             step_edit_rows::isChord(row);
         context.stepEditorContextRowFocused = step_edit_rows::isContext(row);
         if (context.stepEditorContextRowFocused) {
-            const auto projection = resolveActiveContentStepProjection(
+            const auto nodeId = activeContentStepNodeId(
                 sequencer,
-                sequencer.stepEdit.stepIndex.get(),
-                {}
+                sequencer.stepEdit.stepIndex.get()
             );
+            const auto childKind = step_edit_rows::childKindForContextRow(row);
             context.stepEditorContextHasChild =
-                projection.valid &&
-                stepContentProjectionHasChild(
-                    projection,
-                    step_edit_rows::childKindForContextRow(row)
-                );
+                childKind == StepContentChildKind::MICRO_SEQUENCE
+                    ? stepNodeHasMicroSequence(sequencer.pattern, nodeId)
+                    : stepNodeHasCycleStateSet(sequencer.pattern, nodeId);
         }
     }
     return context;

@@ -835,17 +835,16 @@ FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return false;
 
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
         sequencer_,
-        step,
-        effectiveScaleSettings(sequencer_, tracks_)
+        step
     );
-    if (!projection.valid) return false;
-
-    return core::state::sequencer::stepContentProjectionHasChild(
-        projection,
-        step_edit_rows::childKindForContextRow(sequencer_.stepEdit.focusedRow.get())
+    const auto childKind = step_edit_rows::childKindForContextRow(
+        sequencer_.stepEdit.focusedRow.get()
     );
+    return childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+        ? core::state::sequencer::stepNodeHasMicroSequence(sequencer_.pattern, nodeId)
+        : core::state::sequencer::stepNodeHasCycleStateSet(sequencer_.pattern, nodeId);
 }
 
 FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {

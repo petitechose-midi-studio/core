@@ -557,12 +557,11 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
 }
 
 FLASHMEM bool SequencerStepHandler::focusedStepHasChildContent() const {
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
         sequencer_,
-        sequencer_.focusedStep.get(),
-        {}
+        sequencer_.focusedStep.get()
     );
-    return core::state::sequencer::stepContentProjectionHasAnyChild(projection);
+    return core::state::sequencer::stepNodeHasAnyChildContent(sequencer_.pattern, nodeId);
 }
 
 FLASHMEM bool SequencerStepHandler::canPasteFocusedStepContent() const {
