@@ -825,9 +825,7 @@ FLASHMEM void SequencerStructureEditWorkflow::beginStepPastePreview() {
     if (!selection.active.get()) return;
 
     selection.pastePreviewActive.set(true);
-    if (!structure_clipboard_.hasSequencerSteps() ||
-        structure_clipboard_.sequencerSteps.rootContext !=
-            core::state::sequencer::isRootContentView(sequencer_)) {
+    if (!structure_clipboard_.hasSequencerSteps()) {
         selection.pastePreview.set(core::state::sequencer::SequencerStepPastePreview::BLOCKED);
         return;
     }
@@ -837,34 +835,15 @@ FLASHMEM void SequencerStructureEditWorkflow::beginStepPastePreview() {
     );
     const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer_);
     const uint8_t maxStep = core::state::sequencer::maxStepCursorForPaste(sequencer_);
-    bool hasOverwrite = false;
-    bool hasGhost = false;
-    for (uint8_t i = 0; i < structure_clipboard_.sequencerSteps.count; ++i) {
-        const auto& entry = structure_clipboard_.sequencerSteps.entries[i];
-        if (!entry.valid) continue;
-        uint8_t target = 0;
-        if (!core::state::sequencer::resolveStepPasteTarget(
-                mode,
-                selection.cursorStep.get(),
-                entry.offset,
-                activeLength,
-                maxStep,
-                target
-            )) {
-            selection.pastePreview.set(core::state::sequencer::SequencerStepPastePreview::BLOCKED);
-            return;
-        }
-        hasOverwrite = hasOverwrite || target < activeLength;
-        hasGhost = hasGhost || target >= activeLength;
-    }
-
-    selection.pastePreview.set(
-        hasGhost
-            ? core::state::sequencer::SequencerStepPastePreview::GHOST
-            : (hasOverwrite
-                   ? core::state::sequencer::SequencerStepPastePreview::OVERWRITE
-                   : core::state::sequencer::SequencerStepPastePreview::EMPTY)
+    const auto plan = core::state::sequencer::buildStepPastePreviewPlan(
+        structure_clipboard_.sequencerSteps,
+        core::state::sequencer::isRootContentView(sequencer_),
+        selection.cursorStep.get(),
+        activeLength,
+        maxStep,
+        mode
     );
+    selection.pastePreview.set(plan.aggregate);
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::clearStepPastePreview() {
@@ -878,39 +857,21 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
     bool resetSelection
 ) {
     if (!structure_clipboard_.hasSequencerSteps()) return;
-    if (structure_clipboard_.sequencerSteps.rootContext !=
-        core::state::sequencer::isRootContentView(sequencer_)) {
-        clearStepPastePreview();
-        return;
-    }
 
     const auto mode = core::state::project::sanitizeProjectStepPasteMode(
         project_navigation_.stepPasteMode
     );
     const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer_);
     const uint8_t maxStep = core::state::sequencer::maxStepCursorForPaste(sequencer_);
-
-    uint8_t lastTarget = 0;
-    bool hasTarget = false;
-    for (uint8_t i = 0; i < structure_clipboard_.sequencerSteps.count; ++i) {
-        const auto& entry = structure_clipboard_.sequencerSteps.entries[i];
-        if (!entry.valid) continue;
-        uint8_t target = 0;
-        if (!core::state::sequencer::resolveStepPasteTarget(
-                mode,
-                cursorStep,
-                entry.offset,
-                activeLength,
-                maxStep,
-                target
-            )) {
-            clearStepPastePreview();
-            return;
-        }
-        lastTarget = hasTarget ? std::max(lastTarget, target) : target;
-        hasTarget = true;
-    }
-    if (!hasTarget) {
+    const auto plan = core::state::sequencer::buildStepPastePreviewPlan(
+        structure_clipboard_.sequencerSteps,
+        core::state::sequencer::isRootContentView(sequencer_),
+        cursorStep,
+        activeLength,
+        maxStep,
+        mode
+    );
+    if (plan.blocked || !plan.hasEntries()) {
         clearStepPastePreview();
         return;
     }
@@ -920,7 +881,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
     if (!core::state::sequencer::resizeActiveContentForStepPaste(
             sequencer_,
             mode,
-            lastTarget,
+            plan.lastTarget,
             maxStep
         )) {
         clearStepPastePreview();
@@ -929,27 +890,25 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
 
     const auto* sourceGraph = structure_clipboard_.sequencerGraph.get();
     bool changed = false;
-    uint8_t firstTarget = lastTarget;
-    const uint8_t nextActiveLength = core::state::sequencer::activeContentLength(sequencer_);
-    for (uint8_t i = 0; i < structure_clipboard_.sequencerSteps.count; ++i) {
-        const auto& entry = structure_clipboard_.sequencerSteps.entries[i];
+    for (uint8_t i = 0; i < plan.count; ++i) {
+        const auto& preview = plan.entries[i];
+        if (!preview.valid) continue;
+        const auto& entry =
+            structure_clipboard_.sequencerSteps.entries[preview.clipboardIndex];
         if (!entry.valid) continue;
-
-        uint8_t target = 0;
-        if (!core::state::sequencer::resolveStepPasteTarget(
-                mode,
-                cursorStep,
-                entry.offset,
-                nextActiveLength,
-                maxStep,
-                target
-            )) {
-            continue;
-        }
-        firstTarget = std::min(firstTarget, target);
         changed = structure_clipboard_.sequencerSteps.rootContext
-            ? writeRootStepFromClipboardEntry(sequencer_, entry, sourceGraph, target) || changed
-            : writeChildStepFromClipboardEntry(sequencer_, entry, sourceGraph, target) || changed;
+            ? writeRootStepFromClipboardEntry(
+                  sequencer_,
+                  entry,
+                  sourceGraph,
+                  preview.targetStep
+              ) || changed
+            : writeChildStepFromClipboardEntry(
+                  sequencer_,
+                  entry,
+                  sourceGraph,
+                  preview.targetStep
+              ) || changed;
     }
 
     if (!changed) {
@@ -960,10 +919,10 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
     core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.pattern.bumpStepDataRevision();
     if (resetSelection) {
-        sequencer_.structureUi.stepSelection.reset(firstTarget);
+        sequencer_.structureUi.stepSelection.reset(plan.firstTarget);
     }
-    sequencer_.focusedStep.set(firstTarget);
-    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(firstTarget));
+    sequencer_.focusedStep.set(plan.firstTarget);
+    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(plan.firstTarget));
     navigation_focus_.set(core::state::StructureNavigationFocus::STEP);
     recordPageHistoryAfter(std::move(before));
 }
