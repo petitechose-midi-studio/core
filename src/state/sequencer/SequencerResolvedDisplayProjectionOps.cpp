@@ -655,4 +655,18 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
     return step;
 }
 
+FLASHMEM oc::note::sequencer::StepSequencerStepValues sequencerResolvedStepDisplayValues(
+    const SequencerResolvedStepDisplayState& step
+) {
+    if (step.variation.visible) {
+        return step.variation.resolved.resolved;
+    }
+    return {
+        .note = step.note,
+        .velocity = step.velocity,
+        .gate = step.gate,
+        .nudge = step.nudge,
+    };
+}
+
 }  // namespace core::state::sequencer

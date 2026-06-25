@@ -383,30 +383,25 @@ bool fillResolvedStepUxContext(
     );
     if (!resolved.valid) return false;
 
-    const auto& variationValues = resolved.variation.resolved.resolved;
-    const bool useVariationValues = resolved.variation.visible;
-    const uint8_t note = useVariationValues ? variationValues.note : resolved.note;
-    const uint8_t velocity = useVariationValues ? variationValues.velocity : resolved.velocity;
-    const uint16_t gate = useVariationValues ? variationValues.gate : resolved.gate;
-    const int8_t nudge = useVariationValues ? variationValues.nudge : resolved.nudge;
+    const auto values = core::state::sequencer::sequencerResolvedStepDisplayValues(resolved);
 
     out.hasStepOn = true;
     out.stepOn = resolved.enabled;
     out.hasResolvedStep = true;
-    out.resolvedNote = note;
-    out.resolvedVelocity = velocity;
-    out.resolvedGate = gate;
-    out.resolvedNudge = nudge;
+    out.resolvedNote = values.note;
+    out.resolvedVelocity = values.velocity;
+    out.resolvedGate = values.gate;
+    out.resolvedNudge = values.nudge;
     out.resolvedProbability = resolved.probability;
     out.resolvedVariationVisible = resolved.variation.visible;
     core::state::sequencer::formatStepPropertyValue(
         out.valueLabel,
         sizeof(out.valueLabel),
         property,
-        note,
-        velocity,
-        gate,
-        nudge,
+        values.note,
+        values.velocity,
+        values.gate,
+        values.nudge,
         resolved.probability
     );
     return true;

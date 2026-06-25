@@ -68,4 +68,8 @@ SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayState(
     bool stepInlineEditActive
 );
 
+oc::note::sequencer::StepSequencerStepValues sequencerResolvedStepDisplayValues(
+    const SequencerResolvedStepDisplayState& step
+);
+
 }  // namespace core::state::sequencer
