@@ -136,6 +136,7 @@ void test_step_node_child_presence_helpers_validate_targets() {
 
     assert(!core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
     assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+    assert(!core::state::sequencer::stepNodeHasAnyChildContent(state.pattern, rootNode));
 
     const auto sequence = core::state::sequencer::createMicroSequence(
         state.pattern,
@@ -145,6 +146,7 @@ void test_step_node_child_presence_helpers_validate_targets() {
     assert(sequence.ok);
     assert(core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
     assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+    assert(core::state::sequencer::stepNodeHasAnyChildContent(state.pattern, rootNode));
 
     const auto cycleSet = core::state::sequencer::createCycleStateSet(
         state.pattern,
@@ -154,14 +156,17 @@ void test_step_node_child_presence_helpers_validate_targets() {
     assert(cycleSet.ok);
     assert(core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
     assert(core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+    assert(core::state::sequencer::stepNodeHasAnyChildContent(state.pattern, rootNode));
 
     assert(core::state::sequencer::clearNodeChildSequence(state.pattern, rootNode));
     assert(!core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
     assert(core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+    assert(core::state::sequencer::stepNodeHasAnyChildContent(state.pattern, rootNode));
 
     assert(core::state::sequencer::clearNodeCycleStateSet(state.pattern, rootNode));
     assert(!core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
     assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
+    assert(!core::state::sequencer::stepNodeHasAnyChildContent(state.pattern, rootNode));
 
     std::cout << "[PASS] test_step_node_child_presence_helpers_validate_targets\n";
 }

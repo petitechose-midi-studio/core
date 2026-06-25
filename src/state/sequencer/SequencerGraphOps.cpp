@@ -729,4 +729,12 @@ FLASHMEM bool stepNodeHasCycleStateSet(
            graph->cycleSet(node->cycleSetId) != nullptr;
 }
 
+FLASHMEM bool stepNodeHasAnyChildContent(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId
+) {
+    return stepNodeHasMicroSequence(pattern, nodeId) ||
+           stepNodeHasCycleStateSet(pattern, nodeId);
+}
+
 }  // namespace core::state::sequencer

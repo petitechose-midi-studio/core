@@ -59,6 +59,10 @@ bool stepNodeHasCycleStateSet(
     const SequencerPatternState& pattern,
     SequencerGraphNodeId nodeId
 );
+bool stepNodeHasAnyChildContent(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId nodeId
+);
 
 SequencerGraphCreateResult createMicroSequence(
     SequencerPatternState& pattern,

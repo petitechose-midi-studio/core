@@ -191,16 +191,11 @@ Tone variationStatusTone(core::state::sequencer::StepProperty property) {
 
 bool focusedStepHasChildContent(const SequencerViewModelSource& source) {
     const auto& sequencer = source.sequencer;
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
         sequencer,
-        sequencer.focusedStep.get(),
-        core::state::sequencer::resolveEffectiveScaleSettings(
-            source.tracks.projectScaleSettings(),
-            sequencer.pattern.scalePolicy,
-            sequencer.pattern.scaleOverride
-        )
+        sequencer.focusedStep.get()
     );
-    return core::state::sequencer::stepContentProjectionHasAnyChild(projection);
+    return core::state::sequencer::stepNodeHasAnyChildContent(sequencer.pattern, nodeId);
 }
 
 bool canPasteStepContent(const SequencerViewModelSource& source) {
