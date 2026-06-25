@@ -14,7 +14,9 @@
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
+#include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
@@ -358,32 +360,56 @@ const char* structureTarget(core::state::StructureSelectionScope scope) {
     }
 }
 
-void fillStepValueLabel(const core::state::sequencer::SequencerState& sequencer,
-                        const core::state::sequencer::SequencerTrackBankState& tracks,
-                        uint8_t step,
-                        core::state::sequencer::StepProperty property,
-                        char (&out)[16]) {
-    const auto effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
-        tracks.projectScaleSettings(),
-        sequencer.pattern.scalePolicy,
-        sequencer.pattern.scaleOverride
-    );
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
-        sequencer,
+bool fillResolvedStepUxContext(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    uint8_t step,
+    core::state::sequencer::StepProperty property,
+    core::validation::ux::SemanticUxContext& out
+) {
+    const auto context =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            tracks.projectScaleSettings(),
+            property
+        );
+    const auto touchedMask = sequencer.stepInlineFeedback.touchedMask.get();
+    const bool stepInlineEditActive =
+        sequencer.stepInlineFeedback.visible.get() && touchedMask.test(step);
+    const auto resolved = core::state::sequencer::buildSequencerResolvedStepDisplayState(
+        context,
         step,
-        effectiveScaleSettings
+        stepInlineEditActive
     );
-    if (!projection.valid) return;
+    if (!resolved.valid) return false;
+
+    const auto& variationValues = resolved.variation.resolved.resolved;
+    const bool useVariationValues = resolved.variation.visible;
+    const uint8_t note = useVariationValues ? variationValues.note : resolved.note;
+    const uint8_t velocity = useVariationValues ? variationValues.velocity : resolved.velocity;
+    const uint16_t gate = useVariationValues ? variationValues.gate : resolved.gate;
+    const int8_t nudge = useVariationValues ? variationValues.nudge : resolved.nudge;
+
+    out.hasStepOn = true;
+    out.stepOn = resolved.enabled;
+    out.hasResolvedStep = true;
+    out.resolvedNote = note;
+    out.resolvedVelocity = velocity;
+    out.resolvedGate = gate;
+    out.resolvedNudge = nudge;
+    out.resolvedProbability = resolved.probability;
+    out.resolvedVariationVisible = resolved.variation.visible;
     core::state::sequencer::formatStepPropertyValue(
-        out,
-        sizeof(out),
+        out.valueLabel,
+        sizeof(out.valueLabel),
         property,
-        projection.note,
-        projection.velocity,
-        projection.gate,
-        projection.nudge,
-        projection.probability
+        note,
+        velocity,
+        gate,
+        nudge,
+        resolved.probability
     );
+    return true;
 }
 
 }  // namespace
@@ -721,17 +747,7 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
         ? (sequencer_.structureUi.stepSelection.selected(step) ? "selected" : "cursor")
         : core::state::sequencer::stepPropertyName(property);
     out.effect = actionName(action);
-    out.hasStepOn = true;
-    out.stepOn = core::state::sequencer::resolveActiveContentStepProjection(
-        sequencer_,
-        step,
-        core::state::sequencer::resolveEffectiveScaleSettings(
-            tracks_.projectScaleSettings(),
-            sequencer_.pattern.scalePolicy,
-            sequencer_.pattern.scaleOverride
-        )
-    ).enabled;
-    fillStepValueLabel(sequencer_, tracks_, step, property, out.valueLabel);
+    fillResolvedStepUxContext(sequencer_, tracks_, step, property, out);
     return true;
 }
 
@@ -788,6 +804,13 @@ bool SequencerStepEditUxSurface::captureSemanticUxContext(
         out.target = "step";
         out.targetStep = static_cast<int16_t>(step);
         out.effect = actionName(policy.macroLongPress);
+        fillResolvedStepUxContext(
+            sequencer_,
+            tracks_,
+            step,
+            sequencer_.activeStepProperty.get(),
+            out
+        );
         copyIndexLabel(out.valueLabel, step);
         return true;
     }
@@ -803,7 +826,22 @@ bool SequencerStepEditUxSurface::captureSemanticUxContext(
     out.mode = "sequencer.step_edit";
     out.target = "step";
     out.targetStep = static_cast<int16_t>(data.stepIndex);
+    auto resolvedProperty = sequencer_.activeStepProperty.get();
     if (data.selectedIndex >= 0 && data.selectedIndex < data.rowCount) {
+        if (core::state::sequencer::step_edit_rows::isProperty(
+                static_cast<uint8_t>(data.selectedIndex)
+            )) {
+            resolvedProperty = core::state::sequencer::step_edit_rows::propertyForRow(
+                static_cast<uint8_t>(data.selectedIndex)
+            );
+        }
+        fillResolvedStepUxContext(
+            sequencer_,
+            tracks_,
+            static_cast<uint8_t>(data.stepIndex),
+            resolvedProperty,
+            out
+        );
         out.property = data.rows[data.selectedIndex].key;
         copyValueLabel(out.valueLabel, data.rows[data.selectedIndex].value);
     }

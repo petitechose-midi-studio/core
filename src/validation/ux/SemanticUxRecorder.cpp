@@ -102,6 +102,15 @@ void formatContextFields(char* out,
     } else if (pre.hasStepOn) {
         appendBoolField(out, size, "step_on", pre.stepOn);
     }
+    const SemanticUxContext& resolved = post.hasResolvedStep ? post : pre;
+    if (resolved.hasResolvedStep) {
+        appendIntField(out, size, "resolved_note", resolved.resolvedNote);
+        appendIntField(out, size, "resolved_velocity", resolved.resolvedVelocity);
+        appendIntField(out, size, "resolved_gate", resolved.resolvedGate);
+        appendIntField(out, size, "resolved_nudge", resolved.resolvedNudge);
+        appendIntField(out, size, "resolved_probability", resolved.resolvedProbability);
+        appendBoolField(out, size, "resolved_variation", resolved.resolvedVariationVisible);
+    }
 }
 
 }  // namespace
@@ -235,10 +244,10 @@ void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
         provider->captureSemanticUxContext(record.traceEvent, postContext);
     }
 
-    char contextFields[384];
+    char contextFields[640];
     formatContextFields(contextFields, sizeof(contextFields), record.preContext, postContext);
 
-    char line[1408];
+    char line[1600];
     if (record.kind == RecordKind::Encoder) {
         std::snprintf(
             line,

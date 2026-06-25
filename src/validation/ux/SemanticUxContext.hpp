@@ -19,6 +19,13 @@ struct SemanticUxContext {
     char valueLabel[16] = {};
     bool hasStepOn = false;
     bool stepOn = false;
+    bool hasResolvedStep = false;
+    uint8_t resolvedNote = 0;
+    uint8_t resolvedVelocity = 0;
+    uint16_t resolvedGate = 0;
+    int8_t resolvedNudge = 0;
+    uint8_t resolvedProbability = 0;
+    bool resolvedVariationVisible = false;
 };
 
 class SemanticUxContextProvider {

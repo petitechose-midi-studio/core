@@ -38,6 +38,13 @@ public:
         std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s", calls == 1 ? "50%" : "85");
         out.hasStepOn = true;
         out.stepOn = calls > 1;
+        out.hasResolvedStep = true;
+        out.resolvedNote = calls == 1 ? 60 : 67;
+        out.resolvedVelocity = calls == 1 ? 72 : 85;
+        out.resolvedGate = calls == 1 ? 50 : 120;
+        out.resolvedNudge = calls == 1 ? -2 : 3;
+        out.resolvedProbability = calls == 1 ? 90 : 100;
+        out.resolvedVariationVisible = calls > 1;
     }
 
     mutable int calls = 0;
@@ -207,6 +214,12 @@ void test_writes_native_context_provider_fields() {
     assert(contains(sink.lines[0], "\"property\":\"Velocity\""));
     assert(contains(sink.lines[0], "\"value_label\":\"85\""));
     assert(contains(sink.lines[0], "\"step_on\":1"));
+    assert(contains(sink.lines[0], "\"resolved_note\":67"));
+    assert(contains(sink.lines[0], "\"resolved_velocity\":85"));
+    assert(contains(sink.lines[0], "\"resolved_gate\":120"));
+    assert(contains(sink.lines[0], "\"resolved_nudge\":3"));
+    assert(contains(sink.lines[0], "\"resolved_probability\":100"));
+    assert(contains(sink.lines[0], "\"resolved_variation\":1"));
     assert(provider.calls == 2);
     std::cout << "[PASS] test_writes_native_context_provider_fields\n";
 }
