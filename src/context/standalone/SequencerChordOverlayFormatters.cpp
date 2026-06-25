@@ -151,7 +151,7 @@ FLASHMEM void formatChordPreviewName(
             pos = appendText(out, outSize, pos, pitchClassLabel(analysis.bassPitchClass));
         }
     } else if (nonRootIntervalCount(analysis) > 3) {
-        pos = appendText(out, outSize, pos, " complex");
+        pos = appendText(out, outSize, pos, " chord");
     } else {
         for (uint8_t i = 0; i < analysis.intervalCount; ++i) {
             const uint8_t interval = analysis.chromaticIntervals[i];
@@ -209,7 +209,7 @@ FLASHMEM void populateChordPreviewMarkers(
         core::ui::sequencer::semantic::Tone::CHORD_VELOCITY
     );
     props.mapVisible = true;
-    props.timingVisible = preview.voiceCount > 1;
+    props.timingVisible = preview.voiceCount > 1 && maxDelay > minDelay;
     props.timingStart = clampPercent((static_cast<int>(minDelay) * 100) / spanTicks);
     props.timingEnd = clampPercent((static_cast<int>(maxDelay) * 100) / spanTicks);
     props.timingColor = core::ui::sequencer::semantic::color(
@@ -272,7 +272,7 @@ FLASHMEM const char* chordFieldLabel(core::state::sequencer::SequencerChordEditF
         case Field::STRUM:
             return "Strum";
         case Field::VELOCITY_CURVE:
-            return "Velocity curve";
+            return "Velocity";
         case Field::COUNT:
         default:
             return "Chord";
@@ -379,7 +379,7 @@ FLASHMEM void formatChordFieldValue(
             std::snprintf(
                 out,
                 outSize,
-                "%uv",
+                "%u",
                 static_cast<unsigned>(
                     chord.mode == oc::note::sequencer::StepSequencerChordMode::Local
                         ? chord.spec.voiceCount
@@ -388,13 +388,13 @@ FLASHMEM void formatChordFieldValue(
             );
             return;
         case Field::COLOR:
-            std::snprintf(out, outSize, "C%u", static_cast<unsigned>(chord.spec.color));
+            std::snprintf(out, outSize, "%u", static_cast<unsigned>(chord.spec.color));
             return;
         case Field::VARIANT:
-            std::snprintf(out, outSize, "Sh%u", static_cast<unsigned>(chord.spec.variant));
+            std::snprintf(out, outSize, "%u", static_cast<unsigned>(chord.spec.variant));
             return;
         case Field::SPREAD:
-            std::snprintf(out, outSize, "S%u", static_cast<unsigned>(chord.spec.spread));
+            std::snprintf(out, outSize, "%u", static_cast<unsigned>(chord.spec.spread));
             return;
         case Field::STRUM:
             formatSigned(out, outSize, chord.spec.strum, "%");
@@ -412,13 +412,10 @@ FLASHMEM void formatChordFieldValue(
 FLASHMEM void formatChordFieldTitle(
     char* out,
     size_t outSize,
-    core::state::sequencer::SequencerChordEditField field,
-    const core::state::sequencer::SequencerStepChordUiState& chord
+    core::state::sequencer::SequencerChordEditField field
 ) {
     if (!out || outSize == 0) return;
-    std::array<char, 16> value{};
-    formatChordFieldValue(value.data(), value.size(), field, chord);
-    std::snprintf(out, outSize, "%s %s", chordFieldLabel(field), value.data());
+    copyText(out, outSize, chordFieldLabel(field));
 }
 
 FLASHMEM char* chordFieldBuffer(
@@ -491,7 +488,12 @@ FLASHMEM void formatChordPreviewNotes(
 
     size_t pos = 0;
     uint8_t written = 0;
-    for (uint8_t i = 0; i < preview.voiceCount; ++i) {
+    constexpr uint8_t MAX_VISIBLE_NOTES = 5;
+    const bool summarize = preview.voiceCount > MAX_VISIBLE_NOTES;
+    const uint8_t noteLimit =
+        summarize ? static_cast<uint8_t>(MAX_VISIBLE_NOTES - 1U) : preview.voiceCount;
+
+    for (uint8_t i = 0; i < noteLimit; ++i) {
         char note[8] = {};
         formatNoteName(note, sizeof(note), preview.voices[i].note);
         const size_t noteLen = std::strlen(note);
@@ -523,6 +525,17 @@ FLASHMEM void formatChordPreviewNotes(
         if (gap > 0) pos = appendText(out, outSize, pos, " ");
         pos = appendText(out, outSize, pos, note);
         ++written;
+    }
+    if (summarize) {
+        char suffix[8] = {};
+        std::snprintf(
+            suffix,
+            sizeof(suffix),
+            "+%u",
+            static_cast<unsigned>(preview.voiceCount - noteLimit)
+        );
+        if (pos > 0) pos = appendText(out, outSize, pos, " ");
+        pos = appendText(out, outSize, pos, suffix);
     }
     oc::type::text::terminate(out, outSize, pos);
 }
@@ -572,8 +585,7 @@ FLASHMEM void populateChordDetailOverlay(
     formatChordFieldTitle(
         data.chordFieldTitle.data(),
         data.chordFieldTitle.size(),
-        focusedField,
-        chord
+        focusedField
     );
 
     data.overlayProps = {};
