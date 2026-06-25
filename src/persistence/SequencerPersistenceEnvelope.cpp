@@ -8,6 +8,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/SequencerPersistenceCodec.hpp"
+#include "state/sequencer/SequencerGraphAssetRecords.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
@@ -65,47 +66,14 @@ struct SectionHeader {
     uint16_t byteSize = 0;
 };
 
-struct SequenceRecord {
-    uint8_t kind = 0;
-    uint16_t firstStepNode = kInvalidId;
-    uint8_t length = 0;
-    int8_t offset = 0;
-};
-
-struct StepNodeRecord {
-    uint16_t flags = 0;
-    int8_t noteOffset = 0;
-    int16_t velocityOffset = 0;
-    int16_t gateOffset = 0;
-    int8_t nudgeOffset = 0;
-    int16_t probabilityOffset = 0;
-    uint16_t childSequenceId = kInvalidId;
-    uint16_t cycleSetId = kInvalidId;
-    uint8_t localVariationPitchSemitones = 0;
-    uint8_t localVariationVelocity = 0;
-    uint8_t localVariationGatePercent = 0;
-    uint8_t localVariationNudge = 0;
-    uint8_t chordMode = static_cast<uint8_t>(StepSequencerChordMode::Single);
-    uint8_t chordVoiceCount = 3;
-    uint8_t chordColor = 0;
-    uint8_t chordVariant = 0;
-    uint8_t chordSpread = 0;
-    int8_t chordStrum = 0;
-    int8_t chordVelocityCurve = 0;
-};
-
-struct CycleSetRecord {
-    uint16_t firstStateNode = kInvalidId;
-    uint8_t length = 0;
-    int8_t offset = 0;
-};
 #pragma pack(pop)
 
 static_assert(sizeof(EnvelopeHeader) == 12, "Unexpected EnvelopeHeader size");
 static_assert(sizeof(SectionHeader) == 10, "Unexpected SectionHeader size");
-static_assert(sizeof(SequenceRecord) == 5, "Unexpected SequenceRecord size");
-static_assert(sizeof(StepNodeRecord) == 25, "Unexpected StepNodeRecord size");
-static_assert(sizeof(CycleSetRecord) == 4, "Unexpected CycleSetRecord size");
+
+using SequenceRecord = core::state::sequencer::SequencerGraphSequenceRecord;
+using StepNodeRecord = core::state::sequencer::SequencerGraphStepNodeRecord;
+using CycleSetRecord = core::state::sequencer::SequencerGraphCycleSetRecord;
 
 struct GraphRecordScratch {
     std::array<SequenceRecord, StepSequencerGraphLimits::MAX_SEQUENCES> sequences{};
