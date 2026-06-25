@@ -129,3 +129,7 @@ jobs:
       - name: Validate project migration fixtures with host file tool
         working-directory: workspace/midi-studio/core
         run: python script/dev/validate-project-fixtures.py
+
+      - name: Validate step graph preset fixtures with host file tool
+        working-directory: workspace/midi-studio/core
+        run: python script/dev/validate-step-graph-preset-fixtures.py

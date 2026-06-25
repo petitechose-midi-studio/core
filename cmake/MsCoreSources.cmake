@@ -55,6 +55,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphChildOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphContentOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphOps.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphPresetWorkflow.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphPropertyOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerSnapshotOps.cpp"

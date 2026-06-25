@@ -6,11 +6,13 @@
 
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectMigration.hpp"
+#include "StepGraphPresetTool.hpp"
 
 namespace {
 
 namespace migration = core::persistence::project_file_migration;
 namespace project_file = core::persistence::project_file;
+namespace step_graph_preset_tool = core::tools::ms_core_file_tool;
 
 struct Args {
     std::string command;
@@ -210,7 +212,9 @@ void printUsage() {
               << "  ms-core-file-tool inspect <file.mspj> [--json]\n"
               << "  ms-core-file-tool validate <file.mspj> [--json]\n"
               << "  ms-core-file-tool migrate <file.mspj> --out <file.mspj> "
-                 "[--json] [--allow-partial]\n";
+                 "[--json] [--allow-partial]\n"
+              << "  ms-core-file-tool inspect-step-graph-preset <file.msgp> [--json]\n"
+              << "  ms-core-file-tool validate-step-graph-preset <file.msgp> [--json]\n";
 }
 
 bool parseArgs(int argc, char** argv, Args& out) {
@@ -229,10 +233,17 @@ bool parseArgs(int argc, char** argv, Args& out) {
             return false;
         }
     }
-    if (out.command != "inspect" && out.command != "validate" && out.command != "migrate") {
+    if (out.command != "inspect" &&
+        out.command != "validate" &&
+        out.command != "migrate" &&
+        !step_graph_preset_tool::isStepGraphPresetCommand(out.command)) {
         return false;
     }
     if (out.command == "migrate" && out.outputPath.empty()) return false;
+    if (out.command != "migrate" && !out.outputPath.empty()) return false;
+    if (step_graph_preset_tool::isStepGraphPresetCommand(out.command) && out.allowPartial) {
+        return false;
+    }
     return true;
 }
 
@@ -249,6 +260,14 @@ int main(int argc, char** argv) {
     if (!readFile(args.inputPath, input)) {
         std::cerr << "Failed to read input file: " << args.inputPath << "\n";
         return 66;
+    }
+
+    if (step_graph_preset_tool::isStepGraphPresetCommand(args.command)) {
+        return step_graph_preset_tool::runStepGraphPresetCommand(
+            args.command,
+            input,
+            args.json
+        );
     }
 
     project_file::LoadReport report{};
