@@ -883,6 +883,10 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     );
     h.advance(0);
     assert(h.state.sequencer.structureUi.stepSelection.pastePreviewActive.get());
+    assert(
+        h.state.sequencer.structureUi.stepSelection.pastePreview.get() ==
+        core::state::sequencer::SequencerStepPastePreview::GHOST
+    );
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
@@ -1137,6 +1141,11 @@ void test_step_selection_wrap_paste_overwrites_inside_pattern() {
     h.state.sequencer.focusedStep.set(7);
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.advance(0);
+    assert(h.state.sequencer.structureUi.stepSelection.pastePreviewActive.get());
+    assert(
+        h.state.sequencer.structureUi.stepSelection.pastePreview.get() ==
+        core::state::sequencer::SequencerStepPastePreview::OVERWRITE
+    );
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 

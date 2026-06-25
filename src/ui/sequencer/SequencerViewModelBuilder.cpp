@@ -98,52 +98,32 @@ void applyStepPasteFootprint(
     const auto& selection = source.sequencer.structureUi.stepSelection;
     if (!selection.active.get() || !source.structureClipboard.hasSequencerSteps()) return;
 
-    if (source.structureClipboard.sequencerSteps.rootContext !=
-        core::state::sequencer::isRootContentView(source.sequencer)) {
-        for (auto& tile : frame.tiles) {
-            if (!tile.stepSelectionCursor) continue;
-            tile.stepPastePreviewActive = true;
-            tile.stepPastePreview = core::state::sequencer::SequencerStepPastePreview::BLOCKED;
-            return;
-        }
-        return;
-    }
-
     const auto mode = core::state::project::sanitizeProjectStepPasteMode(
         source.projectNavigation.stepPasteMode
     );
     const uint8_t activeLength = core::state::sequencer::activeContentLength(source.sequencer);
     const uint8_t maxStep = core::state::sequencer::maxStepCursorForPaste(source.sequencer);
+    const auto plan = core::state::sequencer::buildStepPastePreviewPlan(
+        source.structureClipboard.sequencerSteps,
+        core::state::sequencer::isRootContentView(source.sequencer),
+        selection.cursorStep.get(),
+        activeLength,
+        maxStep,
+        mode
+    );
 
-    bool blocked = false;
-    for (uint8_t i = 0; i < source.structureClipboard.sequencerSteps.count; ++i) {
-        const auto& entry = source.structureClipboard.sequencerSteps.entries[i];
+    for (uint8_t i = 0; i < plan.count; ++i) {
+        const auto& entry = plan.entries[i];
         if (!entry.valid) continue;
-
-        uint8_t target = 0;
-        if (!core::state::sequencer::resolveStepPasteTarget(
-                mode,
-                selection.cursorStep.get(),
-                entry.offset,
-                activeLength,
-                maxStep,
-                target
-            )) {
-            blocked = true;
-            continue;
-        }
-
         for (auto& tile : frame.tiles) {
-            if (tile.absoluteStep != target) continue;
+            if (tile.absoluteStep != entry.targetStep) continue;
             tile.stepPastePreviewActive = true;
-            tile.stepPastePreview = target >= activeLength
-                ? core::state::sequencer::SequencerStepPastePreview::GHOST
-                : core::state::sequencer::SequencerStepPastePreview::OVERWRITE;
+            tile.stepPastePreview = entry.preview;
             break;
         }
     }
 
-    if (!blocked) return;
+    if (!plan.blocked) return;
     for (auto& tile : frame.tiles) {
         if (!tile.stepSelectionCursor) continue;
         tile.stepPastePreviewActive = true;
