@@ -10,6 +10,7 @@
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphAssetCodec.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerGraphPresetWorkflow.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 
 namespace {
@@ -30,6 +31,8 @@ using core::state::sequencer::enterMicroSequenceContentView;
 using core::state::sequencer::graphView;
 using core::state::sequencer::nodeLocalVariationRange;
 using core::state::sequencer::rootStepNodeId;
+using core::state::sequencer::loadFocusedStepGraphPreset;
+using core::state::sequencer::saveFocusedStepGraphPreset;
 using core::state::sequencer::setNodeChordMode;
 using core::state::sequencer::setNodeChordSpec;
 using core::state::sequencer::setNodeEnabledOverride;
@@ -298,6 +301,58 @@ void test_decode_rejects_invalid_buffers() {
     std::cout << "[PASS] test_decode_rejects_invalid_buffers\n";
 }
 
+void test_focused_workflow_saves_and_loads_step_graph_preset() {
+    SequencerState source;
+    source.pattern.length.set(8);
+    source.focusedStep.set(3);
+    source.pattern.setEnabled(3, true);
+    assert(source.setStepDataAt(3, 62, 82, 120, 5, 88));
+    const auto micro = createMicroSequence(source.pattern, rootStepNodeId(3), 2);
+    assert(micro.ok);
+
+    const auto* sourceGraph = graphView(source.pattern);
+    assert(sourceGraph != nullptr);
+    const auto* microSequence = sourceGraph->sequence(micro.id);
+    assert(microSequence != nullptr);
+    const auto childNode = static_cast<uint16_t>(microSequence->firstStepNode + 1);
+    assert(setNodeNoteOffset(source.pattern, childNode, 9));
+    assert(setNodeLocalVariationRange(source.pattern, childNode, StepProperty::VELOCITY, 12));
+
+    std::array<uint8_t, 1024> bytes{};
+    const auto saved = saveFocusedStepGraphPreset(source, bytes.data(), bytes.size());
+    assert(saved.ok());
+    assert(saved.bytesWritten > 0);
+
+    SequencerState target;
+    target.pattern.length.set(8);
+    target.focusedStep.set(5);
+    const auto loaded = loadFocusedStepGraphPreset(target, bytes.data(), saved.bytesWritten);
+    assert(loaded.ok());
+
+    assert(target.pattern.isEnabled(5));
+    assert(target.pattern.note[5] == 62);
+    assert(target.pattern.velocity[5] == 82);
+    assert(target.pattern.gate[5] == 120);
+    assert(target.pattern.nudge[5] == 5);
+    assert(target.pattern.probability[5] == 88);
+
+    const auto* targetGraph = graphView(target.pattern);
+    assert(targetGraph != nullptr);
+    const auto* targetRoot = targetGraph->stepNode(rootStepNodeId(5));
+    assert(targetRoot != nullptr);
+    assert(targetRoot->has(STEP_NODE_CHILD_SEQUENCE));
+    const auto* targetSequence = targetGraph->sequence(targetRoot->childSequenceId);
+    assert(targetSequence != nullptr);
+    const auto* targetChild = targetGraph->stepNode(
+        static_cast<uint16_t>(targetSequence->firstStepNode + 1)
+    );
+    assert(targetChild != nullptr);
+    assert(targetChild->noteOffset == 9);
+    assert(nodeLocalVariationRange(*targetChild, StepProperty::VELOCITY) == 12);
+
+    std::cout << "[PASS] test_focused_workflow_saves_and_loads_step_graph_preset\n";
+}
+
 }  // namespace
 
 int main() {
@@ -305,6 +360,7 @@ int main() {
     test_child_step_graph_preset_roundtrip_preserves_local_payload_only();
     test_context_mismatch_is_reported();
     test_decode_rejects_invalid_buffers();
+    test_focused_workflow_saves_and_loads_step_graph_preset();
     std::cout << "[PASS] SequencerGraphAssetCodec tests\n";
     return 0;
 }

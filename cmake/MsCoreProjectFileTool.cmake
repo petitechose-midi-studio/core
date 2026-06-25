@@ -22,7 +22,8 @@ function(ms_core_add_project_file_tool)
             ms_core_project_file_open_control_native)
 
     add_executable(ms-core-file-tool
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/ms_core_file_tool/main.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/ms_core_file_tool/main.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/ms_core_file_tool/StepGraphPresetTool.cpp")
     target_link_libraries(ms-core-file-tool PRIVATE ms_core_project_file_native)
     target_include_directories(ms-core-file-tool
         PRIVATE
