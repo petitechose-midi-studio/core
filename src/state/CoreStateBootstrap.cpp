@@ -72,6 +72,11 @@ void configureDebugLabels_(CoreState& state) {
     state.sequencer.stepPropertyInlineSelector.selectedIndex.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selectedIndex");
     state.sequencer.stepEdit.contextHold.action.setDebugLabel("core.sequencer.stepEdit.contextHold.action");
     state.sequencer.stepEdit.contextHold.startedAtMs.setDebugLabel("core.sequencer.stepEdit.contextHold.startedAtMs");
+    state.sequencer.stepPresetPicker.visible.setDebugLabel("core.sequencer.stepPresetPicker.visible");
+    state.sequencer.stepPresetPicker.mode.setDebugLabel("core.sequencer.stepPresetPicker.mode");
+    state.sequencer.stepPresetPicker.selectedIndex.setDebugLabel("core.sequencer.stepPresetPicker.selectedIndex");
+    state.sequencer.stepPresetPicker.entryCount.setDebugLabel("core.sequencer.stepPresetPicker.entryCount");
+    state.sequencer.stepPresetPicker.truncated.setDebugLabel("core.sequencer.stepPresetPicker.truncated");
     state.sequencer.patternQuickControls.selecting.setDebugLabel("core.sequencer.patternQuickControls.selecting");
     state.sequencer.patternQuickControls.physicalHoldActive.setDebugLabel("core.sequencer.patternQuickControls.physicalHoldActive");
     state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
@@ -165,6 +170,10 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, state.viewSelector.visible);
 
     state.overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, state.sequencer.stepEdit.visible);
+    state.overlays.registerItem(
+        core::ui::OverlayType::SEQ_STEP_PRESET,
+        state.sequencer.stepPresetPicker.visible
+    );
     state.overlays.registerItem(
         core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
         state.deviceSettings.selector.visible

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include <oc/interface/IStorage.hpp>
@@ -21,6 +22,14 @@ public:
 
     static constexpr uint32_t LIBRARY_MAGIC = 0x4D4C4942;    // "MLIB"
     static constexpr uint8_t LIBRARY_DATA_VERSION = 1;
+    static constexpr uint16_t LIBRARY_PAYLOAD_SIZE = static_cast<uint16_t>(
+        4U + sizeof(state::macro::MacroTrackData) * state::macro::TRACK_COUNT
+    );
+    static constexpr size_t LIBRARY_STORAGE_CAPACITY =
+        PersistenceSlotFileStore::requiredCapacity(
+            LIBRARY_SLOT_COUNT,
+            LIBRARY_PAYLOAD_SIZE
+        );
 
     explicit MacroPersistence(oc::interface::IStorage& libraryStorage);
 

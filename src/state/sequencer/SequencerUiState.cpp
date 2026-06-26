@@ -34,6 +34,75 @@ FLASHMEM void SequencerStepEditOverlayState::reset() {
     contextHold.clear();
 }
 
+FLASHMEM void SequencerStepPresetPickerState::open(
+    SequencerStepPresetPickerMode nextMode
+) {
+    mode.set(nextMode);
+    selectedIndex.set(0);
+    feedback.set(SequencerStepPresetFeedback::NONE);
+    revision.set(revision.get() + 1U);
+    visible.set(true);
+}
+
+FLASHMEM void SequencerStepPresetPickerState::reset() {
+    visible.set(false);
+    mode.set(SequencerStepPresetPickerMode::LOAD);
+    selectedIndex.set(0);
+    entryCount.set(0);
+    truncated.set(false);
+    feedback.set(SequencerStepPresetFeedback::NONE);
+    for (auto& id : entryIds) {
+        id[0] = '\0';
+    }
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerStepPresetPickerState::setFeedback(
+    SequencerStepPresetFeedback nextFeedback
+) {
+    feedback.set(nextFeedback);
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerStepPresetPickerState::setEntry(uint8_t index, const char* id) {
+    if (index >= ENTRY_CAPACITY) return;
+    const char* source = id ? id : "";
+    std::strncpy(entryIds[index].data(), source, ID_SIZE - 1U);
+    entryIds[index][ID_SIZE - 1U] = '\0';
+}
+
+FLASHMEM const char* SequencerStepPresetPickerState::entryId(uint8_t index) const {
+    return index < ENTRY_CAPACITY ? entryIds[index].data() : "";
+}
+
+FLASHMEM uint8_t SequencerStepPresetPickerState::itemCount() const {
+    const uint8_t existing = entryCount.get();
+    if (mode.get() == SequencerStepPresetPickerMode::SAVE) {
+        const uint16_t withNew = static_cast<uint16_t>(existing) + 1U;
+        return withNew > 255U ? 255U : static_cast<uint8_t>(withNew);
+    }
+    return existing;
+}
+
+FLASHMEM uint8_t SequencerStepPresetPickerState::existingEntryIndexForSelectedItem() const {
+    const uint8_t selected = selectedIndex.get();
+    if (mode.get() == SequencerStepPresetPickerMode::SAVE) {
+        return selected == 0 ? 0 : static_cast<uint8_t>(selected - 1U);
+    }
+    return selected;
+}
+
+FLASHMEM void SequencerStepPresetPickerState::clampSelection() {
+    const uint8_t count = itemCount();
+    if (count == 0) {
+        selectedIndex.set(0);
+        return;
+    }
+    if (selectedIndex.get() >= count) {
+        selectedIndex.set(static_cast<uint8_t>(count - 1U));
+    }
+}
+
 FLASHMEM void SequencerStepPropertyInlineSelectorState::reset() {
     selecting.set(false);
     macroLocalVariationEditActive.set(false);

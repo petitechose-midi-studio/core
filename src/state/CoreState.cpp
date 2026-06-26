@@ -349,8 +349,10 @@ FLASHMEM void syncSequencerStructureUiFromRestoredHistory(CoreState& state) {
 
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
-FLASHMEM SequencerDomainState::SequencerDomainState(oc::interface::IStorage& patternLibraryStorage,
-                                                    oc::interface::IStorage& setLibraryStorage)
+FLASHMEM SequencerDomainState::SequencerDomainState(
+    oc::interface::IStorage& patternLibraryStorage,
+    oc::interface::IStorage& setLibraryStorage
+)
     : editor(createSequencerEditorState())
     , tracks(createSequencerTrackBankState())
     , persistence(patternLibraryStorage, setLibraryStorage)

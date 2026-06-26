@@ -21,6 +21,7 @@ public:
     static constexpr const char* SESSION_DIR = "/midi-studio/session";
     static constexpr const char* PROJECTS_DIR = "/midi-studio/projects";
     static constexpr const char* LIBRARY_DIR = "/midi-studio/library";
+    static constexpr const char* STEP_PRESETS_DIR = "/midi-studio/library/step-presets";
     static constexpr const char* TMP_DIR = "/midi-studio/tmp";
 
     explicit ProductFileService(oc::interface::IFileSystem& filesystem);

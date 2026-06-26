@@ -1,10 +1,12 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include <oc/interface/IStorage.hpp>
 
 #include "persistence/PersistenceSlotFileStore.hpp"
+#include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -24,6 +26,16 @@ public:
     static constexpr uint32_t PATTERN_LIBRARY_MAGIC = 0x53504C42;   // "SPLB"
     static constexpr uint32_t SET_LIBRARY_MAGIC = 0x53534554;       // "SSET"
     static constexpr uint8_t LIBRARY_DATA_VERSION = 4;
+    static constexpr size_t PATTERN_LIBRARY_STORAGE_CAPACITY =
+        PersistenceSlotFileStore::requiredCapacity(
+            PATTERN_LIBRARY_SLOT_COUNT,
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        );
+    static constexpr size_t SET_LIBRARY_STORAGE_CAPACITY =
+        PersistenceSlotFileStore::requiredCapacity(
+            SET_LIBRARY_SLOT_COUNT,
+            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        );
 
     explicit SequencerPersistence(oc::interface::IStorage& patternLibraryStorage,
                                   oc::interface::IStorage& setLibraryStorage);

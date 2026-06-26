@@ -127,6 +127,8 @@ const char* overlayName(core::ui::OverlayType overlay) {
             return "view_selector";
         case core::ui::OverlayType::SEQ_STEP_EDIT:
             return "seq_step_edit";
+        case core::ui::OverlayType::SEQ_STEP_PRESET:
+            return "seq_step_preset";
         case core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR:
             return "device_settings_selector";
         case core::ui::OverlayType::SEQUENCER_SETTINGS:

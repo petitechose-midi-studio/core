@@ -15,6 +15,7 @@
 
 #include "handler/common/ButtonReleaseLatch.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/StructureSelectionState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -40,6 +41,7 @@ public:
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         SequencerHistoryDomainServices history;
+        SequencerStepPresetDomainServices stepPresets;
     };
 
     SequencerStepEditHandler(
@@ -48,7 +50,8 @@ public:
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         oc::type::ScopeID sequencerViewScope,
-        oc::type::ScopeID overlayScope
+        oc::type::ScopeID overlayScope,
+        oc::type::ScopeID stepPresetOverlayScope
     );
 
     // Non-copyable, non-movable
@@ -61,6 +64,8 @@ private:
     void setupBindings();
 
     void openForMacroInPage(uint8_t indexInPage);
+    void backFromStepEdit();
+    void commitStepEditHistory();
     void closeStepEdit();
 
     void moveFocus(float delta);
@@ -93,6 +98,14 @@ private:
         core::state::sequencer::SequencerHistoryPatternSnapshot before,
         bool beforeCaptured
     );
+    void refreshStepPresetList();
+    void openStepPresetPicker();
+    void closeStepPresetPicker();
+    void moveStepPresetItem(float delta);
+    void toggleStepPresetMode();
+    void executeStepPresetAction();
+    void setStepPresetFeedback(const SequencerStepPresetActionResult& result);
+    const char* selectedStepPresetId() const;
 
     // Long-press opens while still pressed; ignore the release that follows.
     ButtonReleaseLatch<8> open_release_latch_;
@@ -109,11 +122,13 @@ private:
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     SequencerHistoryDomainServices history_;
+    SequencerStepPresetDomainServices step_presets_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID overlay_scope_ = 0;
+    oc::type::ScopeID step_preset_overlay_scope_ = 0;
 };
 
 }  // namespace core::handler

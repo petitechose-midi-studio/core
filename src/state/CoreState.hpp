@@ -141,7 +141,7 @@ struct SequencerDomainState {
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
     CoalescedPatternHistory coalescedPatternHistory;
-        std::unique_ptr<oc::state::AutoPersistIncremental<17>> autoPersist;
+    std::unique_ptr<oc::state::AutoPersistIncremental<17>> autoPersist;
 
     SequencerDomainState(oc::interface::IStorage& patternLibraryStorage,
                          oc::interface::IStorage& setLibraryStorage);

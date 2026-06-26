@@ -38,6 +38,14 @@ using StripProps = core::ui::ContextActionStripProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
 
+FLASHMEM core::ui::ContextActionStripSlotProps stepPresetStripSlot() {
+    return core::ui::makeStandaloneIconStripSlot(
+        ::standalone::icons::SETTINGS_GEAR,
+        Visual::ACTIVE,
+        Tone::NEUTRAL
+    );
+}
+
 FLASHMEM const char* availabilityLabel(
     const core::state::sequencer::StepContentCreationAvailability& availability
 ) {
@@ -674,13 +682,16 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
             Visual::ACTIVE,
             Tone::WARNING
         );
-        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[1] = stepPresetStripSlot();
         props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
 
     if (!focusedRowIsContextRow(sequencer)) {
-        props.visible = false;
+        props.visible = true;
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1] = stepPresetStripSlot();
+        props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
 
@@ -704,7 +715,7 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         removeHoldActive ? Visual::ARMED : (hasChild ? Visual::ACTIVE : Visual::DISABLED),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
-    props.slots[1].visualState = Visual::HIDDEN;
+    props.slots[1] = stepPresetStripSlot();
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         core::ui::sequencer::interactionActionIcon(rightAction),
         pasteHoldActive && canPaste
@@ -718,6 +729,132 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     props.slots[2].holdActive = pasteHoldActive && canPaste;
     props.slots[2].holdStartedAtMs = sequencer.stepEdit.contextHold.startedAtMs.get();
     props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    return props;
+}
+
+FLASHMEM const char* stepPresetFeedbackLabel(
+    core::state::sequencer::SequencerStepPresetFeedback feedback
+) {
+    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
+    switch (feedback) {
+        case Feedback::SAVED:
+            return "Saved";
+        case Feedback::EMPTY:
+            return "No preset";
+        case Feedback::INCOMPATIBLE:
+            return "Incompatible";
+        case Feedback::FAILED:
+            return "Failed";
+        case Feedback::NONE:
+        default:
+            return "";
+    }
+}
+
+FLASHMEM StepPresetPickerRenderData buildStepPresetPickerRenderData(
+    const Source& source
+) {
+    StepPresetPickerRenderData data{};
+    const auto& picker = source.sequencer.stepPresetPicker;
+    if (!picker.visible.get()) {
+        return data;
+    }
+
+    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
+    const bool saveMode = picker.mode.get() == Mode::SAVE;
+    data.visible = true;
+    data.title = saveMode ? "Save Step Preset" : "Load Step Preset";
+
+    int itemIndex = 0;
+    if (saveMode) {
+        std::snprintf(
+            data.itemBuffers[itemIndex].data(),
+            data.itemBuffers[itemIndex].size(),
+            "New Step Preset"
+        );
+        data.items[itemIndex] = data.itemBuffers[itemIndex].data();
+        ++itemIndex;
+    }
+
+    const uint8_t entryCount = picker.entryCount.get();
+    for (uint8_t i = 0; i < entryCount && itemIndex < static_cast<int>(data.items.size()); ++i) {
+        std::snprintf(
+            data.itemBuffers[itemIndex].data(),
+            data.itemBuffers[itemIndex].size(),
+            "%s",
+            picker.entryId(i)
+        );
+        data.items[itemIndex] = data.itemBuffers[itemIndex].data();
+        ++itemIndex;
+    }
+
+    if (itemIndex == 0) {
+        std::snprintf(
+            data.itemBuffers[0].data(),
+            data.itemBuffers[0].size(),
+            "No Step Presets"
+        );
+        data.items[0] = data.itemBuffers[0].data();
+        itemIndex = 1;
+    }
+    data.itemCount = itemIndex;
+    data.selectedIndex = std::clamp<int>(picker.selectedIndex.get(), 0, itemIndex - 1);
+
+    const char* feedback = stepPresetFeedbackLabel(picker.feedback.get());
+    if (feedback[0] != '\0') {
+        std::snprintf(data.meta.data(), data.meta.size(), "%s", feedback);
+    } else if (picker.truncated.get()) {
+        std::snprintf(data.meta.data(), data.meta.size(), "More on SD");
+    } else {
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            "Step %02u",
+            static_cast<unsigned>(source.sequencer.stepEdit.stepIndex.get() + 1U)
+        );
+    }
+
+    uint32_t revision = picker.revision.get();
+    revision = mixRevision(revision, picker.visible.get() ? 1U : 0U);
+    revision = mixRevision(revision, static_cast<uint32_t>(picker.mode.get()));
+    revision = mixRevision(revision, picker.selectedIndex.get());
+    revision = mixRevision(revision, picker.entryCount.get());
+    revision = mixRevision(revision, picker.truncated.get() ? 1U : 0U);
+    revision = mixRevision(revision, static_cast<uint32_t>(picker.feedback.get()));
+    data.dataRevision = revision;
+    return data;
+}
+
+FLASHMEM core::ui::ContextActionStripProps buildStepPresetActionStripProps(
+    const Source& source
+) {
+    StripProps props{};
+    const auto& picker = source.sequencer.stepPresetPicker;
+    if (!picker.visible.get()) {
+        props.visible = false;
+        return props;
+    }
+
+    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
+    const bool saveMode = picker.mode.get() == Mode::SAVE;
+    const bool canLoad = picker.entryCount.get() > 0;
+
+    props.visible = true;
+    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+        ::standalone::icons::ACTION_CANCEL,
+        Visual::ACTIVE,
+        Tone::NEUTRAL
+    );
+    props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+        ::standalone::icons::STORAGE,
+        saveMode ? Visual::ARMED : Visual::ACTIVE,
+        Tone::CONSTRUCTIVE
+    );
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+        ::standalone::icons::ACTION_VALIDATE,
+        (saveMode || canLoad) ? Visual::ACTIVE : Visual::DISABLED,
+        Tone::POSITIVE
+    );
     return props;
 }
 

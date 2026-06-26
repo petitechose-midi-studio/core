@@ -32,7 +32,9 @@
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
+#include "persistence/MacroPersistence.hpp"
 #include "persistence/ProductFileService.hpp"
+#include "persistence/SequencerPersistence.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
@@ -79,9 +81,18 @@ int main(int argc, char** argv) {
 
     // 2. Create storages and state (specific to core)
     oc::impl::FileStorage settingsStorage(kStorageFiles[0]);
-    oc::impl::FileStorage macroLibraryStorage(kStorageFiles[1]);
-    oc::impl::FileStorage sequencerPatternLibraryStorage(kStorageFiles[2]);
-    oc::impl::FileStorage sequencerSetLibraryStorage(kStorageFiles[3]);
+    oc::impl::FileStorage macroLibraryStorage(
+        kStorageFiles[1],
+        core::persistence::MacroPersistence::LIBRARY_STORAGE_CAPACITY
+    );
+    oc::impl::FileStorage sequencerPatternLibraryStorage(
+        kStorageFiles[2],
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    oc::impl::FileStorage sequencerSetLibraryStorage(
+        kStorageFiles[3],
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     if (!settingsStorage.init() ||
         !macroLibraryStorage.init() ||
         !sequencerPatternLibraryStorage.init() ||

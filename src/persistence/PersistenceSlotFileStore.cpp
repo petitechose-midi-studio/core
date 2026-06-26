@@ -137,6 +137,27 @@ FLASHMEM SlotLoadStatus PersistenceSlotFileStore::loadSlot(uint16_t slotIndex,
     return SlotLoadStatus::OK;
 }
 
+FLASHMEM SlotLoadStatus PersistenceSlotFileStore::inspectSlot(
+    uint16_t slotIndex,
+    SlotMetadata* outMeta
+) const {
+    if (!isConfigValid_()) return SlotLoadStatus::IO_ERROR;
+    if (!storage_.available()) return SlotLoadStatus::STORAGE_UNAVAILABLE;
+    if (!isSlotIndexValid_(slotIndex)) return SlotLoadStatus::OUT_OF_RANGE;
+
+    SlotHeader header{};
+    const SlotLoadStatus header_status = readSlotHeader_(slotIndex, header);
+    if (header_status != SlotLoadStatus::OK) {
+        return header_status;
+    }
+
+    if (outMeta) {
+        outMeta->payloadSize = header.payloadSize;
+        outMeta->saveCounter = header.saveCounter;
+    }
+    return SlotLoadStatus::OK;
+}
+
 FLASHMEM LatestSlotLoadResult PersistenceSlotFileStore::loadLatest(
     uint8_t* outPayload,
     uint16_t outCapacity

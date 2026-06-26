@@ -199,6 +199,7 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();
+    state.sequencer.stepPresetPicker.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
@@ -235,6 +236,7 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();
+    state.sequencer.stepPresetPicker.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
