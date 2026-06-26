@@ -13,6 +13,7 @@ constexpr const char* kLayoutDirectories[] = {
     ProductFileService::SESSION_DIR,
     ProductFileService::PROJECTS_DIR,
     ProductFileService::LIBRARY_DIR,
+    ProductFileService::STEP_PRESETS_DIR,
     ProductFileService::TMP_DIR,
 };
 

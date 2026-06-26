@@ -36,6 +36,20 @@ enum class PersistenceWriteStatus : uint8_t {
     COMMIT_FAILED,
 };
 
+inline const char* slotLoadStatusLabel(SlotLoadStatus status) {
+    switch (status) {
+        case SlotLoadStatus::OK: return "OK";
+        case SlotLoadStatus::EMPTY: return "EMPTY";
+        case SlotLoadStatus::OUT_OF_RANGE: return "OUT_OF_RANGE";
+        case SlotLoadStatus::STORAGE_UNAVAILABLE: return "STORAGE_UNAVAILABLE";
+        case SlotLoadStatus::HEADER_MISMATCH: return "HEADER_MISMATCH";
+        case SlotLoadStatus::CAPACITY_TOO_SMALL: return "CAPACITY_TOO_SMALL";
+        case SlotLoadStatus::CRC_MISMATCH: return "CRC_MISMATCH";
+        case SlotLoadStatus::IO_ERROR: return "IO_ERROR";
+        default: return "UNKNOWN";
+    }
+}
+
 inline const char* persistenceWriteStatusLabel(PersistenceWriteStatus status) {
     switch (status) {
         case PersistenceWriteStatus::OK: return "OK";
@@ -78,7 +92,15 @@ struct LatestSlotLoadResult {
 class PersistenceSlotFileStore {
 public:
     static constexpr uint8_t FILE_FORMAT_VERSION = 1;
+    static constexpr size_t FILE_HEADER_SIZE = 24;
+    static constexpr size_t SLOT_HEADER_SIZE = 16;
     static constexpr uint16_t MAX_SLOT_COUNT = 64;
+
+    static constexpr size_t requiredCapacity(uint16_t slotCount, uint16_t slotPayloadSize) {
+        return FILE_HEADER_SIZE +
+               static_cast<size_t>(slotCount) *
+                   (SLOT_HEADER_SIZE + static_cast<size_t>(slotPayloadSize));
+    }
 
     explicit PersistenceSlotFileStore(oc::interface::IStorage& storage,
                                       const SlotFileStoreConfig& config);
@@ -100,6 +122,7 @@ public:
                             uint8_t* outPayload,
                             uint16_t outCapacity,
                             SlotMetadata* outMeta = nullptr) const;
+    SlotLoadStatus inspectSlot(uint16_t slotIndex, SlotMetadata* outMeta = nullptr) const;
     LatestSlotLoadResult loadLatest(uint8_t* outPayload, uint16_t outCapacity) const;
 
     bool eraseSlot(uint16_t slotIndex);
@@ -134,8 +157,8 @@ private:
     };
 #pragma pack(pop)
 
-    static_assert(sizeof(FileHeader) == 24, "Unexpected FileHeader size");
-    static_assert(sizeof(SlotHeader) == 16, "Unexpected SlotHeader size");
+    static_assert(sizeof(FileHeader) == FILE_HEADER_SIZE, "Unexpected FileHeader size");
+    static_assert(sizeof(SlotHeader) == SLOT_HEADER_SIZE, "Unexpected SlotHeader size");
 
     static constexpr uint32_t SLOT_HEADER_MAGIC = 0x53534C54;  // "SSLT"
     static constexpr uint8_t SLOT_STATE_VALID = 0x3C;

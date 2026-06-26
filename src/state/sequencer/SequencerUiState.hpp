@@ -9,6 +9,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/StructureSelectionState.hpp"
+#include "state/project/ProjectState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/StepProperty.hpp"
 
@@ -127,6 +128,46 @@ struct SequencerStepEditOverlayState {
     core::state::StructureHoldState contextHold;
 
     void reset();
+};
+
+enum class SequencerStepPresetPickerMode : uint8_t {
+    LOAD = 0,
+    SAVE,
+};
+
+enum class SequencerStepPresetFeedback : uint8_t {
+    NONE = 0,
+    SAVED,
+    EMPTY,
+    INCOMPATIBLE,
+    FAILED,
+};
+
+struct SequencerStepPresetPickerState {
+    static constexpr uint8_t ENTRY_CAPACITY = 15;
+    static constexpr uint8_t ID_SIZE = core::state::project::ProjectMetadata::ID_SIZE;
+
+    Signal<bool> visible{false};
+    Signal<SequencerStepPresetPickerMode> mode{
+        SequencerStepPresetPickerMode::LOAD
+    };
+    Signal<uint8_t> selectedIndex{0};
+    Signal<uint8_t> entryCount{0};
+    Signal<bool> truncated{false};
+    Signal<SequencerStepPresetFeedback> feedback{
+        SequencerStepPresetFeedback::NONE
+    };
+    Signal<uint32_t> revision{0};
+    std::array<std::array<char, ID_SIZE>, ENTRY_CAPACITY> entryIds{};
+
+    void open(SequencerStepPresetPickerMode nextMode);
+    void reset();
+    void setFeedback(SequencerStepPresetFeedback nextFeedback);
+    void setEntry(uint8_t index, const char* id);
+    const char* entryId(uint8_t index) const;
+    uint8_t itemCount() const;
+    uint8_t existingEntryIndexForSelectedItem() const;
+    void clampSelection();
 };
 
 struct SequencerStepPropertyInlineSelectorState {

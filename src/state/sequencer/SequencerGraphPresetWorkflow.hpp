@@ -12,7 +12,9 @@ struct SequencerGraphPresetWorkflowResult {
     SequencerGraphAssetReport report{};
     uint16_t bytesWritten = 0;
 
-    bool ok() const { return status == SequencerGraphAssetStatus::OK; }
+    bool ok() const {
+        return status == SequencerGraphAssetStatus::OK;
+    }
 };
 
 SequencerGraphPresetWorkflowResult saveFocusedStepGraphPreset(

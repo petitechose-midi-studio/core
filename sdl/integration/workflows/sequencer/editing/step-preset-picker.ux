@@ -1,0 +1,38 @@
+# UX workflow: Step Preset picker from Step Editor.
+# Purpose: validates picker access, file-backed Save/Load mode, generated
+# preset id feedback, and returning to the Step Editor after loading a preset.
+
+0 scenario sequencer
+50 capture screen sequencer_ready
+
+# Enable root step 1 and open the Step Editor.
+150 tap MACRO_1 60
+350 capture screen step_1_enabled
+450 button MACRO_1 down
+1500 tick
+1550 capture screen step_editor_open
+1600 button MACRO_1 up
+
+# Open the Step Preset picker from the Step Editor.
+1700 tap BOTTOM_CENTER 60
+1950 capture screen step_preset_picker_load_empty
+
+# Toggle to Save mode and save the focused step as a new file-backed preset.
+2050 tap BOTTOM_CENTER 60
+2250 capture screen step_preset_picker_save_mode
+2350 tap BOTTOM_RIGHT 60
+2650 capture screen step_preset_picker_saved
+
+# Return to the Step Editor, close it, then load step-preset-001 onto step 2.
+2750 tap LEFT_TOP 60
+3000 capture screen returned_to_step_editor
+3100 tap MACRO_1 60
+3350 capture screen step_editor_closed
+3450 button MACRO_2 down
+4500 tick
+4550 capture screen step_2_editor_open
+4600 button MACRO_2 up
+4700 tap BOTTOM_CENTER 60
+4950 capture screen step_preset_picker_load_existing
+5050 tap BOTTOM_RIGHT 60
+5350 capture screen step_preset_loaded_to_step_2

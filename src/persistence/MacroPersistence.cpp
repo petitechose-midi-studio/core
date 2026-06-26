@@ -24,9 +24,8 @@ static_assert(std::is_trivially_copyable_v<state::macro::MacroTrackData>,
               "MacroTrackData must remain trivially copyable");
 static_assert(std::is_trivially_copyable_v<LibraryPayload>,
               "Macro library payload must remain trivially copyable");
-static_assert(sizeof(LibraryPayload) == 14404, "Unexpected macro library payload size");
-
-constexpr uint16_t kLibraryPayloadSize = static_cast<uint16_t>(sizeof(LibraryPayload));
+static_assert(sizeof(LibraryPayload) == MacroPersistence::LIBRARY_PAYLOAD_SIZE,
+              "Unexpected macro library payload size");
 
 template <typename Payload>
 uint8_t* payloadBytes(Payload& payload) {
@@ -64,7 +63,7 @@ FLASHMEM MacroPersistence::MacroPersistence(oc::interface::IStorage& libraryStor
                      {.fileMagic = LIBRARY_MAGIC,
                       .domainVersion = LIBRARY_DATA_VERSION,
                       .slotCount = LIBRARY_SLOT_COUNT,
-                      .slotPayloadSize = kLibraryPayloadSize}) {}
+                      .slotPayloadSize = LIBRARY_PAYLOAD_SIZE}) {}
 
 FLASHMEM bool MacroPersistence::init() {
     return initStatus() == PersistenceWriteStatus::OK;
@@ -95,7 +94,7 @@ FLASHMEM PersistenceWriteStatus MacroPersistence::saveLibrarySlotStatus(
     return library_store_.saveSlotStatus(
         slotIndex,
         payloadBytes(*payload),
-        kLibraryPayloadSize,
+        LIBRARY_PAYLOAD_SIZE,
         counter
     );
 }
@@ -111,12 +110,12 @@ FLASHMEM SlotLoadStatus MacroPersistence::loadLibrarySlot(
 
     SlotMetadata metadata{};
     const SlotLoadStatus status =
-        library_store_.loadSlot(slotIndex, payloadBytes(*payload), kLibraryPayloadSize, &metadata);
+        library_store_.loadSlot(slotIndex, payloadBytes(*payload), LIBRARY_PAYLOAD_SIZE, &metadata);
     if (status != SlotLoadStatus::OK) {
         return status;
     }
 
-    if (metadata.payloadSize != kLibraryPayloadSize) {
+    if (metadata.payloadSize != LIBRARY_PAYLOAD_SIZE) {
         return SlotLoadStatus::HEADER_MISMATCH;
     }
 

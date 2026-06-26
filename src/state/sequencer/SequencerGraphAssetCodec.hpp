@@ -4,6 +4,7 @@
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
+#include "state/sequencer/SequencerGraphAssetRecords.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::state::sequencer {
@@ -17,6 +18,19 @@ enum class SequencerGraphAssetStatus : uint8_t {
     GRAPH_LIMIT_REACHED,
     BUFFER_TOO_SMALL,
 };
+
+inline const char* sequencerGraphAssetStatusLabel(SequencerGraphAssetStatus status) {
+    switch (status) {
+        case SequencerGraphAssetStatus::OK: return "OK";
+        case SequencerGraphAssetStatus::INVALID_ARGUMENT: return "INVALID_ARGUMENT";
+        case SequencerGraphAssetStatus::INVALID_FORMAT: return "INVALID_FORMAT";
+        case SequencerGraphAssetStatus::UNSUPPORTED_VERSION: return "UNSUPPORTED_VERSION";
+        case SequencerGraphAssetStatus::INCOMPATIBLE_TARGET: return "INCOMPATIBLE_TARGET";
+        case SequencerGraphAssetStatus::GRAPH_LIMIT_REACHED: return "GRAPH_LIMIT_REACHED";
+        case SequencerGraphAssetStatus::BUFFER_TOO_SMALL: return "BUFFER_TOO_SMALL";
+        default: return "UNKNOWN";
+    }
+}
 
 enum SequencerGraphAssetReportFlags : uint16_t {
     SEQUENCER_GRAPH_ASSET_REPORT_NONE = 0,
@@ -59,6 +73,19 @@ struct SequencerGraphAssetEncodeResult {
 
     bool ok() const { return status == SequencerGraphAssetStatus::OK; }
 };
+
+inline constexpr uint32_t STEP_GRAPH_PRESET_HEADER_SIZE = 21;
+inline constexpr uint32_t STEP_GRAPH_PRESET_MAX_ENCODED_SIZE_U32 =
+    STEP_GRAPH_PRESET_HEADER_SIZE +
+    oc::note::sequencer::StepSequencerGraphLimits::MAX_SEQUENCES *
+        sizeof(SequencerGraphSequenceRecord) +
+    oc::note::sequencer::StepSequencerGraphLimits::MAX_STEP_NODES *
+        sizeof(SequencerGraphStepNodeRecord) +
+    oc::note::sequencer::StepSequencerGraphLimits::MAX_CYCLE_SETS *
+        sizeof(SequencerGraphCycleSetRecord);
+static_assert(STEP_GRAPH_PRESET_MAX_ENCODED_SIZE_U32 <= UINT16_MAX);
+inline constexpr uint16_t STEP_GRAPH_PRESET_MAX_ENCODED_SIZE =
+    static_cast<uint16_t>(STEP_GRAPH_PRESET_MAX_ENCODED_SIZE_U32);
 
 bool captureStepGraphPreset(
     const SequencerState& sequencer,

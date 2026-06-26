@@ -237,6 +237,7 @@ FLASHMEM void SequencerState::reset() {
     activeStepProperty.set(StepProperty::NOTE);
 
     stepEdit.reset();
+    stepPresetPicker.reset();
     stepPropertyInlineSelector.reset();
     stepInlineFeedback.reset();
     patternVariationFeedback.reset();

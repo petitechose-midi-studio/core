@@ -3,6 +3,8 @@
 #endif
 
 #include <cassert>
+#include <cstring>
+#include <filesystem>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -11,9 +13,11 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <oc/impl/HostFileSystem.hpp>
 
 #include <config/Timing.hpp>
 
+#include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerInputUtils.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
@@ -49,6 +53,15 @@ constexpr uint8_t CHORD_ROW = step_edit_rows::CHORD;
 constexpr uint8_t MICRO_SEQUENCE_ROW = step_edit_rows::MICRO_SEQUENCE;
 constexpr uint8_t CYCLE_STATES_ROW = step_edit_rows::CYCLE_STATES;
 
+std::filesystem::path testRoot() {
+    return std::filesystem::temp_directory_path() / "midi-studio-core-step-edit-handler-test";
+}
+
+void resetTestRoot() {
+    std::error_code ec;
+    std::filesystem::remove_all(testRoot(), ec);
+}
+
 bool stepHasMicroSequence(
     const core::state::sequencer::SequencerPatternState& pattern,
     uint8_t rootStep
@@ -74,9 +87,12 @@ bool stepHasCycleStates(
 struct SequencerStepEditHarness {
     static constexpr oc::type::ScopeID SEQUENCER_SCOPE = 901;
     static constexpr oc::type::ScopeID OVERLAY_SCOPE = 902;
+    static constexpr oc::type::ScopeID STEP_PRESET_SCOPE = 903;
 
     test_support::CoreStorages storages;
     core::state::CoreState state;
+    oc::impl::HostFileSystem filesystem;
+    core::persistence::ProductFileService productFiles;
 
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
@@ -93,6 +109,8 @@ struct SequencerStepEditHarness {
                 storages.macroLibrary,
                 storages.sequencerPatternLibrary,
                 storages.sequencerSetLibrary)
+        , filesystem(testRoot().string().c_str())
+        , productFiles(filesystem)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
@@ -105,12 +123,17 @@ struct SequencerStepEditHarness {
                       state.trackNavigation,
                       state.structureNavigationFocus,
                       core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+                      core::handler::SequencerStepPresetDomainServices::fromCoreState(
+                          state,
+                          productFiles
+                      ),
                   },
                   overlays,
                   encoders,
                   buttons,
                   SEQUENCER_SCOPE,
-                  OVERLAY_SCOPE)
+                  OVERLAY_SCOPE,
+                  STEP_PRESET_SCOPE)
         , quickControlsHandler(
               core::handler::SequencerPatternQuickControlsHandler::StateRefs{
                   state.overlays,
@@ -123,8 +146,12 @@ struct SequencerStepEditHarness {
               buttons,
               SEQUENCER_SCOPE
           ) {
+        resetTestRoot();
+        assert(filesystem.init());
+        assert(productFiles.init());
         overlays.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
         overlays.registerCleanup(core::ui::OverlayType::SEQ_STEP_EDIT, OVERLAY_SCOPE);
+        overlays.registerCleanup(core::ui::OverlayType::SEQ_STEP_PRESET, STEP_PRESET_SCOPE);
         state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
         g_now_ms = 0;
     }
@@ -748,7 +775,7 @@ void test_micro_sequence_note_offsets_follow_parent_scale_degrees() {
     std::cout << "[PASS] test_micro_sequence_note_offsets_follow_parent_scale_degrees\n";
 }
 
-void test_left_top_close_keeps_live_child_step_edit_and_records_history() {
+void test_back_from_child_step_edit_returns_to_parent_and_records_history() {
     SequencerStepEditHarness h;
     h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.pattern.note[0] = 60;
@@ -779,10 +806,12 @@ void test_left_top_close_keeps_live_child_step_edit_and_records_history() {
     assert(firstMicroStep != nullptr);
     assert(firstMicroStep->noteOffset != 0);
 
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(!h.state.sequencer.stepEdit.visible.get());
-    assert(core::state::sequencer::isMicroSequenceContentView(h.state.sequencer));
-    assert(h.state.sequencer.contentView.length.get() == 2);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.stepEdit.visible.get());
+    assert(core::state::sequencer::isRootContentView(h.state.sequencer));
+    assert(h.state.sequencer.stepEdit.stepIndex.get() == 0);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == MICRO_SEQUENCE_ROW);
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
 
     graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     assert(graph != nullptr);
@@ -793,7 +822,11 @@ void test_left_top_close_keeps_live_child_step_edit_and_records_history() {
     assert(firstMicroStep->noteOffset != 0);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
-    std::cout << "[PASS] test_left_top_close_keeps_live_child_step_edit_and_records_history\n";
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    std::cout << "[PASS] test_back_from_child_step_edit_returns_to_parent_and_records_history\n";
 }
 
 void test_step_edit_context_rows_clear_selected_child_context() {
@@ -1492,6 +1525,97 @@ void test_step_edit_does_not_open_when_blocked() {
     std::cout << "[PASS] test_step_edit_does_not_open_when_blocked\n";
 }
 
+void test_step_preset_picker_saves_and_loads_focused_step() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setEnabled(2, true);
+    assert(h.state.sequencer.setStepDataAt(2, 67, 96, 155, -3, 84));
+
+    const auto micro = core::state::sequencer::createMicroSequence(
+        h.state.sequencer.pattern,
+        core::state::sequencer::rootStepNodeId(2),
+        2
+    );
+    assert(micro.ok);
+    const auto* sourceGraph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(sourceGraph != nullptr);
+    const auto* sourceSequence = sourceGraph->sequence(micro.id);
+    assert(sourceSequence != nullptr);
+    assert(core::state::sequencer::setNodeNoteOffset(
+        h.state.sequencer.pattern,
+        static_cast<uint16_t>(sourceSequence->firstStepNode + 1U),
+        6
+    ));
+
+    openStepEdit(h, 2);
+    h.release(Config::MACRO_BUTTONS[2]);
+
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_PRESET);
+    assert(h.state.sequencer.stepPresetPicker.visible.get());
+    assert(
+        h.state.sequencer.stepPresetPicker.mode.get() ==
+        core::state::sequencer::SequencerStepPresetPickerMode::LOAD
+    );
+    assert(h.state.sequencer.stepPresetPicker.entryCount.get() == 0);
+
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(
+        h.state.sequencer.stepPresetPicker.mode.get() ==
+        core::state::sequencer::SequencerStepPresetPickerMode::SAVE
+    );
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(
+        h.state.sequencer.stepPresetPicker.feedback.get() ==
+        core::state::sequencer::SequencerStepPresetFeedback::SAVED
+    );
+    assert(h.state.sequencer.stepPresetPicker.entryCount.get() == 1);
+    assert(std::strcmp(h.state.sequencer.stepPresetPicker.entryId(0), "step-preset-001") == 0);
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "library" / "step-presets" / "step-preset-001.mssp"
+    ));
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+    h.tap(Config::MACRO_BUTTONS[2]);
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
+
+    h.state.sequencer.pattern.setEnabled(5, false);
+    assert(h.state.sequencer.setStepDataAt(5, 41, 12, 40, 4, 100));
+    openStepEdit(h, 5);
+    h.release(Config::MACRO_BUTTONS[5]);
+    focusStepEditRow(h, NOTE_ROW);
+    h.turn(Config::EncoderID::OPT, 72.0f / 127.0f);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+    assert(!h.state.sequencer.stepPresetPicker.visible.get());
+    assert(h.state.sequencer.pattern.isEnabled(5));
+    assert(h.state.sequencer.pattern.note[5] == 67);
+    assert(h.state.sequencer.pattern.velocity[5] == 96);
+    assert(h.state.sequencer.pattern.gate[5] == 155);
+    assert(h.state.sequencer.pattern.nudge[5] == -3);
+    assert(h.state.sequencer.pattern.probability[5] == 84);
+
+    const auto* targetGraph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(targetGraph != nullptr);
+    const auto* targetRoot = targetGraph->stepNode(core::state::sequencer::rootStepNodeId(5));
+    assert(targetRoot != nullptr);
+    assert(targetRoot->has(oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE));
+    const auto* targetSequence = targetGraph->sequence(targetRoot->childSequenceId);
+    assert(targetSequence != nullptr);
+    const auto* targetChild = targetGraph->stepNode(
+        static_cast<uint16_t>(targetSequence->firstStepNode + 1U)
+    );
+    assert(targetChild != nullptr);
+    assert(targetChild->noteOffset == 6);
+    assert(h.state.sequencerHistory.undoCount() == 2);
+
+    resetTestRoot();
+    std::cout << "[PASS] test_step_preset_picker_saves_and_loads_focused_step\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1507,7 +1631,7 @@ int main() {
     test_cycle_state_context_length_is_editable_to_sixteen();
     test_child_context_offset_wraps_steps_from_quick_controls();
     test_micro_sequence_note_offsets_follow_parent_scale_degrees();
-    test_left_top_close_keeps_live_child_step_edit_and_records_history();
+    test_back_from_child_step_edit_returns_to_parent_and_records_history();
     test_step_edit_context_rows_clear_selected_child_context();
     test_graph_compaction_remaps_or_closes_active_child_content_view();
     test_step_edit_context_rows_copy_and_paste_step_content();
@@ -1521,6 +1645,7 @@ int main() {
     test_step_edit_session_undo_redo_workflow();
     test_left_top_close_keeps_live_edit_and_records_history();
     test_step_edit_does_not_open_when_blocked();
+    test_step_preset_picker_saves_and_loads_focused_step();
 
     std::cout << "\nAll SequencerStepEditHandler tests passed.\n";
     return 0;

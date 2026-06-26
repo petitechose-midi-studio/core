@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
+#include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/SequencerUiState.hpp"
@@ -56,6 +57,20 @@ struct StepEditRenderData {
     uint8_t stepIndex = 0;
     int selectedIndex = 0;
     int rowCount = 0;
+    bool visible = false;
+};
+
+struct StepPresetPickerRenderData {
+    static constexpr size_t ITEM_CAPACITY =
+        core::state::sequencer::SequencerStepPresetPickerState::ENTRY_CAPACITY + 1U;
+
+    std::array<std::array<char, 32>, ITEM_CAPACITY> itemBuffers{};
+    std::array<const char*, ITEM_CAPACITY> items{};
+    std::array<char, 20> meta{};
+    uint32_t dataRevision = 0;
+    const char* title = "";
+    int selectedIndex = 0;
+    int itemCount = 0;
     bool visible = false;
 };
 

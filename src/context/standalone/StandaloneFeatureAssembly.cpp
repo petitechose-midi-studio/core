@@ -15,6 +15,7 @@
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/DataManagerDomainServices.hpp"
+#include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "persistence/ProductFileService.hpp"
@@ -88,6 +89,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },
         core::handler::SharedTrackDomainServices::fromCoreState(state),
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(state, productFiles),
         overlays,
         encoders,
         buttons,

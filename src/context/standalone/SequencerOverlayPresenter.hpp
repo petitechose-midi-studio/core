@@ -9,6 +9,7 @@
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
+class VirtualListSelectorOverlay;
 }
 
 namespace core::ui {
@@ -33,18 +34,26 @@ public:
 
     SequencerOverlayPresenter(StateRefs stateRefs,
                               core::ui::SequencerStepEditOverlay& stepEditOverlay,
-                              core::ui::ContextActionStrip& stepEditActionStrip);
+                              core::ui::ContextActionStrip& stepEditActionStrip,
+                              ms::ui::VirtualListSelectorOverlay& stepPresetOverlay,
+                              core::ui::ContextActionStrip& stepPresetActionStrip);
 
     void bind();
     void renderStepEdit();
     void renderStepEditActionStrip();
+    void renderStepPresetPicker();
+    void renderStepPresetActionStrip();
 
 private:
     StateRefs state_refs_;
     core::ui::SequencerStepEditOverlay& step_edit_overlay_;
     core::ui::ContextActionStrip& step_edit_action_strip_;
+    ms::ui::VirtualListSelectorOverlay& step_preset_overlay_;
+    core::ui::ContextActionStrip& step_preset_action_strip_;
     oc::state::SignalWatcher step_edit_watcher_;
     oc::state::SignalWatcher step_edit_action_watcher_;
+    oc::state::SignalWatcher step_preset_watcher_;
+    oc::state::SignalWatcher step_preset_action_watcher_;
 };
 
 }  // namespace core::context::standalone

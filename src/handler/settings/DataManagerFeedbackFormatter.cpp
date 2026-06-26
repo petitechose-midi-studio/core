@@ -7,7 +7,7 @@ namespace core::handler {
 
 namespace {
 
-FLASHMEM const char* slotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
+FLASHMEM const char* dataManagerSlotLoadStatusLabel(core::persistence::SlotLoadStatus status) {
     using core::persistence::SlotLoadStatus;
     switch (status) {
         case SlotLoadStatus::OK: return "OK";
@@ -72,7 +72,12 @@ FLASHMEM void formatDataManagerCommandExecutionFeedback(
     if (result.isLoadOperation) {
         if (result.loadStatus != core::persistence::SlotLoadStatus::OK) {
             size_t pos = oc::type::text::appendString(message, messageSize, 0, "Load ");
-            pos = oc::type::text::appendString(message, messageSize, pos, slotLoadStatusLabel(result.loadStatus));
+            pos = oc::type::text::appendString(
+                message,
+                messageSize,
+                pos,
+                dataManagerSlotLoadStatusLabel(result.loadStatus)
+            );
             oc::type::text::terminate(message, messageSize, pos);
             return;
         }

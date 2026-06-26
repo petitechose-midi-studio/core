@@ -25,6 +25,7 @@ namespace core::context::standalone {
 FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     StateRefs stateRefs,
     core::handler::SharedTrackDomainServices sharedTracks,
+    core::handler::SequencerStepPresetDomainServices stepPresets,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -116,9 +117,30 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
         lv_obj_move_foreground(strip);
     }
+    step_preset_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(overlayRoot);
+    step_preset_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
+        step_preset_overlay_->getElement(),
+        core::ui::ContextActionStripOrientation::HORIZONTAL
+    );
+    if (auto* strip = step_preset_action_strip_->getElement()) {
+        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
+        lv_obj_align(
+            strip,
+            LV_ALIGN_BOTTOM_MID,
+            0,
+            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
+        );
+        lv_obj_move_foreground(strip);
+    }
     overlays.registerCleanup(
         core::ui::OverlayType::SEQ_STEP_EDIT,
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+    overlays.registerCleanup(
+        core::ui::OverlayType::SEQ_STEP_PRESET,
+        oc::ui::lvgl::scopeID(step_preset_overlay_->getElement()),
         static_cast<oc::type::ButtonID>(0)
     );
 
@@ -145,7 +167,9 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.structureClipboard,
         },
         *step_edit_overlay_,
-        *step_edit_action_strip_
+        *step_edit_action_strip_,
+        *step_preset_overlay_,
+        *step_preset_action_strip_
     );
     presenter_->bind();
     pattern_pitch_settings_presenter_ =
@@ -194,20 +218,22 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId
         );
     step_edit_handler_ = core::app::makeExtmemUnique<core::handler::SequencerStepEditHandler>(
-            core::handler::SequencerStepEditHandler::StateRefs{
-                stateRefs.overlays,
-                stateRefs.sequencer,
-                stateRefs.sequencerTracks,
-                stateRefs.structureClipboard,
-                stateRefs.trackNavigation,
-                stateRefs.structureNavigationFocus,
-                stateRefs.history,
-            },
+        core::handler::SequencerStepEditHandler::StateRefs{
+            stateRefs.overlays,
+            stateRefs.sequencer,
+            stateRefs.sequencerTracks,
+            stateRefs.structureClipboard,
+            stateRefs.trackNavigation,
+            stateRefs.structureNavigationFocus,
+            stateRefs.history,
+            stepPresets,
+        },
         overlays,
         encoders,
         buttons,
         sequencerViewScopeId,
-        oc::ui::lvgl::scopeID(step_edit_overlay_->getElement())
+        oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
+        oc::ui::lvgl::scopeID(step_preset_overlay_->getElement())
     );
     property_selector_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerPropertySelectorHandler>(

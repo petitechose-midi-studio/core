@@ -1,11 +1,16 @@
 #include "SequencerStepEditHandler.hpp"
 
+#include <algorithm>
+#include <cstring>
+
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include <oc/time/Time.hpp>
+#include <oc/type/Result.hpp>
 
 #include <utility>
 
+#include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerChordEditOps.hpp"
 #include "SequencerInputUtils.hpp"
@@ -116,7 +121,8 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     oc::type::ScopeID sequencerViewScope,
-    oc::type::ScopeID overlayScope
+    oc::type::ScopeID overlayScope,
+    oc::type::ScopeID stepPresetOverlayScope
 )
     : overlay_state_(state.overlays)
     , sequencer_(state.sequencer)
@@ -125,11 +131,13 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     , track_ui_(state.trackNavigation)
     , navigation_focus_(state.navigationFocus)
     , history_(state.history)
+    , step_presets_(state.stepPresets)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
     , sequencer_view_scope_(sequencerViewScope)
     , overlay_scope_(overlayScope)
+    , step_preset_overlay_scope_(stepPresetOverlayScope)
 {
     setupBindings();
 }
@@ -178,7 +186,17 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(overlay_scope_)
-        .then([this]() { closeStepEdit(); });
+        .then([this]() { backFromStepEdit(); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .release()
+        .scope(overlay_scope_)
+        .then([this]() { backFromStepEdit(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
+        .release()
+        .scope(overlay_scope_)
+        .then([this]() { openStepPresetPicker(); });
 
     buttons_.button(Config::ButtonID::LEFT_BOTTOM)
         .press()
@@ -272,6 +290,41 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
             context_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
             pasteFocusedStepContent();
         });
+
+    encoders_.encoder(Config::EncoderID::NAV)
+        .turn()
+        .scope(step_preset_overlay_scope_)
+        .then([this](float delta) { moveStepPresetItem(delta); });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .release()
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { executeStepPresetAction(); });
+
+    buttons_.button(Config::ButtonID::LEFT_TOP)
+        .release()
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { closeStepPresetPicker(); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .release()
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { closeStepPresetPicker(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .release()
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { closeStepPresetPicker(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
+        .release()
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { toggleStepPresetMode(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .release()
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { executeStepPresetAction(); });
 }
 
 FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
@@ -305,7 +358,7 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
     configureOptForFocusedRow();
 }
 
-FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
+FLASHMEM void SequencerStepEditHandler::commitStepEditHistory() {
     if (history_snapshot_valid_) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
         if (core::state::sequencer::captureHistorySnapshot(sequencer_, after) &&
@@ -322,6 +375,41 @@ FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
     }
 
     history_snapshot_valid_ = false;
+}
+
+FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
+    if (chordEditorActive()) {
+        closeChordEditor();
+        return;
+    }
+
+    if (core::state::sequencer::isChildContentView(sequencer_)) {
+        uint8_t parentContextRow = sequencer_.stepEdit.focusedRow.get();
+        if (const auto* frame = sequencer_.contentView.currentFrame()) {
+            parentContextRow =
+                frame->kind == core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE
+                    ? step_edit_rows::MICRO_SEQUENCE
+                    : step_edit_rows::CYCLE_STATES;
+        }
+        commitStepEditHistory();
+        history_.commitCoalescedPatternEdit();
+        if (core::state::sequencer::leaveContentView(sequencer_)) {
+            sequencer_.stepEdit.contextHold.clear();
+            sequencer_.stepEdit.localVariationEditActive.set(false);
+            sequencer_.stepEdit.stepIndex.set(sequencer_.focusedStep.get());
+            sequencer_.stepEdit.focusedRow.set(parentContextRow);
+            history_snapshot_valid_ =
+                core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+            configureOptForFocusedRow();
+            return;
+        }
+    }
+
+    closeStepEdit();
+}
+
+FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
+    commitStepEditHistory();
     open_release_latch_.clear();
     context_release_latch_.clear();
     overlays_.hide();
@@ -1106,6 +1194,174 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
     core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.contentView.bump();
     recordContextMutation(std::move(before), beforeCaptured);
+}
+
+FLASHMEM void SequencerStepEditHandler::refreshStepPresetList() {
+    auto& picker = sequencer_.stepPresetPicker;
+    using Picker = core::state::sequencer::SequencerStepPresetPickerState;
+    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
+
+    SequencerStepPresetDomainServices::Entry entries[Picker::ENTRY_CAPACITY]{};
+    const auto listed = step_presets_.listPresets(entries, Picker::ENTRY_CAPACITY);
+    if (!listed.ok()) {
+        picker.entryCount.set(0);
+        picker.truncated.set(false);
+        picker.setFeedback(Feedback::FAILED);
+        return;
+    }
+
+    for (uint8_t i = 0; i < Picker::ENTRY_CAPACITY; ++i) {
+        picker.setEntry(i, i < listed.count ? entries[i].id : nullptr);
+    }
+    picker.entryCount.set(listed.count);
+    picker.truncated.set(listed.truncated);
+    picker.clampSelection();
+    picker.revision.set(picker.revision.get() + 1U);
+}
+
+FLASHMEM void SequencerStepEditHandler::openStepPresetPicker() {
+    if (!sequencer_.stepEdit.visible.get()) return;
+
+    sequencer_.stepEdit.contextHold.clear();
+    sequencer_.stepEdit.localVariationEditActive.set(false);
+    sequencer_.stepPresetPicker.open(
+        core::state::sequencer::SequencerStepPresetPickerMode::LOAD
+    );
+    refreshStepPresetList();
+    overlays_.show(core::ui::OverlayType::SEQ_STEP_PRESET, true);
+}
+
+FLASHMEM void SequencerStepEditHandler::closeStepPresetPicker() {
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::SEQ_STEP_PRESET);
+    sequencer_.stepPresetPicker.reset();
+    configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::moveStepPresetItem(float delta) {
+    auto& picker = sequencer_.stepPresetPicker;
+    if (!picker.visible.get() || !nav::hasTurnDelta(delta)) return;
+
+    const int count = static_cast<int>(picker.itemCount());
+    if (count <= 0) return;
+
+    const int current = static_cast<int>(picker.selectedIndex.get());
+    const int next = nav::nextWrappedIndex(delta, current, count);
+    picker.selectedIndex.set(static_cast<uint8_t>(next));
+    picker.feedback.set(core::state::sequencer::SequencerStepPresetFeedback::NONE);
+}
+
+FLASHMEM void SequencerStepEditHandler::toggleStepPresetMode() {
+    auto& picker = sequencer_.stepPresetPicker;
+    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
+    const auto next = picker.mode.get() == Mode::LOAD ? Mode::SAVE : Mode::LOAD;
+    picker.mode.set(next);
+    picker.selectedIndex.set(0);
+    picker.feedback.set(core::state::sequencer::SequencerStepPresetFeedback::NONE);
+    refreshStepPresetList();
+    picker.revision.set(picker.revision.get() + 1U);
+}
+
+FLASHMEM const char* SequencerStepEditHandler::selectedStepPresetId() const {
+    const auto& picker = sequencer_.stepPresetPicker;
+    const uint8_t entryIndex = picker.existingEntryIndexForSelectedItem();
+    if (entryIndex >= picker.entryCount.get()) return "";
+    return picker.entryId(entryIndex);
+}
+
+FLASHMEM void SequencerStepEditHandler::executeStepPresetAction() {
+    auto& picker = sequencer_.stepPresetPicker;
+    if (!picker.visible.get()) return;
+
+    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
+    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
+
+    if (picker.mode.get() == Mode::SAVE) {
+        char presetId[core::state::sequencer::SequencerStepPresetPickerState::ID_SIZE] = {};
+        if (picker.selectedIndex.get() == 0) {
+            const auto next = step_presets_.nextPresetId(presetId, sizeof(presetId));
+            if (!next.ok()) {
+                OC_LOG_WARN("[StepPreset] next id failed status={} file={}",
+                            sequencerStepPresetStatusLabel(next.status),
+                            oc::type::errorCodeToString(next.fileError));
+                setStepPresetFeedback(next);
+                return;
+            }
+        } else {
+            std::strncpy(presetId, selectedStepPresetId(), sizeof(presetId) - 1U);
+            presetId[sizeof(presetId) - 1U] = '\0';
+        }
+
+        const auto result = step_presets_.savePreset(presetId);
+        if (!result.ok()) {
+            OC_LOG_WARN("[StepPreset] save id={} failed status={} asset={} file={} bytes={}",
+                        result.presetId,
+                        sequencerStepPresetStatusLabel(result.status),
+                        core::state::sequencer::sequencerGraphAssetStatusLabel(result.assetStatus),
+                        oc::type::errorCodeToString(result.fileError),
+                        result.bytes);
+            setStepPresetFeedback(result);
+            return;
+        }
+        picker.mode.set(Mode::LOAD);
+        picker.selectedIndex.set(0);
+        refreshStepPresetList();
+        const uint8_t count = picker.entryCount.get();
+        for (uint8_t i = 0; i < count; ++i) {
+            if (std::strcmp(picker.entryId(i), result.presetId) == 0) {
+                picker.selectedIndex.set(i);
+                break;
+            }
+        }
+        picker.setFeedback(Feedback::SAVED);
+        return;
+    }
+
+    if (picker.entryCount.get() == 0) {
+        picker.setFeedback(Feedback::EMPTY);
+        return;
+    }
+
+    commitStepEditHistory();
+    history_.commitCoalescedPatternEdit();
+
+    const auto result = step_presets_.loadPreset(selectedStepPresetId());
+    if (!result.ok()) {
+        OC_LOG_WARN("[StepPreset] load id={} failed status={} asset={} file={} bytes={}",
+                    result.presetId,
+                    sequencerStepPresetStatusLabel(result.status),
+                    core::state::sequencer::sequencerGraphAssetStatusLabel(result.assetStatus),
+                    oc::type::errorCodeToString(result.fileError),
+                    result.bytes);
+        setStepPresetFeedback(result);
+        return;
+    }
+
+    sequencer_.invalidateVariationTelemetry();
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+    closeStepPresetPicker();
+}
+
+FLASHMEM void SequencerStepEditHandler::setStepPresetFeedback(
+    const SequencerStepPresetActionResult& result
+) {
+    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
+
+    if (result.status == SequencerStepPresetStatus::EMPTY) {
+        sequencer_.stepPresetPicker.setFeedback(Feedback::EMPTY);
+        return;
+    }
+    if (result.status == SequencerStepPresetStatus::INCOMPATIBLE ||
+        result.assetStatus ==
+            core::state::sequencer::SequencerGraphAssetStatus::INCOMPATIBLE_TARGET) {
+        sequencer_.stepPresetPicker.setFeedback(Feedback::INCOMPATIBLE);
+        return;
+    }
+    if (!result.ok()) {
+        sequencer_.stepPresetPicker.setFeedback(Feedback::FAILED);
+        return;
+    }
+    sequencer_.stepPresetPicker.setFeedback(Feedback::NONE);
 }
 
 }  // namespace core::handler

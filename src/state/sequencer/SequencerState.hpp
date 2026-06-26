@@ -54,6 +54,7 @@ struct SequencerState {
 
     // UI state
     SequencerStepEditOverlayState stepEdit;
+    SequencerStepPresetPickerState stepPresetPicker;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepInlineFeedbackState stepInlineFeedback;
     SequencerPatternVariationFeedbackState patternVariationFeedback;

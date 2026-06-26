@@ -13,6 +13,7 @@
 #include "app/ViewTypes.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "state/PatternPitchSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -78,6 +79,7 @@ public:
 
     SequencerFeatureModule(StateRefs stateRefs,
                            core::handler::SharedTrackDomainServices sharedTracks,
+                           core::handler::SequencerStepPresetDomainServices stepPresets,
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,
@@ -111,6 +113,10 @@ private:
         encoder_sync_;
     core::app::ExtmemUniquePtr<core::ui::SequencerStepEditOverlay> step_edit_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> step_edit_action_strip_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
+        step_preset_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
+        step_preset_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         pattern_pitch_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
