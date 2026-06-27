@@ -1,0 +1,43 @@
+# UX workflow: capture current Sequencer surfaces for CC lane UX planning.
+# Purpose: provides real LVGL 320x240 references for pattern focus, property
+# selection, quick controls, direct OPT feedback, and Step Editor overlays.
+# This workflow does not exercise future CC lane features.
+
+0 scenario sequencer
+50 capture screen sequencer_track_ready
+
+# Move from Track to Pattern/Page scope.
+250 tap NAV 60
+350 capture screen pattern_focus_ready
+
+# Open the current property selector used for musical dimensions.
+450 button LEFT_BOTTOM down
+520 tick
+560 capture screen property_selector_open
+620 button LEFT_BOTTOM up
+720 capture screen property_selector_closed
+
+# Open pattern quick controls.
+850 button LEFT_CENTER down
+920 tick
+960 capture screen quick_controls_open
+1030 encoder NAV 1
+1130 encoder OPT 0.35
+1230 capture screen quick_controls_adjusted
+1290 button LEFT_CENTER up
+1400 capture screen quick_controls_closed
+
+# Move to Step scope and show direct OPT feedback.
+1550 tap NAV 60
+1650 capture screen step_focus_ready
+1750 encoder OPT 0.35
+1850 capture screen step_direct_opt_feedback
+
+# Open Step Editor.
+2000 tap MACRO_1 60
+2150 capture screen step_edit_open
+2300 encoder NAV 1
+2420 encoder OPT 0.65
+2520 capture screen step_edit_adjusted
+2650 tap LEFT_TOP 60
+2800 capture screen step_edit_closed
