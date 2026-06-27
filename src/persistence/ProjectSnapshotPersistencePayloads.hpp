@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
 namespace core::persistence::project_snapshot_codec {
@@ -21,9 +22,15 @@ struct ProjectMacroStatePayload {
 };
 #pragma pack(pop)
 
+struct ProjectMacroAutomationPayload {
+    core::state::macro::MacroAutomationBankState bank{};
+};
+
 static_assert(std::is_trivially_copyable_v<ProjectMacroStatePayload>,
               "ProjectMacroStatePayload must remain trivially copyable");
 static_assert(sizeof(ProjectMacroStatePayload) == 14404,
               "Unexpected ProjectMacroStatePayload size");
+static_assert(std::is_trivially_copyable_v<ProjectMacroAutomationPayload>,
+              "ProjectMacroAutomationPayload must remain trivially copyable");
 
 }  // namespace core::persistence::project_snapshot_codec

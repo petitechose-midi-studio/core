@@ -76,6 +76,39 @@ void test_library_slot_bounds() {
     std::cout << "[PASS] test_library_slot_bounds\n";
 }
 
+void test_library_load_preserves_project_macro_automation_bank() {
+    MemoryStorage libraryStorage;
+    libraryStorage.init();
+
+    core::persistence::MacroPersistence persistence(libraryStorage);
+    assert(persistence.init());
+
+    core::state::macro::MacroPagesState snapshot;
+    configureState(snapshot, 2, 88, 0.75f);
+    assert(persistence.saveLibrarySlot(4, snapshot));
+
+    core::state::macro::MacroPagesState loaded;
+    loaded.initDefaults();
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        loaded.automation,
+        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(slot != nullptr);
+    slot->modulationDepth = 0.75f;
+
+    const auto status = persistence.loadLibrarySlot(4, loaded);
+    assert(status == core::persistence::SlotLoadStatus::OK);
+
+    const auto* preserved = core::state::macro::macroAutomationFindSlot(
+        loaded.automation,
+        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(preserved != nullptr);
+    assert(preserved->modulationDepth == 0.75f);
+
+    std::cout << "[PASS] test_library_load_preserves_project_macro_automation_bank\n";
+}
+
 }  // namespace
 
 int main() {
@@ -85,6 +118,7 @@ int main() {
 
     test_library_save_load_erase_slot();
     test_library_slot_bounds();
+    test_library_load_preserves_project_macro_automation_bank();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

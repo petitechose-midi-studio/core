@@ -44,6 +44,7 @@ FLASHMEM void MacroPagesState::initDefaults() {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         tracks[i].initDefaults(i);
     }
+    automation.clear();
     active_track_ = 0;
     active_page_ = 0;
     track_enabled_mask_.set(DEFAULT_TRACK_ENABLED_MASK);
@@ -79,7 +80,6 @@ FLASHMEM void MacroPagesState::restoreTracksPreservingSharedState(
     uint16_t enabledTrackMaskOut = DEFAULT_TRACK_ENABLED_MASK;
     uint8_t activeTrackOut = 0;
     captureSharedTrackState(enabledTrackMaskOut, activeTrackOut);
-    initDefaults();
     tracks = persistedTracks;
     syncSharedTrackState(enabledTrackMaskOut, activeTrackOut);
 }
@@ -89,7 +89,6 @@ FLASHMEM void MacroPagesState::restoreTracksWithSharedState(
     uint16_t enabledTrackMaskIn,
     uint8_t activeTrackIn
 ) {
-    initDefaults();
     tracks = persistedTracks;
     syncSharedTrackState(enabledTrackMaskIn, activeTrackIn);
 }

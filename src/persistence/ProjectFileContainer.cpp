@@ -142,6 +142,7 @@ FLASHMEM bool isKnownChunkId(uint32_t id) {
         case ChunkId::ROUTING:
         case ChunkId::EDITING:
         case ChunkId::MACRO_STATE:
+        case ChunkId::MACRO_AUTOMATION:
         case ChunkId::SEQUENCER_STATE:
         case ChunkId::HISTORY_JOURNAL:
             return true;

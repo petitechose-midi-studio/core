@@ -25,6 +25,8 @@ namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
 namespace snapshot_codec = core::persistence::project_snapshot_codec;
 
+constexpr size_t kProjectMigrationScratchSize = 128U * 1024U;
+
 std::filesystem::path fixturePath(const char* relativePath) {
     const auto repoRoot = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
     return repoRoot / relativePath;
@@ -77,7 +79,7 @@ void test_inspects_current_project() {
     project::ProjectSnapshot snapshot;
     assert(project::captureProjectSnapshot(state, snapshot));
 
-    auto bytes = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    auto bytes = core::app::makeExtmemUnique<std::array<uint8_t, kProjectMigrationScratchSize>>();
     assert(bytes);
     const auto encoded = snapshot_codec::encodeProjectSnapshot(
         snapshot,
@@ -98,7 +100,8 @@ void test_inspects_current_project() {
     assert(report.ok());
     assert(std::strcmp(migration::statusName(inspected.status), "current") == 0);
 
-    auto migratedBytes = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    auto migratedBytes =
+        core::app::makeExtmemUnique<std::array<uint8_t, kProjectMigrationScratchSize>>();
     assert(migratedBytes);
     project_file::LoadReport migrateReport{};
     const auto migrated = migration::migrateProjectBytesToCurrent(
@@ -143,7 +146,7 @@ void test_stale_sequencer_project_is_partial_and_not_rewritten_by_default() {
         .size = encodedSequencer.size,
     }};
 
-    auto bytes = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    auto bytes = core::app::makeExtmemUnique<std::array<uint8_t, kProjectMigrationScratchSize>>();
     assert(bytes);
     const auto encoded = project_file::encode(chunks, 1, 0, bytes->data(), bytes->size());
     assert(encoded.status == project_file::Status::OK);
@@ -161,7 +164,8 @@ void test_stale_sequencer_project_is_partial_and_not_rewritten_by_default() {
     assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
     assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
 
-    auto migratedBytes = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    auto migratedBytes =
+        core::app::makeExtmemUnique<std::array<uint8_t, kProjectMigrationScratchSize>>();
     assert(migratedBytes);
     project_file::LoadReport migrateReport{};
     const auto migrated = migration::migrateProjectBytesToCurrent(
@@ -208,7 +212,8 @@ void test_stale_sequencer_fixture_is_partial() {
     assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
     assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
 
-    auto migratedBytes = core::app::makeExtmemUnique<std::array<uint8_t, 32768>>();
+    auto migratedBytes =
+        core::app::makeExtmemUnique<std::array<uint8_t, kProjectMigrationScratchSize>>();
     assert(migratedBytes);
     project_file::LoadReport migrateReport{};
     const auto migrated = migration::migrateProjectBytesToCurrent(

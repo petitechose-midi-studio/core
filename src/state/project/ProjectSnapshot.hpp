@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include "app/ExtmemAllocator.hpp"
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -19,6 +21,7 @@ struct ProjectSnapshot {
         macroTracks{};
     uint16_t sharedTrackEnabledMask = core::state::macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
     uint8_t sharedTrackActive = 0;
+    core::app::ExtmemUniquePtr<core::state::macro::MacroAutomationBankState> macroAutomation;
     core::state::sequencer::SequencerHistoryTrackBankSnapshot sequencer{};
 
     ProjectSnapshot();

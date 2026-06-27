@@ -96,6 +96,17 @@ FLASHMEM void fillMacroPayload(const core::state::project::ProjectSnapshot& snap
     out.tracks = snapshot.macroTracks;
 }
 
+FLASHMEM void fillMacroAutomationPayload(
+    const core::state::project::ProjectSnapshot& snapshot,
+    ProjectMacroAutomationPayload& out
+) {
+    if (snapshot.macroAutomation) {
+        out.bank = *snapshot.macroAutomation;
+    } else {
+        out.bank.clear();
+    }
+}
+
 FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
                              core::state::project::ProjectSnapshot& target,
                              project_file::LoadReport* report) {
@@ -123,6 +134,53 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
     target.sharedTrackActive = payload.activeTrack;
     target.sharedTrackEnabledMask = payload.trackEnabledMask;
     target.macroTracks = payload.tracks;
+    return true;
+}
+
+FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chunk,
+                                       core::state::project::ProjectSnapshot& target,
+                                       project_file::LoadReport* report) {
+    if (!target.macroAutomation) {
+        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
+        return false;
+    }
+    if (chunk == nullptr) {
+        reportMissingOptional(report, project_file::ChunkId::MACRO_AUTOMATION);
+        target.macroAutomation->clear();
+        return true;
+    }
+    if (!chunkVersionSupported(*chunk, report)) {
+        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
+        target.macroAutomation->clear();
+        return false;
+    }
+    if (chunk->size != sizeof(ProjectMacroAutomationPayload) || chunk->data == nullptr) {
+        addReport(report,
+                  project_file::LoadSeverity::ERROR,
+                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+                  chunk->id,
+                  chunk->versionMajor,
+                  chunk->versionMinor);
+        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
+        target.macroAutomation->clear();
+        return false;
+    }
+
+    ProjectMacroAutomationPayload payload{};
+    std::memcpy(&payload, chunk->data, sizeof(payload));
+    if (payload.bank.entryCount > core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) {
+        addReport(report,
+                  project_file::LoadSeverity::ERROR,
+                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+                  chunk->id,
+                  chunk->versionMajor,
+                  chunk->versionMinor);
+        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
+        target.macroAutomation->clear();
+        return false;
+    }
+
+    *target.macroAutomation = payload.bank;
     return true;
 }
 
@@ -214,6 +272,10 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     uint8_t* out,
     uint32_t outCapacity
 ) {
+    if (!snapshot.macroAutomation) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
+
     project_state_codec::ProjectMetaPayload meta{};
     project_state_codec::ProjectTransportPayload transport{};
     project_state_codec::ProjectMusicalContextPayload musical{};
@@ -226,12 +288,14 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     project_state_codec::fillEditingPayload(snapshot.project.editing, editing);
 
     auto macro = core::app::makeExtmemUnique<ProjectMacroStatePayload>();
+    auto macroAutomation = core::app::makeExtmemUnique<ProjectMacroAutomationPayload>();
     auto sequencer = core::app::makeExtmemUnique<sequencer_codec::EnvelopeBuffer>();
-    if (!macro || !sequencer) {
+    if (!macro || !macroAutomation || !sequencer) {
         return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
     }
 
     fillMacroPayload(snapshot, *macro);
+    fillMacroAutomationPayload(snapshot, *macroAutomation);
     uint16_t sequencerSize = 0;
     if (!buildSequencerEnvelope(snapshot, *sequencer, sequencerSize)) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
@@ -287,6 +351,14 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .size = sizeof(ProjectMacroStatePayload),
         },
         {
+            .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_AUTOMATION),
+            .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = reinterpret_cast<const uint8_t*>(macroAutomation.get()),
+            .size = sizeof(ProjectMacroAutomationPayload),
+        },
+        {
             .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
@@ -338,6 +410,11 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
     readMacroChunk(findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_STATE),
                    next,
                    report);
+    readMacroAutomationChunk(
+        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_AUTOMATION),
+        next,
+        report
+    );
     readSequencerChunk(
         findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::SEQUENCER_STATE),
         next,

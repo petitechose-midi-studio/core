@@ -25,14 +25,10 @@
 #include <oc/state/Signal.hpp>
 #include <oc/type/TextFormat.hpp>
 
-#include <config/InputIDs.hpp>
+#include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroConstants.hpp"
 
 namespace core::state::macro {
-
-static constexpr uint8_t PAGE_COUNT = 16;
-static constexpr uint8_t TRACK_COUNT = 16;
-static constexpr uint8_t MACRO_COUNT = Config::MACRO_COUNT;
-static constexpr uint8_t PAGE_NAME_SIZE = 16;
 
 /**
  * @brief Single macro configuration (CC + track channel)
@@ -120,6 +116,9 @@ public:
 
     /// All track data (persisted)
     std::array<MacroTrackData, TRACK_COUNT> tracks;
+
+    /// Sparse project-level automation/modulation data keyed by track/page/macro.
+    MacroAutomationBankState automation;
 
     /// Quick access to active page's configs (updated on page switch)
     std::array<MacroConfig, MACRO_COUNT> activeConfigs;

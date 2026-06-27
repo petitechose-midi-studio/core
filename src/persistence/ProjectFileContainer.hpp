@@ -20,6 +20,7 @@ enum class ChunkId : uint32_t {
     ROUTING = 0x524F5554u,          // "ROUT"
     EDITING = 0x45444954u,          // "EDIT"
     MACRO_STATE = 0x4D414352u,      // "MACR"
+    MACRO_AUTOMATION = 0x4D415554u, // "MAUT"
     SEQUENCER_STATE = 0x53455152u,  // "SEQR"
     HISTORY_JOURNAL = 0x48495354u,  // "HIST"
 };

@@ -341,6 +341,38 @@ void configureProjectSession(core::state::CoreState& state) {
     std::strncpy(page.name, "FullSnap", sizeof(page.name) - 1);
     page.cc[2] = 91;
     page.values[2] = 0.625f;
+    auto* macroSlot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = 2,
+        }
+    );
+    assert(macroSlot != nullptr);
+    assert(core::state::macro::macroAutomationAppendPoint(
+        macroSlot->automation,
+        0.0f,
+        0.2f
+    ));
+    assert(core::state::macro::macroAutomationAppendPoint(
+        macroSlot->automation,
+        1.0f,
+        0.8f
+    ));
+    macroSlot->automation.durationBeats = 2.0f;
+    assert(core::state::macro::macroModulationAppendPoint(
+        macroSlot->modulation,
+        0.0f,
+        -0.25f
+    ));
+    assert(core::state::macro::macroModulationAppendPoint(
+        macroSlot->modulation,
+        1.0f,
+        0.25f
+    ));
+    macroSlot->modulation.durationBeats = 2.0f;
+    macroSlot->modulationDepth = 0.5f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
     state.sequencer.pattern.length.set(12);
@@ -384,6 +416,23 @@ void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
     assert(state.pages.activePageData().cc[2] == 91);
     assert(state.pages.activePageData().values[2] == 0.625f);
     assert(state.macros.slots[2].value.get() == 0.625f);
+    const auto* macroSlot = core::state::macro::macroAutomationFindSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = 2,
+        }
+    );
+    assert(macroSlot != nullptr);
+    assert(macroSlot->automation.active);
+    assert(macroSlot->automation.pointCount == 2);
+    assert(macroSlot->automation.durationBeats == 2.0f);
+    assert(macroSlot->automation.points[0].value == 0.2f);
+    assert(macroSlot->automation.points[1].value == 0.8f);
+    assert(macroSlot->modulation.active);
+    assert(macroSlot->modulation.pointCount == 2);
+    assert(macroSlot->modulationDepth == 0.5f);
 
     assert(state.sequencer.pattern.length.get() == 12);
     assert(state.sequencer.pattern.stepsPerBeat.get() == 5);
@@ -467,6 +516,8 @@ void test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks() 
     assert(std::strcmp(snapshot.project.metadata.id.data(), "p010") == 0);
     assert(std::strcmp(snapshot.project.metadata.name.data(), "p010") == 0);
     assert(snapshot.sharedTrackEnabledMask == core::state::macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK);
+    assert(snapshot.macroAutomation);
+    assert(snapshot.macroAutomation->entryCount == 0);
 
     std::cout << "[PASS] test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks\n";
 }
