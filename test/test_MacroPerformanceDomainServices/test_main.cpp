@@ -214,6 +214,79 @@ void test_status_bar_pulses_are_forwarded() {
     std::cout << "[PASS] test_status_bar_pulses_are_forwarded\n";
 }
 
+void test_automation_recording_commits_to_current_macro_slot() {
+    CoreStorages storage;
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+
+    state.statusBar.tempo.set(120.0f);
+    services.setRuntimeValue(2, 0.25f);
+
+    assert(services.beginAutomationRecording(2, 1000));
+    assert(services.automationRecordingActiveFor(2));
+    assert(!services.beginAutomationRecording(3, 1000));
+    assert(!state.project.metadata.dirty);
+
+    assert(services.recordAutomationPoint(2, 1500, 0.75f));
+    assert(services.commitAutomationRecording(2000));
+    assert(!services.automationRecordingActiveFor(2));
+    assert(state.project.metadata.dirty);
+    assert(state.hasPendingProjectSessionSave());
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = 2,
+        }
+    );
+    assert(slot != nullptr);
+    assert(slot->automation.active);
+    assert(slot->automation.durationBeats == 2.0f);
+    assert(slot->automation.pointCount == 2);
+    assert(std::fabs(slot->automation.points[0].beat - 0.0f) < 0.0001f);
+    assert(std::fabs(slot->automation.points[0].value - 0.25f) < 0.0001f);
+    assert(std::fabs(slot->automation.points[1].beat - 1.0f) < 0.0001f);
+    assert(std::fabs(slot->automation.points[1].value - 0.75f) < 0.0001f);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_automation_recording_commits_to_current_macro_slot\n";
+}
+
+void test_automation_recording_cancel_discards_session() {
+    CoreStorages storage;
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+
+    assert(services.beginAutomationRecording(1, 1000));
+    assert(services.recordAutomationPoint(1, 1250, 0.8f));
+    assert(services.cancelAutomationRecording());
+    assert(!services.commitAutomationRecording(1500));
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = 1,
+        }
+    );
+    assert(slot == nullptr);
+    assert(!state.project.metadata.dirty);
+
+    std::cout << "[PASS] test_automation_recording_cancel_discards_session\n";
+}
+
 }  // namespace
 
 int main() {
@@ -223,6 +296,8 @@ int main() {
     test_switch_to_page_updates_runtime_status_and_marks_project_dirty();
     test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid();
     test_status_bar_pulses_are_forwarded();
+    test_automation_recording_commits_to_current_macro_slot();
+    test_automation_recording_cancel_discards_session();
     std::cout << "\nAll MacroPerformanceDomainServices tests passed.\n";
     return 0;
 }

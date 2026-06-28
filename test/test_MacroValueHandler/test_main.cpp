@@ -12,6 +12,7 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 #include <oc/interface/IMidi.hpp>
+#include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
 #include "../../src/handler/macro/MacroValueHandler.hpp"
@@ -156,11 +157,42 @@ void test_macro_value_handler_respects_modal_guards() {
     std::cout << "[PASS] test_macro_value_handler_respects_modal_guards\n";
 }
 
+void test_macro_encoder_feeds_armed_automation_recording() {
+    MacroValueHarness h;
+    auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(h.state);
+
+    h.state.statusBar.tempo.set(120.0f);
+    assert(services.beginAutomationRecording(0, 0));
+
+    g_now_ms = 500;
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+    assert(services.commitAutomationRecording(1000));
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot != nullptr);
+    assert(slot->automation.active);
+    assert(slot->automation.pointCount == 2);
+    assert(std::fabs(slot->automation.points[0].value - 0.5f) < 0.0001f);
+    assert(std::fabs(slot->automation.points[1].beat - 1.0f) < 0.0001f);
+    assert(std::fabs(slot->automation.points[1].value - 1.0f) < 0.0001f);
+
+    std::cout << "[PASS] test_macro_encoder_feeds_armed_automation_recording\n";
+}
+
 }  // namespace
 
 int main() {
+    oc::time::setProvider(mockTimeMs);
     test_macro_encoder_updates_value_and_sends_cc();
     test_macro_value_handler_respects_modal_guards();
+    test_macro_encoder_feeds_armed_automation_recording();
 
     std::cout << "\nAll MacroValueHandler tests passed.\n";
     return 0;

@@ -116,6 +116,9 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     // Update state (triggers UI update, marks dirty for persistence)
     services_.setRuntimeValue(index, quantized);
+    if (services_.automationRecordingActiveFor(index)) {
+        services_.recordAutomationPoint(index, core::time_compat::millis(), quantized);
+    }
 
     if (!services_.isActivePageEnabled()) {
         recordMacroValueProfiling(core::time_compat::micros() - start_us);

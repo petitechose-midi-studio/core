@@ -7,6 +7,12 @@ namespace core::handler {
 
 namespace {
 
+float elapsedBeats(uint32_t startedAtMs, uint32_t nowMs, float tempoBpm) {
+    const uint32_t elapsedMs = nowMs >= startedAtMs ? nowMs - startedAtMs : 0;
+    const float tempo = tempoBpm > 0.0f ? tempoBpm : 120.0f;
+    return (static_cast<float>(elapsedMs) * tempo) / 60000.0f;
+}
+
 bool setTrackConfigsImpl(
     MacroPerformanceDomainServices::StateRefs state,
     MacroPerformanceDomainServices::Operations operations,
@@ -79,6 +85,7 @@ MacroPerformanceDomainServices::MacroPerformanceDomainServices(
 )
     : macros_(&state.macros)
     , pages_(&state.pages)
+    , macro_ui_(&state.macroUi)
     , config_revision_(&state.configRevision)
     , status_bar_(&state.statusBar)
     , operations_(operations) {}
@@ -90,6 +97,7 @@ MacroPerformanceDomainServices MacroPerformanceDomainServices::fromCoreState(
         StateRefs{
             state.macros,
             state.pages,
+            state.macroUi,
             state.configRevision,
             state.statusBar,
         },
@@ -111,6 +119,80 @@ void MacroPerformanceDomainServices::setRuntimeValue(uint8_t index, float value)
     core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, value);
 }
 
+bool MacroPerformanceDomainServices::beginAutomationRecording(uint8_t index,
+                                                              uint32_t nowMs) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    auto& recording = macro_ui_->automationRecording;
+    if (recording.active) return false;
+
+    recording.reset();
+    recording.active = true;
+    recording.address = {
+        .track = pages_->currentActiveTrack(),
+        .page = pages_->currentActivePage(),
+        .macro = index,
+    };
+    recording.startedAtMs = nowMs;
+    return core::state::macro::macroAutomationAppendPoint(
+        recording.lane,
+        0.0f,
+        runtimeValue(index)
+    );
+}
+
+bool MacroPerformanceDomainServices::recordAutomationPoint(uint8_t index,
+                                                           uint32_t nowMs,
+                                                           float value) const {
+    auto& recording = macro_ui_->automationRecording;
+    if (!recording.active || recording.address.macro != index) return false;
+
+    const float beat = elapsedBeats(recording.startedAtMs, nowMs, status_bar_->tempo.get());
+    return core::state::macro::macroAutomationAppendPoint(
+        recording.lane,
+        beat,
+        value
+    );
+}
+
+bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) const {
+    auto& recording = macro_ui_->automationRecording;
+    if (!recording.active) return false;
+
+    const float duration = elapsedBeats(
+        recording.startedAtMs,
+        nowMs,
+        status_bar_->tempo.get()
+    );
+    core::state::macro::macroAutomationFinalizeRecording(recording.lane, duration);
+
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        pages_->automation,
+        recording.address
+    );
+    if (slot == nullptr) {
+        recording.reset();
+        return false;
+    }
+
+    slot->automation = recording.lane;
+    recording.reset();
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
+    return true;
+}
+
+bool MacroPerformanceDomainServices::cancelAutomationRecording() const {
+    if (!macro_ui_->automationRecording.active) return false;
+    macro_ui_->automationRecording.reset();
+    return true;
+}
+
+bool MacroPerformanceDomainServices::automationRecordingActiveFor(uint8_t index) const {
+    const auto& recording = macro_ui_->automationRecording;
+    return recording.active && recording.address.macro == index;
+}
+
 const core::state::macro::MacroConfig& MacroPerformanceDomainServices::activeConfig(
     uint8_t index
 ) const {
@@ -128,7 +210,7 @@ bool MacroPerformanceDomainServices::setTrackConfigs(
     const std::array<core::state::macro::MacroConfig, core::state::macro::MACRO_COUNT>& configs
 ) const {
     return setTrackConfigsImpl(
-        StateRefs{*macros_, *pages_, *config_revision_, *status_bar_},
+        StateRefs{*macros_, *pages_, *macro_ui_, *config_revision_, *status_bar_},
         operations_,
         configs
     );

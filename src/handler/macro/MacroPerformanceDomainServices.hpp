@@ -11,6 +11,9 @@
 
 namespace core::state {
 struct CoreState;
+namespace macro {
+struct MacroUiState;
+}
 }
 
 namespace core::handler {
@@ -31,6 +34,7 @@ public:
     struct StateRefs {
         core::state::MacroState& macros;
         core::state::macro::MacroPagesState& pages;
+        core::state::macro::MacroUiState& macroUi;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
     };
@@ -48,6 +52,11 @@ public:
 
     float runtimeValue(uint8_t index) const;
     void setRuntimeValue(uint8_t index, float value) const;
+    bool beginAutomationRecording(uint8_t index, uint32_t nowMs) const;
+    bool recordAutomationPoint(uint8_t index, uint32_t nowMs, float value) const;
+    bool commitAutomationRecording(uint32_t nowMs) const;
+    bool cancelAutomationRecording() const;
+    bool automationRecordingActiveFor(uint8_t index) const;
     const core::state::macro::MacroConfig& activeConfig(uint8_t index) const;
     bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
     bool setTrackConfigs(
@@ -64,6 +73,7 @@ public:
 private:
     core::state::MacroState* macros_ = nullptr;
     core::state::macro::MacroPagesState* pages_ = nullptr;
+    core::state::macro::MacroUiState* macro_ui_ = nullptr;
     oc::state::Signal<uint32_t>* config_revision_ = nullptr;
     core::state::StatusBarState* status_bar_ = nullptr;
     Operations operations_{};

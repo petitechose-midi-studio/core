@@ -4,6 +4,7 @@
 
 #include <oc/state/Signal.hpp>
 
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/StructureSelectionState.hpp"
 
 namespace core::state::macro {
@@ -27,6 +28,20 @@ enum class MacroQuickControlItem : uint8_t {
 };
 
 struct MacroUiState {
+    struct AutomationRecordingState {
+        bool active = false;
+        MacroAutomationSlotAddress address{};
+        uint32_t startedAtMs = 0;
+        MacroAutomationLane lane{};
+
+        void reset() {
+            active = false;
+            address = {};
+            startedAtMs = 0;
+            lane = {};
+        }
+    };
+
     oc::state::Signal<MacroPerformanceProperty, 2> activeProperty{
         MacroPerformanceProperty::VALUE
     };
@@ -42,6 +57,7 @@ struct MacroUiState {
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
+    AutomationRecordingState automationRecording;
 
     MacroUiState();
     ~MacroUiState();
