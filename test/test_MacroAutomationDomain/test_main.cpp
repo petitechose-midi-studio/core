@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "state/macro/MacroAutomationDomain.hpp"
+#include "state/macro/MacroAutomationState.hpp"
 
 namespace {
 
@@ -16,7 +17,7 @@ void test_duration_quantization_uses_bounded_musical_values() {
     assert(near(macroAutomationQuantizeDurationBeats(0.33f), 0.25f));
     assert(near(macroAutomationQuantizeDurationBeats(0.76f), 1.0f));
     assert(near(macroAutomationQuantizeDurationBeats(3.3f), 4.0f));
-    assert(near(macroAutomationQuantizeDurationBeats(11.0f), 8.0f));
+    assert(near(macroAutomationQuantizeDurationBeats(11.0f), 12.0f));
 
     std::cout << "[PASS] test_duration_quantization_uses_bounded_musical_values\n";
 }
@@ -129,30 +130,39 @@ void test_automation_conversion_policies_make_relative_shapes() {
 void test_resolve_static_automation_modulation_and_depth() {
     using namespace core::state::macro;
 
-    MacroAutomationSlotState motion;
-    motion.automation.durationBeats = 4.0f;
-    assert(macroAutomationAppendPoint(motion.automation, 0.0f, 0.2f));
-    assert(macroAutomationAppendPoint(motion.automation, 2.0f, 0.8f));
+    MacroAutomationBankState bank;
+    auto* motion = macroAutomationGetOrCreateSlot(
+        bank,
+        MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(motion != nullptr);
+    MacroAutomationLane automation;
+    automation.durationBeats = 4.0f;
+    assert(macroAutomationAppendPoint(automation, 0.0f, 0.2f));
+    assert(macroAutomationAppendPoint(automation, 2.0f, 0.8f));
+    assert(macroAutomationAssignAutomation(bank, *motion, automation));
 
-    motion.modulation.durationBeats = 4.0f;
-    assert(macroModulationAppendPoint(motion.modulation, 0.0f, -0.5f));
-    assert(macroModulationAppendPoint(motion.modulation, 2.0f, 0.5f));
-    motion.modulationDepth = 0.2f;
+    MacroModulationShape modulation;
+    modulation.durationBeats = 4.0f;
+    assert(macroModulationAppendPoint(modulation, 0.0f, -0.5f));
+    assert(macroModulationAppendPoint(modulation, 2.0f, 0.5f));
+    assert(macroAutomationAssignModulation(bank, *motion, modulation));
+    motion->modulationDepth = 0.2f;
 
-    const auto atStart = macroResolveValue(0.6f, motion, 0.0f);
+    const auto atStart = macroResolveValue(0.6f, *motion, bank.pointPool, 0.0f);
     assert(atStart.automationActive);
     assert(atStart.modulationActive);
     assert(near(atStart.base, 0.2f));
     assert(near(atStart.modulation, -0.1f));
     assert(near(atStart.resolved, 0.1f));
 
-    const auto atMiddle = macroResolveValue(0.6f, motion, 2.0f);
+    const auto atMiddle = macroResolveValue(0.6f, *motion, bank.pointPool, 2.0f);
     assert(near(atMiddle.base, 0.8f));
     assert(near(atMiddle.modulation, 0.1f));
     assert(near(atMiddle.resolved, 0.9f));
 
     MacroAutomationSlotState noMotion;
-    const auto staticOnly = macroResolveValue(0.6f, noMotion, 1.0f);
+    const auto staticOnly = macroResolveValue(0.6f, noMotion, bank.pointPool, 1.0f);
     assert(!staticOnly.automationActive);
     assert(!staticOnly.modulationActive);
     assert(near(staticOnly.base, 0.6f));
@@ -165,11 +175,11 @@ void test_capacity_is_bounded() {
     using namespace core::state::macro;
 
     MacroAutomationLane lane;
-    for (uint8_t i = 0; i < MACRO_AUTOMATION_MAX_POINTS; ++i) {
+    for (uint16_t i = 0; i < MACRO_AUTOMATION_RECORDING_MAX_POINTS; ++i) {
         assert(macroAutomationAppendPoint(lane, static_cast<float>(i), 0.5f));
     }
-    assert(!macroAutomationAppendPoint(lane, 99.0f, 0.5f));
-    assert(lane.pointCount == MACRO_AUTOMATION_MAX_POINTS);
+    assert(!macroAutomationAppendPoint(lane, 9999.0f, 0.5f));
+    assert(lane.pointCount == MACRO_AUTOMATION_RECORDING_MAX_POINTS);
 
     std::cout << "[PASS] test_capacity_is_bounded\n";
 }

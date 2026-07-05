@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 
@@ -42,7 +43,7 @@ using oc::note::sequencer::STEP_NODE_VELOCITY_OFFSET;
 using oc::note::sequencer::StepSequencerChordMode;
 using oc::note::sequencer::StepSequencerChordSpec;
 
-constexpr size_t kProjectSnapshotScratchSize = 128U * 1024U;
+constexpr size_t kProjectSnapshotScratchSize = 512U * 1024U;
 
 core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
     return core::state::CoreState{
@@ -63,6 +64,88 @@ bool reportHas(const project_file::LoadReport& report, project_file::LoadCode co
 bool sameScale(const StepSequencerScaleSettings& lhs,
                const StepSequencerScaleSettings& rhs) {
     return lhs.root == rhs.root && lhs.type == rhs.type && lhs.mode == rhs.mode;
+}
+
+core::state::macro::MacroAutomationSlotAddress denseMacroAutomationAddress(uint8_t index) {
+    return core::state::macro::MacroAutomationSlotAddress{
+        .track = static_cast<uint8_t>(index / 5U),
+        .page = static_cast<uint8_t>(index % 5U),
+        .macro = static_cast<uint8_t>((index * 3U) % core::state::macro::MACRO_COUNT),
+    };
+}
+
+float denseMacroAutomationDuration(uint8_t index) {
+    return 4.0f + static_cast<float>(index % 4U) * 4.0f;
+}
+
+float denseMacroAutomationValue(uint8_t index, uint8_t point) {
+    const uint8_t raw = static_cast<uint8_t>((index * 11U + point * 7U) % 128U);
+    return static_cast<float>(raw) / 127.0f;
+}
+
+void configureDenseMacroAutomations(core::state::CoreState& state) {
+    using namespace core::state::macro;
+
+    constexpr uint8_t kAutomationCount = 15;
+    constexpr uint8_t kPointCount = 6;
+
+    for (uint8_t i = 0; i < kAutomationCount; ++i) {
+        const auto address = denseMacroAutomationAddress(i);
+        auto& page = state.pages.pageData(address.track, address.page);
+        state.pages.tracks[address.track].setPageEnabled(address.page, true);
+        page.setMacroActive(address.macro, true);
+        page.cc[address.macro] = static_cast<uint8_t>(40U + i);
+        page.values[address.macro] = denseMacroAutomationValue(i, 0);
+
+        auto* slot = macroAutomationGetOrCreateSlot(state.pages.automation, address);
+        assert(slot != nullptr);
+
+        MacroAutomationLane lane;
+        lane.durationBeats = denseMacroAutomationDuration(i);
+        for (uint8_t point = 0; point < kPointCount; ++point) {
+            const float beat =
+                (lane.durationBeats * static_cast<float>(point)) /
+                static_cast<float>(kPointCount - 1U);
+            assert(macroAutomationAppendPoint(
+                lane,
+                beat,
+                denseMacroAutomationValue(i, point)
+            ));
+        }
+        assert(macroAutomationAssignAutomation(state.pages.automation, *slot, lane));
+    }
+}
+
+void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
+    using namespace core::state::macro;
+
+    constexpr uint8_t kAutomationCount = 15;
+    constexpr uint8_t kPointCount = 6;
+    assert(state.pages.automation.entryCount == kAutomationCount);
+
+    for (uint8_t i = 0; i < kAutomationCount; ++i) {
+        const auto address = denseMacroAutomationAddress(i);
+        const auto* slot = macroAutomationFindSlot(state.pages.automation, address);
+        assert(slot != nullptr);
+        assert(slot->automation.active);
+        assert(slot->automation.pointCount == kPointCount);
+        assert(std::fabs(
+                   macroAutomationBeatsFromTicks(slot->automation.durationTicks) -
+                   denseMacroAutomationDuration(i)
+               ) < 0.0001f);
+
+        for (uint8_t point = 0; point < kPointCount; ++point) {
+            MacroCurvePoint restored{};
+            assert(macroAutomationReadPoint(
+                slot->automation,
+                state.pages.automation.pointPool,
+                point,
+                false,
+                restored
+            ));
+            assert(std::fabs(restored.value - denseMacroAutomationValue(i, point)) < 0.0001f);
+        }
+    }
 }
 
 void configureProjectGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
@@ -350,28 +433,24 @@ void configureProjectSession(core::state::CoreState& state) {
         }
     );
     assert(macroSlot != nullptr);
-    assert(core::state::macro::macroAutomationAppendPoint(
-        macroSlot->automation,
-        0.0f,
-        0.2f
+    core::state::macro::MacroAutomationLane automation;
+    automation.durationBeats = 2.0f;
+    assert(core::state::macro::macroAutomationAppendPoint(automation, 0.0f, 0.2f));
+    assert(core::state::macro::macroAutomationAppendPoint(automation, 1.0f, 0.8f));
+    assert(core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *macroSlot,
+        automation
     ));
-    assert(core::state::macro::macroAutomationAppendPoint(
-        macroSlot->automation,
-        1.0f,
-        0.8f
+    core::state::macro::MacroModulationShape modulation;
+    modulation.durationBeats = 2.0f;
+    assert(core::state::macro::macroModulationAppendPoint(modulation, 0.0f, -0.25f));
+    assert(core::state::macro::macroModulationAppendPoint(modulation, 1.0f, 0.25f));
+    assert(core::state::macro::macroAutomationAssignModulation(
+        state.pages.automation,
+        *macroSlot,
+        modulation
     ));
-    macroSlot->automation.durationBeats = 2.0f;
-    assert(core::state::macro::macroModulationAppendPoint(
-        macroSlot->modulation,
-        0.0f,
-        -0.25f
-    ));
-    assert(core::state::macro::macroModulationAppendPoint(
-        macroSlot->modulation,
-        1.0f,
-        0.25f
-    ));
-    macroSlot->modulation.durationBeats = 2.0f;
     macroSlot->modulationDepth = 0.5f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
@@ -427,9 +506,27 @@ void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
     assert(macroSlot != nullptr);
     assert(macroSlot->automation.active);
     assert(macroSlot->automation.pointCount == 2);
-    assert(macroSlot->automation.durationBeats == 2.0f);
-    assert(macroSlot->automation.points[0].value == 0.2f);
-    assert(macroSlot->automation.points[1].value == 0.8f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(
+               macroSlot->automation.durationTicks
+           ) == 2.0f);
+    core::state::macro::MacroCurvePoint firstAutomationPoint{};
+    core::state::macro::MacroCurvePoint secondAutomationPoint{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        macroSlot->automation,
+        state.pages.automation.pointPool,
+        0,
+        false,
+        firstAutomationPoint
+    ));
+    assert(core::state::macro::macroAutomationReadPoint(
+        macroSlot->automation,
+        state.pages.automation.pointPool,
+        1,
+        false,
+        secondAutomationPoint
+    ));
+    assert(std::fabs(firstAutomationPoint.value - 0.2f) < 0.0001f);
+    assert(std::fabs(secondAutomationPoint.value - 0.8f) < 0.0001f);
     assert(macroSlot->modulation.active);
     assert(macroSlot->modulation.pointCount == 2);
     assert(macroSlot->modulationDepth == 0.5f);
@@ -485,6 +582,79 @@ void test_project_snapshot_roundtrip_restores_runtime_state() {
     assertRuntimeMatchesConfigured(targetState);
 
     std::cout << "[PASS] test_project_snapshot_roundtrip_restores_runtime_state\n";
+}
+
+void test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool() {
+    test_support::CoreStorages sourceStorages;
+    auto sourceState = makeCoreState(sourceStorages);
+    configureDenseMacroAutomations(sourceState);
+
+    project::ProjectSnapshot sourceSnapshot;
+    assert(project::captureProjectSnapshot(sourceState, sourceSnapshot));
+    assert(sourceSnapshot.macroAutomation);
+    const uint8_t expectedAutomationEntries = sourceSnapshot.macroAutomation->entryCount;
+    const uint16_t expectedAutomationPoints = sourceSnapshot.macroAutomation->pointPool.used;
+    assert(expectedAutomationEntries == 15);
+    assert(expectedAutomationPoints > expectedAutomationEntries);
+
+    auto buffer = core::app::makeExtmemUnique<std::array<uint8_t, kProjectSnapshotScratchSize>>();
+    assert(buffer);
+    auto encodeResult = snapshot_codec::encodeProjectSnapshot(
+        sourceSnapshot,
+        buffer->data(),
+        static_cast<uint32_t>(buffer->size())
+    );
+    assert(encodeResult.status == project_file::Status::OK);
+
+    project_file::DecodedChunkView encodedChunks[project_file::MAX_CHUNKS] = {};
+    project_file::LoadReport containerReport{};
+    const auto containerDecode = project_file::decode(
+        buffer->data(),
+        encodeResult.bytesWritten,
+        encodedChunks,
+        project_file::MAX_CHUNKS,
+        &containerReport
+    );
+    assert(containerDecode.status == project_file::Status::OK);
+    const project_file::DecodedChunkView* automationChunk = nullptr;
+    for (uint16_t i = 0; i < containerDecode.chunkCount; ++i) {
+        if (encodedChunks[i].id ==
+            project_file::chunkIdValue(project_file::ChunkId::MACRO_AUTOMATION)) {
+            automationChunk = &encodedChunks[i];
+            break;
+        }
+    }
+    assert(automationChunk != nullptr);
+    assert(
+        automationChunk->versionMinor ==
+        snapshot_codec::PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR
+    );
+    assert(automationChunk->size ==
+           sizeof(snapshot_codec::ProjectMacroAutomationPayloadHeader) +
+               static_cast<uint32_t>(expectedAutomationEntries) *
+                   sizeof(snapshot_codec::ProjectMacroAutomationEntryPayload) +
+               static_cast<uint32_t>(expectedAutomationPoints) *
+                   sizeof(core::state::macro::MacroPackedCurvePoint));
+    assert(automationChunk->size < sizeof(core::state::macro::MacroAutomationBankState));
+
+    project::ProjectSnapshot loadedSnapshot;
+    project_file::LoadReport report{};
+    auto decodeResult = snapshot_codec::decodeProjectSnapshot(
+        buffer->data(),
+        encodeResult.bytesWritten,
+        loadedSnapshot,
+        &report
+    );
+    assert(decodeResult.ok);
+    assert(decodeResult.loadStatus == project_file::LoadStatus::OK);
+    assert(report.ok());
+
+    test_support::CoreStorages targetStorages;
+    auto targetState = makeCoreState(targetStorages);
+    assert(project::applyProjectSnapshot(targetState, loadedSnapshot));
+    assertDenseMacroAutomationsRestored(targetState);
+
+    std::cout << "[PASS] test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool\n";
 }
 
 void test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks() {
@@ -623,6 +793,7 @@ int main() {
     std::cout << "==============================================\n\n";
 
     test_project_snapshot_roundtrip_restores_runtime_state();
+    test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool();
     test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks();
     test_project_snapshot_future_sequencer_chunk_blocks_overwrite();
     test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite();

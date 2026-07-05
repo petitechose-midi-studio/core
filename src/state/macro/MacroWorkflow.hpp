@@ -49,6 +49,9 @@ struct MacroWorkflow {
     static void switchToTrack(CoreState& state, uint8_t trackIndex);
     static bool setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc);
     static bool setTrackChannel(CoreState& state, uint8_t channel);
+    static bool activateMacroSlot(core::state::MacroState& macros,
+                                  MacroPagesState& pages,
+                                  uint8_t index);
     static void setRuntimeValue(core::state::MacroState& macros, uint8_t index, float value);
     static float runtimeValue(const core::state::MacroState& macros, uint8_t index);
     static const MacroConfig& activeConfig(const MacroPagesState& pages, uint8_t index);

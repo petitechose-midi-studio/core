@@ -80,6 +80,9 @@ constexpr uint32_t STEP_PATTERN_NUDGE = STEP_NUDGE;
 // Macro config labels (2 base colors, use opacity for prefix)
 constexpr uint32_t MACRO_CH_COLOR = 0xCC7777;    // Muted red
 constexpr uint32_t MACRO_CC_COLOR = 0x77CC77;    // Muted green
+constexpr uint32_t MACRO_AUTOMATION = 0xCC7777;         // Muted red automation lane
+constexpr uint32_t MACRO_AUTOMATION_RECORDING = 0xE06A6A;  // Stronger red recording lane
+constexpr uint32_t MACRO_AUTOMATION_MANUAL = 0xD1A35A;  // Muted amber manual override
 constexpr lv_opa_t MACRO_PREFIX_OPA = LV_OPA_60; // Prefix opacity (dim)
 
 using base_theme::color::getMacroColor;

@@ -13,6 +13,7 @@
 #include "handler/macro/MacroStructureWorkflow.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/macro/MacroInteractionPolicy.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -26,7 +27,7 @@ namespace core::handler {
 /**
  * Binds macro performance buttons/encoders to macro workflows.
  *
- * This handler owns physical input predicates for clutch, quick controls, and
+ * This handler owns physical input predicates for slot property selection and
  * structure editing. State transitions and domain mutations stay in the
  * workflow/service classes it composes.
  */
@@ -64,15 +65,19 @@ public:
 private:
     void setupBindings();
     bool selectionActive() const;
+    core::state::macro::MacroInteractionContext interactionContext() const;
+    bool policyAllows(core::state::macro::MacroInteractionAction action) const;
 
     MacroStructureWorkflow structure_workflow_;
     MacroPerformanceModeWorkflow performance_workflow_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
     bool nav_long_press_used_ = false;
-    bool left_center_held_ = false;
     bool left_bottom_held_ = false;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;

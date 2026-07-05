@@ -529,6 +529,8 @@ void test_sequencer_library_roundtrip() {
         const auto erasedSetStatus =
             core::state::sequencer::SequencerPersistenceWorkflow::loadSetSlot(state, 2);
         assert(erasedSetStatus == core::persistence::SlotLoadStatus::EMPTY);
+
+        drainNotifications();
     }
 
     drainNotifications();
@@ -947,6 +949,7 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
 }  // namespace
 
 int main() {
+    std::cout.setf(std::ios::unitbuf);
     std::cout << "==============================================\n";
     std::cout << "CoreState persistence tests\n";
     std::cout << "==============================================\n\n";

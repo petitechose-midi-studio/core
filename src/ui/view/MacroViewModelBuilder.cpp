@@ -1,25 +1,17 @@
 #include "ui/view/MacroViewModelBuilder.hpp"
 
+#include <cstdio>
+
 #include "config/Timing.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
 
 namespace structure_slots = core::state::shared;
 
 namespace {
-
-uint8_t globalChannelForPage(const core::state::macro::MacroPagesState& pages) {
-    return pages.activeConfigs[0].channel;
-}
-
-uint8_t previewGlobalChannelForView(const MacroViewModelSource& source) {
-    if (source.macroUi.quickControlsSelecting.get()) {
-        return source.macroUi.quickControlGlobalChannel.get();
-    }
-    return globalChannelForPage(source.pages);
-}
 
 uint8_t nextAddIndexOrCount(uint16_t enabledMask, uint8_t count) {
     const int next = structure_slots::nextAddIndexAfterHighest(enabledMask, count);
@@ -107,6 +99,8 @@ MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source)
     props.selectingTrack = selectingTrack;
     props.previewPageAddSlot = previewPageAddSlot;
     props.previewTrackAddSlot = previewTrackAddSlot;
+    props.automationRecording = source.macroUi.automationRecording.active;
+    props.automationRecordingMacro = source.macroUi.automationRecording.address.macro;
 
     props.pageOutputActivity.fill(0);
     if (source.statusBar.ccOutActive.get()) {
@@ -116,33 +110,38 @@ MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source)
     return props;
 }
 
-MacroBottomControlsProps buildMacroBottomControlsProps(const MacroViewModelSource& source) {
-    return {
-        .selectingQuickControls = source.macroUi.quickControlsSelecting.get(),
-        .focusedQuickControl = source.macroUi.focusedQuickControl.get(),
-        .globalChannel = previewGlobalChannelForView(source),
-        .ccOffset = source.macroUi.ccOffset.get(),
-    };
-}
+StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
+    const MacroViewModelSource& source
+) {
+    if (!source.macroUi.clutchActive.get()) {
+        return {.visible = false};
+    }
 
-MacroPropertyStripProps buildMacroPropertyStripProps(const MacroViewModelSource& source) {
-    return {
-        .activeProperty = source.macroUi.activeProperty.get(),
-        .clutchActive = source.macroUi.clutchActive.get(),
+    const auto property = source.macroUi.activeProperty.get();
+    StepPropertySelectionOverlayProps props{
+        .visible = true,
+        .customContent = true,
+        .useValueText = true,
     };
+
+    if (property == core::state::macro::MacroPerformanceProperty::AUTOMATION) {
+        props.icon = standalone::icons::ACTION_REDO;
+        props.label = "Automation";
+        props.color = standalone::theme::color::MACRO_AUTOMATION;
+        std::snprintf(props.valueText.data(), props.valueText.size(), "Restore");
+        return props;
+    }
+
+    props.icon = standalone::icons::MIDI_CC;
+    props.label = "CC";
+    props.color = standalone::theme::color::MACRO_CC_COLOR;
+    props.valueText[0] = '\0';
+    return props;
 }
 
 ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source) {
     using Visual = ContextActionStripVisualState;
     using Tone = ContextActionStripTone;
-
-    const auto property = source.macroUi.activeProperty.get();
-    const char* propertyIcon = standalone::icons::KNOB;
-    if (property == core::state::macro::MacroPerformanceProperty::CC) {
-        propertyIcon = standalone::icons::MIDI_CC;
-    } else if (property == core::state::macro::MacroPerformanceProperty::CHANNEL) {
-        propertyIcon = standalone::icons::MIDI_CHANNEL;
-    }
 
     ContextActionStripProps props;
     props.visible = true;
@@ -168,41 +167,9 @@ ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSourc
         return props;
     }
 
-    if (source.macroUi.quickControlsSelecting.get()) {
-        props.slots[0] = {
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = true,
-            .icon = standalone::icons::ACTION_CANCEL
-        };
-        props.slots[1] = {
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = true,
-            .icon = standalone::icons::MIDI_CHANNEL
-        };
-        props.slots[2] = {
-            .visualState = Visual::DIM,
-            .tone = Tone::NEUTRAL,
-            .showIcon = true,
-            .icon = propertyIcon
-        };
-        return props;
-    }
-
     props.slots[0].visualState = Visual::HIDDEN;
-    props.slots[1] = {
-        .visualState = source.macroUi.clutchActive.get() ? Visual::ACTIVE : Visual::DIM,
-        .tone = Tone::NEUTRAL,
-        .showIcon = true,
-        .icon = standalone::icons::MIDI_CHANNEL
-    };
-    props.slots[2] = {
-        .visualState = source.macroUi.clutchActive.get() ? Visual::ACTIVE : Visual::DIM,
-        .tone = Tone::NEUTRAL,
-        .showIcon = true,
-        .icon = propertyIcon
-    };
+    props.slots[1].visualState = Visual::HIDDEN;
+    props.slots[2].visualState = Visual::HIDDEN;
 
     return props;
 }
@@ -225,6 +192,13 @@ ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSou
             .showIcon = true,
             .icon = standalone::icons::ACTION_COPY
         };
+        return props;
+    }
+
+    if (source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP) {
+        props.slots[0].visualState = ContextActionStripVisualState::HIDDEN;
+        props.slots[1].visualState = ContextActionStripVisualState::HIDDEN;
+        props.slots[2].visualState = ContextActionStripVisualState::HIDDEN;
         return props;
     }
 
@@ -272,10 +246,36 @@ MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source)
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         const auto& config = source.pages.activeConfigs[i];
+        const bool active = source.pages.isMacroSlotActive(i);
+        const bool addSlot = !active && source.pages.isMacroAddSlot(i);
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = source.pages.currentActiveTrack(),
+            .page = source.pages.currentActivePage(),
+            .macro = i,
+        };
+        const auto* automation =
+            core::state::macro::macroAutomationFindSlot(source.pages.automation, address);
+        const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
+        const bool manualOverride =
+            (source.macroUi.automationManualOverrideMask.get() & overrideBit) != 0;
+        const bool focused =
+            source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP &&
+            source.macroUi.focusedMacroSlot.get() == i;
+        const bool recording =
+            source.macroUi.automationRecording.active &&
+            source.macroUi.automationRecording.address.track == source.pages.currentActiveTrack() &&
+            source.macroUi.automationRecording.address.page == source.pages.currentActivePage() &&
+            source.macroUi.automationRecording.address.macro == i;
         frame.macros[i] = {
             .value = source.macros.slots[i].value.get(),
             .channel = config.channel,
             .cc = config.cc,
+            .automationActive = active && automation != nullptr && automation->automation.active,
+            .automationRecording = active && recording,
+            .automationManualOverride = active && manualOverride,
+            .active = active,
+            .addSlot = addSlot,
+            .focused = focused,
         };
     }
 

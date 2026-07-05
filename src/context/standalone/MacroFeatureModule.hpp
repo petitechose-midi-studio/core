@@ -12,11 +12,13 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
+#include "handler/macro/MacroAutomationPlaybackService.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/StatusBarState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
@@ -40,6 +42,7 @@ class MacroOverlayPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
+class MacroAutomationHandler;
 class MacroEditHandler;
 class MacroMidiHandler;
 class MacroPerformanceHandler;
@@ -69,6 +72,7 @@ public:
             core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
         core::state::StructureClipboardState& structureClipboard;
         oc::state::Signal<uint32_t>& configRevision;
+        core::state::StatusBarState& statusBar;
     };
 
     MacroFeatureModule(StateRefs stateRefs,
@@ -93,6 +97,7 @@ public:
 
     void onCC(uint8_t channel, uint8_t cc, uint8_t value);
     void onNoteIn();
+    void update(uint32_t nowMs);
 
 private:
 #if defined(MS_UX_RECORDER)
@@ -104,14 +109,17 @@ private:
 #endif
 
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> edit_overlay_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> automation_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> edit_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> page_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> target_selector_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::MacroOverlayPresenter> presenter_;
     std::unique_ptr<core::handler::MacroValueHandler> value_handler_;
     std::unique_ptr<core::handler::MacroMidiHandler> midi_handler_;
+    std::unique_ptr<core::handler::MacroAutomationPlaybackService> automation_playback_;
     std::unique_ptr<core::handler::MacroPerformanceHandler> performance_handler_;
     std::unique_ptr<core::handler::MacroEditHandler> edit_handler_;
+    std::unique_ptr<core::handler::MacroAutomationHandler> automation_handler_;
 };
 
 }  // namespace core::context::standalone

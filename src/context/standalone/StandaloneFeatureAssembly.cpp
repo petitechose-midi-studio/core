@@ -59,6 +59,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.structureNavigationFocus,
             state.structureClipboard,
             state.configRevision,
+            state.statusBar,
         },
         core::handler::MacroEditDomainServices::fromCoreState(state),
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
@@ -183,6 +184,12 @@ FLASHMEM void StandaloneFeatureAssembly::onMacroCC(uint8_t channel, uint8_t cc, 
 FLASHMEM void StandaloneFeatureAssembly::onMacroNoteIn() const {
     if (macro_feature_) {
         macro_feature_->onNoteIn();
+    }
+}
+
+FLASHMEM void StandaloneFeatureAssembly::update(uint32_t nowMs) const {
+    if (macro_feature_) {
+        macro_feature_->update(nowMs);
     }
 }
 

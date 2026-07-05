@@ -36,9 +36,7 @@ void configureDebugLabels_(CoreState& state) {
     state.macroEdit.macroSelector.selectedIndex.setDebugLabel("core.macroEdit.macroSelector.selectedIndex");
     state.macroUi.activeProperty.setDebugLabel("core.macroUi.activeProperty");
     state.macroUi.clutchActive.setDebugLabel("core.macroUi.clutchActive");
-    state.macroUi.quickControlsSelecting.setDebugLabel("core.macroUi.quickControlsSelecting");
-    state.macroUi.focusedQuickControl.setDebugLabel("core.macroUi.focusedQuickControl");
-    state.macroUi.ccOffset.setDebugLabel("core.macroUi.ccOffset");
+    state.macroUi.focusedMacroSlot.setDebugLabel("core.macroUi.focusedMacroSlot");
     state.trackNavigation.previewAddSlot.setDebugLabel("core.trackNavigation.previewAddSlot");
     state.trackNavigation.previewTrackIndex.setDebugLabel("core.trackNavigation.previewTrackIndex");
     state.structureClipboard.revision.setDebugLabel("core.structureClipboard.revision");
@@ -167,6 +165,7 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, state.macroEdit.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_SELECTOR, state.macroEdit.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, state.macroEdit.macroSelector.visible);
+    state.overlays.registerItem(core::ui::OverlayType::MACRO_AUTOMATION, state.macroEdit.automationVisible);
     state.overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, state.viewSelector.visible);
 
     state.overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, state.sequencer.stepEdit.visible);

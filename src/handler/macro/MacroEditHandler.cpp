@@ -12,7 +12,8 @@ namespace core::handler {
 namespace {
 
 constexpr uint32_t QUICK_RELEASE_WINDOW_MS = 450;
-constexpr uint8_t ROW_COUNT = 2;
+constexpr uint8_t ROW_COUNT = 3;
+constexpr uint8_t ROW_AUTOMATION = 2;
 
 float clampNormalized(float value) {
     return std::clamp(value, 0.0f, 1.0f);
@@ -70,6 +71,7 @@ FLASHMEM void MacroEditHandler::setupBindings() {
         buttons_.button(macroButton)
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(macro_view_scope_)
+            .when([this]() { return !macro_ui_.automationRecording.active; })
             .then([this, i]() { openEdit(i); });
 
         for (oc::type::ScopeID scopeId : openingReleaseScopes) {
@@ -160,6 +162,7 @@ FLASHMEM void MacroEditHandler::setupBindings() {
 }
 
 FLASHMEM void MacroEditHandler::openEdit(uint8_t macroIndex) {
+    if (!services_.isMacroSlotActive(macroIndex)) return;
     const auto& config = services_.activeConfig(macroIndex);
 
     auto& edit = macro_edit_;
@@ -194,6 +197,7 @@ FLASHMEM void MacroEditHandler::closeOverlay() {
             core::ui::OverlayType::MACRO_EDIT_SELECTOR,
             core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR,
             core::ui::OverlayType::PAGE_SELECTOR,
+            core::ui::OverlayType::MACRO_AUTOMATION,
         }
     );
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT);
@@ -229,6 +233,12 @@ FLASHMEM void MacroEditHandler::openValueSelector() {
     if (edit.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
 
     const uint8_t row = macro_edit_.focusedRow.get();
+    if (row == ROW_AUTOMATION) {
+        edit.openAutomation();
+        overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, true);
+        return;
+    }
+
     edit.openValueSelector(row, valueForRow(row));
     overlays_.show(core::ui::OverlayType::MACRO_EDIT_SELECTOR, true);
 }
@@ -353,9 +363,13 @@ FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
     if (row == 0) {
         const int clamped = std::clamp(value, 0, 15);
         macro_edit_.tempChannel.set(static_cast<uint8_t>(clamped));
-    } else {
+    } else if (row == 1) {
         const int clamped = std::clamp(value, 0, 127);
         macro_edit_.tempCC.set(static_cast<uint8_t>(clamped));
+    } else if (row == ROW_AUTOMATION) {
+        const uint8_t macroIndex = macro_edit_.editingIndex.get();
+        if (!services_.automationActiveFor(macroIndex)) return;
+        services_.setAutomationManualOverride(macroIndex, value <= 0);
     }
 }
 
@@ -363,11 +377,17 @@ FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
     if (row == 0) {
         return static_cast<int>(macro_edit_.tempChannel.get());
     }
+    if (row == ROW_AUTOMATION) {
+        const uint8_t macroIndex = macro_edit_.editingIndex.get();
+        if (!services_.automationActiveFor(macroIndex)) return 0;
+        return services_.automationManualOverrideActiveFor(macroIndex) ? 0 : 1;
+    }
     return static_cast<int>(macro_edit_.tempCC.get());
 }
 
 FLASHMEM int MacroEditHandler::valueCountForRow(uint8_t row) const {
     if (row == 0) return 16;
+    if (row == ROW_AUTOMATION) return 2;
     return 128;
 }
 

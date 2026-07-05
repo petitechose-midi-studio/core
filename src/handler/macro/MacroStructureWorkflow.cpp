@@ -49,9 +49,15 @@ bool MacroStructureWorkflow::selectionActive() const {
 }
 
 bool MacroStructureWorkflow::previewingAddSlot() const {
-    return navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK
-        ? track_ui_.previewAddSlot.get()
-        : macro_ui_.previewAddPageSlot.get();
+    switch (navigation_focus_.get()) {
+        case core::state::StructureNavigationFocus::TRACK:
+            return track_ui_.previewAddSlot.get();
+        case core::state::StructureNavigationFocus::STEP:
+            return pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get());
+        case core::state::StructureNavigationFocus::PAGE:
+        default:
+            return macro_ui_.previewAddPageSlot.get();
+    }
 }
 
 FLASHMEM bool MacroStructureWorkflow::commitPreviewedPageIfNeeded() {
@@ -71,9 +77,11 @@ FLASHMEM bool MacroStructureWorkflow::commitPreviewedPageIfNeeded() {
 
 FLASHMEM void MacroStructureWorkflow::cycleNavigationFocus() {
     const auto current = navigation_focus_.get();
-    const auto next = (current == core::state::StructureNavigationFocus::PAGE)
-        ? core::state::StructureNavigationFocus::TRACK
-        : core::state::StructureNavigationFocus::PAGE;
+    const auto next = (current == core::state::StructureNavigationFocus::TRACK)
+        ? core::state::StructureNavigationFocus::PAGE
+        : (current == core::state::StructureNavigationFocus::PAGE)
+            ? core::state::StructureNavigationFocus::STEP
+            : core::state::StructureNavigationFocus::TRACK;
     syncPreviewToCurrentContext();
     navigation_focus_.set(next);
 }
@@ -83,6 +91,9 @@ FLASHMEM void MacroStructureWorkflow::moveByFocus(float delta) {
         case core::state::StructureNavigationFocus::TRACK:
             moveTrack(delta);
             return;
+        case core::state::StructureNavigationFocus::STEP:
+            moveMacroSlot(delta);
+            return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             movePage(delta);
@@ -91,6 +102,10 @@ FLASHMEM void MacroStructureWorkflow::moveByFocus(float delta) {
 }
 
 FLASHMEM void MacroStructureWorkflow::enterSelectionModeForCurrentFocus() {
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
+        return;
+    }
+
     const auto scope = core::state::selectionScopeForFocus(navigation_focus_.get());
     auto& selection = scope == core::state::StructureSelectionScope::TRACK
         ? track_ui_.selection
@@ -182,6 +197,8 @@ FLASHMEM bool MacroStructureWorkflow::canRemoveCurrentStructure() const {
                 services_.trackEnabledMask(),
                 core::state::macro::TRACK_COUNT
             ) > 1U;
+        case core::state::StructureNavigationFocus::STEP:
+            return false;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (macro_ui_.previewAddPageSlot.get()) return false;
@@ -195,6 +212,9 @@ FLASHMEM bool MacroStructureWorkflow::canRemoveCurrentStructure() const {
 FLASHMEM bool MacroStructureWorkflow::canPasteCurrentStructure() const {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         return structure_clipboard_.hasMacroTrack();
+    }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
+        return false;
     }
     return structure_clipboard_.hasMacroPage();
 }
@@ -220,6 +240,8 @@ FLASHMEM void MacroStructureWorkflow::eraseCurrentStructure() {
                 syncPreviewToCurrentContext();
             }
             return;
+        case core::state::StructureNavigationFocus::STEP:
+            return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (macro_ui_.previewAddPageSlot.get()) return;
@@ -238,6 +260,8 @@ FLASHMEM void MacroStructureWorkflow::removeCurrentStructure() {
                 syncPreviewToCurrentContext();
             }
             return;
+        case core::state::StructureNavigationFocus::STEP:
+            return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (macro_ui_.previewAddPageSlot.get()) return;
@@ -252,12 +276,23 @@ FLASHMEM void MacroStructureWorkflow::copyCurrentStructure() {
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
             if (track_ui_.previewAddSlot.get()) return;
-            structure_clipboard_.storeMacroTrack(pages_.tracks[services_.activeTrack()]);
+            structure_clipboard_.storeMacroTrack(
+                pages_.tracks[services_.activeTrack()],
+                pages_.automation,
+                services_.activeTrack()
+            );
+            return;
+        case core::state::StructureNavigationFocus::STEP:
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (macro_ui_.previewAddPageSlot.get()) return;
-            structure_clipboard_.storeMacroPage(pages_.activePageData());
+            structure_clipboard_.storeMacroPage(
+                pages_.activePageData(),
+                pages_.automation,
+                pages_.currentActiveTrack(),
+                pages_.currentActivePage()
+            );
             return;
     }
 }
@@ -268,10 +303,18 @@ FLASHMEM void MacroStructureWorkflow::pasteCurrentStructure() {
         const uint8_t targetIndex =
             track_ui_.previewAddSlot.get() ? track_ui_.previewTrackIndex.get() : services_.activeTrack();
         if (targetIndex >= core::state::macro::TRACK_COUNT) return;
-        if (services_.pasteTrack(targetIndex, structure_clipboard_.macroTrack)) {
+        if (services_.pasteTrack(
+                targetIndex,
+                structure_clipboard_.macroTrack,
+                structure_clipboard_.macroAutomationSet.get()
+            )) {
             syncPreviewToCurrentContext();
         }
         track_ui_.previewAddSlot.set(false);
+        return;
+    }
+
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
         return;
     }
 
@@ -286,7 +329,11 @@ FLASHMEM void MacroStructureWorkflow::pasteCurrentStructure() {
     const uint8_t targetIndex =
         macro_ui_.previewAddPageSlot.get() ? addPageIndex : pages_.currentActivePage();
     if (targetIndex >= core::state::macro::PAGE_COUNT) return;
-    if (services_.pastePage(targetIndex, structure_clipboard_.macroPage)) {
+    if (services_.pastePage(
+            targetIndex,
+            structure_clipboard_.macroPage,
+            structure_clipboard_.macroAutomationSet.get()
+        )) {
         syncPreviewToCurrentContext();
     }
     macro_ui_.previewAddPageSlot.set(false);
@@ -333,6 +380,11 @@ FLASHMEM void MacroStructureWorkflow::createPreviewedStructure() {
                 syncPreviewToCurrentContext();
             }
             break;
+        case core::state::StructureNavigationFocus::STEP:
+            if (services_.activateMacroSlot(macro_ui_.focusedMacroSlot.get())) {
+                clampFocusedMacroSlot();
+            }
+            break;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (services_.createNextPage()) {
@@ -352,12 +404,14 @@ FLASHMEM void MacroStructureWorkflow::bindStateSync() {
         shared_track_active_.subscribe([this](uint8_t activeTrack) {
             track_ui_.syncPreviewTrack(activeTrack);
             macro_ui_.syncPreviewPage(pages_.currentActivePage());
+            clampFocusedMacroSlot();
         })
     );
 
     subscriptions_.push_back(
         pages_.activePageIndexSignal().subscribe([this](uint8_t activePage) {
             macro_ui_.syncPreviewPage(activePage);
+            clampFocusedMacroSlot();
         })
     );
 }
@@ -407,11 +461,35 @@ FLASHMEM void MacroStructureWorkflow::moveTrack(float delta) {
     }
 }
 
+FLASHMEM void MacroStructureWorkflow::moveMacroSlot(float delta) {
+    if (!nav::hasTurnDelta(delta)) return;
+
+    const uint8_t nextAdd = pages_.nextAddMacroIndex();
+    const uint8_t maxIndex = nextAdd < core::state::macro::MACRO_COUNT
+        ? nextAdd
+        : static_cast<uint8_t>(core::state::macro::MACRO_COUNT - 1U);
+    const int step = nav::turnStep(delta);
+    const int current = macro_ui_.focusedMacroSlot.get();
+    const int next = std::clamp(current + step, 0, static_cast<int>(maxIndex));
+    macro_ui_.focusedMacroSlot.set(static_cast<uint8_t>(next));
+}
+
 FLASHMEM void MacroStructureWorkflow::syncPreviewToCurrentContext() {
     track_ui_.previewAddSlot.set(false);
     macro_ui_.previewAddPageSlot.set(false);
     track_ui_.syncPreviewTrack(services_.activeTrack());
     macro_ui_.syncPreviewPage(pages_.currentActivePage());
+    clampFocusedMacroSlot();
+}
+
+FLASHMEM void MacroStructureWorkflow::clampFocusedMacroSlot() {
+    const uint8_t nextAdd = pages_.nextAddMacroIndex();
+    const uint8_t maxIndex = nextAdd < core::state::macro::MACRO_COUNT
+        ? nextAdd
+        : static_cast<uint8_t>(core::state::macro::MACRO_COUNT - 1U);
+    if (macro_ui_.focusedMacroSlot.get() > maxIndex) {
+        macro_ui_.focusedMacroSlot.set(maxIndex);
+    }
 }
 
 }  // namespace core::handler

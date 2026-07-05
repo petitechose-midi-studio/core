@@ -84,6 +84,7 @@ public:
 
     void onMacroCC(uint8_t channel, uint8_t cc, uint8_t value) const;
     void onMacroNoteIn() const;
+    void update(uint32_t nowMs) const;
     void resetSequencerEncoderSync() const;
     void syncSequencerEncodersNow() const;
     void syncProjectEncoderNow() const;

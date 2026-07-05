@@ -25,7 +25,7 @@ namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
 namespace snapshot_codec = core::persistence::project_snapshot_codec;
 
-constexpr size_t kProjectMigrationScratchSize = 128U * 1024U;
+constexpr size_t kProjectMigrationScratchSize = 512U * 1024U;
 
 std::filesystem::path fixturePath(const char* relativePath) {
     const auto repoRoot = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
@@ -230,7 +230,7 @@ void test_stale_sequencer_fixture_is_partial() {
     std::cout << "[PASS] test_stale_sequencer_fixture_is_partial\n";
 }
 
-void test_current_fixture_is_current() {
+void test_previous_current_fixture_is_partial_after_macro_payload_change() {
     const auto bytes = readFixture(
         "test/fixtures/projects/v1_1/current-from-stale-sequencer.mspj"
     );
@@ -242,13 +242,16 @@ void test_current_fixture_is_current() {
         &report
     );
 
-    assert(inspected.status == migration::Status::CURRENT);
-    assert(inspected.loadStatus == project_file::LoadStatus::OK);
-    assert(inspected.overwriteSafe);
-    assert(report.ok());
-    assert(!report.hasUnknownUnsupportedData);
+    assert(inspected.status == migration::Status::PARTIAL);
+    assert(inspected.loadStatus == project_file::LoadStatus::PARTIAL);
+    assert(!inspected.overwriteSafe);
+    assert(!report.ok());
+    assert(report.hasUnknownUnsupportedData);
+    assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
+    assert(reportHas(report, project_file::LoadCode::CHUNK_PAYLOAD_INVALID));
+    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
 
-    std::cout << "[PASS] test_current_fixture_is_current\n";
+    std::cout << "[PASS] test_previous_current_fixture_is_partial_after_macro_payload_change\n";
 }
 
 }  // namespace
@@ -261,7 +264,7 @@ int main() {
     test_inspects_current_project();
     test_stale_sequencer_project_is_partial_and_not_rewritten_by_default();
     test_stale_sequencer_fixture_is_partial();
-    test_current_fixture_is_current();
+    test_previous_current_fixture_is_partial_after_macro_payload_change();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

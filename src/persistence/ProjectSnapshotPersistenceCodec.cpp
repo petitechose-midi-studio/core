@@ -1,5 +1,6 @@
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
+#include <array>
 #include <cstring>
 #include <utility>
 
@@ -18,20 +19,26 @@ namespace project_file = core::persistence::project_file;
 namespace project_state_codec = core::persistence::project_state_codec;
 namespace sequencer_codec = core::persistence::sequencer_codec;
 
+FLASHMEM bool validateMacroAutomationBank(
+    const core::state::macro::MacroAutomationBankState& bank
+);
+
 FLASHMEM void addReport(project_file::LoadReport* report,
                         project_file::LoadSeverity severity,
                         project_file::LoadCode code,
                         uint32_t chunkId,
                         uint8_t sourceMajor = 0,
-                        uint8_t sourceMinor = 0) {
+                        uint8_t sourceMinor = 0,
+                        uint8_t targetMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+                        uint8_t targetMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR) {
     if (report == nullptr) return;
     report->add(severity,
                 code,
                 chunkId,
                 sourceMajor,
                 sourceMinor,
-                PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-                PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR);
+                targetMajor,
+                targetMinor);
 }
 
 FLASHMEM const project_file::DecodedChunkView* findChunk(
@@ -74,6 +81,26 @@ FLASHMEM bool sequencerChunkVersionSupported(const project_file::DecodedChunkVie
     return false;
 }
 
+FLASHMEM bool macroAutomationChunkVersionSupported(
+    const project_file::DecodedChunkView& chunk,
+    project_file::LoadReport* report
+) {
+    if (chunk.versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
+        chunk.versionMinor == PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR) {
+        return true;
+    }
+
+    addReport(report,
+              project_file::LoadSeverity::WARNING,
+              project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
+              chunk.id,
+              chunk.versionMajor,
+              chunk.versionMinor,
+              PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+              PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
+    return false;
+}
+
 FLASHMEM void reportDefaulted(project_file::LoadReport* report, project_file::ChunkId id) {
     addReport(report,
               project_file::LoadSeverity::INFO,
@@ -96,15 +123,62 @@ FLASHMEM void fillMacroPayload(const core::state::project::ProjectSnapshot& snap
     out.tracks = snapshot.macroTracks;
 }
 
-FLASHMEM void fillMacroAutomationPayload(
+FLASHMEM uint32_t macroAutomationPayloadSize(uint8_t entryCount, uint16_t pointCount) {
+    return sizeof(ProjectMacroAutomationPayloadHeader) +
+           static_cast<uint32_t>(entryCount) * sizeof(ProjectMacroAutomationEntryPayload) +
+           static_cast<uint32_t>(pointCount) *
+               sizeof(core::state::macro::MacroPackedCurvePoint);
+}
+
+FLASHMEM bool fillMacroAutomationPayload(
     const core::state::project::ProjectSnapshot& snapshot,
-    ProjectMacroAutomationPayload& out
+    uint8_t* out,
+    uint32_t outCapacity,
+    uint32_t& outSize
 ) {
-    if (snapshot.macroAutomation) {
-        out.bank = *snapshot.macroAutomation;
-    } else {
-        out.bank.clear();
+    outSize = 0;
+    if (out == nullptr) return false;
+
+    if (!snapshot.macroAutomation) return false;
+    const auto& bank = *snapshot.macroAutomation;
+    if (!validateMacroAutomationBank(bank)) return false;
+
+    const uint8_t entryCount = bank.entryCount;
+    const uint16_t pointCount = bank.pointPool.used;
+    const uint32_t required = macroAutomationPayloadSize(entryCount, pointCount);
+    if (required > outCapacity || required > PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE) {
+        return false;
     }
+
+    ProjectMacroAutomationPayloadHeader header{
+        .entryCount = entryCount,
+        .reserved0 = 0,
+        .pointCount = pointCount,
+        .reserved1 = 0,
+    };
+    std::memcpy(out, &header, sizeof(header));
+
+    uint32_t cursor = sizeof(header);
+    for (uint8_t i = 0; i < entryCount; ++i) {
+        const auto& source = bank.entries[i];
+        ProjectMacroAutomationEntryPayload entry{
+            .address = source.address,
+            .state = source.state,
+        };
+        std::memcpy(out + cursor, &entry, sizeof(entry));
+        cursor += sizeof(entry);
+    }
+
+    if (pointCount > 0) {
+        const uint32_t bytes =
+            static_cast<uint32_t>(pointCount) *
+            sizeof(core::state::macro::MacroPackedCurvePoint);
+        std::memcpy(out + cursor, bank.pointPool.points.data(), bytes);
+        cursor += bytes;
+    }
+
+    outSize = cursor;
+    return true;
 }
 
 FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
@@ -137,6 +211,161 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
     return true;
 }
 
+FLASHMEM bool validateMacroAutomationCurve(
+    const core::state::macro::MacroAutomationCurveRef& curve,
+    const core::state::macro::MacroAutomationPointPool& pool
+) {
+    if (!curve.active) return true;
+    if (curve.durationTicks == 0 || curve.pointCount == 0) return false;
+    if (curve.pointOffset >= pool.used) return false;
+    const uint32_t end =
+        static_cast<uint32_t>(curve.pointOffset) + static_cast<uint32_t>(curve.pointCount);
+    if (end > pool.used || end > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
+        return false;
+    }
+    uint16_t previousTick = 0;
+    for (uint16_t i = 0; i < curve.pointCount; ++i) {
+        const auto& point = pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
+        if (point.tick > curve.durationTicks) return false;
+        if (i > 0 && point.tick < previousTick) return false;
+        previousTick = point.tick;
+    }
+    return true;
+}
+
+struct MacroAutomationCurveRange {
+    uint16_t start = 0;
+    uint16_t end = 0;
+};
+
+FLASHMEM bool appendMacroAutomationCurveRange(
+    const core::state::macro::MacroAutomationCurveRef& curve,
+    std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
+    uint8_t& count
+) {
+    if (!curve.active) return true;
+    if (count >= ranges.size()) return false;
+    ranges[count++] = MacroAutomationCurveRange{
+        .start = curve.pointOffset,
+        .end = static_cast<uint16_t>(curve.pointOffset + curve.pointCount),
+    };
+    return true;
+}
+
+FLASHMEM void sortMacroAutomationRanges(
+    std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
+    uint8_t count
+) {
+    for (uint8_t i = 1; i < count; ++i) {
+        const auto current = ranges[i];
+        uint8_t j = i;
+        while (j > 0 && ranges[j - 1U].start > current.start) {
+            ranges[j] = ranges[j - 1U];
+            --j;
+        }
+        ranges[j] = current;
+    }
+}
+
+FLASHMEM bool macroAutomationPoolIsFullyCovered(
+    const std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
+    uint8_t count,
+    uint16_t poolUsed
+) {
+    if (poolUsed == 0) return count == 0;
+    if (count == 0 || ranges[0].start != 0) return false;
+    uint16_t cursor = 0;
+    for (uint8_t i = 0; i < count; ++i) {
+        if (ranges[i].start != cursor || ranges[i].end <= ranges[i].start) return false;
+        cursor = ranges[i].end;
+    }
+    return cursor == poolUsed;
+}
+
+FLASHMEM bool validateMacroAutomationBank(
+    const core::state::macro::MacroAutomationBankState& bank
+) {
+    if (bank.entryCount > core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
+    if (bank.pointPool.used > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
+        return false;
+    }
+    std::array<
+        MacroAutomationCurveRange,
+        core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2> ranges{};
+    uint8_t rangeCount = 0;
+    const uint8_t count = bank.entryCount;
+    for (uint8_t i = 0; i < count; ++i) {
+        const auto& entry = bank.entries[i];
+        if (!entry.active) return false;
+        if (!core::state::macro::macroAutomationAddressValid(entry.address)) return false;
+        for (uint8_t j = static_cast<uint8_t>(i + 1U); j < count; ++j) {
+            if (bank.entries[j].active &&
+                core::state::macro::macroAutomationAddressEquals(
+                    entry.address,
+                    bank.entries[j].address
+                )) {
+                return false;
+            }
+        }
+        if (!validateMacroAutomationCurve(entry.state.automation, bank.pointPool)) return false;
+        if (!validateMacroAutomationCurve(entry.state.modulation, bank.pointPool)) return false;
+        if (!appendMacroAutomationCurveRange(entry.state.automation, ranges, rangeCount)) {
+            return false;
+        }
+        if (!appendMacroAutomationCurveRange(entry.state.modulation, ranges, rangeCount)) {
+            return false;
+        }
+    }
+    sortMacroAutomationRanges(ranges, rangeCount);
+    return macroAutomationPoolIsFullyCovered(ranges, rangeCount, bank.pointPool.used);
+}
+
+FLASHMEM bool readMacroAutomationPayload(const uint8_t* data,
+                                         uint32_t size,
+                                         core::state::macro::MacroAutomationBankState& out) {
+    out.clear();
+    if (data == nullptr || size < sizeof(ProjectMacroAutomationPayloadHeader)) return false;
+
+    ProjectMacroAutomationPayloadHeader header{};
+    std::memcpy(&header, data, sizeof(header));
+    if (header.entryCount > core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
+    if (header.pointCount > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
+        return false;
+    }
+
+    const uint32_t required = macroAutomationPayloadSize(
+        header.entryCount,
+        header.pointCount
+    );
+    if (required != size || required > PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE) {
+        return false;
+    }
+
+    uint32_t cursor = sizeof(ProjectMacroAutomationPayloadHeader);
+    out.entryCount = header.entryCount;
+    for (uint8_t i = 0; i < header.entryCount; ++i) {
+        ProjectMacroAutomationEntryPayload entry{};
+        std::memcpy(&entry, data + cursor, sizeof(entry));
+        cursor += sizeof(entry);
+
+        out.entries[i] = core::state::macro::MacroAutomationSlotEntry{
+            .active = true,
+            .address = entry.address,
+            .state = entry.state,
+        };
+    }
+
+    out.pointPool.used = header.pointCount;
+    if (header.pointCount > 0) {
+        const uint32_t bytes =
+            static_cast<uint32_t>(header.pointCount) *
+            sizeof(core::state::macro::MacroPackedCurvePoint);
+        std::memcpy(out.pointPool.points.data(), data + cursor, bytes);
+    }
+
+    return validateMacroAutomationBank(out);
+}
+
 FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chunk,
                                        core::state::project::ProjectSnapshot& target,
                                        project_file::LoadReport* report) {
@@ -149,12 +378,12 @@ FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chu
         target.macroAutomation->clear();
         return true;
     }
-    if (!chunkVersionSupported(*chunk, report)) {
+    if (!macroAutomationChunkVersionSupported(*chunk, report)) {
         reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
         target.macroAutomation->clear();
         return false;
     }
-    if (chunk->size != sizeof(ProjectMacroAutomationPayload) || chunk->data == nullptr) {
+    if (!readMacroAutomationPayload(chunk->data, chunk->size, *target.macroAutomation)) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
                   project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
@@ -165,22 +394,7 @@ FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chu
         target.macroAutomation->clear();
         return false;
     }
-
-    ProjectMacroAutomationPayload payload{};
-    std::memcpy(&payload, chunk->data, sizeof(payload));
-    if (payload.bank.entryCount > core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) {
-        addReport(report,
-                  project_file::LoadSeverity::ERROR,
-                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor);
-        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
-        target.macroAutomation->clear();
-        return false;
-    }
-
-    *target.macroAutomation = payload.bank;
+    core::state::macro::macroAutomationCompactPool(*target.macroAutomation);
     return true;
 }
 
@@ -288,14 +502,24 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     project_state_codec::fillEditingPayload(snapshot.project.editing, editing);
 
     auto macro = core::app::makeExtmemUnique<ProjectMacroStatePayload>();
-    auto macroAutomation = core::app::makeExtmemUnique<ProjectMacroAutomationPayload>();
+    auto macroAutomation =
+        core::app::makeExtmemUnique<
+            std::array<uint8_t, PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE>>();
     auto sequencer = core::app::makeExtmemUnique<sequencer_codec::EnvelopeBuffer>();
     if (!macro || !macroAutomation || !sequencer) {
         return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
     }
 
     fillMacroPayload(snapshot, *macro);
-    fillMacroAutomationPayload(snapshot, *macroAutomation);
+    uint32_t macroAutomationSize = 0;
+    if (!fillMacroAutomationPayload(
+            snapshot,
+            macroAutomation->data(),
+            static_cast<uint32_t>(macroAutomation->size()),
+            macroAutomationSize
+        )) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
     uint16_t sequencerSize = 0;
     if (!buildSequencerEnvelope(snapshot, *sequencer, sequencerSize)) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
@@ -353,10 +577,10 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_AUTOMATION),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .versionMinor = PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(macroAutomation.get()),
-            .size = sizeof(ProjectMacroAutomationPayload),
+            .data = macroAutomation->data(),
+            .size = macroAutomationSize,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),

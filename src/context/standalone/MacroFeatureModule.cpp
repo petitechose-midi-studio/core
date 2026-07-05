@@ -7,6 +7,7 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/MacroOverlayPresenter.hpp"
+#include "handler/macro/MacroAutomationHandler.hpp"
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/macro/MacroMidiHandler.hpp"
 #include "handler/macro/MacroPerformanceHandler.hpp"
@@ -35,6 +36,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
           stateRefs.activeView,
           stateRefs.macroEdit,
           stateRefs.pages,
+          stateRefs.macroUi,
           stateRefs.configRevision
       ),
       macro_structure_ux_surface_(
@@ -88,6 +90,14 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         static_cast<oc::type::ButtonID>(0)
     );
 
+    automation_overlay_ =
+        core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    overlays.registerCleanup(
+        core::ui::OverlayType::MACRO_AUTOMATION,
+        oc::ui::lvgl::scopeID(automation_overlay_->getElement()),
+        static_cast<oc::type::ButtonID>(0)
+    );
+
     edit_selector_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
     overlays.registerCleanup(
@@ -116,9 +126,11 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         MacroOverlayPresenter::StateRefs{
             stateRefs.macroEdit,
             stateRefs.pages,
+            stateRefs.macroUi,
             stateRefs.configRevision,
         },
         *edit_overlay_,
+        *automation_overlay_,
         *edit_selector_overlay_,
         *page_selector_overlay_,
         *target_selector_overlay_
@@ -135,6 +147,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         performanceServices,
         overlays,
         encoders,
+        buttons,
         midi,
         macroViewScopeId
     );
@@ -163,6 +176,15 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         performanceServices,
         encoders
     );
+    automation_playback_ = std::make_unique<core::handler::MacroAutomationPlaybackService>(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            stateRefs.pages,
+            stateRefs.macroUi,
+            stateRefs.statusBar,
+        },
+        performanceServices,
+        midi
+    );
     edit_handler_ = std::make_unique<core::handler::MacroEditHandler>(
         core::handler::MacroEditHandler::StateRefs{
             stateRefs.macroEdit,
@@ -180,6 +202,16 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         oc::ui::lvgl::scopeID(target_selector_overlay_->getElement()),
         oc::time::millis
     );
+    automation_handler_ = std::make_unique<core::handler::MacroAutomationHandler>(
+        core::handler::MacroAutomationHandler::StateRefs{
+            stateRefs.macroEdit,
+        },
+        editServices,
+        overlays,
+        encoders,
+        buttons,
+        oc::ui::lvgl::scopeID(automation_overlay_->getElement())
+    );
 }
 
 FLASHMEM MacroFeatureModule::~MacroFeatureModule() = default;
@@ -193,6 +225,12 @@ void MacroFeatureModule::onCC(uint8_t channel, uint8_t cc, uint8_t value) {
 void MacroFeatureModule::onNoteIn() {
     if (midi_handler_) {
         midi_handler_->onNoteIn();
+    }
+}
+
+void MacroFeatureModule::update(uint32_t nowMs) {
+    if (automation_playback_) {
+        automation_playback_->update(nowMs);
     }
 }
 

@@ -16,7 +16,7 @@ namespace core::handler {
 /**
  * Owns macro performance modal state transitions.
  *
- * It gates clutch and quick-control modes, configures encoder behavior for each
+ * It gates Macro Slot property selection, configures encoder behavior for each
  * mode, and delegates durable macro changes through MacroPerformanceDomainServices.
  */
 class MacroPerformanceModeWorkflow {
@@ -36,17 +36,12 @@ public:
     MacroPerformanceModeWorkflow& operator=(const MacroPerformanceModeWorkflow&) = delete;
 
     bool performanceAvailable() const;
-    bool quickControlsSelecting() const;
     bool clutchActive() const;
     bool clutchInactive() const;
 
     void activateClutch();
     void deactivateClutch();
-    void openQuickControls();
-    void closeQuickControlsApply();
-    void closeQuickControlsCancel();
-    void navigateQuickControls(float delta);
-    void setFocusedQuickControlValue(float normalized);
+    void cancelClutch();
     void navigateProperty(float delta);
     void refreshEncoders();
 
@@ -54,16 +49,8 @@ private:
     void configureMacroEncoders();
     void configureValueEncoders();
     void configureDiscreteEncoders(uint8_t discreteSteps);
-    void configureQuickControlEncoder();
-    void resetQuickControlsState();
     void configureNormalizedEncoder(Config::EncoderID id);
     void configureDiscreteEncoder(Config::EncoderID id, uint8_t discreteSteps);
-    int currentCcOffsetMin() const;
-    int currentCcOffsetMax() const;
-    float offsetToNormalized(int offset) const;
-    int normalizedToOffset(float normalized) const;
-    void initializeClutchChannelPreview();
-    void commitClutchChannelPreview();
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;
@@ -71,8 +58,6 @@ private:
     MacroPerformanceDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
-    uint8_t quick_snapshot_page_ = 0;
-    std::array<core::state::macro::MacroConfig, Config::MACRO_COUNT> quick_snapshot_configs_{};
 };
 
 }  // namespace core::handler

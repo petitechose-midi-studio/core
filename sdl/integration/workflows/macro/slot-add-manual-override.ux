@@ -1,0 +1,39 @@
+# UX workflow: create a second macro slot and override an automation manually.
+# Purpose: validates the Macro surface V1 model:
+# - only existing slots render as knobs,
+# - the next empty slot is the add target,
+# - recorded automation is visible on the value band,
+# - turning an automated macro enters manual override without deleting the lane.
+
+0 scenario macro-automation-clean
+50 capture screen macro_ready_one_slot_plus
+
+# Macro 3 is not the add target yet and should remain visually inactive.
+120 encoder MACRO_3 1.00
+220 capture screen inactive_slot_ignored
+
+# Focus the Macro Slot scope, move to the add target, and confirm creation.
+320 tap NAV 60
+440 encoder NAV 1
+560 capture screen second_slot_add_focused
+680 tap NAV 60
+820 capture screen second_slot_created
+
+# The new slot can now be edited normally.
+940 encoder MACRO_2 0.80
+1080 capture screen second_slot_value_edited
+
+# Record automation on Macro 1.
+1220 button MACRO_1 down
+1520 encoder MACRO_1 1.00
+1870 button MACRO_1 up
+2040 capture screen automation_committed
+
+# Transport playback shows automation driving the value.
+2170 tap BOTTOM_CENTER 60
+2470 capture screen automation_playing
+
+# User turns Macro 1: manual override takes priority and uses the override color.
+2670 encoder MACRO_1 0.25
+2820 capture screen manual_override_active
+2970 tap BOTTOM_CENTER 60

@@ -291,6 +291,7 @@ public:
     MacroEditUxSurface(oc::state::Signal<core::ui::ViewType, 8>& activeView,
                        core::state::MacroEditState& macroEdit,
                        core::state::macro::MacroPagesState& pages,
+                       core::state::macro::MacroUiState& macroUi,
                        oc::state::Signal<uint32_t>& configRevision);
 
     bool captureSemanticUxContext(
@@ -302,6 +303,7 @@ private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
+    core::state::macro::MacroUiState& macro_ui_;
     oc::state::Signal<uint32_t>& config_revision_;
     core::context::standalone::macro_overlay_presenter::StaticItems static_items_;
 };

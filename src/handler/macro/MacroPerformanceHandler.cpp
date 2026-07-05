@@ -8,6 +8,13 @@
 
 namespace core::handler {
 
+namespace {
+
+using MacroAction = core::state::macro::MacroInteractionAction;
+using MacroPolicy = core::state::macro::MacroInteractionPolicy;
+
+}  // namespace
+
 FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     StateRefs state,
     MacroPerformanceDomainServices performanceServices,
@@ -42,6 +49,7 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
           overlays,
           encoders
       )
+    , navigation_focus_(state.navigationFocus)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -54,49 +62,26 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
 }
 
 FLASHMEM void MacroPerformanceHandler::setupBindings() {
-    buttons_.button(Config::ButtonID::LEFT_CENTER)
-        .press()
-        .latch()
-        .scope(scope_id_)
-        .when([this]() {
-            left_center_held_ = true;
-            return performance_workflow_.performanceAvailable() &&
-                   !left_bottom_held_;
-        })
-        .then([this]() { performance_workflow_.openQuickControls(); });
-
-    buttons_.button(Config::ButtonID::LEFT_CENTER)
-        .release()
-        .scope(scope_id_)
-        .then([this]() {
-            left_center_held_ = false;
-            if (performance_workflow_.quickControlsSelecting()) {
-                performance_workflow_.closeQuickControlsApply();
-            }
-        });
-
     buttons_.button(Config::ButtonID::LEFT_BOTTOM)
         .press()
         .latch()
         .scope(scope_id_)
         .when([this]() {
             left_bottom_held_ = true;
-            return performance_workflow_.performanceAvailable() &&
-                   !left_center_held_ &&
-                   !performance_workflow_.quickControlsSelecting();
+            return policyAllows(MacroAction::OPEN_SLOT_PROPERTIES);
         })
         .then([this]() { performance_workflow_.activateClutch(); });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return selectionActive(); })
+        .when([this]() { return policyAllows(MacroAction::MOVE_SELECTION_CURSOR); })
         .then([this](float delta) { structure_workflow_.navigateSelection(delta); });
 
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() { return policyAllows(MacroAction::ENTER_SELECTION); })
         .then([this]() {
             nav_long_press_used_ = true;
             structure_workflow_.enterSelectionModeForCurrentFocus();
@@ -105,7 +90,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
-        .when([this]() { return selectionActive(); })
+        .when([this]() { return nav_long_press_used_ || policyAllows(MacroAction::TOGGLE_SELECTION); })
         .then([this]() {
             if (nav_long_press_used_) {
                 nav_long_press_used_ = false;
@@ -119,8 +104,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .then([this]() {
             left_bottom_held_ = false;
-            if (performance_workflow_.clutchActive() &&
-                !performance_workflow_.quickControlsSelecting()) {
+            if (policyAllows(MacroAction::APPLY_SLOT_PROPERTIES)) {
                 performance_workflow_.deactivateClutch();
             }
         });
@@ -128,7 +112,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() {
+            return policyAllows(MacroAction::COMMIT_OR_CYCLE_STRUCTURE) ||
+                   policyAllows(MacroAction::CREATE_PREVIEWED_STRUCTURE);
+        })
         .then([this]() {
             if (nav_long_press_used_) {
                 nav_long_press_used_ = false;
@@ -149,42 +136,31 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.quickControlsSelecting(); })
-        .then([this](float delta) { performance_workflow_.navigateQuickControls(delta); });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchActive(); })
+        .when([this]() { return policyAllows(MacroAction::MOVE_SLOT_PROPERTY); })
         .then([this](float delta) { performance_workflow_.navigateProperty(delta); });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() { return policyAllows(MacroAction::MOVE_STRUCTURE); })
         .then([this](float delta) {
             structure_workflow_.moveByFocus(delta);
             performance_workflow_.refreshEncoders();
         });
 
-    encoders_.encoder(Config::EncoderID::OPT)
-        .turn()
-        .scope(scope_id_)
-        .when([this]() { return performance_workflow_.quickControlsSelecting(); })
-        .then([this](float normalized) {
-            performance_workflow_.setFocusedQuickControlValue(normalized);
-        });
-
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when([this]() { return selectionActive(); })
+        .when([this]() { return policyAllows(MacroAction::CANCEL_SELECTION); })
         .then([this]() { structure_workflow_.cancelSelectionMode(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() {
+            return policyAllows(MacroAction::CLEAR_STRUCTURE) ||
+                   policyAllows(MacroAction::REMOVE_STRUCTURE);
+        })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
@@ -197,7 +173,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return selectionActive(); })
+        .when([this]() { return policyAllows(MacroAction::DELETE_SELECTION); })
         .then([this]() {
             structure_workflow_.deleteSelection();
             performance_workflow_.refreshEncoders();
@@ -206,7 +182,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() { return policyAllows(MacroAction::CLEAR_STRUCTURE); })
         .then([this]() {
             structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
@@ -223,7 +199,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() { return policyAllows(MacroAction::REMOVE_STRUCTURE); })
         .then([this]() {
             structure_workflow_.clearHoldAction();
             ignore_next_bottom_left_release_ = true;
@@ -237,7 +213,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .press()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() {
+            return policyAllows(MacroAction::COPY_STRUCTURE) ||
+                   policyAllows(MacroAction::PASTE_STRUCTURE);
+        })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
@@ -250,7 +229,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return selectionActive(); })
+        .when([this]() { return policyAllows(MacroAction::DUPLICATE_SELECTION); })
         .then([this]() {
             structure_workflow_.duplicateSelection();
             performance_workflow_.refreshEncoders();
@@ -259,7 +238,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() { return policyAllows(MacroAction::COPY_STRUCTURE); })
         .then([this]() {
             structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_right_release_) {
@@ -275,7 +254,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.clutchInactive(); })
+        .when([this]() { return policyAllows(MacroAction::PASTE_STRUCTURE); })
         .then([this]() {
             structure_workflow_.clearHoldAction();
             ignore_next_bottom_right_release_ = true;
@@ -289,12 +268,72 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when([this]() { return performance_workflow_.quickControlsSelecting(); })
-        .then([this]() { performance_workflow_.closeQuickControlsCancel(); });
+        .when([this]() { return policyAllows(MacroAction::CANCEL_SLOT_PROPERTIES); })
+        .then([this]() { performance_workflow_.cancelClutch(); });
 }
 
 bool MacroPerformanceHandler::selectionActive() const {
     return structure_workflow_.selectionActive() && !overlays_.hasVisible();
+}
+
+core::state::macro::MacroInteractionContext
+MacroPerformanceHandler::interactionContext() const {
+    return core::state::macro::MacroInteractionContext{
+        .navigationFocus = navigation_focus_.get(),
+        .blockingOverlay = overlays_.hasVisible(),
+        .slotPropertySelecting = performance_workflow_.clutchActive(),
+        .selectionActive = selectionActive(),
+        .previewingAddSlot = structure_workflow_.previewingAddSlot(),
+        .compatibleClipboardAvailable = structure_workflow_.canPasteCurrentStructure(),
+        .canRemoveStructure = structure_workflow_.canRemoveCurrentStructure(),
+    };
+}
+
+bool MacroPerformanceHandler::policyAllows(
+    core::state::macro::MacroInteractionAction action
+) const {
+    const auto context = interactionContext();
+    switch (action) {
+        case MacroAction::MOVE_STRUCTURE:
+            return MacroPolicy::navTurn(context) == action;
+        case MacroAction::MOVE_SELECTION_CURSOR:
+            return MacroPolicy::navTurn(context) == action;
+        case MacroAction::MOVE_SLOT_PROPERTY:
+            return MacroPolicy::navTurn(context) == action;
+        case MacroAction::COMMIT_OR_CYCLE_STRUCTURE:
+            return MacroPolicy::navRelease(context, nav_long_press_used_) == action;
+        case MacroAction::CREATE_PREVIEWED_STRUCTURE:
+            return MacroPolicy::navRelease(context, nav_long_press_used_) == action;
+        case MacroAction::TOGGLE_SELECTION:
+            return MacroPolicy::navRelease(context, nav_long_press_used_) == action;
+        case MacroAction::ENTER_SELECTION:
+            return MacroPolicy::navLongPress(context) == action;
+        case MacroAction::EDIT_SLOT_PROPERTY:
+            return MacroPolicy::optTurn(context) == action;
+        case MacroAction::CANCEL_SLOT_PROPERTIES:
+            return MacroPolicy::leftTopRelease(context) == action;
+        case MacroAction::CANCEL_SELECTION:
+            return MacroPolicy::leftTopRelease(context) == action;
+        case MacroAction::OPEN_SLOT_PROPERTIES:
+            return MacroPolicy::leftBottomPress(context) == action;
+        case MacroAction::APPLY_SLOT_PROPERTIES:
+            return MacroPolicy::leftBottomRelease(context) == action;
+        case MacroAction::CLEAR_STRUCTURE:
+            return MacroPolicy::bottomLeftRelease(context) == action;
+        case MacroAction::REMOVE_STRUCTURE:
+            return MacroPolicy::bottomLeftLongPress(context) == action;
+        case MacroAction::COPY_STRUCTURE:
+            return MacroPolicy::bottomRightRelease(context) == action;
+        case MacroAction::PASTE_STRUCTURE:
+            return MacroPolicy::bottomRightLongPress(context) == action;
+        case MacroAction::DELETE_SELECTION:
+            return MacroPolicy::bottomLeftRelease(context) == action;
+        case MacroAction::DUPLICATE_SELECTION:
+            return MacroPolicy::bottomRightRelease(context) == action;
+        case MacroAction::NONE:
+        default:
+            return false;
+    }
 }
 
 }  // namespace core::handler

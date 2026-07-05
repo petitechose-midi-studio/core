@@ -58,8 +58,85 @@ FLASHMEM void SequencerTrackSelectionClipboard::reset() {
     }
 }
 
+FLASHMEM void MacroAutomationClipboard::reset() {
+    valid = false;
+    trackScope = false;
+    sourceTrack = core::state::macro::TRACK_COUNT;
+    sourcePage = core::state::macro::PAGE_COUNT;
+    count = 0;
+    pointPool = {};
+    entries = {};
+}
+
+FLASHMEM bool MacroAutomationClipboard::append(
+    uint8_t entrySourcePage,
+    uint8_t entrySourceMacro,
+    const core::state::macro::MacroAutomationPointPool& sourcePool,
+    const core::state::macro::MacroAutomationSlotState& state
+) {
+    if (count >= entries.size()) return false;
+    core::state::macro::MacroAutomationSlotState copied{};
+    if (!core::state::macro::macroAutomationCopySlotState(
+            pointPool,
+            copied,
+            sourcePool,
+            state
+        )) {
+        return false;
+    }
+    entries[count] = MacroAutomationClipboardEntry{
+        .valid = true,
+        .sourcePage = entrySourcePage,
+        .sourceMacro = entrySourceMacro,
+        .state = copied,
+    };
+    count = static_cast<uint8_t>(count + 1U);
+    valid = true;
+    return true;
+}
+
+namespace {
+
+FLASHMEM core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard>
+makeMacroAutomationClipboard(
+    const core::state::macro::MacroAutomationBankState& automation,
+    uint8_t sourceTrack,
+    uint8_t sourcePage,
+    bool trackScope
+) {
+    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
+    if (!clipboard) return {};
+    clipboard->reset();
+    clipboard->trackScope = trackScope;
+    clipboard->sourceTrack = sourceTrack;
+    clipboard->sourcePage = sourcePage;
+
+    const uint8_t entryCount = automation.entryCount >
+            core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
+        ? core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
+        : automation.entryCount;
+    for (uint8_t i = 0; i < entryCount; ++i) {
+        const auto& entry = automation.entries[i];
+        if (!entry.active) continue;
+        if (entry.address.track != sourceTrack) continue;
+        if (!trackScope && entry.address.page != sourcePage) continue;
+        if (!core::state::macro::macroAutomationSlotHasContent(entry.state)) continue;
+        clipboard->append(
+            entry.address.page,
+            entry.address.macro,
+            automation.pointPool,
+            entry.state
+        );
+    }
+
+    return clipboard;
+}
+
+}  // namespace
+
 FLASHMEM void StructureClipboardState::clear() {
     kind.set(StructureClipboardKind::NONE);
+    macroAutomationSet.reset();
     sequencerPage.reset();
     sequencerSteps.reset();
     sequencerPageSelection.reset();
@@ -74,6 +151,24 @@ FLASHMEM void StructureClipboardState::storeMacroPage(
     const core::state::macro::MacroPageData& page
 ) {
     macroPage = page;
+    macroAutomationSet.reset();
+    kind.set(StructureClipboardKind::MACRO_PAGE);
+    revision.set(revision.get() + 1);
+}
+
+FLASHMEM void StructureClipboardState::storeMacroPage(
+    const core::state::macro::MacroPageData& page,
+    const core::state::macro::MacroAutomationBankState& automation,
+    uint8_t sourceTrack,
+    uint8_t sourcePage
+) {
+    macroPage = page;
+    macroAutomationSet = makeMacroAutomationClipboard(
+        automation,
+        sourceTrack,
+        sourcePage,
+        false
+    );
     kind.set(StructureClipboardKind::MACRO_PAGE);
     revision.set(revision.get() + 1);
 }
@@ -82,7 +177,48 @@ FLASHMEM void StructureClipboardState::storeMacroTrack(
     const core::state::macro::MacroTrackData& track
 ) {
     macroTrack = track;
+    macroAutomationSet.reset();
     kind.set(StructureClipboardKind::MACRO_TRACK);
+    revision.set(revision.get() + 1);
+}
+
+FLASHMEM void StructureClipboardState::storeMacroTrack(
+    const core::state::macro::MacroTrackData& track,
+    const core::state::macro::MacroAutomationBankState& automation,
+    uint8_t sourceTrack
+) {
+    macroTrack = track;
+    macroAutomationSet = makeMacroAutomationClipboard(
+        automation,
+        sourceTrack,
+        core::state::macro::PAGE_COUNT,
+        true
+    );
+    kind.set(StructureClipboardKind::MACRO_TRACK);
+    revision.set(revision.get() + 1);
+}
+
+FLASHMEM void StructureClipboardState::storeMacroAutomation(
+    const core::state::macro::MacroAutomationBankState& automation,
+    const core::state::macro::MacroAutomationSlotState& slot
+) {
+    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
+    if (!clipboard) {
+        macroAutomationSet.reset();
+        kind.set(StructureClipboardKind::NONE);
+        revision.set(revision.get() + 1);
+        return;
+    }
+
+    clipboard->reset();
+    if (!clipboard->append(0, 0, automation.pointPool, slot)) {
+        macroAutomationSet.reset();
+        kind.set(StructureClipboardKind::NONE);
+        revision.set(revision.get() + 1);
+        return;
+    }
+    macroAutomationSet = std::move(clipboard);
+    kind.set(StructureClipboardKind::MACRO_AUTOMATION);
     revision.set(revision.get() + 1);
 }
 

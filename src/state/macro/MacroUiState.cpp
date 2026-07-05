@@ -10,11 +10,8 @@ FLASHMEM MacroUiState::~MacroUiState() = default;
 FLASHMEM void MacroUiState::reset() {
     clutchActive.set(false);
     activeProperty.set(MacroPerformanceProperty::VALUE);
-    quickControlsSelecting.set(false);
-    focusedQuickControl.set(MacroQuickControlItem::GLOBAL_CHANNEL);
-    clutchPreviewTrackChannel.set(0);
-    quickControlGlobalChannel.set(0);
-    ccOffset.set(0);
+    automationManualOverrideMask.set(0);
+    focusedMacroSlot.set(0);
     previewAddPageSlot.set(false);
     previewPageIndex.set(0);
     pageHold.clear();

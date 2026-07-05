@@ -10,6 +10,7 @@
 
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
 namespace core::context::standalone::macro_overlay_presenter {
@@ -23,6 +24,7 @@ namespace core::context::standalone::macro_overlay_presenter {
 struct Source {
     core::state::MacroEditState& macroEdit;
     core::state::macro::MacroPagesState& pages;
+    core::state::macro::MacroUiState& macroUi;
     oc::state::Signal<uint32_t>& configRevision;
 };
 
@@ -36,12 +38,22 @@ struct StaticItems {
 };
 
 struct EditRenderData {
-    std::array<std::array<char, 8>, 2> valueBuffers{};
-    std::array<ms::ui::KeyValueRow, 2> rows{};
+    std::array<std::array<char, 12>, 3> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 3> rows{};
     std::array<char, 16> title{};
     std::array<char, 16> meta{};
     uint32_t dataRevision = 0;
     int selectedIndex = 0;
+};
+
+struct AutomationRenderData {
+    std::array<std::array<char, 16>, 4> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 4> rows{};
+    std::array<char, 16> title{};
+    std::array<char, 16> meta{};
+    uint32_t dataRevision = 0;
+    int selectedIndex = 0;
+    bool visible = false;
 };
 
 struct SelectorRenderData {
@@ -56,6 +68,7 @@ struct SelectorRenderData {
 
 void initializeStaticItems(StaticItems& items);
 EditRenderData buildEditRenderData(Source& source);
+AutomationRenderData buildAutomationRenderData(const Source& source);
 SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items);
 SelectorRenderData buildPageSelectorRenderData(const Source& source);
 SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items);

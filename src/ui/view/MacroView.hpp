@@ -28,9 +28,8 @@
 #include "state/ViewSelectorState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
-#include "ui/macro/MacroBottomControls.hpp"
 #include "ui/macro/MacroHeaderBar.hpp"
-#include "ui/macro/MacroPropertyStrip.hpp"
+#include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
@@ -88,9 +87,8 @@ public:
 private:
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
-    void createBottomControls();
     void createActionStrips();
-    void createPropertyStrip();
+    void createSlotPropertyOverlay();
     void createMacros();
     void bindToState();
     bool hasBlockingOverlay() const;
@@ -102,8 +100,7 @@ private:
     void requestHeaderRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
-    void requestBottomControlsRender();
-    void requestPropertyStripRender();
+    void requestSlotPropertyOverlayRender();
     void markAllDirty();
     void markAllConfigDirty();
     void markConfigDirtyIfChanged();
@@ -116,14 +113,19 @@ private:
     std::vector<oc::state::Subscription> subscriptions_;
     std::array<bool, MACRO_COUNT> dirty_flags_{};
     std::array<bool, MACRO_COUNT> config_dirty_flags_{};
+    std::array<bool, MACRO_COUNT> rendered_automation_active_{};
+    std::array<bool, MACRO_COUNT> rendered_automation_recording_{};
+    std::array<bool, MACRO_COUNT> rendered_automation_manual_override_{};
+    std::array<bool, MACRO_COUNT> rendered_active_{};
+    std::array<bool, MACRO_COUNT> rendered_add_slot_{};
+    std::array<bool, MACRO_COUNT> rendered_focused_{};
     std::array<uint8_t, MACRO_COUNT> rendered_channels_{};
     std::array<uint8_t, MACRO_COUNT> rendered_ccs_{};
     bool has_dirty_ = false;
     bool header_dirty_ = true;
     bool left_action_strip_dirty_ = true;
     bool bottom_action_strip_dirty_ = true;
-    bool bottom_controls_dirty_ = true;
-    bool property_strip_dirty_ = true;
+    bool slot_property_overlay_dirty_ = true;
     std::unique_ptr<PausableLvglTimer> update_timer_;
 
     // UI structure: frame_ owns the shared standalone layout skeleton.
@@ -135,10 +137,9 @@ private:
     lv_obj_t* center_column_ = nullptr;
     lv_obj_t* macro_grid_container_ = nullptr;
     std::unique_ptr<core::ui::MacroHeaderBar> header_bar_;
-    std::unique_ptr<core::ui::MacroBottomControls> bottom_controls_;
     std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
     std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
-    std::unique_ptr<core::ui::MacroPropertyStrip> property_strip_;
+    std::unique_ptr<core::ui::StepPropertySelectionOverlay> slot_property_overlay_;
     std::array<std::unique_ptr<core::ui::IMacroWidget>, MACRO_COUNT> macros_;
 };
 }  // namespace core::ui

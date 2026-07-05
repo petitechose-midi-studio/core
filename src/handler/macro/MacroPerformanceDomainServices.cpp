@@ -77,6 +77,10 @@ void switchToPageFromCoreState(void* context, uint8_t pageIndex) {
     core::state::macro::MacroWorkflow::switchToPage(*state, pageIndex);
 }
 
+void bumpAutomationRecordingRevision(core::state::macro::MacroUiState& macroUi) {
+    macroUi.automationRecordingRevision.set(macroUi.automationRecordingRevision.get() + 1U);
+}
+
 }  // namespace
 
 MacroPerformanceDomainServices::MacroPerformanceDomainServices(
@@ -122,6 +126,7 @@ void MacroPerformanceDomainServices::setRuntimeValue(uint8_t index, float value)
 bool MacroPerformanceDomainServices::beginAutomationRecording(uint8_t index,
                                                               uint32_t nowMs) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
+    if (!pages_->isMacroSlotActive(index)) return false;
     auto& recording = macro_ui_->automationRecording;
     if (recording.active) return false;
 
@@ -132,12 +137,25 @@ bool MacroPerformanceDomainServices::beginAutomationRecording(uint8_t index,
         .page = pages_->currentActivePage(),
         .macro = index,
     };
+    const auto* existing = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        recording.address
+    );
+    if (existing != nullptr && existing->automation.active) {
+        recording.preserveDuration = true;
+        recording.targetDurationTicks = existing->automation.durationTicks;
+    }
+    setAutomationManualOverride(index, false);
     recording.startedAtMs = nowMs;
-    return core::state::macro::macroAutomationAppendPoint(
+    const bool appended = core::state::macro::macroAutomationAppendPoint(
         recording.lane,
         0.0f,
         runtimeValue(index)
     );
+    if (appended) {
+        bumpAutomationRecordingRevision(*macro_ui_);
+    }
+    return appended;
 }
 
 bool MacroPerformanceDomainServices::recordAutomationPoint(uint8_t index,
@@ -147,35 +165,63 @@ bool MacroPerformanceDomainServices::recordAutomationPoint(uint8_t index,
     if (!recording.active || recording.address.macro != index) return false;
 
     const float beat = elapsedBeats(recording.startedAtMs, nowMs, status_bar_->tempo.get());
-    return core::state::macro::macroAutomationAppendPoint(
+    const bool appended = core::state::macro::macroAutomationAppendPoint(
         recording.lane,
         beat,
         value
     );
+    if (appended) {
+        bumpAutomationRecordingRevision(*macro_ui_);
+    }
+    return appended;
 }
 
 bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) const {
     auto& recording = macro_ui_->automationRecording;
     if (!recording.active) return false;
+    if (recording.lane.pointCount < 2) {
+        recording.reset();
+        bumpAutomationRecordingRevision(*macro_ui_);
+        return false;
+    }
 
     const float duration = elapsedBeats(
         recording.startedAtMs,
         nowMs,
         status_bar_->tempo.get()
     );
-    core::state::macro::macroAutomationFinalizeRecording(recording.lane, duration);
-
     auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
         pages_->automation,
         recording.address
     );
     if (slot == nullptr) {
         recording.reset();
+        bumpAutomationRecordingRevision(*macro_ui_);
         return false;
     }
 
-    slot->automation = recording.lane;
+    if (recording.preserveDuration) {
+        core::state::macro::macroAutomationFinalizeRecordingWithDuration(
+            recording.lane,
+            duration,
+            core::state::macro::macroAutomationBeatsFromTicks(recording.targetDurationTicks)
+        );
+    } else {
+        core::state::macro::macroAutomationFinalizeRecording(recording.lane, duration);
+    }
+
+    if (!core::state::macro::macroAutomationAssignAutomation(
+            pages_->automation,
+            *slot,
+            recording.lane
+        )) {
+        recording.reset();
+        bumpAutomationRecordingRevision(*macro_ui_);
+        return false;
+    }
+    setAutomationManualOverride(recording.address.macro, false);
     recording.reset();
+    bumpAutomationRecordingRevision(*macro_ui_);
     if (operations_.markProjectMutated != nullptr) {
         operations_.markProjectMutated(operations_.context);
     }
@@ -185,12 +231,71 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
 bool MacroPerformanceDomainServices::cancelAutomationRecording() const {
     if (!macro_ui_->automationRecording.active) return false;
     macro_ui_->automationRecording.reset();
+    bumpAutomationRecordingRevision(*macro_ui_);
     return true;
 }
 
 bool MacroPerformanceDomainServices::automationRecordingActiveFor(uint8_t index) const {
     const auto& recording = macro_ui_->automationRecording;
     return recording.active && recording.address.macro == index;
+}
+
+bool MacroPerformanceDomainServices::automationActiveFor(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_->currentActiveTrack(),
+            .page = pages_->currentActivePage(),
+            .macro = index,
+        }
+    );
+    return slot != nullptr && slot->automation.active;
+}
+
+bool MacroPerformanceDomainServices::automationManualOverrideActiveFor(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    const uint16_t bit = static_cast<uint16_t>(1U << index);
+    return (macro_ui_->automationManualOverrideMask.get() & bit) != 0;
+}
+
+void MacroPerformanceDomainServices::setAutomationManualOverride(uint8_t index,
+                                                                 bool active) const {
+    if (index >= core::state::macro::MACRO_COUNT) return;
+    const uint16_t bit = static_cast<uint16_t>(1U << index);
+    uint16_t mask = macro_ui_->automationManualOverrideMask.get();
+    const uint16_t next = active
+        ? static_cast<uint16_t>(mask | bit)
+        : static_cast<uint16_t>(mask & ~bit);
+    if (next == mask) return;
+    macro_ui_->automationManualOverrideMask.set(next);
+}
+
+bool MacroPerformanceDomainServices::isMacroSlotActive(uint8_t index) const {
+    return pages_ != nullptr && pages_->isMacroSlotActive(index);
+}
+
+bool MacroPerformanceDomainServices::isMacroAddSlot(uint8_t index) const {
+    return pages_ != nullptr && pages_->isMacroAddSlot(index);
+}
+
+bool MacroPerformanceDomainServices::activateMacroSlot(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    if (pages_->activePageData().isMacroActive(index)) return true;
+    if (!core::state::macro::MacroWorkflow::activateMacroSlot(*macros_, *pages_, index)) {
+        return false;
+    }
+
+    if (config_revision_ != nullptr) {
+        config_revision_->set(core::state::macro::nextMacroConfigRevision(
+            config_revision_->get(),
+            index
+        ));
+    }
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
+    return true;
 }
 
 const core::state::macro::MacroConfig& MacroPerformanceDomainServices::activeConfig(

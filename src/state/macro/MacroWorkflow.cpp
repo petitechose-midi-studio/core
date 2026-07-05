@@ -109,6 +109,30 @@ FLASHMEM bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) 
     return true;
 }
 
+FLASHMEM bool MacroWorkflow::activateMacroSlot(core::state::MacroState& macros,
+                                               MacroPagesState& pages,
+                                               uint8_t index) {
+    if (index >= MACRO_COUNT) return false;
+    auto& page = pages.activePageData();
+    if (page.isMacroActive(index)) return false;
+    if (page.nextAddMacroIndex() != index) return false;
+
+    uint8_t sourceIndex = 0;
+    for (uint8_t i = 0; i < index; ++i) {
+        if (page.isMacroActive(i)) {
+            sourceIndex = i;
+        }
+    }
+
+    const uint16_t nextCc = static_cast<uint16_t>(page.cc[sourceIndex]) + 1U;
+    page.cc[index] = static_cast<uint8_t>(nextCc > 127U ? 127U : nextCc);
+    page.values[index] = 0.5f;
+    page.setMacroActive(index, true);
+    pages.updateActiveConfigs();
+    setRuntimeValue(macros, index, page.values[index]);
+    return true;
+}
+
 void MacroWorkflow::setRuntimeValue(core::state::MacroState& macros, uint8_t index, float value) {
     if (index >= MACRO_COUNT) return;
     macros.slots[index].value.set(std::clamp(value, 0.0f, 1.0f));

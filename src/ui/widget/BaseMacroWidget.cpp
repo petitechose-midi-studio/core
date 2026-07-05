@@ -43,14 +43,14 @@ FLASHMEM void BaseMacroWidget::createContainerWithGrid(lv_obj_t* parent) {
 }
 
 FLASHMEM void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
-    lv_obj_t* labelContainer = lv_obj_create(labelParent);
-    style::apply(labelContainer).transparent().noScroll();
-    lv_obj_set_size(labelContainer, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_add_flag(labelContainer, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(labelContainer, LV_ALIGN_CENTER, 0, 6);
-    lv_obj_set_flex_flow(labelContainer, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(labelContainer, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(labelContainer, 0, 0);
+    config_label_container_ = lv_obj_create(labelParent);
+    style::apply(config_label_container_).transparent().noScroll();
+    lv_obj_set_size(config_label_container_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_add_flag(config_label_container_, LV_OBJ_FLAG_FLOATING);
+    lv_obj_align(config_label_container_, LV_ALIGN_CENTER, 0, 6);
+    lv_obj_set_flex_flow(config_label_container_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(config_label_container_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(config_label_container_, 0, 0);
 
     // Shared grid definition for CH and CC rows
     static constexpr lv_coord_t COL_WIDTH = 18;
@@ -58,7 +58,7 @@ FLASHMEM void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
     static const int32_t row_dsc[] = {LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST};
 
     // --- CH line: 2 fixed-width columns for perfect alignment ---
-    lv_obj_t* chRow = lv_obj_create(labelContainer);
+    lv_obj_t* chRow = lv_obj_create(config_label_container_);
     style::apply(chRow).transparent().noScroll();
     lv_obj_set_size(chRow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_grid_dsc_array(chRow, col_dsc, row_dsc);
@@ -95,7 +95,7 @@ FLASHMEM void BaseMacroWidget::createConfigLabels(lv_obj_t* labelParent) {
         LV_GRID_ALIGN_CENTER, 0, 1);
 
     // --- CC line: same structure as CH ---
-    lv_obj_t* ccRow = lv_obj_create(labelContainer);
+    lv_obj_t* ccRow = lv_obj_create(config_label_container_);
     style::apply(ccRow).transparent().noScroll();
     lv_obj_set_size(ccRow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_grid_dsc_array(ccRow, col_dsc, row_dsc);
@@ -140,6 +140,15 @@ void BaseMacroWidget::setConfig(uint8_t channel, uint8_t cc) {
     if (cc_value_ && current_cc_ != cc) {
         cc_value_->setText(static_cast<int>(cc));
         current_cc_ = cc;
+    }
+}
+
+void BaseMacroWidget::setConfigLabelsVisible(bool visible) {
+    if (!config_label_container_) return;
+    if (visible) {
+        lv_obj_clear_flag(config_label_container_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(config_label_container_, LV_OBJ_FLAG_HIDDEN);
     }
 }
 

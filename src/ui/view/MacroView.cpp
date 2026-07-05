@@ -67,11 +67,16 @@ FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     rendered_channels_.fill(0xFF);
     rendered_ccs_.fill(0xFF);
+    rendered_automation_active_.fill(false);
+    rendered_automation_recording_.fill(false);
+    rendered_automation_manual_override_.fill(false);
+    rendered_active_.fill(true);
+    rendered_add_slot_.fill(false);
+    rendered_focused_.fill(false);
     createLayout(parent);
     createHeaderBar();
-    createBottomControls();
     createActionStrips();
-    createPropertyStrip();
+    createSlotPropertyOverlay();
     createMacros();
 
     // Macro rendering is sampled at the global LVGL cadence.
@@ -87,8 +92,7 @@ FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
 FLASHMEM MacroView::~MacroView() {
     update_timer_.reset();
     subscriptions_.clear();
-    bottom_controls_.reset();
-    property_strip_.reset();
+    slot_property_overlay_.reset();
     bottom_action_strip_.reset();
     left_action_strip_.reset();
     header_bar_.reset();
@@ -114,8 +118,7 @@ FLASHMEM void MacroView::onActivate() {
         header_dirty_ = true;
         left_action_strip_dirty_ = true;
         bottom_action_strip_dirty_ = true;
-        bottom_controls_dirty_ = true;
-        property_strip_dirty_ = true;
+        slot_property_overlay_dirty_ = true;
         markConfigDirtyIfChanged();
         scheduleUpdate();
         processDirtyFlags();
@@ -163,7 +166,7 @@ FLASHMEM void MacroView::bindToState() {
     subscriptions_.push_back(
         state_refs_.macroUi.activeProperty.subscribe(
             [this](core::state::macro::MacroPerformanceProperty) {
-                requestPropertyStripRender();
+                requestSlotPropertyOverlayRender();
             }
         )
     );
@@ -172,33 +175,20 @@ FLASHMEM void MacroView::bindToState() {
         state_refs_.macroUi.clutchActive.subscribe([this](bool) {
             requestHeaderRender();
             requestLeftActionStripRender();
-            requestPropertyStripRender();
+            requestSlotPropertyOverlayRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.quickControlsSelecting.subscribe([this](bool) {
-            requestLeftActionStripRender();
-            requestBottomActionStripRender();
-            requestBottomControlsRender();
+        state_refs_.macroUi.automationRecordingRevision.subscribe([this](uint32_t) {
+            requestHeaderRender();
+            markAllConfigDirty();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.focusedQuickControl.subscribe([this](core::state::macro::MacroQuickControlItem) {
-            requestBottomControlsRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.quickControlGlobalChannel.subscribe([this](uint8_t) {
-            requestBottomControlsRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.ccOffset.subscribe([this](int8_t) {
-            requestBottomControlsRender();
+        state_refs_.macroUi.automationManualOverrideMask.subscribe([this](uint16_t) {
+            markAllConfigDirty();
         })
     );
 
@@ -207,6 +197,13 @@ FLASHMEM void MacroView::bindToState() {
             requestHeaderRender();
             requestLeftActionStripRender();
             requestBottomActionStripRender();
+            markAllConfigDirty();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.focusedMacroSlot.subscribe([this](uint8_t) {
+            markAllConfigDirty();
         })
     );
 
@@ -396,8 +393,7 @@ FLASHMEM void MacroView::bindToState() {
     header_dirty_ = true;
     left_action_strip_dirty_ = true;
     bottom_action_strip_dirty_ = true;
-    bottom_controls_dirty_ = true;
-    property_strip_dirty_ = true;
+    slot_property_overlay_dirty_ = true;
     markAllDirty();
     processDirtyFlags();
 }
@@ -411,11 +407,6 @@ FLASHMEM void MacroView::createLayout(lv_obj_t* parent) {
 
 FLASHMEM void MacroView::createHeaderBar() {
     header_bar_ = std::make_unique<MacroHeaderBar>(top_bar_container_);
-}
-
-FLASHMEM void MacroView::createBottomControls() {
-    if (!body_container_) return;
-    bottom_controls_ = std::make_unique<MacroBottomControls>(body_container_);
 }
 
 FLASHMEM void MacroView::createActionStrips() {
@@ -458,9 +449,9 @@ FLASHMEM void MacroView::createActionStrips() {
     );
 }
 
-FLASHMEM void MacroView::createPropertyStrip() {
-    if (!interaction_container_) return;
-    property_strip_ = std::make_unique<MacroPropertyStrip>(interaction_container_);
+FLASHMEM void MacroView::createSlotPropertyOverlay() {
+    if (!container_) return;
+    slot_property_overlay_ = std::make_unique<StepPropertySelectionOverlay>(container_);
 }
 
 FLASHMEM void MacroView::createMacros() {
@@ -484,7 +475,7 @@ FLASHMEM void MacroView::scheduleUpdate() {
 FLASHMEM void MacroView::pauseUpdateIfIdle() {
     if (!update_timer_) return;
     if (has_dirty_ || header_dirty_ || left_action_strip_dirty_ ||
-        bottom_action_strip_dirty_ || bottom_controls_dirty_ || property_strip_dirty_) return;
+        bottom_action_strip_dirty_ || slot_property_overlay_dirty_) return;
     update_timer_->pause();
 }
 
@@ -503,13 +494,8 @@ FLASHMEM void MacroView::requestBottomActionStripRender() {
     scheduleUpdate();
 }
 
-FLASHMEM void MacroView::requestBottomControlsRender() {
-    bottom_controls_dirty_ = true;
-    scheduleUpdate();
-}
-
-FLASHMEM void MacroView::requestPropertyStripRender() {
-    property_strip_dirty_ = true;
+FLASHMEM void MacroView::requestSlotPropertyOverlayRender() {
+    slot_property_overlay_dirty_ = true;
     scheduleUpdate();
 }
 
@@ -531,7 +517,7 @@ FLASHMEM void MacroView::handleOverlayVisibilityChanged() {
     }
 
     if (has_dirty_ || header_dirty_ || left_action_strip_dirty_ || bottom_action_strip_dirty_ ||
-        bottom_controls_dirty_ || property_strip_dirty_) {
+        slot_property_overlay_dirty_) {
         scheduleUpdate();
     }
 }
@@ -547,8 +533,7 @@ FLASHMEM void MacroView::markAllDirty() {
     header_dirty_ = true;
     left_action_strip_dirty_ = true;
     bottom_action_strip_dirty_ = true;
-    bottom_controls_dirty_ = true;
-    property_strip_dirty_ = true;
+    slot_property_overlay_dirty_ = true;
     scheduleUpdate();
 }
 
@@ -562,8 +547,26 @@ FLASHMEM void MacroView::markConfigDirtyIfChanged() {
     bool anyDirty = false;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         const auto& config = state_refs_.pages.activeConfigs[i];
+        const bool active = state_refs_.pages.isMacroSlotActive(i);
+        const bool addSlot = !active && state_refs_.pages.isMacroAddSlot(i);
+        const bool focused =
+            state_refs_.structureNavigationFocus.get() == core::state::StructureNavigationFocus::STEP &&
+            state_refs_.macroUi.focusedMacroSlot.get() == i;
+        const bool recording =
+            state_refs_.macroUi.automationRecording.active &&
+            state_refs_.macroUi.automationRecording.address.track == state_refs_.pages.currentActiveTrack() &&
+            state_refs_.macroUi.automationRecording.address.page == state_refs_.pages.currentActivePage() &&
+            state_refs_.macroUi.automationRecording.address.macro == i;
+        const bool manualOverride =
+            (state_refs_.macroUi.automationManualOverrideMask.get() &
+             static_cast<uint16_t>(1U << i)) != 0;
         const bool dirty = rendered_channels_[i] != config.channel ||
-                           rendered_ccs_[i] != config.cc;
+                           rendered_ccs_[i] != config.cc ||
+                           rendered_active_[i] != active ||
+                           rendered_add_slot_[i] != addSlot ||
+                           rendered_focused_[i] != focused ||
+                           rendered_automation_recording_[i] != recording ||
+                           rendered_automation_manual_override_[i] != manualOverride;
         config_dirty_flags_[i] = dirty;
         anyDirty = anyDirty || dirty;
     }
@@ -592,6 +595,7 @@ FLASHMEM void MacroView::processDirtyFlags() {
     }
 
     const auto source = modelSource();
+    const auto frame = buildMacroViewFrameState(source);
 
     if (header_dirty_ && header_bar_) {
         header_bar_->render(buildMacroHeaderBarProps(source));
@@ -603,14 +607,9 @@ FLASHMEM void MacroView::processDirtyFlags() {
         left_action_strip_dirty_ = false;
     }
 
-    if (property_strip_dirty_ && property_strip_) {
-        property_strip_->render(buildMacroPropertyStripProps(source));
-        property_strip_dirty_ = false;
-    }
-
-    if (bottom_controls_dirty_ && bottom_controls_) {
-        bottom_controls_->render(buildMacroBottomControlsProps(source));
-        bottom_controls_dirty_ = false;
+    if (slot_property_overlay_dirty_ && slot_property_overlay_) {
+        slot_property_overlay_->render(buildMacroSlotPropertyOverlayProps(source));
+        slot_property_overlay_dirty_ = false;
     }
 
     if (bottom_action_strip_dirty_ && bottom_action_strip_) {
@@ -627,22 +626,48 @@ FLASHMEM void MacroView::processDirtyFlags() {
         if (dirty_flags_[i] || config_dirty_flags_[i]) {
             if (macros_[i]) {
                 if (dirty_flags_[i]) {
-                    macros_[i]->setValue(state_refs_.macros.slots[i].value.get());
+                    macros_[i]->setValue(frame.macros[i].value);
                     dirty_flags_[i] = false;
 #if defined(PERF_LOG)
                     value_updates += 1;
 #endif
                 }
                 if (config_dirty_flags_[i]) {
-                    const auto& config = state_refs_.pages.activeConfigs[i];
-                    if (rendered_channels_[i] != config.channel ||
-                        rendered_ccs_[i] != config.cc) {
-                        macros_[i]->setConfig(config.channel, config.cc);
-                        rendered_channels_[i] = config.channel;
-                        rendered_ccs_[i] = config.cc;
+                    const auto& props = frame.macros[i];
+                    if (rendered_active_[i] != props.active ||
+                        rendered_add_slot_[i] != props.addSlot) {
+                        macros_[i]->setSlotState(props.active, props.addSlot);
+                        rendered_active_[i] = props.active;
+                        rendered_add_slot_[i] = props.addSlot;
 #if defined(PERF_LOG)
                         config_updates += 1;
 #endif
+                    }
+                    if (rendered_channels_[i] != props.channel ||
+                        rendered_ccs_[i] != props.cc) {
+                        macros_[i]->setConfig(props.channel, props.cc);
+                        rendered_channels_[i] = props.channel;
+                        rendered_ccs_[i] = props.cc;
+#if defined(PERF_LOG)
+                        config_updates += 1;
+#endif
+                    }
+                    if (rendered_automation_active_[i] != props.automationActive) {
+                        macros_[i]->setAutomationActive(props.automationActive);
+                        rendered_automation_active_[i] = props.automationActive;
+                    }
+                    if (rendered_automation_recording_[i] != props.automationRecording) {
+                        macros_[i]->setAutomationRecording(props.automationRecording);
+                        rendered_automation_recording_[i] = props.automationRecording;
+                    }
+                    if (rendered_automation_manual_override_[i] !=
+                        props.automationManualOverride) {
+                        macros_[i]->setAutomationManualOverride(props.automationManualOverride);
+                        rendered_automation_manual_override_[i] = props.automationManualOverride;
+                    }
+                    if (rendered_focused_[i] != props.focused) {
+                        macros_[i]->setFocused(props.focused);
+                        rendered_focused_[i] = props.focused;
                     }
                     config_dirty_flags_[i] = false;
                 }

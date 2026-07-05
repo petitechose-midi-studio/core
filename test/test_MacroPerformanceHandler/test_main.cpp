@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 
@@ -111,6 +112,31 @@ struct MacroPerformanceHarness {
     }
 };
 
+void configureMacroAutomation(core::state::CoreState& state,
+                              uint8_t track,
+                              uint8_t page,
+                              uint8_t macro,
+                              float value) {
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = track,
+            .page = page,
+            .macro = macro,
+        }
+    );
+    assert(slot != nullptr);
+    core::state::macro::MacroAutomationLane lane;
+    lane.durationBeats = 1.0f;
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, value));
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, value));
+    assert(core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *slot,
+        lane
+    ));
+}
+
 void test_nav_turn_previews_macro_page_until_nav_commit() {
     MacroPerformanceHarness h;
 
@@ -151,8 +177,7 @@ void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
                  core::state::macro::PAGE_NAME_SIZE - 1);
     h.state.pages.tracks[1].pages[3].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
 
-    h.press(Config::ButtonID::NAV);
-    h.release(Config::ButtonID::NAV);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     h.turn(Config::EncoderID::NAV, 1.0f);
 
     assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
@@ -211,6 +236,39 @@ void test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse() {
     assert(h.state.pages.currentActivePage() == 0);
 
     std::cout << "[PASS] test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse\n";
+}
+
+void test_macro_slot_focus_creates_add_slot_only_on_nav_confirm() {
+    MacroPerformanceHarness h;
+
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    assert(h.state.pages.isMacroSlotActive(0));
+    assert(!h.state.pages.isMacroSlotActive(1));
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
+    assert(h.state.macroUi.focusedMacroSlot.get() == 0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroUi.focusedMacroSlot.get() == 1);
+    assert(h.state.pages.isMacroAddSlot(1));
+    assert(!h.state.pages.isMacroSlotActive(1));
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
+    assert(h.state.macroUi.focusedMacroSlot.get() == 1);
+    assert(h.state.pages.isMacroSlotActive(1));
+    assert(h.state.pages.activeConfigs[1].cc == 1);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_macro_slot_focus_creates_add_slot_only_on_nav_confirm\n";
 }
 
 void test_nav_selection_mode_deletes_selected_macro_page() {
@@ -304,6 +362,7 @@ void test_macro_page_copy_and_long_press_paste() {
     h.state.pages.activeTrackData().pages[0].cc[0] = 55;
     h.state.pages.activeTrackData().pages[1].cc[0] = 12;
     h.structureServices.switchToPage(0);
+    configureMacroAutomation(h.state, h.state.pages.currentActiveTrack(), 0, 0, 0.75f);
     drainNotifications();
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -325,6 +384,25 @@ void test_macro_page_copy_and_long_press_paste() {
 
     assert(std::strcmp(h.state.pages.activePageData().name, "Copied Page") == 0);
     assert(h.state.pages.activePageData().cc[0] == 55);
+    const auto* pastedAutomation = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = 1,
+            .macro = 0,
+        }
+    );
+    assert(pastedAutomation != nullptr);
+    assert(pastedAutomation->automation.active);
+    core::state::macro::MacroCurvePoint pastedPoint{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        pastedAutomation->automation,
+        h.state.pages.automation.pointPool,
+        0,
+        false,
+        pastedPoint
+    ));
+    assert(std::fabs(pastedPoint.value - 0.75f) < 0.0001f);
 
     std::cout << "[PASS] test_macro_page_copy_and_long_press_paste\n";
 }
@@ -393,6 +471,7 @@ void test_macro_track_copy_and_long_press_paste_to_add_slot() {
     h.state.setSharedTrackState(0x0001, 0);
     h.state.pages.tracks[0].channel = 10;
     h.state.pages.tracks[0].pages[0].cc[0] = 64;
+    configureMacroAutomation(h.state, 0, 0, 0, 0.33f);
     std::strncpy(
         h.state.pages.tracks[0].pages[0].name,
         "Copied Track",
@@ -418,13 +497,32 @@ void test_macro_track_copy_and_long_press_paste_to_add_slot() {
     assert(h.state.pages.activeTrackData().channel == 10);
     assert(h.state.pages.activeTrackData().pages[0].cc[0] == 64);
     assert(std::strcmp(h.state.pages.activeTrackData().pages[0].name, "Copied Track") == 0);
+    const auto* pastedAutomation = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = 1,
+            .page = 0,
+            .macro = 0,
+        }
+    );
+    assert(pastedAutomation != nullptr);
+    assert(pastedAutomation->automation.active);
+    core::state::macro::MacroCurvePoint pastedPoint{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        pastedAutomation->automation,
+        h.state.pages.automation.pointPool,
+        0,
+        false,
+        pastedPoint
+    ));
+    assert(std::fabs(pastedPoint.value - 0.33f) < 0.0001f);
 
     drainNotifications();
 
     std::cout << "[PASS] test_macro_track_copy_and_long_press_paste_to_add_slot\n";
 }
 
-void test_left_bottom_short_press_latches_property_clutch_and_second_tap_releases_it() {
+void test_left_bottom_toggles_macro_slot_property_selector() {
     MacroPerformanceHarness h;
 
     assert(h.state.macroUi.activeProperty.get() ==
@@ -434,17 +532,22 @@ void test_left_bottom_short_press_latches_property_clutch_and_second_tap_release
     h.press(Config::ButtonID::LEFT_BOTTOM);
     h.tick(1);
     assert(h.state.macroUi.clutchActive.get());
-    h.release(Config::ButtonID::LEFT_BOTTOM);
-    h.tick(2);
-    assert(h.state.macroUi.clutchActive.get());
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroUi.activeProperty.get() ==
            core::state::macro::MacroPerformanceProperty::CC);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CHANNEL);
+           core::state::macro::MacroPerformanceProperty::AUTOMATION);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroUi.activeProperty.get() ==
+           core::state::macro::MacroPerformanceProperty::CC);
+
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+    h.tick(2);
+    assert(h.state.macroUi.clutchActive.get());
+    assert(h.state.macroUi.activeProperty.get() ==
+           core::state::macro::MacroPerformanceProperty::CC);
 
     h.press(Config::ButtonID::LEFT_BOTTOM);
     h.tick(3);
@@ -456,47 +559,47 @@ void test_left_bottom_short_press_latches_property_clutch_and_second_tap_release
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_bottom_short_press_latches_property_clutch_and_second_tap_releases_it\n";
+    std::cout << "[PASS] test_left_bottom_toggles_macro_slot_property_selector\n";
 }
 
-void test_left_center_opens_macro_quick_controls_and_opt_applies_global_channel_and_cc_offset() {
+void test_left_top_cancels_macro_slot_property_selector_without_committing_channel_preview() {
+    MacroPerformanceHarness h;
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    h.tick(1);
+    assert(h.state.macroUi.clutchActive.get());
+    assert(h.state.macroUi.activeProperty.get() ==
+           core::state::macro::MacroPerformanceProperty::CC);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroUi.activeProperty.get() ==
+           core::state::macro::MacroPerformanceProperty::AUTOMATION);
+
+    h.release(Config::ButtonID::LEFT_TOP);
+    h.tick(2);
+    assert(!h.state.macroUi.clutchActive.get());
+    assert(h.state.macroUi.activeProperty.get() ==
+           core::state::macro::MacroPerformanceProperty::VALUE);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_left_top_cancels_macro_slot_property_selector_without_committing_channel_preview\n";
+}
+
+void test_left_center_is_reserved_and_does_not_open_macro_set_controls() {
     MacroPerformanceHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.tick(1);
-    assert(h.state.macroUi.quickControlsSelecting.get());
-    assert(h.state.macroUi.focusedQuickControl.get() ==
-           core::state::macro::MacroQuickControlItem::GLOBAL_CHANNEL);
-
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.macroUi.quickControlGlobalChannel.get() == 15);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.focusedQuickControl.get() ==
-           core::state::macro::MacroQuickControlItem::CC_OFFSET);
-
-    const uint8_t ccBefore = h.state.pages.activeConfigs[0].cc;
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.macroUi.ccOffset.get() >= 0);
-    assert(h.state.pages.activeConfigs[0].cc == ccBefore);
-
     h.release(Config::ButtonID::LEFT_CENTER);
     h.tick(2);
-    assert(h.state.macroUi.quickControlsSelecting.get());
-
-    h.press(Config::ButtonID::LEFT_CENTER);
-    h.tick(3);
-    h.release(Config::ButtonID::LEFT_CENTER);
-    h.tick(4);
-    assert(!h.state.macroUi.quickControlsSelecting.get());
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        assert(h.state.pages.activeConfigs[i].channel == 15);
-        assert(h.state.pages.activeConfigs[i].cc >= ccBefore);
-    }
+    assert(!h.state.macroUi.clutchActive.get());
+    assert(h.state.macroUi.activeProperty.get() ==
+           core::state::macro::MacroPerformanceProperty::VALUE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_center_opens_macro_quick_controls_and_opt_applies_global_channel_and_cc_offset\n";
+    std::cout << "[PASS] test_left_center_is_reserved_and_does_not_open_macro_set_controls\n";
 }
 
 }  // namespace
@@ -506,14 +609,16 @@ int main() {
     test_nav_focus_track_turn_switches_context_to_highlighted_macro_track();
     test_macro_track_cursor_can_cross_gaps_and_reach_any_track();
     test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse();
+    test_macro_slot_focus_creates_add_slot_only_on_nav_confirm();
     test_nav_selection_mode_deletes_selected_macro_page();
     test_nav_selection_mode_deletes_selected_macro_track();
     test_macro_page_copy_and_long_press_paste();
     test_macro_selection_duplicate_copies_page_into_first_free_slot();
     test_macro_selection_duplicate_copies_track_into_first_free_slot();
     test_macro_track_copy_and_long_press_paste_to_add_slot();
-    test_left_bottom_short_press_latches_property_clutch_and_second_tap_releases_it();
-    test_left_center_opens_macro_quick_controls_and_opt_applies_global_channel_and_cc_offset();
+    test_left_bottom_toggles_macro_slot_property_selector();
+    test_left_top_cancels_macro_slot_property_selector_without_committing_channel_preview();
+    test_left_center_is_reserved_and_does_not_open_macro_set_controls();
     std::cout << "\nAll MacroPerformanceHandler tests passed.\n";
     return 0;
 }

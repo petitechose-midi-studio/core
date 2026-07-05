@@ -57,6 +57,12 @@ public:
     bool commitAutomationRecording(uint32_t nowMs) const;
     bool cancelAutomationRecording() const;
     bool automationRecordingActiveFor(uint8_t index) const;
+    bool automationActiveFor(uint8_t index) const;
+    bool automationManualOverrideActiveFor(uint8_t index) const;
+    void setAutomationManualOverride(uint8_t index, bool active) const;
+    bool isMacroSlotActive(uint8_t index) const;
+    bool isMacroAddSlot(uint8_t index) const;
+    bool activateMacroSlot(uint8_t index) const;
     const core::state::macro::MacroConfig& activeConfig(uint8_t index) const;
     bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
     bool setTrackConfigs(

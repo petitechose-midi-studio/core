@@ -78,9 +78,9 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
-    // Standalone UI/handler assemblies are reactive. The authoritative sequencer runtime
-    // is updated from the app pre-context hook in main.cpp to keep its ownership and
-    // execution path outside the context/UI lane.
+    if (feature_assembly_) {
+        feature_assembly_->update(core::time_compat::millis());
+    }
 }
 
 FLASHMEM void StandaloneContext::onCleanup() {
