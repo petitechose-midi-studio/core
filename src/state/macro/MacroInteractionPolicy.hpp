@@ -1,0 +1,74 @@
+#pragma once
+
+#include <cstdint>
+
+#include "state/StructureSelectionState.hpp"
+
+namespace core::state::macro {
+
+enum class MacroInteractionAction : uint8_t {
+    NONE = 0,
+    MOVE_STRUCTURE,
+    MOVE_SELECTION_CURSOR,
+    TOGGLE_SELECTION,
+    ENTER_SELECTION,
+    COMMIT_OR_CYCLE_STRUCTURE,
+    CREATE_PREVIEWED_STRUCTURE,
+    OPEN_SLOT_PROPERTIES,
+    APPLY_SLOT_PROPERTIES,
+    CANCEL_SLOT_PROPERTIES,
+    MOVE_SLOT_PROPERTY,
+    EDIT_SLOT_PROPERTY,
+    CLEAR_STRUCTURE,
+    REMOVE_STRUCTURE,
+    COPY_STRUCTURE,
+    PASTE_STRUCTURE,
+    DELETE_SELECTION,
+    DUPLICATE_SELECTION,
+    CANCEL_SELECTION,
+};
+
+enum class MacroInteractionVisibility : uint8_t {
+    HIDDEN = 0,
+    DIM = 1,
+    ACTIVE = 2,
+};
+
+struct MacroInteractionContext {
+    core::state::StructureNavigationFocus navigationFocus =
+        core::state::StructureNavigationFocus::PAGE;
+    bool blockingOverlay = false;
+    bool slotPropertySelecting = false;
+    bool selectionActive = false;
+    bool previewingAddSlot = false;
+    bool compatibleClipboardAvailable = false;
+    bool canRemoveStructure = false;
+};
+
+struct MacroActionStripPolicy {
+    MacroInteractionVisibility leftCenter = MacroInteractionVisibility::DIM;
+    MacroInteractionVisibility leftBottom = MacroInteractionVisibility::DIM;
+    MacroInteractionVisibility bottomLeft = MacroInteractionVisibility::ACTIVE;
+    MacroInteractionVisibility bottomRight = MacroInteractionVisibility::ACTIVE;
+};
+
+class MacroInteractionPolicy {
+public:
+    static bool performanceAvailable(const MacroInteractionContext& context);
+    static MacroInteractionAction navTurn(const MacroInteractionContext& context);
+    static MacroInteractionAction navRelease(const MacroInteractionContext& context,
+                                             bool longPressConsumed);
+    static MacroInteractionAction navLongPress(const MacroInteractionContext& context);
+    static MacroInteractionAction optTurn(const MacroInteractionContext& context);
+    static MacroInteractionAction leftTopRelease(const MacroInteractionContext& context);
+    static MacroInteractionAction leftCenterPress(const MacroInteractionContext& context);
+    static MacroInteractionAction leftBottomPress(const MacroInteractionContext& context);
+    static MacroInteractionAction leftBottomRelease(const MacroInteractionContext& context);
+    static MacroInteractionAction bottomLeftRelease(const MacroInteractionContext& context);
+    static MacroInteractionAction bottomLeftLongPress(const MacroInteractionContext& context);
+    static MacroInteractionAction bottomRightRelease(const MacroInteractionContext& context);
+    static MacroInteractionAction bottomRightLongPress(const MacroInteractionContext& context);
+    static MacroActionStripPolicy actionStrip(const MacroInteractionContext& context);
+};
+
+}  // namespace core::state::macro

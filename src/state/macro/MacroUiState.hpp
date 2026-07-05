@@ -4,6 +4,7 @@
 
 #include <oc/state/Signal.hpp>
 
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/StructureSelectionState.hpp"
 
 namespace core::state::macro {
@@ -12,36 +13,46 @@ namespace core::state::macro {
  * Session-only macro UI state.
  *
  * Runtime macro values and durable page data live in MacroState/MacroPagesState;
- * this struct tracks editor focus, clutch previews, quick controls, and page
- * selection UI.
+ * this struct tracks editor focus, slot property selection, recording state,
+ * and structure selection UI.
  */
 enum class MacroPerformanceProperty : uint8_t {
     VALUE = 0,
     CC = 1,
-    CHANNEL = 2,
-};
-
-enum class MacroQuickControlItem : uint8_t {
-    GLOBAL_CHANNEL = 0,
-    CC_OFFSET = 1,
+    AUTOMATION = 2,
 };
 
 struct MacroUiState {
+    struct AutomationRecordingState {
+        bool active = false;
+        MacroAutomationSlotAddress address{};
+        uint32_t startedAtMs = 0;
+        bool preserveDuration = false;
+        uint16_t targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
+        MacroAutomationLane lane{};
+
+        void reset() {
+            active = false;
+            address = {};
+            startedAtMs = 0;
+            preserveDuration = false;
+            targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
+            lane = {};
+        }
+    };
+
     oc::state::Signal<MacroPerformanceProperty, 2> activeProperty{
         MacroPerformanceProperty::VALUE
     };
     oc::state::Signal<bool, 2> clutchActive{false};
-    oc::state::Signal<bool, 2> quickControlsSelecting{false};
-    oc::state::Signal<MacroQuickControlItem, 2> focusedQuickControl{
-        MacroQuickControlItem::GLOBAL_CHANNEL
-    };
-    oc::state::Signal<uint8_t, 2> clutchPreviewTrackChannel{0};
-    oc::state::Signal<uint8_t, 2> quickControlGlobalChannel{0};
-    oc::state::Signal<int8_t, 2> ccOffset{0};
+    oc::state::Signal<uint32_t, 3> automationRecordingRevision{0};
+    oc::state::Signal<uint16_t, 4> automationManualOverrideMask{0};
+    oc::state::Signal<uint8_t, 4> focusedMacroSlot{0};
     oc::state::Signal<bool, 2> previewAddPageSlot{false};
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
+    AutomationRecordingState automationRecording;
 
     MacroUiState();
     ~MacroUiState();
@@ -55,10 +66,9 @@ struct MacroUiState {
 
 inline int performancePropertyIndex(MacroPerformanceProperty property) {
     switch (property) {
-        case MacroPerformanceProperty::CC:
+        case MacroPerformanceProperty::AUTOMATION:
             return 1;
-        case MacroPerformanceProperty::CHANNEL:
-            return 2;
+        case MacroPerformanceProperty::CC:
         case MacroPerformanceProperty::VALUE:
         default:
             return 0;
@@ -68,32 +78,10 @@ inline int performancePropertyIndex(MacroPerformanceProperty property) {
 inline MacroPerformanceProperty performancePropertyAtIndex(int index) {
     switch (index) {
         case 1:
+            return MacroPerformanceProperty::AUTOMATION;
+        case 0:
+        default:
             return MacroPerformanceProperty::CC;
-        case 2:
-            return MacroPerformanceProperty::CHANNEL;
-        case 0:
-        default:
-            return MacroPerformanceProperty::VALUE;
-    }
-}
-
-inline int quickControlIndex(MacroQuickControlItem item) {
-    switch (item) {
-        case MacroQuickControlItem::CC_OFFSET:
-            return 1;
-        case MacroQuickControlItem::GLOBAL_CHANNEL:
-        default:
-            return 0;
-    }
-}
-
-inline MacroQuickControlItem quickControlAtIndex(int index) {
-    switch (index) {
-        case 1:
-            return MacroQuickControlItem::CC_OFFSET;
-        case 0:
-        default:
-            return MacroQuickControlItem::GLOBAL_CHANNEL;
     }
 }
 

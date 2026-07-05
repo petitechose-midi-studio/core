@@ -17,6 +17,7 @@ FLASHMEM void MacroEditState::MacroSelectorState::reset() {
 
 FLASHMEM void MacroEditState::reset() {
     visible.set(false);
+    automationVisible.set(false);
     flowPhase.set(MacroEditFlowPhase::CLOSED);
     editingIndex.set(0);
     tempChannel.set(0);
@@ -24,6 +25,7 @@ FLASHMEM void MacroEditState::reset() {
     focusedRow.set(0);
     selector.reset();
     macroSelector.reset();
+    automationFocusedRow.set(0);
     openedByMacroIndex = 0;
     openedAtMs = 0;
     pendingOpenReleaseDecision = false;
@@ -84,6 +86,20 @@ FLASHMEM void MacroEditState::openTargetSelector(int selectedIndex) {
 
 FLASHMEM void MacroEditState::closeTargetSelector() {
     macroSelector.reset();
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
+                                : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::openAutomation() {
+    visible.set(true);
+    automationVisible.set(true);
+    automationFocusedRow.set(0);
+    flowPhase.set(MacroEditFlowPhase::AUTOMATION);
+}
+
+FLASHMEM void MacroEditState::closeAutomation() {
+    automationVisible.set(false);
+    automationFocusedRow.set(0);
     flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
                                 : MacroEditFlowPhase::CLOSED);
 }

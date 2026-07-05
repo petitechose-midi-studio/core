@@ -9,9 +9,11 @@
  */
 
 #include <cstdint>
+#include <array>
 
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/api/MidiAPI.hpp>
+#include <oc/api/ButtonAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
 #include <config/InputIDs.hpp>
@@ -42,6 +44,7 @@ public:
                       MacroPerformanceDomainServices services,
                       oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                       oc::api::EncoderAPI& encoders,
+                      oc::api::ButtonAPI& buttons,
                       oc::api::MidiAPI& midi,
                       oc::type::ScopeID scopeId);
 
@@ -54,8 +57,13 @@ private:
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
     bool shouldHandleTurns() const;
+    bool shouldHandleAutomationRecordPress() const;
+    bool shouldHandleAutomationRestorePress() const;
+    bool shouldIgnorePostRecordTurn(uint8_t index, uint32_t nowMs) const;
+    bool shouldStartAutomationRecording(uint8_t index) const;
+    bool ensureActiveSlot(uint8_t index);
+    void restoreAutomation(uint8_t index);
     void handleConfigChange(uint8_t index, float value);
-    void syncChannelPreviewEncoderPositions(uint8_t channel);
 
     core::state::macro::MacroUiState& macro_ui_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
@@ -63,8 +71,12 @@ private:
     MacroPerformanceDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
+    oc::api::ButtonAPI& buttons_;
     oc::api::MidiAPI& midi_;
     oc::type::ScopeID scope_id_ = 0;
+    std::array<bool, core::state::macro::MACRO_COUNT> macro_button_held_{};
+    std::array<uint32_t, core::state::macro::MACRO_COUNT> macro_button_pressed_at_ms_{};
+    std::array<uint32_t, core::state::macro::MACRO_COUNT> post_record_guard_until_ms_{};
 };
 
 }  // namespace core::handler

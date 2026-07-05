@@ -19,6 +19,7 @@ enum class MacroEditFlowPhase : uint8_t {
     VALUE_SELECTOR = 2,
     PAGE_SELECTOR = 3,
     TARGET_SELECTOR = 4,
+    AUTOMATION = 5,
 };
 
 /**
@@ -33,6 +34,7 @@ enum class MacroEditFlowPhase : uint8_t {
 struct MacroEditState {
     /// Overlay visibility (owned by ExclusiveVisibilityStack)
     oc::state::Signal<bool> visible{false};
+    oc::state::Signal<bool, 4> automationVisible{false};
     oc::state::Signal<MacroEditFlowPhase, 4> flowPhase{MacroEditFlowPhase::CLOSED};
 
     /// Which macro is being edited (0-7)
@@ -67,6 +69,9 @@ struct MacroEditState {
 
     /// Macro selector sub-state (macro target while editing)
     MacroSelectorState macroSelector;
+
+    /// Focused row in the automation lifecycle overlay.
+    oc::state::Signal<uint8_t, 4> automationFocusedRow{0};
 
     /// Runtime decision state for long-press open release policy
     uint8_t openedByMacroIndex = 0;
@@ -104,6 +109,10 @@ struct MacroEditState {
     void openTargetSelector(int selectedIndex);
 
     void closeTargetSelector();
+
+    void openAutomation();
+
+    void closeAutomation();
 
     void loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc);
 

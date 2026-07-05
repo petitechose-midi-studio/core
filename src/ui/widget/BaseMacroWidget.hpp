@@ -43,8 +43,10 @@ protected:
 
     void createContainerWithGrid(lv_obj_t* parent);
     void createConfigLabels(lv_obj_t* labelParent);  // Floating labels inside widget
+    void setConfigLabelsVisible(bool visible);
 
     lv_obj_t* container_ = nullptr;
+    lv_obj_t* config_label_container_ = nullptr;
 
     // Config labels (framework Labels)
     std::unique_ptr<oc::ui::lvgl::Label> ch_prefix_;   // "CH" (small, dim)

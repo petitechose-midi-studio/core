@@ -9,6 +9,7 @@ FLASHMEM MacroPageData::MacroPageData() {
     std::strncpy(name, "Page 1", PAGE_NAME_SIZE - 1);
     cc.fill(0);
     values.fill(0.5f);
+    activeMacroMask = DEFAULT_ACTIVE_MACRO_MASK;
 }
 
 FLASHMEM void MacroPageData::initDefault(uint8_t pageIndex) {
@@ -21,6 +22,24 @@ FLASHMEM void MacroPageData::initDefault(uint8_t pageIndex) {
         cc[i] = static_cast<uint8_t>(pageIndex * MACRO_COUNT + i);
         values[i] = 0.5f;
     }
+    activeMacroMask = DEFAULT_ACTIVE_MACRO_MASK;
+}
+
+FLASHMEM uint8_t MacroPageData::nextAddMacroIndex() const {
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        if (!isMacroActive(i)) return i;
+    }
+    return MACRO_COUNT;
+}
+
+FLASHMEM uint8_t MacroPageData::activeMacroCount() const {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        if (isMacroActive(i)) {
+            count = static_cast<uint8_t>(count + 1U);
+        }
+    }
+    return count;
 }
 
 FLASHMEM MacroTrackData::MacroTrackData() {
@@ -44,6 +63,7 @@ FLASHMEM void MacroPagesState::initDefaults() {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         tracks[i].initDefaults(i);
     }
+    automation.clear();
     active_track_ = 0;
     active_page_ = 0;
     track_enabled_mask_.set(DEFAULT_TRACK_ENABLED_MASK);
@@ -79,7 +99,6 @@ FLASHMEM void MacroPagesState::restoreTracksPreservingSharedState(
     uint16_t enabledTrackMaskOut = DEFAULT_TRACK_ENABLED_MASK;
     uint8_t activeTrackOut = 0;
     captureSharedTrackState(enabledTrackMaskOut, activeTrackOut);
-    initDefaults();
     tracks = persistedTracks;
     syncSharedTrackState(enabledTrackMaskOut, activeTrackOut);
 }
@@ -89,7 +108,6 @@ FLASHMEM void MacroPagesState::restoreTracksWithSharedState(
     uint16_t enabledTrackMaskIn,
     uint8_t activeTrackIn
 ) {
-    initDefaults();
     tracks = persistedTracks;
     syncSharedTrackState(enabledTrackMaskIn, activeTrackIn);
 }

@@ -1,6 +1,7 @@
 #include "ui/macro/MacroHeaderBar.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
@@ -88,14 +89,22 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
             ? props.previewPage
             : props.activePage;
     const bool trackScope = props.selectingTrack || props.focusingTrack;
+    char recordingLabel[12] = {};
+    if (props.automationRecording) {
+        std::snprintf(recordingLabel,
+                      sizeof(recordingLabel),
+                      "REC M%u",
+                      static_cast<unsigned>(props.automationRecordingMacro) + 1U);
+    }
 
     TrackHeaderRowProps rowProps;
-    rowProps.leftText = focusLabel(trackScope);
+    rowProps.leftText = props.automationRecording ? recordingLabel : focusLabel(trackScope);
     rowProps.itemCount = core::state::macro::PAGE_COUNT;
-    rowProps.accentColor =
-        isTrackEnabled(props.trackEnabledMask, displayTrack)
+    rowProps.accentColor = props.automationRecording
+        ? theme::color::getMacroColor(props.automationRecordingMacro)
+        : (isTrackEnabled(props.trackEnabledMask, displayTrack)
             ? trackColor(displayTrack)
-            : trackInactiveColor();
+            : trackInactiveColor());
     rowProps.accentOpa = LV_OPA_80;
     rowProps.backgroundColor = HEADER_BG_COLOR;
     rowProps.backgroundOpa = props.clutchActive ? HEADER_BG_OPA_CLUTCH : HEADER_BG_OPA_IDLE;

@@ -4,7 +4,10 @@
 
 namespace core::state::project {
 
-ProjectSnapshot::ProjectSnapshot() = default;
+ProjectSnapshot::ProjectSnapshot()
+    : macroAutomation(
+          core::app::makeExtmemUnique<core::state::macro::MacroAutomationBankState>()
+      ) {}
 ProjectSnapshot::~ProjectSnapshot() = default;
 ProjectSnapshot::ProjectSnapshot(ProjectSnapshot&&) noexcept = default;
 ProjectSnapshot& ProjectSnapshot::operator=(ProjectSnapshot&&) noexcept = default;

@@ -14,8 +14,9 @@
  * - Page name (16 chars)
  * - CC numbers for each macro (8 bytes)
  * - Last values for each macro (8 floats = 32 bytes)
+ * - Active macro slot mask (1 byte)
  *
- * Total: 56 bytes per page, 900 bytes per track.
+ * Total: 60 bytes per page, 964 bytes per track.
  */
 
 #include <array>
@@ -25,14 +26,10 @@
 #include <oc/state/Signal.hpp>
 #include <oc/type/TextFormat.hpp>
 
-#include <config/InputIDs.hpp>
+#include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroConstants.hpp"
 
 namespace core::state::macro {
-
-static constexpr uint8_t PAGE_COUNT = 16;
-static constexpr uint8_t TRACK_COUNT = 16;
-static constexpr uint8_t MACRO_COUNT = Config::MACRO_COUNT;
-static constexpr uint8_t PAGE_NAME_SIZE = 16;
 
 /**
  * @brief Single macro configuration (CC + track channel)
@@ -46,9 +43,12 @@ struct MacroConfig {
  * @brief Complete page configuration (persisted)
  */
 struct MacroPageData {
+    static constexpr uint8_t DEFAULT_ACTIVE_MACRO_MASK = 0x01;
+
     char name[PAGE_NAME_SIZE];                      ///< Page name (16 bytes)
     std::array<uint8_t, MACRO_COUNT> cc;            ///< CC numbers (8 bytes)
     std::array<float, MACRO_COUNT> values;          ///< Last values (32 bytes)
+    uint8_t activeMacroMask = DEFAULT_ACTIVE_MACRO_MASK;  ///< Active slots
 
     MacroPageData();
 
@@ -59,9 +59,24 @@ struct MacroPageData {
     MacroConfig getConfig(uint8_t macroIndex, uint8_t trackChannel) const {
         return {cc[macroIndex], trackChannel};
     }
+
+    bool isMacroActive(uint8_t macroIndex) const {
+        if (macroIndex >= MACRO_COUNT) return false;
+        return (activeMacroMask & static_cast<uint8_t>(1U << macroIndex)) != 0;
+    }
+
+    void setMacroActive(uint8_t macroIndex, bool active) {
+        if (macroIndex >= MACRO_COUNT) return;
+        const uint8_t bit = static_cast<uint8_t>(1U << macroIndex);
+        if (active) activeMacroMask = static_cast<uint8_t>(activeMacroMask | bit);
+        else activeMacroMask = static_cast<uint8_t>(activeMacroMask & ~bit);
+    }
+
+    uint8_t nextAddMacroIndex() const;
+    uint8_t activeMacroCount() const;
 };
 
-static_assert(sizeof(MacroPageData) == 56, "MacroPageData must be exactly 56 bytes");
+static_assert(sizeof(MacroPageData) == 60, "MacroPageData must be exactly 60 bytes");
 
 /**
  * @brief State for page selector overlay
@@ -121,6 +136,9 @@ public:
     /// All track data (persisted)
     std::array<MacroTrackData, TRACK_COUNT> tracks;
 
+    /// Sparse project-level automation/modulation data keyed by track/page/macro.
+    MacroAutomationBankState automation;
+
     /// Quick access to active page's configs (updated on page switch)
     std::array<MacroConfig, MACRO_COUNT> activeConfigs;
 
@@ -163,6 +181,22 @@ public:
     /// Get active page data
     MacroPageData& activePageData() { return activeTrackData().activePageData(); }
     const MacroPageData& activePageData() const { return activeTrackData().activePageData(); }
+
+    bool isMacroSlotActive(uint8_t index) const {
+        return activePageData().isMacroActive(index);
+    }
+
+    bool isMacroAddSlot(uint8_t index) const {
+        return activePageData().nextAddMacroIndex() == index;
+    }
+
+    void setMacroSlotActive(uint8_t index, bool active) {
+        activePageData().setMacroActive(index, active);
+    }
+
+    uint8_t nextAddMacroIndex() const {
+        return activePageData().nextAddMacroIndex();
+    }
 
     MacroPageData& pageData(uint8_t trackIndex, uint8_t pageIndex) {
         return tracks[trackIndex].pages[pageIndex];

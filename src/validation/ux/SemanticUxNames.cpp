@@ -123,6 +123,8 @@ const char* overlayName(core::ui::OverlayType overlay) {
             return "macro_edit_selector";
         case core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR:
             return "macro_edit_macro_selector";
+        case core::ui::OverlayType::MACRO_AUTOMATION:
+            return "macro_automation";
         case core::ui::OverlayType::VIEW_SELECTOR:
             return "view_selector";
         case core::ui::OverlayType::SEQ_STEP_EDIT:

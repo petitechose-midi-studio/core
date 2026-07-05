@@ -12,6 +12,7 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 #include <oc/interface/IMidi.hpp>
+#include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
 #include "../../src/handler/macro/MacroValueHandler.hpp"
@@ -100,6 +101,7 @@ struct MacroValueHarness {
                   core::handler::MacroPerformanceDomainServices::fromCoreState(state),
                   overlays,
                   encoders,
+                  buttons,
                   midi,
                   MACRO_SCOPE) {
         state.activeView.set(core::ui::ViewType::MACRO);
@@ -111,7 +113,40 @@ struct MacroValueHarness {
         encoderHw.setPosition(encoderId, value);
         eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, value));
     }
+
+    void press(Config::ButtonID id) {
+        const auto buttonId = static_cast<oc::type::ButtonID>(id);
+        buttonHw.setPressed(buttonId, true);
+        eventBus.emit(oc::core::event::ButtonPressEvent(buttonId, true));
+    }
+
+    void release(Config::ButtonID id) {
+        const auto buttonId = static_cast<oc::type::ButtonID>(id);
+        buttonHw.setPressed(buttonId, false);
+        eventBus.emit(oc::core::event::ButtonReleaseEvent(buttonId));
+    }
 };
+
+void configureAutomation(core::state::CoreState& state, uint8_t macroIndex = 0) {
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = macroIndex,
+        }
+    );
+    assert(slot != nullptr);
+    core::state::macro::MacroAutomationLane lane;
+    lane.durationBeats = 2.0f;
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
+    assert(core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *slot,
+        lane
+    ));
+}
 
 void test_macro_encoder_updates_value_and_sends_cc() {
     MacroValueHarness h;
@@ -126,6 +161,25 @@ void test_macro_encoder_updates_value_and_sends_cc() {
     assert(h.state.statusBar.ccOutActive.get());
 
     std::cout << "[PASS] test_macro_encoder_updates_value_and_sends_cc\n";
+}
+
+void test_macro_encoder_does_not_activate_empty_or_add_slots() {
+    MacroValueHarness h;
+
+    assert(h.state.pages.isMacroSlotActive(0));
+    assert(!h.state.pages.isMacroSlotActive(1));
+    assert(!h.state.pages.isMacroSlotActive(2));
+
+    h.turn(Config::EncoderID::MACRO_3, 1.0f);
+    assert(!h.state.pages.isMacroSlotActive(2));
+    assert(h.midiTransport.ccCount == 0);
+
+    h.turn(Config::EncoderID::MACRO_2, 1.0f);
+    assert(!h.state.pages.isMacroSlotActive(1));
+    assert(h.state.pages.nextAddMacroIndex() == 1);
+    assert(h.midiTransport.ccCount == 0);
+
+    std::cout << "[PASS] test_macro_encoder_does_not_activate_empty_or_add_slots\n";
 }
 
 void test_macro_value_handler_respects_modal_guards() {
@@ -145,22 +199,181 @@ void test_macro_value_handler_respects_modal_guards() {
         assert(h.midiTransport.ccCount == 0);
     }
 
-    {
-        MacroValueHarness h;
-        h.state.macroUi.quickControlsSelecting.set(true);
-        h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(std::fabs(h.state.macros[0].value.get() - 0.5f) < 0.0005f);
-        assert(h.midiTransport.ccCount == 0);
-    }
-
     std::cout << "[PASS] test_macro_value_handler_respects_modal_guards\n";
+}
+
+void test_macro_encoder_feeds_armed_automation_recording() {
+    MacroValueHarness h;
+    auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(h.state);
+
+    h.state.statusBar.tempo.set(120.0f);
+    assert(services.beginAutomationRecording(0, 0));
+
+    g_now_ms = 500;
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+    assert(services.commitAutomationRecording(1000));
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot != nullptr);
+    assert(slot->automation.active);
+    assert(slot->automation.pointCount == 2);
+    core::state::macro::MacroCurvePoint firstPoint{};
+    core::state::macro::MacroCurvePoint secondPoint{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        slot->automation,
+        h.state.pages.automation.pointPool,
+        0,
+        false,
+        firstPoint
+    ));
+    assert(core::state::macro::macroAutomationReadPoint(
+        slot->automation,
+        h.state.pages.automation.pointPool,
+        1,
+        false,
+        secondPoint
+    ));
+    assert(std::fabs(firstPoint.value - 0.5f) < 0.0001f);
+    assert(std::fabs(secondPoint.beat - 1.0f) < 0.0001f);
+    assert(std::fabs(secondPoint.value - 1.0f) < 0.0001f);
+
+    std::cout << "[PASS] test_macro_encoder_feeds_armed_automation_recording\n";
+}
+
+void test_macro_button_hold_records_value_automation() {
+    MacroValueHarness h;
+
+    h.state.statusBar.tempo.set(120.0f);
+    h.press(Config::ButtonID::MACRO_1);
+    assert(!h.state.macroUi.automationRecording.active);
+
+    g_now_ms = 500;
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+    assert(h.state.macroUi.automationRecording.active);
+    assert(h.state.macroUi.automationRecording.address.macro == 0);
+
+    g_now_ms = 1000;
+    h.release(Config::ButtonID::MACRO_1);
+    assert(!h.state.macroUi.automationRecording.active);
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot != nullptr);
+    assert(slot->automation.active);
+    assert(slot->automation.pointCount == 1);
+    assert(std::fabs(core::state::macro::macroAutomationBeatsFromTicks(
+                         slot->automation.durationTicks
+                     ) - 1.0f) < 0.0001f);
+    core::state::macro::MacroCurvePoint recordedPoint{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        slot->automation,
+        h.state.pages.automation.pointPool,
+        0,
+        false,
+        recordedPoint
+    ));
+    assert(std::fabs(recordedPoint.beat - 0.0f) < 0.0001f);
+    assert(std::fabs(recordedPoint.value - 1.0f) < 0.0001f);
+    assert(h.state.project.metadata.dirty);
+
+    h.turn(Config::EncoderID::MACRO_1, 0.0f);
+    assert(std::fabs(h.state.macros[0].value.get() - 1.0f) < 0.0005f);
+
+    std::cout << "[PASS] test_macro_button_hold_records_value_automation\n";
+}
+
+void test_turning_an_automated_macro_enters_manual_override() {
+    MacroValueHarness h;
+
+    configureAutomation(h.state);
+
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+
+    assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) != 0);
+    assert(h.midiTransport.ccCount == 1);
+    assert(h.midiTransport.lastValue == 127);
+
+    std::cout << "[PASS] test_turning_an_automated_macro_enters_manual_override\n";
+}
+
+void test_macro_automation_property_button_restores_auto_without_clearing_lane() {
+    MacroValueHarness h;
+
+    configureAutomation(h.state);
+
+    h.state.macroUi.clutchActive.set(true);
+    h.state.macroUi.activeProperty.set(
+        core::state::macro::MacroPerformanceProperty::AUTOMATION
+    );
+    h.state.macroUi.automationManualOverrideMask.set(0x0001);
+
+    h.press(Config::ButtonID::MACRO_1);
+    assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) == 0);
+
+    const auto* preserved = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(preserved != nullptr);
+    assert(preserved->automation.active);
+    assert(preserved->automation.pointCount == 2);
+    assert(h.midiTransport.ccCount == 0);
+
+    std::cout << "[PASS] test_macro_automation_property_button_restores_auto_without_clearing_lane\n";
+}
+
+void test_macro_button_hold_without_turn_discards_recording() {
+    MacroValueHarness h;
+
+    h.press(Config::ButtonID::MACRO_1);
+    assert(!h.state.macroUi.automationRecording.active);
+    g_now_ms = 1000;
+    h.release(Config::ButtonID::MACRO_1);
+    assert(!h.state.macroUi.automationRecording.active);
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot == nullptr);
+    assert(!h.state.project.metadata.dirty);
+
+    std::cout << "[PASS] test_macro_button_hold_without_turn_discards_recording\n";
 }
 
 }  // namespace
 
 int main() {
+    oc::time::setProvider(mockTimeMs);
     test_macro_encoder_updates_value_and_sends_cc();
+    test_macro_encoder_does_not_activate_empty_or_add_slots();
     test_macro_value_handler_respects_modal_guards();
+    test_macro_encoder_feeds_armed_automation_recording();
+    test_macro_button_hold_records_value_automation();
+    test_turning_an_automated_macro_enters_manual_override();
+    test_macro_automation_property_button_restores_auto_without_clearing_lane();
+    test_macro_button_hold_without_turn_discards_recording();
 
     std::cout << "\nAll MacroValueHandler tests passed.\n";
     return 0;

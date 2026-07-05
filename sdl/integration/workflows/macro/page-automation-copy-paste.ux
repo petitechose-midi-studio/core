@@ -1,0 +1,28 @@
+# UX workflow: copy/paste a macro page carrying an automation lane.
+# Purpose: validates that Macro page clipboard operations preserve and remap
+# automation data to the pasted page.
+
+0 scenario macro-automation-clean
+50 capture screen macro_ready
+
+# Record an automation on Macro 1, then copy the current Macro page.
+150 button MACRO_1 down
+500 encoder MACRO_1 1.00
+1100 button MACRO_1 up
+1250 capture screen automation_recorded_on_page_1
+
+1400 tap BOTTOM_RIGHT 60
+1550 capture screen page_copied
+
+# Move to the add-page slot and paste the copied page there.
+1700 encoder NAV 1
+1850 capture screen page_add_target
+2000 button BOTTOM_RIGHT down
+3150 tick
+3250 button BOTTOM_RIGHT up
+3500 capture screen automation_pasted_to_page_2
+
+# Start playback on the pasted page; the automation should still drive Macro 1.
+3650 tap BOTTOM_CENTER 60
+3950 capture screen pasted_page_automation_playing
+4100 tap BOTTOM_CENTER 60

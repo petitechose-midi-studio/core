@@ -28,6 +28,7 @@ enum class StructureClipboardKind : uint8_t {
     SEQUENCER_STEPS = 6,
     SEQUENCER_PAGE_SELECTION = 7,
     SEQUENCER_TRACK_SELECTION = 8,
+    MACRO_AUTOMATION = 9,
 };
 
 enum class SequencerStepContentClipboardKind : uint8_t {
@@ -117,12 +118,38 @@ struct SequencerTrackSelectionClipboard {
     void reset();
 };
 
+struct MacroAutomationClipboardEntry {
+    bool valid = false;
+    uint8_t sourcePage = 0;
+    uint8_t sourceMacro = 0;
+    core::state::macro::MacroAutomationSlotState state{};
+};
+
+struct MacroAutomationClipboard {
+    bool valid = false;
+    bool trackScope = false;
+    uint8_t sourceTrack = core::state::macro::TRACK_COUNT;
+    uint8_t sourcePage = core::state::macro::PAGE_COUNT;
+    uint8_t count = 0;
+    core::state::macro::MacroAutomationPointPool pointPool{};
+    std::array<
+        MacroAutomationClipboardEntry,
+        core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY> entries{};
+
+    void reset();
+    bool append(uint8_t sourcePage,
+                uint8_t sourceMacro,
+                const core::state::macro::MacroAutomationPointPool& sourcePool,
+                const core::state::macro::MacroAutomationSlotState& state);
+};
+
 struct StructureClipboardState {
     oc::state::Signal<StructureClipboardKind, 4> kind{StructureClipboardKind::NONE};
     oc::state::Signal<uint32_t, 8> revision{0};
 
     core::state::macro::MacroPageData macroPage{};
     core::state::macro::MacroTrackData macroTrack{};
+    core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard> macroAutomationSet;
     core::state::SequencerPageClipboard sequencerPage{};
     core::state::SequencerStepsClipboard sequencerSteps{};
     core::state::SequencerPageSelectionClipboard sequencerPageSelection{};
@@ -137,8 +164,18 @@ struct StructureClipboardState {
     void clear();
 
     void storeMacroPage(const core::state::macro::MacroPageData& page);
+    void storeMacroPage(const core::state::macro::MacroPageData& page,
+                        const core::state::macro::MacroAutomationBankState& automation,
+                        uint8_t sourceTrack,
+                        uint8_t sourcePage);
 
     void storeMacroTrack(const core::state::macro::MacroTrackData& track);
+    void storeMacroTrack(const core::state::macro::MacroTrackData& track,
+                         const core::state::macro::MacroAutomationBankState& automation,
+                         uint8_t sourceTrack);
+
+    void storeMacroAutomation(const core::state::macro::MacroAutomationBankState& automation,
+                              const core::state::macro::MacroAutomationSlotState& slot);
 
     bool storeSequencerPage(
         const core::state::SequencerPageClipboard& page,
@@ -172,6 +209,13 @@ struct StructureClipboardState {
 
     bool hasMacroPage() const { return kind.get() == StructureClipboardKind::MACRO_PAGE; }
     bool hasMacroTrack() const { return kind.get() == StructureClipboardKind::MACRO_TRACK; }
+    bool hasMacroAutomation() const {
+        return kind.get() == StructureClipboardKind::MACRO_AUTOMATION &&
+               macroAutomationSet &&
+               macroAutomationSet->valid &&
+               macroAutomationSet->count > 0 &&
+               macroAutomationSet->entries[0].state.automation.active;
+    }
     bool hasSequencerPage() const {
         return kind.get() == StructureClipboardKind::SEQUENCER_PAGE && sequencerPage.valid;
     }

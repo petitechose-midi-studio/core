@@ -1,0 +1,33 @@
+# UX workflow: restore an automated macro from Manual to Auto through the
+# Macro Slot property selector.
+# Purpose: validates the Sequencer-like Macro grammar:
+# Left Bottom opens slot properties, NAV selects Automation, and the macro
+# macro button restores Auto without clearing the automation lane.
+
+0 scenario macro-automation-clean
+50 capture screen macro_ready
+
+# Record automation on Macro 1.
+150 button MACRO_1 down
+500 encoder MACRO_1 1.00
+1100 button MACRO_1 up
+1250 capture screen automation_recorded
+
+# User takes manual control over the automated macro.
+1400 encoder MACRO_1 0.20
+1550 capture screen manual_override_active
+
+# Open Macro Slot property selector and focus Automation.
+1700 button LEFT_BOTTOM down
+1820 button LEFT_BOTTOM up
+1950 encoder NAV 1
+2350 capture screen automation_property_selected
+
+# Restore Auto without deleting the automation.
+2500 tap MACRO_1 60
+2650 capture screen automation_restored_auto
+
+# Close the latched property selector.
+2800 button LEFT_BOTTOM down
+2920 button LEFT_BOTTOM up
+3050 capture screen property_selector_closed

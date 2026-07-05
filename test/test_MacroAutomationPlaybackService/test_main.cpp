@@ -1,0 +1,227 @@
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <iostream>
+
+#include <oc/api/MidiAPI.hpp>
+#include <oc/interface/IMidi.hpp>
+#include <oc/type/Result.hpp>
+
+#include "../../src/handler/macro/MacroAutomationPlaybackService.hpp"
+#include "../../src/state/CoreState.hpp"
+#include "../support/CoreStorages.hpp"
+
+namespace {
+
+class MockMidiTransport : public oc::interface::IMidi {
+public:
+    oc::type::Result<void> init() override { return oc::type::Result<void>::ok(); }
+    void update() override {}
+    void sendCC(uint8_t channel, uint8_t cc, uint8_t value) override {
+        ccCount += 1;
+        lastChannel = channel;
+        lastCc = cc;
+        lastValue = value;
+    }
+    void sendNoteOn(uint8_t, uint8_t, uint8_t) override {}
+    void sendNoteOff(uint8_t, uint8_t, uint8_t) override {}
+    void sendSysEx(const uint8_t*, size_t) override {}
+    void sendProgramChange(uint8_t, uint8_t) override {}
+    void sendPitchBend(uint8_t, int16_t) override {}
+    void sendChannelPressure(uint8_t, uint8_t) override {}
+    void sendClock() override {}
+    void sendStart() override {}
+    void sendStop() override {}
+    void sendContinue() override {}
+    void setOnCC(CCCallback) override {}
+    void setOnNoteOn(NoteCallback) override {}
+    void setOnNoteOff(NoteCallback) override {}
+    void setOnSysEx(SysExCallback) override {}
+    void setOnClock(ClockCallback) override {}
+    void setOnStart(RealtimeCallback) override {}
+    void setOnStop(RealtimeCallback) override {}
+    void setOnContinue(RealtimeCallback) override {}
+
+    int ccCount = 0;
+    uint8_t lastChannel = 0;
+    uint8_t lastCc = 0;
+    uint8_t lastValue = 0;
+};
+
+void configureAutomation(core::state::CoreState& state) {
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot != nullptr);
+    core::state::macro::MacroAutomationLane lane;
+    lane.durationBeats = 2.0f;
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
+    assert(core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *slot,
+        lane
+    ));
+}
+
+void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureAutomation(state);
+    state.pages.activePageData().cc[0] = 74;
+    state.pages.updateActiveConfigs();
+    state.statusBar.tempo.set(60.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    core::handler::MacroAutomationPlaybackService playback(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            state.pages,
+            state.macroUi,
+            state.statusBar,
+        },
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+
+    playback.update(1000);
+    assert(midiTransport.ccCount == 1);
+    assert(midiTransport.lastChannel == 0);
+    assert(midiTransport.lastCc == 74);
+    assert(midiTransport.lastValue == 0);
+    assert(std::fabs(state.macros[0].value.get() - 0.0f) < 0.0001f);
+
+    playback.update(1008);
+    assert(midiTransport.ccCount == 1);
+
+    playback.update(1500);
+    assert(midiTransport.ccCount == 2);
+    assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
+    assert(state.macros[0].value.get() > 0.49f && state.macros[0].value.get() < 0.51f);
+
+    std::cout << "[PASS] test_playback_updates_runtime_and_sends_cc_when_value_changes\n";
+}
+
+void test_playback_stops_when_transport_is_stopped() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureAutomation(state);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    core::handler::MacroAutomationPlaybackService playback(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            state.pages,
+            state.macroUi,
+            state.statusBar,
+        },
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+
+    state.statusBar.playing.set(false);
+    playback.update(1000);
+    playback.update(1500);
+    assert(midiTransport.ccCount == 0);
+
+    std::cout << "[PASS] test_playback_stops_when_transport_is_stopped\n";
+}
+
+void test_manual_override_suspends_playback_for_the_macro_slot() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureAutomation(state);
+    state.statusBar.tempo.set(60.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    core::handler::MacroAutomationPlaybackService playback(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            state.pages,
+            state.macroUi,
+            state.statusBar,
+        },
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+
+    playback.update(1000);
+    assert(midiTransport.ccCount == 1);
+    assert(std::fabs(state.macros[0].value.get() - 0.0f) < 0.0001f);
+
+    state.macroUi.automationManualOverrideMask.set(0x0001);
+    playback.update(1500);
+    assert(midiTransport.ccCount == 1);
+    assert(std::fabs(state.macros[0].value.get() - 0.0f) < 0.0001f);
+
+    std::cout << "[PASS] test_manual_override_suspends_playback_for_the_macro_slot\n";
+}
+
+void test_recording_session_suspends_existing_lane_playback_for_the_macro_slot() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureAutomation(state);
+    state.statusBar.tempo.set(60.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    core::handler::MacroAutomationPlaybackService playback(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            state.pages,
+            state.macroUi,
+            state.statusBar,
+        },
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+
+    playback.update(1000);
+    assert(midiTransport.ccCount == 1);
+
+    state.macros[0].value.set(0.42f);
+    state.macroUi.automationRecording.active = true;
+    state.macroUi.automationRecording.address = {
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+
+    playback.update(1500);
+    assert(midiTransport.ccCount == 1);
+    assert(std::fabs(state.macros[0].value.get() - 0.42f) < 0.0001f);
+
+    std::cout << "[PASS] test_recording_session_suspends_existing_lane_playback_for_the_macro_slot\n";
+}
+
+}  // namespace
+
+int main() {
+    test_playback_updates_runtime_and_sends_cc_when_value_changes();
+    test_playback_stops_when_transport_is_stopped();
+    test_manual_override_suspends_playback_for_the_macro_slot();
+    test_recording_session_suspends_existing_lane_playback_for_the_macro_slot();
+
+    std::cout << "\nAll MacroAutomationPlaybackService tests passed.\n";
+    return 0;
+}

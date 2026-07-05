@@ -30,6 +30,12 @@ bool isMacroButtonLongPress(const oc::core::input::InputBindingTraceEvent& event
            Config::macroButtonIndex(event.buttonId, index);
 }
 
+bool isMacroButtonPress(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
+    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
+           event.buttonType == oc::core::input::ButtonBindingType::PRESS &&
+           Config::macroButtonIndex(event.buttonId, index);
+}
+
 bool isMacroButtonRelease(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
            event.buttonType == oc::core::input::ButtonBindingType::RELEASE &&
@@ -58,12 +64,16 @@ void copyIndexLabel(char (&out)[16], unsigned value) {
     std::snprintf(out, sizeof(out), "%u", value + 1U);
 }
 
+void copyPointCountLabel(char (&out)[16], unsigned value) {
+    std::snprintf(out, sizeof(out), "%u pts", value);
+}
+
 const char* macroPerformancePropertyName(core::state::macro::MacroPerformanceProperty property) {
     switch (property) {
         case core::state::macro::MacroPerformanceProperty::CC:
             return "CC";
-        case core::state::macro::MacroPerformanceProperty::CHANNEL:
-            return "Channel";
+        case core::state::macro::MacroPerformanceProperty::AUTOMATION:
+            return "Automation";
         case core::state::macro::MacroPerformanceProperty::VALUE:
         default:
             return "Value";
@@ -74,35 +84,11 @@ const char* macroPerformanceEffect(core::state::macro::MacroPerformanceProperty 
     switch (property) {
         case core::state::macro::MacroPerformanceProperty::CC:
             return "edit_macro_cc";
-        case core::state::macro::MacroPerformanceProperty::CHANNEL:
-            return "edit_macro_channel";
+        case core::state::macro::MacroPerformanceProperty::AUTOMATION:
+            return "restore_macro_automation";
         case core::state::macro::MacroPerformanceProperty::VALUE:
         default:
             return "edit_macro_value";
-    }
-}
-
-const char* macroQuickControlName(core::state::macro::MacroQuickControlItem item) {
-    switch (item) {
-        case core::state::macro::MacroQuickControlItem::CC_OFFSET:
-            return "CC Offset";
-        case core::state::macro::MacroQuickControlItem::GLOBAL_CHANNEL:
-        default:
-            return "Global Channel";
-    }
-}
-
-void fillMacroQuickControlValueLabel(core::state::macro::MacroUiState& macroUi,
-                                     core::state::macro::MacroQuickControlItem item,
-                                     char (&out)[16]) {
-    switch (item) {
-        case core::state::macro::MacroQuickControlItem::CC_OFFSET:
-            std::snprintf(out, sizeof(out), "%+d", static_cast<int>(macroUi.ccOffset.get()));
-            return;
-        case core::state::macro::MacroQuickControlItem::GLOBAL_CHANNEL:
-        default:
-            copyIndexLabel(out, macroUi.quickControlGlobalChannel.get());
-            return;
     }
 }
 
@@ -168,14 +154,61 @@ bool MacroValueUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::MACRO || macro_edit_.visible.get() ||
-        macro_ui_.quickControlsSelecting.get()) {
+    if (active_view_.get() != core::ui::ViewType::MACRO || macro_edit_.visible.get()) {
         return false;
     }
 
     uint8_t index = 0;
+    if (isMacroButtonPress(event, index) && index < Config::MACRO_COUNT &&
+        macro_ui_.clutchActive.get() &&
+        macro_ui_.activeProperty.get() ==
+            core::state::macro::MacroPerformanceProperty::AUTOMATION) {
+        out.mode = "macro.performance";
+        out.target = "macro";
+        out.targetIndex = static_cast<int16_t>(index);
+        out.property = "Automation";
+        out.effect = "restore_macro_automation";
+        copyValueLabel(out.valueLabel, "Auto");
+        return true;
+    }
+
+    if (isMacroButtonPress(event, index) && index < Config::MACRO_COUNT) {
+        out.mode = "macro.automation";
+        out.target = "macro";
+        out.targetIndex = static_cast<int16_t>(index);
+        out.property = "Automation";
+        out.effect = "arm_macro_automation";
+        copyValueLabel(out.valueLabel, macro_ui_.automationRecording.active ? "REC" : "Arm");
+        return true;
+    }
+
+    if (isMacroButtonRelease(event, index) && index < Config::MACRO_COUNT) {
+        out.mode = "macro.automation";
+        out.target = "macro";
+        out.targetIndex = static_cast<int16_t>(index);
+        out.property = "Automation";
+        out.effect = "commit_macro_automation";
+        if (macro_ui_.automationRecording.active) {
+            copyPointCountLabel(out.valueLabel, macro_ui_.automationRecording.lane.pointCount);
+        } else {
+            copyValueLabel(out.valueLabel, "Done");
+        }
+        return true;
+    }
+
     if (!isMacroEncoderTurn(event, index) || index >= Config::MACRO_COUNT) {
         return false;
+    }
+
+    if (macro_ui_.automationRecording.active &&
+        macro_ui_.automationRecording.address.macro == index) {
+        out.mode = "macro.automation";
+        out.target = "macro";
+        out.targetIndex = static_cast<int16_t>(index);
+        out.property = "Automation";
+        out.effect = "record_macro_automation_point";
+        copyValueLabel(out.valueLabel, macros_.slots[index].displayValue.get());
+        return true;
     }
 
     const auto property = macro_ui_.clutchActive.get()
@@ -196,9 +229,23 @@ bool MacroValueUxSurface::captureSemanticUxContext(
                 static_cast<unsigned>(pages_.activeConfigs[index].cc)
             );
             break;
-        case core::state::macro::MacroPerformanceProperty::CHANNEL:
-            copyIndexLabel(out.valueLabel, pages_.activeConfigs[index].channel);
+        case core::state::macro::MacroPerformanceProperty::AUTOMATION: {
+            const auto address = core::state::macro::MacroAutomationSlotAddress{
+                .track = pages_.currentActiveTrack(),
+                .page = pages_.currentActivePage(),
+                .macro = index,
+            };
+            const auto* slot = core::state::macro::macroAutomationFindSlot(
+                pages_.automation,
+                address
+            );
+            const bool active = slot != nullptr && slot->automation.active;
+            const bool manual =
+                (macro_ui_.automationManualOverrideMask.get() &
+                 static_cast<uint16_t>(1U << index)) != 0;
+            copyValueLabel(out.valueLabel, !active ? "Off" : (manual ? "Manual" : "Auto"));
             break;
+        }
         case core::state::macro::MacroPerformanceProperty::VALUE:
         default:
             copyValueLabel(out.valueLabel, macros_.slots[index].displayValue.get());
@@ -223,29 +270,6 @@ bool MacroPerformanceUxSurface::captureSemanticUxContext(
 
     const bool opening =
         isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::PRESS);
-    const bool quickOpening =
-        isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::PRESS);
-    if (quickOpening || macro_ui_.quickControlsSelecting.get()) {
-        const auto item = macro_ui_.focusedQuickControl.get();
-        out.mode = "macro.quick_controls";
-        out.target = "quick_control";
-        out.targetIndex = static_cast<int16_t>(core::state::macro::quickControlIndex(item));
-        out.property = macroQuickControlName(item);
-        fillMacroQuickControlValueLabel(macro_ui_, item, out.valueLabel);
-        if (quickOpening) {
-            out.effect = "open_quick_controls";
-        } else if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "select_quick_control";
-        } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            out.effect = "edit_quick_control";
-        } else if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "apply_quick_controls";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "cancel_quick_controls";
-        }
-        return true;
-    }
-
     if (!opening && !macro_ui_.clutchActive.get()) {
         return false;
     }
@@ -257,11 +281,13 @@ bool MacroPerformanceUxSurface::captureSemanticUxContext(
     out.property = macroPerformancePropertyName(property);
 
     if (opening) {
-        out.effect = "open_macro_clutch";
+        out.effect = "open_macro_slot_property_selector";
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_macro_property";
     } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "apply_macro_clutch";
+        out.effect = "apply_macro_slot_property_selector";
+    } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
+        out.effect = "cancel_macro_slot_property_selector";
     }
     return true;
 }
@@ -291,7 +317,7 @@ bool MacroStructureUxSurface::captureSemanticUxContext(
     core::validation::ux::SemanticUxContext& out
 ) const {
     if (active_view_.get() != core::ui::ViewType::MACRO || macro_edit_.visible.get() ||
-        macro_ui_.quickControlsSelecting.get() || macro_ui_.clutchActive.get()) {
+        macro_ui_.clutchActive.get()) {
         return false;
     }
 
@@ -429,10 +455,12 @@ MacroEditUxSurface::MacroEditUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::MacroEditState& macroEdit,
     core::state::macro::MacroPagesState& pages,
+    core::state::macro::MacroUiState& macroUi,
     oc::state::Signal<uint32_t>& configRevision
 ) : active_view_(activeView),
     macro_edit_(macroEdit),
     pages_(pages),
+    macro_ui_(macroUi),
     config_revision_(configRevision) {
     core::context::standalone::macro_overlay_presenter::initializeStaticItems(static_items_);
 }
@@ -455,6 +483,7 @@ bool MacroEditUxSurface::captureSemanticUxContext(
     core::context::standalone::macro_overlay_presenter::Source source{
         macro_edit_,
         pages_,
+        macro_ui_,
         config_revision_,
     };
 
@@ -550,6 +579,36 @@ bool MacroEditUxSurface::captureSemanticUxContext(
             out.effect = "apply_macro_target";
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "cancel_macro_target";
+        }
+        return true;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::AUTOMATION) {
+        const auto data =
+            core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(source);
+        if (!data.visible) return false;
+        const int row = data.selectedIndex;
+        out.mode = "macro.automation_editor";
+        out.target = "automation";
+        out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
+        if (row >= 0 && row < static_cast<int>(data.rows.size())) {
+            out.property = data.rows[row].key;
+            copyValueLabel(out.valueLabel, data.rows[row].value);
+        }
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_macro_automation";
+        } else if (isEncoder(event, Config::EncoderID::OPT)) {
+            out.effect = row == 0 ? "edit_macro_automation_state" : "noop";
+        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
+            out.effect = "back_macro_automation";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
+            out.effect = "clear_macro_automation";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+            out.effect = "remove_macro_automation";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
+            out.effect = "copy_macro_automation";
+        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
+            out.effect = "paste_macro_automation";
         }
         return true;
     }

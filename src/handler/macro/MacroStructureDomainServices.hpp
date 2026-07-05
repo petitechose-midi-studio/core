@@ -6,6 +6,7 @@
 
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
 namespace core::state {
@@ -63,10 +64,15 @@ public:
     bool duplicateSelectedTracks(uint16_t selectedMask) const;
     bool erasePage(uint8_t pageIndex) const;
     bool eraseTrack(uint8_t trackIndex) const;
-    bool pastePage(uint8_t pageIndex, const core::state::macro::MacroPageData& pageData) const;
-    bool pasteTrack(uint8_t trackIndex, const core::state::macro::MacroTrackData& trackData) const;
+    bool pastePage(uint8_t pageIndex,
+                   const core::state::macro::MacroPageData& pageData,
+                   const core::state::MacroAutomationClipboard* automation = nullptr) const;
+    bool pasteTrack(uint8_t trackIndex,
+                    const core::state::macro::MacroTrackData& trackData,
+                    const core::state::MacroAutomationClipboard* automation = nullptr) const;
     bool createNextPage() const;
     bool createTrack(uint8_t trackIndex) const;
+    bool activateMacroSlot(uint8_t index) const;
 
 private:
     StateRefs stateRefs_() const;

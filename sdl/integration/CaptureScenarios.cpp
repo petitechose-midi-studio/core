@@ -138,6 +138,20 @@ void offsetFirstCycleState(core::state::sequencer::SequencerState& sequencer,
     );
 }
 
+void prepareMacroAutomationCleanScenario(core::state::CoreState& state) {
+    state.activeView.set(core::ui::ViewType::MACRO);
+    state.overlays.hideAll();
+    state.pages.initDefaults();
+    state.pages.automation.clear();
+    state.macroUi.reset();
+    state.macroEdit.reset();
+    state.trackNavigation.reset();
+    state.structureClipboard.clear();
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
 void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
     using namespace oc::note::sequencer;
 
@@ -514,6 +528,11 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
 
 bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     if (!scenario || scenario[0] == '\0' || std::strcmp(scenario, "macro") == 0) {
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-automation-clean") == 0) {
+        prepareMacroAutomationCleanScenario(state);
         return true;
     }
 

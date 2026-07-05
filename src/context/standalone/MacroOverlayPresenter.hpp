@@ -23,12 +23,14 @@ public:
 
     MacroOverlayPresenter(StateRefs stateRefs,
                           ms::ui::VirtualListKeyValueOverlay& macroEditOverlay,
+                          ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
                           ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
                           ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
                           ms::ui::VirtualListSelectorOverlay& macroTargetSelectorOverlay);
 
     void bind();
     void renderEdit();
+    void renderAutomation();
     void renderEditSelector();
     void renderPageSelector();
     void renderTargetSelector();
@@ -38,10 +40,12 @@ private:
 
     StateRefs state_refs_;
     ms::ui::VirtualListKeyValueOverlay& macro_edit_overlay_;
+    ms::ui::VirtualListKeyValueOverlay& macro_automation_overlay_;
     ms::ui::VirtualListSelectorOverlay& macro_edit_selector_overlay_;
     ms::ui::VirtualListSelectorOverlay& page_selector_overlay_;
     ms::ui::VirtualListSelectorOverlay& macro_target_selector_overlay_;
     oc::state::SignalWatcher edit_watcher_;
+    oc::state::SignalWatcher automation_watcher_;
     oc::state::SignalWatcher edit_selector_watcher_;
     oc::state::SignalWatcher page_selector_watcher_;
     oc::state::SignalWatcher macro_target_selector_watcher_;

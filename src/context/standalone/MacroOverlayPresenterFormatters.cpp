@@ -1,6 +1,7 @@
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
@@ -54,19 +55,119 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
 
     oc::type::text::formatUnsigned(data.valueBuffers[0].data(), data.valueBuffers[0].size(), static_cast<unsigned>(channel0) + 1U);
     oc::type::text::formatUnsigned(data.valueBuffers[1].data(), data.valueBuffers[1].size(), static_cast<unsigned>(cc));
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = source.pages.currentActiveTrack(),
+        .page = source.pages.currentActivePage(),
+        .macro = macroIndex,
+    };
+    const auto* automation = core::state::macro::macroAutomationFindSlot(
+        source.pages.automation,
+        address
+    );
+    const bool automationActive = automation != nullptr && automation->automation.active;
+    const bool manualOverride =
+        (source.macroUi.automationManualOverrideMask.get() &
+         static_cast<uint16_t>(1U << macroIndex)) != 0;
+    std::snprintf(
+        data.valueBuffers[2].data(),
+        data.valueBuffers[2].size(),
+        "%s",
+        !automationActive ? "Off" : (manualOverride ? "Manual" : "Auto")
+    );
 
     data.rows = {{
         {.key = "Channel", .value = data.valueBuffers[0].data()},
         {.key = "CC", .value = data.valueBuffers[1].data()},
+        {.key = "Automation", .value = data.valueBuffers[2].data()},
     }};
     data.selectedIndex = source.macroEdit.focusedRow.get();
     data.dataRevision =
-        (static_cast<uint32_t>(macroIndex) << 24) |
-        (static_cast<uint32_t>(channel0) << 16) |
-        (static_cast<uint32_t>(cc) << 8) |
-        (static_cast<uint32_t>(source.pages.currentActivePage() & 0x0F) << 4) |
-        static_cast<uint32_t>(source.macroEdit.focusedRow.get() & 0x0F);
+        (static_cast<uint32_t>(macroIndex & 0x07U) << 28) |
+        (automationActive ? (1UL << 27) : 0U) |
+        (manualOverride ? (1UL << 26) : 0U) |
+        (static_cast<uint32_t>(channel0 & 0x0FU) << 20) |
+        (static_cast<uint32_t>(cc & 0x7FU) << 12) |
+        (static_cast<uint32_t>(source.pages.currentActivePage() & 0x0FU) << 8) |
+        (static_cast<uint32_t>(source.macroEdit.focusedRow.get() & 0x0FU) << 4) |
+        static_cast<uint32_t>(source.macroUi.automationRecordingRevision.get() & 0x0FU);
 
+    return data;
+}
+
+FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
+    AutomationRenderData data{};
+    if (!source.macroEdit.automationVisible.get()) {
+        return data;
+    }
+
+    const uint8_t macroIndex = source.macroEdit.editingIndex.get();
+    size_t titlePos = oc::type::text::appendString(data.title.data(), data.title.size(), 0, "MACRO ");
+    titlePos = oc::type::text::appendUnsigned(
+        data.title.data(),
+        data.title.size(),
+        titlePos,
+        static_cast<unsigned>(macroIndex) + 1U
+    );
+    oc::type::text::terminate(data.title.data(), data.title.size(), titlePos);
+    std::snprintf(data.meta.data(), data.meta.size(), "%s", "AUTOMATION");
+
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = source.pages.currentActiveTrack(),
+        .page = source.pages.currentActivePage(),
+        .macro = macroIndex,
+    };
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        source.pages.automation,
+        address
+    );
+    const bool active = slot != nullptr && slot->automation.active;
+    const bool manualOverride =
+        (source.macroUi.automationManualOverrideMask.get() &
+         static_cast<uint16_t>(1U << macroIndex)) != 0;
+
+    std::snprintf(
+        data.valueBuffers[0].data(),
+        data.valueBuffers[0].size(),
+        "%s",
+        !active ? "Off" : (manualOverride ? "Manual" : "Auto")
+    );
+    std::snprintf(
+        data.valueBuffers[1].data(),
+        data.valueBuffers[1].size(),
+        "%u pts",
+        active ? static_cast<unsigned>(slot->automation.pointCount) : 0U
+    );
+    if (active) {
+        std::snprintf(
+            data.valueBuffers[2].data(),
+            data.valueBuffers[2].size(),
+            "%.1f beats",
+            static_cast<double>(
+                core::state::macro::macroAutomationBeatsFromTicks(
+                    slot->automation.durationTicks
+                )
+            )
+        );
+    } else {
+        std::snprintf(data.valueBuffers[2].data(), data.valueBuffers[2].size(), "%s", "-");
+    }
+    std::snprintf(data.valueBuffers[3].data(), data.valueBuffers[3].size(), "%s", "Absolute");
+
+    data.rows = {{
+        {.key = "State", .value = data.valueBuffers[0].data()},
+        {.key = "Points", .value = data.valueBuffers[1].data()},
+        {.key = "Length", .value = data.valueBuffers[2].data()},
+        {.key = "Mode", .value = data.valueBuffers[3].data()},
+    }};
+    data.selectedIndex = source.macroEdit.automationFocusedRow.get();
+    data.dataRevision =
+        (static_cast<uint32_t>(macroIndex & 0x07U) << 28) |
+        (active ? (1UL << 27) : 0U) |
+        (manualOverride ? (1UL << 26) : 0U) |
+        (active ? static_cast<uint32_t>(slot->automation.pointCount & 0x3FFU) << 14 : 0U) |
+        (static_cast<uint32_t>(source.macroEdit.automationFocusedRow.get() & 0x0FU) << 8) |
+        static_cast<uint32_t>(source.macroUi.automationRecordingRevision.get() & 0xFFU);
+    data.visible = true;
     return data;
 }
 

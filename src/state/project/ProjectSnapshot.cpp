@@ -85,8 +85,10 @@ FLASHMEM void applyProjectRouting(core::state::CoreState& state,
 
 FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out) {
     ProjectSnapshot next;
+    if (!next.macroAutomation) return false;
     next.project = projectStateFromRuntime(state);
     next.macroTracks = state.pages.tracks;
+    *next.macroAutomation = state.pages.automation;
     state.pages.captureSharedTrackState(next.sharedTrackEnabledMask, next.sharedTrackActive);
 
     if (!core::state::sequencer::captureHistorySnapshot(
@@ -103,6 +105,7 @@ FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, Projec
 
 FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
                                    const ProjectSnapshot& snapshot) {
+    if (!snapshot.macroAutomation) return false;
     if (!core::state::sequencer::applyHistorySnapshot(
             state.sequencerTracks,
             state.sequencer,
@@ -122,6 +125,8 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         snapshot.sharedTrackEnabledMask,
         snapshot.sharedTrackActive
     );
+    state.pages.automation = *snapshot.macroAutomation;
+    core::state::macro::macroAutomationCompactPool(state.pages.automation);
     state.pages.syncSharedTrackState(
         state.sequencerTracks.currentEnabledMask(),
         state.sequencerTracks.activeTrackIndex()

@@ -63,7 +63,9 @@ private:
     void bindStateSync();
     void movePage(float delta);
     void moveTrack(float delta);
+    void moveMacroSlot(float delta);
     void syncPreviewToCurrentContext();
+    void clampFocusedMacroSlot();
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;

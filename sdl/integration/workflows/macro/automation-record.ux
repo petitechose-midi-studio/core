@@ -1,0 +1,30 @@
+# UX workflow: record a live automation lane from one macro encoder.
+# Purpose: validates the controller-facing automation gesture:
+# hold a macro button, turn the same macro, release to commit.
+
+0 scenario macro-automation-clean
+50 capture screen macro_ready
+
+# Hold Macro 1. Holding alone keeps the existing long-press edit path available;
+# recording starts only once the held macro moves.
+150 button MACRO_1 down
+220 capture screen macro_button_held
+
+# Move the held macro: this arms recording, changes the live CC value, and records a point.
+500 encoder MACRO_1 1.00
+650 capture screen macro_record_active
+
+# Release commits the automation lane for the current track/page/macro slot.
+1100 button MACRO_1 up
+1250 capture screen macro_record_committed
+
+# Start transport: the committed automation should now drive the macro value.
+1350 tap BOTTOM_CENTER 60
+1650 capture screen macro_playback_running
+1750 tap BOTTOM_CENTER 60
+
+# A hold without movement should be non-destructive and create no lane.
+2050 button MACRO_2 down
+2200 capture screen macro_record_no_motion_held
+2400 button MACRO_2 up
+2550 capture screen macro_record_no_motion_discarded

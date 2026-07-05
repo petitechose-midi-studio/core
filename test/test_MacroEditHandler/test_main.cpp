@@ -170,7 +170,7 @@ void test_slow_release_closes_macro_edit_immediately() {
 
     openMacroEdit(
         h,
-        1,
+        0,
         Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 600U
     );
 
@@ -270,12 +270,68 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     std::cout << "[PASS] test_macro_edit_buffered_and_selector_flows_commit_on_transition\n";
 }
 
+void test_macro_edit_automation_row_restores_auto_without_clearing_lane() {
+    MacroEditHarness h;
+
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot != nullptr);
+    core::state::macro::MacroAutomationLane lane;
+    lane.durationBeats = 2.0f;
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
+    assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
+    assert(core::state::macro::macroAutomationAssignAutomation(
+        h.state.pages.automation,
+        *slot,
+        lane
+    ));
+
+    openMacroEdit(
+        h,
+        0,
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 200U
+    );
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.focusedRow.get() == 2);
+
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) != 0);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) == 0);
+
+    const auto* preserved = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(preserved != nullptr);
+    assert(preserved->automation.active);
+    assert(preserved->automation.pointCount == 2);
+
+    h.flushState();
+
+    std::cout << "[PASS] test_macro_edit_automation_row_restores_auto_without_clearing_lane\n";
+}
+
 }  // namespace
 
 int main() {
     test_quick_release_keeps_macro_edit_open_and_left_top_closes();
     test_slow_release_closes_macro_edit_immediately();
     test_macro_edit_buffered_and_selector_flows_commit_on_transition();
+    test_macro_edit_automation_row_restores_auto_without_clearing_lane();
     std::cout << "\nAll MacroEditHandler tests passed.\n";
     return 0;
 }

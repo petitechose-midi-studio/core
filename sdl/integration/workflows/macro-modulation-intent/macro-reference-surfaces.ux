@@ -1,0 +1,25 @@
+# UX workflow: capture current Macro surfaces for macro modulation UX planning.
+# Purpose: provides real LVGL 320x240 references before designing motion recorder
+# access, feedback, and edit overlays. This workflow does not exercise future
+# modulation features.
+
+0 scenario macro
+50 capture screen macro_ready
+
+# Performance value feedback.
+150 encoder MACRO_1 0.75
+250 capture screen macro_value_changed
+
+# Macro edit overlay, currently Channel / CC.
+350 button MACRO_1 down
+1400 tick
+1450 capture screen macro_edit_open
+1500 button MACRO_1 up
+
+# Existing row edit feedback.
+1600 encoder NAV 1
+1700 encoder OPT 0.50
+1800 capture screen macro_edit_adjusted
+
+1900 tap LEFT_TOP 60
+2100 capture screen macro_edit_closed

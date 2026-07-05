@@ -68,6 +68,17 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_*/test_main.cpp")
 
     set(MS_CORE_NATIVE_TEST_TARGETS)
+    set(MS_CORE_PERSISTENCE_IO_TESTS
+        test_CoreStatePersistence
+        test_FileSystemRpc
+        test_ProductFileService
+        test_ProjectFileStore
+        test_ProjectHandler
+        test_ProjectSessionAutosaveService
+        test_ProjectSessionRestoreService
+        test_ProjectSessionStore
+        test_SequencerStepEditHandler
+        test_StepPresetFileStore)
 
     foreach(test_source IN LISTS MS_CORE_NATIVE_TESTS)
         get_filename_component(test_dir "${test_source}" DIRECTORY)
@@ -83,6 +94,13 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
 
         add_test(NAME "${test_name}" COMMAND "${test_name}")
         set_tests_properties("${test_name}" PROPERTIES LABELS core)
+        if(test_name IN_LIST MS_CORE_PERSISTENCE_IO_TESTS)
+            set_tests_properties("${test_name}" PROPERTIES
+                RESOURCE_LOCK ms_core_persistence_io)
+        endif()
+        if(test_name STREQUAL test_CoreStatePersistence)
+            set_tests_properties("${test_name}" PROPERTIES RUN_SERIAL TRUE)
+        endif()
     endforeach()
 
     if(PROJECT_IS_TOP_LEVEL)

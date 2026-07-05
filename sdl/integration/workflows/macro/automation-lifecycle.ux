@@ -1,0 +1,46 @@
+# UX workflow: manage the lifecycle of a macro automation lane.
+# Purpose: validates access through Macro Edit > Automation and bottom actions:
+# copy, remove, paste, clear.
+
+0 scenario macro-automation-clean
+50 capture screen macro_ready
+
+# Record an automation on Macro 1.
+150 button MACRO_1 down
+500 encoder MACRO_1 1.00
+1100 button MACRO_1 up
+1250 capture screen automation_recorded
+
+# Open Macro Edit for Macro 1.
+1400 button MACRO_1 down
+2500 tick
+2550 capture screen macro_edit_open
+2600 button MACRO_1 up
+
+# Focus Automation row and enter the Automation lifecycle overlay.
+2800 encoder NAV 1
+2950 encoder NAV 1
+3100 tap NAV 60
+3350 capture screen automation_overlay_active
+
+# State row is editable: low value enters Manual, high value restores Auto
+# without clearing the underlying automation lane.
+3500 encoder OPT 0.00
+3650 capture screen automation_state_manual
+3800 encoder OPT 1.00
+3950 capture screen automation_state_auto
+
+# Copy automation, remove it, then paste it back from the clipboard.
+4100 tap BOTTOM_RIGHT 60
+4300 button BOTTOM_LEFT down
+5400 tick
+5500 button BOTTOM_LEFT up
+5750 capture screen automation_removed
+5950 button BOTTOM_RIGHT down
+7050 tick
+7150 button BOTTOM_RIGHT up
+7400 capture screen automation_pasted
+
+# Clear leaves the macro with no active automation.
+7600 tap BOTTOM_LEFT 60
+7850 capture screen automation_cleared

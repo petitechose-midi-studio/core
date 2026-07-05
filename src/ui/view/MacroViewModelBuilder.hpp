@@ -11,10 +11,9 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
-#include "ui/macro/MacroBottomControls.hpp"
 #include "ui/macro/MacroHeaderBar.hpp"
-#include "ui/macro/MacroPropertyStrip.hpp"
 #include "ui/common/TrackNavigationStrip.hpp"
+#include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
 namespace core::ui {
@@ -43,6 +42,12 @@ struct MacroWidgetProps {
     float value = 0.5f;
     uint8_t channel = 0;
     uint8_t cc = 0;
+    bool automationActive = false;
+    bool automationRecording = false;
+    bool automationManualOverride = false;
+    bool active = true;
+    bool addSlot = false;
+    bool focused = false;
 };
 
 struct MacroViewFrameState {
@@ -50,8 +55,9 @@ struct MacroViewFrameState {
 };
 
 MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source);
-MacroBottomControlsProps buildMacroBottomControlsProps(const MacroViewModelSource& source);
-MacroPropertyStripProps buildMacroPropertyStripProps(const MacroViewModelSource& source);
+StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
+    const MacroViewModelSource& source
+);
 ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source);
 ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSource& source);
 MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source);

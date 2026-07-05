@@ -32,6 +32,8 @@ struct MacroHeaderBarProps {
     bool selectingTrack = false;
     bool previewPageAddSlot = false;
     bool previewTrackAddSlot = false;
+    bool automationRecording = false;
+    uint8_t automationRecordingMacro = 0;
     std::array<uint8_t, ACTIVITY_COUNT> pageOutputActivity{};
 };
 
