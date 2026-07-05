@@ -230,7 +230,7 @@ void test_stale_sequencer_fixture_is_partial() {
     std::cout << "[PASS] test_stale_sequencer_fixture_is_partial\n";
 }
 
-void test_previous_current_fixture_is_partial_after_macro_payload_change() {
+void test_rewritten_fixture_is_current_after_macro_payload_change() {
     const auto bytes = readFixture(
         "test/fixtures/projects/v1_1/current-from-stale-sequencer.mspj"
     );
@@ -242,16 +242,13 @@ void test_previous_current_fixture_is_partial_after_macro_payload_change() {
         &report
     );
 
-    assert(inspected.status == migration::Status::PARTIAL);
-    assert(inspected.loadStatus == project_file::LoadStatus::PARTIAL);
-    assert(!inspected.overwriteSafe);
-    assert(!report.ok());
-    assert(report.hasUnknownUnsupportedData);
-    assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
-    assert(reportHas(report, project_file::LoadCode::CHUNK_PAYLOAD_INVALID));
-    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
+    assert(inspected.status == migration::Status::CURRENT);
+    assert(inspected.loadStatus == project_file::LoadStatus::OK);
+    assert(inspected.overwriteSafe);
+    assert(report.ok());
+    assert(!report.hasUnknownUnsupportedData);
 
-    std::cout << "[PASS] test_previous_current_fixture_is_partial_after_macro_payload_change\n";
+    std::cout << "[PASS] test_rewritten_fixture_is_current_after_macro_payload_change\n";
 }
 
 }  // namespace
@@ -264,7 +261,7 @@ int main() {
     test_inspects_current_project();
     test_stale_sequencer_project_is_partial_and_not_rewritten_by_default();
     test_stale_sequencer_fixture_is_partial();
-    test_previous_current_fixture_is_partial_after_macro_payload_change();
+    test_rewritten_fixture_is_current_after_macro_payload_change();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
