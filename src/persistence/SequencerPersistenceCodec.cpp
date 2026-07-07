@@ -4,13 +4,18 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/PersistenceBinaryCodec.hpp"
+
 namespace core::persistence::sequencer_codec {
 
 namespace {
 
+namespace binary = core::persistence::binary_codec;
+namespace sequencer = core::state::sequencer;
+
 uint8_t sanitizeLength(uint8_t length) {
-    if (length == 0 || length > state::sequencer::SequencerPatternState::MAX_STEPS) {
-        return state::sequencer::SequencerPatternState::DEFAULT_LENGTH;
+    if (length == 0 || length > sequencer::SequencerPatternState::MAX_STEPS) {
+        return sequencer::SequencerPatternState::DEFAULT_LENGTH;
     }
     return length;
 }
@@ -21,14 +26,14 @@ oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length) {
 
 uint8_t sanitizeStepsPerBeat(uint8_t spb) {
     if (spb == 0) {
-        return state::sequencer::SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
+        return sequencer::SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
     }
     return spb;
 }
 
 uint8_t sanitizeMidiChannel(uint8_t channel) {
     return (channel > 15U)
-               ? state::sequencer::SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED
+               ? sequencer::SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED
                : channel;
 }
 
@@ -37,11 +42,11 @@ uint8_t sanitizeMidi7(uint8_t value) {
 }
 
 uint16_t sanitizeGate(uint16_t value) {
-    return state::sequencer::SequencerPatternState::clampGatePercent(value);
+    return sequencer::SequencerPatternState::clampGatePercent(value);
 }
 
 uint8_t sanitizeProbability(uint8_t value) {
-    return state::sequencer::SequencerPatternState::clampProbability(value);
+    return sequencer::SequencerPatternState::clampProbability(value);
 }
 
 oc::note::sequencer::StepSequencerVariationRanges sanitizeVariationRanges(
@@ -49,17 +54,6 @@ oc::note::sequencer::StepSequencerVariationRanges sanitizeVariationRanges(
 ) {
     ranges.clamp();
     return ranges;
-}
-
-oc::note::sequencer::StepSequencerVariationRanges payloadVariationRanges(
-    const PatternPayload& payload
-) {
-    return sanitizeVariationRanges({
-        .pitchSemitones = payload.variationPitchSemitones,
-        .velocity = payload.variationVelocity,
-        .gatePercent = payload.variationGatePercent,
-        .nudge = payload.variationNudge,
-    });
 }
 
 oc::note::sequencer::StepSequencerScaleSettings sanitizeScaleSettings(
@@ -79,11 +73,11 @@ oc::note::sequencer::StepSequencerScaleSettings payloadScaleSettings(uint8_t roo
     });
 }
 
-state::sequencer::StepProperty sanitizeStepProperty(uint8_t value) {
-    if (value > static_cast<uint8_t>(state::sequencer::StepProperty::PROBABILITY)) {
-        return state::sequencer::StepProperty::NOTE;
+sequencer::StepProperty sanitizeStepProperty(uint8_t value) {
+    if (value > static_cast<uint8_t>(sequencer::StepProperty::PROBABILITY)) {
+        return sequencer::StepProperty::NOTE;
     }
-    return static_cast<state::sequencer::StepProperty>(value);
+    return static_cast<sequencer::StepProperty>(value);
 }
 
 uint8_t sanitizeFocusedStep(uint8_t focused, uint8_t length) {
@@ -91,183 +85,388 @@ uint8_t sanitizeFocusedStep(uint8_t focused, uint8_t length) {
     return (focused >= length) ? static_cast<uint8_t>(length - 1) : focused;
 }
 
-}  // namespace
-
-FLASHMEM void fillPatternPayload(const state::sequencer::SequencerPatternState& source, PatternPayload& out) {
+FLASHMEM bool writePattern(binary::Writer& writer,
+                           const sequencer::SequencerPatternState& source) {
     const uint8_t length = sanitizeLength(source.length.get());
-    out.length = length;
-    out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
-    out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
-    out.pitchEditMode = static_cast<uint8_t>(source.pitchEditMode);
     const auto variationRanges = sanitizeVariationRanges(source.variationRanges);
-    out.variationPitchSemitones = variationRanges.pitchSemitones;
-    out.variationVelocity = variationRanges.velocity;
-    out.variationGatePercent = variationRanges.gatePercent;
-    out.variationNudge = variationRanges.nudge;
-    out.swingOffsetPercent =
-        state::sequencer::SequencerPatternState::clampPatternSwingOffsetPercent(
-            source.swingOffsetPercent.get()
-        );
-    out.patternNudgePercent =
-        state::sequencer::SequencerPatternState::clampPatternNudgePercent(
-            source.patternNudgePercent.get()
-        );
     const auto scaleOverride = sanitizeScaleSettings(source.scaleOverride);
-    out.scalePolicy = static_cast<uint8_t>(source.scalePolicy);
-    out.scaleRoot = scaleOverride.root;
-    out.scaleType = static_cast<uint8_t>(scaleOverride.type);
-    out.scaleConstraintMode = static_cast<uint8_t>(scaleOverride.mode);
     const auto mask = source.enabledMask.get() & lengthMask(length);
-    out.enabledMaskLow = mask.low;
-    out.enabledMaskHigh = mask.high;
+
+    if (!writer.writeU8(length) ||
+        !writer.writeU8(sanitizeStepsPerBeat(source.stepsPerBeat.get())) ||
+        !writer.writeU8(sanitizeMidiChannel(source.midiChannel.get())) ||
+        !writer.writeU8(static_cast<uint8_t>(source.pitchEditMode)) ||
+        !writer.writeU8(variationRanges.pitchSemitones) ||
+        !writer.writeU8(variationRanges.velocity) ||
+        !writer.writeU8(variationRanges.gatePercent) ||
+        !writer.writeU8(variationRanges.nudge) ||
+        !writer.writeI8(sequencer::SequencerPatternState::clampPatternSwingOffsetPercent(
+            source.swingOffsetPercent.get()
+        )) ||
+        !writer.writeI8(sequencer::SequencerPatternState::clampPatternNudgePercent(
+            source.patternNudgePercent.get()
+        )) ||
+        !writer.writeU8(static_cast<uint8_t>(source.scalePolicy)) ||
+        !writer.writeU8(scaleOverride.root) ||
+        !writer.writeU8(static_cast<uint8_t>(scaleOverride.type)) ||
+        !writer.writeU8(static_cast<uint8_t>(scaleOverride.mode)) ||
+        !writer.writeU64(mask.low) ||
+        !writer.writeU64(mask.high)) {
+        return false;
+    }
 
     for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
-        out.note[i] = sanitizeMidi7(source.note[i]);
-        out.velocity[i] = sanitizeMidi7(source.velocity[i]);
-        out.gate[i] = sanitizeGate(source.gate[i]);
-        out.nudge[i] = source.nudge[i];
-        out.probability[i] = sanitizeProbability(source.probability[i]);
+        if (!writer.writeU8(sanitizeMidi7(source.note[i]))) return false;
     }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!writer.writeU8(sanitizeMidi7(source.velocity[i]))) return false;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!writer.writeU16(sanitizeGate(source.gate[i]))) return false;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!writer.writeI8(source.nudge[i])) return false;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!writer.writeU8(sanitizeProbability(source.probability[i]))) return false;
+    }
+    return true;
 }
 
-FLASHMEM void applyPatternPayload(const PatternPayload& payload, state::sequencer::SequencerPatternState& target) {
-    const uint8_t length = sanitizeLength(payload.length);
+FLASHMEM bool readPattern(binary::Reader& reader,
+                          sequencer::SequencerPatternState& target) {
+    uint8_t lengthRaw = 0;
+    uint8_t stepsPerBeat = 0;
+    uint8_t midiChannel = 0;
+    uint8_t pitchEditMode = 0;
+    uint8_t variationPitch = 0;
+    uint8_t variationVelocity = 0;
+    uint8_t variationGate = 0;
+    uint8_t variationNudge = 0;
+    int8_t swingOffset = 0;
+    int8_t patternNudge = 0;
+    uint8_t scalePolicy = 0;
+    uint8_t scaleRoot = 0;
+    uint8_t scaleType = 0;
+    uint8_t scaleConstraintMode = 0;
+    uint64_t enabledMaskLow = 0;
+    uint64_t enabledMaskHigh = 0;
+
+    if (!reader.readU8(lengthRaw) ||
+        !reader.readU8(stepsPerBeat) ||
+        !reader.readU8(midiChannel) ||
+        !reader.readU8(pitchEditMode) ||
+        !reader.readU8(variationPitch) ||
+        !reader.readU8(variationVelocity) ||
+        !reader.readU8(variationGate) ||
+        !reader.readU8(variationNudge) ||
+        !reader.readI8(swingOffset) ||
+        !reader.readI8(patternNudge) ||
+        !reader.readU8(scalePolicy) ||
+        !reader.readU8(scaleRoot) ||
+        !reader.readU8(scaleType) ||
+        !reader.readU8(scaleConstraintMode) ||
+        !reader.readU64(enabledMaskLow) ||
+        !reader.readU64(enabledMaskHigh)) {
+        return false;
+    }
+
+    const uint8_t length = sanitizeLength(lengthRaw);
     target.length.set(length);
-    target.stepsPerBeat.set(sanitizeStepsPerBeat(payload.stepsPerBeat));
-    target.midiChannel.set(sanitizeMidiChannel(payload.midiChannel));
-    target.setPitchEditMode(state::sequencer::sanitizePitchEditMode(payload.pitchEditMode));
-    target.setPatternVariationRanges(payloadVariationRanges(payload));
-    target.setPatternSwingOffsetPercent(payload.swingOffsetPercent);
-    target.setPatternNudgePercent(payload.patternNudgePercent);
-    target.setPatternScalePolicy(state::sequencer::sanitizePatternScalePolicy(payload.scalePolicy));
+    target.stepsPerBeat.set(sanitizeStepsPerBeat(stepsPerBeat));
+    target.midiChannel.set(sanitizeMidiChannel(midiChannel));
+    target.setPitchEditMode(sequencer::sanitizePitchEditMode(pitchEditMode));
+    target.setPatternVariationRanges(sanitizeVariationRanges({
+        .pitchSemitones = variationPitch,
+        .velocity = variationVelocity,
+        .gatePercent = variationGate,
+        .nudge = variationNudge,
+    }));
+    target.setPatternSwingOffsetPercent(swingOffset);
+    target.setPatternNudgePercent(patternNudge);
+    target.setPatternScalePolicy(sequencer::sanitizePatternScalePolicy(scalePolicy));
     target.setPatternScaleOverride(payloadScaleSettings(
-        payload.scaleRoot,
-        payload.scaleType,
-        payload.scaleConstraintMode
+        scaleRoot,
+        scaleType,
+        scaleConstraintMode
     ));
     target.enabledMask.set(
-        oc::note::sequencer::StepBitMask128{payload.enabledMaskLow, payload.enabledMaskHigh} &
+        oc::note::sequencer::StepBitMask128{enabledMaskLow, enabledMaskHigh} &
         lengthMask(length)
     );
 
     for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
-        target.note[i] = sanitizeMidi7(payload.note[i]);
-        target.velocity[i] = sanitizeMidi7(payload.velocity[i]);
-        target.gate[i] = sanitizeGate(payload.gate[i]);
-        target.nudge[i] = payload.nudge[i];
-        target.probability[i] = sanitizeProbability(payload.probability[i]);
+        uint8_t value = 0;
+        if (!reader.readU8(value)) return false;
+        target.note[i] = sanitizeMidi7(value);
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        uint8_t value = 0;
+        if (!reader.readU8(value)) return false;
+        target.velocity[i] = sanitizeMidi7(value);
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        uint16_t value = 0;
+        if (!reader.readU16(value)) return false;
+        target.gate[i] = sanitizeGate(value);
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        int8_t value = 0;
+        if (!reader.readI8(value)) return false;
+        target.nudge[i] = value;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        uint8_t value = 0;
+        if (!reader.readU8(value)) return false;
+        target.probability[i] = sanitizeProbability(value);
     }
 
     target.bumpStepDataRevision();
+    return true;
 }
 
-FLASHMEM void fillProjectSequencerPayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                                          const state::sequencer::SequencerState& active,
-                                          ProjectSequencerPayload& out) {
-    const uint8_t activeTrack =
-        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
-    const auto projectScale = trackBank.projectScaleSettings();
-    out.activeTrack = activeTrack;
-    out.enabledMask = trackBank.currentEnabledMask();
-    out.mutedMask = trackBank.currentMutedMask();
-    out.projectScaleRoot = projectScale.root;
-    out.projectScaleType = static_cast<uint8_t>(projectScale.type);
-    out.projectScaleConstraintMode = static_cast<uint8_t>(projectScale.mode);
+FLASHMEM bool readPatternAt(const uint8_t* data,
+                            uint16_t size,
+                            uint16_t offset,
+                            sequencer::SequencerPatternState& target) {
+    if (data == nullptr || offset > size || PATTERN_PAYLOAD_SIZE > size - offset) {
+        return false;
+    }
+    return applyPatternPayload(data + offset, PATTERN_PAYLOAD_SIZE, target);
+}
 
-    for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+}  // namespace
+
+FLASHMEM bool fillPatternPayload(const sequencer::SequencerPatternState& source,
+                                 uint8_t* out,
+                                 uint16_t capacity) {
+    if (capacity != PATTERN_PAYLOAD_SIZE) return false;
+    binary::Writer writer(out, capacity);
+    return writePattern(writer, source) &&
+           writer.ok() &&
+           writer.offset() == PATTERN_PAYLOAD_SIZE;
+}
+
+FLASHMEM bool applyPatternPayload(const uint8_t* data,
+                                  uint16_t size,
+                                  sequencer::SequencerPatternState& target) {
+    if (size != PATTERN_PAYLOAD_SIZE) return false;
+    binary::Reader reader(data, size);
+    return readPattern(reader, target) &&
+           reader.ok() &&
+           reader.offset() == PATTERN_PAYLOAD_SIZE;
+}
+
+FLASHMEM bool fillProjectSequencerPayload(const sequencer::SequencerTrackBankState& trackBank,
+                                          const sequencer::SequencerState& active,
+                                          uint8_t* out,
+                                          uint16_t capacity) {
+    if (capacity != PROJECT_SEQUENCER_PAYLOAD_SIZE) return false;
+
+    binary::Writer writer(out, capacity);
+    const uint8_t activeTrack =
+        sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
+    const auto projectScale = trackBank.projectScaleSettings();
+    if (!writer.writeU8(activeTrack) ||
+        !writer.writeU16(trackBank.currentEnabledMask()) ||
+        !writer.writeU16(trackBank.currentMutedMask()) ||
+        !writer.writeU8(projectScale.root) ||
+        !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
+        !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
+        !writer.writeU8(0)) {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
-        fillPatternPayload(source, out.tracks[i].pattern);
+        if (!writePattern(writer, source)) return false;
         if (i == activeTrack) {
-            out.tracks[i].focusedStep =
-                sanitizeFocusedStep(active.focusedStep.get(), out.tracks[i].pattern.length);
-            out.tracks[i].page = active.page.get();
-            out.tracks[i].activeStepProperty = static_cast<uint8_t>(active.activeStepProperty.get());
+            if (!writer.writeU8(active.page.get()) ||
+                !writer.writeU8(sanitizeFocusedStep(
+                    active.focusedStep.get(),
+                    sanitizeLength(source.length.get())
+                )) ||
+                !writer.writeU8(static_cast<uint8_t>(active.activeStepProperty.get())) ||
+                !writer.writeU8(0)) {
+                return false;
+            }
+        } else if (!writer.writeZeroes(4)) {
+            return false;
         }
     }
+
+    return writer.ok() && writer.offset() == PROJECT_SEQUENCER_PAYLOAD_SIZE;
 }
 
-FLASHMEM void applyProjectSequencerPayload(const ProjectSequencerPayload& payload,
-                                           state::sequencer::SequencerTrackBankState& trackBank,
-                                           state::sequencer::SequencerState& active) {
-    const uint16_t enabledMask = payload.enabledMask;
-    const uint16_t mutedMask = payload.mutedMask;
+FLASHMEM bool applyProjectSequencerPayload(const uint8_t* data,
+                                           uint16_t size,
+                                           sequencer::SequencerTrackBankState& trackBank,
+                                           sequencer::SequencerState& active) {
+    if (size != PROJECT_SEQUENCER_PAYLOAD_SIZE) return false;
+
+    binary::Reader reader(data, size);
+    uint8_t activeTrackRaw = 0;
+    uint16_t enabledMask = 0;
+    uint16_t mutedMask = 0;
+    uint8_t projectScaleRoot = 0;
+    uint8_t projectScaleType = 0;
+    uint8_t projectScaleConstraintMode = 0;
+    uint8_t reserved = 0;
+    if (!reader.readU8(activeTrackRaw) ||
+        !reader.readU16(enabledMask) ||
+        !reader.readU16(mutedMask) ||
+        !reader.readU8(projectScaleRoot) ||
+        !reader.readU8(projectScaleType) ||
+        !reader.readU8(projectScaleConstraintMode) ||
+        !reader.readU8(reserved)) {
+        return false;
+    }
+    (void)reserved;
+
     const uint8_t requestedActiveTrack =
-        state::sequencer::SequencerTrackBankState::clampTrackIndex(payload.activeTrack);
+        sequencer::SequencerTrackBankState::clampTrackIndex(activeTrackRaw);
     trackBank.reset();
     trackBank.syncSharedTrackState(enabledMask, requestedActiveTrack);
     trackBank.setMutedMask(mutedMask);
-    const uint8_t activeTrack = trackBank.activeTrackIndex();
     trackBank.setProjectScaleSettings(payloadScaleSettings(
-        payload.projectScaleRoot,
-        payload.projectScaleType,
-        payload.projectScaleConstraintMode
+        projectScaleRoot,
+        projectScaleType,
+        projectScaleConstraintMode
     ));
 
-    for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        applyPatternPayload(payload.tracks[i].pattern, trackBank.track(i));
-    }
+    const uint8_t activeTrack = trackBank.activeTrackIndex();
+    uint16_t activePatternOffset = 0;
+    uint8_t activePage = 0;
+    uint8_t activeFocusedStep = 0;
+    uint8_t activeStepProperty = static_cast<uint8_t>(sequencer::StepProperty::NOTE);
 
-    applyPatternPayload(payload.tracks[activeTrack].pattern, active.pattern);
-    const uint8_t focused =
-        sanitizeFocusedStep(payload.tracks[activeTrack].focusedStep, active.pattern.length.get());
-    active.focusedStep.set(focused);
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        const uint16_t patternOffset = static_cast<uint16_t>(reader.offset());
+        if (!readPattern(reader, trackBank.track(i))) return false;
+
+        uint8_t page = 0;
+        uint8_t focused = 0;
+        uint8_t stepProperty = 0;
+        uint8_t trackReserved = 0;
+        if (!reader.readU8(page) ||
+            !reader.readU8(focused) ||
+            !reader.readU8(stepProperty) ||
+            !reader.readU8(trackReserved)) {
+            return false;
+        }
+        (void)trackReserved;
+
+        if (i == activeTrack) {
+            activePatternOffset = patternOffset;
+            activePage = page;
+            activeFocusedStep = focused;
+            activeStepProperty = stepProperty;
+        }
+    }
+    if (!reader.ok() || reader.offset() != PROJECT_SEQUENCER_PAYLOAD_SIZE) return false;
+    if (!readPatternAt(data, size, activePatternOffset, active.pattern)) return false;
+
+    active.focusedStep.set(
+        sanitizeFocusedStep(activeFocusedStep, active.pattern.length.get())
+    );
     const uint8_t pageCount = active.activePageCount();
     const uint8_t safePage =
-        (pageCount == 0) ? 0 : static_cast<uint8_t>(payload.tracks[activeTrack].page % pageCount);
+        (pageCount == 0) ? 0 : static_cast<uint8_t>(activePage % pageCount);
     active.page.set(safePage);
-    active.activeStepProperty.set(
-        sanitizeStepProperty(payload.tracks[activeTrack].activeStepProperty)
-    );
+    active.activeStepProperty.set(sanitizeStepProperty(activeStepProperty));
+    return true;
 }
 
-FLASHMEM void fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                             const state::sequencer::SequencerState& active,
-                             SetPayload& out) {
+FLASHMEM bool fillSetPayload(const sequencer::SequencerTrackBankState& trackBank,
+                             const sequencer::SequencerState& active,
+                             uint8_t* out,
+                             uint16_t capacity) {
+    if (capacity != SET_PAYLOAD_SIZE) return false;
+
+    binary::Writer writer(out, capacity);
     const uint8_t activeTrack =
-        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
-    out.trackCount = state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-    out.activeTrack = activeTrack;
-    out.enabledMask = trackBank.currentEnabledMask();
-    out.mutedMask = trackBank.currentMutedMask();
+        sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
     const auto projectScale = trackBank.projectScaleSettings();
-    out.projectScaleRoot = projectScale.root;
-    out.projectScaleType = static_cast<uint8_t>(projectScale.type);
-    out.projectScaleConstraintMode = static_cast<uint8_t>(projectScale.mode);
-
-    for (uint8_t i = 0; i < state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
-        fillPatternPayload(source, out.tracks[i]);
+    if (!writer.writeU8(sequencer::SequencerTrackBankState::TRACK_COUNT) ||
+        !writer.writeU8(activeTrack) ||
+        !writer.writeU16(trackBank.currentEnabledMask()) ||
+        !writer.writeU16(trackBank.currentMutedMask()) ||
+        !writer.writeU8(projectScale.root) ||
+        !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
+        !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
+        !writer.writeU8(0)) {
+        return false;
     }
+
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
+        if (!writePattern(writer, source)) return false;
+    }
+
+    return writer.ok() && writer.offset() == SET_PAYLOAD_SIZE;
 }
 
-FLASHMEM void applySetPayload(const SetPayload& payload,
-                              state::sequencer::SequencerTrackBankState& trackBank,
-                              state::sequencer::SequencerState& active) {
-    trackBank.reset();
-    trackBank.syncSharedTrackState(payload.enabledMask, 0);
-    trackBank.setMutedMask(payload.mutedMask);
-    trackBank.setProjectScaleSettings(payloadScaleSettings(
-        payload.projectScaleRoot,
-        payload.projectScaleType,
-        payload.projectScaleConstraintMode
-    ));
+FLASHMEM bool applySetPayload(const uint8_t* data,
+                              uint16_t size,
+                              sequencer::SequencerTrackBankState& trackBank,
+                              sequencer::SequencerState& active) {
+    if (size != SET_PAYLOAD_SIZE) return false;
+
+    binary::Reader reader(data, size);
+    uint8_t trackCountRaw = 0;
+    uint8_t activeTrackRaw = 0;
+    uint16_t enabledMask = 0;
+    uint16_t mutedMask = 0;
+    uint8_t projectScaleRoot = 0;
+    uint8_t projectScaleType = 0;
+    uint8_t projectScaleConstraintMode = 0;
+    uint8_t reserved = 0;
+    if (!reader.readU8(trackCountRaw) ||
+        !reader.readU8(activeTrackRaw) ||
+        !reader.readU16(enabledMask) ||
+        !reader.readU16(mutedMask) ||
+        !reader.readU8(projectScaleRoot) ||
+        !reader.readU8(projectScaleType) ||
+        !reader.readU8(projectScaleConstraintMode) ||
+        !reader.readU8(reserved)) {
+        return false;
+    }
+    (void)reserved;
 
     const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
-        payload.trackCount == 0 ? 1 : payload.trackCount,
-        state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        trackCountRaw == 0 ? 1 : trackCountRaw,
+        sequencer::SequencerTrackBankState::TRACK_COUNT
+    ));
+    const uint8_t activeTrack =
+        std::min<uint8_t>(activeTrackRaw, static_cast<uint8_t>(trackCount - 1));
+
+    trackBank.reset();
+    trackBank.syncSharedTrackState(enabledMask, 0);
+    trackBank.setMutedMask(mutedMask);
+    trackBank.setProjectScaleSettings(payloadScaleSettings(
+        projectScaleRoot,
+        projectScaleType,
+        projectScaleConstraintMode
     ));
 
-    for (uint8_t i = 0; i < trackCount; ++i) {
-        applyPatternPayload(payload.tracks[i], trackBank.track(i));
+    uint16_t activePatternOffset = 0;
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        const uint16_t patternOffset = static_cast<uint16_t>(reader.offset());
+        if (i < trackCount) {
+            if (!readPattern(reader, trackBank.track(i))) return false;
+            if (i == activeTrack) activePatternOffset = patternOffset;
+        } else if (!reader.skip(PATTERN_PAYLOAD_SIZE)) {
+            return false;
+        }
     }
+    if (!reader.ok() || reader.offset() != SET_PAYLOAD_SIZE) return false;
+    if (!readPatternAt(data, size, activePatternOffset, active.pattern)) return false;
 
-    const uint8_t activeTrack =
-        std::min<uint8_t>(payload.activeTrack, static_cast<uint8_t>(trackCount - 1));
-    applyPatternPayload(payload.tracks[activeTrack], active.pattern);
     active.focusedStep.set(0);
     active.page.set(0);
-    active.activeStepProperty.set(state::sequencer::StepProperty::NOTE);
+    active.activeStepProperty.set(sequencer::StepProperty::NOTE);
     trackBank.syncSharedTrackState(trackBank.currentEnabledMask(), activeTrack);
+    return true;
 }
 
 }  // namespace core::persistence::sequencer_codec

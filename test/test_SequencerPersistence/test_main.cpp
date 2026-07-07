@@ -520,7 +520,7 @@ void test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern(
     const uint16_t firstGraphSectionOffset = static_cast<uint16_t>(
         envelopeHeaderSize +
         sectionHeaderSize +
-        sizeof(core::persistence::sequencer_codec::PatternPayload)
+        core::persistence::sequencer_codec::PATTERN_PAYLOAD_SIZE
     );
     assert(static_cast<uint16_t>(firstGraphSectionOffset + 5) < encoded.size);
 

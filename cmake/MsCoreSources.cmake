@@ -35,6 +35,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectChunkMigration.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectFileContainer.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectMigration.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/MacroTrackBankPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectSnapshotPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectStatePersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerPersistenceCodec.cpp"

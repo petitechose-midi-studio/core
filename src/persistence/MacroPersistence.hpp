@@ -5,6 +5,7 @@
 
 #include <oc/interface/IStorage.hpp>
 
+#include "persistence/MacroTrackBankPersistenceCodec.hpp"
 #include "persistence/PersistenceSlotFileStore.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
@@ -22,9 +23,8 @@ public:
 
     static constexpr uint32_t LIBRARY_MAGIC = 0x4D4C4942;    // "MLIB"
     static constexpr uint8_t LIBRARY_DATA_VERSION = 1;
-    static constexpr uint16_t LIBRARY_PAYLOAD_SIZE = static_cast<uint16_t>(
-        4U + sizeof(state::macro::MacroTrackData) * state::macro::TRACK_COUNT
-    );
+    static constexpr uint16_t LIBRARY_PAYLOAD_SIZE =
+        macro_track_codec::MACRO_TRACK_BANK_PAYLOAD_SIZE;
     static constexpr size_t LIBRARY_STORAGE_CAPACITY =
         PersistenceSlotFileStore::requiredCapacity(
             LIBRARY_SLOT_COUNT,

@@ -1,6 +1,7 @@
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
@@ -29,6 +30,8 @@ using oc::note::sequencer::StepSequencerStepNode;
 
 constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
 constexpr uint8_t kEnvelopeVersion = 3;
+constexpr uint16_t kEnvelopeHeaderSize = 12;
+constexpr uint16_t kSectionHeaderSize = 10;
 constexpr uint8_t kNoTrack = 0xFF;
 constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
 
@@ -47,12 +50,11 @@ enum class SectionId : uint16_t {
     GraphCycleSets = 18,
 };
 
-#pragma pack(push, 1)
 struct EnvelopeHeader {
     uint32_t magic = kEnvelopeMagic;
     uint8_t version = kEnvelopeVersion;
     uint8_t kind = 0;
-    uint16_t headerSize = sizeof(EnvelopeHeader);
+    uint16_t headerSize = kEnvelopeHeaderSize;
     uint16_t sectionCount = 0;
     uint16_t reserved0 = 0;
 };
@@ -66,19 +68,23 @@ struct SectionHeader {
     uint16_t byteSize = 0;
 };
 
-#pragma pack(pop)
-
-static_assert(sizeof(EnvelopeHeader) == 12, "Unexpected EnvelopeHeader size");
-static_assert(sizeof(SectionHeader) == 10, "Unexpected SectionHeader size");
-
 using SequenceRecord = core::state::sequencer::SequencerGraphSequenceRecord;
 using StepNodeRecord = core::state::sequencer::SequencerGraphStepNodeRecord;
 using CycleSetRecord = core::state::sequencer::SequencerGraphCycleSetRecord;
 
 struct GraphRecordScratch {
-    std::array<SequenceRecord, StepSequencerGraphLimits::MAX_SEQUENCES> sequences{};
-    std::array<StepNodeRecord, StepSequencerGraphLimits::MAX_STEP_NODES> nodes{};
-    std::array<CycleSetRecord, StepSequencerGraphLimits::MAX_CYCLE_SETS> cycleSets{};
+    std::array<
+        uint8_t,
+        StepSequencerGraphLimits::MAX_SEQUENCES *
+            state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE> sequences{};
+    std::array<
+        uint8_t,
+        StepSequencerGraphLimits::MAX_STEP_NODES *
+            state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE> nodes{};
+    std::array<
+        uint8_t,
+        StepSequencerGraphLimits::MAX_CYCLE_SETS *
+            state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE> cycleSets{};
 };
 
 struct SectionView {
@@ -98,12 +104,16 @@ class EnvelopeWriter {
 public:
     EnvelopeWriter(uint8_t* out, uint16_t capacity, EnvelopeKind kind)
         : out_(out), capacity_(capacity) {
-        if (out_ == nullptr || capacity_ < sizeof(EnvelopeHeader)) {
+        if (out_ == nullptr || capacity_ < kEnvelopeHeaderSize) {
+            ok_ = false;
             return;
         }
-        EnvelopeHeader header{};
-        header.kind = static_cast<uint8_t>(kind);
-        appendRaw_(&header, sizeof(header));
+        appendU32_(kEnvelopeMagic);
+        appendU8_(kEnvelopeVersion);
+        appendU8_(static_cast<uint8_t>(kind));
+        appendU16_(kEnvelopeHeaderSize);
+        appendU16_(0);
+        appendU16_(0);
     }
 
     bool ok() const { return ok_; }
@@ -121,29 +131,65 @@ public:
             return false;
         }
 
-        SectionHeader header{};
-        header.id = static_cast<uint16_t>(id);
-        header.track = track;
-        header.recordSize = recordSize;
-        header.count = count;
-        header.byteSize = byteSize;
-        if (!appendRaw_(&header, sizeof(header))) return false;
+        if (!appendU16_(static_cast<uint16_t>(id)) ||
+            !appendU8_(track) ||
+            !appendU8_(0) ||
+            !appendU16_(recordSize) ||
+            !appendU16_(count) ||
+            !appendU16_(byteSize)) {
+            return false;
+        }
         if (byteSize > 0 && !appendRaw_(data, byteSize)) return false;
         ++sectionCount_;
         return true;
     }
 
     EnvelopeEncodeResult finish() {
-        if (!ok_ || out_ == nullptr || offset_ < sizeof(EnvelopeHeader)) {
+        if (!ok_ || out_ == nullptr || offset_ < kEnvelopeHeaderSize) {
             return {};
         }
 
-        auto* header = reinterpret_cast<EnvelopeHeader*>(out_);
-        header->sectionCount = sectionCount_;
+        writeU16At_(8, sectionCount_);
         return {.ok = true, .size = offset_};
     }
 
 private:
+    bool appendU8_(uint8_t value) {
+        return appendRaw_(&value, 1);
+    }
+
+    bool appendU16_(uint16_t value) {
+        const uint8_t bytes[2] = {
+            static_cast<uint8_t>(value & 0xFFU),
+            static_cast<uint8_t>((value >> 8U) & 0xFFU),
+        };
+        return appendRaw_(bytes, sizeof(bytes));
+    }
+
+    bool appendU32_(uint32_t value) {
+        const uint8_t bytes[4] = {
+            static_cast<uint8_t>(value & 0xFFU),
+            static_cast<uint8_t>((value >> 8U) & 0xFFU),
+            static_cast<uint8_t>((value >> 16U) & 0xFFU),
+            static_cast<uint8_t>((value >> 24U) & 0xFFU),
+        };
+        return appendRaw_(bytes, sizeof(bytes));
+    }
+
+    void writeU16At_(uint16_t offset, uint16_t value) {
+        if (out_ == nullptr || offset > capacity_) {
+            ok_ = false;
+            return;
+        }
+        const uint16_t remaining = static_cast<uint16_t>(capacity_ - offset);
+        if (remaining < 2U) {
+            ok_ = false;
+            return;
+        }
+        out_[offset] = static_cast<uint8_t>(value & 0xFFU);
+        out_[offset + 1U] = static_cast<uint8_t>((value >> 8U) & 0xFFU);
+    }
+
     bool appendRaw_(const void* data, uint16_t size) {
         if (data == nullptr || size == 0) return true;
         if (offset_ > capacity_ || size > static_cast<uint16_t>(capacity_ - offset_)) {
@@ -204,17 +250,25 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
 
     for (uint16_t i = 0; i < sequenceCount; ++i) {
         const auto& source = graph->sequences[i];
-        scratch->sequences[i] = SequenceRecord{
+        const SequenceRecord record{
             .kind = static_cast<uint8_t>(source.kind),
             .firstStepNode = source.firstStepNode,
             .length = source.length,
             .offset = source.offset,
         };
+        if (!state::sequencer::encodeSequencerGraphSequenceRecord(
+                record,
+                scratch->sequences.data() +
+                    i * state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
+                state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE
+            )) {
+            return false;
+        }
     }
 
     for (uint16_t i = 0; i < nodeCount; ++i) {
         const auto& source = graph->stepNodes[i];
-        scratch->nodes[i] = StepNodeRecord{
+        const StepNodeRecord record{
             .flags = source.flags,
             .noteOffset = source.noteOffset,
             .velocityOffset = source.velocityOffset,
@@ -235,54 +289,130 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
             .chordStrum = source.chordSpec.strum,
             .chordVelocityCurve = source.chordSpec.velocityCurve,
         };
+        if (!state::sequencer::encodeSequencerGraphStepNodeRecord(
+                record,
+                scratch->nodes.data() +
+                    i * state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
+                state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
+            )) {
+            return false;
+        }
     }
 
     for (uint16_t i = 0; i < cycleSetCount; ++i) {
         const auto& source = graph->cycleSets[i];
-        scratch->cycleSets[i] = CycleSetRecord{
+        const CycleSetRecord record{
             .firstStateNode = source.firstStateNode,
             .length = source.length,
             .offset = source.offset,
         };
+        if (!state::sequencer::encodeSequencerGraphCycleSetRecord(
+                record,
+                scratch->cycleSets.data() +
+                    i * state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
+                state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
+            )) {
+            return false;
+        }
     }
 
     return writer.addSection(SectionId::GraphSequences,
                              track,
-                             sizeof(SequenceRecord),
+                             state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
                              sequenceCount,
                              scratch->sequences.data(),
-                             static_cast<uint16_t>(sequenceCount * sizeof(SequenceRecord))) &&
+                             static_cast<uint16_t>(
+                                 sequenceCount *
+                                 state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE
+                             )) &&
            writer.addSection(SectionId::GraphStepNodes,
                              track,
-                             sizeof(StepNodeRecord),
+                             state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
                              nodeCount,
                              scratch->nodes.data(),
-                             static_cast<uint16_t>(nodeCount * sizeof(StepNodeRecord))) &&
+                             static_cast<uint16_t>(
+                                 nodeCount *
+                                 state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
+                             )) &&
            writer.addSection(SectionId::GraphCycleSets,
                              track,
-                             sizeof(CycleSetRecord),
+                             state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
                              cycleSetCount,
                              scratch->cycleSets.data(),
-                             static_cast<uint16_t>(cycleSetCount * sizeof(CycleSetRecord)));
+                             static_cast<uint16_t>(
+                                 cycleSetCount *
+                                 state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
+                             ));
+}
+
+FLASHMEM bool readU8(const uint8_t* data, uint16_t size, uint16_t& offset, uint8_t& out) {
+    if (data == nullptr || offset >= size) return false;
+    out = data[offset++];
+    return true;
+}
+
+FLASHMEM bool readU16(const uint8_t* data, uint16_t size, uint16_t& offset, uint16_t& out) {
+    uint8_t lo = 0;
+    uint8_t hi = 0;
+    if (!readU8(data, size, offset, lo) || !readU8(data, size, offset, hi)) return false;
+    out = static_cast<uint16_t>(lo | static_cast<uint16_t>(hi << 8U));
+    return true;
+}
+
+FLASHMEM bool readU32(const uint8_t* data, uint16_t size, uint16_t& offset, uint32_t& out) {
+    uint8_t b0 = 0;
+    uint8_t b1 = 0;
+    uint8_t b2 = 0;
+    uint8_t b3 = 0;
+    if (!readU8(data, size, offset, b0) ||
+        !readU8(data, size, offset, b1) ||
+        !readU8(data, size, offset, b2) ||
+        !readU8(data, size, offset, b3)) {
+        return false;
+    }
+    out = static_cast<uint32_t>(b0) |
+          (static_cast<uint32_t>(b1) << 8U) |
+          (static_cast<uint32_t>(b2) << 16U) |
+          (static_cast<uint32_t>(b3) << 24U);
+    return true;
+}
+
+FLASHMEM bool readEnvelopeHeader(const uint8_t* data,
+                                 uint16_t size,
+                                 EnvelopeHeader& out) {
+    uint16_t offset = 0;
+    return readU32(data, size, offset, out.magic) &&
+           readU8(data, size, offset, out.version) &&
+           readU8(data, size, offset, out.kind) &&
+           readU16(data, size, offset, out.headerSize) &&
+           readU16(data, size, offset, out.sectionCount) &&
+           readU16(data, size, offset, out.reserved0) &&
+           offset == kEnvelopeHeaderSize;
 }
 
 FLASHMEM bool isHeaderValid(const EnvelopeHeader& header, EnvelopeKind kind) {
     return header.magic == kEnvelopeMagic &&
            header.version == kEnvelopeVersion &&
            header.kind == static_cast<uint8_t>(kind) &&
-           header.headerSize == sizeof(EnvelopeHeader);
+           header.headerSize == kEnvelopeHeaderSize;
 }
 
 FLASHMEM bool readSectionHeader(const uint8_t* data,
                                 uint16_t size,
                                 uint16_t& offset,
-                                SectionHeader& out) {
+                                 SectionHeader& out) {
     if (data == nullptr) return false;
-    if (offset > size || sizeof(SectionHeader) > static_cast<uint16_t>(size - offset)) {
+    if (offset > size || kSectionHeaderSize > static_cast<uint16_t>(size - offset)) {
         return false;
     }
-    std::memcpy(&out, data + offset, sizeof(SectionHeader));
-    offset = static_cast<uint16_t>(offset + sizeof(SectionHeader));
+    if (!readU16(data, size, offset, out.id) ||
+        !readU8(data, size, offset, out.track) ||
+        !readU8(data, size, offset, out.reserved0) ||
+        !readU16(data, size, offset, out.recordSize) ||
+        !readU16(data, size, offset, out.count) ||
+        !readU16(data, size, offset, out.byteSize)) {
+        return false;
+    }
     if (out.byteSize > static_cast<uint16_t>(size - offset)) {
         return false;
     }
@@ -295,10 +425,10 @@ FLASHMEM bool findSections(const uint8_t* data,
                            SectionId flatId,
                            SectionView& flat,
                            std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>* graphViews) {
-    if (data == nullptr || size < sizeof(EnvelopeHeader)) return false;
+    if (data == nullptr || size < kEnvelopeHeaderSize) return false;
 
     EnvelopeHeader header{};
-    std::memcpy(&header, data, sizeof(header));
+    if (!readEnvelopeHeader(data, size, header)) return false;
     if (!isHeaderValid(header, kind)) return false;
 
     uint16_t offset = header.headerSize;
@@ -383,13 +513,22 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
         state::sequencer::clearGraph(target);
         return true;
     }
-    if (!sectionHasExactRecordShape(sections.sequences, sizeof(SequenceRecord)) ||
-        !sectionHasExactRecordShape(sections.stepNodes, sizeof(StepNodeRecord))) {
+    if (!sectionHasExactRecordShape(
+            sections.sequences,
+            state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE
+        ) ||
+        !sectionHasExactRecordShape(
+            sections.stepNodes,
+            state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
+        )) {
         state::sequencer::clearGraph(target);
         return true;
     }
     if (sections.cycleSets.data != nullptr &&
-        !sectionHasExactRecordShape(sections.cycleSets, sizeof(CycleSetRecord))) {
+        !sectionHasExactRecordShape(
+            sections.cycleSets,
+            state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
+        )) {
         state::sequencer::clearGraph(target);
         return true;
     }
@@ -414,9 +553,15 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
 
     for (uint16_t i = 0; i < sections.sequences.count; ++i) {
         SequenceRecord record{};
-        std::memcpy(&record,
-                    sections.sequences.data + i * sizeof(SequenceRecord),
-                    sizeof(record));
+        if (!state::sequencer::decodeSequencerGraphSequenceRecord(
+                sections.sequences.data +
+                    i * state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
+                state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
+                record
+            )) {
+            state::sequencer::clearGraph(target);
+            return true;
+        }
         graph->sequences[i] = StepSequencerSequence{
             .kind = static_cast<StepSequencerSequenceKind>(record.kind),
             .firstStepNode = record.firstStepNode,
@@ -427,9 +572,15 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
 
     for (uint16_t i = 0; i < sections.stepNodes.count; ++i) {
         StepNodeRecord record{};
-        std::memcpy(&record,
-                    sections.stepNodes.data + i * sizeof(StepNodeRecord),
-                    sizeof(record));
+        if (!state::sequencer::decodeSequencerGraphStepNodeRecord(
+                sections.stepNodes.data +
+                    i * state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
+                state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
+                record
+            )) {
+            state::sequencer::clearGraph(target);
+            return true;
+        }
         const StepSequencerChordSpec chordSpec = sanitizeChordSpec({
             .voiceCount = record.chordVoiceCount,
             .color = record.chordColor,
@@ -461,9 +612,15 @@ FLASHMEM bool applyGraphSections(const GraphSectionViews& sections,
 
     for (uint16_t i = 0; i < sections.cycleSets.count; ++i) {
         CycleSetRecord record{};
-        std::memcpy(&record,
-                    sections.cycleSets.data + i * sizeof(CycleSetRecord),
-                    sizeof(record));
+        if (!state::sequencer::decodeSequencerGraphCycleSetRecord(
+                sections.cycleSets.data +
+                    i * state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
+                state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
+                record
+            )) {
+            state::sequencer::clearGraph(target);
+            return true;
+        }
         graph->cycleSets[i] = StepSequencerCycleStateSet{
             .firstStateNode = record.firstStateNode,
             .length = record.length,
@@ -522,14 +679,16 @@ FLASHMEM EnvelopeEncodeResult fillPatternEnvelope(
     uint16_t capacity
 ) {
     EnvelopeWriter writer(out, capacity, EnvelopeKind::Pattern);
-    PatternPayload flat{};
-    fillPatternPayload(source, flat);
+    std::array<uint8_t, PATTERN_PAYLOAD_SIZE> flat{};
+    if (!fillPatternPayload(source, flat.data(), static_cast<uint16_t>(flat.size()))) {
+        return {};
+    }
     if (!writer.addSection(SectionId::FlatPattern,
                            kNoTrack,
-                           sizeof(PatternPayload),
+                           PATTERN_PAYLOAD_SIZE,
                            1,
-                           &flat,
-                           sizeof(flat))) {
+                           flat.data(),
+                           static_cast<uint16_t>(flat.size()))) {
         return {};
     }
     if (!addGraphSections(writer, state::sequencer::graphView(source), 0)) {
@@ -546,13 +705,11 @@ FLASHMEM bool applyPatternEnvelope(const uint8_t* data,
     if (!findSections(data, size, EnvelopeKind::Pattern, SectionId::FlatPattern, flat, &graphs)) {
         return false;
     }
-    if (!sectionHasExactRecordShape(flat, sizeof(PatternPayload)) || flat.count != 1) {
+    if (!sectionHasExactRecordShape(flat, PATTERN_PAYLOAD_SIZE) || flat.count != 1) {
         return false;
     }
 
-    PatternPayload payload{};
-    std::memcpy(&payload, flat.data, sizeof(payload));
-    applyPatternPayload(payload, target);
+    if (!applyPatternPayload(flat.data, flat.byteSize, target)) return false;
     return applyGraphSections(graphs[0], target);
 }
 
@@ -563,14 +720,22 @@ FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
     uint16_t capacity
 ) {
     EnvelopeWriter writer(out, capacity, EnvelopeKind::ProjectSequencer);
-    ProjectSequencerPayload flat{};
-    fillProjectSequencerPayload(trackBank, active, flat);
+    auto flat = core::app::makeExtmemUnique<std::array<uint8_t, PROJECT_SEQUENCER_PAYLOAD_SIZE>>();
+    if (!flat) return {};
+    if (!fillProjectSequencerPayload(
+            trackBank,
+            active,
+            flat->data(),
+            static_cast<uint16_t>(flat->size())
+        )) {
+        return {};
+    }
     if (!writer.addSection(SectionId::FlatProjectSequencer,
                            kNoTrack,
-                           sizeof(ProjectSequencerPayload),
+                           PROJECT_SEQUENCER_PAYLOAD_SIZE,
                            1,
-                           &flat,
-                           sizeof(flat))) {
+                           flat->data(),
+                           static_cast<uint16_t>(flat->size()))) {
         return {};
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
@@ -599,13 +764,13 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
                       &graphs)) {
         return false;
     }
-    if (!sectionHasExactRecordShape(flat, sizeof(ProjectSequencerPayload)) || flat.count != 1) {
+    if (!sectionHasExactRecordShape(flat, PROJECT_SEQUENCER_PAYLOAD_SIZE) || flat.count != 1) {
         return false;
     }
 
-    ProjectSequencerPayload payload{};
-    std::memcpy(&payload, flat.data, sizeof(payload));
-    applyProjectSequencerPayload(payload, trackBank, active);
+    if (!applyProjectSequencerPayload(flat.data, flat.byteSize, trackBank, active)) {
+        return false;
+    }
 
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
@@ -623,14 +788,22 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
     uint16_t capacity
 ) {
     EnvelopeWriter writer(out, capacity, EnvelopeKind::Set);
-    SetPayload flat{};
-    fillSetPayload(trackBank, active, flat);
+    auto flat = core::app::makeExtmemUnique<std::array<uint8_t, SET_PAYLOAD_SIZE>>();
+    if (!flat) return {};
+    if (!fillSetPayload(
+            trackBank,
+            active,
+            flat->data(),
+            static_cast<uint16_t>(flat->size())
+        )) {
+        return {};
+    }
     if (!writer.addSection(SectionId::FlatSet,
                            kNoTrack,
-                           sizeof(SetPayload),
+                           SET_PAYLOAD_SIZE,
                            1,
-                           &flat,
-                           sizeof(flat))) {
+                           flat->data(),
+                           static_cast<uint16_t>(flat->size()))) {
         return {};
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
@@ -654,13 +827,13 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
     if (!findSections(data, size, EnvelopeKind::Set, SectionId::FlatSet, flat, &graphs)) {
         return false;
     }
-    if (!sectionHasExactRecordShape(flat, sizeof(SetPayload)) || flat.count != 1) {
+    if (!sectionHasExactRecordShape(flat, SET_PAYLOAD_SIZE) || flat.count != 1) {
         return false;
     }
 
-    SetPayload payload{};
-    std::memcpy(&payload, flat.data, sizeof(payload));
-    applySetPayload(payload, trackBank, active);
+    if (!applySetPayload(flat.data, flat.byteSize, trackBank, active)) {
+        return false;
+    }
 
     const uint8_t activeTrack =
         state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());

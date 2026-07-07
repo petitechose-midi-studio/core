@@ -1,12 +1,13 @@
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
 #include <array>
-#include <cstring>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "persistence/MacroTrackBankPersistenceCodec.hpp"
+#include "persistence/PersistenceBinaryCodec.hpp"
 #include "persistence/ProjectStatePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -17,7 +18,10 @@ namespace {
 
 namespace project_file = core::persistence::project_file;
 namespace project_state_codec = core::persistence::project_state_codec;
+namespace macro_track_codec = core::persistence::macro_track_codec;
 namespace sequencer_codec = core::persistence::sequencer_codec;
+namespace binary = core::persistence::binary_codec;
+namespace macro = core::state::macro;
 
 FLASHMEM bool validateMacroAutomationBank(
     const core::state::macro::MacroAutomationBankState& bank
@@ -116,18 +120,62 @@ FLASHMEM void reportMissingOptional(project_file::LoadReport* report, project_fi
     reportDefaulted(report, id);
 }
 
-FLASHMEM void fillMacroPayload(const core::state::project::ProjectSnapshot& snapshot,
-                               ProjectMacroStatePayload& out) {
-    out.activeTrack = snapshot.sharedTrackActive;
-    out.trackEnabledMask = snapshot.sharedTrackEnabledMask;
-    out.tracks = snapshot.macroTracks;
+FLASHMEM uint32_t macroAutomationPayloadSize(uint8_t entryCount, uint16_t pointCount) {
+    return PROJECT_MACRO_AUTOMATION_HEADER_SIZE +
+           static_cast<uint32_t>(entryCount) * PROJECT_MACRO_AUTOMATION_ENTRY_SIZE +
+           static_cast<uint32_t>(pointCount) * PROJECT_MACRO_AUTOMATION_POINT_SIZE;
 }
 
-FLASHMEM uint32_t macroAutomationPayloadSize(uint8_t entryCount, uint16_t pointCount) {
-    return sizeof(ProjectMacroAutomationPayloadHeader) +
-           static_cast<uint32_t>(entryCount) * sizeof(ProjectMacroAutomationEntryPayload) +
-           static_cast<uint32_t>(pointCount) *
-               sizeof(core::state::macro::MacroPackedCurvePoint);
+FLASHMEM bool writeMacroAutomationCurveRef(binary::Writer& writer,
+                                           const macro::MacroAutomationCurveRef& curve) {
+    return writer.writeU8(curve.active ? 1U : 0U) &&
+           writer.writeU8(0) &&
+           writer.writeU16(curve.pointOffset) &&
+           writer.writeU16(curve.pointCount) &&
+           writer.writeU16(curve.sourceDurationTicks) &&
+           writer.writeU16(curve.durationTicks) &&
+           writer.writeU16(curve.windowOffsetTicks) &&
+           writer.writeU8(static_cast<uint8_t>(curve.interpolation)) &&
+           writer.writeU8(0);
+}
+
+FLASHMEM bool readMacroAutomationCurveRef(binary::Reader& reader,
+                                          macro::MacroAutomationCurveRef& curve) {
+    uint8_t active = 0;
+    uint8_t reserved0 = 0;
+    uint8_t interpolation = 0;
+    uint8_t reserved1 = 0;
+    if (!reader.readU8(active) ||
+        !reader.readU8(reserved0) ||
+        !reader.readU16(curve.pointOffset) ||
+        !reader.readU16(curve.pointCount) ||
+        !reader.readU16(curve.sourceDurationTicks) ||
+        !reader.readU16(curve.durationTicks) ||
+        !reader.readU16(curve.windowOffsetTicks) ||
+        !reader.readU8(interpolation) ||
+        !reader.readU8(reserved1)) {
+        return false;
+    }
+    (void)reserved0;
+    (void)reserved1;
+    (void)interpolation;
+    curve.active = active != 0;
+    curve.interpolation = macro::MacroAutomationInterpolation::LINEAR;
+    return true;
+}
+
+FLASHMEM bool writeMacroAutomationSlotState(binary::Writer& writer,
+                                            const macro::MacroAutomationSlotState& state) {
+    return writeMacroAutomationCurveRef(writer, state.automation) &&
+           writeMacroAutomationCurveRef(writer, state.modulation) &&
+           writer.writeFloat32(state.modulationDepth);
+}
+
+FLASHMEM bool readMacroAutomationSlotState(binary::Reader& reader,
+                                           macro::MacroAutomationSlotState& state) {
+    return readMacroAutomationCurveRef(reader, state.automation) &&
+           readMacroAutomationCurveRef(reader, state.modulation) &&
+           reader.readFloat32(state.modulationDepth);
 }
 
 FLASHMEM bool fillMacroAutomationPayload(
@@ -150,34 +198,34 @@ FLASHMEM bool fillMacroAutomationPayload(
         return false;
     }
 
-    ProjectMacroAutomationPayloadHeader header{
-        .entryCount = entryCount,
-        .reserved0 = 0,
-        .pointCount = pointCount,
-        .reserved1 = 0,
-    };
-    std::memcpy(out, &header, sizeof(header));
+    binary::Writer writer(out, outCapacity);
+    if (!writer.writeU8(entryCount) ||
+        !writer.writeU8(0) ||
+        !writer.writeU16(pointCount) ||
+        !writer.writeU32(0)) {
+        return false;
+    }
 
-    uint32_t cursor = sizeof(header);
     for (uint8_t i = 0; i < entryCount; ++i) {
         const auto& source = bank.entries[i];
-        ProjectMacroAutomationEntryPayload entry{
-            .address = source.address,
-            .state = source.state,
-        };
-        std::memcpy(out + cursor, &entry, sizeof(entry));
-        cursor += sizeof(entry);
+        if (!writer.writeU8(source.address.track) ||
+            !writer.writeU8(source.address.page) ||
+            !writer.writeU8(source.address.macro) ||
+            !writer.writeU8(0) ||
+            !writeMacroAutomationSlotState(writer, source.state)) {
+            return false;
+        }
     }
 
-    if (pointCount > 0) {
-        const uint32_t bytes =
-            static_cast<uint32_t>(pointCount) *
-            sizeof(core::state::macro::MacroPackedCurvePoint);
-        std::memcpy(out + cursor, bank.pointPool.points.data(), bytes);
-        cursor += bytes;
+    for (uint16_t i = 0; i < pointCount; ++i) {
+        const auto& point = bank.pointPool.points[i];
+        if (!writer.writeU16(point.tick) || !writer.writeI16(point.value)) {
+            return false;
+        }
     }
 
-    outSize = cursor;
+    if (!writer.ok() || writer.offset() != required) return false;
+    outSize = writer.offset();
     return true;
 }
 
@@ -192,7 +240,7 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
         reportDefaulted(report, project_file::ChunkId::MACRO_STATE);
         return false;
     }
-    if (chunk->size != sizeof(ProjectMacroStatePayload) || chunk->data == nullptr) {
+    if (chunk->size != PROJECT_MACRO_STATE_PAYLOAD_SIZE || chunk->data == nullptr) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
                   project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
@@ -203,8 +251,16 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
         return false;
     }
 
-    auto payload = core::app::makeExtmemUnique<ProjectMacroStatePayload>();
-    if (!payload) {
+    std::array<macro::MacroTrackData, macro::TRACK_COUNT> tracks{};
+    uint16_t enabledTrackMask = macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
+    uint8_t activeTrack = 0;
+    if (!macro_track_codec::decodeTrackBankPayload(
+            chunk->data,
+            chunk->size,
+            tracks,
+            enabledTrackMask,
+            activeTrack
+        )) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
                   project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
@@ -215,10 +271,9 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
         return false;
     }
 
-    std::memcpy(payload.get(), chunk->data, sizeof(*payload));
-    target.sharedTrackActive = payload->activeTrack;
-    target.sharedTrackEnabledMask = payload->trackEnabledMask;
-    target.macroTracks = payload->tracks;
+    target.sharedTrackActive = activeTrack;
+    target.sharedTrackEnabledMask = enabledTrackMask;
+    target.macroTracks = tracks;
     return true;
 }
 
@@ -335,49 +390,71 @@ FLASHMEM bool validateMacroAutomationBank(
 }
 
 FLASHMEM bool readMacroAutomationPayload(const uint8_t* data,
-                                         uint32_t size,
-                                         core::state::macro::MacroAutomationBankState& out) {
+                                          uint32_t size,
+                                          macro::MacroAutomationBankState& out) {
     out.clear();
-    if (data == nullptr || size < sizeof(ProjectMacroAutomationPayloadHeader)) return false;
+    if (data == nullptr || size < PROJECT_MACRO_AUTOMATION_HEADER_SIZE) return false;
 
-    ProjectMacroAutomationPayloadHeader header{};
-    std::memcpy(&header, data, sizeof(header));
-    if (header.entryCount > core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
-    if (header.pointCount > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
+    binary::Reader reader(data, size);
+    uint8_t entryCount = 0;
+    uint8_t reserved0 = 0;
+    uint16_t pointCount = 0;
+    uint32_t reserved1 = 0;
+    if (!reader.readU8(entryCount) ||
+        !reader.readU8(reserved0) ||
+        !reader.readU16(pointCount) ||
+        !reader.readU32(reserved1)) {
+        return false;
+    }
+    (void)reserved0;
+    (void)reserved1;
+
+    if (entryCount > macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
+    if (pointCount > macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
         return false;
     }
 
     const uint32_t required = macroAutomationPayloadSize(
-        header.entryCount,
-        header.pointCount
+        entryCount,
+        pointCount
     );
     if (required != size || required > PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE) {
         return false;
     }
 
-    uint32_t cursor = sizeof(ProjectMacroAutomationPayloadHeader);
-    out.entryCount = header.entryCount;
-    for (uint8_t i = 0; i < header.entryCount; ++i) {
-        ProjectMacroAutomationEntryPayload entry{};
-        std::memcpy(&entry, data + cursor, sizeof(entry));
-        cursor += sizeof(entry);
+    out.entryCount = entryCount;
+    for (uint8_t i = 0; i < entryCount; ++i) {
+        macro::MacroAutomationSlotAddress address{};
+        macro::MacroAutomationSlotState state{};
+        uint8_t reservedEntry = 0;
+        if (!reader.readU8(address.track) ||
+            !reader.readU8(address.page) ||
+            !reader.readU8(address.macro) ||
+            !reader.readU8(reservedEntry) ||
+            !readMacroAutomationSlotState(reader, state)) {
+            return false;
+        }
+        (void)reservedEntry;
 
-        out.entries[i] = core::state::macro::MacroAutomationSlotEntry{
+        out.entries[i] = macro::MacroAutomationSlotEntry{
             .active = true,
-            .address = entry.address,
-            .state = entry.state,
+            .address = address,
+            .state = state,
         };
     }
 
-    out.pointPool.used = header.pointCount;
-    if (header.pointCount > 0) {
-        const uint32_t bytes =
-            static_cast<uint32_t>(header.pointCount) *
-            sizeof(core::state::macro::MacroPackedCurvePoint);
-        std::memcpy(out.pointPool.points.data(), data + cursor, bytes);
+    out.pointPool.used = pointCount;
+    for (uint16_t i = 0; i < pointCount; ++i) {
+        uint16_t tick = 0;
+        int16_t value = 0;
+        if (!reader.readU16(tick) || !reader.readI16(value)) return false;
+        out.pointPool.points[i] = macro::MacroPackedCurvePoint{
+            .tick = tick,
+            .value = value,
+        };
     }
 
-    return validateMacroAutomationBank(out);
+    return reader.ok() && reader.offset() == size && validateMacroAutomationBank(out);
 }
 
 FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chunk,
@@ -515,7 +592,7 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     project_state_codec::fillRoutingPayload(snapshot.project.routing, routing);
     project_state_codec::fillEditingPayload(snapshot.project.editing, editing);
 
-    auto macro = core::app::makeExtmemUnique<ProjectMacroStatePayload>();
+    auto macro = core::app::makeExtmemUnique<std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE>>();
     auto macroAutomation =
         core::app::makeExtmemUnique<
             std::array<uint8_t, PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE>>();
@@ -524,7 +601,15 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
     }
 
-    fillMacroPayload(snapshot, *macro);
+    if (!macro_track_codec::encodeTrackBankPayload(
+            snapshot.macroTracks,
+            snapshot.sharedTrackEnabledMask,
+            snapshot.sharedTrackActive,
+            macro->data(),
+            static_cast<uint32_t>(macro->size())
+        )) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
     uint32_t macroAutomationSize = 0;
     if (!fillMacroAutomationPayload(
             snapshot,
@@ -585,8 +670,8 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(macro.get()),
-            .size = sizeof(ProjectMacroStatePayload),
+            .data = macro->data(),
+            .size = PROJECT_MACRO_STATE_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_AUTOMATION),
