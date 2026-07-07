@@ -1,0 +1,31 @@
+# UX workflow: coarse edit macro automation length and offset.
+# Purpose: validates that LEFT_CENTER acts as a temporary coarse modifier for
+# Length and Offset while the normal automation editor remains visible.
+
+0 scenario macro-automation-curve-shape
+80 capture screen macro_grid_curve_source
+
+# Open Macro Edit for Macro 1.
+180 button MACRO_1 down
+1280 tick
+1360 capture screen macro_1_edit_detail
+1460 button MACRO_1 up
+
+# Open Automation detail and focus Length.
+1620 encoder NAV 1
+1780 tap NAV 60
+2020 capture screen macro_1_automation_detail
+2180 encoder NAV 1
+
+# Hold LEFT_CENTER for coarse editing and jump Length by 4-beat units.
+2340 button LEFT_CENTER down
+2500 encoder OPT 0.20
+2740 capture screen macro_1_automation_length_coarse
+2860 button LEFT_CENTER up
+
+# Focus Offset and use the same coarse modifier.
+3020 encoder NAV 1
+3180 button LEFT_CENTER down
+3340 encoder OPT 2.00
+3580 capture screen macro_1_automation_offset_coarse
+3700 button LEFT_CENTER up

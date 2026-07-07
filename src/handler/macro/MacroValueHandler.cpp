@@ -55,11 +55,19 @@ struct MacroValueProfiling {
 MacroValueProfiling g_macro_value_profiling;
 #endif
 
-inline void recordMacroValueProfiling(uint32_t elapsed_us) {
+inline uint32_t startMacroValueProfiling() {
 #if defined(PERF_LOG)
-    g_macro_value_profiling.record(elapsed_us);
+    return core::time_compat::micros();
 #else
-    (void)elapsed_us;
+    return 0;
+#endif
+}
+
+inline void finishMacroValueProfiling(uint32_t start_us) {
+#if defined(PERF_LOG)
+    g_macro_value_profiling.record(core::time_compat::micros() - start_us);
+#else
+    (void)start_us;
 #endif
 }
 
@@ -164,14 +172,14 @@ bool MacroValueHandler::ensureActiveSlot(uint8_t index) {
 }
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {
-    const uint32_t start_us = core::time_compat::micros();
+    const uint32_t start_us = startMacroValueProfiling();
     const uint32_t nowMs = core::time_compat::millis();
     if (!ensureActiveSlot(index)) {
-        recordMacroValueProfiling(core::time_compat::micros() - start_us);
+        finishMacroValueProfiling(start_us);
         return;
     }
     if (shouldIgnorePostRecordTurn(index, nowMs)) {
-        recordMacroValueProfiling(core::time_compat::micros() - start_us);
+        finishMacroValueProfiling(start_us);
         return;
     }
     if (shouldStartAutomationRecording(index)) {
@@ -184,7 +192,7 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     const float quantized = core::midi::fromCC(cc_value);
 
     if (std::abs(services_.runtimeValue(index) - quantized) < 0.0005f) {
-        recordMacroValueProfiling(core::time_compat::micros() - start_us);
+        finishMacroValueProfiling(start_us);
         return;
     }
 
@@ -199,7 +207,7 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     }
 
     if (!services_.isActivePageEnabled()) {
-        recordMacroValueProfiling(core::time_compat::micros() - start_us);
+        finishMacroValueProfiling(start_us);
         return;
     }
 
@@ -210,7 +218,7 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     // Signal CC MIDI OUT activity
     services_.pulseCcOut();
 
-    recordMacroValueProfiling(core::time_compat::micros() - start_us);
+    finishMacroValueProfiling(start_us);
 }
 
 void MacroValueHandler::handleConfigChange(uint8_t index, float value) {

@@ -1,0 +1,24 @@
+# UX workflow: copy/paste a macro track with several pages and automations.
+# Purpose: confirms that the visible workflow preserves the full track payload,
+# not only the active page.
+
+0 scenario macro-track-multipage-automation
+80 capture screen source_track_page_3
+
+# Copy track 1 while focus is Track.
+180 tap BOTTOM_RIGHT 60
+320 capture screen track_copied
+
+# Move to the next track add slot and paste the full track there.
+460 encoder NAV 1
+620 capture screen track_add_target
+760 button BOTTOM_RIGHT down
+1900 tick
+2000 button BOTTOM_RIGHT up
+2250 capture screen pasted_track_page_3
+
+# The pasted track should still expose page 3 as active and keep automation.
+2400 tap NAV 60
+2550 tap NAV 60
+2700 encoder NAV 1
+2850 capture screen pasted_track_macro_2_focused

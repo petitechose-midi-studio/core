@@ -17,7 +17,7 @@ namespace core::ui {
  *
  * Floating layout:
  * - widget container fills the grid cell
- * - CH / CC labels are rendered as a centered overlay inside the knob area
+ * - CC label is rendered as a centered overlay inside the knob area
  */
 class BaseMacroWidget : public IMacroWidget {
 public:
@@ -49,14 +49,12 @@ protected:
     lv_obj_t* config_label_container_ = nullptr;
 
     // Config labels (framework Labels)
-    std::unique_ptr<oc::ui::lvgl::Label> ch_prefix_;   // "CH" (small, dim)
-    std::unique_ptr<oc::ui::lvgl::Label> ch_value_;    // channel number
     std::unique_ptr<oc::ui::lvgl::Label> cc_prefix_;   // "CC" (small, dim)
     std::unique_ptr<oc::ui::lvgl::Label> cc_value_;    // CC number
 
     uint8_t index_ = 0;
-    uint8_t current_channel_ = 0xFF;
     uint8_t current_cc_ = 0xFF;
+    bool config_labels_visible_ = true;
 };
 
 }  // namespace core::ui

@@ -1,0 +1,23 @@
+# UX workflow: inspect and edit automation length from Macro Edit.
+# Purpose: validates that the slot detail reports automation length and that
+# the Automation overlay exposes Length as an editable field.
+
+0 scenario macro-track-multipage-automation
+80 capture screen macro_grid_source
+
+# Open Macro Edit for Macro 2 on page 3.
+180 button MACRO_2 down
+1280 tick
+1360 capture screen macro_2_edit_detail
+1460 button MACRO_2 up
+
+# Open Automation detail from the Automation row.
+1620 encoder NAV 1
+1780 tap NAV 60
+2020 capture screen macro_2_automation_detail
+
+# Edit Length from 8.0 beats to the highest table value.
+2180 encoder NAV 1
+2340 encoder OPT 1.00
+2500 encoder OPT 1.00
+2740 capture screen macro_2_automation_length_edited

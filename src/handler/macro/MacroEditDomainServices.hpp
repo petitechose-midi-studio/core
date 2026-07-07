@@ -54,6 +54,8 @@ public:
     bool removeAutomation(uint8_t index) const;
     bool copyAutomation(uint8_t index) const;
     bool pasteAutomation(uint8_t index) const;
+    bool setAutomationDurationBeats(uint8_t index, float durationBeats) const;
+    bool setAutomationWindowOffsetBeats(uint8_t index, float offsetBeats) const;
 
 private:
     core::state::macro::MacroPagesState* pages_ = nullptr;

@@ -29,8 +29,6 @@ struct Source {
 };
 
 struct StaticItems {
-    std::array<std::array<char, 4>, 16> channelLabels{};
-    std::array<const char*, 16> channelItems{};
     std::array<std::array<char, 4>, 128> ccLabels{};
     std::array<const char*, 128> ccItems{};
     std::array<std::array<char, 16>, core::state::MACRO_COUNT> macroLabels{};
@@ -38,8 +36,8 @@ struct StaticItems {
 };
 
 struct EditRenderData {
-    std::array<std::array<char, 12>, 3> valueBuffers{};
-    std::array<ms::ui::KeyValueRow, 3> rows{};
+    std::array<std::array<char, 16>, 2> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 2> rows{};
     std::array<char, 16> title{};
     std::array<char, 16> meta{};
     uint32_t dataRevision = 0;
@@ -47,7 +45,7 @@ struct EditRenderData {
 };
 
 struct AutomationRenderData {
-    std::array<std::array<char, 16>, 4> valueBuffers{};
+    std::array<std::array<char, 24>, 4> valueBuffers{};
     std::array<ms::ui::KeyValueRow, 4> rows{};
     std::array<char, 16> title{};
     std::array<char, 16> meta{};

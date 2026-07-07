@@ -202,12 +202,6 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     assert(h.state.macroEdit.tempChannel.get() == 5);
     assert(h.state.macroEdit.tempCC.get() == 0);
 
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.macroEdit.tempChannel.get() == 15);
-    assert(h.services.activeConfig(0).channel == 5);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.focusedRow.get() == 1);
     h.turn(Config::EncoderID::OPT, 0.0f);
     assert(h.state.macroEdit.tempCC.get() == 0);
     assert(h.services.activeConfig(0).cc == 0);
@@ -237,10 +231,10 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     assert(h.state.pages.currentActivePage() == 2);
     assert(std::strcmp(h.state.statusBar.pageName.get(), "Mix Bus") == 0);
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
-    assert(h.state.macroEdit.tempChannel.get() == 15);
+    assert(h.state.macroEdit.tempChannel.get() == 5);
     assert(h.state.macroEdit.tempCC.get() == 67);
     assert(h.state.pages.tracks[h.state.pages.currentActiveTrack()].pages[0].cc[0] == 1);
-    assert(h.state.pages.tracks[h.state.pages.currentActiveTrack()].channel == 15);
+    assert(h.state.pages.tracks[h.state.pages.currentActiveTrack()].channel == 5);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
     h.tap(Config::ButtonID::LEFT_BOTTOM);
@@ -255,7 +249,7 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
     assert(h.state.macroEdit.editingIndex.get() == 3);
-    assert(h.state.macroEdit.tempChannel.get() == 15);
+    assert(h.state.macroEdit.tempChannel.get() == 5);
     assert(h.state.macroEdit.tempCC.get() == 99);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
@@ -299,8 +293,7 @@ void test_macro_edit_automation_row_restores_auto_without_clearing_lane() {
     );
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.focusedRow.get() == 2);
+    assert(h.state.macroEdit.focusedRow.get() == 1);
 
     h.turn(Config::EncoderID::OPT, 0.0f);
     assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) != 0);

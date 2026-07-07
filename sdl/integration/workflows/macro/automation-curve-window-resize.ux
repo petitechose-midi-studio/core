@@ -1,0 +1,27 @@
+# UX workflow: resize a non-flat automation window.
+# Purpose: validates that shortening Length acts as a playback window and that
+# extending it again re-exposes the original source curve instead of losing data.
+
+0 scenario macro-automation-curve-shape
+80 capture screen macro_grid_curve_source
+
+# Open Macro Edit for Macro 1.
+180 button MACRO_1 down
+1280 tick
+1360 capture screen macro_1_edit_detail
+1460 button MACRO_1 up
+
+# Open Automation detail and focus Length.
+1620 encoder NAV 1
+1780 tap NAV 60
+2020 capture screen macro_1_automation_detail
+2180 encoder NAV 1
+
+# Shorten the active window.
+2340 encoder OPT -1.00
+2580 capture screen macro_1_automation_window_short
+
+# Extend again. The curve preview should recover the source shape.
+2740 encoder OPT 1.00
+2900 encoder OPT 1.00
+3140 capture screen macro_1_automation_window_extended

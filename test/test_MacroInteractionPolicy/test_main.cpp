@@ -67,17 +67,30 @@ void test_macro_slot_focus_only_routes_navigation_and_property_selector() {
     assert(MacroInteractionPolicy::leftBottomPress(context) ==
            MacroInteractionAction::OPEN_SLOT_PROPERTIES);
     assert(MacroInteractionPolicy::bottomLeftRelease(context) ==
-           MacroInteractionAction::NONE);
+           MacroInteractionAction::CLEAR_STRUCTURE);
     assert(MacroInteractionPolicy::bottomRightRelease(context) ==
-           MacroInteractionAction::NONE);
+           MacroInteractionAction::COPY_STRUCTURE);
+
+    context.canRemoveStructure = true;
+    assert(MacroInteractionPolicy::bottomLeftLongPress(context) ==
+           MacroInteractionAction::REMOVE_STRUCTURE);
+
+    context.compatibleClipboardAvailable = true;
+    assert(MacroInteractionPolicy::bottomRightLongPress(context) ==
+           MacroInteractionAction::PASTE_STRUCTURE);
 
     context.previewingAddSlot = true;
+    context.compatibleClipboardAvailable = false;
     assert(MacroInteractionPolicy::navRelease(context, false) ==
            MacroInteractionAction::CREATE_PREVIEWED_STRUCTURE);
+    assert(MacroInteractionPolicy::bottomLeftRelease(context) ==
+           MacroInteractionAction::NONE);
+    assert(MacroInteractionPolicy::bottomRightLongPress(context) ==
+           MacroInteractionAction::NONE);
 
     const auto strip = MacroInteractionPolicy::actionStrip(context);
-    assert(strip.bottomLeft == MacroInteractionVisibility::HIDDEN);
-    assert(strip.bottomRight == MacroInteractionVisibility::HIDDEN);
+    assert(strip.bottomLeft == MacroInteractionVisibility::DIM);
+    assert(strip.bottomRight == MacroInteractionVisibility::DIM);
 
     std::cout << "[PASS] test_macro_slot_focus_only_routes_navigation_and_property_selector\n";
 }

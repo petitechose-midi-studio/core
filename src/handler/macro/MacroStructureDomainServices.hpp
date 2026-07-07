@@ -73,6 +73,11 @@ public:
     bool createNextPage() const;
     bool createTrack(uint8_t trackIndex) const;
     bool activateMacroSlot(uint8_t index) const;
+    bool macroAutomationActive(uint8_t index) const;
+    bool clearMacroAutomation(uint8_t index) const;
+    bool removeMacroAutomation(uint8_t index) const;
+    bool copyMacroAutomation(uint8_t index, core::state::StructureClipboardState& clipboard) const;
+    bool pasteMacroAutomation(uint8_t index, const core::state::StructureClipboardState& clipboard) const;
 
 private:
     StateRefs stateRefs_() const;

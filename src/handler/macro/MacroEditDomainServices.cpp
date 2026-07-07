@@ -164,9 +164,14 @@ bool MacroEditDomainServices::pasteAutomation(uint8_t index) const {
     const auto& entry = clipboard_->macroAutomationSet->entries[0];
     if (!entry.valid || !entry.state.automation.active) return false;
 
+    const auto address = automationAddress(index);
+    const bool hadSlot = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        address
+    ) != nullptr;
     auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
         pages_->automation,
-        automationAddress(index)
+        address
     );
     if (slot == nullptr) return false;
 
@@ -176,6 +181,9 @@ bool MacroEditDomainServices::pasteAutomation(uint8_t index) const {
             clipboard_->macroAutomationSet->pointPool,
             entry.state
         )) {
+        if (!hadSlot) {
+            core::state::macro::macroAutomationClearSlot(pages_->automation, address);
+        }
         return false;
     }
     if (operations_.markProjectMutated != nullptr) {
@@ -183,6 +191,58 @@ bool MacroEditDomainServices::pasteAutomation(uint8_t index) const {
     }
     if (macro_ui_ != nullptr) {
         setAutomationManualOverride(index, false);
+        macro_ui_->automationRecordingRevision.set(macro_ui_->automationRecordingRevision.get() + 1U);
+    }
+    return true;
+}
+
+bool MacroEditDomainServices::setAutomationDurationBeats(uint8_t index,
+                                                         float durationBeats) const {
+    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
+        pages_->automation,
+        automationAddress(index)
+    );
+    if (slot == nullptr || !slot->automation.active) {
+        return false;
+    }
+
+    const bool changed = core::state::macro::macroAutomationResizeCurveDuration(
+        slot->automation,
+        pages_->automation.pointPool,
+        durationBeats
+    );
+    if (!changed) return false;
+
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(macro_ui_->automationRecordingRevision.get() + 1U);
+    }
+    return true;
+}
+
+bool MacroEditDomainServices::setAutomationWindowOffsetBeats(uint8_t index,
+                                                             float offsetBeats) const {
+    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
+        pages_->automation,
+        automationAddress(index)
+    );
+    if (slot == nullptr || !slot->automation.active) {
+        return false;
+    }
+
+    const bool changed = core::state::macro::macroAutomationSetCurveWindowOffset(
+        slot->automation,
+        pages_->automation.pointPool,
+        offsetBeats
+    );
+    if (!changed) return false;
+
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
+    if (macro_ui_ != nullptr) {
         macro_ui_->automationRecordingRevision.set(macro_ui_->automationRecordingRevision.get() + 1U);
     }
     return true;

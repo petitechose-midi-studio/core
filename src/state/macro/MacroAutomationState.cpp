@@ -79,7 +79,9 @@ FLASHMEM bool appendPackedCurve(MacroAutomationPointPool& pool,
     target.active = true;
     target.pointOffset = start;
     target.pointCount = written;
+    target.sourceDurationTicks = durationTicks;
     target.durationTicks = durationTicks;
+    target.windowOffsetTicks = 0;
     target.interpolation = interpolation;
     return true;
 }
@@ -133,6 +135,57 @@ FLASHMEM void sortCurvesByOffset(
         }
         curves[j] = current;
     }
+}
+
+enum class ClearScope : uint8_t {
+    PAGE,
+    TRACK,
+};
+
+FLASHMEM bool addressMatchesClearScope(const MacroAutomationSlotAddress& address,
+                                       ClearScope scope,
+                                       uint8_t track,
+                                       uint8_t page) {
+    if (address.track != track) return false;
+    if (scope == ClearScope::TRACK) return true;
+    return address.page == page;
+}
+
+FLASHMEM bool clearSlotsInScope(MacroAutomationBankState& bank,
+                                ClearScope scope,
+                                uint8_t track,
+                                uint8_t page) {
+    if (track >= TRACK_COUNT) return false;
+    if (scope == ClearScope::PAGE && page >= PAGE_COUNT) return false;
+
+    const uint8_t count = bank.entryCount > MACRO_AUTOMATION_SLOT_CAPACITY
+        ? MACRO_AUTOMATION_SLOT_CAPACITY
+        : bank.entryCount;
+    uint8_t write = 0;
+    bool changed = bank.entryCount != count;
+    for (uint8_t read = 0; read < count; ++read) {
+        const auto& entry = bank.entries[read];
+        if (!entry.active) {
+            changed = true;
+            continue;
+        }
+        if (addressMatchesClearScope(entry.address, scope, track, page)) {
+            changed = true;
+            continue;
+        }
+        if (write != read) {
+            bank.entries[write] = entry;
+        }
+        ++write;
+    }
+
+    if (!changed) return false;
+    for (uint8_t i = write; i < count; ++i) {
+        bank.entries[i] = {};
+    }
+    bank.entryCount = write;
+    macroAutomationCompactPool(bank);
+    return true;
 }
 
 }  // namespace
@@ -221,6 +274,17 @@ FLASHMEM bool macroAutomationClearSlot(MacroAutomationBankState& bank,
         return true;
     }
     return false;
+}
+
+FLASHMEM bool macroAutomationClearPage(MacroAutomationBankState& bank,
+                                       uint8_t track,
+                                       uint8_t page) {
+    return clearSlotsInScope(bank, ClearScope::PAGE, track, page);
+}
+
+FLASHMEM bool macroAutomationClearTrack(MacroAutomationBankState& bank,
+                                        uint8_t track) {
+    return clearSlotsInScope(bank, ClearScope::TRACK, track, 0);
 }
 
 FLASHMEM bool macroAutomationSlotHasContent(const MacroAutomationSlotState& state) {

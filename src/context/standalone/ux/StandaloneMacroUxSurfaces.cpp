@@ -96,6 +96,8 @@ const char* structureTarget(core::state::StructureNavigationFocus focus) {
     switch (focus) {
         case core::state::StructureNavigationFocus::TRACK:
             return "track";
+        case core::state::StructureNavigationFocus::STEP:
+            return "macro";
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return "page";
@@ -356,16 +358,27 @@ bool MacroStructureUxSurface::captureSemanticUxContext(
     out.target = selectionActive ? structureTarget(scope) : structureTarget(focus);
 
     uint8_t index = 0;
+    const bool targetMacro =
+        !selectionActive && focus == core::state::StructureNavigationFocus::STEP;
+    if (targetMacro) {
+        index = macro_ui_.focusedMacroSlot.get();
+    }
     const bool targetTrack =
         selectionActive ? scope == core::state::StructureSelectionScope::TRACK
                         : focus == core::state::StructureNavigationFocus::TRACK;
     const uint16_t targetMask =
-        targetTrack ? pages_.currentTrackEnabledMask() : pages_.currentEnabledPageMask();
-    const bool canPaste = targetTrack ? structure_clipboard_.hasMacroTrack()
-                                      : structure_clipboard_.hasMacroPage();
+        targetMacro ? pages_.activePageData().activeMacroMask
+                    : (targetTrack ? pages_.currentTrackEnabledMask()
+                                   : pages_.currentEnabledPageMask());
+    const bool canPaste = targetMacro ? (!pages_.isMacroAddSlot(index) &&
+                                         structure_clipboard_.hasMacroAutomation())
+                        : (targetTrack ? structure_clipboard_.hasMacroTrack()
+                                       : structure_clipboard_.hasMacroPage());
     out.targetMask = targetMask;
 
-    if (targetTrack) {
+    if (targetMacro) {
+        out.property = pages_.isMacroAddSlot(index) ? "add_slot" : "existing";
+    } else if (targetTrack) {
         index = track_navigation_.selection.active.get()
             ? track_navigation_.selection.cursorIndex.get()
             : track_navigation_.previewTrackIndex.get();
@@ -410,40 +423,42 @@ bool MacroStructureUxSurface::captureSemanticUxContext(
                          ? "create_structure"
                          : "switch_structure_focus";
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
-        out.effect = "arm_remove";
+        out.effect = targetMacro ? "arm_macro_automation_remove" : "arm_remove";
         if (isAddSlot(out) ||
-            core::state::shared::countEnabled(
-                targetMask,
-                targetTrack ? core::state::macro::TRACK_COUNT : core::state::macro::PAGE_COUNT
-            ) <= 1U) {
+            (!targetMacro &&
+             core::state::shared::countEnabled(
+                 targetMask,
+                 targetTrack ? core::state::macro::TRACK_COUNT
+                             : core::state::macro::PAGE_COUNT
+             ) <= 1U)) {
             markNoop(out, isAddSlot(out) ? "add_slot" : "single_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "erase_structure";
+        out.effect = targetMacro ? "clear_macro_automation" : "erase_structure";
         if (trace_state_ && trace_state_->ignoreNextBottomLeftRelease) {
             markIgnored(out, "after_long_press");
         } else if (isAddSlot(out)) {
             markNoop(out, "add_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-        out.effect = "remove_structure";
+        out.effect = targetMacro ? "remove_macro_automation" : "remove_structure";
         if (isAddSlot(out)) {
             markNoop(out, "add_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
-        out.effect = "arm_paste";
+        out.effect = targetMacro ? "arm_macro_automation_paste" : "arm_paste";
         if (!canPaste) {
             markNoop(out, "clipboard_empty");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "copy_structure";
+        out.effect = targetMacro ? "copy_macro_automation" : "copy_structure";
         if (trace_state_ && trace_state_->ignoreNextBottomRightRelease) {
             markIgnored(out, "after_long_press");
         } else if (isAddSlot(out)) {
             markNoop(out, "add_slot");
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-        out.effect = "paste_structure";
+        out.effect = targetMacro ? "paste_macro_automation" : "paste_structure";
         if (!canPaste) {
             markNoop(out, "clipboard_empty");
         }
@@ -598,7 +613,7 @@ bool MacroEditUxSurface::captureSemanticUxContext(
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "focus_macro_automation";
         } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            out.effect = row == 0 ? "edit_macro_automation_state" : "noop";
+            out.effect = row == 0 ? "edit_macro_automation_state" : "edit_macro_automation_length";
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "back_macro_automation";
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {

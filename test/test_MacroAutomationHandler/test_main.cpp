@@ -72,7 +72,7 @@ struct MacroAutomationHarness {
         overlays.show(core::ui::OverlayType::MACRO_AUTOMATION);
     }
 
-    void configureAutomation(uint8_t macroIndex = 0) {
+    void configureAutomation(uint8_t macroIndex = 0, float durationBeats = 2.0f) {
         auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
             state.pages.automation,
             core::state::macro::MacroAutomationSlotAddress{
@@ -83,9 +83,14 @@ struct MacroAutomationHarness {
         );
         assert(slot != nullptr);
         core::state::macro::MacroAutomationLane lane;
-        lane.durationBeats = 2.0f;
+        lane.durationBeats = durationBeats;
         assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
-        assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
+        assert(core::state::macro::macroAutomationAppendPoint(
+            lane,
+            durationBeats * 0.5f,
+            1.0f
+        ));
+        assert(core::state::macro::macroAutomationAppendPoint(lane, durationBeats, 0.0f));
         assert(core::state::macro::macroAutomationAssignAutomation(
             state.pages.automation,
             *slot,
@@ -97,6 +102,12 @@ struct MacroAutomationHarness {
         const auto encoderId = static_cast<oc::type::EncoderID>(id);
         encoderHw.setPosition(encoderId, value);
         eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, value));
+    }
+
+    void press(Config::ButtonID id) {
+        const auto buttonId = static_cast<oc::type::ButtonID>(id);
+        buttonHw.setPressed(buttonId, true);
+        eventBus.emit(oc::core::event::ButtonPressEvent(buttonId, true));
     }
 
     void release(Config::ButtonID id) {
@@ -130,7 +141,7 @@ void test_state_row_restores_auto_without_clearing_lane() {
     );
     assert(preserved != nullptr);
     assert(preserved->automation.active);
-    assert(preserved->automation.pointCount == 2);
+    assert(preserved->automation.pointCount == 3);
 
     h.flushState();
 
@@ -162,11 +173,103 @@ void test_clear_automation_clears_manual_override() {
     std::cout << "[PASS] test_clear_automation_clears_manual_override\n";
 }
 
+void test_length_row_resizes_automation_duration_without_scaling_points() {
+    MacroAutomationHarness h;
+    h.configureAutomation();
+    h.openAutomationEditor();
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 1);
+    h.turn(Config::EncoderID::OPT, 2.0f / 63.0f);
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot != nullptr);
+    assert(slot->automation.active);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.durationTicks) == 3.0f);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.durationTicks) == 64.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.sourceDurationTicks) == 2.0f);
+    assert(slot->automation.pointCount == 3);
+
+    core::state::macro::MacroCurvePoint point{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        slot->automation,
+        h.state.pages.automation.pointPool,
+        1,
+        false,
+        point
+    ));
+    assert(point.beat == 1.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 2);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.windowOffsetTicks) == 1.0f);
+
+    h.flushState();
+
+    std::cout << "[PASS] test_length_row_resizes_automation_duration_without_scaling_points\n";
+}
+
+void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
+    MacroAutomationHarness h;
+    h.configureAutomation(0, 8.0f);
+    h.openAutomationEditor();
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 1);
+    assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 64);
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 16);
+    h.turn(Config::EncoderID::OPT, 1.0f / 15.0f);
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    );
+    assert(slot != nullptr);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.durationTicks) == 8.0f);
+
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 64);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 2);
+    assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 8);
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 2);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.windowOffsetTicks) == 4.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 8);
+
+    h.flushState();
+
+    std::cout << "[PASS] test_left_center_enables_coarse_length_and_offset_steps_temporarily\n";
+}
+
 }  // namespace
 
 int main() {
     test_state_row_restores_auto_without_clearing_lane();
     test_clear_automation_clears_manual_override();
+    test_length_row_resizes_automation_duration_without_scaling_points();
+    test_left_center_enables_coarse_length_and_offset_steps_temporarily();
     std::cout << "\nAll MacroAutomationHandler tests passed.\n";
     return 0;
 }

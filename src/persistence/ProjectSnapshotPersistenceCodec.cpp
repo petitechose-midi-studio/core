@@ -203,11 +203,22 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
         return false;
     }
 
-    ProjectMacroStatePayload payload{};
-    std::memcpy(&payload, chunk->data, sizeof(payload));
-    target.sharedTrackActive = payload.activeTrack;
-    target.sharedTrackEnabledMask = payload.trackEnabledMask;
-    target.macroTracks = payload.tracks;
+    auto payload = core::app::makeExtmemUnique<ProjectMacroStatePayload>();
+    if (!payload) {
+        addReport(report,
+                  project_file::LoadSeverity::ERROR,
+                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+                  chunk->id,
+                  chunk->versionMajor,
+                  chunk->versionMinor);
+        reportDefaulted(report, project_file::ChunkId::MACRO_STATE);
+        return false;
+    }
+
+    std::memcpy(payload.get(), chunk->data, sizeof(*payload));
+    target.sharedTrackActive = payload->activeTrack;
+    target.sharedTrackEnabledMask = payload->trackEnabledMask;
+    target.macroTracks = payload->tracks;
     return true;
 }
 
@@ -216,7 +227,10 @@ FLASHMEM bool validateMacroAutomationCurve(
     const core::state::macro::MacroAutomationPointPool& pool
 ) {
     if (!curve.active) return true;
-    if (curve.durationTicks == 0 || curve.pointCount == 0) return false;
+    if (curve.durationTicks == 0 || curve.sourceDurationTicks == 0 || curve.pointCount == 0) {
+        return false;
+    }
+    if (curve.windowOffsetTicks > curve.sourceDurationTicks) return false;
     if (curve.pointOffset >= pool.used) return false;
     const uint32_t end =
         static_cast<uint32_t>(curve.pointOffset) + static_cast<uint32_t>(curve.pointCount);
@@ -226,7 +240,7 @@ FLASHMEM bool validateMacroAutomationCurve(
     uint16_t previousTick = 0;
     for (uint16_t i = 0; i < curve.pointCount; ++i) {
         const auto& point = pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
-        if (point.tick > curve.durationTicks) return false;
+        if (point.tick > curve.sourceDurationTicks) return false;
         if (i > 0 && point.tick < previousTick) return false;
         previousTick = point.tick;
     }

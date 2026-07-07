@@ -8,6 +8,7 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "state/DataManagerCatalog.hpp"
+#include "state/macro/MacroAutomationDomain.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -147,6 +148,110 @@ void prepareMacroAutomationCleanScenario(core::state::CoreState& state) {
     state.macroEdit.reset();
     state.trackNavigation.reset();
     state.structureClipboard.clear();
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
+void configureMacroAutomation(core::state::CoreState& state,
+                              uint8_t track,
+                              uint8_t page,
+                              uint8_t macro,
+                              float value,
+                              float durationBeats = 2.0f) {
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = track,
+            .page = page,
+            .macro = macro,
+        }
+    );
+    if (slot == nullptr) return;
+
+    core::state::macro::MacroAutomationLane lane;
+    lane.durationBeats = durationBeats;
+    if (!core::state::macro::macroAutomationAppendPoint(lane, 0.0f, value)) return;
+    if (!core::state::macro::macroAutomationAppendPoint(lane, durationBeats, value)) return;
+    core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *slot,
+        lane
+    );
+}
+
+void configureMacroAutomationShape(core::state::CoreState& state,
+                                   uint8_t track,
+                                   uint8_t page,
+                                   uint8_t macro) {
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = track,
+            .page = page,
+            .macro = macro,
+        }
+    );
+    if (slot == nullptr) return;
+
+    core::state::macro::MacroAutomationLane lane;
+    lane.durationBeats = 8.0f;
+    if (!core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.15f)) return;
+    if (!core::state::macro::macroAutomationAppendPoint(lane, 2.0f, 0.90f)) return;
+    if (!core::state::macro::macroAutomationAppendPoint(lane, 5.0f, 0.25f)) return;
+    if (!core::state::macro::macroAutomationAppendPoint(lane, 8.0f, 0.70f)) return;
+    core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *slot,
+        lane
+    );
+}
+
+void prepareMacroAutomationCurveShapeScenario(core::state::CoreState& state) {
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& track = state.pages.tracks[0];
+    track.channel = 5;
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    track.pages[0].cc[0] = 21;
+    track.pages[0].setMacroActive(0, true);
+    std::snprintf(track.pages[0].name, sizeof(track.pages[0].name), "%s", "Curve P1");
+
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    configureMacroAutomationShape(state, 0, 0, 0);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
+void prepareMacroTrackMultipageAutomationScenario(core::state::CoreState& state) {
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& sourceTrack = state.pages.tracks[0];
+    sourceTrack.channel = 5;
+    sourceTrack.activePage = 2;
+    sourceTrack.enabledPageMask = 0x0005;
+    sourceTrack.pages[0].cc[0] = 21;
+    sourceTrack.pages[2].cc[0] = 84;
+    sourceTrack.pages[2].cc[1] = 85;
+    sourceTrack.pages[2].setMacroActive(1, true);
+    std::snprintf(sourceTrack.pages[0].name, sizeof(sourceTrack.pages[0].name), "%s", "Source P1");
+    std::snprintf(sourceTrack.pages[2].name, sizeof(sourceTrack.pages[2].name), "%s", "Source P3");
+
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(2);
+    state.macroUi.syncPreviewPage(2);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    configureMacroAutomation(state, 0, 0, 0, 0.25f, 4.0f);
+    configureMacroAutomation(state, 0, 2, 1, 0.80f, 8.0f);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
@@ -533,6 +638,16 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "macro-automation-clean") == 0) {
         prepareMacroAutomationCleanScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-track-multipage-automation") == 0) {
+        prepareMacroTrackMultipageAutomationScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-automation-curve-shape") == 0) {
+        prepareMacroAutomationCurveShapeScenario(state);
         return true;
     }
 

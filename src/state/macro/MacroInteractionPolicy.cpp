@@ -91,9 +91,6 @@ FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomLeftRelease(
 ) {
     if (context.blockingOverlay) return MacroInteractionAction::NONE;
     if (context.selectionActive) return MacroInteractionAction::DELETE_SELECTION;
-    if (context.navigationFocus == core::state::StructureNavigationFocus::STEP) {
-        return MacroInteractionAction::NONE;
-    }
     if (!performanceAvailable(context) || context.previewingAddSlot) {
         return MacroInteractionAction::NONE;
     }
@@ -103,9 +100,6 @@ FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomLeftRelease(
 FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomLeftLongPress(
     const MacroInteractionContext& context
 ) {
-    if (context.navigationFocus == core::state::StructureNavigationFocus::STEP) {
-        return MacroInteractionAction::NONE;
-    }
     if (!performanceAvailable(context) || context.previewingAddSlot || !context.canRemoveStructure) {
         return MacroInteractionAction::NONE;
     }
@@ -117,9 +111,6 @@ FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomRightRelease(
 ) {
     if (context.blockingOverlay) return MacroInteractionAction::NONE;
     if (context.selectionActive) return MacroInteractionAction::DUPLICATE_SELECTION;
-    if (context.navigationFocus == core::state::StructureNavigationFocus::STEP) {
-        return MacroInteractionAction::NONE;
-    }
     if (!performanceAvailable(context) || context.previewingAddSlot) {
         return MacroInteractionAction::NONE;
     }
@@ -129,9 +120,6 @@ FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomRightRelease(
 FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomRightLongPress(
     const MacroInteractionContext& context
 ) {
-    if (context.navigationFocus == core::state::StructureNavigationFocus::STEP) {
-        return MacroInteractionAction::NONE;
-    }
     if (!performanceAvailable(context) || !context.compatibleClipboardAvailable) {
         return MacroInteractionAction::NONE;
     }
@@ -170,8 +158,12 @@ FLASHMEM MacroActionStripPolicy MacroInteractionPolicy::actionStrip(
     policy.leftCenter = MacroInteractionVisibility::HIDDEN;
     policy.leftBottom = MacroInteractionVisibility::DIM;
     if (context.navigationFocus == core::state::StructureNavigationFocus::STEP) {
-        policy.bottomLeft = MacroInteractionVisibility::HIDDEN;
-        policy.bottomRight = MacroInteractionVisibility::HIDDEN;
+        policy.bottomLeft = context.previewingAddSlot
+            ? MacroInteractionVisibility::DIM
+            : MacroInteractionVisibility::ACTIVE;
+        policy.bottomRight = context.previewingAddSlot
+            ? MacroInteractionVisibility::DIM
+            : MacroInteractionVisibility::ACTIVE;
         return policy;
     }
     policy.bottomLeft = context.previewingAddSlot

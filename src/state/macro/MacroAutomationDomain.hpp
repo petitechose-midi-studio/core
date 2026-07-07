@@ -38,7 +38,9 @@ struct MacroAutomationCurveRef {
     bool active = false;
     uint16_t pointOffset = 0;
     uint16_t pointCount = 0;
+    uint16_t sourceDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
     uint16_t durationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
+    uint16_t windowOffsetTicks = 0;
     MacroAutomationInterpolation interpolation = MacroAutomationInterpolation::LINEAR;
 };
 
@@ -106,6 +108,12 @@ bool macroAutomationReadPoint(const MacroAutomationCurveRef& lane,
                               uint16_t index,
                               bool signedOutput,
                               MacroCurvePoint& out);
+bool macroAutomationResizeCurveDuration(MacroAutomationCurveRef& lane,
+                                        MacroAutomationPointPool& pool,
+                                        float targetDurationBeats);
+bool macroAutomationSetCurveWindowOffset(MacroAutomationCurveRef& lane,
+                                         const MacroAutomationPointPool& pool,
+                                         float targetOffsetBeats);
 
 bool macroAutomationConvertToModulation(const MacroAutomationLane& automation,
                                         MacroAutomationConversionPolicy policy,
