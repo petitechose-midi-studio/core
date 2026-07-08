@@ -272,21 +272,12 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .then([this]() { performance_workflow_.cancelClutch(); });
 }
 
-bool MacroPerformanceHandler::selectionActive() const {
-    return structure_workflow_.selectionActive() && !overlays_.hasVisible();
-}
-
 core::state::macro::MacroInteractionContext
 MacroPerformanceHandler::interactionContext() const {
-    return core::state::macro::MacroInteractionContext{
-        .navigationFocus = navigation_focus_.get(),
-        .blockingOverlay = overlays_.hasVisible(),
-        .slotPropertySelecting = performance_workflow_.clutchActive(),
-        .selectionActive = selectionActive(),
-        .previewingAddSlot = structure_workflow_.previewingAddSlot(),
-        .compatibleClipboardAvailable = structure_workflow_.canPasteCurrentStructure(),
-        .canRemoveStructure = structure_workflow_.canRemoveCurrentStructure(),
-    };
+    return structure_workflow_.interactionContext(
+        overlays_.hasVisible(),
+        performance_workflow_.clutchActive()
+    );
 }
 
 bool MacroPerformanceHandler::policyAllows(

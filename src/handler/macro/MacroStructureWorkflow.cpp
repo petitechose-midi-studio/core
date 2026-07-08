@@ -44,20 +44,17 @@ FLASHMEM MacroStructureWorkflow::MacroStructureWorkflow(
     bindStateSync();
 }
 
-bool MacroStructureWorkflow::selectionActive() const {
-    return macro_ui_.pageSelection.active.get() || track_ui_.selection.active.get();
+bool MacroStructureWorkflow::previewingAddSlot() const {
+    return core::state::macro::macroInteractionPreviewingAddSlot(interactionContextSource());
 }
 
-bool MacroStructureWorkflow::previewingAddSlot() const {
-    switch (navigation_focus_.get()) {
-        case core::state::StructureNavigationFocus::TRACK:
-            return track_ui_.previewAddSlot.get();
-        case core::state::StructureNavigationFocus::STEP:
-            return pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get());
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
-            return macro_ui_.previewAddPageSlot.get();
-    }
+core::state::macro::MacroInteractionContext MacroStructureWorkflow::interactionContext(
+    bool blockingOverlay,
+    bool slotPropertySelecting
+) const {
+    return core::state::macro::buildMacroInteractionContext(
+        interactionContextSource(blockingOverlay, slotPropertySelecting)
+    );
 }
 
 FLASHMEM bool MacroStructureWorkflow::commitPreviewedPageIfNeeded() {
@@ -190,35 +187,11 @@ FLASHMEM void MacroStructureWorkflow::navigateSelection(float delta) {
 }
 
 FLASHMEM bool MacroStructureWorkflow::canRemoveCurrentStructure() const {
-    switch (navigation_focus_.get()) {
-        case core::state::StructureNavigationFocus::TRACK:
-            if (track_ui_.previewAddSlot.get()) return false;
-            return structure_slots::countEnabled(
-                services_.trackEnabledMask(),
-                core::state::macro::TRACK_COUNT
-            ) > 1U;
-        case core::state::StructureNavigationFocus::STEP:
-            if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return false;
-            return services_.macroAutomationActive(macro_ui_.focusedMacroSlot.get());
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
-            if (macro_ui_.previewAddPageSlot.get()) return false;
-            return structure_slots::countEnabled(
-                services_.pageEnabledMask(),
-                core::state::macro::PAGE_COUNT
-            ) > 1U;
-    }
+    return core::state::macro::macroInteractionCanRemoveStructure(interactionContextSource());
 }
 
 FLASHMEM bool MacroStructureWorkflow::canPasteCurrentStructure() const {
-    if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        return structure_clipboard_.hasMacroTrack();
-    }
-    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
-        if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return false;
-        return structure_clipboard_.hasMacroAutomation();
-    }
-    return structure_clipboard_.hasMacroPage();
+    return core::state::macro::macroInteractionCanPasteStructure(interactionContextSource());
 }
 
 FLASHMEM void MacroStructureWorkflow::beginHoldAction(core::state::StructureHoldAction action) {
@@ -488,6 +461,23 @@ FLASHMEM void MacroStructureWorkflow::moveMacroSlot(float delta) {
     const int current = macro_ui_.focusedMacroSlot.get();
     const int next = std::clamp(current + step, 0, static_cast<int>(maxIndex));
     macro_ui_.focusedMacroSlot.set(static_cast<uint8_t>(next));
+}
+
+core::state::macro::MacroInteractionContextSource
+MacroStructureWorkflow::interactionContextSource(
+    bool blockingOverlay,
+    bool slotPropertySelecting
+) const {
+    return core::state::macro::MacroInteractionContextSource{
+        .pages = pages_,
+        .macroUi = macro_ui_,
+        .trackNavigation = track_ui_,
+        .structureClipboard = structure_clipboard_,
+        .navigationFocus = navigation_focus_.get(),
+        .enabledTrackMask = services_.trackEnabledMask(),
+        .blockingOverlay = blockingOverlay,
+        .slotPropertySelecting = slotPropertySelecting,
+    };
 }
 
 FLASHMEM void MacroStructureWorkflow::syncPreviewToCurrentContext() {

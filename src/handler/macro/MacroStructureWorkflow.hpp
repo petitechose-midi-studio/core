@@ -7,6 +7,7 @@
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 
@@ -36,8 +37,11 @@ public:
     MacroStructureWorkflow(const MacroStructureWorkflow&) = delete;
     MacroStructureWorkflow& operator=(const MacroStructureWorkflow&) = delete;
 
-    bool selectionActive() const;
     bool previewingAddSlot() const;
+    core::state::macro::MacroInteractionContext interactionContext(
+        bool blockingOverlay,
+        bool slotPropertySelecting
+    ) const;
 
     bool commitPreviewedPageIfNeeded();
     void cycleNavigationFocus();
@@ -64,6 +68,10 @@ private:
     void movePage(float delta);
     void moveTrack(float delta);
     void moveMacroSlot(float delta);
+    core::state::macro::MacroInteractionContextSource interactionContextSource(
+        bool blockingOverlay = false,
+        bool slotPropertySelecting = false
+    ) const;
     void syncPreviewToCurrentContext();
     void clampFocusedMacroSlot();
 

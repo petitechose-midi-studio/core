@@ -64,7 +64,6 @@ public:
 
 private:
     void setupBindings();
-    bool selectionActive() const;
     core::state::macro::MacroInteractionContext interactionContext() const;
     bool policyAllows(core::state::macro::MacroInteractionAction action) const;
 
