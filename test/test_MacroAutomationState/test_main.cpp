@@ -3,6 +3,7 @@
 #endif
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
 
 #include "../../src/state/macro/MacroAutomationState.hpp"
@@ -10,6 +11,42 @@
 namespace {
 
 namespace macro = core::state::macro;
+
+constexpr uint8_t kFullPoolLaneCount =
+    macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY /
+    macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS;
+static_assert(kFullPoolLaneCount <= macro::TRACK_COUNT);
+
+bool near(float lhs, float rhs, float epsilon = 0.0001f) {
+    return std::fabs(lhs - rhs) <= epsilon;
+}
+
+void fillDenseLane(macro::MacroAutomationLane& lane,
+                   uint16_t pointCount = macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS) {
+    lane.active = true;
+    lane.durationBeats = 300.0f;
+    lane.pointCount = 0;
+    for (uint16_t i = 0; i < pointCount; ++i) {
+        const float beat = static_cast<float>(i) * 0.125f;
+        const float value = (i & 1U) == 0U ? 0.25f : 0.75f;
+        assert(macro::macroAutomationAppendPoint(lane, beat, value));
+    }
+}
+
+void fillAutomationPool(macro::MacroAutomationBankState& bank) {
+    macro::MacroAutomationLane lane;
+    fillDenseLane(lane);
+
+    for (uint8_t track = 0; track < kFullPoolLaneCount; ++track) {
+        auto* slot = macro::macroAutomationGetOrCreateSlot(
+            bank,
+            macro::MacroAutomationSlotAddress{.track = track, .page = 0, .macro = 0}
+        );
+        assert(slot != nullptr);
+        assert(macro::macroAutomationAssignAutomation(bank, *slot, lane));
+    }
+    assert(bank.pointPool.used == macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+}
 
 void test_macro_automation_bank_creates_finds_and_clears_slots() {
     macro::MacroAutomationBankState bank;
@@ -62,6 +99,138 @@ void test_macro_automation_bank_rejects_invalid_or_full_slots() {
     std::cout << "[PASS] test_macro_automation_bank_rejects_invalid_or_full_slots\n";
 }
 
+void test_macro_automation_point_pool_rejects_full_pool_without_mutating_destination() {
+    macro::MacroAutomationBankState bank;
+    fillAutomationPool(bank);
+
+    auto* slot = macro::macroAutomationGetOrCreateSlot(
+        bank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 1, .macro = 0}
+    );
+    assert(slot != nullptr);
+    assert(!slot->automation.active);
+
+    macro::MacroAutomationLane lane;
+    assert(macro::macroAutomationAppendPoint(lane, 0.0f, 0.5f));
+    assert(!macro::macroAutomationAssignAutomation(bank, *slot, lane));
+    assert(!slot->automation.active);
+    assert(bank.pointPool.used == macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+
+    std::cout
+        << "[PASS] "
+        << "test_macro_automation_point_pool_rejects_full_pool_without_mutating_destination\n";
+}
+
+void test_macro_automation_replacement_reclaims_existing_curve_capacity() {
+    macro::MacroAutomationBankState bank;
+    fillAutomationPool(bank);
+
+    auto* slot = macro::macroAutomationFindMutableSlot(
+        bank,
+        macro::MacroAutomationSlotAddress{.track = 3, .page = 0, .macro = 0}
+    );
+    assert(slot != nullptr);
+    assert(slot->automation.active);
+
+    macro::MacroAutomationLane replacement;
+    fillDenseLane(replacement);
+    assert(macro::macroAutomationAssignAutomation(bank, *slot, replacement));
+    assert(slot->automation.active);
+    assert(slot->automation.pointCount == macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS);
+    assert(bank.pointPool.used == macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+
+    std::cout
+        << "[PASS] test_macro_automation_replacement_reclaims_existing_curve_capacity\n";
+}
+
+void test_macro_automation_compaction_preserves_multicurve_references() {
+    macro::MacroAutomationBankState bank;
+    auto* first = macro::macroAutomationGetOrCreateSlot(
+        bank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    auto* second = macro::macroAutomationGetOrCreateSlot(
+        bank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 1}
+    );
+    assert(first != nullptr);
+    assert(second != nullptr);
+
+    macro::MacroAutomationLane firstAutomation;
+    firstAutomation.durationBeats = 4.0f;
+    assert(macro::macroAutomationAppendPoint(firstAutomation, 0.0f, 0.1f));
+    assert(macro::macroAutomationAppendPoint(firstAutomation, 2.0f, 0.9f));
+    assert(macro::macroAutomationAssignAutomation(bank, *first, firstAutomation));
+
+    macro::MacroModulationShape firstModulation;
+    firstModulation.durationBeats = 4.0f;
+    assert(macro::macroModulationAppendPoint(firstModulation, 0.0f, -0.4f));
+    assert(macro::macroModulationAppendPoint(firstModulation, 2.0f, 0.4f));
+    assert(macro::macroAutomationAssignModulation(bank, *first, firstModulation));
+    first->modulationDepth = 0.5f;
+
+    macro::MacroAutomationLane secondAutomation;
+    secondAutomation.durationBeats = 4.0f;
+    assert(macro::macroAutomationAppendPoint(secondAutomation, 0.0f, 0.2f));
+    assert(macro::macroAutomationAppendPoint(secondAutomation, 1.0f, 0.8f));
+    assert(macro::macroAutomationAppendPoint(secondAutomation, 4.0f, 0.2f));
+    assert(macro::macroAutomationAssignAutomation(bank, *second, secondAutomation));
+
+    assert(bank.pointPool.used == 7);
+    macro::macroAutomationClearAutomation(bank, *first);
+
+    assert(!first->automation.active);
+    assert(first->modulation.active);
+    assert(second->automation.active);
+    assert(bank.pointPool.used == 5);
+    assert(first->modulation.pointOffset == 0);
+    assert(second->automation.pointOffset == 2);
+
+    assert(near(
+        macro::macroModulationEvaluate(first->modulation, bank.pointPool, 2.0f),
+        0.4f
+    ));
+    assert(near(
+        macro::macroAutomationEvaluate(second->automation, bank.pointPool, 1.0f, 0.0f),
+        0.8f
+    ));
+
+    std::cout
+        << "[PASS] test_macro_automation_compaction_preserves_multicurve_references\n";
+}
+
+void test_macro_automation_copy_failure_preserves_existing_destination() {
+    macro::MacroAutomationBankState sourceBank;
+    auto* source = macro::macroAutomationGetOrCreateSlot(
+        sourceBank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(source != nullptr);
+    macro::MacroAutomationLane sourceLane;
+    fillDenseLane(sourceLane);
+    assert(macro::macroAutomationAssignAutomation(sourceBank, *source, sourceLane));
+
+    macro::MacroAutomationBankState destBank;
+    fillAutomationPool(destBank);
+    auto* dest = macro::macroAutomationGetOrCreateSlot(
+        destBank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 1, .macro = 0}
+    );
+    assert(dest != nullptr);
+    dest->modulationDepth = 0.42f;
+
+    assert(!macro::macroAutomationCopySlotState(
+        destBank,
+        *dest,
+        sourceBank.pointPool,
+        *source
+    ));
+    assert(!dest->automation.active);
+    assert(near(dest->modulationDepth, 0.42f));
+
+    std::cout << "[PASS] test_macro_automation_copy_failure_preserves_existing_destination\n";
+}
+
 }  // namespace
 
 int main() {
@@ -71,6 +240,10 @@ int main() {
 
     test_macro_automation_bank_creates_finds_and_clears_slots();
     test_macro_automation_bank_rejects_invalid_or_full_slots();
+    test_macro_automation_point_pool_rejects_full_pool_without_mutating_destination();
+    test_macro_automation_replacement_reclaims_existing_curve_capacity();
+    test_macro_automation_compaction_preserves_multicurve_references();
+    test_macro_automation_copy_failure_preserves_existing_destination();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
