@@ -81,8 +81,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure
         const uint8_t activeTrack = currentActiveTrack();
         const uint16_t historyMask = sequencerStructureHistoryTrackBit(activeTrack);
         auto change = captureTrackHistoryBefore(historyMask);
-        const bool nextMuted = !tracks_.isTrackMuted(activeTrack);
-        if (!tracks_.setTrackMuted(activeTrack, nextMuted)) return;
+        if (!toggleSequencerStructureTrackMute(tracks_, activeTrack)) return;
         recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
@@ -227,27 +226,22 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
 FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (!structure_clipboard_.hasSequencerTrack()) return;
-        const uint8_t targetTrack = track_ui_.previewAddSlot.get()
-            ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-                  track_ui_.previewTrackIndex.get()
-              )
-            : currentActiveTrack();
+        const uint8_t targetTrack =
+            sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
         const uint16_t historyMask = static_cast<uint16_t>(
             sequencerStructureHistoryTrackBit(currentActiveTrack()) |
             sequencerStructureHistoryTrackBit(targetTrack)
         );
         auto change = captureTrackHistoryBefore(historyMask);
-        if (track_ui_.previewAddSlot.get() &&
-            !createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_)) {
+        if (!pasteCurrentSequencerStructureTrack(
+                tracks_,
+                sequencer_,
+                track_ui_,
+                shared_tracks_,
+                structure_clipboard_
+            )) {
             return;
         }
-        core::state::sequencer::applySnapshotToEditor(sequencer_, structure_clipboard_.sequencerTrack);
-        core::state::sequencer::copyGraph(
-            sequencer_.pattern,
-            structure_clipboard_.sequencerGraph.get(),
-            structure_clipboard_.sequencerTrack.graphRevision
-        );
-        core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
         syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
         recordTrackHistoryAfter(std::move(change), historyMask);
         return;
