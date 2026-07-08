@@ -164,6 +164,10 @@ product rules into the wrong layer.
   property reset semantics into `SequencerContentViewOps`, made the step edit
   handler call one domain operation, and zeroed inactive offset payload values
   when their flags are cleared.
+- `838b9b8 sequencer: centralize child context opening` moved micro-sequence
+  and cycle-state open/create semantics into `SequencerContentViewOps`, leaving
+  `SequencerStepEditHandler` responsible for history capture and overlay
+  lifecycle only.
 
 Validated after the Macro context projection slice:
 
@@ -197,6 +201,14 @@ Validated after the Sequencer step property reset slice:
 - `ms ux run core --select sequencer/editing/step-edit-local-random.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive`
+  -> OK.
+
+Validated after the Sequencer child context opening slice:
+
+- `ms test core` -> `80/80`;
+- `ms ux run core --select sequencer/step-content/child-step-edit-back-to-parent.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/step-content/closeout-authoring-runtime.ux --report --no-interactive`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
