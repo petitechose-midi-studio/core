@@ -222,6 +222,10 @@ product rules into the wrong layer.
 - `86c0ea7 sequencer: extract structure page clipboard ops` moved page
   clipboard capture, page paste, and copied page graph payload transfer into
   `SequencerStructurePageClipboardOps`.
+- `7b887c6 sequencer: keep structure ops implementations in flash` moved the
+  extracted structure step/page clipboard implementations out of large inline
+  headers and into `FLASHMEM` `.cpp` units, preserving the cleanup without
+  increasing RAM1 pressure.
 
 Validated after the Macro context projection slice:
 
@@ -391,6 +395,11 @@ Validated after the Sequencer structure page clipboard ops slice:
   -> OK;
 - `ms ux run core --select sequencer/structure/page-chord-copy-paste.ux --report --no-interactive --skip-build`
   -> OK.
+
+Validated after moving extracted structure ops into `FLASHMEM` implementation
+units:
+
+- `ms test core` -> `83/83`.
 
 ### Current Uncommitted Sequencer Grammar Slice
 
