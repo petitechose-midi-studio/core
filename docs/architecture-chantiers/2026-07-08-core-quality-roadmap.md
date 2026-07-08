@@ -41,9 +41,9 @@ Largest current production files:
 | `src/persistence/SequencerPersistenceEnvelope.cpp` | ~767 | Current codec is explicit, but migrations must stay outside hot decode paths. |
 
 Current Teensy build observation from `pio run` on 2026-07-08 after the
-bootstrap cleanup slices through `2dc1d8c`:
+bootstrap code cleanup slices through `5bf37b3`:
 
-- FLASH code/data: `660388` / `169040`
+- FLASH code/data: `660372` / `169040`
 - RAM1 variables/code/padding: `66400` / `312936` / `14744`
 - RAM1 free for local variables: `130208`
 - RAM2 variables/free malloc: `247968` / `276320`
@@ -634,15 +634,15 @@ Validated after the Project state migration contract cleanup slice:
 - `git diff --check` -> OK;
 - `ms test core` -> `83/83`.
 
-Global validation after the bootstrap cleanup slices through `2dc1d8c`:
+Global validation after the bootstrap code cleanup slices through `5bf37b3`:
 
 - `git status --short --branch` -> clean on `chore/core-bootstrap-quality`;
 - `ms status` -> 29 repositories clean;
 - `ms release dependencies --dry-run` -> blocked as expected because
-  `midi-studio/core` is on `chore/core-bootstrap-quality @ 2dc1d8c`, not the
-  release branch `main`; `plugin-bitwig` is blocked by Core and 15 repositories
-  are ready. The dry run did not update dependency SHAs or run tests.
-- `pio run` -> SUCCESS in `17.151s` with FLASH code/data `660388` / `169040`,
+  `midi-studio/core` is on `chore/core-bootstrap-quality`, not the release
+  branch `main`; `plugin-bitwig` is blocked by Core and 15 repositories are
+  ready. The dry run did not update dependency SHAs or run tests.
+- `pio run` -> SUCCESS in `17.781s` with FLASH code/data `660372` / `169040`,
   RAM1 variables/code/padding `66400` / `312936` / `14744`, RAM1 free
   `130208`, RAM2 variables/free malloc `247968` / `276320`, EXTRAM variables
   `4282368`.
