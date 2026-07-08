@@ -247,6 +247,10 @@ product rules into the wrong layer.
   resolution, page preview sync, focused-page clear, and focused-page remove
   into `SequencerStructurePageOps.cpp`, keeping the header declarative and
   `SequencerStructureEditWorkflow` focused on history routing.
+- `b49340c sequencer: move structure track ops out of header` moved
+  sequencer-only track creation out of an inline header and into
+  `SequencerStructureTrackOps.cpp` with `FLASHMEM`, preserving the same shared
+  track state update path.
 
 Validated after the Macro context projection slice:
 
@@ -466,6 +470,12 @@ Validated after the Sequencer structure page current ops slice:
 - `ms ux run core --select sequencer/structure/pattern-selection-bottom-actions.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/structure/page-copy-paste-preview.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after moving Sequencer structure track ops out of the header:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/track-bottom-actions.ux --report --no-interactive`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
