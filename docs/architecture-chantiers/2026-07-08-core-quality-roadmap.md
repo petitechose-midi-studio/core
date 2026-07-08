@@ -138,9 +138,35 @@ product rules into the wrong layer.
    unsupported chunks. That is acceptable when explicit. Future format changes
    must not become silent fallback behavior in hot decoders.
 
+### Progress Log
+
+- `1e34a4c sequencer: align step property selector controls`
+  completed Phase 0 for the current sequencer left-button grammar slice.
+- `ec7bc8d macro: align slot action strip with policy` fixed the immediate
+  Macro slot-focus hidden-action drift.
+- `49a2abe macro: share interaction context projection` made Macro handler and
+  Macro view-model consume one shared interaction context projection and added
+  `test_MacroInteractionContextBuilder`.
+- `46505d7 macro: remove dead performance mode predicates` removed residual
+  Macro performance workflow predicates that were no longer called after the
+  context projection cleanup.
+- `3383809 macro: centralize automation elapsed beat math` moved recording and
+  playback elapsed-beat conversion into `MacroAutomationDomain` and added a
+  domain regression for tempo fallback and reversed-time safety.
+
+Validated after the Macro context projection slice:
+
+- `ms test core` -> `78/78`;
+- `ms ux run core --select macro/slot-automation-local-actions.ux --report --no-interactive`
+  -> OK.
+
+Validated after the Macro timebase slice:
+
+- `ms test core` -> `78/78`.
+
 ### Current Uncommitted Sequencer Grammar Slice
 
-The current working tree contains a small, coherent sequencer grammar slice:
+The initial working tree contained a small, coherent sequencer grammar slice:
 
 - In Step focus, `LEFT_CENTER` opens the musical property selector.
 - In Step focus, `LEFT_BOTTOM` is hidden on the main surface.
@@ -151,8 +177,8 @@ The current working tree contains a small, coherent sequencer grammar slice:
   dimensions use `LEFT_CENTER`.
 - Track focus has neither pattern nor step-property selector access.
 
-This slice should be validated and committed before broader macro grammar work,
-because it defines the reference model the macro surface should learn from.
+This slice was validated and committed as `1e34a4c`; it defines the reference
+model the macro surface should learn from.
 
 ### First Code-Quality Decisions
 
