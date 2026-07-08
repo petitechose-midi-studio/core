@@ -6,6 +6,7 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/shared/StructureSlotOps.hpp"
 
 namespace core::handler {
 
@@ -16,6 +17,22 @@ struct SequencerTrackSelectionPasteTargets {
 
     bool hasTargets() const { return targetMask != 0; }
 };
+
+uint16_t activeTrackSelectionMask(
+    uint16_t selectedMask,
+    uint16_t enabledMask
+);
+
+bool toggleSelectedSequencerStructureTrackMute(
+    core::state::sequencer::SequencerTrackBankState& tracks,
+    uint16_t selectedMask
+);
+
+core::state::shared::MaskMutation removeSelectedSequencerStructureTracks(
+    uint16_t enabledMask,
+    uint16_t selectedMask,
+    uint8_t activeTrack
+);
 
 core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard>
 captureTrackSelectionClipboard(

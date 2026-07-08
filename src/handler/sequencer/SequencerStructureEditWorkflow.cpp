@@ -104,35 +104,18 @@ FLASHMEM void SequencerStructureEditWorkflow::toggleTrackSelectionMute() {
         return;
     }
 
-    const uint16_t selectedMask = static_cast<uint16_t>(
-        selection.selectedMask.get() & currentTrackEnabledMask()
+    const uint16_t selectedMask = activeTrackSelectionMask(
+        selection.selectedMask.get(),
+        currentTrackEnabledMask()
     );
     if (selectedMask == 0) return;
-
-    bool anyAudible = false;
-    for (uint8_t track = 0;
-         track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        const uint16_t bit = structure_slots::slotBit(track);
-        if ((selectedMask & bit) == 0) continue;
-        anyAudible = anyAudible || !tracks_.isTrackMuted(track);
-    }
 
     const uint16_t historyMask = static_cast<uint16_t>(
         selectedMask | sequencerStructureHistoryTrackBit(currentActiveTrack())
     );
     auto change = captureTrackHistoryBefore(historyMask);
 
-    bool changed = false;
-    for (uint8_t track = 0;
-         track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        const uint16_t bit = structure_slots::slotBit(track);
-        if ((selectedMask & bit) == 0) continue;
-        changed = tracks_.setTrackMuted(track, anyAudible) || changed;
-    }
-
-    if (!changed) return;
+    if (!toggleSelectedSequencerStructureTrackMute(tracks_, selectedMask)) return;
     recordTrackHistoryAfter(std::move(change), historyMask);
 }
 
@@ -344,8 +327,9 @@ FLASHMEM void SequencerStructureEditWorkflow::clearSelection() {
 
 FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
     if (track_ui_.selection.active.get()) {
-        const uint16_t selectedMask = static_cast<uint16_t>(
-            track_ui_.selection.selectedMask.get() & currentTrackEnabledMask()
+        const uint16_t selectedMask = activeTrackSelectionMask(
+            track_ui_.selection.selectedMask.get(),
+            currentTrackEnabledMask()
         );
         auto clipboard = captureTrackSelectionClipboard(
             tracks_,
@@ -572,15 +556,20 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
     if (selectedMask == 0) return;
 
     if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
-        const auto mutation = structure_slots::removeSelected(
-            currentTrackEnabledMask(),
+        const uint16_t trackMask = activeTrackSelectionMask(
             selectedMask,
-            currentActiveTrack(),
-            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+            currentTrackEnabledMask()
+        );
+        if (trackMask == 0) return;
+
+        const auto mutation = removeSelectedSequencerStructureTracks(
+            currentTrackEnabledMask(),
+            trackMask,
+            currentActiveTrack()
         );
         if (!mutation.changed) return;
         const uint16_t historyMask = static_cast<uint16_t>(
-            selectedMask |
+            trackMask |
             sequencerStructureHistoryTrackBit(currentActiveTrack()) |
             sequencerStructureHistoryTrackBit(mutation.nextActive)
         );
