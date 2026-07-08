@@ -172,6 +172,10 @@ product rules into the wrong layer.
   micro-sequence/cycle-state clear, copy, paste, clipboard compatibility, and
   view refresh semantics into `SequencerContentViewOps`, leaving the step edit
   handler responsible for button routing and history only.
+- `25065b5 sequencer: extract step preset picker workflow` moved the step graph
+  preset picker open/close/navigation/save/load/feedback behavior into
+  `SequencerStepPresetPickerWorkflow`, leaving `SequencerStepEditHandler` with
+  the history boundary around successful preset loads.
 
 Validated after the Macro context projection slice:
 
@@ -223,6 +227,17 @@ Validated after the Sequencer child content clipboard actions slice:
 - `ms ux run core --select sequencer/step-content/closeout-authoring-runtime.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive`
+  -> OK.
+
+Validated after the Sequencer step preset picker workflow slice:
+
+- `ms test core` -> `80/80`;
+- `cmake --build C:\Users\miu-lab\ms-dev-env\.build\core\native --clean-first --target midi_studio_core -j 16`
+  -> OK; required locally after the `SequencerStepEditHandler.hpp` layout change
+  to avoid a stale SDL object allocating the old handler size;
+- `ms ux run core --select sequencer/editing/step-preset-picker.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/editing/step-edit-basic.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
