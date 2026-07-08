@@ -35,6 +35,12 @@ bool resetActiveContentStep(
     StepResetDepth depth
 );
 
+bool resetSelectedActiveContentSteps(
+    core::state::sequencer::SequencerState& sequencer,
+    const oc::note::sequencer::StepBitMask128& selectedMask,
+    StepResetDepth depth
+);
+
 bool appendStepClipboardEntry(
     const core::state::sequencer::SequencerState& sequencer,
     uint8_t step,

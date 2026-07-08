@@ -367,22 +367,14 @@ FLASHMEM void SequencerStructureEditWorkflow::resetStepSelectionShallow() {
     auto& selection = sequencer_.structureUi.stepSelection;
     if (!selection.active.get()) return;
 
-    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer_);
     const auto selectedMask = selection.selectedMask.get();
-    uint8_t first = 0;
-    uint8_t last = 0;
-    if (!selectedStepRange(selectedMask, activeLength, first, last)) return;
 
     HistoryPatternSnapshot before;
     if (!capturePageHistoryBefore(before)) return;
 
-    bool changed = false;
-    for (uint8_t step = first; step <= last; ++step) {
-        if (!selectedMask.test(step)) continue;
-        changed = resetActiveContentStep(sequencer_, step, StepResetDepth::Shallow) || changed;
+    if (!resetSelectedActiveContentSteps(sequencer_, selectedMask, StepResetDepth::Shallow)) {
+        return;
     }
-
-    if (!changed) return;
     core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.pattern.bumpStepDataRevision();
     recordPageHistoryAfter(std::move(before));
@@ -392,22 +384,14 @@ FLASHMEM void SequencerStructureEditWorkflow::resetStepSelectionDeep() {
     auto& selection = sequencer_.structureUi.stepSelection;
     if (!selection.active.get()) return;
 
-    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer_);
     const auto selectedMask = selection.selectedMask.get();
-    uint8_t first = 0;
-    uint8_t last = 0;
-    if (!selectedStepRange(selectedMask, activeLength, first, last)) return;
 
     HistoryPatternSnapshot before;
     if (!capturePageHistoryBefore(before)) return;
 
-    bool changed = false;
-    for (uint8_t step = first; step <= last; ++step) {
-        if (!selectedMask.test(step)) continue;
-        changed = resetActiveContentStep(sequencer_, step, StepResetDepth::Deep) || changed;
+    if (!resetSelectedActiveContentSteps(sequencer_, selectedMask, StepResetDepth::Deep)) {
+        return;
     }
-
-    if (!changed) return;
     core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.pattern.bumpStepDataRevision();
     recordPageHistoryAfter(std::move(before));

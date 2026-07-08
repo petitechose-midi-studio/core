@@ -86,6 +86,24 @@ FLASHMEM bool resetActiveContentStep(
     return changed;
 }
 
+FLASHMEM bool resetSelectedActiveContentSteps(
+    core::state::sequencer::SequencerState& sequencer,
+    const oc::note::sequencer::StepBitMask128& selectedMask,
+    StepResetDepth depth
+) {
+    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer);
+    uint8_t first = 0;
+    uint8_t last = 0;
+    if (!selectedStepRange(selectedMask, activeLength, first, last)) return false;
+
+    bool changed = false;
+    for (uint8_t step = first; step <= last; ++step) {
+        if (!selectedMask.test(step)) continue;
+        changed = resetActiveContentStep(sequencer, step, depth) || changed;
+    }
+    return changed;
+}
+
 FLASHMEM bool appendStepClipboardEntry(
     const core::state::sequencer::SequencerState& sequencer,
     uint8_t step,
