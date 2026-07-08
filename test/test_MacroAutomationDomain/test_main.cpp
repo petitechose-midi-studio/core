@@ -22,6 +22,17 @@ void test_duration_quantization_uses_bounded_musical_values() {
     std::cout << "[PASS] test_duration_quantization_uses_bounded_musical_values\n";
 }
 
+void test_elapsed_beats_uses_tempo_and_safe_defaults() {
+    using namespace core::state::macro;
+
+    assert(near(macroAutomationElapsedBeats(1000, 1500, 120.0f), 1.0f));
+    assert(near(macroAutomationElapsedBeats(1000, 1500, 60.0f), 0.5f));
+    assert(near(macroAutomationElapsedBeats(1000, 1500, 0.0f), 1.0f));
+    assert(near(macroAutomationElapsedBeats(1500, 1000, 120.0f), 0.0f));
+
+    std::cout << "[PASS] test_elapsed_beats_uses_tempo_and_safe_defaults\n";
+}
+
 void test_finalize_recording_remaps_points_to_quantized_duration() {
     using namespace core::state::macro;
 
@@ -326,6 +337,7 @@ void test_persisted_curve_duration_resize_uses_non_destructive_window() {
 
 int main() {
     test_duration_quantization_uses_bounded_musical_values();
+    test_elapsed_beats_uses_tempo_and_safe_defaults();
     test_finalize_recording_remaps_points_to_quantized_duration();
     test_finalize_recording_simplifies_dense_linear_motion();
     test_finalize_recording_preserves_audible_turning_points();

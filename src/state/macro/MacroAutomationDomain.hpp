@@ -80,6 +80,7 @@ struct MacroResolvedValue {
 
 float macroAutomationClamp01(float value);
 float macroAutomationClampSigned(float value);
+float macroAutomationElapsedBeats(uint32_t startedAtMs, uint32_t nowMs, float tempoBpm);
 float macroAutomationQuantizeDurationBeats(float rawDurationBeats);
 float macroAutomationBeatsFromTicks(uint16_t ticks);
 uint16_t macroAutomationTicksFromBeats(float beats);

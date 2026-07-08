@@ -12,12 +12,6 @@ namespace {
 constexpr uint32_t UPDATE_PERIOD_MS = 16;
 constexpr uint8_t INVALID_CC_VALUE = 0xFF;
 
-float elapsedBeats(uint32_t previousMs, uint32_t nowMs, float tempoBpm) {
-    if (nowMs <= previousMs) return 0.0f;
-    const float tempo = tempoBpm > 0.0f ? tempoBpm : 120.0f;
-    return (static_cast<float>(nowMs - previousMs) * tempo) / 60000.0f;
-}
-
 }  // namespace
 
 MacroAutomationPlaybackService::MacroAutomationPlaybackService(
@@ -65,7 +59,11 @@ void MacroAutomationPlaybackService::updatePlaybackBeat_(uint32_t nowMs) {
         return;
     }
 
-    playback_beat_ += elapsedBeats(last_update_ms_, nowMs, status_bar_.tempo.get());
+    playback_beat_ += core::state::macro::macroAutomationElapsedBeats(
+        last_update_ms_,
+        nowMs,
+        status_bar_.tempo.get()
+    );
     last_update_ms_ = nowMs;
 }
 

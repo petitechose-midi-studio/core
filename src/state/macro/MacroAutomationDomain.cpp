@@ -375,6 +375,16 @@ FLASHMEM float macroAutomationClampSigned(float value) {
     return std::clamp(value, -1.0f, 1.0f);
 }
 
+FLASHMEM float macroAutomationElapsedBeats(
+    uint32_t startedAtMs,
+    uint32_t nowMs,
+    float tempoBpm
+) {
+    if (nowMs <= startedAtMs) return 0.0f;
+    const float tempo = tempoBpm > 0.0f ? tempoBpm : 120.0f;
+    return (static_cast<float>(nowMs - startedAtMs) * tempo) / 60000.0f;
+}
+
 FLASHMEM float macroAutomationQuantizeDurationBeats(float rawDurationBeats) {
     const float raw = sanitizeDuration(rawDurationBeats);
     if (raw > kShortDurationTableBeats.back()) {

@@ -7,12 +7,6 @@ namespace core::handler {
 
 namespace {
 
-float elapsedBeats(uint32_t startedAtMs, uint32_t nowMs, float tempoBpm) {
-    const uint32_t elapsedMs = nowMs >= startedAtMs ? nowMs - startedAtMs : 0;
-    const float tempo = tempoBpm > 0.0f ? tempoBpm : 120.0f;
-    return (static_cast<float>(elapsedMs) * tempo) / 60000.0f;
-}
-
 bool setTrackConfigsImpl(
     MacroPerformanceDomainServices::StateRefs state,
     MacroPerformanceDomainServices::Operations operations,
@@ -164,7 +158,11 @@ bool MacroPerformanceDomainServices::recordAutomationPoint(uint8_t index,
     auto& recording = macro_ui_->automationRecording;
     if (!recording.active || recording.address.macro != index) return false;
 
-    const float beat = elapsedBeats(recording.startedAtMs, nowMs, status_bar_->tempo.get());
+    const float beat = core::state::macro::macroAutomationElapsedBeats(
+        recording.startedAtMs,
+        nowMs,
+        status_bar_->tempo.get()
+    );
     const bool appended = core::state::macro::macroAutomationAppendPoint(
         recording.lane,
         beat,
@@ -185,7 +183,7 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
         return false;
     }
 
-    const float duration = elapsedBeats(
+    const float duration = core::state::macro::macroAutomationElapsedBeats(
         recording.startedAtMs,
         nowMs,
         status_bar_->tempo.get()
