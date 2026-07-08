@@ -581,6 +581,43 @@ FLASHMEM bool macroAutomationSetCurveWindowOffset(MacroAutomationCurveRef& lane,
     return true;
 }
 
+FLASHMEM MacroAutomationCurveWindowSummary macroAutomationCurveWindowSummary(
+    const MacroAutomationCurveRef& lane,
+    const MacroAutomationPointPool& pool
+) {
+    MacroAutomationCurveWindowSummary summary{};
+    if (!lane.active || lane.pointCount == 0 || lane.pointOffset >= pool.used) {
+        return summary;
+    }
+
+    const uint16_t count = availablePoolPointCount(lane, pool);
+    if (count == 0) {
+        return summary;
+    }
+
+    const uint16_t sourceTicks = sourceDurationTicks(lane, pool);
+    const uint16_t durationTicks = lane.durationTicks == 0U
+        ? MACRO_AUTOMATION_TICKS_PER_BEAT
+        : lane.durationTicks;
+    const uint16_t offsetTicks = wrapSourceTick(lane.windowOffsetTicks, sourceTicks);
+    const uint16_t firstTick = pool.points[lane.pointOffset].tick;
+    const uint16_t lastTick = pool.points[
+        static_cast<uint16_t>(lane.pointOffset + count - 1U)
+    ].tick;
+    const uint32_t windowEnd =
+        static_cast<uint32_t>(offsetTicks) + static_cast<uint32_t>(durationTicks);
+
+    summary.active = true;
+    summary.sourceDurationTicks = sourceTicks;
+    summary.durationTicks = durationTicks;
+    summary.windowOffsetTicks = offsetTicks;
+    summary.firstPointTick = std::min<uint16_t>(firstTick, sourceTicks);
+    summary.lastPointTick = std::min<uint16_t>(lastTick, sourceTicks);
+    summary.pointCount = count;
+    summary.wraps = windowEnd > sourceTicks;
+    return summary;
+}
+
 FLASHMEM bool macroAutomationConvertToModulation(
     const MacroAutomationLane& automation,
     MacroAutomationConversionPolicy policy,

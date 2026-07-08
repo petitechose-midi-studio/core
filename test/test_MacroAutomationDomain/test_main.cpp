@@ -333,6 +333,53 @@ void test_persisted_curve_duration_resize_uses_non_destructive_window() {
     std::cout << "[PASS] test_persisted_curve_duration_resize_uses_non_destructive_window\n";
 }
 
+void test_curve_window_summary_matches_persisted_window_semantics() {
+    using namespace core::state::macro;
+
+    MacroAutomationBankState bank;
+    MacroAutomationCurveRef inactive;
+    const auto emptySummary = macroAutomationCurveWindowSummary(inactive, bank.pointPool);
+    assert(!emptySummary.active);
+
+    auto* slot = macroAutomationGetOrCreateSlot(
+        bank,
+        MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(slot != nullptr);
+
+    MacroAutomationLane lane;
+    lane.durationBeats = 2.0f;
+    assert(macroAutomationAppendPoint(lane, 0.0f, 0.25f));
+    assert(macroAutomationAppendPoint(lane, 1.0f, 0.75f));
+    assert(macroAutomationAppendPoint(lane, 2.0f, 0.25f));
+    assert(macroAutomationAssignAutomation(bank, *slot, lane));
+
+    assert(macroAutomationSetCurveWindowOffset(slot->automation, bank.pointPool, 1.0f));
+
+    const auto summary = macroAutomationCurveWindowSummary(
+        slot->automation,
+        bank.pointPool
+    );
+    assert(summary.active);
+    assert(summary.pointCount == 3);
+    assert(near(macroAutomationBeatsFromTicks(summary.sourceDurationTicks), 2.0f));
+    assert(near(macroAutomationBeatsFromTicks(summary.durationTicks), 2.0f));
+    assert(near(macroAutomationBeatsFromTicks(summary.windowOffsetTicks), 1.0f));
+    assert(near(macroAutomationBeatsFromTicks(summary.firstPointTick), 0.0f));
+    assert(near(macroAutomationBeatsFromTicks(summary.lastPointTick), 2.0f));
+    assert(summary.wraps);
+
+    assert(macroAutomationSetCurveWindowOffset(slot->automation, bank.pointPool, 0.0f));
+    assert(macroAutomationSetCurveWindowOffset(slot->automation, bank.pointPool, 3.0f));
+    const auto wrappedOffset = macroAutomationCurveWindowSummary(
+        slot->automation,
+        bank.pointPool
+    );
+    assert(near(macroAutomationBeatsFromTicks(wrappedOffset.windowOffsetTicks), 1.0f));
+
+    std::cout << "[PASS] test_curve_window_summary_matches_persisted_window_semantics\n";
+}
+
 }  // namespace
 
 int main() {
@@ -349,6 +396,7 @@ int main() {
     test_resolve_static_automation_modulation_and_depth();
     test_capacity_is_bounded();
     test_persisted_curve_duration_resize_uses_non_destructive_window();
+    test_curve_window_summary_matches_persisted_window_semantics();
 
     std::cout << "\nAll MacroAutomationDomain tests passed.\n";
     return 0;

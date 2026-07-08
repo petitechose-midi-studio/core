@@ -11,17 +11,6 @@ namespace core::context::standalone::macro_overlay_presenter {
 
 namespace {
 
-struct CurveTickSummary {
-    bool valid = false;
-    uint16_t sourceDurationTicks = 0;
-    uint16_t activeDurationTicks = 0;
-    uint16_t windowOffsetTicks = 0;
-    uint16_t firstTick = 0;
-    uint16_t lastTick = 0;
-    bool wraps = false;
-    uint16_t pointCount = 0;
-};
-
 FLASHMEM void formatBeatDuration(char* out,
                                  size_t outSize,
                                  uint16_t durationTicks,
@@ -112,74 +101,29 @@ FLASHMEM uint32_t mixRevision(uint32_t seed, uint32_t value) {
     return seed;
 }
 
-FLASHMEM CurveTickSummary summarizeCurveTicks(
-    const core::state::macro::MacroAutomationCurveRef& curve,
-    const core::state::macro::MacroAutomationPointPool& pool
-) {
-    CurveTickSummary summary{};
-    if (!curve.active || curve.pointCount == 0 || curve.pointOffset >= pool.used) {
-        return summary;
-    }
-
-    const uint16_t available = static_cast<uint16_t>(pool.used - curve.pointOffset);
-    const uint16_t count = std::min<uint16_t>(curve.pointCount, available);
-    if (count == 0) {
-        return summary;
-    }
-
-    const uint16_t activeDurationTicks = curve.durationTicks == 0
-        ? core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
-        : curve.durationTicks;
-    const uint16_t lastPointTick = pool.points[
-        static_cast<uint16_t>(curve.pointOffset + count - 1U)
-    ].tick;
-    const uint16_t sourceDurationTicks = std::max<uint16_t>({
-        curve.sourceDurationTicks,
-        lastPointTick,
-        1U,
-    });
-    const uint16_t windowOffsetTicks = sourceDurationTicks == 0
-        ? 0
-        : static_cast<uint16_t>(curve.windowOffsetTicks % sourceDurationTicks);
-    const uint32_t windowEndTick =
-        static_cast<uint32_t>(windowOffsetTicks) + static_cast<uint32_t>(activeDurationTicks);
-
-    summary.valid = true;
-    summary.sourceDurationTicks = sourceDurationTicks;
-    summary.activeDurationTicks = activeDurationTicks;
-    summary.windowOffsetTicks = windowOffsetTicks;
-    summary.wraps = windowEndTick > sourceDurationTicks;
-    summary.pointCount = count;
-    summary.firstTick = std::min<uint16_t>(
-        pool.points[curve.pointOffset].tick,
-        sourceDurationTicks
-    );
-    summary.lastTick = std::min<uint16_t>(lastPointTick, sourceDurationTicks);
-    return summary;
-}
-
 FLASHMEM void formatCurveSummary(char* out,
                                  size_t outSize,
-                                 const CurveTickSummary& summary) {
+                                 const core::state::macro::MacroAutomationCurveWindowSummary& summary
+) {
     if (out == nullptr || outSize == 0) return;
     out[0] = '\0';
-    if (!summary.valid) {
+    if (!summary.active) {
         std::snprintf(out, outSize, "%s", "-");
         return;
     }
 
     size_t pos = 0;
     if (summary.pointCount == 1) {
-        pos = appendBeatDurationCompact(out, outSize, pos, summary.firstTick, "b");
+        pos = appendBeatDurationCompact(out, outSize, pos, summary.firstPointTick, "b");
     } else {
         if (summary.windowOffsetTicks > 0) {
             pos = appendText(out, outSize, pos, "+");
             pos = appendBeatDurationCompact(out, outSize, pos, summary.windowOffsetTicks, "");
             pos = appendText(out, outSize, pos, " ");
         }
-        pos = appendBeatDurationCompact(out, outSize, pos, summary.firstTick, "");
+        pos = appendBeatDurationCompact(out, outSize, pos, summary.firstPointTick, "");
         pos = appendText(out, outSize, pos, "-");
-        pos = appendBeatDurationCompact(out, outSize, pos, summary.lastTick, "b");
+        pos = appendBeatDurationCompact(out, outSize, pos, summary.lastPointTick, "b");
     }
     if (summary.wraps) {
         appendText(out, outSize, pos, " Loop");
@@ -363,7 +307,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
     );
     ms::ui::KeyValueSparkline curveSparkline{};
     if (active) {
-        const auto curveSummary = summarizeCurveTicks(
+        const auto curveSummary = core::state::macro::macroAutomationCurveWindowSummary(
             slot->automation,
             source.pages.automation.pointPool
         );

@@ -78,6 +78,17 @@ struct MacroResolvedValue {
     bool modulationActive = false;
 };
 
+struct MacroAutomationCurveWindowSummary {
+    bool active = false;
+    uint16_t sourceDurationTicks = 0;
+    uint16_t durationTicks = 0;
+    uint16_t windowOffsetTicks = 0;
+    uint16_t firstPointTick = 0;
+    uint16_t lastPointTick = 0;
+    uint16_t pointCount = 0;
+    bool wraps = false;
+};
+
 float macroAutomationClamp01(float value);
 float macroAutomationClampSigned(float value);
 float macroAutomationElapsedBeats(uint32_t startedAtMs, uint32_t nowMs, float tempoBpm);
@@ -115,6 +126,9 @@ bool macroAutomationResizeCurveDuration(MacroAutomationCurveRef& lane,
 bool macroAutomationSetCurveWindowOffset(MacroAutomationCurveRef& lane,
                                          const MacroAutomationPointPool& pool,
                                          float targetOffsetBeats);
+MacroAutomationCurveWindowSummary macroAutomationCurveWindowSummary(
+    const MacroAutomationCurveRef& lane,
+    const MacroAutomationPointPool& pool);
 
 bool macroAutomationConvertToModulation(const MacroAutomationLane& automation,
                                         MacroAutomationConversionPolicy policy,
