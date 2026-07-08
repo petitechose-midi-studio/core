@@ -31,16 +31,42 @@ inline oc::type::IsActiveFn canOpenPropertySelector(
     core::state::TrackNavigationState& trackUi,
     oc::state::Signal<
         core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+    Config::ButtonID button
 ) {
-    return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
+    return [&overlays, &sequencer, &trackUi, &navigationFocus, button]() {
         const auto policy = interaction_policy::build(
             sequencer,
             trackUi,
             navigationFocus.get(),
             overlays.hasVisible()
         );
-        return interaction_policy::canOpenMusicalPropertySelector(policy);
+        return button == Config::ButtonID::LEFT_CENTER
+            ? interaction_policy::canOpenMusicalPropertySelectorFromLeftCenter(policy)
+            : interaction_policy::canOpenMusicalPropertySelectorFromLeftBottom(policy);
+    };
+}
+
+inline oc::type::IsActiveFn canApplyPropertySelector(
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::TrackNavigationState& trackUi,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+    Config::ButtonID button
+) {
+    return [&overlays, &sequencer, &trackUi, &navigationFocus, button]() {
+        if (!sequencer.stepPropertyInlineSelector.selecting.get()) return false;
+        const auto policy = interaction_policy::build(
+            sequencer,
+            trackUi,
+            navigationFocus.get(),
+            overlays.hasVisible()
+        );
+        return button == Config::ButtonID::LEFT_CENTER
+            ? interaction_policy::canApplyMusicalPropertySelectorFromLeftCenter(policy)
+            : interaction_policy::canApplyMusicalPropertySelectorFromLeftBottom(policy);
     };
 }
 
@@ -195,17 +221,54 @@ FLASHMEM SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
 }
 
 FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
+    buttons_.button(ButtonID::LEFT_CENTER)
+        .press()
+        .latch()
+        .scope(scope_id_)
+        .when(canOpenPropertySelector(
+            overlays_,
+            sequencer_,
+            track_ui_,
+            navigation_focus_,
+            Config::ButtonID::LEFT_CENTER
+        ))
+        .then([this]() { open(); });
+
+    buttons_.button(ButtonID::LEFT_CENTER)
+        .release()
+        .scope(scope_id_)
+        .when(canApplyPropertySelector(
+            overlays_,
+            sequencer_,
+            track_ui_,
+            navigation_focus_,
+            Config::ButtonID::LEFT_CENTER
+        ))
+        .then([this]() { closeApply(); });
+
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .press()
         .latch()
         .scope(scope_id_)
-        .when(canOpenPropertySelector(overlays_, sequencer_, track_ui_, navigation_focus_))
+        .when(canOpenPropertySelector(
+            overlays_,
+            sequencer_,
+            track_ui_,
+            navigation_focus_,
+            Config::ButtonID::LEFT_BOTTOM
+        ))
         .then([this]() { open(); });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .release()
         .scope(scope_id_)
-        .when(selectingPredicate(sequencer_))
+        .when(canApplyPropertySelector(
+            overlays_,
+            sequencer_,
+            track_ui_,
+            navigation_focus_,
+            Config::ButtonID::LEFT_BOTTOM
+        ))
         .then([this]() { closeApply(); });
 
     encoders_.encoder(EncoderID::NAV)

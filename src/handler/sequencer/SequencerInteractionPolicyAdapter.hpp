@@ -60,7 +60,24 @@ inline bool canOpenPatternDimensionSelector(const Policy& policy) {
 }
 
 inline bool canOpenMusicalPropertySelector(const Policy& policy) {
+    return policy.leftCenterPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR ||
+           policy.leftBottomPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
+}
+
+inline bool canOpenMusicalPropertySelectorFromLeftCenter(const Policy& policy) {
+    return policy.leftCenterPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
+}
+
+inline bool canOpenMusicalPropertySelectorFromLeftBottom(const Policy& policy) {
     return policy.leftBottomPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
+}
+
+inline bool canApplyMusicalPropertySelectorFromLeftCenter(const Policy& policy) {
+    return policy.leftCenterPress == Action::APPLY_MUSICAL_PROPERTY_SELECTOR;
+}
+
+inline bool canApplyMusicalPropertySelectorFromLeftBottom(const Policy& policy) {
+    return policy.leftBottomPress == Action::APPLY_MUSICAL_PROPERTY_SELECTOR;
 }
 
 inline bool canOpenStepEditor(const Policy& policy) {

@@ -78,8 +78,11 @@ void applyStepBottomActions(SequencerInteractionPolicy& policy,
     policy.bottomRightVisibility = Visibility::ACTIVE;
 }
 
-SequencerInteractionPolicy buildSelectorPolicy(bool patternSelector) {
+SequencerInteractionPolicy buildSelectorPolicy(const SequencerInteractionContext& context,
+                                               bool patternSelector) {
     SequencerInteractionPolicy policy{};
+    const bool stepFocused =
+        context.navigationFocus == core::state::StructureNavigationFocus::STEP;
     policy.scope = patternSelector ? Scope::PATTERN_DIMENSION_SELECTOR : Scope::MUSICAL_PROPERTY_SELECTOR;
     policy.navTurn = patternSelector ? Action::SELECT_PATTERN_DIMENSION : Action::SELECT_MUSICAL_PROPERTY;
     policy.navTap = patternSelector ? Action::APPLY_PATTERN_DIMENSION_SELECTOR
@@ -88,8 +91,12 @@ SequencerInteractionPolicy buildSelectorPolicy(bool patternSelector) {
     policy.optTurn = patternSelector ? Action::EDIT_PATTERN_DIMENSION
                                      : Action::EDIT_MUSICAL_PROPERTY_VARIATION;
     policy.leftTopTap = Action::CANCEL_TRANSIENT_CONTEXT;
-    policy.leftCenterPress = patternSelector ? Action::APPLY_PATTERN_DIMENSION_SELECTOR : Action::NONE;
-    policy.leftBottomPress = patternSelector ? Action::NONE : Action::APPLY_MUSICAL_PROPERTY_SELECTOR;
+    policy.leftCenterPress = patternSelector
+        ? Action::APPLY_PATTERN_DIMENSION_SELECTOR
+        : stepFocused ? Action::APPLY_MUSICAL_PROPERTY_SELECTOR : Action::NONE;
+    policy.leftBottomPress = patternSelector
+        ? Action::NONE
+        : stepFocused ? Action::EDIT_STEP_LOCAL_RANDOM : Action::APPLY_MUSICAL_PROPERTY_SELECTOR;
     policy.macroTap = Action::NONE;
     policy.macroLongPress = Action::NONE;
     policy.macroTurn = patternSelector ? Action::EDIT_PATTERN_DIMENSION
@@ -98,7 +105,8 @@ SequencerInteractionPolicy buildSelectorPolicy(bool patternSelector) {
     policy.bottomLeftHold = Action::NONE;
     policy.bottomRightTap = Action::NONE;
     policy.bottomRightHold = Action::NONE;
-    policy.leftCenterVisibility = patternSelector ? Visibility::ACTIVE : Visibility::HIDDEN;
+    policy.leftCenterVisibility = patternSelector || stepFocused ? Visibility::ACTIVE
+                                                                 : Visibility::HIDDEN;
     policy.leftBottomVisibility = patternSelector ? Visibility::HIDDEN : Visibility::ACTIVE;
     policy.bottomLeftVisibility = Visibility::HIDDEN;
     policy.bottomRightVisibility = Visibility::HIDDEN;
@@ -206,10 +214,10 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
             policy.navTap = cycleOrCreatePreview(context);
             policy.navLongPress = Action::ENTER_SELECTION;
             policy.optTurn = Action::EDIT_STEP_PROPERTY;
-            policy.leftCenterPress = Action::NONE;
-            policy.leftCenterVisibility = Visibility::HIDDEN;
-            policy.leftBottomPress = Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
-            policy.leftBottomVisibility = Visibility::ACTIVE;
+            policy.leftCenterPress = Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
+            policy.leftCenterVisibility = Visibility::ACTIVE;
+            policy.leftBottomPress = Action::NONE;
+            policy.leftBottomVisibility = Visibility::HIDDEN;
             applyStepBottomActions(policy, context);
             break;
 
@@ -260,10 +268,10 @@ SequencerInteractionPolicy buildSequencerInteractionPolicy(const SequencerIntera
         return buildStepEditorPolicy(context);
     }
     if (context.patternQuickControlsActive) {
-        return buildSelectorPolicy(true);
+        return buildSelectorPolicy(context, true);
     }
     if (context.propertySelectorActive) {
-        return buildSelectorPolicy(false);
+        return buildSelectorPolicy(context, false);
     }
     if (sequencerInteractionSelectionActive(context)) {
         return buildSelectionPolicy(context);

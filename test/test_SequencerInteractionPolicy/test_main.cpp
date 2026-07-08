@@ -45,10 +45,10 @@ void expectsRootFocusMatrix() {
     assert(step.navTurn == Action::MOVE_STEP);
     assert(step.optTurn == Action::EDIT_STEP_PROPERTY);
     assert(step.macroLongPress == Action::OPEN_STEP_EDITOR);
-    assert(step.leftCenterPress == Action::NONE);
-    assert(step.leftBottomPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR);
-    assert(step.leftCenterVisibility == Visibility::HIDDEN);
-    assert(step.leftBottomVisibility == Visibility::ACTIVE);
+    assert(step.leftCenterPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR);
+    assert(step.leftBottomPress == Action::NONE);
+    assert(step.leftCenterVisibility == Visibility::ACTIVE);
+    assert(step.leftBottomVisibility == Visibility::HIDDEN);
 }
 
 void expectsChildContentBottomActions() {
@@ -117,6 +117,16 @@ void expectsSelectorOverrides() {
     assert(policy.navTap == Action::APPLY_MUSICAL_PROPERTY_SELECTOR);
     assert(policy.optTurn == Action::EDIT_MUSICAL_PROPERTY_VARIATION);
     assert(policy.macroLongPress == Action::NONE);
+    assert(policy.leftCenterPress == Action::APPLY_MUSICAL_PROPERTY_SELECTOR);
+    assert(policy.leftBottomPress == Action::EDIT_STEP_LOCAL_RANDOM);
+    assert(policy.leftCenterVisibility == Visibility::ACTIVE);
+    assert(policy.leftBottomVisibility == Visibility::ACTIVE);
+
+    context.navigationFocus = Focus::PAGE;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.scope == Scope::MUSICAL_PROPERTY_SELECTOR);
+    assert(policy.leftCenterPress == Action::NONE);
+    assert(policy.leftBottomPress == Action::APPLY_MUSICAL_PROPERTY_SELECTOR);
     assert(policy.leftCenterVisibility == Visibility::HIDDEN);
     assert(policy.leftBottomVisibility == Visibility::ACTIVE);
 }

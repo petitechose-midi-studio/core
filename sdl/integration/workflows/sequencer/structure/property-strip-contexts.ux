@@ -1,8 +1,9 @@
 # UX workflow: verify context-specific property-strip affordances.
 # Purpose: validates that Track reserves strip space without active property
 # icons, Pattern exposes pattern dimensions plus musical prop selection, and
-# Step keeps only the musical prop selector while OPT edits the focused step.
-# Expect: capture_match:step_focus_property_only=step_left_center_no_pattern_overlay, capture_match:track_focus_strip_still_hidden=track_left_bottom_no_property_overlay, capture_match:track_focus_strip_still_hidden=track_left_center_no_pattern_overlay
+# Step exposes the musical prop selector from LEFT_CENTER while OPT edits the
+# focused step.
+# Expect: capture_match:track_focus_strip_still_hidden=track_left_bottom_no_property_overlay, capture_match:track_focus_strip_still_hidden=track_left_center_no_pattern_overlay
 
 0 scenario sequencer
 50 capture screen track_focus_strip_hidden
@@ -28,25 +29,28 @@
 2300 button LEFT_BOTTOM up
 2500 capture screen pattern_property_selector_closed
 
-# Step focus: no LEFT_CENTER/pattern icon; OPT edits the focused step property.
+# Step focus: LEFT_CENTER now owns the focused step property selector; OPT edits
+# the focused step property when the selector is closed. LEFT_BOTTOM is kept for
+# secondary property actions and must not open a primary selector on its own.
 2600 tap NAV 60
 2800 capture screen step_focus_property_only
 2900 button LEFT_CENTER down
-3150 capture screen step_left_center_no_pattern_overlay
+3150 capture screen step_property_selector_open
 3200 button LEFT_CENTER up
-3300 encoder OPT 1.00
-3450 capture screen step_opt_edits_focused_property
-3550 button LEFT_BOTTOM down
-3750 capture screen step_property_selector_open
-3800 button LEFT_BOTTOM up
+3400 capture screen step_property_selector_closed
+3500 encoder OPT 1.00
+3650 capture screen step_opt_edits_focused_property
+3750 button LEFT_BOTTOM down
+3950 capture screen step_left_bottom_no_property_overlay
+4000 button LEFT_BOTTOM up
 
 # Track focus: strip space remains reserved but property-strip controls are not
 # active.
-4000 tap NAV 60
-4200 capture screen track_focus_strip_still_hidden
-4300 button LEFT_BOTTOM down
-4550 capture screen track_left_bottom_no_property_overlay
-4600 button LEFT_BOTTOM up
-4700 button LEFT_CENTER down
-4950 capture screen track_left_center_no_pattern_overlay
-5000 button LEFT_CENTER up
+4200 tap NAV 60
+4400 capture screen track_focus_strip_still_hidden
+4500 button LEFT_BOTTOM down
+4750 capture screen track_left_bottom_no_property_overlay
+4800 button LEFT_BOTTOM up
+4900 button LEFT_CENTER down
+5150 capture screen track_left_center_no_pattern_overlay
+5200 button LEFT_CENTER up

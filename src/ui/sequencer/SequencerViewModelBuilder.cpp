@@ -84,6 +84,36 @@ void setStripIconFromVisibility(
     slot = core::ui::makeStandaloneIconStripSlot(icon, visualState);
 }
 
+const char* iconForLeftAction(InteractionAction action,
+                              const char* patternIcon,
+                              const char* propertyIcon) {
+    switch (action) {
+        case InteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR:
+        case InteractionAction::APPLY_PATTERN_DIMENSION_SELECTOR:
+            return patternIcon;
+        case InteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
+        case InteractionAction::APPLY_MUSICAL_PROPERTY_SELECTOR:
+            return propertyIcon;
+        case InteractionAction::EDIT_STEP_LOCAL_RANDOM:
+            return standalone::icons::NOTE_PROP_RANDOM;
+        default:
+            return nullptr;
+    }
+}
+
+void setStripIconFromAction(SlotProps& slot,
+                            InteractionAction action,
+                            InteractionVisibility visibility,
+                            const char* patternIcon,
+                            const char* propertyIcon) {
+    const char* icon = iconForLeftAction(action, patternIcon, propertyIcon);
+    if (icon == nullptr) {
+        slot.visualState = Visual::HIDDEN;
+        return;
+    }
+    setStripIconFromVisibility(slot, icon, visibility);
+}
+
 void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
     std::snprintf(
         out.data(),
@@ -752,15 +782,19 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        setStripIconFromVisibility(
+        setStripIconFromAction(
             props.slots[1],
+            interaction.leftCenterPress,
+            interaction.leftCenterVisibility,
             patternIcon,
-            interaction.leftCenterVisibility
+            propertyIcon
         );
-        setStripIconFromVisibility(
+        setStripIconFromAction(
             props.slots[2],
-            propertyIcon,
-            interaction.leftBottomVisibility
+            interaction.leftBottomPress,
+            interaction.leftBottomVisibility,
+            patternIcon,
+            propertyIcon
         );
         return props;
     }
@@ -770,29 +804,37 @@ FLASHMEM ContextActionStripProps buildLeftActionStripProps(const SequencerViewMo
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        setStripIconFromVisibility(
+        setStripIconFromAction(
             props.slots[1],
+            interaction.leftCenterPress,
+            interaction.leftCenterVisibility,
             patternIcon,
-            interaction.leftCenterVisibility
+            propertyIcon
         );
-        setStripIconFromVisibility(
+        setStripIconFromAction(
             props.slots[2],
-            propertyIcon,
-            interaction.leftBottomVisibility
+            interaction.leftBottomPress,
+            interaction.leftBottomVisibility,
+            patternIcon,
+            propertyIcon
         );
         return props;
     }
 
     props.slots[0].visualState = Visual::HIDDEN;
-    setStripIconFromVisibility(
+    setStripIconFromAction(
         props.slots[1],
+        interaction.leftCenterPress,
+        interaction.leftCenterVisibility,
         patternIcon,
-        interaction.leftCenterVisibility
+        propertyIcon
     );
-    setStripIconFromVisibility(
+    setStripIconFromAction(
         props.slots[2],
-        propertyIcon,
-        interaction.leftBottomVisibility
+        interaction.leftBottomPress,
+        interaction.leftBottomVisibility,
+        patternIcon,
+        propertyIcon
     );
     return props;
 }

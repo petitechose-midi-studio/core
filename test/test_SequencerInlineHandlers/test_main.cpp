@@ -250,6 +250,9 @@ void test_property_selector_is_unavailable_in_track_focus() {
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
     std::cout << "[PASS] test_property_selector_is_unavailable_in_track_focus\n";
@@ -355,6 +358,58 @@ void test_property_selector_left_top_commits_live_local_random_edit() {
     }
 
     std::cout << "[PASS] test_property_selector_left_top_commits_live_local_random_edit\n";
+}
+
+void test_step_property_selector_left_bottom_is_secondary_random_layer() {
+    SequencerInlineHarness h;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    h.state.sequencer.pattern.velocity[2] = 64;
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    h.advance(100);
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_3, 1.0f);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.get());
+
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(
+        core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) ==
+        127
+    );
+
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(h.state.undoSequencerHistory());
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph != nullptr) {
+        node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+        assert(
+            node == nullptr ||
+            core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0
+        );
+    }
+
+    std::cout << "[PASS] test_step_property_selector_left_bottom_is_secondary_random_layer\n";
 }
 
 void test_property_selector_global_and_local_random_have_separate_undo() {
@@ -490,10 +545,13 @@ void test_pattern_quick_controls_are_pattern_focus_only() {
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.state.sequencer.pattern.length.get() == initialLength);
     assert(!h.state.sequencer.patternQuickControls.feedbackVisible.get());
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     h.tap(Config::ButtonID::LEFT_CENTER);
@@ -831,6 +889,7 @@ int main() {
     test_property_selector_edits_active_property_variation_range();
     test_property_selector_left_top_commits_live_variation_edit();
     test_property_selector_left_top_commits_live_local_random_edit();
+    test_step_property_selector_left_bottom_is_secondary_random_layer();
     test_property_selector_global_and_local_random_have_separate_undo();
     test_property_selector_does_not_edit_probability_variation();
     test_pattern_quick_controls_do_not_edit_variation_range();
