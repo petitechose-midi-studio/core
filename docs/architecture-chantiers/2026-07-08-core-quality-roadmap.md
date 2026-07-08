@@ -157,6 +157,9 @@ product rules into the wrong layer.
   window/source/offset/wrap projection from the macro overlay formatter into
   `MacroAutomationDomain`, with a domain regression for persisted window
   semantics.
+- `355c2f4 macro: extract automation editor model` moved the macro automation
+  OPT position/range math for length and offset out of `MacroAutomationHandler`
+  into a tested pure editor model.
 
 Validated after the Macro context projection slice:
 
@@ -174,6 +177,12 @@ Validated after the Macro curve window projection slice:
 - `ms ux run core --select macro/automation-curve-window-offset.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select macro/automation-curve-sparkline.ux --report --no-interactive`
+  -> OK.
+
+Validated after the Macro automation editor model slice:
+
+- `ms test core` -> `79/79`;
+- `ms ux run core --select macro/automation-coarse-length-offset.ux --report --no-interactive`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
