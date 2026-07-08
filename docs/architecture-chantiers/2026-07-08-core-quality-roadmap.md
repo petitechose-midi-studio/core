@@ -40,11 +40,12 @@ Largest current production files:
 | `src/context/standalone/SequencerOverlayPresenterFormatters.cpp` | ~783 | Formatter accumulation risks becoming a second UI model layer. |
 | `src/persistence/SequencerPersistenceEnvelope.cpp` | ~767 | Current codec is explicit, but migrations must stay outside hot decode paths. |
 
-Current Teensy build observation from `pio run` on 2026-07-08:
+Current Teensy build observation from `pio run` on 2026-07-08 after the
+bootstrap cleanup slices through `1027fa0`:
 
-- FLASH code/data: `656852` / `168016`
-- RAM1 variables/code/padding: `65376` / `313272` / `14408`
-- RAM1 free for local variables: `131232`
+- FLASH code/data: `660636` / `169040`
+- RAM1 variables/code/padding: `66400` / `313080` / `14600`
+- RAM1 free for local variables: `130208`
 - RAM2 variables/free malloc: `247968` / `276320`
 - EXTRAM variables: `4282368`
 
@@ -924,6 +925,25 @@ Evidence:
 - `MACRO_AUTOMATION_POINT_POOL_CAPACITY = 32768`.
 - `MacroAutomationLane` and `MacroModulationShape` are temporary full float
   buffers; durable data is packed.
+
+Memory accounting after the 2026-07-08 audit:
+
+- Durable macro pages are owned by `MacroDomainState::pages`, allocated through
+  `makeExtmemUnique<MacroPagesState>()`.
+- The durable automation point pool is inside `MacroPagesState::automation`,
+  therefore EXTMEM-backed on Teensy. The point payload is
+  `32768 * sizeof(MacroPackedCurvePoint)`, roughly `128 KiB` plus a small
+  `used` counter and slot metadata.
+- Macro automation clipboard data is held by
+  `StructureClipboardState::macroAutomationSet`, also an `ExtmemUniquePtr`.
+  Worst-case clipboard point payload is therefore another roughly `128 KiB`,
+  but only when populated.
+- Live recording uses one `MacroAutomationLane` in
+  `MacroUiState::AutomationRecordingState`. `UiSystemState` is also allocated
+  through `makeExtmemUnique`, so the temporary recording lane is not a RAM1
+  resident global. It is roughly `2048 * 2 floats`, around `16 KiB`.
+- Current `pio run` evidence: RAM1 free for locals is `130208`; EXTRAM global
+  variables are `4282368`.
 
 Work:
 
