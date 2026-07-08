@@ -14,6 +14,11 @@ bool capturePageSelectionClipboard(
     core::state::SequencerPageSelectionClipboard& clipboard
 );
 
+uint16_t activePageSelectionMask(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint16_t selectedMask
+);
+
 core::state::SequencerPageSelectionPastePlan buildPageSelectionPastePlan(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& structureClipboard,
@@ -24,6 +29,16 @@ void pastePageSelectionClipboard(
     core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& structureClipboard,
     const core::state::SequencerPageSelectionPastePlan& plan
+);
+
+bool clearSelectedPages(
+    core::state::sequencer::SequencerState& sequencer,
+    uint16_t selectedMask
+);
+
+bool removeSelectedPages(
+    core::state::sequencer::SequencerState& sequencer,
+    uint16_t selectedMask
 );
 
 }  // namespace core::handler

@@ -1,8 +1,11 @@
 #include "handler/sequencer/SequencerStructurePageSelectionOps.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
 
 #include "handler/sequencer/SequencerStructurePageClipboardOps.hpp"
+#include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::handler {
@@ -18,6 +21,22 @@ FLASHMEM uint8_t firstSelectedPage(uint16_t mask) {
         if ((mask & structure_slots::slotBit(page)) != 0) return page;
     }
     return core::state::sequencer::SequencerState::PAGE_COUNT;
+}
+
+FLASHMEM bool clearPage(
+    core::state::sequencer::SequencerState& sequencer,
+    uint8_t page
+) {
+    const uint8_t start = static_cast<uint8_t>(
+        page * core::state::sequencer::SequencerState::STEPS_PER_PAGE
+    );
+    const uint8_t end = static_cast<uint8_t>(std::min<uint16_t>(
+        core::state::sequencer::SequencerState::MAX_STEPS - 1,
+        static_cast<uint16_t>(
+            start + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1
+        )
+    ));
+    return core::state::sequencer::clearStepRange(sequencer, start, end);
 }
 
 }  // namespace
@@ -46,6 +65,15 @@ FLASHMEM bool capturePageSelectionClipboard(
     }
 
     return clipboard.count > 0;
+}
+
+FLASHMEM uint16_t activePageSelectionMask(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint16_t selectedMask
+) {
+    return static_cast<uint16_t>(
+        selectedMask & structure_slots::prefixMask(sequencer.activePageCount())
+    );
 }
 
 FLASHMEM core::state::SequencerPageSelectionPastePlan buildPageSelectionPastePlan(
@@ -79,6 +107,43 @@ FLASHMEM void pastePageSelectionClipboard(
             target.destinationPage
         );
     }
+}
+
+FLASHMEM bool clearSelectedPages(
+    core::state::sequencer::SequencerState& sequencer,
+    uint16_t selectedMask
+) {
+    const uint16_t mask = activePageSelectionMask(sequencer, selectedMask);
+    if (mask == 0) return false;
+
+    bool changed = false;
+    const uint8_t pageCount = sequencer.activePageCount();
+    for (uint8_t page = 0; page < pageCount; ++page) {
+        if ((mask & structure_slots::slotBit(page)) == 0) continue;
+        changed = clearPage(sequencer, page) || changed;
+    }
+    if (changed) {
+        sequencer.pattern.bumpStepDataRevision();
+    }
+    return changed;
+}
+
+FLASHMEM bool removeSelectedPages(
+    core::state::sequencer::SequencerState& sequencer,
+    uint16_t selectedMask
+) {
+    const uint8_t pageCount = sequencer.activePageCount();
+    const uint16_t mask = activePageSelectionMask(sequencer, selectedMask);
+    const uint8_t deleteCount = structure_slots::countEnabled(mask, pageCount);
+    if (deleteCount == 0 || deleteCount >= pageCount) return false;
+
+    bool changed = false;
+    for (int page = static_cast<int>(pageCount) - 1; page >= 0; --page) {
+        const uint8_t pageIndex = static_cast<uint8_t>(page);
+        if ((mask & structure_slots::slotBit(pageIndex)) == 0) continue;
+        changed = core::state::sequencer::removePage(sequencer, pageIndex) || changed;
+    }
+    return changed;
 }
 
 }  // namespace core::handler

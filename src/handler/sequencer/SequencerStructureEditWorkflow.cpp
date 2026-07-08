@@ -344,31 +344,16 @@ FLASHMEM void SequencerStructureEditWorkflow::clearSelection() {
     auto& selection = sequencer_.structureUi.pageSelection;
     if (!selection.active.get()) return;
 
-    const uint16_t selectedMask = static_cast<uint16_t>(
-        selection.selectedMask.get() & structure_slots::prefixMask(sequencer_.activePageCount())
+    const uint16_t selectedMask = activePageSelectionMask(
+        sequencer_,
+        selection.selectedMask.get()
     );
     if (selectedMask == 0) return;
 
     HistoryPatternSnapshot before;
     if (!capturePageHistoryBefore(before)) return;
 
-    bool changed = false;
-    for (uint8_t page = 0; page < core::state::sequencer::SequencerState::PAGE_COUNT; ++page) {
-        if ((selectedMask & structure_slots::slotBit(page)) == 0) continue;
-        const uint8_t start = static_cast<uint8_t>(
-            page * core::state::sequencer::SequencerState::STEPS_PER_PAGE
-        );
-        const uint8_t end = static_cast<uint8_t>(std::min<uint16_t>(
-            core::state::sequencer::SequencerState::MAX_STEPS - 1,
-            static_cast<uint16_t>(
-                start + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1
-            )
-        ));
-        changed = core::state::sequencer::clearStepRange(sequencer_, start, end) || changed;
-    }
-
-    if (!changed) return;
-    sequencer_.pattern.bumpStepDataRevision();
+    if (!clearSelectedPages(sequencer_, selectedMask)) return;
     recordPageHistoryAfter(std::move(before));
 }
 
@@ -390,8 +375,9 @@ FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
     auto& selection = sequencer_.structureUi.pageSelection;
     if (!selection.active.get()) return;
 
-    const uint16_t selectedMask = static_cast<uint16_t>(
-        selection.selectedMask.get() & structure_slots::prefixMask(sequencer_.activePageCount())
+    const uint16_t selectedMask = activePageSelectionMask(
+        sequencer_,
+        selection.selectedMask.get()
     );
 
     core::state::SequencerPageSelectionClipboard clipboard;
@@ -600,8 +586,6 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
     const uint16_t selectedMask = selection.selectedMask.get();
     if (selectedMask == 0) return;
 
-    bool changed = false;
-
     if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
         const auto mutation = structure_slots::removeSelected(
             currentTrackEnabledMask(),
@@ -616,28 +600,18 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
             sequencerStructureHistoryTrackBit(mutation.nextActive)
         );
         auto change = captureTrackHistoryBefore(historyMask);
-        changed = applyTrackState(mutation.nextMask, mutation.nextActive);
+        const bool changed = applyTrackState(mutation.nextMask, mutation.nextActive);
         if (!changed) return;
         cancelSelectionMode();
         recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     } else {
+        const uint16_t pageMask = activePageSelectionMask(sequencer_, selectedMask);
+        if (pageMask == 0) return;
+
         HistoryPatternSnapshot before;
         if (!capturePageHistoryBefore(before)) return;
-        const uint8_t pageCount = sequencer_.activePageCount();
-        const uint8_t deleteCount = structure_slots::countEnabled(selectedMask, pageCount);
-        if (deleteCount > 0 && deleteCount < pageCount) {
-            for (int page = static_cast<int>(pageCount) - 1; page >= 0; --page) {
-                const uint16_t bit = structure_slots::slotBit(static_cast<uint8_t>(page));
-                if ((selectedMask & bit) == 0) continue;
-                changed = core::state::sequencer::removePage(
-                              sequencer_,
-                              static_cast<uint8_t>(page)
-                          ) || changed;
-            }
-        }
-
-        if (!changed) return;
+        if (!removeSelectedPages(sequencer_, pageMask)) return;
         cancelSelectionMode();
         recordPageHistoryAfter(std::move(before));
     }
