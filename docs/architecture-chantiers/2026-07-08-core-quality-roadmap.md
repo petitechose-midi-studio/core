@@ -269,6 +269,10 @@ product rules into the wrong layer.
   `TileRenderState` copies from the frame planner and render loop. The grid
   still keeps the existing tile cache/invalidation model; this slice only
   reduces per-frame hot-path copying.
+- `bc0b471 test: cover macro automation pool compaction` added native coverage
+  for full point-pool refusal, replacement that reclaims existing curve
+  capacity, multi-curve compaction preserving offsets, and copy failure without
+  mutating the destination slot.
 
 Validated after the Macro context projection slice:
 
@@ -535,6 +539,15 @@ Validated after the Sequencer StepGrid state-copy slice:
 - `ms ux run core --select sequencer/structure/step-selection.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/structure/property-strip-contexts.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Macro automation pool/compaction coverage slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`;
+- `ms ux run core --select macro/automation-lifecycle.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select macro/page-automation-copy-paste.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
