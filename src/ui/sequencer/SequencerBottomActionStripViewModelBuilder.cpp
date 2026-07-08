@@ -7,6 +7,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "config/Timing.hpp"
+#include "state/StructureSelectionState.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -52,6 +53,26 @@ void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
         "SEL %u",
         static_cast<unsigned>(count)
     );
+}
+
+SlotProps makeSelectionCountSlot(uint8_t selectedCount) {
+    SlotProps slot{
+        .visualState = Visual::ACTIVE,
+        .tone = Tone::NEUTRAL,
+        .showIcon = false,
+        .icon = nullptr,
+        .showLabel = true,
+    };
+    formatSelectionLabel(slot.labelText, selectedCount);
+    return slot;
+}
+
+void applyHoldProgress(SlotProps& slot,
+                       const core::state::StructureHoldState& holdState,
+                       bool active) {
+    slot.holdActive = active;
+    slot.holdStartedAtMs = holdState.startedAtMs.get();
+    slot.holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
 }
 
 Tone variationStatusTone(core::state::sequencer::StepProperty property) {
@@ -268,17 +289,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
             removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
         );
-        props.slots[0].holdActive = removeHoldActive;
-        props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
-        props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
-        props.slots[1] = SlotProps{
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = false,
-            .icon = nullptr,
-            .showLabel = true,
-        };
-        formatSelectionLabel(props.slots[1].labelText, selectedCount);
+        applyHoldProgress(props.slots[0], holdState, removeHoldActive);
+        props.slots[1] = makeSelectionCountSlot(selectedCount);
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             interactionActionIcon(rightAction),
             pasteHoldActive
@@ -286,9 +298,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 : ((canCopy || canPaste) ? Visual::ACTIVE : Visual::DISABLED),
             (pasteHoldActive || pastePreviewActive) ? Tone::POSITIVE : Tone::NEUTRAL
         );
-        props.slots[2].holdActive = pasteHoldActive;
-        props.slots[2].holdStartedAtMs = holdState.startedAtMs.get();
-        props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        applyHoldProgress(props.slots[2], holdState, pasteHoldActive);
         return props;
     }
 
@@ -353,20 +363,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 : (canDeleteSelection ? Visual::ACTIVE : Visual::DISABLED),
             Tone::DESTRUCTIVE
         );
-        props.slots[0].holdActive = deleteHoldActive;
-        props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
-        props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
-        props.slots[1] = SlotProps{
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = false,
-            .icon = nullptr,
-            .showLabel = true,
-        };
-        formatSelectionLabel(
-            props.slots[1].labelText,
-            countSelectedItems(selectionMask)
-        );
+        applyHoldProgress(props.slots[0], holdState, deleteHoldActive);
+        props.slots[1] = makeSelectionCountSlot(countSelectedItems(selectionMask));
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             interactionActionIcon(rightAction),
             pasteHoldActive
@@ -374,9 +372,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 : ((canCopySelection || canPasteSelection) ? Visual::ACTIVE : Visual::DISABLED),
             pasteHoldActive ? Tone::POSITIVE : Tone::NEUTRAL
         );
-        props.slots[2].holdActive = pasteHoldActive;
-        props.slots[2].holdStartedAtMs = holdState.startedAtMs.get();
-        props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        applyHoldProgress(props.slots[2], holdState, pasteHoldActive);
         return props;
     }
 
@@ -417,9 +413,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                    : ((canClear || canRemove) ? Visual::ACTIVE : Visual::HIDDEN)),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
-    props.slots[0].holdActive = removeHoldActive;
-    props.slots[0].holdStartedAtMs = holdState.startedAtMs.get();
-    props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    applyHoldProgress(props.slots[0], holdState, removeHoldActive);
     props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         interactionActionIcon(rightAction),
@@ -432,9 +426,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             ? (pasteOverwritesDestination ? Tone::WARNING : Tone::POSITIVE)
             : Tone::NEUTRAL
     );
-    props.slots[2].holdActive = pasteHoldActive;
-    props.slots[2].holdStartedAtMs = holdState.startedAtMs.get();
-    props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    applyHoldProgress(props.slots[2], holdState, pasteHoldActive);
     return props;
 }
 
