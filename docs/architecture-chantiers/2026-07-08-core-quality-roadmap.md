@@ -281,6 +281,9 @@ product rules into the wrong layer.
   automation copy/paste state transfer into `MacroAutomationClipboardOps`,
   removing duplicated clipboard validation, allocation rollback, and first-entry
   paste logic from the edit and structure services.
+- `e51d9b4 sequencer: centralize structure step resets` removed the public
+  focused-step erase path and routed focused and selected Step shallow/deep
+  resets through two private helpers in `SequencerStructureEditWorkflow`.
 
 Validated after the Macro context projection slice:
 
@@ -575,6 +578,19 @@ Validated after the Macro automation clipboard cleanup slice:
 - `ms ux run core --select macro/track-multipage-automation-copy-paste.ux --report --no-interactive --skip-build`
   -> OK.
 
+Validated after the Sequencer structure step reset cleanup slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-selection.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-focus-copy-paste.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/child-step-selection-bottom-actions.ux --report --no-interactive --skip-build`
+  -> OK.
+
 ### Completed Sequencer Grammar Baseline Slice
 
 The initial working tree contained a small, coherent sequencer grammar slice:
@@ -862,6 +878,15 @@ Acceptance:
 - Current-action and selection-action code paths share explicit plans where
   behavior is intended to match.
 - No stale "track legacy" or transitional naming remains.
+
+Status:
+
+- In progress. Step reset duplication is removed and the file is down to
+  roughly 529 lines.
+- The remaining work is to decide whether the current track/page/selection
+  routing should stay in this facade or be split into a dedicated current-action
+  router and selection-action router. Do not split further unless it removes a
+  real second behavior path.
 
 ### P1 - Separate Sequencer View-Model Decisions
 
