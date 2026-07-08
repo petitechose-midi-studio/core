@@ -32,7 +32,7 @@ Largest current production files:
 | File | Lines | Concern |
 |---|---:|---|
 | `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
-| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~596 | Reduced, but still mixes track current actions, track selection mute/remove, and history boundaries. |
+| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~590 | Reduced, but still mixes track selection mute/remove, step current actions, and history boundaries. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~26 | Public facade; concrete projections live in dedicated builders. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
 | `src/ui/sequencer/SequencerStepEditOverlay.cpp` | ~971 | Layout/render state is large and tightly coupled to step-editor semantics. |
@@ -251,6 +251,10 @@ product rules into the wrong layer.
   sequencer-only track creation out of an inline header and into
   `SequencerStructureTrackOps.cpp` with `FLASHMEM`, preserving the same shared
   track state update path.
+- `d34eede sequencer: extract structure track current ops` moved Track paste
+  target resolution, focused-track mute toggling, and current Track paste
+  application into `SequencerStructureTrackOps`, while keeping history and
+  preview synchronization in `SequencerStructureEditWorkflow`.
 
 Validated after the Macro context projection slice:
 
@@ -476,6 +480,14 @@ Validated after moving Sequencer structure track ops out of the header:
 
 - `ms test core` -> `83/83`;
 - `ms ux run core --select sequencer/structure/track-bottom-actions.ux --report --no-interactive`
+  -> OK.
+
+Validated after the Sequencer structure track current ops slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/track-bottom-actions.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/structure/track-chord-copy-paste.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
