@@ -277,6 +277,10 @@ product rules into the wrong layer.
 - `09b8f91 test: cover macro automation modulation persistence` expanded the
   project snapshot dense macro automation roundtrip to include modulation
   curves, modulation depth, and automation window offsets.
+- `9fd135f macro: share automation clipboard slot ops` moved single-slot macro
+  automation copy/paste state transfer into `MacroAutomationClipboardOps`,
+  removing duplicated clipboard validation, allocation rollback, and first-entry
+  paste logic from the edit and structure services.
 
 Validated after the Macro context projection slice:
 
@@ -559,7 +563,19 @@ Validated after the Macro automation modulation persistence coverage slice:
 - `git diff --check` -> OK;
 - `ms test core` -> `83/83`.
 
-### Current Uncommitted Sequencer Grammar Slice
+Validated after the Macro automation clipboard cleanup slice:
+
+- `git diff --check` -> OK;
+- `git diff --cached --check` -> OK;
+- `ms test core` -> `83/83`;
+- `ms ux run core --select macro/automation-lifecycle.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select macro/page-automation-copy-paste.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select macro/track-multipage-automation-copy-paste.ux --report --no-interactive --skip-build`
+  -> OK.
+
+### Completed Sequencer Grammar Baseline Slice
 
 The initial working tree contained a small, coherent sequencer grammar slice:
 
@@ -971,6 +987,20 @@ Work:
    accordingly.
 7. Do not add modulation features until automation lifecycle is production
    ready.
+
+Status:
+
+- Memory accounting is documented with current `pio run` evidence.
+- Point-pool refusal, replacement, compaction, and copy-failure behavior now
+  have native coverage.
+- Dense project snapshot persistence now covers automation and modulation curve
+  payloads, modulation depth, and window offsets.
+- Single-slot macro automation copy/paste now uses one helper shared by edit and
+  structure services; page and track copy/paste workflows remain separate
+  because they operate on scoped automation sets.
+- The remaining product decision is the durable macro quick-control grammar,
+  especially whether `LEFT_CENTER` coarse length/offset edit stays as a named
+  macro automation rule before modulation features start.
 
 Acceptance:
 
