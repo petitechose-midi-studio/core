@@ -31,7 +31,7 @@ Largest current production files:
 
 | File | Lines | Concern |
 |---|---:|---|
-| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~974 | Reduced, but still owns row routing, value editing, local random, and history synchronization. |
+| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~780 | Reduced, but still owns overlay routing, context action history, and step edit lifecycle. |
 | `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~1024 | Copy/paste, clear/remove, selection, history, preview, and track/page/step logic are colocated. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~1016 | Builds view models but also holds high-level UX decisions and compatibility logic. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
@@ -180,6 +180,11 @@ product rules into the wrong layer.
   field navigation, value application, encoder configuration, and focused-field
   reset into `SequencerStepChordEditorWorkflow`, leaving the step edit handler
   with routing and OPT resynchronization only.
+- `da92d22 sequencer: extract step value row workflow` moved step activated,
+  musical property, quick chord, local random range, value-row encoder
+  configuration, and value-row default reset behavior into
+  `SequencerStepValueRowWorkflow`, with direct native coverage for the extracted
+  workflow.
 
 Validated after the Macro context projection slice:
 
@@ -250,6 +255,18 @@ Validated after the Sequencer step chord editor workflow slice:
 - `ms ux run core --select sequencer/editing/step-edit-chord.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/editing/step-edit-chord-strum.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer step value row workflow slice:
+
+- `ms test core` -> `81/81`;
+- `ms ux run core --select sequencer/editing/step-edit-basic.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/editing/step-edit-local-random.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/editing/step-edit-chord.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
