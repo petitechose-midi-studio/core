@@ -19,6 +19,8 @@ using oc::note::sequencer::StepSequencerScaleType;
 
 constexpr uint32_t kTransportV0FixtureSize = 4;
 constexpr uint32_t kProjectMetaV1_0FixtureSize = 48;
+static_assert(codec::PROJECT_STATE_CHUNK_VERSION_MINOR > 0,
+              "Same-size stale-minor test needs a previous minor version");
 
 bool reportHas(const project_file::LoadReport& report, project_file::LoadCode code) {
     for (uint8_t i = 0; i < report.itemCount; ++i) {
@@ -263,6 +265,46 @@ void test_project_meta_v1_0_chunk_migrates_generated_id_to_slug() {
     std::cout << "[PASS] test_project_meta_v1_0_chunk_migrates_generated_id_to_slug\n";
 }
 
+void test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite() {
+    codec::ProjectTransportPayload transport{};
+    transport.tempoCentiBpm = 18000;
+    std::array<uint8_t, codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
+    assert(codec::encodeTransportPayload(
+        transport,
+        transportBytes.data(),
+        static_cast<uint32_t>(transportBytes.size())
+    ));
+    const project_file::ChunkView chunks[] = {{
+        .id = project_file::chunkIdValue(project_file::ChunkId::TRANSPORT),
+        .versionMajor = codec::PROJECT_STATE_CHUNK_VERSION_MAJOR,
+        .versionMinor = static_cast<uint8_t>(codec::PROJECT_STATE_CHUNK_VERSION_MINOR - 1U),
+        .flags = 0,
+        .data = transportBytes.data(),
+        .size = codec::PROJECT_TRANSPORT_PAYLOAD_SIZE,
+    }};
+
+    uint8_t bytes[160] = {};
+    auto encodeResult = project_file::encode(chunks, 1, 0, bytes, sizeof(bytes));
+    assert(encodeResult.status == project_file::Status::OK);
+
+    project::ProjectState loaded;
+    project_file::LoadReport report{};
+    auto decodeResult = codec::decodeProjectState(
+        bytes,
+        encodeResult.bytesWritten,
+        loaded,
+        &report
+    );
+    assert(decodeResult.ok);
+    assert(!decodeResult.overwriteSafe);
+    assert(report.status == project_file::LoadStatus::PARTIAL);
+    assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
+    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
+    assert(loaded.transport.tempoBpm == project::ProjectTransportState::DEFAULT_TEMPO_BPM);
+
+    std::cout << "[PASS] test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite\n";
+}
+
 void test_future_chunk_version_defaults_and_blocks_overwrite() {
     codec::ProjectTransportPayload transport{};
     transport.tempoCentiBpm = 18000;
@@ -349,6 +391,7 @@ int main() {
     test_missing_optional_chunks_default_and_report_without_blocking_overwrite();
     test_transport_v0_chunk_migrates_to_current_payload();
     test_project_meta_v1_0_chunk_migrates_generated_id_to_slug();
+    test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite();
     test_future_chunk_version_defaults_and_blocks_overwrite();
     test_invalid_payload_size_defaults_and_reports_partial_load();
 

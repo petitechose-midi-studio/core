@@ -82,8 +82,7 @@ FLASHMEM bool readPayload(const project_file::DecodedChunkView* chunk,
     const bool needsMigration =
         chunk->versionMajor < PROJECT_STATE_CHUNK_VERSION_MAJOR ||
         (chunk->versionMajor == PROJECT_STATE_CHUNK_VERSION_MAJOR &&
-         chunk->versionMinor < PROJECT_STATE_CHUNK_VERSION_MINOR &&
-         chunk->size != PayloadSize);
+         chunk->versionMinor < PROJECT_STATE_CHUNK_VERSION_MINOR);
     if (needsMigration) {
         std::array<uint8_t, PayloadSize> migratedBytes{};
         const auto migrated = migration::migrateToCurrent(
