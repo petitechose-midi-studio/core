@@ -299,6 +299,11 @@ product rules into the wrong layer.
   that are only used by their implementation files into anonymous namespaces,
   reducing the public structure-edit API without changing user-visible
   behavior.
+- `5bf37b3 persistence: reject stale macro snapshot chunks` removed the
+  permissive `versionMajor <= current` check from project snapshot
+  `MACRO_STATE` loading. Macro state, sequencer state, and macro automation
+  snapshot chunks now all require their exact current chunk versions unless an
+  explicit migration path exists.
 
 Validated after the Macro context projection slice:
 
@@ -647,6 +652,11 @@ Validated after the Sequencer structure helper API cleanup slice:
 - `git diff --check` -> OK;
 - `ms test core` -> `83/83`.
 
+Validated after the Project snapshot macro-state version cleanup slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`.
+
 ### Completed Sequencer Grammar Baseline Slice
 
 The initial working tree contained a small, coherent sequencer grammar slice:
@@ -819,11 +829,11 @@ Evidence:
   source of truth for sequencer behavior.
 - `src/handler/sequencer/SequencerInteractionPolicyAdapter.hpp` exposes handler
   predicates.
-- `src/ui/sequencer/SequencerViewModelBuilder.cpp` still derives visible affordance
-  state and clipboard compatibility locally.
+- `src/ui/sequencer/SequencerViewModelBuilder.cpp` is now a narrow facade over
+  dedicated header, strip, overlay, and grid builders.
 - `src/state/macro/MacroInteractionPolicy.cpp` and
-  `src/ui/view/MacroViewModelBuilder.cpp` currently disagree for macro-slot
-  focus bottom-strip visibility.
+  `src/ui/view/MacroViewModelBuilder.cpp` now agree through
+  `MacroInteractionContextBuilder` and `MacroInteractionPolicy::actionStrip`.
 
 Work:
 
@@ -849,6 +859,13 @@ Acceptance:
 - `ms test core` and the targeted sequencer UX workflows pass.
 - Macro slot focus cannot expose behavior without a matching visible affordance,
   unless the product intentionally defines a hidden shortcut and tests name it.
+
+Status:
+
+- Complete for this roadmap pass. Sequencer policy remains the source of truth
+  for visible sequencer controls, macro view-model strips consume the macro
+  policy projection, and the known hidden macro action-strip drift has a native
+  regression path.
 
 ### P1 - Split `SequencerStepEditHandler`
 
@@ -937,12 +954,14 @@ Acceptance:
 
 Status:
 
-- In progress. Step reset duplication is removed and the file is down to
-  roughly 529 lines.
-- The remaining work is to decide whether the current track/page/selection
-  routing should stay in this facade or be split into a dedicated current-action
-  router and selection-action router. Do not split further unless it removes a
-  real second behavior path.
+- Complete for this roadmap pass. The workflow remains a public facade for
+  structure editing, but step, page, track, selection, paste-plan, and clipboard
+  mutation logic now lives in dedicated operation/workflow modules.
+- The remaining `SequencerStructureEditWorkflow.cpp` body is intentional
+  history/preview/focus routing around those operations. A dedicated
+  current-action or selection-action router should only be introduced if a
+  future behavior change creates a second real action path; doing it now would
+  add indirection without reducing product risk.
 
 ### P1 - Separate Sequencer View-Model Decisions
 
@@ -1141,10 +1160,12 @@ Acceptance:
 
 Status:
 
-- In progress. Project-state chunks now route any strictly stale version through
-  `ProjectChunkMigration`, even when the stale payload size matches the current
-  layout. Unsupported stale chunks default through an explicit partial load
-  report and block overwrite.
+- Complete for this roadmap pass. Project-state chunks now route any strictly
+  stale version through `ProjectChunkMigration`, even when the stale payload
+  size matches the current layout. Project snapshot sequencer, macro-state, and
+  macro-automation chunks require exact current versions unless an explicit
+  migration path is added. Unsupported stale chunks default through an explicit
+  partial load report and block overwrite.
 
 ### P3 - Test And UX Harness Hygiene
 
