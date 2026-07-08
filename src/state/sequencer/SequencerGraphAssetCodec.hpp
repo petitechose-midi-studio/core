@@ -78,11 +78,11 @@ inline constexpr uint32_t STEP_GRAPH_PRESET_HEADER_SIZE = 21;
 inline constexpr uint32_t STEP_GRAPH_PRESET_MAX_ENCODED_SIZE_U32 =
     STEP_GRAPH_PRESET_HEADER_SIZE +
     oc::note::sequencer::StepSequencerGraphLimits::MAX_SEQUENCES *
-        sizeof(SequencerGraphSequenceRecord) +
+        SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE +
     oc::note::sequencer::StepSequencerGraphLimits::MAX_STEP_NODES *
-        sizeof(SequencerGraphStepNodeRecord) +
+        SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE +
     oc::note::sequencer::StepSequencerGraphLimits::MAX_CYCLE_SETS *
-        sizeof(SequencerGraphCycleSetRecord);
+        SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE;
 static_assert(STEP_GRAPH_PRESET_MAX_ENCODED_SIZE_U32 <= UINT16_MAX);
 inline constexpr uint16_t STEP_GRAPH_PRESET_MAX_ENCODED_SIZE =
     static_cast<uint16_t>(STEP_GRAPH_PRESET_MAX_ENCODED_SIZE_U32);

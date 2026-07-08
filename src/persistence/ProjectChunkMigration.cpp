@@ -4,7 +4,8 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "persistence/ProjectStatePersistencePayloads.hpp"
+#include "persistence/PersistenceBinaryCodec.hpp"
+#include "persistence/ProjectStatePersistenceCodec.hpp"
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/project/ProjectSlug.hpp"
 
@@ -14,12 +15,14 @@ namespace {
 
 namespace project_file = core::persistence::project_file;
 namespace state_codec = core::persistence::project_state_codec;
+namespace binary = core::persistence::binary_codec;
 
-#pragma pack(push, 1)
+constexpr uint32_t TRANSPORT_V0_PAYLOAD_SIZE = 4;
+constexpr uint32_t PROJECT_META_V1_0_PAYLOAD_SIZE = 48;
+
 struct TransportV0Payload {
     uint16_t tempoBpm = 120;
     uint8_t swingPercent = 0;
-    uint8_t reserved0 = 0;
 };
 
 struct ProjectMetaV1_0Payload {
@@ -27,13 +30,11 @@ struct ProjectMetaV1_0Payload {
     char name[24] = {};
     uint32_t modifiedCounter = 0;
     uint8_t flags = 0;
-    uint8_t reserved0 = 0;
-    uint16_t reserved1 = 0;
 };
-#pragma pack(pop)
 
-static_assert(sizeof(TransportV0Payload) == 4, "Unexpected TransportV0Payload size");
-static_assert(sizeof(ProjectMetaV1_0Payload) == 48, "Unexpected ProjectMetaV1_0Payload size");
+static_assert(TRANSPORT_V0_PAYLOAD_SIZE == 4, "Unexpected transport v0 payload size");
+static_assert(PROJECT_META_V1_0_PAYLOAD_SIZE == 48,
+              "Unexpected project meta v1.0 payload size");
 
 constexpr uint8_t kMetaFlagHasSavedIdentity = 1U << 1U;
 
@@ -102,21 +103,49 @@ FLASHMEM void copyPayloadText(const char* source, char* target, size_t targetSiz
     std::strncpy(target, source, targetSize - 1U);
 }
 
+FLASHMEM bool decodeTransportV0Payload(const uint8_t* data,
+                                       uint32_t size,
+                                       TransportV0Payload& out) {
+    if (size != TRANSPORT_V0_PAYLOAD_SIZE) return false;
+    binary::Reader reader(data, size);
+    return reader.readU16(out.tempoBpm) &&
+           reader.readU8(out.swingPercent) &&
+           reader.skip(1) &&
+           reader.ok() &&
+           reader.offset() == TRANSPORT_V0_PAYLOAD_SIZE;
+}
+
+FLASHMEM bool decodeProjectMetaV1_0Payload(const uint8_t* data,
+                                           uint32_t size,
+                                           ProjectMetaV1_0Payload& out) {
+    if (size != PROJECT_META_V1_0_PAYLOAD_SIZE) return false;
+    binary::Reader reader(data, size);
+    return reader.readBytes(out.id, sizeof(out.id)) &&
+           reader.readBytes(out.name, sizeof(out.name)) &&
+           reader.readU32(out.modifiedCounter) &&
+           reader.readU8(out.flags) &&
+           reader.skip(3) &&
+           reader.ok() &&
+           reader.offset() == PROJECT_META_V1_0_PAYLOAD_SIZE;
+}
+
 FLASHMEM Result migrateTransportV0(const project_file::DecodedChunkView& chunk,
                                    uint8_t* out,
                                    uint32_t outCapacity) {
-    if (chunk.size != sizeof(TransportV0Payload) || chunk.data == nullptr) {
+    if (chunk.size != TRANSPORT_V0_PAYLOAD_SIZE || chunk.data == nullptr) {
         return {.status = Status::INVALID_PAYLOAD, .bytesWritten = 0};
     }
-    if (out == nullptr || outCapacity < sizeof(state_codec::ProjectTransportPayload)) {
+    if (out == nullptr || outCapacity < state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE) {
         return {
             .status = Status::OUTPUT_TOO_SMALL,
-            .bytesWritten = sizeof(state_codec::ProjectTransportPayload),
+            .bytesWritten = state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE,
         };
     }
 
     TransportV0Payload source{};
-    std::memcpy(&source, chunk.data, sizeof(source));
+    if (!decodeTransportV0Payload(chunk.data, chunk.size, source)) {
+        return {.status = Status::INVALID_PAYLOAD, .bytesWritten = 0};
+    }
 
     state_codec::ProjectTransportPayload target{};
     target.tempoCentiBpm =
@@ -124,25 +153,36 @@ FLASHMEM Result migrateTransportV0(const project_file::DecodedChunkView& chunk,
     target.swingPercent = core::state::project::sanitizeProjectSwingPercent(source.swingPercent);
     target.runMode = core::state::project::PROJECT_RUN_MODE_DEFAULT;
 
-    std::memcpy(out, &target, sizeof(target));
-    return {.status = Status::MIGRATED, .bytesWritten = sizeof(target)};
+    if (!state_codec::encodeTransportPayload(
+            target,
+            out,
+            state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE
+        )) {
+        return {.status = Status::INVALID_PAYLOAD, .bytesWritten = 0};
+    }
+    return {
+        .status = Status::MIGRATED,
+        .bytesWritten = state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE,
+    };
 }
 
 FLASHMEM Result migrateProjectMetaV1_0(const project_file::DecodedChunkView& chunk,
                                        uint8_t* out,
                                        uint32_t outCapacity) {
-    if (chunk.size != sizeof(ProjectMetaV1_0Payload) || chunk.data == nullptr) {
+    if (chunk.size != PROJECT_META_V1_0_PAYLOAD_SIZE || chunk.data == nullptr) {
         return {.status = Status::INVALID_PAYLOAD, .bytesWritten = 0};
     }
-    if (out == nullptr || outCapacity < sizeof(state_codec::ProjectMetaPayload)) {
+    if (out == nullptr || outCapacity < state_codec::PROJECT_META_PAYLOAD_SIZE) {
         return {
             .status = Status::OUTPUT_TOO_SMALL,
-            .bytesWritten = sizeof(state_codec::ProjectMetaPayload),
+            .bytesWritten = state_codec::PROJECT_META_PAYLOAD_SIZE,
         };
     }
 
     ProjectMetaV1_0Payload source{};
-    std::memcpy(&source, chunk.data, sizeof(source));
+    if (!decodeProjectMetaV1_0Payload(chunk.data, chunk.size, source)) {
+        return {.status = Status::INVALID_PAYLOAD, .bytesWritten = 0};
+    }
 
     char slug[core::state::project::PROJECT_SLUG_SIZE] = {};
     const size_t idLength = boundedLength(source.id, sizeof(source.id));
@@ -168,8 +208,13 @@ FLASHMEM Result migrateProjectMetaV1_0(const project_file::DecodedChunkView& chu
         target.flags = static_cast<uint8_t>(target.flags & ~kMetaFlagHasSavedIdentity);
     }
 
-    std::memcpy(out, &target, sizeof(target));
-    return {.status = Status::MIGRATED, .bytesWritten = sizeof(target)};
+    if (!state_codec::encodeMetaPayload(target, out, state_codec::PROJECT_META_PAYLOAD_SIZE)) {
+        return {.status = Status::INVALID_PAYLOAD, .bytesWritten = 0};
+    }
+    return {
+        .status = Status::MIGRATED,
+        .bytesWritten = state_codec::PROJECT_META_PAYLOAD_SIZE,
+    };
 }
 
 }  // namespace

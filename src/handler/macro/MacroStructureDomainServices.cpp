@@ -79,23 +79,12 @@ FLASHMEM void persistConfigChange(StateRefs state, Operations operations) {
 FLASHMEM void clearAutomationForPage(core::state::macro::MacroAutomationBankState& bank,
                                      uint8_t track,
                                      uint8_t page) {
-    for (uint8_t macro = 0; macro < core::state::macro::MACRO_COUNT; ++macro) {
-        core::state::macro::macroAutomationClearSlot(
-            bank,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = track,
-                .page = page,
-                .macro = macro,
-            }
-        );
-    }
+    core::state::macro::macroAutomationClearPage(bank, track, page);
 }
 
 FLASHMEM void clearAutomationForTrack(core::state::macro::MacroAutomationBankState& bank,
                                       uint8_t track) {
-    for (uint8_t page = 0; page < core::state::macro::PAGE_COUNT; ++page) {
-        clearAutomationForPage(bank, track, page);
-    }
+    core::state::macro::macroAutomationClearTrack(bank, track);
 }
 
 FLASHMEM void copyAutomationSlot(core::state::macro::MacroAutomationBankState& bank,
@@ -569,6 +558,121 @@ FLASHMEM bool MacroStructureDomainServices::activateMacroSlot(uint8_t index) con
         ));
     }
     markProjectMutated(operations_);
+    return true;
+}
+
+FLASHMEM bool MacroStructureDomainServices::macroAutomationActive(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_->currentActiveTrack(),
+            .page = pages_->currentActivePage(),
+            .macro = index,
+        }
+    );
+    return slot != nullptr && slot->automation.active;
+}
+
+FLASHMEM bool MacroStructureDomainServices::clearMacroAutomation(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
+        pages_->automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_->currentActiveTrack(),
+            .page = pages_->currentActivePage(),
+            .macro = index,
+        }
+    );
+    if (slot == nullptr || !slot->automation.active) return false;
+
+    flushAutoPersist(operations_);
+    core::state::macro::macroAutomationClearAutomation(pages_->automation, *slot);
+    persistConfigChange(stateRefs_(), operations_);
+    return true;
+}
+
+FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    flushAutoPersist(operations_);
+    const bool removed = core::state::macro::macroAutomationClearSlot(
+        pages_->automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_->currentActiveTrack(),
+            .page = pages_->currentActivePage(),
+            .macro = index,
+        }
+    );
+    if (!removed) return false;
+
+    persistConfigChange(stateRefs_(), operations_);
+    return true;
+}
+
+FLASHMEM bool MacroStructureDomainServices::copyMacroAutomation(
+    uint8_t index,
+    core::state::StructureClipboardState& clipboard
+) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_->currentActiveTrack(),
+            .page = pages_->currentActivePage(),
+            .macro = index,
+        }
+    );
+    if (slot == nullptr || !slot->automation.active) return false;
+
+    clipboard.storeMacroAutomation(pages_->automation, *slot);
+    return true;
+}
+
+FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
+    uint8_t index,
+    const core::state::StructureClipboardState& clipboard
+) const {
+    if (index >= core::state::macro::MACRO_COUNT || !clipboard.hasMacroAutomation()) {
+        return false;
+    }
+    if (!clipboard.macroAutomationSet ||
+        !clipboard.macroAutomationSet->valid ||
+        clipboard.macroAutomationSet->count == 0) {
+        return false;
+    }
+
+    const auto& entry = clipboard.macroAutomationSet->entries[0];
+    if (!entry.valid || !entry.state.automation.active) return false;
+
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = pages_->currentActiveTrack(),
+        .page = pages_->currentActivePage(),
+        .macro = index,
+    };
+    const bool hadSlot = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        address
+    ) != nullptr;
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        pages_->automation,
+        address
+    );
+    if (slot == nullptr) return false;
+
+    flushAutoPersist(operations_);
+    if (!core::state::macro::macroAutomationCopySlotState(
+            pages_->automation,
+            *slot,
+            clipboard.macroAutomationSet->pointPool,
+            entry.state
+        )) {
+        if (!hadSlot) {
+            core::state::macro::macroAutomationClearSlot(pages_->automation, address);
+        }
+        return false;
+    }
+
+    persistConfigChange(stateRefs_(), operations_);
     return true;
 }
 

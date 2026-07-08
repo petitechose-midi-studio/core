@@ -630,11 +630,11 @@ void test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool() {
         snapshot_codec::PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR
     );
     assert(automationChunk->size ==
-           sizeof(snapshot_codec::ProjectMacroAutomationPayloadHeader) +
+           snapshot_codec::PROJECT_MACRO_AUTOMATION_HEADER_SIZE +
                static_cast<uint32_t>(expectedAutomationEntries) *
-                   sizeof(snapshot_codec::ProjectMacroAutomationEntryPayload) +
+                   snapshot_codec::PROJECT_MACRO_AUTOMATION_ENTRY_SIZE +
                static_cast<uint32_t>(expectedAutomationPoints) *
-                   sizeof(core::state::macro::MacroPackedCurvePoint));
+                   snapshot_codec::PROJECT_MACRO_AUTOMATION_POINT_SIZE);
     assert(automationChunk->size < sizeof(core::state::macro::MacroAutomationBankState));
 
     project::ProjectSnapshot loadedSnapshot;

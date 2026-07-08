@@ -1,0 +1,17 @@
+# UX workflow: inspect a non-flat macro automation curve.
+# Purpose: validates that the automation detail overlay renders a compact
+# sparkline instead of only textual curve metadata.
+
+0 scenario macro-automation-curve-shape
+80 capture screen macro_grid_curve_source
+
+# Open Macro Edit for Macro 1.
+180 button MACRO_1 down
+1280 tick
+1360 capture screen macro_1_edit_detail
+1460 button MACRO_1 up
+
+# Open Automation detail.
+1620 encoder NAV 1
+1780 tap NAV 60
+2020 capture screen macro_1_automation_sparkline

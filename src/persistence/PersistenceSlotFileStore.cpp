@@ -4,7 +4,13 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/PersistenceBinaryCodec.hpp"
+
 namespace core::persistence {
+
+namespace {
+namespace binary = core::persistence::binary_codec;
+}
 
 FLASHMEM PersistenceSlotFileStore::PersistenceSlotFileStore(
     oc::interface::IStorage& storage,
@@ -17,8 +23,10 @@ FLASHMEM bool PersistenceSlotFileStore::init(bool formatIfInvalid) {
     if (!isConfigValid_()) return false;
     if (!storage_.available()) return false;
 
+    std::array<uint8_t, FILE_HEADER_SIZE> bytes{};
     FileHeader header{};
-    const bool ok = readBytes_(0, reinterpret_cast<uint8_t*>(&header), sizeof(header));
+    const bool ok = readBytes_(0, bytes.data(), bytes.size()) &&
+                    decodeFileHeader_(bytes.data(), bytes.size(), header);
     if (!ok || !isHeaderValid_(header)) {
         return formatIfInvalid ? format() : false;
     }
@@ -35,11 +43,13 @@ FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::formatStatus() {
     if (!storage_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
 
     const FileHeader header = buildHeader_();
-    if (!writeBytes_(0, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
+    std::array<uint8_t, FILE_HEADER_SIZE> bytes{};
+    if (!encodeFileHeader_(header, bytes.data(), bytes.size()) ||
+        !writeBytes_(0, bytes.data(), bytes.size())) {
         return PersistenceWriteStatus::IO_ERROR;
     }
 
-    const uint32_t slots_region_address = sizeof(FileHeader);
+    const uint32_t slots_region_address = FILE_HEADER_SIZE;
     const size_t slots_region_size = static_cast<size_t>(config_.slotCount) * slotSize_();
     if (!storage_.erase(slots_region_address, slots_region_size)) {
         return PersistenceWriteStatus::ERASE_FAILED;
@@ -76,8 +86,10 @@ FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::saveSlotStatus(
     header.saveCounter = saveCounter;
     header.payloadCrc32 = crc32_(payload, payloadSize);
 
+    std::array<uint8_t, SLOT_HEADER_SIZE> headerBytes{};
     const uint32_t header_address = slotHeaderAddress(slotIndex);
-    if (!writeBytes_(header_address, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
+    if (!encodeSlotHeader_(header, headerBytes.data(), headerBytes.size()) ||
+        !writeBytes_(header_address, headerBytes.data(), headerBytes.size())) {
         return PersistenceWriteStatus::IO_ERROR;
     }
 
@@ -89,7 +101,8 @@ FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::saveSlotStatus(
     }
 
     header.state = SLOT_STATE_VALID;
-    if (!writeBytes_(header_address, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
+    if (!encodeSlotHeader_(header, headerBytes.data(), headerBytes.size()) ||
+        !writeBytes_(header_address, headerBytes.data(), headerBytes.size())) {
         return PersistenceWriteStatus::IO_ERROR;
     }
 
@@ -238,12 +251,12 @@ FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::eraseSlotStatus(uint16
 
 FLASHMEM uint32_t PersistenceSlotFileStore::slotHeaderAddress(uint16_t slotIndex) const {
     return static_cast<uint32_t>(
-        sizeof(FileHeader) + static_cast<size_t>(slotIndex) * slotSize_()
+        FILE_HEADER_SIZE + static_cast<size_t>(slotIndex) * slotSize_()
     );
 }
 
 FLASHMEM uint32_t PersistenceSlotFileStore::slotPayloadAddress(uint16_t slotIndex) const {
-    return slotHeaderAddress(slotIndex) + static_cast<uint32_t>(sizeof(SlotHeader));
+    return slotHeaderAddress(slotIndex) + static_cast<uint32_t>(SLOT_HEADER_SIZE);
 }
 
 FLASHMEM uint16_t PersistenceSlotFileStore::slotPayloadSize() const {
@@ -259,7 +272,8 @@ FLASHMEM bool PersistenceSlotFileStore::isConfigValid_() const {
     if (config_.slotCount == 0 || config_.slotCount > MAX_SLOT_COUNT) return false;
     if (config_.slotPayloadSize == 0) return false;
 
-    const size_t total_size = sizeof(FileHeader) + static_cast<size_t>(config_.slotCount) * slotSize_();
+    const size_t total_size =
+        FILE_HEADER_SIZE + static_cast<size_t>(config_.slotCount) * slotSize_();
     return total_size <= storage_.capacity();
 }
 
@@ -268,7 +282,7 @@ FLASHMEM bool PersistenceSlotFileStore::isSlotIndexValid_(uint16_t slotIndex) co
 }
 
 FLASHMEM size_t PersistenceSlotFileStore::slotSize_() const {
-    return sizeof(SlotHeader) + static_cast<size_t>(config_.slotPayloadSize);
+    return SLOT_HEADER_SIZE + static_cast<size_t>(config_.slotPayloadSize);
 }
 
 FLASHMEM bool PersistenceSlotFileStore::isHeaderValid_(const FileHeader& header) const {
@@ -278,9 +292,7 @@ FLASHMEM bool PersistenceSlotFileStore::isHeaderValid_(const FileHeader& header)
     if (header.slotCount != config_.slotCount) return false;
     if (header.slotPayloadSize != config_.slotPayloadSize) return false;
 
-    FileHeader expected = header;
-    expected.layoutCrc32 = 0;
-    const uint32_t computed = crc32_(reinterpret_cast<const uint8_t*>(&expected), sizeof(expected));
+    const uint32_t computed = fileHeaderLayoutCrc_(header);
     return computed == header.layoutCrc32;
 }
 
@@ -292,7 +304,7 @@ FLASHMEM PersistenceSlotFileStore::FileHeader PersistenceSlotFileStore::buildHea
     header.slotCount = config_.slotCount;
     header.slotPayloadSize = config_.slotPayloadSize;
     header.layoutCrc32 = 0;
-    header.layoutCrc32 = crc32_(reinterpret_cast<const uint8_t*>(&header), sizeof(header));
+    header.layoutCrc32 = fileHeaderLayoutCrc_(header);
     return header;
 }
 
@@ -300,12 +312,17 @@ FLASHMEM SlotLoadStatus PersistenceSlotFileStore::readSlotHeader_(
     uint16_t slotIndex,
     SlotHeader& header
 ) const {
-    if (!readBytes_(slotHeaderAddress(slotIndex), reinterpret_cast<uint8_t*>(&header), sizeof(header))) {
+    std::array<uint8_t, SLOT_HEADER_SIZE> bytes{};
+    if (!readBytes_(slotHeaderAddress(slotIndex), bytes.data(), bytes.size())) {
         return SlotLoadStatus::IO_ERROR;
     }
 
-    if (isAllFF_(reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
+    if (isAllFF_(bytes.data(), bytes.size())) {
         return SlotLoadStatus::EMPTY;
+    }
+
+    if (!decodeSlotHeader_(bytes.data(), bytes.size(), header)) {
+        return SlotLoadStatus::HEADER_MISMATCH;
     }
 
     if (header.state != SLOT_STATE_VALID) {
@@ -358,6 +375,83 @@ FLASHMEM uint32_t PersistenceSlotFileStore::crc32_(const uint8_t* data, size_t s
         }
     }
     return ~crc;
+}
+
+FLASHMEM bool PersistenceSlotFileStore::encodeFileHeader_(const FileHeader& header,
+                                                          uint8_t* out,
+                                                          size_t size) {
+    if (size != FILE_HEADER_SIZE) return false;
+    binary::Writer writer(out, static_cast<uint32_t>(size));
+    return writer.writeU32(header.magic) &&
+           writer.writeU8(header.formatVersion) &&
+           writer.writeU8(header.domainVersion) &&
+           writer.writeU16(header.slotCount) &&
+           writer.writeU16(header.slotPayloadSize) &&
+           writer.writeU16(0) &&
+           writer.writeU32(header.layoutCrc32) &&
+           writer.writeU32(0) &&
+           writer.writeU32(0) &&
+           writer.ok() &&
+           writer.offset() == FILE_HEADER_SIZE;
+}
+
+FLASHMEM bool PersistenceSlotFileStore::decodeFileHeader_(const uint8_t* data,
+                                                          size_t size,
+                                                          FileHeader& out) {
+    if (size != FILE_HEADER_SIZE) return false;
+    binary::Reader reader(data, static_cast<uint32_t>(size));
+    uint16_t reserved0 = 0;
+    uint32_t reserved1 = 0;
+    uint32_t reserved2 = 0;
+    return reader.readU32(out.magic) &&
+           reader.readU8(out.formatVersion) &&
+           reader.readU8(out.domainVersion) &&
+           reader.readU16(out.slotCount) &&
+           reader.readU16(out.slotPayloadSize) &&
+           reader.readU16(reserved0) &&
+           reader.readU32(out.layoutCrc32) &&
+           reader.readU32(reserved1) &&
+           reader.readU32(reserved2) &&
+           reader.ok() &&
+           reader.offset() == FILE_HEADER_SIZE;
+}
+
+FLASHMEM bool PersistenceSlotFileStore::encodeSlotHeader_(const SlotHeader& header,
+                                                          uint8_t* out,
+                                                          size_t size) {
+    if (size != SLOT_HEADER_SIZE) return false;
+    binary::Writer writer(out, static_cast<uint32_t>(size));
+    return writer.writeU32(header.magic) &&
+           writer.writeU8(header.formatVersion) &&
+           writer.writeU8(header.state) &&
+           writer.writeU16(header.payloadSize) &&
+           writer.writeU32(header.saveCounter) &&
+           writer.writeU32(header.payloadCrc32) &&
+           writer.ok() &&
+           writer.offset() == SLOT_HEADER_SIZE;
+}
+
+FLASHMEM bool PersistenceSlotFileStore::decodeSlotHeader_(const uint8_t* data,
+                                                          size_t size,
+                                                          SlotHeader& out) {
+    if (size != SLOT_HEADER_SIZE) return false;
+    binary::Reader reader(data, static_cast<uint32_t>(size));
+    return reader.readU32(out.magic) &&
+           reader.readU8(out.formatVersion) &&
+           reader.readU8(out.state) &&
+           reader.readU16(out.payloadSize) &&
+           reader.readU32(out.saveCounter) &&
+           reader.readU32(out.payloadCrc32) &&
+           reader.ok() &&
+           reader.offset() == SLOT_HEADER_SIZE;
+}
+
+FLASHMEM uint32_t PersistenceSlotFileStore::fileHeaderLayoutCrc_(const FileHeader& header) {
+    FileHeader normalized = header;
+    normalized.layoutCrc32 = 0;
+    std::array<uint8_t, FILE_HEADER_SIZE> bytes{};
+    if (!encodeFileHeader_(normalized, bytes.data(), bytes.size())) return 0;
+    return crc32_(bytes.data(), bytes.size());
 }
 
 }  // namespace core::persistence

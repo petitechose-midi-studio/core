@@ -1,0 +1,23 @@
+# UX workflow: offset a macro automation playback window.
+# Purpose: validates that Offset shifts the source window without rewriting
+# the underlying automation points.
+
+0 scenario macro-automation-curve-shape
+80 capture screen macro_grid_curve_source
+
+# Open Macro Edit for Macro 1.
+180 button MACRO_1 down
+1280 tick
+1360 capture screen macro_1_edit_detail
+1460 button MACRO_1 up
+
+# Open Automation detail and focus Offset.
+1620 encoder NAV 1
+1780 tap NAV 60
+2020 capture screen macro_1_automation_detail
+2180 encoder NAV 1
+2340 encoder NAV 1
+
+# Move the playback window start into the source curve.
+2500 encoder OPT 0.25
+2740 capture screen macro_1_automation_offset

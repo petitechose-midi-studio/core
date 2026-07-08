@@ -12,8 +12,9 @@ namespace core::handler {
 namespace {
 
 constexpr uint32_t QUICK_RELEASE_WINDOW_MS = 450;
-constexpr uint8_t ROW_COUNT = 3;
-constexpr uint8_t ROW_AUTOMATION = 2;
+constexpr uint8_t ROW_CC = 0;
+constexpr uint8_t ROW_AUTOMATION = 1;
+constexpr uint8_t ROW_COUNT = 2;
 
 float clampNormalized(float value) {
     return std::clamp(value, 0.0f, 1.0f);
@@ -360,10 +361,7 @@ FLASHMEM void MacroEditHandler::applyMacroTargetSelectorAndClose() {
 }
 
 FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
-    if (row == 0) {
-        const int clamped = std::clamp(value, 0, 15);
-        macro_edit_.tempChannel.set(static_cast<uint8_t>(clamped));
-    } else if (row == 1) {
+    if (row == ROW_CC) {
         const int clamped = std::clamp(value, 0, 127);
         macro_edit_.tempCC.set(static_cast<uint8_t>(clamped));
     } else if (row == ROW_AUTOMATION) {
@@ -374,9 +372,6 @@ FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
 }
 
 FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
-    if (row == 0) {
-        return static_cast<int>(macro_edit_.tempChannel.get());
-    }
     if (row == ROW_AUTOMATION) {
         const uint8_t macroIndex = macro_edit_.editingIndex.get();
         if (!services_.automationActiveFor(macroIndex)) return 0;
@@ -386,7 +381,6 @@ FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
 }
 
 FLASHMEM int MacroEditHandler::valueCountForRow(uint8_t row) const {
-    if (row == 0) return 16;
     if (row == ROW_AUTOMATION) return 2;
     return 128;
 }
@@ -395,7 +389,7 @@ FLASHMEM void MacroEditHandler::commitEditedConfig() {
     if (!macro_edit_.visible.get()) return;
 
     const uint8_t macroIndex = macro_edit_.editingIndex.get();
-    const uint8_t channel = macro_edit_.tempChannel.get();
+    const uint8_t channel = services_.activeConfig(macroIndex).channel;
     const uint8_t cc = macro_edit_.tempCC.get();
 
     services_.setConfig(macroIndex, channel, cc);

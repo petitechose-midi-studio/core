@@ -57,6 +57,11 @@ MacroAutomationSlotState* macroAutomationGetOrCreateSlot(
 
 bool macroAutomationClearSlot(MacroAutomationBankState& bank,
                               const MacroAutomationSlotAddress& address);
+bool macroAutomationClearPage(MacroAutomationBankState& bank,
+                              uint8_t track,
+                              uint8_t page);
+bool macroAutomationClearTrack(MacroAutomationBankState& bank,
+                               uint8_t track);
 
 bool macroAutomationSlotHasContent(const MacroAutomationSlotState& state);
 void macroAutomationCompactPool(MacroAutomationBankState& bank);

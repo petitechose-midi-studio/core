@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "../../src/persistence/PersistenceSlotFileStore.hpp"
+#include "../../src/persistence/PersistenceBinaryCodec.hpp"
 #include "../../src/persistence/SequencerPersistenceEnvelope.hpp"
 #include "../../src/persistence/SequencerPersistence.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
@@ -25,6 +26,7 @@ using oc::note::sequencer::StepBitMask128;
 using oc::note::sequencer::StepSequencerScaleConstraintMode;
 using oc::note::sequencer::StepSequencerScaleSettings;
 using oc::note::sequencer::StepSequencerScaleType;
+namespace binary = core::persistence::binary_codec;
 
 bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSettings& rhs) {
     return lhs.root == rhs.root &&
@@ -32,7 +34,6 @@ bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSe
            lhs.mode == rhs.mode;
 }
 
-#pragma pack(push, 1)
 struct EnvelopeHeaderRaw {
     uint32_t magic = 0;
     uint8_t version = 0;
@@ -50,11 +51,9 @@ struct EnvelopeSectionHeaderRaw {
     uint16_t count = 0;
     uint16_t byteSize = 0;
 };
-#pragma pack(pop)
 
-static_assert(sizeof(EnvelopeHeaderRaw) == 12, "Unexpected envelope header size");
-static_assert(sizeof(EnvelopeSectionHeaderRaw) == 10, "Unexpected envelope section header size");
-
+constexpr uint16_t kEnvelopeHeaderSize = 12;
+constexpr uint16_t kEnvelopeSectionHeaderSize = 10;
 constexpr uint16_t kEnvelopeSectionGraphStepNodes = 17;
 constexpr uint16_t kEnvelopeSectionUnknownFuture = 0x7F00;
 constexpr uint16_t kStepNodeRecordSize = 25;
@@ -286,36 +285,95 @@ void assertGraphContent(const core::state::sequencer::SequencerPatternState& pat
     assert(nodeLocalVariationRange(*stateCycleNode, StepProperty::NUDGE) == 6);
 }
 
-const EnvelopeSectionHeaderRaw* findEnvelopeSection(const uint8_t* data,
-                                                    uint16_t size,
-                                                    uint16_t sectionId,
-                                                    uint16_t& sectionOffset) {
-    if (data == nullptr || size < sizeof(EnvelopeHeaderRaw)) return nullptr;
+bool readEnvelopeHeaderRaw(const uint8_t* data, uint16_t size, EnvelopeHeaderRaw& out) {
+    if (data == nullptr || size < kEnvelopeHeaderSize) return false;
+    binary::Reader reader(data, size);
+    return reader.readU32(out.magic) &&
+           reader.readU8(out.version) &&
+           reader.readU8(out.kind) &&
+           reader.readU16(out.headerSize) &&
+           reader.readU16(out.sectionCount) &&
+           reader.readU16(out.reserved0) &&
+           reader.ok() &&
+           reader.offset() == kEnvelopeHeaderSize;
+}
+
+bool readEnvelopeSectionHeaderRaw(const uint8_t* data,
+                                  uint16_t size,
+                                  EnvelopeSectionHeaderRaw& out) {
+    if (data == nullptr || size < kEnvelopeSectionHeaderSize) return false;
+    binary::Reader reader(data, size);
+    return reader.readU16(out.id) &&
+           reader.readU8(out.track) &&
+           reader.readU8(out.reserved0) &&
+           reader.readU16(out.recordSize) &&
+           reader.readU16(out.count) &&
+           reader.readU16(out.byteSize) &&
+           reader.ok() &&
+           reader.offset() == kEnvelopeSectionHeaderSize;
+}
+
+bool writeEnvelopeSectionHeaderRaw(uint8_t* data,
+                                   uint16_t size,
+                                   const EnvelopeSectionHeaderRaw& source) {
+    if (data == nullptr || size < kEnvelopeSectionHeaderSize) return false;
+    binary::Writer writer(data, size);
+    return writer.writeU16(source.id) &&
+           writer.writeU8(source.track) &&
+           writer.writeU8(source.reserved0) &&
+           writer.writeU16(source.recordSize) &&
+           writer.writeU16(source.count) &&
+           writer.writeU16(source.byteSize) &&
+           writer.ok() &&
+           writer.offset() == kEnvelopeSectionHeaderSize;
+}
+
+bool patchEnvelopeSectionCount(uint8_t* data, uint16_t size, uint16_t sectionCount) {
+    if (data == nullptr || size < kEnvelopeHeaderSize) return false;
+    binary::Writer writer(data + 8, static_cast<uint32_t>(size - 8U));
+    return writer.writeU16(sectionCount) &&
+           writer.ok() &&
+           writer.offset() == sizeof(sectionCount);
+}
+
+bool findEnvelopeSection(const uint8_t* data,
+                         uint16_t size,
+                         uint16_t sectionId,
+                         EnvelopeSectionHeaderRaw& out,
+                         uint16_t& sectionOffset) {
+    if (data == nullptr || size < kEnvelopeHeaderSize) return false;
 
     EnvelopeHeaderRaw header{};
-    std::memcpy(&header, data, sizeof(header));
+    if (!readEnvelopeHeaderRaw(data, size, header)) return false;
     uint16_t offset = header.headerSize;
     for (uint16_t i = 0; i < header.sectionCount; ++i) {
         if (offset > size ||
-            sizeof(EnvelopeSectionHeaderRaw) > static_cast<uint16_t>(size - offset)) {
-            return nullptr;
+            kEnvelopeSectionHeaderSize > static_cast<uint16_t>(size - offset)) {
+            return false;
         }
 
-        const auto* section =
-            reinterpret_cast<const EnvelopeSectionHeaderRaw*>(data + offset);
+        EnvelopeSectionHeaderRaw section{};
+        if (!readEnvelopeSectionHeaderRaw(
+                data + offset,
+                static_cast<uint16_t>(size - offset),
+                section
+            )) {
+            return false;
+        }
         const uint16_t payloadOffset =
-            static_cast<uint16_t>(offset + sizeof(EnvelopeSectionHeaderRaw));
-        if (section->id == sectionId) {
+            static_cast<uint16_t>(offset + kEnvelopeSectionHeaderSize);
+        if (section.id == sectionId) {
             sectionOffset = offset;
-            return section;
+            out = section;
+            return true;
         }
-        if (section->byteSize > static_cast<uint16_t>(size - payloadOffset)) {
-            return nullptr;
+        if (section.byteSize > static_cast<uint16_t>(size - payloadOffset)) {
+            return false;
         }
-        offset = static_cast<uint16_t>(payloadOffset + section->byteSize);
+        offset = static_cast<uint16_t>(payloadOffset + section.byteSize);
     }
 
-    return nullptr;
+    return false;
 }
 
 void test_pattern_library_save_load_erase() {
@@ -474,7 +532,7 @@ void test_pattern_envelope_ignores_unknown_future_section() {
         core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
     );
     assert(encoded.ok);
-    assert(static_cast<uint32_t>(encoded.size) + sizeof(EnvelopeSectionHeaderRaw) <=
+    assert(static_cast<uint32_t>(encoded.size) + kEnvelopeSectionHeaderSize <=
            core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE);
 
     EnvelopeSectionHeaderRaw futureSection{};
@@ -483,11 +541,20 @@ void test_pattern_envelope_ignores_unknown_future_section() {
     futureSection.recordSize = 0;
     futureSection.count = 0;
     futureSection.byteSize = 0;
-    std::memcpy(buffer.bytes.data() + encoded.size, &futureSection, sizeof(futureSection));
+    assert(writeEnvelopeSectionHeaderRaw(
+        buffer.bytes.data() + encoded.size,
+        static_cast<uint16_t>(buffer.bytes.size() - encoded.size),
+        futureSection
+    ));
 
-    auto* header = reinterpret_cast<EnvelopeHeaderRaw*>(buffer.bytes.data());
-    header->sectionCount = static_cast<uint16_t>(header->sectionCount + 1);
-    const uint16_t extendedSize = static_cast<uint16_t>(encoded.size + sizeof(futureSection));
+    EnvelopeHeaderRaw header{};
+    assert(readEnvelopeHeaderRaw(buffer.bytes.data(), encoded.size, header));
+    assert(patchEnvelopeSectionCount(
+        buffer.bytes.data(),
+        static_cast<uint16_t>(buffer.bytes.size()),
+        static_cast<uint16_t>(header.sectionCount + 1)
+    ));
+    const uint16_t extendedSize = static_cast<uint16_t>(encoded.size + kEnvelopeSectionHeaderSize);
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
@@ -520,7 +587,7 @@ void test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern(
     const uint16_t firstGraphSectionOffset = static_cast<uint16_t>(
         envelopeHeaderSize +
         sectionHeaderSize +
-        sizeof(core::persistence::sequencer_codec::PatternPayload)
+        core::persistence::sequencer_codec::PATTERN_PAYLOAD_SIZE
     );
     assert(static_cast<uint16_t>(firstGraphSectionOffset + 5) < encoded.size);
 
@@ -555,18 +622,19 @@ void test_pattern_envelope_sanitizes_broken_graph_links() {
     assert(encoded.ok);
 
     uint16_t stepSectionOffset = 0;
-    const auto* stepSection = findEnvelopeSection(
+    EnvelopeSectionHeaderRaw stepSection{};
+    assert(findEnvelopeSection(
         buffer.bytes.data(),
         encoded.size,
         kEnvelopeSectionGraphStepNodes,
+        stepSection,
         stepSectionOffset
-    );
-    assert(stepSection != nullptr);
-    assert(stepSection->recordSize == kStepNodeRecordSize);
-    assert(stepSection->count > 4);
+    ));
+    assert(stepSection.recordSize == kStepNodeRecordSize);
+    assert(stepSection.count > 4);
 
     const uint16_t stepPayloadOffset =
-        static_cast<uint16_t>(stepSectionOffset + sizeof(EnvelopeSectionHeaderRaw));
+        static_cast<uint16_t>(stepSectionOffset + kEnvelopeSectionHeaderSize);
     uint16_t invalidId = 0x7FFF;
     std::memcpy(buffer.bytes.data() +
                     stepPayloadOffset +

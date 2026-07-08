@@ -1,0 +1,27 @@
+# UX workflow: resize automation length without stretching points.
+# Purpose: validates that shortening crops the curve and extending keeps the
+# remaining point in place with a visible hold zone.
+
+0 scenario macro-track-multipage-automation
+80 capture screen macro_grid_source
+
+# Open Macro Edit for Macro 2 on page 3.
+180 button MACRO_2 down
+1280 tick
+1360 capture screen macro_2_edit_detail
+1460 button MACRO_2 up
+
+# Open Automation detail and focus Length.
+1620 encoder NAV 1
+1780 tap NAV 60
+2020 capture screen macro_2_automation_detail
+2180 encoder NAV 1
+
+# Shorten from 8 beats. This should crop the endpoint and expose hold.
+2340 encoder OPT -1.00
+2580 capture screen macro_2_automation_cropped
+
+# Extend again. The cropped point should not come back; hold remains visible.
+2740 encoder OPT 1.00
+2900 encoder OPT 1.00
+3140 capture screen macro_2_automation_extended_after_crop

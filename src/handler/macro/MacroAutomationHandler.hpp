@@ -37,6 +37,8 @@ private:
     uint8_t macroIndex() const;
     void moveFocus(float delta);
     void editFocusedValue(float normalized);
+    void configureOptForFocusedRow();
+    void setCoarseEditActive(bool active);
     void backToMacroEdit();
     void clearAutomation();
     void removeAutomation();
@@ -51,6 +53,7 @@ private:
     oc::type::ScopeID automation_scope_ = 0;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
+    bool coarse_edit_active_ = false;
 };
 
 }  // namespace core::handler

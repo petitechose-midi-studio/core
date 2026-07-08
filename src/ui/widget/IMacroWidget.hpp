@@ -20,7 +20,7 @@ public:
     /// Set the parameter value [0.0, 1.0]
     virtual void setValue(float value) = 0;
 
-    /// Update config labels (channel 0-15 raw, CC 0-127)
+    /// Update config cache and displayed CC label. Channel remains track-level.
     virtual void setConfig(uint8_t channel, uint8_t cc) = 0;
 
     /// Mark whether this macro has an active automation lane.

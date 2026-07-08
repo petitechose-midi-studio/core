@@ -1,0 +1,30 @@
+# UX workflow: manage focused macro-slot automation from the macro grid.
+# Purpose: validates quick local clear/remove/copy/paste on the focused macro
+# slot, without entering Macro Edit.
+
+0 scenario macro-track-multipage-automation
+80 capture screen source_macro_grid
+
+# Enter Macro slot focus and focus Macro 2, which owns an automation lane.
+180 tap NAV 60
+320 tap NAV 60
+460 encoder NAV 1
+620 capture screen macro_2_focused
+
+# Copy the focused slot automation.
+760 tap BOTTOM_RIGHT 60
+920 capture screen macro_2_automation_copied
+
+# Clear the focused slot automation, then paste it back.
+1060 tap BOTTOM_LEFT 60
+1220 capture screen macro_2_automation_cleared
+1360 button BOTTOM_RIGHT down
+2500 tick
+2600 button BOTTOM_RIGHT up
+2850 capture screen macro_2_automation_pasted
+
+# Remove the whole automation slot entry with the guarded long action.
+3000 button BOTTOM_LEFT down
+4140 tick
+4240 button BOTTOM_LEFT up
+4490 capture screen macro_2_automation_removed

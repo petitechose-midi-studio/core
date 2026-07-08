@@ -1,59 +1,20 @@
 #include "persistence/MacroPersistence.hpp"
 
 #include <array>
-#include <type_traits>
 
 #include <config/PlatformCompat.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "persistence/MacroTrackBankPersistenceCodec.hpp"
 
 namespace core::persistence {
 
 namespace {
 
-#pragma pack(push, 1)
-struct LibraryPayload {
-    uint8_t activeTrack = 0;
-    uint8_t reserved0 = 0;
-    uint16_t trackEnabledMask = 0x0001;
-    std::array<state::macro::MacroTrackData, state::macro::TRACK_COUNT> tracks{};
-};
-#pragma pack(pop)
+using MacroLibraryBuffer = std::array<uint8_t, MacroPersistence::LIBRARY_PAYLOAD_SIZE>;
 
-static_assert(std::is_trivially_copyable_v<state::macro::MacroTrackData>,
-              "MacroTrackData must remain trivially copyable");
-static_assert(std::is_trivially_copyable_v<LibraryPayload>,
-              "Macro library payload must remain trivially copyable");
-static_assert(sizeof(LibraryPayload) == MacroPersistence::LIBRARY_PAYLOAD_SIZE,
-              "Unexpected macro library payload size");
-
-template <typename Payload>
-uint8_t* payloadBytes(Payload& payload) {
-    return reinterpret_cast<uint8_t*>(&payload);
-}
-
-template <typename Payload>
-const uint8_t* payloadBytes(const Payload& payload) {
-    return reinterpret_cast<const uint8_t*>(&payload);
-}
-
-FLASHMEM core::app::ExtmemUniquePtr<LibraryPayload> makeLibraryPayloadScratch() {
-    return core::app::makeExtmemUnique<LibraryPayload>();
-}
-
-FLASHMEM void fillLibraryPayload(const state::macro::MacroPagesState& source,
-                                 LibraryPayload& out) {
-    source.captureSharedTrackState(out.trackEnabledMask, out.activeTrack);
-    out.tracks = source.tracks;
-}
-
-FLASHMEM void applyLibraryPayload(const LibraryPayload& payload,
-                                  state::macro::MacroPagesState& target) {
-    target.restoreTracksWithSharedState(
-        payload.tracks,
-        payload.trackEnabledMask,
-        payload.activeTrack
-    );
+FLASHMEM core::app::ExtmemUniquePtr<MacroLibraryBuffer> makeLibraryPayloadScratch() {
+    return core::app::makeExtmemUnique<MacroLibraryBuffer>();
 }
 
 }  // namespace
@@ -88,12 +49,18 @@ FLASHMEM PersistenceWriteStatus MacroPersistence::saveLibrarySlotStatus(
     auto payload = makeLibraryPayloadScratch();
     if (!payload) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
 
-    fillLibraryPayload(pages, *payload);
+    if (!macro_track_codec::encodePagesPayload(
+            pages,
+            payload->data(),
+            static_cast<uint32_t>(payload->size())
+        )) {
+        return PersistenceWriteStatus::INVALID_CONFIG;
+    }
 
     const uint32_t counter = static_cast<uint32_t>(slotIndex) + 1;
     return library_store_.saveSlotStatus(
         slotIndex,
-        payloadBytes(*payload),
+        payload->data(),
         LIBRARY_PAYLOAD_SIZE,
         counter
     );
@@ -110,7 +77,7 @@ FLASHMEM SlotLoadStatus MacroPersistence::loadLibrarySlot(
 
     SlotMetadata metadata{};
     const SlotLoadStatus status =
-        library_store_.loadSlot(slotIndex, payloadBytes(*payload), LIBRARY_PAYLOAD_SIZE, &metadata);
+        library_store_.loadSlot(slotIndex, payload->data(), LIBRARY_PAYLOAD_SIZE, &metadata);
     if (status != SlotLoadStatus::OK) {
         return status;
     }
@@ -119,7 +86,13 @@ FLASHMEM SlotLoadStatus MacroPersistence::loadLibrarySlot(
         return SlotLoadStatus::HEADER_MISMATCH;
     }
 
-    applyLibraryPayload(*payload, pages);
+    if (!macro_track_codec::applyPagesPayload(
+            payload->data(),
+            static_cast<uint32_t>(payload->size()),
+            pages
+        )) {
+        return SlotLoadStatus::HEADER_MISMATCH;
+    }
     return SlotLoadStatus::OK;
 }
 

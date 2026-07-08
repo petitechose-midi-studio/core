@@ -27,9 +27,9 @@ enum class MacroEditFlowPhase : uint8_t {
  *
  * Tracks which macro is being edited and the current overlay-local edit values.
  *
- * The overlay keeps its own editable CH/CC fields so the UI can move between
- * rows, selectors, pages, and target macros without repeatedly re-reading
- * state. Those values are committed when the editor closes or switches context.
+ * The overlay keeps its own editable CC field and the inherited track channel
+ * snapshot so the UI can move between rows, selectors, pages, and target macros
+ * without repeatedly re-reading state. Only the CC is committed by this editor.
  */
 struct MacroEditState {
     /// Overlay visibility (owned by ExclusiveVisibilityStack)
@@ -40,13 +40,13 @@ struct MacroEditState {
     /// Which macro is being edited (0-7)
     oc::state::Signal<uint8_t> editingIndex{0};
 
-    /// Current editable channel value shown by the overlay (0-15)
+    /// Current inherited track channel snapshot (0-15)
     oc::state::Signal<uint8_t> tempChannel{0};
 
     /// Current editable CC value shown by the overlay (0-127)
     oc::state::Signal<uint8_t> tempCC{0};
 
-    /// Focused row in overlay (0 = channel, 1 = CC)
+    /// Focused row in overlay (0 = CC, 1 = automation)
     oc::state::Signal<uint8_t> focusedRow{0};
 
     struct ValueSelectorState {

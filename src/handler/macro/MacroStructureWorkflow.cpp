@@ -198,7 +198,8 @@ FLASHMEM bool MacroStructureWorkflow::canRemoveCurrentStructure() const {
                 core::state::macro::TRACK_COUNT
             ) > 1U;
         case core::state::StructureNavigationFocus::STEP:
-            return false;
+            if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return false;
+            return services_.macroAutomationActive(macro_ui_.focusedMacroSlot.get());
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (macro_ui_.previewAddPageSlot.get()) return false;
@@ -214,7 +215,8 @@ FLASHMEM bool MacroStructureWorkflow::canPasteCurrentStructure() const {
         return structure_clipboard_.hasMacroTrack();
     }
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
-        return false;
+        if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return false;
+        return structure_clipboard_.hasMacroAutomation();
     }
     return structure_clipboard_.hasMacroPage();
 }
@@ -241,6 +243,10 @@ FLASHMEM void MacroStructureWorkflow::eraseCurrentStructure() {
             }
             return;
         case core::state::StructureNavigationFocus::STEP:
+            if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return;
+            if (services_.clearMacroAutomation(macro_ui_.focusedMacroSlot.get())) {
+                syncPreviewToCurrentContext();
+            }
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
@@ -261,6 +267,10 @@ FLASHMEM void MacroStructureWorkflow::removeCurrentStructure() {
             }
             return;
         case core::state::StructureNavigationFocus::STEP:
+            if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return;
+            if (services_.removeMacroAutomation(macro_ui_.focusedMacroSlot.get())) {
+                syncPreviewToCurrentContext();
+            }
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
@@ -283,6 +293,8 @@ FLASHMEM void MacroStructureWorkflow::copyCurrentStructure() {
             );
             return;
         case core::state::StructureNavigationFocus::STEP:
+            if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return;
+            services_.copyMacroAutomation(macro_ui_.focusedMacroSlot.get(), structure_clipboard_);
             return;
         case core::state::StructureNavigationFocus::PAGE:
         default:
@@ -315,6 +327,10 @@ FLASHMEM void MacroStructureWorkflow::pasteCurrentStructure() {
     }
 
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
+        if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return;
+        if (services_.pasteMacroAutomation(macro_ui_.focusedMacroSlot.get(), structure_clipboard_)) {
+            syncPreviewToCurrentContext();
+        }
         return;
     }
 
