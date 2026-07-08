@@ -9,6 +9,7 @@
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageClipboardOps.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
+#include "handler/sequencer/SequencerStructureStepPasteWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
@@ -17,7 +18,6 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
-#include "state/sequencer/SequencerStepPastePlan.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::handler {
@@ -536,35 +536,11 @@ FLASHMEM void SequencerStructureEditWorkflow::resetStepSelectionDeep() {
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::beginStepPastePreview() {
-    auto& selection = sequencer_.structureUi.stepSelection;
-    if (!selection.active.get()) return;
-
-    selection.pastePreviewActive.set(true);
-    if (!structure_clipboard_.hasSequencerSteps()) {
-        selection.pastePreview.set(core::state::sequencer::SequencerStepPastePreview::BLOCKED);
-        return;
-    }
-
-    const auto mode = core::state::project::sanitizeProjectStepPasteMode(
-        project_navigation_.stepPasteMode
-    );
-    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer_);
-    const uint8_t maxStep = core::state::sequencer::maxStepCursorForPaste(sequencer_);
-    const auto plan = core::state::sequencer::buildStepPastePreviewPlan(
-        structure_clipboard_.sequencerSteps,
-        core::state::sequencer::isRootContentView(sequencer_),
-        selection.cursorStep.get(),
-        activeLength,
-        maxStep,
-        mode
-    );
-    selection.pastePreview.set(plan.aggregate);
+    beginStructureStepPastePreview(sequencer_, structure_clipboard_, project_navigation_);
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::clearStepPastePreview() {
-    auto& selection = sequencer_.structureUi.stepSelection;
-    selection.pastePreviewActive.set(false);
-    selection.pastePreview.set(core::state::sequencer::SequencerStepPastePreview::NONE);
+    clearStructureStepPastePreview(sequencer_);
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
@@ -573,18 +549,12 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
 ) {
     if (!structure_clipboard_.hasSequencerSteps()) return;
 
-    const auto mode = core::state::project::sanitizeProjectStepPasteMode(
-        project_navigation_.stepPasteMode
-    );
-    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer_);
-    const uint8_t maxStep = core::state::sequencer::maxStepCursorForPaste(sequencer_);
-    const auto plan = core::state::sequencer::buildStepPastePreviewPlan(
+    const auto mode = structureStepPasteMode(project_navigation_);
+    const auto plan = buildStructureStepPastePlan(
+        sequencer_,
         structure_clipboard_.sequencerSteps,
-        core::state::sequencer::isRootContentView(sequencer_),
-        cursorStep,
-        activeLength,
-        maxStep,
-        mode
+        mode,
+        cursorStep
     );
     if (plan.blocked || !plan.hasEntries()) {
         clearStepPastePreview();
@@ -593,40 +563,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
     HistoryPatternSnapshot before;
     if (!capturePageHistoryBefore(before)) return;
 
-    if (!core::state::sequencer::resizeActiveContentForStepPaste(
-            sequencer_,
-            mode,
-            plan.lastTarget,
-            maxStep
-        )) {
-        clearStepPastePreview();
-        return;
-    }
-
-    const auto* sourceGraph = structure_clipboard_.sequencerGraph.get();
-    bool changed = false;
-    for (uint8_t i = 0; i < plan.count; ++i) {
-        const auto& preview = plan.entries[i];
-        if (!preview.valid) continue;
-        const auto& entry =
-            structure_clipboard_.sequencerSteps.entries[preview.clipboardIndex];
-        if (!entry.valid) continue;
-        changed = structure_clipboard_.sequencerSteps.rootContext
-            ? writeRootStepFromClipboardEntry(
-                  sequencer_,
-                  entry,
-                  sourceGraph,
-                  preview.targetStep
-              ) || changed
-            : writeChildStepFromClipboardEntry(
-                  sequencer_,
-                  entry,
-                  sourceGraph,
-                  preview.targetStep
-              ) || changed;
-    }
-
-    if (!changed) {
+    if (!commitStructureStepPastePlan(sequencer_, structure_clipboard_, mode, plan)) {
         clearStepPastePreview();
         return;
     }
