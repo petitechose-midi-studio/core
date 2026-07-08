@@ -32,7 +32,7 @@ Largest current production files:
 | File | Lines | Concern |
 |---|---:|---|
 | `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
-| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~1024 | Copy/paste, clear/remove, selection, history, preview, and track/page/step logic are colocated. |
+| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~862 | Reduced, but still mixes page/track current actions, selection actions, history, and paste preview. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~26 | Public facade; concrete projections live in dedicated builders. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
 | `src/ui/sequencer/SequencerStepEditOverlay.cpp` | ~971 | Layout/render state is large and tightly coupled to step-editor semantics. |
@@ -215,6 +215,10 @@ product rules into the wrong layer.
   projection and step paste-preview footprint application into
   `SequencerStepGridViewModelBuilder`, reducing `SequencerViewModelBuilder` to
   public facade wrappers.
+- `db92820 sequencer: extract structure step ops` moved selected-step range
+  detection, root/child step reset, effective scale lookup for copied steps,
+  step clipboard entry capture, and root/child step clipboard write helpers into
+  `SequencerStructureStepOps`.
 
 Validated after the Macro context projection slice:
 
@@ -365,6 +369,16 @@ Validated after the Sequencer step grid view model builder slice:
 - `ms ux run core --select sequencer/structure/step-selection.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/structure/step-focus-copy-paste.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer structure step ops slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/step-focus-copy-paste.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-selection.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/child-step-selection-bottom-actions.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
