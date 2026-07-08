@@ -31,7 +31,7 @@ Largest current production files:
 
 | File | Lines | Concern |
 |---|---:|---|
-| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~1198 | Too many overlay/editor responsibilities in one handler. |
+| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~974 | Reduced, but still owns row routing, value editing, local random, and history synchronization. |
 | `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~1024 | Copy/paste, clear/remove, selection, history, preview, and track/page/step logic are colocated. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~1016 | Builds view models but also holds high-level UX decisions and compatibility logic. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
@@ -176,6 +176,10 @@ product rules into the wrong layer.
   preset picker open/close/navigation/save/load/feedback behavior into
   `SequencerStepPresetPickerWorkflow`, leaving `SequencerStepEditHandler` with
   the history boundary around successful preset loads.
+- `9c62c30 sequencer: extract step chord editor workflow` moved chord detail
+  field navigation, value application, encoder configuration, and focused-field
+  reset into `SequencerStepChordEditorWorkflow`, leaving the step edit handler
+  with routing and OPT resynchronization only.
 
 Validated after the Macro context projection slice:
 
@@ -238,6 +242,14 @@ Validated after the Sequencer step preset picker workflow slice:
 - `ms ux run core --select sequencer/editing/step-preset-picker.ux --report --no-interactive --skip-build`
   -> OK;
 - `ms ux run core --select sequencer/editing/step-edit-basic.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer step chord editor workflow slice:
+
+- `ms test core` -> `80/80`;
+- `ms ux run core --select sequencer/editing/step-edit-chord.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/editing/step-edit-chord-strum.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
