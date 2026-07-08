@@ -11,6 +11,7 @@
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureStepPasteWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
+#include "handler/sequencer/SequencerStructureTrackSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/shared/StructureSlotOps.hpp"
@@ -387,36 +388,12 @@ FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
         const uint16_t selectedMask = static_cast<uint16_t>(
             track_ui_.selection.selectedMask.get() & currentTrackEnabledMask()
         );
-        const uint8_t firstTrack = firstSelectedIndex(
-            selectedMask,
-            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        auto clipboard = captureTrackSelectionClipboard(
+            tracks_,
+            sequencer_,
+            selectedMask
         );
-        if (firstTrack >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) return;
-
-        auto clipboard = core::app::makeExtmemUnique<core::state::SequencerTrackSelectionClipboard>();
         if (!clipboard) return;
-        clipboard->valid = true;
-
-        core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
-        for (uint8_t track = firstTrack;
-             track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-             ++track) {
-            if ((selectedMask & structure_slots::slotBit(track)) == 0) continue;
-            if (clipboard->count >= clipboard->tracks.size()) break;
-
-            auto& entry = clipboard->tracks[clipboard->count++];
-            entry.valid = true;
-            entry.offset = static_cast<uint8_t>(track - firstTrack);
-            core::state::sequencer::captureSnapshot(tracks_.track(track), entry.snapshot);
-            if (!core::state::cloneSequencerGraph(
-                    entry.graph,
-                    core::state::sequencer::graphView(tracks_.track(track))
-                )) {
-                return;
-            }
-        }
-
-        if (clipboard->count == 0) return;
         structure_clipboard_.storeSequencerTrackSelection(std::move(clipboard));
         return;
     }
@@ -595,54 +572,28 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
             core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
                 track_ui_.selection.cursorIndex.get()
             );
-        uint16_t targetMask = 0;
-        uint8_t firstTarget = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-        for (uint8_t i = 0; i < clipboard->count; ++i) {
-            const auto& entry = clipboard->tracks[i];
-            if (!entry.valid) continue;
-            const uint16_t target = static_cast<uint16_t>(cursorTrack) + entry.offset;
-            if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
-
-            const uint8_t targetTrack = static_cast<uint8_t>(target);
-            targetMask = static_cast<uint16_t>(
-                targetMask | structure_slots::slotBit(targetTrack)
-            );
-            firstTarget = std::min(firstTarget, targetTrack);
-        }
-        if (targetMask == 0) return;
+        const auto targets = buildTrackSelectionPasteTargets(*clipboard, cursorTrack);
+        if (!targets.hasTargets()) return;
 
         const uint8_t previousActive = currentActiveTrack();
         const uint16_t historyMask = static_cast<uint16_t>(
-            targetMask | sequencerStructureHistoryTrackBit(previousActive)
+            targets.targetMask | sequencerStructureHistoryTrackBit(previousActive)
         );
         auto change = captureTrackHistoryBefore(historyMask);
         core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
 
-        for (uint8_t i = 0; i < clipboard->count; ++i) {
-            const auto& entry = clipboard->tracks[i];
-            if (!entry.valid) continue;
-            const uint16_t target = static_cast<uint16_t>(cursorTrack) + entry.offset;
-            if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
+        pasteTrackSelectionClipboard(
+            tracks_,
+            sequencer_,
+            *clipboard,
+            cursorTrack,
+            previousActive
+        );
 
-            const uint8_t targetTrack = static_cast<uint8_t>(target);
-            core::state::sequencer::applySnapshot(tracks_.track(targetTrack), entry.snapshot);
-            core::state::sequencer::copyGraph(
-                tracks_.track(targetTrack),
-                entry.graph.get(),
-                entry.snapshot.graphRevision
-            );
-            if (targetTrack == previousActive) {
-                core::state::sequencer::applySnapshotToEditor(sequencer_, entry.snapshot);
-                core::state::sequencer::copyGraph(
-                    sequencer_.pattern,
-                    entry.graph.get(),
-                    entry.snapshot.graphRevision
-                );
-            }
-        }
-
-        const uint16_t nextMask = static_cast<uint16_t>(currentTrackEnabledMask() | targetMask);
-        applyTrackState(nextMask, firstTarget);
+        const uint16_t nextMask = static_cast<uint16_t>(
+            currentTrackEnabledMask() | targets.targetMask
+        );
+        applyTrackState(nextMask, targets.firstTarget);
         cancelSelectionMode();
         recordTrackHistoryAfter(std::move(change), historyMask);
         return;
