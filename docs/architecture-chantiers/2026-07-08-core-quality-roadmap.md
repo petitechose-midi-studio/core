@@ -294,6 +294,11 @@ product rules into the wrong layer.
 - `fa23f84 persistence: route stale project chunks through migration` made
   same-size stale project-state chunks pass through `ProjectChunkMigration`
   instead of being decoded silently as current payloads.
+- `ee0cfba sequencer: hide structure helper internals` moved
+  `SequencerStructurePageOps` and `SequencerStructureStepOps` helper functions
+  that are only used by their implementation files into anonymous namespaces,
+  reducing the public structure-edit API without changing user-visible
+  behavior.
 
 Validated after the Macro context projection slice:
 
@@ -636,6 +641,11 @@ Global validation after the bootstrap cleanup slices through `2dc1d8c`:
   RAM1 variables/code/padding `66400` / `312936` / `14744`, RAM1 free
   `130208`, RAM2 variables/free malloc `247968` / `276320`, EXTRAM variables
   `4282368`.
+
+Validated after the Sequencer structure helper API cleanup slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`.
 
 ### Completed Sequencer Grammar Baseline Slice
 
