@@ -33,7 +33,7 @@ Largest current production files:
 |---|---:|---|
 | `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
 | `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~1024 | Copy/paste, clear/remove, selection, history, preview, and track/page/step logic are colocated. |
-| `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~638 | Reduced to the main facade plus header/left-strip/grid/property-overlay builders. |
+| `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~487 | Reduced to the main facade plus left-strip/grid/property-overlay builders. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
 | `src/ui/sequencer/SequencerStepEditOverlay.cpp` | ~971 | Layout/render state is large and tightly coupled to step-editor semantics. |
 | `src/context/standalone/ux/StandaloneSequencerUxSurfaces.cpp` | ~821 | UX semantic surface rules are becoming dense. |
@@ -199,6 +199,10 @@ product rules into the wrong layer.
   affordance checks, and local variation status label formatting into
   `SequencerBottomActionStripViewModelBuilder`, leaving
   `SequencerViewModelBuilder` with the public facade.
+- `fd105a6 sequencer: extract header view model builder` moved the sequencer
+  header projection, clipboard badge text, page source/destination preview
+  masks, add-slot preview, and Track/Pattern/Step context label resolution into
+  `SequencerHeaderViewModelBuilder`.
 
 Validated after the Macro context projection slice:
 
@@ -315,6 +319,14 @@ Validated after the Sequencer bottom action strip builder slice:
 - `ms ux run core --select sequencer/step-content/child-step-edit-back-to-parent.ux --report --no-interactive --skip-build`
   -> OK;
 - `ms ux run core --select sequencer/editing/step-edit-local-random.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer header view model builder slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/canonical-scope-cycle.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/structure/page-copy-paste-preview.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
