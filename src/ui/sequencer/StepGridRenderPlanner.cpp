@@ -36,7 +36,7 @@ FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& cache
     );
 
     for (uint8_t i = 0; i < frameState.tiles.size(); ++i) {
-        const TileRenderState state = frameState.tiles[i];
+        const TileRenderState& state = frameState.tiles[i];
         plan.diffs[i] = diffTileRenderState(caches[i], state);
         plan.feedbackChanged[i] =
             tileFeedbackChanged(state.absoluteStep, cachedFeedback, plan.nextFeedback);

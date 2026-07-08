@@ -1064,7 +1064,7 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
 
     for (uint8_t i = 0; i < tiles_.size(); ++i) {
         if (!plan.tileDirty[i] && !geometryChanged) continue;
-        const TileRenderState state = frameState.tiles[i];
+        const TileRenderState& state = frameState.tiles[i];
         renderTile(
             i,
             state,
