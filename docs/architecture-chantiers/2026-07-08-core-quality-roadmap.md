@@ -31,7 +31,7 @@ Largest current production files:
 
 | File | Lines | Concern |
 |---|---:|---|
-| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~740 | Reduced, but still owns overlay routing, context action history, and step edit lifecycle. |
+| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
 | `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~1024 | Copy/paste, clear/remove, selection, history, preview, and track/page/step logic are colocated. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~1016 | Builds view models but also holds high-level UX decisions and compatibility logic. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
@@ -189,6 +189,11 @@ product rules into the wrong layer.
   micro-sequence/cycle-state row kind resolution, create/open, copy, paste,
   clear, and paste compatibility checks into `SequencerStepContextRowWorkflow`,
   leaving history snapshots and overlay lifecycle in the step edit handler.
+- `5747368 sequencer: extract step edit session workflow` moved step edit
+  session open, close, commit-history, child-content back navigation,
+  edited-step bounds, and open-release latch checks into
+  `SequencerStepEditSessionWorkflow`, keeping encoder resync and top-level
+  routing in the handler.
 
 Validated after the Macro context projection slice:
 
@@ -279,6 +284,18 @@ Validated after the Sequencer step context row workflow slice:
 - `ms ux run core --select sequencer/step-content/child-step-edit-back-to-parent.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/step-content/closeout-authoring-runtime.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer step edit session workflow slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/editing/step-edit-basic.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/step-content/child-step-edit-back-to-parent.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/editing/step-preset-picker.ux --report --no-interactive --skip-build`
   -> OK;
 - `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive --skip-build`
   -> OK.
