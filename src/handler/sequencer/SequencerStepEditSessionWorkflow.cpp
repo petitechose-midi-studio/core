@@ -1,0 +1,148 @@
+#include "handler/sequencer/SequencerStepEditSessionWorkflow.hpp"
+
+#include <utility>
+
+#include <config/App.hpp>
+#include <config/PlatformCompat.hpp>
+
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStepEditRows.hpp"
+
+namespace core::handler::sequencer::step_edit_session_workflow {
+namespace step_edit_rows = core::state::sequencer::step_edit_rows;
+
+FLASHMEM bool openForMacroInPage(
+    core::state::sequencer::SequencerState& sequencer,
+    SequencerHistoryDomainServices& history,
+    ButtonReleaseLatch<8>& openReleaseLatch,
+    oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+    StepEditHistorySnapshot& historySnapshot,
+    bool& historySnapshotValid,
+    uint8_t indexInPage
+) {
+    history.commitCoalescedPatternEdit();
+
+    uint8_t abs = 0;
+    if (!core::state::sequencer::resolveActiveContentStepInPage(
+            sequencer,
+            sequencer.page.get(),
+            indexInPage,
+            abs
+        )) {
+        return false;
+    }
+
+    historySnapshotValid =
+        core::state::sequencer::captureHistorySnapshot(sequencer, historySnapshot);
+
+    sequencer.focusedStep.set(abs);
+
+    auto& edit = sequencer.stepEdit;
+    edit.reset();
+    edit.focusedRow.set(step_edit_rows::rowForNavigationIndex(0));
+    edit.stepIndex.set(abs);
+
+    openReleaseLatch.arm(Config::MACRO_BUTTONS[indexInPage]);
+    overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT);
+    return true;
+}
+
+FLASHMEM bool commitHistory(
+    core::state::sequencer::SequencerState& sequencer,
+    SequencerHistoryDomainServices& history,
+    StepEditHistorySnapshot& historySnapshot,
+    bool& historySnapshotValid
+) {
+    bool recorded = false;
+    if (historySnapshotValid) {
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        if (core::state::sequencer::captureHistorySnapshot(sequencer, after) &&
+            !core::state::sequencer::sameMusicalHistorySnapshot(historySnapshot, after)) {
+            recorded = history.recordPattern(
+                std::move(historySnapshot),
+                std::move(after),
+                core::state::sequencer::SequencerHistoryDescriptor{
+                    .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+                    .stepIndex = sequencer.stepEdit.stepIndex.get(),
+                }
+            );
+        }
+    }
+
+    historySnapshotValid = false;
+    return recorded;
+}
+
+FLASHMEM bool backToParentContent(
+    core::state::sequencer::SequencerState& sequencer,
+    SequencerHistoryDomainServices& history,
+    StepEditHistorySnapshot& historySnapshot,
+    bool& historySnapshotValid
+) {
+    if (!core::state::sequencer::isChildContentView(sequencer)) return false;
+
+    uint8_t parentContextRow = sequencer.stepEdit.focusedRow.get();
+    if (const auto* frame = sequencer.contentView.currentFrame()) {
+        parentContextRow =
+            frame->kind == core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE
+                ? step_edit_rows::MICRO_SEQUENCE
+                : step_edit_rows::CYCLE_STATES;
+    }
+
+    commitHistory(sequencer, history, historySnapshot, historySnapshotValid);
+    history.commitCoalescedPatternEdit();
+    if (!core::state::sequencer::leaveContentView(sequencer)) return false;
+
+    auto& edit = sequencer.stepEdit;
+    edit.contextHold.clear();
+    edit.localVariationEditActive.set(false);
+    edit.stepIndex.set(sequencer.focusedStep.get());
+    edit.focusedRow.set(parentContextRow);
+    historySnapshotValid =
+        core::state::sequencer::captureHistorySnapshot(sequencer, historySnapshot);
+    return true;
+}
+
+FLASHMEM void close(
+    core::state::sequencer::SequencerState& sequencer,
+    SequencerHistoryDomainServices& history,
+    ButtonReleaseLatch<8>& openReleaseLatch,
+    ButtonReleaseLatch<2>& contextReleaseLatch,
+    oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+    StepEditHistorySnapshot& historySnapshot,
+    bool& historySnapshotValid
+) {
+    commitHistory(sequencer, history, historySnapshot, historySnapshotValid);
+    openReleaseLatch.clear();
+    contextReleaseLatch.clear();
+    overlays.hide();
+    sequencer.stepEdit.reset();
+}
+
+FLASHMEM bool editedStepInRange(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t& step
+) {
+    const uint8_t len = core::state::sequencer::activeContentLength(sequencer);
+    if (len == 0) return false;
+
+    step = sequencer.stepEdit.stepIndex.get();
+    return step < len;
+}
+
+FLASHMEM bool shouldCloseFromMacro(
+    ButtonReleaseLatch<8>& openReleaseLatch,
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t indexInPage
+) {
+    if (openReleaseLatch.consume(Config::MACRO_BUTTONS[indexInPage])) {
+        return false;
+    }
+
+    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
+    const uint8_t currentIndexInPage =
+        static_cast<uint8_t>(sequencer.stepEdit.stepIndex.get() % stepsPerPage);
+    return indexInPage == currentIndexInPage;
+}
+
+}  // namespace core::handler::sequencer::step_edit_session_workflow

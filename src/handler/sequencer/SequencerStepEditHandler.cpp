@@ -10,6 +10,7 @@
 #include "SequencerInteractionPolicyAdapter.hpp"
 #include "SequencerStepChordEditorWorkflow.hpp"
 #include "SequencerStepContextRowWorkflow.hpp"
+#include "SequencerStepEditSessionWorkflow.hpp"
 #include "SequencerStepValueRowWorkflow.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
@@ -20,6 +21,8 @@ namespace step_chord_editor_workflow =
     core::handler::sequencer::step_chord_editor_workflow;
 namespace step_context_row_workflow =
     core::handler::sequencer::step_context_row_workflow;
+namespace step_edit_session_workflow =
+    core::handler::sequencer::step_edit_session_workflow;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 namespace step_value_row_workflow =
     core::handler::sequencer::step_value_row_workflow;
@@ -272,53 +275,27 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
 }
 
 FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
-    history_.commitCoalescedPatternEdit();
-
-    uint8_t abs = 0;
-    if (!core::state::sequencer::resolveActiveContentStepInPage(
+    if (!step_edit_session_workflow::openForMacroInPage(
             sequencer_,
-            sequencer_.page.get(),
-            indexInPage,
-            abs
+            history_,
+            open_release_latch_,
+            overlays_,
+            history_snapshot_,
+            history_snapshot_valid_,
+            indexInPage
         )) {
         return;
     }
-
-    history_snapshot_valid_ =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
-
-    sequencer_.focusedStep.set(abs);
-
-    auto& o = sequencer_.stepEdit;
-    o.reset();
-    o.focusedRow.set(step_edit_rows::rowForNavigationIndex(0));
-    o.stepIndex.set(abs);
-
-    // longPress() fires while button is still pressed; don't immediately close on release.
-    open_release_latch_.arm(Config::MACRO_BUTTONS[indexInPage]);
-
-    overlays_.show(core::ui::OverlayType::SEQ_STEP_EDIT);
-
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::commitStepEditHistory() {
-    if (history_snapshot_valid_) {
-        core::state::sequencer::SequencerHistoryPatternSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after) &&
-            !core::state::sequencer::sameMusicalHistorySnapshot(history_snapshot_, after)) {
-            history_.recordPattern(
-                std::move(history_snapshot_),
-                std::move(after),
-                core::state::sequencer::SequencerHistoryDescriptor{
-                    .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-                    .stepIndex = sequencer_.stepEdit.stepIndex.get(),
-                }
-            );
-        }
-    }
-
-    history_snapshot_valid_ = false;
+    step_edit_session_workflow::commitHistory(
+        sequencer_,
+        history_,
+        history_snapshot_,
+        history_snapshot_valid_
+    );
 }
 
 FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
@@ -327,37 +304,29 @@ FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
         return;
     }
 
-    if (core::state::sequencer::isChildContentView(sequencer_)) {
-        uint8_t parentContextRow = sequencer_.stepEdit.focusedRow.get();
-        if (const auto* frame = sequencer_.contentView.currentFrame()) {
-            parentContextRow =
-                frame->kind == core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE
-                    ? step_edit_rows::MICRO_SEQUENCE
-                    : step_edit_rows::CYCLE_STATES;
-        }
-        commitStepEditHistory();
-        history_.commitCoalescedPatternEdit();
-        if (core::state::sequencer::leaveContentView(sequencer_)) {
-            sequencer_.stepEdit.contextHold.clear();
-            sequencer_.stepEdit.localVariationEditActive.set(false);
-            sequencer_.stepEdit.stepIndex.set(sequencer_.focusedStep.get());
-            sequencer_.stepEdit.focusedRow.set(parentContextRow);
-            history_snapshot_valid_ =
-                core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
-            configureOptForFocusedRow();
-            return;
-        }
+    if (step_edit_session_workflow::backToParentContent(
+            sequencer_,
+            history_,
+            history_snapshot_,
+            history_snapshot_valid_
+        )) {
+        configureOptForFocusedRow();
+        return;
     }
 
     closeStepEdit();
 }
 
 FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
-    commitStepEditHistory();
-    open_release_latch_.clear();
-    context_release_latch_.clear();
-    overlays_.hide();
-    sequencer_.stepEdit.reset();
+    step_edit_session_workflow::close(
+        sequencer_,
+        history_,
+        open_release_latch_,
+        context_release_latch_,
+        overlays_,
+        history_snapshot_,
+        history_snapshot_valid_
+    );
 }
 
 FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
@@ -534,25 +503,17 @@ FLASHMEM bool SequencerStepEditHandler::chordEditorActive() const {
 }
 
 FLASHMEM bool SequencerStepEditHandler::editedStepInRange(uint8_t& step) const {
-    const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
-    if (len == 0) return false;
-
-    step = sequencer_.stepEdit.stepIndex.get();
-    return step < len;
+    return step_edit_session_workflow::editedStepInRange(sequencer_, step);
 }
 
 FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
-    if (open_release_latch_.consume(Config::MACRO_BUTTONS[indexInPage])) {
-        return;
+    if (step_edit_session_workflow::shouldCloseFromMacro(
+            open_release_latch_,
+            sequencer_,
+            indexInPage
+        )) {
+        closeStepEdit();
     }
-
-    auto& edit = sequencer_.stepEdit;
-    constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
-    const uint8_t abs = edit.stepIndex.get();
-    const uint8_t currentIndexInPage = static_cast<uint8_t>(abs % stepsPerPage);
-
-    if (indexInPage != currentIndexInPage) return;
-    closeStepEdit();
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsValueRow() const {
