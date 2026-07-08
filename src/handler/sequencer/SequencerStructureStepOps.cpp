@@ -123,6 +123,55 @@ FLASHMEM bool appendStepClipboardEntry(
     return true;
 }
 
+FLASHMEM bool captureFocusedStepClipboard(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    uint8_t step,
+    core::state::SequencerStepsClipboard& clipboard
+) {
+    if (step >= core::state::sequencer::activeContentLength(sequencer)) return false;
+
+    clipboard = {};
+    clipboard.valid = true;
+    clipboard.rootContext = core::state::sequencer::isRootContentView(sequencer);
+    clipboard.span = 1;
+
+    return appendStepClipboardEntry(
+        sequencer,
+        step,
+        step,
+        effectiveScaleSettings(sequencer, tracks),
+        clipboard
+    );
+}
+
+FLASHMEM bool captureStepSelectionClipboard(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    const oc::note::sequencer::StepBitMask128& selectedMask,
+    core::state::SequencerStepsClipboard& clipboard
+) {
+    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer);
+    uint8_t first = 0;
+    uint8_t last = 0;
+    if (!selectedStepRange(selectedMask, activeLength, first, last)) return false;
+
+    clipboard = {};
+    clipboard.valid = true;
+    clipboard.rootContext = core::state::sequencer::isRootContentView(sequencer);
+    clipboard.span = static_cast<uint8_t>(last - first + 1U);
+
+    const auto scaleSettings = effectiveScaleSettings(sequencer, tracks);
+    for (uint8_t step = first; step <= last; ++step) {
+        if (!selectedMask.test(step)) continue;
+        if (clipboard.count >= clipboard.entries.size()) break;
+
+        (void)appendStepClipboardEntry(sequencer, step, first, scaleSettings, clipboard);
+    }
+
+    return clipboard.count > 0;
+}
+
 FLASHMEM bool writeRootStepFromClipboardEntry(
     core::state::sequencer::SequencerState& sequencer,
     const core::state::SequencerStepClipboardEntry& entry,

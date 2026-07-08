@@ -43,6 +43,20 @@ bool appendStepClipboardEntry(
     core::state::SequencerStepsClipboard& clipboard
 );
 
+bool captureFocusedStepClipboard(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    uint8_t step,
+    core::state::SequencerStepsClipboard& clipboard
+);
+
+bool captureStepSelectionClipboard(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    const oc::note::sequencer::StepBitMask128& selectedMask,
+    core::state::SequencerStepsClipboard& clipboard
+);
+
 bool writeRootStepFromClipboardEntry(
     core::state::sequencer::SequencerState& sequencer,
     const core::state::SequencerStepClipboardEntry& entry,

@@ -277,22 +277,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::canPasteFocusedStep() const {
 
 FLASHMEM void SequencerStructureEditWorkflow::copyFocusedStep() {
     const uint8_t step = sequencer_.focusedStep.get();
-    if (step >= core::state::sequencer::activeContentLength(sequencer_)) return;
 
     core::state::SequencerStepsClipboard clipboard;
-    clipboard.valid = true;
-    clipboard.rootContext = core::state::sequencer::isRootContentView(sequencer_);
-    clipboard.span = 1;
-
-    if (!appendStepClipboardEntry(
-            sequencer_,
-            step,
-            step,
-            effectiveScaleSettings(sequencer_, tracks_),
-            clipboard
-        )) {
-        return;
-    }
+    if (!captureFocusedStepClipboard(sequencer_, tracks_, step, clipboard)) return;
 
     structure_clipboard_.storeSequencerSteps(
         clipboard,
@@ -361,26 +348,15 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
     auto& selection = sequencer_.structureUi.stepSelection;
     if (!selection.active.get()) return;
 
-    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer_);
-    uint8_t first = 0;
-    uint8_t last = 0;
-    const auto selectedMask = selection.selectedMask.get();
-    if (!selectedStepRange(selectedMask, activeLength, first, last)) return;
-
-    const auto scaleSettings = effectiveScaleSettings(sequencer_, tracks_);
     core::state::SequencerStepsClipboard clipboard;
-    clipboard.valid = true;
-    clipboard.rootContext = core::state::sequencer::isRootContentView(sequencer_);
-    clipboard.span = static_cast<uint8_t>(last - first + 1U);
-
-    for (uint8_t step = first; step <= last; ++step) {
-        if (!selectedMask.test(step)) continue;
-        if (clipboard.count >= clipboard.entries.size()) break;
-
-        (void)appendStepClipboardEntry(sequencer_, step, first, scaleSettings, clipboard);
+    if (!captureStepSelectionClipboard(
+            sequencer_,
+            tracks_,
+            selection.selectedMask.get(),
+            clipboard
+        )) {
+        return;
     }
-
-    if (clipboard.count == 0) return;
     structure_clipboard_.storeSequencerSteps(
         clipboard,
         core::state::sequencer::graphView(sequencer_.pattern)
