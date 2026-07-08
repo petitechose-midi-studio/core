@@ -7,6 +7,50 @@
 namespace core::state::sequencer {
 using namespace content_view_internal;
 
+namespace {
+
+FLASHMEM bool resetRootStepPropertyToDefault(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepProperty property
+) {
+    switch (property) {
+        case StepProperty::NOTE:
+            return sequencer.setStepNoteAt(step, SequencerState::DEFAULT_NOTE);
+        case StepProperty::VELOCITY:
+            return sequencer.setStepVelocityAt(step, SequencerState::DEFAULT_VELOCITY);
+        case StepProperty::GATE:
+            return sequencer.setStepGateAt(step, SequencerState::DEFAULT_GATE_PERCENT);
+        case StepProperty::NUDGE:
+            return sequencer.setStepNudgeAt(step, 0);
+        case StepProperty::PROBABILITY:
+            return sequencer.setStepProbabilityAt(step, SequencerState::DEFAULT_PROBABILITY);
+    }
+    return false;
+}
+
+FLASHMEM bool resetChildStepPropertyOffsetToDefault(
+    SequencerState& sequencer,
+    SequencerGraphNodeId nodeId,
+    StepProperty property
+) {
+    switch (property) {
+        case StepProperty::NOTE:
+            return setNodeNoteOffset(sequencer.pattern, nodeId, 0);
+        case StepProperty::VELOCITY:
+            return setNodeVelocityOffset(sequencer.pattern, nodeId, 0);
+        case StepProperty::GATE:
+            return setNodeGateOffset(sequencer.pattern, nodeId, 0);
+        case StepProperty::NUDGE:
+            return setNodeNudgeOffset(sequencer.pattern, nodeId, 0);
+        case StepProperty::PROBABILITY:
+            return setNodeProbabilityOffset(sequencer.pattern, nodeId, 0);
+    }
+    return false;
+}
+
+}  // namespace
+
 FLASHMEM bool rotateActiveContentSteps(SequencerState& sequencer, int offsetSteps) {
     if (!isChildContentView(sequencer)) return false;
 
@@ -111,6 +155,32 @@ FLASHMEM bool setActiveContentStepFromNormalized(
         pitchEditMode,
         scaleSettings
     );
+}
+
+FLASHMEM bool resetActiveContentStepPropertyToDefault(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepProperty property
+) {
+    if (step >= activeContentLength(sequencer)) return false;
+
+    bool changed = false;
+    if (isRootContentView(sequencer)) {
+        changed = resetRootStepPropertyToDefault(sequencer, step, property);
+    } else {
+        const auto nodeId = activeContentStepNodeId(sequencer, step);
+        if (nodeId == kInvalidId) return false;
+        changed = resetChildStepPropertyOffsetToDefault(sequencer, nodeId, property);
+        if (changed) sequencer.contentView.bump();
+    }
+
+    changed = setNodeLocalVariationRange(
+        sequencer.pattern,
+        activeContentStepNodeId(sequencer, step),
+        property,
+        0
+    ) || changed;
+    return changed;
 }
 
 FLASHMEM float activeContentStepPropertyToNormalized(

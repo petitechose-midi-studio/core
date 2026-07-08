@@ -975,87 +975,11 @@ FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
         );
     } else if (isPropertyRow(row)) {
         const auto property = propertyForRow(row);
-        if (core::state::sequencer::isRootContentView(sequencer_)) {
-            switch (property) {
-                case core::state::sequencer::StepProperty::NOTE:
-                    changed = sequencer_.setStepNoteAt(
-                        step,
-                        core::state::sequencer::SequencerState::DEFAULT_NOTE
-                    );
-                    break;
-                case core::state::sequencer::StepProperty::VELOCITY:
-                    changed = sequencer_.setStepVelocityAt(
-                        step,
-                        core::state::sequencer::SequencerState::DEFAULT_VELOCITY
-                    );
-                    break;
-                case core::state::sequencer::StepProperty::GATE:
-                    changed = sequencer_.setStepGateAt(
-                        step,
-                        core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT
-                    );
-                    break;
-                case core::state::sequencer::StepProperty::NUDGE:
-                    changed = sequencer_.setStepNudgeAt(step, 0);
-                    break;
-                case core::state::sequencer::StepProperty::PROBABILITY:
-                    changed = sequencer_.setStepProbabilityAt(
-                        step,
-                        core::state::sequencer::SequencerState::DEFAULT_PROBABILITY
-                    );
-                    break;
-            }
-        } else {
-            const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-                sequencer_,
-                step
-            );
-            switch (property) {
-                case core::state::sequencer::StepProperty::NOTE:
-                    changed = core::state::sequencer::setNodeNoteOffset(
-                        sequencer_.pattern,
-                        nodeId,
-                        0
-                    );
-                    break;
-                case core::state::sequencer::StepProperty::VELOCITY:
-                    changed = core::state::sequencer::setNodeVelocityOffset(
-                        sequencer_.pattern,
-                        nodeId,
-                        0
-                    );
-                    break;
-                case core::state::sequencer::StepProperty::GATE:
-                    changed = core::state::sequencer::setNodeGateOffset(
-                        sequencer_.pattern,
-                        nodeId,
-                        0
-                    );
-                    break;
-                case core::state::sequencer::StepProperty::NUDGE:
-                    changed = core::state::sequencer::setNodeNudgeOffset(
-                        sequencer_.pattern,
-                        nodeId,
-                        0
-                    );
-                    break;
-                case core::state::sequencer::StepProperty::PROBABILITY:
-                    changed = core::state::sequencer::setNodeProbabilityOffset(
-                        sequencer_.pattern,
-                        nodeId,
-                        0
-                    );
-                    break;
-            }
-            if (changed) sequencer_.contentView.bump();
-        }
-
-        changed = core::state::sequencer::setNodeLocalVariationRange(
-            sequencer_.pattern,
-            core::state::sequencer::activeContentStepNodeId(sequencer_, step),
-            property,
-            0
-        ) || changed;
+        changed = core::state::sequencer::resetActiveContentStepPropertyToDefault(
+            sequencer_,
+            step,
+            property
+        );
     }
 
     if (!changed) return;

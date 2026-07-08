@@ -514,6 +514,10 @@ FLASHMEM bool setSignedOffset(SequencerPatternState& pattern,
     bool changed = false;
     if (value == 0) {
         changed = assignFlag(node.flags, flag, false);
+        if (target != 0) {
+            target = 0;
+            changed = true;
+        }
     } else {
         if (target != value) {
             target = value;

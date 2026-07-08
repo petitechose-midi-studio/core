@@ -60,6 +60,10 @@ FLASHMEM bool setNodeNoteOffset(SequencerPatternState& pattern,
     bool changed = false;
     if (offset == 0) {
         changed = assignFlag(node.flags, STEP_NODE_NOTE_OFFSET, false);
+        if (node.noteOffset != 0) {
+            node.noteOffset = 0;
+            changed = true;
+        }
     } else {
         if (node.noteOffset != offset) {
             node.noteOffset = offset;
@@ -113,6 +117,10 @@ FLASHMEM bool setNodeNudgeOffset(SequencerPatternState& pattern,
     bool changed = false;
     if (offset == 0) {
         changed = assignFlag(node.flags, STEP_NODE_NUDGE_OFFSET, false);
+        if (node.nudgeOffset != 0) {
+            node.nudgeOffset = 0;
+            changed = true;
+        }
     } else {
         if (node.nudgeOffset != offset) {
             node.nudgeOffset = offset;

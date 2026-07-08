@@ -187,6 +187,11 @@ bool setActiveContentStepFromNormalized(
     SequencerPitchEditMode pitchEditMode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 );
+bool resetActiveContentStepPropertyToDefault(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepProperty property
+);
 float activeContentStepPropertyToNormalized(
     const SequencerState& sequencer,
     uint8_t step,
