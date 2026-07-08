@@ -33,7 +33,7 @@ Largest current production files:
 |---|---:|---|
 | `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
 | `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~1024 | Copy/paste, clear/remove, selection, history, preview, and track/page/step logic are colocated. |
-| `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~1016 | Builds view models but also holds high-level UX decisions and compatibility logic. |
+| `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~638 | Reduced to the main facade plus header/left-strip/grid/property-overlay builders. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
 | `src/ui/sequencer/SequencerStepEditOverlay.cpp` | ~971 | Layout/render state is large and tightly coupled to step-editor semantics. |
 | `src/context/standalone/ux/StandaloneSequencerUxSurfaces.cpp` | ~821 | UX semantic surface rules are becoming dense. |
@@ -194,6 +194,11 @@ product rules into the wrong layer.
   edited-step bounds, and open-release latch checks into
   `SequencerStepEditSessionWorkflow`, keeping encoder resync and top-level
   routing in the handler.
+- `2bf076e sequencer: extract bottom action strip builder` moved the sequencer
+  bottom action strip projection, selection counts, hold visuals, clipboard
+  affordance checks, and local variation status label formatting into
+  `SequencerBottomActionStripViewModelBuilder`, leaving
+  `SequencerViewModelBuilder` with the public facade.
 
 Validated after the Macro context projection slice:
 
@@ -298,6 +303,18 @@ Validated after the Sequencer step edit session workflow slice:
 - `ms ux run core --select sequencer/editing/step-preset-picker.ux --report --no-interactive --skip-build`
   -> OK;
 - `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer bottom action strip builder slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/property-strip-contexts.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/step-content/child-step-edit-back-to-parent.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/editing/step-edit-local-random.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
