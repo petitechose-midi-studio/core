@@ -16,6 +16,7 @@
 #include "handler/common/ButtonReleaseLatch.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
+#include "handler/sequencer/SequencerStepPresetPickerWorkflow.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/StructureSelectionState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -98,14 +99,11 @@ private:
         core::state::sequencer::SequencerHistoryPatternSnapshot before,
         bool beforeCaptured
     );
-    void refreshStepPresetList();
     void openStepPresetPicker();
     void closeStepPresetPicker();
     void moveStepPresetItem(float delta);
     void toggleStepPresetMode();
     void executeStepPresetAction();
-    void setStepPresetFeedback(const SequencerStepPresetActionResult& result);
-    const char* selectedStepPresetId() const;
 
     // Long-press opens while still pressed; ignore the release that follows.
     ButtonReleaseLatch<8> open_release_latch_;
@@ -123,6 +121,7 @@ private:
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     SequencerHistoryDomainServices history_;
     SequencerStepPresetDomainServices step_presets_;
+    SequencerStepPresetPickerWorkflow step_preset_picker_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

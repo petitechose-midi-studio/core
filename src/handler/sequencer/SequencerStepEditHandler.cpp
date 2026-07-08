@@ -1,16 +1,12 @@
 #include "SequencerStepEditHandler.hpp"
 
 #include <algorithm>
-#include <cstring>
-
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include <oc/time/Time.hpp>
-#include <oc/type/Result.hpp>
 
 #include <utility>
 
-#include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerChordEditOps.hpp"
 #include "SequencerInputUtils.hpp"
@@ -122,6 +118,7 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     , navigation_focus_(state.navigationFocus)
     , history_(state.history)
     , step_presets_(state.stepPresets)
+    , step_preset_picker_(sequencer_, step_presets_, overlays)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -1061,172 +1058,36 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
     recordContextMutation(std::move(before), beforeCaptured);
 }
 
-FLASHMEM void SequencerStepEditHandler::refreshStepPresetList() {
-    auto& picker = sequencer_.stepPresetPicker;
-    using Picker = core::state::sequencer::SequencerStepPresetPickerState;
-    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
-
-    SequencerStepPresetDomainServices::Entry entries[Picker::ENTRY_CAPACITY]{};
-    const auto listed = step_presets_.listPresets(entries, Picker::ENTRY_CAPACITY);
-    if (!listed.ok()) {
-        picker.entryCount.set(0);
-        picker.truncated.set(false);
-        picker.setFeedback(Feedback::FAILED);
-        return;
-    }
-
-    for (uint8_t i = 0; i < Picker::ENTRY_CAPACITY; ++i) {
-        picker.setEntry(i, i < listed.count ? entries[i].id : nullptr);
-    }
-    picker.entryCount.set(listed.count);
-    picker.truncated.set(listed.truncated);
-    picker.clampSelection();
-    picker.revision.set(picker.revision.get() + 1U);
-}
-
 FLASHMEM void SequencerStepEditHandler::openStepPresetPicker() {
-    if (!sequencer_.stepEdit.visible.get()) return;
-
-    sequencer_.stepEdit.contextHold.clear();
-    sequencer_.stepEdit.localVariationEditActive.set(false);
-    sequencer_.stepPresetPicker.open(
-        core::state::sequencer::SequencerStepPresetPickerMode::LOAD
-    );
-    refreshStepPresetList();
-    overlays_.show(core::ui::OverlayType::SEQ_STEP_PRESET, true);
+    step_preset_picker_.open();
 }
 
 FLASHMEM void SequencerStepEditHandler::closeStepPresetPicker() {
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::SEQ_STEP_PRESET);
-    sequencer_.stepPresetPicker.reset();
+    step_preset_picker_.close();
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::moveStepPresetItem(float delta) {
-    auto& picker = sequencer_.stepPresetPicker;
-    if (!picker.visible.get() || !nav::hasTurnDelta(delta)) return;
-
-    const int count = static_cast<int>(picker.itemCount());
-    if (count <= 0) return;
-
-    const int current = static_cast<int>(picker.selectedIndex.get());
-    const int next = nav::nextWrappedIndex(delta, current, count);
-    picker.selectedIndex.set(static_cast<uint8_t>(next));
-    picker.feedback.set(core::state::sequencer::SequencerStepPresetFeedback::NONE);
+    step_preset_picker_.move(delta);
 }
 
 FLASHMEM void SequencerStepEditHandler::toggleStepPresetMode() {
-    auto& picker = sequencer_.stepPresetPicker;
-    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
-    const auto next = picker.mode.get() == Mode::LOAD ? Mode::SAVE : Mode::LOAD;
-    picker.mode.set(next);
-    picker.selectedIndex.set(0);
-    picker.feedback.set(core::state::sequencer::SequencerStepPresetFeedback::NONE);
-    refreshStepPresetList();
-    picker.revision.set(picker.revision.get() + 1U);
-}
-
-FLASHMEM const char* SequencerStepEditHandler::selectedStepPresetId() const {
-    const auto& picker = sequencer_.stepPresetPicker;
-    const uint8_t entryIndex = picker.existingEntryIndexForSelectedItem();
-    if (entryIndex >= picker.entryCount.get()) return "";
-    return picker.entryId(entryIndex);
+    step_preset_picker_.toggleMode();
 }
 
 FLASHMEM void SequencerStepEditHandler::executeStepPresetAction() {
-    auto& picker = sequencer_.stepPresetPicker;
-    if (!picker.visible.get()) return;
-
-    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
-    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
-
-    if (picker.mode.get() == Mode::SAVE) {
-        char presetId[core::state::sequencer::SequencerStepPresetPickerState::ID_SIZE] = {};
-        if (picker.selectedIndex.get() == 0) {
-            const auto next = step_presets_.nextPresetId(presetId, sizeof(presetId));
-            if (!next.ok()) {
-                OC_LOG_WARN("[StepPreset] next id failed status={} file={}",
-                            sequencerStepPresetStatusLabel(next.status),
-                            oc::type::errorCodeToString(next.fileError));
-                setStepPresetFeedback(next);
-                return;
-            }
-        } else {
-            std::strncpy(presetId, selectedStepPresetId(), sizeof(presetId) - 1U);
-            presetId[sizeof(presetId) - 1U] = '\0';
-        }
-
-        const auto result = step_presets_.savePreset(presetId);
-        if (!result.ok()) {
-            OC_LOG_WARN("[StepPreset] save id={} failed status={} asset={} file={} bytes={}",
-                        result.presetId,
-                        sequencerStepPresetStatusLabel(result.status),
-                        core::state::sequencer::sequencerGraphAssetStatusLabel(result.assetStatus),
-                        oc::type::errorCodeToString(result.fileError),
-                        result.bytes);
-            setStepPresetFeedback(result);
-            return;
-        }
-        picker.mode.set(Mode::LOAD);
-        picker.selectedIndex.set(0);
-        refreshStepPresetList();
-        const uint8_t count = picker.entryCount.get();
-        for (uint8_t i = 0; i < count; ++i) {
-            if (std::strcmp(picker.entryId(i), result.presetId) == 0) {
-                picker.selectedIndex.set(i);
-                break;
-            }
-        }
-        picker.setFeedback(Feedback::SAVED);
-        return;
+    if (step_preset_picker_.shouldCommitBeforeLoad()) {
+        commitStepEditHistory();
+        history_.commitCoalescedPatternEdit();
     }
 
-    if (picker.entryCount.get() == 0) {
-        picker.setFeedback(Feedback::EMPTY);
-        return;
-    }
-
-    commitStepEditHistory();
-    history_.commitCoalescedPatternEdit();
-
-    const auto result = step_presets_.loadPreset(selectedStepPresetId());
-    if (!result.ok()) {
-        OC_LOG_WARN("[StepPreset] load id={} failed status={} asset={} file={} bytes={}",
-                    result.presetId,
-                    sequencerStepPresetStatusLabel(result.status),
-                    core::state::sequencer::sequencerGraphAssetStatusLabel(result.assetStatus),
-                    oc::type::errorCodeToString(result.fileError),
-                    result.bytes);
-        setStepPresetFeedback(result);
-        return;
-    }
+    const auto outcome = step_preset_picker_.execute();
+    if (outcome != SequencerStepPresetPickerOutcome::LOADED) return;
 
     sequencer_.invalidateVariationTelemetry();
     history_snapshot_valid_ =
         core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
     closeStepPresetPicker();
-}
-
-FLASHMEM void SequencerStepEditHandler::setStepPresetFeedback(
-    const SequencerStepPresetActionResult& result
-) {
-    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
-
-    if (result.status == SequencerStepPresetStatus::EMPTY) {
-        sequencer_.stepPresetPicker.setFeedback(Feedback::EMPTY);
-        return;
-    }
-    if (result.status == SequencerStepPresetStatus::INCOMPATIBLE ||
-        result.assetStatus ==
-            core::state::sequencer::SequencerGraphAssetStatus::INCOMPATIBLE_TARGET) {
-        sequencer_.stepPresetPicker.setFeedback(Feedback::INCOMPATIBLE);
-        return;
-    }
-    if (!result.ok()) {
-        sequencer_.stepPresetPicker.setFeedback(Feedback::FAILED);
-        return;
-    }
-    sequencer_.stepPresetPicker.setFeedback(Feedback::NONE);
 }
 
 }  // namespace core::handler
