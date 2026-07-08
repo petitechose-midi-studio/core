@@ -42,6 +42,7 @@ Code seams checked during this review:
 Feature cleanup audits:
 
 - [`Chord Step Editor Cleanup Audit - 2026-06-23`](2026-06-23-chord-step-editor-cleanup-audit.md)
+- [`Core Quality Audit And Roadmap - 2026-07-08`](2026-07-08-core-quality-roadmap.md)
 
 ## Certainty Levels
 
