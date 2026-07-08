@@ -33,7 +33,7 @@ Largest current production files:
 |---|---:|---|
 | `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
 | `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~1024 | Copy/paste, clear/remove, selection, history, preview, and track/page/step logic are colocated. |
-| `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~237 | Reduced to the main facade plus left-strip and grid builders. |
+| `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~74 | Reduced to a facade plus the step-grid paste preview adapter. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
 | `src/ui/sequencer/SequencerStepEditOverlay.cpp` | ~971 | Layout/render state is large and tightly coupled to step-editor semantics. |
 | `src/context/standalone/ux/StandaloneSequencerUxSurfaces.cpp` | ~821 | UX semantic surface rules are becoming dense. |
@@ -207,6 +207,10 @@ product rules into the wrong layer.
   selector, local random overlay value formatting, pattern quick-control overlay
   formatting, and shared quick-control icon/color mapping out of
   `SequencerViewModelBuilder`.
+- `ae8eef4 sequencer: extract left action strip builder` moved the sequencer
+  left action strip projection and action-to-icon visibility mapping into
+  `SequencerLeftActionStripViewModelBuilder`, consuming the existing sequencer
+  interaction policy and shared quick-control visuals.
 
 Validated after the Macro context projection slice:
 
@@ -341,6 +345,14 @@ Validated after the Sequencer property overlay builder slice:
 - `ms ux run core --select sequencer/editing/step-edit-local-random.ux --report --no-interactive --skip-build`
   -> OK;
 - `ms ux run core --select sequencer/structure/property-strip-contexts.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer left action strip builder slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/property-strip-contexts.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/editing/quick-controls-basic.ux --report --no-interactive --skip-build`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
