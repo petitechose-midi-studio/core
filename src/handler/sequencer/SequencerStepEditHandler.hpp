@@ -24,10 +24,6 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
 
-namespace core::state::sequencer {
-enum class StepContentChildKind : uint8_t;
-}
-
 namespace core::handler {
 
 class SequencerStepEditHandler {
@@ -81,10 +77,7 @@ private:
     void resetFocusedChordFieldToDefault();
     bool chordEditorActive() const;
     bool editedStepInRange(uint8_t& step) const;
-    void activateFocusedContextRow(
-        core::state::sequencer::StepContentChildKind childKind,
-        uint8_t defaultLength
-    );
+    void activateFocusedContextRow();
     void maybeCloseFromMacro(uint8_t indexInPage);
     bool focusedRowIsValueRow() const;
     bool focusedRowIsContextRow() const;

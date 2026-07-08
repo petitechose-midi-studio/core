@@ -9,6 +9,7 @@
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
 #include "SequencerStepChordEditorWorkflow.hpp"
+#include "SequencerStepContextRowWorkflow.hpp"
 #include "SequencerStepValueRowWorkflow.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
@@ -17,6 +18,8 @@ namespace core::handler {
 namespace interaction_policy = core::handler::sequencer::interaction_policy;
 namespace step_chord_editor_workflow =
     core::handler::sequencer::step_chord_editor_workflow;
+namespace step_context_row_workflow =
+    core::handler::sequencer::step_context_row_workflow;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 namespace step_value_row_workflow =
     core::handler::sequencer::step_value_row_workflow;
@@ -408,35 +411,19 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
         return;
     }
 
-    if (focusedRow == step_edit_rows::MICRO_SEQUENCE) {
-        activateFocusedContextRow(
-            core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
-            core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
-        );
-        return;
-    }
-
-    if (focusedRow == step_edit_rows::CYCLE_STATES) {
-        activateFocusedContextRow(
-            core::state::sequencer::StepContentChildKind::CYCLE_STATES,
-            core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
-        );
+    if (step_edit_rows::isContext(focusedRow)) {
+        activateFocusedContextRow();
         return;
     }
 }
 
-FLASHMEM void SequencerStepEditHandler::activateFocusedContextRow(
-    core::state::sequencer::StepContentChildKind childKind,
-    uint8_t defaultLength
-) {
+FLASHMEM void SequencerStepEditHandler::activateFocusedContextRow() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    const auto result = core::state::sequencer::openOrCreateActiveContentChild(
+    const auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
         sequencer_,
-        step,
-        childKind,
-        defaultLength
+        step
     );
     if (!result.opened) return;
 
@@ -575,8 +562,7 @@ FLASHMEM bool SequencerStepEditHandler::focusedRowIsValueRow() const {
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsContextRow() const {
     if (chordEditorActive()) return false;
-    const uint8_t focusedRow = sequencer_.stepEdit.focusedRow.get();
-    return step_edit_rows::isContext(focusedRow);
+    return step_context_row_workflow::focusedRowIsContext(sequencer_);
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowSupportsLocalVariation() const {
@@ -590,32 +576,18 @@ FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return false;
 
-    const auto childKind = step_edit_rows::childKindForContextRow(
-        sequencer_.stepEdit.focusedRow.get()
-    );
-    return core::state::sequencer::activeContentStepHasChildContent(
-        sequencer_,
-        step,
-        childKind
-    );
+    return step_context_row_workflow::focusedContextHasChild(sequencer_, step);
 }
 
 FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return false;
 
-    const auto childKind = step_edit_rows::childKindForContextRow(
-        sequencer_.stepEdit.focusedRow.get()
+    return step_context_row_workflow::canPasteFocusedContextChild(
+        sequencer_,
+        step,
+        structure_clipboard_
     );
-    return focusedRowIsContextRow() &&
-           core::state::sequencer::clipboardCanPasteActiveContentChild(
-               structure_clipboard_,
-               childKind
-           ) &&
-           core::state::sequencer::activeContentStepCanReceiveChildContent(
-               sequencer_,
-               step
-           );
 }
 
 FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
@@ -675,13 +647,9 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
         beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
     }
 
-    const auto childKind = step_edit_rows::childKindForContextRow(
-        sequencer_.stepEdit.focusedRow.get()
-    );
-    const bool changed = core::state::sequencer::clearActiveContentChild(
+    const bool changed = step_context_row_workflow::clearFocusedContextChild(
         sequencer_,
-        step,
-        childKind
+        step
     );
     if (!changed) {
         if (!history_snapshot_valid_ && beforeCaptured) {
@@ -698,13 +666,9 @@ FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    const auto childKind = step_edit_rows::childKindForContextRow(
-        sequencer_.stepEdit.focusedRow.get()
-    );
-    core::state::sequencer::copyActiveContentChildToClipboard(
+    step_context_row_workflow::copyFocusedContextChildToClipboard(
         sequencer_,
         step,
-        childKind,
         structure_clipboard_
     );
 }
@@ -726,13 +690,9 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
         beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
     }
 
-    const auto childKind = step_edit_rows::childKindForContextRow(
-        sequencer_.stepEdit.focusedRow.get()
-    );
-    const bool changed = core::state::sequencer::pasteActiveContentChildFromClipboard(
+    const bool changed = step_context_row_workflow::pasteFocusedContextChildFromClipboard(
         sequencer_,
         step,
-        childKind,
         structure_clipboard_
     );
     if (!changed) {
