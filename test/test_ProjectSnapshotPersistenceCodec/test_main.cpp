@@ -44,6 +44,8 @@ using oc::note::sequencer::StepSequencerChordMode;
 using oc::note::sequencer::StepSequencerChordSpec;
 
 constexpr size_t kProjectSnapshotScratchSize = 512U * 1024U;
+static_assert(snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR > 0,
+              "Stale-minor snapshot chunk tests need a previous minor version");
 
 core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
     return core::state::CoreState{
@@ -795,6 +797,48 @@ void test_project_snapshot_future_sequencer_chunk_blocks_overwrite() {
     std::cout << "[PASS] test_project_snapshot_future_sequencer_chunk_blocks_overwrite\n";
 }
 
+void test_project_snapshot_stale_macro_state_chunk_defaults_and_blocks_overwrite() {
+    using MacroStatePayload =
+        std::array<uint8_t, snapshot_codec::PROJECT_MACRO_STATE_PAYLOAD_SIZE>;
+
+    auto macroPayload = core::app::makeExtmemUnique<MacroStatePayload>();
+    assert(macroPayload);
+
+    const project_file::ChunkView chunks[] = {{
+        .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_STATE),
+        .versionMajor = snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+        .versionMinor = static_cast<uint8_t>(
+            snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR - 1U
+        ),
+        .flags = 0,
+        .data = macroPayload->data(),
+        .size = static_cast<uint32_t>(macroPayload->size()),
+    }};
+
+    auto buffer =
+        core::app::makeExtmemUnique<std::array<uint8_t, kProjectSnapshotScratchSize>>();
+    assert(buffer);
+    auto encodeResult = project_file::encode(chunks, 1, 0, buffer->data(), buffer->size());
+    assert(encodeResult.status == project_file::Status::OK);
+
+    project::ProjectSnapshot snapshot;
+    project_file::LoadReport report{};
+    auto decodeResult = snapshot_codec::decodeProjectSnapshot(
+        buffer->data(),
+        encodeResult.bytesWritten,
+        snapshot,
+        &report
+    );
+    assert(decodeResult.ok);
+    assert(decodeResult.loadStatus == project_file::LoadStatus::PARTIAL);
+    assert(!decodeResult.overwriteSafe);
+    assert(report.hasUnknownUnsupportedData);
+    assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
+    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
+
+    std::cout << "[PASS] test_project_snapshot_stale_macro_state_chunk_defaults_and_blocks_overwrite\n";
+}
+
 void test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite() {
     test_support::CoreStorages sourceStorages;
     auto sourceState = makeCoreState(sourceStorages);
@@ -864,6 +908,7 @@ int main() {
     test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool();
     test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks();
     test_project_snapshot_future_sequencer_chunk_blocks_overwrite();
+    test_project_snapshot_stale_macro_state_chunk_defaults_and_blocks_overwrite();
     test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite();
 
     std::cout << "\n==============================================\n";
