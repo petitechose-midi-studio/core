@@ -11,6 +11,7 @@
 #include "SequencerChordEditOps.hpp"
 #include "SequencerInputUtils.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
+#include "SequencerStepChordEditorWorkflow.hpp"
 #include "state/sequencer/SequencerChordUiOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -20,6 +21,8 @@ namespace core::handler {
 namespace chord_edit_ops = core::handler::sequencer::chord_edit_ops;
 namespace input_utils = core::handler::sequencer::input_utils;
 namespace interaction_policy = core::handler::sequencer::interaction_policy;
+namespace step_chord_editor_workflow =
+    core::handler::sequencer::step_chord_editor_workflow;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 
 namespace {
@@ -657,177 +660,55 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
 }
 
 FLASHMEM void SequencerStepEditHandler::openChordEditor() {
-    auto& edit = sequencer_.stepEdit;
-    edit.contextHold.clear();
-    edit.localVariationEditActive.set(false);
-    edit.chordEditor.active.set(true);
-    edit.chordEditor.focusedField.set(core::state::sequencer::SequencerChordEditField::MODE);
+    step_chord_editor_workflow::open(sequencer_);
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::closeChordEditor() {
-    sequencer_.stepEdit.chordEditor.reset();
+    step_chord_editor_workflow::close(sequencer_);
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::moveChordEditorFocus(float delta) {
-    auto& chordEditor = sequencer_.stepEdit.chordEditor;
-    const int current = static_cast<int>(chordEditor.focusedField.get());
-    const int next = nav::nextWrappedIndex(delta, current, chord_edit_ops::editFieldCount());
-    chordEditor.focusedField.set(
-        static_cast<core::state::sequencer::SequencerChordEditField>(next)
-    );
+    step_chord_editor_workflow::moveFocus(sequencer_, delta);
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::setFocusedChordFieldValue(float normalized) {
-    using Field = core::state::sequencer::SequencerChordEditField;
-
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    const auto scaleSettings = effectiveScaleSettings(sequencer_, tracks_);
-    auto chord = core::state::sequencer::resolveStepChordUiState(sequencer_, step);
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+    step_chord_editor_workflow::setFocusedFieldValue(
         sequencer_,
         step,
-        scaleSettings
+        effectiveScaleSettings(sequencer_, tracks_),
+        normalized
     );
-    if (projection.valid) {
-        core::state::sequencer::resolveStepChordPreview(chord, projection, scaleSettings);
-    }
-
-    const auto field = sequencer_.stepEdit.chordEditor.focusedField.get();
-    if (field == Field::MODE) {
-        const int choice = input_utils::normalizedToIndex(
-            normalized,
-            chord_edit_ops::modeChoiceCount(chord.rootContext)
-        );
-        chord_edit_ops::applyModeChoice(sequencer_, step, choice, chord.spec);
-        return;
-    }
-
-    chord_edit_ops::applySpecField(sequencer_, step, field, chord.spec, normalized);
 }
 
 FLASHMEM void SequencerStepEditHandler::configureOptForFocusedChordField() {
-    using Field = core::state::sequencer::SequencerChordEditField;
-    using Spec = oc::note::sequencer::StepSequencerChordSpec;
-
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    const auto scaleSettings = effectiveScaleSettings(sequencer_, tracks_);
-    auto chord = core::state::sequencer::resolveStepChordUiState(sequencer_, step);
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+    step_chord_editor_workflow::configureFocusedFieldEncoder(
+        encoders_,
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT),
         sequencer_,
         step,
-        scaleSettings
+        effectiveScaleSettings(sequencer_, tracks_)
     );
-    if (projection.valid) {
-        core::state::sequencer::resolveStepChordPreview(chord, projection, scaleSettings);
-    }
-    const auto field = sequencer_.stepEdit.chordEditor.focusedField.get();
-
-    encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, 4);
-    encoders_.setNormalizedTurns(Config::EncoderID::OPT, 0.5f);
-
-    switch (field) {
-        case Field::MODE:
-            encoders_.setDiscreteSteps(
-                Config::EncoderID::OPT,
-                static_cast<uint8_t>(chord_edit_ops::modeChoiceCount(chord.rootContext))
-            );
-            encoders_.setPosition(
-                Config::EncoderID::OPT,
-                input_utils::indexToNormalized(
-                    chord_edit_ops::modeChoiceIndex(chord.rootContext, chord.mode),
-                    chord_edit_ops::modeChoiceCount(chord.rootContext)
-                )
-            );
-            return;
-        case Field::VOICES:
-            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_VOICES - 1U);
-            encoders_.setPosition(
-                Config::EncoderID::OPT,
-                chord_edit_ops::voiceCountToNormalized(chord.spec.voiceCount)
-            );
-            return;
-        case Field::COLOR:
-            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_COLOR + 1U);
-            encoders_.setPosition(
-                Config::EncoderID::OPT,
-                input_utils::indexToNormalized(chord.spec.color, Spec::MAX_COLOR + 1)
-            );
-            return;
-        case Field::VARIANT:
-            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_VARIANT + 1U);
-            encoders_.setPosition(
-                Config::EncoderID::OPT,
-                input_utils::indexToNormalized(chord.spec.variant, Spec::MAX_VARIANT + 1)
-            );
-            return;
-        case Field::SPREAD:
-            encoders_.setDiscreteSteps(Config::EncoderID::OPT, Spec::MAX_SPREAD + 1U);
-            encoders_.setPosition(
-                Config::EncoderID::OPT,
-                input_utils::indexToNormalized(chord.spec.spread, Spec::MAX_SPREAD + 1)
-            );
-            return;
-        case Field::STRUM:
-            encoders_.setDiscreteSteps(
-                Config::EncoderID::OPT,
-                static_cast<uint8_t>((Spec::MAX_STRUM - Spec::MIN_STRUM) + 1)
-            );
-            encoders_.setNormalizedTurns(Config::EncoderID::OPT, 2.0f);
-            encoders_.setPosition(
-                Config::EncoderID::OPT,
-                chord_edit_ops::signedToNormalized(
-                    chord.spec.strum,
-                    Spec::MIN_STRUM,
-                    Spec::MAX_STRUM
-                )
-            );
-            return;
-        case Field::VELOCITY_CURVE:
-            encoders_.setDiscreteSteps(
-                Config::EncoderID::OPT,
-                static_cast<uint8_t>(
-                    (Spec::MAX_VELOCITY_CURVE - Spec::MIN_VELOCITY_CURVE) + 1
-                )
-            );
-            encoders_.setNormalizedTurns(Config::EncoderID::OPT, 2.0f);
-            encoders_.setPosition(
-                Config::EncoderID::OPT,
-                chord_edit_ops::signedToNormalized(
-                    chord.spec.velocityCurve,
-                    Spec::MIN_VELOCITY_CURVE,
-                    Spec::MAX_VELOCITY_CURVE
-                )
-            );
-            return;
-        case Field::COUNT:
-        default:
-            return;
-    }
 }
 
 FLASHMEM void SequencerStepEditHandler::resetFocusedChordFieldToDefault() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    if (!chord_edit_ops::resetSpecField(
-            sequencer_,
-            step,
-            sequencer_.stepEdit.chordEditor.focusedField.get()
-        )) {
-        return;
-    }
+    if (!step_chord_editor_workflow::resetFocusedFieldToDefault(sequencer_, step)) return;
     configureOptForFocusedRow();
 }
 
 FLASHMEM bool SequencerStepEditHandler::chordEditorActive() const {
-    return sequencer_.stepEdit.chordEditor.active.get();
+    return step_chord_editor_workflow::active(sequencer_);
 }
 
 FLASHMEM bool SequencerStepEditHandler::editedStepInRange(uint8_t& step) const {
