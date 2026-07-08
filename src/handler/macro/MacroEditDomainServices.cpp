@@ -1,9 +1,11 @@
 #include "handler/macro/MacroEditDomainServices.hpp"
 
+#include "handler/macro/MacroAutomationClipboardOps.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 
 namespace core::handler {
+namespace automation_clipboard_ops = core::handler::macro::automation_clipboard_ops;
 
 namespace {
 
@@ -148,44 +150,23 @@ bool MacroEditDomainServices::removeAutomation(uint8_t index) const {
 
 bool MacroEditDomainServices::copyAutomation(uint8_t index) const {
     if (clipboard_ == nullptr) return false;
-    const auto* slot = automationSlot(index);
-    if (slot == nullptr || !slot->automation.active) return false;
-    clipboard_->storeMacroAutomation(pages_->automation, *slot);
-    return true;
+    return automation_clipboard_ops::copySlotAutomationToClipboard(
+        pages_->automation,
+        automationAddress(index),
+        *clipboard_
+    );
 }
 
 bool MacroEditDomainServices::pasteAutomation(uint8_t index) const {
-    if (clipboard_ == nullptr || !clipboard_->hasMacroAutomation()) return false;
-    if (!clipboard_->macroAutomationSet ||
-        !clipboard_->macroAutomationSet->valid ||
-        clipboard_->macroAutomationSet->count == 0) {
+    if (clipboard_ == nullptr) return false;
+    if (!automation_clipboard_ops::pasteFirstClipboardAutomationToSlot(
+        pages_->automation,
+        automationAddress(index),
+        *clipboard_
+    )) {
         return false;
     }
-    const auto& entry = clipboard_->macroAutomationSet->entries[0];
-    if (!entry.valid || !entry.state.automation.active) return false;
 
-    const auto address = automationAddress(index);
-    const bool hadSlot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        address
-    ) != nullptr;
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        pages_->automation,
-        address
-    );
-    if (slot == nullptr) return false;
-
-    if (!core::state::macro::macroAutomationCopySlotState(
-            pages_->automation,
-            *slot,
-            clipboard_->macroAutomationSet->pointPool,
-            entry.state
-        )) {
-        if (!hadSlot) {
-            core::state::macro::macroAutomationClearSlot(pages_->automation, address);
-        }
-        return false;
-    }
     if (operations_.markProjectMutated != nullptr) {
         operations_.markProjectMutated(operations_.context);
     }

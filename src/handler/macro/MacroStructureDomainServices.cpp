@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "handler/macro/MacroAutomationClipboardOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
@@ -9,6 +10,7 @@
 namespace core::handler {
 
 namespace structure_slots = core::state::shared;
+namespace automation_clipboard_ops = core::handler::macro::automation_clipboard_ops;
 
 namespace {
 
@@ -614,61 +616,37 @@ FLASHMEM bool MacroStructureDomainServices::copyMacroAutomation(
     core::state::StructureClipboardState& clipboard
 ) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
+
+    return automation_clipboard_ops::copySlotAutomationToClipboard(
         pages_->automation,
         core::state::macro::MacroAutomationSlotAddress{
             .track = pages_->currentActiveTrack(),
             .page = pages_->currentActivePage(),
             .macro = index,
-        }
+        },
+        clipboard
     );
-    if (slot == nullptr || !slot->automation.active) return false;
-
-    clipboard.storeMacroAutomation(pages_->automation, *slot);
-    return true;
 }
 
 FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
     uint8_t index,
     const core::state::StructureClipboardState& clipboard
 ) const {
-    if (index >= core::state::macro::MACRO_COUNT || !clipboard.hasMacroAutomation()) {
-        return false;
-    }
-    if (!clipboard.macroAutomationSet ||
-        !clipboard.macroAutomationSet->valid ||
-        clipboard.macroAutomationSet->count == 0) {
-        return false;
-    }
-
-    const auto& entry = clipboard.macroAutomationSet->entries[0];
-    if (!entry.valid || !entry.state.automation.active) return false;
+    if (index >= core::state::macro::MACRO_COUNT) return false;
 
     const auto address = core::state::macro::MacroAutomationSlotAddress{
         .track = pages_->currentActiveTrack(),
         .page = pages_->currentActivePage(),
         .macro = index,
     };
-    const bool hadSlot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        address
-    ) != nullptr;
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        pages_->automation,
-        address
-    );
-    if (slot == nullptr) return false;
+    if (!automation_clipboard_ops::hasFirstClipboardAutomation(clipboard)) return false;
 
     flushAutoPersist(operations_);
-    if (!core::state::macro::macroAutomationCopySlotState(
+    if (!automation_clipboard_ops::pasteFirstClipboardAutomationToSlot(
             pages_->automation,
-            *slot,
-            clipboard.macroAutomationSet->pointPool,
-            entry.state
+            address,
+            clipboard
         )) {
-        if (!hadSlot) {
-            core::state::macro::macroAutomationClearSlot(pages_->automation, address);
-        }
         return false;
     }
 
