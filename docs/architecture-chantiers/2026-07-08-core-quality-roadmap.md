@@ -32,7 +32,7 @@ Largest current production files:
 | File | Lines | Concern |
 |---|---:|---|
 | `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
-| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~605 | Reduced, but still mixes page current actions, track current actions, and history boundaries. |
+| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~596 | Reduced, but still mixes track current actions, track selection mute/remove, and history boundaries. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~26 | Public facade; concrete projections live in dedicated builders. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
 | `src/ui/sequencer/SequencerStepEditOverlay.cpp` | ~971 | Layout/render state is large and tightly coupled to step-editor semantics. |
@@ -243,6 +243,10 @@ product rules into the wrong layer.
   selected-page active-mask filtering, selected-page clear, and selected-page
   remove mutations into `SequencerStructurePageSelectionOps`, keeping only
   history/cancel boundaries in `SequencerStructureEditWorkflow`.
+- `8769569 sequencer: extract structure page current ops` moved page add-target
+  resolution, page preview sync, focused-page clear, and focused-page remove
+  into `SequencerStructurePageOps.cpp`, keeping the header declarative and
+  `SequencerStructureEditWorkflow` focused on history routing.
 
 Validated after the Macro context projection slice:
 
@@ -452,6 +456,14 @@ Validated after the Sequencer structure page selection mutations slice:
 - `ms ux run core --select sequencer/structure/pattern-selection-bottom-actions.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/structure/page-chord-copy-paste.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/page-copy-paste-preview.ux --report --no-interactive --skip-build`
+  -> OK.
+
+Validated after the Sequencer structure page current ops slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/pattern-selection-bottom-actions.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/structure/page-copy-paste-preview.ux --report --no-interactive --skip-build`
   -> OK.
