@@ -273,6 +273,9 @@ product rules into the wrong layer.
   for full point-pool refusal, replacement that reclaims existing curve
   capacity, multi-curve compaction preserving offsets, and copy failure without
   mutating the destination slot.
+- `09b8f91 test: cover macro automation modulation persistence` expanded the
+  project snapshot dense macro automation roundtrip to include modulation
+  curves, modulation depth, and automation window offsets.
 
 Validated after the Macro context projection slice:
 
@@ -549,6 +552,11 @@ Validated after the Macro automation pool/compaction coverage slice:
   -> OK;
 - `ms ux run core --select macro/page-automation-copy-paste.ux --report --no-interactive --skip-build`
   -> OK.
+
+Validated after the Macro automation modulation persistence coverage slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`.
 
 ### Current Uncommitted Sequencer Grammar Slice
 
