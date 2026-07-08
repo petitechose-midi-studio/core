@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "config/Timing.hpp"
+#include "state/macro/MacroInteractionPolicy.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -24,6 +25,95 @@ uint8_t clampTrackPreviewIndex(uint8_t index) {
 
 uint8_t clampPagePreviewIndex(uint8_t index) {
     return static_cast<uint8_t>(std::min<uint16_t>(index, core::state::macro::PAGE_COUNT - 1U));
+}
+
+bool macroSlotAutomationActive(const MacroViewModelSource& source, uint8_t macroIndex) {
+    if (macroIndex >= core::state::macro::MACRO_COUNT) return false;
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        source.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = source.pages.currentActiveTrack(),
+            .page = source.pages.currentActivePage(),
+            .macro = macroIndex,
+        }
+    );
+    return slot != nullptr && slot->automation.active;
+}
+
+bool macroPreviewingAddSlot(const MacroViewModelSource& source) {
+    switch (source.navigationFocus.get()) {
+        case core::state::StructureNavigationFocus::TRACK:
+            return source.trackNavigation.previewAddSlot.get();
+        case core::state::StructureNavigationFocus::STEP:
+            return source.pages.isMacroAddSlot(source.macroUi.focusedMacroSlot.get());
+        case core::state::StructureNavigationFocus::PAGE:
+        default:
+            return source.macroUi.previewAddPageSlot.get();
+    }
+}
+
+bool macroCompatibleClipboardAvailable(const MacroViewModelSource& source) {
+    switch (source.navigationFocus.get()) {
+        case core::state::StructureNavigationFocus::TRACK:
+            return source.structureClipboard.hasMacroTrack();
+        case core::state::StructureNavigationFocus::STEP:
+            return !source.pages.isMacroAddSlot(source.macroUi.focusedMacroSlot.get()) &&
+                   source.structureClipboard.hasMacroAutomation();
+        case core::state::StructureNavigationFocus::PAGE:
+        default:
+            return source.structureClipboard.hasMacroPage();
+    }
+}
+
+bool macroCanRemoveStructure(const MacroViewModelSource& source) {
+    switch (source.navigationFocus.get()) {
+        case core::state::StructureNavigationFocus::TRACK:
+            return !source.trackNavigation.previewAddSlot.get() &&
+                   structure_slots::countEnabled(
+                       source.sharedTrackEnabledMask.get(),
+                       core::state::macro::TRACK_COUNT
+                   ) > 1U;
+        case core::state::StructureNavigationFocus::STEP:
+            return !source.pages.isMacroAddSlot(source.macroUi.focusedMacroSlot.get()) &&
+                   macroSlotAutomationActive(source, source.macroUi.focusedMacroSlot.get());
+        case core::state::StructureNavigationFocus::PAGE:
+        default:
+            return !source.macroUi.previewAddPageSlot.get() &&
+                   structure_slots::countEnabled(
+                       source.pages.currentEnabledPageMask(),
+                       core::state::macro::PAGE_COUNT
+                   ) > 1U;
+    }
+}
+
+core::state::macro::MacroInteractionContext macroInteractionContext(
+    const MacroViewModelSource& source
+) {
+    return {
+        .navigationFocus = source.navigationFocus.get(),
+        .blockingOverlay = false,
+        .slotPropertySelecting = source.macroUi.clutchActive.get(),
+        .selectionActive =
+            source.trackNavigation.selection.active.get() ||
+            source.macroUi.pageSelection.active.get(),
+        .previewingAddSlot = macroPreviewingAddSlot(source),
+        .compatibleClipboardAvailable = macroCompatibleClipboardAvailable(source),
+        .canRemoveStructure = macroCanRemoveStructure(source),
+    };
+}
+
+ContextActionStripVisualState macroVisual(
+    core::state::macro::MacroInteractionVisibility visibility
+) {
+    switch (visibility) {
+        case core::state::macro::MacroInteractionVisibility::ACTIVE:
+            return ContextActionStripVisualState::ACTIVE;
+        case core::state::macro::MacroInteractionVisibility::DIM:
+            return ContextActionStripVisualState::DIM;
+        case core::state::macro::MacroInteractionVisibility::HIDDEN:
+        default:
+            return ContextActionStripVisualState::HIDDEN;
+    }
 }
 
 }  // namespace
@@ -195,18 +285,11 @@ ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSou
         return props;
     }
 
-    if (source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP) {
-        props.slots[0].visualState = ContextActionStripVisualState::HIDDEN;
-        props.slots[1].visualState = ContextActionStripVisualState::HIDDEN;
-        props.slots[2].visualState = ContextActionStripVisualState::HIDDEN;
-        return props;
-    }
-
     const bool trackFocus =
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
-    const bool canPaste = trackFocus
-        ? source.structureClipboard.hasMacroTrack()
-        : source.structureClipboard.hasMacroPage();
+    const auto context = macroInteractionContext(source);
+    const auto policy = core::state::macro::MacroInteractionPolicy::actionStrip(context);
+    const bool canPaste = context.compatibleClipboardAvailable;
     const auto& holdState = trackFocus ? source.trackNavigation.hold : source.macroUi.pageHold;
     const auto holdAction = holdState.action.get();
     const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
@@ -215,7 +298,7 @@ ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSou
     props.slots[0] = {
         .visualState = removeHoldActive
             ? ContextActionStripVisualState::ARMED
-            : ContextActionStripVisualState::ACTIVE,
+            : macroVisual(policy.bottomLeft),
         .tone = ContextActionStripTone::DESTRUCTIVE,
         .showIcon = true,
         .icon = removeHoldActive ? standalone::icons::ACTION_CANCEL
@@ -230,7 +313,7 @@ ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSou
             ? ContextActionStripVisualState::ARMED
             : (canPaste
             ? ContextActionStripVisualState::ARMED
-            : ContextActionStripVisualState::ACTIVE),
+            : macroVisual(policy.bottomRight)),
         .tone = canPaste ? ContextActionStripTone::CONSTRUCTIVE : ContextActionStripTone::NEUTRAL,
         .showIcon = true,
         .icon = canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY,
