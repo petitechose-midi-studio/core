@@ -9,11 +9,11 @@
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageClipboardOps.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
+#include "handler/sequencer/SequencerStructurePageSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureStepPasteWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
-#include "state/StructureClipboardPastePlan.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -24,17 +24,6 @@
 namespace core::handler {
 
 namespace structure_slots = core::state::shared;
-
-namespace {
-
-FLASHMEM uint8_t firstSelectedIndex(uint16_t mask, uint8_t limit) {
-    for (uint8_t index = 0; index < limit; ++index) {
-        if ((mask & structure_slots::slotBit(index)) != 0) return index;
-    }
-    return limit;
-}
-
-}  // namespace
 
 FLASHMEM SequencerStructureEditWorkflow::SequencerStructureEditWorkflow(StateRefs state)
     : sequencer_(state.sequencer)
@@ -404,28 +393,9 @@ FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
     const uint16_t selectedMask = static_cast<uint16_t>(
         selection.selectedMask.get() & structure_slots::prefixMask(sequencer_.activePageCount())
     );
-    const uint8_t firstPage = firstSelectedIndex(
-        selectedMask,
-        core::state::sequencer::SequencerState::PAGE_COUNT
-    );
-    if (firstPage >= core::state::sequencer::SequencerState::PAGE_COUNT) return;
 
     core::state::SequencerPageSelectionClipboard clipboard;
-    clipboard.valid = true;
-    clipboard.sourceFirstPage = firstPage;
-
-    for (uint8_t page = firstPage;
-         page < core::state::sequencer::SequencerState::PAGE_COUNT;
-         ++page) {
-        if ((selectedMask & structure_slots::slotBit(page)) == 0) continue;
-        if (clipboard.count >= clipboard.pages.size()) break;
-
-        auto& entry = clipboard.pages[clipboard.count];
-        if (!capturePageClipboard(sequencer_, page, entry)) continue;
-        ++clipboard.count;
-    }
-
-    if (clipboard.count == 0) return;
+    if (!capturePageSelectionClipboard(sequencer_, selectedMask, clipboard)) return;
     structure_clipboard_.storeSequencerPageSelection(
         clipboard,
         core::state::sequencer::graphView(sequencer_.pattern)
@@ -602,28 +572,17 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
     auto& selection = sequencer_.structureUi.pageSelection;
     if (!selection.active.get() || !structure_clipboard_.hasSequencerPageSelection()) return;
 
-    const auto& clipboard = structure_clipboard_.sequencerPageSelection;
-    const auto plan = core::state::buildSequencerPageSelectionPastePlan(
-        clipboard,
-        selection.cursorIndex.get(),
-        sequencer_.activePageCount()
+    const auto plan = buildPageSelectionPastePlan(
+        sequencer_,
+        structure_clipboard_,
+        selection.cursorIndex.get()
     );
     if (!plan.hasEntries()) return;
 
     HistoryPatternSnapshot before;
     if (!capturePageHistoryBefore(before)) return;
 
-    for (uint8_t i = 0; i < plan.count; ++i) {
-        const auto& target = plan.entries[i];
-        const auto& entry = clipboard.pages[target.clipboardIndex];
-        pastePageClipboard(
-            sequencer_,
-            entry,
-            structure_clipboard_.sequencerGraph.get(),
-            target.destinationPage
-        );
-    }
-
+    pastePageSelectionClipboard(sequencer_, structure_clipboard_, plan);
     sequencer_.pattern.bumpStepDataRevision();
     sequencer_.page.set(plan.firstDestinationPage);
     sequencer_.focusedStep.set(sequencer_.pageStartStep(plan.firstDestinationPage));
