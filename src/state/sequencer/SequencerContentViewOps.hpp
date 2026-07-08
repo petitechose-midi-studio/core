@@ -9,6 +9,10 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
+namespace core::state {
+struct StructureClipboardState;
+}
+
 namespace core::state::sequencer {
 
 static constexpr uint8_t DEFAULT_MICRO_SEQUENCE_LENGTH = 2;
@@ -160,6 +164,32 @@ StepContentOpenResult openOrCreateActiveContentChild(
 bool activeContentStepCanReceiveChildContent(
     const SequencerState& sequencer,
     uint8_t step
+);
+bool activeContentStepHasChildContent(
+    const SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind
+);
+bool clipboardCanPasteActiveContentChild(
+    const core::state::StructureClipboardState& clipboard,
+    StepContentChildKind childKind
+);
+bool copyActiveContentChildToClipboard(
+    const SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind,
+    core::state::StructureClipboardState& clipboard
+);
+bool clearActiveContentChild(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind
+);
+bool pasteActiveContentChildFromClipboard(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind,
+    const core::state::StructureClipboardState& clipboard
 );
 
 bool enterMicroSequenceContentView(

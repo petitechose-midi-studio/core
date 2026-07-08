@@ -40,16 +40,6 @@ FLASHMEM bool isChordRow(uint8_t row) {
     return step_edit_rows::isChord(row);
 }
 
-FLASHMEM core::state::SequencerStepContentClipboardKind clipboardKindForContextRow(uint8_t row) {
-    if (row == step_edit_rows::MICRO_SEQUENCE) {
-        return core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE;
-    }
-    if (row == step_edit_rows::CYCLE_STATES) {
-        return core::state::SequencerStepContentClipboardKind::CYCLE_STATES;
-    }
-    return core::state::SequencerStepContentClipboardKind::NONE;
-}
-
 FLASHMEM core::state::sequencer::StepProperty propertyForRow(uint8_t row) {
     return step_edit_rows::propertyForRow(row);
 }
@@ -892,25 +882,28 @@ FLASHMEM bool SequencerStepEditHandler::focusedContextHasChild() const {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return false;
 
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        step
-    );
     const auto childKind = step_edit_rows::childKindForContextRow(
         sequencer_.stepEdit.focusedRow.get()
     );
-    return childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
-        ? core::state::sequencer::stepNodeHasMicroSequence(sequencer_.pattern, nodeId)
-        : core::state::sequencer::stepNodeHasCycleStateSet(sequencer_.pattern, nodeId);
+    return core::state::sequencer::activeContentStepHasChildContent(
+        sequencer_,
+        step,
+        childKind
+    );
 }
 
 FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return false;
 
-    const auto clipboardKind = clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get());
+    const auto childKind = step_edit_rows::childKindForContextRow(
+        sequencer_.stepEdit.focusedRow.get()
+    );
     return focusedRowIsContextRow() &&
-           structure_clipboard_.hasSequencerStepContent(clipboardKind) &&
+           core::state::sequencer::clipboardCanPasteActiveContentChild(
+               structure_clipboard_,
+               childKind
+           ) &&
            core::state::sequencer::activeContentStepCanReceiveChildContent(
                sequencer_,
                step
@@ -998,13 +991,14 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
         beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
     }
 
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        step
+    const auto childKind = step_edit_rows::childKindForContextRow(
+        sequencer_.stepEdit.focusedRow.get()
     );
-    const bool changed = sequencer_.stepEdit.focusedRow.get() == step_edit_rows::MICRO_SEQUENCE
-        ? core::state::sequencer::clearNodeChildSequence(sequencer_.pattern, nodeId)
-        : core::state::sequencer::clearNodeCycleStateSet(sequencer_.pattern, nodeId);
+    const bool changed = core::state::sequencer::clearActiveContentChild(
+        sequencer_,
+        step,
+        childKind
+    );
     if (!changed) {
         if (!history_snapshot_valid_ && beforeCaptured) {
             history_snapshot_ = std::move(before);
@@ -1012,10 +1006,6 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
         }
         return;
     }
-
-    core::state::sequencer::compactSequencerGraph(sequencer_);
-    core::state::sequencer::refreshContentView(sequencer_);
-    sequencer_.contentView.bump();
     recordContextMutation(std::move(before), beforeCaptured);
 }
 
@@ -1024,20 +1014,15 @@ FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    const auto* graph = core::state::sequencer::graphView(sequencer_.pattern);
-    if (graph == nullptr) return;
-
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        step
+    const auto childKind = step_edit_rows::childKindForContextRow(
+        sequencer_.stepEdit.focusedRow.get()
     );
-    if (!structure_clipboard_.storeSequencerStepContent(
-        *graph,
-        nodeId,
-        clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get())
-    )) {
-        return;
-    }
+    core::state::sequencer::copyActiveContentChildToClipboard(
+        sequencer_,
+        step,
+        childKind,
+        structure_clipboard_
+    );
 }
 
 FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
@@ -1057,24 +1042,15 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
         beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
     }
 
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        step
+    const auto childKind = step_edit_rows::childKindForContextRow(
+        sequencer_.stepEdit.focusedRow.get()
     );
-    const auto clipboardKind = clipboardKindForContextRow(sequencer_.stepEdit.focusedRow.get());
-    const bool changed = clipboardKind == core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE
-        ? core::state::sequencer::copyNodeChildSequenceFromGraph(
-              sequencer_.pattern,
-              nodeId,
-              *structure_clipboard_.sequencerGraph,
-              structure_clipboard_.sequencerStepContentNodeId
-          )
-        : core::state::sequencer::copyNodeCycleStateSetFromGraph(
-              sequencer_.pattern,
-              nodeId,
-              *structure_clipboard_.sequencerGraph,
-              structure_clipboard_.sequencerStepContentNodeId
-          );
+    const bool changed = core::state::sequencer::pasteActiveContentChildFromClipboard(
+        sequencer_,
+        step,
+        childKind,
+        structure_clipboard_
+    );
     if (!changed) {
         if (!history_snapshot_valid_ && beforeCaptured) {
             history_snapshot_ = std::move(before);
@@ -1082,10 +1058,6 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
         }
         return;
     }
-
-    core::state::sequencer::compactSequencerGraph(sequencer_);
-    core::state::sequencer::refreshContentView(sequencer_);
-    sequencer_.contentView.bump();
     recordContextMutation(std::move(before), beforeCaptured);
 }
 

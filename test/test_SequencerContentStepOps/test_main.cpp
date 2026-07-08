@@ -157,12 +157,99 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
     std::cout << "[PASS] test_open_or_create_child_context_opens_existing_without_graph_mutation\n";
 }
 
+void test_copy_paste_and_clear_active_child_content() {
+    test_support::CoreStorages storage;
+    auto state = makeState(storage);
+    auto& sequencer = state.sequencer;
+    auto& clipboard = state.structureClipboard;
+    sequencer.pattern.length.set(8);
+
+    const auto createdMicro = core::state::sequencer::openOrCreateActiveContentChild(
+        sequencer,
+        0,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+        core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
+    );
+    assert(createdMicro.opened);
+    assert(createdMicro.created);
+    const auto sourceChildNode = core::state::sequencer::activeContentStepNodeId(sequencer, 0);
+    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern, sourceChildNode, 5));
+    assert(core::state::sequencer::leaveContentView(sequencer));
+
+    assert(core::state::sequencer::activeContentStepHasChildContent(
+        sequencer,
+        0,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+    ));
+    assert(core::state::sequencer::copyActiveContentChildToClipboard(
+        sequencer,
+        0,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+        clipboard
+    ));
+    assert(core::state::sequencer::clipboardCanPasteActiveContentChild(
+        clipboard,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+    ));
+    assert(!core::state::sequencer::clipboardCanPasteActiveContentChild(
+        clipboard,
+        core::state::sequencer::StepContentChildKind::CYCLE_STATES
+    ));
+
+    const uint32_t revisionBeforePaste = sequencer.contentView.revision.get();
+    assert(core::state::sequencer::pasteActiveContentChildFromClipboard(
+        sequencer,
+        1,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+        clipboard
+    ));
+    assert(sequencer.contentView.revision.get() == revisionBeforePaste + 1U);
+    assert(core::state::sequencer::activeContentStepHasChildContent(
+        sequencer,
+        1,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+    ));
+
+    const auto reopenedMicro = core::state::sequencer::openOrCreateActiveContentChild(
+        sequencer,
+        1,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+        core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
+    );
+    assert(reopenedMicro.opened);
+    assert(!reopenedMicro.created);
+    const auto pastedChildNode = core::state::sequencer::activeContentStepNodeId(sequencer, 0);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(pastedChildNode);
+    assert(node != nullptr);
+    assert(node->has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
+    assert(node->noteOffset == 5);
+    assert(core::state::sequencer::leaveContentView(sequencer));
+
+    const uint32_t revisionBeforeClear = sequencer.contentView.revision.get();
+    assert(core::state::sequencer::clearActiveContentChild(
+        sequencer,
+        1,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+    ));
+    assert(sequencer.contentView.revision.get() > revisionBeforeClear);
+    assert(!core::state::sequencer::activeContentStepHasChildContent(
+        sequencer,
+        1,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
+    ));
+
+    std::cout << "[PASS] test_copy_paste_and_clear_active_child_content\n";
+}
+
 }  // namespace
 
 int main() {
     test_reset_root_property_to_default_also_resets_local_variation();
     test_reset_child_property_to_default_preserves_existing_revision_behavior();
     test_open_or_create_child_context_opens_existing_without_graph_mutation();
+    test_copy_paste_and_clear_active_child_content();
 
     std::cout << "\nAll SequencerContentStepOps tests passed.\n";
     return 0;

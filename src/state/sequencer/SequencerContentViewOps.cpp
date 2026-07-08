@@ -2,10 +2,23 @@
 
 #include <algorithm>
 
+#include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerContentViewInternal.hpp"
 
 namespace core::state::sequencer {
 using namespace content_view_internal;
+
+namespace {
+
+FLASHMEM core::state::SequencerStepContentClipboardKind clipboardKindForChild(
+    StepContentChildKind childKind
+) {
+    return childKind == StepContentChildKind::MICRO_SEQUENCE
+        ? core::state::SequencerStepContentClipboardKind::MICRO_SEQUENCE
+        : core::state::SequencerStepContentClipboardKind::CYCLE_STATES;
+}
+
+}  // namespace
 
 FLASHMEM bool isRootContentView(const SequencerState& sequencer) {
     return !sequencer.contentView.isChildContent();
@@ -189,6 +202,104 @@ FLASHMEM bool activeContentStepCanReceiveChildContent(
 ) {
     return activeContentDepth(sequencer) < GraphLimits::MAX_DEPTH - 1U &&
            activeContentStepNodeId(sequencer, step) != kInvalidId;
+}
+
+FLASHMEM bool activeContentStepHasChildContent(
+    const SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind
+) {
+    if (step >= activeContentLength(sequencer)) return false;
+
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (nodeId == kInvalidId) return false;
+
+    return childKind == StepContentChildKind::MICRO_SEQUENCE
+        ? stepNodeHasMicroSequence(sequencer.pattern, nodeId)
+        : stepNodeHasCycleStateSet(sequencer.pattern, nodeId);
+}
+
+FLASHMEM bool clipboardCanPasteActiveContentChild(
+    const core::state::StructureClipboardState& clipboard,
+    StepContentChildKind childKind
+) {
+    return clipboard.hasSequencerStepContent(clipboardKindForChild(childKind));
+}
+
+FLASHMEM bool copyActiveContentChildToClipboard(
+    const SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind,
+    core::state::StructureClipboardState& clipboard
+) {
+    if (!activeContentStepHasChildContent(sequencer, step, childKind)) return false;
+
+    const auto* graph = graphView(sequencer.pattern);
+    if (graph == nullptr) return false;
+
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (nodeId == kInvalidId) return false;
+
+    return clipboard.storeSequencerStepContent(
+        *graph,
+        nodeId,
+        clipboardKindForChild(childKind)
+    );
+}
+
+FLASHMEM bool clearActiveContentChild(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind
+) {
+    if (!activeContentStepHasChildContent(sequencer, step, childKind)) return false;
+
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (nodeId == kInvalidId) return false;
+
+    const bool changed = childKind == StepContentChildKind::MICRO_SEQUENCE
+        ? clearNodeChildSequence(sequencer.pattern, nodeId)
+        : clearNodeCycleStateSet(sequencer.pattern, nodeId);
+    if (!changed) return false;
+
+    compactSequencerGraph(sequencer);
+    refreshContentView(sequencer);
+    sequencer.contentView.bump();
+    return true;
+}
+
+FLASHMEM bool pasteActiveContentChildFromClipboard(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind,
+    const core::state::StructureClipboardState& clipboard
+) {
+    if (!activeContentStepCanReceiveChildContent(sequencer, step)) return false;
+    if (!clipboardCanPasteActiveContentChild(clipboard, childKind)) return false;
+    if (!clipboard.sequencerGraph) return false;
+
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (nodeId == kInvalidId) return false;
+
+    const bool changed = childKind == StepContentChildKind::MICRO_SEQUENCE
+        ? copyNodeChildSequenceFromGraph(
+              sequencer.pattern,
+              nodeId,
+              *clipboard.sequencerGraph,
+              clipboard.sequencerStepContentNodeId
+          )
+        : copyNodeCycleStateSetFromGraph(
+              sequencer.pattern,
+              nodeId,
+              *clipboard.sequencerGraph,
+              clipboard.sequencerStepContentNodeId
+          );
+    if (!changed) return false;
+
+    compactSequencerGraph(sequencer);
+    refreshContentView(sequencer);
+    sequencer.contentView.bump();
+    return true;
 }
 
 FLASHMEM bool enterMicroSequenceContentView(
