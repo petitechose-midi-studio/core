@@ -5,16 +5,22 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/PersistenceBinaryCodec.hpp"
+
 namespace core::persistence::project_file {
 
 namespace {
 
-#pragma pack(push, 1)
+namespace binary = core::persistence::binary_codec;
+
+constexpr uint16_t kHeaderSize = 28;
+constexpr uint16_t kDirectoryEntrySize = 20;
+
 struct FileHeader {
     uint32_t magic = PROJECT_FILE_MAGIC;
     uint8_t versionMajor = CONTAINER_VERSION_MAJOR;
     uint8_t versionMinor = CONTAINER_VERSION_MINOR;
-    uint16_t headerSize = sizeof(FileHeader);
+    uint16_t headerSize = kHeaderSize;
     uint16_t chunkCount = 0;
     uint16_t directoryEntrySize = 0;
     uint32_t directoryOffset = 0;
@@ -32,13 +38,9 @@ struct ChunkDirectoryEntry {
     uint32_t size = 0;
     uint32_t crc32 = 0;
 };
-#pragma pack(pop)
 
-static_assert(sizeof(FileHeader) == 28, "Unexpected project file header size");
-static_assert(sizeof(ChunkDirectoryEntry) == 20, "Unexpected project chunk directory size");
-
-constexpr uint16_t kDirectoryEntrySize = sizeof(ChunkDirectoryEntry);
-constexpr uint32_t kHeaderSize = sizeof(FileHeader);
+static_assert(kHeaderSize == 28, "Unexpected project file header size");
+static_assert(kDirectoryEntrySize == 20, "Unexpected project chunk directory size");
 
 FLASHMEM bool addOverflow(uint32_t lhs, uint32_t rhs, uint32_t& out) {
     if (lhs > UINT32_MAX - rhs) return true;
@@ -50,6 +52,71 @@ FLASHMEM bool rangeInside(uint32_t offset, uint32_t length, uint32_t total) {
     uint32_t end = 0;
     if (addOverflow(offset, length, end)) return false;
     return offset <= total && end <= total;
+}
+
+FLASHMEM bool writeFileHeader(uint8_t* out, uint32_t outCapacity, const FileHeader& header) {
+    binary::Writer writer(out, outCapacity);
+    return writer.writeU32(header.magic) &&
+           writer.writeU8(header.versionMajor) &&
+           writer.writeU8(header.versionMinor) &&
+           writer.writeU16(header.headerSize) &&
+           writer.writeU16(header.chunkCount) &&
+           writer.writeU16(header.directoryEntrySize) &&
+           writer.writeU32(header.directoryOffset) &&
+           writer.writeU32(header.payloadOffset) &&
+           writer.writeU32(header.modifiedCounter) &&
+           writer.writeU32(0) &&
+           writer.ok() &&
+           writer.offset() == kHeaderSize;
+}
+
+FLASHMEM bool readFileHeader(const uint8_t* data, uint32_t size, FileHeader& out) {
+    if (size < kHeaderSize) return false;
+    binary::Reader reader(data, size);
+    uint32_t reserved = 0;
+    return reader.readU32(out.magic) &&
+           reader.readU8(out.versionMajor) &&
+           reader.readU8(out.versionMinor) &&
+           reader.readU16(out.headerSize) &&
+           reader.readU16(out.chunkCount) &&
+           reader.readU16(out.directoryEntrySize) &&
+           reader.readU32(out.directoryOffset) &&
+           reader.readU32(out.payloadOffset) &&
+           reader.readU32(out.modifiedCounter) &&
+           reader.readU32(reserved) &&
+           reader.ok() &&
+           reader.offset() == kHeaderSize;
+}
+
+FLASHMEM bool writeChunkDirectoryEntry(uint8_t* out,
+                                       uint32_t outCapacity,
+                                       const ChunkDirectoryEntry& entry) {
+    binary::Writer writer(out, outCapacity);
+    return writer.writeU32(entry.id) &&
+           writer.writeU8(entry.versionMajor) &&
+           writer.writeU8(entry.versionMinor) &&
+           writer.writeU16(entry.flags) &&
+           writer.writeU32(entry.offset) &&
+           writer.writeU32(entry.size) &&
+           writer.writeU32(entry.crc32) &&
+           writer.ok() &&
+           writer.offset() == kDirectoryEntrySize;
+}
+
+FLASHMEM bool readChunkDirectoryEntry(const uint8_t* data,
+                                      uint32_t size,
+                                      ChunkDirectoryEntry& out) {
+    if (size < kDirectoryEntrySize) return false;
+    binary::Reader reader(data, size);
+    return reader.readU32(out.id) &&
+           reader.readU8(out.versionMajor) &&
+           reader.readU8(out.versionMinor) &&
+           reader.readU16(out.flags) &&
+           reader.readU32(out.offset) &&
+           reader.readU32(out.size) &&
+           reader.readU32(out.crc32) &&
+           reader.ok() &&
+           reader.offset() == kDirectoryEntrySize;
 }
 
 FLASHMEM void report(LoadReport* loadReport,
@@ -210,7 +277,9 @@ FLASHMEM EncodeResult encode(const ChunkView* chunks,
     header.directoryOffset = directoryOffset;
     header.payloadOffset = payloadOffset;
     header.modifiedCounter = modifiedCounter;
-    std::memcpy(out, &header, sizeof(header));
+    if (!writeFileHeader(out, outCapacity, header)) {
+        return {.status = Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
 
     uint32_t payloadCursor = payloadOffset;
     for (uint16_t i = 0; i < chunkCount; ++i) {
@@ -223,9 +292,11 @@ FLASHMEM EncodeResult encode(const ChunkView* chunks,
         entry.size = chunks[i].size;
         entry.crc32 = crc32(chunks[i].data, chunks[i].size);
 
-        std::memcpy(out + directoryOffset + static_cast<uint32_t>(i) * sizeof(entry),
-                    &entry,
-                    sizeof(entry));
+        const uint32_t entryOffset =
+            directoryOffset + static_cast<uint32_t>(i) * kDirectoryEntrySize;
+        if (!writeChunkDirectoryEntry(out + entryOffset, outCapacity - entryOffset, entry)) {
+            return {.status = Status::INVALID_ARGUMENT, .bytesWritten = 0};
+        }
 
         if (chunks[i].size > 0) {
             std::memcpy(out + payloadCursor, chunks[i].data, chunks[i].size);
@@ -249,13 +320,16 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
         report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
         return {.status = Status::INVALID_ARGUMENT, .chunkCount = 0, .overwriteSafe = false};
     }
-    if (size < sizeof(FileHeader)) {
+    if (size < kHeaderSize) {
         report(loadReport, LoadSeverity::FATAL, LoadCode::BUFFER_TOO_SMALL);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
 
     FileHeader header{};
-    std::memcpy(&header, data, sizeof(header));
+    if (!readFileHeader(data, size, header)) {
+        report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
+        return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
+    }
     if (header.magic != PROJECT_FILE_MAGIC) {
         report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_MAGIC);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
@@ -270,16 +344,16 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
                header.versionMinor);
     }
 
-    if (header.headerSize != sizeof(FileHeader) ||
-        header.directoryEntrySize != sizeof(ChunkDirectoryEntry) ||
+    if (header.headerSize != kHeaderSize ||
+        header.directoryEntrySize != kDirectoryEntrySize ||
         header.chunkCount > MAX_CHUNKS ||
-        header.directoryOffset < sizeof(FileHeader)) {
+        header.directoryOffset < kHeaderSize) {
         report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
 
     const uint32_t directoryBytes =
-        static_cast<uint32_t>(header.chunkCount) * sizeof(ChunkDirectoryEntry);
+        static_cast<uint32_t>(header.chunkCount) * kDirectoryEntrySize;
     if (!rangeInside(header.directoryOffset, directoryBytes, size) ||
         header.payloadOffset < header.directoryOffset + directoryBytes ||
         header.payloadOffset > size) {
@@ -291,8 +365,11 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
     for (uint16_t i = 0; i < header.chunkCount; ++i) {
         ChunkDirectoryEntry entry{};
         const uint32_t entryOffset =
-            header.directoryOffset + static_cast<uint32_t>(i) * sizeof(entry);
-        std::memcpy(&entry, data + entryOffset, sizeof(entry));
+            header.directoryOffset + static_cast<uint32_t>(i) * kDirectoryEntrySize;
+        if (!readChunkDirectoryEntry(data + entryOffset, size - entryOffset, entry)) {
+            report(loadReport, LoadSeverity::ERROR, LoadCode::CHUNK_DIRECTORY_INVALID);
+            continue;
+        }
 
         if (!rangeInside(entry.offset, entry.size, size) || entry.offset < header.payloadOffset) {
             report(loadReport, LoadSeverity::ERROR, LoadCode::CHUNK_OUT_OF_BOUNDS, entry.id);

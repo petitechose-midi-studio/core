@@ -134,17 +134,13 @@ public:
     uint16_t slotCount() const;
 
 private:
-#pragma pack(push, 1)
     struct FileHeader {
         uint32_t magic = 0;
         uint8_t formatVersion = 0;
         uint8_t domainVersion = 0;
         uint16_t slotCount = 0;
         uint16_t slotPayloadSize = 0;
-        uint16_t reserved0 = 0;
         uint32_t layoutCrc32 = 0;
-        uint32_t reserved1 = 0;
-        uint32_t reserved2 = 0;
     };
 
     struct SlotHeader {
@@ -155,10 +151,6 @@ private:
         uint32_t saveCounter = 0;
         uint32_t payloadCrc32 = 0;
     };
-#pragma pack(pop)
-
-    static_assert(sizeof(FileHeader) == FILE_HEADER_SIZE, "Unexpected FileHeader size");
-    static_assert(sizeof(SlotHeader) == SLOT_HEADER_SIZE, "Unexpected SlotHeader size");
 
     static constexpr uint32_t SLOT_HEADER_MAGIC = 0x53534C54;  // "SSLT"
     static constexpr uint8_t SLOT_STATE_VALID = 0x3C;
@@ -176,6 +168,11 @@ private:
     static bool isAllFF_(const uint8_t* data, size_t size);
     static bool isCounterNewer_(uint32_t a, uint32_t b);
     static uint32_t crc32_(const uint8_t* data, size_t size);
+    static bool encodeFileHeader_(const FileHeader& header, uint8_t* out, size_t size);
+    static bool decodeFileHeader_(const uint8_t* data, size_t size, FileHeader& out);
+    static bool encodeSlotHeader_(const SlotHeader& header, uint8_t* out, size_t size);
+    static bool decodeSlotHeader_(const uint8_t* data, size_t size, SlotHeader& out);
+    static uint32_t fileHeaderLayoutCrc_(const FileHeader& header);
 
     oc::interface::IStorage& storage_;
     SlotFileStoreConfig config_;

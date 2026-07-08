@@ -592,6 +592,39 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     project_state_codec::fillRoutingPayload(snapshot.project.routing, routing);
     project_state_codec::fillEditingPayload(snapshot.project.editing, editing);
 
+    std::array<uint8_t, project_state_codec::PROJECT_META_PAYLOAD_SIZE> metaBytes{};
+    std::array<uint8_t, project_state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
+    std::array<uint8_t, project_state_codec::PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE> musicalBytes{};
+    std::array<uint8_t, project_state_codec::PROJECT_ROUTING_PAYLOAD_SIZE> routingBytes{};
+    std::array<uint8_t, project_state_codec::PROJECT_EDITING_PAYLOAD_SIZE> editingBytes{};
+    if (!project_state_codec::encodeMetaPayload(
+            meta,
+            metaBytes.data(),
+            static_cast<uint32_t>(metaBytes.size())
+        ) ||
+        !project_state_codec::encodeTransportPayload(
+            transport,
+            transportBytes.data(),
+            static_cast<uint32_t>(transportBytes.size())
+        ) ||
+        !project_state_codec::encodeMusicalContextPayload(
+            musical,
+            musicalBytes.data(),
+            static_cast<uint32_t>(musicalBytes.size())
+        ) ||
+        !project_state_codec::encodeRoutingPayload(
+            routing,
+            routingBytes.data(),
+            static_cast<uint32_t>(routingBytes.size())
+        ) ||
+        !project_state_codec::encodeEditingPayload(
+            editing,
+            editingBytes.data(),
+            static_cast<uint32_t>(editingBytes.size())
+        )) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
+
     auto macro = core::app::makeExtmemUnique<std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE>>();
     auto macroAutomation =
         core::app::makeExtmemUnique<
@@ -630,40 +663,40 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(&meta),
-            .size = sizeof(meta),
+            .data = metaBytes.data(),
+            .size = project_state_codec::PROJECT_META_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::TRANSPORT),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(&transport),
-            .size = sizeof(transport),
+            .data = transportBytes.data(),
+            .size = project_state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::MUSICAL_CONTEXT),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(&musical),
-            .size = sizeof(musical),
+            .data = musicalBytes.data(),
+            .size = project_state_codec::PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::ROUTING),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(&routing),
-            .size = sizeof(routing),
+            .data = routingBytes.data(),
+            .size = project_state_codec::PROJECT_ROUTING_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::EDITING),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(&editing),
-            .size = sizeof(editing),
+            .data = editingBytes.data(),
+            .size = project_state_codec::PROJECT_EDITING_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_STATE),

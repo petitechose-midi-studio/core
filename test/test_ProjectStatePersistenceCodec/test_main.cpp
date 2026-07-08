@@ -1,7 +1,9 @@
 #include <cassert>
+#include <array>
 #include <cstring>
 #include <iostream>
 
+#include "../../src/persistence/PersistenceBinaryCodec.hpp"
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
 #include "../../src/state/project/ProjectSlug.hpp"
 
@@ -10,29 +12,13 @@ namespace {
 namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
 namespace codec = core::persistence::project_state_codec;
+namespace binary = core::persistence::binary_codec;
 
 using oc::note::sequencer::StepSequencerScaleConstraintMode;
 using oc::note::sequencer::StepSequencerScaleType;
 
-#pragma pack(push, 1)
-struct TransportV0Fixture {
-    uint16_t tempoBpm = 120;
-    uint8_t swingPercent = 0;
-    uint8_t reserved0 = 0;
-};
-
-struct ProjectMetaV1_0Fixture {
-    char id[16] = {};
-    char name[24] = {};
-    uint32_t modifiedCounter = 0;
-    uint8_t flags = 0;
-    uint8_t reserved0 = 0;
-    uint16_t reserved1 = 0;
-};
-#pragma pack(pop)
-
-static_assert(sizeof(TransportV0Fixture) == 4, "Unexpected TransportV0Fixture size");
-static_assert(sizeof(ProjectMetaV1_0Fixture) == 48, "Unexpected ProjectMetaV1_0Fixture size");
+constexpr uint32_t kTransportV0FixtureSize = 4;
+constexpr uint32_t kProjectMetaV1_0FixtureSize = 48;
 
 bool reportHas(const project_file::LoadReport& report, project_file::LoadCode code) {
     for (uint8_t i = 0; i < report.itemCount; ++i) {
@@ -86,6 +72,42 @@ project::ProjectState makeProject() {
         state.routing.outputMidiChannels[i] = static_cast<uint8_t>(15U - i);
     }
     return state;
+}
+
+std::array<uint8_t, kTransportV0FixtureSize> makeTransportV0Fixture(uint16_t tempoBpm,
+                                                                    uint8_t swingPercent) {
+    std::array<uint8_t, kTransportV0FixtureSize> bytes{};
+    binary::Writer writer(bytes.data(), static_cast<uint32_t>(bytes.size()));
+    assert(writer.writeU16(tempoBpm));
+    assert(writer.writeU8(swingPercent));
+    assert(writer.writeU8(0));
+    assert(writer.ok());
+    assert(writer.offset() == bytes.size());
+    return bytes;
+}
+
+std::array<uint8_t, kProjectMetaV1_0FixtureSize> makeProjectMetaV1_0Fixture(
+    const char* id,
+    const char* name,
+    uint32_t modifiedCounter,
+    uint8_t flags
+) {
+    std::array<uint8_t, kProjectMetaV1_0FixtureSize> bytes{};
+    char idBytes[16] = {};
+    char nameBytes[24] = {};
+    std::strncpy(idBytes, id, sizeof(idBytes) - 1U);
+    std::strncpy(nameBytes, name, sizeof(nameBytes) - 1U);
+
+    binary::Writer writer(bytes.data(), static_cast<uint32_t>(bytes.size()));
+    assert(writer.writeBytes(idBytes, sizeof(idBytes)));
+    assert(writer.writeBytes(nameBytes, sizeof(nameBytes)));
+    assert(writer.writeU32(modifiedCounter));
+    assert(writer.writeU8(flags));
+    assert(writer.writeU8(0));
+    assert(writer.writeU16(0));
+    assert(writer.ok());
+    assert(writer.offset() == bytes.size());
+    return bytes;
 }
 
 void test_project_state_roundtrip_core_chunks() {
@@ -169,17 +191,15 @@ void test_missing_optional_chunks_default_and_report_without_blocking_overwrite(
 }
 
 void test_transport_v0_chunk_migrates_to_current_payload() {
-    TransportV0Fixture transport{};
-    transport.tempoBpm = 142;
-    transport.swingPercent = 12;
+    const auto transport = makeTransportV0Fixture(142, 12);
 
     const project_file::ChunkView chunks[] = {{
         .id = project_file::chunkIdValue(project_file::ChunkId::TRANSPORT),
         .versionMajor = 0,
         .versionMinor = 0,
         .flags = 0,
-        .data = reinterpret_cast<const uint8_t*>(&transport),
-        .size = sizeof(transport),
+        .data = transport.data(),
+        .size = static_cast<uint32_t>(transport.size()),
     }};
 
     uint8_t bytes[160] = {};
@@ -207,19 +227,15 @@ void test_transport_v0_chunk_migrates_to_current_payload() {
 }
 
 void test_project_meta_v1_0_chunk_migrates_generated_id_to_slug() {
-    ProjectMetaV1_0Fixture meta{};
-    std::strncpy(meta.id, "P042", sizeof(meta.id) - 1U);
-    std::strncpy(meta.name, "Project 042", sizeof(meta.name) - 1U);
-    meta.modifiedCounter = 42;
-    meta.flags = 0x03;
+    const auto meta = makeProjectMetaV1_0Fixture("P042", "Project 042", 42, 0x03);
 
     const project_file::ChunkView chunks[] = {{
         .id = project_file::chunkIdValue(project_file::ChunkId::PROJECT_META),
         .versionMajor = codec::PROJECT_STATE_CHUNK_VERSION_MAJOR,
         .versionMinor = 0,
         .flags = 0,
-        .data = reinterpret_cast<const uint8_t*>(&meta),
-        .size = sizeof(meta),
+        .data = meta.data(),
+        .size = static_cast<uint32_t>(meta.size()),
     }};
 
     uint8_t bytes[256] = {};
@@ -250,13 +266,19 @@ void test_project_meta_v1_0_chunk_migrates_generated_id_to_slug() {
 void test_future_chunk_version_defaults_and_blocks_overwrite() {
     codec::ProjectTransportPayload transport{};
     transport.tempoCentiBpm = 18000;
+    std::array<uint8_t, codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
+    assert(codec::encodeTransportPayload(
+        transport,
+        transportBytes.data(),
+        static_cast<uint32_t>(transportBytes.size())
+    ));
     const project_file::ChunkView chunks[] = {{
         .id = project_file::chunkIdValue(project_file::ChunkId::TRANSPORT),
         .versionMajor = static_cast<uint8_t>(codec::PROJECT_STATE_CHUNK_VERSION_MAJOR + 1),
         .versionMinor = 0,
         .flags = 0,
-        .data = reinterpret_cast<const uint8_t*>(&transport),
-        .size = sizeof(transport),
+        .data = transportBytes.data(),
+        .size = codec::PROJECT_TRANSPORT_PAYLOAD_SIZE,
     }};
 
     uint8_t bytes[160] = {};

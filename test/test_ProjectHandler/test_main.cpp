@@ -1,4 +1,5 @@
 #include <cassert>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -182,6 +183,12 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
 
     project_state_codec::ProjectMetaPayload meta{};
     project_state_codec::fillMetaPayload(metadata, meta);
+    std::array<uint8_t, project_state_codec::PROJECT_META_PAYLOAD_SIZE> metaBytes{};
+    assert(project_state_codec::encodeMetaPayload(
+        meta,
+        metaBytes.data(),
+        static_cast<uint32_t>(metaBytes.size())
+    ));
     const uint8_t futureSequencerPayload[] = {1, 2, 3};
 
     const project_file::ChunkView chunks[] = {
@@ -190,8 +197,8 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
             .versionMajor = project_snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = project_snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = reinterpret_cast<const uint8_t*>(&meta),
-            .size = sizeof(meta),
+            .data = metaBytes.data(),
+            .size = project_state_codec::PROJECT_META_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),

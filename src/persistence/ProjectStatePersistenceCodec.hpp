@@ -18,26 +18,56 @@ struct DecodeResult {
 
 void fillMetaPayload(const core::state::project::ProjectMetadata& source,
                      ProjectMetaPayload& out);
+bool encodeMetaPayload(const ProjectMetaPayload& payload,
+                       uint8_t* out,
+                       uint32_t outCapacity);
+bool decodeMetaPayload(const uint8_t* data,
+                       uint32_t size,
+                       ProjectMetaPayload& out);
 void applyMetaPayload(const ProjectMetaPayload& payload,
                       core::state::project::ProjectMetadata& target);
 
 void fillTransportPayload(const core::state::project::ProjectTransportState& source,
                           ProjectTransportPayload& out);
+bool encodeTransportPayload(const ProjectTransportPayload& payload,
+                            uint8_t* out,
+                            uint32_t outCapacity);
+bool decodeTransportPayload(const uint8_t* data,
+                            uint32_t size,
+                            ProjectTransportPayload& out);
 void applyTransportPayload(const ProjectTransportPayload& payload,
                            core::state::project::ProjectTransportState& target);
 
 void fillMusicalContextPayload(const core::state::project::ProjectMusicalContext& source,
                                ProjectMusicalContextPayload& out);
+bool encodeMusicalContextPayload(const ProjectMusicalContextPayload& payload,
+                                 uint8_t* out,
+                                 uint32_t outCapacity);
+bool decodeMusicalContextPayload(const uint8_t* data,
+                                 uint32_t size,
+                                 ProjectMusicalContextPayload& out);
 void applyMusicalContextPayload(const ProjectMusicalContextPayload& payload,
                                 core::state::project::ProjectMusicalContext& target);
 
 void fillRoutingPayload(const core::state::project::ProjectRoutingState& source,
                         ProjectRoutingPayload& out);
+bool encodeRoutingPayload(const ProjectRoutingPayload& payload,
+                          uint8_t* out,
+                          uint32_t outCapacity);
+bool decodeRoutingPayload(const uint8_t* data,
+                          uint32_t size,
+                          ProjectRoutingPayload& out);
 void applyRoutingPayload(const ProjectRoutingPayload& payload,
                          core::state::project::ProjectRoutingState& target);
 
 void fillEditingPayload(const core::state::project::ProjectEditingState& source,
                         ProjectEditingPayload& out);
+bool encodeEditingPayload(const ProjectEditingPayload& payload,
+                          uint8_t* out,
+                          uint32_t outCapacity);
+bool decodeEditingPayload(const uint8_t* data,
+                          uint32_t size,
+                          ProjectEditingPayload& out);
 void applyEditingPayload(const ProjectEditingPayload& payload,
                          core::state::project::ProjectEditingState& target);
 
