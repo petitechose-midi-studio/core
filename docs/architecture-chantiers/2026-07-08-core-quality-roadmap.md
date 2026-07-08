@@ -287,6 +287,10 @@ product rules into the wrong layer.
 - `f78243c sequencer: hide focused step helpers` reduced
   `SequencerStructureEditWorkflow`'s public surface by making focused Step
   paste/copy helpers private implementation details.
+- `9b278d8 sequencer: share bottom strip hold projection` removed repeated hold
+  progress and selection-count slot setup from
+  `SequencerBottomActionStripViewModelBuilder` while keeping the existing policy
+  and visual contract.
 
 Validated after the Macro context projection slice:
 
@@ -598,6 +602,19 @@ Validated after the Sequencer structure public API cleanup slice:
 
 - `git diff --check` -> OK;
 - `ms test core` -> `83/83`.
+
+Validated after the Sequencer bottom strip hold projection cleanup slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/destructive-actions.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/pattern-selection-bottom-actions.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-selection.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/property-strip-contexts.ux --report --no-interactive --skip-build`
+  -> OK.
 
 ### Completed Sequencer Grammar Baseline Slice
 
@@ -923,6 +940,16 @@ Acceptance:
 - Each builder file has one visible output type.
 - Interaction decisions remain traceable to `SequencerInteractionPolicy`.
 - BuildStepGrid does not need to know unrelated action-strip details.
+
+Status:
+
+- Complete for this roadmap pass. `SequencerViewModelBuilder.cpp` is now a
+  small facade over dedicated header, left strip, bottom strip, property overlay,
+  and grid builders.
+- The bottom strip builder still owns context-specific visual projection, but
+  repeated hold progress and selection-count setup have been collapsed into
+  local helpers. Further splitting should wait for a real policy drift or render
+  performance issue.
 
 ### P2 - Bound StepGrid Render Cost
 
