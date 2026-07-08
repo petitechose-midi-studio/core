@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <oc/state/Signal.hpp>
 
 #include "handler/common/SharedTrackDomainServices.hpp"
@@ -11,6 +13,8 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
+
+enum class StepResetDepth : uint8_t;
 
 /**
  * Owns sequencer page/track structure edit actions.
@@ -44,7 +48,6 @@ public:
     void beginHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
     void applyBottomLeftTapCurrentStructure();
-    void eraseFocusedStep();
     void toggleTrackSelectionMute();
     void removeCurrentStructure();
     void copyCurrentStructure();
@@ -76,6 +79,8 @@ private:
     void recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
+    void resetFocusedStep(StepResetDepth depth);
+    void resetStepSelection(StepResetDepth depth);
     void pasteStepClipboardAt(uint8_t cursorStep, bool resetSelection);
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
