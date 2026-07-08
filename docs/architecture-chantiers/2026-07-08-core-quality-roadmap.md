@@ -284,6 +284,9 @@ product rules into the wrong layer.
 - `e51d9b4 sequencer: centralize structure step resets` removed the public
   focused-step erase path and routed focused and selected Step shallow/deep
   resets through two private helpers in `SequencerStructureEditWorkflow`.
+- `f78243c sequencer: hide focused step helpers` reduced
+  `SequencerStructureEditWorkflow`'s public surface by making focused Step
+  paste/copy helpers private implementation details.
 
 Validated after the Macro context projection slice:
 
@@ -590,6 +593,11 @@ Validated after the Sequencer structure step reset cleanup slice:
   -> OK;
 - `ms ux run core --select sequencer/structure/child-step-selection-bottom-actions.ux --report --no-interactive --skip-build`
   -> OK.
+
+Validated after the Sequencer structure public API cleanup slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`.
 
 ### Completed Sequencer Grammar Baseline Slice
 
