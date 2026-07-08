@@ -130,6 +130,59 @@ FLASHMEM StepContentCreationAvailability activeContentChildCreationAvailability(
     };
 }
 
+FLASHMEM StepContentOpenResult openOrCreateActiveContentChild(
+    SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind,
+    uint8_t length
+) {
+    StepContentOpenResult result{
+        .childKind = childKind,
+    };
+    const auto availability = activeContentChildCreationAvailability(
+        sequencer,
+        step,
+        childKind,
+        length
+    );
+    result.blockedReason = availability.blockedReason;
+    if (!availability.canCreateOrOpen) {
+        return result;
+    }
+
+    const auto ownerNodeId = activeContentStepNodeId(sequencer, step);
+    if (ownerNodeId == kInvalidId) {
+        result.blockedReason = StepContentCreationBlockReason::INVALID_FOCUSED_STEP;
+        return result;
+    }
+
+    const uint32_t graphRevisionBefore = sequencer.pattern.graphRevision.get();
+    const auto created = childKind == StepContentChildKind::MICRO_SEQUENCE
+        ? createMicroSequence(sequencer.pattern, ownerNodeId, length)
+        : createCycleStateSet(sequencer.pattern, ownerNodeId, length);
+    if (!created.ok) {
+        result.blockedReason = created.limitReached
+            ? StepContentCreationBlockReason::GRAPH_LIMIT_REACHED
+            : StepContentCreationBlockReason::INACTIVE_CONTEXT;
+        return result;
+    }
+
+    const bool opened = childKind == StepContentChildKind::MICRO_SEQUENCE
+        ? enterMicroSequenceContentView(sequencer, ownerNodeId, created.id)
+        : enterCycleStatesContentView(sequencer, ownerNodeId, created.id);
+    if (!opened) {
+        result.blockedReason = StepContentCreationBlockReason::INVALID_FOCUSED_STEP;
+        return result;
+    }
+
+    result.opened = true;
+    result.created = sequencer.pattern.graphRevision.get() != graphRevisionBefore;
+    result.blockedReason = StepContentCreationBlockReason::NONE;
+    result.ownerNodeId = ownerNodeId;
+    result.contentId = created.id;
+    return result;
+}
+
 FLASHMEM bool activeContentStepCanReceiveChildContent(
     const SequencerState& sequencer,
     uint8_t step

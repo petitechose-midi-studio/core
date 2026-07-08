@@ -114,11 +114,55 @@ void test_reset_child_property_to_default_preserves_existing_revision_behavior()
     std::cout << "[PASS] test_reset_child_property_to_default_preserves_existing_revision_behavior\n";
 }
 
+void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
+    test_support::CoreStorages storage;
+    auto state = makeState(storage);
+    auto& sequencer = state.sequencer;
+    sequencer.pattern.length.set(8);
+
+    const auto createdMicro = core::state::sequencer::openOrCreateActiveContentChild(
+        sequencer,
+        0,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+        core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
+    );
+    assert(createdMicro.opened);
+    assert(createdMicro.created);
+    assert(core::state::sequencer::isMicroSequenceContentView(sequencer));
+
+    assert(core::state::sequencer::leaveContentView(sequencer));
+    const uint32_t graphRevisionBeforeReopen = sequencer.pattern.graphRevision.get();
+    const auto reopenedMicro = core::state::sequencer::openOrCreateActiveContentChild(
+        sequencer,
+        0,
+        core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
+        core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
+    );
+    assert(reopenedMicro.opened);
+    assert(!reopenedMicro.created);
+    assert(reopenedMicro.contentId == createdMicro.contentId);
+    assert(sequencer.pattern.graphRevision.get() == graphRevisionBeforeReopen);
+
+    assert(core::state::sequencer::leaveContentView(sequencer));
+    const auto createdCycle = core::state::sequencer::openOrCreateActiveContentChild(
+        sequencer,
+        1,
+        core::state::sequencer::StepContentChildKind::CYCLE_STATES,
+        core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
+    );
+    assert(createdCycle.opened);
+    assert(createdCycle.created);
+    assert(core::state::sequencer::isCycleStatesContentView(sequencer));
+
+    std::cout << "[PASS] test_open_or_create_child_context_opens_existing_without_graph_mutation\n";
+}
+
 }  // namespace
 
 int main() {
     test_reset_root_property_to_default_also_resets_local_variation();
     test_reset_child_property_to_default_preserves_existing_revision_behavior();
+    test_open_or_create_child_context_opens_existing_without_graph_mutation();
 
     std::cout << "\nAll SequencerContentStepOps tests passed.\n";
     return 0;

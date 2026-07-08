@@ -34,6 +34,18 @@ struct StepContentCreationAvailability {
         StepContentCreationBlockReason::INACTIVE_CONTEXT;
 };
 
+struct StepContentOpenResult {
+    bool opened = false;
+    bool created = false;
+    StepContentCreationBlockReason blockedReason =
+        StepContentCreationBlockReason::INACTIVE_CONTEXT;
+    StepContentChildKind childKind = StepContentChildKind::MICRO_SEQUENCE;
+    SequencerGraphNodeId ownerNodeId =
+        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    uint16_t contentId =
+        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+};
+
 bool isRootContentView(const SequencerState& sequencer);
 bool isChildContentView(const SequencerState& sequencer);
 bool isMicroSequenceContentView(const SequencerState& sequencer);
@@ -135,6 +147,12 @@ int16_t stepContentProjectionOffsetForProperty(
 );
 StepContentCreationAvailability activeContentChildCreationAvailability(
     const SequencerState& sequencer,
+    uint8_t step,
+    StepContentChildKind childKind,
+    uint8_t length
+);
+StepContentOpenResult openOrCreateActiveContentChild(
+    SequencerState& sequencer,
     uint8_t step,
     StepContentChildKind childKind,
     uint8_t length

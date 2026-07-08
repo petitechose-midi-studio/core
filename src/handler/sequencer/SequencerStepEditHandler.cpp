@@ -491,30 +491,13 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedContextRow(
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    const auto availability = core::state::sequencer::activeContentChildCreationAvailability(
+    const auto result = core::state::sequencer::openOrCreateActiveContentChild(
         sequencer_,
         step,
         childKind,
         defaultLength
     );
-    if (!availability.canCreateOrOpen) return;
-
-    const auto ownerNodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        step
-    );
-    const auto result = childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
-        ? core::state::sequencer::createMicroSequence(
-              sequencer_.pattern,
-              ownerNodeId,
-              defaultLength
-          )
-        : core::state::sequencer::createCycleStateSet(
-              sequencer_.pattern,
-              ownerNodeId,
-              defaultLength
-          );
-    if (!result.ok) return;
+    if (!result.opened) return;
 
     if (history_snapshot_valid_) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
@@ -531,20 +514,6 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedContextRow(
             );
         }
         history_snapshot_valid_ = false;
-    }
-
-    if (childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE) {
-        core::state::sequencer::enterMicroSequenceContentView(
-            sequencer_,
-            ownerNodeId,
-            result.id
-        );
-    } else {
-        core::state::sequencer::enterCycleStatesContentView(
-            sequencer_,
-            ownerNodeId,
-            result.id
-        );
     }
 
     overlays_.hide();
