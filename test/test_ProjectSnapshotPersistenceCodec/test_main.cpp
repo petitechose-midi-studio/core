@@ -83,6 +83,19 @@ float denseMacroAutomationValue(uint8_t index, uint8_t point) {
     return static_cast<float>(raw) / 127.0f;
 }
 
+bool denseMacroAutomationHasModulation(uint8_t index) {
+    return (index % 4U) == 0U;
+}
+
+float denseMacroAutomationWindowOffset(uint8_t index) {
+    return (index % 2U) == 0U ? 1.0f : 0.0f;
+}
+
+float denseMacroModulationValue(uint8_t index, uint8_t point) {
+    const int raw = static_cast<int>(index) * 3 + static_cast<int>(point) * 5 - 16;
+    return static_cast<float>(raw) / 32.0f;
+}
+
 void configureDenseMacroAutomations(core::state::CoreState& state) {
     using namespace core::state::macro;
 
@@ -113,6 +126,32 @@ void configureDenseMacroAutomations(core::state::CoreState& state) {
             ));
         }
         assert(macroAutomationAssignAutomation(state.pages.automation, *slot, lane));
+        const float windowOffset = denseMacroAutomationWindowOffset(i);
+        assert(macroAutomationSetCurveWindowOffset(
+            slot->automation,
+            state.pages.automation.pointPool,
+            windowOffset
+        ) || windowOffset == 0.0f);
+
+        if (denseMacroAutomationHasModulation(i)) {
+            MacroModulationShape modulation;
+            modulation.durationBeats = lane.durationBeats;
+            for (uint8_t point = 0; point < 3; ++point) {
+                const float beat =
+                    (modulation.durationBeats * static_cast<float>(point)) / 2.0f;
+                assert(macroModulationAppendPoint(
+                    modulation,
+                    beat,
+                    denseMacroModulationValue(i, point)
+                ));
+            }
+            assert(macroAutomationAssignModulation(
+                state.pages.automation,
+                *slot,
+                modulation
+            ));
+            slot->modulationDepth = 0.1f * static_cast<float>((i % 5U) + 1U);
+        }
     }
 }
 
@@ -133,6 +172,10 @@ void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
                    macroAutomationBeatsFromTicks(slot->automation.durationTicks) -
                    denseMacroAutomationDuration(i)
                ) < 0.0001f);
+        assert(std::fabs(
+                   macroAutomationBeatsFromTicks(slot->automation.windowOffsetTicks) -
+                   denseMacroAutomationWindowOffset(i)
+               ) < 0.0001f);
 
         for (uint8_t point = 0; point < kPointCount; ++point) {
             MacroCurvePoint restored{};
@@ -144,6 +187,31 @@ void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
                 restored
             ));
             assert(std::fabs(restored.value - denseMacroAutomationValue(i, point)) < 0.0001f);
+        }
+
+        if (denseMacroAutomationHasModulation(i)) {
+            assert(slot->modulation.active);
+            assert(slot->modulation.pointCount == 3);
+            assert(std::fabs(
+                       slot->modulationDepth -
+                       (0.1f * static_cast<float>((i % 5U) + 1U))
+                   ) < 0.0001f);
+            for (uint8_t point = 0; point < 3; ++point) {
+                MacroCurvePoint restored{};
+                assert(macroAutomationReadPoint(
+                    slot->modulation,
+                    state.pages.automation.pointPool,
+                    point,
+                    true,
+                    restored
+                ));
+                assert(
+                    std::fabs(restored.value - denseMacroModulationValue(i, point)) <
+                    0.0001f
+                );
+            }
+        } else {
+            assert(!slot->modulation.active);
         }
     }
 }
