@@ -291,6 +291,9 @@ product rules into the wrong layer.
   progress and selection-count slot setup from
   `SequencerBottomActionStripViewModelBuilder` while keeping the existing policy
   and visual contract.
+- `fa23f84 persistence: route stale project chunks through migration` made
+  same-size stale project-state chunks pass through `ProjectChunkMigration`
+  instead of being decoded silently as current payloads.
 
 Validated after the Macro context projection slice:
 
@@ -615,6 +618,11 @@ Validated after the Sequencer bottom strip hold projection cleanup slice:
   -> OK;
 - `ms ux run core --select sequencer/structure/property-strip-contexts.ux --report --no-interactive --skip-build`
   -> OK.
+
+Validated after the Project state migration contract cleanup slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`.
 
 ### Completed Sequencer Grammar Baseline Slice
 
@@ -984,6 +992,15 @@ Acceptance:
 - Hardware or SDL perf counter evidence for track switch and local random edit.
 - Existing captures remain visually equivalent.
 
+Status:
+
+- Partially addressed for this pass. The grid already uses a frame render plan,
+  tile diffs, LVGL caches, and local invalidation. `487714e` removed unnecessary
+  `TileRenderState` copies from the hot frame planner/render loop.
+- Do not split `StepGrid.cpp` further unless a measured UI bottleneck or a
+  specific duplicate render path appears. The current risk is performance
+  regression from unnecessary abstraction, not lack of modules.
+
 ### P2 - Stabilize Macro Automation Memory And Lifecycle
 
 Concern:
@@ -1098,6 +1115,13 @@ Acceptance:
 - Fixture coverage exists for every supported migration.
 - Old unsupported data fails or partially loads through explicit reports, not
   random UI corruption.
+
+Status:
+
+- In progress. Project-state chunks now route any strictly stale version through
+  `ProjectChunkMigration`, even when the stale payload size matches the current
+  layout. Unsupported stale chunks default through an explicit partial load
+  report and block overwrite.
 
 ### P3 - Test And UX Harness Hygiene
 
