@@ -32,7 +32,7 @@ Largest current production files:
 | File | Lines | Concern |
 |---|---:|---|
 | `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
-| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~765 | Reduced, but still mixes page/track current actions, selection actions, history, and paste preview. |
+| `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~706 | Reduced, but still mixes page/track current actions, selection actions, and history boundaries. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~26 | Public facade; concrete projections live in dedicated builders. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
 | `src/ui/sequencer/SequencerStepEditOverlay.cpp` | ~971 | Layout/render state is large and tightly coupled to step-editor semantics. |
@@ -226,6 +226,10 @@ product rules into the wrong layer.
   extracted structure step/page clipboard implementations out of large inline
   headers and into `FLASHMEM` `.cpp` units, preserving the cleanup without
   increasing RAM1 pressure.
+- `ff476f7 sequencer: extract structure step paste workflow` moved step paste
+  preview setup, paste-plan construction, content resizing, and root/child
+  clipboard write dispatch into `SequencerStructureStepPasteWorkflow`, leaving
+  `SequencerStructureEditWorkflow` responsible for history and focus updates.
 
 Validated after the Macro context projection slice:
 
@@ -400,6 +404,16 @@ Validated after moving extracted structure ops into `FLASHMEM` implementation
 units:
 
 - `ms test core` -> `83/83`.
+
+Validated after the Sequencer structure step paste workflow slice:
+
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/step-focus-copy-paste.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-selection.ux --report --no-interactive --skip-build`
+  -> OK;
+- `ms ux run core --select sequencer/structure/child-step-selection-bottom-actions.ux --report --no-interactive --skip-build`
+  -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
 
