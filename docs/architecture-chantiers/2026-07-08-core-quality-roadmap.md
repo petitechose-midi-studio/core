@@ -168,6 +168,10 @@ product rules into the wrong layer.
   and cycle-state open/create semantics into `SequencerContentViewOps`, leaving
   `SequencerStepEditHandler` responsible for history capture and overlay
   lifecycle only.
+- `3b412ed sequencer: centralize child content clipboard actions` moved
+  micro-sequence/cycle-state clear, copy, paste, clipboard compatibility, and
+  view refresh semantics into `SequencerContentViewOps`, leaving the step edit
+  handler responsible for button routing and history only.
 
 Validated after the Macro context projection slice:
 
@@ -209,6 +213,16 @@ Validated after the Sequencer child context opening slice:
 - `ms ux run core --select sequencer/step-content/child-step-edit-back-to-parent.ux --report --no-interactive`
   -> OK;
 - `ms ux run core --select sequencer/step-content/closeout-authoring-runtime.ux --report --no-interactive`
+  -> OK.
+
+Validated after the Sequencer child content clipboard actions slice:
+
+- `ms test core` -> `80/80`;
+- `ms ux run core --select sequencer/step-content/child-step-edit-back-to-parent.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/step-content/closeout-authoring-runtime.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/structure/step-editor-bottom-actions.ux --report --no-interactive`
   -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
