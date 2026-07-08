@@ -53,9 +53,6 @@ public:
     void copyCurrentStructure();
     void pasteCurrentStructure();
     bool canPasteSelection() const;
-    bool canPasteFocusedStep() const;
-    void copyFocusedStep();
-    void pasteFocusedStep();
     void clearSelection();
     void copySelection();
     void copyStepSelection();
@@ -79,6 +76,9 @@ private:
     void recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
+    bool canPasteFocusedStep() const;
+    void copyFocusedStep();
+    void pasteFocusedStep();
     void resetFocusedStep(StepResetDepth depth);
     void resetStepSelection(StepResetDepth depth);
     void pasteStepClipboardAt(uint8_t cursorStep, bool resetSelection);
