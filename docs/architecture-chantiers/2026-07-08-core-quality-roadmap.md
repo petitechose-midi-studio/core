@@ -31,7 +31,7 @@ Largest current production files:
 
 | File | Lines | Concern |
 |---|---:|---|
-| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~701 | Reduced, but still owns input binding and top-level step edit routing. |
+| `src/handler/sequencer/SequencerStepEditHandler.cpp` | ~598 | Now mostly input binding, overlay lifecycle, and history boundaries. |
 | `src/handler/sequencer/SequencerStructureEditWorkflow.cpp` | ~547 | Reduced, but still owns history boundaries and top-level structure routing. |
 | `src/ui/sequencer/SequencerViewModelBuilder.cpp` | ~26 | Public facade; concrete projections live in dedicated builders. |
 | `src/ui/sequencer/StepGrid.cpp` | ~974 | Custom draw path is feature-rich and performance-sensitive. |
@@ -265,6 +265,10 @@ product rules into the wrong layer.
 - `2c0a231 sequencer: extract structure step selection reset` moved selected
   Step shallow/deep reset loops into `SequencerStructureStepOps`, leaving
   history capture and content refresh in `SequencerStructureEditWorkflow`.
+- `487714e sequencer: avoid step grid state copies` removed full
+  `TileRenderState` copies from the frame planner and render loop. The grid
+  still keeps the existing tile cache/invalidation model; this slice only
+  reduces per-frame hot-path copying.
 
 Validated after the Macro context projection slice:
 
@@ -524,6 +528,15 @@ Validated after the Sequencer structure step selection reset slice:
 - `ms ux run core --select sequencer/structure/child-step-selection-bottom-actions.ux --report --no-interactive --skip-build`
   -> OK.
 
+Validated after the Sequencer StepGrid state-copy slice:
+
+- `git diff --check` -> OK;
+- `ms test core` -> `83/83`;
+- `ms ux run core --select sequencer/structure/step-selection.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select sequencer/structure/property-strip-contexts.ux --report --no-interactive --skip-build`
+  -> OK.
+
 ### Current Uncommitted Sequencer Grammar Slice
 
 The initial working tree contained a small, coherent sequencer grammar slice:
@@ -771,6 +784,16 @@ Acceptance:
 - Each extracted module has a clear header contract and direct tests.
 - No behavior change without a matching UX workflow update.
 - `ms test core`; step editor UX workflows; `pio run`.
+
+Status:
+
+- Complete for this roadmap pass. The handler is now at roughly 598 lines and
+  delegates value rows, context rows, preset picker, chord detail, and session
+  lifecycle to dedicated modules.
+- The remaining large method is `setupBindings()`. It is intentionally kept in
+  the handler for now because it is declarative input wiring; extracting it
+  without a broader binding policy would add indirection without reducing
+  behavior risk.
 
 ### P1 - Split `SequencerStructureEditWorkflow`
 
