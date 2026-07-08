@@ -1,6 +1,5 @@
 #include "handler/sequencer/SequencerStructureEditWorkflow.hpp"
 
-#include <algorithm>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -92,15 +91,9 @@ FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure
         return;
     }
 
-    if (sequencer_.structureUi.previewAddPageSlot.get()) return;
     HistoryPatternSnapshot before;
     if (!capturePageHistoryBefore(before)) return;
-    const uint8_t start = sequencer_.pageStartStepClamped(sequencer_.visiblePage());
-    const uint8_t end = static_cast<uint8_t>(std::min<uint16_t>(
-        core::state::sequencer::SequencerState::MAX_STEPS - 1,
-        static_cast<uint16_t>(start + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1)
-    ));
-    if (core::state::sequencer::clearStepRange(sequencer_, start, end)) {
+    if (clearCurrentSequencerStructurePage(sequencer_)) {
         recordPageHistoryAfter(std::move(before));
     }
 }
@@ -193,11 +186,9 @@ FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
         return;
     }
 
-    if (sequencer_.structureUi.previewAddPageSlot.get()) return;
     HistoryPatternSnapshot before;
     if (!capturePageHistoryBefore(before)) return;
-    const uint8_t pageIndex = sequencer_.visiblePage();
-    if (core::state::sequencer::removePage(sequencer_, pageIndex)) {
+    if (removeCurrentSequencerStructurePage(sequencer_)) {
         recordPageHistoryAfter(std::move(before));
     }
 }
