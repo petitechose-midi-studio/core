@@ -153,6 +153,10 @@ product rules into the wrong layer.
 - `3383809 macro: centralize automation elapsed beat math` moved recording and
   playback elapsed-beat conversion into `MacroAutomationDomain` and added a
   domain regression for tempo fallback and reversed-time safety.
+- `8ee53af macro: project automation curve window state` moved automation curve
+  window/source/offset/wrap projection from the macro overlay formatter into
+  `MacroAutomationDomain`, with a domain regression for persisted window
+  semantics.
 
 Validated after the Macro context projection slice:
 
@@ -163,6 +167,14 @@ Validated after the Macro context projection slice:
 Validated after the Macro timebase slice:
 
 - `ms test core` -> `78/78`.
+
+Validated after the Macro curve window projection slice:
+
+- `ms test core` -> `78/78`;
+- `ms ux run core --select macro/automation-curve-window-offset.ux --report --no-interactive`
+  -> OK;
+- `ms ux run core --select macro/automation-curve-sparkline.ux --report --no-interactive`
+  -> OK.
 
 ### Current Uncommitted Sequencer Grammar Slice
 
