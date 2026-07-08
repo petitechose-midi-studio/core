@@ -8,6 +8,8 @@
 
 namespace core::handler {
 
+namespace {
+
 FLASHMEM uint8_t sequencerStructurePageTarget(
     const core::state::sequencer::SequencerState& sequencer
 ) {
@@ -15,6 +17,8 @@ FLASHMEM uint8_t sequencerStructurePageTarget(
         ? sequencer.clampPage(sequencer.structureUi.previewPageIndex.get())
         : sequencer.activePageCount();
 }
+
+}  // namespace
 
 FLASHMEM bool createSequencerStructurePage(
     core::state::sequencer::SequencerState& sequencer

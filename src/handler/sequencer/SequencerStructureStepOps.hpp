@@ -17,18 +17,6 @@ enum class StepResetDepth : uint8_t {
     Deep,
 };
 
-bool selectedStepRange(
-    const oc::note::sequencer::StepBitMask128& mask,
-    uint8_t activeLength,
-    uint8_t& outFirst,
-    uint8_t& outLast
-);
-
-oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings(
-    const core::state::sequencer::SequencerState& sequencer,
-    const core::state::sequencer::SequencerTrackBankState& tracks
-);
-
 bool resetActiveContentStep(
     core::state::sequencer::SequencerState& sequencer,
     uint8_t step,
@@ -39,14 +27,6 @@ bool resetSelectedActiveContentSteps(
     core::state::sequencer::SequencerState& sequencer,
     const oc::note::sequencer::StepBitMask128& selectedMask,
     StepResetDepth depth
-);
-
-bool appendStepClipboardEntry(
-    const core::state::sequencer::SequencerState& sequencer,
-    uint8_t step,
-    uint8_t firstStep,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    core::state::SequencerStepsClipboard& clipboard
 );
 
 bool captureFocusedStepClipboard(

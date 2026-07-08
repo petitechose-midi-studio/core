@@ -8,6 +8,8 @@
 
 namespace core::handler {
 
+namespace {
+
 FLASHMEM bool selectedStepRange(
     const oc::note::sequencer::StepBitMask128& mask,
     uint8_t activeLength,
@@ -38,6 +40,45 @@ FLASHMEM oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings(
         sequencer.pattern.scaleOverride
     );
 }
+
+FLASHMEM bool appendStepClipboardEntry(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t step,
+    uint8_t firstStep,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    core::state::SequencerStepsClipboard& clipboard
+) {
+    if (clipboard.count >= clipboard.entries.size()) return false;
+
+    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
+        sequencer,
+        step,
+        scaleSettings
+    );
+    if (!projection.valid) return false;
+
+    auto& entry = clipboard.entries[clipboard.count++];
+    entry.valid = true;
+    entry.offset = static_cast<uint8_t>(step - firstStep);
+    entry.enabled = projection.enabled;
+    entry.sourceNodeId = projection.nodeId;
+    if (clipboard.rootContext) {
+        entry.note = projection.parentNote;
+        entry.velocity = projection.parentVelocity;
+        entry.gate = projection.parentGate;
+        entry.nudge = projection.parentNudge;
+        entry.probability = projection.parentProbability;
+    } else {
+        entry.note = projection.note;
+        entry.velocity = projection.velocity;
+        entry.gate = projection.gate;
+        entry.nudge = projection.nudge;
+        entry.probability = projection.probability;
+    }
+    return true;
+}
+
+}  // namespace
 
 FLASHMEM bool resetActiveContentStep(
     core::state::sequencer::SequencerState& sequencer,
@@ -102,43 +143,6 @@ FLASHMEM bool resetSelectedActiveContentSteps(
         changed = resetActiveContentStep(sequencer, step, depth) || changed;
     }
     return changed;
-}
-
-FLASHMEM bool appendStepClipboardEntry(
-    const core::state::sequencer::SequencerState& sequencer,
-    uint8_t step,
-    uint8_t firstStep,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    core::state::SequencerStepsClipboard& clipboard
-) {
-    if (clipboard.count >= clipboard.entries.size()) return false;
-
-    const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
-        sequencer,
-        step,
-        scaleSettings
-    );
-    if (!projection.valid) return false;
-
-    auto& entry = clipboard.entries[clipboard.count++];
-    entry.valid = true;
-    entry.offset = static_cast<uint8_t>(step - firstStep);
-    entry.enabled = projection.enabled;
-    entry.sourceNodeId = projection.nodeId;
-    if (clipboard.rootContext) {
-        entry.note = projection.parentNote;
-        entry.velocity = projection.parentVelocity;
-        entry.gate = projection.parentGate;
-        entry.nudge = projection.parentNudge;
-        entry.probability = projection.parentProbability;
-    } else {
-        entry.note = projection.note;
-        entry.velocity = projection.velocity;
-        entry.gate = projection.gate;
-        entry.nudge = projection.nudge;
-        entry.probability = projection.probability;
-    }
-    return true;
 }
 
 FLASHMEM bool captureFocusedStepClipboard(

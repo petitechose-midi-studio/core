@@ -6,10 +6,6 @@
 
 namespace core::handler {
 
-uint8_t sequencerStructurePageTarget(
-    const core::state::sequencer::SequencerState& sequencer
-);
-
 bool createSequencerStructurePage(
     core::state::sequencer::SequencerState& sequencer
 );
