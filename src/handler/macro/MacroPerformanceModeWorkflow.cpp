@@ -43,21 +43,8 @@ FLASHMEM MacroPerformanceModeWorkflow::MacroPerformanceModeWorkflow(
     refreshEncoders();
 }
 
-bool MacroPerformanceModeWorkflow::performanceAvailable() const {
-    return !overlays_.hasVisible() &&
-           !macro_ui_.pageSelection.active.get() &&
-           !track_ui_.selection.active.get();
-}
-
 bool MacroPerformanceModeWorkflow::clutchActive() const {
     return macro_ui_.clutchActive.get() &&
-           !macro_ui_.pageSelection.active.get() &&
-           !track_ui_.selection.active.get() &&
-           !overlays_.hasVisible();
-}
-
-bool MacroPerformanceModeWorkflow::clutchInactive() const {
-    return !macro_ui_.clutchActive.get() &&
            !macro_ui_.pageSelection.active.get() &&
            !track_ui_.selection.active.get() &&
            !overlays_.hasVisible();

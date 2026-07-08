@@ -35,9 +35,7 @@ public:
     MacroPerformanceModeWorkflow(const MacroPerformanceModeWorkflow&) = delete;
     MacroPerformanceModeWorkflow& operator=(const MacroPerformanceModeWorkflow&) = delete;
 
-    bool performanceAvailable() const;
     bool clutchActive() const;
-    bool clutchInactive() const;
 
     void activateClutch();
     void deactivateClutch();
