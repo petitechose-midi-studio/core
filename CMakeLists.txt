@@ -64,6 +64,20 @@ option(
     ${MS_CORE_BUILD_TESTS_DEFAULT})
 
 if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    add_test(
+        NAME check_PerformanceArchitecture
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-performance-architecture.py")
+    set_tests_properties(check_PerformanceArchitecture PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_TeensyMemoryBudgetParser
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-memory-budget.py")
+    set_tests_properties(check_TeensyMemoryBudgetParser PROPERTIES LABELS core)
+
     file(GLOB MS_CORE_NATIVE_TESTS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_*/test_main.cpp")
 
@@ -91,6 +105,11 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        if(MSVC)
+            target_compile_options("${test_name}" PRIVATE /UNDEBUG)
+        else()
+            target_compile_options("${test_name}" PRIVATE -UNDEBUG)
+        endif()
 
         add_test(NAME "${test_name}" COMMAND "${test_name}")
         set_tests_properties("${test_name}" PROPERTIES LABELS core)

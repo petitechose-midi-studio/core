@@ -7,6 +7,7 @@
 #include <oc/ui/lvgl/Scope.hpp>
 
 #include "context/standalone/PatternPitchSettingsOverlayPresenter.hpp"
+#include "context/standalone/OverlayPresentationRegistry.hpp"
 #include "context/standalone/SequencerEncoderSyncCoordinator.hpp"
 #include "context/standalone/SequencerOverlayPresenter.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
@@ -27,6 +28,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     core::handler::SharedTrackDomainServices sharedTracks,
     core::handler::SequencerStepPresetDomainServices stepPresets,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+    OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* overlayRoot,
@@ -89,7 +91,9 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     }
 #endif
 
+    if (!overlayRoot || !sequencerViewScope) return;
     const auto sequencerViewScopeId = oc::ui::lvgl::scopeID(sequencerViewScope);
+    if (sequencerViewScopeId == 0) return;
     encoder_sync_ = core::app::makeExtmemUnique<SequencerEncoderSyncCoordinator>(
         SequencerEncoderSyncCoordinator::StateRefs{
             stateRefs.overlays,
@@ -101,12 +105,15 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         },
         encoders
     );
+    if (!encoder_sync_) return;
     step_edit_overlay_ =
         core::app::makeExtmemUnique<core::ui::SequencerStepEditOverlay>(overlayRoot);
+    if (!step_edit_overlay_ || !step_edit_overlay_->getElement()) return;
     step_edit_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
         step_edit_overlay_->getElement(),
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
+    if (!step_edit_action_strip_ || !step_edit_action_strip_->getElement()) return;
     if (auto* strip = step_edit_action_strip_->getElement()) {
         lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
         lv_obj_align(
@@ -119,10 +126,12 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     }
     step_preset_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(overlayRoot);
+    if (!step_preset_overlay_ || !step_preset_overlay_->getElement()) return;
     step_preset_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
         step_preset_overlay_->getElement(),
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
+    if (!step_preset_action_strip_ || !step_preset_action_strip_->getElement()) return;
     if (auto* strip = step_preset_action_strip_->getElement()) {
         lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
         lv_obj_align(
@@ -133,32 +142,38 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
         lv_obj_move_foreground(strip);
     }
-    overlays.registerCleanup(
+    if (!registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::SEQ_STEP_EDIT,
-        oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
-    overlays.registerCleanup(
+        step_edit_overlay_->getElement()
+    )) return;
+    if (!registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::SEQ_STEP_PRESET,
-        oc::ui::lvgl::scopeID(step_preset_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        step_preset_overlay_->getElement()
+    )) return;
 
     pattern_pitch_settings_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(overlayRoot);
-    overlays.registerCleanup(
+    if (!pattern_pitch_settings_overlay_ ||
+        !pattern_pitch_settings_overlay_->getElement() || !registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::PATTERN_PITCH_SETTINGS,
-        oc::ui::lvgl::scopeID(pattern_pitch_settings_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        pattern_pitch_settings_overlay_->getElement()
+    )) return;
 
     pattern_pitch_settings_selector_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(overlayRoot);
-    overlays.registerCleanup(
+    if (!pattern_pitch_settings_selector_overlay_ ||
+        !pattern_pitch_settings_selector_overlay_->getElement() || !registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR,
-        oc::ui::lvgl::scopeID(pattern_pitch_settings_selector_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        pattern_pitch_settings_selector_overlay_->getElement()
+    )) return;
 
     presenter_ = core::app::makeExtmemUnique<SequencerOverlayPresenter>(
         SequencerOverlayPresenter::StateRefs{
@@ -171,7 +186,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         *step_preset_overlay_,
         *step_preset_action_strip_
     );
-    presenter_->bind();
+    if (!presenter_ || !presenter_->bind()) return;
     pattern_pitch_settings_presenter_ =
         core::app::makeExtmemUnique<PatternPitchSettingsOverlayPresenter>(
             PatternPitchSettingsOverlayPresenter::StateRefs{
@@ -182,8 +197,10 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             *pattern_pitch_settings_overlay_,
             *pattern_pitch_settings_selector_overlay_
         );
-    pattern_pitch_settings_presenter_->bind();
-    encoder_sync_->bind();
+    if (!pattern_pitch_settings_presenter_ ||
+        !pattern_pitch_settings_presenter_->bind() || !encoder_sync_->bind()) {
+        return;
+    }
 
     step_handler_ = core::app::makeExtmemUnique<core::handler::SequencerStepHandler>(
         core::handler::SequencerStepHandler::StateRefs{
@@ -284,6 +301,9 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId,
             oc::time::millis
         );
+    valid_ = step_handler_ && quick_controls_handler_ && step_edit_handler_ &&
+             property_selector_handler_ && pattern_pitch_settings_handler_ &&
+             macro_property_handler_;
 }
 
 FLASHMEM SequencerFeatureModule::~SequencerFeatureModule() = default;

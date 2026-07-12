@@ -39,6 +39,7 @@ private:
     oc::api::MidiAPI& midi_;
 
     bool was_playing_ = false;
+    bool update_scheduled_ = false;
     uint32_t last_update_ms_ = 0;
     uint32_t next_due_ms_ = 0;
     float playback_beat_ = 0.0f;

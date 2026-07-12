@@ -9,30 +9,19 @@ namespace core::sequencer {
  * Estimates external MIDI clock tempo and timing quality.
  *
  * The estimator consumes timestamped MIDI clock pulses, filters interval
- * samples into a BPM estimate, and accumulates telemetry for PERF_LOG/runtime
- * diagnostics. It does not decide whether the external source is authoritative.
+ * samples into a BPM estimate, and does not decide whether the external source
+ * is authoritative.
  */
 class ExternalClockEstimator {
 public:
-    struct Telemetry {
-        uint32_t clockCount = 0;
-        uint32_t maxIntervalUs = 0;
-        uint32_t maxHostGapMs = 0;
-        uint32_t maxJitterUs = 0;
-    };
-
     void reset();
-    void recordClock(uint64_t timestampUs, uint32_t hostNowMs, uint32_t previousHostClockMs);
+    void recordClock(uint64_t timestampUs);
 
     bool bpmValid() const { return bpm_valid_; }
     float bpmEstimate() const { return bpm_estimate_; }
 
-    Telemetry telemetry() const { return telemetry_; }
-    Telemetry takeTelemetry();
-
 private:
     void pushIntervalUs_(uint32_t intervalUs);
-    uint32_t meanIntervalUs_() const;
     float estimateTempoFromIntervals_() const;
 
     uint64_t last_clock_us_ = 0;
@@ -41,7 +30,6 @@ private:
     uint8_t interval_write_idx_ = 0;
     float bpm_estimate_ = 120.0f;
     bool bpm_valid_ = false;
-    Telemetry telemetry_{};
 };
 
 }  // namespace core::sequencer

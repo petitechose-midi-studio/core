@@ -2,6 +2,7 @@
 # Purpose: validates the ADR-0020 navigation contract without exercising save/load
 # persistence. LEFT_CENTER+NAV switches tabs; LEFT_TOP backs inside Project
 # folders, then opens the global view selector when Project is at any tab root.
+# Expect: capture_changed:project_overview_tab=project_music_tab, capture_changed:project_transport_tab=selector_from_project_root
 
 0 capture screen boot
 

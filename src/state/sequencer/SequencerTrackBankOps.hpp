@@ -14,9 +14,22 @@ namespace core::state::sequencer {
  * Switching tracks stores the current editor, loads the target track, and clears
  * transient edit overlays while preserving persistent pattern data.
  */
-void initializeTrackBankFromActive(SequencerTrackBankState& bank, const SequencerState& active);
+[[nodiscard]] bool initializeTrackBankFromActive(
+    SequencerTrackBankState& bank,
+    const SequencerState& active
+);
 
-void storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active);
+[[nodiscard]] bool storeActiveTrack(
+    SequencerTrackBankState& bank,
+    const SequencerState& active
+);
+
+// Avoids graph cloning when the active editor and bank track already own the
+// same graph revision; falls back to a full copy if that contract is not met.
+[[nodiscard]] bool storeActiveTrackPreservingGraph(
+    SequencerTrackBankState& bank,
+    const SequencerState& active
+);
 
 bool switchActiveTrack(SequencerTrackBankState& bank, SequencerState& active, uint8_t nextTrack);
 
@@ -30,6 +43,15 @@ void applyTrackBankSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
     const SequencerTrackBankSnapshot& snapshot
+);
+
+// Installs a fully decoded bank by transferring graph ownership. The staged
+// objects are consumed and no PSRAM allocation occurs during the commit.
+void installTrackBankState(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    SequencerTrackBankState& stagedBank,
+    SequencerState& stagedActive
 );
 
 }  // namespace core::state::sequencer

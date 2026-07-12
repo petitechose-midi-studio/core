@@ -1,6 +1,7 @@
 # UX workflow: resize automation length without stretching points.
 # Purpose: validates that shortening crops the curve and extending keeps the
 # remaining point in place with a visible hold zone.
+# Expect: capture_changed:macro_2_automation_detail=macro_2_automation_cropped, capture_changed:macro_2_automation_cropped=macro_2_automation_extended_after_crop
 
 0 scenario macro-track-multipage-automation
 80 capture screen macro_grid_source

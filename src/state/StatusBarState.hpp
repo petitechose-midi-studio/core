@@ -237,7 +237,7 @@ private:
             activeMask &= static_cast<uint8_t>(~activeBit);
             return;
         }
-        if (static_cast<uint32_t>(nowMs - untilMs) < 0x80000000u) {
+        if (oc::time::deadlineReachedMs(nowMs, untilMs)) {
             signal.set(false);
             activeMask &= static_cast<uint8_t>(~activeBit);
         }
@@ -253,7 +253,7 @@ private:
             activeMask &= static_cast<uint16_t>(~trackBit);
             return;
         }
-        if (static_cast<uint32_t>(nowMs - untilMs) < 0x80000000u) {
+        if (oc::time::deadlineReachedMs(nowMs, untilMs)) {
             signal.set(0);
             activeMask &= static_cast<uint16_t>(~trackBit);
         }

@@ -1,6 +1,7 @@
 # UX workflow: enable a sequencer step, open step edit, adjust a value, and close.
 # Purpose: validates sequencer step toggling, long-press edit overlay, focused
 # row navigation, OPT value editing, and overlay close.
+# Expect: capture_changed:step_edit_open=step_edit_adjusted
 
 0 scenario sequencer
 50 capture screen sequencer_ready

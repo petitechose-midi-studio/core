@@ -8,7 +8,7 @@
 
 namespace core::context::standalone {
 
-SequencerOverlayPresenter::SequencerOverlayPresenter(
+FLASHMEM SequencerOverlayPresenter::SequencerOverlayPresenter(
     StateRefs stateRefs,
     core::ui::SequencerStepEditOverlay& stepEditOverlay,
     core::ui::ContextActionStrip& stepEditActionStrip,
@@ -19,11 +19,19 @@ SequencerOverlayPresenter::SequencerOverlayPresenter(
     , step_edit_overlay_(stepEditOverlay)
     , step_edit_action_strip_(stepEditActionStrip)
     , step_preset_overlay_(stepPresetOverlay)
-    , step_preset_action_strip_(stepPresetActionStrip) {}
+    , step_preset_action_strip_(stepPresetActionStrip)
+    , render_scheduler_(
+          core::ui::renderSchedulerDebugLabel("SequencerOverlay"),
+          &SequencerOverlayPresenter::drainRenderQueue,
+          this
+      ) {}
 
-FLASHMEM void SequencerOverlayPresenter::bind() {
-    step_edit_watcher_.watchAll(
-        [this]() { renderStepEdit(); },
+FLASHMEM bool SequencerOverlayPresenter::bind() {
+    bool bound = render_scheduler_.valid();
+    step_edit_watcher_.bind<&SequencerOverlayPresenter::requestStepEditRender>(
+        *this, 0, "SequencerOverlay.stepEdit"
+    );
+    bound = step_edit_watcher_.watchAll(
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.sequencer.stepEdit.stepIndex,
         state_refs_.sequencer.stepEdit.focusedRow,
@@ -37,15 +45,19 @@ FLASHMEM void SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.pattern.graphRevision,
         state_refs_.sequencer.contentView.revision,
         state_refs_.tracks.projectScaleRevisionSignal()
+    ) && bound;
+    step_edit_action_watcher_.bind<&SequencerOverlayPresenter::requestStepEditActionsRender>(
+        *this, 1, "SequencerOverlay.stepEditActions"
     );
-    step_edit_action_watcher_.watchAll(
-        [this]() { renderStepEditActionStrip(); },
+    bound = step_edit_action_watcher_.watchAll(
         state_refs_.structureClipboard.revision,
         state_refs_.sequencer.stepEdit.contextHold.action,
         state_refs_.sequencer.stepEdit.contextHold.startedAtMs
+    ) && bound;
+    step_preset_watcher_.bind<&SequencerOverlayPresenter::requestStepPresetRender>(
+        *this, 2, "SequencerOverlay.stepPreset"
     );
-    step_preset_watcher_.watchAll(
-        [this]() { renderStepPresetPicker(); },
+    bound = step_preset_watcher_.watchAll(
         state_refs_.sequencer.stepPresetPicker.visible,
         state_refs_.sequencer.stepPresetPicker.mode,
         state_refs_.sequencer.stepPresetPicker.selectedIndex,
@@ -54,14 +66,45 @@ FLASHMEM void SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepPresetPicker.feedback,
         state_refs_.sequencer.stepPresetPicker.revision,
         state_refs_.sequencer.stepEdit.stepIndex
+    ) && bound;
+    step_preset_action_watcher_.bind<&SequencerOverlayPresenter::requestStepPresetActionsRender>(
+        *this, 3, "SequencerOverlay.stepPresetActions"
     );
-    step_preset_action_watcher_.watchAll(
-        [this]() { renderStepPresetActionStrip(); },
+    bound = step_preset_action_watcher_.watchAll(
         state_refs_.sequencer.stepPresetPicker.visible,
         state_refs_.sequencer.stepPresetPicker.mode,
         state_refs_.sequencer.stepPresetPicker.selectedIndex,
         state_refs_.sequencer.stepPresetPicker.entryCount
-    );
+    ) && bound;
+    return bound;
+}
+
+FLASHMEM void SequencerOverlayPresenter::requestStepEditRender() {
+    render_scheduler_.request(RENDER_STEP_EDIT | RENDER_STEP_EDIT_ACTIONS);
+}
+
+FLASHMEM void SequencerOverlayPresenter::requestStepEditActionsRender() {
+    render_scheduler_.request(RENDER_STEP_EDIT_ACTIONS);
+}
+
+FLASHMEM void SequencerOverlayPresenter::requestStepPresetRender() {
+    render_scheduler_.request(RENDER_STEP_PRESET | RENDER_STEP_PRESET_ACTIONS);
+}
+
+FLASHMEM void SequencerOverlayPresenter::requestStepPresetActionsRender() {
+    render_scheduler_.request(RENDER_STEP_PRESET_ACTIONS);
+}
+
+FLASHMEM void SequencerOverlayPresenter::drainRenderQueue(void* context, uint32_t flags) {
+    auto* self = static_cast<SequencerOverlayPresenter*>(context);
+    if (self) self->renderPending(flags);
+}
+
+FLASHMEM void SequencerOverlayPresenter::renderPending(uint32_t flags) {
+    if ((flags & RENDER_STEP_EDIT) != 0) renderStepEdit();
+    if ((flags & RENDER_STEP_EDIT_ACTIONS) != 0) renderStepEditActionStrip();
+    if ((flags & RENDER_STEP_PRESET) != 0) renderStepPresetPicker();
+    if ((flags & RENDER_STEP_PRESET_ACTIONS) != 0) renderStepPresetActionStrip();
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
@@ -69,34 +112,25 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
         state_refs_.sequencer,
         state_refs_.tracks,
     });
-    if (!data.visible) {
+    if (!data.visible || state_refs_.sequencer.stepPresetPicker.visible.get()) {
         step_edit_overlay_.render({.visible = false});
-        step_edit_action_strip_.render({.visible = false});
-        return;
+    } else {
+        step_edit_overlay_.render(data.overlayProps);
     }
-    if (state_refs_.sequencer.stepPresetPicker.visible.get()) {
-        step_edit_overlay_.render({.visible = false});
-        step_edit_action_strip_.render({.visible = false});
-        return;
-    }
-
-    step_edit_overlay_.render(data.overlayProps);
-    renderStepEditActionStrip();
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepEditActionStrip() {
     if (!state_refs_.sequencer.stepEdit.visible.get()) {
         step_edit_action_strip_.render({.visible = false});
-        return;
+    } else {
+        step_edit_action_strip_.render(
+            core::context::standalone::sequencer_overlay_presenter::buildStepEditActionStripProps({
+                state_refs_.sequencer,
+                state_refs_.tracks,
+                state_refs_.structureClipboard,
+            })
+        );
     }
-
-    step_edit_action_strip_.render(
-        core::context::standalone::sequencer_overlay_presenter::buildStepEditActionStripProps({
-            state_refs_.sequencer,
-            state_refs_.tracks,
-            state_refs_.structureClipboard,
-        })
-    );
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepPresetPicker() {
@@ -108,7 +142,6 @@ FLASHMEM void SequencerOverlayPresenter::renderStepPresetPicker() {
             });
     if (!data.visible) {
         step_preset_overlay_.render({.visible = false});
-        step_preset_action_strip_.render({.visible = false});
         return;
     }
 
@@ -122,7 +155,6 @@ FLASHMEM void SequencerOverlayPresenter::renderStepPresetPicker() {
         .visible = true,
         .dataRevision = data.dataRevision,
     });
-    renderStepPresetActionStrip();
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepPresetActionStrip() {

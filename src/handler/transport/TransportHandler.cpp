@@ -4,7 +4,7 @@
 
 namespace core::handler {
 
-TransportHandler::TransportHandler(StateRefs state,
+FLASHMEM TransportHandler::TransportHandler(StateRefs state,
                                    oc::api::ButtonAPI& buttons,
                                    TransportHandler::ViewScopes playToggleScopes)
     : status_bar_(state.statusBar)

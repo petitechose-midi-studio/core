@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+#include <config/PlatformCompat.hpp>
 #include "config/Timing.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
@@ -61,7 +62,7 @@ ContextActionStripVisualState macroVisual(
 
 }  // namespace
 
-MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source) {
+FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source) {
     MacroHeaderBarProps props;
     const bool focusingTrack =
         !source.trackNavigation.selection.active.get() &&
@@ -134,6 +135,7 @@ MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source)
     props.previewTrackAddSlot = previewTrackAddSlot;
     props.automationRecording = source.macroUi.automationRecording.active;
     props.automationRecordingMacro = source.macroUi.automationRecording.address.macro;
+    props.automationRecordingStatus = source.macroUi.automationRecordingStatus.get();
 
     props.pageOutputActivity.fill(0);
     if (source.statusBar.ccOutActive.get()) {
@@ -143,7 +145,7 @@ MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source)
     return props;
 }
 
-StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
+FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
     const MacroViewModelSource& source
 ) {
     if (!source.macroUi.clutchActive.get()) {
@@ -172,7 +174,7 @@ StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
     return props;
 }
 
-ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source) {
+FLASHMEM ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source) {
     using Visual = ContextActionStripVisualState;
     using Tone = ContextActionStripTone;
 
@@ -207,7 +209,7 @@ ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSourc
     return props;
 }
 
-ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSource& source) {
+FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSource& source) {
     ContextActionStripProps props;
     props.visible = true;
 
@@ -267,7 +269,7 @@ ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSou
     return props;
 }
 
-MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source) {
+FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source) {
     MacroViewFrameState frame;
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
@@ -294,7 +296,6 @@ MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source)
             source.macroUi.automationRecording.address.macro == i;
         frame.macros[i] = {
             .value = source.macros.slots[i].value.get(),
-            .channel = config.channel,
             .cc = config.cc,
             .automationActive = active && automation != nullptr && automation->automation.active,
             .automationRecording = active && recording,

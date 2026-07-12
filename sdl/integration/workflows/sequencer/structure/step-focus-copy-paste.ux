@@ -1,6 +1,7 @@
 # UX workflow: focused step copy/paste without selection.
 # Purpose: validates that a user can copy the focused step directly, move the
 # step cursor, then paste with a bottom-right hold without entering selection.
+# Expect: capture_changed:step_4_focus_paste_target=step_4_pasted
 
 0 scenario sequencer
 50 capture screen track_focus

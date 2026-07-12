@@ -27,6 +27,9 @@ inline SequencerInteractionContext makeSequencerInteractionContext(
     context.trackSelectionActive = trackUi.selection.active.get();
     context.stepSelectionActive = sequencer.structureUi.stepSelection.active.get();
     context.patternQuickControlsActive = sequencer.patternQuickControls.selecting.get();
+    context.historyShortcutHoldActive =
+        sequencer.patternQuickControls.physicalHoldActive.get() &&
+        !context.patternQuickControlsActive;
     context.propertySelectorActive = sequencer.stepPropertyInlineSelector.selecting.get();
     context.stepEditorVisible = sequencer.stepEdit.visible.get();
     if (context.stepEditorVisible) {

@@ -1,6 +1,7 @@
 # UX workflow: verify chord strum preview uses step-relative timing.
 # Purpose: Strum 0 should show simultaneous voices; increasing Strum should
 # spread voice markers across the step proportionally to the edited value.
+# Expect: capture_changed:strum_zero=strum_adjusted, capture_changed:velocity_curve_zero=velocity_curve_adjusted
 
 0 scenario sequencer
 50 capture screen sequencer_ready

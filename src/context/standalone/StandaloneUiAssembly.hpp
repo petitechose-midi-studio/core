@@ -1,11 +1,11 @@
 #pragma once
 
-#include <memory>
 #include "app/ExtmemAllocator.hpp"
 #include <lvgl.h>
 
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 #include <oc/type/Ids.hpp>
+#include <oc/ui/lvgl/RetainedSurfaceParkingLot.hpp>
 
 #include "ui/common/TrackNavigationStrip.hpp"
 
@@ -21,7 +21,7 @@ namespace core::ui {
 class ContextSoftkeyBar;
 class DeviceSettingsView;
 class MacroView;
-class PausableLvglTimer;
+class CoalescedLvglRenderScheduler;
 class ProjectView;
 class SequencerView;
 class TransportBar;
@@ -44,6 +44,8 @@ public:
     StandaloneUiAssembly(const StandaloneUiAssembly&) = delete;
     StandaloneUiAssembly& operator=(const StandaloneUiAssembly&) = delete;
 
+    bool initialize();
+    bool valid() const { return initialized_; }
     void show();
     lv_obj_t* mainZone() const;
     lv_obj_t* overlayRoot() const;
@@ -67,38 +69,52 @@ public:
     void deactivateDeviceSettingsView() const;
 
 private:
-    void createViewContainer();
-    void createGlobalTrackStrip();
-    void createViews();
-    void createBottomBar();
+    bool createViewContainer();
+    bool createGlobalTrackStrip();
+    bool createViews();
+    bool createBottomBar();
     void cacheViewScopes();
-    void bindGlobalTrackStrip();
+    bool bindGlobalTrackStrip();
     void applyOverlayExclusivity();
     void scheduleGlobalTrackStripRender(bool ready = false);
     void renderGlobalTrackStrip();
-    static void onGlobalTrackStripTimer(lv_timer_t* timer);
+    void requestGlobalTrackStripRender();
+    void requestGlobalTrackStripRenderReady();
+    static void drainGlobalTrackStripRender(void* context, uint32_t flags);
 
     core::state::CoreState& core_state_;
     oc::type::ScopeID macro_view_scope_ = 0;
     oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID project_view_scope_ = 0;
     oc::type::ScopeID device_settings_view_scope_ = 0;
-    oc::state::SignalWatcher global_track_strip_watcher_;
+    oc::state::StaticWatchGroup<2> global_track_context_watcher_;
+    oc::state::StaticWatchGroup<9> global_track_structure_watcher_;
+    oc::state::StaticWatchGroup<8> global_track_activity_low_watcher_;
+    oc::state::StaticWatchGroup<8> global_track_activity_high_watcher_;
+    oc::state::StaticWatchGroup<1> overlay_visibility_watcher_;
     bool overlay_exclusive_mode_ = false;
     core::app::ExtmemUniquePtr<ms::ui::ViewContainer> view_container_;
+    oc::ui::lvgl::RetainedSurfaceParkingLot retained_view_parking_{};
+    lv_obj_t* macro_view_parking_host_ = nullptr;
+    lv_obj_t* sequencer_view_parking_host_ = nullptr;
+    lv_obj_t* project_view_parking_host_ = nullptr;
+    lv_obj_t* device_settings_view_parking_host_ = nullptr;
     lv_obj_t* views_host_ = nullptr;
+    lv_obj_t* full_view_host_ = nullptr;
+    lv_obj_t* overlay_curtain_ = nullptr;
     lv_obj_t* global_track_strip_container_ = nullptr;
-    std::unique_ptr<core::ui::TrackNavigationStrip> global_track_strip_;
-    std::unique_ptr<core::ui::PausableLvglTimer> global_track_strip_timer_;
+    core::app::ExtmemUniquePtr<core::ui::TrackNavigationStrip> global_track_strip_;
+    core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
+        global_track_strip_scheduler_;
     core::ui::TrackNavigationStripProps global_track_strip_props_cache_{};
     bool global_track_strip_props_initialized_ = false;
-    bool global_track_strip_dirty_ = true;
     core::app::ExtmemUniquePtr<core::ui::MacroView> macro_view_;
     core::app::ExtmemUniquePtr<core::ui::SequencerView> sequencer_view_;
     core::app::ExtmemUniquePtr<core::ui::ProjectView> project_view_;
     core::app::ExtmemUniquePtr<core::ui::DeviceSettingsView> device_settings_view_;
     core::app::ExtmemUniquePtr<core::ui::TransportBar> transport_bar_;
     core::app::ExtmemUniquePtr<core::ui::ContextSoftkeyBar> context_softkey_bar_;
+    bool initialized_ = false;
 };
 
 }  // namespace core::context::standalone

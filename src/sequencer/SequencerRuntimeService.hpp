@@ -1,15 +1,13 @@
 #pragma once
 
 #include <array>
+#include <memory>
 
 #include <oc/api/MidiAPI.hpp>
 #include <oc/interface/IEventBus.hpp>
 
 #include "sequencer/MidiClockSyncService.hpp"
-#include "sequencer/RealtimeMidiQueue.hpp"
-#include "sequencer/SequencerInternalTimerLane.hpp"
-#include "sequencer/SequencerPlaybackService.hpp"
-#include "sequencer/SequencerRuntimePerfReporter.hpp"
+#include "sequencer/SequencerRuntimeGraphBank.hpp"
 #include "sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/MidiSyncState.hpp"
@@ -19,6 +17,8 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::sequencer {
+
+class SequencerRealtimeLane;
 
 /**
  * Standalone sequencer runtime orchestrator.
@@ -58,7 +58,9 @@ private:
     MidiClockSyncRuntimeConfig captureClockSyncRuntimeConfig_() const;
     bool updateClockDomainOwnership_(const MidiClockSyncRuntimeConfig& config, uint32_t nowMs);
     void publishPlaybackUiFromTimerPath_(uint32_t nowMs);
+    void stopPlayback_();
     void drainRealtimeMidiQueue_(uint32_t nowUs);
+    void drainRealtimeMidiQueueFully_(uint32_t nowUs);
 
     void subscribeToMidiEvents_();
     void unsubscribeFromMidiEvents_();
@@ -66,15 +68,16 @@ private:
     oc::interface::IEventBus& event_bus_;
     oc::api::MidiAPI& midi_;
     core::state::sequencer::SequencerState& sequencer_state_;
-    core::state::project::ProjectNavigationState& project_navigation_state_;
+    core::state::sequencer::SequencerTrackBankState& track_bank_state_;
     core::state::StatusBarState& status_bar_state_;
     core::state::MidiSyncState& midi_sync_state_;
     MidiClockSyncService midi_clock_sync_;
-    RealtimeMidiQueue midi_event_queue_{};
+    SequencerRuntimeGraphBank runtime_graph_bank_{};
     SequencerRuntimeSnapshotBank snapshot_bank_;
-    SequencerPlaybackService sequencer_playback_;
-    SequencerInternalTimerLane internal_timer_lane_;
-    SequencerRuntimePerfReporter perf_reporter_{};
+    // The service itself is PSRAM-backed because snapshots and graph ownership
+    // are large. The timer lane, queue, and playback bookkeeping stay on the
+    // internal heap through this indirection because they are touched at 1 kHz.
+    std::unique_ptr<SequencerRealtimeLane> realtime_lane_;
     std::array<oc::interface::SubscriptionID, 4> midi_subscription_ids_{};
 };
 

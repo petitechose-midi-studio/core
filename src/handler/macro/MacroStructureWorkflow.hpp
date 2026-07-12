@@ -1,7 +1,6 @@
 #pragma once
 
-#include <vector>
-
+#include <oc/state/FixedSubscriptionList.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "handler/macro/MacroStructureDomainServices.hpp"
@@ -84,7 +83,7 @@ private:
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::StructureClipboardState& structure_clipboard_;
     MacroStructureDomainServices services_;
-    std::vector<oc::state::Subscription> subscriptions_;
+    oc::state::FixedSubscriptionList<2> subscriptions_;
 };
 
 }  // namespace core::handler

@@ -185,6 +185,41 @@ void test_sandbox_rejects_escape_and_invalid_paths() {
     std::cout << "[PASS] test_sandbox_rejects_escape_and_invalid_paths\n";
 }
 
+void test_sequential_write_session_contract_is_enforced_by_product_service() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto service = makeService(filesystem);
+
+    const uint8_t payload[] = {1, 2, 3, 4};
+    assert(hasSizeErrorCode(
+        service.appendWrite(payload, sizeof(payload)),
+        oc::type::ErrorCode::INVALID_STATE
+    ));
+    assert(hasErrorCode(service.finishWrite(), oc::type::ErrorCode::INVALID_STATE));
+
+    assert(service.beginWrite("tmp/session.bin", sizeof(payload)));
+    assert(service.writeSessionActive());
+    assert(hasErrorCode(
+        service.beginWrite("tmp/other.bin", sizeof(payload)),
+        oc::type::ErrorCode::INVALID_STATE
+    ));
+    assert(service.appendWrite(payload, 2));
+    assert(service.appendWrite(payload + 2, 2));
+    assert(service.finishWrite());
+    assert(!service.writeSessionActive());
+
+    uint8_t loaded[sizeof(payload)] = {};
+    auto read = service.read("tmp/session.bin", 0, loaded, sizeof(loaded));
+    assert(read && read.value() == sizeof(payload));
+    assert(std::memcmp(loaded, payload, sizeof(payload)) == 0);
+
+    service.abortWrite();
+    assert(!service.writeSessionActive());
+
+    std::cout << "[PASS] test_sequential_write_session_contract_is_enforced_by_product_service\n";
+}
+
 }  // namespace
 
 int main() {
@@ -196,6 +231,7 @@ int main() {
     test_resolve_path_accepts_relative_and_product_rooted_paths();
     test_file_roundtrip_rename_and_recursive_remove();
     test_sandbox_rejects_escape_and_invalid_paths();
+    test_sequential_write_session_contract_is_enforced_by_product_service();
 
     resetTestRoot();
 

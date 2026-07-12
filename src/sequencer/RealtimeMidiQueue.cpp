@@ -1,14 +1,13 @@
 #include "sequencer/RealtimeMidiQueue.hpp"
 
-#include <algorithm>
-
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
 
 namespace core::sequencer {
 
 bool RealtimeMidiQueue::push(const RealtimeMidiEvent& event) {
     if (count_ >= events_.size() && !makeRoomFor_(event)) {
-        counters_.overflow += 1;
+        OC_PERF_RECORD("midi.queue.reject", 0, static_cast<uint32_t>(event.type), 0);
         return false;
     }
 
@@ -20,18 +19,15 @@ bool RealtimeMidiQueue::push(const RealtimeMidiEvent& event) {
 
     events_[insertIndex] = event;
     count_ += 1;
-    counters_.pushed += 1;
-    counters_.highWater = std::max<uint32_t>(counters_.highWater, static_cast<uint32_t>(count_));
     return true;
 }
 
-uint32_t RealtimeMidiQueue::cancelPendingNoteOns(uint8_t trackIndex) {
+uint32_t RealtimeMidiQueue::cancelPendingEvents(uint8_t trackIndex) {
     uint32_t removed = 0;
     size_t index = 0;
 
     while (index < count_) {
-        if (events_[index].type == RealtimeMidiEventType::NoteOn &&
-            events_[index].trackIndex == trackIndex) {
+        if (events_[index].trackIndex == trackIndex) {
             erase_(index);
             removed += 1;
             continue;
@@ -40,7 +36,9 @@ uint32_t RealtimeMidiQueue::cancelPendingNoteOns(uint8_t trackIndex) {
         index += 1;
     }
 
-    counters_.cancelledNoteOns += removed;
+    if (removed > 0) {
+        OC_PERF_RECORD("midi.queue.cancel-track", 0, removed, trackIndex);
+    }
     return removed;
 }
 
@@ -48,14 +46,30 @@ void RealtimeMidiQueue::clear() {
     count_ = 0;
 }
 
-RealtimeMidiQueue::Counters RealtimeMidiQueue::takeCounters() {
-    const Counters snapshot = counters_;
-    counters_ = {};
-    counters_.highWater = static_cast<uint32_t>(count_);
-    return snapshot;
+void RealtimeMidiQueue::attachTrackObserver(
+    uint8_t trackIndex,
+    RealtimeMidiQueueDispatchObserver& observer
+) {
+    if (trackIndex >= track_observers_.size()) return;
+    track_observers_[trackIndex] = &observer;
+}
+
+void RealtimeMidiQueue::detachTrackObserver(
+    uint8_t trackIndex,
+    RealtimeMidiQueueDispatchObserver& observer
+) {
+    if (trackIndex >= track_observers_.size() ||
+        track_observers_[trackIndex] != &observer) {
+        return;
+    }
+    track_observers_[trackIndex] = nullptr;
 }
 
 void RealtimeMidiQueue::drainDue(oc::api::MidiAPI& midi, uint32_t nowUs, uint32_t budgetUs) {
+    OC_PERF_SCOPE(perfDrain, "midi.queue.drain");
+#if OC_ENABLE_STATS
+    const uint32_t queuedBefore = static_cast<uint32_t>(count_);
+#endif
     const uint32_t startUs = nowUs;
     uint32_t currentUs = nowUs;
 
@@ -65,24 +79,23 @@ void RealtimeMidiQueue::drainDue(oc::api::MidiAPI& midi, uint32_t nowUs, uint32_
 
         if (event.type == RealtimeMidiEventType::NoteOn &&
             deltaUs > static_cast<int32_t>(DROP_THRESHOLD_US)) {
-            counters_.dropped += 1;
+            OC_PERF_RECORD("midi.queue.drop-late-note-on", 0, static_cast<uint32_t>(deltaUs), 0);
             erase_(0);
         } else {
             if (deltaUs > static_cast<int32_t>(LATE_SEND_THRESHOLD_US)) {
-                counters_.lateSent += 1;
+                OC_PERF_RECORD("midi.queue.late-send", 0, static_cast<uint32_t>(deltaUs), 0);
             }
             send_(midi, event);
-            counters_.sent += 1;
             erase_(0);
         }
 
         currentUs = oc::time::isMicrosConfigured() ? oc::time::micros32() : nowUs;
         const uint32_t drainUs = currentUs - startUs;
-        counters_.maxDrainUs = std::max(counters_.maxDrainUs, drainUs);
         if (drainUs >= budgetUs) {
             break;
         }
     }
+    OC_PERF_UNITS(perfDrain, queuedBefore, static_cast<uint32_t>(count_));
 }
 
 bool RealtimeMidiQueue::due_(const RealtimeMidiEvent& event, uint32_t nowUs) {
@@ -113,7 +126,7 @@ bool RealtimeMidiQueue::makeRoomFor_(const RealtimeMidiEvent& event) {
         const size_t index = i - 1;
         if (events_[index].type == RealtimeMidiEventType::NoteOn) {
             erase_(index);
-            counters_.dropped += 1;
+            OC_PERF_RECORD("midi.queue.displace-note-on", 0, 1, 0);
             return true;
         }
     }
@@ -135,10 +148,16 @@ void RealtimeMidiQueue::erase_(size_t index) {
 void RealtimeMidiQueue::send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& event) {
     if (event.type == RealtimeMidiEventType::NoteOn) {
         midi.sendNoteOn(event.channel, event.note, event.velocity);
-        return;
+    } else {
+        midi.sendNoteOff(event.channel, event.note, event.velocity);
     }
 
-    midi.sendNoteOff(event.channel, event.note, event.velocity);
+    if (event.trackIndex < track_observers_.size()) {
+        auto* observer = track_observers_[event.trackIndex];
+        if (observer != nullptr) {
+            observer->onRealtimeMidiEventDispatched(event);
+        }
+    }
 }
 
 }  // namespace core::sequencer

@@ -6,9 +6,13 @@
 
 #include <config/PlatformCompat.hpp>
 #include "context/standalone/MacroFeatureModule.hpp"
+#include "context/standalone/OverlayPresentationRegistry.hpp"
 #include "context/standalone/ProjectFeatureModule.hpp"
 #include "context/standalone/SequencerFeatureModule.hpp"
 #include "context/standalone/SettingsFeatureModule.hpp"
+#if OC_ENABLE_STATS
+#include "diagnostics/MemoryFootprintReporter.hpp"
+#endif
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
@@ -29,6 +33,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     core::state::CoreState& state,
     core::persistence::ProductFileService& productFiles,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+    OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     oc::api::MidiAPI& midi,
@@ -46,7 +51,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
 #endif
 ) {
-    OC_LOG_DEBUG("StandaloneFeatureAssembly: macro_feature");
     macro_feature_ = core::app::makeExtmemUnique<core::context::standalone::MacroFeatureModule>(
         core::context::standalone::MacroFeatureModule::StateRefs{
             state.activeView,
@@ -65,6 +69,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         core::handler::MacroStructureDomainServices::fromCoreState(state),
         overlays,
+        overlayPresentations,
         encoders,
         buttons,
         midi,
@@ -75,7 +80,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         uxRegistry
 #endif
     );
-    OC_LOG_DEBUG("StandaloneFeatureAssembly: sequencer_feature");
+    if (!macro_feature_ || !macro_feature_->valid()) return;
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-feature-macro");
+#endif
     sequencer_feature_ = core::app::makeExtmemUnique<core::context::standalone::SequencerFeatureModule>(
         core::context::standalone::SequencerFeatureModule::StateRefs{
             state.overlays,
@@ -92,6 +100,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::handler::SharedTrackDomainServices::fromCoreState(state),
         core::handler::SequencerStepPresetDomainServices::fromCoreState(state, productFiles),
         overlays,
+        overlayPresentations,
         encoders,
         buttons,
         overlayRoot,
@@ -101,7 +110,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         uxRegistry
 #endif
     );
-    OC_LOG_DEBUG("StandaloneFeatureAssembly: project_feature");
+    if (!sequencer_feature_ || !sequencer_feature_->valid()) return;
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-feature-sequencer");
+#endif
     project_feature_ =
         core::app::makeExtmemUnique<core::context::standalone::ProjectFeatureModule>(
             core::context::standalone::ProjectFeatureModule::StateRefs{
@@ -127,7 +139,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             buttons,
             projectViewElement
         );
-    OC_LOG_DEBUG("StandaloneFeatureAssembly: settings_feature");
+    if (!project_feature_ || !project_feature_->valid()) return;
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-feature-project");
+#endif
     settings_feature_ = core::app::makeExtmemUnique<core::context::standalone::SettingsFeatureModule>(
         core::context::standalone::SettingsFeatureModule::StateRefs{
             state.deviceSettings,
@@ -155,6 +170,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         },
         core::handler::DataManagerDomainServices::fromCoreState(state),
         overlays,
+        overlayPresentations,
         encoders,
         buttons,
         overlayRoot,
@@ -170,24 +186,28 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         uxRegistry
 #endif
     );
-    OC_LOG_DEBUG("StandaloneFeatureAssembly: ready");
+    if (!settings_feature_ || !settings_feature_->valid()) return;
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-feature-settings");
+#endif
+    valid_ = true;
 }
 
 FLASHMEM StandaloneFeatureAssembly::~StandaloneFeatureAssembly() = default;
 
-FLASHMEM void StandaloneFeatureAssembly::onMacroCC(uint8_t channel, uint8_t cc, uint8_t value) const {
+void StandaloneFeatureAssembly::onMacroCC(uint8_t channel, uint8_t cc, uint8_t value) const {
     if (macro_feature_) {
         macro_feature_->onCC(channel, cc, value);
     }
 }
 
-FLASHMEM void StandaloneFeatureAssembly::onMacroNoteIn() const {
+void StandaloneFeatureAssembly::onMacroNoteIn() const {
     if (macro_feature_) {
         macro_feature_->onNoteIn();
     }
 }
 
-FLASHMEM void StandaloneFeatureAssembly::update(uint32_t nowMs) const {
+void StandaloneFeatureAssembly::update(uint32_t nowMs) const {
     if (macro_feature_) {
         macro_feature_->update(nowMs);
     }

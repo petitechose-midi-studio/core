@@ -14,8 +14,10 @@
 #include "../../src/persistence/SequencerPersistenceEnvelope.hpp"
 #include "../../src/persistence/SequencerPersistence.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/MemoryStorage.hpp"
+#include "../support/ProjectSequencerEnvelopeTestSupport.hpp"
 
 namespace {
 using test_support::MemoryStorage;
@@ -26,6 +28,9 @@ using oc::note::sequencer::StepBitMask128;
 using oc::note::sequencer::StepSequencerScaleConstraintMode;
 using oc::note::sequencer::StepSequencerScaleSettings;
 using oc::note::sequencer::StepSequencerScaleType;
+using oc::note::sequencer::StepSequencerGraph;
+using oc::note::sequencer::StepSequencerGraphLimits;
+using oc::note::sequencer::StepSequencerSequenceKind;
 namespace binary = core::persistence::binary_codec;
 
 bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSettings& rhs) {
@@ -97,7 +102,7 @@ void configurePattern(core::state::sequencer::SequencerState& sequencer,
 
 void prepareTrackBank(core::state::sequencer::SequencerTrackBankState& trackBank,
                       const core::state::sequencer::SequencerState& active) {
-    core::state::sequencer::initializeTrackBankFromActive(trackBank, active);
+    assert(core::state::sequencer::initializeTrackBankFromActive(trackBank, active));
 }
 
 void assertPatternEquals(const core::state::sequencer::SequencerState& sequencer,
@@ -202,6 +207,34 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern) {
     const auto stateCycleNode = static_cast<uint16_t>(stateCycleSet->firstStateNode + 2);
     assert(setNodeNoteOffset(pattern, stateCycleNode, 3));
     assert(setNodeLocalVariationRange(pattern, stateCycleNode, StepProperty::NUDGE, 6));
+}
+
+StepSequencerGraph makeMaxDensityGraph() {
+    StepSequencerGraph graph;
+    graph.reset();
+    graph.enabled = true;
+    graph.rootSequenceId = 0;
+    graph.stepNodeCount = StepSequencerGraphLimits::MAX_STEP_NODES;
+    graph.sequenceCount = StepSequencerGraphLimits::MAX_SEQUENCES;
+    graph.cycleSetCount = StepSequencerGraphLimits::MAX_CYCLE_SETS;
+
+    graph.sequences[0].kind = StepSequencerSequenceKind::RootPattern;
+    graph.sequences[0].firstStepNode = 0;
+    graph.sequences[0].length = core::state::sequencer::SequencerPatternState::MAX_STEPS;
+    for (uint16_t i = 1; i < graph.sequenceCount; ++i) {
+        graph.sequences[i].kind = StepSequencerSequenceKind::MicroSequence;
+        graph.sequences[i].firstStepNode = 0;
+        graph.sequences[i].length = 1;
+    }
+    for (uint16_t i = 0; i < graph.cycleSetCount; ++i) {
+        graph.cycleSets[i].firstStateNode = 0;
+        graph.cycleSets[i].length = 1;
+    }
+    for (uint16_t i = 0; i < graph.stepNodeCount; ++i) {
+        graph.stepNodes[i].flags = STEP_NODE_NOTE_OFFSET;
+        graph.stepNodes[i].noteOffset = static_cast<int8_t>(i % 12U);
+    }
+    return graph;
 }
 
 void assertGraphContent(const core::state::sequencer::SequencerPatternState& pattern) {
@@ -489,11 +522,11 @@ void test_pattern_envelope_rejects_incompatible_header() {
     core::state::sequencer::SequencerState source;
     configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
 
-    core::persistence::sequencer_codec::EnvelopeBuffer buffer{};
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
     const auto encoded = core::persistence::sequencer_codec::fillPatternEnvelope(
         source.pattern,
         buffer.bytes.data(),
-        core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        core::persistence::sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE
     );
     assert(encoded.ok);
 
@@ -525,15 +558,15 @@ void test_pattern_envelope_ignores_unknown_future_section() {
     configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
 
-    core::persistence::sequencer_codec::EnvelopeBuffer buffer{};
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
     const auto encoded = core::persistence::sequencer_codec::fillPatternEnvelope(
         source.pattern,
         buffer.bytes.data(),
-        core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        core::persistence::sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE
     );
     assert(encoded.ok);
     assert(static_cast<uint32_t>(encoded.size) + kEnvelopeSectionHeaderSize <=
-           core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE);
+           core::persistence::sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE);
 
     EnvelopeSectionHeaderRaw futureSection{};
     futureSection.id = kEnvelopeSectionUnknownFuture;
@@ -574,11 +607,11 @@ void test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern(
     configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
 
-    core::persistence::sequencer_codec::EnvelopeBuffer buffer{};
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
     const auto encoded = core::persistence::sequencer_codec::fillPatternEnvelope(
         source.pattern,
         buffer.bytes.data(),
-        core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        core::persistence::sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE
     );
     assert(encoded.ok);
 
@@ -613,11 +646,11 @@ void test_pattern_envelope_sanitizes_broken_graph_links() {
     configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
 
-    core::persistence::sequencer_codec::EnvelopeBuffer buffer{};
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
     const auto encoded = core::persistence::sequencer_codec::fillPatternEnvelope(
         source.pattern,
         buffer.bytes.data(),
-        core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        core::persistence::sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE
     );
     assert(encoded.ok);
 
@@ -803,12 +836,19 @@ void test_project_sequencer_envelope_roundtrips_track_masks() {
     assert(sourceTrackBank.setTrackMuted(1, true));
     assert(sourceTrackBank.setTrackMuted(3, true));
 
-    std::vector<uint8_t> buffer(32768);
-    const auto encoded = core::persistence::sequencer_codec::fillProjectSequencerEnvelope(
+    std::vector<uint8_t> buffer(
+        core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+    );
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot snapshot;
+    assert(core::state::sequencer::captureHistorySnapshot(
         sourceTrackBank,
         source,
+        snapshot
+    ));
+    const auto encoded = test_support::encodeProjectSequencerSnapshot(
+        snapshot,
         buffer.data(),
-        static_cast<uint16_t>(buffer.size())
+        static_cast<uint32_t>(buffer.size())
     );
     assert(encoded.ok);
 
@@ -828,6 +868,66 @@ void test_project_sequencer_envelope_roundtrips_track_masks() {
     assert(loadedTrackBank.activeTrackIndex() == 3);
 
     std::cout << "[PASS] test_project_sequencer_envelope_roundtrips_track_masks\n";
+}
+
+void test_set_library_roundtrips_max_density_graphs() {
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
+    patternStorage.init();
+    setStorage.init();
+
+    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
+    assert(persistence.init());
+
+    core::state::sequencer::SequencerState source;
+    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
+    source.reset();
+    sourceTrackBank.reset();
+    assert(core::state::sequencer::initializeTrackBankFromActive(sourceTrackBank, source));
+
+    const auto graph = makeMaxDensityGraph();
+    const uint8_t activeTrack = sourceTrackBank.activeTrackIndex();
+    for (uint8_t i = 0; i < sourceTrackBank.TRACK_COUNT; ++i) {
+        auto& target = (i == activeTrack) ? source.pattern : sourceTrackBank.track(i);
+        assert(core::state::sequencer::copyGraph(target, &graph, i + 1U));
+    }
+
+    std::vector<uint8_t> envelope(
+        core::persistence::sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE
+    );
+    const auto encoded = core::persistence::sequencer_codec::fillSetEnvelope(
+        sourceTrackBank,
+        source,
+        envelope.data(),
+        envelope.size()
+    );
+    assert(encoded.ok);
+    assert(encoded.size == core::persistence::sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE);
+    assert(encoded.size > 65535U);
+
+    assert(persistence.saveSetSlot(0, sourceTrackBank, source));
+
+    core::state::sequencer::SequencerState loaded;
+    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
+    loaded.reset();
+    loadedTrackBank.reset();
+    assert(persistence.loadSetSlot(0, loadedTrackBank, loaded) ==
+           core::persistence::SlotLoadStatus::OK);
+
+    for (uint8_t i = 0; i < loadedTrackBank.TRACK_COUNT; ++i) {
+        const auto& pattern = (i == activeTrack) ? loaded.pattern : loadedTrackBank.track(i);
+        const auto* restored = core::state::sequencer::graphView(pattern);
+        assert(restored != nullptr);
+        assert(restored->stepNodeCount == StepSequencerGraphLimits::MAX_STEP_NODES);
+        assert(restored->sequenceCount == StepSequencerGraphLimits::MAX_SEQUENCES);
+        assert(restored->cycleSetCount == StepSequencerGraphLimits::MAX_CYCLE_SETS);
+    }
+
+    std::cout << "[PASS] test_set_library_roundtrips_max_density_graphs\n";
 }
 
 void test_library_bounds() {
@@ -966,6 +1066,7 @@ int main() {
     test_set_library_graph_roundtrip_for_active_and_bank_tracks();
     test_set_library_roundtrips_track_mute_mask();
     test_project_sequencer_envelope_roundtrips_track_masks();
+    test_set_library_roundtrips_max_density_graphs();
     test_library_bounds();
     test_scale_settings_roundtrip_across_pattern_and_set();
     test_write_status_reports_commit_failure_and_out_of_range();

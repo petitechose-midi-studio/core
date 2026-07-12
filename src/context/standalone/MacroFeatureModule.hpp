@@ -38,6 +38,7 @@ class VirtualListSelectorOverlay;
 namespace core::context::standalone {
 
 class MacroOverlayPresenter;
+class OverlayPresentationRegistry;
 
 }  // namespace core::context::standalone
 
@@ -80,6 +81,7 @@ public:
                        core::handler::MacroPerformanceDomainServices performanceServices,
                        core::handler::MacroStructureDomainServices structureServices,
                        oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                       OverlayPresentationRegistry& overlayPresentations,
                        oc::api::EncoderAPI& encoders,
                        oc::api::ButtonAPI& buttons,
                        oc::api::MidiAPI& midi,
@@ -95,6 +97,7 @@ public:
     MacroFeatureModule(const MacroFeatureModule&) = delete;
     MacroFeatureModule& operator=(const MacroFeatureModule&) = delete;
 
+    [[nodiscard]] bool valid() const { return valid_; }
     void onCC(uint8_t channel, uint8_t cc, uint8_t value);
     void onNoteIn();
     void update(uint32_t nowMs);
@@ -117,9 +120,10 @@ private:
     std::unique_ptr<core::handler::MacroValueHandler> value_handler_;
     std::unique_ptr<core::handler::MacroMidiHandler> midi_handler_;
     std::unique_ptr<core::handler::MacroAutomationPlaybackService> automation_playback_;
-    std::unique_ptr<core::handler::MacroPerformanceHandler> performance_handler_;
-    std::unique_ptr<core::handler::MacroEditHandler> edit_handler_;
-    std::unique_ptr<core::handler::MacroAutomationHandler> automation_handler_;
+    core::app::ExtmemUniquePtr<core::handler::MacroPerformanceHandler> performance_handler_;
+    core::app::ExtmemUniquePtr<core::handler::MacroEditHandler> edit_handler_;
+    core::app::ExtmemUniquePtr<core::handler::MacroAutomationHandler> automation_handler_;
+    bool valid_ = false;
 };
 
 }  // namespace core::context::standalone

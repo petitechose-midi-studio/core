@@ -130,9 +130,11 @@ FLASHMEM SequencerEncoderSyncCoordinator::SequencerEncoderSyncCoordinator(
     , track_bank_(state.trackBank)
     , encoders_(encoders) {}
 
-FLASHMEM void SequencerEncoderSyncCoordinator::bind() {
-    watcher_.watchAll(
-        [this]() { syncPositions(); },
+FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
+    watcher_.bind<&SequencerEncoderSyncCoordinator::syncPositions>(
+        *this, 0, "Sequencer.encoderSync"
+    );
+    return watcher_.watchAll(
         active_view_,
         navigation_focus_,
         sequencer_.page,

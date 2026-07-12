@@ -1,6 +1,7 @@
 # UX workflow: open sequencer quick controls, change selection/value, and apply.
 # Purpose: validates held-button modal routing, quick-control selection, OPT
 # editing, and release-to-apply semantics.
+# Expect: capture_changed:quick_controls_open=quick_controls_offset, capture_changed:quick_controls_offset=quick_controls_adjusted
 
 0 scenario sequencer
 50 capture screen sequencer_ready

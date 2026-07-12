@@ -10,6 +10,12 @@
 
 namespace core::sequencer {
 
+class RealtimeMidiQueueDispatchObserver {
+public:
+    virtual ~RealtimeMidiQueueDispatchObserver() = default;
+    virtual void onRealtimeMidiEventDispatched(const RealtimeMidiEvent& event) = 0;
+};
+
 /**
  * Bounded, deadline-ordered queue for sequencer note events.
  *
@@ -25,25 +31,13 @@ public:
     static constexpr uint32_t DROP_THRESHOLD_US = 20000;
     static constexpr uint32_t MAX_DRAIN_BUDGET_US = 500;
 
-    struct Counters {
-        uint32_t pushed = 0;
-        uint32_t sent = 0;
-        uint32_t lateSent = 0;
-        uint32_t dropped = 0;
-        uint32_t cancelledNoteOns = 0;
-        uint32_t overflow = 0;
-        uint32_t highWater = 0;
-        uint32_t maxDrainUs = 0;
-    };
-
     bool push(const RealtimeMidiEvent& event);
-    uint32_t cancelPendingNoteOns(uint8_t trackIndex);
+    uint32_t cancelPendingEvents(uint8_t trackIndex);
     void clear();
+    void attachTrackObserver(uint8_t trackIndex, RealtimeMidiQueueDispatchObserver& observer);
+    void detachTrackObserver(uint8_t trackIndex, RealtimeMidiQueueDispatchObserver& observer);
     size_t size() const { return count_; }
     size_t capacity() const { return events_.size(); }
-
-    Counters counters() const { return counters_; }
-    Counters takeCounters();
 
     void drainDue(oc::api::MidiAPI& midi,
                   uint32_t nowUs,
@@ -59,8 +53,8 @@ private:
     void send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& event);
 
     std::array<RealtimeMidiEvent, MAX_QUEUE_DEPTH> events_{};
+    std::array<RealtimeMidiQueueDispatchObserver*, 16> track_observers_{};
     size_t count_ = 0;
-    Counters counters_{};
 };
 
 }  // namespace core::sequencer

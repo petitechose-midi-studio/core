@@ -1,6 +1,7 @@
 # UX workflow: Track bottom-left mute/remove actions.
 # Purpose: validates Track focus and Track selection share the same model:
 # tap toggles mute without deleting content; hold removes selected tracks.
+# Expect: capture_changed:track_2_created=track_2_muted_by_tap, capture_match:track_2_created=track_2_unmuted_by_tap, capture_changed:track_selection_unmuted_by_tap=track_selection_remove_hold_applied
 
 0 scenario sequencer
 50 capture screen track_focus_initial

@@ -53,6 +53,15 @@ void test_project_state_defaults_are_stable() {
     std::cout << "[PASS] test_project_state_defaults_are_stable\n";
 }
 
+void test_snapshot_macro_tracks_keep_track_specific_defaults() {
+    project::ProjectSnapshot snapshot;
+    for (uint8_t i = 0; i < snapshot.macroTracks.size(); ++i) {
+        assert(snapshot.macroTracks[i].channel == i);
+    }
+
+    std::cout << "[PASS] test_snapshot_macro_tracks_keep_track_specific_defaults\n";
+}
+
 void configureProjectSession(core::state::CoreState& state) {
     std::strncpy(
         state.project.metadata.id.data(),
@@ -173,6 +182,55 @@ void test_snapshot_project_routing_wins_on_apply() {
     std::cout << "[PASS] test_snapshot_project_routing_wins_on_apply\n";
 }
 
+void test_incremental_capture_completes_the_same_snapshot_contract() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProjectSession(state);
+
+    project::ProjectSnapshot snapshot;
+    project::ProjectSnapshotCapture capture;
+    assert(capture.begin(state, snapshot));
+
+    for (uint8_t phase = 0; phase < 3; ++phase) {
+        const auto progress = capture.advance();
+        assert(progress.status == project::ProjectSnapshotCapture::Status::IN_PROGRESS);
+        assert(progress.modifiedCounter == 42);
+        assert(capture.active());
+    }
+
+    const auto complete = capture.advance();
+    assert(complete.status == project::ProjectSnapshotCapture::Status::COMPLETE);
+    assert(complete.modifiedCounter == 42);
+    assert(!capture.active());
+    assert(snapshot.project.metadata.modifiedCounter == 42);
+    assert(snapshot.macroTracks[1].pages[0].cc[0] == 74);
+    assert(snapshot.sequencer.flat.tracks[1].note[0] == 66);
+
+    std::cout << "[PASS] test_incremental_capture_completes_the_same_snapshot_contract\n";
+}
+
+void test_incremental_capture_rejects_a_mixed_revision() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProjectSession(state);
+
+    project::ProjectSnapshot snapshot;
+    project::ProjectSnapshotCapture capture;
+    assert(capture.begin(state, snapshot));
+    assert(capture.advance().status ==
+           project::ProjectSnapshotCapture::Status::IN_PROGRESS);
+
+    state.sequencer.setStepDataAt(0, 77, 111, 88);
+    state.markProjectMutated();
+
+    const auto stale = capture.advance();
+    assert(stale.status == project::ProjectSnapshotCapture::Status::STALE);
+    assert(stale.modifiedCounter == 42);
+    assert(!capture.active());
+
+    std::cout << "[PASS] test_incremental_capture_rejects_a_mixed_revision\n";
+}
+
 }  // namespace
 
 int main() {
@@ -181,8 +239,11 @@ int main() {
     std::cout << "==============================================\n\n";
 
     test_project_state_defaults_are_stable();
+    test_snapshot_macro_tracks_keep_track_specific_defaults();
     test_snapshot_capture_apply_restores_project_session();
     test_snapshot_project_routing_wins_on_apply();
+    test_incremental_capture_completes_the_same_snapshot_contract();
+    test_incremental_capture_rejects_a_mixed_revision();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

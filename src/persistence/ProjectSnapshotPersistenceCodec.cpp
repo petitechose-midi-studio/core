@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/MacroTrackBankPersistenceCodec.hpp"
@@ -13,6 +14,28 @@
 #include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::persistence::project_snapshot_codec {
+
+struct ProjectSnapshotCodecWorkspace::Storage {
+    std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE> macro;
+    std::array<uint8_t, PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE> macroAutomation;
+    sequencer_codec::EnvelopeBuffer sequencerEnvelope;
+};
+
+ProjectSnapshotCodecWorkspace::ProjectSnapshotCodecWorkspace() = default;
+ProjectSnapshotCodecWorkspace::~ProjectSnapshotCodecWorkspace() = default;
+ProjectSnapshotCodecWorkspace::ProjectSnapshotCodecWorkspace(
+    ProjectSnapshotCodecWorkspace&&
+) noexcept = default;
+ProjectSnapshotCodecWorkspace& ProjectSnapshotCodecWorkspace::operator=(
+    ProjectSnapshotCodecWorkspace&&
+) noexcept = default;
+
+FLASHMEM bool ProjectSnapshotCodecWorkspace::prepare() {
+    if (!storage_) {
+        storage_ = core::app::makeExtmemUniqueForOverwrite<Storage>();
+    }
+    return static_cast<bool>(storage_);
+}
 
 namespace {
 
@@ -26,6 +49,14 @@ namespace macro = core::state::macro;
 FLASHMEM bool validateMacroAutomationBank(
     const core::state::macro::MacroAutomationBankState& bank
 );
+
+FLASHMEM void resetMacroTracks(core::state::project::ProjectSnapshot& target) {
+    for (uint8_t i = 0; i < target.macroTracks.size(); ++i) {
+        target.macroTracks[i].initDefaults(i);
+    }
+    target.sharedTrackEnabledMask = macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
+    target.sharedTrackActive = 0;
+}
 
 FLASHMEM void addReport(project_file::LoadReport* report,
                         project_file::LoadSeverity severity,
@@ -57,44 +88,11 @@ FLASHMEM const project_file::DecodedChunkView* findChunk(
     return nullptr;
 }
 
-FLASHMEM bool sequencerChunkVersionSupported(const project_file::DecodedChunkView& chunk,
-                                             project_file::LoadReport* report) {
+FLASHMEM bool chunkVersionSupported(const project_file::DecodedChunkView& chunk,
+                                    uint8_t expectedMinor,
+                                    project_file::LoadReport* report) {
     if (chunk.versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
-        chunk.versionMinor == PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR) {
-        return true;
-    }
-
-    addReport(report,
-              project_file::LoadSeverity::WARNING,
-              project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
-              chunk.id,
-              chunk.versionMajor,
-              chunk.versionMinor);
-    return false;
-}
-
-FLASHMEM bool macroStateChunkVersionSupported(const project_file::DecodedChunkView& chunk,
-                                              project_file::LoadReport* report) {
-    if (chunk.versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
-        chunk.versionMinor == PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR) {
-        return true;
-    }
-
-    addReport(report,
-              project_file::LoadSeverity::WARNING,
-              project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
-              chunk.id,
-              chunk.versionMajor,
-              chunk.versionMinor);
-    return false;
-}
-
-FLASHMEM bool macroAutomationChunkVersionSupported(
-    const project_file::DecodedChunkView& chunk,
-    project_file::LoadReport* report
-) {
-    if (chunk.versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
-        chunk.versionMinor == PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR) {
+        chunk.versionMinor == expectedMinor) {
         return true;
     }
 
@@ -105,7 +103,7 @@ FLASHMEM bool macroAutomationChunkVersionSupported(
               chunk.versionMajor,
               chunk.versionMinor,
               PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-              PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
+              expectedMinor);
     return false;
 }
 
@@ -162,9 +160,11 @@ FLASHMEM bool readMacroAutomationCurveRef(binary::Reader& reader,
     }
     (void)reserved0;
     (void)reserved1;
-    (void)interpolation;
+    if (interpolation != static_cast<uint8_t>(macro::MacroAutomationInterpolation::LINEAR)) {
+        return false;
+    }
     curve.active = active != 0;
-    curve.interpolation = macro::MacroAutomationInterpolation::LINEAR;
+    curve.interpolation = static_cast<macro::MacroAutomationInterpolation>(interpolation);
     return true;
 }
 
@@ -240,7 +240,7 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
         reportMissingOptional(report, project_file::ChunkId::MACRO_STATE);
         return true;
     }
-    if (!macroStateChunkVersionSupported(*chunk, report)) {
+    if (!chunkVersionSupported(*chunk, PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR, report)) {
         reportDefaulted(report, project_file::ChunkId::MACRO_STATE);
         return false;
     }
@@ -255,13 +255,12 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
         return false;
     }
 
-    std::array<macro::MacroTrackData, macro::TRACK_COUNT> tracks{};
     uint16_t enabledTrackMask = macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
     uint8_t activeTrack = 0;
-    if (!macro_track_codec::decodeTrackBankPayload(
+    if (!macro_track_codec::decodeTrackBankPayloadInto(
             chunk->data,
             chunk->size,
-            tracks,
+            target.macroTracks,
             enabledTrackMask,
             activeTrack
         )) {
@@ -272,12 +271,12 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
                   chunk->versionMajor,
                   chunk->versionMinor);
         reportDefaulted(report, project_file::ChunkId::MACRO_STATE);
+        resetMacroTracks(target);
         return false;
     }
 
     target.sharedTrackActive = activeTrack;
     target.sharedTrackEnabledMask = enabledTrackMask;
-    target.macroTracks = tracks;
     return true;
 }
 
@@ -473,7 +472,7 @@ FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chu
         target.macroAutomation->clear();
         return true;
     }
-    if (!macroAutomationChunkVersionSupported(*chunk, report)) {
+    if (!chunkVersionSupported(*chunk, PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR, report)) {
         reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
         target.macroAutomation->clear();
         return false;
@@ -496,24 +495,33 @@ FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chu
 FLASHMEM bool buildSequencerEnvelope(
     const core::state::project::ProjectSnapshot& snapshot,
     sequencer_codec::EnvelopeBuffer& out,
-    uint16_t& outSize
+    uint32_t& outSize
 ) {
-    auto bank = core::app::makeExtmemUnique<core::state::sequencer::SequencerTrackBankState>();
-    auto active = core::app::makeExtmemUnique<core::state::sequencer::SequencerState>();
-    if (!bank || !active) return false;
+    OC_PERF_SCOPE(perfEnvelope, "persistence.project-codec.sequencer");
 
-    if (!core::state::sequencer::applyHistorySnapshot(*bank, *active, snapshot.sequencer)) {
-        return false;
+    sequencer_codec::ProjectSequencerSnapshotEncodeSource source{};
+    source.flat = &snapshot.sequencer.flat;
+    source.focusedStep = snapshot.sequencer.focusedStep;
+    source.activeStepProperty = snapshot.sequencer.activeStepProperty;
+    const uint8_t activeTrack =
+        core::state::sequencer::SequencerTrackBankState::sanitizeActiveTrack(
+            snapshot.sequencer.flat.enabledMask,
+            snapshot.sequencer.flat.activeTrack
+        );
+    for (uint8_t i = 0; i < source.graphs.size(); ++i) {
+        source.graphs[i] = (i == activeTrack)
+            ? snapshot.sequencer.editorGraph.get()
+            : snapshot.sequencer.bankGraphs[i].get();
     }
 
     const auto encoded = sequencer_codec::fillProjectSequencerEnvelope(
-        *bank,
-        *active,
+        source,
         out.bytes.data(),
-        static_cast<uint16_t>(out.bytes.size())
+        static_cast<uint32_t>(out.bytes.size())
     );
     if (!encoded.ok) return false;
     outSize = encoded.size;
+    OC_PERF_UNITS(perfEnvelope, outSize, source.graphs.size());
     return true;
 }
 
@@ -524,7 +532,7 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
         reportMissingOptional(report, project_file::ChunkId::SEQUENCER_STATE);
         return true;
     }
-    if (!sequencerChunkVersionSupported(*chunk, report)) {
+    if (!chunkVersionSupported(*chunk, PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR, report)) {
         reportDefaulted(report, project_file::ChunkId::SEQUENCER_STATE);
         return false;
     }
@@ -579,11 +587,16 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
 FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     const core::state::project::ProjectSnapshot& snapshot,
     uint8_t* out,
-    uint32_t outCapacity
+    uint32_t outCapacity,
+    ProjectSnapshotCodecWorkspace& workspace
 ) {
     if (!snapshot.macroAutomation) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
+    if (!workspace.prepare()) {
+        return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
+    }
+    OC_PERF_SCOPE(perfEncode, "persistence.project-codec.encode");
 
     project_state_codec::ProjectMetaPayload meta{};
     project_state_codec::ProjectTransportPayload transport{};
@@ -629,35 +642,32 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
 
-    auto macro = core::app::makeExtmemUnique<std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE>>();
-    auto macroAutomation =
-        core::app::makeExtmemUnique<
-            std::array<uint8_t, PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE>>();
-    auto sequencer = core::app::makeExtmemUnique<sequencer_codec::EnvelopeBuffer>();
-    if (!macro || !macroAutomation || !sequencer) {
-        return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
-    }
+    auto& scratch = *workspace.storage_;
 
     if (!macro_track_codec::encodeTrackBankPayload(
             snapshot.macroTracks,
             snapshot.sharedTrackEnabledMask,
             snapshot.sharedTrackActive,
-            macro->data(),
-            static_cast<uint32_t>(macro->size())
+            scratch.macro.data(),
+            static_cast<uint32_t>(scratch.macro.size())
         )) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
     uint32_t macroAutomationSize = 0;
     if (!fillMacroAutomationPayload(
             snapshot,
-            macroAutomation->data(),
-            static_cast<uint32_t>(macroAutomation->size()),
+            scratch.macroAutomation.data(),
+            static_cast<uint32_t>(scratch.macroAutomation.size()),
             macroAutomationSize
         )) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
-    uint16_t sequencerSize = 0;
-    if (!buildSequencerEnvelope(snapshot, *sequencer, sequencerSize)) {
+    uint32_t sequencerSize = 0;
+    if (!buildSequencerEnvelope(
+            snapshot,
+            scratch.sequencerEnvelope,
+            sequencerSize
+        )) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
 
@@ -707,7 +717,7 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = macro->data(),
+            .data = scratch.macro.data(),
             .size = PROJECT_MACRO_STATE_PAYLOAD_SIZE,
         },
         {
@@ -715,7 +725,7 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = macroAutomation->data(),
+            .data = scratch.macroAutomation.data(),
             .size = macroAutomationSize,
         },
         {
@@ -723,18 +733,32 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = sequencer->bytes.data(),
+            .data = scratch.sequencerEnvelope.bytes.data(),
             .size = sequencerSize,
         },
     };
 
-    return project_file::encode(
+    auto encoded = project_file::encode(
         chunks,
         static_cast<uint16_t>(sizeof(chunks) / sizeof(chunks[0])),
         snapshot.project.metadata.modifiedCounter,
         out,
         outCapacity
     );
+    OC_PERF_UNITS(perfEncode, encoded.bytesWritten, sequencerSize);
+    return encoded;
+}
+
+FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
+    const core::state::project::ProjectSnapshot& snapshot,
+    uint8_t* out,
+    uint32_t outCapacity
+) {
+    ProjectSnapshotCodecWorkspace workspace;
+    if (!workspace.prepare()) {
+        return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
+    }
+    return encodeProjectSnapshot(snapshot, out, outCapacity, workspace);
 }
 
 FLASHMEM DecodeResult decodeProjectSnapshot(
@@ -743,49 +767,57 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
     core::state::project::ProjectSnapshot& out,
     project_file::LoadReport* report
 ) {
+    project_file::LoadReport localReport{};
+    auto* effectiveReport = report != nullptr ? report : &localReport;
     project_file::DecodedChunkView chunks[project_file::MAX_CHUNKS] = {};
     auto decodeResult = project_file::decode(
         data,
         size,
         chunks,
         project_file::MAX_CHUNKS,
-        report
+        effectiveReport
     );
     if (decodeResult.status != project_file::Status::OK) {
         return {
             .ok = false,
             .containerStatus = decodeResult.status,
-            .loadStatus = report == nullptr ? project_file::LoadStatus::FAILED : report->status,
+            .loadStatus = effectiveReport->status,
             .overwriteSafe = false,
         };
     }
 
-    core::state::project::ProjectSnapshot next;
+    auto next = core::state::project::makeProjectSnapshot();
+    if (!next) {
+        return {
+            .ok = false,
+            .containerStatus = project_file::Status::SCRATCH_ALLOCATION_FAILED,
+            .loadStatus = project_file::LoadStatus::FAILED,
+            .overwriteSafe = false,
+        };
+    }
     project_state_codec::applyProjectStateChunks(
         chunks,
         decodeResult.chunkCount,
-        next.project,
-        report
+        next->project,
+        effectiveReport
     );
     readMacroChunk(findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_STATE),
-                   next,
-                   report);
+                   *next,
+                   effectiveReport);
     readMacroAutomationChunk(
         findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_AUTOMATION),
-        next,
-        report
+        *next,
+        effectiveReport
     );
     readSequencerChunk(
         findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::SEQUENCER_STATE),
-        next,
-        report
+        *next,
+        effectiveReport
     );
 
-    out = std::move(next);
-    const project_file::LoadStatus loadStatus =
-        report == nullptr ? project_file::LoadStatus::OK : report->status;
-    const bool overwriteSafe =
-        report == nullptr ? decodeResult.overwriteSafe : report->overwriteSafe;
+    out = std::move(*next);
+    const project_file::LoadStatus loadStatus = effectiveReport->status;
+    const bool overwriteSafe = effectiveReport->overwriteSafe;
     return {
         .ok = loadStatus != project_file::LoadStatus::FAILED,
         .containerStatus = decodeResult.status,

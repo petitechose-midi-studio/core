@@ -133,6 +133,20 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         return delegate.remove(path, mode);
     }
     oc::type::Result<void> rename(const char* fromPath, const char* toPath) override {
+        if (failTmpPromotion && fromPath && toPath &&
+            std::strstr(fromPath, "/midi-studio/tmp/rpc-write-") != nullptr &&
+            std::strstr(toPath, "/midi-studio/projects/") != nullptr) {
+            return oc::type::Result<void>::err(
+                {oc::type::ErrorCode::STORAGE_WRITE_FAILED, "forced tmp promotion failure"}
+            );
+        }
+        if (failBackupRestore && fromPath && toPath &&
+            std::strstr(fromPath, "/midi-studio/tmp/rpc-backup-") != nullptr &&
+            std::strstr(toPath, "/midi-studio/projects/") != nullptr) {
+            return oc::type::Result<void>::err(
+                {oc::type::ErrorCode::STORAGE_WRITE_FAILED, "forced backup restore failure"}
+            );
+        }
         return delegate.rename(fromPath, toPath);
     }
     oc::type::Result<size_t> read(
@@ -178,7 +192,63 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
     oc::impl::HostFileSystem delegate;
     bool shortAppend = false;
     bool failFinalStat = false;
+    bool failTmpPromotion = false;
+    bool failBackupRestore = false;
 };
+
+FileSystemRpcStatus writeFileViaRpc(
+    FileSystemRpcHandler& handler,
+    uint16_t sessionId,
+    const char* path,
+    const uint8_t* data,
+    uint16_t size
+) {
+    uint8_t request[1024] = {};
+    uint8_t response[1024] = {};
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        100,
+        sessionId,
+        path,
+        size,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0);
+    auto handled = handler.handleFrame(request, requestSize, 10, response, sizeof(response));
+    assert(handled);
+    auto write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+    assert(write && write.value().status == FileSystemRpcStatus::OK);
+
+    if (size > 0) {
+        requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(
+            101,
+            sessionId,
+            0,
+            data,
+            size,
+            request,
+            sizeof(request)
+        );
+        assert(requestSize > 0);
+        handled = handler.handleFrame(request, requestSize, 20, response, sizeof(response));
+        assert(handled);
+        write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+        assert(write && write.value().status == FileSystemRpcStatus::OK);
+    }
+
+    requestSize = FileSystemRpcCodec::encodeWriteCommitRequest(
+        102,
+        sessionId,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0);
+    handled = handler.handleFrame(request, requestSize, 30, response, sizeof(response));
+    assert(handled);
+    write = FileSystemRpcCodec::decodeWriteResponse(response, handled.value());
+    assert(write);
+    return write.value().status;
+}
 
 bool listContains(const core::protocol::filesystem::FileSystemRpcListResponse& response,
                   const char* name) {
@@ -556,6 +626,71 @@ void test_write_commit_propagates_final_stat_error() {
     std::cout << "[PASS] test_write_commit_propagates_final_stat_error\n";
 }
 
+void test_write_commit_restores_previous_file_when_promotion_fails() {
+    resetTestRoot();
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+
+    const uint8_t previous[] = {'o', 'l', 'd'};
+    const uint8_t replacement[] = {'n', 'e', 'w'};
+    assert(service.write("projects/rollback.bin", 0, previous, sizeof(previous)));
+    filesystem.failTmpPromotion = true;
+
+    assert(writeFileViaRpc(
+               handler,
+               0x1250,
+               "projects/rollback.bin",
+               replacement,
+               sizeof(replacement)
+           ) == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(!handler.hasActiveWriteSession());
+
+    uint8_t loaded[8] = {};
+    auto read = service.read("projects/rollback.bin", 0, loaded, sizeof(loaded));
+    assert(read && read.value() == sizeof(previous));
+    assert(std::memcmp(loaded, previous, sizeof(previous)) == 0);
+    assert(!service.stat("tmp/rpc-write-1250.tmp"));
+    assert(!service.stat("tmp/rpc-backup-1250.tmp"));
+
+    std::cout << "[PASS] test_write_commit_restores_previous_file_when_promotion_fails\n";
+}
+
+void test_write_commit_retains_backup_when_rollback_fails() {
+    resetTestRoot();
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+
+    const uint8_t previous[] = {'s', 'a', 'f', 'e'};
+    const uint8_t replacement[] = {'n', 'e', 'w'};
+    assert(service.write("projects/backup-retained.bin", 0, previous, sizeof(previous)));
+    filesystem.failTmpPromotion = true;
+    filesystem.failBackupRestore = true;
+
+    assert(writeFileViaRpc(
+               handler,
+               0x1251,
+               "projects/backup-retained.bin",
+               replacement,
+               sizeof(replacement)
+           ) == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(!handler.hasActiveWriteSession());
+    assert(!service.stat("projects/backup-retained.bin"));
+    assert(!service.stat("tmp/rpc-write-1251.tmp"));
+
+    uint8_t loaded[8] = {};
+    auto read = service.read("tmp/rpc-backup-1251.tmp", 0, loaded, sizeof(loaded));
+    assert(read && read.value() == sizeof(previous));
+    assert(std::memcmp(loaded, previous, sizeof(previous)) == 0);
+
+    std::cout << "[PASS] test_write_commit_retains_backup_when_rollback_fails\n";
+}
+
 void test_write_session_abort_and_timeout_cleanup() {
     resetTestRoot();
     Harness h;
@@ -785,6 +920,51 @@ void test_endpoint_answers_only_filesystem_requests() {
     std::cout << "[PASS] test_endpoint_answers_only_filesystem_requests\n";
 }
 
+void test_endpoint_update_expires_abandoned_write_session() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(
+        transport,
+        service,
+        nowMs,
+        FileSystemRpcHandler::Config{100}
+    );
+    endpoint.begin();
+
+    uint8_t request[256] = {};
+    g_now_ms = 1000;
+    const size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        52,
+        0x1234,
+        "projects/abandoned.bin",
+        4,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0);
+    transport.emit(request, requestSize);
+    auto response = FileSystemRpcCodec::decodeWriteResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(response);
+    assert(response.value().status == FileSystemRpcStatus::OK);
+    assert(service.stat("tmp/rpc-write-1234.tmp"));
+
+    g_now_ms = 1101;
+    endpoint.update();
+    assert(!service.stat("tmp/rpc-write-1234.tmp"));
+    assert(!service.stat("projects/abandoned.bin"));
+
+    endpoint.end();
+    std::cout << "[PASS] test_endpoint_update_expires_abandoned_write_session\n";
+}
+
 }  // namespace
 
 int main() {
@@ -799,11 +979,14 @@ int main() {
     test_write_session_commits_empty_file();
     test_write_session_aborts_on_short_append();
     test_write_commit_propagates_final_stat_error();
+    test_write_commit_restores_previous_file_when_promotion_fails();
+    test_write_commit_retains_backup_when_rollback_fails();
     test_write_session_abort_and_timeout_cleanup();
     test_invalid_path_maps_to_error_status();
     test_read_error_response_is_decodable();
     test_file_management_operations();
     test_endpoint_answers_only_filesystem_requests();
+    test_endpoint_update_expires_abandoned_write_session();
 
     resetTestRoot();
 

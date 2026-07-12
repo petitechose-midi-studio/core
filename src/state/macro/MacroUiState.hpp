@@ -22,6 +22,14 @@ enum class MacroPerformanceProperty : uint8_t {
     AUTOMATION = 2,
 };
 
+enum class MacroAutomationRecordingStatus : uint8_t {
+    IDLE = 0,
+    RECORDING,
+    REDUCED,
+    TOO_SHORT,
+    COMMIT_FAILED,
+};
+
 struct MacroUiState {
     struct AutomationRecordingState {
         bool active = false;
@@ -46,6 +54,9 @@ struct MacroUiState {
     };
     oc::state::Signal<bool, 2> clutchActive{false};
     oc::state::Signal<uint32_t, 3> automationRecordingRevision{0};
+    oc::state::Signal<MacroAutomationRecordingStatus, 3> automationRecordingStatus{
+        MacroAutomationRecordingStatus::IDLE
+    };
     oc::state::Signal<uint16_t, 4> automationManualOverrideMask{0};
     oc::state::Signal<uint8_t, 4> focusedMacroSlot{0};
     oc::state::Signal<bool, 2> previewAddPageSlot{false};

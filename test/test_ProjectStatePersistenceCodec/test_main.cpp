@@ -6,12 +6,14 @@
 #include "../../src/persistence/PersistenceBinaryCodec.hpp"
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
 #include "../../src/state/project/ProjectSlug.hpp"
+#include "support/ProjectStatePersistenceTestSupport.hpp"
 
 namespace {
 
 namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
 namespace codec = core::persistence::project_state_codec;
+namespace container_support = core::test::project_state_persistence;
 namespace binary = core::persistence::binary_codec;
 
 using oc::note::sequencer::StepSequencerScaleConstraintMode;
@@ -116,12 +118,12 @@ void test_project_state_roundtrip_core_chunks() {
     auto source = makeProject();
 
     uint8_t bytes[512] = {};
-    auto encodeResult = codec::encodeProjectState(source, bytes, sizeof(bytes));
+    auto encodeResult = container_support::encode(source, bytes, sizeof(bytes));
     assert(encodeResult.status == project_file::Status::OK);
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,
@@ -147,12 +149,12 @@ void test_project_state_roundtrip_long_slug() {
     }
 
     uint8_t bytes[768] = {};
-    auto encodeResult = codec::encodeProjectState(source, bytes, sizeof(bytes));
+    auto encodeResult = container_support::encode(source, bytes, sizeof(bytes));
     assert(encodeResult.status == project_file::Status::OK);
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,
@@ -174,7 +176,7 @@ void test_missing_optional_chunks_default_and_report_without_blocking_overwrite(
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,
@@ -210,7 +212,7 @@ void test_transport_v0_chunk_migrates_to_current_payload() {
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,
@@ -246,7 +248,7 @@ void test_project_meta_v1_0_chunk_migrates_generated_id_to_slug() {
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,
@@ -289,7 +291,7 @@ void test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite()
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,
@@ -329,7 +331,7 @@ void test_future_chunk_version_defaults_and_blocks_overwrite() {
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,
@@ -363,7 +365,7 @@ void test_invalid_payload_size_defaults_and_reports_partial_load() {
 
     project::ProjectState loaded;
     project_file::LoadReport report{};
-    auto decodeResult = codec::decodeProjectState(
+    auto decodeResult = container_support::decode(
         bytes,
         encodeResult.bytesWritten,
         loaded,

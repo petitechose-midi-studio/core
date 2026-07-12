@@ -1,7 +1,11 @@
 #include "state/sequencer/SequencerStructureHistory.hpp"
 
+#include <utility>
+
 #include <config/PlatformCompat.hpp>
 
+#include "app/ExtmemAllocator.hpp"
+#include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state::sequencer {
@@ -13,6 +17,56 @@ constexpr uint16_t kTrackMaskAll =
 
 FLASHMEM uint16_t activeTrackBit(const SequencerTrackBankState& bank) {
     return sequencerHistoryTrackBit(bank.activeTrackIndex());
+}
+
+FLASHMEM bool captureStructureSnapshot(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureSnapshot& out,
+    bool reuseGraphStorage
+) {
+    if (!reuseGraphStorage) {
+        out = SequencerHistoryTrackStructureSnapshot{};
+    }
+    out.enabledMask = bank.currentEnabledMask();
+    out.mutedMask = bank.currentMutedMask();
+    out.activeTrack = bank.activeTrackIndex();
+    out.focusedStep = active.focusedStep.get();
+    out.page = active.page.get();
+    out.capturedTrackMask = sequencerHistorySanitizeTrackMask(
+        static_cast<uint16_t>(trackMask | activeTrackBit(bank))
+    );
+
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((out.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0) continue;
+        const bool captured = reuseGraphStorage
+            ? captureHistorySnapshotUsingReservedGraph(bank, active, i, out.tracks[i])
+            : captureHistorySnapshot(bank, active, i, out.tracks[i]);
+        if (!captured) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool cloneSnapshotGraph(
+    const SequencerHistoryPatternSnapshot& snapshot,
+    SequencerHistoryGraphPtr& out
+) {
+    out.reset();
+    if (!snapshot.graph || !snapshot.graph->enabled) return true;
+    out = core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>(
+        *snapshot.graph
+    );
+    return static_cast<bool>(out);
+}
+
+FLASHMEM void installSnapshotGraph(
+    SequencerPatternState& target,
+    SequencerHistoryGraphPtr graph,
+    uint32_t revision
+) {
+    target.graph = std::move(graph);
+    target.graphRevision.set(revision);
 }
 
 }  // namespace
@@ -62,27 +116,16 @@ FLASHMEM bool captureHistoryStructureSnapshot(
     uint16_t trackMask,
     SequencerHistoryTrackStructureSnapshot& out
 ) {
-    out = SequencerHistoryTrackStructureSnapshot{};
-    out.enabledMask = bank.currentEnabledMask();
-    out.mutedMask = bank.currentMutedMask();
-    out.activeTrack = bank.activeTrackIndex();
-    out.focusedStep = active.focusedStep.get();
-    out.page = active.page.get();
-    out.capturedTrackMask = sequencerHistorySanitizeTrackMask(
-        static_cast<uint16_t>(trackMask | activeTrackBit(bank))
-    );
+    return captureStructureSnapshot(bank, active, trackMask, out, false);
+}
 
-    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((out.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0) {
-            continue;
-        }
-
-        if (!captureHistorySnapshot(bank, active, i, out.tracks[i])) {
-            return false;
-        }
-    }
-
-    return true;
+FLASHMEM bool captureHistoryStructureSnapshotUsingReservedGraphs(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureSnapshot& out
+) {
+    return captureStructureSnapshot(bank, active, trackMask, out, true);
 }
 
 FLASHMEM bool applyHistoryStructureSnapshot(
@@ -93,28 +136,43 @@ FLASHMEM bool applyHistoryStructureSnapshot(
     const uint16_t capturedMask = sequencerHistorySanitizeTrackMask(
         static_cast<uint16_t>(snapshot.capturedTrackMask | sequencerHistoryTrackBit(snapshot.activeTrack))
     );
+    const uint8_t targetActive = SequencerTrackBankState::clampTrackIndex(
+        snapshot.activeTrack
+    );
+    if ((capturedMask & sequencerHistoryTrackBit(bank.activeTrackIndex())) == 0) {
+        return false;
+    }
 
-    storeActiveTrack(bank, active);
-    bank.syncSharedTrackState(snapshot.enabledMask, snapshot.activeTrack);
-    bank.setMutedMask(snapshot.mutedMask);
-
-    bool restoredActiveTrack = false;
+    std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
+    SequencerHistoryGraphPtr editorGraph;
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         if ((capturedMask & sequencerHistoryTrackBit(i)) == 0) {
             continue;
         }
-
-        if (!applyHistorySnapshotToTrack(bank, active, i, snapshot.tracks[i])) {
-            return false;
-        }
-
-        restoredActiveTrack = restoredActiveTrack || i == bank.activeTrackIndex();
+        if (!cloneSnapshotGraph(snapshot.tracks[i], bankGraphs[i])) return false;
     }
-
-    if (!restoredActiveTrack) {
+    if (!cloneSnapshotGraph(snapshot.tracks[targetActive], editorGraph)) {
         return false;
     }
 
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0) continue;
+        applySnapshot(bank.track(i), snapshot.tracks[i].flat);
+        installSnapshotGraph(
+            bank.track(i),
+            std::move(bankGraphs[i]),
+            snapshot.tracks[i].flat.graphRevision
+        );
+    }
+
+    applySnapshotToEditor(active, snapshot.tracks[targetActive].flat);
+    installSnapshotGraph(
+        active.pattern,
+        std::move(editorGraph),
+        snapshot.tracks[targetActive].flat.graphRevision
+    );
+    bank.syncSharedTrackState(snapshot.enabledMask, targetActive);
+    bank.setMutedMask(snapshot.mutedMask);
     active.focusedStep.set(snapshot.focusedStep);
     active.page.set(snapshot.page);
     return true;

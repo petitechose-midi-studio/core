@@ -11,6 +11,7 @@
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/persistence/ProjectSnapshotPersistenceCodec.hpp"
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
+#include "support/ProjectStatePersistenceTestSupport.hpp"
 #include "../../src/persistence/SequencerPersistenceEnvelope.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
@@ -19,6 +20,7 @@
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerScaleState.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProjectSequencerEnvelopeTestSupport.hpp"
 
 namespace {
 
@@ -533,6 +535,7 @@ void configureProjectSession(core::state::CoreState& state) {
     state.sequencer.pattern.toggle(4);
     state.sequencer.focusedStep.set(4);
     state.sequencer.page.set(0);
+    state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::GATE);
     configureProjectGraphContent(state.sequencer.pattern);
 }
 
@@ -609,7 +612,38 @@ void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
     assert(state.sequencer.pattern.note[0] == 64);
     assert(state.sequencer.pattern.note[4] == 67);
     assert(state.sequencer.focusedStep.get() == 4);
+    assert(state.sequencer.activeStepProperty.get() ==
+           core::state::sequencer::StepProperty::GATE);
     assertProjectGraphContent(state.sequencer.pattern);
+}
+
+void test_project_sequencer_snapshot_encoder_is_deterministic() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProjectSession(state);
+
+    project::ProjectSnapshot snapshot;
+    assert(project::captureProjectSnapshot(state, snapshot));
+
+    auto firstEnvelope = core::app::makeExtmemUnique<
+        core::persistence::sequencer_codec::EnvelopeBuffer>();
+    auto secondEnvelope = core::app::makeExtmemUnique<
+        core::persistence::sequencer_codec::EnvelopeBuffer>();
+    assert(firstEnvelope && secondEnvelope);
+
+    const auto firstEncoded =
+        test_support::encodeProjectSequencerSnapshot(snapshot.sequencer, *firstEnvelope);
+    const auto secondEncoded =
+        test_support::encodeProjectSequencerSnapshot(snapshot.sequencer, *secondEnvelope);
+    assert(firstEncoded.ok && secondEncoded.ok);
+    assert(firstEncoded.size == secondEncoded.size);
+    assert(std::memcmp(
+        firstEnvelope->bytes.data(),
+        secondEnvelope->bytes.data(),
+        firstEncoded.size
+    ) == 0);
+
+    std::cout << "[PASS] test_project_sequencer_snapshot_encoder_is_deterministic\n";
 }
 
 void test_project_snapshot_roundtrip_restores_runtime_state() {
@@ -733,7 +767,7 @@ void test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks() 
     std::strncpy(state.metadata.name.data(), "p010", state.metadata.name.size() - 1);
 
     uint8_t bytes[512] = {};
-    auto encodeResult = core::persistence::project_state_codec::encodeProjectState(
+    auto encodeResult = core::test::project_state_persistence::encode(
         state,
         bytes,
         sizeof(bytes)
@@ -794,6 +828,16 @@ void test_project_snapshot_future_sequencer_chunk_blocks_overwrite() {
     assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
     assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
 
+    project::ProjectSnapshot snapshotWithoutReport;
+    const auto decodeWithoutReport = snapshot_codec::decodeProjectSnapshot(
+        bytes,
+        encodeResult.bytesWritten,
+        snapshotWithoutReport
+    );
+    assert(decodeWithoutReport.ok);
+    assert(decodeWithoutReport.loadStatus == project_file::LoadStatus::PARTIAL);
+    assert(!decodeWithoutReport.overwriteSafe);
+
     std::cout << "[PASS] test_project_snapshot_future_sequencer_chunk_blocks_overwrite\n";
 }
 
@@ -846,13 +890,10 @@ void test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite()
 
     auto envelope = core::app::makeExtmemUnique<core::persistence::sequencer_codec::EnvelopeBuffer>();
     assert(envelope);
+    project::ProjectSnapshot sourceSnapshot;
+    assert(project::captureProjectSnapshot(sourceState, sourceSnapshot));
     const auto encodedSequencer =
-        core::persistence::sequencer_codec::fillProjectSequencerEnvelope(
-            sourceState.sequencerTracks,
-            sourceState.sequencer,
-            envelope->bytes.data(),
-            static_cast<uint16_t>(envelope->bytes.size())
-        );
+        test_support::encodeProjectSequencerSnapshot(sourceSnapshot.sequencer, *envelope);
     assert(encodedSequencer.ok);
 
     const project_file::ChunkView chunks[] = {{
@@ -905,6 +946,7 @@ int main() {
     std::cout << "==============================================\n\n";
 
     test_project_snapshot_roundtrip_restores_runtime_state();
+    test_project_sequencer_snapshot_encoder_is_deterministic();
     test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool();
     test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks();
     test_project_snapshot_future_sequencer_chunk_blocks_overwrite();

@@ -1,5 +1,6 @@
 # UX workflow: inspect scale degree and free out-of-scale feedback.
 # Purpose: validates that notes and scale degrees coexist with distinct visual identities.
+# Expect: capture_changed:constrained_degree_feedback=free_out_of_scale_feedback
 
 0 scenario seq-scale-constrained-degree
 80 capture screen constrained_degree_feedback

@@ -29,6 +29,35 @@ FLASHMEM bool recordPatternFromCoreState(
     );
 }
 
+FLASHMEM bool recordFlatPatternFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    return state->recordSequencerPatternHistory(
+        std::move(before),
+        std::move(after),
+        descriptor,
+        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly
+    );
+}
+
+FLASHMEM bool recordPatternChangeFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryPatternChangePtr change
+) {
+    if (context == nullptr) return false;
+    return static_cast<core::state::CoreState*>(context)->recordSequencerPatternHistory(
+        std::move(change)
+    );
+}
+
 FLASHMEM bool recordFullBankFromCoreState(
     void* context,
     core::state::sequencer::SequencerHistoryFullBankChangePtr change
@@ -116,6 +145,8 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
         Operations{
             &state,
             recordPatternFromCoreState,
+            recordFlatPatternFromCoreState,
+            recordPatternChangeFromCoreState,
             recordStructureFromCoreState,
             recordFullBankFromCoreState,
             undoFromCoreState,
@@ -139,6 +170,27 @@ FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
                std::move(after),
                descriptor
            );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::recordFlatPattern(
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) const {
+    return operations_.recordFlatPattern != nullptr &&
+           operations_.recordFlatPattern(
+               operations_.context,
+               std::move(before),
+               std::move(after),
+               descriptor
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
+    core::state::sequencer::SequencerHistoryPatternChangePtr change
+) const {
+    return operations_.recordPatternChange != nullptr &&
+           operations_.recordPatternChange(operations_.context, std::move(change));
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::recordStructure(

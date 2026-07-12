@@ -44,6 +44,8 @@ public:
 
 private:
     void createUI(lv_obj_t* parent);
+    void cacheItemGeometry();
+    void syncSelectionCursor();
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* accent_ = nullptr;
@@ -64,7 +66,6 @@ private:
     std::array<lv_opa_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_opa_cache_{};
     std::array<bool, TrackHeaderRowProps::MAX_ITEM_COUNT> item_hidden_cache_{};
     std::array<bool, TrackHeaderRowProps::MAX_ITEM_COUNT> item_add_visible_cache_{};
-    std::array<bool, TrackHeaderRowProps::MAX_ITEM_COUNT> item_selected_cache_{};
     std::array<lv_coord_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_border_width_cache_{};
     std::array<uint32_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_border_color_cache_{};
     std::array<lv_opa_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_border_opa_cache_{};
@@ -72,11 +73,16 @@ private:
     bool dense_layout_cache_ = false;
     lv_coord_t item_size_cache_ = -1;
     lv_coord_t item_gap_cache_ = -1;
-    lv_coord_t items_row_width_cache_ = -1;
+    uint8_t geometry_item_count_cache_ = 0;
     std::array<lv_coord_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_x_cache_{};
     std::array<lv_coord_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_y_cache_{};
     std::array<lv_coord_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_width_cache_{};
     std::array<lv_coord_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_height_cache_{};
+    bool cursor_requested_visible_ = false;
+    uint8_t cursor_requested_index_ = 0;
+    uint8_t cursor_requested_item_count_ = 0;
+    uint32_t cursor_requested_color_ = 0;
+    lv_opa_t cursor_requested_opa_ = LV_OPA_TRANSP;
     bool cursor_visible_cache_ = false;
     lv_coord_t cursor_x_cache_ = -1;
     lv_coord_t cursor_y_cache_ = -1;

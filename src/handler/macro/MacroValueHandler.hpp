@@ -59,7 +59,7 @@ private:
     bool shouldHandleTurns() const;
     bool shouldHandleAutomationRecordPress() const;
     bool shouldHandleAutomationRestorePress() const;
-    bool shouldIgnorePostRecordTurn(uint8_t index, uint32_t nowMs) const;
+    bool shouldIgnorePostRecordTurn(uint8_t index, uint32_t nowMs);
     bool shouldStartAutomationRecording(uint8_t index) const;
     bool ensureActiveSlot(uint8_t index);
     void restoreAutomation(uint8_t index);
@@ -75,7 +75,7 @@ private:
     oc::api::MidiAPI& midi_;
     oc::type::ScopeID scope_id_ = 0;
     std::array<bool, core::state::macro::MACRO_COUNT> macro_button_held_{};
-    std::array<uint32_t, core::state::macro::MACRO_COUNT> macro_button_pressed_at_ms_{};
+    std::array<bool, core::state::macro::MACRO_COUNT> post_record_guard_active_{};
     std::array<uint32_t, core::state::macro::MACRO_COUNT> post_record_guard_until_ms_{};
 };
 

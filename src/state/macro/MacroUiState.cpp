@@ -17,6 +17,7 @@ FLASHMEM void MacroUiState::reset() {
     pageHold.clear();
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     automationRecording.reset();
+    automationRecordingStatus.set(MacroAutomationRecordingStatus::IDLE);
 }
 
 }  // namespace core::state::macro

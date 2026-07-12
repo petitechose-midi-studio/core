@@ -3,10 +3,12 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <optional>
 
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IWidget.hpp>
+#include <oc/ui/lvgl/PausableTimer.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
 
@@ -125,7 +127,7 @@ private:
     ContextActionStripOrientation orientation_;
     ContextActionStripVerticalLayout vertical_layout_;
     lv_obj_t* container_ = nullptr;
-    lv_timer_t* hold_timer_ = nullptr;
+    std::optional<oc::ui::lvgl::PausableTimer> hold_timer_;
     std::array<SlotWidgets, 3> slots_{};
     bool has_rendered_ = false;
     ContextActionStripProps rendered_props_{};

@@ -345,9 +345,10 @@ FLASHMEM void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
                 sequencer_,
                 historyMask
             );
+            if (!change) break;
             const bool changed =
                 createSequencerStructureTrack(sequencer_, tracks_, track_ui_, shared_tracks_);
-            if (changed && change &&
+            if (changed &&
                 captureSequencerTrackStructureHistoryAfter(
                     tracks_,
                     sequencer_,
@@ -360,14 +361,14 @@ FLASHMEM void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
         }
         case core::state::StructureNavigationFocus::PAGE:
         default: {
-            core::state::sequencer::SequencerHistoryPatternSnapshot before;
-            const bool captured = captureSequencerPageStructureHistory(sequencer_, before);
+            auto change = captureSequencerPageStructureHistoryBefore(sequencer_);
+            if (!change) break;
             const bool changed = createSequencerStructurePage(sequencer_);
-            if (changed && captured) {
+            if (changed) {
                 recordSequencerPageStructureHistoryChange(
                     history_,
                     sequencer_,
-                    std::move(before),
+                    std::move(change),
                     currentActiveTrack()
                 );
             }
@@ -379,8 +380,6 @@ FLASHMEM void SequencerStructureNavigationWorkflow::createPreviewedStructure() {
 }
 
 FLASHMEM void SequencerStructureNavigationWorkflow::bindStateSync() {
-    subscriptions_.reserve(2);
-
     subscriptions_.push_back(
         tracks_.activeTrackSignal().subscribe([this](uint8_t activeTrack) {
             track_ui_.syncPreviewTrack(activeTrack);

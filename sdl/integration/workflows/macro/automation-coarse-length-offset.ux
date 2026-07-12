@@ -1,6 +1,7 @@
 # UX workflow: coarse edit macro automation length and offset.
 # Purpose: validates that LEFT_CENTER acts as a temporary coarse modifier for
 # Length and Offset while the normal automation editor remains visible.
+# Expect: capture_changed:macro_1_automation_detail=macro_1_automation_length_coarse, capture_changed:macro_1_automation_length_coarse=macro_1_automation_offset_coarse
 
 0 scenario macro-automation-curve-shape
 80 capture screen macro_grid_curve_source

@@ -1,6 +1,7 @@
 # UX workflow: record a live automation lane from one macro encoder.
 # Purpose: validates the controller-facing automation gesture:
 # hold a macro button, turn the same macro, release to commit.
+# Expect: capture_changed:macro_ready=macro_record_active, capture_changed:macro_record_active=macro_record_committed
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready

@@ -17,6 +17,7 @@
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProjectSequencerEnvelopeTestSupport.hpp"
 
 namespace {
 
@@ -126,13 +127,10 @@ void test_stale_sequencer_project_is_partial_and_not_rewritten_by_default() {
     auto envelope =
         core::app::makeExtmemUnique<core::persistence::sequencer_codec::EnvelopeBuffer>();
     assert(envelope);
+    project::ProjectSnapshot snapshot;
+    assert(project::captureProjectSnapshot(state, snapshot));
     const auto encodedSequencer =
-        core::persistence::sequencer_codec::fillProjectSequencerEnvelope(
-            state.sequencerTracks,
-            state.sequencer,
-            envelope->bytes.data(),
-            static_cast<uint16_t>(envelope->bytes.size())
-        );
+        test_support::encodeProjectSequencerSnapshot(snapshot.sequencer, *envelope);
     assert(encodedSequencer.ok);
 
     const project_file::ChunkView chunks[] = {{

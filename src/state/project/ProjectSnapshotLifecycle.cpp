@@ -4,12 +4,22 @@
 
 namespace core::state::project {
 
-ProjectSnapshot::ProjectSnapshot()
+FLASHMEM ProjectSnapshot::ProjectSnapshot()
     : macroAutomation(
           core::app::makeExtmemUnique<core::state::macro::MacroAutomationBankState>()
-      ) {}
-ProjectSnapshot::~ProjectSnapshot() = default;
-ProjectSnapshot::ProjectSnapshot(ProjectSnapshot&&) noexcept = default;
-ProjectSnapshot& ProjectSnapshot::operator=(ProjectSnapshot&&) noexcept = default;
+      ) {
+    for (uint8_t i = 0; i < macroTracks.size(); ++i) {
+        macroTracks[i].initDefaults(i);
+    }
+}
+FLASHMEM ProjectSnapshot::~ProjectSnapshot() = default;
+FLASHMEM ProjectSnapshot::ProjectSnapshot(ProjectSnapshot&&) noexcept = default;
+FLASHMEM ProjectSnapshot& ProjectSnapshot::operator=(ProjectSnapshot&&) noexcept = default;
+
+FLASHMEM ProjectSnapshotPtr makeProjectSnapshot() {
+    auto snapshot = core::app::makeExtmemUnique<ProjectSnapshot>();
+    if (!snapshot || !snapshot->macroAutomation) return {};
+    return snapshot;
+}
 
 }  // namespace core::state::project

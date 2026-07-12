@@ -1,6 +1,7 @@
 # UX workflow: cancel the New Project confirmation without resetting musical state.
 # Purpose: validates that the confirmation screen is navigable and that Cancel
 # returns to the previous Project context.
+# Expect: capture_changed:project_overview=new_project_confirm_default, capture_match:project_overview=project_overview_after_cancel
 
 0 capture screen boot
 

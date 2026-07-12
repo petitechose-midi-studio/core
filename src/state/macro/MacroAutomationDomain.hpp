@@ -98,7 +98,10 @@ uint16_t macroAutomationTicksFromBeats(float beats);
 int16_t macroAutomationPackValue(float value, bool signedInput);
 float macroAutomationUnpackValue(int16_t packed, bool signedOutput);
 
-bool macroAutomationAppendPoint(MacroAutomationLane& lane, float beat, float value);
+bool macroAutomationAppendPoint(MacroAutomationLane& lane,
+                                float beat,
+                                float value,
+                                bool* reduced = nullptr);
 bool macroModulationAppendPoint(MacroModulationShape& shape, float beat, float value);
 
 void macroAutomationFinalizeRecording(MacroAutomationLane& lane, float rawDurationBeats);

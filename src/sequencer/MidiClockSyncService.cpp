@@ -172,16 +172,12 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
         return;
     }
 
-    external_clock_estimator_.recordClock(timestampUs, hostNowMs, last_external_clock_ms_);
+    external_clock_estimator_.recordClock(timestampUs);
     external_tick_ += 1;
     last_external_clock_ms_ = hostNowMs;
     clock_source_selector_.recordClock(runtime_config_.mode, runtime_config_.autoLockClockCount);
 
     pending_sync_input_pulse_ = true;
-}
-
-MidiClockSyncService::ExternalClockTelemetry MidiClockSyncService::takeExternalClockTelemetry() {
-    return external_clock_estimator_.takeTelemetry();
 }
 
 void MidiClockSyncService::resetExternalTempoEstimator_() {

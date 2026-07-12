@@ -43,6 +43,7 @@ public:
     ProjectFeatureModule(const ProjectFeatureModule&) = delete;
     ProjectFeatureModule& operator=(const ProjectFeatureModule&) = delete;
 
+    [[nodiscard]] bool valid() const { return static_cast<bool>(handler_); }
     void syncFocusedEncoder() const;
 
 private:

@@ -1,6 +1,7 @@
 # UX workflow: adjust a macro, open its edit overlay, edit one field, and close.
 # Purpose: validates macro performance input, macro long-press overlay opening,
 # overlay-local NAV/OPT routing, and commit/close behavior.
+# Expect: capture_changed:edit_open=edit_adjusted
 
 0 scenario macro
 50 capture screen macro_ready

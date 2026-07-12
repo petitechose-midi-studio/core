@@ -224,6 +224,11 @@ void expectsAvailabilityHelpers() {
     context.propertySelectorActive = true;
     assert(sequencerInteractionTransientActive(context));
     assert(!sequencerInteractionMainSurfaceAvailable(context));
+
+    context.propertySelectorActive = false;
+    context.historyShortcutHoldActive = true;
+    assert(sequencerInteractionTransientActive(context));
+    assert(!sequencerInteractionMainSurfaceAvailable(context));
 }
 
 void expectsOverlayBlocksMainSurfaceEditing() {

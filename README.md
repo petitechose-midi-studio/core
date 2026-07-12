@@ -99,7 +99,7 @@ src/
   config/       platform and timing configuration
   context/      app composition roots and standalone presenters
   handler/      input handling and interaction logic
-  persistence/  storage helpers and slot file stores
+  persistence/  product filesystem, project/session transactions, and codecs
   sequencer/    runtime playback and clock services
   state/        reactive state and workflows
   ui/           views, components, widgets, top bar, transport bar
@@ -131,14 +131,18 @@ Current architectural direction:
 - persistence and workflow logic stay out of widgets
 - sequencer runtime is decoupled from heavy UI rendering
 
-For the current architectural audit and cleanup roadmap, start with:
+For code-local contracts and review rules, start with:
 
 - [docs/README.md](docs/README.md)
-- [docs/architecture-chantiers/README.md](docs/architecture-chantiers/README.md)
 - [docs/ARCHITECTURE_REVIEW_RULES.md](docs/ARCHITECTURE_REVIEW_RULES.md)
+
+Cross-repository roadmaps, ADRs, and audit evidence live in the canonical
+[petitechose-audio-docs](https://github.com/petitechose-audio/petitechose-audio-docs)
+repository. They are intentionally not duplicated in Core.
 
 ## Notes
 
 - The codebase is optimized for embedded constraints, so some rendering paths are intentionally imperative.
-- Persistence is split between lightweight settings storage and slot-based library storage.
+- Settings use lightweight storage; projects, sessions, and reusable assets use
+  versioned product files under the shared MIDI Studio filesystem.
 - The authoritative developer index is [docs/README.md](docs/README.md), not historical repository descriptions.

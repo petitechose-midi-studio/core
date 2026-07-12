@@ -151,8 +151,6 @@ private:
     void renderAction(size_t index,
                       const SequencerStepEditActionChip& chip,
                       bool selected);
-    void resetRenderCaches();
-
     lv_obj_t* overlay_ = nullptr;
     lv_obj_t* panel_ = nullptr;
     lv_obj_t* header_row_ = nullptr;
@@ -183,7 +181,7 @@ private:
 
     struct ChipRenderCache {
         std::array<char, 16> value{};
-        const char* icon = nullptr;
+        std::array<char, 8> icon{};
         uint32_t color = UINT32_MAX;
         uint32_t valueColor = UINT32_MAX;
         int16_t iconOpa = -1;

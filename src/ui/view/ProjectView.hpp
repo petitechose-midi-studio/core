@@ -5,7 +5,7 @@
 #include <lvgl.h>
 
 #include <ms/ui/widget/MenuListView.hpp>
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
 #include "app/ExtmemAllocator.hpp"
@@ -16,9 +16,9 @@
 #include "state/project/ProjectState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
-#include "ui/view/PausableLvglTimer.hpp"
 
 namespace core::ui {
 
@@ -37,15 +37,14 @@ public:
 
     void onActivate() override;
     void onDeactivate() override;
+    [[nodiscard]] bool valid() const { return initialized_; }
     const char* getViewId() const override { return "core.project"; }
     lv_obj_t* getElement() const override { return container_; }
 
 private:
     void createLayout(lv_obj_t* parent);
-    void bindToState();
+    bool bindToState();
     void requestRender();
-    void scheduleRender(bool ready = false);
-    void pauseRenderTimerIfIdle();
     void render();
     void renderTabs();
     void renderKeyboardActionStrips(bool visible);
@@ -54,12 +53,13 @@ private:
     void renderKeyboardKey(uint8_t index, bool selected, bool force = false);
     void applyKeyboardShiftVisibility(bool shiftActive);
     void setKeyboardVisible(bool visible);
-    static void onRenderTimer(lv_timer_t* timer);
+    static bool canDrainRender(void* context);
+    static void drainRender(void* context, uint32_t flags);
 
     StateRefs state_refs_;
-    oc::state::SignalWatcher watcher_;
-    bool dirty_ = true;
-    core::app::ExtmemUniquePtr<core::ui::PausableLvglTimer> render_timer_;
+    oc::state::StaticWatchGroup<9> watcher_;
+    core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
+        render_scheduler_;
 
     core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
@@ -106,6 +106,7 @@ private:
     uint8_t rendered_keyboard_selected_ =
         core::state::project::PROJECT_NAME_KEYBOARD_CELL_COUNT;
     bool rendered_keyboard_shift_ = false;
+    bool initialized_ = false;
 };
 
 }  // namespace core::ui

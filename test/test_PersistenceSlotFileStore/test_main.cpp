@@ -155,6 +155,40 @@ void test_load_latest_falls_back_when_newest_is_corrupted() {
     std::cout << "[PASS] test_load_latest_falls_back_when_newest_is_corrupted\n";
 }
 
+void test_roundtrips_payload_larger_than_uint16() {
+    constexpr uint32_t kPayloadSize = 70000;
+    auto config = makeConfig();
+    config.slotCount = 2;
+    config.slotPayloadSize = kPayloadSize;
+    MemoryStorage storage(
+        core::persistence::PersistenceSlotFileStore::requiredCapacity(
+            config.slotCount,
+            config.slotPayloadSize
+        )
+    );
+    storage.init();
+
+    core::persistence::PersistenceSlotFileStore store(storage, config);
+    assert(store.init());
+    assert(store.slotPayloadSize() == kPayloadSize);
+
+    std::vector<uint8_t> source(kPayloadSize);
+    for (uint32_t i = 0; i < source.size(); ++i) {
+        source[i] = static_cast<uint8_t>(i * 17U);
+    }
+    assert(store.saveSlot(1, source.data(), source.size(), 42));
+
+    std::vector<uint8_t> loaded(kPayloadSize);
+    core::persistence::SlotMetadata metadata{};
+    assert(store.loadSlot(1, loaded.data(), loaded.size(), &metadata) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(metadata.payloadSize == kPayloadSize);
+    assert(metadata.saveCounter == 42);
+    assert(loaded == source);
+
+    std::cout << "[PASS] test_roundtrips_payload_larger_than_uint16\n";
+}
+
 }  // namespace
 
 int main() {
@@ -168,6 +202,7 @@ int main() {
     test_crc_mismatch_detected();
     test_load_latest_picks_newest_valid_slot();
     test_load_latest_falls_back_when_newest_is_corrupted();
+    test_roundtrips_payload_larger_than_uint16();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

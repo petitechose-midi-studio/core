@@ -37,8 +37,6 @@ struct MidiClockSyncRuntimeConfig {
  */
 class MidiClockSyncService {
 public:
-    using ExternalClockTelemetry = ExternalClockEstimator::Telemetry;
-
     struct UiProjectionSnapshot {
         enum DirtyBits : uint8_t {
             PLAYING = 1U << 0,
@@ -74,8 +72,6 @@ public:
     uint32_t tick() const { return current_tick_; }
     bool playing() const { return current_playing_; }
     bool usingExternalSource() const { return using_external_source_; }
-    ExternalClockTelemetry externalClockTelemetry() const { return external_clock_estimator_.telemetry(); }
-    ExternalClockTelemetry takeExternalClockTelemetry();
 
     bool consumeResyncRequest();
 

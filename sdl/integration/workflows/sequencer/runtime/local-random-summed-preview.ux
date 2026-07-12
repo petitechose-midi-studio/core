@@ -1,6 +1,7 @@
 # UX workflow: inspect summed pattern + per-step local random previews.
 # Purpose: validates that resolved local step randomization is visually projected
 # like pattern randomization for every supported musical dimension.
+# Expect: capture_changed:summed_pitch_preview=summed_velocity_preview, capture_changed:summed_velocity_preview=summed_gate_preview, capture_changed:summed_gate_preview=summed_nudge_preview
 
 0 scenario seq-local-random-summed-pitch
 80 capture screen summed_pitch_preview

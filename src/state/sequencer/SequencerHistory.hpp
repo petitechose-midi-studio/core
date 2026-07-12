@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
@@ -18,7 +19,6 @@ using SequencerHistoryGraphPtr =
 struct SequencerHistoryPatternSnapshot {
     SequencerPatternSnapshot flat{};
     uint8_t focusedStep = 0;
-    uint8_t page = 0;
     SequencerHistoryGraphPtr graph;
 
     SequencerHistoryPatternSnapshot();
@@ -27,12 +27,13 @@ struct SequencerHistoryPatternSnapshot {
     SequencerHistoryPatternSnapshot& operator=(const SequencerHistoryPatternSnapshot&) = delete;
     SequencerHistoryPatternSnapshot(SequencerHistoryPatternSnapshot&&) noexcept;
     SequencerHistoryPatternSnapshot& operator=(SequencerHistoryPatternSnapshot&&) noexcept;
+    void reset();
 };
 
 struct SequencerHistoryTrackBankSnapshot {
     SequencerTrackBankSnapshot flat{};
     uint8_t focusedStep = 0;
-    uint8_t page = 0;
+    StepProperty activeStepProperty = StepProperty::NOTE;
     SequencerHistoryGraphPtr editorGraph;
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
 
@@ -42,6 +43,7 @@ struct SequencerHistoryTrackBankSnapshot {
     SequencerHistoryTrackBankSnapshot& operator=(const SequencerHistoryTrackBankSnapshot&) = delete;
     SequencerHistoryTrackBankSnapshot(SequencerHistoryTrackBankSnapshot&&) noexcept;
     SequencerHistoryTrackBankSnapshot& operator=(SequencerHistoryTrackBankSnapshot&&) noexcept;
+    void reset();
 };
 
 struct SequencerHistoryTrackStructureChange;
@@ -50,6 +52,13 @@ enum class SequencerHistoryScope : uint8_t {
     PatternOnly = 0,
     Structure,
     FullBank,
+};
+
+enum class SequencerHistoryPatternStorage : uint8_t {
+    FullGraph = 0,
+    // Restores flat pattern data while retaining the graph already owned by
+    // the editor/track. Recording rejects entries whose graph revisions differ.
+    FlatOnly,
 };
 
 enum class SequencerHistoryDirection : uint8_t {
@@ -91,6 +100,7 @@ struct SequencerHistoryApplyResult {
 
 struct SequencerHistoryPatternChange {
     uint8_t trackIndex = 0;
+    SequencerHistoryPatternStorage storage = SequencerHistoryPatternStorage::FullGraph;
     SequencerHistoryDescriptor descriptor{};
     SequencerHistoryPatternSnapshot before;
     SequencerHistoryPatternSnapshot after;
@@ -102,6 +112,9 @@ struct SequencerHistoryPatternChange {
     SequencerHistoryPatternChange(SequencerHistoryPatternChange&&) noexcept;
     SequencerHistoryPatternChange& operator=(SequencerHistoryPatternChange&&) noexcept;
 };
+
+using SequencerHistoryPatternChangePtr =
+    core::app::ExtmemUniquePtr<SequencerHistoryPatternChange>;
 
 struct SequencerHistoryFullBankChange {
     SequencerHistoryDescriptor descriptor{};
@@ -145,8 +158,31 @@ bool captureHistorySnapshot(
     const SequencerState& source,
     SequencerHistoryPatternSnapshot& out
 );
+bool reserveHistorySnapshotGraphStorage(SequencerHistoryPatternSnapshot& snapshot);
+bool captureHistorySnapshotUsingReservedGraph(
+    const SequencerState& source,
+    SequencerHistoryPatternSnapshot& out
+);
+
+void captureFlatHistorySnapshot(
+    const SequencerState& source,
+    SequencerHistoryPatternSnapshot& out
+);
 
 bool captureHistorySnapshot(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& out
+);
+bool captureHistorySnapshotUsingReservedGraph(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& out
+);
+
+void captureFlatHistorySnapshot(
     const SequencerTrackBankState& bank,
     const SequencerState& active,
     uint8_t trackIndex,
@@ -199,6 +235,7 @@ public:
     static constexpr uint8_t FULL_BANK_ENTRY_LIMIT = 4;
     static constexpr uint8_t ENTRY_LIMIT =
         PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT;
+    static constexpr size_t RETAINED_BYTE_BUDGET = 1024U * 1024U;
 
     SequencerHistoryService();
     ~SequencerHistoryService();
@@ -209,8 +246,22 @@ public:
         SequencerHistoryPatternSnapshot after,
         SequencerHistoryDescriptor descriptor = {}
     );
+    bool recordPattern(SequencerHistoryPatternChangePtr change);
+
+    bool recordFlatPattern(
+        uint8_t trackIndex,
+        SequencerHistoryPatternSnapshot before,
+        SequencerHistoryPatternSnapshot after,
+        SequencerHistoryDescriptor descriptor = {}
+    );
 
     bool recordPattern(
+        SequencerHistoryPatternSnapshot before,
+        SequencerHistoryPatternSnapshot after,
+        SequencerHistoryDescriptor descriptor = {}
+    );
+
+    bool recordFlatPattern(
         SequencerHistoryPatternSnapshot before,
         SequencerHistoryPatternSnapshot after,
         SequencerHistoryDescriptor descriptor = {}
@@ -240,6 +291,7 @@ public:
     uint8_t redoCount() const { return redo_count_; }
     uint8_t undoCount(SequencerHistoryScope scope) const;
     uint8_t redoCount(SequencerHistoryScope scope) const;
+    size_t retainedBytes() const;
 
 private:
     std::array<SequencerHistoryEntry, ENTRY_LIMIT> undo_{};
@@ -249,6 +301,14 @@ private:
 
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);
+    bool recordEntry(SequencerHistoryEntry entry);
+    bool recordPatternWithStorage(
+        uint8_t trackIndex,
+        SequencerHistoryPatternSnapshot before,
+        SequencerHistoryPatternSnapshot after,
+        SequencerHistoryDescriptor descriptor,
+        SequencerHistoryPatternStorage storage
+    );
 };
 
 }  // namespace core::state::sequencer

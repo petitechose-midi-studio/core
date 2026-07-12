@@ -39,6 +39,7 @@ public:
           transport_ux_surface_(state.statusBar)
 #endif
     {
+        if (!viewSelectorElement) return;
 #if defined(MS_UX_RECORDER)
         if (uxRegistry) {
             uxRegistry->add(
@@ -52,7 +53,6 @@ public:
         }
 #endif
 
-        OC_LOG_DEBUG("StandaloneGlobalHandlerAssembly: transport_handler");
         transport_handler_ = core::app::makeExtmemUnique<core::handler::TransportHandler>(
             core::handler::TransportHandler::StateRefs{state.statusBar},
             buttons,
@@ -63,9 +63,10 @@ public:
                 deviceSettingsViewScope,
             }
         );
+        if (!transport_handler_) return;
 
         const auto viewSelectorScope = oc::ui::lvgl::scopeID(viewSelectorElement);
-        OC_LOG_DEBUG("StandaloneGlobalHandlerAssembly: view_switcher_handler");
+        if (viewSelectorScope == 0) return;
         view_switcher_handler_ = core::app::makeExtmemUnique<core::handler::ViewSwitcherHandler>(
             core::handler::ViewSwitcherHandler::StateRefs{
                 state.overlays,
@@ -91,8 +92,11 @@ public:
             },
             viewSelectorScope
         );
-        OC_LOG_DEBUG("StandaloneGlobalHandlerAssembly: ready");
+        if (!view_switcher_handler_) return;
+        valid_ = true;
     }
+
+    [[nodiscard]] bool valid() const { return valid_; }
 
 private:
 #if defined(MS_UX_RECORDER)
@@ -102,6 +106,7 @@ private:
 
     core::app::ExtmemUniquePtr<core::handler::TransportHandler> transport_handler_;
     core::app::ExtmemUniquePtr<core::handler::ViewSwitcherHandler> view_switcher_handler_;
+    bool valid_ = false;
 };
 
 FLASHMEM StandaloneGlobalHandlerAssembly::StandaloneGlobalHandlerAssembly(
@@ -137,5 +142,9 @@ FLASHMEM StandaloneGlobalHandlerAssembly::StandaloneGlobalHandlerAssembly(
 }
 
 FLASHMEM StandaloneGlobalHandlerAssembly::~StandaloneGlobalHandlerAssembly() = default;
+
+FLASHMEM bool StandaloneGlobalHandlerAssembly::valid() const {
+    return impl_ && impl_->valid();
+}
 
 }  // namespace core::context::standalone

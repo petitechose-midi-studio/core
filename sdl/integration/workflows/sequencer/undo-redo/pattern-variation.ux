@@ -1,6 +1,7 @@
 # UX workflow: edit a pattern variation range, then undo and redo it through the
 # held LEFT_CENTER history layer.
 # Purpose: validates variation range changes create one undoable pattern entry.
+# Expect: capture_changed:range_applied_closed=range_undone_closed, capture_match:range_applied_closed=range_redone_closed
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -10,6 +11,7 @@
 350 capture screen step_enabled
 
 # Hold LEFT_BOTTOM, select Velocity, and set its variation range.
+370 tap NAV 60
 450 button LEFT_BOTTOM down
 600 capture screen property_selector_open
 700 encoder NAV 1

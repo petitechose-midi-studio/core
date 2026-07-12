@@ -1,22 +1,17 @@
 #pragma once
 
 #include <array>
-#include <memory>
-
 #include <cstdint>
+#include <optional>
 
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
-#include <oc/note/sequencer/StepSequencerGraph.hpp>
-
-#include "app/ExtmemAllocator.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerMidiEventSink.hpp"
-#include "sequencer/SequencerPlaybackProfiler.hpp"
+#include "sequencer/SequencerRuntimeGraphBank.hpp"
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
-#include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::sequencer {
 
@@ -37,57 +32,26 @@ public:
         std::array<uint8_t, TRACK_COUNT> trackVelocity{};
     };
 
-    using ProfilingSnapshot = SequencerPlaybackProfiler::Snapshot;
-
     SequencerPlaybackService(core::state::sequencer::SequencerState& sequencer,
-                             core::state::sequencer::SequencerTrackBankState& trackBank,
                              core::state::StatusBarState& statusBar,
-                             RealtimeMidiQueue& midiQueue);
+                             RealtimeMidiQueue& midiQueue,
+                             const SequencerRuntimeGraphBank& runtimeGraphBank);
 
     void update(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
                 uint32_t tick,
                 bool playing,
-                uint32_t nowMs,
                 uint32_t nowUs,
                 uint32_t tickPeriodUs,
-                bool publishRuntimeState = true,
-                bool emitLogs = true);
-    void stop();
+                bool publishRuntimeState = true);
+    void stopTrack(uint8_t trackIndex);
+    void completeStop();
     void publishUiProjection(const UiProjectionSnapshot& projection, uint32_t nowMs);
     UiProjectionSnapshot takeUiProjectionSnapshot();
     SequencerRuntimeTelemetrySnapshot copyActiveRuntimeTelemetry() const;
-    bool takeProfilingSnapshot(uint32_t nowMs, ProfilingSnapshot& snapshot);
     void publishUiState(uint32_t nowMs);
 
 private:
     const oc::note::sequencer::StepSequencerRuntimeState& activeRuntimeState_() const;
-
-    struct PendingNoteActivity {
-        bool noteOutActive = false;
-        uint32_t noteOnCount = 0;
-        uint32_t noteOffCount = 0;
-        uint32_t panicNoteOffCount = 0;
-        uint32_t queuedEventCount = 0;
-        std::array<uint8_t, TRACK_COUNT> trackVelocity{};
-
-        void reset();
-        void recordNoteOn(uint8_t trackIndex, uint8_t velocity);
-        void recordNoteOff();
-        void recordPanicNoteOffs(uint32_t count);
-        SequencerPlaybackActivitySnapshot snapshot() const;
-    };
-
-    class PendingNoteActivityObserver final : public SequencerMidiEventSinkObserver {
-    public:
-        explicit PendingNoteActivityObserver(PendingNoteActivity& pendingNoteActivity);
-
-        void onNoteOn(uint8_t trackIndex, uint8_t velocity) override;
-        void onNoteOff() override;
-        void onPanicNoteOffs(uint32_t count) override;
-
-    private:
-        PendingNoteActivity& pending_note_activity_;
-    };
 
     struct PendingUiProjection {
         bool noteOutPulse = false;
@@ -95,31 +59,39 @@ private:
         std::array<uint8_t, TRACK_COUNT> trackVelocity{};
 
         void reset();
+        void recordNoteOn(uint8_t trackIndex, uint8_t velocity);
+    };
+
+    class PendingNoteActivityObserver final : public SequencerMidiEventSinkObserver {
+    public:
+        explicit PendingNoteActivityObserver(PendingUiProjection& pendingUiProjection);
+
+        void onNoteOn(uint8_t trackIndex, uint8_t velocity) override;
+
+    private:
+        PendingUiProjection& pending_ui_projection_;
     };
 
     void handleActiveTrackSwitch_();
-    void syncRuntimeStates_(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot);
-    void syncRuntimeGraph_(uint8_t trackIndex,
-                           const core::state::sequencer::SequencerTrackBankSnapshot& snapshot);
-    void recordProfiling_(uint32_t tick, bool playing, uint32_t updateUs, uint32_t nowMs);
-    void collectUiProjection_();
+    void syncRuntimeStates_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot
+    );
 
     core::state::sequencer::SequencerState& sequencer_;
-    core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::StatusBarState& status_bar_;
-    PendingNoteActivity pending_note_activity_{};
+    const SequencerRuntimeGraphBank& runtime_graph_bank_;
     PendingUiProjection pending_ui_projection_{};
-    PendingNoteActivityObserver note_activity_observer_{pending_note_activity_};
-    SequencerPlaybackProfiler profiler_{};
-    // Keep the per-track runtime bank on the regular heap so the timer/playback
-    // engines do not read their hottest state back from the PSRAM-backed parent.
-    std::unique_ptr<oc::note::sequencer::StepSequencerRuntimeState[]> track_runtime_states_{};
-    // Runtime-owned graph copies keep engines away from double-buffered snapshots.
-    std::array<core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>, TRACK_COUNT>
-        track_runtime_graphs_{};
+    PendingNoteActivityObserver note_activity_observer_{pending_ui_projection_};
+    // SequencerRealtimeLane owns this service in one RAM2 allocation. Keeping
+    // the fixed track topology inline avoids 33 secondary heap allocations and
+    // leaves the 1 kHz engine state out of PSRAM.
+    std::array<oc::note::sequencer::StepSequencerRuntimeState, TRACK_COUNT>
+        track_runtime_states_{};
     std::array<SequencerRuntimeStateSignature, TRACK_COUNT> track_runtime_signatures_{};
-    std::array<std::unique_ptr<SequencerMidiEventSink>, TRACK_COUNT> track_event_sinks_{};
-    std::array<std::unique_ptr<oc::note::sequencer::StepSequencerEngine>, TRACK_COUNT> track_engines_{};
+    std::array<std::optional<SequencerMidiEventSink>, TRACK_COUNT> track_event_sinks_{};
+    std::array<
+        std::optional<oc::note::sequencer::StepSequencerEngine>,
+        TRACK_COUNT> track_engines_{};
     uint8_t runtime_active_track_ = 0;
     uint16_t runtime_enabled_mask_ = 0x0001;
     uint16_t runtime_muted_mask_ = 0;

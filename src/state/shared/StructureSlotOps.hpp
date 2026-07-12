@@ -78,7 +78,9 @@ inline DuplicationResult duplicateSelectionIntoFreeSlots(
             break;
         }
 
-        copyFn(source, static_cast<uint8_t>(dest));
+        if (!copyFn(source, static_cast<uint8_t>(dest))) {
+            break;
+        }
         nextMask |= slotBit(static_cast<uint8_t>(dest));
         if (firstDuplicated >= count) {
             firstDuplicated = static_cast<uint8_t>(dest);

@@ -313,6 +313,7 @@ public:
 
     void begin();
     void end();
+    void update();
     bool active() const;
 
 private:

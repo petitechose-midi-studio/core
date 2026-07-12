@@ -9,6 +9,7 @@
 
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
+#include "ui/view/RetainedViewRenderPolicy.hpp"
 
 namespace core::ui {
 
@@ -203,16 +204,37 @@ FLASHMEM ContextActionStripProps keyboardBottomActionStripProps(bool visible) {
 FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     createLayout(parent);
-    render_timer_ = core::app::makeExtmemUnique<core::ui::PausableLvglTimer>(
-        RENDER_TIMER_PERIOD_MS,
-        onRenderTimer,
-        this
-    );
-    bindToState();
+    if (!frame_ || !frame_->valid() || !container_ || !body_container_ ||
+        !interaction_container_ || !center_column_ || !tab_strip_ ||
+        !left_action_strip_ || !left_action_strip_->getElement() ||
+        !bottom_action_strip_ || !bottom_action_strip_->getElement() ||
+        !menu_ || !menu_->getElement() || !keyboard_container_ ||
+        !keyboard_title_ || !keyboard_meta_ || !keyboard_name_box_ ||
+        !keyboard_name_label_) {
+        return;
+    }
+    for (uint8_t i = 0; i < keyboard_keys_.size(); ++i) {
+        const auto& widgets = keyboard_keys_[i];
+        const auto& cell = core::state::project::projectNameKeyboardCellAt(i);
+        if (!widgets.container || !widgets.label ||
+            (isKeyboardLetter(cell.character) && !widgets.shiftLabel)) {
+            return;
+        }
+    }
+    render_scheduler_ =
+        core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
+            core::ui::renderSchedulerDebugLabel("ProjectView"),
+            &ProjectView::drainRender,
+            this,
+            RENDER_TIMER_PERIOD_MS,
+            &ProjectView::canDrainRender
+        );
+    if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;
+    initialized_ = true;
 }
 
 FLASHMEM ProjectView::~ProjectView() {
-    render_timer_.reset();
+    render_scheduler_.reset();
     menu_.reset();
     bottom_action_strip_.reset();
     left_action_strip_.reset();
@@ -234,25 +256,24 @@ FLASHMEM ProjectView::~ProjectView() {
 FLASHMEM void ProjectView::onActivate() {
     if (!container_) return;
 
-    lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    scheduleRender(true);
+    RetainedViewRenderPolicy::show(container_);
+    if (render_scheduler_) render_scheduler_->request(1U, true);
 }
 
 FLASHMEM void ProjectView::onDeactivate() {
-    if (container_) {
-        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    }
-    pauseRenderTimerIfIdle();
+    if (render_scheduler_) render_scheduler_->pause();
+    RetainedViewRenderPolicy::hide(container_);
 }
 
 FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
     frame_ = core::app::makeExtmemUnique<MainViewFrame>(parent);
+    if (!frame_ || !frame_->valid()) return;
     container_ = frame_->container();
     body_container_ = frame_->body();
-    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    RetainedViewRenderPolicy::initializeHidden(container_);
 
     tab_strip_ = lv_obj_create(body_container_);
+    if (!tab_strip_) return;
     style::apply(tab_strip_)
         .size(LV_PCT(100), TAB_STRIP_HEIGHT)
         .transparent()
@@ -273,6 +294,7 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
 
     for (uint8_t i = 0; i < tab_widgets_.size(); ++i) {
         auto* tab = lv_obj_create(tab_strip_);
+        if (!tab) return;
         tab_widgets_[i].container = tab;
         style::apply(tab).transparent().noBorder().pad(0).noScroll();
         lv_obj_set_height(tab, 18);
@@ -287,12 +309,14 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
         lv_obj_set_style_pad_bottom(tab, 1, 0);
 
         auto* icon = lv_label_create(tab);
+        if (!icon) return;
         tab_widgets_[i].icon = icon;
         standalone::icons::set(icon, tabIcon(tabAt(i)), standalone::icons::Size::M);
         lv_label_set_long_mode(icon, LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(icon, LV_TEXT_ALIGN_CENTER, 0);
 
         auto* label = lv_label_create(tab);
+        if (!label) return;
         tab_widgets_[i].label = label;
         lv_obj_set_style_text_font(label, fonts.inter_12_medium, 0);
         lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
@@ -301,12 +325,14 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
 
     frame_->createInteractionRow();
     interaction_container_ = frame_->interactionRow();
+    if (!interaction_container_) return;
 
     left_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         interaction_container_,
         ContextActionStripOrientation::VERTICAL,
         ContextActionStripVerticalLayout::SPREAD
     );
+    if (!left_action_strip_ || !left_action_strip_->getElement()) return;
     if (left_action_strip_ && left_action_strip_->getElement()) {
         lv_obj_set_width(left_action_strip_->getElement(), 32);
         lv_obj_set_style_pad_left(left_action_strip_->getElement(), 3, 0);
@@ -315,6 +341,7 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
 
     frame_->createCenterColumn();
     center_column_ = frame_->centerColumn();
+    if (!center_column_) return;
 
     menu_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(center_column_);
     if (menu_ && menu_->getElement()) {
@@ -326,13 +353,14 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
         body_container_,
         ContextActionStripOrientation::HORIZONTAL
     );
+    if (!bottom_action_strip_ || !bottom_action_strip_->getElement()) return;
 
     createKeyboardLayout();
 }
 
-FLASHMEM void ProjectView::bindToState() {
-    watcher_.watchAll(
-        [this]() { requestRender(); },
+FLASHMEM bool ProjectView::bindToState() {
+    watcher_.bind<&ProjectView::requestRender>(*this, 0, "Project.view");
+    return watcher_.watchAll(
         state_refs_.navigation.activeTab,
         state_refs_.navigation.currentNode,
         state_refs_.navigation.depth,
@@ -345,29 +373,12 @@ FLASHMEM void ProjectView::bindToState() {
     );
 }
 
-FLASHMEM void ProjectView::requestRender() {
-    dirty_ = true;
-    scheduleRender();
+void ProjectView::requestRender() {
+    if (render_scheduler_) render_scheduler_->request(1U);
 }
 
-FLASHMEM void ProjectView::scheduleRender(bool ready) {
-    dirty_ = true;
-    if (render_timer_) {
-        render_timer_->resume(ready);
-    }
-}
-
-FLASHMEM void ProjectView::pauseRenderTimerIfIdle() {
-    if (!render_timer_) return;
-    if (dirty_ && container_ && !lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
-    render_timer_->pause();
-}
-
-FLASHMEM void ProjectView::render() {
-    if (!dirty_ || !menu_ || !container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) {
-        pauseRenderTimerIfIdle();
-        return;
-    }
+void ProjectView::render() {
+    if (!menu_ || !RetainedViewRenderPolicy::visible(container_)) return;
 
     renderTabs();
 
@@ -378,8 +389,6 @@ FLASHMEM void ProjectView::render() {
         if (menu_) menu_->hide();
         setKeyboardVisible(true);
         renderKeyboard();
-        dirty_ = false;
-        pauseRenderTimerIfIdle();
         return;
     }
 
@@ -427,11 +436,9 @@ FLASHMEM void ProjectView::render() {
         .selectedIndex = page.selectedIndex,
         .dataRevision = page.dataRevision,
     });
-    dirty_ = false;
-    pauseRenderTimerIfIdle();
 }
 
-FLASHMEM void ProjectView::renderKeyboardActionStrips(bool visible) {
+void ProjectView::renderKeyboardActionStrips(bool visible) {
     if (left_action_strip_) {
         left_action_strip_->render(
             keyboardLeftActionStripProps(visible, state_refs_.navigation.projectNameShiftActive)
@@ -446,6 +453,7 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
     if (!center_column_) return;
 
     keyboard_container_ = lv_obj_create(center_column_);
+    if (!keyboard_container_) return;
     style::apply(keyboard_container_)
         .size(LV_PCT(100), LV_PCT(100))
         .transparent()
@@ -457,6 +465,7 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
     lv_obj_add_flag(keyboard_container_, LV_OBJ_FLAG_HIDDEN);
 
     keyboard_title_ = lv_label_create(keyboard_container_);
+    if (!keyboard_title_) return;
     lv_label_set_text(keyboard_title_, "");
     lv_obj_set_pos(keyboard_title_, 10, 4);
     lv_obj_set_size(keyboard_title_, 78, 24);
@@ -465,6 +474,7 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
     lv_label_set_long_mode(keyboard_title_, LV_LABEL_LONG_CLIP);
 
     keyboard_meta_ = lv_label_create(keyboard_container_);
+    if (!keyboard_meta_) return;
     lv_label_set_text(keyboard_meta_, "");
     lv_obj_set_pos(keyboard_meta_, 224, 5);
     lv_obj_set_size(keyboard_meta_, 88, 20);
@@ -475,6 +485,7 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
     lv_label_set_long_mode(keyboard_meta_, LV_LABEL_LONG_DOT);
 
     keyboard_name_box_ = lv_obj_create(keyboard_container_);
+    if (!keyboard_name_box_) return;
     style::apply(keyboard_name_box_).transparent().noBorder().pad(0).noScroll();
     lv_obj_set_pos(keyboard_name_box_, 90, 2);
     lv_obj_set_size(keyboard_name_box_, 130, 26);
@@ -486,6 +497,7 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
     lv_obj_set_style_border_opa(keyboard_name_box_, LV_OPA_70, 0);
 
     keyboard_name_label_ = lv_label_create(keyboard_name_box_);
+    if (!keyboard_name_label_) return;
     lv_label_set_text(keyboard_name_label_, "");
     lv_obj_set_pos(keyboard_name_label_, 6, 2);
     lv_obj_set_size(keyboard_name_label_, 118, 18);
@@ -509,6 +521,7 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
 
         auto& widgets = keyboard_keys_[i];
         widgets.container = lv_obj_create(keyboard_container_);
+        if (!widgets.container) return;
         style::apply(widgets.container).transparent().noBorder().pad(0).noScroll();
         lv_obj_set_pos(widgets.container, x, y);
         lv_obj_set_size(widgets.container, w, KEYBOARD_KEY_H);
@@ -516,10 +529,12 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
         lv_obj_set_style_border_width(widgets.container, 1, 0);
 
         widgets.label = lv_label_create(widgets.container);
+        if (!widgets.label) return;
         configureKeyboardKeyLabel(widgets.label, cell.label);
         if (isKeyboardLetter(cell.character)) {
             char shiftedText[2] = {shiftedKeyboardCharacter(cell.character), '\0'};
             widgets.shiftLabel = lv_label_create(widgets.container);
+            if (!widgets.shiftLabel) return;
             configureKeyboardKeyLabel(widgets.shiftLabel, shiftedText);
             lv_obj_add_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
         }
@@ -527,7 +542,7 @@ FLASHMEM void ProjectView::createKeyboardLayout() {
     }
 }
 
-FLASHMEM void ProjectView::renderKeyboard() {
+void ProjectView::renderKeyboard() {
     if (!keyboard_container_) return;
 
     const auto node = state_refs_.navigation.currentNode.get();
@@ -564,7 +579,7 @@ FLASHMEM void ProjectView::renderKeyboard() {
     }
 }
 
-FLASHMEM void ProjectView::renderKeyboardKey(uint8_t index, bool selected, bool force) {
+void ProjectView::renderKeyboardKey(uint8_t index, bool selected, bool force) {
     if (index >= keyboard_keys_.size()) return;
 
     auto& widgets = keyboard_keys_[index];
@@ -600,7 +615,7 @@ FLASHMEM void ProjectView::renderKeyboardKey(uint8_t index, bool selected, bool 
     widgets.styleInitialized = true;
 }
 
-FLASHMEM void ProjectView::applyKeyboardShiftVisibility(bool shiftActive) {
+void ProjectView::applyKeyboardShiftVisibility(bool shiftActive) {
     for (auto& widgets : keyboard_keys_) {
         if (!widgets.label || !widgets.shiftLabel || widgets.shiftVisible == shiftActive) continue;
         if (shiftActive) {
@@ -614,7 +629,7 @@ FLASHMEM void ProjectView::applyKeyboardShiftVisibility(bool shiftActive) {
     }
 }
 
-FLASHMEM void ProjectView::setKeyboardVisible(bool visible) {
+void ProjectView::setKeyboardVisible(bool visible) {
     if (!keyboard_container_ || keyboard_visible_ == visible) return;
     keyboard_visible_ = visible;
     if (visible) {
@@ -628,7 +643,7 @@ FLASHMEM void ProjectView::setKeyboardVisible(bool visible) {
     }
 }
 
-FLASHMEM void ProjectView::renderTabs() {
+void ProjectView::renderTabs() {
     const auto activeTab = state_refs_.navigation.activeTab.get();
     const bool holdActive = state_refs_.navigation.physicalHoldActive.get();
     if (tabs_rendered_ &&
@@ -693,10 +708,15 @@ FLASHMEM void ProjectView::renderTabs() {
     rendered_hold_active_ = holdActive;
 }
 
-FLASHMEM void ProjectView::onRenderTimer(lv_timer_t* timer) {
-    auto* self = static_cast<ProjectView*>(lv_timer_get_user_data(timer));
-    if (!self) return;
-    self->render();
+bool ProjectView::canDrainRender(void* context) {
+    const auto* self = static_cast<const ProjectView*>(context);
+    return self && RetainedViewRenderPolicy::visible(self->container_);
+}
+
+void ProjectView::drainRender(void* context, uint32_t flags) {
+    if ((flags & 1U) == 0) return;
+    auto* self = static_cast<ProjectView*>(context);
+    if (self) self->render();
 }
 
 }  // namespace core::ui

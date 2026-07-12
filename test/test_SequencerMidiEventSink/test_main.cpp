@@ -74,17 +74,7 @@ public:
         lastVelocity = velocity;
     }
 
-    void onNoteOff() override {
-        noteOffCount += 1;
-    }
-
-    void onPanicNoteOffs(uint32_t count) override {
-        panicCount += count;
-    }
-
     uint32_t noteOnCount = 0;
-    uint32_t noteOffCount = 0;
-    uint32_t panicCount = 0;
     uint8_t lastTrack = 0;
     uint8_t lastVelocity = 0;
 };
@@ -157,17 +147,15 @@ void test_note_off_marks_inactive_and_counts_observer() {
     assert(transport.messages[1].type == RealtimeMidiEventType::NoteOff);
     assert(transport.messages[1].note == 60);
     assert(observer.noteOnCount == 1);
-    assert(observer.noteOffCount == 1);
 
     assert(sink.emitSequencerEvent({.tick = 21, .type = SequencerEventType::AllNotesOff}));
     drainDue(queue, midi, 2100);
     assert(transport.messages.size() == 2);
-    assert(observer.panicCount == 0);
 
     std::cout << "[PASS] test_note_off_marks_inactive_and_counts_observer\n";
 }
 
-void test_all_notes_off_flushes_active_notes_at_current_time() {
+void test_all_notes_off_cancels_notes_that_were_never_dispatched() {
     core::sequencer::RealtimeMidiQueue queue;
     Observer observer;
     core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
@@ -179,20 +167,17 @@ void test_all_notes_off_flushes_active_notes_at_current_time() {
     assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 5, 2, 61, 91)));
     assert(queue.size() == 2);
     assert(sink.emitSequencerEvent({.tick = 4, .type = SequencerEventType::AllNotesOff}));
-    assert(queue.size() == 2);
+    assert(queue.size() == 0);
 
     drainDue(queue, midi, 3999);
     assert(transport.messages.empty());
 
     drainDue(queue, midi, 4000);
-    assert(transport.messages.size() == 2);
-    assert(transport.messages[0].type == RealtimeMidiEventType::NoteOff);
-    assert(transport.messages[1].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages.empty());
     assert(queue.size() == 0);
-    assert(observer.noteOnCount == 2);
-    assert(observer.panicCount == 2);
+    assert(observer.noteOnCount == 0);
 
-    std::cout << "[PASS] test_all_notes_off_flushes_active_notes_at_current_time\n";
+    std::cout << "[PASS] test_all_notes_off_cancels_notes_that_were_never_dispatched\n";
 }
 
 void test_all_notes_off_flushes_active_chord_voices() {
@@ -227,9 +212,31 @@ void test_all_notes_off_flushes_active_chord_voices() {
         assert(message.note == static_cast<uint8_t>(60 + i));
     }
     assert(observer.noteOnCount == 8);
-    assert(observer.panicCount == 8);
 
     std::cout << "[PASS] test_all_notes_off_flushes_active_chord_voices\n";
+}
+
+void test_all_notes_off_tracks_more_than_thirty_two_active_notes() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    for (uint8_t note = 24; note < 64; ++note) {
+        assert(sink.emitSequencerEvent(
+            noteEvent(SequencerEventType::NoteOn, 4, 2, note, 90)
+        ));
+    }
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 40);
+
+    assert(sink.emitSequencerEvent({.tick = 4, .type = SequencerEventType::AllNotesOff}));
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 80);
+
+    std::cout << "[PASS] test_all_notes_off_tracks_more_than_thirty_two_active_notes\n";
 }
 
 void test_all_notes_off_tracks_same_pitch_per_channel() {
@@ -255,7 +262,6 @@ void test_all_notes_off_tracks_same_pitch_per_channel() {
     assert(transport.messages[3].type == RealtimeMidiEventType::NoteOff);
     assert(transport.messages[3].channel == 3);
     assert(transport.messages[3].note == 60);
-    assert(observer.panicCount == 2);
 
     std::cout << "[PASS] test_all_notes_off_tracks_same_pitch_per_channel\n";
 }
@@ -290,7 +296,6 @@ void test_retrigger_same_pitch_keeps_latest_note_active() {
     assert(transport.messages.size() == 4);
     assert(transport.messages[3].type == RealtimeMidiEventType::NoteOff);
     assert(transport.messages[3].note == 60);
-    assert(observer.panicCount == 1);
 
     std::cout << "[PASS] test_retrigger_same_pitch_keeps_latest_note_active\n";
 }
@@ -316,9 +321,36 @@ void test_all_notes_off_releases_note_before_long_gate_note_off_arrives() {
     assert(transport.messages[1].type == RealtimeMidiEventType::NoteOff);
     assert(transport.messages[1].channel == 2);
     assert(transport.messages[1].note == 72);
-    assert(observer.panicCount == 1);
 
     std::cout << "[PASS] test_all_notes_off_releases_note_before_long_gate_note_off_arrives\n";
+}
+
+void test_all_notes_off_replaces_a_future_note_off_with_an_immediate_release() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 4, 2, 72, 96)));
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 1);
+
+    sink.setTimeline(5, 4025, 25);
+    assert(sink.emitSequencerEvent(noteEvent(SequencerEventType::NoteOff, 8, 2, 72, 0)));
+    assert(queue.size() == 1);
+
+    assert(sink.emitSequencerEvent({.tick = 5, .type = SequencerEventType::AllNotesOff}));
+    assert(queue.size() == 1);
+    drainDue(queue, midi, 4025);
+
+    assert(transport.messages.size() == 2);
+    assert(transport.messages[1].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[1].note == 72);
+
+    std::cout << "[PASS] "
+                 "test_all_notes_off_replaces_a_future_note_off_with_an_immediate_release\n";
 }
 
 void test_all_notes_off_cancels_only_own_track() {
@@ -332,27 +364,28 @@ void test_all_notes_off_cancels_only_own_track() {
 
     sink0.setTimeline(4, 4000, 25);
     sink1.setTimeline(4, 4000, 25);
-    assert(sink0.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 5, 2, 60, 90)));
-    assert(sink1.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 5, 3, 61, 91)));
+    assert(sink0.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 4, 2, 60, 90)));
+    assert(sink1.emitSequencerEvent(noteEvent(SequencerEventType::NoteOn, 4, 3, 61, 91)));
     assert(queue.size() == 2);
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 2);
 
     assert(sink0.emitSequencerEvent({.tick = 4, .type = SequencerEventType::AllNotesOff}));
-    assert(queue.size() == 2);
-
-    drainDue(queue, midi, 4000);
-    assert(transport.messages.size() == 1);
-    assert(transport.messages[0].type == RealtimeMidiEventType::NoteOff);
-    assert(transport.messages[0].channel == 2);
-    assert(transport.messages[0].note == 60);
     assert(queue.size() == 1);
 
-    drainDue(queue, midi, 4025);
-    assert(transport.messages.size() == 2);
-    assert(transport.messages[1].type == RealtimeMidiEventType::NoteOn);
-    assert(transport.messages[1].channel == 3);
-    assert(transport.messages[1].note == 61);
-    assert(observer0.panicCount == 1);
-    assert(observer1.panicCount == 0);
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 3);
+    assert(transport.messages[2].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[2].channel == 2);
+    assert(transport.messages[2].note == 60);
+    assert(queue.size() == 0);
+
+    assert(sink1.emitSequencerEvent({.tick = 4, .type = SequencerEventType::AllNotesOff}));
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 4);
+    assert(transport.messages[3].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[3].channel == 3);
+    assert(transport.messages[3].note == 61);
 
     std::cout << "[PASS] test_all_notes_off_cancels_only_own_track\n";
 }
@@ -379,11 +412,13 @@ int main() {
     installTimeProvider();
     test_note_on_uses_timeline_deadline_and_observer();
     test_note_off_marks_inactive_and_counts_observer();
-    test_all_notes_off_flushes_active_notes_at_current_time();
+    test_all_notes_off_cancels_notes_that_were_never_dispatched();
     test_all_notes_off_flushes_active_chord_voices();
+    test_all_notes_off_tracks_more_than_thirty_two_active_notes();
     test_all_notes_off_tracks_same_pitch_per_channel();
     test_retrigger_same_pitch_keeps_latest_note_active();
     test_all_notes_off_releases_note_before_long_gate_note_off_arrives();
+    test_all_notes_off_replaces_a_future_note_off_with_an_immediate_release();
     test_all_notes_off_cancels_only_own_track();
     test_past_tick_deadline_is_due_immediately();
 

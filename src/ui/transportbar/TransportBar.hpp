@@ -6,11 +6,11 @@
  */
 
 #include <memory>
-#include <vector>
 
 #include <lvgl.h>
 #include <oc/ui/lvgl/IComponent.hpp>
 #include <oc/ui/lvgl/widget/StateIndicator.hpp>
+#include <oc/state/FixedSubscriptionList.hpp>
 
 #include "state/StatusBarState.hpp"
 
@@ -43,7 +43,7 @@ private:
     lv_obj_t* transport_lock_icon_ = nullptr;
 
     std::unique_ptr<StateIndicator> beat_indicator_;
-    std::vector<oc::state::Subscription> subs_;
+    oc::state::FixedSubscriptionList<7> subs_;
     bool cc_in_active_ = false;
     bool cc_out_active_ = false;
 

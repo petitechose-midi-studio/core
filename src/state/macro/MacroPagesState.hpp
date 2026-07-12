@@ -89,7 +89,7 @@ struct PageSelectorState {
 /**
  * @brief Persisted data for one macro track
  *
- * One track carries a single MIDI channel and up to 8 macro pages.
+ * One track carries a single MIDI channel and up to 16 macro pages.
  */
 struct MacroTrackData {
     uint8_t channel = 0;          ///< Track MIDI channel (0-15)

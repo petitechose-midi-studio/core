@@ -1,6 +1,7 @@
 # UX workflow: Step Preset picker from Step Editor.
 # Purpose: validates picker access, file-backed Save/Load mode, generated
 # preset id feedback, and returning to the Step Editor after loading a preset.
+# Expect: capture_changed:step_preset_picker_load_empty=step_preset_picker_save_mode, capture_changed:step_2_editor_open=step_preset_loaded_to_step_2
 
 0 scenario sequencer
 50 capture screen sequencer_ready

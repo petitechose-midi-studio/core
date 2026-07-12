@@ -62,12 +62,6 @@ lv_obj_t* createLabel(lv_obj_t* parent,
     return label;
 }
 
-bool sameText(const char* lhs, const char* rhs) {
-    if (lhs == rhs) return true;
-    if (!lhs || !rhs) return false;
-    return std::strcmp(lhs, rhs) == 0;
-}
-
 template <size_t N>
 bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
     if (!label) return false;
@@ -77,7 +71,28 @@ bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text
     }
     std::strncpy(cache.data(), next, N - 1);
     cache[N - 1] = '\0';
-    lv_label_set_text(label, cache.data());
+    lv_label_set_text_static(label, cache.data());
+    return true;
+}
+
+template <size_t N>
+bool setCachedIcon(lv_obj_t* label,
+                   std::array<char, N>& cache,
+                   standalone::icons::Size& sizeCache,
+                   const char* icon,
+                   standalone::icons::Size size,
+                   bool valid) {
+    if (!label) return false;
+    const char* next = icon ? icon : "";
+    const bool textChanged = std::strncmp(cache.data(), next, N) != 0;
+    if (valid && !textChanged && sizeCache == size) return false;
+
+    if (textChanged) {
+        std::strncpy(cache.data(), next, N - 1);
+        cache[N - 1] = '\0';
+    }
+    standalone::icons::set(label, cache.data(), size);
+    sizeCache = size;
     return true;
 }
 
@@ -95,36 +110,20 @@ bool setCachedOpa(lv_obj_t* label, int16_t& cache, lv_opa_t opa) {
     return true;
 }
 
-void styleChip(lv_obj_t* box,
-               uint32_t color,
-               bool selected,
-               bool active,
-               lv_opa_t idleBorderOpa = LV_OPA_30) {
-    if (!box) return;
-    lv_obj_set_style_bg_color(box, lv_color_hex(color), 0);
+void setChipState(lv_obj_t* box,
+                  bool selected,
+                  bool active,
+                  lv_opa_t idleBorderOpa = LV_OPA_30) {
     lv_obj_set_style_bg_opa(
         box,
         selected ? LV_OPA_20 : (active ? LV_OPA_10 : LV_OPA_TRANSP),
         0
     );
-    lv_obj_set_style_border_width(box, 1, 0);
-    lv_obj_set_style_border_color(box, lv_color_hex(color), 0);
     lv_obj_set_style_border_opa(
         box,
         selected ? LV_OPA_80 : (active ? idleBorderOpa : LV_OPA_20),
         0
     );
-}
-
-void setIcon(lv_obj_t* label,
-             const char* icon,
-             standalone::icons::Size size,
-             uint32_t color,
-             lv_opa_t opa) {
-    if (!label) return;
-    standalone::icons::set(label, icon ? icon : "", size);
-    lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
-    lv_obj_set_style_text_opa(label, opa, 0);
 }
 
 lv_coord_t markerCoord(uint8_t normalized, lv_coord_t span, lv_coord_t size) {
@@ -403,6 +402,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             LV_FLEX_ALIGN_CENTER
         );
         lv_obj_set_style_radius(widgets.box, CHIP_RADIUS, 0);
+        lv_obj_set_style_border_width(widgets.box, 1, 0);
         lv_obj_set_style_pad_left(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_right(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_top(widgets.box, TRIGGER_PAD_V, 0);
@@ -450,6 +450,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             LV_FLEX_ALIGN_CENTER
         );
         lv_obj_set_style_radius(widgets.box, CHIP_RADIUS, 0);
+        lv_obj_set_style_border_width(widgets.box, 1, 0);
         lv_obj_set_style_pad_all(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
         lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
@@ -501,6 +502,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             LV_FLEX_ALIGN_CENTER
         );
         lv_obj_set_style_radius(widgets.box, CHIP_RADIUS, 0);
+        lv_obj_set_style_border_width(widgets.box, 1, 0);
         lv_obj_set_style_pad_all(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
         lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
@@ -531,20 +533,21 @@ FLASHMEM void SequencerStepEditOverlay::renderChip(
     const lv_opa_t iconOpa = selected ? LV_OPA_COVER : (active ? LV_OPA_70 : LV_OPA_30);
     const uint32_t valueColor = selected ? TEXT_PRIMARY : TEXT_SECONDARY;
     const lv_opa_t valueOpa = selected ? LV_OPA_COVER : (active ? LV_OPA_80 : LV_OPA_40);
-    const bool shellChanged =
-        !cache.valid ||
-        cache.color != color ||
-        cache.selected != selected ||
-        cache.active != active;
+    const bool colorChanged = !cache.valid || cache.color != color;
+    const bool stateChanged =
+        !cache.valid || cache.selected != selected || cache.active != active;
 
-    if (shellChanged) {
-        styleChip(widgets.box, color, selected, active);
+    if (colorChanged) {
+        lv_obj_set_style_bg_color(widgets.box, lv_color_hex(color), 0);
+        lv_obj_set_style_border_color(widgets.box, lv_color_hex(color), 0);
+        lv_obj_set_style_text_color(widgets.icon, lv_color_hex(color), 0);
     }
-    if (shellChanged ||
-        !sameText(cache.icon, icon) ||
-        cache.iconSize != iconSize ||
-        cache.iconOpa != static_cast<int16_t>(iconOpa)) {
-        setIcon(widgets.icon, icon, iconSize, color, iconOpa);
+    if (stateChanged) {
+        setChipState(widgets.box, selected, active);
+    }
+    setCachedIcon(widgets.icon, cache.icon, cache.iconSize, icon, iconSize, cache.valid);
+    if (cache.iconOpa != static_cast<int16_t>(iconOpa)) {
+        lv_obj_set_style_text_opa(widgets.icon, iconOpa, 0);
     }
     setCachedText(widgets.value, cache.value, value);
     if (cache.valueColor != valueColor) {
@@ -556,7 +559,6 @@ FLASHMEM void SequencerStepEditOverlay::renderChip(
         cache.valueOpa = static_cast<int16_t>(valueOpa);
     }
 
-    cache.icon = icon;
     cache.color = color;
     cache.iconOpa = static_cast<int16_t>(iconOpa);
     cache.iconSize = iconSize;
@@ -584,20 +586,28 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
     const lv_opa_t iconOpa = active ? (selected ? LV_OPA_COVER : LV_OPA_70) : LV_OPA_TRANSP;
     const uint32_t valueColor = selected ? TEXT_PRIMARY : TEXT_SECONDARY;
     const lv_opa_t valueOpa = active ? (selected ? LV_OPA_COVER : LV_OPA_70) : LV_OPA_TRANSP;
-    const bool shellChanged =
-        !cache.valid ||
-        cache.color != color ||
-        cache.selected != selected ||
-        cache.active != active;
+    const bool colorChanged = !cache.valid || cache.color != color;
+    const bool stateChanged =
+        !cache.valid || cache.selected != selected || cache.active != active;
 
-    if (shellChanged) {
-        styleChip(widgets.box, color, selected && active, active, LV_OPA_30);
+    if (colorChanged) {
+        lv_obj_set_style_bg_color(widgets.box, lv_color_hex(color), 0);
+        lv_obj_set_style_border_color(widgets.box, lv_color_hex(color), 0);
+        lv_obj_set_style_text_color(widgets.icon, lv_color_hex(color), 0);
     }
-    if (shellChanged ||
-        !sameText(cache.icon, icon) ||
-        cache.iconSize != standalone::icons::Size::M ||
-        cache.iconOpa != static_cast<int16_t>(iconOpa)) {
-        setIcon(widgets.icon, icon, standalone::icons::Size::M, color, iconOpa);
+    if (stateChanged) {
+        setChipState(widgets.box, selected && active, active, LV_OPA_30);
+    }
+    setCachedIcon(
+        widgets.icon,
+        cache.icon,
+        cache.iconSize,
+        icon,
+        standalone::icons::Size::M,
+        cache.valid
+    );
+    if (cache.iconOpa != static_cast<int16_t>(iconOpa)) {
+        lv_obj_set_style_text_opa(widgets.icon, iconOpa, 0);
     }
     setCachedText(widgets.value, cache.value, value);
     if (cache.valueColor != valueColor) {
@@ -609,84 +619,12 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
         cache.valueOpa = static_cast<int16_t>(valueOpa);
     }
 
-    cache.icon = icon;
     cache.color = color;
     cache.iconOpa = static_cast<int16_t>(iconOpa);
     cache.iconSize = standalone::icons::Size::M;
     cache.selected = selected;
     cache.active = active;
     cache.valid = true;
-}
-
-FLASHMEM void SequencerStepEditOverlay::resetRenderCaches() {
-    has_rendered_props_cache_ = false;
-    data_revision_cache_ = 0;
-    selected_index_cache_ = -1;
-    actions_visible_cache_ = true;
-    title_centered_cache_ = false;
-    focus_label_visible_cache_ = true;
-    chord_detail_layout_cache_ = false;
-    selected_visual_slot_cache_ = SequencerStepEditVisualSlot::AUTO;
-    focus_color_cache_ = 0;
-    step_badge_cache_ = {};
-    title_cache_ = {};
-    meta_cache_ = {};
-    focus_label_cache_ = {};
-    if (title_) {
-        lv_obj_set_style_text_align(title_, LV_TEXT_ALIGN_LEFT, 0);
-        lv_obj_set_style_text_color(title_, lv_color_hex(TEXT_PRIMARY), 0);
-    }
-    if (focus_label_) {
-        lv_obj_clear_flag(focus_label_, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (chord_preview_) {
-        lv_obj_add_flag(chord_preview_, LV_OBJ_FLAG_HIDDEN);
-    }
-    chord_preview_name_cache_ = {};
-    chord_preview_detail_cache_ = {};
-    if (chord_preview_detail_) {
-        lv_obj_add_flag(chord_preview_detail_, LV_OBJ_FLAG_HIDDEN);
-    }
-    chord_preview_visible_cache_ = false;
-    chord_preview_map_visible_cache_ = false;
-    chord_preview_timing_visible_cache_ = false;
-    chord_preview_detail_visible_cache_ = false;
-    chord_preview_color_cache_ = 0;
-    chord_preview_timing_x_cache_ = -1;
-    chord_preview_timing_width_cache_ = -1;
-    chord_preview_timing_color_cache_ = UINT32_MAX;
-    if (chord_preview_map_) {
-        lv_obj_add_flag(chord_preview_map_, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (chord_preview_timing_rail_) {
-        lv_obj_add_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (chord_preview_timing_span_) {
-        lv_obj_add_flag(chord_preview_timing_span_, LV_OBJ_FLAG_HIDDEN);
-    }
-    for (auto* dot : chord_preview_voice_dots_) {
-        if (dot) {
-            lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-    for (auto& cache : chord_preview_voice_cache_) {
-        cache = {};
-    }
-    if (action_row_) {
-        lv_obj_clear_flag(action_row_, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (trigger_row_) {
-        lv_obj_clear_flag(trigger_row_, LV_OBJ_FLAG_HIDDEN);
-    }
-    for (auto& cache : trigger_cache_) {
-        cache = {};
-    }
-    for (auto& cache : property_cache_) {
-        cache = {};
-    }
-    for (auto& cache : action_cache_) {
-        cache = {};
-    }
 }
 
 FLASHMEM void SequencerStepEditOverlay::render(
@@ -698,12 +636,10 @@ FLASHMEM void SequencerStepEditOverlay::render(
         if (visible_cache_) {
             lv_obj_add_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
             visible_cache_ = false;
-            resetRenderCaches();
         }
         return;
     }
 
-    const bool wasHidden = !visible_cache_;
     if (!visible_cache_) {
         lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(overlay_);
@@ -725,8 +661,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
         return;
     }
 
-    bool layoutDirty = false;
-
     if (chord_detail_layout_cache_ != props.chordDetailLayout) {
         if (trigger_row_) {
             if (props.chordDetailLayout) {
@@ -736,7 +670,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
             }
         }
         chord_detail_layout_cache_ = props.chordDetailLayout;
-        layoutDirty = true;
     }
 
     if (action_row_ && actions_visible_cache_ != actionRowVisible) {
@@ -746,7 +679,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
             lv_obj_add_flag(action_row_, LV_OBJ_FLAG_HIDDEN);
         }
         actions_visible_cache_ = actionRowVisible;
-        layoutDirty = true;
     }
 
     lv_obj_t* stepLabel = step_badge_ ? lv_obj_get_child(step_badge_, 0) : nullptr;
@@ -781,7 +713,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
                 lv_obj_add_flag(focus_label_, LV_OBJ_FLAG_HIDDEN);
             }
             focus_label_visible_cache_ = props.focusLabelVisible;
-            layoutDirty = true;
         }
         setCachedText(focus_label_, focus_label_cache_.text, props.focusLabel);
         setCachedColor(focus_label_, focus_label_cache_.color, focusColorForSelection(props));
@@ -794,7 +725,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
                 lv_obj_add_flag(chord_preview_, LV_OBJ_FLAG_HIDDEN);
             }
             chord_preview_visible_cache_ = props.chordPreview.visible;
-            layoutDirty = true;
         }
         if (props.chordPreview.visible) {
             const uint32_t previewColor =
@@ -821,7 +751,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
                         lv_obj_add_flag(chord_preview_detail_, LV_OBJ_FLAG_HIDDEN);
                     }
                     chord_preview_detail_visible_cache_ = hasDetail;
-                    layoutDirty = true;
                 }
             }
             if (chord_preview_map_) {
@@ -836,7 +765,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
                         lv_obj_add_flag(chord_preview_map_, LV_OBJ_FLAG_HIDDEN);
                     }
                     chord_preview_map_visible_cache_ = props.chordPreview.mapVisible;
-                    layoutDirty = true;
                 }
             }
             const bool timingVisible =
@@ -1033,9 +961,8 @@ FLASHMEM void SequencerStepEditOverlay::render(
         }
     }
 
-    if (wasHidden || layoutDirty) {
-        lv_obj_update_layout(panel_);
-    }
+    // LVGL batches any required layout with the next refresh. Do not force an
+    // immediate whole-screen layout from the state notification path.
     has_rendered_props_cache_ = true;
     data_revision_cache_ = props.dataRevision;
     selected_index_cache_ = props.selectedIndex;

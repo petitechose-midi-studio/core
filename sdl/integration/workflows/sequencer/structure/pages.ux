@@ -2,6 +2,7 @@
 # preview cursor-anchored paste destinations.
 # Purpose: validates the selection grammar `BOTTOM_RIGHT tap = copy selection`
 # and `BOTTOM_RIGHT hold = paste selection at cursor`.
+# Expect: capture_changed:selection_mode_entered=pages_1_3_5_selected, capture_changed:paste_preview_overwrite_and_free=paste_selection_applied_by_hold
 
 0 scenario sequencer
 50 capture screen track_focus

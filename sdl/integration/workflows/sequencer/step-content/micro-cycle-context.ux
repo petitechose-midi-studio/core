@@ -2,6 +2,7 @@
 # Purpose: validates micro-sequence/cycle-state entry points, resolved child
 # offset display, child back navigation, child content copy/clear/paste, and
 # parent badge visibility.
+# Expect: capture_changed:micro_step_edit_for_cycle=cycle_context_open, capture_changed:micro_context_cleared=micro_context_pasted_to_step_2
 
 0 scenario sequencer
 50 capture screen sequencer_ready

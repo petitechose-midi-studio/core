@@ -7,6 +7,7 @@
 
 #include "context/standalone/DataManagerPresenter.hpp"
 #include "context/standalone/DeviceSettingsSelectorPresenter.hpp"
+#include "context/standalone/OverlayPresentationRegistry.hpp"
 #include "context/standalone/SequencerSettingsOverlayPresenter.hpp"
 #include "handler/settings/DataManagerHandler.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
@@ -22,6 +23,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
     core::handler::DataManagerDomainServices dataManagerServices,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+    OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     lv_obj_t* mainZone,
@@ -52,45 +54,56 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
     }
 #endif
 
+    if (!mainZone || deviceSettingsViewScope == 0) return;
     device_settings_selector_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
-    overlays.registerCleanup(
+    if (!device_settings_selector_overlay_ ||
+        !device_settings_selector_overlay_->getElement() || !registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
-        oc::ui::lvgl::scopeID(device_settings_selector_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        device_settings_selector_overlay_->getElement()
+    )) return;
 
     data_manager_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
-    overlays.registerCleanup(
+    if (!data_manager_overlay_ || !data_manager_overlay_->getElement() ||
+        !registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::DATA_MANAGER,
-        oc::ui::lvgl::scopeID(data_manager_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        data_manager_overlay_->getElement()
+    )) return;
 
     data_manager_dialog_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
-    overlays.registerCleanup(
+    if (!data_manager_dialog_overlay_ || !data_manager_dialog_overlay_->getElement() ||
+        !registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::DATA_MANAGER_DIALOG,
-        oc::ui::lvgl::scopeID(data_manager_dialog_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        data_manager_dialog_overlay_->getElement()
+    )) return;
 
     sequencer_settings_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
-    overlays.registerCleanup(
+    if (!sequencer_settings_overlay_ || !sequencer_settings_overlay_->getElement() ||
+        !registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::SEQUENCER_SETTINGS,
-        oc::ui::lvgl::scopeID(sequencer_settings_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        sequencer_settings_overlay_->getElement()
+    )) return;
 
     sequencer_settings_selector_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
-    overlays.registerCleanup(
+    if (!sequencer_settings_selector_overlay_ ||
+        !sequencer_settings_selector_overlay_->getElement() || !registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR,
-        oc::ui::lvgl::scopeID(sequencer_settings_selector_overlay_->getElement()),
-        static_cast<oc::type::ButtonID>(0)
-    );
+        sequencer_settings_selector_overlay_->getElement()
+    )) return;
 
     device_settings_presenter_ =
         core::app::makeExtmemUnique<DeviceSettingsSelectorPresenter>(
@@ -100,7 +113,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
             },
             *device_settings_selector_overlay_
         );
-    device_settings_presenter_->bind();
+    if (!device_settings_presenter_ || !device_settings_presenter_->bind()) return;
 
     data_manager_presenter_ = core::app::makeExtmemUnique<DataManagerPresenter>(
         DataManagerPresenter::StateRefs{
@@ -111,8 +124,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         softkeyBar,
         transportBar
     );
-    data_manager_presenter_->bind();
-    data_manager_presenter_->renderSoftkeyBar();
+    if (!data_manager_presenter_ || !data_manager_presenter_->bind()) return;
 
     sequencer_settings_presenter_ =
         core::app::makeExtmemUnique<SequencerSettingsOverlayPresenter>(
@@ -123,9 +135,10 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
             *sequencer_settings_overlay_,
             *sequencer_settings_selector_overlay_
         );
-    sequencer_settings_presenter_->bind();
+    if (!sequencer_settings_presenter_ || !sequencer_settings_presenter_->bind()) return;
 
-    device_settings_handler_ = std::make_unique<core::handler::DeviceSettingsHandler>(
+    device_settings_handler_ =
+        core::app::makeExtmemUnique<core::handler::DeviceSettingsHandler>(
         core::handler::DeviceSettingsHandler::StateRefs{
             stateRefs.deviceSettings,
         },
@@ -137,7 +150,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         oc::ui::lvgl::scopeID(device_settings_selector_overlay_->getElement())
     );
 
-    data_manager_handler_ = std::make_unique<core::handler::DataManagerHandler>(
+    data_manager_handler_ = core::app::makeExtmemUnique<core::handler::DataManagerHandler>(
         core::handler::DataManagerHandler::StateRefs{
             stateRefs.dataManager,
             stateRefs.activeView,
@@ -151,7 +164,8 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         oc::ui::lvgl::scopeID(data_manager_dialog_overlay_->getElement())
     );
 
-    sequencer_settings_handler_ = std::make_unique<core::handler::SequencerSettingsHandler>(
+    sequencer_settings_handler_ =
+        core::app::makeExtmemUnique<core::handler::SequencerSettingsHandler>(
         core::handler::SequencerSettingsHandler::StateRefs{
             stateRefs.sequencerSettings,
             stateRefs.viewSelector,
@@ -166,6 +180,8 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
         oc::ui::lvgl::scopeID(sequencer_settings_overlay_->getElement()),
         oc::ui::lvgl::scopeID(sequencer_settings_selector_overlay_->getElement())
     );
+    valid_ = device_settings_handler_ && data_manager_handler_ &&
+             sequencer_settings_handler_;
 }
 
 FLASHMEM SettingsFeatureModule::~SettingsFeatureModule() = default;

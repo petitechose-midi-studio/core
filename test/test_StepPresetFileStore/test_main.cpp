@@ -144,6 +144,27 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     assert(applied.ok());
     assertLoadedIntoTarget(target);
 
+    assert(productFiles.rename(
+        "library/step-presets/step-preset-001.mssp",
+        "library/step-presets/step-preset-001.mssp.bak"
+    ));
+    loadedSize = 0;
+    assert(store.load(
+        "step-preset-001",
+        loadedPayload.data(),
+        static_cast<uint16_t>(loadedPayload.size()),
+        loadedSize
+    ));
+    assert(loadedSize == encoded.bytesWritten);
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "library" / "step-presets" /
+        "step-preset-001.mssp"
+    ));
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "library" / "step-presets" /
+        "step-preset-001.mssp.bak"
+    ));
+
     resetTestRoot();
     std::cout << "[PASS] test_step_preset_file_store_roundtrip_and_lists_files\n";
 }

@@ -8,6 +8,7 @@
 #include "persistence/ProductFileService.hpp"
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectLoadReport.hpp"
+#include "persistence/ProjectFileWorkspace.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 
 namespace core::persistence {
@@ -70,6 +71,7 @@ private:
                                      void* context);
 
     ProductFileService& files_;
+    ProjectFileWorkspace workspace_;
 };
 
 }  // namespace core::persistence

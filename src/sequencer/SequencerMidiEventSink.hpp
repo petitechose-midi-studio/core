@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/SequencerEvent.hpp>
+#include <oc/note/sequencer/StepBitMask128.hpp>
 
 #include "sequencer/RealtimeMidiQueue.hpp"
 
@@ -21,8 +22,6 @@ struct SequencerMidiEventSinkObserver {
     virtual ~SequencerMidiEventSinkObserver() = default;
 
     virtual void onNoteOn(uint8_t trackIndex, uint8_t velocity) = 0;
-    virtual void onNoteOff() = 0;
-    virtual void onPanicNoteOffs(uint32_t count) = 0;
 };
 
 /**
@@ -32,30 +31,27 @@ struct SequencerMidiEventSinkObserver {
  * current timeline, tracks active notes per track, and handles all-notes-off by
  * cancelling that track's pending note-ons before enqueueing immediate note-offs.
  */
-class SequencerMidiEventSink final : public oc::note::sequencer::ISequencerEventSink {
+class SequencerMidiEventSink final : public oc::note::sequencer::ISequencerEventSink,
+                                    private RealtimeMidiQueueDispatchObserver {
 public:
-    static constexpr size_t MAX_ACTIVE_NOTES = 32;
+    static constexpr uint8_t MIDI_CHANNEL_COUNT = 16;
 
     explicit SequencerMidiEventSink(RealtimeMidiQueue& queue,
                                     uint8_t trackIndex,
                                     SequencerMidiEventSinkObserver* observer = nullptr);
+    ~SequencerMidiEventSink() override;
 
     void setTimeline(uint32_t currentTick, uint32_t nowUs, uint32_t tickPeriodUs);
     bool emitSequencerEvent(const oc::note::sequencer::SequencerEvent& event) override;
 
 private:
-    struct ActiveNote {
-        uint8_t channel = 0;
-        uint8_t note = 0;
-        bool active = false;
-    };
-
     bool enqueueNoteOn_(const oc::note::sequencer::SequencerEvent& event);
     bool enqueueNoteOff_(const oc::note::sequencer::SequencerEvent& event);
     bool enqueueAllNotesOff_();
     uint32_t deadlineForTick_(uint32_t tick) const;
     void markNoteActive_(uint8_t channel, uint8_t note);
     void markNoteInactive_(uint8_t channel, uint8_t note);
+    void onRealtimeMidiEventDispatched(const RealtimeMidiEvent& event) override;
 
     RealtimeMidiQueue& queue_;
     SequencerMidiEventSinkObserver* observer_ = nullptr;
@@ -63,7 +59,8 @@ private:
     uint32_t current_tick_ = 0;
     uint32_t current_time_us_ = 0;
     uint32_t tick_period_us_ = 0;
-    std::array<ActiveNote, MAX_ACTIVE_NOTES> active_notes_{};
+    std::array<oc::note::sequencer::StepBitMask128, MIDI_CHANNEL_COUNT>
+        active_notes_by_channel_{};
 };
 
 }  // namespace core::sequencer

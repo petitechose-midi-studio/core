@@ -13,6 +13,7 @@
 #include <oc/hal/teensy/SDCardBackend.hpp>
 #include <oc/hal/teensy/SDFileSystemBackend.hpp>
 #include <oc/hal/teensy/Teensy.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
@@ -26,10 +27,16 @@
 #include "persistence/ProductFileService.hpp"
 #include "persistence/ProjectSessionAutosaveService.hpp"
 #include "persistence/ProjectSessionRestoreService.hpp"
+#include "persistence/ProjectSessionStore.hpp"
+#include "persistence/SequencerPersistence.hpp"
 #include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 #include "validation/project/ProjectStoreSmoke.hpp"
+#if OC_ENABLE_STATS
+#include "diagnostics/MemoryFootprintReporter.hpp"
+#include "diagnostics/PerformanceReporter.hpp"
+#endif
 #if defined(MS_UX_RECORDER)
 #include "validation/ux/SemanticUxRecorder.hpp"
 #endif
@@ -45,10 +52,17 @@ static std::optional<oc::hal::teensy::CD74HC4067> mux;
 #endif
 static oc::hal::teensy::SDCardBackend settingsStorage("/macros.bin");
 static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
-static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage("/sequencer-pattern-library.bin");
-static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage("/sequencer-set-library.bin");
+static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage(
+    "/sequencer-pattern-library.bin",
+    core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+);
+static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage(
+    "/sequencer-set-library.bin",
+    core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+);
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
 static std::optional<core::persistence::ProductFileService> productFileService;
+static std::optional<core::persistence::ProjectSessionStore> projectSessionStore;
 static std::optional<core::persistence::ProjectSessionAutosaveService> projectSessionAutosaveService;
 static std::optional<core::persistence::ProjectSessionRestoreService> projectSessionRestoreService;
 static std::optional<core::state::CoreState> coreState;
@@ -206,80 +220,6 @@ core::validation::ux::SemanticUxRecorder semanticUxRecorder{
 }  // namespace
 #endif
 
-#if defined(PERF_LOG)
-namespace {
-
-struct LoopPerfWindow {
-    uint32_t startedAtMs = 0;
-
-    uint32_t appUpdateCount = 0;
-    uint64_t appUpdateTotalUs = 0;
-    uint32_t appUpdateMaxUs = 0;
-
-    uint32_t stateUpdateCount = 0;
-    uint64_t stateUpdateTotalUs = 0;
-    uint32_t stateUpdateMaxUs = 0;
-
-    uint32_t lvglRefreshCount = 0;
-    uint64_t lvglRefreshTotalUs = 0;
-    uint32_t lvglRefreshMaxUs = 0;
-};
-
-LoopPerfWindow g_loopPerfWindow;
-
-void recordPerfSample(uint32_t& count, uint64_t& totalUs, uint32_t& maxUs, uint32_t sampleUs) {
-    ++count;
-    totalUs += sampleUs;
-    if (sampleUs > maxUs) {
-        maxUs = sampleUs;
-    }
-}
-
-void maybeLogLoopPerfWindow(uint32_t nowMs) {
-    auto& window = g_loopPerfWindow;
-    if (window.startedAtMs == 0) {
-        window.startedAtMs = nowMs;
-        return;
-    }
-
-    if ((nowMs - window.startedAtMs) < 1000) {
-        return;
-    }
-
-    const uint32_t appUpdateAvgUs =
-        (window.appUpdateCount > 0)
-            ? static_cast<uint32_t>(window.appUpdateTotalUs / window.appUpdateCount)
-            : 0;
-    const uint32_t stateUpdateAvgUs =
-        (window.stateUpdateCount > 0)
-            ? static_cast<uint32_t>(window.stateUpdateTotalUs / window.stateUpdateCount)
-            : 0;
-    const uint32_t lvglRefreshAvgUs =
-        (window.lvglRefreshCount > 0)
-            ? static_cast<uint32_t>(window.lvglRefreshTotalUs / window.lvglRefreshCount)
-            : 0;
-
-    OC_LOG_INFO(
-        "[Perf][MainLoop] appUpdates={} avgApp={}us maxApp={}us stateUpdates={} avgState={}us "
-        "maxState={}us lvglRefreshes={} avgLvgl={}us maxLvgl={}us",
-        window.appUpdateCount,
-        appUpdateAvgUs,
-        window.appUpdateMaxUs,
-        window.stateUpdateCount,
-        stateUpdateAvgUs,
-        window.stateUpdateMaxUs,
-        window.lvglRefreshCount,
-        lvglRefreshAvgUs,
-        window.lvglRefreshMaxUs
-    );
-
-    window = {};
-    window.startedAtMs = nowMs;
-}
-
-}  // namespace
-#endif
-
 // =============================================================================
 // Initialization Helpers
 // =============================================================================
@@ -363,7 +303,8 @@ static FLASHMEM void initApp() {
                       macroLibraryStorage,
                       sequencerPatternLibraryStorage,
                       sequencerSetLibraryStorage);
-    projectSessionRestoreService.emplace(*productFileService);
+    projectSessionStore.emplace(*productFileService);
+    projectSessionRestoreService.emplace(*projectSessionStore);
     const auto sessionRestore = projectSessionRestoreService->restore(*coreState);
     switch (sessionRestore.status) {
         case core::persistence::ProjectSessionRestoreService::Status::RESTORED:
@@ -381,13 +322,18 @@ static FLASHMEM void initApp() {
             OC_LOG_WARN("[ProjectSession] current.mspj unavailable/corrupt; using default session");
             break;
     }
-    projectSessionAutosaveService.emplace(*productFileService);
+    projectSessionAutosaveService.emplace(*projectSessionStore);
 
     oc::hal::teensy::AppBuilder appBuilder;
     appBuilder.midi()
         .frames()
         .encoders(Hardware::Encoder::ENCODERS)
-        .buttons(Hardware::Button::BUTTONS, *mux, Config::Timing::DEBOUNCE_MS)
+        .buttons(
+            Hardware::Button::BUTTONS,
+            *mux,
+            Config::Timing::DEBOUNCE_MS,
+            Hardware::Mux::BUTTON_READS_PER_APP_TICK
+        )
         .inputConfig(Config::Input::CONFIG);
 
 #if defined(MS_UX_RECORDER)
@@ -449,6 +395,9 @@ static FLASHMEM void initApp() {
             );
         });
     app->begin();
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("ui-ready");
+#endif
 }
 #endif
 
@@ -482,6 +431,9 @@ FLASHMEM void setup() {
                        : "[project-store-smoke] done result=FAIL");
     return;
 #else
+#if OC_ENABLE_STATS
+    core::diagnostics::performanceReporter().begin();
+#endif
     initDisplay();
     initLVGL();
     initMux();
@@ -524,74 +476,60 @@ void loop() {
     const uint32_t now = micros();
     if (now - lastMicros < APP_PERIOD_US) return;
     lastMicros = now;
+    {
+        OC_PERF_SCOPE(perfMainLoop, "main.loop");
 
-    // Poll hardware and update active context
-#if defined(PERF_LOG)
-    const uint32_t appUpdateStartUs = micros();
-#endif
-    app->update();
-#if defined(PERF_LOG)
-    recordPerfSample(
-        g_loopPerfWindow.appUpdateCount,
-        g_loopPerfWindow.appUpdateTotalUs,
-        g_loopPerfWindow.appUpdateMaxUs,
-        micros() - appUpdateStartUs
-    );
-#endif
-
-    const bool productFileWriteActive =
-        productFileService && productFileService->writeSessionActive();
-    // Product file sessions keep an SD handle open; avoid competing recovery
-    // and persistence paths while a PC/controller transfer is in flight.
-    if (!productFileWriteActive) {
-        storageRecovery.update(millis(), coreState->statusBar.playing.get());
-    }
-
-    // Update persistence (handles delayed value saves)
-#if defined(PERF_LOG)
-    const uint32_t stateUpdateStartUs = micros();
-#endif
-    if (!productFileWriteActive) {
-        coreState->update();
-        if (projectSessionAutosaveService) {
-            projectSessionAutosaveService->update(*coreState, millis());
+        {
+            OC_PERF_SCOPE(perfAppUpdate, "main.app-update");
+            app->update();
         }
-    }
-#if defined(PERF_LOG)
-    if (!productFileWriteActive) {
-        recordPerfSample(
-            g_loopPerfWindow.stateUpdateCount,
-            g_loopPerfWindow.stateUpdateTotalUs,
-            g_loopPerfWindow.stateUpdateMaxUs,
-            micros() - stateUpdateStartUs
-        );
-    }
-#endif
+
+        const bool productFileWriteActive =
+            productFileService && productFileService->writeSessionActive();
+        const bool autosaveWriteActive =
+            projectSessionAutosaveService &&
+            projectSessionAutosaveService->writeSessionActive();
+        const bool externalProductFileWriteActive =
+            productFileWriteActive && !autosaveWriteActive;
+        // Product file sessions keep an SD handle open; avoid competing recovery
+        // while any write is active. An autosave-owned session is advanced below;
+        // an external PC/controller transfer blocks state-side persistence.
+        if (!productFileWriteActive) {
+            OC_PERF_SCOPE(perfStorageRecovery, "main.storage-recovery");
+            storageRecovery.update(millis(), coreState->statusBar.playing.get());
+        }
+
+        // Update state-side coalescing before evaluating the project autosave.
+        if (!externalProductFileWriteActive) {
+            {
+                OC_PERF_SCOPE(perfCoreState, "main.core-state");
+                coreState->update();
+            }
+
+            if (projectSessionAutosaveService) {
+                OC_PERF_SCOPE(perfAutosave, "main.autosave");
+                projectSessionAutosaveService->update(
+                    *coreState,
+                    millis(),
+                    coreState->hasPendingProjectMutationCoalescing()
+                );
+            }
+        }
 
 #if defined(MS_UX_RECORDER)
-    semanticUxRecorder.flush(millis(), *coreState);
+        semanticUxRecorder.flush(millis(), *coreState);
 #endif
 
-    // Refresh LVGL at lower frequency to reduce CPU load
-    lvglAccumulator += APP_PERIOD_US;
-    if (lvglAccumulator >= LVGL_PERIOD_US) {
-        lvglAccumulator = 0;
-#if defined(PERF_LOG)
-        const uint32_t lvglRefreshStartUs = micros();
-#endif
-        lvgl->refresh();
-#if defined(PERF_LOG)
-        recordPerfSample(
-            g_loopPerfWindow.lvglRefreshCount,
-            g_loopPerfWindow.lvglRefreshTotalUs,
-            g_loopPerfWindow.lvglRefreshMaxUs,
-            micros() - lvglRefreshStartUs
-        );
-#endif
+        // Refresh LVGL at lower frequency to reduce CPU load.
+        lvglAccumulator += APP_PERIOD_US;
+        if (lvglAccumulator >= LVGL_PERIOD_US) {
+            lvglAccumulator = 0;
+            lvgl->refresh();
+        }
     }
 
-#if defined(PERF_LOG)
-    maybeLogLoopPerfWindow(millis());
+#if OC_ENABLE_STATS
+    core::diagnostics::performanceReporter().update(millis());
 #endif
 #endif
 }

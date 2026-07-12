@@ -2,6 +2,7 @@
 
 #include <oc/log/Log.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/interface/IEncoder.hpp>
 #include <oc/ui/lvgl/FontLoader.hpp>
 
@@ -13,12 +14,14 @@
 #include "context/standalone/StandaloneGlobalHandlerAssembly.hpp"
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 #include "context/standalone/StandaloneUiAssembly.hpp"
+#include "diagnostics/MemoryFootprintReporter.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "protocol/filesystem/FileSystemRpc.hpp"
 #include "config/TimeCompat.hpp"
 #include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -44,6 +47,10 @@ FLASHMEM StandaloneContext::~StandaloneContext() = default;
 FLASHMEM oc::type::Result<void> StandaloneContext::init() {
     OC_LOG_INFO("StandaloneContext::initialize()");
 
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-entry");
+#endif
+
 #if defined(MS_UX_RECORDER)
     ux_surface_registry_.clear();
     core::validation::ux::setCurrentSemanticUxContextProvider(&ux_surface_registry_);
@@ -53,24 +60,49 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
     oc::ui::lvgl::font::load(STANDALONE_FONT_ENTRIES, STANDALONE_FONT_COUNT);
     linkCoreFontAliases();
 
-    OC_LOG_DEBUG("StandaloneContext: configureEncoders");
     configureEncoders();
-    OC_LOG_DEBUG("StandaloneContext: createUiAssembly");
-    createUiAssembly();
-    OC_LOG_DEBUG("StandaloneContext: createOverlayAssembly");
-    createOverlayAssembly();
-    OC_LOG_DEBUG("StandaloneContext: createFeatureAssembly");
-    createFeatureAssembly();
-    OC_LOG_DEBUG("StandaloneContext: createGlobalHandlerAssembly");
-    createGlobalHandlerAssembly();
-    OC_LOG_DEBUG("StandaloneContext: createFileSystemRpcEndpoint");
+    if (!createUiAssembly()) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::RESOURCE_EXHAUSTED, "standalone ui assembly"}
+        );
+    }
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-ui");
+#endif
+    if (!createOverlayAssembly()) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::RESOURCE_EXHAUSTED, "standalone overlay assembly"}
+        );
+    }
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-overlays");
+#endif
+    if (!createFeatureAssembly()) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::RESOURCE_EXHAUSTED, "standalone feature assembly"}
+        );
+    }
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-features");
+#endif
+    if (!createGlobalHandlerAssembly()) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::RESOURCE_EXHAUSTED, "standalone handler assembly"}
+        );
+    }
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-global-handlers");
+#endif
     if (!createFileSystemRpcEndpoint()) {
         return oc::type::Result<void>::err(
             {oc::type::ErrorCode::RESOURCE_EXHAUSTED, "filesystem rpc endpoint"}
         );
     }
+#if OC_ENABLE_STATS
+    core::diagnostics::logMemoryFootprint("standalone-filesystem-rpc");
+#endif
 
-    OC_LOG_DEBUG("StandaloneContext: show");
+    applyActiveView();
     ui_assembly_->show();
 
     OC_LOG_INFO("StandaloneContext ready");
@@ -80,6 +112,9 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
 void StandaloneContext::update() {
     if (feature_assembly_) {
         feature_assembly_->update(core::time_compat::millis());
+    }
+    if (filesystem_rpc_endpoint_) {
+        filesystem_rpc_endpoint_->update();
     }
 }
 
@@ -118,15 +153,26 @@ FLASHMEM void StandaloneContext::configureEncoders() {
     }
 }
 
-FLASHMEM void StandaloneContext::createUiAssembly() {
+FLASHMEM bool StandaloneContext::createUiAssembly() {
     ui_assembly_ = core::app::makeExtmemUnique<core::context::standalone::StandaloneUiAssembly>(
         core_state_
     );
-    setupActiveViewSwitching();
-    applyActiveView();
+    if (!ui_assembly_) {
+        OC_LOG_ERROR("StandaloneContext: UI assembly PSRAM allocation failed");
+        return false;
+    }
+    if (!ui_assembly_->initialize()) {
+        OC_LOG_ERROR("StandaloneContext: UI assembly initialization failed");
+        return false;
+    }
+    if (!setupActiveViewSwitching()) {
+        OC_LOG_ERROR("StandaloneContext: active view binding failed");
+        return false;
+    }
+    return true;
 }
 
-FLASHMEM void StandaloneContext::createOverlayAssembly() {
+FLASHMEM bool StandaloneContext::createOverlayAssembly() {
     overlay_assembly_ =
         core::app::makeExtmemUnique<core::context::standalone::StandaloneOverlayAssembly>(
             core_state_,
@@ -134,10 +180,25 @@ FLASHMEM void StandaloneContext::createOverlayAssembly() {
             ui_assembly_->overlayRoot(),
             [this]() -> oc::type::ScopeID { return activeViewScopeId(); }
         );
-    setupViewSelectorRendering();
+    if (!overlay_assembly_ || !overlay_assembly_->valid()) {
+        OC_LOG_ERROR("StandaloneContext: overlay assembly initialization failed");
+        return false;
+    }
+    view_selector_render_scheduler_ =
+        core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
+            core::ui::renderSchedulerDebugLabel("StandaloneViewSelector"),
+            &StandaloneContext::drainViewSelectorRender,
+            this
+        );
+    if (!view_selector_render_scheduler_ || !view_selector_render_scheduler_->valid()) {
+        OC_LOG_ERROR("StandaloneContext: view selector scheduler allocation failed");
+        return false;
+    }
+    return setupViewSelectorRendering();
 }
 
 FLASHMEM void StandaloneContext::cleanupOverlayAssembly() {
+    view_selector_render_scheduler_.reset();
     overlay_assembly_.reset();
 }
 
@@ -145,12 +206,14 @@ FLASHMEM void StandaloneContext::cleanupUiAssembly() {
     ui_assembly_.reset();
 }
 
-FLASHMEM void StandaloneContext::createFeatureAssembly() {
+FLASHMEM bool StandaloneContext::createFeatureAssembly() {
+    if (!ui_assembly_ || !overlay_assembly_) return false;
     syncEncodersFromState();
     feature_assembly_ = core::app::makeExtmemUnique<core::context::standalone::StandaloneFeatureAssembly>(
         core_state_,
         product_files_,
         overlay_assembly_->controller(),
+        overlay_assembly_->presentationRegistry(),
         encoders(),
         buttons(),
         midi(),
@@ -168,10 +231,15 @@ FLASHMEM void StandaloneContext::createFeatureAssembly() {
         &ux_surface_registry_
 #endif
     );
+    if (!feature_assembly_ || !feature_assembly_->valid()) {
+        OC_LOG_ERROR("StandaloneContext: feature assembly initialization failed");
+        return false;
+    }
+    return true;
 }
 
-FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
-    registerMidiRouting();
+FLASHMEM bool StandaloneContext::createGlobalHandlerAssembly() {
+    if (!ui_assembly_ || !overlay_assembly_) return false;
     global_handler_assembly_ =
         core::app::makeExtmemUnique<core::context::standalone::StandaloneGlobalHandlerAssembly>(
             core_state_,
@@ -188,11 +256,17 @@ FLASHMEM void StandaloneContext::createGlobalHandlerAssembly() {
             &ux_surface_registry_
 #endif
         );
+    if (!global_handler_assembly_ || !global_handler_assembly_->valid()) {
+        OC_LOG_ERROR("StandaloneContext: global handler assembly initialization failed");
+        return false;
+    }
+    registerMidiRouting();
     OC_LOG_INFO("Input bindings buttons={}/{} encoders={}/{}",
                 static_cast<unsigned>(buttons().bindingCount()),
                 static_cast<unsigned>(buttons().bindingCapacity()),
                 static_cast<unsigned>(encoders().bindingCount()),
                 static_cast<unsigned>(encoders().bindingCapacity()));
+    return true;
 }
 
 FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
@@ -268,41 +342,62 @@ FLASHMEM void StandaloneContext::syncEncodersFromState() {
     OC_LOG_DEBUG("Synced encoder positions from restored state");
 }
 
-FLASHMEM void StandaloneContext::setupViewSelectorRendering() {
-    view_selector_watcher_.watchAll(
-        [this]() {
-            if (!overlay_assembly_) return;
-            overlay_assembly_->renderViewSelector(
-                core_state_.viewSelector.selectedIndex.get(),
-                core_state_.viewSelector.visible.get()
-            );
-            if (!ui_assembly_) return;
-
-            const auto item = core::state::viewSelectorItemAt(
-                core_state_.viewSelector.selectedIndex.get()
-            );
-            const bool showSequencerSettingsAction =
-                core_state_.viewSelector.visible.get() &&
-                core::state::viewSelectorItemHasSettingsAction(item);
-            if (showSequencerSettingsAction) {
-                ui_assembly_->contextSoftkeyBar().setLeftIcon(::standalone::icons::SETTINGS_GEAR);
-                ui_assembly_->contextSoftkeyBar().show();
-                ui_assembly_->transportBar().hide();
-            } else {
-                ui_assembly_->contextSoftkeyBar().hide();
-                ui_assembly_->transportBar().show();
-            }
-        },
+FLASHMEM bool StandaloneContext::setupViewSelectorRendering() {
+    view_selector_watcher_.bind<&StandaloneContext::requestViewSelectorRender>(
+        *this, 0, "Standalone.viewSelector"
+    );
+    return view_selector_render_scheduler_ && view_selector_render_scheduler_->valid() &&
+           view_selector_watcher_.watchAll(
         core_state_.viewSelector.visible,
         core_state_.viewSelector.selectedIndex
     );
 }
 
-FLASHMEM void StandaloneContext::setupActiveViewSwitching() {
-    active_view_watcher_.watchAll(
-        [this]() { applyActiveView(); },
-        core_state_.activeView
+FLASHMEM void StandaloneContext::requestViewSelectorRender() {
+    syncViewSelectorChrome();
+    if (view_selector_render_scheduler_) {
+        view_selector_render_scheduler_->request(1U);
+    }
+}
+
+FLASHMEM void StandaloneContext::drainViewSelectorRender(void* context, uint32_t flags) {
+    if ((flags & 1U) == 0) return;
+    auto* self = static_cast<StandaloneContext*>(context);
+    if (self) self->renderViewSelectorProjection();
+}
+
+FLASHMEM void StandaloneContext::renderViewSelectorProjection() {
+    if (!overlay_assembly_) return;
+    overlay_assembly_->renderViewSelector(
+        core_state_.viewSelector.selectedIndex.get(),
+        core_state_.viewSelector.visible.get()
     );
+}
+
+FLASHMEM void StandaloneContext::syncViewSelectorChrome() {
+    if (!ui_assembly_) return;
+
+    const auto item = core::state::viewSelectorItemAt(
+        core_state_.viewSelector.selectedIndex.get()
+    );
+    const bool showSequencerSettingsAction =
+        core_state_.viewSelector.visible.get() &&
+        core::state::viewSelectorItemHasSettingsAction(item);
+    if (showSequencerSettingsAction) {
+        ui_assembly_->contextSoftkeyBar().setLeftIcon(::standalone::icons::SETTINGS_GEAR);
+        ui_assembly_->contextSoftkeyBar().show();
+        ui_assembly_->transportBar().hide();
+    } else {
+        ui_assembly_->contextSoftkeyBar().hide();
+        ui_assembly_->transportBar().show();
+    }
+}
+
+FLASHMEM bool StandaloneContext::setupActiveViewSwitching() {
+    active_view_watcher_.bind<&StandaloneContext::applyActiveView>(
+        *this, 0, "Standalone.activeView"
+    );
+    return active_view_watcher_.watchAll(core_state_.activeView);
 }
 
 FLASHMEM oc::type::ScopeID StandaloneContext::activeViewScopeId() const {
@@ -322,8 +417,10 @@ FLASHMEM oc::type::ScopeID StandaloneContext::activeViewScopeId() const {
 }
 
 FLASHMEM void StandaloneContext::applyActiveView() {
-    for (auto step :
-         core::context::standalone::makeActiveViewLifecyclePlan(core_state_.activeView.get())) {
+    const auto targetView = core_state_.activeView.get();
+    OC_PERF_SCOPE(perfTransition, "ui.view-transition");
+    OC_PERF_UNITS(perfTransition, static_cast<uint32_t>(targetView), 0U);
+    for (auto step : core::context::standalone::makeActiveViewLifecyclePlan(targetView)) {
         switch (step) {
             case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_MACRO:
                 if (ui_assembly_) ui_assembly_->deactivateMacroView();

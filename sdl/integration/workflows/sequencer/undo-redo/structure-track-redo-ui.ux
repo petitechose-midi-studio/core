@@ -1,6 +1,7 @@
 # UX workflow: track structure redo restores the visible UI.
 # Purpose: isolates the hardware regression where redo restored the sequencer
 # track state musically but left the track strip/header on a stale UI preview.
+# Expect: capture_changed:track_2_created=track_2_creation_undone_ui, capture_match:track_2_created=track_2_creation_redone_ui
 
 0 scenario sequencer
 50 capture screen initial

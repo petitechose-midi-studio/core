@@ -231,6 +231,44 @@ void test_macro_automation_copy_failure_preserves_existing_destination() {
     std::cout << "[PASS] test_macro_automation_copy_failure_preserves_existing_destination\n";
 }
 
+void test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window() {
+    macro::MacroAutomationBankState bank;
+    auto* slot = macro::macroAutomationGetOrCreateSlot(
+        bank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(slot != nullptr);
+
+    macro::MacroAutomationLane lane;
+    fillDenseLane(lane);
+    assert(macro::macroAutomationAssignAutomation(bank, *slot, lane));
+    assert(slot->automation.pointCount == macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS);
+
+    assert(near(
+        macro::macroAutomationEvaluate(slot->automation, bank.pointPool, 0.0f, 0.0f),
+        0.25f
+    ));
+    assert(near(
+        macro::macroAutomationEvaluate(slot->automation, bank.pointPool, 0.0625f, 0.0f),
+        0.5f
+    ));
+    assert(near(
+        macro::macroAutomationEvaluate(slot->automation, bank.pointPool, 0.125f, 0.0f),
+        0.75f
+    ));
+
+    slot->automation.windowOffsetTicks =
+        static_cast<uint16_t>(slot->automation.sourceDurationTicks - 12U);
+    assert(near(
+        macro::macroAutomationEvaluate(slot->automation, bank.pointPool, 0.125f, 0.0f),
+        0.5f
+    ));
+
+    std::cout
+        << "[PASS] "
+        << "test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window\n";
+}
+
 }  // namespace
 
 int main() {
@@ -244,6 +282,7 @@ int main() {
     test_macro_automation_replacement_reclaims_existing_curve_capacity();
     test_macro_automation_compaction_preserves_multicurve_references();
     test_macro_automation_copy_failure_preserves_existing_destination();
+    test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

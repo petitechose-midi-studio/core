@@ -14,10 +14,13 @@ constexpr lv_coord_t STRUCTURE_ROW_HEIGHT = 12;
 }  // namespace
 
 FLASHMEM MainViewFrame::MainViewFrame(lv_obj_t* parent) {
-    layout_ = std::make_unique<ms::ui::LayoutView>(parent);
+    if (!parent) return;
+    layout_ = core::app::makeExtmemUnique<ms::ui::LayoutView>(parent);
+    if (!layout_) return;
     container_ = layout_->getElement();
     header_root_ = layout_->header();
     body_ = layout_->content();
+    if (!container_ || !header_root_ || !body_) return;
 
     style::apply(header_root_).transparent().pad(0);
     lv_obj_set_layout(header_root_, LV_LAYOUT_FLEX);
@@ -31,6 +34,7 @@ FLASHMEM MainViewFrame::MainViewFrame(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(header_root_, 0, 0);
 
     header_ = lv_obj_create(header_root_);
+    if (!header_) return;
     style::apply(header_).size(LV_PCT(100), LV_SIZE_CONTENT).transparent().noBorder().pad(0).noScroll();
     lv_obj_set_layout(header_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(header_, LV_FLEX_FLOW_COLUMN);
@@ -42,12 +46,14 @@ FLASHMEM MainViewFrame::MainViewFrame(lv_obj_t* parent) {
     lv_obj_set_flex_flow(body_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(body_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(body_, 0, 0);
+    valid_ = true;
 }
 
 FLASHMEM void MainViewFrame::createInteractionRow() {
     if (interaction_row_ || !body_) return;
 
     interaction_row_ = lv_obj_create(body_);
+    if (!interaction_row_) return;
     style::apply(interaction_row_).size(LV_PCT(100), LV_PCT(100)).transparent().noBorder().pad(0).noScroll();
     lv_obj_set_flex_grow(interaction_row_, 1);
     lv_obj_set_layout(interaction_row_, LV_LAYOUT_FLEX);
@@ -65,6 +71,7 @@ FLASHMEM void MainViewFrame::createCenterColumn() {
     if (center_column_ || !interaction_row_) return;
 
     center_column_ = lv_obj_create(interaction_row_);
+    if (!center_column_) return;
     style::apply(center_column_).transparent().noBorder().pad(0).noScroll();
     lv_obj_set_width(center_column_, 0);
     lv_obj_set_height(center_column_, LV_PCT(100));
@@ -79,6 +86,7 @@ FLASHMEM void MainViewFrame::createStructureRow() {
     if (structure_row_ || !header_root_) return;
 
     structure_row_ = lv_obj_create(header_root_);
+    if (!structure_row_) return;
     style::apply(structure_row_)
         .size(LV_PCT(100), STRUCTURE_ROW_HEIGHT)
         .transparent()

@@ -32,6 +32,48 @@ struct ProjectSnapshot {
     ProjectSnapshot& operator=(ProjectSnapshot&&) noexcept;
 };
 
+using ProjectSnapshotPtr = core::app::ExtmemUniquePtr<ProjectSnapshot>;
+
+class ProjectSnapshotCapture {
+public:
+    enum class Status : uint8_t {
+        IDLE = 0,
+        IN_PROGRESS,
+        COMPLETE,
+        STALE,
+        FAILED,
+    };
+
+    struct Progress {
+        Status status = Status::IDLE;
+        uint32_t modifiedCounter = 0;
+    };
+
+    bool begin(const core::state::CoreState& state, ProjectSnapshot& snapshot);
+    Progress advance();
+    void cancel();
+
+    bool active() const;
+
+private:
+    enum class Phase : uint8_t {
+        IDLE = 0,
+        PROJECT,
+        MACROS,
+        AUTOMATION,
+        SEQUENCER,
+        COMPLETE,
+    };
+
+    const core::state::CoreState* state_ = nullptr;
+    ProjectSnapshot* snapshot_ = nullptr;
+    Phase phase_ = Phase::IDLE;
+    uint32_t modified_counter_ = 0;
+
+};
+
+ProjectSnapshotPtr makeProjectSnapshot();
+ProjectSnapshotPtr captureProjectSnapshotOwned(const core::state::CoreState& state);
 bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out);
 bool applyProjectSnapshot(core::state::CoreState& state, const ProjectSnapshot& snapshot);
 

@@ -1,6 +1,7 @@
 #include "state/shared/SharedTrackCoordinator.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include <oc/log/Log.hpp>
 
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
@@ -45,21 +46,32 @@ FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
     const uint8_t sanitizedActive = sanitizeActiveTrack(sanitizedMask, activeTrack);
     const uint16_t previousMask = state.enabledMask.get();
     const uint8_t previousActive = state.activeTrack.get();
+    const uint16_t previousSequencerMask = state.sequencerTracks.currentEnabledMask();
+    const uint16_t previousSequencerMutedMask = state.sequencerTracks.currentMutedMask();
+
+    if (previousSequencerMask != sanitizedMask) {
+        state.sequencerTracks.enabledMaskSignal().set(sanitizedMask);
+        state.sequencerTracks.setMutedMask(previousSequencerMutedMask);
+    }
+
+    if (state.sequencerTracks.activeTrackIndex() != sanitizedActive) {
+        if (!sequencer::switchActiveTrack(
+                state.sequencerTracks,
+                state.sequencer,
+                sanitizedActive
+            )) {
+            state.sequencerTracks.enabledMaskSignal().set(previousSequencerMask);
+            state.sequencerTracks.setMutedMask(previousSequencerMutedMask);
+            OC_LOG_ERROR("[SharedTrack] Track switch failed: graph allocation unavailable");
+            return Result{previousMask, previousActive, false, false};
+        }
+    }
 
     if (previousMask != sanitizedMask) {
         state.enabledMask.set(sanitizedMask);
     }
 
     state.macroPages.syncSharedTrackState(sanitizedMask, sanitizedActive);
-
-    if (state.sequencerTracks.currentEnabledMask() != sanitizedMask) {
-        state.sequencerTracks.enabledMaskSignal().set(sanitizedMask);
-        state.sequencerTracks.setMutedMask(state.sequencerTracks.currentMutedMask());
-    }
-
-    if (state.sequencerTracks.activeTrackIndex() != sanitizedActive) {
-        sequencer::switchActiveTrack(state.sequencerTracks, state.sequencer, sanitizedActive);
-    }
 
     if (previousActive != sanitizedActive) {
         state.activeTrack.set(sanitizedActive);
@@ -69,6 +81,7 @@ FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
         sanitizedMask,
         sanitizedActive,
         previousMask != state.enabledMask.get() || previousActive != state.activeTrack.get(),
+        true,
     };
 }
 

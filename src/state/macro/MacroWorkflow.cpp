@@ -37,21 +37,11 @@ FLASHMEM void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& 
     }
 }
 
-FLASHMEM void MacroWorkflow::syncActivePageValuesFromRuntime(
-    MacroPagesState& pages,
-    const core::state::MacroState& macros
-) {
-    auto& page = pages.activePageData();
-    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        page.values[i] = std::clamp(macros.slots[i].value.get(), 0.0f, 1.0f);
-    }
-}
-
 FLASHMEM void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     if (pageIndex >= PAGE_COUNT) return;
 
     const auto previousConfigs = state.pages.activeConfigs;
-    state.flushAutoPersist();
+    state.flushProjectMutationCoalescing();
     state.pages.setActivePage(pageIndex);
     state.markProjectMutated();
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
@@ -65,7 +55,7 @@ FLASHMEM void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex)
     if (trackIndex >= TRACK_COUNT) return;
 
     const auto previousConfigs = state.pages.activeConfigs;
-    state.flushAutoPersist();
+    state.flushProjectMutationCoalescing();
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), trackIndex);
     state.markProjectMutated();
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {

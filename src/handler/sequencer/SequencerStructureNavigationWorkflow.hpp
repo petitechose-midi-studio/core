@@ -1,7 +1,6 @@
 #pragma once
 
-#include <vector>
-
+#include <oc/state/FixedSubscriptionList.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "handler/common/SharedTrackDomainServices.hpp"
@@ -77,7 +76,7 @@ private:
     core::state::TrackNavigationState& track_ui_;
     SharedTrackDomainServices shared_tracks_;
     SequencerHistoryDomainServices history_;
-    std::vector<oc::state::Subscription> subscriptions_;
+    oc::state::FixedSubscriptionList<2> subscriptions_;
 };
 
 }  // namespace core::handler

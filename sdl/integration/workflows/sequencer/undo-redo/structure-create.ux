@@ -1,6 +1,7 @@
 # UX workflow: create sequencer pages/tracks and undo/redo structural history.
 # Purpose: validates semantic structure-history entries for structure creation
 # and the transient feedback toast for page/track structure changes.
+# Expect: capture_changed:page_2_created=page_creation_undone, capture_match:page_2_created=page_creation_redone, capture_changed:track_2_created=track_creation_undone
 
 0 scenario sequencer
 50 capture screen initial

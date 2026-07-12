@@ -1,6 +1,7 @@
 # UX workflow: change Project Music scale root and undo it.
 # Purpose: validates that the Project Music tab edits the real project scale
 # state and that the same history shortcut can undo the musical change.
+# Expect: capture_changed:music_scale_default=music_scale_root_changed, capture_match:music_scale_default=music_scale_after_undo
 
 0 capture screen boot
 
@@ -28,5 +29,5 @@
 # Undo through the Project hold layer.
 2380 button LEFT_CENTER down
 2980 tap LEFT_TOP 60
-3200 capture screen music_scale_after_undo
-3280 button LEFT_CENTER up
+3200 button LEFT_CENTER up
+3400 capture screen music_scale_after_undo

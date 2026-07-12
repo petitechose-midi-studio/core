@@ -2,11 +2,16 @@
 #include <cstdint>
 #include <iostream>
 
+#include <oc/api/MidiAPI.hpp>
+#include <oc/impl/NullMidi.hpp>
+
 #include "../../src/sequencer/RealtimeMidiQueue.hpp"
 #include "../../src/sequencer/SequencerPlaybackService.hpp"
+#include "../../src/sequencer/SequencerRuntimeGraphBank.hpp"
+#include "../../src/sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "../../src/state/StatusBarState.hpp"
+#include "../../src/state/project/ProjectNavigationState.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
-#include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace {
 
@@ -19,20 +24,30 @@ void enableStep(SequencerState& state, uint8_t step) {
     state.pattern.enabledMask.set(mask);
 }
 
-core::state::sequencer::SequencerTrackBankSnapshot captureSnapshot(
-    const core::state::sequencer::SequencerTrackBankState& bank,
-    const SequencerState& sequencer
+const core::sequencer::SequencerRuntimeSnapshotBank::Snapshot& refreshSnapshot(
+    core::sequencer::SequencerRuntimeSnapshotBank& bank,
+    core::sequencer::SequencerRuntimeGraphBank& graphBank,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerTrackBankState& trackBank
 ) {
-    core::state::sequencer::SequencerTrackBankSnapshot snapshot;
-    core::state::sequencer::captureTrackBankSnapshot(bank, sequencer, snapshot);
-    return snapshot;
+    assert(graphBank.prepare(sequencer, trackBank));
+    const uint8_t index = bank.refresh();
+    graphBank.publishPrepared([&bank, index]() { bank.commit(index); });
+    return bank.activeSnapshot();
 }
 
 void test_graph_revision_change_resyncs_playback_service_graph() {
     SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
+    core::sequencer::SequencerRuntimeGraphBank runtimeGraphBank;
+    core::sequencer::SequencerRuntimeSnapshotBank snapshotBank{
+        sequencer,
+        bank,
+        projectNavigation,
+    };
 
     sequencer.pattern.length.set(4);
     sequencer.pattern.stepsPerBeat.set(4);
@@ -43,20 +58,24 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
 
     core::sequencer::SequencerPlaybackService service{
         sequencer,
-        bank,
         status,
         midiQueue,
+        runtimeGraphBank,
     };
 
-    auto snapshot = captureSnapshot(bank, sequencer);
-    service.update(snapshot, 0, true, 0, 0, 1000, false, false);
-    service.update(snapshot, 12, true, 0, 12000, 1000, false, false);
-    auto counters = midiQueue.takeCounters();
-    assert(counters.pushed == 2);
+    const auto& snapshot = refreshSnapshot(snapshotBank, runtimeGraphBank, sequencer, bank);
+    service.update(snapshot, 0, true, 0, 1000, false);
+    service.update(snapshot, 12, true, 12000, 1000, false);
+    assert(midiQueue.size() == 2);
     midiQueue.clear();
-    service.stop();
+    for (uint8_t track = 0;
+         track < core::sequencer::SequencerPlaybackService::TRACK_COUNT;
+         ++track) {
+        service.stopTrack(track);
+        midiQueue.clear();
+    }
+    service.completeStop();
     midiQueue.clear();
-    midiQueue.takeCounters();
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto sequence = core::state::sequencer::createMicroSequence(
@@ -76,12 +95,16 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
     ));
     assert(graph->stepNodes[child->firstStepNode + 1U].has(STEP_NODE_NOTE_OFFSET));
 
-    snapshot = captureSnapshot(bank, sequencer);
-    service.update(snapshot, 0, true, 1, 0, 1000, false, false);
-    service.update(snapshot, 12, true, 1, 12000, 1000, false, false);
-    counters = midiQueue.takeCounters();
+    const auto& graphSnapshot = refreshSnapshot(
+        snapshotBank, runtimeGraphBank, sequencer, bank
+    );
+    service.update(graphSnapshot, 0, true, 0, 1000, false);
+    service.update(graphSnapshot, 12, true, 12000, 1000, false);
 
-    assert(counters.pushed == 4);
+    assert(midiQueue.size() == 4);
+    oc::impl::NullMidi midiTransport;
+    oc::api::MidiAPI midi{midiTransport};
+    midiQueue.drainDue(midi, 12000, 10000);
     const auto projection = service.takeUiProjectionSnapshot();
     assert(projection.noteOutPulse);
     assert(projection.trackVelocity[0] == 96);
@@ -92,8 +115,15 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
 void test_muted_track_does_not_emit_note_events() {
     SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
+    core::sequencer::SequencerRuntimeGraphBank runtimeGraphBank;
+    core::sequencer::SequencerRuntimeSnapshotBank snapshotBank{
+        sequencer,
+        bank,
+        projectNavigation,
+    };
 
     sequencer.pattern.length.set(4);
     sequencer.pattern.stepsPerBeat.set(4);
@@ -105,24 +135,24 @@ void test_muted_track_does_not_emit_note_events() {
 
     core::sequencer::SequencerPlaybackService service{
         sequencer,
-        bank,
         status,
         midiQueue,
+        runtimeGraphBank,
     };
 
-    auto snapshot = captureSnapshot(bank, sequencer);
+    const auto& snapshot = refreshSnapshot(snapshotBank, runtimeGraphBank, sequencer, bank);
     assert(snapshot.enabledMask == 0x0001);
     assert(snapshot.mutedMask == 0x0001);
-    service.update(snapshot, 0, true, 0, 0, 1000, false, false);
+    service.update(snapshot, 0, true, 0, 1000, false);
 
-    auto counters = midiQueue.takeCounters();
-    assert(counters.pushed == 0);
+    assert(midiQueue.size() == 0);
 
     assert(bank.setTrackMuted(0, false));
-    snapshot = captureSnapshot(bank, sequencer);
-    service.update(snapshot, 0, true, 1, 0, 1000, false, false);
-    counters = midiQueue.takeCounters();
-    assert(counters.pushed > 0);
+    const auto& unmutedSnapshot = refreshSnapshot(
+        snapshotBank, runtimeGraphBank, sequencer, bank
+    );
+    service.update(unmutedSnapshot, 0, true, 0, 1000, false);
+    assert(midiQueue.size() > 0);
 
     std::cout << "[PASS] test_muted_track_does_not_emit_note_events\n";
 }

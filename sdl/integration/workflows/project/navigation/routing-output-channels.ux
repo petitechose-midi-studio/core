@@ -1,6 +1,7 @@
 # UX workflow: edit Project Routing one-to-one output channels.
 # Purpose: validates the V1 routing contract: all 16 tracks are listed and each
 # row can assign its output MIDI channel from Project > Routing.
+# Expect: capture_changed:routing_track_1_focused=routing_track_1_ch_2, capture_changed:routing_track_2_focused=routing_track_2_opt_changed
 
 0 capture screen boot
 

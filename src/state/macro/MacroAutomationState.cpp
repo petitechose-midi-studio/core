@@ -38,11 +38,6 @@ FLASHMEM bool curveRangeValid(const MacroAutomationCurveRef& ref,
     return end <= pool.used && end <= MACRO_AUTOMATION_POINT_POOL_CAPACITY;
 }
 
-FLASHMEM uint16_t reclaimableCurvePoints(const MacroAutomationCurveRef& ref,
-                                         const MacroAutomationPointPool& pool) {
-    return curveRangeValid(ref, pool) ? ref.pointCount : 0;
-}
-
 FLASHMEM bool appendPackedCurve(MacroAutomationPointPool& pool,
                                 MacroAutomationCurveRef& target,
                                 const MacroCurvePoint* source,
@@ -190,6 +185,23 @@ FLASHMEM bool clearSlotsInScope(MacroAutomationBankState& bank,
 
 }  // namespace
 
+FLASHMEM uint16_t macroAutomationStoredPointCount(
+    const MacroAutomationCurveRef& curve,
+    const MacroAutomationPointPool& pool
+) {
+    return curveRangeValid(curve, pool) ? curve.pointCount : 0;
+}
+
+FLASHMEM uint16_t macroAutomationStoredPointCount(
+    const MacroAutomationSlotState& state,
+    const MacroAutomationPointPool& pool
+) {
+    return static_cast<uint16_t>(
+        macroAutomationStoredPointCount(state.automation, pool) +
+        macroAutomationStoredPointCount(state.modulation, pool)
+    );
+}
+
 FLASHMEM void MacroAutomationBankState::clear() {
     entryCount = 0;
     entries = {};
@@ -331,7 +343,7 @@ FLASHMEM bool macroAutomationAssignAutomation(MacroAutomationBankState& bank,
         return true;
     }
 
-    const uint16_t oldCount = reclaimableCurvePoints(slot.automation, bank.pointPool);
+    const uint16_t oldCount = macroAutomationStoredPointCount(slot.automation, bank.pointPool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - bank.pointPool.used);
     if (lane.pointCount > static_cast<uint16_t>(freeCount + oldCount)) return false;
@@ -357,7 +369,7 @@ FLASHMEM bool macroAutomationAssignModulation(MacroAutomationBankState& bank,
         return true;
     }
 
-    const uint16_t oldCount = reclaimableCurvePoints(slot.modulation, bank.pointPool);
+    const uint16_t oldCount = macroAutomationStoredPointCount(slot.modulation, bank.pointPool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - bank.pointPool.used);
     if (shape.pointCount > static_cast<uint16_t>(freeCount + oldCount)) return false;
@@ -393,10 +405,7 @@ FLASHMEM bool macroAutomationCopySlotState(MacroAutomationPointPool& destPool,
                                            const MacroAutomationSlotState& source) {
     MacroAutomationSlotState next{};
     next.modulationDepth = source.modulationDepth;
-    const uint16_t required = static_cast<uint16_t>(
-        reclaimableCurvePoints(source.automation, sourcePool) +
-        reclaimableCurvePoints(source.modulation, sourcePool)
-    );
+    const uint16_t required = macroAutomationStoredPointCount(source, sourcePool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - destPool.used);
     if (required > freeCount) return false;
@@ -410,14 +419,8 @@ FLASHMEM bool macroAutomationCopySlotState(MacroAutomationBankState& destBank,
                                            MacroAutomationSlotState& dest,
                                            const MacroAutomationPointPool& sourcePool,
                                            const MacroAutomationSlotState& source) {
-    const uint16_t oldCount = static_cast<uint16_t>(
-        reclaimableCurvePoints(dest.automation, destBank.pointPool) +
-        reclaimableCurvePoints(dest.modulation, destBank.pointPool)
-    );
-    const uint16_t required = static_cast<uint16_t>(
-        reclaimableCurvePoints(source.automation, sourcePool) +
-        reclaimableCurvePoints(source.modulation, sourcePool)
-    );
+    const uint16_t oldCount = macroAutomationStoredPointCount(dest, destBank.pointPool);
+    const uint16_t required = macroAutomationStoredPointCount(source, sourcePool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - destBank.pointPool.used);
     if (required > static_cast<uint16_t>(freeCount + oldCount)) return false;

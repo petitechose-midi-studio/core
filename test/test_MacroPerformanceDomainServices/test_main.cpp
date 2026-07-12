@@ -25,6 +25,45 @@ uint32_t mockTimeMs() {
 using test_support::CoreStorages;
 using test_support::drainNotifications;
 
+void fillAutomationPointPoolExcept(
+    core::state::macro::MacroAutomationBankState& bank,
+    const core::state::macro::MacroAutomationSlotAddress& excluded
+) {
+    core::state::macro::MacroAutomationLane lane;
+    lane.active = true;
+    lane.durationBeats = 256.0f;
+    for (uint16_t i = 0;
+         i < core::state::macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS;
+         ++i) {
+        assert(core::state::macro::macroAutomationAppendPoint(
+            lane,
+            static_cast<float>(i) * 0.125f,
+            (i & 1U) == 0U ? 0.25f : 0.75f
+        ));
+    }
+
+    for (uint8_t track = 0;
+         track < core::state::macro::TRACK_COUNT &&
+         bank.pointPool.used < core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY;
+         ++track) {
+        for (uint8_t macro = 0;
+             macro < core::state::macro::MACRO_COUNT &&
+             bank.pointPool.used < core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY;
+             ++macro) {
+            const auto address = core::state::macro::MacroAutomationSlotAddress{
+                .track = track,
+                .page = 0,
+                .macro = macro,
+            };
+            if (core::state::macro::macroAutomationAddressEquals(address, excluded)) continue;
+            auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(bank, address);
+            assert(slot != nullptr);
+            assert(core::state::macro::macroAutomationAssignAutomation(bank, *slot, lane));
+        }
+    }
+    assert(bank.pointPool.used == core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+}
+
 void test_runtime_values_are_forwarded_and_clamped() {
     CoreStorages storage;
 
@@ -34,8 +73,8 @@ void test_runtime_values_are_forwarded_and_clamped() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
-    services.setRuntimeValue(0, 1.5f);
-    services.setRuntimeValue(1, -0.5f);
+    services.setResolvedValue(0, 1.5f);
+    services.setResolvedValue(1, -0.5f);
 
     assert(std::fabs(services.runtimeValue(0) - 1.0f) < 0.0001f);
     assert(std::fabs(services.runtimeValue(1) - 0.0f) < 0.0001f);
@@ -44,6 +83,31 @@ void test_runtime_values_are_forwarded_and_clamped() {
     state.flush();
 
     std::cout << "[PASS] test_runtime_values_are_forwarded_and_clamped\n";
+}
+
+void test_manual_value_updates_base_and_stages_project_mutation() {
+    CoreStorages storage;
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+
+    services.setManualValue(0, 0.75f);
+
+    assert(std::fabs(services.runtimeValue(0) - 0.75f) < 0.0001f);
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.75f) < 0.0001f);
+    assert(state.hasPendingProjectMutationCoalescing());
+    assert(!state.project.metadata.dirty);
+
+    state.flushProjectMutationCoalescing();
+    assert(!state.hasPendingProjectMutationCoalescing());
+    assert(state.project.metadata.dirty);
+
+    drainNotifications();
+
+    std::cout << "[PASS] test_manual_value_updates_base_and_stages_project_mutation\n";
 }
 
 void test_config_changes_mark_project_dirty_and_bump_revision() {
@@ -252,15 +316,19 @@ void test_automation_recording_commits_to_current_macro_slot() {
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     state.statusBar.tempo.set(120.0f);
-    services.setRuntimeValue(0, 0.25f);
+    services.setResolvedValue(0, 0.25f);
 
     assert(services.beginAutomationRecording(0, 1000));
+    assert(state.macroUi.automationRecordingStatus.get() ==
+           core::state::macro::MacroAutomationRecordingStatus::RECORDING);
     assert(services.automationRecordingActiveFor(0));
     assert(!services.beginAutomationRecording(1, 1000));
     assert(!state.project.metadata.dirty);
 
     assert(services.recordAutomationPoint(0, 1500, 0.75f));
     assert(services.commitAutomationRecording(2000));
+    assert(state.macroUi.automationRecordingStatus.get() ==
+           core::state::macro::MacroAutomationRecordingStatus::IDLE);
     assert(!services.automationRecordingActiveFor(0));
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
@@ -315,6 +383,8 @@ void test_automation_recording_cancel_discards_session() {
     assert(services.beginAutomationRecording(0, 1000));
     assert(services.recordAutomationPoint(0, 1250, 0.8f));
     assert(services.cancelAutomationRecording());
+    assert(state.macroUi.automationRecordingStatus.get() ==
+           core::state::macro::MacroAutomationRecordingStatus::IDLE);
     assert(!services.commitAutomationRecording(1500));
 
     const auto* slot = core::state::macro::macroAutomationFindSlot(
@@ -342,6 +412,8 @@ void test_automation_recording_without_motion_does_not_create_slot() {
 
     assert(services.beginAutomationRecording(0, 1000));
     assert(!services.commitAutomationRecording(1500));
+    assert(state.macroUi.automationRecordingStatus.get() ==
+           core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT);
     assert(!services.automationRecordingActiveFor(0));
 
     const auto* slot = core::state::macro::macroAutomationFindSlot(
@@ -356,6 +428,38 @@ void test_automation_recording_without_motion_does_not_create_slot() {
     assert(!state.project.metadata.dirty);
 
     std::cout << "[PASS] test_automation_recording_without_motion_does_not_create_slot\n";
+}
+
+void test_failed_first_recording_does_not_leave_an_empty_slot() {
+    CoreStorages storage;
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    fillAutomationPointPoolExcept(state.pages.automation, address);
+    const uint8_t entryCountBefore = state.pages.automation.entryCount;
+
+    assert(services.beginAutomationRecording(0, 1000));
+    assert(services.recordAutomationPoint(0, 1500, 0.75f));
+    assert(!services.commitAutomationRecording(2000));
+    assert(state.macroUi.automationRecordingStatus.get() ==
+           core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED);
+
+    assert(!services.automationRecordingActiveFor(0));
+    assert(core::state::macro::macroAutomationFindSlot(state.pages.automation, address) == nullptr);
+    assert(state.pages.automation.entryCount == entryCountBefore);
+    assert(state.pages.automation.pointPool.used ==
+           core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+    assert(!state.project.metadata.dirty);
+
+    std::cout << "[PASS] test_failed_first_recording_does_not_leave_an_empty_slot\n";
 }
 
 void test_macro_edit_automation_lifecycle_actions() {
@@ -396,6 +500,7 @@ void test_macro_edit_automation_lifecycle_actions() {
 int main() {
     oc::time::setProvider(mockTimeMs);
     test_runtime_values_are_forwarded_and_clamped();
+    test_manual_value_updates_base_and_stages_project_mutation();
     test_config_changes_mark_project_dirty_and_bump_revision();
     test_switch_to_page_updates_runtime_status_and_marks_project_dirty();
     test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid();
@@ -404,6 +509,7 @@ int main() {
     test_automation_recording_commits_to_current_macro_slot();
     test_automation_recording_cancel_discards_session();
     test_automation_recording_without_motion_does_not_create_slot();
+    test_failed_first_recording_does_not_leave_an_empty_slot();
     test_macro_edit_automation_lifecycle_actions();
     std::cout << "\nAll MacroPerformanceDomainServices tests passed.\n";
     return 0;

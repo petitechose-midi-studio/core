@@ -4,15 +4,15 @@
 
 #include <lvgl.h>
 #include <ms/ui/widget/MenuListView.hpp>
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/DeviceSettingsState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/settings/DeviceSettingsMenuModel.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include "ui/view/MainViewFrame.hpp"
-#include "ui/view/PausableLvglTimer.hpp"
 
 namespace core::ui {
 
@@ -28,28 +28,29 @@ public:
 
     void onActivate() override;
     void onDeactivate() override;
+    [[nodiscard]] bool valid() const { return initialized_; }
     const char* getViewId() const override { return "core.device_settings"; }
     lv_obj_t* getElement() const override { return container_; }
 
 private:
     void createLayout(lv_obj_t* parent);
-    void bindToState();
+    bool bindToState();
     void requestRender();
-    void scheduleRender(bool ready = false);
-    void pauseRenderTimerIfIdle();
     void render();
-    static void onRenderTimer(lv_timer_t* timer);
+    static bool canDrainRender(void* context);
+    static void drainRender(void* context, uint32_t flags);
 
     StateRefs state_refs_;
-    oc::state::SignalWatcher watcher_;
-    bool dirty_ = true;
-    core::app::ExtmemUniquePtr<core::ui::PausableLvglTimer> render_timer_;
+    oc::state::StaticWatchGroup<8> watcher_;
+    core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
+        render_scheduler_;
 
     core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
     core::app::ExtmemUniquePtr<ms::ui::MenuListView> menu_;
     std::array<ms::ui::MenuRow, core::state::settings::DeviceSettingsMenuPage::MAX_ROWS> rows_{};
+    bool initialized_ = false;
 };
 
 }  // namespace core::ui

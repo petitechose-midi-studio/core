@@ -550,34 +550,13 @@ FLASHMEM bool applyStepGraphPreset(
         return false;
     }
 
-    bool changed = false;
-    if (preset.rootContext && preset.rootValuesValid) {
-        const bool existed = sequencer.pattern.isEnabled(step) ||
-                             sequencer.pattern.note[step] != SequencerState::DEFAULT_NOTE ||
-                             sequencer.pattern.velocity[step] != SequencerState::DEFAULT_VELOCITY ||
-                             sequencer.pattern.gate[step] != SequencerState::DEFAULT_GATE_PERCENT ||
-                             sequencer.pattern.nudge[step] != 0 ||
-                             sequencer.pattern.probability[step] != SequencerState::DEFAULT_PROBABILITY;
-        if (report != nullptr && existed) {
-            report->flags = static_cast<uint16_t>(
-                report->flags | SEQUENCER_GRAPH_ASSET_REPORT_OVERWRITE
-            );
-        }
-        sequencer.pattern.setEnabled(step, preset.enabled);
-        changed = sequencer.setStepDataAt(
-            step,
-            preset.note,
-            preset.velocity,
-            preset.gate,
-            preset.nudge,
-            preset.probability
-        ) || changed;
-        if (report != nullptr) {
-            report->flags = static_cast<uint16_t>(
-                report->flags | SEQUENCER_GRAPH_ASSET_REPORT_ROOT_VALUES
-            );
-        }
-    }
+    const bool rootValuesExisted = preset.rootContext && preset.rootValuesValid &&
+        (sequencer.pattern.isEnabled(step) ||
+         sequencer.pattern.note[step] != SequencerState::DEFAULT_NOTE ||
+         sequencer.pattern.velocity[step] != SequencerState::DEFAULT_VELOCITY ||
+         sequencer.pattern.gate[step] != SequencerState::DEFAULT_GATE_PERCENT ||
+         sequencer.pattern.nudge[step] != 0 ||
+         sequencer.pattern.probability[step] != SequencerState::DEFAULT_PROBABILITY);
 
     if (!copyStepNodePayloadFromGraph(
             sequencer.pattern,
@@ -588,16 +567,40 @@ FLASHMEM bool applyStepGraphPreset(
         setReportStatus(report, SequencerGraphAssetStatus::GRAPH_LIMIT_REACHED);
         return false;
     }
+    const bool compacted = compactSequencerGraph(sequencer);
 
-    refreshContentView(sequencer);
-    if (!preset.rootContext) sequencer.contentView.bump();
+    if (preset.rootContext && preset.rootValuesValid) {
+        if (report != nullptr && rootValuesExisted) {
+            report->flags = static_cast<uint16_t>(
+                report->flags | SEQUENCER_GRAPH_ASSET_REPORT_OVERWRITE
+            );
+        }
+        sequencer.pattern.setEnabled(step, preset.enabled);
+        (void)sequencer.setStepDataAt(
+            step,
+            preset.note,
+            preset.velocity,
+            preset.gate,
+            preset.nudge,
+            preset.probability
+        );
+        if (report != nullptr) {
+            report->flags = static_cast<uint16_t>(
+                report->flags | SEQUENCER_GRAPH_ASSET_REPORT_ROOT_VALUES
+            );
+        }
+    }
+
+    if (!compacted) {
+        refreshContentView(sequencer);
+        if (!preset.rootContext) sequencer.contentView.bump();
+    }
     if (report != nullptr) {
         report->flags = static_cast<uint16_t>(
             report->flags | SEQUENCER_GRAPH_ASSET_REPORT_GRAPH_PAYLOAD
         );
         fillReportCounts(report, preset.graph);
     }
-    (void)changed;
     return true;
 }
 

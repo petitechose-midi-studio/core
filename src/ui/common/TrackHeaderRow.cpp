@@ -1,5 +1,6 @@
 #include "ui/common/TrackHeaderRow.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
@@ -124,6 +125,88 @@ FLASHMEM void TrackHeaderRow::createUI(lv_obj_t* parent) {
     lv_obj_set_style_border_width(selection_cursor_, 0, 0);
     lv_obj_set_style_bg_opa(selection_cursor_, LV_OPA_80, 0);
     lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_add_event_cb(
+        items_row_,
+        [](lv_event_t* event) {
+            auto* self = static_cast<TrackHeaderRow*>(lv_event_get_user_data(event));
+            if (!self) return;
+            self->cacheItemGeometry();
+            self->syncSelectionCursor();
+        },
+        LV_EVENT_LAYOUT_CHANGED,
+        this
+    );
+}
+
+FLASHMEM void TrackHeaderRow::cacheItemGeometry() {
+    if (!items_row_ || lv_obj_get_width(items_row_) <= 0) {
+        item_geometry_cache_initialized_ = false;
+        return;
+    }
+
+    for (uint8_t i = 0; i < items_.size(); ++i) {
+        if (!items_[i]) {
+            item_geometry_cache_initialized_ = false;
+            return;
+        }
+        item_x_cache_[i] = lv_obj_get_x(items_[i]);
+        item_y_cache_[i] = lv_obj_get_y(items_[i]);
+        item_width_cache_[i] = lv_obj_get_width(items_[i]);
+        item_height_cache_[i] = lv_obj_get_height(items_[i]);
+    }
+    item_geometry_cache_initialized_ = true;
+}
+
+FLASHMEM void TrackHeaderRow::syncSelectionCursor() {
+    if (!selection_cursor_) return;
+
+    const bool showCursor =
+        cursor_requested_visible_ &&
+        item_geometry_cache_initialized_ &&
+        cursor_requested_index_ < cursor_requested_item_count_ &&
+        cursor_requested_index_ < items_.size() &&
+        items_[cursor_requested_index_] &&
+        !lv_obj_has_flag(items_[cursor_requested_index_], LV_OBJ_FLAG_HIDDEN);
+
+    if (!showCursor) {
+        if (cursor_visible_cache_) {
+            lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+            cursor_visible_cache_ = false;
+        }
+        return;
+    }
+
+    const uint8_t index = cursor_requested_index_;
+    const lv_coord_t itemX = item_x_cache_[index];
+    const lv_coord_t itemY = item_y_cache_[index];
+    const lv_coord_t itemW = item_width_cache_[index];
+    const lv_coord_t itemH = item_height_cache_[index];
+    const lv_coord_t cursorWidth = std::max<lv_coord_t>(1, itemW - 2);
+    const lv_coord_t cursorX = static_cast<lv_coord_t>(itemX + (itemW - cursorWidth) / 2);
+    const lv_coord_t cursorY = static_cast<lv_coord_t>(itemY + itemH + CURSOR_OFFSET_Y);
+
+    if (!cursor_visible_cache_) {
+        lv_obj_clear_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
+        cursor_visible_cache_ = true;
+    }
+    if (cursor_x_cache_ != cursorX || cursor_y_cache_ != cursorY) {
+        lv_obj_set_pos(selection_cursor_, cursorX, cursorY);
+        cursor_x_cache_ = cursorX;
+        cursor_y_cache_ = cursorY;
+    }
+    if (cursor_width_cache_ != cursorWidth) {
+        lv_obj_set_size(selection_cursor_, cursorWidth, CURSOR_HEIGHT);
+        cursor_width_cache_ = cursorWidth;
+    }
+    if (cursor_color_cache_ != cursor_requested_color_) {
+        lv_obj_set_style_bg_color(selection_cursor_, lv_color_hex(cursor_requested_color_), 0);
+        cursor_color_cache_ = cursor_requested_color_;
+    }
+    if (cursor_opa_cache_ != cursor_requested_opa_) {
+        lv_obj_set_style_bg_opa(selection_cursor_, cursor_requested_opa_, 0);
+        cursor_opa_cache_ = cursor_requested_opa_;
+    }
 }
 
 FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
@@ -134,13 +217,16 @@ FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
     const bool denseLayout = props.itemCount > 8;
     const lv_coord_t itemSize = denseLayout ? ITEM_SIZE_DENSE : ITEM_SIZE_WIDE;
     const lv_coord_t itemGap = denseLayout ? ITEM_GAP_DENSE : ITEM_GAP_WIDE;
-    const bool geometryModeChanged =
+    const bool geometryChanged =
         !item_geometry_cache_initialized_ ||
         dense_layout_cache_ != denseLayout ||
         item_size_cache_ != itemSize ||
-        item_gap_cache_ != itemGap;
+        item_gap_cache_ != itemGap ||
+        geometry_item_count_cache_ != props.itemCount;
 
-    if (geometryModeChanged) {
+    if (dense_layout_cache_ != denseLayout ||
+        item_size_cache_ != itemSize ||
+        item_gap_cache_ != itemGap) {
         lv_obj_set_style_pad_column(items_row_, itemGap, 0);
         for (uint8_t i = 0; i < items_.size(); ++i) {
             lv_obj_set_size(items_[i], itemSize, itemSize);
@@ -148,7 +234,10 @@ FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
         dense_layout_cache_ = denseLayout;
         item_size_cache_ = itemSize;
         item_gap_cache_ = itemGap;
-        items_row_width_cache_ = -1;
+    }
+    if (geometryChanged) {
+        item_geometry_cache_initialized_ = false;
+        geometry_item_count_cache_ = props.itemCount;
     }
 
     if (!surface_cache_initialized_ || accent_cache_color_ != props.accentColor) {
@@ -225,7 +314,6 @@ FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
                 item_border_width_cache_[i] = borderWidth;
             }
         }
-        item_selected_cache_[i] = selected;
         if (selected) {
             const uint32_t borderColor = props.cursorColor != 0 ? props.cursorColor : props.accentColor;
             if (item_border_color_cache_[i] != borderColor) {
@@ -242,63 +330,12 @@ FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
         }
     }
 
-    if (selection_cursor_) {
-        const bool showCursor = props.showCursor && props.cursorIndex < props.itemCount &&
-                                props.cursorIndex < items_.size() && items_[props.cursorIndex] &&
-                                !lv_obj_has_flag(items_[props.cursorIndex], LV_OBJ_FLAG_HIDDEN);
-
-        if (!showCursor) {
-            if (cursor_visible_cache_) {
-                lv_obj_add_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
-                cursor_visible_cache_ = false;
-            }
-        } else {
-            lv_coord_t rowWidth = lv_obj_get_width(items_row_);
-            if (rowWidth <= 0 || geometryModeChanged || rowWidth != items_row_width_cache_) {
-                lv_obj_update_layout(items_row_);
-                rowWidth = lv_obj_get_width(items_row_);
-                items_row_width_cache_ = rowWidth;
-                for (uint8_t i = 0; i < items_.size(); ++i) {
-                    item_x_cache_[i] = lv_obj_get_x(items_[i]);
-                    item_y_cache_[i] = lv_obj_get_y(items_[i]);
-                    item_width_cache_[i] = lv_obj_get_width(items_[i]);
-                    item_height_cache_[i] = lv_obj_get_height(items_[i]);
-                }
-                item_geometry_cache_initialized_ = true;
-            }
-
-            const lv_coord_t itemX = item_x_cache_[props.cursorIndex];
-            const lv_coord_t itemY = item_y_cache_[props.cursorIndex];
-            const lv_coord_t itemW = item_width_cache_[props.cursorIndex];
-            const lv_coord_t itemH = item_height_cache_[props.cursorIndex];
-            const lv_coord_t cursorWidth = std::max<lv_coord_t>(1, itemW - 2);
-            const lv_coord_t cursorX = static_cast<lv_coord_t>(itemX + (itemW - cursorWidth) / 2);
-            const lv_coord_t cursorY = static_cast<lv_coord_t>(itemY + itemH + CURSOR_OFFSET_Y);
-
-            if (!cursor_visible_cache_) {
-                lv_obj_clear_flag(selection_cursor_, LV_OBJ_FLAG_HIDDEN);
-                cursor_visible_cache_ = true;
-            }
-            if (cursor_x_cache_ != cursorX || cursor_y_cache_ != cursorY) {
-                lv_obj_set_pos(selection_cursor_, cursorX, cursorY);
-                cursor_x_cache_ = cursorX;
-                cursor_y_cache_ = cursorY;
-            }
-            if (cursor_width_cache_ != cursorWidth) {
-                lv_obj_set_size(selection_cursor_, cursorWidth, CURSOR_HEIGHT);
-                cursor_width_cache_ = cursorWidth;
-            }
-            const uint32_t cursorColor = props.cursorColor != 0 ? props.cursorColor : props.accentColor;
-            if (cursor_color_cache_ != cursorColor) {
-                lv_obj_set_style_bg_color(selection_cursor_, lv_color_hex(cursorColor), 0);
-                cursor_color_cache_ = cursorColor;
-            }
-            if (cursor_opa_cache_ != props.cursorOpa) {
-                lv_obj_set_style_bg_opa(selection_cursor_, props.cursorOpa, 0);
-                cursor_opa_cache_ = props.cursorOpa;
-            }
-        }
-    }
+    cursor_requested_visible_ = props.showCursor;
+    cursor_requested_index_ = props.cursorIndex;
+    cursor_requested_item_count_ = props.itemCount;
+    cursor_requested_color_ = props.cursorColor != 0 ? props.cursorColor : props.accentColor;
+    cursor_requested_opa_ = props.cursorOpa;
+    syncSelectionCursor();
 
     surface_cache_initialized_ = true;
 }

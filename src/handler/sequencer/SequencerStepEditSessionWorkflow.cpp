@@ -56,16 +56,33 @@ FLASHMEM bool commitHistory(
     bool recorded = false;
     if (historySnapshotValid) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(sequencer, after) &&
+        const bool graphUnchanged =
+            historySnapshot.flat.graphRevision == sequencer.pattern.graphRevision.get();
+        bool captured = true;
+        if (graphUnchanged) {
+            historySnapshot.graph.reset();
+            core::state::sequencer::captureFlatHistorySnapshot(sequencer, after);
+        } else {
+            captured = core::state::sequencer::captureHistorySnapshot(sequencer, after);
+        }
+
+        if (captured &&
             !core::state::sequencer::sameMusicalHistorySnapshot(historySnapshot, after)) {
-            recorded = history.recordPattern(
-                std::move(historySnapshot),
-                std::move(after),
-                core::state::sequencer::SequencerHistoryDescriptor{
-                    .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-                    .stepIndex = sequencer.stepEdit.stepIndex.get(),
-                }
-            );
+            const auto descriptor = core::state::sequencer::SequencerHistoryDescriptor{
+                .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+                .stepIndex = sequencer.stepEdit.stepIndex.get(),
+            };
+            recorded = graphUnchanged
+                ? history.recordFlatPattern(
+                      std::move(historySnapshot),
+                      std::move(after),
+                      descriptor
+                  )
+                : history.recordPattern(
+                      std::move(historySnapshot),
+                      std::move(after),
+                      descriptor
+                  );
         }
     }
 

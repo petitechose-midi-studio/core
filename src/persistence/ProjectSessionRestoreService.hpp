@@ -10,7 +10,7 @@ struct CoreState;
 
 namespace core::persistence {
 
-class ProductFileService;
+class ProjectSessionStore;
 
 class ProjectSessionRestoreService {
 public:
@@ -32,13 +32,13 @@ public:
         }
     };
 
-    explicit ProjectSessionRestoreService(ProductFileService& files);
+    explicit ProjectSessionRestoreService(ProjectSessionStore& store);
 
     Result restore(core::state::CoreState& state,
                    core::persistence::project_file::LoadReport* report = nullptr);
 
 private:
-    ProductFileService& files_;
+    ProjectSessionStore& store_;
 };
 
 }  // namespace core::persistence

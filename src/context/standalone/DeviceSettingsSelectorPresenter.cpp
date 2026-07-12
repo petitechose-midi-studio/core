@@ -79,16 +79,23 @@ FLASHMEM SelectorRenderData buildSelectorRenderData(
 
 }  // namespace
 
-DeviceSettingsSelectorPresenter::DeviceSettingsSelectorPresenter(
+FLASHMEM DeviceSettingsSelectorPresenter::DeviceSettingsSelectorPresenter(
     StateRefs stateRefs,
     ms::ui::VirtualListSelectorOverlay& selectorOverlay
 )
     : state_refs_(stateRefs)
-    , selector_overlay_(selectorOverlay) {}
+    , selector_overlay_(selectorOverlay)
+    , render_scheduler_(
+          core::ui::renderSchedulerDebugLabel("DeviceSettingsSelector"),
+          &DeviceSettingsSelectorPresenter::drainRenderQueue,
+          this
+      ) {}
 
-FLASHMEM void DeviceSettingsSelectorPresenter::bind() {
-    selector_watcher_.watchAll(
-        [this]() { renderSelector(); },
+FLASHMEM bool DeviceSettingsSelectorPresenter::bind() {
+    selector_watcher_.bind<&DeviceSettingsSelectorPresenter::requestSelectorRender>(
+        *this, 0, "DeviceSettings.selector"
+    );
+    return render_scheduler_.valid() && selector_watcher_.watchAll(
         state_refs_.settings.flowPhase,
         state_refs_.settings.selector.selectedIndex,
         state_refs_.settings.selector.editingRow,
@@ -97,6 +104,16 @@ FLASHMEM void DeviceSettingsSelectorPresenter::bind() {
         state_refs_.midiSync.autoFallbackMs,
         state_refs_.midiSync.autoLockClockCount
     );
+}
+
+FLASHMEM void DeviceSettingsSelectorPresenter::requestSelectorRender() {
+    render_scheduler_.request(RENDER_SELECTOR);
+}
+
+FLASHMEM void DeviceSettingsSelectorPresenter::drainRenderQueue(void* context, uint32_t flags) {
+    if ((flags & RENDER_SELECTOR) == 0) return;
+    auto* self = static_cast<DeviceSettingsSelectorPresenter*>(context);
+    if (self) self->renderSelector();
 }
 
 FLASHMEM void DeviceSettingsSelectorPresenter::renderSelector() {

@@ -1,11 +1,12 @@
 #include "persistence/StepPresetFileStore.hpp"
 
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/AtomicProductFile.hpp"
+#include "persistence/ProductFilePath.hpp"
 #include "state/project/ProjectSlug.hpp"
 
 namespace core::persistence {
@@ -21,111 +22,8 @@ struct StepPresetListContext {
     StepPresetFileListResult result{};
 };
 
-FLASHMEM bool pathWrite(char* out,
-                        size_t outSize,
-                        const char* pattern,
-                        const char* presetId) {
-    if (out == nullptr || outSize == 0 || pattern == nullptr || presetId == nullptr) {
-        return false;
-    }
-    const int written = std::snprintf(out, outSize, pattern, presetId);
-    return written > 0 && static_cast<size_t>(written) < outSize;
-}
-
-FLASHMEM bool pathWriteLiteral(char* out, size_t outSize, const char* path) {
-    if (out == nullptr || outSize == 0 || path == nullptr) return false;
-    const size_t length = std::strlen(path);
-    if (length >= outSize) return false;
-    std::memcpy(out, path, length);
-    out[length] = '\0';
-    return true;
-}
-
-FLASHMEM bool isNotFound(const oc::type::Result<void>& result) {
-    return !result && result.error().code == ErrorCode::RESOURCE_NOT_FOUND;
-}
-
 FLASHMEM oc::type::Result<void> invalid(const char* context) {
     return oc::type::Result<void>::err({ErrorCode::INVALID_ARGUMENT, context});
-}
-
-FLASHMEM oc::type::Result<void> storageWriteFailed(const char* context) {
-    return oc::type::Result<void>::err({ErrorCode::STORAGE_WRITE_FAILED, context});
-}
-
-FLASHMEM oc::type::Result<void> removeIfExists(ProductFileService& files, const char* path) {
-    auto removed = files.remove(path);
-    if (removed || isNotFound(removed)) {
-        return oc::type::Result<void>::ok();
-    }
-    return removed;
-}
-
-FLASHMEM oc::type::Result<void> writeTmp(ProductFileService& files,
-                                         const char* tmpPath,
-                                         const uint8_t* data,
-                                         uint32_t size) {
-    if (data == nullptr || size == 0 || size > StepPresetFileStore::MAX_FILE_SIZE) {
-        return invalid("invalid step preset payload");
-    }
-    if (files.writeSessionActive()) {
-        return oc::type::Result<void>::err({ErrorCode::INVALID_STATE, "write session active"});
-    }
-
-    auto begin = files.beginWrite(tmpPath, size);
-    if (!begin) return begin;
-
-    uint32_t offset = 0;
-    while (offset < size) {
-        const uint32_t next = std::min<uint32_t>(
-            StepPresetFileStore::WRITE_CHUNK_SIZE,
-            size - offset
-        );
-        auto written = files.appendWrite(data + offset, next);
-        if (!written || written.value() != next) {
-            files.abortWrite();
-            return storageWriteFailed("step preset tmp write failed");
-        }
-        offset += next;
-    }
-
-    auto finish = files.finishWrite();
-    if (!finish) {
-        files.abortWrite();
-        return finish;
-    }
-    return oc::type::Result<void>::ok();
-}
-
-FLASHMEM oc::type::Result<void> commitTmp(ProductFileService& files,
-                                          const char* current,
-                                          const char* backup,
-                                          const char* tmp) {
-    auto removeBackup = removeIfExists(files, backup);
-    if (!removeBackup) return removeBackup;
-
-    auto currentInfo = files.stat(current);
-    if (!currentInfo && currentInfo.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
-        return oc::type::Result<void>::err(currentInfo.error());
-    }
-    const bool hadCurrent = static_cast<bool>(currentInfo);
-    if (hadCurrent) {
-        auto backupResult = files.rename(current, backup);
-        if (!backupResult) return backupResult;
-    }
-
-    auto promote = files.rename(tmp, current);
-    if (!promote) {
-        if (hadCurrent) {
-            (void)files.rename(backup, current);
-        }
-        return promote;
-    }
-
-    if (hadCurrent) {
-        (void)removeIfExists(files, backup);
-    }
-    return oc::type::Result<void>::ok();
 }
 
 }  // namespace
@@ -139,13 +37,25 @@ FLASHMEM bool StepPresetFileStore::validPresetId(const char* presetId) {
 
 FLASHMEM bool StepPresetFileStore::buildPaths_(const char* presetId, PresetPaths& out) {
     if (!validPresetId(presetId)) return false;
-    return pathWriteLiteral(out.directory, sizeof(out.directory), DIRECTORY) &&
-           pathWrite(out.current, sizeof(out.current), "library/step-presets/%s.mssp", presetId) &&
-           pathWrite(out.backup,
-                     sizeof(out.backup),
-                     "library/step-presets/%s.mssp.bak",
-                     presetId) &&
-           pathWrite(out.tmp, sizeof(out.tmp), "tmp/%s.mssp.tmp", presetId);
+    return copyProductRelativePath(out.directory, sizeof(out.directory), DIRECTORY) &&
+           formatProductRelativePath(
+               out.current,
+               sizeof(out.current),
+               "library/step-presets/%s.mssp",
+               presetId
+           ) &&
+           formatProductRelativePath(
+               out.backup,
+               sizeof(out.backup),
+               "library/step-presets/%s.mssp.bak",
+               presetId
+           ) &&
+           formatProductRelativePath(
+               out.tmp,
+               sizeof(out.tmp),
+               "tmp/%s.mssp.tmp",
+               presetId
+           );
 }
 
 FLASHMEM bool StepPresetFileStore::listVisitor_(
@@ -193,6 +103,12 @@ FLASHMEM oc::type::Result<StepPresetFileSaveResult> StepPresetFileStore::save(
     const uint8_t* payload,
     uint16_t payloadSize
 ) {
+    if (payload == nullptr || payloadSize == 0 || payloadSize > MAX_FILE_SIZE) {
+        return oc::type::Result<StepPresetFileSaveResult>::err(
+            {ErrorCode::INVALID_ARGUMENT, "invalid step preset payload"}
+        );
+    }
+
     PresetPaths paths{};
     if (!buildPaths_(presetId, paths)) {
         return oc::type::Result<StepPresetFileSaveResult>::err(
@@ -200,26 +116,20 @@ FLASHMEM oc::type::Result<StepPresetFileSaveResult> StepPresetFileStore::save(
         );
     }
 
-    auto ensureDir = files_.createDirectory(paths.directory);
-    if (!ensureDir) {
-        return oc::type::Result<StepPresetFileSaveResult>::err(ensureDir.error());
-    }
-
-    auto removeTmp = removeIfExists(files_, paths.tmp);
-    if (!removeTmp) {
-        return oc::type::Result<StepPresetFileSaveResult>::err(removeTmp.error());
-    }
-
-    auto write = writeTmp(files_, paths.tmp, payload, payloadSize);
-    if (!write) {
-        (void)removeIfExists(files_, paths.tmp);
-        return oc::type::Result<StepPresetFileSaveResult>::err(write.error());
-    }
-
-    auto commit = commitTmp(files_, paths.current, paths.backup, paths.tmp);
-    if (!commit) {
-        (void)removeIfExists(files_, paths.tmp);
-        return oc::type::Result<StepPresetFileSaveResult>::err(commit.error());
+    auto saved = replaceProductFileAtomically(
+        files_,
+        {
+            .directory = paths.directory,
+            .current = paths.current,
+            .backup = paths.backup,
+            .tmp = paths.tmp,
+        },
+        payload,
+        payloadSize,
+        WRITE_CHUNK_SIZE
+    );
+    if (!saved) {
+        return oc::type::Result<StepPresetFileSaveResult>::err(saved.error());
     }
 
     StepPresetFileSaveResult result{};
@@ -247,6 +157,15 @@ FLASHMEM oc::type::Result<StepPresetFileLoadResult> StepPresetFileStore::load(
         return oc::type::Result<StepPresetFileLoadResult>::err(
             {ErrorCode::INVALID_ARGUMENT, "invalid step preset id"}
         );
+    }
+
+    auto recovered = recoverProductFileBackupIfCurrentMissing(
+        files_,
+        paths.current,
+        paths.backup
+    );
+    if (!recovered) {
+        return oc::type::Result<StepPresetFileLoadResult>::err(recovered.error());
     }
 
     auto info = files_.stat(paths.current);

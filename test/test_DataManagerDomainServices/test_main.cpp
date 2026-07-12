@@ -7,6 +7,7 @@
 
 #include <oc/time/Time.hpp>
 
+#include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
 #include "../../src/handler/settings/DataManagerDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
@@ -97,7 +98,10 @@ void test_macro_slot_execution_and_probe_roundtrip() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.73f);
+    core::handler::MacroPerformanceDomainServices::fromCoreState(state).setManualValue(
+        0,
+        0.73f
+    );
     drainNotifications();
     state.flush();
 
@@ -113,7 +117,10 @@ void test_macro_slot_execution_and_probe_roundtrip() {
 
     assert(services.slotOccupied(core::state::DataManagerCommand::MACRO_LOAD_SLOT, 5));
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.11f);
+    core::handler::MacroPerformanceDomainServices::fromCoreState(state).setManualValue(
+        0,
+        0.11f
+    );
     drainNotifications();
     state.flush();
 

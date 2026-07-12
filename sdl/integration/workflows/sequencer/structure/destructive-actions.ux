@@ -2,6 +2,7 @@
 # Purpose: Step focus and step selection expose the same shallow/deep model:
 # tap resets step values while preserving child content; hold performs the deep
 # reset that removes child content.
+# Expect: capture_changed:step_3_enabled=step_3_reset_by_tap, capture_changed:step_3_reenabled=selection_deep_reset_applied_by_hold
 
 0 scenario sequencer
 50 capture screen track_focus

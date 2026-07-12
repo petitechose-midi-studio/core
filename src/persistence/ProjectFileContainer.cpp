@@ -312,31 +312,31 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
                              DecodedChunkView* outChunks,
                              uint16_t outCapacity,
                              LoadReport* loadReport) {
-    if (loadReport != nullptr) {
-        loadReport->reset();
-    }
+    LoadReport localReport{};
+    LoadReport* effectiveReport = loadReport != nullptr ? loadReport : &localReport;
+    effectiveReport->reset();
 
     if (data == nullptr || outChunks == nullptr) {
-        report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
+        report(effectiveReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
         return {.status = Status::INVALID_ARGUMENT, .chunkCount = 0, .overwriteSafe = false};
     }
     if (size < kHeaderSize) {
-        report(loadReport, LoadSeverity::FATAL, LoadCode::BUFFER_TOO_SMALL);
+        report(effectiveReport, LoadSeverity::FATAL, LoadCode::BUFFER_TOO_SMALL);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
 
     FileHeader header{};
     if (!readFileHeader(data, size, header)) {
-        report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
+        report(effectiveReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
     if (header.magic != PROJECT_FILE_MAGIC) {
-        report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_MAGIC);
+        report(effectiveReport, LoadSeverity::FATAL, LoadCode::INVALID_MAGIC);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
 
     if (header.versionMajor > CONTAINER_VERSION_MAJOR) {
-        report(loadReport,
+        report(effectiveReport,
                LoadSeverity::WARNING,
                LoadCode::UNSUPPORTED_CONTAINER_VERSION,
                0,
@@ -348,7 +348,7 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
         header.directoryEntrySize != kDirectoryEntrySize ||
         header.chunkCount > MAX_CHUNKS ||
         header.directoryOffset < kHeaderSize) {
-        report(loadReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
+        report(effectiveReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
 
@@ -357,7 +357,7 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
     if (!rangeInside(header.directoryOffset, directoryBytes, size) ||
         header.payloadOffset < header.directoryOffset + directoryBytes ||
         header.payloadOffset > size) {
-        report(loadReport, LoadSeverity::FATAL, LoadCode::CHUNK_DIRECTORY_INVALID);
+        report(effectiveReport, LoadSeverity::FATAL, LoadCode::CHUNK_DIRECTORY_INVALID);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
 
@@ -367,25 +367,25 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
         const uint32_t entryOffset =
             header.directoryOffset + static_cast<uint32_t>(i) * kDirectoryEntrySize;
         if (!readChunkDirectoryEntry(data + entryOffset, size - entryOffset, entry)) {
-            report(loadReport, LoadSeverity::ERROR, LoadCode::CHUNK_DIRECTORY_INVALID);
+            report(effectiveReport, LoadSeverity::ERROR, LoadCode::CHUNK_DIRECTORY_INVALID);
             continue;
         }
 
         if (!rangeInside(entry.offset, entry.size, size) || entry.offset < header.payloadOffset) {
-            report(loadReport, LoadSeverity::ERROR, LoadCode::CHUNK_OUT_OF_BOUNDS, entry.id);
+            report(effectiveReport, LoadSeverity::ERROR, LoadCode::CHUNK_OUT_OF_BOUNDS, entry.id);
             continue;
         }
 
         const uint8_t* payload = data + entry.offset;
         const uint32_t actualCrc = crc32(payload, entry.size);
         if (actualCrc != entry.crc32) {
-            report(loadReport, LoadSeverity::ERROR, LoadCode::CHUNK_CRC_MISMATCH, entry.id);
+            report(effectiveReport, LoadSeverity::ERROR, LoadCode::CHUNK_CRC_MISMATCH, entry.id);
             continue;
         }
 
         const bool known = isKnownChunkId(entry.id);
         if (!known) {
-            report(loadReport,
+            report(effectiveReport,
                    LoadSeverity::WARNING,
                    LoadCode::UNKNOWN_CHUNK,
                    entry.id,
@@ -393,11 +393,11 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
                    entry.versionMinor);
         }
         if (containsChunk(outChunks, decodedCount, entry.id)) {
-            report(loadReport, LoadSeverity::ERROR, LoadCode::DUPLICATE_CHUNK, entry.id);
+            report(effectiveReport, LoadSeverity::ERROR, LoadCode::DUPLICATE_CHUNK, entry.id);
             continue;
         }
         if (decodedCount >= outCapacity) {
-            report(loadReport, LoadSeverity::WARNING, LoadCode::OUTPUT_CAPACITY_EXCEEDED);
+            report(effectiveReport, LoadSeverity::WARNING, LoadCode::OUTPUT_CAPACITY_EXCEEDED);
             continue;
         }
 
@@ -412,8 +412,8 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
         };
     }
 
-    const Status status = statusForReport(loadReport);
-    const bool overwriteSafe = (loadReport == nullptr) ? true : loadReport->overwriteSafe;
+    const Status status = statusForReport(effectiveReport);
+    const bool overwriteSafe = effectiveReport->overwriteSafe;
     return {.status = status, .chunkCount = decodedCount, .overwriteSafe = overwriteSafe};
 }
 

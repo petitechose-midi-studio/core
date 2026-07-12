@@ -85,26 +85,97 @@ uint8_t sanitizeFocusedStep(uint8_t focused, uint8_t length) {
     return (focused >= length) ? static_cast<uint8_t>(length - 1) : focused;
 }
 
-FLASHMEM bool writePattern(binary::Writer& writer,
-                           const sequencer::SequencerPatternState& source) {
-    const uint8_t length = sanitizeLength(source.length.get());
+struct PatternEncodeView {
+    uint8_t length = sequencer::SequencerPatternState::DEFAULT_LENGTH;
+    uint8_t stepsPerBeat = sequencer::SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
+    uint8_t midiChannel = sequencer::SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED;
+    sequencer::SequencerPitchEditMode pitchEditMode =
+        sequencer::SequencerPitchEditMode::CHROMATIC;
+    oc::note::sequencer::StepSequencerVariationRanges variationRanges{};
+    int8_t swingOffsetPercent = 0;
+    int8_t patternNudgePercent = 0;
+    sequencer::SequencerPatternScalePolicy scalePolicy =
+        sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT;
+    oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
+    oc::note::sequencer::StepBitMask128 enabledMask{};
+    const uint8_t* note = nullptr;
+    const uint8_t* velocity = nullptr;
+    const uint16_t* gate = nullptr;
+    const int8_t* nudge = nullptr;
+    const uint8_t* probability = nullptr;
+};
+
+FLASHMEM PatternEncodeView patternEncodeView(
+    const sequencer::SequencerPatternState& source
+) {
+    return {
+        .length = source.length.get(),
+        .stepsPerBeat = source.stepsPerBeat.get(),
+        .midiChannel = source.midiChannel.get(),
+        .pitchEditMode = source.pitchEditMode,
+        .variationRanges = source.variationRanges,
+        .swingOffsetPercent = source.swingOffsetPercent.get(),
+        .patternNudgePercent = source.patternNudgePercent.get(),
+        .scalePolicy = source.scalePolicy,
+        .scaleOverride = source.scaleOverride,
+        .enabledMask = source.enabledMask.get(),
+        .note = &source.note[0],
+        .velocity = &source.velocity[0],
+        .gate = &source.gate[0],
+        .nudge = &source.nudge[0],
+        .probability = &source.probability[0],
+    };
+}
+
+FLASHMEM PatternEncodeView patternEncodeView(
+    const sequencer::SequencerPatternSnapshot& source
+) {
+    return {
+        .length = source.length,
+        .stepsPerBeat = source.stepsPerBeat,
+        .midiChannel = source.midiChannel,
+        .pitchEditMode = source.pitchEditMode,
+        .variationRanges = source.variationRanges,
+        .swingOffsetPercent = source.swingOffsetPercent,
+        .patternNudgePercent = source.patternNudgePercent,
+        .scalePolicy = source.scalePolicy,
+        .scaleOverride = source.scaleOverride,
+        .enabledMask = source.enabledMask,
+        .note = source.note.data(),
+        .velocity = source.velocity.data(),
+        .gate = source.gate.data(),
+        .nudge = source.nudge.data(),
+        .probability = source.probability.data(),
+    };
+}
+
+FLASHMEM bool writePattern(binary::Writer& writer, const PatternEncodeView& source) {
+    if (source.note == nullptr ||
+        source.velocity == nullptr ||
+        source.gate == nullptr ||
+        source.nudge == nullptr ||
+        source.probability == nullptr) {
+        return false;
+    }
+
+    const uint8_t length = sanitizeLength(source.length);
     const auto variationRanges = sanitizeVariationRanges(source.variationRanges);
     const auto scaleOverride = sanitizeScaleSettings(source.scaleOverride);
-    const auto mask = source.enabledMask.get() & lengthMask(length);
+    const auto mask = source.enabledMask & lengthMask(length);
 
     if (!writer.writeU8(length) ||
-        !writer.writeU8(sanitizeStepsPerBeat(source.stepsPerBeat.get())) ||
-        !writer.writeU8(sanitizeMidiChannel(source.midiChannel.get())) ||
+        !writer.writeU8(sanitizeStepsPerBeat(source.stepsPerBeat)) ||
+        !writer.writeU8(sanitizeMidiChannel(source.midiChannel)) ||
         !writer.writeU8(static_cast<uint8_t>(source.pitchEditMode)) ||
         !writer.writeU8(variationRanges.pitchSemitones) ||
         !writer.writeU8(variationRanges.velocity) ||
         !writer.writeU8(variationRanges.gatePercent) ||
         !writer.writeU8(variationRanges.nudge) ||
         !writer.writeI8(sequencer::SequencerPatternState::clampPatternSwingOffsetPercent(
-            source.swingOffsetPercent.get()
+            source.swingOffsetPercent
         )) ||
         !writer.writeI8(sequencer::SequencerPatternState::clampPatternNudgePercent(
-            source.patternNudgePercent.get()
+            source.patternNudgePercent
         )) ||
         !writer.writeU8(static_cast<uint8_t>(source.scalePolicy)) ||
         !writer.writeU8(scaleOverride.root) ||
@@ -131,6 +202,63 @@ FLASHMEM bool writePattern(binary::Writer& writer,
         if (!writer.writeU8(sanitizeProbability(source.probability[i]))) return false;
     }
     return true;
+}
+
+FLASHMEM bool writeProjectSequencerSnapshotPayload(
+    binary::Writer& writer,
+    const sequencer::SequencerTrackBankSnapshot& snapshot,
+    uint8_t focusedStep,
+    sequencer::StepProperty activeStepProperty
+) {
+    const uint16_t enabledMask =
+        sequencer::SequencerTrackBankState::sanitizeEnabledMask(snapshot.enabledMask);
+    const uint8_t activeTrack =
+        sequencer::SequencerTrackBankState::sanitizeActiveTrack(
+            enabledMask,
+            snapshot.activeTrack
+        );
+    const uint16_t mutedMask =
+        sequencer::SequencerTrackBankState::sanitizeMutedMask(
+            snapshot.mutedMask,
+            enabledMask
+        );
+    const auto projectScale = sanitizeScaleSettings(snapshot.projectScaleSettings);
+    const uint8_t focused = sanitizeFocusedStep(
+        focusedStep,
+        sanitizeLength(snapshot.tracks[activeTrack].length)
+    );
+    const uint8_t page = static_cast<uint8_t>(
+        focused / sequencer::SequencerPatternState::STEPS_PER_PAGE
+    );
+
+    if (!writer.writeU8(activeTrack) ||
+        !writer.writeU16(enabledMask) ||
+        !writer.writeU16(mutedMask) ||
+        !writer.writeU8(projectScale.root) ||
+        !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
+        !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
+        !writer.writeU8(0)) {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        const PatternEncodeView source = patternEncodeView(snapshot.tracks[i]);
+        if (!writePattern(writer, source)) return false;
+        if (i == activeTrack) {
+            if (!writer.writeU8(page) ||
+                !writer.writeU8(focused) ||
+                !writer.writeU8(static_cast<uint8_t>(sanitizeStepProperty(
+                    static_cast<uint8_t>(activeStepProperty)
+                ))) ||
+                !writer.writeU8(0)) {
+                return false;
+            }
+        } else if (!writer.writeZeroes(4)) {
+            return false;
+        }
+    }
+
+    return writer.ok() && writer.offset() == PROJECT_SEQUENCER_PAYLOAD_SIZE;
 }
 
 FLASHMEM bool readPattern(binary::Reader& reader,
@@ -242,7 +370,7 @@ FLASHMEM bool fillPatternPayload(const sequencer::SequencerPatternState& source,
                                  uint16_t capacity) {
     if (capacity != PATTERN_PAYLOAD_SIZE) return false;
     binary::Writer writer(out, capacity);
-    return writePattern(writer, source) &&
+    return writePattern(writer, patternEncodeView(source)) &&
            writer.ok() &&
            writer.offset() == PATTERN_PAYLOAD_SIZE;
 }
@@ -257,45 +385,22 @@ FLASHMEM bool applyPatternPayload(const uint8_t* data,
            reader.offset() == PATTERN_PAYLOAD_SIZE;
 }
 
-FLASHMEM bool fillProjectSequencerPayload(const sequencer::SequencerTrackBankState& trackBank,
-                                          const sequencer::SequencerState& active,
-                                          uint8_t* out,
-                                          uint16_t capacity) {
+FLASHMEM bool fillProjectSequencerPayload(
+    const sequencer::SequencerTrackBankSnapshot& snapshot,
+    uint8_t focusedStep,
+    sequencer::StepProperty activeStepProperty,
+    uint8_t* out,
+    uint16_t capacity
+) {
     if (capacity != PROJECT_SEQUENCER_PAYLOAD_SIZE) return false;
 
     binary::Writer writer(out, capacity);
-    const uint8_t activeTrack =
-        sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
-    const auto projectScale = trackBank.projectScaleSettings();
-    if (!writer.writeU8(activeTrack) ||
-        !writer.writeU16(trackBank.currentEnabledMask()) ||
-        !writer.writeU16(trackBank.currentMutedMask()) ||
-        !writer.writeU8(projectScale.root) ||
-        !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
-        !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
-        !writer.writeU8(0)) {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
-        if (!writePattern(writer, source)) return false;
-        if (i == activeTrack) {
-            if (!writer.writeU8(active.page.get()) ||
-                !writer.writeU8(sanitizeFocusedStep(
-                    active.focusedStep.get(),
-                    sanitizeLength(source.length.get())
-                )) ||
-                !writer.writeU8(static_cast<uint8_t>(active.activeStepProperty.get())) ||
-                !writer.writeU8(0)) {
-                return false;
-            }
-        } else if (!writer.writeZeroes(4)) {
-            return false;
-        }
-    }
-
-    return writer.ok() && writer.offset() == PROJECT_SEQUENCER_PAYLOAD_SIZE;
+    return writeProjectSequencerSnapshotPayload(
+        writer,
+        snapshot,
+        focusedStep,
+        activeStepProperty
+    );
 }
 
 FLASHMEM bool applyProjectSequencerPayload(const uint8_t* data,
@@ -400,7 +505,7 @@ FLASHMEM bool fillSetPayload(const sequencer::SequencerTrackBankState& trackBank
 
     for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
         const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
-        if (!writePattern(writer, source)) return false;
+        if (!writePattern(writer, patternEncodeView(source))) return false;
     }
 
     return writer.ok() && writer.offset() == SET_PAYLOAD_SIZE;

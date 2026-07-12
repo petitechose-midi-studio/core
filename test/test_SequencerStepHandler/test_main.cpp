@@ -17,6 +17,7 @@
 #include "../../src/handler/sequencer/SequencerStepHandler.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -166,6 +167,11 @@ void test_step_toggle_undo_redo_workflow() {
     SequencerStepHarness h;
     h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.focusedStep.set(3);
+    createRootMicroSequence(h, 0);
+    assert(core::state::sequencer::storeActiveTrack(
+        h.state.sequencerTracks,
+        h.state.sequencer
+    ));
 
     assert(!h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencerHistory.undoCount() == 0);
@@ -174,11 +180,13 @@ void test_step_toggle_undo_redo_workflow() {
     assert(h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(rootStepHasMicroSequence(h, 0));
 
     holdPatternQuickControls(h);
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 3);
+    assert(rootStepHasMicroSequence(h, 0));
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 0);
@@ -188,6 +196,7 @@ void test_step_toggle_undo_redo_workflow() {
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 0);
+    assert(rootStepHasMicroSequence(h, 0));
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 1);

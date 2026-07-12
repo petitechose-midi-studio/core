@@ -528,8 +528,14 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
         return;
     }
 
+    const bool rootContext = core::state::sequencer::isRootContentView(sequencer_);
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
-    const bool beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+    bool beforeCaptured = true;
+    if (rootContext) {
+        core::state::sequencer::captureFlatHistorySnapshot(sequencer_, before);
+    } else {
+        beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
+    }
 
     sequencer_.focusedStep.set(abs);
     core::state::sequencer::toggleActiveContentStep(sequencer_, abs);
@@ -537,22 +543,28 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
     if (!beforeCaptured) return;
 
     core::state::sequencer::SequencerHistoryPatternSnapshot after;
-    if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-        const bool rootContext = core::state::sequencer::isRootContentView(sequencer_);
+    bool afterCaptured = true;
+    if (rootContext) {
+        core::state::sequencer::captureFlatHistorySnapshot(sequencer_, after);
+    } else {
+        afterCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, after);
+    }
+    if (afterCaptured) {
         const bool beforeEnabled = rootContext ? before.flat.enabledMask.test(abs) : false;
         const bool afterEnabled = rootContext ? after.flat.enabledMask.test(abs) : false;
-        history_.recordPattern(
-            std::move(before),
-            std::move(after),
-            core::state::sequencer::SequencerHistoryDescriptor{
-                .kind = core::state::sequencer::SequencerHistoryActionKind::StepToggle,
-                .stepIndex = abs,
-                .property = core::state::sequencer::StepProperty::NOTE,
-                .hasValue = rootContext,
-                .beforeValue = beforeEnabled ? 1 : 0,
-                .afterValue = afterEnabled ? 1 : 0,
-            }
-        );
+        const auto descriptor = core::state::sequencer::SequencerHistoryDescriptor{
+            .kind = core::state::sequencer::SequencerHistoryActionKind::StepToggle,
+            .stepIndex = abs,
+            .property = core::state::sequencer::StepProperty::NOTE,
+            .hasValue = rootContext,
+            .beforeValue = beforeEnabled ? 1 : 0,
+            .afterValue = afterEnabled ? 1 : 0,
+        };
+        if (rootContext) {
+            history_.recordFlatPattern(std::move(before), std::move(after), descriptor);
+        } else {
+            history_.recordPattern(std::move(before), std::move(after), descriptor);
+        }
     }
 }
 
@@ -603,32 +615,22 @@ FLASHMEM void SequencerStepHandler::clearFocusedStepContent() {
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
     const bool beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
 
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        sequencer_.focusedStep.get()
-    );
-    if (!core::state::sequencer::clearNodeChildren(sequencer_.pattern, nodeId)) return;
-    core::state::sequencer::refreshContentView(sequencer_);
-    sequencer_.contentView.bump();
+    if (!core::state::sequencer::clearActiveContentChildren(
+            sequencer_,
+            sequencer_.focusedStep.get()
+        )) {
+        return;
+    }
     recordFocusedContentEdit(std::move(before), beforeCaptured);
 }
 
 FLASHMEM void SequencerStepHandler::copyFocusedStepContent() {
     if (!focusedStepHasChildContent()) return;
-    const auto* graph = core::state::sequencer::graphView(sequencer_.pattern);
-    if (graph == nullptr) return;
-
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
+    (void)core::state::sequencer::copyActiveContentChildrenToClipboard(
         sequencer_,
-        sequencer_.focusedStep.get()
+        sequencer_.focusedStep.get(),
+        structure_clipboard_
     );
-    if (!structure_clipboard_.storeSequencerStepContent(
-        *graph,
-        nodeId,
-        core::state::SequencerStepContentClipboardKind::ALL
-    )) {
-        return;
-    }
 }
 
 FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
@@ -638,20 +640,13 @@ FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
     const bool beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
 
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        sequencer_.focusedStep.get()
-    );
-    if (!core::state::sequencer::copyNodeChildrenFromGraph(
-            sequencer_.pattern,
-            nodeId,
-            *structure_clipboard_.sequencerGraph,
-            structure_clipboard_.sequencerStepContentNodeId
+    if (!core::state::sequencer::pasteActiveContentChildrenFromClipboard(
+            sequencer_,
+            sequencer_.focusedStep.get(),
+            structure_clipboard_
         )) {
         return;
     }
-    core::state::sequencer::refreshContentView(sequencer_);
-    sequencer_.contentView.bump();
     recordFocusedContentEdit(std::move(before), beforeCaptured);
 }
 

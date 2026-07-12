@@ -279,6 +279,53 @@ void test_load_recovers_interrupted_backup_commit() {
     std::cout << "[PASS] test_load_recovers_interrupted_backup_commit\n";
 }
 
+void test_load_recovers_corrupt_current_from_valid_backup() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    auto store = makeStore(files);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "Backup", 4);
+    assert(store.save(capture(state)));
+    assert(files.rename("projects/p321.mspj", "projects/p321.mspj.bak"));
+
+    const uint8_t corrupt[] = {'b', 'r', 'o', 'k', 'e', 'n'};
+    assert(files.write("projects/p321.mspj", 0, corrupt, sizeof(corrupt)));
+
+    assertLoadedProject(store, "Backup", 4);
+    assert(std::filesystem::is_regular_file(
+        testRoot() / "midi-studio" / "projects" / "p321.mspj"
+    ));
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "p321.mspj.bak"
+    ));
+
+    std::cout << "[PASS] test_load_recovers_corrupt_current_from_valid_backup\n";
+}
+
+void test_load_reports_corrupt_backup_when_current_is_missing() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    auto store = makeStore(files);
+
+    const uint8_t corrupt[] = {'b', 'r', 'o', 'k', 'e', 'n'};
+    assert(files.write("projects/p321.mspj.bak", 0, corrupt, sizeof(corrupt)));
+
+    project::ProjectSnapshot loaded;
+    project_file::LoadReport report{};
+    auto result = store.load("p321", loaded, &report);
+    assert(!result);
+    assert(result.error().code == oc::type::ErrorCode::STORAGE_CORRUPT);
+    assert(report.failed());
+
+    std::cout << "[PASS] test_load_reports_corrupt_backup_when_current_is_missing\n";
+}
+
 void test_save_propagates_current_stat_error_before_commit() {
     resetTestRoot();
 
@@ -404,6 +451,8 @@ int main() {
     test_save_overwrites_existing_project_through_backup_commit();
     test_stale_tmp_is_replaced_on_save();
     test_load_recovers_interrupted_backup_commit();
+    test_load_recovers_corrupt_current_from_valid_backup();
+    test_load_reports_corrupt_backup_when_current_is_missing();
     test_save_propagates_current_stat_error_before_commit();
     test_list_projects_returns_saved_projects_sorted();
     test_save_load_and_list_max_length_project_slug();

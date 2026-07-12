@@ -88,6 +88,7 @@ struct SequencerInteractionContext {
     bool trackSelectionActive = false;
     bool stepSelectionActive = false;
     bool patternQuickControlsActive = false;
+    bool historyShortcutHoldActive = false;
     bool propertySelectorActive = false;
     bool stepEditorVisible = false;
     bool compatibleClipboardAvailable = false;

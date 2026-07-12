@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
+#include <ms/ui/font/CoreFonts.hpp>
 
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/sequencer/StepGridGeometryLogic.hpp"
@@ -491,12 +492,24 @@ void renderTileNoteLabel(uint8_t tileIndex,
         const bool inlineScaleStatus =
             primaryLabelShowsScalePrefix(state) ||
             childPitchSummaryShowsScalePrefix(state);
+        lv_coord_t primaryLabelWidth = 0;
         if (inlineScaleStatus) {
-            lv_obj_update_layout(noteLabel);
+            lv_point_t textSize{};
+            const lv_font_t* font = fonts.inter_13_bold ? fonts.inter_13_bold : LV_FONT_DEFAULT;
+            lv_text_get_size(
+                &textSize,
+                cache.noteLabelText,
+                font,
+                0,
+                0,
+                LV_COORD_MAX,
+                LV_TEXT_FLAG_NONE
+            );
+            primaryLabelWidth = static_cast<lv_coord_t>(textSize.x);
         }
         const lv_coord_t originalLabelX =
             inlineScaleStatus
-                ? static_cast<lv_coord_t>(layout.labelX + lv_obj_get_width(noteLabel) + 1)
+                ? static_cast<lv_coord_t>(layout.labelX + primaryLabelWidth + 1)
                 : layout.labelX;
         const lv_coord_t originalLabelY =
             inlineScaleStatus

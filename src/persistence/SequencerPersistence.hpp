@@ -29,12 +29,12 @@ public:
     static constexpr size_t PATTERN_LIBRARY_STORAGE_CAPACITY =
         PersistenceSlotFileStore::requiredCapacity(
             PATTERN_LIBRARY_SLOT_COUNT,
-            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+            sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE
         );
     static constexpr size_t SET_LIBRARY_STORAGE_CAPACITY =
         PersistenceSlotFileStore::requiredCapacity(
             SET_LIBRARY_SLOT_COUNT,
-            sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+            sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE
         );
 
     explicit SequencerPersistence(oc::interface::IStorage& patternLibraryStorage,

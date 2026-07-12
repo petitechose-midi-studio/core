@@ -9,30 +9,62 @@
 
 namespace core::context::standalone {
 
-SequencerSettingsOverlayPresenter::SequencerSettingsOverlayPresenter(
+FLASHMEM SequencerSettingsOverlayPresenter::SequencerSettingsOverlayPresenter(
     StateRefs stateRefs,
     ms::ui::VirtualListKeyValueOverlay& overlay,
     ms::ui::VirtualListSelectorOverlay& selectorOverlay
 )
     : state_refs_(stateRefs)
     , overlay_(overlay)
-    , selector_overlay_(selectorOverlay) {}
+    , selector_overlay_(selectorOverlay)
+    , render_scheduler_(
+          core::ui::renderSchedulerDebugLabel("SequencerSettings"),
+          &SequencerSettingsOverlayPresenter::drainRenderQueue,
+          this
+      ) {}
 
-FLASHMEM void SequencerSettingsOverlayPresenter::bind() {
-    overlay_watcher_.watchAll(
-        [this]() { renderOverlay(); },
+FLASHMEM bool SequencerSettingsOverlayPresenter::bind() {
+    bool bound = render_scheduler_.valid();
+    overlay_watcher_.bind<&SequencerSettingsOverlayPresenter::requestOverlayRender>(
+        *this, 0, "SequencerSettings.overlay"
+    );
+    bound = overlay_watcher_.watchAll(
         state_refs_.sequencerSettings.visible,
         state_refs_.sequencerSettings.focusedRow,
         state_refs_.trackBank.projectScaleRevisionSignal()
-    );
+    ) && bound;
 
-    selector_watcher_.watchAll(
-        [this]() { renderSelector(); },
+    selector_watcher_.bind<&SequencerSettingsOverlayPresenter::requestSelectorRender>(
+        *this, 1, "SequencerSettings.selector"
+    );
+    bound = selector_watcher_.watchAll(
         state_refs_.sequencerSettings.flowPhase,
         state_refs_.sequencerSettings.selector.visible,
         state_refs_.sequencerSettings.selector.editingRow,
         state_refs_.sequencerSettings.selector.selectedIndex
-    );
+    ) && bound;
+    return bound;
+}
+
+FLASHMEM void SequencerSettingsOverlayPresenter::requestOverlayRender() {
+    render_scheduler_.request(RENDER_OVERLAY);
+}
+
+FLASHMEM void SequencerSettingsOverlayPresenter::requestSelectorRender() {
+    render_scheduler_.request(RENDER_SELECTOR);
+}
+
+FLASHMEM void SequencerSettingsOverlayPresenter::drainRenderQueue(
+    void* context,
+    uint32_t flags
+) {
+    auto* self = static_cast<SequencerSettingsOverlayPresenter*>(context);
+    if (self) self->renderPending(flags);
+}
+
+FLASHMEM void SequencerSettingsOverlayPresenter::renderPending(uint32_t flags) {
+    if ((flags & RENDER_OVERLAY) != 0) renderOverlay();
+    if ((flags & RENDER_SELECTOR) != 0) renderSelector();
 }
 
 FLASHMEM void SequencerSettingsOverlayPresenter::renderOverlay() {

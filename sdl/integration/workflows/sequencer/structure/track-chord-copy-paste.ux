@@ -1,6 +1,7 @@
 # UX workflow: copy/paste a track containing chord step content.
 # Purpose: validates that track clipboard preserves the full sequencer graph,
 # including local chord state attached to root step nodes.
+# Expect: capture_changed:track_2_paste_preview=track_2_chord_pasted
 
 0 scenario sequencer
 50 capture screen sequencer_ready

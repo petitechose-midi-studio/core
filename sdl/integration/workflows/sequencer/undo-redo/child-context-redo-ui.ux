@@ -1,6 +1,7 @@
 # UX workflow: child-content edit undo/redo keeps editor context readable.
 # Purpose: validates that a micro-sequence edit can be undone and redone from
 # the normal global history path while the visible child context remains synced.
+# Expect: capture_changed:micro_note_offset_applied=micro_note_offset_undone_ui, capture_match:micro_note_offset_applied=micro_note_offset_redone_ui
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -29,7 +30,8 @@
 3880 capture screen micro_step_edit_open
 3940 button MACRO_1 up
 4040 encoder NAV 1
-4140 encoder OPT 0.72
+4100 encoder NAV 1
+4180 encoder OPT 0.72
 4360 capture screen micro_step_note_offset_visible
 4460 tap NAV 60
 4760 capture screen micro_note_offset_applied

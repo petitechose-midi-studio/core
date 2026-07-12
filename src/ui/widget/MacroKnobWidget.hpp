@@ -5,40 +5,84 @@
  * @brief Knob-style macro widget
  */
 
-#include <memory>
+#include <cstdint>
 
-#include <oc/ui/lvgl/widget/KnobWidget.hpp>
+#include <lvgl.h>
 
-#include "BaseMacroWidget.hpp"
+#include <oc/ui/lvgl/IWidget.hpp>
+#include <oc/ui/lvgl/widget/Label.hpp>
+
+#include "app/ExtmemAllocator.hpp"
 
 namespace core::ui {
 
-class MacroKnobWidget : public BaseMacroWidget {
+/**
+ * Concrete macro-slot widget used by the standalone macro view.
+ *
+ * Macro slots have a single visual representation. Keeping the CC label and
+ * automation arc in one concrete widget avoids a dormant polymorphic widget
+ * hierarchy and makes the hot value-update path explicit.
+ */
+class MacroKnobWidget : public oc::ui::lvgl::IWidget {
 public:
-    MacroKnobWidget(lv_obj_t* parent, uint8_t index);
+    explicit MacroKnobWidget(lv_obj_t* parent);
     ~MacroKnobWidget() override;
 
-    void setValue(float value) override;
-    void setAutomationActive(bool active) override;
-    void setAutomationRecording(bool active) override;
-    void setAutomationManualOverride(bool active) override;
-    void setSlotState(bool active, bool addSlot) override;
-    void setFocused(bool focused) override;
+    MacroKnobWidget(const MacroKnobWidget&) = delete;
+    MacroKnobWidget& operator=(const MacroKnobWidget&) = delete;
+
+    lv_obj_t* getElement() const override { return container_; }
+    [[nodiscard]] bool valid() const {
+        return container_ && knob_ && config_label_container_ && add_label_ &&
+               cc_prefix_ && cc_prefix_->getElement() &&
+               cc_value_ && cc_value_->getElement();
+    }
+
+    void setValue(float value);
+    void setConfig(uint8_t cc);
+    void setAutomationActive(bool active);
+    void setAutomationRecording(bool active);
+    void setAutomationManualOverride(bool active);
+    void setSlotState(bool active, bool addSlot);
+    void setFocused(bool focused);
 
 private:
+    struct ArcGeometry {
+        lv_point_t center{};
+        uint16_t radius = 0;
+        lv_coord_t width = 0;
+    };
+
     void createUI(lv_obj_t* parent);
+    void createContainer(lv_obj_t* parent);
+    void createConfigLabels();
+    void setConfigLabelsVisible(bool visible);
     void updateAutomationTrackColor();
     void updateFocusFrame();
     void updateSlotVisibility();
+    bool buildArcGeometry(ArcGeometry& geometry) const;
+    void invalidateValueArc();
+    void invalidateArcRange(lv_value_precise_t startAngle, lv_value_precise_t endAngle);
+    void invalidateArcDelta(uint16_t previousAngle, uint16_t nextAngle);
+    void drawArc(lv_layer_t* layer, lv_obj_t* target) const;
+    static void onArcDrawEvent(lv_event_t* event);
 
-    std::unique_ptr<oc::ui::lvgl::KnobWidget> knob_;
+    lv_obj_t* container_ = nullptr;
+    lv_obj_t* knob_ = nullptr;
+    lv_obj_t* config_label_container_ = nullptr;
     lv_obj_t* add_label_ = nullptr;
+    core::app::ExtmemUniquePtr<oc::ui::lvgl::Label> cc_prefix_;
+    core::app::ExtmemUniquePtr<oc::ui::lvgl::Label> cc_value_;
+    uint32_t track_color_ = 0;
+    uint16_t rendered_value_angle_ = 0xFFFF;
+    uint8_t current_cc_ = 0xFF;
     bool automation_active_ = false;
     bool automation_recording_ = false;
     bool automation_manual_override_ = false;
     bool slot_active_ = true;
     bool add_slot_ = false;
     bool focused_ = false;
+    bool config_labels_visible_ = true;
     float current_value_ = 0.0f;
 };
 

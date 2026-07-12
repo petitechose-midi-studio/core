@@ -21,7 +21,7 @@
 
 #include <oc/interface/IStorage.hpp>
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
-#include <oc/state/AutoPersistIncremental.hpp>
+#include <oc/state/ChangeCoalescer.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
@@ -68,12 +68,9 @@ struct MacroDomainState {
     oc::state::Signal<uint32_t> configRevision{0};
     persistence::MacroPersistence persistence;
     bool persistenceReady = false;
-    std::unique_ptr<oc::state::AutoPersistIncremental<MACRO_COUNT>> autoPersist;
+    std::unique_ptr<oc::state::ChangeCoalescer<>> mutationCoalescer;
 
-    explicit MacroDomainState(oc::interface::IStorage& libraryStorage)
-        : runtime(core::app::makeExtmemUnique<MacroState>())
-        , pages(core::app::makeExtmemUnique<macro::MacroPagesState>())
-        , persistence(libraryStorage) {}
+    explicit MacroDomainState(oc::interface::IStorage& libraryStorage);
     ~MacroDomainState();
 
     MacroDomainState(const MacroDomainState&) = delete;
@@ -95,6 +92,7 @@ struct SequencerDomainState {
         sequencer::SequencerPatternSnapshot snapshot{};
         sequencer::SequencerTrackBankSnapshot bankSnapshot{};
         core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> patternGraph;
+        core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> activeTrackGraph;
         std::array<
             core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>,
             sequencer::SequencerTrackBankState::TRACK_COUNT
@@ -130,7 +128,7 @@ struct SequencerDomainState {
             step = 0;
             property = sequencer::StepProperty::NOTE;
             lastTouchedMs = 0;
-            before = sequencer::SequencerHistoryPatternSnapshot{};
+            before.reset();
         }
     };
 
@@ -141,7 +139,7 @@ struct SequencerDomainState {
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
     CoalescedPatternHistory coalescedPatternHistory;
-    std::unique_ptr<oc::state::AutoPersistIncremental<17>> autoPersist;
+    std::unique_ptr<oc::state::ChangeCoalescer<17>> mutationCoalescer;
 
     SequencerDomainState(oc::interface::IStorage& patternLibraryStorage,
                          oc::interface::IStorage& setLibraryStorage);
@@ -285,21 +283,26 @@ public:
      * @brief Flush any pending dirty values immediately
      */
     void flush();
-    void flushAutoPersist();
+    void flushProjectMutationCoalescing();
     void resetStandaloneTransientUi();
     void resetMusicalProject();
+    void markMacroValueEdited(uint8_t index);
     void markProjectMutated();
     void requestProjectSessionSave();
     void acknowledgeProjectSessionSave(uint32_t savedModifiedCounter);
     bool hasPendingProjectSessionSave() const;
     uint32_t projectSessionSaveTimestampMs() const;
+    bool hasPendingProjectMutationCoalescing() const;
 
     bool isMacroPersistenceReady() const;
     bool isSequencerPersistenceReady() const;
     void markSequencerProjectMutated();
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
                                        sequencer::SequencerHistoryPatternSnapshot after,
-                                       sequencer::SequencerHistoryDescriptor descriptor = {});
+                                       sequencer::SequencerHistoryDescriptor descriptor = {},
+                                       sequencer::SequencerHistoryPatternStorage storage =
+                                            sequencer::SequencerHistoryPatternStorage::FullGraph);
+    bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternChangePtr change);
     bool recordSequencerBankHistory(sequencer::SequencerHistoryTrackBankSnapshot before,
                                     sequencer::SequencerHistoryTrackBankSnapshot after,
                                     sequencer::SequencerHistoryDescriptor descriptor = {});
@@ -314,9 +317,14 @@ public:
     bool undoSequencerHistory();
     bool redoSequencerHistory();
     void clearSequencerHistory();
-    void queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge = false);
-    void queuePendingSequencerBankApply(const sequencer::SequencerTrackBankState& stagedBank,
-                                        const sequencer::SequencerState& staged);
+    [[nodiscard]] bool queuePendingSequencerApply(
+        sequencer::SequencerState& staged,
+        bool merge = false
+    );
+    [[nodiscard]] bool queuePendingSequencerBankApply(
+        sequencer::SequencerTrackBankState& stagedBank,
+        sequencer::SequencerState& staged
+    );
     void clearPendingSequencerApply();
     bool hasPendingSequencerApply() const;
     uint16_t currentSharedTrackEnabledMask() const;
@@ -334,9 +342,14 @@ public:
     persistence::PersistenceWriteStatus recoverPersistenceFromRamAfterStorageReopen();
 
 private:
-    void queueSequencerApply_(const sequencer::SequencerState& staged, bool merge = false);
-    void queueSequencerBankApply_(const sequencer::SequencerTrackBankState& stagedBank,
-                                  const sequencer::SequencerState& staged);
+    [[nodiscard]] bool queueSequencerApply_(
+        sequencer::SequencerState& staged,
+        bool merge = false
+    );
+    [[nodiscard]] bool queueSequencerBankApply_(
+        sequencer::SequencerTrackBankState& stagedBank,
+        sequencer::SequencerState& staged
+    );
     void requestProjectSessionSave_();
     void markSequencerProjectMutated_();
     void requestSharedTrackPersist_();

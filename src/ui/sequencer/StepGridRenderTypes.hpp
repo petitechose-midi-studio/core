@@ -58,7 +58,6 @@ struct TileRenderState {
 };
 
 struct TileRenderDiff {
-    bool initialized = false;
     bool absoluteStepChanged = false;
     bool inPatternChanged = false;
     bool enabledChanged = false;
@@ -74,7 +73,6 @@ struct TileRenderDiff {
     bool childPitchSummaryChanged = false;
     bool variationChanged = false;
     bool contentBadgesChanged = false;
-    bool velocityZeroChanged = false;
     bool probabilityMaskChanged = false;
     bool dataChanged = false;
     bool barChanged = false;

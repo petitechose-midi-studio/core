@@ -1,5 +1,6 @@
 # UX workflow: edit a root step chord from the Step Editor.
 # Purpose: captures the Chord row, live OPT feedback, and the resulting grid badge.
+# Expect: capture_changed:chord_row_single=chord_row_local, capture_changed:step_1_enabled=chord_badge_on_grid
 
 0 scenario sequencer
 50 capture screen sequencer_ready

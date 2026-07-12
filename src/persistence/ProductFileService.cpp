@@ -237,6 +237,11 @@ FLASHMEM oc::type::Result<void> ProductFileService::beginWrite(
     const char* productPath,
     uint32_t expectedSize
 ) {
+    if (writeSessionActive_) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::INVALID_STATE, "write session already active"}
+        );
+    }
     char path[PATH_BUFFER_SIZE] = {};
     auto pathResult = resolvePath(productPath, path, sizeof(path));
     if (!pathResult) {
@@ -258,10 +263,20 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::appendWrite(
     const uint8_t* data,
     size_t size
 ) {
+    if (!writeSessionActive_) {
+        return oc::type::Result<size_t>::err(
+            {oc::type::ErrorCode::INVALID_STATE, "write session is not active"}
+        );
+    }
     return filesystem_.appendWrite(data, size);
 }
 
 FLASHMEM oc::type::Result<void> ProductFileService::finishWrite() {
+    if (!writeSessionActive_) {
+        return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::INVALID_STATE, "write session is not active"}
+        );
+    }
     auto result = filesystem_.finishWrite();
     writeSessionActive_ = false;
     return result;

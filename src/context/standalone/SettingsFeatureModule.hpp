@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 #include <lvgl.h>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -43,6 +41,7 @@ class TransportBar;
 namespace core::context::standalone {
 class DataManagerPresenter;
 class DeviceSettingsSelectorPresenter;
+class OverlayPresentationRegistry;
 class SequencerSettingsOverlayPresenter;
 }  // namespace core::context::standalone
 
@@ -80,6 +79,7 @@ public:
                           core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
                           core::handler::DataManagerDomainServices dataManagerServices,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                          OverlayPresentationRegistry& overlayPresentations,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,
                           lv_obj_t* mainZone,
@@ -96,6 +96,8 @@ public:
 
     SettingsFeatureModule(const SettingsFeatureModule&) = delete;
     SettingsFeatureModule& operator=(const SettingsFeatureModule&) = delete;
+
+    [[nodiscard]] bool valid() const { return valid_; }
 
 private:
 #if defined(MS_UX_RECORDER)
@@ -116,9 +118,11 @@ private:
         data_manager_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerSettingsOverlayPresenter>
         sequencer_settings_presenter_;
-    std::unique_ptr<core::handler::DeviceSettingsHandler> device_settings_handler_;
-    std::unique_ptr<core::handler::DataManagerHandler> data_manager_handler_;
-    std::unique_ptr<core::handler::SequencerSettingsHandler> sequencer_settings_handler_;
+    core::app::ExtmemUniquePtr<core::handler::DeviceSettingsHandler> device_settings_handler_;
+    core::app::ExtmemUniquePtr<core::handler::DataManagerHandler> data_manager_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerSettingsHandler>
+        sequencer_settings_handler_;
+    bool valid_ = false;
 };
 
 }  // namespace core::context::standalone

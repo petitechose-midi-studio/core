@@ -350,6 +350,23 @@ void test_focused_workflow_saves_and_loads_step_graph_preset() {
     assert(targetChild->noteOffset == 9);
     assert(nodeLocalVariationRange(*targetChild, StepProperty::VELOCITY) == 12);
 
+    const uint16_t stableStepNodeCount = targetGraph->stepNodeCount;
+    const uint8_t stableSequenceCount = targetGraph->sequenceCount;
+    const uint8_t stableCycleSetCount = targetGraph->cycleSetCount;
+    for (uint8_t iteration = 0; iteration < 40; ++iteration) {
+        const auto repeated = loadFocusedStepGraphPreset(
+            target,
+            bytes.data(),
+            saved.bytesWritten
+        );
+        assert(repeated.ok());
+        targetGraph = graphView(target.pattern);
+        assert(targetGraph != nullptr);
+        assert(targetGraph->stepNodeCount == stableStepNodeCount);
+        assert(targetGraph->sequenceCount == stableSequenceCount);
+        assert(targetGraph->cycleSetCount == stableCycleSetCount);
+    }
+
     std::cout << "[PASS] test_focused_workflow_saves_and_loads_step_graph_preset\n";
 }
 

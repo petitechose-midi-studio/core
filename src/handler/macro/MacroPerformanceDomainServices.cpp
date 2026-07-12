@@ -54,6 +54,12 @@ void markProjectMutatedFromCoreState(void* context) {
     state->markProjectMutated();
 }
 
+void markMacroValueEditedFromCoreState(void* context, uint8_t index) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    if (state == nullptr) return;
+    state->markMacroValueEdited(index);
+}
+
 bool setConfigFromCoreState(void* context, uint8_t index, uint8_t channel, uint8_t cc) {
     auto* state = static_cast<core::state::CoreState*>(context);
     return state != nullptr &&
@@ -100,11 +106,12 @@ MacroPerformanceDomainServices MacroPerformanceDomainServices::fromCoreState(
             state.statusBar,
         },
         Operations{
-            &state,
-            markProjectMutatedFromCoreState,
-            setConfigFromCoreState,
-            setTrackChannelFromCoreState,
-            switchToPageFromCoreState,
+            .context = &state,
+            .markProjectMutated = markProjectMutatedFromCoreState,
+            .markMacroValueEdited = markMacroValueEditedFromCoreState,
+            .setConfig = setConfigFromCoreState,
+            .setTrackChannel = setTrackChannelFromCoreState,
+            .switchToPage = switchToPageFromCoreState,
         },
     };
 }
@@ -113,7 +120,19 @@ float MacroPerformanceDomainServices::runtimeValue(uint8_t index) const {
     return core::state::macro::MacroWorkflow::runtimeValue(*macros_, index);
 }
 
-void MacroPerformanceDomainServices::setRuntimeValue(uint8_t index, float value) const {
+void MacroPerformanceDomainServices::setManualValue(uint8_t index, float value) const {
+    if (index >= core::state::macro::MACRO_COUNT) return;
+    core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, value);
+    const float manualValue = runtimeValue(index);
+    auto& page = pages_->activePageData();
+    if (page.values[index] == manualValue) return;
+    page.values[index] = manualValue;
+    if (operations_.markMacroValueEdited != nullptr) {
+        operations_.markMacroValueEdited(operations_.context, index);
+    }
+}
+
+void MacroPerformanceDomainServices::setResolvedValue(uint8_t index, float value) const {
     core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, value);
 }
 
@@ -126,6 +145,9 @@ bool MacroPerformanceDomainServices::beginAutomationRecording(uint8_t index,
 
     recording.reset();
     recording.active = true;
+    macro_ui_->automationRecordingStatus.set(
+        core::state::macro::MacroAutomationRecordingStatus::RECORDING
+    );
     recording.address = {
         .track = pages_->currentActiveTrack(),
         .page = pages_->currentActivePage(),
@@ -148,6 +170,11 @@ bool MacroPerformanceDomainServices::beginAutomationRecording(uint8_t index,
     );
     if (appended) {
         bumpAutomationRecordingRevision(*macro_ui_);
+    } else {
+        recording.reset();
+        macro_ui_->automationRecordingStatus.set(
+            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
+        );
     }
     return appended;
 }
@@ -163,11 +190,18 @@ bool MacroPerformanceDomainServices::recordAutomationPoint(uint8_t index,
         nowMs,
         status_bar_->tempo.get()
     );
+    bool reduced = false;
     const bool appended = core::state::macro::macroAutomationAppendPoint(
         recording.lane,
         beat,
-        value
+        value,
+        &reduced
     );
+    if (reduced) {
+        macro_ui_->automationRecordingStatus.set(
+            core::state::macro::MacroAutomationRecordingStatus::REDUCED
+        );
+    }
     if (appended) {
         bumpAutomationRecordingRevision(*macro_ui_);
     }
@@ -179,6 +213,9 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
     if (!recording.active) return false;
     if (recording.lane.pointCount < 2) {
         recording.reset();
+        macro_ui_->automationRecordingStatus.set(
+            core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT
+        );
         bumpAutomationRecordingRevision(*macro_ui_);
         return false;
     }
@@ -188,12 +225,19 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
         nowMs,
         status_bar_->tempo.get()
     );
+    const bool hadSlot = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        recording.address
+    ) != nullptr;
     auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
         pages_->automation,
         recording.address
     );
     if (slot == nullptr) {
         recording.reset();
+        macro_ui_->automationRecordingStatus.set(
+            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
+        );
         bumpAutomationRecordingRevision(*macro_ui_);
         return false;
     }
@@ -213,12 +257,24 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
             *slot,
             recording.lane
         )) {
+        if (!hadSlot) {
+            core::state::macro::macroAutomationClearSlot(
+                pages_->automation,
+                recording.address
+            );
+        }
         recording.reset();
+        macro_ui_->automationRecordingStatus.set(
+            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
+        );
         bumpAutomationRecordingRevision(*macro_ui_);
         return false;
     }
     setAutomationManualOverride(recording.address.macro, false);
     recording.reset();
+    macro_ui_->automationRecordingStatus.set(
+        core::state::macro::MacroAutomationRecordingStatus::IDLE
+    );
     bumpAutomationRecordingRevision(*macro_ui_);
     if (operations_.markProjectMutated != nullptr) {
         operations_.markProjectMutated(operations_.context);
@@ -229,6 +285,9 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
 bool MacroPerformanceDomainServices::cancelAutomationRecording() const {
     if (!macro_ui_->automationRecording.active) return false;
     macro_ui_->automationRecording.reset();
+    macro_ui_->automationRecordingStatus.set(
+        core::state::macro::MacroAutomationRecordingStatus::IDLE
+    );
     bumpAutomationRecordingRevision(*macro_ui_);
     return true;
 }

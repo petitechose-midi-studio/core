@@ -1,10 +1,12 @@
 # UX workflow: change pattern pitch settings, then undo and redo the change.
 # Purpose: validates pattern pitch settings participate in sequencer history.
+# Expect: capture_changed:pattern_pitch_override_applied=pattern_settings_undone_inspected, capture_match:pattern_pitch_override_applied=pattern_settings_redone_inspected
 
 0 scenario sequencer
 50 capture screen sequencer_ready
 
 # Open the pitch property settings from the NOTE property selector.
+60 tap NAV 60
 150 button LEFT_BOTTOM down
 300 capture screen pitch_property_selector_open
 400 tap BOTTOM_LEFT 60
@@ -31,11 +33,24 @@
 4550 button LEFT_CENTER up
 5850 capture screen pattern_settings_undone_closed
 
+# Reopen the pitch settings to verify that undo restored Inherit explicitly.
+5950 button LEFT_BOTTOM down
+6100 tap BOTTOM_LEFT 60
+6220 button LEFT_BOTTOM up
+6500 capture screen pattern_settings_undone_inspected
+6600 tap LEFT_TOP 60
+
 # Redo the pattern setting.
-5950 button LEFT_CENTER down
-6950 tick
-7000 capture screen redo_layer
-7050 tap LEFT_BOTTOM 60
-8550 capture screen pattern_settings_redone_toast
-8650 button LEFT_CENTER up
-9950 capture screen pattern_settings_redone_closed
+6850 button LEFT_CENTER down
+7850 tick
+7900 capture screen redo_layer
+7950 tap LEFT_BOTTOM 60
+9450 capture screen pattern_settings_redone_toast
+9550 button LEFT_CENTER up
+10850 capture screen pattern_settings_redone_closed
+
+# Reopen once more: redo must restore the exact Override state.
+10950 button LEFT_BOTTOM down
+11100 tap BOTTOM_LEFT 60
+11220 button LEFT_BOTTOM up
+11500 capture screen pattern_settings_redone_inspected

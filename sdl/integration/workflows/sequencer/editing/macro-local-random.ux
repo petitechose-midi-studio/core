@@ -3,6 +3,7 @@
 # Step property selector, then LEFT_BOTTOM + macro encoder writes the local
 # variation range for the active property and previews it without editing the
 # deterministic step value.
+# Expect: capture_changed:prop_selector_ready=macro_local_random_pitch, capture_changed:macro_local_random_pitch=macro_local_random_closed
 
 0 scenario sequencer
 50 capture screen sequencer_ready

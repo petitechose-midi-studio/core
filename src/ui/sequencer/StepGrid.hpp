@@ -31,7 +31,6 @@ public:
 
     lv_obj_t* getElement() const override { return container_; }
 
-    void prepareForActivationLayoutRefresh();
     void render(const sequencer::grid::StepGridFrameState& frameState);
 
 private:
@@ -83,7 +82,6 @@ private:
         lv_coord_t containerHeight = -1;
         lv_coord_t noteLayerWidth = -1;
         lv_coord_t noteLayerHeight = -1;
-        bool forceLayoutRefresh = false;
     };
 
     struct RenderCacheState {

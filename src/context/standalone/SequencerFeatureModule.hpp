@@ -38,6 +38,7 @@ class SequencerStepEditOverlay;
 
 namespace core::context::standalone {
 class PatternPitchSettingsOverlayPresenter;
+class OverlayPresentationRegistry;
 class SequencerEncoderSyncCoordinator;
 class SequencerOverlayPresenter;
 }  // namespace core::context::standalone
@@ -81,6 +82,7 @@ public:
                            core::handler::SharedTrackDomainServices sharedTracks,
                            core::handler::SequencerStepPresetDomainServices stepPresets,
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                           OverlayPresentationRegistry& overlayPresentations,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,
                            lv_obj_t* overlayRoot,
@@ -95,6 +97,7 @@ public:
     SequencerFeatureModule(const SequencerFeatureModule&) = delete;
     SequencerFeatureModule& operator=(const SequencerFeatureModule&) = delete;
 
+    [[nodiscard]] bool valid() const { return valid_; }
     void resetEncoderSync();
     void syncEncodersNow();
 
@@ -134,6 +137,7 @@ private:
         pattern_pitch_settings_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerMacroPropertyHandler>
         macro_property_handler_;
+    bool valid_ = false;
 };
 
 }  // namespace core::context::standalone
