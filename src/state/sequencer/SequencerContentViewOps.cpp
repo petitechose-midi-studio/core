@@ -247,6 +247,16 @@ FLASHMEM bool copyActiveContentChildToClipboard(
     );
 }
 
+namespace {
+
+FLASHMEM void settleGraphMutation(SequencerState& sequencer) {
+    if (compactSequencerGraph(sequencer)) return;
+    refreshContentView(sequencer);
+    sequencer.contentView.bump();
+}
+
+}  // namespace
+
 FLASHMEM bool clearActiveContentChild(
     SequencerState& sequencer,
     uint8_t step,
@@ -262,9 +272,7 @@ FLASHMEM bool clearActiveContentChild(
         : clearNodeCycleStateSet(sequencer.pattern, nodeId);
     if (!changed) return false;
 
-    compactSequencerGraph(sequencer);
-    refreshContentView(sequencer);
-    sequencer.contentView.bump();
+    settleGraphMutation(sequencer);
     return true;
 }
 
@@ -296,9 +304,66 @@ FLASHMEM bool pasteActiveContentChildFromClipboard(
           );
     if (!changed) return false;
 
-    compactSequencerGraph(sequencer);
-    refreshContentView(sequencer);
-    sequencer.contentView.bump();
+    settleGraphMutation(sequencer);
+    return true;
+}
+
+FLASHMEM bool copyActiveContentChildrenToClipboard(
+    const SequencerState& sequencer,
+    uint8_t step,
+    core::state::StructureClipboardState& clipboard
+) {
+    const auto* graph = graphView(sequencer.pattern);
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (graph == nullptr ||
+        nodeId == kInvalidId ||
+        !stepNodeHasAnyChildContent(sequencer.pattern, nodeId)) {
+        return false;
+    }
+    return clipboard.storeSequencerStepContent(
+        *graph,
+        nodeId,
+        core::state::SequencerStepContentClipboardKind::ALL
+    );
+}
+
+FLASHMEM bool clearActiveContentChildren(SequencerState& sequencer, uint8_t step) {
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (nodeId == kInvalidId ||
+        !stepNodeHasAnyChildContent(sequencer.pattern, nodeId) ||
+        !clearNodeChildren(sequencer.pattern, nodeId)) {
+        return false;
+    }
+
+    settleGraphMutation(sequencer);
+    return true;
+}
+
+FLASHMEM bool pasteActiveContentChildrenFromClipboard(
+    SequencerState& sequencer,
+    uint8_t step,
+    const core::state::StructureClipboardState& clipboard
+) {
+    if (!activeContentStepCanReceiveChildContent(sequencer, step) ||
+        !clipboard.hasSequencerStepContent(
+            core::state::SequencerStepContentClipboardKind::ALL
+        ) ||
+        !clipboard.sequencerGraph) {
+        return false;
+    }
+
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    if (nodeId == kInvalidId ||
+        !copyNodeChildrenFromGraph(
+            sequencer.pattern,
+            nodeId,
+            *clipboard.sequencerGraph,
+            clipboard.sequencerStepContentNodeId
+        )) {
+        return false;
+    }
+
+    settleGraphMutation(sequencer);
     return true;
 }
 

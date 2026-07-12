@@ -31,7 +31,13 @@ bool encodeTrackBankPayload(
     uint32_t capacity
 );
 
-bool decodeTrackBankPayload(
+/**
+ * Decode directly into caller-owned scratch storage.
+ *
+ * The destination may be partially written when false is returned. Callers
+ * that expose live state must therefore decode into disposable storage first.
+ */
+bool decodeTrackBankPayloadInto(
     const uint8_t* data,
     uint32_t size,
     std::array<core::state::macro::MacroTrackData, core::state::macro::TRACK_COUNT>& tracks,

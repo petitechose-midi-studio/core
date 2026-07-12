@@ -38,7 +38,7 @@ enum class SequencerStepContentClipboardKind : uint8_t {
     CYCLE_STATES = 3,
 };
 
-bool cloneSequencerGraph(
+[[nodiscard]] bool cloneSequencerGraph(
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>& target,
     const oc::note::sequencer::StepSequencerGraph* source
 );
@@ -136,7 +136,7 @@ struct MacroAutomationClipboard {
         MacroAutomationClipboardEntry,
         core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY> entries{};
 
-    void reset();
+    MacroAutomationClipboard();
     bool append(uint8_t sourcePage,
                 uint8_t sourceMacro,
                 const core::state::macro::MacroAutomationPointPool& sourcePool,
@@ -163,47 +163,51 @@ struct StructureClipboardState {
 
     void clear();
 
-    void storeMacroPage(const core::state::macro::MacroPageData& page);
-    void storeMacroPage(const core::state::macro::MacroPageData& page,
-                        const core::state::macro::MacroAutomationBankState& automation,
-                        uint8_t sourceTrack,
-                        uint8_t sourcePage);
+    [[nodiscard]] bool storeMacroPage(
+        const core::state::macro::MacroPageData& page,
+        const core::state::macro::MacroAutomationBankState& automation,
+        uint8_t sourceTrack,
+        uint8_t sourcePage
+    );
 
-    void storeMacroTrack(const core::state::macro::MacroTrackData& track);
-    void storeMacroTrack(const core::state::macro::MacroTrackData& track,
-                         const core::state::macro::MacroAutomationBankState& automation,
-                         uint8_t sourceTrack);
+    [[nodiscard]] bool storeMacroTrack(
+        const core::state::macro::MacroTrackData& track,
+        const core::state::macro::MacroAutomationBankState& automation,
+        uint8_t sourceTrack
+    );
 
-    void storeMacroAutomation(const core::state::macro::MacroAutomationBankState& automation,
-                              const core::state::macro::MacroAutomationSlotState& slot);
+    [[nodiscard]] bool storeMacroAutomation(
+        const core::state::macro::MacroAutomationBankState& automation,
+        const core::state::macro::MacroAutomationSlotState& slot
+    );
 
-    bool storeSequencerPage(
+    [[nodiscard]] bool storeSequencerPage(
         const core::state::SequencerPageClipboard& page,
         const oc::note::sequencer::StepSequencerGraph* graph
     );
 
-    bool storeSequencerTrack(
+    [[nodiscard]] bool storeSequencerTrack(
         const core::state::sequencer::SequencerPatternSnapshot& track,
         const oc::note::sequencer::StepSequencerGraph* graph
     );
 
-    bool storeSequencerStepContent(
+    [[nodiscard]] bool storeSequencerStepContent(
         const oc::note::sequencer::StepSequencerGraph& graph,
         core::state::sequencer::SequencerGraphNodeId nodeId,
         SequencerStepContentClipboardKind contentKind = SequencerStepContentClipboardKind::ALL
     );
 
-    bool storeSequencerSteps(
+    [[nodiscard]] bool storeSequencerSteps(
         const core::state::SequencerStepsClipboard& steps,
         const oc::note::sequencer::StepSequencerGraph* graph
     );
 
-    bool storeSequencerPageSelection(
+    [[nodiscard]] bool storeSequencerPageSelection(
         const core::state::SequencerPageSelectionClipboard& pages,
         const oc::note::sequencer::StepSequencerGraph* graph
     );
 
-    bool storeSequencerTrackSelection(
+    [[nodiscard]] bool storeSequencerTrackSelection(
         core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard> tracks
     );
 

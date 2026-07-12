@@ -26,6 +26,10 @@ struct SequencerTrackBankState {
         return (track >= TRACK_COUNT) ? static_cast<uint8_t>(TRACK_COUNT - 1) : track;
     }
 
+    static uint16_t sanitizeEnabledMask(uint16_t enabledMask);
+    static uint16_t sanitizeMutedMask(uint16_t mutedMask, uint16_t enabledMask);
+    static uint8_t sanitizeActiveTrack(uint16_t enabledMask, uint8_t activeTrack);
+
     SequencerPatternState& track(uint8_t index) {
         return tracks_[clampTrackIndex(index)];
     }

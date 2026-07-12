@@ -30,6 +30,7 @@ struct SharedTrackCoordinator {
         uint16_t enabledMask = 0x0001;
         uint8_t activeTrack = 0;
         bool changed = false;
+        bool ok = true;
     };
 
     static uint16_t sanitizeEnabledMask(uint16_t enabledMask);

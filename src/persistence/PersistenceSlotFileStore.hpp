@@ -65,7 +65,7 @@ inline const char* persistenceWriteStatusLabel(PersistenceWriteStatus status) {
 }
 
 struct SlotMetadata {
-    uint16_t payloadSize = 0;
+    uint32_t payloadSize = 0;
     uint32_t saveCounter = 0;
 };
 
@@ -73,7 +73,7 @@ struct SlotFileStoreConfig {
     uint32_t fileMagic = 0;
     uint8_t domainVersion = 1;
     uint16_t slotCount = 0;
-    uint16_t slotPayloadSize = 0;
+    uint32_t slotPayloadSize = 0;
 };
 
 struct LatestSlotLoadResult {
@@ -91,12 +91,12 @@ struct LatestSlotLoadResult {
  */
 class PersistenceSlotFileStore {
 public:
-    static constexpr uint8_t FILE_FORMAT_VERSION = 1;
+    static constexpr uint8_t FILE_FORMAT_VERSION = 2;
     static constexpr size_t FILE_HEADER_SIZE = 24;
-    static constexpr size_t SLOT_HEADER_SIZE = 16;
+    static constexpr size_t SLOT_HEADER_SIZE = 20;
     static constexpr uint16_t MAX_SLOT_COUNT = 64;
 
-    static constexpr size_t requiredCapacity(uint16_t slotCount, uint16_t slotPayloadSize) {
+    static constexpr size_t requiredCapacity(uint16_t slotCount, uint32_t slotPayloadSize) {
         return FILE_HEADER_SIZE +
                static_cast<size_t>(slotCount) *
                    (SLOT_HEADER_SIZE + static_cast<size_t>(slotPayloadSize));
@@ -111,26 +111,26 @@ public:
 
     bool saveSlot(uint16_t slotIndex,
                   const uint8_t* payload,
-                  uint16_t payloadSize,
+                  uint32_t payloadSize,
                   uint32_t saveCounter);
     PersistenceWriteStatus saveSlotStatus(uint16_t slotIndex,
                                           const uint8_t* payload,
-                                          uint16_t payloadSize,
+                                          uint32_t payloadSize,
                                           uint32_t saveCounter);
 
     SlotLoadStatus loadSlot(uint16_t slotIndex,
                             uint8_t* outPayload,
-                            uint16_t outCapacity,
+                            uint32_t outCapacity,
                             SlotMetadata* outMeta = nullptr) const;
     SlotLoadStatus inspectSlot(uint16_t slotIndex, SlotMetadata* outMeta = nullptr) const;
-    LatestSlotLoadResult loadLatest(uint8_t* outPayload, uint16_t outCapacity) const;
+    LatestSlotLoadResult loadLatest(uint8_t* outPayload, uint32_t outCapacity) const;
 
     bool eraseSlot(uint16_t slotIndex);
     PersistenceWriteStatus eraseSlotStatus(uint16_t slotIndex);
 
     uint32_t slotHeaderAddress(uint16_t slotIndex) const;
     uint32_t slotPayloadAddress(uint16_t slotIndex) const;
-    uint16_t slotPayloadSize() const;
+    uint32_t slotPayloadSize() const;
     uint16_t slotCount() const;
 
 private:
@@ -139,7 +139,7 @@ private:
         uint8_t formatVersion = 0;
         uint8_t domainVersion = 0;
         uint16_t slotCount = 0;
-        uint16_t slotPayloadSize = 0;
+        uint32_t slotPayloadSize = 0;
         uint32_t layoutCrc32 = 0;
     };
 
@@ -147,7 +147,7 @@ private:
         uint32_t magic = 0;
         uint8_t formatVersion = 0;
         uint8_t state = 0;
-        uint16_t payloadSize = 0;
+        uint32_t payloadSize = 0;
         uint32_t saveCounter = 0;
         uint32_t payloadCrc32 = 0;
     };

@@ -95,7 +95,7 @@ void test_macro_slot_focus_shows_paste_when_automation_clipboard_is_available() 
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::STEP);
     state.macroUi.focusedMacroSlot.set(0);
     auto& slot = configureAutomation(state, 0, 0.42f);
-    state.structureClipboard.storeMacroAutomation(state.pages.automation, slot);
+    assert(state.structureClipboard.storeMacroAutomation(state.pages.automation, slot));
 
     const auto props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(props.visible);

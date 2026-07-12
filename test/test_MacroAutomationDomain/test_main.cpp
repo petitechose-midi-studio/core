@@ -29,6 +29,7 @@ void test_elapsed_beats_uses_tempo_and_safe_defaults() {
     assert(near(macroAutomationElapsedBeats(1000, 1500, 60.0f), 0.5f));
     assert(near(macroAutomationElapsedBeats(1000, 1500, 0.0f), 1.0f));
     assert(near(macroAutomationElapsedBeats(1500, 1000, 120.0f), 0.0f));
+    assert(near(macroAutomationElapsedBeats(0xFFFF'FFF0U, 0x0000'0010U, 120.0f), 0.064f));
 
     std::cout << "[PASS] test_elapsed_beats_uses_tempo_and_safe_defaults\n";
 }
@@ -73,6 +74,33 @@ void test_finalize_recording_simplifies_dense_linear_motion() {
     assert(near(macroAutomationEvaluate(lane, 0.5f, 0.0f), 0.5f));
 
     std::cout << "[PASS] test_finalize_recording_simplifies_dense_linear_motion\n";
+}
+
+void test_recording_reduces_dense_input_instead_of_truncating() {
+    using namespace core::state::macro;
+
+    MacroAutomationLane lane;
+    for (uint16_t i = 0; i < MACRO_AUTOMATION_RECORDING_MAX_POINTS; ++i) {
+        const float value = (i & 1U) == 0U ? 0.0f : 1.0f;
+        assert(macroAutomationAppendPoint(lane, static_cast<float>(i), value));
+    }
+
+    bool reduced = false;
+    assert(macroAutomationAppendPoint(
+        lane,
+        static_cast<float>(MACRO_AUTOMATION_RECORDING_MAX_POINTS),
+        0.5f,
+        &reduced
+    ));
+    assert(reduced);
+    assert(lane.pointCount < MACRO_AUTOMATION_RECORDING_MAX_POINTS);
+    assert(near(lane.points[0].beat, 0.0f));
+    assert(near(
+        lane.points[static_cast<uint16_t>(lane.pointCount - 1U)].beat,
+        static_cast<float>(MACRO_AUTOMATION_RECORDING_MAX_POINTS)
+    ));
+
+    std::cout << "[PASS] test_recording_reduces_dense_input_instead_of_truncating\n";
 }
 
 void test_finalize_recording_preserves_audible_turning_points() {
@@ -249,19 +277,6 @@ void test_resolve_static_automation_modulation_and_depth() {
     std::cout << "[PASS] test_resolve_static_automation_modulation_and_depth\n";
 }
 
-void test_capacity_is_bounded() {
-    using namespace core::state::macro;
-
-    MacroAutomationLane lane;
-    for (uint16_t i = 0; i < MACRO_AUTOMATION_RECORDING_MAX_POINTS; ++i) {
-        assert(macroAutomationAppendPoint(lane, static_cast<float>(i), 0.5f));
-    }
-    assert(!macroAutomationAppendPoint(lane, 9999.0f, 0.5f));
-    assert(lane.pointCount == MACRO_AUTOMATION_RECORDING_MAX_POINTS);
-
-    std::cout << "[PASS] test_capacity_is_bounded\n";
-}
-
 void test_persisted_curve_duration_resize_uses_non_destructive_window() {
     using namespace core::state::macro;
 
@@ -387,6 +402,7 @@ int main() {
     test_elapsed_beats_uses_tempo_and_safe_defaults();
     test_finalize_recording_remaps_points_to_quantized_duration();
     test_finalize_recording_simplifies_dense_linear_motion();
+    test_recording_reduces_dense_input_instead_of_truncating();
     test_finalize_recording_preserves_audible_turning_points();
     test_finalize_recording_coalesces_same_tick_with_last_value();
     test_linear_interpolation_and_tail_hold_are_deterministic();
@@ -394,7 +410,6 @@ int main() {
     test_points_must_be_appended_in_musical_order();
     test_automation_conversion_policies_make_relative_shapes();
     test_resolve_static_automation_modulation_and_depth();
-    test_capacity_is_bounded();
     test_persisted_curve_duration_resize_uses_non_destructive_window();
     test_curve_window_summary_matches_persisted_window_semantics();
 

@@ -11,8 +11,9 @@ namespace core::persistence {
 
 namespace {
 
-FLASHMEM core::app::ExtmemUniquePtr<sequencer_codec::EnvelopeBuffer> makeEnvelopeBuffer() {
-    return core::app::makeExtmemUnique<sequencer_codec::EnvelopeBuffer>();
+template<typename Buffer>
+FLASHMEM core::app::ExtmemUniquePtr<Buffer> makeEnvelopeBuffer() {
+    return core::app::makeExtmemUniqueForOverwrite<Buffer>();
 }
 
 }  // namespace
@@ -25,12 +26,13 @@ FLASHMEM SequencerPersistence::SequencerPersistence(
                              {.fileMagic = PATTERN_LIBRARY_MAGIC,
                               .domainVersion = LIBRARY_DATA_VERSION,
                               .slotCount = PATTERN_LIBRARY_SLOT_COUNT,
-                              .slotPayloadSize = sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE})
+                              .slotPayloadSize =
+                                  sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE})
     , set_library_store_(setLibraryStorage,
                          {.fileMagic = SET_LIBRARY_MAGIC,
                           .domainVersion = LIBRARY_DATA_VERSION,
                           .slotCount = SET_LIBRARY_SLOT_COUNT,
-                          .slotPayloadSize = sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE}) {}
+                          .slotPayloadSize = sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE}) {}
 
 FLASHMEM bool SequencerPersistence::init() {
     return initStatus() == PersistenceWriteStatus::OK;
@@ -55,12 +57,12 @@ FLASHMEM PersistenceWriteStatus SequencerPersistence::savePatternSlotStatus(
 ) {
     if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
-    auto buffer = makeEnvelopeBuffer();
+    auto buffer = makeEnvelopeBuffer<sequencer_codec::PatternEnvelopeBuffer>();
     if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     const auto encoded = sequencer_codec::fillPatternEnvelope(
         sequencer.pattern,
         buffer->bytes.data(),
-        sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE
     );
     if (!encoded.ok) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
 
@@ -79,13 +81,13 @@ FLASHMEM SlotLoadStatus SequencerPersistence::loadPatternSlot(
 ) {
     if (slotIndex >= PATTERN_LIBRARY_SLOT_COUNT) return SlotLoadStatus::OUT_OF_RANGE;
 
-    auto buffer = makeEnvelopeBuffer();
+    auto buffer = makeEnvelopeBuffer<sequencer_codec::PatternEnvelopeBuffer>();
     if (!buffer) return SlotLoadStatus::STORAGE_UNAVAILABLE;
     SlotMetadata metadata{};
     const SlotLoadStatus status = pattern_library_store_.loadSlot(
         slotIndex,
         buffer->bytes.data(),
-        sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE,
+        sequencer_codec::MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE,
         &metadata
     );
     if (status != SlotLoadStatus::OK) {
@@ -134,13 +136,13 @@ FLASHMEM PersistenceWriteStatus SequencerPersistence::saveSetSlotStatus(
 ) {
     if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return PersistenceWriteStatus::OUT_OF_RANGE;
 
-    auto buffer = makeEnvelopeBuffer();
+    auto buffer = makeEnvelopeBuffer<sequencer_codec::EnvelopeBuffer>();
     if (!buffer) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     const auto encoded = sequencer_codec::fillSetEnvelope(
         trackBank,
         sequencer,
         buffer->bytes.data(),
-        sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
+        sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE
     );
     if (!encoded.ok) return PersistenceWriteStatus::PAYLOAD_TOO_LARGE;
 
@@ -160,13 +162,13 @@ FLASHMEM SlotLoadStatus SequencerPersistence::loadSetSlot(
 ) {
     if (slotIndex >= SET_LIBRARY_SLOT_COUNT) return SlotLoadStatus::OUT_OF_RANGE;
 
-    auto buffer = makeEnvelopeBuffer();
+    auto buffer = makeEnvelopeBuffer<sequencer_codec::EnvelopeBuffer>();
     if (!buffer) return SlotLoadStatus::STORAGE_UNAVAILABLE;
     SlotMetadata metadata{};
     const SlotLoadStatus status = set_library_store_.loadSlot(
         slotIndex,
         buffer->bytes.data(),
-        sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE,
+        sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE,
         &metadata
     );
     if (status != SlotLoadStatus::OK) {

@@ -1,6 +1,7 @@
 # UX workflow: enter step selection, select steps, and inspect copy/paste previews.
 # Purpose: validates that step-selection state is immediately visible in the
 # sequencer grid, header badge, and action strips.
+# Expect: capture_changed:step_selection_entered=steps_3_5_selected, capture_changed:paste_preview_step_6=pasted_steps
 
 0 scenario sequencer
 50 capture screen track_focus

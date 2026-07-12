@@ -15,12 +15,10 @@ FLASHMEM bool cloneSequencerGraph(
         return true;
     }
 
-    auto graph = core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
-    if (!graph) {
-        return false;
-    }
-
-    *graph = *source;
+    auto graph = core::app::makeExtmemUnique<
+        oc::note::sequencer::StepSequencerGraph
+    >(*source);
+    if (!graph) return false;
     target = std::move(graph);
     return true;
 }
@@ -58,15 +56,7 @@ FLASHMEM void SequencerTrackSelectionClipboard::reset() {
     }
 }
 
-FLASHMEM void MacroAutomationClipboard::reset() {
-    valid = false;
-    trackScope = false;
-    sourceTrack = core::state::macro::TRACK_COUNT;
-    sourcePage = core::state::macro::PAGE_COUNT;
-    count = 0;
-    pointPool = {};
-    entries = {};
-}
+FLASHMEM MacroAutomationClipboard::MacroAutomationClipboard() = default;
 
 FLASHMEM bool MacroAutomationClipboard::append(
     uint8_t entrySourcePage,
@@ -97,19 +87,38 @@ FLASHMEM bool MacroAutomationClipboard::append(
 
 namespace {
 
-FLASHMEM core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard>
+FLASHMEM void releaseOwnedPayloads(core::state::StructureClipboardState& clipboard) {
+    clipboard.macroAutomationSet.reset();
+    clipboard.sequencerTrackSelection.reset();
+    clipboard.sequencerGraph.reset();
+}
+
+FLASHMEM void commitClipboardKind(
+    core::state::StructureClipboardState& clipboard,
+    core::state::StructureClipboardKind kind
+) {
+    clipboard.kind.set(kind);
+    clipboard.revision.set(clipboard.revision.get() + 1U);
+}
+
+FLASHMEM bool rejectClipboardStore(core::state::StructureClipboardState& clipboard) {
+    clipboard.clear();
+    return false;
+}
+
+struct MacroAutomationClipboardBuild {
+    core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard> value;
+    bool success = true;
+};
+
+FLASHMEM MacroAutomationClipboardBuild
 makeMacroAutomationClipboard(
     const core::state::macro::MacroAutomationBankState& automation,
     uint8_t sourceTrack,
     uint8_t sourcePage,
     bool trackScope
 ) {
-    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
-    if (!clipboard) return {};
-    clipboard->reset();
-    clipboard->trackScope = trackScope;
-    clipboard->sourceTrack = sourceTrack;
-    clipboard->sourcePage = sourcePage;
+    core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard> clipboard;
 
     const uint8_t entryCount = automation.entryCount >
             core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
@@ -121,118 +130,123 @@ makeMacroAutomationClipboard(
         if (entry.address.track != sourceTrack) continue;
         if (!trackScope && entry.address.page != sourcePage) continue;
         if (!core::state::macro::macroAutomationSlotHasContent(entry.state)) continue;
-        clipboard->append(
+        if (!clipboard) {
+            clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
+            if (!clipboard) return {.success = false};
+            clipboard->trackScope = trackScope;
+            clipboard->sourceTrack = sourceTrack;
+            clipboard->sourcePage = sourcePage;
+        }
+        if (!clipboard->append(
             entry.address.page,
             entry.address.macro,
             automation.pointPool,
             entry.state
-        );
+        )) {
+            return {.success = false};
+        }
     }
 
-    return clipboard;
+    return {.value = std::move(clipboard)};
 }
 
 }  // namespace
 
 FLASHMEM void StructureClipboardState::clear() {
     kind.set(StructureClipboardKind::NONE);
-    macroAutomationSet.reset();
+    releaseOwnedPayloads(*this);
     sequencerPage.reset();
     sequencerSteps.reset();
     sequencerPageSelection.reset();
-    sequencerTrackSelection.reset();
-    sequencerGraph.reset();
     sequencerStepContentNodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     sequencerStepContentKind = SequencerStepContentClipboardKind::NONE;
-    revision.set(revision.get() + 1);
+    revision.set(revision.get() + 1U);
 }
 
-FLASHMEM void StructureClipboardState::storeMacroPage(
-    const core::state::macro::MacroPageData& page
-) {
-    macroPage = page;
-    macroAutomationSet.reset();
-    kind.set(StructureClipboardKind::MACRO_PAGE);
-    revision.set(revision.get() + 1);
-}
-
-FLASHMEM void StructureClipboardState::storeMacroPage(
+FLASHMEM bool StructureClipboardState::storeMacroPage(
     const core::state::macro::MacroPageData& page,
     const core::state::macro::MacroAutomationBankState& automation,
     uint8_t sourceTrack,
     uint8_t sourcePage
 ) {
-    macroPage = page;
-    macroAutomationSet = makeMacroAutomationClipboard(
+    auto automationSet = makeMacroAutomationClipboard(
         automation,
         sourceTrack,
         sourcePage,
         false
     );
-    kind.set(StructureClipboardKind::MACRO_PAGE);
-    revision.set(revision.get() + 1);
+    if (!automationSet.success) {
+        return rejectClipboardStore(*this);
+    }
+
+    releaseOwnedPayloads(*this);
+    macroPage = page;
+    macroAutomationSet = std::move(automationSet.value);
+    commitClipboardKind(*this, StructureClipboardKind::MACRO_PAGE);
+    return true;
 }
 
-FLASHMEM void StructureClipboardState::storeMacroTrack(
-    const core::state::macro::MacroTrackData& track
-) {
-    macroTrack = track;
-    macroAutomationSet.reset();
-    kind.set(StructureClipboardKind::MACRO_TRACK);
-    revision.set(revision.get() + 1);
-}
-
-FLASHMEM void StructureClipboardState::storeMacroTrack(
+FLASHMEM bool StructureClipboardState::storeMacroTrack(
     const core::state::macro::MacroTrackData& track,
     const core::state::macro::MacroAutomationBankState& automation,
     uint8_t sourceTrack
 ) {
-    macroTrack = track;
-    macroAutomationSet = makeMacroAutomationClipboard(
+    auto automationSet = makeMacroAutomationClipboard(
         automation,
         sourceTrack,
         core::state::macro::PAGE_COUNT,
         true
     );
-    kind.set(StructureClipboardKind::MACRO_TRACK);
-    revision.set(revision.get() + 1);
+    if (!automationSet.success) {
+        return rejectClipboardStore(*this);
+    }
+
+    releaseOwnedPayloads(*this);
+    macroTrack = track;
+    macroAutomationSet = std::move(automationSet.value);
+    commitClipboardKind(*this, StructureClipboardKind::MACRO_TRACK);
+    return true;
 }
 
-FLASHMEM void StructureClipboardState::storeMacroAutomation(
+FLASHMEM bool StructureClipboardState::storeMacroAutomation(
     const core::state::macro::MacroAutomationBankState& automation,
     const core::state::macro::MacroAutomationSlotState& slot
 ) {
-    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
-    if (!clipboard) {
-        macroAutomationSet.reset();
-        kind.set(StructureClipboardKind::NONE);
-        revision.set(revision.get() + 1);
-        return;
+    if (!core::state::macro::macroAutomationSlotHasContent(slot)) {
+        return rejectClipboardStore(*this);
     }
 
-    clipboard->reset();
-    if (!clipboard->append(0, 0, automation.pointPool, slot)) {
-        macroAutomationSet.reset();
-        kind.set(StructureClipboardKind::NONE);
-        revision.set(revision.get() + 1);
-        return;
+    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
+    if (!clipboard) {
+        return rejectClipboardStore(*this);
     }
+
+    if (!clipboard->append(0, 0, automation.pointPool, slot)) {
+        return rejectClipboardStore(*this);
+    }
+
+    releaseOwnedPayloads(*this);
     macroAutomationSet = std::move(clipboard);
-    kind.set(StructureClipboardKind::MACRO_AUTOMATION);
-    revision.set(revision.get() + 1);
+    commitClipboardKind(*this, StructureClipboardKind::MACRO_AUTOMATION);
+    return true;
 }
 
 FLASHMEM bool StructureClipboardState::storeSequencerPage(
     const core::state::SequencerPageClipboard& page,
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
-    if (!cloneSequencerGraph(sequencerGraph, graph)) {
-        return false;
+    if (!page.valid || page.count == 0) {
+        return rejectClipboardStore(*this);
+    }
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
+    if (!cloneSequencerGraph(graphCopy, graph)) {
+        return rejectClipboardStore(*this);
     }
 
+    releaseOwnedPayloads(*this);
     sequencerPage = page;
-    kind.set(StructureClipboardKind::SEQUENCER_PAGE);
-    revision.set(revision.get() + 1);
+    sequencerGraph = std::move(graphCopy);
+    commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_PAGE);
     return true;
 }
 
@@ -240,13 +254,15 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrack(
     const core::state::sequencer::SequencerPatternSnapshot& track,
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
-    if (!cloneSequencerGraph(sequencerGraph, graph)) {
-        return false;
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
+    if (!cloneSequencerGraph(graphCopy, graph)) {
+        return rejectClipboardStore(*this);
     }
 
+    releaseOwnedPayloads(*this);
     sequencerTrack = track;
-    kind.set(StructureClipboardKind::SEQUENCER_TRACK);
-    revision.set(revision.get() + 1);
+    sequencerGraph = std::move(graphCopy);
+    commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_TRACK);
     return true;
 }
 
@@ -255,14 +271,20 @@ FLASHMEM bool StructureClipboardState::storeSequencerStepContent(
     core::state::sequencer::SequencerGraphNodeId nodeId,
     SequencerStepContentClipboardKind contentKind
 ) {
-    if (!cloneSequencerGraph(sequencerGraph, &graph)) {
-        return false;
+    if (nodeId == oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID ||
+        contentKind == SequencerStepContentClipboardKind::NONE) {
+        return rejectClipboardStore(*this);
+    }
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
+    if (!cloneSequencerGraph(graphCopy, &graph)) {
+        return rejectClipboardStore(*this);
     }
 
+    releaseOwnedPayloads(*this);
+    sequencerGraph = std::move(graphCopy);
     sequencerStepContentNodeId = nodeId;
     sequencerStepContentKind = contentKind;
-    kind.set(StructureClipboardKind::SEQUENCER_STEP_CONTENT);
-    revision.set(revision.get() + 1);
+    commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_STEP_CONTENT);
     return true;
 }
 
@@ -271,15 +293,17 @@ FLASHMEM bool StructureClipboardState::storeSequencerSteps(
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     if (!steps.valid || steps.count == 0) {
-        return false;
+        return rejectClipboardStore(*this);
     }
-    if (!cloneSequencerGraph(sequencerGraph, graph)) {
-        return false;
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
+    if (!cloneSequencerGraph(graphCopy, graph)) {
+        return rejectClipboardStore(*this);
     }
 
+    releaseOwnedPayloads(*this);
     sequencerSteps = steps;
-    kind.set(StructureClipboardKind::SEQUENCER_STEPS);
-    revision.set(revision.get() + 1);
+    sequencerGraph = std::move(graphCopy);
+    commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_STEPS);
     return true;
 }
 
@@ -288,15 +312,17 @@ FLASHMEM bool StructureClipboardState::storeSequencerPageSelection(
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     if (!pages.valid || pages.count == 0) {
-        return false;
+        return rejectClipboardStore(*this);
     }
-    if (!cloneSequencerGraph(sequencerGraph, graph)) {
-        return false;
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
+    if (!cloneSequencerGraph(graphCopy, graph)) {
+        return rejectClipboardStore(*this);
     }
 
+    releaseOwnedPayloads(*this);
     sequencerPageSelection = pages;
-    kind.set(StructureClipboardKind::SEQUENCER_PAGE_SELECTION);
-    revision.set(revision.get() + 1);
+    sequencerGraph = std::move(graphCopy);
+    commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_PAGE_SELECTION);
     return true;
 }
 
@@ -304,13 +330,12 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrackSelection(
     core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard> tracks
 ) {
     if (!tracks || !tracks->valid || tracks->count == 0) {
-        return false;
+        return rejectClipboardStore(*this);
     }
 
+    releaseOwnedPayloads(*this);
     sequencerTrackSelection = std::move(tracks);
-    sequencerGraph.reset();
-    kind.set(StructureClipboardKind::SEQUENCER_TRACK_SELECTION);
-    revision.set(revision.get() + 1);
+    commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_TRACK_SELECTION);
     return true;
 }
 

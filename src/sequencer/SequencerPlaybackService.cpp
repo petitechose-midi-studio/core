@@ -3,75 +3,31 @@
 #include <algorithm>
 
 #include <config/PlatformCompat.hpp>
-
-#include "app/ExtmemAllocator.hpp"
-#include "config/TimeCompat.hpp"
-#include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerTrackBankOps.hpp"
+#include <oc/diagnostics/Performance.hpp>
 
 namespace core::sequencer {
 
-void SequencerPlaybackService::PendingNoteActivity::reset() {
-    noteOutActive = false;
-    noteOnCount = 0;
-    noteOffCount = 0;
-    panicNoteOffCount = 0;
-    queuedEventCount = 0;
-    trackVelocity.fill(0);
-}
-
-void SequencerPlaybackService::PendingNoteActivity::recordNoteOn(uint8_t trackIndex,
-                                                                 uint8_t velocity) {
-    noteOutActive = true;
-    noteOnCount += 1;
-    queuedEventCount += 1;
-    if (trackIndex >= TRACK_COUNT) {
-        return;
-    }
-    trackVelocity[trackIndex] = std::max(trackVelocity[trackIndex], velocity);
-}
-
-void SequencerPlaybackService::PendingNoteActivity::recordNoteOff() {
-    noteOffCount += 1;
-    queuedEventCount += 1;
-}
-
-void SequencerPlaybackService::PendingNoteActivity::recordPanicNoteOffs(uint32_t count) {
-    panicNoteOffCount += count;
-    queuedEventCount += count;
-}
-
-SequencerPlaybackActivitySnapshot SequencerPlaybackService::PendingNoteActivity::snapshot() const {
-    return {
-        .noteOnCount = noteOnCount,
-        .noteOffCount = noteOffCount,
-        .panicNoteOffCount = panicNoteOffCount,
-        .queuedEventCount = queuedEventCount,
-    };
-}
-
 SequencerPlaybackService::PendingNoteActivityObserver::PendingNoteActivityObserver(
-    PendingNoteActivity& pendingNoteActivity
+    PendingUiProjection& pendingUiProjection
 )
-    : pending_note_activity_(pendingNoteActivity) {}
+    : pending_ui_projection_(pendingUiProjection) {}
 
 void SequencerPlaybackService::PendingNoteActivityObserver::onNoteOn(uint8_t trackIndex,
                                                                      uint8_t velocity) {
-    pending_note_activity_.recordNoteOn(trackIndex, velocity);
-}
-
-void SequencerPlaybackService::PendingNoteActivityObserver::onNoteOff() {
-    pending_note_activity_.recordNoteOff();
-}
-
-void SequencerPlaybackService::PendingNoteActivityObserver::onPanicNoteOffs(uint32_t count) {
-    pending_note_activity_.recordPanicNoteOffs(count);
+    pending_ui_projection_.recordNoteOn(trackIndex, velocity);
 }
 
 void SequencerPlaybackService::PendingUiProjection::reset() {
     noteOutPulse = false;
     beatPulse = false;
     trackVelocity.fill(0);
+}
+
+void SequencerPlaybackService::PendingUiProjection::recordNoteOn(uint8_t trackIndex,
+                                                                 uint8_t velocity) {
+    noteOutPulse = true;
+    if (trackIndex >= TRACK_COUNT) return;
+    trackVelocity[trackIndex] = std::max(trackVelocity[trackIndex], velocity);
 }
 
 void SequencerPlaybackService::handleActiveTrackSwitch_() {
@@ -86,51 +42,30 @@ void SequencerPlaybackService::handleActiveTrackSwitch_() {
 
 FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     core::state::sequencer::SequencerState& sequencer,
-    core::state::sequencer::SequencerTrackBankState& trackBank,
     core::state::StatusBarState& statusBar,
-    RealtimeMidiQueue& midiQueue
+    RealtimeMidiQueue& midiQueue,
+    const SequencerRuntimeGraphBank& runtimeGraphBank
 )
     : sequencer_(sequencer)
-    , track_bank_(trackBank)
     , status_bar_(statusBar)
-    , track_runtime_states_(
-          std::make_unique<oc::note::sequencer::StepSequencerRuntimeState[]>(TRACK_COUNT)
-      )
+    , runtime_graph_bank_(runtimeGraphBank)
 {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        track_event_sinks_[i] =
-            std::make_unique<SequencerMidiEventSink>(midiQueue, i, &note_activity_observer_);
-        track_engines_[i] =
-            std::make_unique<oc::note::sequencer::StepSequencerEngine>(
-                track_runtime_states_[i],
-                *track_event_sinks_[i]
-            );
-    }
-    last_active_track_ = trackBank.activeTrackIndex();
-    runtime_active_track_ = last_active_track_;
-    runtime_enabled_mask_ = trackBank.currentEnabledMask();
-    runtime_muted_mask_ = trackBank.currentMutedMask();
-    auto snapshot = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerTrackBankSnapshot
-    >();
-    if (snapshot) {
-        core::state::sequencer::captureTrackBankSnapshot(trackBank, sequencer, *snapshot);
-        syncRuntimeStates_(*snapshot);
+        track_event_sinks_[i].emplace(midiQueue, i, &note_activity_observer_);
+        track_engines_[i].emplace(track_runtime_states_[i], *track_event_sinks_[i]);
     }
     publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
 }
 
-void SequencerPlaybackService::update(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
-                                      uint32_t tick,
+void SequencerPlaybackService::update(
+    const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+    uint32_t tick,
                                       bool playing,
-                                      uint32_t nowMs,
                                       uint32_t nowUs,
                                       uint32_t tickPeriodUs,
-                                      bool publishRuntimeState,
-                                      bool emitLogs) {
-    const uint32_t startUs = core::time_compat::micros();
-    pending_note_activity_.reset();
-    pending_ui_projection_.reset();
+                                      bool publishRuntimeState) {
+    OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
+    OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
     syncRuntimeStates_(snapshot);
 
     handleActiveTrackSwitch_();
@@ -149,11 +84,6 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
         if (publishRuntimeState) {
             publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
         }
-        const uint32_t updateUs = core::time_compat::micros() - startUs;
-        recordProfiling_(tick, false, updateUs, nowMs);
-        if (emitLogs) {
-            profiler_.maybeLog(nowMs);
-        }
         return;
     }
 
@@ -171,8 +101,6 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
         );
     }
 
-    collectUiProjection_();
-
     if (publishRuntimeState) {
         publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
     }
@@ -186,19 +114,14 @@ void SequencerPlaybackService::update(const core::state::sequencer::SequencerTra
         }
     }
     last_playhead_ = playhead;
-    const uint32_t updateUs = core::time_compat::micros() - startUs;
-    recordProfiling_(tick, true, updateUs, nowMs);
-    if (emitLogs) {
-        profiler_.maybeLog(nowMs);
-    }
 }
 
-FLASHMEM void SequencerPlaybackService::stop() {
-    for (auto& trackEngine : track_engines_) {
-        if (trackEngine) {
-            trackEngine->reset();
-        }
-    }
+FLASHMEM void SequencerPlaybackService::stopTrack(uint8_t trackIndex) {
+    if (trackIndex >= track_engines_.size() || !track_engines_[trackIndex]) return;
+    track_engines_[trackIndex]->reset();
+}
+
+FLASHMEM void SequencerPlaybackService::completeStop() {
     publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
     last_playhead_ = -1;
     pending_ui_projection_.reset();
@@ -208,12 +131,17 @@ void SequencerPlaybackService::syncRuntimeStates_(
     const core::state::sequencer::SequencerTrackBankSnapshot& snapshot
 ) {
     runtime_active_track_ =
-        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(snapshot.activeTrack);
+        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+            snapshot.activeTrack
+        );
     runtime_enabled_mask_ = snapshot.enabledMask;
     runtime_muted_mask_ = snapshot.mutedMask;
 
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         track_runtime_states_[i].variationTelemetryEnabled = (i == runtime_active_track_);
+        if (track_engines_[i]) {
+            track_engines_[i]->setGraph(runtime_graph_bank_.graphForTrack(i));
+        }
 
         const auto trackSignature = captureRuntimeStateSignature(snapshot.tracks[i]);
         if (track_runtime_signatures_[i].matches(trackSignature)) {
@@ -221,51 +149,7 @@ void SequencerPlaybackService::syncRuntimeStates_(
         }
 
         syncRuntimeState(track_runtime_states_[i], snapshot.tracks[i]);
-        syncRuntimeGraph_(i, snapshot);
         track_runtime_signatures_[i] = trackSignature;
-    }
-}
-
-void SequencerPlaybackService::syncRuntimeGraph_(
-    uint8_t trackIndex,
-    const core::state::sequencer::SequencerTrackBankSnapshot& snapshot
-) {
-    if (trackIndex >= TRACK_COUNT || !track_engines_[trackIndex]) return;
-
-    const auto* graphSource = (trackIndex == snapshot.activeTrack)
-                                  ? core::state::sequencer::graphView(sequencer_.pattern)
-                                  : core::state::sequencer::graphView(track_bank_.track(trackIndex));
-    if (graphSource == nullptr) {
-        track_runtime_graphs_[trackIndex].reset();
-        track_engines_[trackIndex]->setGraph(nullptr);
-        return;
-    }
-
-    if (!track_runtime_graphs_[trackIndex]) {
-        track_runtime_graphs_[trackIndex] =
-            core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
-    }
-    if (!track_runtime_graphs_[trackIndex]) {
-        track_engines_[trackIndex]->setGraph(nullptr);
-        return;
-    }
-
-    *track_runtime_graphs_[trackIndex] = *graphSource;
-    track_engines_[trackIndex]->setGraph(
-        track_runtime_graphs_[trackIndex]->enabled ? track_runtime_graphs_[trackIndex].get() : nullptr
-    );
-}
-
-void SequencerPlaybackService::collectUiProjection_() {
-    if (pending_note_activity_.noteOutActive) {
-        pending_ui_projection_.noteOutPulse = true;
-    }
-
-    for (uint8_t track = 0; track < pending_note_activity_.trackVelocity.size(); ++track) {
-        const uint8_t velocity = pending_note_activity_.trackVelocity[track];
-        if (velocity == 0) continue;
-        pending_ui_projection_.trackVelocity[track] =
-            std::max(pending_ui_projection_.trackVelocity[track], velocity);
     }
 }
 
@@ -306,17 +190,6 @@ SequencerPlaybackService::activeRuntimeState_() const {
 
 SequencerRuntimeTelemetrySnapshot SequencerPlaybackService::copyActiveRuntimeTelemetry() const {
     return captureRuntimeTelemetry(activeRuntimeState_());
-}
-
-FLASHMEM bool SequencerPlaybackService::takeProfilingSnapshot(uint32_t nowMs, ProfilingSnapshot& snapshot) {
-    return profiler_.takeSnapshot(nowMs, snapshot);
-}
-
-void SequencerPlaybackService::recordProfiling_(uint32_t tick,
-                                                bool playing,
-                                                uint32_t updateUs,
-                                                uint32_t nowMs) {
-    profiler_.record(tick, playing, updateUs, pending_note_activity_.snapshot(), nowMs);
 }
 
 }  // namespace core::sequencer

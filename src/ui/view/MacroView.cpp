@@ -1,71 +1,24 @@
 #include "MacroView.hpp"
 
-#include <oc/log/Log.hpp>
+#include <cstddef>
+
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
+#include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
+#include <oc/diagnostics/Performance.hpp>
+#include <oc/log/Log.hpp>
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
-#include <config/TimeCompat.hpp>
-
 #include "state/macro/MacroWorkflow.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
+#include "ui/view/RetainedViewRenderPolicy.hpp"
 #include "ui/widget/MacroKnobWidget.hpp"
 
 namespace core::ui {
 
 namespace style = oc::ui::lvgl::style;
 
-namespace {
-
-#if defined(PERF_LOG)
-struct MacroRenderProfiling {
-    uint32_t window_start_ms = 0;
-    uint32_t pass_count = 0;
-    uint32_t total_us = 0;
-    uint32_t max_us = 0;
-    uint32_t total_value_updates = 0;
-    uint32_t total_config_updates = 0;
-
-    void record(uint32_t elapsed_us, uint32_t value_updates, uint32_t config_updates) {
-        const uint32_t now = core::time_compat::millis();
-        if (window_start_ms == 0) {
-            window_start_ms = now;
-        }
-
-        pass_count += 1;
-        total_us += elapsed_us;
-        max_us = std::max(max_us, elapsed_us);
-        total_value_updates += value_updates;
-        total_config_updates += config_updates;
-
-        if ((now - window_start_ms) < 500) return;
-
-        const uint32_t avg_us = pass_count > 0 ? (total_us / pass_count) : 0;
-        if (max_us >= 2000 || avg_us >= 1000) {
-            OC_LOG_INFO("[Perf][MacroView] passes={} avg={}us max={}us valueUpdates={} configUpdates={}",
-                        pass_count,
-                        avg_us,
-                        max_us,
-                        total_value_updates,
-                        total_config_updates);
-        }
-
-        window_start_ms = now;
-        pass_count = 0;
-        total_us = 0;
-        max_us = 0;
-        total_value_updates = 0;
-        total_config_updates = 0;
-    }
-};
-
-MacroRenderProfiling g_macro_render_profiling;
-#endif
-
-}  // namespace
-
 FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
-    rendered_channels_.fill(0xFF);
     rendered_ccs_.fill(0xFF);
     rendered_automation_active_.fill(false);
     rendered_automation_recording_.fill(false);
@@ -78,19 +31,51 @@ FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     createActionStrips();
     createSlotPropertyOverlay();
     createMacros();
+    if (!frame_ || !frame_->valid() || !container_ || !top_bar_container_ ||
+        !body_container_ || !interaction_container_ || !center_column_ ||
+        !macro_grid_container_ || !header_bar_ || !header_bar_->getElement() ||
+        !left_action_strip_ || !left_action_strip_->getElement() ||
+        !bottom_action_strip_ || !bottom_action_strip_->getElement() ||
+        !slot_property_overlay_ || !slot_property_overlay_->getElement()) {
+        return;
+    }
+    for (const auto& macro : macros_) {
+        if (!macro || !macro->valid()) return;
+    }
+
+    // Prime retained header styles during construction so first activation only
+    // resolves geometry through LVGL's normal layout pass.
+    if (header_bar_) {
+        header_bar_->render(buildMacroHeaderBarProps(modelSource()));
+    }
 
     // Macro rendering is sampled at the global LVGL cadence.
     constexpr uint32_t targetHz = Config::Timing::LVGL_HZ;
     constexpr uint32_t periodMs = (targetHz > 1000)
         ? 1
         : ((1000 + targetHz - 1) / targetHz);
-    update_timer_ = std::make_unique<PausableLvglTimer>(periodMs, onUpdateTimer, this);
+    render_scheduler_ =
+        core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
+            core::ui::renderSchedulerDebugLabel("MacroView"),
+            &MacroView::drainRender,
+            this,
+            periodMs,
+            &MacroView::canDrainRender
+        );
+    if (!render_scheduler_ || !render_scheduler_->valid()) {
+        OC_LOG_ERROR("MacroView: render scheduler allocation failed");
+        return;
+    }
 
-    bindToState();
+    if (!bindToState()) {
+        OC_LOG_ERROR("MacroView: state binding failed");
+        return;
+    }
+    initialized_ = true;
 }
 
 FLASHMEM MacroView::~MacroView() {
-    update_timer_.reset();
+    render_scheduler_.reset();
     subscriptions_.clear();
     slot_property_overlay_.reset();
     bottom_action_strip_.reset();
@@ -111,33 +96,19 @@ FLASHMEM MacroView::~MacroView() {
 }
 
 FLASHMEM void MacroView::onActivate() {
-    if (container_) {
-        lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
-        dirty_flags_.fill(true);
-        has_dirty_ = true;
-        header_dirty_ = true;
-        left_action_strip_dirty_ = true;
-        bottom_action_strip_dirty_ = true;
-        slot_property_overlay_dirty_ = true;
-        markConfigDirtyIfChanged();
-        scheduleUpdate();
-        processDirtyFlags();
-    }
+    if (!container_) return;
+
+    RetainedViewRenderPolicy::show(container_);
+    markConfigDirtyIfChanged();
+    if (render_scheduler_) render_scheduler_->resumePending(true);
 }
 
 FLASHMEM void MacroView::onDeactivate() {
-    if (container_) {
-        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    if (update_timer_) {
-        update_timer_->pause();
-    }
+    if (render_scheduler_) render_scheduler_->pause();
+    RetainedViewRenderPolicy::hide(container_);
 }
 
-FLASHMEM void MacroView::bindToState() {
-    subscriptions_.reserve(MACRO_COUNT + 24);
-
+FLASHMEM bool MacroView::bindToState() {
     subscriptions_.push_back(
         state_refs_.configRevision.subscribe([this](uint32_t revision) {
             if (core::state::macro::macroConfigRevisionTargetsAll(revision)) {
@@ -147,9 +118,7 @@ FLASHMEM void MacroView::bindToState() {
 
             const int dirtyIndex = core::state::macro::macroConfigRevisionDirtyIndex(revision);
             if (dirtyIndex >= 0) {
-                config_dirty_flags_[dirtyIndex] = true;
-                has_dirty_ = true;
-                scheduleUpdate();
+                requestRender(configRenderFlag(static_cast<uint8_t>(dirtyIndex)));
                 return;
             }
 
@@ -181,14 +150,21 @@ FLASHMEM void MacroView::bindToState() {
 
     subscriptions_.push_back(
         state_refs_.macroUi.automationRecordingRevision.subscribe([this](uint32_t) {
-            requestHeaderRender();
-            markAllConfigDirty();
+            markAutomationRecordingDirtyIfChanged();
         })
     );
 
     subscriptions_.push_back(
+        state_refs_.macroUi.automationRecordingStatus.subscribe(
+            [this](core::state::macro::MacroAutomationRecordingStatus) {
+                requestHeaderRender();
+            }
+        )
+    );
+
+    subscriptions_.push_back(
         state_refs_.macroUi.automationManualOverrideMask.subscribe([this](uint16_t) {
-            markAllConfigDirty();
+            markConfigDirtyIfChanged();
         })
     );
 
@@ -197,13 +173,13 @@ FLASHMEM void MacroView::bindToState() {
             requestHeaderRender();
             requestLeftActionStripRender();
             requestBottomActionStripRender();
-            markAllConfigDirty();
+            markConfigDirtyIfChanged();
         })
     );
 
     subscriptions_.push_back(
         state_refs_.macroUi.focusedMacroSlot.subscribe([this](uint8_t) {
-            markAllConfigDirty();
+            markConfigDirtyIfChanged();
         })
     );
 
@@ -333,6 +309,7 @@ FLASHMEM void MacroView::bindToState() {
         state_refs_.sharedTrackActive.subscribe([this](uint8_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
+            markConfigDirtyIfChanged();
         })
     );
 
@@ -340,6 +317,7 @@ FLASHMEM void MacroView::bindToState() {
         state_refs_.pages.activePageIndexSignal().subscribe([this](uint8_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
+            markConfigDirtyIfChanged();
         })
     );
 
@@ -390,23 +368,31 @@ FLASHMEM void MacroView::bindToState() {
         })
     );
 
-    header_dirty_ = true;
-    left_action_strip_dirty_ = true;
-    bottom_action_strip_dirty_ = true;
-    slot_property_overlay_dirty_ = true;
     markAllDirty();
-    processDirtyFlags();
+
+    if (!subscriptions_.valid()) {
+        OC_LOG_ERROR(
+            "MacroView: subscriptions invalid count={} capacity={}",
+            static_cast<unsigned>(subscriptions_.size()),
+            static_cast<unsigned>(subscriptions_.capacity())
+        );
+        return false;
+    }
+    return true;
 }
 
 FLASHMEM void MacroView::createLayout(lv_obj_t* parent) {
-    frame_ = std::make_unique<MainViewFrame>(parent);
+    frame_ = core::app::makeExtmemUnique<MainViewFrame>(parent);
+    if (!frame_ || !frame_->valid()) return;
     container_ = frame_->container();
     top_bar_container_ = frame_->header();
     body_container_ = frame_->body();
+    RetainedViewRenderPolicy::initializeHidden(container_);
 }
 
 FLASHMEM void MacroView::createHeaderBar() {
-    header_bar_ = std::make_unique<MacroHeaderBar>(top_bar_container_);
+    if (!top_bar_container_) return;
+    header_bar_ = core::app::makeExtmemUnique<MacroHeaderBar>(top_bar_container_);
 }
 
 FLASHMEM void MacroView::createActionStrips() {
@@ -414,17 +400,21 @@ FLASHMEM void MacroView::createActionStrips() {
 
     frame_->createInteractionRow();
     interaction_container_ = frame_->interactionRow();
+    if (!interaction_container_) return;
 
-    left_action_strip_ = std::make_unique<ContextActionStrip>(
+    left_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         interaction_container_,
         ContextActionStripOrientation::VERTICAL,
         ContextActionStripVerticalLayout::SPREAD
     );
+    if (!left_action_strip_ || !left_action_strip_->getElement()) return;
 
     frame_->createCenterColumn();
     center_column_ = frame_->centerColumn();
+    if (!center_column_) return;
 
     macro_grid_container_ = lv_obj_create(center_column_);
+    if (!macro_grid_container_) return;
     style::apply(macro_grid_container_)
         .size(LV_PCT(100), 0)
         .transparent()
@@ -443,7 +433,7 @@ FLASHMEM void MacroView::createActionStrips() {
     lv_obj_set_style_pad_column(macro_grid_container_, 0, 0);
     lv_obj_set_style_pad_row(macro_grid_container_, 0, 0);
 
-    bottom_action_strip_ = std::make_unique<ContextActionStrip>(
+    bottom_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         body_container_,
         ContextActionStripOrientation::HORIZONTAL
     );
@@ -451,55 +441,45 @@ FLASHMEM void MacroView::createActionStrips() {
 
 FLASHMEM void MacroView::createSlotPropertyOverlay() {
     if (!container_) return;
-    slot_property_overlay_ = std::make_unique<StepPropertySelectionOverlay>(container_);
+    slot_property_overlay_ =
+        core::app::makeExtmemUnique<StepPropertySelectionOverlay>(container_);
 }
 
 FLASHMEM void MacroView::createMacros() {
+    if (!macro_grid_container_) return;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         uint8_t col = i % COLS;
         uint8_t row = i / COLS;
 
-        macros_[i] = std::make_unique<MacroKnobWidget>(macro_grid_container_, i);
+        macros_[i] = core::app::makeExtmemUnique<MacroKnobWidget>(macro_grid_container_);
+        if (!macros_[i] || !macros_[i]->valid()) return;
         lv_obj_set_grid_cell(macros_[i]->getElement(),
             LV_GRID_ALIGN_STRETCH, col, 1,
             LV_GRID_ALIGN_STRETCH, row, 1);
     }
 }
 
-FLASHMEM void MacroView::scheduleUpdate() {
-    if (update_timer_) {
-        update_timer_->resume();
-    }
+void MacroView::requestRender(uint32_t flags, bool ready) {
+    if (render_scheduler_) render_scheduler_->request(flags, ready);
 }
 
-FLASHMEM void MacroView::pauseUpdateIfIdle() {
-    if (!update_timer_) return;
-    if (has_dirty_ || header_dirty_ || left_action_strip_dirty_ ||
-        bottom_action_strip_dirty_ || slot_property_overlay_dirty_) return;
-    update_timer_->pause();
+void MacroView::requestHeaderRender() {
+    requestRender(RENDER_HEADER);
 }
 
-FLASHMEM void MacroView::requestHeaderRender() {
-    header_dirty_ = true;
-    scheduleUpdate();
+void MacroView::requestLeftActionStripRender() {
+    requestRender(RENDER_LEFT_ACTION_STRIP);
 }
 
-FLASHMEM void MacroView::requestLeftActionStripRender() {
-    left_action_strip_dirty_ = true;
-    scheduleUpdate();
+void MacroView::requestBottomActionStripRender() {
+    requestRender(RENDER_BOTTOM_ACTION_STRIP);
 }
 
-FLASHMEM void MacroView::requestBottomActionStripRender() {
-    bottom_action_strip_dirty_ = true;
-    scheduleUpdate();
+void MacroView::requestSlotPropertyOverlayRender() {
+    requestRender(RENDER_SLOT_PROPERTY_OVERLAY);
 }
 
-FLASHMEM void MacroView::requestSlotPropertyOverlayRender() {
-    slot_property_overlay_dirty_ = true;
-    scheduleUpdate();
-}
-
-FLASHMEM bool MacroView::hasBlockingOverlay() const {
+bool MacroView::hasBlockingOverlay() const {
     return state_refs_.macroEdit.visible.get() ||
            state_refs_.viewSelector.visible.get() ||
            state_refs_.deviceSettings.visible.get() ||
@@ -508,149 +488,155 @@ FLASHMEM bool MacroView::hasBlockingOverlay() const {
            state_refs_.dataManager.dialog.visible.get();
 }
 
-FLASHMEM void MacroView::handleOverlayVisibilityChanged() {
+void MacroView::handleOverlayVisibilityChanged() {
+    if (!render_scheduler_) return;
     if (hasBlockingOverlay()) {
-        if (update_timer_) {
-            update_timer_->pause();
-        }
+        render_scheduler_->pause();
         return;
     }
 
-    if (has_dirty_ || header_dirty_ || left_action_strip_dirty_ || bottom_action_strip_dirty_ ||
-        slot_property_overlay_dirty_) {
-        scheduleUpdate();
-    }
+    render_scheduler_->resumePending(true);
 }
 
-// =============================================================================
-// Debounced Update System
-// =============================================================================
-
-FLASHMEM void MacroView::markAllDirty() {
-    dirty_flags_.fill(true);
-    config_dirty_flags_.fill(true);
-    has_dirty_ = true;
-    header_dirty_ = true;
-    left_action_strip_dirty_ = true;
-    bottom_action_strip_dirty_ = true;
-    slot_property_overlay_dirty_ = true;
-    scheduleUpdate();
+void MacroView::markAllDirty() {
+    requestRender(RENDER_ALL);
 }
 
-FLASHMEM void MacroView::markAllConfigDirty() {
-    config_dirty_flags_.fill(true);
-    has_dirty_ = true;
-    scheduleUpdate();
+void MacroView::markAllConfigDirty() {
+    requestRender(RENDER_CONFIG_MASK);
 }
 
-FLASHMEM void MacroView::markConfigDirtyIfChanged() {
-    bool anyDirty = false;
+void MacroView::markAutomationRecordingDirtyIfChanged() {
+    const auto& recording = state_refs_.macroUi.automationRecording;
+    const uint8_t activeTrack = state_refs_.pages.currentActiveTrack();
+    const uint8_t activePage = state_refs_.pages.currentActivePage();
+    uint32_t flags = 0;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        const auto& config = state_refs_.pages.activeConfigs[i];
-        const bool active = state_refs_.pages.isMacroSlotActive(i);
-        const bool addSlot = !active && state_refs_.pages.isMacroAddSlot(i);
-        const bool focused =
-            state_refs_.structureNavigationFocus.get() == core::state::StructureNavigationFocus::STEP &&
-            state_refs_.macroUi.focusedMacroSlot.get() == i;
-        const bool recording =
-            state_refs_.macroUi.automationRecording.active &&
-            state_refs_.macroUi.automationRecording.address.track == state_refs_.pages.currentActiveTrack() &&
-            state_refs_.macroUi.automationRecording.address.page == state_refs_.pages.currentActivePage() &&
-            state_refs_.macroUi.automationRecording.address.macro == i;
-        const bool manualOverride =
-            (state_refs_.macroUi.automationManualOverrideMask.get() &
-             static_cast<uint16_t>(1U << i)) != 0;
-        const bool dirty = rendered_channels_[i] != config.channel ||
-                           rendered_ccs_[i] != config.cc ||
-                           rendered_active_[i] != active ||
-                           rendered_add_slot_[i] != addSlot ||
-                           rendered_focused_[i] != focused ||
-                           rendered_automation_recording_[i] != recording ||
-                           rendered_automation_manual_override_[i] != manualOverride;
-        config_dirty_flags_[i] = dirty;
-        anyDirty = anyDirty || dirty;
+        const bool recordingThisSlot =
+            state_refs_.pages.isMacroSlotActive(i) &&
+            recording.active &&
+            recording.address.track == activeTrack &&
+            recording.address.page == activePage &&
+            recording.address.macro == i;
+        if (rendered_automation_recording_[i] != recordingThisSlot) {
+            flags |= configRenderFlag(i);
+        }
     }
-    if (anyDirty) {
-        has_dirty_ = true;
-    }
+    if (flags == 0) return;
+    requestRender(flags | RENDER_HEADER);
 }
 
-FLASHMEM void MacroView::markDirty(uint8_t index) {
-    if (index < MACRO_COUNT) {
-        dirty_flags_[index] = true;
-        has_dirty_ = true;
-        scheduleUpdate();
+void MacroView::markConfigDirtyIfChanged() {
+    const auto frame = buildMacroViewFrameState(modelSource());
+    uint32_t flags = 0;
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        const auto& props = frame.macros[i];
+        if (rendered_ccs_[i] != props.cc ||
+            rendered_active_[i] != props.active ||
+            rendered_add_slot_[i] != props.addSlot ||
+            rendered_focused_[i] != props.focused ||
+            rendered_automation_active_[i] != props.automationActive ||
+            rendered_automation_recording_[i] != props.automationRecording ||
+            rendered_automation_manual_override_[i] != props.automationManualOverride) {
+            flags |= configRenderFlag(i);
+        }
     }
+    requestRender(flags);
 }
 
-FLASHMEM void MacroView::processDirtyFlags() {
-#if defined(PERF_LOG)
-    const uint32_t start_us = core::time_compat::micros();
-    uint32_t value_updates = 0;
-    uint32_t config_updates = 0;
-#endif
-    if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN) || hasBlockingOverlay()) {
-        pauseUpdateIfIdle();
+void MacroView::markDirty(uint8_t index) {
+    if (index < MACRO_COUNT) requestRender(valueRenderFlag(index));
+}
+
+bool MacroView::canDrainRender(void* context) {
+    const auto* self = static_cast<const MacroView*>(context);
+    return self && RetainedViewRenderPolicy::renderable(
+        self->container_, self->hasBlockingOverlay()
+    );
+}
+
+void MacroView::drainRender(void* context, uint32_t flags) {
+    auto* self = static_cast<MacroView*>(context);
+    if (self) self->processRenderFlags(flags);
+}
+
+void MacroView::processRenderFlags(uint32_t flags) {
+    if (!RetainedViewRenderPolicy::renderable(container_, hasBlockingOverlay())) {
+        requestRender(flags);
         return;
     }
+    OC_PERF_SCOPE(perfRender, "ui.macro.render");
+
+    const bool headerDirty = (flags & RENDER_HEADER) != 0;
+    const bool leftActionStripDirty = (flags & RENDER_LEFT_ACTION_STRIP) != 0;
+    const bool bottomActionStripDirty = (flags & RENDER_BOTTOM_ACTION_STRIP) != 0;
+    const bool slotPropertyOverlayDirty =
+        (flags & RENDER_SLOT_PROPERTY_OVERLAY) != 0;
+    const bool hasValueDirty = (flags & RENDER_VALUE_MASK) != 0;
+    const bool hasConfigDirty = (flags & RENDER_CONFIG_MASK) != 0;
+    const bool needsStructuralInvalidationBatch =
+        headerDirty || leftActionStripDirty || bottomActionStripDirty ||
+        slotPropertyOverlayDirty || hasConfigDirty;
 
     const auto source = modelSource();
-    const auto frame = buildMacroViewFrameState(source);
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<> invalidation(
+        container_, needsStructuralInvalidationBatch
+    );
 
-    if (header_dirty_ && header_bar_) {
+    if (headerDirty && header_bar_) {
+        invalidation.include(header_bar_->getElement());
         header_bar_->render(buildMacroHeaderBarProps(source));
-        header_dirty_ = false;
     }
 
-    if (left_action_strip_dirty_ && left_action_strip_) {
+    if (leftActionStripDirty && left_action_strip_) {
+        invalidation.include(left_action_strip_->getElement());
         left_action_strip_->render(buildMacroLeftActionStripProps(source));
-        left_action_strip_dirty_ = false;
     }
 
-    if (slot_property_overlay_dirty_ && slot_property_overlay_) {
+    if (slotPropertyOverlayDirty && slot_property_overlay_) {
+        invalidation.include(slot_property_overlay_->getElement());
         slot_property_overlay_->render(buildMacroSlotPropertyOverlayProps(source));
-        slot_property_overlay_dirty_ = false;
+        invalidation.include(slot_property_overlay_->getElement());
     }
 
-    if (bottom_action_strip_dirty_ && bottom_action_strip_) {
+    if (bottomActionStripDirty && bottom_action_strip_) {
+        invalidation.include(bottom_action_strip_->getElement());
         bottom_action_strip_->render(buildMacroBottomActionStripProps(source));
-        bottom_action_strip_dirty_ = false;
     }
 
-    if (!has_dirty_) {
-        pauseUpdateIfIdle();
+    if (!hasValueDirty && !hasConfigDirty) {
+        invalidation.flush();
         return;
     }
 
+    MacroViewFrameState frame{};
+    if (hasConfigDirty) {
+        frame = buildMacroViewFrameState(source);
+    }
+
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        if (dirty_flags_[i] || config_dirty_flags_[i]) {
+        const bool valueDirty = (flags & valueRenderFlag(i)) != 0;
+        const bool configDirty = (flags & configRenderFlag(i)) != 0;
+        if (valueDirty || configDirty) {
             if (macros_[i]) {
-                if (dirty_flags_[i]) {
-                    macros_[i]->setValue(frame.macros[i].value);
-                    dirty_flags_[i] = false;
-#if defined(PERF_LOG)
-                    value_updates += 1;
-#endif
+                invalidation.include(macros_[i]->getElement());
+                if (valueDirty) {
+                    const float value = hasConfigDirty
+                        ? frame.macros[i].value
+                        : state_refs_.macros.slots[i].value.get();
+                    macros_[i]->setValue(value);
                 }
-                if (config_dirty_flags_[i]) {
+                if (configDirty) {
                     const auto& props = frame.macros[i];
                     if (rendered_active_[i] != props.active ||
                         rendered_add_slot_[i] != props.addSlot) {
                         macros_[i]->setSlotState(props.active, props.addSlot);
                         rendered_active_[i] = props.active;
                         rendered_add_slot_[i] = props.addSlot;
-#if defined(PERF_LOG)
-                        config_updates += 1;
-#endif
                     }
-                    if (rendered_channels_[i] != props.channel ||
-                        rendered_ccs_[i] != props.cc) {
-                        macros_[i]->setConfig(props.channel, props.cc);
-                        rendered_channels_[i] = props.channel;
+                    if (rendered_ccs_[i] != props.cc) {
+                        macros_[i]->setConfig(props.cc);
                         rendered_ccs_[i] = props.cc;
-#if defined(PERF_LOG)
-                        config_updates += 1;
-#endif
                     }
                     if (rendered_automation_active_[i] != props.automationActive) {
                         macros_[i]->setAutomationActive(props.automationActive);
@@ -669,31 +655,15 @@ FLASHMEM void MacroView::processDirtyFlags() {
                         macros_[i]->setFocused(props.focused);
                         rendered_focused_[i] = props.focused;
                     }
-                    config_dirty_flags_[i] = false;
                 }
             }
         }
     }
 
-    has_dirty_ = false;
-    pauseUpdateIfIdle();
-#if defined(PERF_LOG)
-    g_macro_render_profiling.record(
-        core::time_compat::micros() - start_us,
-        value_updates,
-        config_updates
-    );
-#endif
+    invalidation.flush();
 }
 
-FLASHMEM void MacroView::onUpdateTimer(lv_timer_t* timer) {
-    auto* self = static_cast<MacroView*>(lv_timer_get_user_data(timer));
-    if (self) {
-        self->processDirtyFlags();
-    }
-}
-
-FLASHMEM MacroViewModelSource MacroView::modelSource() const {
+MacroViewModelSource MacroView::modelSource() const {
     return {
         .macros = state_refs_.macros,
         .pages = state_refs_.pages,

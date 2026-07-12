@@ -17,6 +17,7 @@ enum class SequencerGraphAssetStatus : uint8_t {
     INCOMPATIBLE_TARGET,
     GRAPH_LIMIT_REACHED,
     BUFFER_TOO_SMALL,
+    RESOURCE_EXHAUSTED,
 };
 
 inline const char* sequencerGraphAssetStatusLabel(SequencerGraphAssetStatus status) {
@@ -28,6 +29,7 @@ inline const char* sequencerGraphAssetStatusLabel(SequencerGraphAssetStatus stat
         case SequencerGraphAssetStatus::INCOMPATIBLE_TARGET: return "INCOMPATIBLE_TARGET";
         case SequencerGraphAssetStatus::GRAPH_LIMIT_REACHED: return "GRAPH_LIMIT_REACHED";
         case SequencerGraphAssetStatus::BUFFER_TOO_SMALL: return "BUFFER_TOO_SMALL";
+        case SequencerGraphAssetStatus::RESOURCE_EXHAUSTED: return "RESOURCE_EXHAUSTED";
         default: return "UNKNOWN";
     }
 }

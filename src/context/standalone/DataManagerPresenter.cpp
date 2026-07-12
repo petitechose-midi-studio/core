@@ -9,7 +9,7 @@
 
 namespace core::context::standalone {
 
-DataManagerPresenter::DataManagerPresenter(
+FLASHMEM DataManagerPresenter::DataManagerPresenter(
     StateRefs stateRefs,
     ms::ui::VirtualListKeyValueOverlay& overlay,
     ms::ui::VirtualListSelectorOverlay& dialogOverlay,
@@ -20,11 +20,19 @@ DataManagerPresenter::DataManagerPresenter(
     , overlay_(overlay)
     , dialog_overlay_(dialogOverlay)
     , softkey_bar_(softkeyBar)
-    , transport_bar_(transportBar) {}
+    , transport_bar_(transportBar)
+    , render_scheduler_(
+          core::ui::renderSchedulerDebugLabel("DataManager"),
+          &DataManagerPresenter::drainRenderQueue,
+          this
+      ) {}
 
-FLASHMEM void DataManagerPresenter::bind() {
-    overlay_watcher_.watchAll(
-        [this]() { renderOverlay(); },
+FLASHMEM bool DataManagerPresenter::bind() {
+    bool bound = render_scheduler_.valid();
+    overlay_watcher_.bind<&DataManagerPresenter::requestOverlayRender>(
+        *this, 0, "DataManager.overlay"
+    );
+    bound = overlay_watcher_.watchAll(
         state_refs_.dataManager.visible,
         state_refs_.dataManager.focusedRow,
         state_refs_.dataManager.context,
@@ -33,10 +41,12 @@ FLASHMEM void DataManagerPresenter::bind() {
         state_refs_.dataManager.seqShortcutLeft,
         state_refs_.dataManager.seqShortcutRight,
         state_refs_.dataManager.feedback
-    );
+    ) && bound;
 
-    dialog_watcher_.watchAll(
-        [this]() { renderDialog(); },
+    dialog_watcher_.bind<&DataManagerPresenter::requestDialogRender>(
+        *this, 1, "DataManager.dialog"
+    );
+    bound = dialog_watcher_.watchAll(
         state_refs_.dataManager.flowPhase,
         state_refs_.dataManager.dialog.selectedIndex,
         state_refs_.dataManager.dialog.editingShortcutRow,
@@ -44,17 +54,45 @@ FLASHMEM void DataManagerPresenter::bind() {
         state_refs_.dataManager.pendingCommand,
         state_refs_.dataManager.pendingSlot,
         state_refs_.dataManager.pendingSetLoadMode
-    );
+    ) && bound;
 
-    softkey_bar_watcher_.watchAll(
-        [this]() { renderSoftkeyBar(); },
+    softkey_bar_watcher_.bind<&DataManagerPresenter::requestSoftkeyBarRender>(
+        *this, 2, "DataManager.softkeyBar"
+    );
+    bound = softkey_bar_watcher_.watchAll(
         state_refs_.dataManager.visible,
         state_refs_.dataManager.context,
         state_refs_.dataManager.macroShortcutLeft,
         state_refs_.dataManager.macroShortcutRight,
         state_refs_.dataManager.seqShortcutLeft,
         state_refs_.dataManager.seqShortcutRight
-    );
+    ) && bound;
+
+    render_scheduler_.request(RENDER_OVERLAY | RENDER_DIALOG | RENDER_SOFTKEY_BAR);
+    return bound;
+}
+
+FLASHMEM void DataManagerPresenter::requestOverlayRender() {
+    render_scheduler_.request(RENDER_OVERLAY);
+}
+
+FLASHMEM void DataManagerPresenter::requestDialogRender() {
+    render_scheduler_.request(RENDER_DIALOG);
+}
+
+FLASHMEM void DataManagerPresenter::requestSoftkeyBarRender() {
+    render_scheduler_.request(RENDER_SOFTKEY_BAR);
+}
+
+FLASHMEM void DataManagerPresenter::drainRenderQueue(void* context, uint32_t flags) {
+    auto* self = static_cast<DataManagerPresenter*>(context);
+    if (self) self->renderPending(flags);
+}
+
+FLASHMEM void DataManagerPresenter::renderPending(uint32_t flags) {
+    if ((flags & RENDER_OVERLAY) != 0) renderOverlay();
+    if ((flags & RENDER_DIALOG) != 0) renderDialog();
+    if ((flags & RENDER_SOFTKEY_BAR) != 0) renderSoftkeyBar();
 }
 
 FLASHMEM void DataManagerPresenter::renderOverlay() {

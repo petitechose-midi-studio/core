@@ -1,6 +1,7 @@
 # UX workflow: offset a macro automation playback window.
 # Purpose: validates that Offset shifts the source window without rewriting
 # the underlying automation points.
+# Expect: capture_changed:macro_1_automation_detail=macro_1_automation_offset
 
 0 scenario macro-automation-curve-shape
 80 capture screen macro_grid_curve_source

@@ -74,7 +74,7 @@ FLASHMEM void MacroHeaderBar::createUI(lv_obj_t* parent) {
         .noBorder();
     lv_obj_add_flag(container_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
-    header_row_ = std::make_unique<TrackHeaderRow>(container_);
+    header_row_ = core::app::makeExtmemUnique<TrackHeaderRow>(container_);
 }
 
 FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
@@ -93,14 +93,24 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     if (props.automationRecording) {
         std::snprintf(recordingLabel,
                       sizeof(recordingLabel),
-                      "REC M%u",
+                      props.automationRecordingStatus ==
+                              core::state::macro::MacroAutomationRecordingStatus::REDUCED
+                          ? "REC~ M%u"
+                          : "REC M%u",
                       static_cast<unsigned>(props.automationRecordingMacro) + 1U);
+    } else if (props.automationRecordingStatus ==
+               core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT) {
+        std::snprintf(recordingLabel, sizeof(recordingLabel), "REC SHORT");
+    } else if (props.automationRecordingStatus ==
+               core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED) {
+        std::snprintf(recordingLabel, sizeof(recordingLabel), "REC ERR");
     }
+    const bool showRecordingStatus = recordingLabel[0] != '\0';
 
     TrackHeaderRowProps rowProps;
-    rowProps.leftText = props.automationRecording ? recordingLabel : focusLabel(trackScope);
+    rowProps.leftText = showRecordingStatus ? recordingLabel : focusLabel(trackScope);
     rowProps.itemCount = core::state::macro::PAGE_COUNT;
-    rowProps.accentColor = props.automationRecording
+    rowProps.accentColor = showRecordingStatus
         ? theme::color::getMacroColor(props.automationRecordingMacro)
         : (isTrackEnabled(props.trackEnabledMask, displayTrack)
             ? trackColor(displayTrack)

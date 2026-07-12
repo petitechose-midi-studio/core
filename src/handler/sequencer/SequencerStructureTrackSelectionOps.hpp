@@ -46,7 +46,7 @@ SequencerTrackSelectionPasteTargets buildTrackSelectionPasteTargets(
     uint8_t cursorTrack
 );
 
-void pasteTrackSelectionClipboard(
+[[nodiscard]] bool pasteTrackSelectionClipboard(
     core::state::sequencer::SequencerTrackBankState& tracks,
     core::state::sequencer::SequencerState& sequencer,
     const core::state::SequencerTrackSelectionClipboard& clipboard,

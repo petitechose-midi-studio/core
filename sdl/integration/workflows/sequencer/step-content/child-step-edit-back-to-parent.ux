@@ -1,6 +1,7 @@
 # UX workflow: Step Edit contextual back from child content.
 # Purpose: verifies LEFT_CENTER backs out of a child Step Editor to the parent
 # Step Editor context instead of closing straight back to the step grid.
+# Expect: capture_changed:child_step_edit_open=returned_to_parent_step_edit
 
 0 scenario sequencer
 50 capture screen sequencer_ready

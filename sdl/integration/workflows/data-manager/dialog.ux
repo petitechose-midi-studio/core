@@ -1,6 +1,7 @@
 # UX workflow: navigate Data Manager, open the command palette, then close cleanly.
 # Purpose: validates Data Manager overlay scope, dialog scope, NAV routing, and
 # modal close behavior without relying on storage mutation.
+# Expect: capture_changed:manager_open=command_palette_open
 
 0 scenario data-manager
 100 capture screen manager_open

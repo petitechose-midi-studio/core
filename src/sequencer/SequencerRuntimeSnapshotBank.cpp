@@ -1,5 +1,6 @@
 #include "sequencer/SequencerRuntimeSnapshotBank.hpp"
 
+#include <config/PlatformCompat.hpp>
 #include <oc/realtime/InterruptGuard.hpp>
 
 #include "state/project/ProjectDomainRules.hpp"
@@ -7,7 +8,7 @@
 
 namespace core::sequencer {
 
-SequencerRuntimeSnapshotBank::SequencerRuntimeSnapshotBank(
+FLASHMEM SequencerRuntimeSnapshotBank::SequencerRuntimeSnapshotBank(
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& trackBank,
     core::state::project::ProjectNavigationState& projectNavigation

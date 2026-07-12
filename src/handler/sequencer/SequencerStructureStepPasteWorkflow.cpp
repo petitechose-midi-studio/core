@@ -103,6 +103,11 @@ FLASHMEM bool commitStructureStepPastePlan(
                   preview.targetStep
               ) || changed;
     }
+    if (changed) {
+        if (!core::state::sequencer::compactSequencerGraph(sequencer)) {
+            core::state::sequencer::refreshContentView(sequencer);
+        }
+    }
     return changed;
 }
 

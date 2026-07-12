@@ -8,8 +8,8 @@ struct CoreState;
  * Initializes CoreState once after construction.
  *
  * Bootstrap owns settings/library initialization, overlay signal
- * registration, debug labels, and auto-persist wiring. Runtime mutation paths
- * belong to CoreStateLifecycle and workflow classes.
+ * registration, debug labels, and mutation-coalescing wiring. Runtime mutation
+ * paths belong to CoreStateLifecycle and workflow classes.
  */
 struct CoreStateBootstrap {
     static void initialize(CoreState& state);
@@ -17,11 +17,11 @@ struct CoreStateBootstrap {
 private:
     static void registerOverlaySignals_(CoreState& state);
     static void initializePersistence_(CoreState& state);
-    static void setupAutoPersist_(CoreState& state);
+    static void setupMutationCoalescing_(CoreState& state);
     static void initializeMacroPersistence_(CoreState& state);
     static void initializeSequencerPersistence_(CoreState& state);
-    static void configureMacroAutoPersist_(CoreState& state);
-    static void configureSequencerAutoPersist_(CoreState& state);
+    static void configureMacroMutationCoalescing_(CoreState& state);
+    static void configureSequencerMutationCoalescing_(CoreState& state);
 };
 
 }  // namespace core::state

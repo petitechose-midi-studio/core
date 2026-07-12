@@ -191,6 +191,17 @@ bool pasteActiveContentChildFromClipboard(
     StepContentChildKind childKind,
     const core::state::StructureClipboardState& clipboard
 );
+bool copyActiveContentChildrenToClipboard(
+    const SequencerState& sequencer,
+    uint8_t step,
+    core::state::StructureClipboardState& clipboard
+);
+bool clearActiveContentChildren(SequencerState& sequencer, uint8_t step);
+bool pasteActiveContentChildrenFromClipboard(
+    SequencerState& sequencer,
+    uint8_t step,
+    const core::state::StructureClipboardState& clipboard
+);
 
 bool enterMicroSequenceContentView(
     SequencerState& sequencer,

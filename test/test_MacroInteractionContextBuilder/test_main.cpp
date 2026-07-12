@@ -126,7 +126,7 @@ void test_step_focus_tracks_add_slot_and_automation_clipboard() {
         }
     );
     assert(slot != nullptr);
-    h.clipboard.storeMacroAutomation(h.pages.automation, *slot);
+    assert(h.clipboard.storeMacroAutomation(h.pages.automation, *slot));
 
     const auto activeSlot = core::state::macro::buildMacroInteractionContext(
         h.source(StructureNavigationFocus::STEP)

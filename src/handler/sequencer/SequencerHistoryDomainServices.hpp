@@ -16,6 +16,10 @@ public:
         core::state::sequencer::SequencerHistoryPatternSnapshot after,
         core::state::sequencer::SequencerHistoryDescriptor descriptor
     );
+    using RecordPatternChangeFn = bool (*)(
+        void* context,
+        core::state::sequencer::SequencerHistoryPatternChangePtr change
+    );
     using RecordFullBankFn = bool (*)(
         void* context,
         core::state::sequencer::SequencerHistoryFullBankChangePtr change
@@ -35,6 +39,8 @@ public:
     struct Operations {
         void* context = nullptr;
         RecordPatternFn recordPattern = nullptr;
+        RecordPatternFn recordFlatPattern = nullptr;
+        RecordPatternChangeFn recordPatternChange = nullptr;
         RecordStructureFn recordStructure = nullptr;
         RecordFullBankFn recordFullBank = nullptr;
         CommandFn undo = nullptr;
@@ -52,6 +58,14 @@ public:
         core::state::sequencer::SequencerHistoryPatternSnapshot before,
         core::state::sequencer::SequencerHistoryPatternSnapshot after,
         core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
+    ) const;
+    bool recordFlatPattern(
+        core::state::sequencer::SequencerHistoryPatternSnapshot before,
+        core::state::sequencer::SequencerHistoryPatternSnapshot after,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
+    ) const;
+    bool recordPattern(
+        core::state::sequencer::SequencerHistoryPatternChangePtr change
     ) const;
     bool recordFullBank(
         core::state::sequencer::SequencerHistoryFullBankChangePtr change

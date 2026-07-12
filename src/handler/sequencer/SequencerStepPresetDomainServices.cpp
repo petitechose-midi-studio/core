@@ -19,11 +19,11 @@ namespace {
 using core::state::sequencer::STEP_GRAPH_PRESET_MAX_ENCODED_SIZE;
 
 struct StepPresetBuffer {
-    uint8_t bytes[STEP_GRAPH_PRESET_MAX_ENCODED_SIZE]{};
+    uint8_t bytes[STEP_GRAPH_PRESET_MAX_ENCODED_SIZE];
 };
 
 FLASHMEM core::app::ExtmemUniquePtr<StepPresetBuffer> makeStepPresetBuffer() {
-    return core::app::makeExtmemUnique<StepPresetBuffer>();
+    return core::app::makeExtmemUniqueForOverwrite<StepPresetBuffer>();
 }
 
 FLASHMEM SequencerStepPresetStatus statusFromFileError(oc::type::ErrorCode code) {

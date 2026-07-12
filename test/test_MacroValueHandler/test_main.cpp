@@ -159,6 +159,8 @@ void test_macro_encoder_updates_value_and_sends_cc() {
     assert(h.midiTransport.lastCc == 0);
     assert(h.midiTransport.lastValue == 127);
     assert(h.state.statusBar.ccOutActive.get());
+    assert(std::fabs(h.state.pages.activePageData().values[0] - 1.0f) < 0.0005f);
+    assert(h.state.hasPendingProjectMutationCoalescing());
 
     std::cout << "[PASS] test_macro_encoder_updates_value_and_sends_cc\n";
 }
@@ -362,6 +364,33 @@ void test_macro_button_hold_without_turn_discards_recording() {
     std::cout << "[PASS] test_macro_button_hold_without_turn_discards_recording\n";
 }
 
+void test_post_record_input_guard_survives_millisecond_rollover() {
+    MacroValueHarness h;
+
+    h.state.statusBar.tempo.set(120.0f);
+    h.press(Config::ButtonID::MACRO_1);
+    g_now_ms = 0xFFFF'FF00U;
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+    g_now_ms = 0xFFFF'FF40U;
+    h.turn(Config::EncoderID::MACRO_1, 0.75f);
+    g_now_ms = 0xFFFF'FF88U;
+    h.release(Config::ButtonID::MACRO_1);
+
+    const float recordedValue = h.state.macros[0].value.get();
+    const int ccCountAfterRecording = h.midiTransport.ccCount;
+    g_now_ms = 0xFFFF'FFF0U;
+    h.turn(Config::EncoderID::MACRO_1, 0.0f);
+    assert(std::fabs(h.state.macros[0].value.get() - recordedValue) < 0.0005f);
+    assert(h.midiTransport.ccCount == ccCountAfterRecording);
+
+    g_now_ms = 0x0000'0000U;
+    h.turn(Config::EncoderID::MACRO_1, 0.0f);
+    assert(std::fabs(h.state.macros[0].value.get()) < 0.0005f);
+    assert(h.midiTransport.ccCount == ccCountAfterRecording + 1);
+
+    std::cout << "[PASS] test_post_record_input_guard_survives_millisecond_rollover\n";
+}
+
 }  // namespace
 
 int main() {
@@ -374,6 +403,7 @@ int main() {
     test_turning_an_automated_macro_enters_manual_override();
     test_macro_automation_property_button_restores_auto_without_clearing_lane();
     test_macro_button_hold_without_turn_discards_recording();
+    test_post_record_input_guard_survives_millisecond_rollover();
 
     std::cout << "\nAll MacroValueHandler tests passed.\n";
     return 0;

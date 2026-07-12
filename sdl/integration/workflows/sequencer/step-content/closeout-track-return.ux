@@ -2,6 +2,7 @@
 # Purpose: validates that child content remains visible after leaving the child
 # context, changing track, and returning to the original track. This guards the
 # regression where nested contexts disappeared after track navigation.
+# Expect: capture_changed:t02_created=t01_returned_after_track_switch, capture_changed:t01_step_edit_after_return=t01_micro_context_reopened_after_return
 
 0 scenario sequencer
 50 capture screen sequencer_ready

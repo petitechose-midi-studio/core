@@ -1,6 +1,7 @@
 # UX workflow: copy one sequencer page and preview normal-mode paste targets.
 # Purpose: validates clipboard source marker plus overwrite/free paste previews
 # outside structure selection mode.
+# Expect: capture_changed:page_2_copied=paste_preview_overwrite_page_1, capture_changed:paste_hold_overwrite_armed=page_1_overwritten, capture_changed:paste_preview_free_page_3=page_3_pasted
 
 0 scenario sequencer
 50 capture screen track_focus

@@ -190,8 +190,8 @@ FLASHMEM SequencerPatternQuickControlsHandler::SequencerPatternQuickControlsHand
     , navigation_focus_(state.navigationFocus)
     , encoders_(encoders)
     , buttons_(buttons)
-    , scope_id_(scopeId) {
-    history_ = state.history;
+    , scope_id_(scopeId)
+    , history_(state.history) {
     setupBindings();
 }
 

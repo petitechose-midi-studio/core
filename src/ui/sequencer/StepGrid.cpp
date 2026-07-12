@@ -2,13 +2,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/type/TextFormat.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
-
+#include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepGridGeometryLogic.hpp"
 #include "ui/sequencer/StepGridLabelRenderer.hpp"
@@ -593,11 +595,6 @@ FLASHMEM StepGrid::~StepGrid() {
     }
 }
 
-FLASHMEM void StepGrid::prepareForActivationLayoutRefresh() {
-    geometry_.dirty = true;
-    geometry_.forceLayoutRefresh = true;
-}
-
 FLASHMEM void StepGrid::createUI(lv_obj_t* parent) {
     grid::widgets::createRoot(
         parent,
@@ -668,18 +665,20 @@ FLASHMEM void StepGrid::markGeometryDirty() {
 
 FLASHMEM bool StepGrid::refreshStaticGeometry() {
     if (!note_layer_ || !container_) return false;
-
-    const lv_coord_t containerWidth = lv_obj_get_width(container_);
-    const lv_coord_t containerHeight = lv_obj_get_height(container_);
-    const lv_coord_t noteLayerWidth = lv_obj_get_width(note_layer_);
-    const lv_coord_t noteLayerHeight = lv_obj_get_height(note_layer_);
-    if (geometry_.forceLayoutRefresh ||
-        !geometry_.initialized ||
+    lv_coord_t containerWidth = lv_obj_get_width(container_);
+    lv_coord_t containerHeight = lv_obj_get_height(container_);
+    lv_coord_t noteLayerWidth = lv_obj_get_width(note_layer_);
+    lv_coord_t noteLayerHeight = lv_obj_get_height(note_layer_);
+    if (!geometry_.initialized ||
         geometry_.containerWidth != containerWidth ||
         geometry_.containerHeight != containerHeight ||
         geometry_.noteLayerWidth != noteLayerWidth ||
         geometry_.noteLayerHeight != noteLayerHeight) {
         lv_obj_update_layout(container_);
+        containerWidth = lv_obj_get_width(container_);
+        containerHeight = lv_obj_get_height(container_);
+        noteLayerWidth = lv_obj_get_width(note_layer_);
+        noteLayerHeight = lv_obj_get_height(note_layer_);
     }
 
     lv_area_t noteLayerArea{};
@@ -718,12 +717,11 @@ FLASHMEM bool StepGrid::refreshStaticGeometry() {
     }
 
     geometry_.initialized = true;
-    geometry_.containerWidth = lv_obj_get_width(container_);
-    geometry_.containerHeight = lv_obj_get_height(container_);
-    geometry_.noteLayerWidth = lv_obj_get_width(note_layer_);
-    geometry_.noteLayerHeight = lv_obj_get_height(note_layer_);
+    geometry_.containerWidth = containerWidth;
+    geometry_.containerHeight = containerHeight;
+    geometry_.noteLayerWidth = noteLayerWidth;
+    geometry_.noteLayerHeight = noteLayerHeight;
     geometry_.dirty = false;
-    geometry_.forceLayoutRefresh = false;
     return changed;
 }
 
@@ -789,11 +787,6 @@ void StepGrid::renderTileBar(uint8_t tileIndex, bool visible, bool active) {
     const lv_opa_t nextOpa =
         visible ? (active ? STEP_BAR_ACTIVE_OPA : STEP_BAR_INACTIVE_OPA) : LV_OPA_TRANSP;
     const uint32_t nextColor = active ? COLOR_STEP_PLAY_HEX : COLOR_STEP_PLAY_INACTIVE_HEX;
-    const bool changed =
-        cache.indicatorVisible != visible ||
-        cache.indicatorOpa != nextOpa ||
-        (visible && cache.indicatorColorFull != nextColor);
-
     cache.indicatorVisible = visible;
     if (cache.indicatorColorFull != nextColor) {
         cache.indicatorColorFull = nextColor;
@@ -803,9 +796,6 @@ void StepGrid::renderTileBar(uint8_t tileIndex, bool visible, bool active) {
         cache.indicatorOpa = nextOpa;
     }
 
-    if (changed && tileIndex < step_buttons_.size() && step_buttons_[tileIndex] != nullptr) {
-        lv_obj_invalidate(step_buttons_[tileIndex]);
-    }
 }
 
 void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
@@ -936,12 +926,6 @@ void StepGrid::renderTile(
         diff.childContentChanged ||
         diff.childPitchSummaryChanged;
     const lv_coord_t noteLabelY = geometry_.noteLabelBaselineY[tileIndex];
-    bool buttonOverlayDirty =
-        !cache.initialized || diff.absoluteStepChanged || diff.inPatternChanged ||
-        diff.barChanged || diff.variationChanged || diff.contentBadgesChanged ||
-        diff.enabledChanged || diff.probabilityChanged || diff.stepSelectionChanged ||
-        propertyVisualChanged || geometryChanged;
-
     if (!geometryChanged &&
         !diff.dataChanged && !diff.barChanged && !propertyVisualChanged && !tileFeedbackChanged &&
         !diff.probabilityMaskChanged && !diff.contentBadgesChanged &&
@@ -1007,7 +991,11 @@ void StepGrid::renderTile(
     }
 
     if (diff.dataChanged || diff.barChanged) {
-        renderTileBar(tileIndex, state.playheadVisible && state.inPattern, state.playing);
+        renderTileBar(
+            tileIndex,
+            state.playheadVisible && state.inPattern,
+            state.playing
+        );
     }
 
     cache.initialized = true;
@@ -1035,13 +1023,11 @@ void StepGrid::renderTile(
     cache.variation = state.variation;
     cache.contentBadges = state.contentBadges;
 
-    if (buttonOverlayDirty && step_buttons_[tileIndex]) {
-        lv_obj_invalidate(step_buttons_[tileIndex]);
-    }
 }
 
 void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
     if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
+    OC_PERF_SCOPE(perfRender, "ui.step-grid.render");
 
     bool geometryChanged = false;
     if (geometry_.dirty) {
@@ -1062,8 +1048,16 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
         return;
     }
 
+#if OC_ENABLE_STATS
+    uint32_t dirtyTileCount = 0;
+#endif
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<8> invalidation(container_);
     for (uint8_t i = 0; i < tiles_.size(); ++i) {
         if (!plan.tileDirty[i] && !geometryChanged) continue;
+        invalidation.include(tiles_[i]);
+#if OC_ENABLE_STATS
+        dirtyTileCount += 1;
+#endif
         const TileRenderState& state = frameState.tiles[i];
         renderTile(
             i,
@@ -1075,6 +1069,11 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
             frameState
         );
     }
+    invalidation.flush();
+
+#if OC_ENABLE_STATS
+    OC_PERF_UNITS(perfRender, dirtyTileCount, geometryChanged ? 1U : 0U);
+#endif
 }
 
 }  // namespace core::ui

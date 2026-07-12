@@ -1,0 +1,110 @@
+#include "sequencer/SequencerRuntimeGraphBank.hpp"
+
+#include <utility>
+
+#include <oc/log/Log.hpp>
+
+#include "state/sequencer/SequencerGraphOps.hpp"
+
+namespace core::sequencer {
+
+bool SequencerRuntimeGraphBank::prepare(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& trackBank
+) {
+    static_assert(TRACK_COUNT <= 16, "prepared graph mask capacity exceeded");
+    discardPrepared_();
+
+    const uint8_t activeTrack =
+        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+            trackBank.activeTrackIndex()
+        );
+
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const auto& sourceState = track == activeTrack
+            ? sequencer.pattern
+            : trackBank.track(track);
+        const auto* sourceGraph = core::state::sequencer::graphView(sourceState);
+        const SourceSignature signature{
+            .source = sourceGraph,
+            .revision = sourceState.graphRevision.get(),
+        };
+        if (source_signatures_[track].matches(signature)) continue;
+
+        const uint16_t trackBit = static_cast<uint16_t>(1U << track);
+        prepared_mask_ = static_cast<uint16_t>(prepared_mask_ | trackBit);
+        prepared_signatures_[track] = signature;
+        if (!sourceGraph) continue;
+
+        if (staging_graph_) {
+            prepared_graphs_[track] = std::move(staging_graph_);
+            *prepared_graphs_[track] = *sourceGraph;
+        } else {
+            prepared_graphs_[track] = core::app::makeExtmemUnique<Graph>(*sourceGraph);
+        }
+
+        if (prepared_graphs_[track]) continue;
+
+        discardPrepared_();
+        if (!allocation_failure_reported_) {
+            OC_LOG_ERROR("{}", "[SequencerRuntimeGraphBank] PSRAM allocation failed");
+            allocation_failure_reported_ = true;
+        }
+        return false;
+    }
+
+    allocation_failure_reported_ = false;
+    return true;
+}
+
+void SequencerRuntimeGraphBank::commitPrepared_() {
+    if (prepared_mask_ == 0) return;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t trackBit = static_cast<uint16_t>(1U << track);
+        if ((prepared_mask_ & trackBit) == 0) continue;
+        active_graphs_[track].swap(prepared_graphs_[track]);
+    }
+}
+
+void SequencerRuntimeGraphBank::finishPublication_() {
+    if (prepared_mask_ == 0) return;
+    // Retain one old allocation as scratch for the common single-track edit.
+    // Other obsolete generations are released outside the interrupt guard.
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t trackBit = static_cast<uint16_t>(1U << track);
+        if ((prepared_mask_ & trackBit) == 0) continue;
+
+        source_signatures_[track] = prepared_signatures_[track];
+        prepared_signatures_[track] = {};
+        if (!staging_graph_ && prepared_graphs_[track]) {
+            staging_graph_ = std::move(prepared_graphs_[track]);
+        } else {
+            prepared_graphs_[track].reset();
+        }
+    }
+    prepared_mask_ = 0;
+}
+
+void SequencerRuntimeGraphBank::discardPrepared_() {
+    if (prepared_mask_ == 0) return;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t trackBit = static_cast<uint16_t>(1U << track);
+        if ((prepared_mask_ & trackBit) == 0) continue;
+
+        prepared_signatures_[track] = {};
+        if (!staging_graph_ && prepared_graphs_[track]) {
+            staging_graph_ = std::move(prepared_graphs_[track]);
+        } else {
+            prepared_graphs_[track].reset();
+        }
+    }
+    prepared_mask_ = 0;
+}
+
+const oc::note::sequencer::StepSequencerGraph*
+SequencerRuntimeGraphBank::graphForTrack(uint8_t trackIndex) const {
+    if (trackIndex >= TRACK_COUNT) return nullptr;
+    return active_graphs_[trackIndex].get();
+}
+
+}  // namespace core::sequencer

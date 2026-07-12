@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 namespace core::state::macro {
 
@@ -171,6 +172,24 @@ FLASHMEM float packedCurveValue(const MacroAutomationPointPool& pool,
     return macroAutomationUnpackValue(pool.points[index].value, signedOutput);
 }
 
+FLASHMEM uint16_t lowerBoundPoolPointByTick(const MacroAutomationPointPool& pool,
+                                            uint16_t start,
+                                            uint16_t count,
+                                            uint16_t tick) {
+    uint16_t low = 0;
+    uint16_t high = count;
+    while (low < high) {
+        const uint16_t mid = static_cast<uint16_t>(low + ((high - low) / 2U));
+        const uint16_t poolIndex = static_cast<uint16_t>(start + mid);
+        if (pool.points[poolIndex].tick < tick) {
+            low = static_cast<uint16_t>(mid + 1U);
+        } else {
+            high = mid;
+        }
+    }
+    return low;
+}
+
 FLASHMEM float evaluatePoolPointsAtSourceTick(const MacroAutomationCurveRef& curve,
                                               const MacroAutomationPointPool& pool,
                                               uint16_t sourceTick,
@@ -191,29 +210,29 @@ FLASHMEM float evaluatePoolPointsAtSourceTick(const MacroAutomationCurveRef& cur
         return firstValue;
     }
 
-    uint16_t previousTick = first.tick;
-    float previousValue = firstValue;
-    for (uint16_t i = 1; i < count; ++i) {
-        const uint16_t poolIndex = static_cast<uint16_t>(curve.pointOffset + i);
-        const auto& current = pool.points[poolIndex];
-        const float currentValue = macroAutomationUnpackValue(current.value, signedOutput);
-        if (sourceTick <= current.tick) {
-            const uint16_t span = static_cast<uint16_t>(current.tick - previousTick);
-            const float value = span == 0U
-                ? currentValue
-                : previousValue + (
-                    (currentValue - previousValue) *
-                    (static_cast<float>(sourceTick - previousTick) / static_cast<float>(span))
-                );
-            return signedOutput ? macroAutomationClampSigned(value)
-                                : macroAutomationClamp01(value);
-        }
-        previousTick = current.tick;
-        previousValue = currentValue;
+    const uint16_t relativeIndex =
+        lowerBoundPoolPointByTick(pool, curve.pointOffset, count, sourceTick);
+    if (relativeIndex >= count) {
+        const uint16_t lastIndex = static_cast<uint16_t>(curve.pointOffset + count - 1U);
+        return packedCurveValue(pool, lastIndex, signedOutput);
     }
 
-    return signedOutput ? macroAutomationClampSigned(previousValue)
-                        : macroAutomationClamp01(previousValue);
+    const uint16_t previousIndex =
+        static_cast<uint16_t>(curve.pointOffset + relativeIndex - 1U);
+    const uint16_t currentIndex = static_cast<uint16_t>(curve.pointOffset + relativeIndex);
+    const auto& previous = pool.points[previousIndex];
+    const auto& current = pool.points[currentIndex];
+    const float previousValue = macroAutomationUnpackValue(previous.value, signedOutput);
+    const float currentValue = macroAutomationUnpackValue(current.value, signedOutput);
+    const uint16_t span = static_cast<uint16_t>(current.tick - previous.tick);
+    const float value = span == 0U
+        ? currentValue
+        : previousValue + (
+            (currentValue - previousValue) *
+            (static_cast<float>(sourceTick - previous.tick) / static_cast<float>(span))
+        );
+    return signedOutput ? macroAutomationClampSigned(value)
+                        : macroAutomationClamp01(value);
 }
 
 FLASHMEM float evaluatePoolPoints(const MacroAutomationCurveRef& curve,
@@ -358,6 +377,19 @@ FLASHMEM void simplifyLaneByLinearError(MacroAutomationLane& lane) {
     lane.active = write > 0;
 }
 
+FLASHMEM void decimateLaneForContinuedRecording(MacroAutomationLane& lane) {
+    const uint16_t count =
+        std::min<uint16_t>(lane.pointCount, MACRO_AUTOMATION_RECORDING_MAX_POINTS);
+    if (count <= 2) return;
+
+    uint16_t write = 1;
+    for (uint16_t read = 2; static_cast<uint16_t>(read + 1U) < count; read += 2U) {
+        lane.points[write++] = lane.points[read];
+    }
+    lane.points[write++] = lane.points[static_cast<uint16_t>(count - 1U)];
+    lane.pointCount = write;
+}
+
 FLASHMEM void rationalizeRecordedLane(MacroAutomationLane& lane) {
     snapLaneToTickGrid(lane);
     simplifyLaneByLinearError(lane);
@@ -380,9 +412,10 @@ FLASHMEM float macroAutomationElapsedBeats(
     uint32_t nowMs,
     float tempoBpm
 ) {
-    if (nowMs <= startedAtMs) return 0.0f;
+    const int32_t elapsedMs = oc::time::signedDeltaMs(nowMs, startedAtMs);
+    if (elapsedMs <= 0) return 0.0f;
     const float tempo = tempoBpm > 0.0f ? tempoBpm : 120.0f;
-    return (static_cast<float>(nowMs - startedAtMs) * tempo) / 60000.0f;
+    return (static_cast<float>(elapsedMs) * tempo) / 60000.0f;
 }
 
 FLASHMEM float macroAutomationQuantizeDurationBeats(float rawDurationBeats) {
@@ -435,10 +468,24 @@ FLASHMEM float macroAutomationUnpackValue(int16_t packed, bool signedOutput) {
                         : macroAutomationClamp01(normalized);
 }
 
-FLASHMEM bool macroAutomationAppendPoint(MacroAutomationLane& lane, float beat, float value) {
-    if (lane.pointCount >= MACRO_AUTOMATION_RECORDING_MAX_POINTS) return false;
+FLASHMEM bool macroAutomationAppendPoint(MacroAutomationLane& lane,
+                                         float beat,
+                                         float value,
+                                         bool* reduced) {
+    if (reduced != nullptr) *reduced = false;
     if (!std::isfinite(beat) || beat < 0.0f) return false;
     if (lane.pointCount > 0 && beat < lane.points[lane.pointCount - 1].beat) return false;
+
+    if (lane.pointCount >= MACRO_AUTOMATION_RECORDING_MAX_POINTS) {
+        const uint16_t before = lane.pointCount;
+        simplifyLaneByLinearError(lane);
+        if (lane.pointCount >= MACRO_AUTOMATION_RECORDING_MAX_POINTS) {
+            decimateLaneForContinuedRecording(lane);
+        }
+        if (reduced != nullptr) *reduced = lane.pointCount < before;
+    }
+    if (lane.pointCount >= MACRO_AUTOMATION_RECORDING_MAX_POINTS) return false;
+
     const uint16_t index = lane.pointCount;
     lane.points[index] = MacroCurvePoint{beat, macroAutomationClamp01(value)};
     lane.pointCount = static_cast<uint16_t>(lane.pointCount + 1U);

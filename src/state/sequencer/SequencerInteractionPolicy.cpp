@@ -255,7 +255,8 @@ bool sequencerInteractionSelectionActive(const SequencerInteractionContext& cont
 }
 
 bool sequencerInteractionTransientActive(const SequencerInteractionContext& context) {
-    return context.overlayVisible || context.patternQuickControlsActive || context.propertySelectorActive ||
+    return context.overlayVisible || context.patternQuickControlsActive ||
+           context.historyShortcutHoldActive || context.propertySelectorActive ||
            context.stepEditorVisible;
 }
 

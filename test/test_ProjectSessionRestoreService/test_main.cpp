@@ -72,7 +72,8 @@ void test_missing_session_is_non_fatal() {
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
     assert(files.init());
-    core::persistence::ProjectSessionRestoreService restore(files);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionRestoreService restore(store);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -106,7 +107,7 @@ void test_valid_session_restores_runtime_project() {
     assert(runtime.project.metadata.id[0] == '\0');
     assert(std::strcmp(runtime.project.metadata.name.data(), "untitled") == 0);
 
-    core::persistence::ProjectSessionRestoreService restore(files);
+    core::persistence::ProjectSessionRestoreService restore(store);
     auto result = restore.restore(runtime);
     assert(result.restored());
     assert(result.bytes > 0);
@@ -135,12 +136,13 @@ void test_corrupt_session_reports_degraded_and_keeps_runtime() {
     assert(files.init());
     const uint8_t corrupt[] = {'b', 'a', 'd'};
     assert(files.write("session/current.mspj", 0, corrupt, sizeof(corrupt)));
+    core::persistence::ProjectSessionStore store(files);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
     state.statusBar.tempo.set(123.0f);
 
-    core::persistence::ProjectSessionRestoreService restore(files);
+    core::persistence::ProjectSessionRestoreService restore(store);
     auto result = restore.restore(state);
     assert(result.status == core::persistence::ProjectSessionRestoreService::Status::DEGRADED);
     assert(!result.restored());

@@ -1,9 +1,10 @@
 #pragma once
 
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 
 #include "state/DeviceSettingsState.hpp"
 #include "state/MidiSyncState.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 
 namespace ms::ui {
 class VirtualListSelectorOverlay;
@@ -21,14 +22,19 @@ public:
     DeviceSettingsSelectorPresenter(StateRefs stateRefs,
                                     ms::ui::VirtualListSelectorOverlay& selectorOverlay);
 
-    void bind();
+    [[nodiscard]] bool bind();
 
 private:
+    static constexpr uint32_t RENDER_SELECTOR = 1U;
+
+    static void drainRenderQueue(void* context, uint32_t flags);
+    void requestSelectorRender();
     void renderSelector();
 
     StateRefs state_refs_;
     ms::ui::VirtualListSelectorOverlay& selector_overlay_;
-    oc::state::SignalWatcher selector_watcher_;
+    core::ui::CoalescedLvglRenderScheduler render_scheduler_;
+    oc::state::StaticWatchGroup<7> selector_watcher_;
 };
 
 }  // namespace core::context::standalone

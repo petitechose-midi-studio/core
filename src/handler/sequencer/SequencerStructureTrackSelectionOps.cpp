@@ -88,7 +88,7 @@ captureTrackSelectionClipboard(
     if (!clipboard) return nullptr;
     clipboard->valid = true;
 
-    core::state::sequencer::storeActiveTrack(tracks, sequencer);
+    if (!core::state::sequencer::storeActiveTrack(tracks, sequencer)) return nullptr;
     for (uint8_t track = firstTrack;
          track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -132,7 +132,7 @@ FLASHMEM SequencerTrackSelectionPasteTargets buildTrackSelectionPasteTargets(
     return targets;
 }
 
-FLASHMEM void pasteTrackSelectionClipboard(
+FLASHMEM bool pasteTrackSelectionClipboard(
     core::state::sequencer::SequencerTrackBankState& tracks,
     core::state::sequencer::SequencerState& sequencer,
     const core::state::SequencerTrackSelectionClipboard& clipboard,
@@ -148,21 +148,24 @@ FLASHMEM void pasteTrackSelectionClipboard(
         if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
 
         const uint8_t targetTrack = static_cast<uint8_t>(target);
-        core::state::sequencer::applySnapshot(tracks.track(targetTrack), entry.snapshot);
-        core::state::sequencer::copyGraph(
+        if (!core::state::sequencer::applySnapshotWithGraph(
             tracks.track(targetTrack),
-            entry.graph.get(),
-            entry.snapshot.graphRevision
-        );
+            entry.snapshot,
+            entry.graph.get()
+        )) {
+            return false;
+        }
         if (targetTrack == previousActiveTrack) {
-            core::state::sequencer::applySnapshotToEditor(sequencer, entry.snapshot);
-            core::state::sequencer::copyGraph(
-                sequencer.pattern,
-                entry.graph.get(),
-                entry.snapshot.graphRevision
-            );
+            if (!core::state::sequencer::applySnapshotToEditorWithGraph(
+                    sequencer,
+                    entry.snapshot,
+                    entry.graph.get()
+                )) {
+                return false;
+            }
         }
     }
+    return true;
 }
 
 }  // namespace core::handler

@@ -64,6 +64,10 @@ bool macroAutomationClearTrack(MacroAutomationBankState& bank,
                                uint8_t track);
 
 bool macroAutomationSlotHasContent(const MacroAutomationSlotState& state);
+uint16_t macroAutomationStoredPointCount(const MacroAutomationCurveRef& curve,
+                                         const MacroAutomationPointPool& pool);
+uint16_t macroAutomationStoredPointCount(const MacroAutomationSlotState& state,
+                                         const MacroAutomationPointPool& pool);
 void macroAutomationCompactPool(MacroAutomationBankState& bank);
 // `slot` must be owned by `bank`; compaction rewrites pool offsets through bank entries.
 bool macroAutomationAssignAutomation(MacroAutomationBankState& bank,

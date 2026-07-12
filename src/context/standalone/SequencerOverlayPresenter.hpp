@@ -1,10 +1,11 @@
 #pragma once
 
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
 namespace ms::ui {
@@ -38,22 +39,35 @@ public:
                               ms::ui::VirtualListSelectorOverlay& stepPresetOverlay,
                               core::ui::ContextActionStrip& stepPresetActionStrip);
 
-    void bind();
+    [[nodiscard]] bool bind();
+
+private:
+    static constexpr uint32_t RENDER_STEP_EDIT = 1U << 0;
+    static constexpr uint32_t RENDER_STEP_EDIT_ACTIONS = 1U << 1;
+    static constexpr uint32_t RENDER_STEP_PRESET = 1U << 2;
+    static constexpr uint32_t RENDER_STEP_PRESET_ACTIONS = 1U << 3;
+
+    static void drainRenderQueue(void* context, uint32_t flags);
+    void requestStepEditRender();
+    void requestStepEditActionsRender();
+    void requestStepPresetRender();
+    void requestStepPresetActionsRender();
+    void renderPending(uint32_t flags);
     void renderStepEdit();
     void renderStepEditActionStrip();
     void renderStepPresetPicker();
     void renderStepPresetActionStrip();
 
-private:
     StateRefs state_refs_;
     core::ui::SequencerStepEditOverlay& step_edit_overlay_;
     core::ui::ContextActionStrip& step_edit_action_strip_;
     ms::ui::VirtualListSelectorOverlay& step_preset_overlay_;
     core::ui::ContextActionStrip& step_preset_action_strip_;
-    oc::state::SignalWatcher step_edit_watcher_;
-    oc::state::SignalWatcher step_edit_action_watcher_;
-    oc::state::SignalWatcher step_preset_watcher_;
-    oc::state::SignalWatcher step_preset_action_watcher_;
+    core::ui::CoalescedLvglRenderScheduler render_scheduler_;
+    oc::state::StaticWatchGroup<13> step_edit_watcher_;
+    oc::state::StaticWatchGroup<3> step_edit_action_watcher_;
+    oc::state::StaticWatchGroup<8> step_preset_watcher_;
+    oc::state::StaticWatchGroup<4> step_preset_action_watcher_;
 };
 
 }  // namespace core::context::standalone

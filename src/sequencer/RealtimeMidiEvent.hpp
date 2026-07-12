@@ -20,7 +20,7 @@ enum class RealtimeMidiEventType : uint8_t {
  *
  * `deadlineUs` is compared with wrap-aware time helpers by the queue. The
  * `trackIndex` exists so panic/all-notes-off paths can cancel only one track's
- * pending note-ons without disturbing other tracks.
+ * pending generation without disturbing other tracks.
  */
 struct RealtimeMidiEvent {
     uint32_t deadlineUs = 0;

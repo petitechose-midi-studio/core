@@ -2,6 +2,7 @@
 # Purpose: validates that page focus and page selection share the same model:
 # tap clears page content while preserving page slots; hold removes pages and
 # compacts following pages.
+# Expect: capture_changed:page_2_pattern_focus_with_content=page_2_cleared_by_tap, capture_changed:page_2_cleared_by_tap=page_2_remove_hold_applied, capture_changed:page_selection_cleared_by_tap=page_selection_removed
 
 0 scenario sequencer
 50 capture screen track_focus_initial

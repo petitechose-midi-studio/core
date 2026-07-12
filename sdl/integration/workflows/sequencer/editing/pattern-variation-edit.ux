@@ -1,5 +1,6 @@
 # UX workflow: edit pattern variation range from the property selector.
 # Purpose: validates LEFT_BOTTOM property selection owns OPT variation range edits.
+# Expect: capture_changed:property_selector_open=velocity_range_adjusted
 
 0 scenario sequencer
 50 capture screen sequencer_ready

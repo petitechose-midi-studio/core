@@ -1,8 +1,9 @@
 #pragma once
 
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 
 #include "context/standalone/DataManagerPresenterFormatters.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -32,20 +33,31 @@ public:
                          core::ui::ContextSoftkeyBar& softkeyBar,
                          core::ui::TransportBar& transportBar);
 
-    void bind();
+    [[nodiscard]] bool bind();
+
+private:
+    static constexpr uint32_t RENDER_OVERLAY = 1U << 0;
+    static constexpr uint32_t RENDER_DIALOG = 1U << 1;
+    static constexpr uint32_t RENDER_SOFTKEY_BAR = 1U << 2;
+
+    static void drainRenderQueue(void* context, uint32_t flags);
+    void requestOverlayRender();
+    void requestDialogRender();
+    void requestSoftkeyBarRender();
+    void renderPending(uint32_t flags);
     void renderOverlay();
     void renderDialog();
     void renderSoftkeyBar();
 
-private:
     StateRefs state_refs_;
     ms::ui::VirtualListKeyValueOverlay& overlay_;
     ms::ui::VirtualListSelectorOverlay& dialog_overlay_;
     core::ui::ContextSoftkeyBar& softkey_bar_;
     core::ui::TransportBar& transport_bar_;
-    oc::state::SignalWatcher overlay_watcher_;
-    oc::state::SignalWatcher dialog_watcher_;
-    oc::state::SignalWatcher softkey_bar_watcher_;
+    core::ui::CoalescedLvglRenderScheduler render_scheduler_;
+    oc::state::StaticWatchGroup<8> overlay_watcher_;
+    oc::state::StaticWatchGroup<7> dialog_watcher_;
+    oc::state::StaticWatchGroup<6> softkey_bar_watcher_;
 };
 
 }  // namespace core::context::standalone

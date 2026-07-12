@@ -53,6 +53,7 @@ void test_duplicate_selection_copies_enabled_selected_slots_into_free_slots() {
         [&](uint8_t source, uint8_t dest) {
             copiedSources.push_back(source);
             copiedDestinations.push_back(dest);
+            return true;
         }
     );
 
@@ -77,6 +78,7 @@ void test_duplicate_selection_stops_when_no_free_slot_remains() {
         [&](uint8_t, uint8_t dest) {
             ++copyCount;
             assert(dest == 3);
+            return true;
         }
     );
 
@@ -86,6 +88,28 @@ void test_duplicate_selection_stops_when_no_free_slot_remains() {
     assert(copyCount == 1);
 
     std::cout << "[PASS] test_duplicate_selection_stops_when_no_free_slot_remains\n";
+}
+
+void test_duplicate_selection_does_not_enable_a_rejected_destination() {
+    uint8_t copyCount = 0;
+    const auto result = slots::duplicateSelectionIntoFreeSlots(
+        0x0003,
+        0x0003,
+        4,
+        [&](uint8_t source, uint8_t dest) {
+            ++copyCount;
+            assert(source == 0);
+            assert(dest == 2);
+            return false;
+        }
+    );
+
+    assert(!result.changed);
+    assert(result.nextMask == 0x0003);
+    assert(result.firstDuplicated == 4);
+    assert(copyCount == 1);
+
+    std::cout << "[PASS] test_duplicate_selection_does_not_enable_a_rejected_destination\n";
 }
 
 void test_enabled_navigation_wraps_over_gaps() {
@@ -128,6 +152,7 @@ int main() {
     test_remove_selected_rejects_empty_or_full_delete();
     test_duplicate_selection_copies_enabled_selected_slots_into_free_slots();
     test_duplicate_selection_stops_when_no_free_slot_remains();
+    test_duplicate_selection_does_not_enable_a_rejected_destination();
     test_enabled_navigation_wraps_over_gaps();
     test_add_slot_navigation_is_terminal_after_highest_enabled_slot();
 

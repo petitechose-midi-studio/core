@@ -2,11 +2,11 @@
 
 #include <algorithm>
 
-#include <oc/log/Log.hpp>
-
 #include <config/PlatformCompat.hpp>
 #include <config/Timing.hpp>
 #include <config/TimeCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
+#include <oc/time/Time.hpp>
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "midi/MidiUtils.hpp"
 
@@ -18,62 +18,9 @@ namespace {
 
 constexpr uint32_t POST_RECORD_INPUT_GUARD_MS = 120;
 
-#if defined(PERF_LOG)
-struct MacroValueProfiling {
-    uint32_t window_start_ms = 0;
-    uint32_t call_count = 0;
-    uint32_t total_us = 0;
-    uint32_t max_us = 0;
-
-    void record(uint32_t elapsed_us) {
-        const uint32_t now = core::time_compat::millis();
-        if (window_start_ms == 0) {
-            window_start_ms = now;
-        }
-
-        call_count += 1;
-        total_us += elapsed_us;
-        max_us = std::max(max_us, elapsed_us);
-
-        if ((now - window_start_ms) < 500) return;
-
-        const uint32_t avg_us = call_count > 0 ? (total_us / call_count) : 0;
-        if (max_us >= 1000 || avg_us >= 500) {
-            OC_LOG_INFO("[Perf][MacroValue] calls={} avg={}us max={}us",
-                        call_count,
-                        avg_us,
-                        max_us);
-        }
-
-        window_start_ms = now;
-        call_count = 0;
-        total_us = 0;
-        max_us = 0;
-    }
-};
-
-MacroValueProfiling g_macro_value_profiling;
-#endif
-
-inline uint32_t startMacroValueProfiling() {
-#if defined(PERF_LOG)
-    return core::time_compat::micros();
-#else
-    return 0;
-#endif
-}
-
-inline void finishMacroValueProfiling(uint32_t start_us) {
-#if defined(PERF_LOG)
-    g_macro_value_profiling.record(core::time_compat::micros() - start_us);
-#else
-    (void)start_us;
-#endif
-}
-
 }  // namespace
 
-MacroValueHandler::MacroValueHandler(StateRefs state,
+FLASHMEM MacroValueHandler::MacroValueHandler(StateRefs state,
                                      MacroPerformanceDomainServices services,
                                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                      oc::api::EncoderAPI& encoders,
@@ -114,7 +61,6 @@ FLASHMEM void MacroValueHandler::setupBindings() {
             .then([this, i]() {
                 if (!ensureActiveSlot(i)) return;
                 macro_button_held_[i] = true;
-                macro_button_pressed_at_ms_[i] = core::time_compat::millis();
             });
 
         buttons_.button(Config::MACRO_BUTTONS[i])
@@ -128,10 +74,10 @@ FLASHMEM void MacroValueHandler::setupBindings() {
             .scope(scope_id_)
             .then([this, i]() {
                 macro_button_held_[i] = false;
-                macro_button_pressed_at_ms_[i] = 0;
                 if (!services_.automationRecordingActiveFor(i)) return;
                 const uint32_t nowMs = core::time_compat::millis();
                 services_.commitAutomationRecording(nowMs);
+                post_record_guard_active_[i] = true;
                 post_record_guard_until_ms_[i] = nowMs + POST_RECORD_INPUT_GUARD_MS;
             });
     }
@@ -154,10 +100,13 @@ bool MacroValueHandler::shouldHandleAutomationRestorePress() const {
                core::state::macro::MacroPerformanceProperty::AUTOMATION;
 }
 
-bool MacroValueHandler::shouldIgnorePostRecordTurn(uint8_t index, uint32_t nowMs) const {
-    return index < post_record_guard_until_ms_.size() &&
-           post_record_guard_until_ms_[index] != 0 &&
-           nowMs < post_record_guard_until_ms_[index];
+bool MacroValueHandler::shouldIgnorePostRecordTurn(uint8_t index, uint32_t nowMs) {
+    if (index >= post_record_guard_until_ms_.size() || !post_record_guard_active_[index]) {
+        return false;
+    }
+    if (!oc::time::deadlineReachedMs(nowMs, post_record_guard_until_ms_[index])) return true;
+    post_record_guard_active_[index] = false;
+    return false;
 }
 
 bool MacroValueHandler::shouldStartAutomationRecording(uint8_t index) const {
@@ -172,16 +121,10 @@ bool MacroValueHandler::ensureActiveSlot(uint8_t index) {
 }
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {
-    const uint32_t start_us = startMacroValueProfiling();
+    OC_PERF_SCOPE(perfValueChange, "macro.value-change");
     const uint32_t nowMs = core::time_compat::millis();
-    if (!ensureActiveSlot(index)) {
-        finishMacroValueProfiling(start_us);
-        return;
-    }
-    if (shouldIgnorePostRecordTurn(index, nowMs)) {
-        finishMacroValueProfiling(start_us);
-        return;
-    }
+    if (!ensureActiveSlot(index)) return;
+    if (shouldIgnorePostRecordTurn(index, nowMs)) return;
     if (shouldStartAutomationRecording(index)) {
         services_.beginAutomationRecording(index, nowMs);
     }
@@ -191,25 +134,19 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     const uint8_t cc_value = core::midi::toCC(clamped);
     const float quantized = core::midi::fromCC(cc_value);
 
-    if (std::abs(services_.runtimeValue(index) - quantized) < 0.0005f) {
-        finishMacroValueProfiling(start_us);
-        return;
-    }
+    if (std::abs(services_.runtimeValue(index) - quantized) < 0.0005f) return;
 
     if (!recordingActive && services_.automationActiveFor(index)) {
         services_.setAutomationManualOverride(index, true);
     }
 
     // Update state (triggers UI update, marks dirty for persistence)
-    services_.setRuntimeValue(index, quantized);
+    services_.setManualValue(index, quantized);
     if (recordingActive) {
         services_.recordAutomationPoint(index, nowMs, quantized);
     }
 
-    if (!services_.isActivePageEnabled()) {
-        finishMacroValueProfiling(start_us);
-        return;
-    }
+    if (!services_.isActivePageEnabled()) return;
 
     // Send MIDI CC
     const auto& config = services_.activeConfig(index);
@@ -217,8 +154,6 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     // Signal CC MIDI OUT activity
     services_.pulseCcOut();
-
-    finishMacroValueProfiling(start_us);
 }
 
 void MacroValueHandler::handleConfigChange(uint8_t index, float value) {

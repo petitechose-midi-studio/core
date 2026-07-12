@@ -4,7 +4,7 @@
 
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/MacroState.hpp"
@@ -44,7 +44,7 @@ public:
 
     SequencerEncoderSyncCoordinator(StateRefs state, oc::api::EncoderAPI& encoders);
 
-    void bind();
+    [[nodiscard]] bool bind();
     void reset();
     void syncNow();
 
@@ -78,7 +78,7 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     oc::api::EncoderAPI& encoders_;
-    oc::state::SignalWatcher watcher_;
+    oc::state::StaticWatchGroup<26> watcher_;
 
     uint8_t macro_steps_configured_ = 0;
     uint16_t macro_ticks_per_step_configured_ = 0;

@@ -2,8 +2,8 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "app/ExtmemAllocator.hpp"
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
+#include "state/project/ProjectSnapshot.hpp"
 
 namespace core::persistence::project_file_migration {
 
@@ -51,7 +51,7 @@ FLASHMEM Result allocationFailed() {
 FLASHMEM Result inspectProjectBytes(const uint8_t* data,
                                     uint32_t size,
                                     project_file::LoadReport* report) {
-    auto snapshot = core::app::makeExtmemUnique<core::state::project::ProjectSnapshot>();
+    auto snapshot = core::state::project::makeProjectSnapshot();
     if (!snapshot) return allocationFailed();
     return decodeProjectBytesToSnapshot(data, size, *snapshot, report);
 }
@@ -82,7 +82,7 @@ FLASHMEM Result migrateProjectBytesToCurrent(const uint8_t* data,
         };
     }
 
-    auto snapshot = core::app::makeExtmemUnique<core::state::project::ProjectSnapshot>();
+    auto snapshot = core::state::project::makeProjectSnapshot();
     if (!snapshot) return allocationFailed();
 
     auto decodeResult = snapshot_codec::decodeProjectSnapshot(data, size, *snapshot, report);

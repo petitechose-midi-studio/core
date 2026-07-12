@@ -2,6 +2,7 @@
 # Purpose: validates the momentary LEFT_BOTTOM + OPT mode used to set local
 # random depth for the focused StepNode property. Releasing LEFT_BOTTOM exits
 # range editing, while the resolved local-random value remains visible.
+# Expect: capture_changed:local_random_pitch_zero=local_random_pitch_max
 
 0 scenario sequencer
 50 capture screen sequencer_ready

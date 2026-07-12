@@ -3,6 +3,7 @@
 # Purpose: validates the Sequencer-like Macro grammar:
 # Left Bottom opens slot properties, NAV selects Automation, and the macro
 # macro button restores Auto without clearing the automation lane.
+# Expect: capture_changed:automation_recorded=manual_override_active, capture_changed:manual_override_active=automation_restored_auto
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready

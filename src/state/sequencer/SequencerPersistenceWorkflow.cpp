@@ -21,10 +21,6 @@ FLASHMEM core::app::ExtmemUniquePtr<SequencerTrackBankState> makeTrackBankScratc
     return core::app::makeExtmemUnique<SequencerTrackBankState>();
 }
 
-FLASHMEM core::app::ExtmemUniquePtr<SequencerTrackBankSnapshot> makeTrackBankSnapshotScratch() {
-    return core::app::makeExtmemUnique<SequencerTrackBankSnapshot>();
-}
-
 }  // namespace
 
 FLASHMEM bool SequencerPersistenceWorkflow::savePatternSlot(CoreState& state, uint8_t slotIndex) {
@@ -47,17 +43,26 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSl
         if (!staged) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
         const persistence::SlotLoadStatus status =
             state.sequencerPersistence.loadPatternSlot(slotIndex, *staged);
-        if (status == persistence::SlotLoadStatus::OK) {
-            state.queuePendingSequencerApply(*staged);
+        if (status == persistence::SlotLoadStatus::OK &&
+            !state.queuePendingSequencerApply(*staged)) {
+            return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
         }
         return status;
     }
 
     state.clearPendingSequencerApply();
+    auto staged = makeSequencerStateScratch();
+    if (!staged) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
     const persistence::SlotLoadStatus status =
-        state.sequencerPersistence.loadPatternSlot(slotIndex, state.sequencer);
+        state.sequencerPersistence.loadPatternSlot(slotIndex, *staged);
     if (status == persistence::SlotLoadStatus::OK) {
-        storeActiveTrack(state.sequencerTracks, state.sequencer);
+        auto& bankTarget = state.sequencerTracks.track(
+            state.sequencerTracks.activeTrackIndex()
+        );
+        if (!copyPatternState(bankTarget, staged->pattern)) {
+            return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+        }
+        installPatternStateToEditor(state.sequencer, staged->pattern);
         state.clearSequencerHistory();
         state.markSequencerProjectMutated();
     }
@@ -78,7 +83,7 @@ FLASHMEM bool SequencerPersistenceWorkflow::erasePatternSlot(CoreState& state, u
 
 FLASHMEM bool SequencerPersistenceWorkflow::saveSetSlot(CoreState& state, uint8_t slotIndex) {
     if (!state.isSequencerPersistenceReady()) return false;
-    storeActiveTrack(state.sequencerTracks, state.sequencer);
+    if (!storeActiveTrack(state.sequencerTracks, state.sequencer)) return false;
     const auto status = state.sequencerPersistence.saveSetSlotStatus(
         slotIndex,
         state.sequencerTracks,
@@ -109,9 +114,13 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
             state.sequencerPersistence.loadSetSlot(slotIndex, *stagedBank, *staged);
         if (status == persistence::SlotLoadStatus::OK) {
             if (merge) {
-                state.queuePendingSequencerApply(*staged, true);
+                if (!state.queuePendingSequencerApply(*staged, true)) {
+                    return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+                }
             } else {
-                state.queuePendingSequencerBankApply(*stagedBank, *staged);
+                if (!state.queuePendingSequencerBankApply(*stagedBank, *staged)) {
+                    return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+                }
             }
         }
         return status;
@@ -127,20 +136,23 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
         state.sequencerPersistence.loadSetSlot(slotIndex, *stagedBank, *staged);
     if (status == persistence::SlotLoadStatus::OK) {
         if (merge) {
-            SequencerPatternSnapshot snapshot;
-            captureSnapshot(staged->pattern, snapshot);
-            mergeSnapshotIntoCurrent(state.sequencer, snapshot);
-            copyGraph(state.sequencer.pattern, staged->pattern);
-            storeActiveTrack(state.sequencerTracks, state.sequencer);
-        } else {
-            auto snapshot = makeTrackBankSnapshotScratch();
-            if (!snapshot) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
-            captureTrackBankSnapshot(*stagedBank, *staged, *snapshot);
-            applyTrackBankSnapshot(state.sequencerTracks, state.sequencer, *snapshot);
-            for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-                copyGraph(state.sequencerTracks.track(i), stagedBank->track(i));
+            auto& bankTarget = state.sequencerTracks.track(
+                state.sequencerTracks.activeTrackIndex()
+            );
+            if (!copyGraph(bankTarget, staged->pattern)) {
+                return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
             }
-            copyGraph(state.sequencer.pattern, staged->pattern);
+            mergePatternStateIntoCurrent(state.sequencer, staged->pattern);
+            if (!storeActiveTrack(state.sequencerTracks, state.sequencer)) {
+                return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+            }
+        } else {
+            installTrackBankState(
+                state.sequencerTracks,
+                state.sequencer,
+                *stagedBank,
+                *staged
+            );
         }
         state.setSharedTrackState(
             state.sequencerTracks.currentEnabledMask(),

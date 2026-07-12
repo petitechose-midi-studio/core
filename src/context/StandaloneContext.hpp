@@ -28,7 +28,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include <oc/context/ContextBase.hpp>
 #include <oc/context/Requirements.hpp>
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 
 #if defined(MS_UX_RECORDER)
 #include "validation/ux/SemanticUxSurface.hpp"
@@ -40,6 +40,10 @@ struct CoreState;
 
 namespace core::persistence {
 class ProductFileService;
+}
+
+namespace core::ui {
+class CoalescedLvglRenderScheduler;
 }
 
 namespace core::protocol::filesystem {
@@ -98,10 +102,10 @@ protected:
 
 private:
     void configureEncoders();
-    void createUiAssembly();
-    void createOverlayAssembly();
-    void createFeatureAssembly();
-    void createGlobalHandlerAssembly();
+    bool createUiAssembly();
+    bool createOverlayAssembly();
+    bool createFeatureAssembly();
+    bool createGlobalHandlerAssembly();
     bool createFileSystemRpcEndpoint();
     void registerMidiRouting();
     void cleanupFileSystemRpcEndpoint();
@@ -111,8 +115,12 @@ private:
     void cleanupUiAssembly();
 
     void syncEncodersFromState();
-    void setupViewSelectorRendering();
-    void setupActiveViewSwitching();
+    bool setupViewSelectorRendering();
+    void requestViewSelectorRender();
+    void renderViewSelectorProjection();
+    void syncViewSelectorChrome();
+    static void drainViewSelectorRender(void* context, uint32_t flags);
+    bool setupActiveViewSwitching();
     void applyActiveView();
     oc::type::ScopeID activeViewScopeId() const;
 
@@ -125,13 +133,15 @@ private:
 
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneUiAssembly> ui_assembly_;
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneOverlayAssembly> overlay_assembly_;
+    core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
+        view_selector_render_scheduler_;
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneFeatureAssembly> feature_assembly_;
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneGlobalHandlerAssembly>
         global_handler_assembly_;
     core::app::ExtmemUniquePtr<core::protocol::filesystem::FileSystemRpcEndpoint>
         filesystem_rpc_endpoint_;
-    oc::state::SignalWatcher view_selector_watcher_;
-    oc::state::SignalWatcher active_view_watcher_;
+    oc::state::StaticWatchGroup<2> view_selector_watcher_;
+    oc::state::StaticWatchGroup<1> active_view_watcher_;
 };
 
 }  // namespace core::context

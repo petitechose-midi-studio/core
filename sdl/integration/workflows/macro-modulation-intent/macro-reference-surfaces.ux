@@ -2,6 +2,7 @@
 # Purpose: provides real LVGL 320x240 references before designing motion recorder
 # access, feedback, and edit overlays. This workflow does not exercise future
 # modulation features.
+# Expect: capture_changed:macro_edit_open=macro_edit_adjusted
 
 0 scenario macro
 50 capture screen macro_ready

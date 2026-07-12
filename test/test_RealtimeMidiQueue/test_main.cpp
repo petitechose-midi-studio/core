@@ -126,7 +126,7 @@ void test_future_event_stays_queued() {
     std::cout << "[PASS] test_future_event_stays_queued\n";
 }
 
-void test_late_note_on_is_sent_and_counted() {
+void test_late_note_on_is_sent() {
     core::sequencer::RealtimeMidiQueue queue;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
@@ -135,13 +135,10 @@ void test_late_note_on_is_sent_and_counted() {
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 1000, 60)));
     queue.drainDue(midi, fakeMicros, 10000);
 
-    const auto counters = queue.counters();
     assert(transport.messages.size() == 1);
-    assert(counters.sent == 1);
-    assert(counters.lateSent == 1);
-    assert(counters.dropped == 0);
+    assert(queue.size() == 0);
 
-    std::cout << "[PASS] test_late_note_on_is_sent_and_counted\n";
+    std::cout << "[PASS] test_late_note_on_is_sent\n";
 }
 
 void test_large_late_note_on_drops_but_note_off_sends() {
@@ -154,16 +151,14 @@ void test_large_late_note_on_drops_but_note_off_sends() {
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOff, 0, 60)));
     queue.drainDue(midi, fakeMicros, 10000);
 
-    const auto counters = queue.counters();
     assert(transport.messages.size() == 1);
     assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOff);
-    assert(counters.sent == 1);
-    assert(counters.dropped == 1);
+    assert(queue.size() == 0);
 
     std::cout << "[PASS] test_large_late_note_on_drops_but_note_off_sends\n";
 }
 
-void test_overflow_is_counted() {
+void test_note_on_is_rejected_when_full() {
     core::sequencer::RealtimeMidiQueue queue;
 
     for (size_t i = 0; i < queue.capacity(); ++i) {
@@ -173,11 +168,9 @@ void test_overflow_is_counted() {
     }
 
     assert(!queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 9999, 61)));
-    const auto counters = queue.counters();
-    assert(counters.overflow == 1);
-    assert(counters.highWater == queue.capacity());
+    assert(queue.size() == queue.capacity());
 
-    std::cout << "[PASS] test_overflow_is_counted\n";
+    std::cout << "[PASS] test_note_on_is_rejected_when_full\n";
 }
 
 void test_note_off_replaces_note_on_when_full() {
@@ -195,16 +188,13 @@ void test_note_off_replaces_note_on_when_full() {
     fakeMicros = 1000;
     queue.drainDue(midi, fakeMicros, 10000);
 
-    const auto counters = queue.counters();
     assert(!transport.messages.empty());
     assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOff);
-    assert(counters.dropped == 1);
-    assert(counters.overflow == 0);
 
     std::cout << "[PASS] test_note_off_replaces_note_on_when_full\n";
 }
 
-void test_cancel_pending_note_ons_for_track_keeps_other_events() {
+void test_cancel_pending_events_for_track_keeps_other_tracks() {
     core::sequencer::RealtimeMidiQueue queue;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
@@ -213,22 +203,17 @@ void test_cancel_pending_note_ons_for_track_keeps_other_events() {
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOff, 1000, 60, 1)));
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 1000, 61, 2)));
 
-    assert(queue.cancelPendingNoteOns(1) == 1);
-    assert(queue.size() == 2);
+    assert(queue.cancelPendingEvents(1) == 2);
+    assert(queue.size() == 1);
 
     fakeMicros = 1000;
     queue.drainDue(midi, fakeMicros, 10000);
 
-    const auto counters = queue.counters();
-    assert(transport.messages.size() == 2);
-    assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOff);
-    assert(transport.messages[0].note == 60);
-    assert(transport.messages[1].type == core::sequencer::RealtimeMidiEventType::NoteOn);
-    assert(transport.messages[1].note == 61);
-    assert(counters.cancelledNoteOns == 1);
-    assert(counters.dropped == 0);
+    assert(transport.messages.size() == 1);
+    assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOn);
+    assert(transport.messages[0].note == 61);
 
-    std::cout << "[PASS] test_cancel_pending_note_ons_for_track_keeps_other_events\n";
+    std::cout << "[PASS] test_cancel_pending_events_for_track_keeps_other_tracks\n";
 }
 
 }  // namespace
@@ -237,11 +222,11 @@ int main() {
     installTimeProvider();
     test_drains_in_deadline_order_with_note_off_priority();
     test_future_event_stays_queued();
-    test_late_note_on_is_sent_and_counted();
+    test_late_note_on_is_sent();
     test_large_late_note_on_drops_but_note_off_sends();
-    test_overflow_is_counted();
+    test_note_on_is_rejected_when_full();
     test_note_off_replaces_note_on_when_full();
-    test_cancel_pending_note_ons_for_track_keeps_other_events();
+    test_cancel_pending_events_for_track_keeps_other_tracks();
     std::cout << "All RealtimeMidiQueue tests passed\n";
     return 0;
 }

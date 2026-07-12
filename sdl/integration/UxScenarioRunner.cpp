@@ -11,6 +11,7 @@
 #include <oc/hal/sdl/InputMapper.hpp>
 
 #include "integration/UxInputIds.hpp"
+#include "integration/UxReplayTimeline.hpp"
 #include "integration/UxScriptParser.hpp"
 
 namespace sdl::integration {
@@ -114,13 +115,19 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
           << "\",\"actions\":" << actions.size() << "}\n";
 
     const uint32_t start = SDL_GetTicks();
+    UxReplayTimeline timeline;
     for (const UxAction& action : actions) {
-        if (!pumpUntil(action.dueMs, start, env, app, state)) {
+        const uint32_t scheduledMs = timeline.schedule(action.dueMs);
+
+        // A slow render may delay an action, but must never compress the next
+        // gesture interval (notably button holds used to enter an overlay).
+        if (!pumpUntil(scheduledMs, start, env, app, state)) {
             error_ = "UX run stopped before action at " + std::to_string(action.dueMs) + "ms";
             return false;
         }
 
         const uint32_t actualMs = elapsedSince(start);
+        timeline.record(action.dueMs, actualMs);
         std::string capturePath;
 
         switch (action.kind) {
@@ -172,6 +179,7 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
 
         trace << "{\"event\":\"action\",\"line\":" << action.line
               << ",\"due_ms\":" << action.dueMs
+              << ",\"scheduled_ms\":" << scheduledMs
               << ",\"actual_ms\":" << actualMs
               << ",\"drift_ms\":" << static_cast<int32_t>(actualMs) - static_cast<int32_t>(action.dueMs)
               << ",\"action\":\"" << uxActionName(action.kind)

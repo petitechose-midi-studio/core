@@ -23,10 +23,13 @@ namespace core::handler {
  *
  * Input code receives focused macro/status refs and typed operations for
  * cross-domain effects such as project mutation and page/config workflows.
+ * Manual values update persistable page intent; resolved values are transient
+ * playback projections and never dirty the project.
  */
 class MacroPerformanceDomainServices {
 public:
     using MarkProjectMutatedFn = void (*)(void* context);
+    using MarkMacroValueEditedFn = void (*)(void* context, uint8_t index);
     using SetConfigFn = bool (*)(void* context, uint8_t index, uint8_t channel, uint8_t cc);
     using SetTrackChannelFn = bool (*)(void* context, uint8_t channel);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
@@ -42,6 +45,7 @@ public:
     struct Operations {
         void* context = nullptr;
         MarkProjectMutatedFn markProjectMutated = nullptr;
+        MarkMacroValueEditedFn markMacroValueEdited = nullptr;
         SetConfigFn setConfig = nullptr;
         SetTrackChannelFn setTrackChannel = nullptr;
         SwitchToPageFn switchToPage = nullptr;
@@ -51,7 +55,10 @@ public:
     static MacroPerformanceDomainServices fromCoreState(core::state::CoreState& state);
 
     float runtimeValue(uint8_t index) const;
-    void setRuntimeValue(uint8_t index, float value) const;
+    /// Apply user/MIDI input to both runtime feedback and persisted base intent.
+    void setManualValue(uint8_t index, float value) const;
+    /// Apply computed playback feedback without changing persisted base intent.
+    void setResolvedValue(uint8_t index, float value) const;
     bool beginAutomationRecording(uint8_t index, uint32_t nowMs) const;
     bool recordAutomationPoint(uint8_t index, uint32_t nowMs, float value) const;
     bool commitAutomationRecording(uint32_t nowMs) const;

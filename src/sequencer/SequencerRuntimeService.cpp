@@ -1,17 +1,43 @@
 #include "SequencerRuntimeService.hpp"
 
+#include <new>
+
 #include <oc/core/event/Events.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/log/Log.hpp>
 #include <oc/realtime/InterruptGuard.hpp>
 #include <oc/time/Time.hpp>
 #include <oc/type/Event.hpp>
 
 #include "config/TimeCompat.hpp"
+#include "sequencer/RealtimeMidiQueue.hpp"
+#include "sequencer/SequencerInternalTimerLane.hpp"
+#include "sequencer/SequencerPlaybackService.hpp"
 #include "sequencer/SequencerTiming.hpp"
 
 namespace core::sequencer {
 
+class SequencerRealtimeLane {
+public:
+    SequencerRealtimeLane(core::state::sequencer::SequencerState& sequencer,
+                          core::state::StatusBarState& statusBar,
+                          oc::api::MidiAPI& midi,
+                          SequencerRuntimeSnapshotBank& snapshotBank,
+                          const SequencerRuntimeGraphBank& graphBank)
+        : playback(sequencer, statusBar, midiQueue, graphBank)
+        , timer(midi, midiQueue, snapshotBank, playback) {}
+
+    RealtimeMidiQueue midiQueue{};
+    SequencerPlaybackService playback;
+    SequencerInternalTimerLane timer;
+};
+
 namespace {
+
+[[noreturn]] FLASHMEM void failSequencerRuntimeAllocation() {
+    OC_LOG_ERROR("{}", "[SequencerRuntime] RAM2 allocation failed");
+    while (true) {}
+}
 
 FLASHMEM void applyMidiClockSyncUiProjection(
     core::state::StatusBarState& statusBar,
@@ -53,15 +79,26 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     : event_bus_(eventBus)
     , midi_(midi)
     , sequencer_state_(state.sequencer)
-    , project_navigation_state_(state.projectNavigation)
+    , track_bank_state_(state.trackBank)
     , status_bar_state_(state.statusBar)
     , midi_sync_state_(state.midiSync)
     , midi_clock_sync_(midi)
     , snapshot_bank_(state.sequencer, state.trackBank, state.projectNavigation)
-    , sequencer_playback_(state.sequencer, state.trackBank, state.statusBar, midi_event_queue_)
-    , internal_timer_lane_(midi, midi_event_queue_, snapshot_bank_, sequencer_playback_) {
+    , realtime_lane_(new (std::nothrow) SequencerRealtimeLane(
+          state.sequencer,
+          state.statusBar,
+          midi,
+          snapshot_bank_,
+          runtime_graph_bank_
+      )) {
+    if (!realtime_lane_) failSequencerRuntimeAllocation();
+    // Initial flat state remains useful even if PSRAM is unavailable: root
+    // steps can still play and the graph bank will retry on later updates.
+    (void)runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
     const uint8_t initialSnapshotIndex = snapshot_bank_.refresh();
-    snapshot_bank_.commit(initialSnapshotIndex);
+    runtime_graph_bank_.publishPrepared([this, initialSnapshotIndex]() {
+        snapshot_bank_.commit(initialSnapshotIndex);
+    });
     subscribeToMidiEvents_();
 }
 
@@ -71,62 +108,75 @@ FLASHMEM SequencerRuntimeService::~SequencerRuntimeService() {
 }
 
 void SequencerRuntimeService::update() {
-    const uint32_t startUs = core::time_compat::micros();
-    const uint32_t nowUs = startUs;
+    OC_PERF_SCOPE(perfRuntime, "sequencer.runtime");
+    const uint32_t nowUs = core::time_compat::micros();
     const uint32_t nowMs = oc::time::millis();
     const auto clockConfig = captureClockSyncRuntimeConfig_();
     const uint32_t tickPeriodUs = tickPeriodUsForTempo(clockConfig.tempo);
-    const uint8_t snapshotIndex = snapshot_bank_.refresh();
+    const bool graphGenerationReady =
+        runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
+    // Keep graph and flat data on the same published generation. On a rare
+    // PSRAM allocation failure, retain the previous pair and retry next loop.
+    const uint8_t snapshotIndex = graphGenerationReady
+        ? snapshot_bank_.refresh()
+        : snapshot_bank_.activeIndex();
     const auto& runtimeSnapshot = snapshot_bank_.snapshot(snapshotIndex);
 
-    const uint32_t clockStartUs = core::time_compat::micros();
-    const bool timerOwnsTransport = updateClockDomainOwnership_(clockConfig, nowMs);
-    const uint32_t clockUs = core::time_compat::micros() - clockStartUs;
+    bool timerOwnsTransport = false;
+    {
+        OC_PERF_SCOPE(perfClock, "sequencer.clock-domain");
+        timerOwnsTransport = updateClockDomainOwnership_(clockConfig, nowMs);
+    }
 
     const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
 
-    uint32_t playbackUs = 0;
     bool usingInternalTimerPath = false;
 
 #ifdef ARDUINO
     if (timerOwnsTransport) {
-        internal_timer_lane_.publishRealtimeInputs(clockConfig, snapshotIndex);
+        runtime_graph_bank_.publishPrepared([this, &clockConfig, snapshotIndex]() {
+            realtime_lane_->timer.publishRealtimeInputs(clockConfig, snapshotIndex);
+        });
 
         if (resyncRequested) {
-            internal_timer_lane_.stop();
-            sequencer_playback_.stop();
+            realtime_lane_->timer.stop();
+            stopPlayback_();
         }
 
-        usingInternalTimerPath = internal_timer_lane_.start();
+        usingInternalTimerPath = realtime_lane_->timer.start();
         if (!usingInternalTimerPath) {
             OC_LOG_WARN("{}", "[SequencerRuntime] failed to start internal playback timer");
             midi_clock_sync_.update(clockConfig, nowMs, true);
         }
     } else {
-        internal_timer_lane_.stop();
+        realtime_lane_->timer.stop();
+        runtime_graph_bank_.publishPrepared([this, snapshotIndex]() {
+            snapshot_bank_.commit(snapshotIndex);
+        });
     }
 #endif
 
-    if (usingInternalTimerPath) {
-        const uint32_t playbackStartUs = core::time_compat::micros();
-        publishPlaybackUiFromTimerPath_(nowMs);
-        playbackUs = core::time_compat::micros() - playbackStartUs;
-    } else {
+#ifndef ARDUINO
+    runtime_graph_bank_.publishPrepared([this, snapshotIndex]() {
         snapshot_bank_.commit(snapshotIndex);
+    });
+#endif
+
+    if (usingInternalTimerPath) {
+        OC_PERF_SCOPE(perfTimerUi, "sequencer.timer-ui-projection");
+        publishPlaybackUiFromTimerPath_(nowMs);
+    } else {
         if (resyncRequested) {
-            sequencer_playback_.stop();
+            stopPlayback_();
         }
 
-        const uint32_t playbackStartUs = core::time_compat::micros();
-        sequencer_playback_.update(runtimeSnapshot,
-                                   midi_clock_sync_.tick(),
-                                   midi_clock_sync_.playing(),
-                                   nowMs,
-                                   nowUs,
-                                   tickPeriodUs);
-        playbackUs = core::time_compat::micros() - playbackStartUs;
+        realtime_lane_->playback.update(runtimeSnapshot,
+                                        midi_clock_sync_.tick(),
+                                        midi_clock_sync_.playing(),
+                                        nowUs,
+                                        tickPeriodUs);
         drainRealtimeMidiQueue_(core::time_compat::micros());
-        sequencer_playback_.publishUiState(nowMs);
+        realtime_lane_->playback.publishUiState(nowMs);
     }
 
     applyMidiClockSyncUiProjection(
@@ -135,18 +185,13 @@ void SequencerRuntimeService::update() {
         midi_clock_sync_.takeUiProjectionSnapshot(),
         nowMs
     );
-    const uint32_t updateUs = core::time_compat::micros() - startUs;
-
-    perf_reporter_.record(updateUs, clockUs, playbackUs, resyncRequested, nowMs);
-    perf_reporter_.flush(nowMs, midi_clock_sync_, midi_event_queue_, internal_timer_lane_);
 }
 
 FLASHMEM void SequencerRuntimeService::stop() {
 #ifdef ARDUINO
-    internal_timer_lane_.stop();
+    realtime_lane_->timer.stop();
 #endif
-    sequencer_playback_.stop();
-    drainRealtimeMidiQueue_(core::time_compat::micros());
+    stopPlayback_();
 }
 
 MidiClockSyncRuntimeConfig SequencerRuntimeService::captureClockSyncRuntimeConfig_() const {
@@ -188,31 +233,43 @@ void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
 #ifdef ARDUINO
     SequencerPlaybackService::UiProjectionSnapshot uiProjection;
     SequencerRuntimeTelemetrySnapshot runtimeTelemetry;
-    SequencerPlaybackService::ProfilingSnapshot profilingSnapshot{};
-    bool shouldLogPlayback = false;
 
     // Pull the timer-lane projection under lock, then publish it outside the ISR.
     {
         oc::realtime::InterruptGuard lock;
-        uiProjection = sequencer_playback_.takeUiProjectionSnapshot();
-        runtimeTelemetry = sequencer_playback_.copyActiveRuntimeTelemetry();
-        shouldLogPlayback = sequencer_playback_.takeProfilingSnapshot(nowMs, profilingSnapshot);
+        uiProjection = realtime_lane_->playback.takeUiProjectionSnapshot();
+        runtimeTelemetry = realtime_lane_->playback.copyActiveRuntimeTelemetry();
     }
 
     publishRuntimeTelemetry(sequencer_state_, runtimeTelemetry);
-    sequencer_playback_.publishUiProjection(uiProjection, nowMs);
-
-    if (shouldLogPlayback) {
-        perf_reporter_.logPlaybackSnapshot(profilingSnapshot);
-    }
+    realtime_lane_->playback.publishUiProjection(uiProjection, nowMs);
 #else
-    sequencer_playback_.publishUiState(nowMs);
+    realtime_lane_->playback.publishUiState(nowMs);
 #endif
 }
 
 void SequencerRuntimeService::drainRealtimeMidiQueue_(uint32_t nowUs) {
-    midi_event_queue_.drainDue(midi_, nowUs);
+    realtime_lane_->midiQueue.drainDue(midi_, nowUs);
     midi_.serviceOutput(RealtimeMidiQueue::MAX_DRAIN_BUDGET_US);
+}
+
+void SequencerRuntimeService::drainRealtimeMidiQueueFully_(uint32_t nowUs) {
+    realtime_lane_->midiQueue.drainDue(midi_, nowUs, UINT32_MAX);
+    midi_.serviceOutput(UINT32_MAX);
+}
+
+void SequencerRuntimeService::stopPlayback_() {
+    // Future events no longer belong to the stopped generation. Drop them,
+    // then drain each track's immediate panic note-offs before the next track
+    // can fill the bounded realtime queue.
+    realtime_lane_->midiQueue.clear();
+    midi_.serviceOutput(UINT32_MAX);
+    for (uint8_t track = 0; track < SequencerPlaybackService::TRACK_COUNT; ++track) {
+        realtime_lane_->playback.stopTrack(track);
+        drainRealtimeMidiQueueFully_(core::time_compat::micros());
+    }
+    realtime_lane_->playback.completeStop();
+    midi_.allNotesOff();
 }
 
 FLASHMEM void SequencerRuntimeService::subscribeToMidiEvents_() {

@@ -81,6 +81,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure
         const uint8_t activeTrack = currentActiveTrack();
         const uint16_t historyMask = sequencerStructureHistoryTrackBit(activeTrack);
         auto change = captureTrackHistoryBefore(historyMask);
+        if (!change) return;
         if (!toggleSequencerStructureTrackMute(tracks_, activeTrack)) return;
         recordTrackHistoryAfter(std::move(change), historyMask);
         return;
@@ -90,10 +91,10 @@ FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure
         return;
     }
 
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
     if (clearCurrentSequencerStructurePage(sequencer_)) {
-        recordPageHistoryAfter(std::move(before));
+        recordPageHistoryAfter(std::move(historyChange));
     }
 }
 
@@ -114,6 +115,7 @@ FLASHMEM void SequencerStructureEditWorkflow::toggleTrackSelectionMute() {
         selectedMask | sequencerStructureHistoryTrackBit(currentActiveTrack())
     );
     auto change = captureTrackHistoryBefore(historyMask);
+    if (!change) return;
 
     if (!toggleSelectedSequencerStructureTrackMute(tracks_, selectedMask)) return;
     recordTrackHistoryAfter(std::move(change), historyMask);
@@ -133,7 +135,8 @@ FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
             sequencerStructureHistoryTrackBit(mutation.nextActive)
         );
         auto change = captureTrackHistoryBefore(historyMask);
-        applyTrackState(mutation.nextMask, mutation.nextActive);
+        if (!change) return;
+        if (!applyTrackState(mutation.nextMask, mutation.nextActive)) return;
         recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
@@ -142,10 +145,10 @@ FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
         return;
     }
 
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
     if (removeCurrentSequencerStructurePage(sequencer_)) {
-        recordPageHistoryAfter(std::move(before));
+        recordPageHistoryAfter(std::move(historyChange));
     }
 }
 
@@ -190,6 +193,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
             sequencerStructureHistoryTrackBit(targetTrack)
         );
         auto change = captureTrackHistoryBefore(historyMask);
+        if (!change) return;
         if (!pasteCurrentSequencerStructureTrack(
                 tracks_,
                 sequencer_,
@@ -210,8 +214,8 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     }
 
     if (!structure_clipboard_.hasSequencerPage()) return;
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
     uint8_t targetPage = sequencer_.visiblePage();
     if (sequencer_.structureUi.previewAddPageSlot.get()) {
         targetPage = sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get());
@@ -230,7 +234,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     sequencer_.page.set(targetPage);
     sequencer_.structureUi.previewAddPageSlot.set(false);
     sequencer_.focusedStep.set(sequencer_.pageStartStep(targetPage));
-    recordPageHistoryAfter(std::move(before));
+    recordPageHistoryAfter(std::move(historyChange));
 }
 
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteSelection() const {
@@ -255,10 +259,12 @@ FLASHMEM void SequencerStructureEditWorkflow::copyFocusedStep() {
     core::state::SequencerStepsClipboard clipboard;
     if (!captureFocusedStepClipboard(sequencer_, tracks_, step, clipboard)) return;
 
-    structure_clipboard_.storeSequencerSteps(
+    if (!structure_clipboard_.storeSequencerSteps(
         clipboard,
         core::state::sequencer::graphView(sequencer_.pattern)
-    );
+    )) {
+        return;
+    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteFocusedStep() {
@@ -279,11 +285,11 @@ FLASHMEM void SequencerStructureEditWorkflow::clearSelection() {
     );
     if (selectedMask == 0) return;
 
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
 
     if (!clearSelectedPages(sequencer_, selectedMask)) return;
-    recordPageHistoryAfter(std::move(before));
+    recordPageHistoryAfter(std::move(historyChange));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
@@ -298,7 +304,9 @@ FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
             selectedMask
         );
         if (!clipboard) return;
-        structure_clipboard_.storeSequencerTrackSelection(std::move(clipboard));
+        if (!structure_clipboard_.storeSequencerTrackSelection(std::move(clipboard))) {
+            return;
+        }
         return;
     }
 
@@ -312,10 +320,12 @@ FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
 
     core::state::SequencerPageSelectionClipboard clipboard;
     if (!capturePageSelectionClipboard(sequencer_, selectedMask, clipboard)) return;
-    structure_clipboard_.storeSequencerPageSelection(
+    if (!structure_clipboard_.storeSequencerPageSelection(
         clipboard,
         core::state::sequencer::graphView(sequencer_.pattern)
-    );
+    )) {
+        return;
+    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
@@ -331,10 +341,12 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
         )) {
         return;
     }
-    structure_clipboard_.storeSequencerSteps(
+    if (!structure_clipboard_.storeSequencerSteps(
         clipboard,
         core::state::sequencer::graphView(sequencer_.pattern)
-    );
+    )) {
+        return;
+    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::resetStepSelectionShallow() {
@@ -370,8 +382,8 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
         clearStepPastePreview();
         return;
     }
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
 
     if (!commitStructureStepPastePlan(sequencer_, structure_clipboard_, mode, plan)) {
         clearStepPastePreview();
@@ -386,7 +398,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(
     sequencer_.focusedStep.set(plan.firstTarget);
     sequencer_.page.set(core::state::sequencer::activeContentPageForStep(plan.firstTarget));
     navigation_focus_.set(core::state::StructureNavigationFocus::STEP);
-    recordPageHistoryAfter(std::move(before));
+    recordPageHistoryAfter(std::move(historyChange));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
@@ -413,15 +425,18 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
             targets.targetMask | sequencerStructureHistoryTrackBit(previousActive)
         );
         auto change = captureTrackHistoryBefore(historyMask);
-        core::state::sequencer::storeActiveTrack(tracks_, sequencer_);
+        if (!change) return;
+        if (!core::state::sequencer::storeActiveTrack(tracks_, sequencer_)) return;
 
-        pasteTrackSelectionClipboard(
-            tracks_,
-            sequencer_,
-            *clipboard,
-            cursorTrack,
-            previousActive
-        );
+        if (!pasteTrackSelectionClipboard(
+                tracks_,
+                sequencer_,
+                *clipboard,
+                cursorTrack,
+                previousActive
+            )) {
+            return;
+        }
 
         const uint16_t nextMask = static_cast<uint16_t>(
             currentTrackEnabledMask() | targets.targetMask
@@ -442,8 +457,8 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
     );
     if (!plan.hasEntries()) return;
 
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
 
     pastePageSelectionClipboard(sequencer_, structure_clipboard_, plan);
     sequencer_.pattern.bumpStepDataRevision();
@@ -452,7 +467,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
     sequencer_.structureUi.syncPreviewPage(plan.firstDestinationPage);
     sequencer_.structureUi.previewAddPageSlot.set(false);
     cancelSelectionMode();
-    recordPageHistoryAfter(std::move(before));
+    recordPageHistoryAfter(std::move(historyChange));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
@@ -482,6 +497,7 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
             sequencerStructureHistoryTrackBit(mutation.nextActive)
         );
         auto change = captureTrackHistoryBefore(historyMask);
+        if (!change) return;
         const bool changed = applyTrackState(mutation.nextMask, mutation.nextActive);
         if (!changed) return;
         cancelSelectionMode();
@@ -491,27 +507,26 @@ FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
         const uint16_t pageMask = activePageSelectionMask(sequencer_, selectedMask);
         if (pageMask == 0) return;
 
-        HistoryPatternSnapshot before;
-        if (!capturePageHistoryBefore(before)) return;
+        auto historyChange = capturePageHistoryBefore();
+        if (!historyChange) return;
         if (!removeSelectedPages(sequencer_, pageMask)) return;
         cancelSelectionMode();
-        recordPageHistoryAfter(std::move(before));
+        recordPageHistoryAfter(std::move(historyChange));
     }
 }
 
-FLASHMEM bool SequencerStructureEditWorkflow::capturePageHistoryBefore(
-    HistoryPatternSnapshot& before
-) const {
-    return captureSequencerPageStructureHistory(sequencer_, before);
+FLASHMEM SequencerStructureEditWorkflow::HistoryPatternChangePtr
+SequencerStructureEditWorkflow::capturePageHistoryBefore() const {
+    return captureSequencerPageStructureHistoryBefore(sequencer_);
 }
 
-FLASHMEM void SequencerStructureEditWorkflow::recordPageHistoryAfter(
-    HistoryPatternSnapshot before
+FLASHMEM bool SequencerStructureEditWorkflow::recordPageHistoryAfter(
+    HistoryPatternChangePtr change
 ) {
-    recordSequencerPageStructureHistoryChange(
+    return recordSequencerPageStructureHistoryChange(
         history_,
         sequencer_,
-        std::move(before),
+        std::move(change),
         currentActiveTrack()
     );
 }
@@ -521,11 +536,11 @@ SequencerStructureEditWorkflow::captureTrackHistoryBefore(uint16_t trackMask) co
     return captureSequencerTrackStructureHistoryBefore(tracks_, sequencer_, trackMask);
 }
 
-FLASHMEM void SequencerStructureEditWorkflow::recordTrackHistoryAfter(
+FLASHMEM bool SequencerStructureEditWorkflow::recordTrackHistoryAfter(
     HistoryTrackStructureChangePtr change,
     uint16_t trackMask
 ) {
-    if (!change) return;
+    if (!change) return false;
 
     if (!captureSequencerTrackStructureHistoryAfter(
             tracks_,
@@ -533,10 +548,10 @@ FLASHMEM void SequencerStructureEditWorkflow::recordTrackHistoryAfter(
             trackMask,
             *change
         )) {
-        return;
+        return false;
     }
 
-    recordSequencerTrackStructureHistoryChange(history_, std::move(change));
+    return recordSequencerTrackStructureHistoryChange(history_, std::move(change));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::syncPreviewToFocus(
@@ -569,15 +584,17 @@ FLASHMEM void SequencerStructureEditWorkflow::resetFocusedStep(StepResetDepth de
     const uint8_t step = sequencer_.focusedStep.get();
     if (step >= core::state::sequencer::activeContentLength(sequencer_)) return;
 
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
 
     if (!resetActiveContentStep(sequencer_, step, depth)) return;
-    core::state::sequencer::refreshContentView(sequencer_);
+    const bool compacted = depth == StepResetDepth::Deep &&
+        core::state::sequencer::compactSequencerGraph(sequencer_);
+    if (!compacted) core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.pattern.bumpStepDataRevision();
     sequencer_.focusedStep.set(step);
     sequencer_.page.set(core::state::sequencer::activeContentPageForStep(step));
-    recordPageHistoryAfter(std::move(before));
+    recordPageHistoryAfter(std::move(historyChange));
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::resetStepSelection(StepResetDepth depth) {
@@ -586,13 +603,15 @@ FLASHMEM void SequencerStructureEditWorkflow::resetStepSelection(StepResetDepth 
 
     const auto selectedMask = selection.selectedMask.get();
 
-    HistoryPatternSnapshot before;
-    if (!capturePageHistoryBefore(before)) return;
+    auto historyChange = capturePageHistoryBefore();
+    if (!historyChange) return;
 
     if (!resetSelectedActiveContentSteps(sequencer_, selectedMask, depth)) return;
-    core::state::sequencer::refreshContentView(sequencer_);
+    const bool compacted = depth == StepResetDepth::Deep &&
+        core::state::sequencer::compactSequencerGraph(sequencer_);
+    if (!compacted) core::state::sequencer::refreshContentView(sequencer_);
     sequencer_.pattern.bumpStepDataRevision();
-    recordPageHistoryAfter(std::move(before));
+    recordPageHistoryAfter(std::move(historyChange));
 }
 
 FLASHMEM uint16_t SequencerStructureEditWorkflow::currentTrackEnabledMask() const {

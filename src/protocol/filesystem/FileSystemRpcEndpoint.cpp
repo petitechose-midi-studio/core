@@ -33,6 +33,11 @@ FLASHMEM void FileSystemRpcEndpoint::end() {
     active_ = false;
 }
 
+void FileSystemRpcEndpoint::update() {
+    if (!active_ || !handler_.hasActiveWriteSession()) return;
+    handler_.update(nowProvider_ ? nowProvider_() : 0);
+}
+
 FLASHMEM bool FileSystemRpcEndpoint::active() const {
     return active_;
 }

@@ -2,6 +2,7 @@
 # Purpose: validates the hardware feedback path reported on Teensy: disabled rows
 # must show focus, enabled placeholder values must update, and LEFT_TOP must open
 # the global view selector again when Project is at a tab root.
+# Expect: capture_changed:storage_slot_focused=storage_slot_changed, capture_changed:storage_autosave_focused=storage_autosave_off, capture_changed:storage_autosave_off=selector_from_storage_root
 
 0 capture screen boot
 

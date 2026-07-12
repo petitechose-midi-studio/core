@@ -7,6 +7,7 @@
 #include <oc/note/sequencer/StepBitMask128.hpp>
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 #include <oc/state/Signal.hpp>
+#include <oc/time/Time.hpp>
 
 #include "state/StructureSelectionState.hpp"
 #include "state/project/ProjectState.hpp"
@@ -205,7 +206,7 @@ struct SequencerStepInlineFeedbackState {
 
         for (uint8_t step = 0; step < MAX_STEPS; ++step) {
             if (!nextMask.test(step)) continue;
-            if (nowMs < hideAtMs[step]) continue;
+            if (!oc::time::deadlineReachedMs(nowMs, hideAtMs[step])) continue;
             nextMask.setBit(step, false);
             hideAtMs[step] = 0;
         }
@@ -228,7 +229,7 @@ struct SequencerPatternVariationFeedbackState {
 
     void update(uint32_t nowMs) {
         if (!visible.get()) return;
-        if (nowMs < hideAtMs) return;
+        if (!oc::time::deadlineReachedMs(nowMs, hideAtMs)) return;
         visible.set(false);
         hideAtMs = 0;
     }
@@ -251,7 +252,7 @@ struct SequencerHistoryFeedbackState {
 
     void update(uint32_t nowMs) {
         if (!visible.get()) return;
-        if (nowMs < hideAtMs) return;
+        if (!oc::time::deadlineReachedMs(nowMs, hideAtMs)) return;
         reset();
     }
 
@@ -284,7 +285,7 @@ struct SequencerPatternQuickControlsState {
     void update(uint32_t nowMs) {
         if (!feedbackVisible.get()) return;
         if (selecting.get()) return;
-        if (nowMs < hideAtMs) return;
+        if (!oc::time::deadlineReachedMs(nowMs, hideAtMs)) return;
         feedbackVisible.set(false);
         hideAtMs = 0;
     }

@@ -9,15 +9,14 @@
  */
 
 #include <array>
-#include <cassert>
 #include <cstdint>
-#include <memory>
-#include <vector>
 
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IView.hpp>
+#include <oc/state/FixedSubscriptionList.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/DataManagerState.hpp"
@@ -29,12 +28,12 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "ui/macro/MacroHeaderBar.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
-#include "ui/view/PausableLvglTimer.hpp"
-#include "ui/widget/IMacroWidget.hpp"
+#include "ui/widget/MacroKnobWidget.hpp"
 
 namespace core::ui {
 
@@ -71,75 +70,86 @@ public:
     void onDeactivate() override;
     const char* getViewId() const override { return "core.macro"; }
     lv_obj_t* getElement() const override { return container_; }
-
-    // Widget access
-    core::ui::IMacroWidget& macro(uint8_t index) {
-        assert(index < MACRO_COUNT);
-        if (index >= MACRO_COUNT) index = 0;
-        return *macros_[index];
-    }
-    const core::ui::IMacroWidget& macro(uint8_t index) const {
-        assert(index < MACRO_COUNT);
-        if (index >= MACRO_COUNT) index = 0;
-        return *macros_[index];
-    }
+    bool valid() const { return initialized_; }
 
 private:
+    enum RenderFlag : uint32_t {
+        RENDER_HEADER = 1U << 0,
+        RENDER_LEFT_ACTION_STRIP = 1U << 1,
+        RENDER_BOTTOM_ACTION_STRIP = 1U << 2,
+        RENDER_SLOT_PROPERTY_OVERLAY = 1U << 3,
+    };
+    static constexpr uint8_t VALUE_FLAG_SHIFT = 4;
+    static constexpr uint8_t CONFIG_FLAG_SHIFT = VALUE_FLAG_SHIFT + MACRO_COUNT;
+    static constexpr uint32_t RENDER_VALUE_MASK =
+        ((1U << MACRO_COUNT) - 1U) << VALUE_FLAG_SHIFT;
+    static constexpr uint32_t RENDER_CONFIG_MASK =
+        ((1U << MACRO_COUNT) - 1U) << CONFIG_FLAG_SHIFT;
+    static constexpr uint32_t RENDER_ALL =
+        RENDER_HEADER | RENDER_LEFT_ACTION_STRIP | RENDER_BOTTOM_ACTION_STRIP |
+        RENDER_SLOT_PROPERTY_OVERLAY | RENDER_VALUE_MASK | RENDER_CONFIG_MASK;
+
+    static constexpr uint32_t valueRenderFlag(uint8_t index) {
+        return 1U << (VALUE_FLAG_SHIFT + index);
+    }
+    static constexpr uint32_t configRenderFlag(uint8_t index) {
+        return 1U << (CONFIG_FLAG_SHIFT + index);
+    }
+
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
     void createActionStrips();
     void createSlotPropertyOverlay();
     void createMacros();
-    void bindToState();
+    bool bindToState();
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
 
-    // Debounced update system
-    void scheduleUpdate();
-    void pauseUpdateIfIdle();
+    void requestRender(uint32_t flags, bool ready = false);
     void requestHeaderRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
     void requestSlotPropertyOverlayRender();
     void markAllDirty();
     void markAllConfigDirty();
+    void markAutomationRecordingDirtyIfChanged();
     void markConfigDirtyIfChanged();
     void markDirty(uint8_t index);
-    void processDirtyFlags();
-    static void onUpdateTimer(lv_timer_t* timer);
+    static bool canDrainRender(void* context);
+    static void drainRender(void* context, uint32_t flags);
+    void processRenderFlags(uint32_t flags);
     MacroViewModelSource modelSource() const;
 
     StateRefs state_refs_;
-    std::vector<oc::state::Subscription> subscriptions_;
-    std::array<bool, MACRO_COUNT> dirty_flags_{};
-    std::array<bool, MACRO_COUNT> config_dirty_flags_{};
+    // Fixed PSRAM-backed headroom avoids heap traffic without coupling boot
+    // correctness to a manually maintained exact subscription count.
+    static constexpr size_t SUBSCRIPTION_CAPACITY = 64;
+    oc::state::CheckedSubscriptionList<SUBSCRIPTION_CAPACITY> subscriptions_;
     std::array<bool, MACRO_COUNT> rendered_automation_active_{};
     std::array<bool, MACRO_COUNT> rendered_automation_recording_{};
     std::array<bool, MACRO_COUNT> rendered_automation_manual_override_{};
     std::array<bool, MACRO_COUNT> rendered_active_{};
     std::array<bool, MACRO_COUNT> rendered_add_slot_{};
     std::array<bool, MACRO_COUNT> rendered_focused_{};
-    std::array<uint8_t, MACRO_COUNT> rendered_channels_{};
     std::array<uint8_t, MACRO_COUNT> rendered_ccs_{};
-    bool has_dirty_ = false;
-    bool header_dirty_ = true;
-    bool left_action_strip_dirty_ = true;
-    bool bottom_action_strip_dirty_ = true;
-    bool slot_property_overlay_dirty_ = true;
-    std::unique_ptr<PausableLvglTimer> update_timer_;
+    core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
+        render_scheduler_;
 
     // UI structure: frame_ owns the shared standalone layout skeleton.
-    std::unique_ptr<core::ui::MainViewFrame> frame_;
+    core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* top_bar_container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
     lv_obj_t* interaction_container_ = nullptr;
     lv_obj_t* center_column_ = nullptr;
     lv_obj_t* macro_grid_container_ = nullptr;
-    std::unique_ptr<core::ui::MacroHeaderBar> header_bar_;
-    std::unique_ptr<core::ui::ContextActionStrip> left_action_strip_;
-    std::unique_ptr<core::ui::ContextActionStrip> bottom_action_strip_;
-    std::unique_ptr<core::ui::StepPropertySelectionOverlay> slot_property_overlay_;
-    std::array<std::unique_ptr<core::ui::IMacroWidget>, MACRO_COUNT> macros_;
+    core::app::ExtmemUniquePtr<core::ui::MacroHeaderBar> header_bar_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::StepPropertySelectionOverlay>
+        slot_property_overlay_;
+    std::array<core::app::ExtmemUniquePtr<core::ui::MacroKnobWidget>, MACRO_COUNT>
+        macros_;
+    bool initialized_ = false;
 };
 }  // namespace core::ui

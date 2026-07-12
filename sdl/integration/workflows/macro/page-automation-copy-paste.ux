@@ -1,6 +1,7 @@
 # UX workflow: copy/paste a macro page carrying an automation lane.
 # Purpose: validates that Macro page clipboard operations preserve and remap
 # automation data to the pasted page.
+# Expect: capture_changed:page_add_target=automation_pasted_to_page_2
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready

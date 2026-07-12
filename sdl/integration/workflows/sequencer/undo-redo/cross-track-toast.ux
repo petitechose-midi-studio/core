@@ -3,6 +3,7 @@
 # transient history toast.
 # Purpose: validates centralized sequencer history across tracks without
 # automatic navigation jumps.
+# Expect: capture_changed:t02_step_on=t02_step_off_after_toast, capture_changed:t01_step_on=t01_step_off_verified
 
 0 scenario sequencer
 50 capture screen initial_t01

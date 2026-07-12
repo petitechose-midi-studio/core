@@ -6,16 +6,6 @@ namespace core::state::sequencer {
 
 namespace {
 
-FLASHMEM uint16_t sanitizeEnabledMask(uint16_t enabledMask) {
-    const uint16_t availableMask = static_cast<uint16_t>((1U << SequencerTrackBankState::TRACK_COUNT) - 1U);
-    const uint16_t sanitized = static_cast<uint16_t>(enabledMask & availableMask);
-    return sanitized == 0 ? 0x0001 : sanitized;
-}
-
-FLASHMEM uint16_t sanitizeMutedMask(uint16_t mutedMask, uint16_t enabledMask) {
-    return static_cast<uint16_t>(mutedMask & enabledMask);
-}
-
 FLASHMEM uint8_t firstEnabledTrack(uint16_t enabledMask) {
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         if ((enabledMask & static_cast<uint16_t>(1U << i)) != 0) {
@@ -23,13 +13,6 @@ FLASHMEM uint8_t firstEnabledTrack(uint16_t enabledMask) {
         }
     }
     return 0;
-}
-
-FLASHMEM uint8_t sanitizeActiveTrack(uint16_t enabledMask, uint8_t activeTrack) {
-    const uint8_t clamped = SequencerTrackBankState::clampTrackIndex(activeTrack);
-    return (enabledMask & static_cast<uint16_t>(1U << clamped)) != 0
-        ? clamped
-        : firstEnabledTrack(enabledMask);
 }
 
 }  // namespace
@@ -41,6 +24,27 @@ FLASHMEM SequencerTrackBankState::SequencerTrackBankState()
     , project_scale_revision_{0}
     , project_scale_settings_{defaultProjectScaleSettings()}
     , tracks_{} {}
+
+FLASHMEM uint16_t SequencerTrackBankState::sanitizeEnabledMask(uint16_t enabledMask) {
+    constexpr uint16_t availableMask =
+        static_cast<uint16_t>((1U << TRACK_COUNT) - 1U);
+    const uint16_t sanitized = static_cast<uint16_t>(enabledMask & availableMask);
+    return sanitized == 0 ? 0x0001 : sanitized;
+}
+
+FLASHMEM uint16_t SequencerTrackBankState::sanitizeMutedMask(uint16_t mutedMask,
+                                                             uint16_t enabledMask) {
+    return static_cast<uint16_t>(mutedMask & sanitizeEnabledMask(enabledMask));
+}
+
+FLASHMEM uint8_t SequencerTrackBankState::sanitizeActiveTrack(uint16_t enabledMask,
+                                                              uint8_t activeTrack) {
+    const uint16_t sanitizedMask = sanitizeEnabledMask(enabledMask);
+    const uint8_t clamped = clampTrackIndex(activeTrack);
+    return (sanitizedMask & static_cast<uint16_t>(1U << clamped)) != 0
+        ? clamped
+        : firstEnabledTrack(sanitizedMask);
+}
 
 FLASHMEM void SequencerTrackBankState::syncSharedTrackState(uint16_t enabledMaskIn, uint8_t activeTrackIn) {
     const uint16_t sanitizedMask = sanitizeEnabledMask(enabledMaskIn);

@@ -1,22 +1,24 @@
 # UX workflow: inspect pattern variation runtime feedback for each supported property.
 # Purpose: validates resolved pitch labels and minimal range/delta overlays.
+# Expect: capture_changed:pitch_runtime_feedback=pitch_runtime_edit_immediate, capture_changed:pitch_runtime_feedback=velocity_runtime_feedback, capture_changed:velocity_runtime_feedback=gate_runtime_feedback
 
 0 scenario seq-variation-pitch
-80 capture screen pitch_runtime_feedback
+80 tap NAV 60
+240 capture screen pitch_runtime_feedback
 
 # Editing pitch while runtime telemetry exists must refresh the visual immediately,
 # without waiting for the next loop to republish resolved values.
-160 encoder MACRO_1 1.00
-240 capture screen pitch_runtime_edit_immediate
+320 encoder MACRO_1 1.00
+480 capture screen pitch_runtime_edit_immediate
 
-360 scenario seq-variation-velocity
-440 capture screen velocity_runtime_feedback
+600 scenario seq-variation-velocity
+680 capture screen velocity_runtime_feedback
 
-560 scenario seq-variation-gate
-640 capture screen gate_runtime_feedback
+800 scenario seq-variation-gate
+880 capture screen gate_runtime_feedback
 
-760 scenario seq-variation-nudge
-840 capture screen nudge_runtime_feedback
+1000 scenario seq-variation-nudge
+1080 capture screen nudge_runtime_feedback
 
 # Exercise one real sequencer binding so workflow verification records dispatch.
-920 tap MACRO_8 60
+1160 tap MACRO_8 60

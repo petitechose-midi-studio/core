@@ -1,6 +1,7 @@
 #pragma once
 
 #include "persistence/SequencerPersistencePayloads.hpp"
+#include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::persistence::sequencer_codec {
@@ -19,10 +20,13 @@ bool applyPatternPayload(const uint8_t* data,
                          uint16_t size,
                          state::sequencer::SequencerPatternState& target);
 
-bool fillProjectSequencerPayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                                 const state::sequencer::SequencerState& active,
-                                 uint8_t* out,
-                                 uint16_t capacity);
+bool fillProjectSequencerPayload(
+    const state::sequencer::SequencerTrackBankSnapshot& snapshot,
+    uint8_t focusedStep,
+    state::sequencer::StepProperty activeStepProperty,
+    uint8_t* out,
+    uint16_t capacity
+);
 bool applyProjectSequencerPayload(const uint8_t* data,
                                   uint16_t size,
                                   state::sequencer::SequencerTrackBankState& trackBank,

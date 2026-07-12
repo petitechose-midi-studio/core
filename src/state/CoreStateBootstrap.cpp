@@ -1,10 +1,11 @@
 #include "state/CoreStateBootstrap.hpp"
 
+#include <cstddef>
 #include <memory>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
-#include <oc/state/AutoPersistIncremental.hpp>
+#include <oc/state/ChangeCoalescer.hpp>
 
 #include "state/CoreState.hpp"
 #include "state/CoreSettingsLayout.hpp"
@@ -14,12 +15,19 @@
 namespace core::state {
 
 namespace {
-// Macro runtime values are projected back into the project snapshot after a
-// short idle window so live movement does not continuously enqueue session
-// saves.
+// Manual macro values update their page base immediately. Only the project
+// mutation notification is coalesced so encoder-rate input does not
+// continuously enqueue session saves.
 constexpr uint32_t MACRO_VALUE_PROJECT_SAVE_DELAY_MS = 5000;
+constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 17;
+
+[[noreturn]] FLASHMEM void failSequencerCoalescerSetup() {
+    OC_LOG_ERROR("{}", "[CoreState] Sequencer mutation coalescer setup failed");
+    while (true) {}
+}
 
 void configureDebugLabels_(CoreState& state) {
+#if OC_ENABLE_STATS
     state.activeView.setDebugLabel("core.activeView");
 
     state.viewSelector.selectedIndex.setDebugLabel("core.viewSelector.selectedIndex");
@@ -94,6 +102,9 @@ void configureDebugLabels_(CoreState& state) {
     state.projectNavigation.depth.setDebugLabel("core.projectNavigation.depth");
     state.projectNavigation.focusedRow.setDebugLabel("core.projectNavigation.focusedRow");
     state.projectNavigation.physicalHoldActive.setDebugLabel("core.projectNavigation.physicalHoldActive");
+#else
+    (void)state;
+#endif
 }
 }  // namespace
 
@@ -113,51 +124,46 @@ FLASHMEM void CoreStateBootstrap::initializeSequencerPersistence_(CoreState& sta
     }
 }
 
-FLASHMEM void CoreStateBootstrap::configureMacroAutoPersist_(CoreState& state) {
-    state.macroDomain_.autoPersist =
-        std::make_unique<oc::state::AutoPersistIncremental<MACRO_COUNT>>(
-            [&state](uint8_t i) {
-                float value = state.macros.slots[i].value.get();
-                auto& page = state.pages.activePageData();
-                if (page.values[i] == value) return;
-                page.values[i] = value;
-            },
+FLASHMEM void CoreStateBootstrap::configureMacroMutationCoalescing_(CoreState& state) {
+    state.macroDomain_.mutationCoalescer =
+        std::make_unique<oc::state::ChangeCoalescer<>>(
             [&state]() { state.markProjectMutated(); },
             MACRO_VALUE_PROJECT_SAVE_DELAY_MS
         );
-
-    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        state.macroDomain_.autoPersist->watchAt(i, state.macros.slots[i].value);
-    }
 }
 
-FLASHMEM void CoreStateBootstrap::configureSequencerAutoPersist_(CoreState& state) {
-    state.sequencerDomain_.autoPersist =
-        std::make_unique<oc::state::AutoPersistIncremental<17>>(
-            [](uint8_t) {},
+FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreState& state) {
+    state.sequencerDomain_.mutationCoalescer =
+        std::make_unique<oc::state::ChangeCoalescer<SEQUENCER_COALESCER_SUBSCRIPTION_COUNT>>(
             [&state]() {
                 state.markSequencerProjectMutated_();
             },
             CoreSettings::VALUE_SAVE_DELAY_MS
         );
 
-    state.sequencerDomain_.autoPersist->watchAt(0, state.sequencer.pattern.length);
-    state.sequencerDomain_.autoPersist->watchAt(1, state.sequencer.pattern.stepsPerBeat);
-    state.sequencerDomain_.autoPersist->watchAt(2, state.sequencer.pattern.midiChannel);
-    state.sequencerDomain_.autoPersist->watchAt(3, state.sequencer.pattern.enabledMask);
-    state.sequencerDomain_.autoPersist->watchAt(4, state.sequencer.pattern.stepDataRevision);
-    state.sequencerDomain_.autoPersist->watchAt(5, state.sequencer.page);
-    state.sequencerDomain_.autoPersist->watchAt(6, state.sequencer.focusedStep);
-    state.sequencerDomain_.autoPersist->watchAt(7, state.sequencer.activeStepProperty);
-    state.sequencerDomain_.autoPersist->watchAt(8, state.sequencerTracks.activeTrackSignal());
-    state.sequencerDomain_.autoPersist->watchAt(9, state.sequencerTracks.enabledMaskSignal());
-    state.sequencerDomain_.autoPersist->watchAt(10, state.sequencer.pattern.patternVariationRevision);
-    state.sequencerDomain_.autoPersist->watchAt(11, state.sequencer.pattern.patternScaleRevision);
-    state.sequencerDomain_.autoPersist->watchAt(12, state.sequencerTracks.projectScaleRevisionSignal());
-    state.sequencerDomain_.autoPersist->watchAt(13, state.sequencer.pattern.patternTimingRevision);
-    state.sequencerDomain_.autoPersist->watchAt(14, state.sequencer.pattern.swingOffsetPercent);
-    state.sequencerDomain_.autoPersist->watchAt(15, state.sequencer.pattern.patternNudgePercent);
-    state.sequencerDomain_.autoPersist->watchAt(16, state.sequencerTracks.mutedMaskSignal());
+    auto& coalescer = *state.sequencerDomain_.mutationCoalescer;
+    coalescer.watch(state.sequencer.pattern.length);
+    coalescer.watch(state.sequencer.pattern.stepsPerBeat);
+    coalescer.watch(state.sequencer.pattern.midiChannel);
+    coalescer.watch(state.sequencer.pattern.enabledMask);
+    coalescer.watch(state.sequencer.pattern.stepDataRevision);
+    coalescer.watch(state.sequencer.page);
+    coalescer.watch(state.sequencer.focusedStep);
+    coalescer.watch(state.sequencer.activeStepProperty);
+    coalescer.watch(state.sequencerTracks.activeTrackSignal());
+    coalescer.watch(state.sequencerTracks.enabledMaskSignal());
+    coalescer.watch(state.sequencer.pattern.patternVariationRevision);
+    coalescer.watch(state.sequencer.pattern.patternScaleRevision);
+    coalescer.watch(state.sequencerTracks.projectScaleRevisionSignal());
+    coalescer.watch(state.sequencer.pattern.patternTimingRevision);
+    coalescer.watch(state.sequencer.pattern.swingOffsetPercent);
+    coalescer.watch(state.sequencer.pattern.patternNudgePercent);
+    coalescer.watch(state.sequencerTracks.mutedMaskSignal());
+
+    if (!coalescer.valid() ||
+        coalescer.subscriptionCount() != SEQUENCER_COALESCER_SUBSCRIPTION_COUNT) {
+        failSequencerCoalescerSetup();
+    }
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
@@ -208,9 +214,9 @@ FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     initializeSequencerPersistence_(state);
 }
 
-FLASHMEM void CoreStateBootstrap::setupAutoPersist_(CoreState& state) {
-    configureMacroAutoPersist_(state);
-    configureSequencerAutoPersist_(state);
+FLASHMEM void CoreStateBootstrap::setupMutationCoalescing_(CoreState& state) {
+    configureMacroMutationCoalescing_(state);
+    configureSequencerMutationCoalescing_(state);
 }
 
 FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
@@ -219,7 +225,7 @@ FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
     state.statusBar.pageName.set(state.pages.activePageData().name);
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     registerOverlaySignals_(state);
-    setupAutoPersist_(state);
+    setupMutationCoalescing_(state);
     state.projectSessionTrackingEnabled_ = true;
 }
 

@@ -20,9 +20,53 @@ void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapsh
 
 void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot);
 
-void copyPatternState(SequencerPatternState& target, const SequencerPatternState& source);
+// Applies scalar pattern state without replacing the graph allocation.
+void applySnapshotPreservingGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot
+);
+
+[[nodiscard]] bool copyPatternState(
+    SequencerPatternState& target,
+    const SequencerPatternState& source
+);
+
+[[nodiscard]] bool applySnapshotWithGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+);
+
+// Copies scalar pattern state when graph revisions are already synchronized.
+void copyPatternStatePreservingGraph(
+    SequencerPatternState& target,
+    const SequencerPatternState& source
+);
 
 void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot);
+
+void applySnapshotToEditorPreservingGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot
+);
+
+[[nodiscard]] bool applySnapshotToEditorWithGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+);
+
+// Installs a decoded/staged pattern without allocating another graph copy.
+void installPatternStateToEditor(
+    SequencerState& target,
+    SequencerPatternState& staged
+);
+
+// Merges staged flat data and transfers its graph ownership into the editor.
+void mergePatternStateIntoCurrent(
+    SequencerState& target,
+    SequencerPatternState& staged
+);
 
 void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot);
 

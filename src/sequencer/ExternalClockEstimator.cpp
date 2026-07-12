@@ -23,30 +23,12 @@ void ExternalClockEstimator::reset() {
     bpm_valid_ = false;
 }
 
-void ExternalClockEstimator::recordClock(uint64_t timestampUs,
-                                         uint32_t hostNowMs,
-                                         uint32_t previousHostClockMs) {
-    telemetry_.clockCount += 1U;
-
-    if (previousHostClockMs > 0) {
-        const uint32_t hostGapMs = hostNowMs - previousHostClockMs;
-        telemetry_.maxHostGapMs = std::max(telemetry_.maxHostGapMs, hostGapMs);
-    }
-
+void ExternalClockEstimator::recordClock(uint64_t timestampUs) {
     if (last_clock_us_ > 0 && timestampUs > last_clock_us_) {
         const uint64_t deltaUs64 = timestampUs - last_clock_us_;
         const uint32_t intervalUs = deltaUs64 > UINT32_MAX
                                         ? UINT32_MAX
                                         : static_cast<uint32_t>(deltaUs64);
-
-        telemetry_.maxIntervalUs = std::max(telemetry_.maxIntervalUs, intervalUs);
-
-        const uint32_t meanUs = meanIntervalUs_();
-        if (meanUs > 0) {
-            const uint32_t jitterUs =
-                intervalUs > meanUs ? intervalUs - meanUs : meanUs - intervalUs;
-            telemetry_.maxJitterUs = std::max(telemetry_.maxJitterUs, jitterUs);
-        }
 
         if (intervalUs >= MIN_CLOCK_INTERVAL_US && intervalUs <= MAX_CLOCK_INTERVAL_US) {
             pushIntervalUs_(intervalUs);
@@ -74,12 +56,6 @@ void ExternalClockEstimator::recordClock(uint64_t timestampUs,
     last_clock_us_ = timestampUs;
 }
 
-ExternalClockEstimator::Telemetry ExternalClockEstimator::takeTelemetry() {
-    const Telemetry snapshot = telemetry_;
-    telemetry_ = {};
-    return snapshot;
-}
-
 void ExternalClockEstimator::pushIntervalUs_(uint32_t intervalUs) {
     interval_us_[interval_write_idx_] = intervalUs;
 
@@ -89,19 +65,6 @@ void ExternalClockEstimator::pushIntervalUs_(uint32_t intervalUs) {
     if (interval_count_ < interval_us_.size()) {
         interval_count_ += 1;
     }
-}
-
-uint32_t ExternalClockEstimator::meanIntervalUs_() const {
-    if (interval_count_ < MIN_INTERVAL_SAMPLES) {
-        return 0;
-    }
-
-    uint64_t sumUs = 0;
-    for (uint8_t i = 0; i < interval_count_; ++i) {
-        sumUs += interval_us_[i];
-    }
-
-    return static_cast<uint32_t>(sumUs / interval_count_);
 }
 
 float ExternalClockEstimator::estimateTempoFromIntervals_() const {

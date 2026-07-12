@@ -4,6 +4,8 @@
 #include <config/Timing.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include "ui/view/RetainedViewRenderPolicy.hpp"
+
 namespace core::ui {
 namespace {
 
@@ -17,16 +19,22 @@ constexpr uint32_t RENDER_TIMER_PERIOD_MS =
 FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     createLayout(parent);
-    render_timer_ = core::app::makeExtmemUnique<core::ui::PausableLvglTimer>(
-        RENDER_TIMER_PERIOD_MS,
-        onRenderTimer,
-        this
-    );
-    bindToState();
+    if (!frame_ || !frame_->valid() || !container_ || !body_container_ ||
+        !menu_ || !menu_->getElement()) return;
+    render_scheduler_ =
+        core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
+            core::ui::renderSchedulerDebugLabel("DeviceSettingsView"),
+            &DeviceSettingsView::drainRender,
+            this,
+            RENDER_TIMER_PERIOD_MS,
+            &DeviceSettingsView::canDrainRender
+        );
+    if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;
+    initialized_ = true;
 }
 
 FLASHMEM DeviceSettingsView::~DeviceSettingsView() {
-    render_timer_.reset();
+    render_scheduler_.reset();
     menu_.reset();
     frame_.reset();
     container_ = nullptr;
@@ -37,24 +45,23 @@ FLASHMEM void DeviceSettingsView::onActivate() {
     if (!container_) return;
 
     state_refs_.settings.openView();
-    lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    scheduleRender(true);
+    RetainedViewRenderPolicy::show(container_);
+    if (render_scheduler_) render_scheduler_->request(1U, true);
 }
 
 FLASHMEM void DeviceSettingsView::onDeactivate() {
     state_refs_.settings.closeView();
-    if (container_) {
-        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    }
-    pauseRenderTimerIfIdle();
+    if (render_scheduler_) render_scheduler_->pause();
+    RetainedViewRenderPolicy::hide(container_);
 }
 
 FLASHMEM void DeviceSettingsView::createLayout(lv_obj_t* parent) {
     frame_ = core::app::makeExtmemUnique<MainViewFrame>(parent);
+    if (!frame_ || !frame_->valid()) return;
     container_ = frame_->container();
     body_container_ = frame_->body();
-    style::apply(container_).transparent().noScroll();
-    lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    style::apply(container_).noScroll();
+    RetainedViewRenderPolicy::initializeHidden(container_);
 
     menu_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(body_container_);
     if (menu_ && menu_->getElement()) {
@@ -63,9 +70,9 @@ FLASHMEM void DeviceSettingsView::createLayout(lv_obj_t* parent) {
     }
 }
 
-FLASHMEM void DeviceSettingsView::bindToState() {
-    watcher_.watchAll(
-        [this]() { requestRender(); },
+FLASHMEM bool DeviceSettingsView::bindToState() {
+    watcher_.bind<&DeviceSettingsView::requestRender>(*this, 0, "DeviceSettings.view");
+    return watcher_.watchAll(
         state_refs_.settings.visible,
         state_refs_.settings.focusedRow,
         state_refs_.midiSync.mode,
@@ -77,29 +84,12 @@ FLASHMEM void DeviceSettingsView::bindToState() {
     );
 }
 
-FLASHMEM void DeviceSettingsView::requestRender() {
-    dirty_ = true;
-    scheduleRender();
+void DeviceSettingsView::requestRender() {
+    if (render_scheduler_) render_scheduler_->request(1U);
 }
 
-FLASHMEM void DeviceSettingsView::scheduleRender(bool ready) {
-    dirty_ = true;
-    if (render_timer_) {
-        render_timer_->resume(ready);
-    }
-}
-
-FLASHMEM void DeviceSettingsView::pauseRenderTimerIfIdle() {
-    if (!render_timer_) return;
-    if (dirty_ && container_ && !lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) return;
-    render_timer_->pause();
-}
-
-FLASHMEM void DeviceSettingsView::render() {
-    if (!dirty_ || !menu_ || !container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) {
-        pauseRenderTimerIfIdle();
-        return;
-    }
+void DeviceSettingsView::render() {
+    if (!menu_ || !RetainedViewRenderPolicy::visible(container_)) return;
 
     const auto page = core::state::settings::buildDeviceSettingsMenuPage(
         state_refs_.settings,
@@ -132,14 +122,17 @@ FLASHMEM void DeviceSettingsView::render() {
         .dataRevision = page.dataRevision,
     });
 
-    dirty_ = false;
-    pauseRenderTimerIfIdle();
 }
 
-FLASHMEM void DeviceSettingsView::onRenderTimer(lv_timer_t* timer) {
-    auto* self = static_cast<DeviceSettingsView*>(lv_timer_get_user_data(timer));
-    if (!self) return;
-    self->render();
+bool DeviceSettingsView::canDrainRender(void* context) {
+    const auto* self = static_cast<const DeviceSettingsView*>(context);
+    return self && RetainedViewRenderPolicy::visible(self->container_);
+}
+
+void DeviceSettingsView::drainRender(void* context, uint32_t flags) {
+    if ((flags & 1U) == 0) return;
+    auto* self = static_cast<DeviceSettingsView*>(context);
+    if (self) self->render();
 }
 
 }  // namespace core::ui

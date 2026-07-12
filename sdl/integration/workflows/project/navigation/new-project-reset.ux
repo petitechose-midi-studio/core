@@ -1,6 +1,7 @@
 # UX workflow: reset the current musical project from Project Overview.
 # Purpose: validates that New Project is an enabled action and resets project
 # musical defaults without relying on save/load persistence.
+# Expect: capture_changed:music_scale_default=music_scale_changed, capture_match:music_scale_default=scale_defaults_after_new_project
 
 0 capture screen boot
 

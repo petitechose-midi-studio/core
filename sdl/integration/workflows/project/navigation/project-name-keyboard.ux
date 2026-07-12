@@ -1,6 +1,7 @@
 # UX workflow: inspect the Project name keyboard.
 # Purpose: captures the compact QWERTY keyboard used by Save As/Rename, including
 # text insertion and physical soft-key action strips.
+# Expect: capture_changed:keyboard_initial=keyboard_uppercase_q_inserted, capture_changed:keyboard_q_before_cancel=keyboard_reopened
 
 0 capture screen boot
 

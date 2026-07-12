@@ -643,22 +643,28 @@ FLASHMEM void clearGraph(SequencerPatternState& pattern) {
     pattern.bumpGraphRevision();
 }
 
-FLASHMEM void copyGraph(SequencerPatternState& target,
-                         const StepSequencerGraph* source,
-                         uint32_t revision) {
+FLASHMEM bool copyGraph(SequencerPatternState& target,
+                        const StepSequencerGraph* source,
+                        uint32_t revision) {
     if (source == nullptr || !source->enabled) {
         target.graph.reset();
         target.graphRevision.set(revision);
-        return;
+        return true;
     }
 
-    if (!ensureGraphAllocated(target)) return;
-    *target.graph = *source;
+    if (target.graph) {
+        *target.graph = *source;
+    } else {
+        auto graph = core::app::makeExtmemUnique<StepSequencerGraph>(*source);
+        if (!graph) return false;
+        target.graph = std::move(graph);
+    }
     target.graphRevision.set(revision);
+    return true;
 }
 
-FLASHMEM void copyGraph(SequencerPatternState& target, const SequencerPatternState& source) {
-    copyGraph(target, graphView(source), source.graphRevision.get());
+FLASHMEM bool copyGraph(SequencerPatternState& target, const SequencerPatternState& source) {
+    return copyGraph(target, graphView(source), source.graphRevision.get());
 }
 
 FLASHMEM const StepSequencerGraph* graphView(const SequencerPatternState& pattern) {

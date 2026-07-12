@@ -1,6 +1,7 @@
 #include "state/sequencer/SequencerHistory.hpp"
 
 #include <algorithm>
+#include <new>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -21,6 +22,10 @@ FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot(
 FLASHMEM SequencerHistoryPatternSnapshot& SequencerHistoryPatternSnapshot::operator=(
     SequencerHistoryPatternSnapshot&&
 ) noexcept = default;
+FLASHMEM void SequencerHistoryPatternSnapshot::reset() {
+    this->~SequencerHistoryPatternSnapshot();
+    ::new (static_cast<void*>(this)) SequencerHistoryPatternSnapshot();
+}
 
 FLASHMEM SequencerHistoryTrackBankSnapshot::SequencerHistoryTrackBankSnapshot() = default;
 FLASHMEM SequencerHistoryTrackBankSnapshot::~SequencerHistoryTrackBankSnapshot() = default;
@@ -30,6 +35,10 @@ FLASHMEM SequencerHistoryTrackBankSnapshot::SequencerHistoryTrackBankSnapshot(
 FLASHMEM SequencerHistoryTrackBankSnapshot& SequencerHistoryTrackBankSnapshot::operator=(
     SequencerHistoryTrackBankSnapshot&&
 ) noexcept = default;
+FLASHMEM void SequencerHistoryTrackBankSnapshot::reset() {
+    this->~SequencerHistoryTrackBankSnapshot();
+    ::new (static_cast<void*>(this)) SequencerHistoryTrackBankSnapshot();
+}
 
 FLASHMEM SequencerHistoryPatternChange::SequencerHistoryPatternChange() = default;
 FLASHMEM SequencerHistoryPatternChange::~SequencerHistoryPatternChange() = default;
@@ -190,18 +199,27 @@ FLASHMEM bool cloneGraph(const Graph* source, GraphPtr& out) {
         return true;
     }
 
-    auto graph = core::app::makeExtmemUnique<Graph>();
-    if (!graph) {
-        return false;
-    }
-
-    *graph = *source;
+    auto graph = core::app::makeExtmemUnique<Graph>(*source);
+    if (!graph) return false;
     out = std::move(graph);
     return true;
 }
 
 FLASHMEM bool cloneGraph(const GraphPtr& source, GraphPtr& out) {
     return cloneGraph(source.get(), out);
+}
+
+FLASHMEM bool captureGraphUsingReservedStorage(const Graph* source, GraphPtr& out) {
+    if (source == nullptr || !source->enabled) {
+        out.reset();
+        return true;
+    }
+    if (!out) {
+        out = core::app::makeExtmemUnique<Graph>();
+        if (!out) return false;
+    }
+    *out = *source;
+    return true;
 }
 
 FLASHMEM void installGraph(
@@ -280,6 +298,74 @@ FLASHMEM uint8_t countScope(
     return result;
 }
 
+constexpr size_t kExtmemAllocationOverheadEstimate = 16U;
+
+FLASHMEM size_t graphRetainedBytes(const GraphPtr& graph) {
+    return graph ? sizeof(Graph) + kExtmemAllocationOverheadEstimate : 0U;
+}
+
+FLASHMEM size_t patternSnapshotRetainedBytes(
+    const SequencerHistoryPatternSnapshot& snapshot
+) {
+    return graphRetainedBytes(snapshot.graph);
+}
+
+FLASHMEM size_t trackBankSnapshotRetainedBytes(
+    const SequencerHistoryTrackBankSnapshot& snapshot
+) {
+    size_t bytes = graphRetainedBytes(snapshot.editorGraph);
+    for (const auto& graph : snapshot.bankGraphs) {
+        bytes += graphRetainedBytes(graph);
+    }
+    return bytes;
+}
+
+FLASHMEM size_t structureSnapshotRetainedBytes(
+    const SequencerHistoryTrackStructureSnapshot& snapshot
+) {
+    size_t bytes = 0;
+    for (const auto& track : snapshot.tracks) {
+        bytes += patternSnapshotRetainedBytes(track);
+    }
+    return bytes;
+}
+
+FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
+    switch (entry.scope) {
+        case SequencerHistoryScope::PatternOnly:
+            if (!entry.pattern) return 0;
+            return sizeof(SequencerHistoryPatternChange) +
+                   kExtmemAllocationOverheadEstimate +
+                   patternSnapshotRetainedBytes(entry.pattern->before) +
+                   patternSnapshotRetainedBytes(entry.pattern->after);
+        case SequencerHistoryScope::Structure:
+            if (!entry.structure) return 0;
+            return sizeof(SequencerHistoryTrackStructureChange) +
+                   kExtmemAllocationOverheadEstimate +
+                   structureSnapshotRetainedBytes(entry.structure->before) +
+                   structureSnapshotRetainedBytes(entry.structure->after);
+        case SequencerHistoryScope::FullBank:
+            if (!entry.fullBank) return 0;
+            return sizeof(SequencerHistoryFullBankChange) +
+                   kExtmemAllocationOverheadEstimate +
+                   trackBankSnapshotRetainedBytes(entry.fullBank->before) +
+                   trackBankSnapshotRetainedBytes(entry.fullBank->after);
+        default:
+            return 0;
+    }
+}
+
+FLASHMEM size_t entriesRetainedBytes(
+    const std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
+    uint8_t count
+) {
+    size_t bytes = 0;
+    for (uint8_t i = 0; i < count; ++i) {
+        bytes += entryRetainedBytes(entries[i]);
+    }
+    return bytes;
+}
+
 FLASHMEM void removeEntryAt(
     std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
     uint8_t& count,
@@ -346,6 +432,26 @@ FLASHMEM SequencerHistoryEntry popBack(
     return entry;
 }
 
+FLASHMEM bool applyFlatHistorySnapshotToTrack(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex,
+    const SequencerHistoryPatternSnapshot& snapshot
+) {
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    const uint8_t activeTrack = bank.activeTrackIndex();
+
+    if (targetTrack != activeTrack) {
+        applySnapshotPreservingGraph(bank.track(targetTrack), snapshot.flat);
+        return true;
+    }
+
+    applySnapshotToEditorPreservingGraph(active, snapshot.flat);
+    applySnapshotPreservingGraph(bank.track(activeTrack), snapshot.flat);
+    restoreFocus(active, snapshot.focusedStep);
+    return true;
+}
+
 FLASHMEM bool applyEntrySnapshot(
     SequencerHistoryEntry& entry,
     bool after,
@@ -354,11 +460,20 @@ FLASHMEM bool applyEntrySnapshot(
 ) {
     if (entry.scope == SequencerHistoryScope::PatternOnly) {
         if (!entry.pattern) return false;
+        const auto& snapshot = after ? entry.pattern->after : entry.pattern->before;
+        if (entry.pattern->storage == SequencerHistoryPatternStorage::FlatOnly) {
+            return applyFlatHistorySnapshotToTrack(
+                bank,
+                active,
+                entry.pattern->trackIndex,
+                snapshot
+            );
+        }
         return applyHistorySnapshotToTrack(
             bank,
             active,
             entry.pattern->trackIndex,
-            after ? entry.pattern->after : entry.pattern->before
+            snapshot
         );
     }
 
@@ -405,11 +520,34 @@ FLASHMEM bool captureHistorySnapshot(
     const SequencerState& source,
     SequencerHistoryPatternSnapshot& out
 ) {
-    out = SequencerHistoryPatternSnapshot{};
+    out.reset();
+    return captureHistorySnapshotUsingReservedGraph(source, out);
+}
+
+FLASHMEM bool reserveHistorySnapshotGraphStorage(
+    SequencerHistoryPatternSnapshot& snapshot
+) {
+    if (snapshot.graph) return true;
+    snapshot.graph = core::app::makeExtmemUnique<Graph>();
+    return static_cast<bool>(snapshot.graph);
+}
+
+FLASHMEM bool captureHistorySnapshotUsingReservedGraph(
+    const SequencerState& source,
+    SequencerHistoryPatternSnapshot& out
+) {
     captureSnapshot(source.pattern, out.flat);
     out.focusedStep = source.focusedStep.get();
-    out.page = source.page.get();
-    return cloneGraph(graphView(source.pattern), out.graph);
+    return captureGraphUsingReservedStorage(graphView(source.pattern), out.graph);
+}
+
+FLASHMEM void captureFlatHistorySnapshot(
+    const SequencerState& source,
+    SequencerHistoryPatternSnapshot& out
+) {
+    out.reset();
+    captureSnapshot(source.pattern, out.flat);
+    out.focusedStep = source.focusedStep.get();
 }
 
 FLASHMEM bool captureHistorySnapshot(
@@ -423,12 +561,42 @@ FLASHMEM bool captureHistorySnapshot(
         return captureHistorySnapshot(active, out);
     }
 
-    out = SequencerHistoryPatternSnapshot{};
+    out.reset();
+    return captureHistorySnapshotUsingReservedGraph(bank, active, targetTrack, out);
+}
+
+FLASHMEM bool captureHistorySnapshotUsingReservedGraph(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& out
+) {
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    if (targetTrack == bank.activeTrackIndex()) {
+        return captureHistorySnapshotUsingReservedGraph(active, out);
+    }
+
     const auto& source = bank.track(targetTrack);
     captureSnapshot(source, out.flat);
     out.focusedStep = active.focusedStep.get();
-    out.page = active.page.get();
-    return cloneGraph(graphView(source), out.graph);
+    return captureGraphUsingReservedStorage(graphView(source), out.graph);
+}
+
+FLASHMEM void captureFlatHistorySnapshot(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& out
+) {
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    if (targetTrack == bank.activeTrackIndex()) {
+        captureFlatHistorySnapshot(active, out);
+        return;
+    }
+
+    out.reset();
+    captureSnapshot(bank.track(targetTrack), out.flat);
+    out.focusedStep = active.focusedStep.get();
 }
 
 FLASHMEM bool captureHistorySnapshot(
@@ -436,10 +604,10 @@ FLASHMEM bool captureHistorySnapshot(
     const SequencerState& active,
     SequencerHistoryTrackBankSnapshot& out
 ) {
-    out = SequencerHistoryTrackBankSnapshot{};
+    out.reset();
     captureTrackBankSnapshot(bank, active, out.flat);
     out.focusedStep = active.focusedStep.get();
-    out.page = active.page.get();
+    out.activeStepProperty = active.activeStepProperty.get();
 
     if (!cloneGraph(graphView(active.pattern), out.editorGraph)) {
         return false;
@@ -542,6 +710,7 @@ FLASHMEM bool applyHistorySnapshot(
 
     installGraph(active.pattern, std::move(editorGraph), snapshot.flat.tracks[activeTrack].graphRevision);
     restoreFocus(active, snapshot.focusedStep);
+    active.activeStepProperty.set(snapshot.activeStepProperty);
     return true;
 }
 
@@ -577,10 +746,37 @@ FLASHMEM bool SequencerHistoryService::recordPattern(
     SequencerHistoryPatternSnapshot after,
     SequencerHistoryDescriptor descriptor
 ) {
-    if (sameMusicalHistorySnapshot(before, after)) {
-        return false;
-    }
+    return recordPatternWithStorage(
+        trackIndex,
+        std::move(before),
+        std::move(after),
+        descriptor,
+        SequencerHistoryPatternStorage::FullGraph
+    );
+}
 
+FLASHMEM bool SequencerHistoryService::recordFlatPattern(
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot before,
+    SequencerHistoryPatternSnapshot after,
+    SequencerHistoryDescriptor descriptor
+) {
+    return recordPatternWithStorage(
+        trackIndex,
+        std::move(before),
+        std::move(after),
+        descriptor,
+        SequencerHistoryPatternStorage::FlatOnly
+    );
+}
+
+FLASHMEM bool SequencerHistoryService::recordPatternWithStorage(
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot before,
+    SequencerHistoryPatternSnapshot after,
+    SequencerHistoryDescriptor descriptor,
+    SequencerHistoryPatternStorage storage
+) {
     auto change = core::app::makeExtmemUnique<SequencerHistoryPatternChange>();
     if (!change) {
         return false;
@@ -592,23 +788,39 @@ FLASHMEM bool SequencerHistoryService::recordPattern(
     }
 
     change->trackIndex = targetTrack;
+    change->storage = storage;
     change->descriptor = descriptor;
     change->before = std::move(before);
     change->after = std::move(after);
+
+    return recordPattern(std::move(change));
+}
+
+FLASHMEM bool SequencerHistoryService::recordPattern(
+    SequencerHistoryPatternChangePtr change
+) {
+    if (!change) return false;
+    if (change->storage == SequencerHistoryPatternStorage::FlatOnly) {
+        if (change->before.flat.graphRevision != change->after.flat.graphRevision) {
+            return false;
+        }
+        change->before.graph.reset();
+        change->after.graph.reset();
+    }
+    if (sameMusicalHistorySnapshot(change->before, change->after)) {
+        return false;
+    }
+
+    change->trackIndex = SequencerTrackBankState::clampTrackIndex(change->trackIndex);
+    if (change->descriptor.trackIndex == SequencerHistoryDescriptor::INVALID_INDEX) {
+        change->descriptor.trackIndex = change->trackIndex;
+    }
 
     SequencerHistoryEntry entry;
     entry.scope = SequencerHistoryScope::PatternOnly;
     entry.pattern = std::move(change);
 
-    if (!pushUndo(std::move(entry))) {
-        return false;
-    }
-
-    redo_count_ = 0;
-    for (auto& item : redo_) {
-        item = SequencerHistoryEntry{};
-    }
-    return true;
+    return recordEntry(std::move(entry));
 }
 
 FLASHMEM bool SequencerHistoryService::recordPattern(
@@ -617,6 +829,14 @@ FLASHMEM bool SequencerHistoryService::recordPattern(
     SequencerHistoryDescriptor descriptor
 ) {
     return recordPattern(0, std::move(before), std::move(after), descriptor);
+}
+
+FLASHMEM bool SequencerHistoryService::recordFlatPattern(
+    SequencerHistoryPatternSnapshot before,
+    SequencerHistoryPatternSnapshot after,
+    SequencerHistoryDescriptor descriptor
+) {
+    return recordFlatPattern(0, std::move(before), std::move(after), descriptor);
 }
 
 FLASHMEM bool SequencerHistoryService::recordFullBank(
@@ -654,15 +874,7 @@ FLASHMEM bool SequencerHistoryService::recordFullBank(
     entry.scope = SequencerHistoryScope::FullBank;
     entry.fullBank = std::move(change);
 
-    if (!pushUndo(std::move(entry))) {
-        return false;
-    }
-
-    redo_count_ = 0;
-    for (auto& item : redo_) {
-        item = SequencerHistoryEntry{};
-    }
-    return true;
+    return recordEntry(std::move(entry));
 }
 
 FLASHMEM bool SequencerHistoryService::recordStructure(
@@ -684,15 +896,7 @@ FLASHMEM bool SequencerHistoryService::recordStructure(
     entry.scope = SequencerHistoryScope::Structure;
     entry.structure = std::move(change);
 
-    if (!pushUndo(std::move(entry))) {
-        return false;
-    }
-
-    redo_count_ = 0;
-    for (auto& item : redo_) {
-        item = SequencerHistoryEntry{};
-    }
-    return true;
+    return recordEntry(std::move(entry));
 }
 
 FLASHMEM bool SequencerHistoryService::undo(
@@ -772,12 +976,37 @@ FLASHMEM uint8_t SequencerHistoryService::redoCount(SequencerHistoryScope scope)
     return countScope(redo_, redo_count_, scope);
 }
 
+FLASHMEM size_t SequencerHistoryService::retainedBytes() const {
+    return entriesRetainedBytes(undo_, undo_count_) +
+           entriesRetainedBytes(redo_, redo_count_);
+}
+
 FLASHMEM bool SequencerHistoryService::pushUndo(SequencerHistoryEntry entry) {
     return pushEntry(undo_, undo_count_, std::move(entry));
 }
 
 FLASHMEM bool SequencerHistoryService::pushRedo(SequencerHistoryEntry entry) {
     return pushEntry(redo_, redo_count_, std::move(entry));
+}
+
+FLASHMEM bool SequencerHistoryService::recordEntry(SequencerHistoryEntry entry) {
+    if (!entry.valid()) return false;
+
+    const size_t incomingBytes = entryRetainedBytes(entry);
+    if (incomingBytes > RETAINED_BYTE_BUDGET) return false;
+
+    redo_count_ = 0;
+    for (auto& item : redo_) {
+        item = SequencerHistoryEntry{};
+    }
+
+    pruneOldestScope(undo_, undo_count_, entry.scope);
+    while (undo_count_ > 0 && retainedBytes() + incomingBytes > RETAINED_BYTE_BUDGET) {
+        removeEntryAt(undo_, undo_count_, 0);
+    }
+    if (retainedBytes() + incomingBytes > RETAINED_BYTE_BUDGET) return false;
+
+    return pushUndo(std::move(entry));
 }
 
 }  // namespace core::state::sequencer

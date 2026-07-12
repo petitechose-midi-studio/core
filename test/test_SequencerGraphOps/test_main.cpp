@@ -74,7 +74,7 @@ void test_pattern_without_graph_stays_unallocated_through_snapshot_copy() {
     assert(target.pattern.graph.get() == nullptr);
     assert(core::state::sequencer::graphView(target.pattern) == nullptr);
 
-    core::state::sequencer::copyPatternState(target.pattern, source.pattern);
+    assert(core::state::sequencer::copyPatternState(target.pattern, source.pattern));
     assert(target.pattern.graph.get() == nullptr);
 
     std::cout << "[PASS] test_pattern_without_graph_stays_unallocated_through_snapshot_copy\n";
@@ -189,7 +189,7 @@ void test_pattern_copy_preserves_graph() {
     ));
 
     SequencerState target;
-    core::state::sequencer::copyPatternState(target.pattern, source.pattern);
+    assert(core::state::sequencer::copyPatternState(target.pattern, source.pattern));
 
     assert(target.pattern.graphRevision.get() == source.pattern.graphRevision.get());
     const auto* targetGraph = core::state::sequencer::graphView(target.pattern);

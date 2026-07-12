@@ -27,6 +27,11 @@ namespace core::state {
 
 namespace {
 
+[[noreturn]] FLASHMEM void failCoreStateAllocation(const char* label) {
+    OC_LOG_ERROR("[CoreState] Failed to allocate {}", label);
+    while (true) {}
+}
+
 FLASHMEM SequencerDomainState::PendingApply* createPendingApply() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(SequencerDomainState::PendingApply));
@@ -38,15 +43,21 @@ FLASHMEM SequencerDomainState::PendingApply* createPendingApply() {
 }
 
 FLASHMEM core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
-    return core::app::makeExtmemUnique<UiSystemState>();
+    auto state = core::app::makeExtmemUnique<UiSystemState>();
+    if (!state) failCoreStateAllocation("UI system state");
+    return state;
 }
 
 FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState() {
-    return core::app::makeExtmemUnique<sequencer::SequencerState>();
+    auto state = core::app::makeExtmemUnique<sequencer::SequencerState>();
+    if (!state) failCoreStateAllocation("sequencer editor state");
+    return state;
 }
 
 FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
-    return core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
+    auto state = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
+    if (!state) failCoreStateAllocation("sequencer track bank");
+    return state;
 }
 
 FLASHMEM int32_t sequencerHistoryValueForProperty(
@@ -347,6 +358,14 @@ FLASHMEM void syncSequencerStructureUiFromRestoredHistory(CoreState& state) {
 
 }  // namespace
 
+FLASHMEM MacroDomainState::MacroDomainState(oc::interface::IStorage& libraryStorage)
+    : runtime(core::app::makeExtmemUnique<MacroState>())
+    , pages(core::app::makeExtmemUnique<macro::MacroPagesState>())
+    , persistence(libraryStorage) {
+    if (!runtime) failCoreStateAllocation("macro runtime state");
+    if (!pages) failCoreStateAllocation("macro pages state");
+}
+
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
 FLASHMEM SequencerDomainState::SequencerDomainState(
@@ -356,16 +375,7 @@ FLASHMEM SequencerDomainState::SequencerDomainState(
     : editor(createSequencerEditorState())
     , tracks(createSequencerTrackBankState())
     , persistence(patternLibraryStorage, setLibraryStorage)
-    , pendingApply(nullptr) {
-    if (!editor) {
-        OC_LOG_ERROR("[CoreState] Failed to allocate sequencer editor state");
-        while (true) {}
-    }
-    if (!tracks) {
-        OC_LOG_ERROR("[CoreState] Failed to allocate sequencer track bank");
-        while (true) {}
-    }
-}
+    , pendingApply(nullptr) {}
 
 FLASHMEM SequencerDomainState::~SequencerDomainState() = default;
 
@@ -414,22 +424,9 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , macroEdit(systemUi_->macroEdit)
     , macroUi(systemUi_->macroUi)
     , projectNavigation(systemUi_->projectNavigation) {
-    if (!macroDomain_.runtime) {
-        OC_LOG_ERROR("[CoreState] Failed to allocate macro runtime state");
-        while (true) {}
-    }
-    if (!macroDomain_.pages) {
-        OC_LOG_ERROR("[CoreState] Failed to allocate macro pages state");
-        while (true) {}
-    }
-    if (!systemUi_) {
-        OC_LOG_ERROR("[CoreState] Failed to allocate UI system state");
-        while (true) {}
-    }
     sequencerDomain_.pendingApply.reset(createPendingApply());
     if (!sequencerDomain_.pendingApply) {
-        OC_LOG_ERROR("[CoreState] Failed to allocate sequencer pending apply buffer");
-        while (true) {}
+        failCoreStateAllocation("sequencer pending apply buffer");
     }
     CoreStateBootstrap::initialize(*this);
 }
@@ -447,8 +444,8 @@ FLASHMEM void CoreState::flush() {
     CoreStateLifecycle::flush(*this);
 }
 
-FLASHMEM void CoreState::flushAutoPersist() {
-    CoreStateLifecycle::flushAutoPersist(*this);
+FLASHMEM void CoreState::flushProjectMutationCoalescing() {
+    CoreStateLifecycle::flushProjectMutationCoalescing(*this);
 }
 
 FLASHMEM void CoreState::resetStandaloneTransientUi() {
@@ -459,6 +456,15 @@ FLASHMEM void CoreState::resetStandaloneTransientUi() {
 FLASHMEM void CoreState::resetMusicalProject() {
     commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::resetMusicalProject(*this);
+}
+
+void CoreState::markMacroValueEdited(uint8_t index) {
+    if (index >= MACRO_COUNT) return;
+    if (macroDomain_.mutationCoalescer) {
+        macroDomain_.mutationCoalescer->markChanged();
+        return;
+    }
+    markProjectMutated();
 }
 
 FLASHMEM void CoreState::markProjectMutated() {
@@ -493,6 +499,16 @@ uint32_t CoreState::projectSessionSaveTimestampMs() const {
     return projectSessionSaveTimestampMs_;
 }
 
+bool CoreState::hasPendingProjectMutationCoalescing() const {
+    const bool macroPending =
+        macroDomain_.mutationCoalescer && macroDomain_.mutationCoalescer->hasPendingChanges();
+    const bool sequencerPending =
+        sequencerDomain_.mutationCoalescer &&
+        sequencerDomain_.mutationCoalescer->hasPendingChanges();
+    return macroPending || sequencerPending ||
+           hasPendingSequencerPatternHistoryCoalescing();
+}
+
 bool CoreState::isMacroPersistenceReady() const {
     return macroDomain_.persistenceReady;
 }
@@ -508,7 +524,8 @@ FLASHMEM void CoreState::markSequencerProjectMutated() {
 FLASHMEM bool CoreState::recordSequencerPatternHistory(
     sequencer::SequencerHistoryPatternSnapshot before,
     sequencer::SequencerHistoryPatternSnapshot after,
-    sequencer::SequencerHistoryDescriptor descriptor
+    sequencer::SequencerHistoryDescriptor descriptor,
+    sequencer::SequencerHistoryPatternStorage storage
 ) {
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
     uint8_t targetTrack = activeTrack;
@@ -519,16 +536,57 @@ FLASHMEM bool CoreState::recordSequencerPatternHistory(
         descriptor.trackIndex = targetTrack;
     }
 
-    if (!sequencerHistory.recordPattern(
-            targetTrack,
-            std::move(before),
-            std::move(after),
-            descriptor
-        )) {
+    const bool recorded = storage == sequencer::SequencerHistoryPatternStorage::FlatOnly
+        ? sequencerHistory.recordFlatPattern(
+              targetTrack,
+              std::move(before),
+              std::move(after),
+              descriptor
+          )
+        : sequencerHistory.recordPattern(
+              targetTrack,
+              std::move(before),
+              std::move(after),
+              descriptor
+          );
+    if (!recorded) {
         return false;
     }
 
-    sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    const bool synchronized = storage == sequencer::SequencerHistoryPatternStorage::FlatOnly
+        ? sequencer::storeActiveTrackPreservingGraph(sequencerTracks, sequencer)
+        : sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    if (!synchronized) {
+        OC_LOG_ERROR("[CoreState] Failed to synchronize active sequencer graph after history");
+    }
+    markProjectMutated();
+    refreshSharedTrackStateFromSequencer();
+    return true;
+}
+
+FLASHMEM bool CoreState::recordSequencerPatternHistory(
+    sequencer::SequencerHistoryPatternChangePtr change
+) {
+    if (!change) return false;
+
+    const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
+    const uint8_t targetTrack =
+        change->descriptor.trackIndex == sequencer::SequencerHistoryDescriptor::INVALID_INDEX
+            ? activeTrack
+            : sequencer::SequencerTrackBankState::clampTrackIndex(
+                  change->descriptor.trackIndex
+              );
+    change->trackIndex = targetTrack;
+    change->descriptor.trackIndex = targetTrack;
+    const auto storage = change->storage;
+    if (!sequencerHistory.recordPattern(std::move(change))) return false;
+
+    const bool synchronized = storage == sequencer::SequencerHistoryPatternStorage::FlatOnly
+        ? sequencer::storeActiveTrackPreservingGraph(sequencerTracks, sequencer)
+        : sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    if (!synchronized) {
+        OC_LOG_ERROR("[CoreState] Failed to synchronize active sequencer graph after history");
+    }
     markProjectMutated();
     refreshSharedTrackStateFromSequencer();
     return true;
@@ -621,8 +679,24 @@ FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
     sequencer::SequencerHistoryPatternSnapshot before = std::move(pending.before);
     pending.clear();
 
+    const uint32_t currentGraphRevision =
+        targetTrack == sequencerTracks.activeTrackIndex()
+            ? sequencer.pattern.graphRevision.get()
+            : sequencerTracks.track(targetTrack).graphRevision.get();
+    const auto storage = before.flat.graphRevision == currentGraphRevision
+        ? sequencer::SequencerHistoryPatternStorage::FlatOnly
+        : sequencer::SequencerHistoryPatternStorage::FullGraph;
+
     sequencer::SequencerHistoryPatternSnapshot after;
-    if (!sequencer::captureHistorySnapshot(sequencerTracks, sequencer, targetTrack, after)) {
+    if (storage == sequencer::SequencerHistoryPatternStorage::FlatOnly) {
+        before.graph.reset();
+        sequencer::captureFlatHistorySnapshot(sequencerTracks, sequencer, targetTrack, after);
+    } else if (!sequencer::captureHistorySnapshot(
+                   sequencerTracks,
+                   sequencer,
+                   targetTrack,
+                   after
+               )) {
         return false;
     }
 
@@ -637,7 +711,8 @@ FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
     return recordSequencerPatternHistory(
         std::move(before),
         std::move(after),
-        descriptor
+        descriptor,
+        storage
     );
 }
 
@@ -698,15 +773,18 @@ FLASHMEM void CoreState::clearSequencerHistory() {
     sequencerHistory.clear();
 }
 
-FLASHMEM void CoreState::queuePendingSequencerApply(const sequencer::SequencerState& staged, bool merge) {
-    queueSequencerApply_(staged, merge);
+FLASHMEM bool CoreState::queuePendingSequencerApply(
+    sequencer::SequencerState& staged,
+    bool merge
+) {
+    return queueSequencerApply_(staged, merge);
 }
 
-FLASHMEM void CoreState::queuePendingSequencerBankApply(
-    const sequencer::SequencerTrackBankState& stagedBank,
-    const sequencer::SequencerState& staged
+FLASHMEM bool CoreState::queuePendingSequencerBankApply(
+    sequencer::SequencerTrackBankState& stagedBank,
+    sequencer::SequencerState& staged
 ) {
-    queueSequencerBankApply_(stagedBank, staged);
+    return queueSequencerBankApply_(stagedBank, staged);
 }
 
 FLASHMEM void CoreState::clearPendingSequencerApply() {
@@ -777,17 +855,20 @@ FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRa
     return persistence::PersistenceWriteStatus::OK;
 }
 
-FLASHMEM void CoreState::queueSequencerApply_(const sequencer::SequencerState& staged, bool merge) {
-    commitSequencerPatternHistoryCoalescing();
-    CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
-}
-
-FLASHMEM void CoreState::queueSequencerBankApply_(
-    const sequencer::SequencerTrackBankState& stagedBank,
-    const sequencer::SequencerState& staged
+FLASHMEM bool CoreState::queueSequencerApply_(
+    sequencer::SequencerState& staged,
+    bool merge
 ) {
     commitSequencerPatternHistoryCoalescing();
-    CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
+    return CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
+}
+
+FLASHMEM bool CoreState::queueSequencerBankApply_(
+    sequencer::SequencerTrackBankState& stagedBank,
+    sequencer::SequencerState& staged
+) {
+    commitSequencerPatternHistoryCoalescing();
+    return CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
 }
 
 FLASHMEM void CoreState::requestProjectSessionSave_() {
@@ -795,22 +876,18 @@ FLASHMEM void CoreState::requestProjectSessionSave_() {
 
     projectSessionSavePending_ = true;
     projectSessionSaveTimestampMs_ = oc::time::millis();
-    if (projectSessionSaveTimestampMs_ == 0) {
-        projectSessionSaveTimestampMs_ = 1;
-    }
 }
 
 FLASHMEM void CoreState::markSequencerProjectMutated_() {
-    sequencer::storeActiveTrack(sequencerTracks, sequencer);
+    if (!sequencer::storeActiveTrack(sequencerTracks, sequencer)) {
+        OC_LOG_ERROR("[CoreState] Failed to synchronize active sequencer graph");
+    }
     markProjectMutated();
 }
 
 FLASHMEM void CoreState::requestSharedTrackPersist_() {
     sharedTrackPersistPending_ = true;
     sharedTrackPersistTimestampMs_ = oc::time::millis();
-    if (sharedTrackPersistTimestampMs_ == 0) {
-        sharedTrackPersistTimestampMs_ = 1;
-    }
 }
 
 FLASHMEM void CoreState::persistSharedTrackState_() {
@@ -831,9 +908,6 @@ FLASHMEM void CoreState::persistSharedTrackState_() {
     if (persistStatus == persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE) {
         sharedTrackPersistPending_ = true;
         sharedTrackPersistTimestampMs_ = oc::time::millis();
-        if (sharedTrackPersistTimestampMs_ == 0) {
-            sharedTrackPersistTimestampMs_ = 1;
-        }
     } else {
         sharedTrackPersistPending_ = false;
         sharedTrackPersistTimestampMs_ = 0;

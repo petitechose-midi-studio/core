@@ -135,10 +135,7 @@ FLASHMEM ContextActionStrip::ContextActionStrip(
 }
 
 FLASHMEM ContextActionStrip::~ContextActionStrip() {
-    if (hold_timer_) {
-        lv_timer_del(hold_timer_);
-        hold_timer_ = nullptr;
-    }
+    hold_timer_.reset();
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -256,10 +253,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
     }
 
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    hold_timer_ = lv_timer_create(onHoldTimer, HOLD_TIMER_PERIOD_MS, this);
-    if (hold_timer_) {
-        lv_timer_pause(hold_timer_);
-    }
+    hold_timer_.emplace(HOLD_TIMER_PERIOD_MS, onHoldTimer, this);
 }
 
 void ContextActionStrip::render(const ContextActionStripProps& props) {
@@ -468,9 +462,9 @@ void ContextActionStrip::updateHoldTimer() {
     }
 
     if (active) {
-        lv_timer_resume(hold_timer_);
+        hold_timer_->resume();
     } else {
-        lv_timer_pause(hold_timer_);
+        hold_timer_->pause();
     }
 }
 

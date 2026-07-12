@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "handler/macro/MacroAutomationClipboardOps.hpp"
+#include "handler/macro/MacroStructureAutomationOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
@@ -11,15 +12,16 @@ namespace core::handler {
 
 namespace structure_slots = core::state::shared;
 namespace automation_clipboard_ops = core::handler::macro::automation_clipboard_ops;
+namespace structure_automation_ops = core::handler::macro_structure_automation_ops;
 
 namespace {
 
 using StateRefs = MacroStructureDomainServices::StateRefs;
 using Operations = MacroStructureDomainServices::Operations;
 
-FLASHMEM void flushAutoPersist(Operations operations) {
-    if (operations.flushAutoPersist != nullptr) {
-        operations.flushAutoPersist(operations.context);
+FLASHMEM void flushMutationCoalescing(Operations operations) {
+    if (operations.flushMutationCoalescing != nullptr) {
+        operations.flushMutationCoalescing(operations.context);
     }
 }
 
@@ -49,7 +51,7 @@ FLASHMEM void applyPageStructureMutation(StateRefs state,
                                          Operations operations,
                                          uint16_t enabledMask,
                                          uint8_t activePage) {
-    flushAutoPersist(operations);
+    flushMutationCoalescing(operations);
     state.pages.activeTrackData().enabledPageMask = enabledMask;
     state.pages.syncActiveTrackCache();
     state.pages.setActivePage(activePage);
@@ -60,7 +62,7 @@ FLASHMEM void applyTrackStructureMutation(StateRefs state,
                                           Operations operations,
                                           uint16_t enabledMask,
                                           uint8_t activeTrack) {
-    flushAutoPersist(operations);
+    flushMutationCoalescing(operations);
     setSharedTrackState(operations, enabledMask, activeTrack);
     finalizeStructureChange(state, operations);
 }
@@ -89,134 +91,10 @@ FLASHMEM void clearAutomationForTrack(core::state::macro::MacroAutomationBankSta
     core::state::macro::macroAutomationClearTrack(bank, track);
 }
 
-FLASHMEM void copyAutomationSlot(core::state::macro::MacroAutomationBankState& bank,
-                                 uint8_t sourceTrack,
-                                 uint8_t sourcePage,
-                                 uint8_t sourceMacro,
-                                 uint8_t destTrack,
-                                 uint8_t destPage,
-                                 uint8_t destMacro) {
-    const auto* source = core::state::macro::macroAutomationFindSlot(
-        bank,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = sourceTrack,
-            .page = sourcePage,
-            .macro = sourceMacro,
-        }
-    );
-    if (source == nullptr) return;
-    auto* dest = core::state::macro::macroAutomationGetOrCreateSlot(
-        bank,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = destTrack,
-            .page = destPage,
-            .macro = destMacro,
-        }
-    );
-    if (dest == nullptr) return;
-    core::state::macro::macroAutomationCopySlotState(
-        bank,
-        *dest,
-        bank.pointPool,
-        *source
-    );
-}
-
-FLASHMEM void copyAutomationPage(core::state::macro::MacroAutomationBankState& bank,
-                                 uint8_t sourceTrack,
-                                 uint8_t sourcePage,
-                                 uint8_t destTrack,
-                                 uint8_t destPage) {
-    clearAutomationForPage(bank, destTrack, destPage);
-    for (uint8_t macro = 0; macro < core::state::macro::MACRO_COUNT; ++macro) {
-        copyAutomationSlot(bank, sourceTrack, sourcePage, macro, destTrack, destPage, macro);
-    }
-}
-
-FLASHMEM void copyAutomationTrack(core::state::macro::MacroAutomationBankState& bank,
-                                  uint8_t sourceTrack,
-                                  uint8_t destTrack) {
-    clearAutomationForTrack(bank, destTrack);
-    for (uint8_t page = 0; page < core::state::macro::PAGE_COUNT; ++page) {
-        for (uint8_t macro = 0; macro < core::state::macro::MACRO_COUNT; ++macro) {
-            copyAutomationSlot(bank, sourceTrack, page, macro, destTrack, page, macro);
-        }
-    }
-}
-
-FLASHMEM void applyAutomationClipboardToPage(
-    core::state::macro::MacroAutomationBankState& bank,
-    uint8_t destTrack,
-    uint8_t destPage,
-    const core::state::MacroAutomationClipboard* clipboard
-) {
-    clearAutomationForPage(bank, destTrack, destPage);
-    if (clipboard == nullptr || !clipboard->valid || clipboard->trackScope) return;
-    const uint8_t count = clipboard->count >
-            core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
-        ? core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
-        : clipboard->count;
-    for (uint8_t i = 0; i < count; ++i) {
-        const auto& entry = clipboard->entries[i];
-        if (!entry.valid || entry.sourceMacro >= core::state::macro::MACRO_COUNT) continue;
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            bank,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = destTrack,
-                .page = destPage,
-                .macro = entry.sourceMacro,
-            }
-        );
-        if (slot == nullptr) continue;
-        core::state::macro::macroAutomationCopySlotState(
-            bank,
-            *slot,
-            clipboard->pointPool,
-            entry.state
-        );
-    }
-}
-
-FLASHMEM void applyAutomationClipboardToTrack(
-    core::state::macro::MacroAutomationBankState& bank,
-    uint8_t destTrack,
-    const core::state::MacroAutomationClipboard* clipboard
-) {
-    clearAutomationForTrack(bank, destTrack);
-    if (clipboard == nullptr || !clipboard->valid || !clipboard->trackScope) return;
-    const uint8_t count = clipboard->count >
-            core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
-        ? core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
-        : clipboard->count;
-    for (uint8_t i = 0; i < count; ++i) {
-        const auto& entry = clipboard->entries[i];
-        if (!entry.valid ||
-            entry.sourcePage >= core::state::macro::PAGE_COUNT ||
-            entry.sourceMacro >= core::state::macro::MACRO_COUNT) {
-            continue;
-        }
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            bank,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = destTrack,
-                .page = entry.sourcePage,
-                .macro = entry.sourceMacro,
-            }
-        );
-        if (slot == nullptr) continue;
-        core::state::macro::macroAutomationCopySlotState(
-            bank,
-            *slot,
-            clipboard->pointPool,
-            entry.state
-        );
-    }
-}
-
-FLASHMEM void flushAutoPersistFromCoreState(void* context) {
+FLASHMEM void flushMutationCoalescingFromCoreState(void* context) {
     auto* state = static_cast<core::state::CoreState*>(context);
     if (state == nullptr) return;
-    state->flushAutoPersist();
+    state->flushProjectMutationCoalescing();
 }
 
 FLASHMEM void markProjectMutatedFromCoreState(void* context) {
@@ -270,7 +148,7 @@ FLASHMEM MacroStructureDomainServices MacroStructureDomainServices::fromCoreStat
         },
         Operations{
             &state,
-            flushAutoPersistFromCoreState,
+            flushMutationCoalescingFromCoreState,
             markProjectMutatedFromCoreState,
             setSharedTrackStateFromCoreState,
             switchToPageFromCoreState,
@@ -388,14 +266,17 @@ FLASHMEM bool MacroStructureDomainServices::duplicateSelectedPages(uint16_t sele
         selectedMask,
         core::state::macro::PAGE_COUNT,
         [this](uint8_t source, uint8_t dest) {
+            if (!structure_automation_ops::duplicatePage(
+                    pages_->automation,
+                    pages_->currentActiveTrack(),
+                    source,
+                    pages_->currentActiveTrack(),
+                    dest
+                )) {
+                return false;
+            }
             pages_->activeTrackData().pages[dest] = pages_->activeTrackData().pages[source];
-            copyAutomationPage(
-                pages_->automation,
-                pages_->currentActiveTrack(),
-                source,
-                pages_->currentActiveTrack(),
-                dest
-            );
+            return true;
         }
     );
     if (!result.changed) return false;
@@ -417,8 +298,15 @@ FLASHMEM bool MacroStructureDomainServices::duplicateSelectedTracks(uint16_t sel
         selectedMask,
         core::state::macro::TRACK_COUNT,
         [this](uint8_t source, uint8_t dest) {
+            if (!structure_automation_ops::duplicateTrack(
+                    pages_->automation,
+                    source,
+                    dest
+                )) {
+                return false;
+            }
             pages_->tracks[dest] = pages_->tracks[source];
-            copyAutomationTrack(pages_->automation, source, dest);
+            return true;
         }
     );
     if (!result.changed) return false;
@@ -438,7 +326,7 @@ FLASHMEM bool MacroStructureDomainServices::erasePage(uint8_t pageIndex) const {
     if (pageIndex >= core::state::macro::PAGE_COUNT) return false;
     if (!pages_->activeTrackData().isPageEnabled(pageIndex)) return false;
 
-    flushAutoPersist(operations_);
+    flushMutationCoalescing(operations_);
     pages_->activeTrackData().pages[pageIndex].initDefault(pageIndex);
     clearAutomationForPage(pages_->automation, pages_->currentActiveTrack(), pageIndex);
     if (pages_->currentActivePage() == pageIndex) {
@@ -453,7 +341,7 @@ FLASHMEM bool MacroStructureDomainServices::eraseTrack(uint8_t trackIndex) const
     if (trackIndex >= core::state::macro::TRACK_COUNT) return false;
     if (!pages_->isTrackEnabled(trackIndex)) return false;
 
-    flushAutoPersist(operations_);
+    flushMutationCoalescing(operations_);
     pages_->tracks[trackIndex].initDefaults(trackIndex);
     clearAutomationForTrack(pages_->automation, trackIndex);
     if (activeTrack() == trackIndex) {
@@ -471,14 +359,16 @@ FLASHMEM bool MacroStructureDomainServices::pastePage(
 ) const {
     if (pageIndex >= core::state::macro::PAGE_COUNT) return false;
 
-    flushAutoPersist(operations_);
-    pages_->activeTrackData().pages[pageIndex] = pageData;
-    applyAutomationClipboardToPage(
+    if (!structure_automation_ops::replacePageFromClipboard(
         pages_->automation,
         pages_->currentActiveTrack(),
         pageIndex,
         automation
-    );
+    )) {
+        return false;
+    }
+    flushMutationCoalescing(operations_);
+    pages_->activeTrackData().pages[pageIndex] = pageData;
     pages_->activeTrackData().setPageEnabled(pageIndex, true);
     pages_->syncActiveTrackCache();
     pages_->setActivePage(pageIndex);
@@ -493,9 +383,15 @@ FLASHMEM bool MacroStructureDomainServices::pasteTrack(
 ) const {
     if (trackIndex >= core::state::macro::TRACK_COUNT) return false;
 
-    flushAutoPersist(operations_);
+    if (!structure_automation_ops::replaceTrackFromClipboard(
+            pages_->automation,
+            trackIndex,
+            automation
+        )) {
+        return false;
+    }
+    flushMutationCoalescing(operations_);
     pages_->tracks[trackIndex] = trackData;
-    applyAutomationClipboardToTrack(pages_->automation, trackIndex, automation);
     applyTrackStructureState(
         stateRefs_(),
         operations_,
@@ -588,7 +484,7 @@ FLASHMEM bool MacroStructureDomainServices::clearMacroAutomation(uint8_t index) 
     );
     if (slot == nullptr || !slot->automation.active) return false;
 
-    flushAutoPersist(operations_);
+    flushMutationCoalescing(operations_);
     core::state::macro::macroAutomationClearAutomation(pages_->automation, *slot);
     persistConfigChange(stateRefs_(), operations_);
     return true;
@@ -596,7 +492,7 @@ FLASHMEM bool MacroStructureDomainServices::clearMacroAutomation(uint8_t index) 
 
 FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
-    flushAutoPersist(operations_);
+    flushMutationCoalescing(operations_);
     const bool removed = core::state::macro::macroAutomationClearSlot(
         pages_->automation,
         core::state::macro::MacroAutomationSlotAddress{
@@ -641,7 +537,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
     };
     if (!automation_clipboard_ops::hasFirstClipboardAutomation(clipboard)) return false;
 
-    flushAutoPersist(operations_);
+    flushMutationCoalescing(operations_);
     if (!automation_clipboard_ops::pasteFirstClipboardAutomationToSlot(
             pages_->automation,
             address,

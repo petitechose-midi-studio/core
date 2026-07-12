@@ -116,11 +116,11 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
     }
 }
 
-FLASHMEM void FileSystemRpcHandler::update(uint32_t nowMs) {
+void FileSystemRpcHandler::update(uint32_t nowMs) {
     expireWriteSession_(nowMs);
 }
 
-FLASHMEM bool FileSystemRpcHandler::hasActiveWriteSession() const {
+bool FileSystemRpcHandler::hasActiveWriteSession() const {
     return writeSession_.active;
 }
 

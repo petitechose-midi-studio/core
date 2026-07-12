@@ -1,6 +1,7 @@
 # UX workflow: edit Project Transport values from the focused row.
 # Purpose: validates the immediate LEFT_CENTER tab hold, quick NAV tab movement,
 # direct OPT value editing, and NAV activation for focused transport values.
+# Expect: capture_changed:transport_tempo_focused=transport_tempo_opt_up, capture_match:transport_tempo_focused=transport_tempo_opt_down, capture_changed:transport_clock_focused=transport_clock_master
 
 0 capture screen boot
 

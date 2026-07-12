@@ -65,15 +65,15 @@ public:
     void deleteSelection();
 
 private:
-    using HistoryPatternSnapshot =
-        core::state::sequencer::SequencerHistoryPatternSnapshot;
+    using HistoryPatternChangePtr =
+        core::state::sequencer::SequencerHistoryPatternChangePtr;
     using HistoryTrackStructureChangePtr =
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr;
 
-    bool capturePageHistoryBefore(HistoryPatternSnapshot& before) const;
-    void recordPageHistoryAfter(HistoryPatternSnapshot before);
+    HistoryPatternChangePtr capturePageHistoryBefore() const;
+    bool recordPageHistoryAfter(HistoryPatternChangePtr change);
     HistoryTrackStructureChangePtr captureTrackHistoryBefore(uint16_t trackMask) const;
-    void recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
+    bool recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     void cancelSelectionMode();
     bool canPasteFocusedStep() const;

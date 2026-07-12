@@ -1,6 +1,7 @@
 # UX workflow: route top-level navigation through the View Selector.
 # Purpose: validates selector hold behavior, absence of redundant Sequencer
 # settings action, and Device Settings as a real top-level view.
+# Expect: capture_match:device_settings_open=device_settings_after_selector_release
 
 0 capture screen boot
 

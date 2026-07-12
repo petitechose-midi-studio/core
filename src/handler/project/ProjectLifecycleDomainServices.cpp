@@ -179,24 +179,24 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
         return Result{.status = Status::UNSAFE_OVERWRITE};
     }
 
-    core::state::project::ProjectSnapshot snapshot;
-    if (!core::state::project::captureProjectSnapshot(*state_, snapshot)) {
+    auto snapshot = core::state::project::captureProjectSnapshotOwned(*state_);
+    if (!snapshot) {
         return Result{.status = Status::SAVE_FAILED};
     }
-    if (!core::state::project::assignProjectSlug(snapshot.project.metadata, projectId)) {
+    if (!core::state::project::assignProjectSlug(snapshot->project.metadata, projectId)) {
         return invalidArgument();
     }
-    snapshot.project.metadata.hasSavedIdentity = true;
-    snapshot.project.metadata.dirty = false;
-    snapshot.project.metadata.overwriteSafe = true;
+    snapshot->project.metadata.hasSavedIdentity = true;
+    snapshot->project.metadata.dirty = false;
+    snapshot->project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
-    auto saved = store.save(snapshot);
+    auto saved = store.save(*snapshot);
     if (!saved) {
         return Result{.status = Status::SAVE_FAILED};
     }
 
-    state_->project.metadata = snapshot.project.metadata;
+    state_->project.metadata = snapshot->project.metadata;
     state_->requestProjectSessionSave();
     state_->projectNavigation.notifyContentChanged();
     return Result{.status = Status::OK, .bytes = saved.value().bytesWritten};
@@ -225,24 +225,24 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
         return selected;
     }
 
-    core::state::project::ProjectSnapshot snapshot;
-    if (!core::state::project::captureProjectSnapshot(*state_, snapshot)) {
+    auto snapshot = core::state::project::captureProjectSnapshotOwned(*state_);
+    if (!snapshot) {
         return Result{.status = Status::SAVE_FAILED};
     }
-    if (!core::state::project::assignProjectSlug(snapshot.project.metadata, nextId)) {
+    if (!core::state::project::assignProjectSlug(snapshot->project.metadata, nextId)) {
         return invalidArgument();
     }
-    snapshot.project.metadata.hasSavedIdentity = true;
-    snapshot.project.metadata.dirty = false;
-    snapshot.project.metadata.overwriteSafe = true;
+    snapshot->project.metadata.hasSavedIdentity = true;
+    snapshot->project.metadata.dirty = false;
+    snapshot->project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
-    auto saved = store.save(snapshot);
+    auto saved = store.save(*snapshot);
     if (!saved) {
         return Result{.status = Status::SAVE_FAILED};
     }
 
-    state_->project.metadata = snapshot.project.metadata;
+    state_->project.metadata = snapshot->project.metadata;
     state_->requestProjectSessionSave();
     state_->projectNavigation.notifyContentChanged();
     return Result{.status = Status::OK, .bytes = saved.value().bytesWritten};
@@ -294,19 +294,19 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
         return invalidArgument();
     }
 
-    core::state::project::ProjectSnapshot snapshot;
-    if (!core::state::project::captureProjectSnapshot(*state_, snapshot)) {
+    auto snapshot = core::state::project::captureProjectSnapshotOwned(*state_);
+    if (!snapshot) {
         return Result{.status = Status::SAVE_FAILED};
     }
-    if (!core::state::project::assignProjectSlug(snapshot.project.metadata, projectId)) {
+    if (!core::state::project::assignProjectSlug(snapshot->project.metadata, projectId)) {
         return invalidArgument();
     }
-    snapshot.project.metadata.hasSavedIdentity = true;
-    snapshot.project.metadata.dirty = false;
-    snapshot.project.metadata.overwriteSafe = true;
+    snapshot->project.metadata.hasSavedIdentity = true;
+    snapshot->project.metadata.dirty = false;
+    snapshot->project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
-    auto saved = store.save(snapshot);
+    auto saved = store.save(*snapshot);
     if (!saved) {
         return Result{.status = Status::SAVE_FAILED};
     }
@@ -319,7 +319,7 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
         }
     }
 
-    state_->project.metadata = snapshot.project.metadata;
+    state_->project.metadata = snapshot->project.metadata;
     state_->requestProjectSessionSave();
     state_->projectNavigation.notifyContentChanged();
     return Result{.status = Status::OK, .bytes = saved.value().bytesWritten};
@@ -336,13 +336,16 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
     }
 
     core::persistence::ProjectFileStore store(*product_files_);
-    core::state::project::ProjectSnapshot snapshot;
+    auto snapshot = core::state::project::makeProjectSnapshot();
+    if (!snapshot) {
+        return Result{.status = Status::LOAD_FAILED};
+    }
     core::persistence::project_file::LoadReport report{};
-    auto loaded = store.load(projectId, snapshot, &report);
+    auto loaded = store.load(projectId, *snapshot, &report);
     if (!loaded) {
         return Result{.status = Status::LOAD_FAILED};
     }
-    if (!core::state::project::applyProjectSnapshot(*state_, snapshot)) {
+    if (!core::state::project::applyProjectSnapshot(*state_, *snapshot)) {
         return Result{.status = Status::LOAD_FAILED};
     }
 

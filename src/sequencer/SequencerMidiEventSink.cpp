@@ -1,16 +1,24 @@
 #include "sequencer/SequencerMidiEventSink.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::sequencer {
 
 using oc::note::sequencer::SequencerEvent;
 using oc::note::sequencer::SequencerEventType;
 
-SequencerMidiEventSink::SequencerMidiEventSink(RealtimeMidiQueue& queue,
+FLASHMEM SequencerMidiEventSink::SequencerMidiEventSink(RealtimeMidiQueue& queue,
                                                uint8_t trackIndex,
                                                SequencerMidiEventSinkObserver* observer)
     : queue_(queue)
     , observer_(observer)
-    , track_index_(trackIndex) {}
+    , track_index_(trackIndex) {
+    queue_.attachTrackObserver(track_index_, *this);
+}
+
+SequencerMidiEventSink::~SequencerMidiEventSink() {
+    queue_.detachTrackObserver(track_index_, *this);
+}
 
 void SequencerMidiEventSink::setTimeline(uint32_t currentTick,
                                          uint32_t nowUs,
@@ -46,10 +54,6 @@ bool SequencerMidiEventSink::enqueueNoteOn_(const SequencerEvent& event) {
         return false;
     }
 
-    markNoteActive_(event.channel, event.note);
-    if (observer_ != nullptr) {
-        observer_->onNoteOn(track_index_, event.velocity);
-    }
     return true;
 }
 
@@ -66,39 +70,30 @@ bool SequencerMidiEventSink::enqueueNoteOff_(const SequencerEvent& event) {
         return false;
     }
 
-    markNoteInactive_(event.channel, event.note);
-    if (observer_ != nullptr) {
-        observer_->onNoteOff();
-    }
     return true;
 }
 
 bool SequencerMidiEventSink::enqueueAllNotesOff_() {
-    uint32_t panicCount = 0;
-    queue_.cancelPendingNoteOns(track_index_);
+    queue_.cancelPendingEvents(track_index_);
 
-    for (auto& slot : active_notes_) {
-        if (!slot.active) {
-            continue;
+    for (uint8_t channel = 0; channel < active_notes_by_channel_.size(); ++channel) {
+        auto& activeNotes = active_notes_by_channel_[channel];
+        if (!activeNotes.any()) continue;
+        for (uint8_t note = 0; note < 128; ++note) {
+            if (!activeNotes.test(note)) continue;
+
+            RealtimeMidiEvent midiEvent{};
+            midiEvent.deadlineUs = current_time_us_;
+            midiEvent.type = RealtimeMidiEventType::NoteOff;
+            midiEvent.channel = channel;
+            midiEvent.note = note;
+            midiEvent.velocity = 0;
+            midiEvent.trackIndex = track_index_;
+
+            if (!queue_.push(midiEvent)) {
+                return false;
+            }
         }
-
-        RealtimeMidiEvent midiEvent{};
-        midiEvent.deadlineUs = current_time_us_;
-        midiEvent.type = RealtimeMidiEventType::NoteOff;
-        midiEvent.channel = slot.channel;
-        midiEvent.note = slot.note;
-        midiEvent.velocity = 0;
-        midiEvent.trackIndex = track_index_;
-
-        if (!queue_.push(midiEvent)) {
-            return false;
-        }
-        slot.active = false;
-        panicCount += 1;
-    }
-
-    if (observer_ != nullptr && panicCount > 0) {
-        observer_->onPanicNoteOffs(panicCount);
     }
 
     return true;
@@ -117,26 +112,23 @@ uint32_t SequencerMidiEventSink::deadlineForTick_(uint32_t tick) const {
 }
 
 void SequencerMidiEventSink::markNoteActive_(uint8_t channel, uint8_t note) {
-    for (auto& slot : active_notes_) {
-        if (slot.active && slot.channel == channel && slot.note == note) {
-            return;
-        }
-    }
-
-    for (auto& slot : active_notes_) {
-        if (!slot.active) {
-            slot = {channel, note, true};
-            return;
-        }
-    }
+    active_notes_by_channel_[channel & 0x0FU].setBit(note & 0x7FU);
 }
 
 void SequencerMidiEventSink::markNoteInactive_(uint8_t channel, uint8_t note) {
-    for (auto& slot : active_notes_) {
-        if (slot.active && slot.channel == channel && slot.note == note) {
-            slot.active = false;
-            return;
+    active_notes_by_channel_[channel & 0x0FU].setBit(note & 0x7FU, false);
+}
+
+void SequencerMidiEventSink::onRealtimeMidiEventDispatched(
+    const RealtimeMidiEvent& event
+) {
+    if (event.type == RealtimeMidiEventType::NoteOn) {
+        markNoteActive_(event.channel, event.note);
+        if (observer_ != nullptr) {
+            observer_->onNoteOn(track_index_, event.velocity);
         }
+    } else {
+        markNoteInactive_(event.channel, event.note);
     }
 }
 

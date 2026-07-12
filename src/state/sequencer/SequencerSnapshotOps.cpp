@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 
@@ -217,11 +218,43 @@ FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatter
     target.bumpStepDataRevision();
 }
 
-FLASHMEM void copyPatternState(SequencerPatternState& target, const SequencerPatternState& source) {
+FLASHMEM void applySnapshotPreservingGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot
+) {
+    auto graph = std::move(target.graph);
+    applySnapshot(target, snapshot);
+    target.graph = std::move(graph);
+}
+
+FLASHMEM bool copyPatternState(
+    SequencerPatternState& target,
+    const SequencerPatternState& source
+) {
     SequencerPatternSnapshot snapshot;
     captureSnapshot(source, snapshot);
-    applySnapshot(target, snapshot);
-    copyGraph(target, source);
+    return applySnapshotWithGraph(target, snapshot, graphView(source));
+}
+
+FLASHMEM bool applySnapshotWithGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    // Prepare or update graph ownership before touching scalar state. If PSRAM
+    // allocation fails, the target remains completely unchanged.
+    if (!copyGraph(target, graph, snapshot.graphRevision)) return false;
+    applySnapshotPreservingGraph(target, snapshot);
+    return true;
+}
+
+FLASHMEM void copyPatternStatePreservingGraph(
+    SequencerPatternState& target,
+    const SequencerPatternState& source
+) {
+    SequencerPatternSnapshot snapshot;
+    captureSnapshot(source, snapshot);
+    applySnapshotPreservingGraph(target, snapshot);
 }
 
 FLASHMEM void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
@@ -234,6 +267,49 @@ FLASHMEM void applySnapshotToEditor(SequencerState& target, const SequencerPatte
         (focusedBefore >= length) ? static_cast<uint8_t>(length - 1U) : focusedBefore;
     target.focusedStep.set(focused);
     target.page.set(target.pageForStep(focused));
+}
+
+FLASHMEM void applySnapshotToEditorPreservingGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot
+) {
+    auto graph = std::move(target.pattern.graph);
+    applySnapshotToEditor(target, snapshot);
+    target.pattern.graph = std::move(graph);
+}
+
+FLASHMEM bool applySnapshotToEditorWithGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    if (!copyGraph(target.pattern, graph, snapshot.graphRevision)) return false;
+    applySnapshotToEditorPreservingGraph(target, snapshot);
+    return true;
+}
+
+FLASHMEM void installPatternStateToEditor(
+    SequencerState& target,
+    SequencerPatternState& staged
+) {
+    SequencerPatternSnapshot snapshot;
+    captureSnapshot(staged, snapshot);
+    auto graph = std::move(staged.graph);
+    applySnapshotToEditor(target, snapshot);
+    target.pattern.graph = std::move(graph);
+    target.pattern.graphRevision.set(snapshot.graphRevision);
+}
+
+FLASHMEM void mergePatternStateIntoCurrent(
+    SequencerState& target,
+    SequencerPatternState& staged
+) {
+    SequencerPatternSnapshot snapshot;
+    captureSnapshot(staged, snapshot);
+    auto graph = std::move(staged.graph);
+    mergeSnapshotIntoCurrent(target, snapshot);
+    target.pattern.graph = std::move(graph);
+    target.pattern.graphRevision.set(snapshot.graphRevision);
 }
 
 FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot) {

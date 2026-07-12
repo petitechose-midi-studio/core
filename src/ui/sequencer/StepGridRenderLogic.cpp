@@ -211,7 +211,7 @@ FLASHMEM const char* runtimeScaleDegreeLabel(const TileRenderState& state) {
     return scaleDegreeLabel(degree);
 }
 
-FLASHMEM bool sameVariationState(const TileVariationRenderState& lhs,
+bool sameVariationState(const TileVariationRenderState& lhs,
                         const TileVariationRenderState& rhs) {
     if (lhs.visible != rhs.visible) return false;
     if (!lhs.visible) return true;
@@ -248,8 +248,8 @@ FLASHMEM bool sameVariationState(const TileVariationRenderState& lhs,
            a.nudgeDelta == b.nudgeDelta;
 }
 
-FLASHMEM bool sameContentBadges(const TileContentBadgeState& lhs,
-                                const TileContentBadgeState& rhs) {
+bool sameContentBadges(const TileContentBadgeState& lhs,
+                       const TileContentBadgeState& rhs) {
     return lhs.microSequence == rhs.microSequence &&
            lhs.cycleStates == rhs.cycleStates &&
            lhs.chord == rhs.chord &&
@@ -303,44 +303,42 @@ FLASHMEM StepVisualStyle buildStepVisualStyle(uint8_t note,
     return style;
 }
 
-FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRenderState& state) {
+TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRenderState& state) {
     TileRenderDiff diff;
-    diff.initialized = cache.initialized;
-    diff.absoluteStepChanged = !diff.initialized || cache.absoluteStep != state.absoluteStep;
-    diff.inPatternChanged = !diff.initialized || cache.inPattern != state.inPattern;
-    diff.enabledChanged = !diff.initialized || cache.enabled != state.enabled;
+    const bool initialized = cache.initialized;
+    diff.absoluteStepChanged = !initialized || cache.absoluteStep != state.absoluteStep;
+    diff.inPatternChanged = !initialized || cache.inPattern != state.inPattern;
+    diff.enabledChanged = !initialized || cache.enabled != state.enabled;
     diff.stepSelectionChanged =
-        !diff.initialized ||
+        !initialized ||
         cache.stepSelectionActive != state.stepSelectionActive ||
         cache.stepSelectionCursor != state.stepSelectionCursor ||
         cache.stepSelectionSelected != state.stepSelectionSelected ||
         cache.stepPastePreviewActive != state.stepPastePreviewActive ||
         cache.stepPastePreview != state.stepPastePreview;
     diff.playheadVisibleChanged =
-        !diff.initialized || cache.playheadVisible != state.playheadVisible;
-    diff.noteChanged = !diff.initialized || cache.note != state.note;
-    diff.velocityChanged = !diff.initialized || cache.velocity != state.velocity;
-    diff.probabilityChanged = !diff.initialized || cache.probability != state.probability;
+        !initialized || cache.playheadVisible != state.playheadVisible;
+    diff.noteChanged = !initialized || cache.note != state.note;
+    diff.velocityChanged = !initialized || cache.velocity != state.velocity;
+    diff.probabilityChanged = !initialized || cache.probability != state.probability;
     diff.probabilityCycleActiveChanged =
-        !diff.initialized || cache.probabilityCycleActive != state.probabilityCycleActive;
-    diff.gateChanged = !diff.initialized || cache.gate != state.gate;
-    diff.nudgeChanged = !diff.initialized || cache.nudge != state.nudge;
+        !initialized || cache.probabilityCycleActive != state.probabilityCycleActive;
+    diff.gateChanged = !initialized || cache.gate != state.gate;
+    diff.nudgeChanged = !initialized || cache.nudge != state.nudge;
     diff.childContentChanged =
-        !diff.initialized ||
+        !initialized ||
         cache.childContentContext != state.childContentContext ||
         cache.childContentOffset != state.childContentOffset ||
         cache.childContentNoteOffsetUsesScaleDegrees != state.childContentNoteOffsetUsesScaleDegrees;
     diff.childPitchSummaryChanged =
-        !diff.initialized ||
+        !initialized ||
         cache.childPitchSummaryVisible != state.childPitchSummaryVisible ||
         cache.childPitchSummaryNote != state.childPitchSummaryNote;
-    diff.variationChanged = !diff.initialized || !sameVariationState(cache.variation, state.variation);
+    diff.variationChanged = !initialized || !sameVariationState(cache.variation, state.variation);
     diff.contentBadgesChanged =
-        !diff.initialized || !sameContentBadges(cache.contentBadges, state.contentBadges);
-    diff.velocityZeroChanged =
-        !diff.initialized || ((cache.velocity == 0) != (state.velocity == 0));
+        !initialized || !sameContentBadges(cache.contentBadges, state.contentBadges);
     diff.probabilityMaskChanged =
-        !diff.initialized || (state.inPattern && diff.probabilityCycleActiveChanged);
+        !initialized || (state.inPattern && diff.probabilityCycleActiveChanged);
 
     const bool baseChanged = diff.absoluteStepChanged || diff.inPatternChanged || diff.enabledChanged;
     diff.dataChanged =
@@ -351,7 +349,7 @@ FLASHMEM TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const 
           diff.gateChanged || diff.nudgeChanged || diff.variationChanged ||
           diff.childContentChanged || diff.childPitchSummaryChanged));
     diff.barChanged =
-        !diff.initialized || diff.inPatternChanged || diff.playheadVisibleChanged ||
+        !initialized || diff.inPatternChanged || diff.playheadVisibleChanged ||
         cache.playing != state.playing || diff.variationChanged;
     return diff;
 }

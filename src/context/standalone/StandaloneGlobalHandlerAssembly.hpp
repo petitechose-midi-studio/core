@@ -57,6 +57,8 @@ public:
     StandaloneGlobalHandlerAssembly(const StandaloneGlobalHandlerAssembly&) = delete;
     StandaloneGlobalHandlerAssembly& operator=(const StandaloneGlobalHandlerAssembly&) = delete;
 
+    [[nodiscard]] bool valid() const;
+
 private:
     class Impl;
     core::app::ExtmemUniquePtr<Impl> impl_;

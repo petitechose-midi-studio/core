@@ -4,10 +4,10 @@
 #include <cstdint>
 
 #include "sequencer/SequencerRuntimeStateSync.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "state/project/ProjectNavigationState.hpp"
 
 namespace core::sequencer {
 

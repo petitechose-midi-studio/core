@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
@@ -83,24 +84,125 @@ FLASHMEM void applyProjectRouting(core::state::CoreState& state,
 
 }  // namespace
 
-FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out) {
-    ProjectSnapshot next;
-    if (!next.macroAutomation) return false;
-    next.project = projectStateFromRuntime(state);
-    next.macroTracks = state.pages.tracks;
-    *next.macroAutomation = state.pages.automation;
-    state.pages.captureSharedTrackState(next.sharedTrackEnabledMask, next.sharedTrackActive);
+FLASHMEM bool ProjectSnapshotCapture::begin(const core::state::CoreState& state,
+                                            ProjectSnapshot& snapshot) {
+    cancel();
+    if (!snapshot.macroAutomation) return false;
 
-    if (!core::state::sequencer::captureHistorySnapshot(
-            state.sequencerTracks,
-            state.sequencer,
-            next.sequencer
-        )) {
-        return false;
+    state_ = &state;
+    snapshot_ = &snapshot;
+    modified_counter_ = state.project.metadata.modifiedCounter;
+    phase_ = Phase::PROJECT;
+    return true;
+}
+
+FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
+    if (!active() || state_ == nullptr || snapshot_ == nullptr) {
+        return {.status = Status::IDLE};
     }
 
-    out = std::move(next);
-    return true;
+    if (state_->project.metadata.modifiedCounter != modified_counter_) {
+        const uint32_t modifiedCounter = modified_counter_;
+        cancel();
+        return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
+    }
+
+    OC_PERF_SCOPE(perfCaptureSlice, "persistence.project-snapshot.capture-slice");
+    OC_PERF_UNITS(perfCaptureSlice, static_cast<uint32_t>(phase_), 0);
+
+    switch (phase_) {
+        case Phase::PROJECT:
+            snapshot_->project = projectStateFromRuntime(*state_);
+            phase_ = Phase::MACROS;
+            break;
+
+        case Phase::MACROS:
+            snapshot_->macroTracks = state_->pages.tracks;
+            state_->pages.captureSharedTrackState(
+                snapshot_->sharedTrackEnabledMask,
+                snapshot_->sharedTrackActive
+            );
+            phase_ = Phase::AUTOMATION;
+            break;
+
+        case Phase::AUTOMATION:
+            *snapshot_->macroAutomation = state_->pages.automation;
+            phase_ = Phase::SEQUENCER;
+            break;
+
+        case Phase::SEQUENCER:
+            if (!core::state::sequencer::captureHistorySnapshot(
+                    state_->sequencerTracks,
+                    state_->sequencer,
+                    snapshot_->sequencer
+                )) {
+                const uint32_t modifiedCounter = modified_counter_;
+                cancel();
+                return {.status = Status::FAILED, .modifiedCounter = modifiedCounter};
+            }
+            phase_ = Phase::COMPLETE;
+            break;
+
+        case Phase::COMPLETE:
+        case Phase::IDLE:
+            return {.status = Status::IDLE};
+    }
+
+    if (state_->project.metadata.modifiedCounter != modified_counter_) {
+        const uint32_t modifiedCounter = modified_counter_;
+        cancel();
+        return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
+    }
+
+    if (phase_ != Phase::COMPLETE) {
+        return {.status = Status::IN_PROGRESS, .modifiedCounter = modified_counter_};
+    }
+
+    const uint32_t modifiedCounter = modified_counter_;
+    cancel();
+    return {.status = Status::COMPLETE, .modifiedCounter = modifiedCounter};
+}
+
+FLASHMEM void ProjectSnapshotCapture::cancel() {
+    state_ = nullptr;
+    snapshot_ = nullptr;
+    phase_ = Phase::IDLE;
+    modified_counter_ = 0;
+}
+
+FLASHMEM bool ProjectSnapshotCapture::active() const {
+    return phase_ != Phase::IDLE;
+}
+
+namespace {
+
+FLASHMEM bool captureToCompletion(const core::state::CoreState& state,
+                                  ProjectSnapshot& snapshot) {
+    ProjectSnapshotCapture capture;
+    if (!capture.begin(state, snapshot)) return false;
+
+    while (capture.active()) {
+        const auto progress = capture.advance();
+        if (progress.status == ProjectSnapshotCapture::Status::COMPLETE) return true;
+        if (progress.status == ProjectSnapshotCapture::Status::FAILED ||
+            progress.status == ProjectSnapshotCapture::Status::STALE) {
+            return false;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+FLASHMEM ProjectSnapshotPtr captureProjectSnapshotOwned(const core::state::CoreState& state) {
+    OC_PERF_SCOPE(perfCapture, "persistence.project-snapshot.allocate-and-capture");
+    auto snapshot = makeProjectSnapshot();
+    if (!snapshot || !captureToCompletion(state, *snapshot)) return {};
+    return snapshot;
+}
+
+FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out) {
+    return captureToCompletion(state, out);
 }
 
 FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,

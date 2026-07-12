@@ -2,6 +2,7 @@
 # Purpose: validates that micro/cycle child contexts expose root-like step wrap
 # offset through quick controls and that row-level clipboard actions only paste
 # matching child kinds.
+# Expect: capture_changed:micro_step_edit_open=micro_step_pitch_offset, capture_changed:child_quick_offset=child_offset_shifted, capture_changed:micro_row_paste_ready=micro_row_pasted
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -30,20 +31,25 @@
 3880 capture screen micro_step_edit_open
 3940 button MACRO_1 up
 4040 encoder NAV 1
-4140 encoder OPT 0.72
+4100 encoder NAV 1
+4180 encoder OPT 0.72
 4360 capture screen micro_step_pitch_offset
 4460 tap NAV 60
 4700 capture screen micro_pitch_offset_applied
 
-# Quick controls in a child context must expose Length then Offset, no Division.
-4800 button LEFT_CENTER down
-5060 capture screen child_quick_length
-5160 encoder NAV 1
-5360 capture screen child_quick_offset
-5460 encoder OPT 1.00
-5680 capture screen child_offset_shifted
-5780 button LEFT_CENTER up
-6060 capture screen micro_offset_applied
+# Return from Step focus to the child Pattern focus. Quick controls in a child
+# context must then expose Length and Offset, with no Division.
+4740 tap NAV 20
+4780 tap NAV 20
+4840 capture screen child_pattern_focus
+4900 button LEFT_CENTER down
+5160 capture screen child_quick_length
+5260 encoder NAV 1
+5460 capture screen child_quick_offset
+5560 encoder OPT 4.00
+5780 capture screen child_offset_shifted
+5880 button LEFT_CENTER up
+6100 capture screen micro_offset_applied
 
 # Copy only the micro-sequence row from step 1.
 6160 tap LEFT_TOP 60

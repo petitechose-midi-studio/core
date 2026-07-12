@@ -24,7 +24,7 @@ namespace core::handler {
  */
 class MacroStructureDomainServices {
 public:
-    using FlushAutoPersistFn = void (*)(void* context);
+    using FlushMutationCoalescingFn = void (*)(void* context);
     using MarkProjectMutatedFn = void (*)(void* context);
     using SetSharedTrackStateFn = bool (*)(void* context, uint16_t enabledMask, uint8_t activeTrack);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
@@ -41,7 +41,7 @@ public:
 
     struct Operations {
         void* context = nullptr;
-        FlushAutoPersistFn flushAutoPersist = nullptr;
+        FlushMutationCoalescingFn flushMutationCoalescing = nullptr;
         MarkProjectMutatedFn markProjectMutated = nullptr;
         SetSharedTrackStateFn setSharedTrackState = nullptr;
         SwitchToPageFn switchToPage = nullptr;

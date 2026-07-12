@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "persistence/PersistenceBinaryCodec.hpp"
 
 namespace core::persistence::macro_track_codec {
@@ -129,7 +130,7 @@ FLASHMEM bool encodeTrackBankPayload(
     return writer.ok() && writer.offset() == MACRO_TRACK_BANK_PAYLOAD_SIZE;
 }
 
-FLASHMEM bool decodeTrackBankPayload(
+FLASHMEM bool decodeTrackBankPayloadInto(
     const uint8_t* data,
     uint32_t size,
     std::array<macro::MacroTrackData, macro::TRACK_COUNT>& tracks,
@@ -147,13 +148,11 @@ FLASHMEM bool decodeTrackBankPayload(
     }
     (void)reserved;
 
-    std::array<macro::MacroTrackData, macro::TRACK_COUNT> decoded{};
     for (uint8_t i = 0; i < macro::TRACK_COUNT; ++i) {
-        if (!readTrack(reader, decoded[i])) return false;
+        if (!readTrack(reader, tracks[i])) return false;
     }
     if (!reader.ok() || reader.offset() != MACRO_TRACK_BANK_PAYLOAD_SIZE) return false;
 
-    tracks = decoded;
     enabledTrackMask = sanitizeTrackMask(enabled);
     activeTrack = sanitizeTrack(active);
     return true;
@@ -171,13 +170,22 @@ FLASHMEM bool encodePagesPayload(const macro::MacroPagesState& pages,
 FLASHMEM bool applyPagesPayload(const uint8_t* data,
                                 uint32_t size,
                                 macro::MacroPagesState& pages) {
-    std::array<macro::MacroTrackData, macro::TRACK_COUNT> tracks{};
+    using TrackBank = std::array<macro::MacroTrackData, macro::TRACK_COUNT>;
+    auto tracks = core::app::makeExtmemUnique<TrackBank>();
+    if (!tracks) return false;
+
     uint16_t enabledTrackMask = macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
     uint8_t activeTrack = 0;
-    if (!decodeTrackBankPayload(data, size, tracks, enabledTrackMask, activeTrack)) {
+    if (!decodeTrackBankPayloadInto(
+            data,
+            size,
+            *tracks,
+            enabledTrackMask,
+            activeTrack
+        )) {
         return false;
     }
-    pages.restoreTracksWithSharedState(tracks, enabledTrackMask, activeTrack);
+    pages.restoreTracksWithSharedState(*tracks, enabledTrackMask, activeTrack);
     return true;
 }
 

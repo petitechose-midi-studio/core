@@ -1,6 +1,7 @@
 # UX workflow: exercise overlay authority and recovery after closing.
 # Purpose: validates that a visible overlay owns NAV routing, unrelated inputs do
 # not break it, and global/main bindings recover after confirmation.
+# Expect: capture_match:selector_ready=selector_after_unrelated_input
 
 0 scenario view-selector
 100 capture screen selector_ready

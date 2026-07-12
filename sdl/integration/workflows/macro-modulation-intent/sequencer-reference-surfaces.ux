@@ -2,6 +2,7 @@
 # Purpose: provides real LVGL 320x240 references for pattern focus, property
 # selection, quick controls, direct OPT feedback, and Step Editor overlays.
 # This workflow does not exercise future CC lane features.
+# Expect: capture_changed:quick_controls_open=quick_controls_adjusted, capture_changed:step_edit_open=step_edit_adjusted
 
 0 scenario sequencer
 50 capture screen sequencer_track_ready

@@ -9,17 +9,23 @@
 
 namespace core::persistence {
 
-FLASHMEM ProjectSessionRestoreService::ProjectSessionRestoreService(ProductFileService& files)
-    : files_(files) {}
+FLASHMEM ProjectSessionRestoreService::ProjectSessionRestoreService(ProjectSessionStore& store)
+    : store_(store) {}
 
 FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::restore(
     core::state::CoreState& state,
     core::persistence::project_file::LoadReport* report
 ) {
-    ProjectSessionStore store(files_);
-    core::state::project::ProjectSnapshot snapshot;
+    auto snapshot = core::state::project::makeProjectSnapshot();
+    if (!snapshot) {
+        return Result{
+            .status = Status::DEGRADED,
+            .loadStatus = project_file::LoadStatus::FAILED,
+            .overwriteSafe = false,
+        };
+    }
     core::persistence::project_file::LoadReport localReport{};
-    auto loaded = store.loadCurrent(snapshot, report != nullptr ? report : &localReport);
+    auto loaded = store_.loadCurrent(*snapshot, report != nullptr ? report : &localReport);
     if (!loaded) {
         const auto code = loaded.error().code;
         return Result{
@@ -29,7 +35,7 @@ FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::rest
         };
     }
 
-    if (!core::state::project::applyProjectSnapshot(state, snapshot)) {
+    if (!core::state::project::applyProjectSnapshot(state, *snapshot)) {
         return Result{
             .status = Status::APPLY_FAILED,
             .bytes = loaded.value().bytesRead,

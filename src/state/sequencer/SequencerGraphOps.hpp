@@ -39,10 +39,13 @@ struct SequencerGraphCompactionResult {
 
 bool ensureGraphRoot(SequencerPatternState& pattern);
 void clearGraph(SequencerPatternState& pattern);
-void copyGraph(SequencerPatternState& target, const SequencerPatternState& source);
-void copyGraph(SequencerPatternState& target,
-               const oc::note::sequencer::StepSequencerGraph* source,
-               uint32_t revision);
+[[nodiscard]] bool copyGraph(SequencerPatternState& target,
+                             const SequencerPatternState& source);
+[[nodiscard]] bool copyGraph(
+    SequencerPatternState& target,
+    const oc::note::sequencer::StepSequencerGraph* source,
+    uint32_t revision
+);
 SequencerGraphCompactionResult compactGraph(
     SequencerPatternState& pattern,
     SequencerGraphCompactionRemap* remap = nullptr

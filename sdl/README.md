@@ -179,8 +179,16 @@ Full-line comments can also declare verifier expectations:
 # Expect: playhead_progress
 ```
 
-`playhead_progress` requires at least two distinct non-negative `playhead_step`
-values while the trace reports `playing=true`.
+Supported expectations:
+
+| Expectation | Contract |
+|---|---|
+| `playhead_progress` | At least two distinct non-negative `playhead_step` values while `playing=true`. |
+| `overlay_exclusive` | The standard early/late selector captures remain visually stable within the exclusive-overlay tolerance. |
+| `capture_match:<left>=<right>` | The two named BMP captures are byte-identical. |
+| `capture_changed:<left>=<right>` | The two named BMP captures differ by at least 16 bytes. |
+
+Multiple expectations can be comma-separated on the same `# Expect:` line.
 
 Supported commands:
 
@@ -200,8 +208,12 @@ Supported button names are `LEFT_TOP`, `LEFT_CENTER`, `LEFT_BOTTOM`,
 `MACRO_8`. Supported encoder names are `NAV`, `OPT`, and `MACRO_1` through
 `MACRO_8`.
 
-`trace.ndjson` records replay timing, capture artifacts, and selected UI/runtime
-state snapshots including `playing`, `playhead_step`, and `sequencer_page`.
+Script timestamps define minimum action intervals. When rendering delays an
+action, the runner shifts later actions instead of shortening button holds or
+other gestures. `trace.ndjson` records the original `due_ms`, the compensated
+`scheduled_ms`, the observed `actual_ms`, capture artifacts, and selected
+UI/runtime state snapshots including `playing`, `playhead_step`, and
+`sequencer_page`.
 `binding-trace.ndjson` records the binding resolution stream:
 
 | Field | Meaning |

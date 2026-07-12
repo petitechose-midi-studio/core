@@ -2,13 +2,13 @@
 
 #include <array>
 #include <cstdint>
-#include <memory>
-
 #include <lvgl.h>
 
 #include <oc/ui/lvgl/IWidget.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "ui/common/TrackHeaderRow.hpp"
 
 namespace core::ui {
@@ -34,6 +34,8 @@ struct MacroHeaderBarProps {
     bool previewTrackAddSlot = false;
     bool automationRecording = false;
     uint8_t automationRecordingMacro = 0;
+    core::state::macro::MacroAutomationRecordingStatus automationRecordingStatus =
+        core::state::macro::MacroAutomationRecordingStatus::IDLE;
     std::array<uint8_t, ACTIVITY_COUNT> pageOutputActivity{};
 };
 
@@ -52,7 +54,7 @@ private:
     void createUI(lv_obj_t* parent);
 
     lv_obj_t* container_ = nullptr;
-    std::unique_ptr<TrackHeaderRow> header_row_;
+    core::app::ExtmemUniquePtr<TrackHeaderRow> header_row_;
 };
 
 }  // namespace core::ui

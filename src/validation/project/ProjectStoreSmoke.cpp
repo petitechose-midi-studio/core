@@ -105,14 +105,14 @@ FLASHMEM bool runProjectStoreSmoke(core::persistence::ProductFileService& produc
 
     configureProjectStoreSmokeState(state, 41);
 
-    core::state::project::ProjectSnapshot savedSnapshot;
-    if (!core::state::project::captureProjectSnapshot(state, savedSnapshot)) {
+    auto savedSnapshot = core::state::project::captureProjectSnapshotOwned(state);
+    if (!savedSnapshot) {
         OC_LOG_ERROR("[project-store-smoke] capture failed");
         return false;
     }
 
     core::persistence::ProjectFileStore store(productFiles);
-    auto saved = store.save(savedSnapshot);
+    auto saved = store.save(*savedSnapshot);
     if (!saved) {
         OC_LOG_ERROR("[project-store-smoke] save failed: {}",
                      oc::type::errorCodeToString(saved.error().code));
@@ -124,9 +124,13 @@ FLASHMEM bool runProjectStoreSmoke(core::persistence::ProductFileService& produc
 
     mutateProjectStoreSmokeState(state);
 
-    core::state::project::ProjectSnapshot loadedSnapshot;
+    auto loadedSnapshot = core::state::project::makeProjectSnapshot();
+    if (!loadedSnapshot) {
+        OC_LOG_ERROR("[project-store-smoke] snapshot allocation failed");
+        return false;
+    }
     core::persistence::project_file::LoadReport report{};
-    auto loaded = store.load(PROJECT_STORE_SMOKE_ID, loadedSnapshot, &report);
+    auto loaded = store.load(PROJECT_STORE_SMOKE_ID, *loadedSnapshot, &report);
     if (!loaded) {
         OC_LOG_ERROR("[project-store-smoke] load failed: {}",
                      oc::type::errorCodeToString(loaded.error().code));
@@ -143,7 +147,7 @@ FLASHMEM bool runProjectStoreSmoke(core::persistence::ProductFileService& produc
         return false;
     }
 
-    if (!core::state::project::applyProjectSnapshot(state, loadedSnapshot)) {
+    if (!core::state::project::applyProjectSnapshot(state, *loadedSnapshot)) {
         OC_LOG_ERROR("[project-store-smoke] apply failed");
         return false;
     }

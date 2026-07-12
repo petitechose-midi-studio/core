@@ -2,6 +2,7 @@
 # Purpose: validates the canonical direct-OPT grammar outside held selector
 # overlays: Pattern focus edits the selected pattern dimension and Step focus
 # edits the selected musical property for the focused step.
+# Expect: capture_changed:pattern_focus_ready=pattern_direct_opt_feedback, capture_changed:pattern_direct_opt_feedback=pattern_direct_opt_feedback_expired, capture_changed:step_focus_ready=step_direct_opt_feedback
 
 0 scenario sequencer
 50 capture screen sequencer_track_ready

@@ -1,6 +1,7 @@
 # UX workflow: child-context step selection bottom actions.
 # Purpose: verifies that step-selection copy/paste plus shallow/deep reset work
 # inside a micro-sequence content view, not only at root pattern level.
+# Expect: capture_changed:child_steps_1_3_selected=child_selection_tap_shallow_reset, capture_changed:child_paste_preview_cursor_2=child_selection_pasted
 
 0 scenario sequencer
 50 capture screen sequencer_ready

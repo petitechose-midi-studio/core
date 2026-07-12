@@ -55,6 +55,12 @@ bool captureHistoryStructureSnapshot(
     uint16_t trackMask,
     SequencerHistoryTrackStructureSnapshot& out
 );
+bool captureHistoryStructureSnapshotUsingReservedGraphs(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureSnapshot& out
+);
 
 bool applyHistoryStructureSnapshot(
     SequencerTrackBankState& bank,

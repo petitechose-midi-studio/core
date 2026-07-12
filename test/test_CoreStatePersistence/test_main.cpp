@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
 #include "../../src/handler/settings/DataManagerDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/DataManagerWorkflow.hpp"
@@ -19,6 +20,13 @@
 namespace {
 using test_support::CoreStorages;
 using test_support::drainNotifications;
+
+void setManualMacroValue(core::state::CoreState& state, uint8_t index, float value) {
+    core::handler::MacroPerformanceDomainServices::fromCoreState(state).setManualValue(
+        index,
+        value
+    );
+}
 
 void addGraphContent(core::state::sequencer::SequencerPatternState& pattern,
                      int8_t noteOffset = 7) {
@@ -80,8 +88,8 @@ void test_project_state_does_not_boot_restore_from_removed_domain_store() {
                                      storage.macroLibrary,
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
-        core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.13f);
-        core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 1, 0.87f);
+        setManualMacroValue(state, 0, 0.13f);
+        setManualMacroValue(state, 1, 0.87f);
         oc::state::NotificationQueue::instance().flush();
         state.flush();
     }
@@ -111,14 +119,14 @@ void test_macro_library_roundtrip_and_erase() {
                                  storage.sequencerSetLibrary);
     core::state::macro::MacroWorkflow::switchToPage(state, 2);
     core::state::macro::MacroWorkflow::setConfig(state, 0, 4, 88);
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.64f);
+    setManualMacroValue(state, 0, 0.64f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
     assert(core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 3));
 
     core::state::macro::MacroWorkflow::setConfig(state, 0, 0, 1);
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.01f);
+    setManualMacroValue(state, 0, 0.01f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
@@ -141,7 +149,7 @@ void test_macro_library_roundtrip_and_erase() {
     std::cout << "[PASS] test_macro_library_roundtrip_and_erase\n";
 }
 
-void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
+void test_macro_library_save_uses_manual_base_without_flush() {
     CoreStorages storage;
     storage.initAll();
 
@@ -150,12 +158,15 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
-    // Change runtime macro value and save immediately (without NotificationQueue/state flush).
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.37f);
+    // Manual input updates the base value immediately; project mutation stays
+    // coalesced and does not need to flush before an explicit library save.
+    setManualMacroValue(state, 0, 0.37f);
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.91f);
+    assert(state.pages.activePageData().values[0] == 0.37f);
     assert(core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 6));
 
     // Move away from that value so load verification is unambiguous.
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.02f);
+    setManualMacroValue(state, 0, 0.02f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
@@ -167,7 +178,7 @@ void test_macro_library_save_snapshots_runtime_values_without_manual_flush() {
 
     drainNotifications();
 
-    std::cout << "[PASS] test_macro_library_save_snapshots_runtime_values_without_manual_flush\n";
+    std::cout << "[PASS] test_macro_library_save_uses_manual_base_without_flush\n";
 }
 
 void test_macro_config_changes_mark_project_dirty_and_bump_revision() {
@@ -407,7 +418,7 @@ void test_data_manager_command_execution_and_slot_probe() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.73f);
+    setManualMacroValue(state, 0, 0.73f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
@@ -430,7 +441,7 @@ void test_data_manager_command_execution_and_slot_probe() {
         5
     ));
 
-    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.11f);
+    setManualMacroValue(state, 0, 0.11f);
     oc::state::NotificationQueue::instance().flush();
     state.flush();
 
@@ -679,6 +690,12 @@ void test_sequencer_queued_pattern_load_preserves_graph_content() {
     state.sequencer.playheadStep.set(5);
     state.update();
     assert(hasGraphContent(state.sequencer.pattern));
+    const auto& activeTrack = state.sequencerTracks.track(
+        state.sequencerTracks.activeTrackIndex()
+    );
+    assert(hasGraphContent(activeTrack));
+    assert(core::state::sequencer::graphView(state.sequencer.pattern) !=
+           core::state::sequencer::graphView(activeTrack));
 
     drainNotifications();
 
@@ -956,7 +973,7 @@ int main() {
 
     test_project_state_does_not_boot_restore_from_removed_domain_store();
     test_macro_library_roundtrip_and_erase();
-    test_macro_library_save_snapshots_runtime_values_without_manual_flush();
+    test_macro_library_save_uses_manual_base_without_flush();
     test_macro_config_changes_mark_project_dirty_and_bump_revision();
     test_macro_config_changes_do_not_require_macro_library_storage();
     test_shared_track_pending_save_survives_settings_storage_unavailable();

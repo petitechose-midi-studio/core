@@ -7,15 +7,6 @@
 
 namespace core::persistence::project_state_codec {
 
-struct DecodeResult {
-    bool ok = false;
-    core::persistence::project_file::Status containerStatus =
-        core::persistence::project_file::Status::OK;
-    core::persistence::project_file::LoadStatus loadStatus =
-        core::persistence::project_file::LoadStatus::OK;
-    bool overwriteSafe = true;
-};
-
 void fillMetaPayload(const core::state::project::ProjectMetadata& source,
                      ProjectMetaPayload& out);
 bool encodeMetaPayload(const ProjectMetaPayload& payload,
@@ -71,22 +62,11 @@ bool decodeEditingPayload(const uint8_t* data,
 void applyEditingPayload(const ProjectEditingPayload& payload,
                          core::state::project::ProjectEditingState& target);
 
-core::persistence::project_file::EncodeResult encodeProjectState(
-    const core::state::project::ProjectState& state,
-    uint8_t* out,
-    uint32_t outCapacity
-);
-
 void applyProjectStateChunks(
     const core::persistence::project_file::DecodedChunkView* chunks,
     uint16_t chunkCount,
     core::state::project::ProjectState& target,
     core::persistence::project_file::LoadReport* report = nullptr
 );
-
-DecodeResult decodeProjectState(const uint8_t* data,
-                                uint32_t size,
-                                core::state::project::ProjectState& out,
-                                core::persistence::project_file::LoadReport* report = nullptr);
 
 }  // namespace core::persistence::project_state_codec

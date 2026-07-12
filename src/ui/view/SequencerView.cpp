@@ -1,10 +1,14 @@
 #include "SequencerView.hpp"
 
+#include <cstddef>
+
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
+#include "ui/view/RetainedViewRenderPolicy.hpp"
 
 namespace core::ui {
 
@@ -13,17 +17,27 @@ namespace theme = standalone::theme;
 FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     createLayout(parent);
+    if (!frame_ || !frame_->valid() || !container_ || !body_container_) return;
     createHistoryToast();
+    if (!history_toast_ || !history_toast_line1_ ||
+        !history_toast_line2_ || !history_toast_line3_) return;
     createHeaderBar();
+    if (!header_bar_ || !header_bar_->getElement()) return;
     createActionStrips();
+    if (!left_action_strip_ || !left_action_strip_->getElement() ||
+        !bottom_action_strip_ || !bottom_action_strip_->getElement() ||
+        !center_column_) return;
     createPropertySelectionOverlay();
+    if (!property_selection_overlay_ || !property_selection_overlay_->getElement()) return;
     createGrid();
-    ensureRenderTimer();
-    bindToState();
+    if (!step_grid_ || !step_grid_->getElement()) return;
+    ensureRenderScheduler();
+    if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;
+    initialized_ = true;
 }
 
 FLASHMEM SequencerView::~SequencerView() {
-    render_timer_.reset();
+    render_scheduler_.reset();
 
     step_grid_.reset();
     bottom_action_strip_.reset();
@@ -44,31 +58,21 @@ FLASHMEM SequencerView::~SequencerView() {
 FLASHMEM void SequencerView::onActivate() {
     if (!container_) return;
 
-    lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
-
-    if (step_grid_) {
-        step_grid_->prepareForActivationLayoutRefresh();
-        grid_dirty_ = true;
-    }
-    scheduleRender(true);
+    RetainedViewRenderPolicy::show(container_);
+    if (render_scheduler_) render_scheduler_->resumePending(true);
 }
 
 FLASHMEM void SequencerView::onDeactivate() {
-    if (container_) {
-        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    if (render_timer_) {
-        render_timer_->pause();
-    }
+    if (render_scheduler_) render_scheduler_->pause();
+    RetainedViewRenderPolicy::hide(container_);
 }
 
 FLASHMEM void SequencerView::createLayout(lv_obj_t* parent) {
     frame_ = core::app::makeExtmemUnique<MainViewFrame>(parent);
+    if (!frame_ || !frame_->valid()) return;
     container_ = frame_->container();
     body_container_ = frame_->body();
-    lv_obj_set_style_bg_opa(container_, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    RetainedViewRenderPolicy::initializeHidden(container_);
 }
 
 FLASHMEM void SequencerView::createHeaderBar() {
@@ -95,6 +99,7 @@ FLASHMEM void SequencerView::createHistoryToast() {
     if (!container_) return;
 
     history_toast_ = lv_obj_create(container_);
+    if (!history_toast_) return;
     lv_obj_remove_style_all(history_toast_);
     lv_obj_add_flag(history_toast_, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_add_flag(history_toast_, LV_OBJ_FLAG_HIDDEN);
@@ -124,6 +129,7 @@ FLASHMEM void SequencerView::createHistoryToast() {
     history_toast_line1_ = lv_label_create(history_toast_);
     history_toast_line2_ = lv_label_create(history_toast_);
     history_toast_line3_ = lv_label_create(history_toast_);
+    if (!history_toast_line1_ || !history_toast_line2_ || !history_toast_line3_) return;
 
     lv_obj_t* labels[] = {history_toast_line1_, history_toast_line2_, history_toast_line3_};
     for (lv_obj_t* label : labels) {
@@ -144,15 +150,18 @@ FLASHMEM void SequencerView::createActionStrips() {
     if (!frame_ || !body_container_) return;
     frame_->createInteractionRow();
     interaction_container_ = frame_->interactionRow();
+    if (!interaction_container_) return;
 
     left_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         interaction_container_,
         ContextActionStripOrientation::VERTICAL,
         ContextActionStripVerticalLayout::SPREAD
     );
+    if (!left_action_strip_ || !left_action_strip_->getElement()) return;
 
     frame_->createCenterColumn();
     center_column_ = frame_->centerColumn();
+    if (!center_column_) return;
 
     bottom_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         body_container_,
@@ -160,13 +169,13 @@ FLASHMEM void SequencerView::createActionStrips() {
     );
 }
 
-FLASHMEM void SequencerView::onStepGridGeometryInvalidated(void* userData) {
+void SequencerView::onStepGridGeometryInvalidated(void* userData) {
     auto* self = static_cast<SequencerView*>(userData);
     if (!self) return;
     self->requestGridRender();
 }
 
-FLASHMEM void SequencerView::bindToState() {
+FLASHMEM bool SequencerView::bindToState() {
     bindHeaderState();
     bindHeaderStripState();
     bindGridState();
@@ -177,18 +186,27 @@ FLASHMEM void SequencerView::bindToState() {
     bindHistoryFeedbackState();
     bindTrackSwitchReadyState();
 
+    const bool bound =
+        header_watcher_.subscriptionCount() == header_watcher_.capacity() &&
+        header_strip_watcher_.subscriptionCount() == header_strip_watcher_.capacity() &&
+        grid_watcher_.subscriptionCount() == grid_watcher_.capacity() &&
+        selector_overlay_watcher_.subscriptionCount() == selector_overlay_watcher_.capacity() &&
+        overlay_visibility_watcher_.subscriptionCount() == overlay_visibility_watcher_.capacity() &&
+        left_action_strip_watcher_.subscriptionCount() == left_action_strip_watcher_.capacity() &&
+        bottom_action_strip_watcher_.subscriptionCount() == bottom_action_strip_watcher_.capacity() &&
+        history_feedback_watcher_.subscriptionCount() == history_feedback_watcher_.capacity() &&
+        track_switch_ready_watcher_.subscriptionCount() == track_switch_ready_watcher_.capacity();
+    if (!bound) return false;
+
     markAllDirty();
-    render();
-    dirty_ = false;
-    pauseRenderTimerIfIdle();
+    return true;
 }
 
 FLASHMEM void SequencerView::bindHeaderState() {
-    watcher_.watchAll(
-        [this]() {
-            requestHeaderTopRender();
-            requestLeftActionStripRender();
-        },
+    header_watcher_.bind<&SequencerView::requestHeaderAndLeftRender>(
+        *this, 0, "SequencerView.header"
+    );
+    header_watcher_.watchAll(
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
         state_refs_.structureNavigationFocus,
@@ -214,11 +232,10 @@ FLASHMEM void SequencerView::bindHeaderState() {
 }
 
 FLASHMEM void SequencerView::bindHeaderStripState() {
-    watcher_.watchAll(
-        [this]() {
-            requestHeaderStripRender();
-            requestLeftActionStripRender();
-        },
+    header_strip_watcher_.bind<&SequencerView::requestHeaderStripAndLeftRender>(
+        *this, 1, "SequencerView.headerStrip"
+    );
+    header_strip_watcher_.watchAll(
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
         state_refs_.sequencer.pattern.length,
@@ -246,10 +263,10 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
 }
 
 FLASHMEM void SequencerView::bindGridState() {
-    watcher_.watchAll(
-        [this]() {
-            requestGridRender();
-        },
+    grid_watcher_.bind<&SequencerView::requestGridRender>(
+        *this, 2, "SequencerView.grid"
+    );
+    grid_watcher_.watchAll(
         state_refs_.sequencer.pattern.length,
         state_refs_.sequencer.page,
         state_refs_.sequencer.focusedStep,
@@ -289,10 +306,10 @@ FLASHMEM void SequencerView::bindGridState() {
 }
 
 FLASHMEM void SequencerView::bindSelectorOverlayState() {
-    watcher_.watchAll(
-        [this]() {
-            requestSelectorOverlayRender();
-        },
+    selector_overlay_watcher_.bind<&SequencerView::requestSelectorOverlayRender>(
+        *this, 3, "SequencerView.selectorOverlay"
+    );
+    selector_overlay_watcher_.watchAll(
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.stepPropertyInlineSelector.selectedIndex,
@@ -316,10 +333,10 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
 }
 
 FLASHMEM void SequencerView::bindOverlayVisibilityState() {
-    watcher_.watchAll(
-        [this]() {
-            handleOverlayVisibilityChanged();
-        },
+    overlay_visibility_watcher_.bind<&SequencerView::handleOverlayVisibilityChanged>(
+        *this, 4, "SequencerView.overlayVisibility"
+    );
+    overlay_visibility_watcher_.watchAll(
         state_refs_.viewSelector.visible,
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.deviceSettings.visible,
@@ -332,10 +349,10 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
 }
 
 FLASHMEM void SequencerView::bindLeftActionStripState() {
-    watcher_.watchAll(
-        [this]() {
-            requestLeftActionStripRender();
-        },
+    left_action_strip_watcher_.bind<&SequencerView::requestLeftActionStripRender>(
+        *this, 5, "SequencerView.leftStrip"
+    );
+    left_action_strip_watcher_.watchAll(
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.physicalHoldActive,
@@ -351,10 +368,10 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
 }
 
 FLASHMEM void SequencerView::bindBottomActionStripState() {
-    watcher_.watchAll(
-        [this]() {
-            requestBottomActionStripRender();
-        },
+    bottom_action_strip_watcher_.bind<&SequencerView::requestBottomActionStripRender>(
+        *this, 6, "SequencerView.bottomStrip"
+    );
+    bottom_action_strip_watcher_.watchAll(
         state_refs_.structureNavigationFocus,
         state_refs_.structureClipboard.revision,
         state_refs_.trackNavigation.previewAddSlot,
@@ -381,30 +398,44 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
 }
 
 FLASHMEM void SequencerView::bindHistoryFeedbackState() {
-    watcher_.watchAll(
-        [this]() {
-            requestHistoryFeedbackRender();
-        },
+    history_feedback_watcher_.bind<&SequencerView::requestHistoryFeedbackRender>(
+        *this, 7, "SequencerView.historyFeedback"
+    );
+    history_feedback_watcher_.watchAll(
         state_refs_.sequencer.historyFeedback.visible,
         state_refs_.sequencer.historyFeedback.revision
     );
 }
 
 FLASHMEM void SequencerView::bindTrackSwitchReadyState() {
-    watcher_.watchAll(
-        [this]() {
-            readyRenderTimerIfDirty();
-        },
+    track_switch_ready_watcher_.bind<&SequencerView::resumePendingRender>(
+        *this, 8, "SequencerView.trackSwitchReady"
+    );
+    track_switch_ready_watcher_.watchAll(
         state_refs_.sharedTrackActive
     );
 }
 
-FLASHMEM void SequencerView::ensureRenderTimer() {
-    if (render_timer_) return;
-    render_timer_ = core::app::makeExtmemUnique<PausableLvglTimer>(16, onRenderTimer, this);
+FLASHMEM void SequencerView::ensureRenderScheduler() {
+    if (render_scheduler_) return;
+    render_scheduler_ =
+        core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
+            core::ui::renderSchedulerDebugLabel("SequencerView"),
+            &SequencerView::drainRender,
+            this,
+            core::ui::CoalescedLvglRenderScheduler::DEFAULT_PERIOD_MS,
+            &SequencerView::canDrainRender
+        );
 }
 
-FLASHMEM bool SequencerView::hasBlockingOverlay() const {
+bool SequencerView::canDrainRender(void* context) {
+    const auto* self = static_cast<const SequencerView*>(context);
+    return self && RetainedViewRenderPolicy::renderable(
+        self->container_, self->hasBlockingOverlay()
+    );
+}
+
+bool SequencerView::hasBlockingOverlay() const {
     return state_refs_.viewSelector.visible.get() ||
            state_refs_.sequencer.stepEdit.visible.get() ||
            state_refs_.deviceSettings.visible.get() ||
@@ -415,121 +446,87 @@ FLASHMEM bool SequencerView::hasBlockingOverlay() const {
            state_refs_.dataManager.dialog.visible.get();
 }
 
-FLASHMEM void SequencerView::handleOverlayVisibilityChanged() {
+void SequencerView::handleOverlayVisibilityChanged() {
+    if (!render_scheduler_) return;
     if (hasBlockingOverlay()) {
-        pauseRenderTimerIfIdle();
-        if (render_timer_) {
-            render_timer_->pause();
-        }
+        render_scheduler_->pause();
         return;
     }
 
-    if (dirty_) {
-        scheduleRender(true);
-    }
+    render_scheduler_->resumePending(true);
 }
 
-FLASHMEM void SequencerView::scheduleRender(bool ready) {
-    ensureRenderTimer();
-    const bool wasDirty = dirty_;
-    dirty_ = true;
-    if (render_timer_) {
-        if ((container_ && lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) || hasBlockingOverlay()) {
-            return;
-        }
-        render_timer_->resume(!wasDirty && ready);
-    }
+void SequencerView::requestRender(uint32_t flags, bool ready) {
+    ensureRenderScheduler();
+    if (render_scheduler_) render_scheduler_->request(flags, ready);
 }
 
-FLASHMEM void SequencerView::readyRenderTimerIfDirty() {
-    if (!dirty_) return;
-    ensureRenderTimer();
-    if (!render_timer_) return;
-    if ((container_ && lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN)) || hasBlockingOverlay()) {
+void SequencerView::resumePendingRender() {
+    if (render_scheduler_) render_scheduler_->resumePending(true);
+}
+
+void SequencerView::requestHeaderTopRender() {
+    requestRender(RENDER_HEADER_TOP);
+}
+
+void SequencerView::requestHeaderStripRender() {
+    requestRender(RENDER_HEADER_STRIP);
+}
+
+void SequencerView::requestHeaderAndLeftRender() {
+    requestRender(RENDER_HEADER_TOP | RENDER_LEFT_ACTION_STRIP);
+}
+
+void SequencerView::requestHeaderStripAndLeftRender() {
+    requestRender(RENDER_HEADER_STRIP | RENDER_LEFT_ACTION_STRIP);
+}
+
+void SequencerView::requestSelectorOverlayRender() {
+    requestRender(RENDER_SELECTOR_OVERLAY);
+}
+
+void SequencerView::requestLeftActionStripRender() {
+    requestRender(RENDER_LEFT_ACTION_STRIP);
+}
+
+void SequencerView::requestBottomActionStripRender() {
+    requestRender(RENDER_BOTTOM_ACTION_STRIP);
+}
+
+void SequencerView::requestHistoryFeedbackRender() {
+    requestRender(RENDER_HISTORY_FEEDBACK);
+}
+
+void SequencerView::requestGridRender() {
+    requestRender(RENDER_GRID);
+}
+
+void SequencerView::markAllDirty() {
+    requestRender(RENDER_ALL);
+}
+
+void SequencerView::drainRender(void* context, uint32_t flags) {
+    auto* self = static_cast<SequencerView*>(context);
+    if (self) self->render(flags);
+}
+
+void SequencerView::render(uint32_t flags) {
+    if (!RetainedViewRenderPolicy::renderable(container_, hasBlockingOverlay())) {
+        requestRender(flags);
         return;
     }
-    render_timer_->resume(true);
-}
+    OC_PERF_SCOPE(perfRender, "ui.sequencer.render");
 
-FLASHMEM void SequencerView::pauseRenderTimerIfIdle() {
-    if (!render_timer_) return;
-    if (dirty_) return;
-    render_timer_->pause();
-}
-
-FLASHMEM void SequencerView::requestRender(bool& dirtyFlag) {
-    dirtyFlag = true;
-    scheduleRender();
-}
-
-FLASHMEM void SequencerView::requestHeaderTopRender() {
-    requestRender(header_top_dirty_);
-}
-
-FLASHMEM void SequencerView::requestHeaderStripRender() {
-    requestRender(header_strip_dirty_);
-}
-
-FLASHMEM void SequencerView::requestSelectorOverlayRender() {
-    requestRender(selector_overlay_dirty_);
-}
-
-FLASHMEM void SequencerView::requestLeftActionStripRender() {
-    requestRender(left_action_strip_dirty_);
-}
-
-FLASHMEM void SequencerView::requestBottomActionStripRender() {
-    requestRender(bottom_action_strip_dirty_);
-}
-
-FLASHMEM void SequencerView::requestHistoryFeedbackRender() {
-    requestRender(history_feedback_dirty_);
-}
-
-FLASHMEM void SequencerView::requestGridRender() {
-    requestRender(grid_dirty_);
-}
-
-FLASHMEM void SequencerView::markAllDirty() {
-    header_top_dirty_ = true;
-    header_strip_dirty_ = true;
-    selector_overlay_dirty_ = true;
-    left_action_strip_dirty_ = true;
-    bottom_action_strip_dirty_ = true;
-    history_feedback_dirty_ = true;
-    grid_dirty_ = true;
-}
-
-FLASHMEM void SequencerView::onRenderTimer(lv_timer_t* timer) {
-    auto* self = static_cast<SequencerView*>(lv_timer_get_user_data(timer));
-    if (!self) return;
-
-    if (!self->container_ || lv_obj_has_flag(self->container_, LV_OBJ_FLAG_HIDDEN) ||
-        self->hasBlockingOverlay()) {
-        self->pauseRenderTimerIfIdle();
-        return;
-    }
-
-    if (!self->dirty_) {
-        self->pauseRenderTimerIfIdle();
-        return;
-    }
-
-    self->render();
-    self->dirty_ = false;
-    self->pauseRenderTimerIfIdle();
-}
-
-FLASHMEM void SequencerView::render() {
-    if (!container_ || lv_obj_has_flag(container_, LV_OBJ_FLAG_HIDDEN) || hasBlockingOverlay()) return;
-
-    const bool needsSelectorOverlay = selector_overlay_dirty_;
-    const bool needsLeftActionStrip = left_action_strip_dirty_ && left_action_strip_;
-    const bool needsBottomActionStrip = bottom_action_strip_dirty_ && bottom_action_strip_;
-    const bool needsHistoryToast = history_feedback_dirty_ && history_toast_;
-    const bool needsHeaderTop = header_top_dirty_ && header_bar_;
-    const bool needsHeaderStrip = header_strip_dirty_ && header_bar_;
-    const bool needsGrid = grid_dirty_ && step_grid_;
+    const bool needsSelectorOverlay = (flags & RENDER_SELECTOR_OVERLAY) != 0;
+    const bool needsLeftActionStrip =
+        (flags & RENDER_LEFT_ACTION_STRIP) != 0 && left_action_strip_;
+    const bool needsBottomActionStrip =
+        (flags & RENDER_BOTTOM_ACTION_STRIP) != 0 && bottom_action_strip_;
+    const bool needsHistoryToast =
+        (flags & RENDER_HISTORY_FEEDBACK) != 0 && history_toast_;
+    const bool needsHeaderTop = (flags & RENDER_HEADER_TOP) != 0 && header_bar_;
+    const bool needsHeaderStrip = (flags & RENDER_HEADER_STRIP) != 0 && header_bar_;
+    const bool needsGrid = (flags & RENDER_GRID) != 0 && step_grid_;
     if (!needsSelectorOverlay && !needsLeftActionStrip &&
         !needsBottomActionStrip && !needsHistoryToast && !needsHeaderTop &&
         !needsHeaderStrip && !needsGrid) {
@@ -540,46 +537,39 @@ FLASHMEM void SequencerView::render() {
 
     if (needsLeftActionStrip) {
         left_action_strip_->render(sequencer::buildLeftActionStripProps(source));
-        left_action_strip_dirty_ = false;
     }
 
     if (needsBottomActionStrip) {
         bottom_action_strip_->render(sequencer::buildBottomActionStripProps(source));
-        bottom_action_strip_dirty_ = false;
     }
 
     if (needsSelectorOverlay) {
         if (property_selection_overlay_) {
             renderSelectorOverlay();
         }
-        selector_overlay_dirty_ = false;
     }
 
     if (needsHeaderTop || needsHeaderStrip) {
         const auto headerProps = sequencer::buildHeaderBarProps(source);
         if (needsHeaderTop) {
             header_bar_->renderTopRowOnly(headerProps);
-            header_top_dirty_ = false;
         }
         if (needsHeaderStrip) {
             header_bar_->renderStripOnly(headerProps);
-            header_strip_dirty_ = false;
         }
     }
 
     if (needsGrid) {
         const auto gridProps = sequencer::buildStepGridProps(source);
         step_grid_->render(gridProps);
-        grid_dirty_ = false;
     }
 
     if (needsHistoryToast) {
         renderHistoryToast();
-        history_feedback_dirty_ = false;
     }
 }
 
-FLASHMEM void SequencerView::renderSelectorOverlay() {
+void SequencerView::renderSelectorOverlay() {
     if (!property_selection_overlay_) return;
 
     property_selection_overlay_->render(
@@ -587,7 +577,7 @@ FLASHMEM void SequencerView::renderSelectorOverlay() {
     );
 }
 
-FLASHMEM void SequencerView::renderHistoryToast() {
+void SequencerView::renderHistoryToast() {
     if (!history_toast_) return;
 
     const auto& feedback = state_refs_.sequencer.historyFeedback;
@@ -603,7 +593,7 @@ FLASHMEM void SequencerView::renderHistoryToast() {
     lv_obj_clear_flag(history_toast_, LV_OBJ_FLAG_HIDDEN);
 }
 
-FLASHMEM sequencer::SequencerViewModelSource SequencerView::modelSource() const {
+sequencer::SequencerViewModelSource SequencerView::modelSource() const {
     return {
         .sequencer = state_refs_.sequencer,
         .tracks = state_refs_.tracks,

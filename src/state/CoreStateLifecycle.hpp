@@ -17,24 +17,28 @@ struct CoreState;
 struct CoreStateLifecycle {
     static void update(CoreState& state);
     static void flush(CoreState& state);
-    static void flushAutoPersist(CoreState& state);
+    static void flushProjectMutationCoalescing(CoreState& state);
     static void factoryReset(CoreState& state);
     static void resetStandaloneTransientUi(CoreState& state);
     static void resetMusicalProject(CoreState& state);
 
-    static void queuePendingSequencerApply(CoreState& state,
-                                           const sequencer::SequencerState& staged,
-                                           bool merge = false);
-    static void queuePendingSequencerBankApply(CoreState& state,
-                                               const sequencer::SequencerTrackBankState& stagedBank,
-                                               const sequencer::SequencerState& staged);
+    [[nodiscard]] static bool queuePendingSequencerApply(
+        CoreState& state,
+        sequencer::SequencerState& staged,
+        bool merge = false
+    );
+    [[nodiscard]] static bool queuePendingSequencerBankApply(
+        CoreState& state,
+        sequencer::SequencerTrackBankState& stagedBank,
+        sequencer::SequencerState& staged
+    );
     static void clearPendingSequencerApply(CoreState& state);
 
 private:
     static void applyPendingSequencerApplyIfReady(CoreState& state);
-    static void updateAutoPersist_(CoreState& state);
+    static void updateMutationCoalescers_(CoreState& state);
     static void updatePendingSharedTrackPersist_(CoreState& state);
-    static void flushAutoPersist_(CoreState& state);
+    static void flushMutationCoalescers_(CoreState& state);
     static void flushPendingSharedTrackPersist_(CoreState& state);
     static void persistFactoryDefaults_(CoreState& state);
     static void resetMacroDomain_(CoreState& state);

@@ -259,11 +259,13 @@ FLASHMEM void MacroStructureWorkflow::copyCurrentStructure() {
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
             if (track_ui_.previewAddSlot.get()) return;
-            structure_clipboard_.storeMacroTrack(
+            if (!structure_clipboard_.storeMacroTrack(
                 pages_.tracks[services_.activeTrack()],
                 pages_.automation,
                 services_.activeTrack()
-            );
+            )) {
+                return;
+            }
             return;
         case core::state::StructureNavigationFocus::STEP:
             if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return;
@@ -272,12 +274,14 @@ FLASHMEM void MacroStructureWorkflow::copyCurrentStructure() {
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (macro_ui_.previewAddPageSlot.get()) return;
-            structure_clipboard_.storeMacroPage(
+            if (!structure_clipboard_.storeMacroPage(
                 pages_.activePageData(),
                 pages_.automation,
                 pages_.currentActiveTrack(),
                 pages_.currentActivePage()
-            );
+            )) {
+                return;
+            }
             return;
     }
 }
@@ -387,8 +391,6 @@ FLASHMEM void MacroStructureWorkflow::createPreviewedStructure() {
 }
 
 FLASHMEM void MacroStructureWorkflow::bindStateSync() {
-    subscriptions_.reserve(2);
-
     subscriptions_.push_back(
         shared_track_active_.subscribe([this](uint8_t activeTrack) {
             track_ui_.syncPreviewTrack(activeTrack);

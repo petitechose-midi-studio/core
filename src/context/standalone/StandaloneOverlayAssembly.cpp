@@ -6,6 +6,7 @@
 
 #include <config/App.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
+#include "context/standalone/OverlayPresentationRegistry.hpp"
 #include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
 
@@ -18,8 +19,12 @@ FLASHMEM StandaloneOverlayAssembly::StandaloneOverlayAssembly(
     ActiveViewScopeProvider activeViewScopeProvider
 )
     : core_state_(state) {
-    createOverlayController(buttons, std::move(activeViewScopeProvider));
-    createViewSelectorOverlay(overlayRoot);
+    presentation_registry_ =
+        core::app::makeExtmemUnique<OverlayPresentationRegistry>(overlayRoot);
+    if (!presentation_registry_ || !presentation_registry_->valid()) return;
+    if (!createOverlayController(buttons, std::move(activeViewScopeProvider))) return;
+    if (!createViewSelectorOverlay(overlayRoot)) return;
+    valid_ = true;
 }
 
 FLASHMEM StandaloneOverlayAssembly::~StandaloneOverlayAssembly() = default;
@@ -27,6 +32,11 @@ FLASHMEM StandaloneOverlayAssembly::~StandaloneOverlayAssembly() = default;
 FLASHMEM oc::context::OverlayManager<core::ui::OverlayType>&
 StandaloneOverlayAssembly::controller() const {
     return *overlay_controller_;
+}
+
+FLASHMEM OverlayPresentationRegistry&
+StandaloneOverlayAssembly::presentationRegistry() const {
+    return *presentation_registry_;
 }
 
 FLASHMEM lv_obj_t* StandaloneOverlayAssembly::viewSelectorElement() const {
@@ -38,22 +48,10 @@ FLASHMEM oc::type::ScopeID StandaloneOverlayAssembly::viewSelectorScope() const 
 }
 
 FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, bool visible) {
-    if (!view_selector_) return;
+    if (!valid_ || !view_selector_) return;
     if (!visible) {
         view_selector_->hide();
         return;
-    }
-
-    for (int i = 0; i < core::state::VIEW_SELECTOR_ITEM_COUNT && i < static_cast<int>(view_selector_rows_.size()); ++i) {
-        const auto item = core::state::viewSelectorItemAt(i);
-        view_selector_rows_[static_cast<std::size_t>(i)] = ms::ui::MenuRow{
-            .label = core::state::viewSelectorItemLabel(item),
-            .value = core::state::viewSelectorItemDescription(item),
-            .kind = ms::ui::MenuRowKind::Folder,
-            .enabled = true,
-            .valueAutoScroll = true,
-            .valueRole = ms::ui::MenuRowValueRole::Description,
-        };
     }
 
     view_selector_->show();
@@ -67,7 +65,7 @@ FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, b
     });
 }
 
-FLASHMEM void StandaloneOverlayAssembly::createOverlayController(
+FLASHMEM bool StandaloneOverlayAssembly::createOverlayController(
     oc::api::ButtonAPI& buttons,
     ActiveViewScopeProvider activeViewScopeProvider
 ) {
@@ -75,16 +73,39 @@ FLASHMEM void StandaloneOverlayAssembly::createOverlayController(
         core_state_.overlays,
         buttons
     );
+    if (!overlay_controller_) return false;
+    overlay_controller_->setPresentationCallback(
+        presentation_registry_.get(),
+        &OverlayPresentationRegistry::onPresentationChanged
+    );
     overlay_controller_->setActiveViewProvider(std::move(activeViewScopeProvider));
+    return true;
 }
 
-FLASHMEM void StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* overlayRoot) {
+FLASHMEM bool StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* overlayRoot) {
     view_selector_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(overlayRoot);
+    if (!view_selector_ || !view_selector_->getElement()) return false;
     view_selector_->hide();
+    for (int i = 0;
+         i < core::state::VIEW_SELECTOR_ITEM_COUNT &&
+         i < static_cast<int>(view_selector_rows_.size());
+         ++i) {
+        const auto item = core::state::viewSelectorItemAt(i);
+        view_selector_rows_[static_cast<std::size_t>(i)] = ms::ui::MenuRow{
+            .label = core::state::viewSelectorItemLabel(item),
+            .value = core::state::viewSelectorItemDescription(item),
+            .kind = ms::ui::MenuRowKind::Folder,
+            .enabled = true,
+            .valueAutoScroll = true,
+            .valueRole = ms::ui::MenuRowValueRole::Description,
+        };
+    }
     view_selector_scope_ = oc::ui::lvgl::scopeID(view_selector_->getElement());
-    overlay_controller_->registerCleanup(
+    return registerOverlaySurface(
+        *overlay_controller_,
+        *presentation_registry_,
         core::ui::OverlayType::VIEW_SELECTOR,
-        view_selector_scope_,
+        view_selector_->getElement(),
         static_cast<oc::type::ButtonID>(Config::ButtonID::LEFT_TOP)
     );
 }

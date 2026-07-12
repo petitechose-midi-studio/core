@@ -6,18 +6,17 @@ Developer documentation for the standalone firmware in this repository.
 
 Read these first, in order:
 
-1. [architecture-chantiers/README.md](architecture-chantiers/README.md)
-2. [architecture-chantiers/sprint-0-documentation-source-of-truth.md](architecture-chantiers/sprint-0-documentation-source-of-truth.md)
-3. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
-4. [CODE_STYLE.md](CODE_STYLE.md)
+1. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
+2. [CODE_STYLE.md](CODE_STYLE.md)
 
 Architecture contracts should live as close as possible to the code they
 constrain. Put durable "why" comments in `.hpp` files when a reader needs the
 contract before editing an API. Keep `.cpp` comments short and local to
 non-obvious implementation details.
 
-The `architecture-chantiers` directory lists codebase-scale improvement work.
-It is planning documentation, not a replacement for source-level contracts.
+Codebase-scale plans, ADRs, and audit evidence belong in the canonical
+[petitechose-audio-docs](https://github.com/petitechose-audio/petitechose-audio-docs)
+repository. This directory contains only code-local developer documentation.
 
 ## Source Map
 
@@ -28,7 +27,7 @@ src/
   config/       configuration and platform constants
   context/      composition roots, overlay presenters, runtime wiring
   handler/      input logic and interaction workflows
-  persistence/  slot-based persistence helpers
+  persistence/  product filesystem, project/session transactions, and codecs
   sequencer/    playback and clock services
   state/        reactive state, workflows, bootstrap, lifecycle
   ui/           views, components, widgets, top bar, transport bar

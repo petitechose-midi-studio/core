@@ -40,7 +40,6 @@ struct MacroViewModelSource {
 
 struct MacroWidgetProps {
     float value = 0.5f;
-    uint8_t channel = 0;
     uint8_t cc = 0;
     bool automationActive = false;
     bool automationRecording = false;

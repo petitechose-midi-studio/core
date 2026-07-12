@@ -7,7 +7,7 @@
 
 #include <lvgl.h>
 
-#include <oc/state/SignalWatcher.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
 #include "app/ExtmemAllocator.hpp"
@@ -25,9 +25,9 @@
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/sequencer/StepGrid.hpp"
+#include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
-#include "ui/view/PausableLvglTimer.hpp"
 
 namespace core::ui {
 
@@ -56,10 +56,25 @@ public:
 
     void onActivate() override;
     void onDeactivate() override;
+    [[nodiscard]] bool valid() const { return initialized_; }
     const char* getViewId() const override { return "core.sequencer"; }
     lv_obj_t* getElement() const override { return container_; }
 
 private:
+    enum RenderFlag : uint32_t {
+        RENDER_HEADER_TOP = 1U << 0,
+        RENDER_HEADER_STRIP = 1U << 1,
+        RENDER_SELECTOR_OVERLAY = 1U << 2,
+        RENDER_LEFT_ACTION_STRIP = 1U << 3,
+        RENDER_BOTTOM_ACTION_STRIP = 1U << 4,
+        RENDER_HISTORY_FEEDBACK = 1U << 5,
+        RENDER_GRID = 1U << 6,
+    };
+    static constexpr uint32_t RENDER_ALL =
+        RENDER_HEADER_TOP | RENDER_HEADER_STRIP | RENDER_SELECTOR_OVERLAY |
+        RENDER_LEFT_ACTION_STRIP | RENDER_BOTTOM_ACTION_STRIP |
+        RENDER_HISTORY_FEEDBACK | RENDER_GRID;
+
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
     void createGrid();
@@ -67,7 +82,7 @@ private:
     void createActionStrips();
     void createHistoryToast();
     static void onStepGridGeometryInvalidated(void* userData);
-    void bindToState();
+    bool bindToState();
     void bindHeaderState();
     void bindHeaderStripState();
     void bindGridState();
@@ -80,37 +95,39 @@ private:
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
 
-    void ensureRenderTimer();
-    void scheduleRender(bool ready = false);
-    void readyRenderTimerIfDirty();
-    void pauseRenderTimerIfIdle();
-    void requestRender(bool& dirtyFlag);
+    void ensureRenderScheduler();
+    void requestRender(uint32_t flags, bool ready = false);
+    void resumePendingRender();
     void requestHeaderTopRender();
     void requestHeaderStripRender();
+    void requestHeaderAndLeftRender();
+    void requestHeaderStripAndLeftRender();
     void requestSelectorOverlayRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
     void requestHistoryFeedbackRender();
     void requestGridRender();
-    static void onRenderTimer(lv_timer_t* timer);
+    static bool canDrainRender(void* context);
+    static void drainRender(void* context, uint32_t flags);
     void markAllDirty();
-    void render();
+    void render(uint32_t flags);
     void renderSelectorOverlay();
     void renderHistoryToast();
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
-    oc::state::SignalWatcher watcher_;
+    oc::state::StaticWatchGroup<21> header_watcher_;
+    oc::state::StaticWatchGroup<23> header_strip_watcher_;
+    oc::state::StaticWatchGroup<35> grid_watcher_;
+    oc::state::StaticWatchGroup<19> selector_overlay_watcher_;
+    oc::state::StaticWatchGroup<8> overlay_visibility_watcher_;
+    oc::state::StaticWatchGroup<11> left_action_strip_watcher_;
+    oc::state::StaticWatchGroup<22> bottom_action_strip_watcher_;
+    oc::state::StaticWatchGroup<2> history_feedback_watcher_;
+    oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
 
-    bool dirty_ = false;
-    bool header_top_dirty_ = true;
-    bool header_strip_dirty_ = true;
-    bool selector_overlay_dirty_ = true;
-    bool left_action_strip_dirty_ = true;
-    bool bottom_action_strip_dirty_ = true;
-    bool history_feedback_dirty_ = true;
-    bool grid_dirty_ = true;
-    core::app::ExtmemUniquePtr<PausableLvglTimer> render_timer_;
+    core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
+        render_scheduler_;
 
     core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
@@ -128,6 +145,7 @@ private:
     lv_obj_t* history_toast_line1_ = nullptr;
     lv_obj_t* history_toast_line2_ = nullptr;
     lv_obj_t* history_toast_line3_ = nullptr;
+    bool initialized_ = false;
 };
 
 }  // namespace core::ui

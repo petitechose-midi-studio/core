@@ -1,6 +1,7 @@
 # UX workflow: resize a non-flat automation window.
 # Purpose: validates that shortening Length acts as a playback window and that
 # extending it again re-exposes the original source curve instead of losing data.
+# Expect: capture_changed:macro_1_automation_window_short=macro_1_automation_window_extended
 
 0 scenario macro-automation-curve-shape
 80 capture screen macro_grid_curve_source

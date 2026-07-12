@@ -34,7 +34,7 @@ FLASHMEM bool createSequencerStructureTrack(
         return false;
     }
 
-    core::state::sequencer::storeActiveTrack(tracks, sequencer);
+    if (!core::state::sequencer::storeActiveTrack(tracks, sequencer)) return false;
     tracks.track(index).reset();
     tracks.track(index).midiChannel.set(index);
     return sharedTracks.setState(
@@ -66,17 +66,14 @@ FLASHMEM bool pasteCurrentSequencerStructureTrack(
         return false;
     }
 
-    core::state::sequencer::applySnapshotToEditor(
+    if (!core::state::sequencer::applySnapshotToEditorWithGraph(
         sequencer,
-        structureClipboard.sequencerTrack
-    );
-    core::state::sequencer::copyGraph(
-        sequencer.pattern,
-        structureClipboard.sequencerGraph.get(),
-        structureClipboard.sequencerTrack.graphRevision
-    );
-    core::state::sequencer::storeActiveTrack(tracks, sequencer);
-    return true;
+        structureClipboard.sequencerTrack,
+        structureClipboard.sequencerGraph.get()
+    )) {
+        return false;
+    }
+    return core::state::sequencer::storeActiveTrack(tracks, sequencer);
 }
 
 }  // namespace core::handler

@@ -10,6 +10,9 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
                                                     oc::api::EncoderAPI& encoders,
                                                     oc::api::ButtonAPI& buttons,
                                                     lv_obj_t* projectViewElement) {
+    if (!projectViewElement) return;
+    const auto viewScope = oc::ui::lvgl::scopeID(projectViewElement);
+    if (viewScope == 0) return;
     handler_ = core::app::makeExtmemUnique<core::handler::ProjectHandler>(
         core::handler::ProjectHandler::StateRefs{
             stateRefs.overlays,
@@ -24,7 +27,7 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
         sequencerSettings,
         encoders,
         buttons,
-        oc::ui::lvgl::scopeID(projectViewElement)
+        viewScope
     );
 }
 

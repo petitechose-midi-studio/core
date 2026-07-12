@@ -3,6 +3,8 @@
 #include <algorithm>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
+#include <oc/time/Time.hpp>
 #include "midi/MidiUtils.hpp"
 
 namespace core::handler {
@@ -14,7 +16,7 @@ constexpr uint8_t INVALID_CC_VALUE = 0xFF;
 
 }  // namespace
 
-MacroAutomationPlaybackService::MacroAutomationPlaybackService(
+FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
     StateRefs state,
     MacroPerformanceDomainServices services,
     oc::api::MidiAPI& midi
@@ -29,6 +31,7 @@ MacroAutomationPlaybackService::MacroAutomationPlaybackService(
 
 void MacroAutomationPlaybackService::reset() {
     was_playing_ = false;
+    update_scheduled_ = false;
     last_update_ms_ = 0;
     next_due_ms_ = 0;
     playback_beat_ = 0.0f;
@@ -68,8 +71,10 @@ void MacroAutomationPlaybackService::updatePlaybackBeat_(uint32_t nowMs) {
 }
 
 void MacroAutomationPlaybackService::update(uint32_t nowMs) {
-    if (nowMs < next_due_ms_) return;
+    if (update_scheduled_ && !oc::time::deadlineReachedMs(nowMs, next_due_ms_)) return;
+    update_scheduled_ = true;
     next_due_ms_ = nowMs + UPDATE_PERIOD_MS;
+    OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
 
     updatePlaybackBeat_(nowMs);
     if (!status_bar_.playing.get()) return;
@@ -84,8 +89,12 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     }
 
     const auto& pageData = pages_.activePageData();
+    const uint16_t manualOverrideMask = macro_ui_.automationManualOverrideMask.get();
     for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        if (!pageData.isMacroActive(i)) continue;
+        if (!pageData.isMacroActive(i)) {
+            sent_cc_values_[i] = INVALID_CC_VALUE;
+            continue;
+        }
         if (macro_ui_.automationRecording.active &&
             macro_ui_.automationRecording.address.track == track &&
             macro_ui_.automationRecording.address.page == page &&
@@ -94,14 +103,20 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             continue;
         }
         const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
-        if ((macro_ui_.automationManualOverrideMask.get() & overrideBit) != 0) continue;
+        if ((manualOverrideMask & overrideBit) != 0) {
+            sent_cc_values_[i] = INVALID_CC_VALUE;
+            continue;
+        }
         const auto address = core::state::macro::MacroAutomationSlotAddress{
             .track = track,
             .page = page,
             .macro = i,
         };
         const auto* slot = core::state::macro::macroAutomationFindSlot(pages_.automation, address);
-        if (slot == nullptr || !slot->automation.active) continue;
+        if (slot == nullptr || !slot->automation.active) {
+            sent_cc_values_[i] = INVALID_CC_VALUE;
+            continue;
+        }
 
         const auto resolved = core::state::macro::macroResolveValue(
             std::clamp(pageData.values[i], 0.0f, 1.0f),
@@ -110,9 +125,9 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             playback_beat_
         );
         const uint8_t ccValue = core::midi::toCC(resolved.resolved);
-        services_.setRuntimeValue(i, core::midi::fromCC(ccValue));
         if (sent_cc_values_[i] == ccValue) continue;
 
+        services_.setResolvedValue(i, core::midi::fromCC(ccValue));
         const auto& config = services_.activeConfig(i);
         midi_.sendCC(config.channel, config.cc, ccValue);
         services_.pulseCcOut();

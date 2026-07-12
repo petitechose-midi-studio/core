@@ -43,8 +43,6 @@ inline int macroConfigRevisionDirtyIndex(uint32_t revision) {
 struct MacroWorkflow {
     static void syncRuntimeFromActivePage(core::state::MacroState& macros,
                                           const MacroPagesState& pages);
-    static void syncActivePageValuesFromRuntime(MacroPagesState& pages,
-                                                const core::state::MacroState& macros);
     static void switchToPage(CoreState& state, uint8_t pageIndex);
     static void switchToTrack(CoreState& state, uint8_t trackIndex);
     static bool setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc);

@@ -1,5 +1,6 @@
 # UX workflow: verify Step Editor State refreshes immediately.
 # Purpose: captures State On -> Off -> On without moving NAV focus between edits.
+# Expect: capture_changed:state_on_initial=state_off_after_opt, capture_match:state_on_initial=state_on_after_opt
 
 0 scenario sequencer
 50 capture screen sequencer_ready

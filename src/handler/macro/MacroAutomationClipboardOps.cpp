@@ -26,8 +26,7 @@ FLASHMEM bool copySlotAutomationToClipboard(
     const auto* slot = core::state::macro::macroAutomationFindSlot(bank, address);
     if (slot == nullptr || !slot->automation.active) return false;
 
-    clipboard.storeMacroAutomation(bank, *slot);
-    return true;
+    return clipboard.storeMacroAutomation(bank, *slot);
 }
 
 FLASHMEM bool pasteFirstClipboardAutomationToSlot(

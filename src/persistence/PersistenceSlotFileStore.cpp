@@ -60,7 +60,7 @@ FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::formatStatus() {
 
 FLASHMEM bool PersistenceSlotFileStore::saveSlot(uint16_t slotIndex,
                                                  const uint8_t* payload,
-                                                 uint16_t payloadSize,
+                                                 uint32_t payloadSize,
                                                  uint32_t saveCounter) {
     return saveSlotStatus(slotIndex, payload, payloadSize, saveCounter) ==
            PersistenceWriteStatus::OK;
@@ -69,7 +69,7 @@ FLASHMEM bool PersistenceSlotFileStore::saveSlot(uint16_t slotIndex,
 FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::saveSlotStatus(
     uint16_t slotIndex,
     const uint8_t* payload,
-    uint16_t payloadSize,
+    uint32_t payloadSize,
     uint32_t saveCounter
 ) {
     if (!isConfigValid_()) return PersistenceWriteStatus::INVALID_CONFIG;
@@ -111,7 +111,7 @@ FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::saveSlotStatus(
 
 FLASHMEM SlotLoadStatus PersistenceSlotFileStore::loadSlot(uint16_t slotIndex,
                                                            uint8_t* outPayload,
-                                                           uint16_t outCapacity,
+                                                           uint32_t outCapacity,
                                                            SlotMetadata* outMeta) const {
     if (!isConfigValid_()) return SlotLoadStatus::IO_ERROR;
     if (!storage_.available()) return SlotLoadStatus::STORAGE_UNAVAILABLE;
@@ -173,7 +173,7 @@ FLASHMEM SlotLoadStatus PersistenceSlotFileStore::inspectSlot(
 
 FLASHMEM LatestSlotLoadResult PersistenceSlotFileStore::loadLatest(
     uint8_t* outPayload,
-    uint16_t outCapacity
+    uint32_t outCapacity
 ) const {
     LatestSlotLoadResult result{};
     if (!isConfigValid_()) {
@@ -259,7 +259,7 @@ FLASHMEM uint32_t PersistenceSlotFileStore::slotPayloadAddress(uint16_t slotInde
     return slotHeaderAddress(slotIndex) + static_cast<uint32_t>(SLOT_HEADER_SIZE);
 }
 
-FLASHMEM uint16_t PersistenceSlotFileStore::slotPayloadSize() const {
+FLASHMEM uint32_t PersistenceSlotFileStore::slotPayloadSize() const {
     return config_.slotPayloadSize;
 }
 
@@ -386,8 +386,7 @@ FLASHMEM bool PersistenceSlotFileStore::encodeFileHeader_(const FileHeader& head
            writer.writeU8(header.formatVersion) &&
            writer.writeU8(header.domainVersion) &&
            writer.writeU16(header.slotCount) &&
-           writer.writeU16(header.slotPayloadSize) &&
-           writer.writeU16(0) &&
+           writer.writeU32(header.slotPayloadSize) &&
            writer.writeU32(header.layoutCrc32) &&
            writer.writeU32(0) &&
            writer.writeU32(0) &&
@@ -400,15 +399,13 @@ FLASHMEM bool PersistenceSlotFileStore::decodeFileHeader_(const uint8_t* data,
                                                           FileHeader& out) {
     if (size != FILE_HEADER_SIZE) return false;
     binary::Reader reader(data, static_cast<uint32_t>(size));
-    uint16_t reserved0 = 0;
     uint32_t reserved1 = 0;
     uint32_t reserved2 = 0;
     return reader.readU32(out.magic) &&
            reader.readU8(out.formatVersion) &&
            reader.readU8(out.domainVersion) &&
            reader.readU16(out.slotCount) &&
-           reader.readU16(out.slotPayloadSize) &&
-           reader.readU16(reserved0) &&
+           reader.readU32(out.slotPayloadSize) &&
            reader.readU32(out.layoutCrc32) &&
            reader.readU32(reserved1) &&
            reader.readU32(reserved2) &&
@@ -424,7 +421,8 @@ FLASHMEM bool PersistenceSlotFileStore::encodeSlotHeader_(const SlotHeader& head
     return writer.writeU32(header.magic) &&
            writer.writeU8(header.formatVersion) &&
            writer.writeU8(header.state) &&
-           writer.writeU16(header.payloadSize) &&
+           writer.writeU16(0) &&
+           writer.writeU32(header.payloadSize) &&
            writer.writeU32(header.saveCounter) &&
            writer.writeU32(header.payloadCrc32) &&
            writer.ok() &&
@@ -436,10 +434,12 @@ FLASHMEM bool PersistenceSlotFileStore::decodeSlotHeader_(const uint8_t* data,
                                                           SlotHeader& out) {
     if (size != SLOT_HEADER_SIZE) return false;
     binary::Reader reader(data, static_cast<uint32_t>(size));
+    uint16_t reserved = 0;
     return reader.readU32(out.magic) &&
            reader.readU8(out.formatVersion) &&
            reader.readU8(out.state) &&
-           reader.readU16(out.payloadSize) &&
+           reader.readU16(reserved) &&
+           reader.readU32(out.payloadSize) &&
            reader.readU32(out.saveCounter) &&
            reader.readU32(out.payloadCrc32) &&
            reader.ok() &&

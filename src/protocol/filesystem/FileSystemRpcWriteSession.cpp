@@ -5,9 +5,10 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/AtomicProductFile.hpp"
+
 namespace core::protocol::filesystem {
 
-using oc::type::ErrorCode;
 using oc::type::Result;
 using internal::ByteReader;
 using internal::bufferTooSmall;
@@ -201,29 +202,14 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
             clearWriteSession_();
         } else {
             writeFinished = true;
-            bool targetWasBackedUp = false;
-            auto existing = files_.stat(writeSession_.finalPath);
-            if (!existing && existing.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
-                status = mapError(existing.error());
-            } else if (existing && existing.value().exists()) {
-                (void)files_.remove(writeSession_.backupPath);
-                auto backup = files_.rename(writeSession_.finalPath, writeSession_.backupPath);
-                if (!backup) {
-                    status = mapError(backup.error());
-                } else {
-                    targetWasBackedUp = true;
-                }
-            }
-            if (status == FileSystemRpcStatus::OK) {
-                auto rename = files_.rename(writeSession_.tmpPath, writeSession_.finalPath);
-                if (!rename) {
-                    status = mapError(rename.error());
-                    if (targetWasBackedUp) {
-                        (void)files_.rename(writeSession_.backupPath, writeSession_.finalPath);
-                    }
-                } else if (targetWasBackedUp) {
-                    (void)files_.remove(writeSession_.backupPath);
-                }
+            auto commit = core::persistence::commitProductFileTemp(
+                files_,
+                writeSession_.finalPath,
+                writeSession_.backupPath,
+                writeSession_.tmpPath
+            );
+            if (!commit) {
+                status = mapError(commit.error());
             }
         }
     }
@@ -232,7 +218,6 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
         clearWriteSession_();
     } else if (writeFinished) {
         (void)files_.remove(writeSession_.tmpPath);
-        (void)files_.remove(writeSession_.backupPath);
         clearWriteSession_();
     }
 
@@ -274,7 +259,6 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteAbort_(
     } else {
         files_.abortWrite();
         (void)files_.remove(writeSession_.tmpPath);
-        (void)files_.remove(writeSession_.backupPath);
         clearWriteSession_();
     }
 
@@ -290,7 +274,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteAbort_(
     return encoded > 0 ? Result<size_t>::ok(encoded) : bufferTooSmall();
 }
 
-FLASHMEM void FileSystemRpcHandler::expireWriteSession_(uint32_t nowMs) {
+void FileSystemRpcHandler::expireWriteSession_(uint32_t nowMs) {
     if (!writeSession_.active) {
         return;
     }

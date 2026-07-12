@@ -20,31 +20,63 @@ constexpr const char* const ROW_KEYS[] = {"Scale", "Root", "Type", "Pitch Edit"}
 
 }  // namespace
 
-PatternPitchSettingsOverlayPresenter::PatternPitchSettingsOverlayPresenter(
+FLASHMEM PatternPitchSettingsOverlayPresenter::PatternPitchSettingsOverlayPresenter(
     StateRefs stateRefs,
     ms::ui::VirtualListKeyValueOverlay& overlay,
     ms::ui::VirtualListSelectorOverlay& selectorOverlay
 )
     : state_refs_(stateRefs)
     , overlay_(overlay)
-    , selector_overlay_(selectorOverlay) {}
+    , selector_overlay_(selectorOverlay)
+    , render_scheduler_(
+          core::ui::renderSchedulerDebugLabel("PatternPitchSettings"),
+          &PatternPitchSettingsOverlayPresenter::drainRenderQueue,
+          this
+      ) {}
 
-FLASHMEM void PatternPitchSettingsOverlayPresenter::bind() {
-    overlay_watcher_.watchAll(
-        [this]() { renderOverlay(); },
+FLASHMEM bool PatternPitchSettingsOverlayPresenter::bind() {
+    bool bound = render_scheduler_.valid();
+    overlay_watcher_.bind<&PatternPitchSettingsOverlayPresenter::requestOverlayRender>(
+        *this, 0, "PatternPitchSettings.overlay"
+    );
+    bound = overlay_watcher_.watchAll(
         state_refs_.settings.visible,
         state_refs_.settings.focusedRow,
         state_refs_.sequencer.pattern.patternScaleRevision,
         state_refs_.trackBank.projectScaleRevisionSignal()
-    );
+    ) && bound;
 
-    selector_watcher_.watchAll(
-        [this]() { renderSelector(); },
+    selector_watcher_.bind<&PatternPitchSettingsOverlayPresenter::requestSelectorRender>(
+        *this, 1, "PatternPitchSettings.selector"
+    );
+    bound = selector_watcher_.watchAll(
         state_refs_.settings.flowPhase,
         state_refs_.settings.selector.visible,
         state_refs_.settings.selector.editingRow,
         state_refs_.settings.selector.selectedIndex
-    );
+    ) && bound;
+    return bound;
+}
+
+FLASHMEM void PatternPitchSettingsOverlayPresenter::requestOverlayRender() {
+    render_scheduler_.request(RENDER_OVERLAY);
+}
+
+FLASHMEM void PatternPitchSettingsOverlayPresenter::requestSelectorRender() {
+    render_scheduler_.request(RENDER_SELECTOR);
+}
+
+FLASHMEM void PatternPitchSettingsOverlayPresenter::drainRenderQueue(
+    void* context,
+    uint32_t flags
+) {
+    auto* self = static_cast<PatternPitchSettingsOverlayPresenter*>(context);
+    if (self) self->renderPending(flags);
+}
+
+FLASHMEM void PatternPitchSettingsOverlayPresenter::renderPending(uint32_t flags) {
+    if ((flags & RENDER_OVERLAY) != 0) renderOverlay();
+    if ((flags & RENDER_SELECTOR) != 0) renderSelector();
 }
 
 FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {

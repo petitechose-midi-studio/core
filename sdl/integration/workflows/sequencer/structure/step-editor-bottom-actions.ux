@@ -1,6 +1,7 @@
 # UX workflow: Step Editor bottom actions.
 # Purpose: verifies that the Step Editor exposes row-scoped bottom actions:
 # musical rows reset to default, context rows copy/remove/paste child content.
+# Expect: capture_changed:pitch_row_focused=pitch_row_reset, capture_changed:micro_row_focused_with_child=micro_context_remove_hold_applied, capture_changed:step_2_micro_row_focused=micro_context_paste_hold_applied
 
 0 scenario sequencer
 50 capture screen sequencer_ready
