@@ -1,0 +1,51 @@
+# UX workflow: exercise every top-level view as a roundtrip from Macro.
+# Purpose: catch delayed reactive fan-out and NotificationQueue overflow after
+# settling in Sequencer, Project, and Device Settings.
+# Expect: capture_changed:macro_initial=sequencer_open, capture_match:macro_initial=macro_after_sequencer, capture_changed:macro_initial=project_open, capture_match:macro_initial=macro_after_project, capture_changed:macro_initial=device_settings_open, capture_match:macro_initial=macro_final
+
+0 capture screen macro_initial
+
+# Macro -> Sequencer -> settle -> Macro.
+100 button LEFT_TOP down
+180 tick
+260 encoder NAV 1
+340 button LEFT_TOP up
+520 capture screen sequencer_open
+8020 tick
+8120 button LEFT_TOP down
+8200 tick
+8280 encoder NAV -1
+8360 button LEFT_TOP up
+8540 capture screen macro_after_sequencer
+
+# Macro -> Project -> settle -> Macro.
+8640 button LEFT_TOP down
+8720 tick
+8800 encoder NAV 1
+8880 encoder NAV 1
+8960 button LEFT_TOP up
+9140 capture screen project_open
+16640 tick
+16740 button LEFT_TOP down
+16820 tick
+16900 encoder NAV -1
+16980 encoder NAV -1
+17060 button LEFT_TOP up
+17240 capture screen macro_after_project
+
+# Macro -> Device Settings -> settle -> Macro.
+17340 button LEFT_TOP down
+17420 tick
+17500 encoder NAV 1
+17580 encoder NAV 1
+17660 encoder NAV 1
+17740 button LEFT_TOP up
+17920 capture screen device_settings_open
+25420 tick
+25520 button LEFT_TOP down
+25600 tick
+25680 encoder NAV -1
+25760 encoder NAV -1
+25840 encoder NAV -1
+25920 button LEFT_TOP up
+26100 capture screen macro_final

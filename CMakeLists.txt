@@ -16,6 +16,8 @@ set(MS_CORE_OPEN_CONTROL_ROOT
 set(MS_CORE_OC_FRAMEWORK_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/framework")
 set(MS_CORE_OC_NOTE_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/note")
 
+set(MS_CORE_NOTIFICATION_QUEUE_CAPACITY 96)
+
 if(NOT EXISTS "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/Config.hpp")
     message(FATAL_ERROR "open-control framework not found at ${MS_CORE_OC_FRAMEWORK_DIR}")
 endif()
@@ -30,6 +32,14 @@ if(NOT TARGET oc_framework_native)
         "${MS_CORE_OC_FRAMEWORK_DIR}"
         "${CMAKE_BINARY_DIR}/open-control-framework")
 endif()
+
+# A full sequencer-bank apply with an active-track transition produces a
+# measured 66-entry atomic notification wave. Apply the Core-specific capacity
+# directly to the singleton's target, including when a parent project supplied
+# that target, and propagate the identical layout to every consumer.
+target_compile_definitions(
+    oc_framework_native
+    PUBLIC OC_MAX_PENDING_NOTIFICATIONS=${MS_CORE_NOTIFICATION_QUEUE_CAPACITY})
 
 if(NOT TARGET oc_note_native)
     set(OC_NOTE_BUILD_TESTS OFF CACHE BOOL "Build OpenControl note tests" FORCE)

@@ -18,12 +18,14 @@ struct UxRunOptions {
 class UxScenarioRunner {
 public:
     using ScenarioApplier = std::function<bool(const char*)>;
+    using StateTick = std::function<void()>;
 
     bool run(const UxRunOptions& options,
              sdl::SdlEnvironment& env,
              oc::app::OpenControlApp& app,
              core::state::CoreState& state,
-             ScenarioApplier scenarioApplier);
+             ScenarioApplier scenarioApplier,
+             StateTick stateTick = {});
 
     const std::string& error() const { return error_; }
 
