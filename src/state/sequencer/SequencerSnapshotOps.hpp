@@ -37,6 +37,16 @@ void applySnapshotPreservingGraph(
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
+/**
+ * Applies copied Track musical content and graph while retaining the MIDI
+ * channel owned by the destination Track.
+ */
+[[nodiscard]] bool applyTrackContentSnapshotWithGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+);
+
 // Copies scalar pattern state when graph revisions are already synchronized.
 void copyPatternStatePreservingGraph(
     SequencerPatternState& target,
@@ -51,6 +61,16 @@ void applySnapshotToEditorPreservingGraph(
 );
 
 [[nodiscard]] bool applySnapshotToEditorWithGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+);
+
+/**
+ * Applies copied Track musical content and graph to the active editor while
+ * retaining the MIDI channel owned by the destination Track.
+ */
+[[nodiscard]] bool applyTrackContentSnapshotToEditorWithGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
     const oc::note::sequencer::StepSequencerGraph* graph

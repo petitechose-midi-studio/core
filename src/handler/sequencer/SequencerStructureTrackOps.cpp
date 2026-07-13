@@ -35,8 +35,10 @@ FLASHMEM bool createSequencerStructureTrack(
     }
 
     if (!core::state::sequencer::storeActiveTrack(tracks, sequencer)) return false;
-    tracks.track(index).reset();
-    tracks.track(index).midiChannel.set(index);
+    auto& destination = tracks.track(index);
+    const uint8_t destinationMidiChannel = destination.midiChannel.get();
+    destination.reset();
+    destination.midiChannel.set(destinationMidiChannel);
     return sharedTracks.setState(
         static_cast<uint16_t>(enabledMask | structure_slots::slotBit(index)),
         index
@@ -66,7 +68,7 @@ FLASHMEM bool pasteCurrentSequencerStructureTrack(
         return false;
     }
 
-    if (!core::state::sequencer::applySnapshotToEditorWithGraph(
+    if (!core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
         sequencer,
         structureClipboard.sequencerTrack,
         structureClipboard.sequencerGraph.get()

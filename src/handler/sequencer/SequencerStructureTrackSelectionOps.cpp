@@ -148,7 +148,7 @@ FLASHMEM bool pasteTrackSelectionClipboard(
         if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
 
         const uint8_t targetTrack = static_cast<uint8_t>(target);
-        if (!core::state::sequencer::applySnapshotWithGraph(
+        if (!core::state::sequencer::applyTrackContentSnapshotWithGraph(
             tracks.track(targetTrack),
             entry.snapshot,
             entry.graph.get()
@@ -156,7 +156,7 @@ FLASHMEM bool pasteTrackSelectionClipboard(
             return false;
         }
         if (targetTrack == previousActiveTrack) {
-            if (!core::state::sequencer::applySnapshotToEditorWithGraph(
+            if (!core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
                     sequencer,
                     entry.snapshot,
                     entry.graph.get()

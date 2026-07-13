@@ -635,7 +635,9 @@ void test_sequencer_selection_copy_keeps_page_selection_active() {
 void test_sequencer_selection_copy_paste_copies_track_payload() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
-    h.state.setSharedTrackState(0x0003, 1);
+    h.state.setSharedTrackState(0x0007, 1);
+    h.state.sequencerTracks.track(2).midiChannel.set(10);
+    h.state.sequencerTracks.setTrackMuted(2, true);
     h.state.sequencer.pattern.note[0] = 82;
     h.state.sequencer.pattern.velocity[0] = 108;
     h.state.sequencer.pattern.setEnabled(0, true);
@@ -650,7 +652,7 @@ void test_sequencer_selection_copy_paste_copies_track_payload() {
 
     assert(h.state.structureClipboard.hasSequencerTrackSelection());
     assert(h.state.trackNavigation.selection.active.get());
-    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007);
 
     h.state.trackNavigation.selection.cursorIndex.set(2);
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -660,10 +662,27 @@ void test_sequencer_selection_copy_paste_copies_track_payload() {
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007);
     assert(h.state.sequencerTracks.activeTrackIndex() == 2);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 10);
+    assert(h.state.sequencerTracks.track(2).midiChannel.get() == 10);
+    assert(h.state.sequencerTracks.isTrackMuted(2));
     assert(h.state.sequencer.pattern.note[0] == 82);
     assert(h.state.sequencer.pattern.velocity[0] == 108);
     assert(h.state.sequencer.pattern.isEnabled(0));
     assert(!h.state.trackNavigation.selection.active.get());
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 1);
+    assert(h.state.structureClipboard.hasSequencerTrackSelection());
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerTracks.track(2).midiChannel.get() == 10);
+    assert(h.state.sequencerTracks.isTrackMuted(2));
+    assert(h.state.structureClipboard.hasSequencerTrackSelection());
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.midiChannel.get() == 10);
+    assert(h.state.sequencerTracks.isTrackMuted(2));
+    assert(h.state.structureClipboard.hasSequencerTrackSelection());
 
     std::cout << "[PASS] test_sequencer_selection_copy_paste_copies_track_payload\n";
 }
@@ -672,6 +691,7 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0001, 0);
+    h.state.sequencerTracks.track(1).midiChannel.set(8);
     h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.pattern.note[0] = 79;
     h.state.sequencer.pattern.velocity[0] = 96;
@@ -695,19 +715,88 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 8);
+    assert(h.state.sequencerTracks.track(1).midiChannel.get() == 8);
     assert(h.state.sequencer.pattern.note[0] == 79);
     assert(h.state.sequencer.pattern.velocity[0] == 96);
     assert(h.state.sequencer.pattern.gate[0] == 72);
     assert(h.state.sequencer.pattern.isEnabled(0));
     assert(rootStepHasMicroSequence(h, 0));
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 1);
+    assert(h.state.structureClipboard.hasSequencerTrack());
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0001);
+    assert(h.state.sequencerTracks.track(1).midiChannel.get() == 8);
+    assert(h.state.structureClipboard.hasSequencerTrack());
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 8);
+    assert(rootStepHasMicroSequence(h, 0));
+    assert(h.state.structureClipboard.hasSequencerTrack());
 
     std::cout << "[PASS] test_sequencer_track_copy_and_long_press_paste_to_add_slot\n";
+}
+
+void test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 0);
+    h.state.sequencerTracks.track(1).midiChannel.set(11);
+    h.state.sequencerTracks.setTrackMuted(1, true);
+    h.state.sequencer.pattern.note[0] = 76;
+    h.state.sequencer.pattern.velocity[0] = 104;
+    h.state.sequencer.pattern.setEnabled(0, true);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerTrack());
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 11);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(0);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 11);
+    assert(h.state.sequencerTracks.track(1).midiChannel.get() == 11);
+    assert(h.state.sequencerTracks.isTrackMuted(1));
+    assert(h.state.sequencer.pattern.note[0] == 76);
+    assert(h.state.sequencer.pattern.velocity[0] == 104);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 1);
+    assert(h.state.structureClipboard.hasSequencerTrack());
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.midiChannel.get() == 11);
+    assert(h.state.sequencerTracks.isTrackMuted(1));
+    assert(h.state.structureClipboard.hasSequencerTrack());
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.midiChannel.get() == 11);
+    assert(h.state.sequencerTracks.isTrackMuted(1));
+    assert(h.state.sequencer.pattern.note[0] == 76);
+    assert(h.state.structureClipboard.hasSequencerTrack());
+
+    std::cout
+        << "[PASS] test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute\n";
 }
 
 void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0005, 0);
+    h.state.sequencerTracks.track(1).midiChannel.set(8);
     h.state.sequencerTracks.track(2).midiChannel.set(2);
     h.state.sequencerTracks.track(2).note[0] = 83;
     h.state.sequencerTracks.track(2).setEnabled(0, true);
@@ -731,7 +820,8 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencerTracks.isTrackEnabled(1));
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.sequencer.pattern.midiChannel.get() == 1);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 8);
+    assert(h.state.sequencerTracks.track(1).midiChannel.get() == 8);
     assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(!h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencerTracks.track(2).note[0] == 83);
@@ -1326,6 +1416,7 @@ int main() {
     test_sequencer_selection_copy_keeps_page_selection_active();
     test_sequencer_selection_copy_paste_copies_track_payload();
     test_sequencer_track_copy_and_long_press_paste_to_add_slot();
+    test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute();
     test_deleted_track_slot_can_be_recreated_at_any_gap();
     test_created_page_is_undoable_and_redoable();
     test_created_track_is_undoable_and_redoable();
