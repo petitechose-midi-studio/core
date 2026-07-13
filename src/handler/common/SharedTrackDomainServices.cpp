@@ -21,6 +21,17 @@ FLASHMEM bool setSharedTrackStateFromCoreState(
     return state->setSharedTrackState(enabledMask, activeTrack);
 }
 
+FLASHMEM void publishPreparedSequencerStateFromCoreState(
+    void* context,
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) {
+    if (context == nullptr) return;
+
+    auto* state = static_cast<core::state::CoreState*>(context);
+    state->publishPreparedSequencerTrackState(enabledMask, activeTrack);
+}
+
 }  // namespace
 
 FLASHMEM SharedTrackDomainServices::SharedTrackDomainServices(StateRefs state)
@@ -39,7 +50,11 @@ FLASHMEM SharedTrackDomainServices SharedTrackDomainServices::fromCoreState(
             state.sharedTrackActive,
             state.sharedTrackEnabledMask,
         },
-        Operations{&state, setSharedTrackStateFromCoreState},
+        Operations{
+            &state,
+            setSharedTrackStateFromCoreState,
+            publishPreparedSequencerStateFromCoreState,
+        },
     };
 }
 
@@ -54,6 +69,22 @@ FLASHMEM uint8_t SharedTrackDomainServices::activeTrack() const {
 FLASHMEM bool SharedTrackDomainServices::setState(uint16_t enabledMask, uint8_t activeTrack) const {
     return operations_.setSharedTrackState != nullptr &&
            operations_.setSharedTrackState(operations_.context, enabledMask, activeTrack);
+}
+
+FLASHMEM bool SharedTrackDomainServices::canPublishPreparedSequencerState() const {
+    return operations_.context != nullptr &&
+           operations_.publishPreparedSequencerState != nullptr;
+}
+
+FLASHMEM void SharedTrackDomainServices::publishPreparedSequencerState(
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) const {
+    operations_.publishPreparedSequencerState(
+        operations_.context,
+        enabledMask,
+        activeTrack
+    );
 }
 
 }  // namespace core::handler

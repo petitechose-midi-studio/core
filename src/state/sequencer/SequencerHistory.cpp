@@ -1,6 +1,7 @@
 #include "state/sequencer/SequencerHistory.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <new>
 #include <utility>
 
@@ -330,6 +331,21 @@ FLASHMEM size_t structureSnapshotRetainedBytes(
     return bytes;
 }
 
+FLASHMEM size_t structureChangeRetainedBytes(
+    const SequencerHistoryTrackStructureChange& change
+) {
+    return sizeof(SequencerHistoryTrackStructureChange) +
+           kExtmemAllocationOverheadEstimate +
+           structureSnapshotRetainedBytes(change.before) +
+           structureSnapshotRetainedBytes(change.after);
+}
+
+FLASHMEM bool incomingEntryFitsRetainedBudget(size_t incomingBytes) {
+    // recordEntry may evict every retained entry, so admission depends only on
+    // whether the incoming entry itself fits the total retained-byte budget.
+    return incomingBytes <= SequencerHistoryService::RETAINED_BYTE_BUDGET;
+}
+
 FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
     switch (entry.scope) {
         case SequencerHistoryScope::PatternOnly:
@@ -340,10 +356,7 @@ FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
                    patternSnapshotRetainedBytes(entry.pattern->after);
         case SequencerHistoryScope::Structure:
             if (!entry.structure) return 0;
-            return sizeof(SequencerHistoryTrackStructureChange) +
-                   kExtmemAllocationOverheadEstimate +
-                   structureSnapshotRetainedBytes(entry.structure->before) +
-                   structureSnapshotRetainedBytes(entry.structure->after);
+            return structureChangeRetainedBytes(*entry.structure);
         case SequencerHistoryScope::FullBank:
             if (!entry.fullBank) return 0;
             return sizeof(SequencerHistoryFullBankChange) +
@@ -482,7 +495,8 @@ FLASHMEM bool applyEntrySnapshot(
         return applyHistoryStructureSnapshot(
             bank,
             active,
-            after ? entry.structure->after : entry.structure->before
+            after ? entry.structure->after : entry.structure->before,
+            entry.structure->preserveDestinationBindingsMask
         );
     }
 
@@ -880,13 +894,19 @@ FLASHMEM bool SequencerHistoryService::recordFullBank(
 FLASHMEM bool SequencerHistoryService::recordStructure(
     SequencerHistoryTrackStructureChangePtr change
 ) {
-    if (!change) {
+    if (!change || !canRecordStructure(*change)) {
         return false;
     }
 
-    if (sameMusicalHistoryStructureSnapshot(change->before, change->after)) {
-        return false;
-    }
+    recordPreparedStructure(std::move(change));
+    return true;
+}
+
+FLASHMEM void SequencerHistoryService::recordPreparedStructure(
+    SequencerHistoryTrackStructureChangePtr change
+) {
+    assert(change && canRecordStructure(*change));
+    if (!change) return;
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
         change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
@@ -896,7 +916,17 @@ FLASHMEM bool SequencerHistoryService::recordStructure(
     entry.scope = SequencerHistoryScope::Structure;
     entry.structure = std::move(change);
 
-    return recordEntry(std::move(entry));
+    commitPreparedEntry(std::move(entry));
+}
+
+FLASHMEM bool SequencerHistoryService::canRecordStructure(
+    const SequencerHistoryTrackStructureChange& change
+) const {
+    if (sameMusicalHistoryStructureSnapshot(change.before, change.after)) {
+        return false;
+    }
+
+    return incomingEntryFitsRetainedBudget(structureChangeRetainedBytes(change));
 }
 
 FLASHMEM bool SequencerHistoryService::undo(
@@ -989,11 +1019,10 @@ FLASHMEM bool SequencerHistoryService::pushRedo(SequencerHistoryEntry entry) {
     return pushEntry(redo_, redo_count_, std::move(entry));
 }
 
-FLASHMEM bool SequencerHistoryService::recordEntry(SequencerHistoryEntry entry) {
-    if (!entry.valid()) return false;
-
+FLASHMEM void SequencerHistoryService::commitPreparedEntry(SequencerHistoryEntry entry) {
+    assert(entry.valid());
     const size_t incomingBytes = entryRetainedBytes(entry);
-    if (incomingBytes > RETAINED_BYTE_BUDGET) return false;
+    assert(incomingEntryFitsRetainedBudget(incomingBytes));
 
     redo_count_ = 0;
     for (auto& item : redo_) {
@@ -1004,9 +1033,21 @@ FLASHMEM bool SequencerHistoryService::recordEntry(SequencerHistoryEntry entry) 
     while (undo_count_ > 0 && retainedBytes() + incomingBytes > RETAINED_BYTE_BUDGET) {
         removeEntryAt(undo_, undo_count_, 0);
     }
-    if (retainedBytes() + incomingBytes > RETAINED_BYTE_BUDGET) return false;
+    assert(retainedBytes() + incomingBytes <= RETAINED_BYTE_BUDGET);
 
-    return pushUndo(std::move(entry));
+    const bool pushed = pushUndo(std::move(entry));
+    assert(pushed);
+    (void)pushed;
+}
+
+FLASHMEM bool SequencerHistoryService::recordEntry(SequencerHistoryEntry entry) {
+    if (!entry.valid()) return false;
+
+    const size_t incomingBytes = entryRetainedBytes(entry);
+    if (!incomingEntryFitsRetainedBudget(incomingBytes)) return false;
+
+    commitPreparedEntry(std::move(entry));
+    return true;
 }
 
 }  // namespace core::state::sequencer

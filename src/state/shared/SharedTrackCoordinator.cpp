@@ -85,6 +85,33 @@ FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
     };
 }
 
+FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::publishPreparedSequencerState(
+    StateRefs state,
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) {
+    const uint16_t sanitizedMask = sanitizeEnabledMask(enabledMask);
+    const uint8_t sanitizedActive = sanitizeActiveTrack(sanitizedMask, activeTrack);
+    const uint16_t previousMask = state.enabledMask.get();
+    const uint8_t previousActive = state.activeTrack.get();
+
+    state.sequencerTracks.syncSharedTrackState(sanitizedMask, sanitizedActive);
+    if (previousMask != sanitizedMask) {
+        state.enabledMask.set(sanitizedMask);
+    }
+    state.macroPages.syncSharedTrackState(sanitizedMask, sanitizedActive);
+    if (previousActive != sanitizedActive) {
+        state.activeTrack.set(sanitizedActive);
+    }
+
+    return Result{
+        sanitizedMask,
+        sanitizedActive,
+        previousMask != sanitizedMask || previousActive != sanitizedActive,
+        true,
+    };
+}
+
 FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::refreshFromMacroPages(StateRefs state) {
     return apply(
         state,

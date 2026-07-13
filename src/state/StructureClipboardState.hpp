@@ -103,7 +103,7 @@ struct SequencerPageSelectionClipboard {
 
 struct SequencerTrackSelectionClipboardEntry {
     bool valid = false;
-    uint8_t offset = 0;
+    uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     core::state::sequencer::SequencerPatternSnapshot snapshot{};
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
 };
@@ -154,6 +154,8 @@ struct StructureClipboardState {
     core::state::SequencerStepsClipboard sequencerSteps{};
     core::state::SequencerPageSelectionClipboard sequencerPageSelection{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
+    uint8_t sequencerTrackSource =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard> sequencerTrackSelection;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
     core::state::sequencer::SequencerGraphNodeId sequencerStepContentNodeId =
@@ -188,7 +190,8 @@ struct StructureClipboardState {
 
     [[nodiscard]] bool storeSequencerTrack(
         const core::state::sequencer::SequencerPatternSnapshot& track,
-        const oc::note::sequencer::StepSequencerGraph* graph
+        const oc::note::sequencer::StepSequencerGraph* graph,
+        uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
     );
 
     [[nodiscard]] bool storeSequencerStepContent(

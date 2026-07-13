@@ -307,6 +307,12 @@ public:
                                     sequencer::SequencerHistoryTrackBankSnapshot after,
                                     sequencer::SequencerHistoryDescriptor descriptor = {});
     bool recordSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
+    bool canRecordSequencerStructureHistory(
+        const sequencer::SequencerHistoryTrackStructureChange& change
+    ) const;
+    void recordPreparedSequencerStructureHistory(
+        sequencer::SequencerHistoryTrackStructureChangePtr change
+    );
     bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
                                                           sequencer::StepProperty property,
@@ -330,6 +336,7 @@ public:
     uint16_t currentSharedTrackEnabledMask() const;
     uint8_t currentSharedActiveTrack() const;
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
+    void publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack);
     bool refreshSharedTrackStateFromMacroPages();
     bool refreshSharedTrackStateFromSequencer();
 

@@ -634,6 +634,22 @@ FLASHMEM bool CoreState::recordSequencerStructureHistory(
     return true;
 }
 
+FLASHMEM bool CoreState::canRecordSequencerStructureHistory(
+    const sequencer::SequencerHistoryTrackStructureChange& change
+) const {
+    return sequencerHistory.canRecordStructure(change);
+}
+
+FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
+    sequencer::SequencerHistoryTrackStructureChangePtr change
+) {
+    sequencerHistory.recordPreparedStructure(std::move(change));
+    // The prepared Track transaction has already synchronized its bank/editor
+    // state. Marking the project dirty is allocation-free and deliberately
+    // avoids markSequencerProjectMutated_()/refreshSharedTrackStateFromSequencer().
+    markProjectMutated();
+}
+
 FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step,
     sequencer::StepProperty property,
@@ -805,6 +821,17 @@ uint8_t CoreState::currentSharedActiveTrack() const {
 
 bool CoreState::setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack) {
     return setSharedTrackState_(enabledMask, activeTrack, true);
+}
+
+void CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack) {
+    const auto result = shared::SharedTrackCoordinator::publishPreparedSequencerState(
+        sharedTrackRefs(*this),
+        enabledMask,
+        activeTrack
+    );
+    if (result.changed) {
+        requestSharedTrackPersist_();
+    }
 }
 
 bool CoreState::refreshSharedTrackStateFromMacroPages() {

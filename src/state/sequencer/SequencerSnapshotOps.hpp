@@ -47,6 +47,16 @@ void applySnapshotPreservingGraph(
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
+/**
+ * Installs already-cloned Track content without allocating. The destination
+ * MIDI channel remains authoritative.
+ */
+void installTrackContentSnapshotWithOwnedGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
+);
+
 // Copies scalar pattern state when graph revisions are already synchronized.
 void copyPatternStatePreservingGraph(
     SequencerPatternState& target,
@@ -74,6 +84,12 @@ void applySnapshotToEditorPreservingGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
     const oc::note::sequencer::StepSequencerGraph* graph
+);
+
+void installTrackContentSnapshotToEditorWithOwnedGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 );
 
 // Installs a decoded/staged pattern without allocating another graph copy.

@@ -82,6 +82,27 @@ FLASHMEM bool recordStructureFromCoreState(
     return state->recordSequencerStructureHistory(std::move(change));
 }
 
+FLASHMEM bool canRecordStructureFromCoreState(
+    void* context,
+    const core::state::sequencer::SequencerHistoryTrackStructureChange& change
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    const auto* state = static_cast<const core::state::CoreState*>(context);
+    return state->canRecordSequencerStructureHistory(change);
+}
+
+FLASHMEM void recordPreparedStructureFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) {
+    if (context == nullptr) return;
+    auto* state = static_cast<core::state::CoreState*>(context);
+    state->recordPreparedSequencerStructureHistory(std::move(change));
+}
+
 FLASHMEM bool undoFromCoreState(void* context) {
     if (context == nullptr) {
         return false;
@@ -148,6 +169,8 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
             recordFlatPatternFromCoreState,
             recordPatternChangeFromCoreState,
             recordStructureFromCoreState,
+            canRecordStructureFromCoreState,
+            recordPreparedStructureFromCoreState,
             recordFullBankFromCoreState,
             undoFromCoreState,
             redoFromCoreState,
@@ -201,6 +224,21 @@ FLASHMEM bool SequencerHistoryDomainServices::recordStructure(
                operations_.context,
                std::move(change)
            );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::canRecordStructure(
+    const core::state::sequencer::SequencerHistoryTrackStructureChange& change
+) const {
+    return operations_.canRecordStructure != nullptr &&
+           operations_.recordPreparedStructure != nullptr &&
+           operations_.canRecordStructure(operations_.context, change);
+}
+
+FLASHMEM void SequencerHistoryDomainServices::recordPreparedStructure(
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) const {
+    if (operations_.recordPreparedStructure == nullptr) return;
+    operations_.recordPreparedStructure(operations_.context, std::move(change));
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(

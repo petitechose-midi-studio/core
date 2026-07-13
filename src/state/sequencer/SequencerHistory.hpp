@@ -273,6 +273,12 @@ public:
         SequencerHistoryDescriptor descriptor = {}
     );
     bool recordFullBank(SequencerHistoryFullBankChangePtr change);
+    // Side-effect-free admission check for a fully prepared change. Callers
+    // must repeat it if snapshot graph ownership changes before recording.
+    bool canRecordStructure(const SequencerHistoryTrackStructureChange& change) const;
+    // Precondition: canRecordStructure(change) was true and change was not
+    // modified afterwards. Under that contract this commit cannot fail.
+    void recordPreparedStructure(SequencerHistoryTrackStructureChangePtr change);
     bool recordStructure(SequencerHistoryTrackStructureChangePtr change);
 
     bool canUndo() const { return undo_count_ > 0; }
@@ -301,6 +307,7 @@ private:
 
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);
+    void commitPreparedEntry(SequencerHistoryEntry entry);
     bool recordEntry(SequencerHistoryEntry entry);
     bool recordPatternWithStorage(
         uint8_t trackIndex,

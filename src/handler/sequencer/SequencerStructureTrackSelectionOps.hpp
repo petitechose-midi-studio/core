@@ -10,14 +10,6 @@
 
 namespace core::handler {
 
-struct SequencerTrackSelectionPasteTargets {
-    uint16_t targetMask = 0;
-    uint8_t firstTarget =
-        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-
-    bool hasTargets() const { return targetMask != 0; }
-};
-
 uint16_t activeTrackSelectionMask(
     uint16_t selectedMask,
     uint16_t enabledMask
@@ -39,19 +31,6 @@ captureTrackSelectionClipboard(
     core::state::sequencer::SequencerTrackBankState& tracks,
     core::state::sequencer::SequencerState& sequencer,
     uint16_t selectedMask
-);
-
-SequencerTrackSelectionPasteTargets buildTrackSelectionPasteTargets(
-    const core::state::SequencerTrackSelectionClipboard& clipboard,
-    uint8_t cursorTrack
-);
-
-[[nodiscard]] bool pasteTrackSelectionClipboard(
-    core::state::sequencer::SequencerTrackBankState& tracks,
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::SequencerTrackSelectionClipboard& clipboard,
-    uint8_t cursorTrack,
-    uint8_t previousActiveTrack
 );
 
 }  // namespace core::handler

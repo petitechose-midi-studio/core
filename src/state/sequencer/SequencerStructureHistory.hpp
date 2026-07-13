@@ -30,6 +30,10 @@ struct SequencerHistoryTrackStructureSnapshot {
 
 struct SequencerHistoryTrackStructureChange {
     SequencerHistoryDescriptor descriptor{};
+    // Tracks whose destination-owned bindings must survive history traversal.
+    // Track paste sets this for its destinations so Undo/Redo restores musical
+    // content without rolling routing back to the captured snapshot.
+    uint16_t preserveDestinationBindingsMask = 0;
     SequencerHistoryTrackStructureSnapshot before;
     SequencerHistoryTrackStructureSnapshot after;
 
@@ -65,7 +69,8 @@ bool captureHistoryStructureSnapshotUsingReservedGraphs(
 bool applyHistoryStructureSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
-    const SequencerHistoryTrackStructureSnapshot& snapshot
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    uint16_t preserveDestinationBindingsMask
 );
 
 bool sameMusicalHistoryStructureSnapshot(

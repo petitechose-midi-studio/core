@@ -10,6 +10,7 @@ struct SharedTrackMutationRecorder {
     uint16_t enabledMask = 0;
     uint8_t activeTrack = 0;
     bool called = false;
+    bool preparedCalled = false;
 };
 
 bool recordSharedTrackState(void* context, uint16_t enabledMask, uint8_t activeTrack) {
@@ -22,6 +23,18 @@ bool recordSharedTrackState(void* context, uint16_t enabledMask, uint8_t activeT
     recorder->activeTrack = activeTrack;
     recorder->called = true;
     return true;
+}
+
+void recordPreparedSequencerState(
+    void* context,
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) {
+    auto* recorder = static_cast<SharedTrackMutationRecorder*>(context);
+    if (recorder == nullptr) return;
+    recorder->enabledMask = enabledMask;
+    recorder->activeTrack = activeTrack;
+    recorder->preparedCalled = true;
 }
 
 void test_reads_state_and_uses_explicit_set_state_operation() {
@@ -37,6 +50,7 @@ void test_reads_state_and_uses_explicit_set_state_operation() {
         core::handler::SharedTrackDomainServices::Operations{
             &recorder,
             recordSharedTrackState,
+            recordPreparedSequencerState,
         },
     };
 
@@ -46,6 +60,11 @@ void test_reads_state_and_uses_explicit_set_state_operation() {
     assert(recorder.called);
     assert(recorder.enabledMask == 0x0003);
     assert(recorder.activeTrack == 1);
+    assert(services.canPublishPreparedSequencerState());
+    services.publishPreparedSequencerState(0x0018, 4);
+    assert(recorder.preparedCalled);
+    assert(recorder.enabledMask == 0x0018);
+    assert(recorder.activeTrack == 4);
 
     std::cout << "[PASS] test_reads_state_and_uses_explicit_set_state_operation\n";
 }
@@ -62,6 +81,7 @@ void test_set_state_returns_false_without_operation() {
     };
 
     assert(!services.setState(0x0003, 1));
+    assert(!services.canPublishPreparedSequencerState());
 
     std::cout << "[PASS] test_set_state_returns_false_without_operation\n";
 }

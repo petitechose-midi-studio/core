@@ -1,6 +1,5 @@
 #include "handler/sequencer/SequencerStructureTrackSelectionOps.hpp"
 
-#include <algorithm>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -97,7 +96,7 @@ captureTrackSelectionClipboard(
 
         auto& entry = clipboard->tracks[clipboard->count++];
         entry.valid = true;
-        entry.offset = static_cast<uint8_t>(track - firstTrack);
+        entry.sourceTrack = track;
         core::state::sequencer::captureSnapshot(tracks.track(track), entry.snapshot);
         if (!core::state::cloneSequencerGraph(
                 entry.graph,
@@ -108,64 +107,6 @@ captureTrackSelectionClipboard(
     }
 
     return clipboard->count == 0 ? nullptr : std::move(clipboard);
-}
-
-FLASHMEM SequencerTrackSelectionPasteTargets buildTrackSelectionPasteTargets(
-    const core::state::SequencerTrackSelectionClipboard& clipboard,
-    uint8_t cursorTrack
-) {
-    SequencerTrackSelectionPasteTargets targets;
-    const uint8_t cursor =
-        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(cursorTrack);
-    for (uint8_t i = 0; i < clipboard.count; ++i) {
-        const auto& entry = clipboard.tracks[i];
-        if (!entry.valid) continue;
-        const uint16_t target = static_cast<uint16_t>(cursor) + entry.offset;
-        if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
-
-        const uint8_t targetTrack = static_cast<uint8_t>(target);
-        targets.targetMask = static_cast<uint16_t>(
-            targets.targetMask | structure_slots::slotBit(targetTrack)
-        );
-        targets.firstTarget = std::min(targets.firstTarget, targetTrack);
-    }
-    return targets;
-}
-
-FLASHMEM bool pasteTrackSelectionClipboard(
-    core::state::sequencer::SequencerTrackBankState& tracks,
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::SequencerTrackSelectionClipboard& clipboard,
-    uint8_t cursorTrack,
-    uint8_t previousActiveTrack
-) {
-    const uint8_t cursor =
-        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(cursorTrack);
-    for (uint8_t i = 0; i < clipboard.count; ++i) {
-        const auto& entry = clipboard.tracks[i];
-        if (!entry.valid) continue;
-        const uint16_t target = static_cast<uint16_t>(cursor) + entry.offset;
-        if (target >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) continue;
-
-        const uint8_t targetTrack = static_cast<uint8_t>(target);
-        if (!core::state::sequencer::applyTrackContentSnapshotWithGraph(
-            tracks.track(targetTrack),
-            entry.snapshot,
-            entry.graph.get()
-        )) {
-            return false;
-        }
-        if (targetTrack == previousActiveTrack) {
-            if (!core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
-                    sequencer,
-                    entry.snapshot,
-                    entry.graph.get()
-                )) {
-                return false;
-            }
-        }
-    }
-    return true;
 }
 
 }  // namespace core::handler

@@ -50,7 +50,7 @@ FLASHMEM void SequencerTrackSelectionClipboard::reset() {
     count = 0;
     for (auto& entry : tracks) {
         entry.valid = false;
-        entry.offset = 0;
+        entry.sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
         entry.snapshot = {};
         entry.graph.reset();
     }
@@ -91,6 +91,8 @@ FLASHMEM void releaseOwnedPayloads(core::state::StructureClipboardState& clipboa
     clipboard.macroAutomationSet.reset();
     clipboard.sequencerTrackSelection.reset();
     clipboard.sequencerGraph.reset();
+    clipboard.sequencerTrackSource =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 }
 
 FLASHMEM void commitClipboardKind(
@@ -252,7 +254,8 @@ FLASHMEM bool StructureClipboardState::storeSequencerPage(
 
 FLASHMEM bool StructureClipboardState::storeSequencerTrack(
     const core::state::sequencer::SequencerPatternSnapshot& track,
-    const oc::note::sequencer::StepSequencerGraph* graph
+    const oc::note::sequencer::StepSequencerGraph* graph,
+    uint8_t sourceTrack
 ) {
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
     if (!cloneSequencerGraph(graphCopy, graph)) {
@@ -261,6 +264,9 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrack(
 
     releaseOwnedPayloads(*this);
     sequencerTrack = track;
+    sequencerTrackSource = sourceTrack < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        ? sourceTrack
+        : core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     sequencerGraph = std::move(graphCopy);
     commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_TRACK);
     return true;

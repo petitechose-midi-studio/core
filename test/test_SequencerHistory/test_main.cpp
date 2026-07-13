@@ -38,6 +38,29 @@ void setStep(SequencerPatternState& pattern, uint8_t step, uint8_t note) {
     pattern.setEnabled(step, true);
 }
 
+core::state::sequencer::SequencerHistoryTrackStructureChangePtr
+makeGraphHeavyStructureHistoryChange() {
+    auto change = core::app::makeExtmemUnique<SequencerHistoryTrackStructureChange>();
+    assert(change);
+
+    change->before.enabledMask = 0x0001;
+    change->after.enabledMask = 0x0003;
+    change->before.capturedTrackMask = 0xFFFF;
+    change->after.capturedTrackMask = 0xFFFF;
+    change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
+
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        change->before.tracks[i].graph =
+            core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+        change->after.tracks[i].graph =
+            core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+        assert(change->before.tracks[i].graph);
+        assert(change->after.tracks[i].graph);
+    }
+
+    return change;
+}
+
 bool hasMicroSequence(const SequencerPatternState& pattern, uint8_t step) {
     const auto* graph = core::state::sequencer::graphView(pattern);
     if (graph == nullptr) return false;
@@ -527,6 +550,186 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
     std::cout << "[PASS] test_structure_history_restores_track_mask_active_track_and_graphs\n";
 }
 
+void test_structure_history_preserves_masked_destination_channel_across_active_track_changes() {
+    SequencerTrackBankState bank;
+    SequencerState active;
+    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    bank.syncSharedTrackState(0x0003, 0);
+    active.pattern.midiChannel.set(2);
+    bank.track(0).midiChannel.set(2);
+    bank.track(1).midiChannel.set(11);
+    setStep(active.pattern, 0, 60);
+    setStep(bank.track(1), 0, 72);
+
+    auto change = core::app::makeExtmemUnique<SequencerHistoryTrackStructureChange>();
+    assert(change);
+    const uint16_t historyMask = static_cast<uint16_t>(
+        core::state::sequencer::sequencerHistoryTrackBit(0) |
+        core::state::sequencer::sequencerHistoryTrackBit(1)
+    );
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        historyMask,
+        change->before
+    ));
+
+    assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
+    assert(active.pattern.midiChannel.get() == 11);
+    setStep(active.pattern, 0, 80);
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        historyMask,
+        change->after
+    ));
+    change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
+    change->preserveDestinationBindingsMask =
+        core::state::sequencer::sequencerHistoryTrackBit(1);
+
+    SequencerHistoryService history;
+    assert(history.recordStructure(std::move(change)));
+
+    // Route changes after paste live in the active editor; the bank copy is
+    // intentionally left stale to prove history reads the authoritative path.
+    active.pattern.midiChannel.set(13);
+    assert(bank.track(1).midiChannel.get() == 11);
+
+    assert(history.undo(bank, active));
+    assert(bank.activeTrackIndex() == 0);
+    assert(bank.track(1).note[0] == 72);
+    assert(bank.track(1).midiChannel.get() == 13);
+
+    // A second route change while the destination is dormant must also win
+    // over the Redo snapshot when that Track becomes active again.
+    bank.track(1).midiChannel.set(14);
+    assert(history.redo(bank, active));
+    assert(bank.activeTrackIndex() == 1);
+    assert(active.pattern.note[0] == 80);
+    assert(active.pattern.midiChannel.get() == 14);
+    assert(bank.track(1).midiChannel.get() == 14);
+
+    std::cout
+        << "[PASS] test_structure_history_preserves_masked_destination_channel_across_active_track_changes\n";
+}
+
+void test_structure_history_restores_unmasked_destination_channel() {
+    SequencerTrackBankState bank;
+    SequencerState active;
+    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    bank.syncSharedTrackState(0x0001, 0);
+    active.pattern.midiChannel.set(2);
+    bank.track(0).midiChannel.set(2);
+    setStep(active.pattern, 0, 60);
+
+    auto change = core::app::makeExtmemUnique<SequencerHistoryTrackStructureChange>();
+    assert(change);
+    const uint16_t historyMask = core::state::sequencer::sequencerHistoryTrackBit(0);
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        historyMask,
+        change->before
+    ));
+
+    active.pattern.midiChannel.set(7);
+    bank.track(0).midiChannel.set(7);
+    setStep(active.pattern, 0, 80);
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        historyMask,
+        change->after
+    ));
+    change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
+
+    SequencerHistoryService history;
+    assert(history.recordStructure(std::move(change)));
+
+    active.pattern.midiChannel.set(12);
+    assert(history.undo(bank, active));
+    assert(active.pattern.midiChannel.get() == 2);
+    assert(history.redo(bank, active));
+    assert(active.pattern.midiChannel.get() == 7);
+
+    std::cout << "[PASS] test_structure_history_restores_unmasked_destination_channel\n";
+}
+
+void test_structure_history_preflight_matches_record_acceptance() {
+    SequencerTrackBankState bank;
+    SequencerState active;
+    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+
+    SequencerHistoryService history;
+    auto noOp = core::app::makeExtmemUnique<SequencerHistoryTrackStructureChange>();
+    assert(noOp);
+    const uint16_t trackMask = core::state::sequencer::sequencerHistoryTrackBit(0);
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        trackMask,
+        noOp->before
+    ));
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        trackMask,
+        noOp->after
+    ));
+    assert(!history.canRecordStructure(*noOp));
+    assert(!history.recordStructure(std::move(noOp)));
+
+    auto change = core::app::makeExtmemUnique<SequencerHistoryTrackStructureChange>();
+    assert(change);
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        trackMask,
+        change->before
+    ));
+    setStep(active.pattern, 0, 67);
+    assert(core::state::sequencer::captureHistoryStructureSnapshot(
+        bank,
+        active,
+        trackMask,
+        change->after
+    ));
+    assert(history.canRecordStructure(*change));
+    history.recordPreparedStructure(std::move(change));
+    assert(history.undoCount(SequencerHistoryScope::Structure) == 1);
+
+    std::cout << "[PASS] test_structure_history_preflight_matches_record_acceptance\n";
+}
+
+void test_structure_history_preflight_accepts_with_budget_pruning() {
+    SequencerHistoryService history;
+
+    auto first = makeGraphHeavyStructureHistoryChange();
+    assert(history.canRecordStructure(*first));
+    assert(history.recordStructure(std::move(first)));
+    const size_t entryBytes = history.retainedBytes();
+    assert(entryBytes > 0);
+    assert(entryBytes <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
+
+    auto second = makeGraphHeavyStructureHistoryChange();
+    assert(history.canRecordStructure(*second));
+    assert(history.recordStructure(std::move(second)));
+    assert(history.retainedBytes() == entryBytes * 2U);
+    assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
+
+    auto incoming = makeGraphHeavyStructureHistoryChange();
+    assert(history.retainedBytes() + entryBytes >
+           SequencerHistoryService::RETAINED_BYTE_BUDGET);
+    const uint8_t countBefore = history.undoCount(SequencerHistoryScope::Structure);
+    assert(history.canRecordStructure(*incoming));
+    history.recordPreparedStructure(std::move(incoming));
+    assert(history.undoCount(SequencerHistoryScope::Structure) == countBefore);
+    assert(history.retainedBytes() == entryBytes * 2U);
+    assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
+
+    std::cout << "[PASS] test_structure_history_preflight_accepts_with_budget_pruning\n";
+}
+
 void test_track_switch_preserves_nested_graph_payload() {
     SequencerTrackBankState bank;
     SequencerState active;
@@ -624,6 +827,7 @@ void test_history_limits_prune_by_scope() {
             change->after
         ));
         change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
+        assert(history.canRecordStructure(*change));
         assert(history.recordStructure(std::move(change)));
     }
 
@@ -705,6 +909,10 @@ int main() {
     test_pattern_history_undoes_previous_track_without_switching_active_track();
     test_full_bank_history_restores_active_track_and_graphs();
     test_structure_history_restores_track_mask_active_track_and_graphs();
+    test_structure_history_preserves_masked_destination_channel_across_active_track_changes();
+    test_structure_history_restores_unmasked_destination_channel();
+    test_structure_history_preflight_matches_record_acceptance();
+    test_structure_history_preflight_accepts_with_budget_pruning();
     test_track_switch_preserves_nested_graph_payload();
     test_history_limits_prune_by_scope();
     test_history_prunes_graph_heavy_entries_to_psram_budget();

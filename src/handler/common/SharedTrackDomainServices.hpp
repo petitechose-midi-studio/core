@@ -26,10 +26,16 @@ public:
     using SetSharedTrackStateFn = bool (*)(void* context,
                                            uint16_t enabledMask,
                                            uint8_t activeTrack);
+    using PublishPreparedSequencerStateFn = void (*)(
+        void* context,
+        uint16_t enabledMask,
+        uint8_t activeTrack
+    );
 
     struct Operations {
         void* context = nullptr;
         SetSharedTrackStateFn setSharedTrackState = nullptr;
+        PublishPreparedSequencerStateFn publishPreparedSequencerState = nullptr;
     };
 
     explicit SharedTrackDomainServices(StateRefs state);
@@ -39,6 +45,8 @@ public:
     uint16_t enabledMask() const;
     uint8_t activeTrack() const;
     bool setState(uint16_t enabledMask, uint8_t activeTrack) const;
+    bool canPublishPreparedSequencerState() const;
+    void publishPreparedSequencerState(uint16_t enabledMask, uint8_t activeTrack) const;
 
 private:
     oc::state::Signal<uint8_t, 8>* active_track_ = nullptr;

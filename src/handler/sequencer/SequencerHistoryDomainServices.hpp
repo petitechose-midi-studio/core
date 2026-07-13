@@ -28,6 +28,14 @@ public:
         void* context,
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
     );
+    using CanRecordStructureFn = bool (*)(
+        void* context,
+        const core::state::sequencer::SequencerHistoryTrackStructureChange& change
+    );
+    using RecordPreparedStructureFn = void (*)(
+        void* context,
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+    );
     using CommandFn = bool (*)(void* context);
     using BeginCoalescedPatternEditFn = bool (*)(
         void* context,
@@ -42,6 +50,8 @@ public:
         RecordPatternFn recordFlatPattern = nullptr;
         RecordPatternChangeFn recordPatternChange = nullptr;
         RecordStructureFn recordStructure = nullptr;
+        CanRecordStructureFn canRecordStructure = nullptr;
+        RecordPreparedStructureFn recordPreparedStructure = nullptr;
         RecordFullBankFn recordFullBank = nullptr;
         CommandFn undo = nullptr;
         CommandFn redo = nullptr;
@@ -69,6 +79,13 @@ public:
     ) const;
     bool recordFullBank(
         core::state::sequencer::SequencerHistoryFullBankChangePtr change
+    ) const;
+    bool canRecordStructure(
+        const core::state::sequencer::SequencerHistoryTrackStructureChange& change
+    ) const;
+    // Precondition: canRecordStructure(change) was true and change is unchanged.
+    void recordPreparedStructure(
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
     ) const;
     bool recordStructure(
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change

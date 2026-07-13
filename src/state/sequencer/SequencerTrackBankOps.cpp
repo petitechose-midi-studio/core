@@ -30,6 +30,8 @@ FLASHMEM bool copyEditorToPattern(SequencerPatternState& target, const Sequencer
     return copyPatternState(target, source.pattern);
 }
 
+}  // namespace
+
 FLASHMEM void resetTransientTrackState(SequencerState& state) {
     state.stepEdit.reset();
     state.stepPropertyInlineSelector.reset();
@@ -37,8 +39,6 @@ FLASHMEM void resetTransientTrackState(SequencerState& state) {
     state.patternQuickControls.reset();
     state.contentView.reset();
 }
-
-}  // namespace
 
 FLASHMEM bool initializeTrackBankFromActive(
     SequencerTrackBankState& bank,

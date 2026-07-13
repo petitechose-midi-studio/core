@@ -2,8 +2,6 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
@@ -53,29 +51,6 @@ FLASHMEM bool toggleSequencerStructureTrackMute(
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(track);
     const bool nextMuted = !tracks.isTrackMuted(index);
     return tracks.setTrackMuted(index, nextMuted);
-}
-
-FLASHMEM bool pasteCurrentSequencerStructureTrack(
-    core::state::sequencer::SequencerTrackBankState& tracks,
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::TrackNavigationState& trackUi,
-    const SharedTrackDomainServices& sharedTracks,
-    const core::state::StructureClipboardState& structureClipboard
-) {
-    if (!structureClipboard.hasSequencerTrack()) return false;
-    if (trackUi.previewAddSlot.get() &&
-        !createSequencerStructureTrack(sequencer, tracks, trackUi, sharedTracks)) {
-        return false;
-    }
-
-    if (!core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
-        sequencer,
-        structureClipboard.sequencerTrack,
-        structureClipboard.sequencerGraph.get()
-    )) {
-        return false;
-    }
-    return core::state::sequencer::storeActiveTrack(tracks, sequencer);
 }
 
 }  // namespace core::handler

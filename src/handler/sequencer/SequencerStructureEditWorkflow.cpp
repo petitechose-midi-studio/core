@@ -13,6 +13,7 @@
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
+#include "handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -159,7 +160,8 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
         core::state::sequencer::captureSnapshot(sequencer_.pattern, snapshot);
         if (!structure_clipboard_.storeSequencerTrack(
             snapshot,
-            core::state::sequencer::graphView(sequencer_.pattern)
+            core::state::sequencer::graphView(sequencer_.pattern),
+            currentActiveTrack()
         )) {
             return;
         }
@@ -188,23 +190,16 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
         if (!structure_clipboard_.hasSequencerTrack()) return;
         const uint8_t targetTrack =
             sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
-        const uint16_t historyMask = static_cast<uint16_t>(
-            sequencerStructureHistoryTrackBit(currentActiveTrack()) |
-            sequencerStructureHistoryTrackBit(targetTrack)
-        );
-        auto change = captureTrackHistoryBefore(historyMask);
-        if (!change) return;
-        if (!pasteCurrentSequencerStructureTrack(
+        const auto result = executeSequencerTrackTransfer(
                 tracks_,
                 sequencer_,
-                track_ui_,
+                structure_clipboard_,
                 shared_tracks_,
-                structure_clipboard_
-            )) {
-            return;
-        }
+                history_,
+                targetTrack
+            );
+        if (!result.applied()) return;
         syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
-        recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
 
@@ -410,40 +405,20 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
 FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
     if (track_ui_.selection.active.get()) {
         if (!structure_clipboard_.hasSequencerTrackSelection()) return;
-        const auto* clipboard = structure_clipboard_.sequencerTrackSelection.get();
-        if (clipboard == nullptr) return;
-
         const uint8_t cursorTrack =
             core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
                 track_ui_.selection.cursorIndex.get()
             );
-        const auto targets = buildTrackSelectionPasteTargets(*clipboard, cursorTrack);
-        if (!targets.hasTargets()) return;
-
-        const uint8_t previousActive = currentActiveTrack();
-        const uint16_t historyMask = static_cast<uint16_t>(
-            targets.targetMask | sequencerStructureHistoryTrackBit(previousActive)
-        );
-        auto change = captureTrackHistoryBefore(historyMask);
-        if (!change) return;
-        if (!core::state::sequencer::storeActiveTrack(tracks_, sequencer_)) return;
-
-        if (!pasteTrackSelectionClipboard(
+        const auto result = executeSequencerTrackTransfer(
                 tracks_,
                 sequencer_,
-                *clipboard,
-                cursorTrack,
-                previousActive
-            )) {
-            return;
-        }
-
-        const uint16_t nextMask = static_cast<uint16_t>(
-            currentTrackEnabledMask() | targets.targetMask
-        );
-        applyTrackState(nextMask, targets.firstTarget);
+                structure_clipboard_,
+                shared_tracks_,
+                history_,
+                cursorTrack
+            );
+        if (!result.applied()) return;
         cancelSelectionMode();
-        recordTrackHistoryAfter(std::move(change), historyMask);
         return;
     }
 

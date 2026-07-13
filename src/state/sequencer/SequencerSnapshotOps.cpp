@@ -323,6 +323,20 @@ FLASHMEM bool applyTrackContentSnapshotWithGraph(
     return true;
 }
 
+FLASHMEM void installTrackContentSnapshotWithOwnedGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
+) {
+    applySnapshotImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::PRESERVE_DESTINATION
+    );
+    target.graph = std::move(graph);
+    target.graphRevision.set(snapshot.graphRevision);
+}
+
 FLASHMEM void copyPatternStatePreservingGraph(
     SequencerPatternState& target,
     const SequencerPatternState& source
@@ -373,6 +387,20 @@ FLASHMEM bool applyTrackContentSnapshotToEditorWithGraph(
         MidiChannelApplyPolicy::PRESERVE_DESTINATION
     );
     return true;
+}
+
+FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
+) {
+    applySnapshotToEditorImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::PRESERVE_DESTINATION
+    );
+    target.pattern.graph = std::move(graph);
+    target.pattern.graphRevision.set(snapshot.graphRevision);
 }
 
 FLASHMEM void installPatternStateToEditor(
