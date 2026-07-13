@@ -12,6 +12,7 @@
 #include "entry/MidiDefaults.hpp"
 #include "entry/SdlRunLoop.hpp"
 #include "entry/BridgeArgs.hpp"
+#include "entry/SdlProjectSessionRuntime.hpp"
 #include "integration/CaptureScenarios.hpp"
 #include "integration/InputBindingTraceWriter.hpp"
 #include "integration/UxScenarioRunner.hpp"
@@ -26,6 +27,7 @@
 #include <oc/hal/sdl/Sdl.hpp>
 #include <oc/impl/FileStorage.hpp>
 #include <oc/impl/HostFileSystem.hpp>
+#include <oc/impl/NullMidi.hpp>
 #include <oc/hal/midi/LibreMidiTransport.hpp>
 #include <oc/hal/net/UdpTransport.hpp>
 
@@ -58,6 +60,32 @@ bool removeStorageFilesForUxRun() {
         }
     }
     return ok;
+}
+
+void reportProjectSessionRestore(
+    const core::persistence::ProjectSessionRestoreService::Result& result
+) {
+    using Status = core::persistence::ProjectSessionRestoreService::Status;
+    switch (result.status) {
+        case Status::RESTORED:
+            std::fprintf(stdout,
+                         "[ProjectSession] restored current.mspj bytes=%u\n",
+                         static_cast<unsigned>(result.bytes));
+            return;
+        case Status::MISSING:
+            std::fprintf(stdout,
+                         "[ProjectSession] no current.mspj; using default session\n");
+            return;
+        case Status::APPLY_FAILED:
+            std::fprintf(stderr,
+                         "[ProjectSession] current.mspj apply failed; using default session\n");
+            return;
+        case Status::DEGRADED:
+        default:
+            std::fprintf(stderr,
+                         "[ProjectSession] current.mspj unavailable/corrupt; using default session\n");
+            return;
+    }
 }
 
 }  // namespace
@@ -129,6 +157,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Failed to initialize product file service\n");
         return 1;
     }
+    ms::entry::SdlProjectSessionRuntime projectSessionRuntime(productFiles, coreState);
+    reportProjectSessionRestore(projectSessionRuntime.restoreResult());
 
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
     std::string bindingTracePath;
@@ -143,10 +173,21 @@ int main(int argc, char** argv) {
         }
     }
 
+    // UX workflows must not inherit clock/transport traffic from the user's
+    // live loopMIDI ports. They drive transport explicitly through scripted
+    // controller input, so a no-op transport keeps captures deterministic.
+    std::unique_ptr<oc::interface::IMidi> midiTransport;
+    if (uxScript) {
+        midiTransport = std::make_unique<oc::impl::NullMidi>();
+    } else {
+        midiTransport = std::make_unique<oc::hal::midi::LibreMidiTransport>(
+            ms::midi::make_native_config("MIDI Studio")
+        );
+    }
+
     // 3. Build application with MIDI transport
     oc::app::OpenControlApp app = oc::hal::sdl::AppBuilder()
-        .midi(std::make_unique<oc::hal::midi::LibreMidiTransport>(
-            ms::midi::make_native_config("MIDI Studio")))
+        .midi(std::move(midiTransport))
         .remote(std::make_unique<oc::hal::net::UdpTransport>(
             oc::hal::net::UdpConfig{
                 .host = "127.0.0.1",
@@ -200,6 +241,9 @@ int main(int argc, char** argv) {
             coreState,
             [&coreState](const char* scenario) {
                 return sdl::integration::applyCaptureScenario(coreState, scenario);
+            },
+            [&projectSessionRuntime]() {
+                projectSessionRuntime.update();
             }
         );
         if (!ok) {
@@ -229,8 +273,10 @@ int main(int argc, char** argv) {
     return ms::entry::run_native(
         env,
         app,
-        &coreState,
-        [](void* user) { static_cast<core::state::CoreState*>(user)->update(); }
+        &projectSessionRuntime,
+        [](void* user) {
+            static_cast<ms::entry::SdlProjectSessionRuntime*>(user)->update();
+        }
     );
 
     // 6. Cleanup: handled by destructors in correct order

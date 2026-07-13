@@ -9,6 +9,7 @@
 
 #include <SDL2/SDL.h>
 #include <oc/hal/sdl/InputMapper.hpp>
+#include <oc/state/NotificationQueue.hpp>
 
 #include "integration/UxInputIds.hpp"
 #include "integration/UxReplayTimeline.hpp"
@@ -50,11 +51,16 @@ bool pumpUntil(uint32_t dueMs,
                uint32_t start,
                ::sdl::SdlEnvironment& env,
                oc::app::OpenControlApp& app,
-               core::state::CoreState& state) {
+               core::state::CoreState& state,
+               const UxScenarioRunner::StateTick& stateTick) {
     while (env.isRunning() && elapsedSince(start) < dueMs) {
         if (!env.processEvents()) return false;
         app.update();
-        state.update();
+        if (stateTick) {
+            stateTick();
+        } else {
+            state.update();
+        }
         env.refresh();
 
         const uint32_t elapsed = elapsedSince(start);
@@ -66,10 +72,15 @@ bool pumpUntil(uint32_t dueMs,
 
 void flushFrame(::sdl::SdlEnvironment& env,
                 oc::app::OpenControlApp& app,
-                core::state::CoreState& state) {
+                core::state::CoreState& state,
+                const UxScenarioRunner::StateTick& stateTick) {
     env.processEvents();
     app.update();
-    state.update();
+    if (stateTick) {
+        stateTick();
+    } else {
+        state.update();
+    }
     env.refresh();
 }
 
@@ -79,7 +90,8 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
                            ::sdl::SdlEnvironment& env,
                            oc::app::OpenControlApp& app,
                            core::state::CoreState& state,
-                           ScenarioApplier scenarioApplier) {
+                           ScenarioApplier scenarioApplier,
+                           StateTick stateTick) {
     error_.clear();
     if (!options.scriptPath || options.scriptPath[0] == '\0') {
         error_ = "missing UX script path";
@@ -111,8 +123,18 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
         return false;
     }
 
+    auto& notificationQueue = oc::state::NotificationQueue::instance();
+    notificationQueue.flush();
+    const size_t preRunOverflowCount = notificationQueue.overflowCount();
     trace << "{\"event\":\"run_start\",\"script\":\"" << jsonEscape(options.scriptPath)
-          << "\",\"actions\":" << actions.size() << "}\n";
+          << "\",\"actions\":" << actions.size()
+          << ",\"pre_run_notification_overflow_count\":" << preRunOverflowCount << "}\n";
+    if (preRunOverflowCount != 0) {
+        error_ = "NotificationQueue dropped " + std::to_string(preRunOverflowCount) +
+                 " notification(s) before UX workflow start";
+        return false;
+    }
+    notificationQueue.resetOverflowCount();
 
     const uint32_t start = SDL_GetTicks();
     UxReplayTimeline timeline;
@@ -121,7 +143,7 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
 
         // A slow render may delay an action, but must never compress the next
         // gesture interval (notably button holds used to enter an overlay).
-        if (!pumpUntil(scheduledMs, start, env, app, state)) {
+        if (!pumpUntil(scheduledMs, start, env, app, state, stateTick)) {
             error_ = "UX run stopped before action at " + std::to_string(action.dueMs) + "ms";
             return false;
         }
@@ -152,7 +174,7 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
             }
 
             case UxActionKind::Capture: {
-                flushFrame(env, app, state);
+                flushFrame(env, app, state, stateTick);
                 const std::string fileName = std::to_string(action.dueMs) + "_" +
                     safeName(action.id) + "_" + uxScopeName(action.scope) + ".bmp";
                 const std::filesystem::path path = outputDir / fileName;
@@ -173,7 +195,7 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
 
             case UxActionKind::Tick:
             default:
-                flushFrame(env, app, state);
+                flushFrame(env, app, state, stateTick);
                 break;
         }
 
@@ -186,13 +208,26 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
               << "\",\"id\":\"" << jsonEscape(action.id)
               << "\",\"value\":\"" << jsonEscape(action.value)
               << "\",\"scope\":\"" << uxScopeName(action.scope)
-              << "\",\"playing\":" << (state.statusBar.playing.get() ? "true" : "false")
+              << "\",\"active_view\":" << static_cast<int>(state.activeView.get())
+              << ",\"playing\":" << (state.statusBar.playing.get() ? "true" : "false")
               << ",\"playhead_step\":" << state.sequencer.playheadStep.get()
               << ",\"sequencer_page\":" << static_cast<int>(state.sequencer.page.get())
               << ",\"capture\":\"" << jsonEscape(capturePath) << "\"}\n";
     }
 
-    trace << "{\"event\":\"run_end\",\"actual_ms\":" << elapsedSince(start) << "}\n";
+    flushFrame(env, app, state, stateTick);
+    // The state tick runs after app.update(), matching firmware order. Drain
+    // the resulting reactive wave so a final callback-triggered overflow cannot
+    // escape the workflow gate.
+    notificationQueue.flush();
+    const size_t notificationOverflowCount = notificationQueue.overflowCount();
+    trace << "{\"event\":\"run_end\",\"actual_ms\":" << elapsedSince(start)
+          << ",\"notification_overflow_count\":" << notificationOverflowCount << "}\n";
+    if (notificationOverflowCount != 0) {
+        error_ = "NotificationQueue dropped " + std::to_string(notificationOverflowCount) +
+                 " notification(s) during UX workflow";
+        return false;
+    }
     return true;
 }
 

@@ -231,6 +231,8 @@ target_include_directories(${APP_EXE_NAME} PRIVATE
 target_compile_definitions(${APP_EXE_NAME} PRIVATE
     OC_DESKTOP=1
     OC_LOG=1
+    # Match the firmware capacity for the measured 66-entry full-bank apply.
+    OC_MAX_PENDING_NOTIFICATIONS=96
     # Keep SDL/native/wasm binding capacity aligned with the Teensy firmware.
     # A smaller desktop registry silently drops later bindings, which mostly
     # affects the standalone LEFT/BOTTOM button handlers.
