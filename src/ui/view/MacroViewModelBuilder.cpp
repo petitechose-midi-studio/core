@@ -6,6 +6,7 @@
 #include "config/Timing.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
+#include "state/macro/MacroSelectionDeleteAction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -52,11 +53,34 @@ ContextActionStripVisualState macroVisual(
     switch (visibility) {
         case core::state::macro::MacroInteractionVisibility::ACTIVE:
             return ContextActionStripVisualState::ACTIVE;
+        case core::state::macro::MacroInteractionVisibility::DISABLED:
+            return ContextActionStripVisualState::DISABLED;
         case core::state::macro::MacroInteractionVisibility::DIM:
             return ContextActionStripVisualState::DIM;
         case core::state::macro::MacroInteractionVisibility::HIDDEN:
         default:
             return ContextActionStripVisualState::HIDDEN;
+    }
+}
+
+ContextActionStripVisualState selectionDeleteVisual(
+    core::state::macro::MacroSelectionDeletePresentationState state
+) {
+    using Presentation = core::state::macro::MacroSelectionDeletePresentationState;
+    switch (state) {
+        case Presentation::AVAILABLE:
+            return ContextActionStripVisualState::AVAILABLE;
+        case Presentation::PRESSED:
+            return ContextActionStripVisualState::PRESSED;
+        case Presentation::ARMED:
+            return ContextActionStripVisualState::ARMED;
+        case Presentation::CANCELLED:
+            return ContextActionStripVisualState::CANCELLED;
+        case Presentation::APPLIED:
+            return ContextActionStripVisualState::APPLIED;
+        case Presentation::DISABLED:
+        default:
+            return ContextActionStripVisualState::DISABLED;
     }
 }
 
@@ -213,20 +237,53 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
     ContextActionStripProps props;
     props.visible = true;
 
-    if (source.trackNavigation.selection.active.get() || source.macroUi.pageSelection.active.get()) {
+    const auto selectionFeedback = source.macroUi.selectionDeleteFeedback.get();
+    const bool appliedSelectionDeleteFeedback =
+        selectionFeedback.active &&
+        selectionFeedback.action == core::state::contextual::ContextActionId::REMOVE &&
+        selectionFeedback.status ==
+            core::state::contextual::OperationFeedbackStatus::APPLIED;
+    if (source.trackNavigation.selection.active.get() ||
+        source.macroUi.pageSelection.active.get() ||
+        appliedSelectionDeleteFeedback) {
+        const auto context = macroInteractionContext(source);
+        const auto presentation = appliedSelectionDeleteFeedback
+            ? core::state::macro::MacroSelectionDeletePresentationState::APPLIED
+            : core::state::macro::macroSelectionDeletePresentationState(
+                context.selectionDeleteAction,
+                source.macroUi.selectionDeleteGuard.get(),
+                selectionFeedback
+            );
+        const bool armed = presentation ==
+            core::state::macro::MacroSelectionDeletePresentationState::ARMED;
+        const bool cancelled = presentation ==
+            core::state::macro::MacroSelectionDeletePresentationState::CANCELLED;
+        const bool applied = presentation ==
+            core::state::macro::MacroSelectionDeletePresentationState::APPLIED;
         props.slots[0] = {
-            .visualState = ContextActionStripVisualState::ACTIVE,
-            .tone = ContextActionStripTone::DESTRUCTIVE,
+            .visualState = selectionDeleteVisual(presentation),
+            .tone = applied ? ContextActionStripTone::POSITIVE
+                            : (cancelled ? ContextActionStripTone::WARNING
+                                         : ContextActionStripTone::DESTRUCTIVE),
             .showIcon = true,
-            .icon = standalone::icons::ACTION_CLEAR
+            .icon = applied ? standalone::icons::ACTION_VALIDATE
+                            : (cancelled ? standalone::icons::ACTION_CANCEL
+                                         : standalone::icons::ACTION_CLEAR),
+            .holdActive = armed,
+            .holdStartedAtMs = source.macroUi.selectionDeleteGuard.get().pressedAtMs,
+            .holdDurationMs = context.selectionDeleteAction.guard.durationMs,
         };
         props.slots[1].visualState = ContextActionStripVisualState::HIDDEN;
-        props.slots[2] = {
-            .visualState = ContextActionStripVisualState::ACTIVE,
-            .tone = ContextActionStripTone::CONSTRUCTIVE,
-            .showIcon = true,
-            .icon = standalone::icons::ACTION_COPY
-        };
+        if (appliedSelectionDeleteFeedback) {
+            props.slots[2].visualState = ContextActionStripVisualState::HIDDEN;
+        } else {
+            props.slots[2] = {
+                .visualState = ContextActionStripVisualState::ACTIVE,
+                .tone = ContextActionStripTone::CONSTRUCTIVE,
+                .showIcon = true,
+                .icon = standalone::icons::ACTION_COPY
+            };
+        }
         return props;
     }
 

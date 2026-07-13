@@ -300,6 +300,22 @@ FLASHMEM bool MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
+        state_refs_.macroUi.selectionDeleteGuard.subscribe(
+            [this](const core::state::contextual::GuardedActionState&) {
+                requestBottomActionStripRender();
+            }
+        )
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.selectionDeleteFeedback.subscribe(
+            [this](const core::state::contextual::OperationFeedbackState&) {
+                requestBottomActionStripRender();
+            }
+        )
+    );
+
+    subscriptions_.push_back(
         state_refs_.pages.enabledPageMaskSignal().subscribe([this](uint16_t) {
             requestHeaderRender();
         })

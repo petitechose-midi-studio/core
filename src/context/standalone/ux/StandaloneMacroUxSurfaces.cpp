@@ -13,6 +13,7 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
 
@@ -136,6 +137,21 @@ void markIgnored(core::validation::ux::SemanticUxContext& out, const char* reaso
     out.effect = "release_ignored";
     out.outcome = "ignored";
     out.reason = reason;
+}
+
+const char* contextualReasonName(
+    core::state::contextual::ContextActionReason reason
+) {
+    switch (reason) {
+        case core::state::contextual::ContextActionReason::EMPTY_SELECTION:
+            return "empty_selection";
+        case core::state::contextual::ContextActionReason::MINIMUM_CARDINALITY:
+            return "minimum_cardinality";
+        case core::state::contextual::ContextActionReason::NO_ACTION:
+            return "unavailable";
+        default:
+            return "blocked";
+    }
 }
 
 }  // namespace
@@ -397,14 +413,61 @@ bool MacroStructureUxSurface::captureSemanticUxContext(
     copyIndexLabel(out.valueLabel, index);
 
     if (selectionActive) {
+        const auto interaction = core::state::macro::buildMacroInteractionContext(
+            core::state::macro::MacroInteractionContextSource{
+                .pages = pages_,
+                .macroUi = macro_ui_,
+                .trackNavigation = track_navigation_,
+                .structureClipboard = structure_clipboard_,
+                .navigationFocus = focus,
+                .enabledTrackMask = pages_.currentTrackEnabledMask(),
+                .blockingOverlay = false,
+                .slotPropertySelecting = false,
+            }
+        );
+        const auto& deleteAction = interaction.selectionDeleteAction;
+        const bool deleteAvailable =
+            core::state::contextual::canExecute(deleteAction.hold);
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "navigate_selection";
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "toggle_selection";
         } else if (leftTopRelease) {
             out.effect = "cancel_selection";
-        } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_LEFT,
+                       oc::core::input::ButtonBindingType::PRESS
+                   )) {
+            out.effect = "guard_delete_selection";
+            out.outcome = deleteAvailable ? "pressed" : "blocked";
+            out.reason = deleteAvailable
+                ? nullptr
+                : contextualReasonName(deleteAction.hold.reason);
+            copyValueLabel(out.valueLabel, deleteAvailable ? "Pressed" : "Disabled");
+            out.targetMask = deleteAction.source.item;
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_LEFT,
+                       oc::core::input::ButtonBindingType::LONG_PRESS
+                   )) {
             out.effect = "delete_selection";
+            out.outcome = deleteAvailable ? "applied" : "blocked";
+            out.reason = deleteAvailable
+                ? nullptr
+                : contextualReasonName(deleteAction.hold.reason);
+            copyValueLabel(out.valueLabel, deleteAvailable ? "Applied" : "Disabled");
+            out.targetMask = deleteAction.source.item;
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_LEFT,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "delete_selection";
+            out.outcome = "cancelled";
+            out.reason = "early_release";
+            copyValueLabel(out.valueLabel, "Cancelled");
+            out.targetMask = deleteAction.source.item;
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "duplicate_selection";
         }

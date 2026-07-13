@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/macro/MacroSelectionDeleteAction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::state::macro {
@@ -88,6 +89,26 @@ FLASHMEM bool macroInteractionCanRemoveStructure(
 FLASHMEM MacroInteractionContext buildMacroInteractionContext(
     const MacroInteractionContextSource& source
 ) {
+    const bool trackSelection = source.trackNavigation.selection.active.get();
+    const auto& selection = trackSelection
+        ? source.trackNavigation.selection
+        : source.macroUi.pageSelection;
+    const auto selectionScope = trackSelection
+        ? core::state::StructureSelectionScope::TRACK
+        : core::state::StructureSelectionScope::PAGE;
+    const uint16_t selectionEnabledMask = trackSelection
+        ? source.enabledTrackMask
+        : source.pages.currentEnabledPageMask();
+    const auto selectionDeleteAction = buildMacroSelectionDeleteActionSpec({
+        .active = macroInteractionSelectionActive(source),
+        .scope = selectionScope,
+        .selectedMask = selection.selectedMask.get(),
+        .enabledMask = selectionEnabledMask,
+        .currentIndex = selection.cursorIndex.get(),
+        .activeTrack = source.pages.currentActiveTrack(),
+        .activePage = source.pages.currentActivePage(),
+    });
+
     return MacroInteractionContext{
         .navigationFocus = source.navigationFocus,
         .blockingOverlay = source.blockingOverlay,
@@ -96,6 +117,7 @@ FLASHMEM MacroInteractionContext buildMacroInteractionContext(
         .previewingAddSlot = macroInteractionPreviewingAddSlot(source),
         .compatibleClipboardAvailable = macroInteractionCanPasteStructure(source),
         .canRemoveStructure = macroInteractionCanRemoveStructure(source),
+        .selectionDeleteAction = selectionDeleteAction,
     };
 }
 

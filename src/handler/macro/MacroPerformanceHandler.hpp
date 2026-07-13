@@ -17,6 +17,7 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
+#include "config/TimeCompat.hpp"
 
 namespace core::validation::ux {
 struct StructureUxTraceState;
@@ -33,6 +34,8 @@ namespace core::handler {
  */
 class MacroPerformanceHandler {
 public:
+    using TimeProviderFn = uint32_t (*)();
+
     struct StateRefs {
         core::state::macro::MacroUiState& macroUi;
         core::state::macro::MacroPagesState& pages;
@@ -50,7 +53,8 @@ public:
                             oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                             oc::api::EncoderAPI& encoders,
                             oc::api::ButtonAPI& buttons,
-                            oc::type::ScopeID scopeId
+                            oc::type::ScopeID scopeId,
+                            TimeProviderFn timeProvider = core::time_compat::millis
 #if defined(MS_UX_RECORDER)
                             ,
                             core::validation::ux::StructureUxTraceState* uxTraceState = nullptr
@@ -61,6 +65,8 @@ public:
 
     MacroPerformanceHandler(const MacroPerformanceHandler&) = delete;
     MacroPerformanceHandler& operator=(const MacroPerformanceHandler&) = delete;
+
+    void update(uint32_t nowMs);
 
 private:
     void setupBindings();
@@ -76,8 +82,10 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
+    TimeProviderFn time_provider_ = core::time_compat::millis;
     bool nav_long_press_used_ = false;
     bool left_bottom_held_ = false;
+    bool selection_delete_press_active_ = false;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
 #if defined(MS_UX_RECORDER)

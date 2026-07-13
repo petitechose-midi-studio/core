@@ -5,12 +5,16 @@
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
 
+#include "config/Timing.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/contextual/GuardedActionState.hpp"
+#include "state/contextual/OperationFeedbackState.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::handler {
 
 namespace structure_slots = core::state::shared;
+namespace contextual = core::state::contextual;
 
 namespace {
 
@@ -128,9 +132,12 @@ FLASHMEM void MacroStructureWorkflow::enterSelectionModeForCurrentFocus() {
     );
     track_ui_.syncPreviewTrack(services_.activeTrack());
     macro_ui_.syncPreviewPage(pages_.currentActivePage());
+    macro_ui_.selectionDeleteGuard.set(contextual::GuardedActionState{});
+    macro_ui_.selectionDeleteFeedback.set(contextual::OperationFeedbackState{});
 }
 
 FLASHMEM void MacroStructureWorkflow::cancelSelectionMode() {
+    cancelSelectionDeleteGuard(core::time_compat::millis());
     track_ui_.previewAddSlot.set(false);
     macro_ui_.previewAddPageSlot.set(false);
     auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
@@ -147,6 +154,8 @@ FLASHMEM void MacroStructureWorkflow::cancelSelectionMode() {
 FLASHMEM void MacroStructureWorkflow::toggleSelectionAtCursor() {
     auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
     if (!selection.active.get()) return;
+
+    cancelSelectionDeleteGuard(core::time_compat::millis());
 
     const uint8_t cursor = selection.cursorIndex.get();
     const bool trackScope = selection.scope.get() == core::state::StructureSelectionScope::TRACK;
@@ -168,6 +177,8 @@ FLASHMEM void MacroStructureWorkflow::navigateSelection(float delta) {
     auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
     if (!selection.active.get()) return;
     if (!nav::hasTurnDelta(delta)) return;
+
+    cancelSelectionDeleteGuard(core::time_compat::millis());
 
     const bool trackScope = selection.scope.get() == core::state::StructureSelectionScope::TRACK;
     const uint16_t enabledMask =
@@ -192,6 +203,196 @@ FLASHMEM bool MacroStructureWorkflow::canRemoveCurrentStructure() const {
 
 FLASHMEM bool MacroStructureWorkflow::canPasteCurrentStructure() const {
     return core::state::macro::macroInteractionCanPasteStructure(interactionContextSource());
+}
+
+FLASHMEM bool MacroStructureWorkflow::selectionDeleteGuardEngaged() const {
+    const auto phase = macro_ui_.selectionDeleteGuard.get().phase;
+    return phase == contextual::GuardedActionPhase::PRESSED ||
+           phase == contextual::GuardedActionPhase::ARMED;
+}
+
+FLASHMEM bool MacroStructureWorkflow::beginSelectionDeleteGuard(uint32_t nowMs) {
+    const auto action = interactionContext(false, false).selectionDeleteAction;
+    if (!contextual::canExecute(action.hold)) {
+        auto feedback = macro_ui_.selectionDeleteFeedback.get();
+        contextual::setOperationFeedback(
+            feedback,
+            action.hold.action,
+            action.source,
+            action.target,
+            contextual::OperationFeedbackStatus::BLOCKED,
+            action.hold.reason,
+            contextual::OperationFeedbackExpiryPolicy::ON_NEXT_MEANINGFUL_INPUT,
+            nowMs
+        );
+        macro_ui_.selectionDeleteFeedback.set(feedback);
+        return false;
+    }
+
+    auto guard = macro_ui_.selectionDeleteGuard.get();
+    if (contextual::guardedActionTerminal(guard)) {
+        contextual::resetGuardedAction(guard);
+    }
+    if (!contextual::beginGuardedActionPress(
+            guard,
+            nowMs,
+            action.guard.durationMs
+        )) {
+        return false;
+    }
+
+    macro_ui_.selectionDeleteGuard.set(guard);
+    auto feedback = macro_ui_.selectionDeleteFeedback.get();
+    contextual::setOperationFeedback(
+        feedback,
+        action.hold.action,
+        action.source,
+        action.target,
+        contextual::OperationFeedbackStatus::PRESSED,
+        contextual::ContextActionReason::NONE,
+        contextual::OperationFeedbackExpiryPolicy::MANUAL,
+        nowMs
+    );
+    macro_ui_.selectionDeleteFeedback.set(feedback);
+    return true;
+}
+
+FLASHMEM void MacroStructureWorkflow::updateSelectionDeleteGuard(uint32_t nowMs) {
+    auto feedback = macro_ui_.selectionDeleteFeedback.get();
+    if (contextual::updateOperationFeedback(feedback, nowMs)) {
+        macro_ui_.selectionDeleteFeedback.set(feedback);
+    }
+
+    auto guard = macro_ui_.selectionDeleteGuard.get();
+    if (guard.phase == contextual::GuardedActionPhase::CANCELLED) {
+        if (!macro_ui_.selectionDeleteFeedback.get().active) {
+            contextual::resetGuardedAction(guard);
+            macro_ui_.selectionDeleteGuard.set(guard);
+        }
+        return;
+    }
+    if (guard.phase != contextual::GuardedActionPhase::PRESSED) {
+        return;
+    }
+
+    const uint32_t elapsed = nowMs - guard.pressedAtMs;
+    if (elapsed < Config::Timing::LATCH_THRESHOLD_MS) {
+        return;
+    }
+
+    const uint32_t pressedAtMs = guard.pressedAtMs;
+    if (!contextual::armGuardedAction(guard, pressedAtMs)) {
+        return;
+    }
+    if (elapsed < guard.guardDurationMs) {
+        contextual::updateGuardedAction(guard, nowMs);
+    }
+    macro_ui_.selectionDeleteGuard.set(guard);
+
+    const auto action = interactionContext(false, false).selectionDeleteAction;
+    contextual::setOperationFeedback(
+        feedback,
+        action.hold.action,
+        action.source,
+        action.target,
+        contextual::OperationFeedbackStatus::ARMED,
+        contextual::ContextActionReason::NONE,
+        contextual::OperationFeedbackExpiryPolicy::MANUAL,
+        nowMs
+    );
+    macro_ui_.selectionDeleteFeedback.set(feedback);
+}
+
+FLASHMEM bool MacroStructureWorkflow::commitSelectionDeleteGuard(uint32_t nowMs) {
+    auto guard = macro_ui_.selectionDeleteGuard.get();
+    if (guard.phase == contextual::GuardedActionPhase::PRESSED &&
+        (nowMs - guard.pressedAtMs) >= Config::Timing::LATCH_THRESHOLD_MS) {
+        const uint32_t pressedAtMs = guard.pressedAtMs;
+        contextual::armGuardedAction(guard, pressedAtMs);
+    }
+    if (guard.phase == contextual::GuardedActionPhase::ARMED) {
+        contextual::updateGuardedAction(guard, nowMs);
+    }
+    if (guard.phase != contextual::GuardedActionPhase::COMMITTED) {
+        return false;
+    }
+
+    macro_ui_.selectionDeleteGuard.set(guard);
+    const auto action = interactionContext(false, false).selectionDeleteAction;
+    const auto previousFeedback = macro_ui_.selectionDeleteFeedback.get();
+    const bool sameTarget = previousFeedback.active &&
+        previousFeedback.action == action.hold.action &&
+        previousFeedback.source == action.source &&
+        previousFeedback.target == action.target;
+
+    auto feedback = previousFeedback;
+    if (!sameTarget || !contextual::canExecute(action.hold)) {
+        contextual::setOperationFeedback(
+            feedback,
+            action.hold.action,
+            action.source,
+            action.target,
+            contextual::OperationFeedbackStatus::CANCELLED,
+            contextual::ContextActionReason::CONFLICT,
+            contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+            nowMs,
+            Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
+        );
+        macro_ui_.selectionDeleteFeedback.set(feedback);
+        contextual::resetGuardedAction(guard);
+        macro_ui_.selectionDeleteGuard.set(guard);
+        return false;
+    }
+
+    const bool applied = applySelectionDelete(action);
+    contextual::setOperationFeedback(
+        feedback,
+        action.hold.action,
+        action.source,
+        action.target,
+        applied ? contextual::OperationFeedbackStatus::APPLIED
+                : contextual::OperationFeedbackStatus::FAILED,
+        applied ? contextual::ContextActionReason::NONE
+                : contextual::ContextActionReason::FAILED,
+        applied ? contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION
+                : contextual::OperationFeedbackExpiryPolicy::ON_ACKNOWLEDGEMENT,
+        nowMs,
+        applied ? Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS : 0
+    );
+    macro_ui_.selectionDeleteFeedback.set(feedback);
+    contextual::resetGuardedAction(guard);
+    macro_ui_.selectionDeleteGuard.set(guard);
+    return applied;
+}
+
+FLASHMEM bool MacroStructureWorkflow::cancelSelectionDeleteGuard(uint32_t nowMs) {
+    auto guard = macro_ui_.selectionDeleteGuard.get();
+    const bool cancelledActiveGuard = contextual::cancelGuardedAction(guard);
+    if (!cancelledActiveGuard &&
+        guard.phase == contextual::GuardedActionPhase::COMMITTED) {
+        // COMMITTED means the timing threshold was observed, not that the
+        // domain mutation ran. Only the long-press callback may apply it, so a
+        // physical release at this scheduler boundary still cancels safely.
+        guard.phase = contextual::GuardedActionPhase::CANCELLED;
+    } else if (!cancelledActiveGuard) {
+        return false;
+    }
+    macro_ui_.selectionDeleteGuard.set(guard);
+
+    auto feedback = macro_ui_.selectionDeleteFeedback.get();
+    contextual::setOperationFeedback(
+        feedback,
+        feedback.action,
+        feedback.source,
+        feedback.target,
+        contextual::OperationFeedbackStatus::CANCELLED,
+        contextual::ContextActionReason::NONE,
+        contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
+    );
+    macro_ui_.selectionDeleteFeedback.set(feedback);
+    return true;
 }
 
 FLASHMEM void MacroStructureWorkflow::beginHoldAction(core::state::StructureHoldAction action) {
@@ -332,21 +533,30 @@ FLASHMEM void MacroStructureWorkflow::pasteCurrentStructure() {
     macro_ui_.previewAddPageSlot.set(false);
 }
 
-FLASHMEM void MacroStructureWorkflow::deleteSelection() {
+FLASHMEM bool MacroStructureWorkflow::applySelectionDelete(
+    const contextual::ContextActionSpec& action
+) {
     auto& selection = track_ui_.selection.active.get() ? track_ui_.selection : macro_ui_.pageSelection;
-    if (!selection.active.get()) return;
+    if (!selection.active.get()) return false;
 
     const bool trackScope = selection.scope.get() == core::state::StructureSelectionScope::TRACK;
-    const uint16_t selectedMask = selection.selectedMask.get();
-    if (selectedMask == 0) return;
+    const bool actionTargetsTrack =
+        action.target.kind == contextual::ContextEntityKind::TRACK;
+    if (trackScope != actionTargetsTrack ||
+        selection.selectedMask.get() != action.source.item) {
+        return false;
+    }
+    const uint16_t selectedMask = action.source.item;
+    if (selectedMask == 0) return false;
 
     const bool changed = trackScope
         ? services_.deleteSelectedTracks(selectedMask)
         : services_.deleteSelectedPages(selectedMask);
-    if (!changed) return;
+    if (!changed) return false;
 
     cancelSelectionMode();
     syncPreviewToCurrentContext();
+    return true;
 }
 
 FLASHMEM void MacroStructureWorkflow::duplicateSelection() {

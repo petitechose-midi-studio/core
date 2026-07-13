@@ -178,7 +178,8 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         overlays,
         encoders,
         buttons,
-        macroViewScopeId
+        macroViewScopeId,
+        core::time_compat::millis
 #if defined(MS_UX_RECORDER)
         ,
         &structure_ux_trace_state_
@@ -244,6 +245,9 @@ void MacroFeatureModule::onNoteIn() {
 }
 
 void MacroFeatureModule::update(uint32_t nowMs) {
+    if (performance_handler_) {
+        performance_handler_->update(nowMs);
+    }
     if (automation_playback_) {
         automation_playback_->update(nowMs);
     }

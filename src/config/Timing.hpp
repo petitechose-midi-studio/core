@@ -13,6 +13,8 @@ constexpr uint32_t LONG_PRESS_MS = 500;
 constexpr uint32_t OVERLAY_OPEN_LONG_PRESS_MS = 1000;
 constexpr uint32_t LATCH_THRESHOLD_MS = 200;
 constexpr uint32_t DOUBLE_TAP_MS = 300;         // Double tap window
+constexpr uint32_t CONTEXT_CANCELLED_FEEDBACK_MS = 700;
+constexpr uint32_t CONTEXT_APPLIED_FEEDBACK_MS = 1200;
 constexpr uint32_t STATUS_MIDI_PULSE_MS = 80;   // Transport MIDI/clock pulse window
 constexpr uint32_t STATUS_BEAT_PULSE_MS = 100;  // Transport beat pulse window
 

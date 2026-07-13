@@ -43,7 +43,11 @@ enum class ContextActionStripVisualState : uint8_t {
     DISABLED = 1,
     DIM = 2,
     ACTIVE = 3,
-    ARMED = 4,
+    AVAILABLE = ACTIVE,
+    PRESSED = 4,
+    ARMED = 5,
+    CANCELLED = 6,
+    APPLIED = 7,
 };
 
 struct ContextActionStripSlotProps {

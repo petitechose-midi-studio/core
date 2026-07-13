@@ -29,6 +29,23 @@ struct GuardedActionState {
     uint16_t progressPermille = 0;
 };
 
+constexpr bool operator==(
+    const GuardedActionState& lhs,
+    const GuardedActionState& rhs
+) {
+    return lhs.phase == rhs.phase && lhs.pressedAtMs == rhs.pressedAtMs &&
+           lhs.armedAtMs == rhs.armedAtMs &&
+           lhs.guardDurationMs == rhs.guardDurationMs &&
+           lhs.progressPermille == rhs.progressPermille;
+}
+
+constexpr bool operator!=(
+    const GuardedActionState& lhs,
+    const GuardedActionState& rhs
+) {
+    return !(lhs == rhs);
+}
+
 void resetGuardedAction(GuardedActionState& state);
 
 bool beginGuardedActionPress(

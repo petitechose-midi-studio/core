@@ -52,13 +52,17 @@ public:
 
     bool canRemoveCurrentStructure() const;
     bool canPasteCurrentStructure() const;
+    bool selectionDeleteGuardEngaged() const;
+    bool beginSelectionDeleteGuard(uint32_t nowMs);
+    void updateSelectionDeleteGuard(uint32_t nowMs);
+    bool commitSelectionDeleteGuard(uint32_t nowMs);
+    bool cancelSelectionDeleteGuard(uint32_t nowMs);
     void beginHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
     void eraseCurrentStructure();
     void removeCurrentStructure();
     void copyCurrentStructure();
     void pasteCurrentStructure();
-    void deleteSelection();
     void duplicateSelection();
     void createPreviewedStructure();
 
@@ -73,6 +77,9 @@ private:
     ) const;
     void syncPreviewToCurrentContext();
     void clampFocusedMacroSlot();
+    bool applySelectionDelete(
+        const core::state::contextual::ContextActionSpec& action
+    );
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;

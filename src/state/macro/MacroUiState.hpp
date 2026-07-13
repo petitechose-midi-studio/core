@@ -6,6 +6,8 @@
 
 #include "state/macro/MacroAutomationState.hpp"
 #include "state/StructureSelectionState.hpp"
+#include "state/contextual/GuardedActionState.hpp"
+#include "state/contextual/OperationFeedbackState.hpp"
 
 namespace core::state::macro {
 
@@ -63,6 +65,10 @@ struct MacroUiState {
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
+    oc::state::Signal<core::state::contextual::GuardedActionState, 4>
+        selectionDeleteGuard{};
+    oc::state::Signal<core::state::contextual::OperationFeedbackState, 4>
+        selectionDeleteFeedback{};
     AutomationRecordingState automationRecording;
 
     MacroUiState();

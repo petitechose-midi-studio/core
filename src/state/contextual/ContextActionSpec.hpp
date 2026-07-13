@@ -115,6 +115,8 @@ enum class ContextActionAvailability : uint8_t {
 enum class ContextActionReason : uint8_t {
     NONE = 0,
     NO_ACTION,
+    EMPTY_SELECTION,
+    MINIMUM_CARDINALITY,
     EMPTY_CLIPBOARD,
     WRONG_PAYLOAD,
     INVALID_PAYLOAD,

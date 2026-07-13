@@ -41,6 +41,25 @@ struct OperationFeedbackState {
     uint32_t durationMs = 0;
 };
 
+constexpr bool operator==(
+    const OperationFeedbackState& lhs,
+    const OperationFeedbackState& rhs
+) {
+    return lhs.active == rhs.active && lhs.action == rhs.action &&
+           lhs.source == rhs.source && lhs.target == rhs.target &&
+           lhs.status == rhs.status && lhs.reason == rhs.reason &&
+           lhs.expiryPolicy == rhs.expiryPolicy &&
+           lhs.shownAtMs == rhs.shownAtMs &&
+           lhs.durationMs == rhs.durationMs;
+}
+
+constexpr bool operator!=(
+    const OperationFeedbackState& lhs,
+    const OperationFeedbackState& rhs
+) {
+    return !(lhs == rhs);
+}
+
 void clearOperationFeedback(OperationFeedbackState& state);
 
 void setOperationFeedback(

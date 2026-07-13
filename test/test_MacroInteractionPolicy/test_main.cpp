@@ -98,6 +98,10 @@ void test_macro_slot_focus_only_routes_navigation_and_property_selector() {
 void test_selection_and_blocking_overlay_contracts() {
     MacroInteractionContext context{};
     context.selectionActive = true;
+    context.selectionDeleteAction.hold.action =
+        core::state::contextual::ContextActionId::REMOVE;
+    context.selectionDeleteAction.hold.availability =
+        core::state::contextual::ContextActionAvailability::AVAILABLE;
 
     assert(MacroInteractionPolicy::navTurn(context) ==
            MacroInteractionAction::MOVE_SELECTION_CURSOR);
@@ -106,9 +110,20 @@ void test_selection_and_blocking_overlay_contracts() {
     assert(MacroInteractionPolicy::leftTopRelease(context) ==
            MacroInteractionAction::CANCEL_SELECTION);
     assert(MacroInteractionPolicy::bottomLeftRelease(context) ==
+           MacroInteractionAction::NONE);
+    assert(MacroInteractionPolicy::bottomLeftLongPress(context) ==
            MacroInteractionAction::DELETE_SELECTION);
     assert(MacroInteractionPolicy::bottomRightRelease(context) ==
            MacroInteractionAction::DUPLICATE_SELECTION);
+    assert(MacroInteractionPolicy::actionStrip(context).bottomLeft ==
+           MacroInteractionVisibility::ACTIVE);
+
+    context.selectionDeleteAction.hold.availability =
+        core::state::contextual::ContextActionAvailability::DISABLED;
+    assert(MacroInteractionPolicy::bottomLeftLongPress(context) ==
+           MacroInteractionAction::NONE);
+    assert(MacroInteractionPolicy::actionStrip(context).bottomLeft ==
+           MacroInteractionVisibility::DISABLED);
 
     context = {};
     context.blockingOverlay = true;
