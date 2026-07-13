@@ -13,6 +13,7 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
+#include "state/sequencer/SequencerTrackTransferAction.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
@@ -29,6 +30,11 @@ using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
 using InteractionAction = core::state::sequencer::SequencerInteractionAction;
 
+struct TrackTransferProjection {
+    core::state::ClipboardTransferPlan plan{};
+    core::state::contextual::ContextActionSpec action{};
+};
+
 uint8_t countSelectedItems(uint16_t mask) {
     uint8_t count = 0;
     while (mask != 0) {
@@ -44,6 +50,55 @@ uint8_t countSelectedSteps(oc::note::sequencer::StepBitMask128 mask, uint8_t lim
         if (mask.test(i)) ++count;
     }
     return count;
+}
+
+TrackTransferProjection trackTransferProjection(
+    const SequencerViewModelSource& source,
+    bool selectionActive
+) {
+    const uint8_t targetTrack = selectionActive
+        ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+              source.trackNavigation.selection.cursorIndex.get()
+          )
+        : (source.trackNavigation.previewAddSlot.get()
+               ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+                     source.trackNavigation.previewTrackIndex.get()
+                 )
+               : core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+                     source.sharedTrackActive.get()
+                 ));
+    auto plan = core::state::buildSequencerTrackClipboardTransferPlan(
+        source.structureClipboard,
+        source.tracks,
+        targetTrack,
+        0,
+        &source.sequencer
+    );
+    const uint16_t selectedEnabledMask = static_cast<uint16_t>(
+        source.trackNavigation.selection.selectedMask.get() &
+        source.sharedTrackEnabledMask.get()
+    );
+    const bool copyAvailable = selectionActive
+        ? selectedEnabledMask != 0
+        : !source.trackNavigation.previewAddSlot.get();
+    auto action = core::state::sequencer::buildSequencerTrackTransferActionSpec(
+        plan,
+        targetTrack,
+        copyAvailable,
+        static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+    );
+    return {plan, action};
+}
+
+bool trackPasteAvailable(const TrackTransferProjection& projection) {
+    return core::state::contextual::canExecute(projection.action.hold);
+}
+
+Tone trackPasteTone(const TrackTransferProjection& projection) {
+    return projection.action.hold.visual.tone ==
+               core::state::contextual::ContextTone::AMBER
+        ? Tone::WARNING
+        : Tone::POSITIVE;
 }
 
 void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
@@ -159,7 +214,7 @@ core::state::sequencer::SequencerInteractionContext makeBottomInteractionContext
         );
         context.selectedItemsAvailable = countSelectedItems(actionableMask) > 0;
         context.compatibleClipboardAvailable =
-            source.structureClipboard.hasSequencerTrackSelection();
+            trackPasteAvailable(trackTransferProjection(source, true));
         return context;
     }
 
@@ -200,7 +255,8 @@ core::state::sequencer::SequencerInteractionContext makeBottomInteractionContext
         context.currentStructureCanRemove =
             !context.previewingAddSlot &&
             countSelectedItems(source.sharedTrackEnabledMask.get()) > 1;
-        context.compatibleClipboardAvailable = source.structureClipboard.hasSequencerTrack();
+        context.compatibleClipboardAvailable =
+            trackPasteAvailable(trackTransferProjection(source, false));
     } else {
         context.currentStructureCanRemove =
             !context.previewingAddSlot && source.sequencer.activePageCount() > 1;
@@ -333,7 +389,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             const uint8_t enabledCount = countSelectedItems(enabledMask);
             canDeleteSelection = actionableCount > 0 && actionableCount < enabledCount;
             canCopySelection = actionableCount > 0;
-            canPasteSelection = source.structureClipboard.hasSequencerTrackSelection();
+            canPasteSelection =
+                trackPasteAvailable(trackTransferProjection(source, true));
         } else {
             const uint8_t activePages = source.sequencer.activePageCount();
             const uint16_t actionableMask = static_cast<uint16_t>(
@@ -365,12 +422,17 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         );
         applyHoldProgress(props.slots[0], holdState, deleteHoldActive);
         props.slots[1] = makeSelectionCountSlot(countSelectedItems(selectionMask));
+        const auto trackProjection = selectingTrack
+            ? trackTransferProjection(source, true)
+            : TrackTransferProjection{};
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             interactionActionIcon(rightAction),
             pasteHoldActive
                 ? Visual::ARMED
                 : ((canCopySelection || canPasteSelection) ? Visual::ACTIVE : Visual::DISABLED),
-            pasteHoldActive ? Tone::POSITIVE : Tone::NEUTRAL
+            pasteHoldActive && selectingTrack
+                ? trackPasteTone(trackProjection)
+                : (pasteHoldActive ? Tone::POSITIVE : Tone::NEUTRAL)
         );
         applyHoldProgress(props.slots[2], holdState, pasteHoldActive);
         return props;
@@ -385,9 +447,12 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     const bool canCopy =
         interaction.bottomRightTap != InteractionAction::NONE &&
         bottomContext.currentStructureCanCopy;
-    const bool canPaste =
-        interaction.bottomRightHold != InteractionAction::NONE &&
-        bottomContext.compatibleClipboardAvailable;
+    const auto trackProjection = trackFocus
+        ? trackTransferProjection(source, false)
+        : TrackTransferProjection{};
+    const bool canPaste = interaction.bottomRightHold != InteractionAction::NONE &&
+        (trackFocus ? trackPasteAvailable(trackProjection)
+                    : bottomContext.compatibleClipboardAvailable);
     const bool pasteOverwritesDestination = canPaste && !bottomContext.previewingAddSlot;
     const bool copyOrPasteAvailable = canCopy || canPaste;
     const auto& holdState = trackFocus ? source.trackNavigation.hold
@@ -423,7 +488,9 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                    ? Visual::ARMED
                    : (copyOrPasteAvailable ? Visual::ACTIVE : Visual::DISABLED)),
         pasteHoldActive
-            ? (pasteOverwritesDestination ? Tone::WARNING : Tone::POSITIVE)
+            ? (trackFocus ? trackPasteTone(trackProjection)
+                          : (pasteOverwritesDestination ? Tone::WARNING
+                                                       : Tone::POSITIVE))
             : Tone::NEUTRAL
     );
     applyHoldProgress(props.slots[2], holdState, pasteHoldActive);

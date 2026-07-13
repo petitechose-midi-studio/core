@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "config/InputIDs.hpp"
+#include "config/Timing.hpp"
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "state/StructureClipboardState.hpp"
@@ -16,6 +17,7 @@
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/sequencer/SequencerTrackTransferAction.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "state/shared/StructureSlotOps.hpp"
@@ -231,6 +233,47 @@ const char* armActionName(SequencerAction action) {
     }
 }
 
+bool isPasteAction(SequencerAction action) {
+    return action == SequencerAction::PASTE_CURRENT_STRUCTURE ||
+           action == SequencerAction::PASTE_SELECTION;
+}
+
+const char* contextualReasonName(
+    core::state::contextual::ContextActionReason reason
+) {
+    using Reason = core::state::contextual::ContextActionReason;
+    switch (reason) {
+        case Reason::EMPTY_CLIPBOARD: return "clipboard_empty";
+        case Reason::WRONG_PAYLOAD: return "wrong_payload";
+        case Reason::INVALID_PAYLOAD: return "invalid_payload";
+        case Reason::SAME_SOURCE_TARGET: return "same_track";
+        case Reason::OUT_OF_RANGE: return "out_of_range";
+        case Reason::CAPACITY: return "capacity";
+        case Reason::PENDING: return "paste_pending";
+        case Reason::NO_ROUTE: return "no_route";
+        case Reason::HISTORY_UNAVAILABLE: return "history_unavailable";
+        case Reason::ALLOCATION_UNAVAILABLE: return "allocation_unavailable";
+        case Reason::NONE: return nullptr;
+        default: return "blocked";
+    }
+}
+
+void fillTrackTransferFacts(
+    const core::state::ClipboardTransferPlan& plan,
+    core::validation::ux::SemanticUxContext& out
+) {
+    out.sourceMask = plan.sourceMask;
+    out.targetMask = plan.targetMask;
+    out.createMask = plan.createMask;
+    out.overwriteMask = plan.overwriteMask;
+    out.routePolicy = "preserve_destination";
+    if (plan.count > 0) {
+        out.hasTargetRoute = true;
+        out.targetRoute = plan.entries[0].targetMidiChannel;
+        out.targetRouteValid = plan.entries[0].targetRouteValid;
+    }
+}
+
 bool isSelectionScope(SequencerScope scope) {
     return scope == SequencerScope::TRACK_SELECTION ||
            scope == SequencerScope::PATTERN_SELECTION ||
@@ -334,18 +377,6 @@ uint16_t sequencerPageMask(const core::state::sequencer::SequencerState& sequenc
     const uint8_t count = sequencer.activePageCount();
     if (count >= 16U) return 0xffffU;
     return static_cast<uint16_t>((1U << count) - 1U);
-}
-
-const char* structureTarget(core::state::StructureNavigationFocus focus) {
-    switch (focus) {
-        case core::state::StructureNavigationFocus::STEP:
-            return "step";
-        case core::state::StructureNavigationFocus::TRACK:
-            return "track";
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
-            return "page";
-    }
 }
 
 const char* structureTarget(core::state::StructureSelectionScope scope) {
@@ -585,14 +616,14 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         selectionActive ? scope == core::state::StructureSelectionScope::TRACK
                         : policyScopeTargetsTrack(policy.scope);
     const uint16_t targetMask = targetTrack ? tracks_.currentEnabledMask() : sequencerPageMask(sequencer_);
-    const bool canPaste = targetTrack ? structure_clipboard_.hasSequencerTrack()
-                                      : structure_clipboard_.hasSequencerPage();
     out.targetMask = targetMask;
 
     if (targetTrack) {
         index = track_navigation_.selection.active.get()
             ? track_navigation_.selection.cursorIndex.get()
-            : track_navigation_.previewTrackIndex.get();
+            : (track_navigation_.previewAddSlot.get()
+                   ? track_navigation_.previewTrackIndex.get()
+                   : tracks_.activeTrackIndex());
         out.property = track_navigation_.previewAddSlot.get() && !selectionActive
             ? "add_slot"
             : (selectionActive ? "selection" : "existing");
@@ -607,6 +638,34 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
     out.targetIndex = static_cast<int16_t>(index);
     copyIndexLabel(out.valueLabel, index);
 
+    core::state::ClipboardTransferPlan trackTransferPlan{};
+    core::state::contextual::ContextActionSpec trackTransferAction{};
+    bool canPaste = selectionActive
+        ? structure_clipboard_.hasSequencerPageSelection()
+        : structure_clipboard_.hasSequencerPage();
+    if (targetTrack) {
+        trackTransferPlan = core::state::buildSequencerTrackClipboardTransferPlan(
+            structure_clipboard_,
+            tracks_,
+            index,
+            0,
+            &sequencer_
+        );
+        const uint16_t selectedEnabledMask = static_cast<uint16_t>(
+            track_navigation_.selection.selectedMask.get() &
+            tracks_.currentEnabledMask()
+        );
+        trackTransferAction =
+            core::state::sequencer::buildSequencerTrackTransferActionSpec(
+                trackTransferPlan,
+                index,
+                selectionActive ? selectedEnabledMask != 0
+                                : !track_navigation_.previewAddSlot.get(),
+                static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+            );
+        canPaste = core::state::contextual::canExecute(trackTransferAction.hold);
+    }
+
     if (selectionActive) {
         out.effect = isButton(
             event,
@@ -619,6 +678,16 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         )
             ? armActionName(action)
             : actionName(action);
+        if (targetTrack && isPasteAction(action)) {
+            fillTrackTransferFacts(trackTransferPlan, out);
+            if (!canPaste) {
+                markNoop(out, contextualReasonName(trackTransferAction.hold.reason));
+            } else if (trackTransferAction.hold.availability ==
+                       core::state::contextual::ContextActionAvailability::WARNING) {
+                out.outcome = "warning";
+                out.reason = contextualReasonName(trackTransferAction.hold.reason);
+            }
+        }
         return true;
     }
 
@@ -650,8 +719,21 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
         out.effect = armActionName(action);
-        if (!canPaste) {
-            markNoop(out, "clipboard_empty");
+        if (targetTrack && isPasteAction(action)) {
+            fillTrackTransferFacts(trackTransferPlan, out);
+        }
+        if (isPasteAction(action) && !canPaste) {
+            markNoop(
+                out,
+                targetTrack
+                    ? contextualReasonName(trackTransferAction.hold.reason)
+                    : "clipboard_empty"
+            );
+        } else if (targetTrack && isPasteAction(action) &&
+                   trackTransferAction.hold.availability ==
+                       core::state::contextual::ContextActionAvailability::WARNING) {
+            out.outcome = "warning";
+            out.reason = contextualReasonName(trackTransferAction.hold.reason);
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = actionName(action);
@@ -662,8 +744,16 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
         out.effect = actionName(action);
-        if (!canPaste) {
-            markNoop(out, "clipboard_empty");
+        if (targetTrack && isPasteAction(action)) {
+            fillTrackTransferFacts(trackTransferPlan, out);
+        }
+        if (isPasteAction(action) && !canPaste) {
+            markNoop(
+                out,
+                targetTrack
+                    ? contextualReasonName(trackTransferAction.hold.reason)
+                    : "clipboard_empty"
+            );
         }
     } else {
         out.effect = actionName(action);

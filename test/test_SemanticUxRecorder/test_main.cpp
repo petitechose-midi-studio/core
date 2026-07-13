@@ -34,6 +34,13 @@ public:
         out.targetIndex = calls == 1 ? 2 : 1;
         out.targetStep = calls == 1 ? 2 : 1;
         out.targetMask = calls == 1 ? 3 : 7;
+        out.sourceMask = 5;
+        out.createMask = calls == 1 ? 4 : 0;
+        out.overwriteMask = calls == 1 ? 0 : 4;
+        out.routePolicy = "preserve_destination";
+        out.hasTargetRoute = true;
+        out.targetRoute = 10;
+        out.targetRouteValid = true;
         out.property = calls == 1 ? "Gate" : "Velocity";
         std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s", calls == 1 ? "50%" : "85");
         out.hasStepOn = true;
@@ -210,6 +217,12 @@ void test_writes_native_context_provider_fields() {
     assert(contains(sink.lines[0], "\"target_step\":1"));
     assert(contains(sink.lines[0], "\"pre_target_mask\":3"));
     assert(contains(sink.lines[0], "\"target_mask\":7"));
+    assert(contains(sink.lines[0], "\"source_mask\":5"));
+    assert(contains(sink.lines[0], "\"create_mask\":0"));
+    assert(contains(sink.lines[0], "\"overwrite_mask\":4"));
+    assert(contains(sink.lines[0], "\"route_policy\":\"preserve_destination\""));
+    assert(contains(sink.lines[0], "\"target_route\":10"));
+    assert(contains(sink.lines[0], "\"target_route_valid\":1"));
     assert(contains(sink.lines[0], "\"pre_property\":\"Gate\""));
     assert(contains(sink.lines[0], "\"property\":\"Velocity\""));
     assert(contains(sink.lines[0], "\"value_label\":\"85\""));

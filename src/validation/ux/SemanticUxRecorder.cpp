@@ -89,6 +89,27 @@ void formatContextFields(char* out,
     } else if (pre.targetMask >= 0) {
         appendIntField(out, size, "target_mask", static_cast<int>(pre.targetMask));
     }
+    const SemanticUxContext& transfer = post.sourceMask >= 0 ? post : pre;
+    if (transfer.sourceMask >= 0) {
+        appendIntField(out, size, "source_mask", static_cast<int>(transfer.sourceMask));
+    }
+    if (transfer.createMask >= 0) {
+        appendIntField(out, size, "create_mask", static_cast<int>(transfer.createMask));
+    }
+    if (transfer.overwriteMask >= 0) {
+        appendIntField(out, size, "overwrite_mask", static_cast<int>(transfer.overwriteMask));
+    }
+    appendField(
+        out,
+        size,
+        "route_policy",
+        post.routePolicy ? post.routePolicy : pre.routePolicy
+    );
+    const SemanticUxContext& route = post.hasTargetRoute ? post : pre;
+    if (route.hasTargetRoute) {
+        appendIntField(out, size, "target_route", static_cast<int>(route.targetRoute));
+        appendBoolField(out, size, "target_route_valid", route.targetRouteValid);
+    }
     if (pre.property) appendField(out, size, "pre_property", pre.property);
     appendField(out, size, "property", sameSurface && post.property ? post.property : pre.property);
     appendField(

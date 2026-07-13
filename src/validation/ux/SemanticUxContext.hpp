@@ -15,6 +15,13 @@ struct SemanticUxContext {
     int16_t targetIndex = -1;
     int16_t targetStep = -1;
     int32_t targetMask = -1;
+    int32_t sourceMask = -1;
+    int32_t createMask = -1;
+    int32_t overwriteMask = -1;
+    const char* routePolicy = nullptr;
+    bool hasTargetRoute = false;
+    uint8_t targetRoute = 0;
+    bool targetRouteValid = false;
     const char* property = nullptr;
     char valueLabel[16] = {};
     bool hasStepOn = false;
