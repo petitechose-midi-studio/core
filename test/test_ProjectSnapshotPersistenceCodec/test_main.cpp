@@ -100,6 +100,24 @@ float denseMacroModulationValue(uint8_t index, uint8_t point) {
     return static_cast<float>(raw) / 32.0f;
 }
 
+core::state::macro::MacroCurvePlaybackState denseAutomationPlaybackState(uint8_t index) {
+    return (index % 3U) == 0U
+        ? core::state::macro::MacroCurvePlaybackState::OFF
+        : core::state::macro::MacroCurvePlaybackState::ACTIVE;
+}
+
+core::state::macro::MacroCurvePlaybackState denseModulationPlaybackState(uint8_t index) {
+    return (index % 8U) == 4U
+        ? core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD
+        : core::state::macro::MacroCurvePlaybackState::ACTIVE;
+}
+
+core::state::macro::MacroModulationOrigin denseModulationOrigin(uint8_t index) {
+    return (index % 8U) == 0U
+        ? core::state::macro::MacroModulationOrigin::CONVERTED_MEAN
+        : core::state::macro::MacroModulationOrigin::CONVERTED_MIN;
+}
+
 void configureDenseMacroAutomations(core::state::CoreState& state) {
     using namespace core::state::macro;
 
@@ -130,6 +148,7 @@ void configureDenseMacroAutomations(core::state::CoreState& state) {
             ));
         }
         assert(macroAutomationAssignAutomation(state.pages.automation, *slot, lane));
+        slot->automation.playbackState = denseAutomationPlaybackState(i);
         const float windowOffset = denseMacroAutomationWindowOffset(i);
         assert(macroAutomationSetCurveWindowOffset(
             slot->automation,
@@ -155,6 +174,8 @@ void configureDenseMacroAutomations(core::state::CoreState& state) {
                 modulation
             ));
             slot->modulationDepth = 0.1f * static_cast<float>((i % 5U) + 1U);
+            slot->modulation.playbackState = denseModulationPlaybackState(i);
+            slot->modulation.modulationOrigin = denseModulationOrigin(i);
         }
     }
 }
@@ -171,6 +192,7 @@ void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
         const auto* slot = macroAutomationFindSlot(state.pages.automation, address);
         assert(slot != nullptr);
         assert(slot->automation.active);
+        assert(slot->automation.playbackState == denseAutomationPlaybackState(i));
         assert(slot->automation.pointCount == kPointCount);
         assert(std::fabs(
                    macroAutomationBeatsFromTicks(slot->automation.durationTicks) -
@@ -195,6 +217,8 @@ void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
 
         if (denseMacroAutomationHasModulation(i)) {
             assert(slot->modulation.active);
+            assert(slot->modulation.playbackState == denseModulationPlaybackState(i));
+            assert(slot->modulation.modulationOrigin == denseModulationOrigin(i));
             assert(slot->modulation.pointCount == 3);
             assert(std::fabs(
                        slot->modulationDepth -
@@ -761,6 +785,225 @@ void test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool() {
     std::cout << "[PASS] test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool\n";
 }
 
+void test_project_snapshot_rejects_invalid_automation_lifecycle_metadata() {
+    using namespace core::state::macro;
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProjectSession(state);
+    project::ProjectSnapshot snapshot;
+    assert(project::captureProjectSnapshot(state, snapshot));
+    const MacroAutomationSlotAddress address{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 2,
+    };
+    auto* slot = macroAutomationFindMutableSlot(*snapshot.macroAutomation, address);
+    assert(slot != nullptr);
+    auto buffer = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectSnapshotScratchSize>>();
+    assert(buffer);
+
+    slot->automation.playbackState = MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    auto result = snapshot_codec::encodeProjectSnapshot(
+        snapshot,
+        buffer->data(),
+        static_cast<uint32_t>(buffer->size())
+    );
+    assert(result.status == project_file::Status::INVALID_ARGUMENT);
+    assert(result.bytesWritten == 0);
+
+    slot->automation.playbackState = MacroCurvePlaybackState::ACTIVE;
+    slot->automation.modulationOrigin = MacroModulationOrigin::CONVERTED_MEAN;
+    result = snapshot_codec::encodeProjectSnapshot(
+        snapshot,
+        buffer->data(),
+        static_cast<uint32_t>(buffer->size())
+    );
+    assert(result.status == project_file::Status::INVALID_ARGUMENT);
+    assert(result.bytesWritten == 0);
+
+    std::cout
+        << "[PASS] test_project_snapshot_rejects_invalid_automation_lifecycle_metadata\n";
+}
+
+void test_project_snapshot_migrates_macro_automation_v14_lifecycle_defaults() {
+    using namespace core::state::macro;
+
+    test_support::CoreStorages sourceStorages;
+    auto sourceState = makeCoreState(sourceStorages);
+    configureProjectSession(sourceState);
+    const MacroAutomationSlotAddress address{
+        .track = sourceState.pages.currentActiveTrack(),
+        .page = sourceState.pages.currentActivePage(),
+        .macro = 2,
+    };
+    auto* sourceSlot = macroAutomationFindMutableSlot(sourceState.pages.automation, address);
+    assert(sourceSlot != nullptr);
+    sourceSlot->automation.playbackState = MacroCurvePlaybackState::OFF;
+    sourceSlot->modulation.playbackState = MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    sourceSlot->modulation.modulationOrigin = MacroModulationOrigin::CONVERTED_FIRST;
+
+    project::ProjectSnapshot snapshot;
+    assert(project::captureProjectSnapshot(sourceState, snapshot));
+    auto encoded = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectSnapshotScratchSize>>();
+    auto legacyEncoded = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectSnapshotScratchSize>>();
+    auto legacyMacroPayload = core::app::makeExtmemUnique<
+        std::array<uint8_t, snapshot_codec::PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE>>();
+    assert(encoded && legacyEncoded && legacyMacroPayload);
+    const auto encodedResult = snapshot_codec::encodeProjectSnapshot(
+        snapshot,
+        encoded->data(),
+        static_cast<uint32_t>(encoded->size())
+    );
+    assert(encodedResult.status == project_file::Status::OK);
+
+    std::array<project_file::DecodedChunkView, project_file::MAX_CHUNKS> decoded{};
+    project_file::LoadReport containerReport{};
+    const auto containerDecoded = project_file::decode(
+        encoded->data(),
+        encodedResult.bytesWritten,
+        decoded.data(),
+        static_cast<uint16_t>(decoded.size()),
+        &containerReport
+    );
+    assert(containerDecoded.status == project_file::Status::OK);
+
+    std::array<project_file::ChunkView, project_file::MAX_CHUNKS> legacyChunks{};
+    bool foundMacroAutomation = false;
+    uint16_t macroAutomationChunkIndex = project_file::MAX_CHUNKS;
+    for (uint16_t i = 0; i < containerDecoded.chunkCount; ++i) {
+        const auto& source = decoded[i];
+        legacyChunks[i] = project_file::ChunkView{
+            .id = source.id,
+            .versionMajor = source.versionMajor,
+            .versionMinor = source.versionMinor,
+            .flags = source.flags,
+            .data = source.data,
+            .size = source.size,
+        };
+        if (source.id != project_file::chunkIdValue(
+                project_file::ChunkId::MACRO_AUTOMATION
+            )) {
+            continue;
+        }
+        foundMacroAutomation = true;
+        macroAutomationChunkIndex = i;
+        assert(source.size <= legacyMacroPayload->size());
+        std::memcpy(legacyMacroPayload->data(), source.data, source.size);
+
+        constexpr uint32_t kEntryAddressBytes = 4;
+        constexpr uint32_t kCurvePlaybackOffset = 1;
+        constexpr uint32_t kCurveOriginOffset =
+            snapshot_codec::PROJECT_MACRO_AUTOMATION_CURVE_REF_SIZE - 1U;
+        const uint8_t entryCount = (*legacyMacroPayload)[0];
+        for (uint8_t entry = 0; entry < entryCount; ++entry) {
+            const uint32_t entryOffset =
+                snapshot_codec::PROJECT_MACRO_AUTOMATION_HEADER_SIZE +
+                static_cast<uint32_t>(entry) *
+                    snapshot_codec::PROJECT_MACRO_AUTOMATION_ENTRY_SIZE;
+            const uint32_t automationOffset = entryOffset + kEntryAddressBytes;
+            const uint32_t modulationOffset =
+                automationOffset + snapshot_codec::PROJECT_MACRO_AUTOMATION_CURVE_REF_SIZE;
+            (*legacyMacroPayload)[automationOffset + kCurvePlaybackOffset] = 0;
+            (*legacyMacroPayload)[automationOffset + kCurveOriginOffset] = 0;
+            (*legacyMacroPayload)[modulationOffset + kCurvePlaybackOffset] = 0;
+            (*legacyMacroPayload)[modulationOffset + kCurveOriginOffset] = 0;
+        }
+        legacyChunks[i].versionMinor =
+            snapshot_codec::PROJECT_MACRO_AUTOMATION_LEGACY_CHUNK_VERSION_MINOR;
+        legacyChunks[i].data = legacyMacroPayload->data();
+    }
+    assert(foundMacroAutomation);
+
+    const auto legacyResult = project_file::encode(
+        legacyChunks.data(),
+        containerDecoded.chunkCount,
+        0,
+        legacyEncoded->data(),
+        static_cast<uint32_t>(legacyEncoded->size())
+    );
+    assert(legacyResult.status == project_file::Status::OK);
+
+    project::ProjectSnapshot migrated;
+    project_file::LoadReport report{};
+    const auto decodeResult = snapshot_codec::decodeProjectSnapshot(
+        legacyEncoded->data(),
+        legacyResult.bytesWritten,
+        migrated,
+        &report
+    );
+    assert(decodeResult.ok);
+    assert(decodeResult.loadStatus == project_file::LoadStatus::MIGRATED);
+    assert(reportHas(report, project_file::LoadCode::MIGRATED_CHUNK));
+    const auto* migratedSlot = macroAutomationFindSlot(*migrated.macroAutomation, address);
+    assert(migratedSlot != nullptr);
+    assert(migratedSlot->automation.playbackState == MacroCurvePlaybackState::ACTIVE);
+    assert(migratedSlot->automation.modulationOrigin == MacroModulationOrigin::NATIVE);
+    assert(migratedSlot->modulation.playbackState == MacroCurvePlaybackState::ACTIVE);
+    assert(migratedSlot->modulation.modulationOrigin == MacroModulationOrigin::NATIVE);
+
+    constexpr uint32_t kFirstAutomationPlaybackByte =
+        snapshot_codec::PROJECT_MACRO_AUTOMATION_HEADER_SIZE + 4U + 1U;
+    (*legacyMacroPayload)[kFirstAutomationPlaybackByte] = 1U;
+    legacyChunks[macroAutomationChunkIndex].versionMinor =
+        snapshot_codec::PROJECT_MACRO_AUTOMATION_LEGACY_CHUNK_VERSION_MINOR;
+    const auto corruptLegacyResult = project_file::encode(
+        legacyChunks.data(),
+        containerDecoded.chunkCount,
+        0,
+        legacyEncoded->data(),
+        static_cast<uint32_t>(legacyEncoded->size())
+    );
+    assert(corruptLegacyResult.status == project_file::Status::OK);
+    project::ProjectSnapshot corruptLegacy;
+    project_file::LoadReport corruptLegacyReport{};
+    const auto corruptLegacyDecode = snapshot_codec::decodeProjectSnapshot(
+        legacyEncoded->data(),
+        corruptLegacyResult.bytesWritten,
+        corruptLegacy,
+        &corruptLegacyReport
+    );
+    assert(corruptLegacyDecode.ok);
+    assert(corruptLegacyDecode.loadStatus == project_file::LoadStatus::PARTIAL);
+    assert(!corruptLegacyDecode.overwriteSafe);
+    assert(reportHas(corruptLegacyReport, project_file::LoadCode::CHUNK_PAYLOAD_INVALID));
+    assert(reportHas(corruptLegacyReport, project_file::LoadCode::DEFAULTED_CHUNK));
+    assert(corruptLegacy.macroAutomation->entryCount == 0);
+    (*legacyMacroPayload)[kFirstAutomationPlaybackByte] = 0U;
+
+    legacyChunks[macroAutomationChunkIndex].versionMinor = static_cast<uint8_t>(
+        snapshot_codec::PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR + 1U
+    );
+    const auto futureResult = project_file::encode(
+        legacyChunks.data(),
+        containerDecoded.chunkCount,
+        0,
+        legacyEncoded->data(),
+        static_cast<uint32_t>(legacyEncoded->size())
+    );
+    assert(futureResult.status == project_file::Status::OK);
+    project::ProjectSnapshot future;
+    project_file::LoadReport futureReport{};
+    const auto futureDecode = snapshot_codec::decodeProjectSnapshot(
+        legacyEncoded->data(),
+        futureResult.bytesWritten,
+        future,
+        &futureReport
+    );
+    assert(futureDecode.ok);
+    assert(futureDecode.loadStatus == project_file::LoadStatus::PARTIAL);
+    assert(!futureDecode.overwriteSafe);
+    assert(reportHas(futureReport, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
+    assert(reportHas(futureReport, project_file::LoadCode::DEFAULTED_CHUNK));
+    assert(future.macroAutomation->entryCount == 0);
+
+    std::cout
+        << "[PASS] test_project_snapshot_migrates_macro_automation_v14_lifecycle_defaults\n";
+}
+
 void test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks() {
     project::ProjectState state;
     std::strncpy(state.metadata.id.data(), "p010", state.metadata.id.size() - 1);
@@ -948,6 +1191,8 @@ int main() {
     test_project_snapshot_roundtrip_restores_runtime_state();
     test_project_sequencer_snapshot_encoder_is_deterministic();
     test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool();
+    test_project_snapshot_rejects_invalid_automation_lifecycle_metadata();
+    test_project_snapshot_migrates_macro_automation_v14_lifecycle_defaults();
     test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks();
     test_project_snapshot_future_sequencer_chunk_blocks_overwrite();
     test_project_snapshot_stale_macro_state_chunk_defaults_and_blocks_overwrite();

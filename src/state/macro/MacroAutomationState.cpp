@@ -17,6 +17,14 @@ struct CurveDescriptor {
     uint16_t count = 0;
 };
 
+struct CurveRange {
+    uint16_t start = 0;
+    uint16_t end = 0;
+};
+
+constexpr uint32_t FNV_OFFSET_BASIS = 2166136261U;
+constexpr uint32_t FNV_PRIME = 16777619U;
+
 FLASHMEM uint16_t clampedPointTick(float beat, uint16_t durationTicks) {
     if (!std::isfinite(beat) || beat <= 0.0f) return 0;
     const float ticks =
@@ -36,6 +44,175 @@ FLASHMEM bool curveRangeValid(const MacroAutomationCurveRef& ref,
     const uint32_t end =
         static_cast<uint32_t>(ref.pointOffset) + static_cast<uint32_t>(ref.pointCount);
     return end <= pool.used && end <= MACRO_AUTOMATION_POINT_POOL_CAPACITY;
+}
+
+FLASHMEM uint32_t fingerprintByte(uint32_t fingerprint, uint8_t value) {
+    return (fingerprint ^ value) * FNV_PRIME;
+}
+
+FLASHMEM uint32_t fingerprintU16(uint32_t fingerprint, uint16_t value) {
+    fingerprint = fingerprintByte(fingerprint, static_cast<uint8_t>(value & 0xFFU));
+    return fingerprintByte(fingerprint, static_cast<uint8_t>((value >> 8U) & 0xFFU));
+}
+
+FLASHMEM uint32_t curveFingerprint(const MacroAutomationCurveRef& curve,
+                                   const MacroAutomationPointPool& pool) {
+    uint32_t fingerprint = FNV_OFFSET_BASIS;
+    fingerprint = fingerprintByte(fingerprint, curve.active ? 1U : 0U);
+    fingerprint = fingerprintByte(
+        fingerprint,
+        static_cast<uint8_t>(curve.playbackState)
+    );
+    fingerprint = fingerprintU16(fingerprint, curve.pointCount);
+    fingerprint = fingerprintU16(fingerprint, curve.sourceDurationTicks);
+    fingerprint = fingerprintU16(fingerprint, curve.durationTicks);
+    fingerprint = fingerprintU16(fingerprint, curve.windowOffsetTicks);
+    fingerprint = fingerprintByte(
+        fingerprint,
+        static_cast<uint8_t>(curve.interpolation)
+    );
+    fingerprint = fingerprintByte(
+        fingerprint,
+        static_cast<uint8_t>(curve.modulationOrigin)
+    );
+    if (!curveRangeValid(curve, pool)) return fingerprint;
+    for (uint16_t i = 0; i < curve.pointCount; ++i) {
+        const auto& point = pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
+        fingerprint = fingerprintU16(fingerprint, point.tick);
+        fingerprint = fingerprintU16(
+            fingerprint,
+            static_cast<uint16_t>(point.value)
+        );
+    }
+    return fingerprint;
+}
+
+FLASHMEM uint32_t modulationTargetFingerprint(
+    const MacroAutomationSlotState& slot,
+    const MacroAutomationPointPool& pool
+) {
+    uint32_t fingerprint = curveFingerprint(slot.modulation, pool);
+    uint32_t depthBits = 0;
+    static_assert(sizeof(depthBits) == sizeof(slot.modulationDepth));
+    std::memcpy(&depthBits, &slot.modulationDepth, sizeof(depthBits));
+    fingerprint = fingerprintU16(fingerprint, static_cast<uint16_t>(depthBits));
+    return fingerprintU16(fingerprint, static_cast<uint16_t>(depthBits >> 16U));
+}
+
+FLASHMEM bool curveValidForMutation(const MacroAutomationCurveRef& curve,
+                                    const MacroAutomationPointPool& pool) {
+    if (!macroCurvePlaybackStateValid(curve.playbackState) ||
+        !macroModulationOriginValid(curve.modulationOrigin) ||
+        curve.interpolation != MacroAutomationInterpolation::LINEAR) {
+        return false;
+    }
+    if (!curve.active) return curve.pointCount == 0;
+    if (!curveRangeValid(curve, pool)) return false;
+    uint16_t previousTick = 0;
+    for (uint16_t i = 0; i < curve.pointCount; ++i) {
+        const auto& point = pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
+        if (point.tick > curve.sourceDurationTicks) return false;
+        if (i > 0 && point.tick < previousTick) return false;
+        previousTick = point.tick;
+    }
+    return true;
+}
+
+FLASHMEM bool bankValidForMutation(const MacroAutomationBankState& bank) {
+    if (bank.entryCount > MACRO_AUTOMATION_SLOT_CAPACITY ||
+        bank.pointPool.used > MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
+        return false;
+    }
+
+    std::array<CurveRange, MACRO_AUTOMATION_SLOT_CAPACITY * 2U> ranges{};
+    uint8_t rangeCount = 0;
+    for (uint8_t i = 0; i < bank.entryCount; ++i) {
+        const auto& entry = bank.entries[i];
+        if (!entry.active || !macroAutomationAddressValid(entry.address)) return false;
+        for (uint8_t j = static_cast<uint8_t>(i + 1U); j < bank.entryCount; ++j) {
+            if (bank.entries[j].active &&
+                macroAutomationAddressEquals(entry.address, bank.entries[j].address)) {
+                return false;
+            }
+        }
+        if (!macroAutomationCurveLifecycleValid(entry.state.automation) ||
+            !macroModulationCurveLifecycleValid(entry.state.modulation)) {
+            return false;
+        }
+        const std::array<const MacroAutomationCurveRef*, 2> curves{
+            &entry.state.automation,
+            &entry.state.modulation,
+        };
+        for (const auto* curve : curves) {
+            if (curve == nullptr || !curveValidForMutation(*curve, bank.pointPool)) {
+                return false;
+            }
+            if (!curve->active) continue;
+            if (rangeCount >= ranges.size()) return false;
+            ranges[rangeCount++] = CurveRange{
+                .start = curve->pointOffset,
+                .end = static_cast<uint16_t>(curve->pointOffset + curve->pointCount),
+            };
+        }
+    }
+
+    for (uint8_t i = 1; i < rangeCount; ++i) {
+        const CurveRange current = ranges[i];
+        uint8_t j = i;
+        while (j > 0 && ranges[j - 1U].start > current.start) {
+            ranges[j] = ranges[j - 1U];
+            --j;
+        }
+        ranges[j] = current;
+    }
+    uint16_t cursor = 0;
+    for (uint8_t i = 0; i < rangeCount; ++i) {
+        if (ranges[i].start != cursor || ranges[i].end <= ranges[i].start) return false;
+        cursor = ranges[i].end;
+    }
+    return cursor == bank.pointPool.used;
+}
+
+FLASHMEM float conversionReference(const MacroAutomationCurveRef& automation,
+                                   const MacroAutomationPointPool& pool,
+                                   MacroAutomationConversionPolicy policy) {
+    if (!curveRangeValid(automation, pool)) return 0.0f;
+    const uint16_t count = automation.pointCount;
+    if (policy == MacroAutomationConversionPolicy::FIRST) {
+        return macroAutomationUnpackValue(pool.points[automation.pointOffset].value, false);
+    }
+    if (policy == MacroAutomationConversionPolicy::MIN) {
+        int16_t minimum = 32767;
+        for (uint16_t i = 0; i < count; ++i) {
+            minimum = std::min(
+                minimum,
+                pool.points[static_cast<uint16_t>(automation.pointOffset + i)].value
+            );
+        }
+        return macroAutomationUnpackValue(minimum, false);
+    }
+
+    uint32_t sum = 0;
+    for (uint16_t i = 0; i < count; ++i) {
+        const int16_t value =
+            pool.points[static_cast<uint16_t>(automation.pointOffset + i)].value;
+        sum += static_cast<uint16_t>(std::max<int16_t>(0, value));
+    }
+    return macroAutomationClamp01(
+        static_cast<float>(sum) /
+        (static_cast<float>(count) * 32767.0f)
+    );
+}
+
+FLASHMEM bool conversionPolicyValid(MacroAutomationConversionPolicy policy) {
+    switch (policy) {
+        case MacroAutomationConversionPolicy::MEAN:
+        case MacroAutomationConversionPolicy::FIRST:
+        case MacroAutomationConversionPolicy::MIN:
+            return true;
+        default:
+            return false;
+    }
 }
 
 FLASHMEM bool appendPackedCurve(MacroAutomationPointPool& pool,
@@ -346,7 +523,10 @@ FLASHMEM bool macroAutomationAssignAutomation(MacroAutomationBankState& bank,
     const uint16_t oldCount = macroAutomationStoredPointCount(slot.automation, bank.pointPool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - bank.pointPool.used);
-    if (lane.pointCount > static_cast<uint16_t>(freeCount + oldCount)) return false;
+    if (static_cast<uint32_t>(lane.pointCount) >
+        static_cast<uint32_t>(freeCount) + static_cast<uint32_t>(oldCount)) {
+        return false;
+    }
 
     slot.automation = {};
     macroAutomationCompactPool(bank);
@@ -372,7 +552,10 @@ FLASHMEM bool macroAutomationAssignModulation(MacroAutomationBankState& bank,
     const uint16_t oldCount = macroAutomationStoredPointCount(slot.modulation, bank.pointPool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - bank.pointPool.used);
-    if (shape.pointCount > static_cast<uint16_t>(freeCount + oldCount)) return false;
+    if (static_cast<uint32_t>(shape.pointCount) >
+        static_cast<uint32_t>(freeCount) + static_cast<uint32_t>(oldCount)) {
+        return false;
+    }
 
     slot.modulation = {};
     macroAutomationCompactPool(bank);
@@ -399,6 +582,110 @@ FLASHMEM void macroAutomationClearModulation(MacroAutomationBankState& bank,
     macroAutomationCompactPool(bank);
 }
 
+FLASHMEM MacroAutomationConversionPlan macroAutomationPreflightConversion(
+    const MacroAutomationBankState& bank,
+    const MacroAutomationSlotAddress& address,
+    MacroAutomationConversionPolicy policy,
+    float currentStaticBase
+) {
+    MacroAutomationConversionPlan plan{};
+    plan.address = address;
+    plan.policy = policy;
+    plan.expectedStaticBase = macroAutomationClamp01(currentStaticBase);
+    if (!macroAutomationAddressValid(address) || !conversionPolicyValid(policy)) {
+        plan.status = MacroAutomationConversionStatus::INVALID_ADDRESS;
+        return plan;
+    }
+    if (!bankValidForMutation(bank)) {
+        plan.status = MacroAutomationConversionStatus::INVALID_BANK;
+        return plan;
+    }
+
+    const auto* slot = macroAutomationFindSlot(bank, address);
+    if (slot == nullptr || !macroCurveStored(slot->automation)) {
+        plan.status = MacroAutomationConversionStatus::NO_AUTOMATION;
+        return plan;
+    }
+
+    plan.pointCount = slot->automation.pointCount;
+    plan.reclaimablePointCount =
+        macroAutomationStoredPointCount(slot->modulation, bank.pointPool);
+    plan.freePointCount = static_cast<uint16_t>(
+        MACRO_AUTOMATION_POINT_POOL_CAPACITY - bank.pointPool.used
+    );
+    plan.overwritesModulation = macroCurveStored(slot->modulation);
+    plan.reference = conversionReference(slot->automation, bank.pointPool, policy);
+    plan.sourceFingerprint = curveFingerprint(slot->automation, bank.pointPool);
+    plan.targetFingerprint = modulationTargetFingerprint(*slot, bank.pointPool);
+
+    if (static_cast<uint32_t>(plan.pointCount) >
+        static_cast<uint32_t>(plan.freePointCount) +
+            static_cast<uint32_t>(plan.reclaimablePointCount)) {
+        plan.status = MacroAutomationConversionStatus::POINT_POOL_EXHAUSTED;
+        return plan;
+    }
+    plan.status = plan.overwritesModulation
+        ? MacroAutomationConversionStatus::OVERWRITE_REQUIRED
+        : MacroAutomationConversionStatus::READY;
+    return plan;
+}
+
+FLASHMEM bool macroAutomationApplyConversion(
+    MacroAutomationBankState& bank,
+    float& staticBase,
+    const MacroAutomationConversionPlan& plan,
+    bool overwriteConfirmed
+) {
+    if (!plan.actionable()) return false;
+    const float currentBase = macroAutomationClamp01(staticBase);
+    if (std::fabs(currentBase - plan.expectedStaticBase) > 0.000001f) return false;
+
+    const auto current = macroAutomationPreflightConversion(
+        bank,
+        plan.address,
+        plan.policy,
+        currentBase
+    );
+    if (!current.actionable() ||
+        current.sourceFingerprint != plan.sourceFingerprint ||
+        current.targetFingerprint != plan.targetFingerprint ||
+        current.pointCount != plan.pointCount ||
+        current.overwritesModulation != plan.overwritesModulation ||
+        std::fabs(current.reference - plan.reference) > 0.000001f) {
+        return false;
+    }
+    if (current.overwritesModulation && !overwriteConfirmed) return false;
+
+    auto* slot = macroAutomationFindMutableSlot(bank, plan.address);
+    if (slot == nullptr) return false;
+
+    // From this point the validated preflight makes every remaining step
+    // infallible: reclaim first, then append exactly `pointCount` points.
+    slot->modulation = {};
+    macroAutomationCompactPool(bank);
+    const MacroAutomationCurveRef source = slot->automation;
+    const uint16_t start = bank.pointPool.used;
+    for (uint16_t i = 0; i < source.pointCount; ++i) {
+        const auto& sourcePoint =
+            bank.pointPool.points[static_cast<uint16_t>(source.pointOffset + i)];
+        const float absolute = macroAutomationUnpackValue(sourcePoint.value, false);
+        bank.pointPool.points[static_cast<uint16_t>(start + i)] = MacroPackedCurvePoint{
+            .tick = sourcePoint.tick,
+            .value = macroAutomationPackValue(absolute - current.reference, true),
+        };
+    }
+    bank.pointPool.used = static_cast<uint16_t>(start + source.pointCount);
+
+    slot->modulation = source;
+    slot->modulation.pointOffset = start;
+    slot->modulation.playbackState = MacroCurvePlaybackState::ACTIVE;
+    slot->modulation.modulationOrigin = macroModulationOriginForConversion(plan.policy);
+    slot->modulationDepth = 1.0f;
+    slot->automation.playbackState = MacroCurvePlaybackState::OFF;
+    staticBase = current.reference;
+    return true;
+}
+
 FLASHMEM bool macroAutomationCopySlotState(MacroAutomationPointPool& destPool,
                                            MacroAutomationSlotState& dest,
                                            const MacroAutomationPointPool& sourcePool,
@@ -423,7 +710,10 @@ FLASHMEM bool macroAutomationCopySlotState(MacroAutomationBankState& destBank,
     const uint16_t required = macroAutomationStoredPointCount(source, sourcePool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - destBank.pointPool.used);
-    if (required > static_cast<uint16_t>(freeCount + oldCount)) return false;
+    if (static_cast<uint32_t>(required) >
+        static_cast<uint32_t>(freeCount) + static_cast<uint32_t>(oldCount)) {
+        return false;
+    }
 
     dest = {};
     macroAutomationCompactPool(destBank);

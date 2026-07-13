@@ -267,6 +267,32 @@ void test_resolve_static_automation_modulation_and_depth() {
     assert(near(atMiddle.modulation, 0.1f));
     assert(near(atMiddle.resolved, 0.9f));
 
+    motion->automation.playbackState = MacroCurvePlaybackState::OFF;
+    const auto modulationOnly = macroResolveValue(0.6f, *motion, bank.pointPool, 0.0f);
+    assert(modulationOnly.automationStored);
+    assert(!modulationOnly.automationActive);
+    assert(modulationOnly.modulationStored);
+    assert(modulationOnly.modulationActive);
+    assert(near(modulationOnly.base, 0.6f));
+    assert(near(modulationOnly.resolved, 0.5f));
+
+    motion->modulationDepth = 0.0f;
+    const auto paused = macroResolveValue(0.6f, *motion, bank.pointPool, 0.0f);
+    assert(paused.modulationStored);
+    assert(!paused.modulationActive);
+    assert(paused.modulationPausedDepthZero);
+    assert(!paused.modulationSuspended);
+    assert(near(paused.resolved, 0.6f));
+
+    motion->modulationDepth = 0.2f;
+    motion->modulation.playbackState = MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    const auto suspended = macroResolveValue(0.6f, *motion, bank.pointPool, 0.0f);
+    assert(suspended.modulationStored);
+    assert(!suspended.modulationActive);
+    assert(!suspended.modulationPausedDepthZero);
+    assert(suspended.modulationSuspended);
+    assert(near(suspended.resolved, 0.6f));
+
     MacroAutomationSlotState noMotion;
     const auto staticOnly = macroResolveValue(0.6f, noMotion, bank.pointPool, 1.0f);
     assert(!staticOnly.automationActive);
@@ -275,6 +301,30 @@ void test_resolve_static_automation_modulation_and_depth() {
     assert(near(staticOnly.resolved, 0.6f));
 
     std::cout << "[PASS] test_resolve_static_automation_modulation_and_depth\n";
+}
+
+void test_curve_lifecycle_roles_reject_automation_only_invalid_states() {
+    using namespace core::state::macro;
+
+    MacroAutomationCurveRef curve;
+    assert(macroAutomationCurveLifecycleValid(curve));
+    assert(macroModulationCurveLifecycleValid(curve));
+
+    curve.playbackState = MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    assert(!macroAutomationCurveLifecycleValid(curve));
+    assert(macroModulationCurveLifecycleValid(curve));
+
+    curve.playbackState = MacroCurvePlaybackState::OFF;
+    curve.modulationOrigin = MacroModulationOrigin::CONVERTED_MIN;
+    assert(!macroAutomationCurveLifecycleValid(curve));
+    assert(macroModulationCurveLifecycleValid(curve));
+
+    curve.modulationOrigin = static_cast<MacroModulationOrigin>(0xFF);
+    assert(!macroAutomationCurveLifecycleValid(curve));
+    assert(!macroModulationCurveLifecycleValid(curve));
+
+    std::cout
+        << "[PASS] test_curve_lifecycle_roles_reject_automation_only_invalid_states\n";
 }
 
 void test_persisted_curve_duration_resize_uses_non_destructive_window() {
@@ -410,6 +460,7 @@ int main() {
     test_points_must_be_appended_in_musical_order();
     test_automation_conversion_policies_make_relative_shapes();
     test_resolve_static_automation_modulation_and_depth();
+    test_curve_lifecycle_roles_reject_automation_only_invalid_states();
     test_persisted_curve_duration_resize_uses_non_destructive_window();
     test_curve_window_summary_matches_persisted_window_semantics();
 

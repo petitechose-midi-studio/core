@@ -9,7 +9,8 @@ namespace core::persistence::project_snapshot_codec {
 
 inline constexpr uint8_t PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR = 1;
 inline constexpr uint8_t PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR = 2;
-inline constexpr uint8_t PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR = 4;
+inline constexpr uint8_t PROJECT_MACRO_AUTOMATION_LEGACY_CHUNK_VERSION_MINOR = 4;
+inline constexpr uint8_t PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR = 5;
 
 inline constexpr uint32_t PROJECT_MACRO_STATE_PAYLOAD_SIZE =
     core::persistence::macro_track_codec::MACRO_TRACK_BANK_PAYLOAD_SIZE;

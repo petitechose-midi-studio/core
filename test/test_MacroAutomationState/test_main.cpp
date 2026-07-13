@@ -269,6 +269,149 @@ void test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_windo
         << "test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window\n";
 }
 
+void test_conversion_preview_is_non_mutating_and_commit_is_atomic() {
+    macro::MacroAutomationBankState bank;
+    const macro::MacroAutomationSlotAddress address{.track = 1, .page = 2, .macro = 3};
+    auto* slot = macro::macroAutomationGetOrCreateSlot(bank, address);
+    assert(slot != nullptr);
+
+    macro::MacroAutomationLane lane;
+    lane.durationBeats = 2.0f;
+    assert(macro::macroAutomationAppendPoint(lane, 0.0f, 0.25f));
+    assert(macro::macroAutomationAppendPoint(lane, 2.0f, 0.75f));
+    assert(macro::macroAutomationAssignAutomation(bank, *slot, lane));
+
+    float staticBase = 0.33f;
+    const uint16_t usedBefore = bank.pointPool.used;
+    const auto automationBefore = slot->automation;
+    const auto firstPointBefore = bank.pointPool.points[slot->automation.pointOffset];
+    const auto plan = macro::macroAutomationPreflightConversion(
+        bank,
+        address,
+        macro::MacroAutomationConversionPolicy::MEAN,
+        staticBase
+    );
+    assert(plan.status == macro::MacroAutomationConversionStatus::READY);
+    assert(plan.actionable());
+    assert(!plan.overwritesModulation);
+    assert(plan.pointCount == 2);
+    assert(near(plan.reference, 0.5f));
+    assert(near(staticBase, 0.33f));
+    assert(bank.pointPool.used == usedBefore);
+    assert(slot->automation.pointOffset == automationBefore.pointOffset);
+    assert(slot->automation.playbackState == macro::MacroCurvePlaybackState::ACTIVE);
+    assert(!slot->modulation.active);
+    assert(bank.pointPool.points[slot->automation.pointOffset].tick == firstPointBefore.tick);
+    assert(bank.pointPool.points[slot->automation.pointOffset].value == firstPointBefore.value);
+
+    assert(macro::macroAutomationApplyConversion(bank, staticBase, plan, false));
+    slot = macro::macroAutomationFindMutableSlot(bank, address);
+    assert(slot != nullptr);
+    assert(near(staticBase, 0.5f));
+    assert(slot->automation.active);
+    assert(slot->automation.playbackState == macro::MacroCurvePlaybackState::OFF);
+    assert(slot->modulation.active);
+    assert(slot->modulation.playbackState == macro::MacroCurvePlaybackState::ACTIVE);
+    assert(slot->modulation.modulationOrigin == macro::MacroModulationOrigin::CONVERTED_MEAN);
+    assert(near(slot->modulationDepth, 1.0f));
+    assert(near(macro::macroModulationEvaluate(slot->modulation, bank.pointPool, 0.0f), -0.25f));
+    macro::MacroCurvePoint convertedTail{};
+    assert(macro::macroAutomationReadPoint(
+        slot->modulation,
+        bank.pointPool,
+        1,
+        true,
+        convertedTail
+    ));
+    assert(near(convertedTail.value, 0.25f));
+
+    std::cout << "[PASS] test_conversion_preview_is_non_mutating_and_commit_is_atomic\n";
+}
+
+void test_conversion_requires_overwrite_confirmation_and_rejects_stale_plan() {
+    macro::MacroAutomationBankState bank;
+    const macro::MacroAutomationSlotAddress address{.track = 0, .page = 0, .macro = 0};
+    auto* slot = macro::macroAutomationGetOrCreateSlot(bank, address);
+    assert(slot != nullptr);
+
+    macro::MacroAutomationLane automation;
+    assert(macro::macroAutomationAppendPoint(automation, 0.0f, 0.2f));
+    assert(macro::macroAutomationAppendPoint(automation, 1.0f, 0.8f));
+    assert(macro::macroAutomationAssignAutomation(bank, *slot, automation));
+    macro::MacroModulationShape modulation;
+    assert(macro::macroModulationAppendPoint(modulation, 0.0f, -0.1f));
+    assert(macro::macroModulationAppendPoint(modulation, 1.0f, 0.1f));
+    assert(macro::macroAutomationAssignModulation(bank, *slot, modulation));
+    slot->modulationDepth = 0.4f;
+
+    float staticBase = 0.6f;
+    const auto overwritePlan = macro::macroAutomationPreflightConversion(
+        bank,
+        address,
+        macro::MacroAutomationConversionPolicy::FIRST,
+        staticBase
+    );
+    assert(overwritePlan.status == macro::MacroAutomationConversionStatus::OVERWRITE_REQUIRED);
+    const uint16_t usedBefore = bank.pointPool.used;
+    const uint32_t targetFingerprint = overwritePlan.targetFingerprint;
+    assert(!macro::macroAutomationApplyConversion(bank, staticBase, overwritePlan, false));
+    assert(bank.pointPool.used == usedBefore);
+    assert(near(staticBase, 0.6f));
+    assert(macro::macroAutomationPreflightConversion(
+               bank,
+               address,
+               macro::MacroAutomationConversionPolicy::FIRST,
+               staticBase
+           ).targetFingerprint == targetFingerprint);
+
+    staticBase = 0.7f;
+    assert(!macro::macroAutomationApplyConversion(bank, staticBase, overwritePlan, true));
+    assert(bank.pointPool.used == usedBefore);
+    assert(near(staticBase, 0.7f));
+
+    staticBase = 0.6f;
+    const auto freshPlan = macro::macroAutomationPreflightConversion(
+        bank,
+        address,
+        macro::MacroAutomationConversionPolicy::MIN,
+        staticBase
+    );
+    slot->automation.playbackState = macro::MacroCurvePlaybackState::OFF;
+    assert(!macro::macroAutomationApplyConversion(bank, staticBase, freshPlan, true));
+    assert(bank.pointPool.used == usedBefore);
+    assert(near(staticBase, 0.6f));
+
+    std::cout << "[PASS] test_conversion_requires_overwrite_confirmation_and_rejects_stale_plan\n";
+}
+
+void test_conversion_pool_exhaustion_has_no_partial_mutation() {
+    macro::MacroAutomationBankState bank;
+    fillAutomationPool(bank);
+    const macro::MacroAutomationSlotAddress address{.track = 0, .page = 0, .macro = 0};
+    auto* slot = macro::macroAutomationFindMutableSlot(bank, address);
+    assert(slot != nullptr);
+    const auto sourceBefore = slot->automation;
+    float staticBase = 0.42f;
+
+    const auto plan = macro::macroAutomationPreflightConversion(
+        bank,
+        address,
+        macro::MacroAutomationConversionPolicy::MEAN,
+        staticBase
+    );
+    assert(plan.status == macro::MacroAutomationConversionStatus::POINT_POOL_EXHAUSTED);
+    assert(!plan.actionable());
+    assert(!macro::macroAutomationApplyConversion(bank, staticBase, plan, true));
+    assert(bank.pointPool.used == macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+    assert(slot->automation.pointOffset == sourceBefore.pointOffset);
+    assert(slot->automation.pointCount == sourceBefore.pointCount);
+    assert(slot->automation.playbackState == macro::MacroCurvePlaybackState::ACTIVE);
+    assert(!slot->modulation.active);
+    assert(near(staticBase, 0.42f));
+
+    std::cout << "[PASS] test_conversion_pool_exhaustion_has_no_partial_mutation\n";
+}
+
 }  // namespace
 
 int main() {
@@ -283,6 +426,9 @@ int main() {
     test_macro_automation_compaction_preserves_multicurve_references();
     test_macro_automation_copy_failure_preserves_existing_destination();
     test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window();
+    test_conversion_preview_is_non_mutating_and_commit_is_atomic();
+    test_conversion_requires_overwrite_confirmation_and_rejects_stale_plan();
+    test_conversion_pool_exhaustion_has_no_partial_mutation();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

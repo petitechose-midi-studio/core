@@ -31,6 +31,43 @@ struct MacroAutomationBankState {
     void clear();
 };
 
+enum class MacroAutomationConversionStatus : uint8_t {
+    READY = 0,
+    OVERWRITE_REQUIRED,
+    INVALID_ADDRESS,
+    INVALID_BANK,
+    NO_AUTOMATION,
+    POINT_POOL_EXHAUSTED,
+    STALE_PLAN,
+};
+
+/**
+ * Immutable result of an Automation -> Modulation preflight.
+ *
+ * Fingerprints deliberately exclude pool offsets so unrelated compaction does
+ * not invalidate a semantically identical source. Commit recomputes capacity
+ * and both fingerprints before the first write.
+ */
+struct MacroAutomationConversionPlan {
+    MacroAutomationConversionStatus status =
+        MacroAutomationConversionStatus::INVALID_ADDRESS;
+    MacroAutomationSlotAddress address{};
+    MacroAutomationConversionPolicy policy = MacroAutomationConversionPolicy::MEAN;
+    float reference = 0.0f;
+    float expectedStaticBase = 0.0f;
+    uint16_t pointCount = 0;
+    uint16_t reclaimablePointCount = 0;
+    uint16_t freePointCount = 0;
+    uint32_t sourceFingerprint = 0;
+    uint32_t targetFingerprint = 0;
+    bool overwritesModulation = false;
+
+    bool actionable() const {
+        return status == MacroAutomationConversionStatus::READY ||
+               status == MacroAutomationConversionStatus::OVERWRITE_REQUIRED;
+    }
+};
+
 static_assert(std::is_trivially_copyable_v<MacroAutomationSlotAddress>);
 static_assert(std::is_trivially_copyable_v<MacroAutomationSlotEntry>);
 static_assert(std::is_trivially_copyable_v<MacroAutomationPointPool>);
@@ -81,6 +118,19 @@ void macroAutomationClearAutomation(MacroAutomationBankState& bank,
                                     MacroAutomationSlotState& slot);
 void macroAutomationClearModulation(MacroAutomationBankState& bank,
                                     MacroAutomationSlotState& slot);
+MacroAutomationConversionPlan macroAutomationPreflightConversion(
+    const MacroAutomationBankState& bank,
+    const MacroAutomationSlotAddress& address,
+    MacroAutomationConversionPolicy policy,
+    float currentStaticBase);
+/**
+ * Applies a still-current plan atomically and updates `staticBase` last.
+ * Existing Modulation requires explicit overwrite confirmation.
+ */
+bool macroAutomationApplyConversion(MacroAutomationBankState& bank,
+                                    float& staticBase,
+                                    const MacroAutomationConversionPlan& plan,
+                                    bool overwriteConfirmed);
 bool macroAutomationCopySlotState(MacroAutomationPointPool& destPool,
                                   MacroAutomationSlotState& dest,
                                   const MacroAutomationPointPool& sourcePool,

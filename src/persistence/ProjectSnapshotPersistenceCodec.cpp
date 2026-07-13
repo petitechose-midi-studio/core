@@ -1,6 +1,7 @@
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
 #include <array>
+#include <cmath>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -131,40 +132,52 @@ FLASHMEM uint32_t macroAutomationPayloadSize(uint8_t entryCount, uint16_t pointC
 FLASHMEM bool writeMacroAutomationCurveRef(binary::Writer& writer,
                                            const macro::MacroAutomationCurveRef& curve) {
     return writer.writeU8(curve.active ? 1U : 0U) &&
-           writer.writeU8(0) &&
+           writer.writeU8(static_cast<uint8_t>(curve.playbackState)) &&
            writer.writeU16(curve.pointOffset) &&
            writer.writeU16(curve.pointCount) &&
            writer.writeU16(curve.sourceDurationTicks) &&
            writer.writeU16(curve.durationTicks) &&
            writer.writeU16(curve.windowOffsetTicks) &&
            writer.writeU8(static_cast<uint8_t>(curve.interpolation)) &&
-           writer.writeU8(0);
+           writer.writeU8(static_cast<uint8_t>(curve.modulationOrigin));
 }
 
 FLASHMEM bool readMacroAutomationCurveRef(binary::Reader& reader,
-                                          macro::MacroAutomationCurveRef& curve) {
+                                          macro::MacroAutomationCurveRef& curve,
+                                          bool legacyV14) {
     uint8_t active = 0;
-    uint8_t reserved0 = 0;
+    uint8_t playbackState = 0;
     uint8_t interpolation = 0;
-    uint8_t reserved1 = 0;
+    uint8_t modulationOrigin = 0;
     if (!reader.readU8(active) ||
-        !reader.readU8(reserved0) ||
+        !reader.readU8(playbackState) ||
         !reader.readU16(curve.pointOffset) ||
         !reader.readU16(curve.pointCount) ||
         !reader.readU16(curve.sourceDurationTicks) ||
         !reader.readU16(curve.durationTicks) ||
         !reader.readU16(curve.windowOffsetTicks) ||
         !reader.readU8(interpolation) ||
-        !reader.readU8(reserved1)) {
+        !reader.readU8(modulationOrigin)) {
         return false;
     }
-    (void)reserved0;
-    (void)reserved1;
     if (interpolation != static_cast<uint8_t>(macro::MacroAutomationInterpolation::LINEAR)) {
+        return false;
+    }
+    if (legacyV14 && (playbackState != 0U || modulationOrigin != 0U)) {
         return false;
     }
     curve.active = active != 0;
     curve.interpolation = static_cast<macro::MacroAutomationInterpolation>(interpolation);
+    curve.playbackState = legacyV14
+        ? macro::MacroCurvePlaybackState::ACTIVE
+        : static_cast<macro::MacroCurvePlaybackState>(playbackState);
+    curve.modulationOrigin = legacyV14
+        ? macro::MacroModulationOrigin::NATIVE
+        : static_cast<macro::MacroModulationOrigin>(modulationOrigin);
+    if (!macro::macroCurvePlaybackStateValid(curve.playbackState) ||
+        !macro::macroModulationOriginValid(curve.modulationOrigin)) {
+        return false;
+    }
     return true;
 }
 
@@ -176,9 +189,10 @@ FLASHMEM bool writeMacroAutomationSlotState(binary::Writer& writer,
 }
 
 FLASHMEM bool readMacroAutomationSlotState(binary::Reader& reader,
-                                           macro::MacroAutomationSlotState& state) {
-    return readMacroAutomationCurveRef(reader, state.automation) &&
-           readMacroAutomationCurveRef(reader, state.modulation) &&
+                                           macro::MacroAutomationSlotState& state,
+                                           bool legacyV14) {
+    return readMacroAutomationCurveRef(reader, state.automation, legacyV14) &&
+           readMacroAutomationCurveRef(reader, state.modulation, legacyV14) &&
            reader.readFloat32(state.modulationDepth);
 }
 
@@ -284,7 +298,11 @@ FLASHMEM bool validateMacroAutomationCurve(
     const core::state::macro::MacroAutomationCurveRef& curve,
     const core::state::macro::MacroAutomationPointPool& pool
 ) {
-    if (!curve.active) return true;
+    if (!core::state::macro::macroCurvePlaybackStateValid(curve.playbackState) ||
+        !core::state::macro::macroModulationOriginValid(curve.modulationOrigin)) {
+        return false;
+    }
+    if (!curve.active) return curve.pointCount == 0;
     if (curve.durationTicks == 0 || curve.sourceDurationTicks == 0 || curve.pointCount == 0) {
         return false;
     }
@@ -379,8 +397,21 @@ FLASHMEM bool validateMacroAutomationBank(
                 return false;
             }
         }
+        if (!core::state::macro::macroAutomationCurveLifecycleValid(
+                entry.state.automation
+            ) ||
+            !core::state::macro::macroModulationCurveLifecycleValid(
+                entry.state.modulation
+            )) {
+            return false;
+        }
         if (!validateMacroAutomationCurve(entry.state.automation, bank.pointPool)) return false;
         if (!validateMacroAutomationCurve(entry.state.modulation, bank.pointPool)) return false;
+        if (!std::isfinite(entry.state.modulationDepth) ||
+            entry.state.modulationDepth < 0.0f ||
+            entry.state.modulationDepth > 1.0f) {
+            return false;
+        }
         if (!appendMacroAutomationCurveRange(entry.state.automation, ranges, rangeCount)) {
             return false;
         }
@@ -394,7 +425,8 @@ FLASHMEM bool validateMacroAutomationBank(
 
 FLASHMEM bool readMacroAutomationPayload(const uint8_t* data,
                                           uint32_t size,
-                                          macro::MacroAutomationBankState& out) {
+                                          macro::MacroAutomationBankState& out,
+                                          bool legacyV14) {
     out.clear();
     if (data == nullptr || size < PROJECT_MACRO_AUTOMATION_HEADER_SIZE) return false;
 
@@ -434,7 +466,7 @@ FLASHMEM bool readMacroAutomationPayload(const uint8_t* data,
             !reader.readU8(address.page) ||
             !reader.readU8(address.macro) ||
             !reader.readU8(reservedEntry) ||
-            !readMacroAutomationSlotState(reader, state)) {
+            !readMacroAutomationSlotState(reader, state, legacyV14)) {
             return false;
         }
         (void)reservedEntry;
@@ -472,12 +504,31 @@ FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chu
         target.macroAutomation->clear();
         return true;
     }
-    if (!chunkVersionSupported(*chunk, PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR, report)) {
+    const bool currentVersion =
+        chunk->versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
+        chunk->versionMinor == PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR;
+    const bool legacyV14 =
+        chunk->versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
+        chunk->versionMinor == PROJECT_MACRO_AUTOMATION_LEGACY_CHUNK_VERSION_MINOR;
+    if (!currentVersion && !legacyV14) {
+        addReport(report,
+                  project_file::LoadSeverity::WARNING,
+                  project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
+                  chunk->id,
+                  chunk->versionMajor,
+                  chunk->versionMinor,
+                  PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+                  PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
         reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
         target.macroAutomation->clear();
         return false;
     }
-    if (!readMacroAutomationPayload(chunk->data, chunk->size, *target.macroAutomation)) {
+    if (!readMacroAutomationPayload(
+            chunk->data,
+            chunk->size,
+            *target.macroAutomation,
+            legacyV14
+        )) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
                   project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
@@ -487,6 +538,16 @@ FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chu
         reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
         target.macroAutomation->clear();
         return false;
+    }
+    if (legacyV14) {
+        addReport(report,
+                  project_file::LoadSeverity::INFO,
+                  project_file::LoadCode::MIGRATED_CHUNK,
+                  chunk->id,
+                  chunk->versionMajor,
+                  chunk->versionMinor,
+                  PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+                  PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
     }
     core::state::macro::macroAutomationCompactPool(*target.macroAutomation);
     return true;

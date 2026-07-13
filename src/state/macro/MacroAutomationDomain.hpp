@@ -19,6 +19,27 @@ enum class MacroAutomationConversionPolicy : uint8_t {
     MIN = 2,
 };
 
+/**
+ * Persisted permission for a stored curve to participate in playback.
+ *
+ * ACTIVE intentionally remains zero: MAUT 1.4 files wrote zero in the byte
+ * now used for this field, so existing stored curves migrate as audible.
+ * `active` on MacroAutomationCurveRef continues to mean "data is stored".
+ */
+enum class MacroCurvePlaybackState : uint8_t {
+    ACTIVE = 0,
+    OFF = 1,
+    SUSPENDED_AFTER_RECORD = 2,
+};
+
+/** Provenance retained for semantic conversion feedback and inspection. */
+enum class MacroModulationOrigin : uint8_t {
+    NATIVE = 0,
+    CONVERTED_MEAN = 1,
+    CONVERTED_FIRST = 2,
+    CONVERTED_MIN = 3,
+};
+
 struct MacroCurvePoint {
     float beat = 0.0f;
     float value = 0.0f;
@@ -36,12 +57,14 @@ struct MacroAutomationPointPool {
 
 struct MacroAutomationCurveRef {
     bool active = false;
+    MacroCurvePlaybackState playbackState = MacroCurvePlaybackState::ACTIVE;
     uint16_t pointOffset = 0;
     uint16_t pointCount = 0;
     uint16_t sourceDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
     uint16_t durationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
     uint16_t windowOffsetTicks = 0;
     MacroAutomationInterpolation interpolation = MacroAutomationInterpolation::LINEAR;
+    MacroModulationOrigin modulationOrigin = MacroModulationOrigin::NATIVE;
 };
 
 // Temporary absolute lane used while recording or authoring. Durable project
@@ -74,8 +97,12 @@ struct MacroResolvedValue {
     float base = 0.0f;
     float modulation = 0.0f;
     float resolved = 0.0f;
+    bool automationStored = false;
+    bool modulationStored = false;
     bool automationActive = false;
     bool modulationActive = false;
+    bool modulationPausedDepthZero = false;
+    bool modulationSuspended = false;
 };
 
 struct MacroAutomationCurveWindowSummary {
@@ -91,6 +118,15 @@ struct MacroAutomationCurveWindowSummary {
 
 float macroAutomationClamp01(float value);
 float macroAutomationClampSigned(float value);
+bool macroCurvePlaybackStateValid(MacroCurvePlaybackState state);
+bool macroModulationOriginValid(MacroModulationOrigin origin);
+bool macroAutomationCurveLifecycleValid(const MacroAutomationCurveRef& curve);
+bool macroModulationCurveLifecycleValid(const MacroAutomationCurveRef& curve);
+bool macroCurveStored(const MacroAutomationCurveRef& curve);
+bool macroCurvePlaybackActive(const MacroAutomationCurveRef& curve);
+bool macroCurveSuspendedAfterRecord(const MacroAutomationCurveRef& curve);
+MacroModulationOrigin macroModulationOriginForConversion(
+    MacroAutomationConversionPolicy policy);
 float macroAutomationElapsedBeats(uint32_t startedAtMs, uint32_t nowMs, float tempoBpm);
 float macroAutomationQuantizeDurationBeats(float rawDurationBeats);
 float macroAutomationBeatsFromTicks(uint16_t ticks);
