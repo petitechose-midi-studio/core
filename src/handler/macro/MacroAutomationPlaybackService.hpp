@@ -13,6 +13,8 @@
 
 namespace core::handler {
 
+class MacroMidiCcRuntimeAdapter;
+
 class MacroAutomationPlaybackService {
 public:
     struct StateRefs {
@@ -21,6 +23,15 @@ public:
         core::state::StatusBarState& statusBar;
     };
 
+    MacroAutomationPlaybackService(StateRefs state,
+                                   MacroPerformanceDomainServices services,
+                                   MacroMidiCcRuntimeAdapter& midiRuntime);
+
+    /**
+     * Compatibility-only direct-output path for isolated legacy tests.
+     * Standalone production assembly must inject MacroMidiCcRuntimeAdapter.
+     */
+    [[deprecated("Inject MacroMidiCcRuntimeAdapter in production")]]
     MacroAutomationPlaybackService(StateRefs state,
                                    MacroPerformanceDomainServices services,
                                    oc::api::MidiAPI& midi);
@@ -36,7 +47,8 @@ private:
     core::state::macro::MacroUiState& macro_ui_;
     core::state::StatusBarState& status_bar_;
     MacroPerformanceDomainServices services_;
-    oc::api::MidiAPI& midi_;
+    MacroMidiCcRuntimeAdapter* midi_runtime_ = nullptr;
+    oc::api::MidiAPI* direct_midi_fallback_ = nullptr;
 
     bool was_playing_ = false;
     bool update_scheduled_ = false;

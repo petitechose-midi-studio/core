@@ -8,6 +8,7 @@
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
 
 namespace core::handler {
@@ -25,6 +26,25 @@ FLASHMEM MacroValueHandler::MacroValueHandler(StateRefs state,
                                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                      oc::api::EncoderAPI& encoders,
                                      oc::api::ButtonAPI& buttons,
+                                     MacroMidiCcRuntimeAdapter& midiRuntime,
+                                     oc::type::ScopeID scopeId)
+    : macro_ui_(state.macroUi)
+    , active_view_(state.activeView)
+    , macro_edit_(state.macroEdit)
+    , services_(services)
+    , overlays_(overlays)
+    , encoders_(encoders)
+    , buttons_(buttons)
+    , midi_runtime_(&midiRuntime)
+    , scope_id_(scopeId) {
+    setupBindings();
+}
+
+FLASHMEM MacroValueHandler::MacroValueHandler(StateRefs state,
+                                     MacroPerformanceDomainServices services,
+                                     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                                     oc::api::EncoderAPI& encoders,
+                                     oc::api::ButtonAPI& buttons,
                                      oc::api::MidiAPI& midi,
                                      oc::type::ScopeID scopeId)
     : macro_ui_(state.macroUi)
@@ -34,7 +54,7 @@ FLASHMEM MacroValueHandler::MacroValueHandler(StateRefs state,
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
-    , midi_(midi)
+    , direct_midi_fallback_(&midi)
     , scope_id_(scopeId) {
     setupBindings();
 }
@@ -148,12 +168,18 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     if (!services_.isActivePageEnabled()) return;
 
-    // Send MIDI CC
-    const auto& config = services_.activeConfig(index);
-    midi_.sendCC(config.channel, config.cc, cc_value);
+    if (midi_runtime_ != nullptr) {
+        (void)midi_runtime_->publishLiveManual(index, cc_value);
+        return;
+    }
 
-    // Signal CC MIDI OUT activity
-    services_.pulseCcOut();
+    // Compatibility-only direct path. Production always injects the shared
+    // adapter so duplicate Macro destinations resolve as one complete frame.
+    if (direct_midi_fallback_ != nullptr) {
+        const auto& config = services_.activeConfig(index);
+        direct_midi_fallback_->sendCC(config.channel, config.cc, cc_value);
+        services_.pulseCcOut();
+    }
 }
 
 void MacroValueHandler::handleConfigChange(uint8_t index, float value) {

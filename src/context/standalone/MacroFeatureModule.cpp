@@ -149,6 +149,23 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
     );
     if (!presenter_ || !presenter_->bind()) return;
 
+    // One EXTMEM-owned resolver instance is the only production owner of
+    // classic-CC emission for Macro authors. Keeping the adapter beside it
+    // prevents handlers from opening or publishing partial resolver frames.
+    midi_cc_runtime_ =
+        core::app::makeExtmemUnique<core::handler::MidiCcRuntimeAggregator>(midi);
+    if (!midi_cc_runtime_) return;
+    macro_midi_runtime_ =
+        core::app::makeExtmemUnique<core::handler::MacroMidiCcRuntimeAdapter>(
+            core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
+                stateRefs.pages,
+                stateRefs.macroUi,
+            },
+            performanceServices,
+            *midi_cc_runtime_
+        );
+    if (!macro_midi_runtime_) return;
+
     const auto macroViewScopeId = oc::ui::lvgl::scopeID(macroViewScope);
     if (macroViewScopeId == 0) return;
     value_handler_ = std::make_unique<core::handler::MacroValueHandler>(
@@ -161,7 +178,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         overlays,
         encoders,
         buttons,
-        midi,
+        *macro_midi_runtime_,
         macroViewScopeId
     );
     performance_handler_ = core::app::makeExtmemUnique<core::handler::MacroPerformanceHandler>(
@@ -197,7 +214,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
             stateRefs.statusBar,
         },
         performanceServices,
-        midi
+        *macro_midi_runtime_
     );
     edit_handler_ = core::app::makeExtmemUnique<core::handler::MacroEditHandler>(
         core::handler::MacroEditHandler::StateRefs{
@@ -231,6 +248,13 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
 }
 
 FLASHMEM MacroFeatureModule::~MacroFeatureModule() = default;
+
+const core::state::shared::MidiCcResolutionTelemetry*
+MacroFeatureModule::midiCcTelemetry() const {
+    return macro_midi_runtime_ != nullptr
+        ? &macro_midi_runtime_->telemetry()
+        : nullptr;
+}
 
 void MacroFeatureModule::onCC(uint8_t channel, uint8_t cc, uint8_t value) {
     if (midi_handler_) {

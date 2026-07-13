@@ -25,6 +25,8 @@
 
 namespace core::handler {
 
+class MacroMidiCcRuntimeAdapter;
+
 /**
  * @brief Encoder input handler for standalone macros
  *
@@ -40,6 +42,20 @@ public:
         core::state::MacroEditState& macroEdit;
     };
 
+    /** Production path: all Macro authors share one complete CC frame. */
+    MacroValueHandler(StateRefs state,
+                      MacroPerformanceDomainServices services,
+                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                      oc::api::EncoderAPI& encoders,
+                      oc::api::ButtonAPI& buttons,
+                      MacroMidiCcRuntimeAdapter& midiRuntime,
+                      oc::type::ScopeID scopeId);
+
+    /**
+     * Compatibility-only direct-output path for isolated legacy tests.
+     * Standalone production assembly must inject MacroMidiCcRuntimeAdapter.
+     */
+    [[deprecated("Inject MacroMidiCcRuntimeAdapter in production")]]
     MacroValueHandler(StateRefs state,
                       MacroPerformanceDomainServices services,
                       oc::context::OverlayManager<core::ui::OverlayType>& overlays,
@@ -72,7 +88,8 @@ private:
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    oc::api::MidiAPI& midi_;
+    MacroMidiCcRuntimeAdapter* midi_runtime_ = nullptr;
+    oc::api::MidiAPI* direct_midi_fallback_ = nullptr;
     oc::type::ScopeID scope_id_ = 0;
     std::array<bool, core::state::macro::MACRO_COUNT> macro_button_held_{};
     std::array<bool, core::state::macro::MACRO_COUNT> post_record_guard_active_{};

@@ -11,8 +11,10 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "handler/common/MidiCcRuntimeAggregator.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/macro/MacroAutomationPlaybackService.hpp"
+#include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "state/MacroEditState.hpp"
@@ -98,6 +100,8 @@ public:
     MacroFeatureModule& operator=(const MacroFeatureModule&) = delete;
 
     [[nodiscard]] bool valid() const { return valid_; }
+    [[nodiscard]] const core::state::shared::MidiCcResolutionTelemetry*
+    midiCcTelemetry() const;
     void onCC(uint8_t channel, uint8_t cc, uint8_t value);
     void onNoteIn();
     void update(uint32_t nowMs);
@@ -117,6 +121,10 @@ private:
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> page_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> target_selector_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::MacroOverlayPresenter> presenter_;
+    core::app::ExtmemUniquePtr<core::handler::MidiCcRuntimeAggregator>
+        midi_cc_runtime_;
+    core::app::ExtmemUniquePtr<core::handler::MacroMidiCcRuntimeAdapter>
+        macro_midi_runtime_;
     std::unique_ptr<core::handler::MacroValueHandler> value_handler_;
     std::unique_ptr<core::handler::MacroMidiHandler> midi_handler_;
     std::unique_ptr<core::handler::MacroAutomationPlaybackService> automation_playback_;

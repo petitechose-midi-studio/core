@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
+#include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
 
 namespace core::handler {
@@ -19,13 +20,26 @@ constexpr uint8_t INVALID_CC_VALUE = 0xFF;
 FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
     StateRefs state,
     MacroPerformanceDomainServices services,
+    MacroMidiCcRuntimeAdapter& midiRuntime
+)
+    : pages_(state.pages)
+    , macro_ui_(state.macroUi)
+    , status_bar_(state.statusBar)
+    , services_(services)
+    , midi_runtime_(&midiRuntime) {
+    reset();
+}
+
+FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
+    StateRefs state,
+    MacroPerformanceDomainServices services,
     oc::api::MidiAPI& midi
 )
     : pages_(state.pages)
     , macro_ui_(state.macroUi)
     , status_bar_(state.statusBar)
     , services_(services)
-    , midi_(midi) {
+    , direct_midi_fallback_(&midi) {
     reset();
 }
 
@@ -38,6 +52,9 @@ void MacroAutomationPlaybackService::reset() {
     cached_track_ = 0xFF;
     cached_page_ = 0xFF;
     invalidateSentCache_();
+    if (midi_runtime_ != nullptr) {
+        midi_runtime_->clearComputedValues();
+    }
 }
 
 void MacroAutomationPlaybackService::invalidateSentCache_() {
@@ -51,6 +68,9 @@ void MacroAutomationPlaybackService::updatePlaybackBeat_(uint32_t nowMs) {
         playback_beat_ = 0.0f;
         last_update_ms_ = nowMs;
         invalidateSentCache_();
+        if (midi_runtime_ != nullptr) {
+            midi_runtime_->clearComputedValues();
+        }
         return;
     }
 
@@ -86,10 +106,16 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
         cached_page_ = page;
         macro_ui_.automationManualOverrideMask.set(0);
         invalidateSentCache_();
+        if (midi_runtime_ != nullptr) {
+            midi_runtime_->clearComputedValues();
+        }
     }
 
     const auto& pageData = pages_.activePageData();
     const uint16_t manualOverrideMask = macro_ui_.automationManualOverrideMask.get();
+    if (midi_runtime_ != nullptr) {
+        midi_runtime_->beginComputedFrame();
+    }
     for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
         if (!pageData.isMacroActive(i)) {
             sent_cc_values_[i] = INVALID_CC_VALUE;
@@ -99,11 +125,6 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             macro_ui_.automationRecording.address.track == track &&
             macro_ui_.automationRecording.address.page == page &&
             macro_ui_.automationRecording.address.macro == i) {
-            sent_cc_values_[i] = INVALID_CC_VALUE;
-            continue;
-        }
-        const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
-        if ((manualOverrideMask & overrideBit) != 0) {
             sent_cc_values_[i] = INVALID_CC_VALUE;
             continue;
         }
@@ -125,13 +146,32 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             playback_beat_
         );
         const uint8_t ccValue = core::midi::toCC(resolved.resolved);
+        if (midi_runtime_ != nullptr) {
+            (void)midi_runtime_->setComputedValue(i, ccValue);
+            const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
+            if ((manualOverrideMask & overrideBit) == 0) {
+                services_.setResolvedValue(i, core::midi::fromCC(ccValue));
+            }
+            continue;
+        }
+
+        const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
+        if ((manualOverrideMask & overrideBit) != 0) {
+            sent_cc_values_[i] = INVALID_CC_VALUE;
+            continue;
+        }
         if (sent_cc_values_[i] == ccValue) continue;
+        if (direct_midi_fallback_ == nullptr) continue;
 
         services_.setResolvedValue(i, core::midi::fromCC(ccValue));
         const auto& config = services_.activeConfig(i);
-        midi_.sendCC(config.channel, config.cc, ccValue);
+        direct_midi_fallback_->sendCC(config.channel, config.cc, ccValue);
         services_.pulseCcOut();
         sent_cc_values_[i] = ccValue;
+    }
+
+    if (midi_runtime_ != nullptr) {
+        (void)midi_runtime_->publishComputedFrame();
     }
 }
 
