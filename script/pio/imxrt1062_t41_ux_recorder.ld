@@ -45,6 +45,7 @@ SECTIONS
 
 	.text.progmem : {
 		*(.progmem*)
+		INCLUDE script/pio/imxrt1062_t41_cold_placement.ld
 		*StandaloneSequencerUxSurfaces.cpp.o(.rodata*)
 		*StandaloneMacroUxSurfaces.cpp.o(.rodata*)
 		*StandaloneGlobalUxSurfaces.cpp.o(.rodata*)

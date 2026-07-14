@@ -20,6 +20,7 @@ from teensy_memory_budget import (  # noqa: E402
     summary,
 )
 from teensy_diagnostics_placement import diagnostics_placement_violations  # noqa: E402
+from teensy_product_placement import product_placement_violations  # noqa: E402
 
 
 def project_option(action_env, name: str, default: int) -> int:
@@ -46,9 +47,7 @@ def arm_nm_path(action_env) -> Path:
     raise RuntimeError(f"arm-none-eabi-nm not found under {package_dir}")
 
 
-def diagnostics_elf_violations(action_env, elf_path: Path) -> tuple[str, ...]:
-    if str(action_env.get("PIOENV", "")) != "dev_diagnostics":
-        return ()
+def elf_placement_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     result = subprocess.run(
         [str(arm_nm_path(action_env)), "-S", "--radix=d", "-C", str(elf_path)],
         check=False,
@@ -57,7 +56,10 @@ def diagnostics_elf_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     )
     if result.returncode != 0:
         raise RuntimeError(f"arm-none-eabi-nm failed for {elf_path}:\n{result.stderr}")
-    return diagnostics_placement_violations(result.stdout)
+    violations = product_placement_violations(result.stdout)
+    if str(action_env.get("PIOENV", "")) == "dev_diagnostics":
+        violations += diagnostics_placement_violations(result.stdout)
+    return violations
 
 
 def check_memory_budget(target, source, env) -> None:
@@ -76,18 +78,19 @@ def check_memory_budget(target, source, env) -> None:
     usage = parse_teensy_size(output)
     budget = TeensyMemoryBudget(
         ram1_min_free=project_option(env, "custom_ram1_min_free", 114688),
+        ram1_code_max=project_option(env, "custom_ram1_code_max", 294912),
         ram2_min_free=project_option(env, "custom_ram2_min_free", 196608),
         extram_capacity=project_option(env, "custom_extram_capacity", 8388608),
         extram_min_free=project_option(env, "custom_extram_min_free", 2097152),
     )
     print(summary(usage, budget))
-    violations = budget_violations(usage, budget) + diagnostics_elf_violations(
+    violations = budget_violations(usage, budget) + elf_placement_violations(
         env,
         elf_path,
     )
     if violations:
         details = "\n".join(f"  - {item}" for item in violations)
-        raise RuntimeError(f"Teensy memory budget exceeded:\n{details}")
+        raise RuntimeError(f"Teensy memory or placement gate failed:\n{details}")
 
 
 pio_env.AddPostAction(

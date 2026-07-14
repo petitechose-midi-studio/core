@@ -8,7 +8,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOT = ROOT / "src"
 PLATFORMIO = ROOT / "platformio.ini"
+PRODUCT_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_product.ld"
+UX_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_ux_recorder.ld"
 DIAGNOSTICS_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_diagnostics.ld"
+COLD_PLACEMENT = ROOT / "script" / "pio" / "imxrt1062_t41_cold_placement.ld"
 MEMORY_GATE = ROOT / "script" / "pio" / "check_memory_budget.py"
 
 FORBIDDEN_LEGACY = (
@@ -64,6 +67,32 @@ def main() -> int:
     errors: list[str] = []
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
+    if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
+        errors.append("platformio.ini: Teensy base must use the product linker script")
+
+    for linker_path in (PRODUCT_LINKER, UX_LINKER, DIAGNOSTICS_LINKER):
+        if not linker_path.exists():
+            errors.append(f"script/pio: missing linker script {linker_path.name}")
+        elif "INCLUDE script/pio/imxrt1062_t41_cold_placement.ld" not in linker_path.read_text(encoding="utf-8"):
+            errors.append(
+                f"script/pio/{linker_path.name}: missing shared cold-placement fragment"
+            )
+
+    if not COLD_PLACEMENT.exists():
+        errors.append("script/pio: missing cold-placement linker fragment")
+    else:
+        cold_placement = COLD_PLACEMENT.read_text(encoding="utf-8")
+        for selector in (
+            "*(.text.*_M_manager*)",
+            "*(.text.*9subscribe*)",
+            "*lv_binfont_loader.c.o(.text* .rodata*)",
+            "*lv_draw_sw_box_shadow.c.o(.text* .rodata*)",
+        ):
+            if selector not in cold_placement:
+                errors.append(
+                    "script/pio/imxrt1062_t41_cold_placement.ld: "
+                    f"missing selector {selector}"
+                )
     diagnostics_env = re.search(
         r"\[env:dev_diagnostics\](.*?)(?=\n\[env:|\Z)",
         platformio,
@@ -95,9 +124,13 @@ def main() -> int:
                 )
 
     memory_gate = MEMORY_GATE.read_text(encoding="utf-8")
-    if "diagnostics_elf_violations" not in memory_gate:
+    if (
+        "elf_placement_violations" not in memory_gate
+        or "product_placement_violations" not in memory_gate
+        or "diagnostics_placement_violations" not in memory_gate
+    ):
         errors.append(
-            "script/pio/check_memory_budget.py: missing post-link diagnostics placement gate"
+            "script/pio/check_memory_budget.py: missing post-link placement gates"
         )
 
     reporter = (SOURCE_ROOT / "diagnostics" / "PerformanceReporter.cpp").read_text(

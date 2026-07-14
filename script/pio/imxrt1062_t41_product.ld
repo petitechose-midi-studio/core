@@ -1,10 +1,10 @@
 /*
- * Diagnostics variant of Teensy 4.1 imxrt1062_t41.ld from Teensyduino 1.62.
+ * Product variant of Teensy 4.1 imxrt1062_t41.ld from Teensyduino 1.62.
  *
- * The opt-in reporter and signal-label registry are outside the realtime
- * product path. Their code and immutable data stay in memory-mapped Flash;
- * producer samples remain in DMAMEM (RAM2). All other input sections retain
- * the upstream placement and normal development keeps the upstream script.
+ * Realtime code retains the upstream ITCM placement. Explicitly classified
+ * setup, error, font-loading, inactive shadow, and filesystem-formatting
+ * sections are kept in memory-mapped Flash to preserve a full FlexRAM block
+ * for DTCM/RAM1.
  */
 MEMORY
 {
@@ -45,17 +45,6 @@ SECTIONS
 	.text.progmem : {
 		*(.progmem*)
 		INCLUDE script/pio/imxrt1062_t41_cold_placement.ld
-		*PerformanceReporter.cpp.o(.text* .rodata*)
-		*MemoryFootprintReporter.cpp.o(.text* .rodata*)
-		*CoreStateDiagnostics.cpp.o(.text* .rodata*)
-		/*
-		 * These two handlers only serve modal authoring interactions. Stats
-		 * instrumentation expands their std::function binding thunks enough to
-		 * cross the next 32 KiB ITCM partition boundary. Keep those cold thunks
-		 * in memory-mapped Flash; playback/runtime services remain in ITCM.
-		 */
-		*MacroAutomationHandler.cpp.o(.text* .rodata*)
-		*SequencerCcLaneHandler.cpp.o(.text* .rodata*)
 		. = ALIGN(4);
 	} > FLASH
 
