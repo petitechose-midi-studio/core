@@ -63,6 +63,7 @@ private:
     void setActiveVariationRange(float normalized);
     void configureOptForSelectedProperty();
     void enterCcLaneSelector();
+    void enterCcLaneShortcut();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;

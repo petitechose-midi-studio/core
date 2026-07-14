@@ -16,8 +16,7 @@ constexpr uint32_t QUICK_RELEASE_WINDOW_MS = 450;
 constexpr uint8_t ROW_CC = 0;
 constexpr uint8_t ROW_AUTOMATION = 1;
 constexpr uint8_t ROW_MODULATION = 2;
-constexpr uint8_t ROW_DEPTH = 3;
-constexpr uint8_t ROW_COUNT = 4;
+constexpr uint8_t ROW_COUNT = 3;
 
 bool contextActionInProgress(const core::state::MacroEditState& state) {
     const auto phase = state.contextGuard.get().phase;
@@ -336,8 +335,8 @@ FLASHMEM void MacroEditHandler::openValueSelector() {
         overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, true);
         return;
     }
-    if (row == ROW_MODULATION || row == ROW_DEPTH) {
-        edit.openModulation(row == ROW_DEPTH ? 1U : 0U);
+    if (row == ROW_MODULATION) {
+        edit.openModulation();
         overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, true);
         return;
     }

@@ -783,9 +783,18 @@ FLASHMEM core::ui::ContextActionStripProps buildStepPresetActionStripProps(
         Tone::NEUTRAL
     );
     props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::STORAGE,
-        action.saveIcon ? Visual::ARMED : Visual::ACTIVE,
-        Tone::CONSTRUCTIVE
+        action.saveIcon
+            ? ::standalone::icons::ACTION_APPLY
+            : ::standalone::icons::STORAGE,
+        Visual::ACTIVE,
+        action.saveIcon ? Tone::CONSTRUCTIVE : Tone::POSITIVE
+    );
+    props.slots[1].showLabel = true;
+    std::snprintf(
+        props.slots[1].labelText.data(),
+        props.slots[1].labelText.size(),
+        "%s",
+        action.saveIcon ? "Load" : "Save"
     );
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         action.statusIcon != nullptr

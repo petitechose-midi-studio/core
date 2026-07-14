@@ -87,18 +87,26 @@ void feedback(
     value.feedback.status = status;
 }
 
-void test_ready_preflight_is_visible_before_commit() {
-    const auto model = ui::buildSequencerTrackPastePreflightViewModel(
-        projection(),
+void test_ready_preflight_is_quiet_until_details_are_requested() {
+    auto value = projection();
+    auto model = ui::buildSequencerTrackPastePreflightViewModel(
+        value,
+        false,
+        Telemetry{}
+    );
+    assert(!model.visible);
+    assert(model.phase == ui::SequencerTrackPastePreflightPhase::READY);
+
+    value.detailVisible = true;
+    model = ui::buildSequencerTrackPastePreflightViewModel(
+        value,
         false,
         Telemetry{}
     );
     assert(model.visible);
-    assert(model.phase == ui::SequencerTrackPastePreflightPhase::READY);
     assert(model.tone == ui::SequencerTrackPastePreflightTone::CONSTRUCTIVE);
-    assert(std::strcmp(model.header.data(), "Track paste | 1 Track") == 0);
-    assert(std::strstr(model.mapping.data(), "T1>T5/C1") != nullptr);
-    assert(std::strstr(model.detail.data(), "Hold Paste") != nullptr);
+    assert(std::strcmp(model.header.data(), "Track paste | 1/1") == 0);
+    assert(std::strcmp(model.mapping.data(), "T1 -> T5 | Ch1") == 0);
 }
 
 void test_guard_phases_explain_copy_cancel_and_progress() {
@@ -166,8 +174,10 @@ void test_details_cover_first_middle_last_for_1_2_16_without_truncation() {
     assertDetailMapping(16, 7, "8/16", "T8 -> T8 | Ch8");
     assertDetailMapping(16, 15, "16/16", "T16 -> T16 | Ch16");
 
+    auto summaryValue = projection(16);
+    feedback(summaryValue, contextual::OperationFeedbackStatus::PRESSED);
     const auto summary = ui::buildSequencerTrackPastePreflightViewModel(
-        projection(16),
+        summaryValue,
         false,
         Telemetry{}
     );
@@ -238,7 +248,7 @@ void test_exact_activation_generation_drives_mixed_then_applied() {
     );
     assert(model.phase == ui::SequencerTrackPastePreflightPhase::APPLIED);
     assert(ui::shouldShowSequencerTrackPasteAppliedConfirmation(model, 0));
-    assert(!ui::shouldShowSequencerTrackPasteAppliedConfirmation(model, 7));
+    assert(!ui::shouldShowSequencerTrackPasteAppliedConfirmation(model, 41));
 
     telemetry[4].generation = 8;
     telemetry[5].generation = 8;
@@ -249,6 +259,22 @@ void test_exact_activation_generation_drives_mixed_then_applied() {
     );
     // A later operation must never be mistaken for generation 7.
     assert(model.phase == ui::SequencerTrackPastePreflightPhase::QUEUED);
+}
+
+void test_immediate_apply_uses_operation_identity_without_activation_generation() {
+    auto value = projection();
+    feedback(value, contextual::OperationFeedbackStatus::APPLIED);
+    value.operationGeneration = 84;
+    value.activationGeneration = 0;
+    const auto model = ui::buildSequencerTrackPastePreflightViewModel(
+        value,
+        false,
+        Telemetry{}
+    );
+    assert(model.visible);
+    assert(model.phase == ui::SequencerTrackPastePreflightPhase::APPLIED);
+    assert(ui::shouldShowSequencerTrackPasteAppliedConfirmation(model, 0));
+    assert(!ui::shouldShowSequencerTrackPasteAppliedConfirmation(model, 84));
 }
 
 void test_blocked_reason_is_explicit() {
@@ -270,11 +296,12 @@ void test_blocked_reason_is_explicit() {
 }  // namespace
 
 int main() {
-    test_ready_preflight_is_visible_before_commit();
+    test_ready_preflight_is_quiet_until_details_are_requested();
     test_guard_phases_explain_copy_cancel_and_progress();
     test_details_cover_first_middle_last_for_1_2_16_without_truncation();
     test_detail_exposes_kind_mute_lane_and_live_route_semantics();
     test_exact_activation_generation_drives_mixed_then_applied();
+    test_immediate_apply_uses_operation_identity_without_activation_generation();
     test_blocked_reason_is_explicit();
     return 0;
 }

@@ -1,8 +1,10 @@
 # UX workflow: operate the visible Modulation source lifecycle.
-# Purpose: validates Manual, Resume, Auto + Mod, and the semantic 0% Paused
+# Purpose: validates Manual override from the performance grid, contextual
+# Resume, binary Modulation playback, Enable both, and the semantic 0% Paused
 # state without deleting either stored curve.
-# Expect: capture_changed:auto_mod_active=manual_override, capture_changed:manual_override=sources_resumed, capture_changed:sources_resumed=depth_paused, capture_changed:depth_paused=depth_restored
-# Expect: semantic:auto_mod_active:source=auto_mod, semantic:manual_override:source=manual, semantic:sources_resumed:source=auto_mod
+# Expect: capture_changed:auto_mod_active=manual_override_grid, capture_changed:manual_override_detail=sources_resumed, capture_changed:sources_resumed=modulation_playback_off, capture_changed:modulation_playback_off=auto_mod_restored, capture_changed:auto_mod_restored=depth_paused, capture_changed:depth_paused=depth_restored
+# Expect: semantic:auto_mod_active:source=auto_mod, semantic:manual_override_detail:source=manual, semantic:sources_resumed:source=auto_mod
+# Expect: semantic:modulation_playback_off:effect=edit_modulation_playback, semantic:modulation_playback_off:source=automation, semantic:auto_mod_restored:source=auto_mod
 # Expect: semantic:depth_paused:effect=edit_modulation_depth, semantic:depth_paused:source=auto_mod, semantic:depth_restored:source=auto_mod
 # Expect: semantic:auto_mod_active:route_policy=live_manual>cc_lane>macro_computed>macro_static
 
@@ -17,30 +19,38 @@
 1720 tap NAV 60
 1920 capture screen auto_mod_active
 
-# State row: select Manual without deleting Automation or Modulation.
-# Encoder script values are physical turn deltas. Drive past the lower bound
-# so the three-state selector deterministically lands on Manual.
-2070 encoder OPT -4.00
-2270 capture screen manual_override
+# Manual override follows the same grammar as Automation: leave the editor and
+# turn the physical Macro. No destructive source-state selector is involved.
+2070 tap LEFT_TOP 60
+2230 tap LEFT_TOP 60
+2410 encoder MACRO_1 0.25
+2610 capture screen manual_override_grid
 
-# Resume is an explicit row action and restores the stored sources.
-2400 encoder NAV 1
-2510 encoder NAV 1
-2620 encoder NAV 1
-2760 tap NAV 60
-2980 capture screen sources_resumed
+# Reopen Modulation. Resume only appears while control is overridden and
+# restores both stored sources in one tap.
+2750 button MACRO_1 down
+3810 tick
+3870 button MACRO_1 up
+4010 encoder NAV 1
+4140 encoder NAV 1
+4280 tap NAV 60
+4500 capture screen manual_override_detail
+4640 encoder NAV 1
+4780 tap NAV 60
+5000 capture screen sources_resumed
 
-# Auto + Mod is the next explicit row action and remains one domain mutation.
-3110 encoder NAV 1
-3250 tap NAV 60
-3440 capture screen auto_mod_enabled
+# Turning Playback Off keeps Modulation stored and exposes the contextual
+# Enable both action. One backwards NAV step reaches that last row.
+5140 encoder OPT -4.00
+5360 capture screen modulation_playback_off
+5500 encoder NAV -1
+5640 tap NAV 60
+5860 capture screen auto_mod_restored
 
-# Wrap to Depth. A depth of 0% is Paused, not deleted; restore it directly.
-3570 encoder NAV 1
-3680 encoder NAV 1
-3790 encoder NAV 1
-3930 encoder OPT -4.00
-4140 capture screen depth_paused
+# Depth 0% is Paused, not deleted; restore the original 65% directly.
+6000 encoder NAV 1
+6140 encoder OPT -4.00
+6360 capture screen depth_paused
 # The SDL encoder has 333 virtual ticks here; +2.17 restores 65% from zero.
-4280 encoder OPT 2.17
-4510 capture screen depth_restored
+6500 encoder OPT 2.17
+6740 capture screen depth_restored

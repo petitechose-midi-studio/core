@@ -1,10 +1,12 @@
 # UX workflow: manage the lifecycle of a macro automation lane.
-# Purpose: validates access through Macro Edit > Automation, source-state
-# switching, typed Slot copy, guarded removal, explicit retargeting, and restore.
-# Expect: capture_changed:macro_ready=automation_recorded, capture_changed:automation_state_manual=automation_state_auto, capture_match:automation_overlay_active=automation_pasted
+# Purpose: validates access through Macro Edit > Automation, explicit playback
+# control without deleting the stored curve, typed Slot copy, guarded removal,
+# explicit retargeting, and restore.
+# Expect: capture_changed:macro_ready=automation_recorded, capture_changed:automation_overlay_active=automation_playback_off, capture_changed:automation_playback_off=automation_playback_on, capture_match:automation_overlay_active=automation_pasted
 # Expect: capture_changed:empty_slot_target=slot_restored
 # Expect: capture_match:slot_pasted=slot_restored
 # Expect: semantic:automation_overlay_active:mode=macro.automation_editor, semantic:automation_overlay_active:source=automation
+# Expect: semantic:automation_playback_off:effect=edit_automation_playback, semantic:automation_playback_off:source=macro_static, semantic:automation_playback_on:source=automation
 # Expect: semantic:automation_pasted:mode=macro.automation_editor, semantic:automation_pasted:source=automation
 # Expect: semantic:slot_pasted:effect=paste_macro_slot, semantic:slot_pasted:target=macro
 
@@ -28,12 +30,12 @@
 3100 tap NAV 60
 3350 capture screen automation_overlay_active
 
-# State row is editable: low value enters Manual, high value restores Auto
-# without clearing the underlying automation lane.
+# Playback is a binary, explicit source control. Off keeps the curve stored;
+# On resumes it without changing its points.
 3500 encoder OPT -2.00
-3650 capture screen automation_state_manual
+3650 capture screen automation_playback_off
 3800 encoder OPT 2.00
-3950 capture screen automation_state_auto
+3950 capture screen automation_playback_on
 
 # Copy the complete Slot, then remove it with the guarded action. Removing the
 # target closes both Macro Edit surfaces and returns input authority to the grid.

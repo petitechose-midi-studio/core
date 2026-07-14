@@ -47,6 +47,14 @@ SECTIONS
 		*PerformanceReporter.cpp.o(.text* .rodata*)
 		*MemoryFootprintReporter.cpp.o(.text* .rodata*)
 		*CoreStateDiagnostics.cpp.o(.text* .rodata*)
+		/*
+		 * These two handlers only serve modal authoring interactions. Stats
+		 * instrumentation expands their std::function binding thunks enough to
+		 * cross the next 32 KiB ITCM partition boundary. Keep those cold thunks
+		 * in memory-mapped Flash; playback/runtime services remain in ITCM.
+		 */
+		*MacroAutomationHandler.cpp.o(.text* .rodata*)
+		*SequencerCcLaneHandler.cpp.o(.text* .rodata*)
 		. = ALIGN(4);
 	} > FLASH
 

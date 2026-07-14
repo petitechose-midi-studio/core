@@ -16,6 +16,7 @@
 1620 encoder NAV 1
 1780 tap NAV 60
 2020 capture screen macro_1_automation_detail
+2100 encoder NAV 1
 2180 encoder NAV 1
 
 # Shorten the active window.

@@ -19,8 +19,10 @@
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
+#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
+#include "sequencer/RealtimeMidiQueue.hpp"
 #include "state/CoreState.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "validation/ux/SequencerCcLaneSemanticGesture.hpp"
@@ -160,6 +162,37 @@ void test_draft_is_silent_create_and_event_edit_coalesces() {
     assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].values[0] == 65);
     test_support::drainNotifications();
     std::cout << "[PASS] silent draft/create and coalesced `--` -> Initial event edit\n";
+}
+
+void test_nav_grammar_toggles_events_and_reveals_advanced_settings() {
+    Harness h;
+    openAdd(h);
+    auto& ui = h.state.sequencer.ccLaneUi;
+    assert(!ui.advancedSettings);
+
+    h.workflow.moveDraftField(1.0f);
+    assert(ui.focusedField == seq::SequencerCcLaneDraftField::ROUTE_POLICY);
+    h.workflow.moveDraftField(1.0f);
+    assert(ui.focusedField == seq::SequencerCcLaneDraftField::ADVANCED);
+    assert(h.workflow.activateDraftField());
+    assert(ui.advancedSettings);
+    h.workflow.moveDraftField(-1.0f);
+    assert(ui.focusedField == seq::SequencerCcLaneDraftField::INITIAL);
+    const auto initial = ui.draft.initialValue;
+    h.workflow.editDraft(1.0f);
+    assert(ui.draft.initialValue == initial + 1U);
+
+    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
+    assert(h.workflow.toggleFocusedEvent(20));
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank != nullptr && bank->lanes[0].activeMask.test(0));
+    assert(bank->lanes[0].values[0] == initial + 1U);
+    assert(h.workflow.toggleFocusedEvent(30));
+    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern)
+                ->lanes[0].activeMask.test(0));
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] NAV grammar toggles events and progressive advanced settings\n";
 }
 
 void test_clear_settings_cancel_and_guarded_remove_are_exact_history() {
@@ -393,22 +426,60 @@ void test_lane_duplicate_blocks_but_macro_conflict_uses_amber_hold() {
     std::cout << "[PASS] lane duplicate blocked; Macro conflict accepted by amber hold\n";
 }
 
-void test_projection_follows_transport_without_claiming_stopped_output_is_live() {
+void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
     Harness h;
     openAdd(h);
     assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
     assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
     assert(!h.state.sequencer.ccLaneUi.liveProjection);
 
+    // Merely starting transport is not evidence that this silent lane has
+    // emitted anything. The UI must remain in its waiting state.
     h.state.statusBar.playing.set(true);
     h.workflow.update(20);
+    assert(!h.state.sequencer.ccLaneUi.liveProjection);
+    assert(!h.state.sequencer.ccLaneUi.hasResolvedValue);
+
+    core::sequencer::RealtimeMidiQueue queue;
+    core::handler::MidiCcGlobalFrameCoordinator coordinator{queue};
+    core::handler::SequencerCcLaneWorkflow liveWorkflow{
+        {h.state.sequencer,
+         h.state.sequencerTracks,
+         core::handler::SequencerHistoryDomainServices::fromCoreState(h.state),
+         h.state.statusBar,
+         &coordinator},
+        h.services,
+    };
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    frame.candidateCount = 1;
+    frame.candidates[0] = {
+        .destination = {
+            .identity = {
+                .port = 0,
+                .channel = h.state.sequencer.pattern.midiChannel.get(),
+                .controller = 74,
+            },
+            .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
+        },
+        .author = {
+            .candidateClass =
+                core::state::shared::MidiCcCandidateClass::SEQUENCER_CC_LANE,
+            .stableAddress = 0,
+        },
+        .localValue = 91,
+    };
+    assert(coordinator.publishSequencerLanes(frame));
+    assert(coordinator.resolveLive(1000).ok());
+    liveWorkflow.refreshProjection();
     assert(h.state.sequencer.ccLaneUi.liveProjection);
+    assert(h.state.sequencer.ccLaneUi.hasResolvedValue);
+    assert(h.state.sequencer.ccLaneUi.resolvedValue == 91);
 
     h.state.statusBar.playing.set(false);
-    h.workflow.update(30);
+    liveWorkflow.update(30);
     assert(!h.state.sequencer.ccLaneUi.liveProjection);
     test_support::drainNotifications();
-    std::cout << "[PASS] stopped Preview and playing Live projections stay truthful\n";
+    std::cout << "[PASS] Live projection requires committed lane runtime telemetry\n";
 }
 
 void test_handler_owns_a_centered_directional_opt_contract() {
@@ -469,7 +540,9 @@ void test_handler_registers_only_guard_capable_action_presses() {
     // NAV release, three action releases, Back release, two guarded presses
     // (Remove/clear and conflict-confirm Apply), plus the property long press.
     // Settings is tap-only and must not consume a redundant press binding.
-    constexpr std::size_t PROPERTY_SELECTOR_BINDINGS = 6U;
+    // The seventh property binding is the Pattern-scope hold shortcut that
+    // enters CC lanes without changing the normal short-press grammar.
+    constexpr std::size_t PROPERTY_SELECTOR_BINDINGS = 7U;
     assert(h.inputBinding.buttonBindingCount() == PROPERTY_SELECTOR_BINDINGS + 8U);
 
     test_support::drainNotifications();
@@ -480,9 +553,10 @@ void test_handler_registers_only_guard_capable_action_presses() {
 
 int main() {
     test_draft_is_silent_create_and_event_edit_coalesces();
+    test_nav_grammar_toggles_events_and_reveals_advanced_settings();
     test_clear_settings_cancel_and_guarded_remove_are_exact_history();
     test_lane_duplicate_blocks_but_macro_conflict_uses_amber_hold();
-    test_projection_follows_transport_without_claiming_stopped_output_is_live();
+    test_live_projection_requires_the_lane_in_committed_runtime_telemetry();
     test_handler_owns_a_centered_directional_opt_contract();
     test_handler_registers_only_guard_capable_action_presses();
     test_semantic_gesture_classifier_never_claims_early_hold_mutation();

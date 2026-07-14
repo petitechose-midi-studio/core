@@ -1,48 +1,52 @@
-# UX workflow: inspect and apply the non-audible Automation-to-Modulation preview.
-# Purpose: validates semantic policy feedback, tap Apply on an empty target,
-# guarded Overwrite on an existing target, and Modulation-only Clear.
-# Expect: capture_changed:modulation_empty=modulation_applied, capture_changed:overwrite_preview=modulation_overwritten, capture_changed:modulation_overwritten=modulation_cleared
+# UX workflow: inspect and apply Automation-to-Modulation conversion.
+# Purpose: proves the primary Automation > Convert path, explicit silent impact
+# preview, tap Apply on an empty target, guarded overwrite, and Modulation clear.
+# Expect: capture_changed:preview_mean_empty=modulation_applied, capture_changed:overwrite_preview=modulation_overwritten, capture_changed:modulation_detail=modulation_cleared
 # Expect: semantic:overwrite_pressed:outcome=pressed, semantic:overwrite_armed:outcome=armed, semantic:modulation_overwritten:outcome=applied
 # Expect: semantic:overwrite_pressed:projection=non_audible_preview, semantic:modulation_overwritten:route_policy=live_manual>cc_lane>macro_computed>macro_static
 
 0 scenario macro-automation-curve-shape
 80 capture screen automation_source
 
-# Open Macro Edit and enter the Modulation detail.
+# Open Macro Edit, focus Automation, and enter its source detail.
 180 button MACRO_1 down
 1240 tick
 1300 button MACRO_1 up
 1450 encoder NAV 1
-1580 encoder NAV 1
-1720 tap NAV 60
-1920 capture screen modulation_empty
+1580 tap NAV 60
+1780 capture screen automation_detail
 
-# Focus Convert automation, preview Mean, then select First.
-2050 encoder NAV 1
-2160 encoder NAV 1
-2270 encoder NAV 1
-2380 encoder NAV 1
-2490 encoder NAV 1
-2630 tap NAV 60
-2830 capture screen preview_mean_empty
-2960 encoder NAV 1
-3130 capture screen preview_first_empty
+# Convert is directly below Playback. Entering it opens a non-audible preview
+# that states the policy, reference value, and post-conversion source states.
+1900 encoder NAV 1
+2020 tap NAV 60
+2220 capture screen preview_mean_empty
+2340 encoder NAV 1
+2500 capture screen preview_first_empty
 
-# Empty destination: tap Apply. The preview is silent and closes on commit.
-3280 tap BOTTOM_RIGHT 60
-3510 capture screen modulation_applied
+# Empty destination: tap Apply. Automation stays stored but Playback is Off;
+# the new Modulation source is On.
+2640 tap BOTTOM_RIGHT 60
+2860 capture screen modulation_applied
 
-# Re-open conversion: the existing Modulation requires guarded Overwrite.
-3650 tap NAV 60
-3850 capture screen overwrite_preview
-3990 button BOTTOM_RIGHT down
-4100 capture screen overwrite_pressed
-4240 tick
-4320 capture screen overwrite_armed
-5070 tick
-5130 button BOTTOM_RIGHT up
-5390 capture screen modulation_overwritten
+# A successful conversion lands in the new Modulation detail. Return to the
+# parent, reopen Automation, and select Convert again. The existing Modulation
+# destination now requires a guarded overwrite.
+3000 tap LEFT_TOP 60
+3160 tap NAV 60
+3320 encoder NAV 1
+3460 tap NAV 60
+3680 capture screen overwrite_preview
+3820 button BOTTOM_RIGHT down
+3940 capture screen overwrite_pressed
+4700 tick
+4760 capture screen overwrite_armed
+4940 tick
+5000 button BOTTOM_RIGHT up
+5220 capture screen modulation_overwritten
 
-# Clear affects only Modulation; the source Automation and destination survive.
-5540 tap BOTTOM_LEFT 60
-5790 capture screen modulation_cleared
+# Overwrite also lands in Modulation detail. Clear only that source; the
+# stored Automation curve and the Macro destination remain intact.
+5360 capture screen modulation_detail
+5500 tap BOTTOM_LEFT 60
+5720 capture screen modulation_cleared

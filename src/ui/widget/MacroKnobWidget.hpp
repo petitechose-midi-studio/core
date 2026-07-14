@@ -34,6 +34,7 @@ public:
     lv_obj_t* getElement() const override { return container_; }
     [[nodiscard]] bool valid() const {
         return container_ && knob_ && config_label_container_ && add_label_ &&
+               automation_source_label_ && modulation_source_label_ &&
                cc_prefix_ && cc_prefix_->getElement() &&
                cc_value_ && cc_value_->getElement();
     }
@@ -43,6 +44,12 @@ public:
     void setAutomationActive(bool active);
     void setAutomationRecording(bool active);
     void setAutomationManualOverride(bool active);
+    void setSourceIndicators(bool automationStored,
+                             bool automationActive,
+                             bool modulationStored,
+                             bool modulationActive,
+                             bool modulationPaused,
+                             bool modulationSuspended);
     void setSlotState(bool active, bool addSlot);
     void setFocused(bool focused);
 
@@ -56,8 +63,10 @@ private:
     void createUI(lv_obj_t* parent);
     void createContainer(lv_obj_t* parent);
     void createConfigLabels();
+    void createSourceIndicators();
     void setConfigLabelsVisible(bool visible);
     void updateAutomationTrackColor();
+    void updateSourceIndicators();
     void updateFocusFrame();
     void updateSlotVisibility();
     bool buildArcGeometry(ArcGeometry& geometry) const;
@@ -71,12 +80,19 @@ private:
     lv_obj_t* knob_ = nullptr;
     lv_obj_t* config_label_container_ = nullptr;
     lv_obj_t* add_label_ = nullptr;
+    lv_obj_t* automation_source_label_ = nullptr;
+    lv_obj_t* modulation_source_label_ = nullptr;
     core::app::ExtmemUniquePtr<oc::ui::lvgl::Label> cc_prefix_;
     core::app::ExtmemUniquePtr<oc::ui::lvgl::Label> cc_value_;
     uint32_t track_color_ = 0;
     uint16_t rendered_value_angle_ = 0xFFFF;
     uint8_t current_cc_ = 0xFF;
     bool automation_active_ = false;
+    bool automation_stored_ = false;
+    bool modulation_stored_ = false;
+    bool modulation_active_ = false;
+    bool modulation_paused_ = false;
+    bool modulation_suspended_ = false;
     bool automation_recording_ = false;
     bool automation_manual_override_ = false;
     bool slot_active_ = true;

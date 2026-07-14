@@ -95,7 +95,7 @@ FLASHMEM void MacroOverlayPresenter::renderEdit() {
         .title = data.title.data(),
         .meta = data.meta.data(),
         .rows = data.rows.data(),
-        .rowCount = static_cast<int>(data.rows.size()),
+        .rowCount = data.rowCount,
         .selectedIndex = data.selectedIndex,
         .dimUnselected = false,
         .visible = true,

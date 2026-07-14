@@ -1058,6 +1058,7 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
             case seq::SequencerCcLaneDraftField::MINIMUM: out.property = "minimum"; break;
             case seq::SequencerCcLaneDraftField::MAXIMUM: out.property = "maximum"; break;
             case seq::SequencerCcLaneDraftField::INITIAL: out.property = "initial"; break;
+            case seq::SequencerCcLaneDraftField::ADVANCED: out.property = "advanced"; break;
             case seq::SequencerCcLaneDraftField::COUNT: break;
         }
     }
@@ -1098,7 +1099,15 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
             );
     } else if (isButton(event, Config::ButtonID::NAV,
                         oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "enter_cc_lane";
+        if (ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID) {
+            out.effect = "toggle_cc_event";
+        } else if ((ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
+                    ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) &&
+                   ui.focusedField == seq::SequencerCcLaneDraftField::ADVANCED) {
+            out.effect = "toggle_cc_advanced";
+        } else {
+            out.effect = "enter_cc_lane";
+        }
     } else if (isButton(event, Config::ButtonID::LEFT_TOP,
                         oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "back_cc_lane";

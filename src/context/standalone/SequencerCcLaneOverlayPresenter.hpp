@@ -9,6 +9,7 @@
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
+#include "ui/sequencer/SequencerCcLaneGrid.hpp"
 
 namespace ms::ui {
 class VirtualListKeyValueOverlay;
@@ -16,6 +17,10 @@ class VirtualListKeyValueOverlay;
 
 namespace core::ui {
 class ContextActionStrip;
+}
+
+namespace core::handler {
+class MidiCcGlobalFrameCoordinator;
 }
 
 namespace core::context::standalone {
@@ -32,6 +37,7 @@ public:
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
         core::state::StatusBarState& statusBar;
+        const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
     };
 
     SequencerCcLaneOverlayPresenter(
@@ -57,12 +63,14 @@ private:
     StateRefs state_;
     ms::ui::VirtualListKeyValueOverlay& overlay_;
     core::ui::ContextActionStrip& action_strip_;
+    core::ui::SequencerCcLaneGrid grid_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
-    oc::state::StaticWatchGroup<4> watcher_;
+    oc::state::StaticWatchGroup<5> watcher_;
     std::array<Text, ROW_CAPACITY> keys_{};
     std::array<Text, ROW_CAPACITY> values_{};
     std::array<char, TEXT_CAPACITY> title_{};
     std::array<char, TEXT_CAPACITY> meta_{};
+    std::array<char, 64> hint_{};
 };
 
 }  // namespace core::context::standalone

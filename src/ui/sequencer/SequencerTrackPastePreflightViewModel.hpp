@@ -93,7 +93,11 @@ SequencerTrackPastePreflightViewModel buildSequencerTrackPastePreflightViewModel
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>& telemetry
 );
 
-/** Prevents persistent APPLIED telemetry from becoming permanent chrome. */
+/**
+ * Prevents persistent APPLIED telemetry from becoming permanent chrome.
+ * The paste operation id is the identity because it exists for both immediate
+ * and loop-boundary applications; an activation generation does not.
+ */
 bool shouldShowSequencerTrackPasteAppliedConfirmation(
     const SequencerTrackPastePreflightViewModel& model,
     uint32_t dismissedGeneration

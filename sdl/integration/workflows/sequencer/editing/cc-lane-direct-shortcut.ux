@@ -1,0 +1,15 @@
+# UX workflow: direct Pattern-to-CC-lanes shortcut.
+# Purpose: keeps the learned LEFT_BOTTOM property press unchanged while proving
+# that holding the same control jumps directly to the frequent CC lane branch.
+# Expect: capture_changed:pattern_ready_track_scope=cc_lane_shortcut_selector
+# Expect: semantic:cc_lane_shortcut_selector:mode=sequencer.cc_lane.selector, semantic:cc_lane_shortcut_selector:overlay=seq_cc_lane
+
+0 scenario sequencer
+80 capture screen pattern_ready_track_scope
+
+# Enter Pattern, then hold the normal musical-property control for one second.
+160 tap NAV 60
+300 button LEFT_BOTTOM down
+1340 tick
+1420 capture screen cc_lane_shortcut_selector
+1500 button LEFT_BOTTOM up

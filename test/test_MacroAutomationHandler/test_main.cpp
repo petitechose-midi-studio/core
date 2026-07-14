@@ -164,15 +164,12 @@ struct MacroAutomationHarness {
     }
 };
 
-void test_state_row_restores_auto_without_clearing_lane() {
+void test_playback_row_toggles_automation_without_clearing_curve() {
     MacroAutomationHarness h;
     h.configureAutomation();
     h.openAutomationEditor();
-    h.services.setManualOverride(0, true);
 
-    h.turn(Config::EncoderID::OPT, 1.0f);
-
-    assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) == 0);
+    h.turn(Config::EncoderID::OPT, 0.0f);
     const auto* preserved = core::state::macro::macroAutomationFindSlot(
         h.state.pages.automation,
         core::state::macro::MacroAutomationSlotAddress{
@@ -182,15 +179,24 @@ void test_state_row_restores_auto_without_clearing_lane() {
         }
     );
     assert(preserved != nullptr);
-    assert(preserved->automation.active);
+    assert(core::state::macro::macroCurveStored(preserved->automation));
+    assert(!core::state::macro::macroCurvePlaybackActive(
+        preserved->automation
+    ));
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(core::state::macro::macroCurvePlaybackActive(
+        preserved->automation
+    ));
     assert(preserved->automation.pointCount == 3);
 
     h.flushState();
 
-    std::cout << "[PASS] test_state_row_restores_auto_without_clearing_lane\n";
+    std::cout
+        << "[PASS] test_playback_row_toggles_automation_without_clearing_curve\n";
 }
 
-void test_modulation_entry_synchronizes_opt_to_visible_source_mode() {
+void test_modulation_entry_synchronizes_opt_to_playback_state() {
     MacroAutomationHarness h;
     h.configureAutomation();
     h.configureModulation();
@@ -200,12 +206,61 @@ void test_modulation_entry_synchronizes_opt_to_visible_source_mode() {
     h.handler.update(0);
 
     const auto opt = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
-    assert(h.encoderHw.getDiscreteSteps(opt) == 3);
+    assert(h.encoderHw.getDiscreteSteps(opt) == 2);
     assert(h.encoderHw.getPosition(opt) == 1.0f);
 
     std::cout
         << "[PASS] "
-        << "test_modulation_entry_synchronizes_opt_to_visible_source_mode\n";
+        << "test_modulation_entry_synchronizes_opt_to_playback_state\n";
+}
+
+void test_contextual_resume_row_restores_sources_and_disappears() {
+    MacroAutomationHarness h;
+    h.configureAutomation();
+    h.openAutomationEditor();
+    h.services.setManualOverride(0, true);
+    assert(h.services.manualOverrideActiveFor(0));
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 1);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(!h.services.manualOverrideActiveFor(0));
+    assert(h.state.macroEdit.automationFocusedRow.get() == 0);
+    std::cout
+        << "[PASS] test_contextual_resume_row_restores_sources_and_disappears\n";
+}
+
+void test_conversion_is_one_turn_away_and_switches_playback_truth() {
+    MacroAutomationHarness h;
+    h.configureAutomation();
+    h.openAutomationEditor();
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 1);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::CONVERT_PREVIEW);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.setNow(100);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATION);
+    assert(h.state.macroEdit.contextFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::APPLIED);
+    const auto* slot = h.services.automationSlot(0);
+    assert(slot != nullptr);
+    assert(core::state::macro::macroCurveStored(slot->automation));
+    assert(!core::state::macro::macroCurvePlaybackActive(slot->automation));
+    assert(core::state::macro::macroCurveStored(slot->modulation));
+    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
+    assert(slot->modulationDepth == 1.0f);
+
+    std::cout
+        << "[PASS] test_conversion_is_one_turn_away_and_switches_playback_truth\n";
 }
 
 void test_modulation_tap_clear_preserves_automation_and_destination() {
@@ -441,7 +496,8 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
     h.openAutomationEditor();
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.automationFocusedRow.get() == 1);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 2);
     h.turn(Config::EncoderID::OPT, 2.0f / 63.0f);
 
     const auto* slot = core::state::macro::macroAutomationFindSlot(
@@ -473,7 +529,7 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
     assert(point.beat == 1.0f);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.automationFocusedRow.get() == 2);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 3);
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.windowOffsetTicks) == 1.0f);
 
@@ -488,7 +544,8 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
     h.openAutomationEditor();
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.automationFocusedRow.get() == 1);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 2);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 64);
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -510,7 +567,7 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 64);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.automationFocusedRow.get() == 2);
+    assert(h.state.macroEdit.automationFocusedRow.get() == 3);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 8);
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -528,8 +585,10 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
 }  // namespace
 
 int main() {
-    test_state_row_restores_auto_without_clearing_lane();
-    test_modulation_entry_synchronizes_opt_to_visible_source_mode();
+    test_playback_row_toggles_automation_without_clearing_curve();
+    test_modulation_entry_synchronizes_opt_to_playback_state();
+    test_contextual_resume_row_restores_sources_and_disappears();
+    test_conversion_is_one_turn_away_and_switches_playback_truth();
     test_modulation_tap_clear_preserves_automation_and_destination();
     test_typed_paste_preflight_rejects_invalid_payload_without_mutation();
     test_typed_paste_quick_release_keeps_copy_semantics();

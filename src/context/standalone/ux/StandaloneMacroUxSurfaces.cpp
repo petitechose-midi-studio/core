@@ -18,10 +18,57 @@
 #include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/shared/StructureSlotOps.hpp"
+#include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
 
 namespace core::context::standalone::ux {
 namespace {
+
+namespace detail_ui = core::ui::macro;
+
+FLASHMEM detail_ui::MacroSourceDetailContext macroSourceDetailContext(
+    const core::state::macro::MacroAutomationSlotState* slot,
+    bool manualOverride
+) {
+    if (slot == nullptr) return {};
+    return {
+        .automationStored =
+            core::state::macro::macroCurveStored(slot->automation),
+        .modulationStored =
+            core::state::macro::macroCurveStored(slot->modulation),
+        .automationPlayback =
+            core::state::macro::macroCurvePlaybackActive(slot->automation),
+        .modulationPlayback =
+            core::state::macro::macroCurvePlaybackActive(slot->modulation),
+        .manualOverride = manualOverride,
+        .modulationSuspended =
+            core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation),
+    };
+}
+
+FLASHMEM const char* macroSourceLabel(
+    const detail_ui::MacroSourceDetailContext& context
+) {
+    if (context.manualOverride) return "manual";
+    if (context.automationPlayback && context.modulationPlayback) {
+        return "auto_mod";
+    }
+    if (context.automationPlayback) return "automation";
+    if (context.modulationPlayback) return "modulation";
+    return "macro_static";
+}
+
+FLASHMEM core::state::shared::MidiCcCandidateClass macroCandidateClass(
+    const detail_ui::MacroSourceDetailContext& context
+) {
+    if (context.manualOverride) {
+        return core::state::shared::MidiCcCandidateClass::LIVE_MANUAL;
+    }
+    if (context.automationPlayback || context.modulationPlayback) {
+        return core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED;
+    }
+    return core::state::shared::MidiCcCandidateClass::MACRO_STATIC;
+}
 
 FLASHMEM bool isMacroEncoderTurn(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
@@ -887,9 +934,25 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(source);
         if (!data.visible) return false;
         const int row = data.selectedIndex;
+        const uint8_t macroIndex = macro_edit_.editingIndex.get();
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_.currentActiveTrack(),
+            .page = pages_.currentActivePage(),
+            .macro = macroIndex,
+        };
+        const auto* slot = core::state::macro::macroAutomationFindSlot(
+            pages_.automation,
+            address
+        );
+        const bool manual =
+            (macro_ui_.automationManualOverrideMask.get() &
+             static_cast<uint16_t>(1U << macroIndex)) != 0;
+        const auto context = macroSourceDetailContext(slot, manual);
+        const auto layout = detail_ui::buildAutomationDetailLayout(context);
+        const auto item = layout.at(static_cast<uint8_t>(row));
         out.mode = "macro.automation_editor";
         out.target = "macro_slot";
-        out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
+        out.targetIndex = static_cast<int16_t>(macroIndex);
         if (row >= 0 && row < static_cast<int>(data.rows.size())) {
             out.property = data.rows[row].key;
             copyValueLabel(out.valueLabel, data.rows[row].value);
@@ -897,11 +960,35 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "focus_macro_automation";
         } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            out.effect = row == 0 ? "edit_macro_automation_state" : "edit_macro_automation_length";
+            switch (item) {
+                case detail_ui::AutomationDetailItem::PLAYBACK:
+                    out.effect = "edit_automation_playback";
+                    break;
+                case detail_ui::AutomationDetailItem::LENGTH:
+                    out.effect = "edit_automation_length";
+                    break;
+                case detail_ui::AutomationDetailItem::OFFSET:
+                    out.effect = "edit_automation_offset";
+                    break;
+                default:
+                    out.effect = "noop_read_only";
+                    break;
+            }
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = row == 4 ? "resume_macro_sources"
-                       : (row == 5 ? "enable_auto_mod"
-                                   : (row == 6 ? "preview_conversion" : "activate_automation_property"));
+            switch (item) {
+                case detail_ui::AutomationDetailItem::RESUME:
+                    out.effect = "resume_macro_sources";
+                    break;
+                case detail_ui::AutomationDetailItem::ENABLE_BOTH:
+                    out.effect = "enable_auto_mod";
+                    break;
+                case detail_ui::AutomationDetailItem::CONVERT_TO_MODULATION:
+                    out.effect = "preview_conversion";
+                    break;
+                default:
+                    out.effect = "activate_automation_property";
+                    break;
+            }
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "back_macro_automation";
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
@@ -921,17 +1008,13 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
             fillGuardedMacroFeedback(out, macro_edit_);
         }
-        const bool manual =
-            (macro_ui_.automationManualOverrideMask.get() &
-             static_cast<uint16_t>(1U << macro_edit_.editingIndex.get())) != 0;
-        out.source = manual ? "manual" : "automation";
+        out.source = macroSourceLabel(context);
         fillMacroResolutionFacts(
             out,
             midi_cc_coordinator_,
             pages_,
-            macro_edit_.editingIndex.get(),
-            manual ? core::state::shared::MidiCcCandidateClass::LIVE_MANUAL
-                   : core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED
+            macroIndex,
+            macroCandidateClass(context)
         );
         return true;
     }
@@ -960,22 +1043,36 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         const bool manual =
             (macro_ui_.automationManualOverrideMask.get() &
              static_cast<uint16_t>(1U << address.macro)) != 0;
-        const bool automation = slot != nullptr &&
-            core::state::macro::macroCurvePlaybackActive(slot->automation);
-        const bool modulation = slot != nullptr &&
-            core::state::macro::macroCurvePlaybackActive(slot->modulation);
-        out.source = manual ? "manual"
-                   : (automation && modulation ? "auto_mod"
-                      : (modulation ? "modulation" : "macro_static"));
+        const auto context = macroSourceDetailContext(slot, manual);
+        const auto layout = detail_ui::buildModulationDetailLayout(context);
+        const auto item = layout.at(static_cast<uint8_t>(row));
+        out.source = macroSourceLabel(context);
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "focus_macro_modulation";
         } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            out.effect = row == 0 ? "edit_macro_source_state"
-                       : (row == 1 ? "edit_modulation_depth" : "noop_read_only");
+            switch (item) {
+                case detail_ui::ModulationDetailItem::PLAYBACK:
+                    out.effect = "edit_modulation_playback";
+                    break;
+                case detail_ui::ModulationDetailItem::DEPTH:
+                    out.effect = "edit_modulation_depth";
+                    break;
+                default:
+                    out.effect = "noop_read_only";
+                    break;
+            }
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = row == 3 ? "resume_macro_sources"
-                       : (row == 4 ? "enable_auto_mod"
-                                   : (row == 5 ? "preview_conversion" : "activate_modulation_property"));
+            switch (item) {
+                case detail_ui::ModulationDetailItem::RESUME:
+                    out.effect = "resume_macro_sources";
+                    break;
+                case detail_ui::ModulationDetailItem::ENABLE_BOTH:
+                    out.effect = "enable_auto_mod";
+                    break;
+                default:
+                    out.effect = "activate_modulation_property";
+                    break;
+            }
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "back_macro_modulation";
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
@@ -996,10 +1093,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             midi_cc_coordinator_,
             pages_,
             address.macro,
-            manual ? core::state::shared::MidiCcCandidateClass::LIVE_MANUAL
-                   : (automation || modulation
-                          ? core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED
-                          : core::state::shared::MidiCcCandidateClass::MACRO_STATIC)
+            macroCandidateClass(context)
         );
         return true;
     }

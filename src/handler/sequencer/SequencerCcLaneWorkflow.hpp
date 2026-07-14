@@ -9,6 +9,8 @@
 
 namespace core::handler {
 
+class MidiCcGlobalFrameCoordinator;
+
 class SequencerCcLaneWorkflow {
 public:
     static constexpr uint32_t EVENT_EDIT_IDLE_MS = 320;
@@ -18,6 +20,7 @@ public:
         core::state::sequencer::SequencerTrackBankState& tracks;
         SequencerHistoryDomainServices history;
         core::state::StatusBarState& statusBar;
+        const MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
     };
 
     SequencerCcLaneWorkflow(StateRefs state, SequencerCcLaneDomainServices services);
@@ -28,8 +31,10 @@ public:
     bool activateSelector();
     bool openSettings();
     void moveDraftField(float delta);
+    bool activateDraftField();
     void editDraft(float delta);
     void moveFocusedStep(float delta, uint32_t nowMs);
+    bool toggleFocusedEvent(uint32_t nowMs);
     bool editFocusedEvent(float delta, uint32_t nowMs);
 
     bool executeTap(
@@ -95,6 +100,7 @@ private:
     core::state::sequencer::SequencerTrackBankState& tracks_;
     SequencerHistoryDomainServices history_;
     core::state::StatusBarState& status_bar_;
+    const MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
     SequencerCcLaneDomainServices services_;
     PatternChangePtr pending_event_change_;
     uint32_t last_event_edit_ms_ = 0;

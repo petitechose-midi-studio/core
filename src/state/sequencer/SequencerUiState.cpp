@@ -169,6 +169,7 @@ FLASHMEM void SequencerCcLaneUiState::reset() {
     focusedField = SequencerCcLaneDraftField::CONTROLLER;
     draft = {};
     draftDirty = false;
+    advancedSettings = false;
     hasAuthoredValue = false;
     authoredValue = 0;
     hasResolvedValue = false;

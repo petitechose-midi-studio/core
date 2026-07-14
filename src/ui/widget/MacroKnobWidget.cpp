@@ -33,12 +33,16 @@ constexpr uint16_t INVALID_VALUE_ANGLE = 0xFFFF;
 
 uint32_t automationTrackColor(bool slotActive,
                               bool automationActive,
+                              bool modulationActive,
                               bool automationRecording,
                               bool manualOverride) {
     if (!slotActive) return theme::color::KNOB_VALUE;
     if (automationRecording) return stheme::color::MACRO_AUTOMATION_RECORDING;
     if (manualOverride) return stheme::color::MACRO_AUTOMATION_MANUAL;
-    return automationActive ? stheme::color::MACRO_AUTOMATION : theme::color::KNOB_VALUE;
+    if (automationActive) return stheme::color::MACRO_AUTOMATION;
+    return modulationActive
+        ? stheme::color::MACRO_MODULATION
+        : theme::color::KNOB_VALUE;
 }
 
 float clampNormalized(float value) {
@@ -67,6 +71,8 @@ MacroKnobWidget::~MacroKnobWidget() {
     knob_ = nullptr;
     config_label_container_ = nullptr;
     add_label_ = nullptr;
+    automation_source_label_ = nullptr;
+    modulation_source_label_ = nullptr;
 }
 
 FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
@@ -86,6 +92,7 @@ FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
     track_color_ = theme::color::KNOB_VALUE;
 
     createConfigLabels();
+    createSourceIndicators();
 
     add_label_ = lv_label_create(container_);
     if (!add_label_) return;
@@ -98,6 +105,24 @@ FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(add_label_, LV_OBJ_FLAG_FLOATING);
     lv_obj_center(add_label_);
     lv_obj_add_flag(add_label_, LV_OBJ_FLAG_HIDDEN);
+}
+
+FLASHMEM void MacroKnobWidget::createSourceIndicators() {
+    if (!container_) return;
+    const auto create = [this](const char* text, lv_coord_t x) {
+        lv_obj_t* label = lv_label_create(container_);
+        if (!label) return static_cast<lv_obj_t*>(nullptr);
+        lv_label_set_text(label, text);
+        if (fonts.inter_12_medium) {
+            lv_obj_set_style_text_font(label, fonts.inter_12_medium, 0);
+        }
+        lv_obj_add_flag(label, LV_OBJ_FLAG_FLOATING);
+        lv_obj_align(label, LV_ALIGN_TOP_RIGHT, x, 1);
+        lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        return label;
+    };
+    automation_source_label_ = create("A", -15);
+    modulation_source_label_ = create("M", -3);
 }
 
 FLASHMEM void MacroKnobWidget::createContainer(lv_obj_t* parent) {
@@ -183,6 +208,7 @@ void MacroKnobWidget::setConfig(uint8_t cc) {
 void MacroKnobWidget::setAutomationActive(bool active) {
     if (!knob_ || automation_active_ == active) return;
     automation_active_ = active;
+    updateSourceIndicators();
     updateAutomationTrackColor();
 }
 
@@ -196,6 +222,33 @@ void MacroKnobWidget::setAutomationManualOverride(bool active) {
     if (!knob_ || automation_manual_override_ == active) return;
     automation_manual_override_ = active;
     updateAutomationTrackColor();
+}
+
+void MacroKnobWidget::setSourceIndicators(
+    bool automationStored,
+    bool automationActive,
+    bool modulationStored,
+    bool modulationActive,
+    bool modulationPaused,
+    bool modulationSuspended
+) {
+    const bool arcChanged = automation_active_ != automationActive ||
+        modulation_active_ != modulationActive;
+    const bool visualChanged = automation_stored_ != automationStored ||
+        automation_active_ != automationActive ||
+        modulation_stored_ != modulationStored ||
+        modulation_active_ != modulationActive ||
+        modulation_paused_ != modulationPaused ||
+        modulation_suspended_ != modulationSuspended;
+    if (!visualChanged) return;
+    automation_stored_ = automationStored;
+    automation_active_ = automationActive;
+    modulation_stored_ = modulationStored;
+    modulation_active_ = modulationActive;
+    modulation_paused_ = modulationPaused;
+    modulation_suspended_ = modulationSuspended;
+    updateSourceIndicators();
+    if (arcChanged) updateAutomationTrackColor();
 }
 
 void MacroKnobWidget::setSlotState(bool active, bool addSlot) {
@@ -216,12 +269,49 @@ void MacroKnobWidget::updateAutomationTrackColor() {
     const uint32_t nextColor = automationTrackColor(
         slot_active_,
         automation_active_,
+        modulation_active_,
         automation_recording_,
         automation_manual_override_
     );
     if (track_color_ == nextColor) return;
     track_color_ = nextColor;
     invalidateValueArc();
+}
+
+void MacroKnobWidget::updateSourceIndicators() {
+    if (!automation_source_label_ || !modulation_source_label_) return;
+    const auto render = [this](
+        lv_obj_t* label,
+        bool stored,
+        uint32_t color,
+        lv_opa_t opacity
+    ) {
+        if (!slot_active_ || !stored) {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+            return;
+        }
+        lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
+        lv_obj_set_style_text_opa(label, opacity, 0);
+        lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+    };
+    render(
+        automation_source_label_,
+        automation_stored_,
+        stheme::color::MACRO_AUTOMATION,
+        automation_active_ ? LV_OPA_COVER : LV_OPA_40
+    );
+    render(
+        modulation_source_label_,
+        modulation_stored_,
+        modulation_suspended_
+            ? stheme::color::MACRO_SUSPENDED
+            : (modulation_paused_
+                ? stheme::color::MACRO_PAUSED
+                : stheme::color::MACRO_MODULATION),
+        (modulation_active_ || modulation_paused_ || modulation_suspended_)
+            ? LV_OPA_COVER
+            : LV_OPA_40
+    );
 }
 
 void MacroKnobWidget::updateFocusFrame() {
@@ -245,6 +335,7 @@ void MacroKnobWidget::updateSlotVisibility() {
     }
 
     setConfigLabelsVisible(slot_active_);
+    updateSourceIndicators();
 
     if (!add_label_) return;
     if (!slot_active_ && add_slot_) {

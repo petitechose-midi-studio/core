@@ -7,8 +7,10 @@
 #include <config/Timing.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "handler/sequencer/SequencerCcLaneLiveProjection.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
+#include "state/sequencer/SequencerCcLaneDraftLayout.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 
 namespace core::handler {
@@ -65,6 +67,7 @@ FLASHMEM SequencerCcLaneWorkflow::SequencerCcLaneWorkflow(
     , tracks_(state.tracks)
     , history_(state.history)
     , status_bar_(state.statusBar)
+    , midi_cc_coordinator_(state.midiCcCoordinator)
     , services_(services)
     , last_transport_playing_(state.statusBar.playing.get()) {}
 
@@ -159,6 +162,7 @@ FLASHMEM void SequencerCcLaneWorkflow::openAddDraft_() {
     ui.focusedLane = static_cast<uint8_t>(freeLane);
     ui.mode = seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT;
     ui.focusedField = seq::SequencerCcLaneDraftField::CONTROLLER;
+    ui.advancedSettings = false;
     ui.draft = {};
     ui.draft.destination.pinnedChannel = editor_.pattern.midiChannel.get();
     ui.draftDirty = false;
@@ -201,6 +205,7 @@ FLASHMEM void SequencerCcLaneWorkflow::loadSettingsDraft_() {
     ui.draft.acceptedMacroConflict = lane.acceptedMacroConflict;
     ui.acceptedMacroConflict = lane.acceptedMacroConflict;
     ui.focusedField = seq::SequencerCcLaneDraftField::CONTROLLER;
+    ui.advancedSettings = false;
     ui.draftDirty = false;
 }
 
@@ -226,14 +231,28 @@ FLASHMEM void SequencerCcLaneWorkflow::moveDraftField(float delta) {
         ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) return;
     const int direction = direction_(delta);
     if (direction == 0) return;
-    constexpr int count = static_cast<int>(seq::SequencerCcLaneDraftField::COUNT);
-    int next = (static_cast<int>(ui.focusedField) + direction + count) % count;
-    if (ui.draft.destination.routePolicy == seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK &&
-        next == static_cast<int>(seq::SequencerCcLaneDraftField::PINNED_CHANNEL)) {
-        next = (next + direction + count) % count;
-    }
-    ui.focusedField = static_cast<seq::SequencerCcLaneDraftField>(next);
+    const auto layout = seq::buildSequencerCcLaneDraftLayout(
+        ui.draft.destination.routePolicy,
+        ui.advancedSettings
+    );
+    if (layout.count == 0) return;
+    const int current = layout.indexOf(ui.focusedField);
+    const int count = layout.count;
+    const int next = (current + direction + count) % count;
+    ui.focusedField = layout.fieldAt(static_cast<uint8_t>(next));
     refreshProjection();
+}
+
+FLASHMEM bool SequencerCcLaneWorkflow::activateDraftField() {
+    auto& ui = editor_.ccLaneUi;
+    if ((ui.mode != seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT &&
+         ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) ||
+        ui.focusedField != seq::SequencerCcLaneDraftField::ADVANCED) {
+        return false;
+    }
+    ui.advancedSettings = !ui.advancedSettings;
+    refreshProjection();
+    return true;
 }
 
 FLASHMEM void SequencerCcLaneWorkflow::editDraft(float delta) {
@@ -293,6 +312,8 @@ FLASHMEM void SequencerCcLaneWorkflow::editDraft(float delta) {
                 destination.maximum
             );
             break;
+        case seq::SequencerCcLaneDraftField::ADVANCED:
+            return;
         case seq::SequencerCcLaneDraftField::COUNT:
             return;
     }
@@ -501,6 +522,21 @@ FLASHMEM bool SequencerCcLaneWorkflow::editFocusedEvent(float delta, uint32_t no
     last_event_edit_ms_ = nowMs;
     refreshProjection();
     return true;
+}
+
+FLASHMEM bool SequencerCcLaneWorkflow::toggleFocusedEvent(uint32_t nowMs) {
+    auto& ui = editor_.ccLaneUi;
+    if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID) return false;
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    if (bank == nullptr || ui.focusedLane >= bank->lanes.size() ||
+        !bank->lanes[ui.focusedLane].occupied) {
+        return false;
+    }
+    if (bank->lanes[ui.focusedLane].activeMask.test(ui.focusedStep)) {
+        return clearFocusedEvent_(nowMs);
+    }
+    if (!editFocusedEvent(1.0f, nowMs)) return false;
+    return commitEventEdit(nowMs);
 }
 
 FLASHMEM bool SequencerCcLaneWorkflow::commitEventEdit(uint32_t nowMs) {
@@ -743,16 +779,30 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshValueProjection_() {
     ui.authoredValue = 0;
     ui.hasResolvedValue = false;
     ui.resolvedValue = 0;
+    ui.liveProjection = false;
     const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return;
     const auto& lane = bank->lanes[ui.focusedLane];
-    if (!lane.occupied || ui.focusedStep >= seq::SequencerCcLaneBank::MAX_STEPS ||
-        !lane.activeMask.test(ui.focusedStep)) return;
-    ui.hasAuthoredValue = true;
-    ui.authoredValue = lane.values[ui.focusedStep];
-    ui.hasResolvedValue = ui.routeValid;
-    ui.resolvedValue = ui.authoredValue;
-    ui.winnerClass = core::state::shared::MidiCcCandidateClass::SEQUENCER_CC_LANE;
+    if (!lane.occupied) return;
+    if (ui.focusedStep < seq::SequencerCcLaneBank::MAX_STEPS &&
+        lane.activeMask.test(ui.focusedStep)) {
+        ui.hasAuthoredValue = true;
+        ui.authoredValue = lane.values[ui.focusedStep];
+    }
+    if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID ||
+        !status_bar_.playing.get()) {
+        return;
+    }
+    const auto live = projectSequencerCcLaneLive(
+        midi_cc_coordinator_,
+        {tracks_.activeTrackIndex(), ui.focusedLane},
+        lane,
+        services_.trackRoute(tracks_.activeTrackIndex())
+    );
+    ui.liveProjection = live.lanePresent;
+    ui.hasResolvedValue = live.lanePresent && live.hasOutput;
+    ui.resolvedValue = live.outputValue;
+    ui.winnerClass = live.winnerClass;
 }
 
 FLASHMEM void SequencerCcLaneWorkflow::refreshActions_(
@@ -869,8 +919,6 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshProjection() {
     ui.routeValid = preflight.routeValid;
     ui.laneConflict = preflight.laneConflict;
     ui.macroConflict = preflight.macroConflict;
-    ui.liveProjection = ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID &&
-        status_bar_.playing.get();
     refreshValueProjection_();
     refreshActions_(preflight);
     ui.bump();

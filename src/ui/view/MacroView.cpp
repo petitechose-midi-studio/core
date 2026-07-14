@@ -17,12 +17,28 @@ namespace core::ui {
 
 namespace style = oc::ui::lvgl::style;
 
+namespace {
+
+uint8_t sourceStateBits(const MacroWidgetProps& props) {
+    return static_cast<uint8_t>(
+        (props.automationStored ? 1U << 0U : 0U) |
+        (props.automationActive ? 1U << 1U : 0U) |
+        (props.modulationStored ? 1U << 2U : 0U) |
+        (props.modulationActive ? 1U << 3U : 0U) |
+        (props.modulationPaused ? 1U << 4U : 0U) |
+        (props.modulationSuspended ? 1U << 5U : 0U)
+    );
+}
+
+}  // namespace
+
 FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     rendered_ccs_.fill(0xFF);
     rendered_automation_active_.fill(false);
     rendered_automation_recording_.fill(false);
     rendered_automation_manual_override_.fill(false);
+    rendered_source_state_.fill(0xFF);
     rendered_active_.fill(true);
     rendered_add_slot_.fill(false);
     rendered_focused_.fill(false);
@@ -551,7 +567,7 @@ void MacroView::markConfigDirtyIfChanged() {
             rendered_active_[i] != props.active ||
             rendered_add_slot_[i] != props.addSlot ||
             rendered_focused_[i] != props.focused ||
-            rendered_automation_active_[i] != props.automationActive ||
+            rendered_source_state_[i] != sourceStateBits(props) ||
             rendered_automation_recording_[i] != props.automationRecording ||
             rendered_automation_manual_override_[i] != props.automationManualOverride) {
             flags |= configRenderFlag(i);
@@ -654,8 +670,17 @@ void MacroView::processRenderFlags(uint32_t flags) {
                         macros_[i]->setConfig(props.cc);
                         rendered_ccs_[i] = props.cc;
                     }
-                    if (rendered_automation_active_[i] != props.automationActive) {
-                        macros_[i]->setAutomationActive(props.automationActive);
+                    const uint8_t nextSourceState = sourceStateBits(props);
+                    if (rendered_source_state_[i] != nextSourceState) {
+                        macros_[i]->setSourceIndicators(
+                            props.automationStored,
+                            props.automationActive,
+                            props.modulationStored,
+                            props.modulationActive,
+                            props.modulationPaused,
+                            props.modulationSuspended
+                        );
+                        rendered_source_state_[i] = nextSourceState;
                         rendered_automation_active_[i] = props.automationActive;
                     }
                     if (rendered_automation_recording_[i] != props.automationRecording) {

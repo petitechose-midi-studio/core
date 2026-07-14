@@ -1,14 +1,14 @@
 # UX workflow: route-aware Sequencer CC lane authoring.
-# Purpose: proves the discoverable property entry, silent draft, stopped
-# Preview vs playing Live projection, Inherited/Pin settings, authored/resolved
-# values, and guarded Remove press/arm/cancel/apply grammar.
+# Purpose: proves the discoverable property entry, progressive silent draft,
+# eight-step authored grid, stopped vs telemetry-backed Live truth, Track/Fixed
+# routing, and guarded Remove press/arm/cancel/apply grammar.
 # Expect: capture_changed:cc_lane_draft_silent=cc_lane_grid_preview, capture_changed:cc_lane_grid_preview=cc_lane_grid_live, capture_changed:cc_lane_remove_pressed=cc_lane_remove_cancelled, capture_changed:cc_lane_remove_armed=cc_lane_removed
 # Expect: semantic:cc_lane_property_selected:mode=sequencer.property_selector, semantic:cc_lane_property_selected:property=cc_lanes
 # Expect: semantic:cc_lane_selector_empty:mode=sequencer.cc_lane.selector, semantic:cc_lane_selector_empty:overlay=seq_cc_lane, semantic:cc_lane_selector_empty:target_route_valid=0
 # Expect: semantic:cc_lane_selector_empty:reason=no_route, semantic:cc_lane_selector_empty:conflict=0
 # Expect: semantic:cc_lane_draft_silent:mode=sequencer.cc_lane.add_draft, semantic:cc_lane_draft_silent:property=controller, semantic:cc_lane_draft_silent:projection=preview, semantic:cc_lane_draft_silent:target_route_valid=1
 # Expect: semantic:cc_lane_grid_preview:mode=sequencer.cc_lane.grid, semantic:cc_lane_grid_preview:effect=create_cc_lane, semantic:cc_lane_grid_preview:outcome=applied, semantic:cc_lane_grid_preview:value_label=--
-# Expect: semantic:cc_lane_authored_resolved:authored_value=64, semantic:cc_lane_authored_resolved:resolved_value=64
+# Expect: semantic:cc_lane_authored_resolved:effect=toggle_cc_event, semantic:cc_lane_authored_resolved:authored_value=64, semantic:cc_lane_authored_resolved:projection=preview
 # Expect: semantic:cc_lane_grid_live:mode=sequencer.cc_lane.grid, semantic:cc_lane_grid_live:projection=live, semantic:cc_lane_grid_live:playing=true
 # Expect: semantic:cc_lane_settings_inherited:mode=sequencer.cc_lane.settings, semantic:cc_lane_settings_inherited:route_policy=inherit_track, semantic:cc_lane_settings_inherited:projection=preview, semantic:cc_lane_settings_inherited:playing=false
 # Expect: semantic:cc_lane_settings_pinned:property=route_policy, semantic:cc_lane_settings_pinned:route_policy=pinned
@@ -45,9 +45,9 @@
 1900 tap BOTTOM_RIGHT 60
 2140 capture screen cc_lane_grid_preview
 
-# Turning OPT on `--` authors Initial at the focused step and exposes the
-# Authored/Resolved pair without making a stopped projection look Live.
-2240 encoder OPT 1
+# NAV follows the shared select/enter/toggle grammar: on `--` it authors the
+# lane's New event value. OPT remains dedicated to value editing.
+2240 tap NAV 60
 2460 capture screen cc_lane_authored_resolved
 
 # Close the lane grammar, start transport, then reopen the same lane. The
@@ -74,7 +74,7 @@
 5420 tap BOTTOM_CENTER 60
 5640 capture screen cc_lane_settings_inherited
 
-# Route is the second field. Toggle Inherit -> Pin and expose the temporary
+# Route is the second field. Toggle Track -> Fixed and expose the temporary
 # Channel setting only when it is useful.
 5720 encoder NAV 1
 5800 encoder OPT 1

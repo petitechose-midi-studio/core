@@ -351,10 +351,34 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             source.macroUi.automationRecording.address.track == source.pages.currentActiveTrack() &&
             source.macroUi.automationRecording.address.page == source.pages.currentActivePage() &&
             source.macroUi.automationRecording.address.macro == i;
+        const bool automationStored = automation != nullptr &&
+            core::state::macro::macroCurveStored(automation->automation);
+        const bool modulationStored = automation != nullptr &&
+            core::state::macro::macroCurveStored(automation->modulation);
+        const bool automationPlayback = automationStored &&
+            core::state::macro::macroCurvePlaybackActive(
+                automation->automation
+            );
+        const bool modulationPlayback = modulationStored &&
+            core::state::macro::macroCurvePlaybackActive(
+                automation->modulation
+            );
+        const bool modulationSuspended = modulationStored &&
+            core::state::macro::macroCurveSuspendedAfterRecord(
+                automation->modulation
+            );
+        const bool modulationPaused = modulationPlayback &&
+            automation->modulationDepth <= 0.0f;
         frame.macros[i] = {
             .value = source.macros.slots[i].value.get(),
             .cc = config.cc,
-            .automationActive = active && automation != nullptr && automation->automation.active,
+            .automationStored = active && automationStored,
+            .automationActive = active && automationPlayback && !manualOverride,
+            .modulationStored = active && modulationStored,
+            .modulationActive = active && modulationPlayback &&
+                !modulationPaused && !manualOverride,
+            .modulationPaused = active && modulationPaused && !manualOverride,
+            .modulationSuspended = active && modulationSuspended,
             .automationRecording = active && recording,
             .automationManualOverride = active && manualOverride,
             .active = active,

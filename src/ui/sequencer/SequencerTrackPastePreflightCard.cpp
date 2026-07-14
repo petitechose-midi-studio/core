@@ -160,7 +160,6 @@ FLASHMEM void SequencerTrackPastePreflightCard::hide() {
 
 FLASHMEM void SequencerTrackPastePreflightCard::show() {
     if (!panel_) return;
-    lv_obj_move_foreground(panel_);
     lv_obj_clear_flag(panel_, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -228,8 +227,8 @@ FLASHMEM void SequencerTrackPastePreflightCard::render(
             hide();
             return;
         }
-        if (model.activationGeneration != shown_applied_generation_) {
-            shown_applied_generation_ = model.activationGeneration;
+        if (model.operationGeneration != shown_applied_generation_) {
+            shown_applied_generation_ = model.operationGeneration;
             // Recreate the RAII timer so every distinct applied generation gets
             // the full confirmation interval. PausableTimer intentionally does
             // not expose the underlying LVGL timer or a mutable period/reset API.

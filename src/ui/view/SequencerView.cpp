@@ -668,6 +668,9 @@ void SequencerView::renderHistoryToast() {
     lv_label_set_text(history_toast_line2_, feedback.line2.data());
     lv_label_set_text(history_toast_line3_, feedback.line3.data());
     lv_obj_align(history_toast_, LV_ALIGN_TOP_MID, 0, 34);
+    // Outcome feedback has priority over any contextual paste card occupying
+    // the same temporary-information zone.
+    lv_obj_move_foreground(history_toast_);
     lv_obj_clear_flag(history_toast_, LV_OBJ_FLAG_HIDDEN);
 }
 

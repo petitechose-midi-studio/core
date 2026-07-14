@@ -51,6 +51,7 @@ struct EditRenderData {
     std::array<char, 24> meta{};
     uint32_t dataRevision = 0;
     int selectedIndex = 0;
+    int rowCount = 3;
 };
 
 struct AutomationRenderData {

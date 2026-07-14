@@ -322,7 +322,11 @@ buildSequencerTrackPastePreflightViewModel(
 
     switch (status) {
         case FeedbackStatus::PREVIEW:
-            out.visible = projection.plan.canCommit();
+            // A valid clipboard is persistent state, not a reason to keep a
+            // large card over the sequencer. The compact action strip remains
+            // available at rest; the card is opt-in through Details and is
+            // otherwise reserved for the active gesture and its outcome.
+            out.visible = projection.plan.canCommit() && projection.detailVisible;
             out.phase = SequencerTrackPastePreflightPhase::READY;
             out.tone = projection.plan.overwriteMask != 0 ||
                     projection.plan.availability ==
@@ -353,7 +357,7 @@ buildSequencerTrackPastePreflightViewModel(
             out.visible = true;
             out.phase = SequencerTrackPastePreflightPhase::QUEUED;
             out.tone = SequencerTrackPastePreflightTone::WARNING;
-            format(out.detail, "Queued | audio at next loop");
+            format(out.detail, "Next loop | audio pending");
             break;
         case FeedbackStatus::APPLIED:
             out.visible = true;
@@ -401,8 +405,8 @@ FLASHMEM bool shouldShowSequencerTrackPasteAppliedConfirmation(
 ) {
     return model.visible &&
            model.phase == SequencerTrackPastePreflightPhase::APPLIED &&
-           model.activationGeneration != 0 &&
-           model.activationGeneration != dismissedGeneration;
+           model.operationGeneration != 0 &&
+           model.operationGeneration != dismissedGeneration;
 }
 
 }  // namespace core::ui::sequencer

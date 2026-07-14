@@ -11,27 +11,34 @@
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/macro/MacroAutomationEditorModel.hpp"
 #include "handler/macro/MacroGuardedActionWorkflow.hpp"
+#include "ui/macro/MacroSourceDetailLayout.hpp"
 
 namespace core::handler {
 
 namespace {
 
-constexpr uint8_t ROW_STATE = 0;
-constexpr uint8_t ROW_LENGTH = 1;
-constexpr uint8_t ROW_OFFSET = 2;
-constexpr uint8_t ROW_CURVE = 3;
-constexpr uint8_t ROW_RESUME = 4;
-constexpr uint8_t ROW_AUTO_MOD = 5;
-constexpr uint8_t ROW_CONVERT = 6;
-constexpr uint8_t AUTOMATION_ROW_COUNT = 7;
+namespace detail_ui = core::ui::macro;
 
-constexpr uint8_t MOD_ROW_STATE = 0;
-constexpr uint8_t MOD_ROW_DEPTH = 1;
-constexpr uint8_t MOD_ROW_SOURCE = 2;
-constexpr uint8_t MOD_ROW_RESUME = 3;
-constexpr uint8_t MOD_ROW_AUTO_MOD = 4;
-constexpr uint8_t MOD_ROW_CONVERT = 5;
-constexpr uint8_t MODULATION_ROW_COUNT = 6;
+detail_ui::MacroSourceDetailContext detailContext(
+    const MacroEditDomainServices& services,
+    uint8_t macroIndex
+) {
+    const auto* slot = services.automationSlot(macroIndex);
+    if (slot == nullptr) return {};
+    return {
+        .automationStored =
+            core::state::macro::macroCurveStored(slot->automation),
+        .modulationStored =
+            core::state::macro::macroCurveStored(slot->modulation),
+        .automationPlayback =
+            core::state::macro::macroCurvePlaybackActive(slot->automation),
+        .modulationPlayback =
+            core::state::macro::macroCurvePlaybackActive(slot->modulation),
+        .manualOverride = services.manualOverrideActiveFor(macroIndex),
+        .modulationSuspended =
+            core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation),
+    };
+}
 
 bool contextActionInProgress(const core::state::MacroEditState& state) {
     const auto phase = state.contextGuard.get().phase;
@@ -181,9 +188,10 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
         ? macro_edit_.modulationFocusedRow
         : macro_edit_.automationFocusedRow;
     const int current = static_cast<int>(focus.get());
+    const auto context = detailContext(services_, macroIndex());
     const int count = modulationDetailActive()
-        ? MODULATION_ROW_COUNT
-        : AUTOMATION_ROW_COUNT;
+        ? static_cast<int>(detail_ui::buildModulationDetailLayout(context).count)
+        : static_cast<int>(detail_ui::buildAutomationDetailLayout(context).count);
     const int next = nav::nextWrappedIndex(delta, current, count);
     focus.set(static_cast<uint8_t>(next));
     configureOptForFocusedRow();
@@ -196,26 +204,25 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
     );
     const uint8_t index = macroIndex();
     const float clamped = std::clamp(normalized, 0.0f, 1.0f);
+    const auto context = detailContext(services_, index);
     if (modulationDetailActive()) {
-        const uint8_t row = macro_edit_.modulationFocusedRow.get();
-        if (row == MOD_ROW_STATE) {
-            if (clamped < 0.34f) services_.setManualOverride(index, true);
-            else if (clamped > 0.66f) (void)services_.enableAutoMod(index);
-            else (void)services_.resumeSources(index);
-            return;
-        }
-        if (row == MOD_ROW_DEPTH) {
+        const auto layout = detail_ui::buildModulationDetailLayout(context);
+        const auto item = layout.at(macro_edit_.modulationFocusedRow.get());
+        if (item == detail_ui::ModulationDetailItem::PLAYBACK) {
+            (void)services_.setModulationPlayback(index, clamped >= 0.5f);
+        } else if (item == detail_ui::ModulationDetailItem::DEPTH) {
             (void)services_.setModulationDepth(index, clamped);
         }
         return;
     }
-    if (!automationDetailActive() || !services_.automationActiveFor(index)) return;
-    const uint8_t row = macro_edit_.automationFocusedRow.get();
-    if (row == ROW_STATE) {
-        services_.setManualOverride(index, clamped < 0.5f);
+    if (!automationDetailActive()) return;
+    const auto layout = detail_ui::buildAutomationDetailLayout(context);
+    const auto item = layout.at(macro_edit_.automationFocusedRow.get());
+    if (item == detail_ui::AutomationDetailItem::PLAYBACK) {
+        (void)services_.setAutomationPlayback(index, clamped >= 0.5f);
         return;
     }
-    if (row == ROW_LENGTH) {
+    if (item == detail_ui::AutomationDetailItem::LENGTH) {
         const auto range = macroAutomationLengthEditRange(coarse_edit_active_);
         services_.setAutomationDurationBeats(
             index,
@@ -223,7 +230,7 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
         );
         return;
     }
-    if (row == ROW_OFFSET) {
+    if (item == detail_ui::AutomationDetailItem::OFFSET) {
         const auto* slot = services_.automationSlot(index);
         const auto range = macroAutomationOffsetEditRange(slot, coarse_edit_active_);
         services_.setAutomationWindowOffsetBeats(
@@ -236,15 +243,14 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
 FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
     uint8_t steps = 1;
     float position = 0.0f;
+    const auto context = detailContext(services_, macroIndex());
     if (modulationDetailActive()) {
-        const uint8_t row = macro_edit_.modulationFocusedRow.get();
-        if (row == MOD_ROW_STATE) {
-            steps = 3;
-            const auto mode = services_.sourceModeFor(macroIndex());
-            position = mode == MacroSourceMode::MANUAL
-                ? 0.0f
-                : (mode == MacroSourceMode::AUTO_MOD ? 1.0f : 0.5f);
-        } else if (row == MOD_ROW_DEPTH) {
+        const auto layout = detail_ui::buildModulationDetailLayout(context);
+        const auto item = layout.at(macro_edit_.modulationFocusedRow.get());
+        if (item == detail_ui::ModulationDetailItem::PLAYBACK) {
+            steps = 2;
+            position = context.modulationPlayback ? 1.0f : 0.0f;
+        } else if (item == detail_ui::ModulationDetailItem::DEPTH) {
             steps = 101;
             position = services_.modulationDepth(macroIndex());
         }
@@ -252,12 +258,12 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
         encoders_.setPosition(Config::EncoderID::OPT, position);
         return;
     }
-    const uint8_t row = macro_edit_.automationFocusedRow.get();
-    if (row == ROW_STATE) {
+    const auto layout = detail_ui::buildAutomationDetailLayout(context);
+    const auto item = layout.at(macro_edit_.automationFocusedRow.get());
+    if (item == detail_ui::AutomationDetailItem::PLAYBACK) {
         steps = 2;
-        const uint8_t index = macroIndex();
-        position = services_.manualOverrideActiveFor(index) ? 0.0f : 1.0f;
-    } else if (row == ROW_LENGTH) {
+        position = context.automationPlayback ? 1.0f : 0.0f;
+    } else if (item == detail_ui::AutomationDetailItem::LENGTH) {
         const auto range = macroAutomationLengthEditRange(coarse_edit_active_);
         steps = range.stepCount;
         const auto* slot = services_.automationSlot(macroIndex());
@@ -267,7 +273,7 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
                 range
             );
         }
-    } else if (row == ROW_OFFSET) {
+    } else if (item == detail_ui::AutomationDetailItem::OFFSET) {
         const auto* slot = services_.automationSlot(macroIndex());
         const auto range = macroAutomationOffsetEditRange(slot, coarse_edit_active_);
         steps = range.stepCount;
@@ -360,9 +366,10 @@ FLASHMEM void MacroAutomationHandler::beginBottomRightAction() {
     core::state::contextual::ContextActionId action =
         core::state::contextual::ContextActionId::NONE;
     if (conversionPreviewActive()) {
-        if (macro_edit_.conversionPreview.plan.overwritesModulation &&
-            macro_edit_.conversionPreview.plan.actionable()) {
-            action = core::state::contextual::ContextActionId::OVERWRITE;
+        if (macro_edit_.conversionPreview.plan.actionable()) {
+            action = macro_edit_.conversionPreview.plan.overwritesModulation
+                ? core::state::contextual::ContextActionId::OVERWRITE
+                : core::state::contextual::ContextActionId::APPLY;
         }
     } else {
         const auto plan = modulationDetailActive()
@@ -396,8 +403,14 @@ FLASHMEM void MacroAutomationHandler::releaseBottomRightAction() {
         nowMs
     );
     if (release == core::state::contextual::GuardedActionRelease::TAP) {
-        if (conversionPreviewActive()) (void)applyConversion(false);
-        else copyAutomation();
+        if (conversionPreviewActive()) {
+            const bool applied = applyConversion(false);
+            macro::MacroGuardedActionWorkflow::complete(
+                macro_edit_, applied, nowMs
+            );
+        } else {
+            copyAutomation();
+        }
     } else if (release ==
                core::state::contextual::GuardedActionRelease::COMMITTED) {
         commitGuardedAction(nowMs);
@@ -485,22 +498,41 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
     cancelContextAction(
         macro_edit_, now_provider_ ? now_provider_() : 0U, false
     );
-    const uint8_t row = modulationDetailActive()
-        ? macro_edit_.modulationFocusedRow.get()
-        : macro_edit_.automationFocusedRow.get();
-    const bool resume = modulationDetailActive()
-        ? row == MOD_ROW_RESUME
-        : row == ROW_RESUME;
-    const bool autoMod = modulationDetailActive()
-        ? row == MOD_ROW_AUTO_MOD
-        : row == ROW_AUTO_MOD;
-    const bool convert = modulationDetailActive()
-        ? row == MOD_ROW_CONVERT
-        : row == ROW_CONVERT;
+    const auto context = detailContext(services_, macroIndex());
+    bool resume = false;
+    bool autoMod = false;
+    bool convert = false;
+    if (modulationDetailActive()) {
+        const auto layout = detail_ui::buildModulationDetailLayout(context);
+        const auto item = layout.at(macro_edit_.modulationFocusedRow.get());
+        resume = item == detail_ui::ModulationDetailItem::RESUME;
+        autoMod = item == detail_ui::ModulationDetailItem::ENABLE_BOTH;
+    } else {
+        const auto layout = detail_ui::buildAutomationDetailLayout(context);
+        const auto item = layout.at(macro_edit_.automationFocusedRow.get());
+        resume = item == detail_ui::AutomationDetailItem::RESUME;
+        autoMod = item == detail_ui::AutomationDetailItem::ENABLE_BOTH;
+        convert =
+            item == detail_ui::AutomationDetailItem::CONVERT_TO_MODULATION;
+    }
     if (resume) {
-        (void)services_.resumeSources(macroIndex());
+        if (services_.resumeSources(macroIndex())) {
+            if (modulationDetailActive()) {
+                macro_edit_.modulationFocusedRow.set(0);
+            } else {
+                macro_edit_.automationFocusedRow.set(0);
+            }
+            configureOptForFocusedRow();
+        }
     } else if (autoMod) {
-        (void)services_.enableAutoMod(macroIndex());
+        if (services_.enableAutoMod(macroIndex())) {
+            if (modulationDetailActive()) {
+                macro_edit_.modulationFocusedRow.set(0);
+            } else {
+                macro_edit_.automationFocusedRow.set(0);
+            }
+            configureOptForFocusedRow();
+        }
     } else if (convert) {
         openConversionPreview();
     }

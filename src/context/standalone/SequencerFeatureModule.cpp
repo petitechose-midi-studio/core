@@ -250,6 +250,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.sequencer,
                 stateRefs.sequencerTracks,
                 *stateRefs.statusBar,
+                stateRefs.midiCcCoordinator,
             },
             *cc_lane_overlay_,
             *cc_lane_action_strip_
@@ -328,6 +329,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.sequencerTracks,
             stateRefs.history,
             *stateRefs.statusBar,
+            stateRefs.midiCcCoordinator,
         },
         core::handler::SequencerCcLaneDomainServices{
             core::handler::SequencerCcLaneDomainServices::StateRefs{

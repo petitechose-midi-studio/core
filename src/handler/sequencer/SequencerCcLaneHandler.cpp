@@ -181,8 +181,19 @@ FLASHMEM void SequencerCcLaneHandler::onOptTurn(float normalized) {
 }
 
 FLASHMEM void SequencerCcLaneHandler::onNavTap() {
-    if (sequencer_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR) {
-        (void)workflow_.activateSelector();
+    switch (sequencer_.ccLaneUi.mode) {
+        case seq::SequencerCcLaneUiMode::LANE_SELECTOR:
+            (void)workflow_.activateSelector();
+            break;
+        case seq::SequencerCcLaneUiMode::LANE_GRID:
+            (void)workflow_.toggleFocusedEvent(now());
+            break;
+        case seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT:
+        case seq::SequencerCcLaneUiMode::LANE_SETTINGS:
+            (void)workflow_.activateDraftField();
+            break;
+        case seq::SequencerCcLaneUiMode::CLOSED:
+            break;
     }
 }
 

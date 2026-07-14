@@ -93,7 +93,7 @@ bool showTrackPasteDetailsAction(
         slot.labelText.data(),
         slot.labelText.size(),
         "%s",
-        projection.detailVisible ? "Summary" : "Details"
+        projection.detailVisible ? "Close" : "Details"
     );
     return true;
 }

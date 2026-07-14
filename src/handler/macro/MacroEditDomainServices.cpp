@@ -182,6 +182,90 @@ void MacroEditDomainServices::setManualOverride(uint8_t index, bool active) cons
     );
 }
 
+bool MacroEditDomainServices::setAutomationPlayback(
+    uint8_t index,
+    bool active
+) const {
+    const auto address = automationAddress(index);
+    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
+        pages_->automation,
+        address
+    );
+    if (slot == nullptr ||
+        !core::state::macro::macroCurveStored(slot->automation)) {
+        return false;
+    }
+    const auto next = active
+        ? core::state::macro::MacroCurvePlaybackState::ACTIVE
+        : core::state::macro::MacroCurvePlaybackState::OFF;
+    if (slot->automation.playbackState == next) return false;
+
+    auto change = history_ != nullptr
+        ? history_->prepare(
+              *pages_,
+              address,
+              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
+          )
+        : core::state::macro::MacroHistoryChangePtr{};
+    if (history_ != nullptr && !change) return false;
+    slot->automation.playbackState = next;
+    if (history_ != nullptr &&
+        !history_->commitPrepared(*pages_, std::move(change))) {
+        return false;
+    }
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
+    return true;
+}
+
+bool MacroEditDomainServices::setModulationPlayback(
+    uint8_t index,
+    bool active
+) const {
+    const auto address = automationAddress(index);
+    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
+        pages_->automation,
+        address
+    );
+    if (slot == nullptr ||
+        !core::state::macro::macroCurveStored(slot->modulation)) {
+        return false;
+    }
+    const auto next = active
+        ? core::state::macro::MacroCurvePlaybackState::ACTIVE
+        : core::state::macro::MacroCurvePlaybackState::OFF;
+    if (slot->modulation.playbackState == next) return false;
+
+    auto change = history_ != nullptr
+        ? history_->prepare(
+              *pages_,
+              address,
+              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
+          )
+        : core::state::macro::MacroHistoryChangePtr{};
+    if (history_ != nullptr && !change) return false;
+    slot->modulation.playbackState = next;
+    if (history_ != nullptr &&
+        !history_->commitPrepared(*pages_, std::move(change))) {
+        return false;
+    }
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
+    return true;
+}
+
 bool MacroEditDomainServices::clearAutomation(uint8_t index) const {
     const auto address = automationAddress(index);
     auto* slot = core::state::macro::macroAutomationFindMutableSlot(

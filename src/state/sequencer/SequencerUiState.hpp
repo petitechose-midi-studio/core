@@ -219,6 +219,7 @@ enum class SequencerCcLaneDraftField : uint8_t {
     MINIMUM,
     MAXIMUM,
     INITIAL,
+    ADVANCED,
     COUNT,
 };
 
@@ -251,6 +252,9 @@ struct SequencerCcLaneUiState {
         SequencerCcLaneDraftField::CONTROLLER;
     SequencerCcLaneDraft draft{};
     bool draftDirty = false;
+    // The common path exposes destination + route only. Range/proposal fields
+    // remain one NAV tap away and never burden the default creation surface.
+    bool advancedSettings = false;
 
     bool hasAuthoredValue = false;
     uint8_t authoredValue = 0;

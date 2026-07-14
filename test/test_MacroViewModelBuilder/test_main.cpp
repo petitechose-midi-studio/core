@@ -237,6 +237,64 @@ void test_macro_selection_delete_strip_projects_disabled_and_applied() {
     std::cout << "[PASS] test_macro_selection_delete_strip_projects_disabled_and_applied\n";
 }
 
+void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
+    CoreStorages storage;
+    core::state::CoreState state(
+        storage.settings,
+        storage.macroLibrary,
+        storage.sequencerPatternLibrary,
+        storage.sequencerSetLibrary
+    );
+    state.pages.setMacroSlotActive(0, true);
+    auto& slot = configureAutomation(state, 0, 0.42f);
+    core::state::macro::MacroModulationShape shape;
+    shape.durationBeats = 2.0f;
+    assert(core::state::macro::macroModulationAppendPoint(
+        shape,
+        0.0f,
+        -0.5f
+    ));
+    assert(core::state::macro::macroModulationAppendPoint(
+        shape,
+        1.0f,
+        0.5f
+    ));
+    assert(core::state::macro::macroAutomationAssignModulation(
+        state.pages.automation,
+        slot,
+        shape
+    ));
+    slot.modulationDepth = 0.75f;
+
+    auto props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
+    assert(props.automationStored && props.automationActive);
+    assert(props.modulationStored && props.modulationActive);
+    assert(!props.modulationPaused && !props.modulationSuspended);
+
+    slot.automation.playbackState =
+        core::state::macro::MacroCurvePlaybackState::OFF;
+    props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
+    assert(props.automationStored && !props.automationActive);
+    assert(props.modulationStored && props.modulationActive);
+
+    state.macroUi.automationManualOverrideMask.set(0x0001);
+    props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
+    assert(props.automationStored && !props.automationActive);
+    assert(props.modulationStored && !props.modulationActive);
+
+    state.macroUi.automationManualOverrideMask.set(0);
+    slot.modulation.playbackState =
+        core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
+    assert(props.modulationStored);
+    assert(!props.modulationActive);
+    assert(props.modulationSuspended);
+
+    std::cout
+        << "[PASS] "
+        << "test_macro_grid_distinguishes_stored_playback_modulation_and_manual\n";
+}
+
 }  // namespace
 
 int main() {
@@ -245,6 +303,7 @@ int main() {
     test_macro_add_slot_focus_dims_structure_actions();
     test_macro_selection_delete_strip_projects_guard_lifecycle();
     test_macro_selection_delete_strip_projects_disabled_and_applied();
+    test_macro_grid_distinguishes_stored_playback_modulation_and_manual();
     std::cout << "\nAll MacroViewModelBuilder tests passed.\n";
     return 0;
 }

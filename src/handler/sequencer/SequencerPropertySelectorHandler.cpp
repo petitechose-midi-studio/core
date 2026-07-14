@@ -5,6 +5,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
+#include <config/Timing.hpp>
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
@@ -277,6 +278,20 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
         ))
         .then([this]() { closeApply(); });
 
+    // Pattern scope keeps the normal short-press property grammar. Holding the
+    // same learned control jumps directly to its CC-lane branch, avoiding a
+    // repeated five-item scroll for the frequent automation path.
+    buttons_.button(ButtonID::LEFT_BOTTOM)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .when([this]() {
+            return navigation_focus_.get() ==
+                       core::state::StructureNavigationFocus::PAGE &&
+                   sequencer_.stepPropertyInlineSelector.selecting.get() &&
+                   cc_lane_workflow_ != nullptr && overlay_manager_ != nullptr;
+        })
+        .then([this]() { enterCcLaneShortcut(); });
+
     encoders_.encoder(EncoderID::NAV)
         .turn()
         .scope(scope_id_)
@@ -461,6 +476,13 @@ FLASHMEM void SequencerPropertySelectorHandler::enterCcLaneSelector() {
     closeApply();
     cc_lane_workflow_->openLaneSelector();
     overlay_manager_->show(core::ui::OverlayType::SEQ_CC_LANE, false);
+}
+
+FLASHMEM void SequencerPropertySelectorHandler::enterCcLaneShortcut() {
+    sequencer_.stepPropertyInlineSelector.selectedIndex.set(
+        CC_LANES_PROPERTY_INDEX
+    );
+    enterCcLaneSelector();
 }
 
 }  // namespace core::handler

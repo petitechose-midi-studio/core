@@ -244,7 +244,9 @@ FLASHMEM void formatHistoryStructureValue(
 FLASHMEM void showSequencerHistoryFeedback(
     sequencer::SequencerState& sequencerState,
     const sequencer::SequencerHistoryApplyResult& result,
-    uint32_t nowMs
+    uint32_t nowMs,
+    const char* actionOverride = nullptr,
+    const char* statusOverride = nullptr
 ) {
     if (!result.applied) return;
 
@@ -266,7 +268,9 @@ FLASHMEM void showSequencerHistoryFeedback(
         std::snprintf(line1, sizeof(line1), "%s", direction);
     }
 
-    if (descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+    if (actionOverride != nullptr) {
+        std::snprintf(line2, sizeof(line2), "%s", actionOverride);
+    } else if (descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
         std::snprintf(
             line2,
             sizeof(line2),
@@ -285,7 +289,9 @@ FLASHMEM void showSequencerHistoryFeedback(
         std::snprintf(line2, sizeof(line2), "%s", historyActionLabel(descriptor.kind));
     }
 
-    if (descriptor.hasValue) {
+    if (statusOverride != nullptr) {
+        std::snprintf(line3, sizeof(line3), "%s", statusOverride);
+    } else if (descriptor.hasValue) {
         const int32_t fromValue = result.direction == sequencer::SequencerHistoryDirection::Undo
             ? descriptor.afterValue
             : descriptor.beforeValue;
@@ -800,7 +806,29 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
     markSequencerProjectMutated_();
     sequencer::refreshContentView(sequencer);
     sequencer.contentView.bump();
-    showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
+    const bool trackPaste = hasActivation &&
+        activation.reference.origin ==
+            sequencer::SequencerTrackActivationOrigin::TRACK_PASTE;
+    const uint16_t audibleMask = static_cast<uint16_t>(
+        activation.targetEnabledMask &
+        static_cast<uint16_t>(~activation.targetMutedMask)
+    );
+    const bool waitsForLoop = hasActivation && statusBar.playing.get() &&
+        (activationTransition.queuedMask & audibleMask) != 0;
+    const bool cancelsPending = hasActivation &&
+        activationTransition.cancelledMask != 0 &&
+        activationTransition.queuedMask == 0;
+    showSequencerHistoryFeedback(
+        sequencer,
+        result,
+        oc::time::millis(),
+        trackPaste ? "Track Paste" : nullptr,
+        waitsForLoop
+            ? "At next loop"
+            : (cancelsPending
+                ? "Pending cancelled"
+                : (trackPaste ? "Applied" : nullptr))
+    );
     refreshSharedTrackStateFromSequencer();
     syncSequencerStructureUiFromRestoredHistory(*this);
     return true;
@@ -836,7 +864,29 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
     markSequencerProjectMutated_();
     sequencer::refreshContentView(sequencer);
     sequencer.contentView.bump();
-    showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
+    const bool trackPaste = hasActivation &&
+        activation.reference.origin ==
+            sequencer::SequencerTrackActivationOrigin::TRACK_PASTE;
+    const uint16_t audibleMask = static_cast<uint16_t>(
+        activation.targetEnabledMask &
+        static_cast<uint16_t>(~activation.targetMutedMask)
+    );
+    const bool waitsForLoop = hasActivation && statusBar.playing.get() &&
+        (activationTransition.queuedMask & audibleMask) != 0;
+    const bool cancelsPending = hasActivation &&
+        activationTransition.cancelledMask != 0 &&
+        activationTransition.queuedMask == 0;
+    showSequencerHistoryFeedback(
+        sequencer,
+        result,
+        oc::time::millis(),
+        trackPaste ? "Track Paste" : nullptr,
+        waitsForLoop
+            ? "At next loop"
+            : (cancelsPending
+                ? "Pending cancelled"
+                : (trackPaste ? "Applied" : nullptr))
+    );
     refreshSharedTrackStateFromSequencer();
     syncSequencerStructureUiFromRestoredHistory(*this);
     return true;

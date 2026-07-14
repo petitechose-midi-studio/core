@@ -9,6 +9,7 @@
 
 #include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone::macro_overlay_presenter {
@@ -173,27 +174,120 @@ FLASHMEM ms::ui::KeyValueSparkline buildCurveSparkline(
     return sparkline;
 }
 
-FLASHMEM const char* sourceStateLabel(
+FLASHMEM ms::ui::KeyValueSparkline buildModulationSparkline(
+    const core::state::macro::MacroAutomationCurveRef& curve,
+    const core::state::macro::MacroAutomationPointPool& pool
+) {
+    ms::ui::KeyValueSparkline sparkline{};
+    if (!curve.active || curve.pointCount == 0 || curve.pointOffset >= pool.used) {
+        return sparkline;
+    }
+
+    const uint16_t durationTicks = curve.durationTicks == 0
+        ? core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
+        : curve.durationTicks;
+    constexpr uint8_t sampleCount =
+        static_cast<uint8_t>(ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT);
+    sparkline.enabled = true;
+    sparkline.centerLine = true;
+    sparkline.sampleCount = sampleCount;
+    const uint16_t lastSampleTick = durationTicks > 0U
+        ? static_cast<uint16_t>(durationTicks - 1U)
+        : 0U;
+    for (uint8_t i = 0; i < sampleCount; ++i) {
+        const uint32_t tick = sampleCount > 1U
+            ? (static_cast<uint32_t>(i) * lastSampleTick) / (sampleCount - 1U)
+            : 0U;
+        const float beat =
+            static_cast<float>(tick) /
+            static_cast<float>(
+                core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
+            );
+        const float value = core::state::macro::macroModulationEvaluate(
+            curve,
+            pool,
+            beat
+        );
+        const float normalized = std::clamp((value + 1.0f) * 0.5f, 0.0f, 1.0f);
+        sparkline.samples[i] =
+            static_cast<uint8_t>(normalized * 255.0f + 0.5f);
+    }
+    return sparkline;
+}
+
+FLASHMEM void formatAutomationState(
+    char* out,
+    size_t outSize,
     const core::state::macro::MacroAutomationSlotState* slot,
     bool manual
 ) {
-    if (manual) return "Manual";
-    if (slot == nullptr) return "Off";
-    if (core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation)) {
-        return "Suspended";
+    if (out == nullptr || outSize == 0) return;
+    if (slot == nullptr ||
+        !core::state::macro::macroCurveStored(slot->automation)) {
+        std::snprintf(out, outSize, "%s", "Off");
+        return;
     }
-    const bool automation =
-        core::state::macro::macroCurvePlaybackActive(slot->automation);
-    const bool modulation =
-        core::state::macro::macroCurvePlaybackActive(slot->modulation);
-    if (automation && modulation) return "Auto + Mod";
-    if (automation) return "Auto";
-    if (modulation && slot->modulationDepth <= 0.0f) return "Paused · 0%";
-    if (modulation) return "Mod";
-    return core::state::macro::macroCurveStored(slot->automation) ||
-               core::state::macro::macroCurveStored(slot->modulation)
-        ? "Stored · Off"
-        : "Off";
+    if (!core::state::macro::macroCurvePlaybackActive(slot->automation)) {
+        std::snprintf(out, outSize, "%s", "Stored · Off");
+        return;
+    }
+    std::snprintf(out, outSize, "%s", manual ? "On · Manual" : "On");
+}
+
+FLASHMEM void formatModulationState(
+    char* out,
+    size_t outSize,
+    const core::state::macro::MacroAutomationSlotState* slot,
+    bool manual
+) {
+    if (out == nullptr || outSize == 0) return;
+    if (slot == nullptr ||
+        !core::state::macro::macroCurveStored(slot->modulation)) {
+        std::snprintf(out, outSize, "%s", "Off");
+        return;
+    }
+    if (core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation)) {
+        std::snprintf(out, outSize, "%s", "Suspended");
+        return;
+    }
+    if (!core::state::macro::macroCurvePlaybackActive(slot->modulation)) {
+        std::snprintf(out, outSize, "%s", "Stored · Off");
+        return;
+    }
+    if (slot->modulationDepth <= 0.0f) {
+        std::snprintf(out, outSize, "%s", "Paused · 0%%");
+        return;
+    }
+    if (manual) {
+        std::snprintf(out, outSize, "%s", "On · Manual");
+        return;
+    }
+    std::snprintf(
+        out,
+        outSize,
+        "On · %u%%",
+        static_cast<unsigned>(slot->modulationDepth * 100.0f + 0.5f)
+    );
+}
+
+FLASHMEM core::ui::macro::MacroSourceDetailContext sourceDetailContext(
+    const core::state::macro::MacroAutomationSlotState* slot,
+    bool manual
+) {
+    if (slot == nullptr) return {};
+    return {
+        .automationStored =
+            core::state::macro::macroCurveStored(slot->automation),
+        .modulationStored =
+            core::state::macro::macroCurveStored(slot->modulation),
+        .automationPlayback =
+            core::state::macro::macroCurvePlaybackActive(slot->automation),
+        .modulationPlayback =
+            core::state::macro::macroCurvePlaybackActive(slot->modulation),
+        .manualOverride = manual,
+        .modulationSuspended =
+            core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation),
+    };
 }
 
 FLASHMEM const char* modulationOriginLabel(
@@ -451,24 +545,18 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
         core::state::macro::macroCurveStored(slot->automation);
     const bool modulationStored = slot != nullptr &&
         core::state::macro::macroCurveStored(slot->modulation);
-    std::snprintf(
-        data.valueBuffers[1].data(), data.valueBuffers[1].size(), "%s",
-        !automationStored ? "Off" : sourceStateLabel(slot, manualOverride)
+    formatAutomationState(
+        data.valueBuffers[1].data(),
+        data.valueBuffers[1].size(),
+        slot,
+        manualOverride
     );
-    std::snprintf(
-        data.valueBuffers[2].data(), data.valueBuffers[2].size(), "%s",
-        !modulationStored ? "Off" : sourceStateLabel(slot, manualOverride)
+    formatModulationState(
+        data.valueBuffers[2].data(),
+        data.valueBuffers[2].size(),
+        slot,
+        manualOverride
     );
-    if (!modulationStored) {
-        std::snprintf(data.valueBuffers[3].data(), data.valueBuffers[3].size(), "%s", "No modulation");
-    } else if (slot->modulationDepth <= 0.0f) {
-        std::snprintf(data.valueBuffers[3].data(), data.valueBuffers[3].size(), "%s", "Paused · 0%%");
-    } else {
-        std::snprintf(
-            data.valueBuffers[3].data(), data.valueBuffers[3].size(), "%u%%",
-            static_cast<unsigned>(slot->modulationDepth * 100.0f + 0.5f)
-        );
-    }
 
     data.rows = {{
         {
@@ -492,17 +580,7 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
             .iconFont = standalone_fonts.icons_14,
             .iconColor = ::standalone::theme::color::MACRO_MODULATION,
         },
-        {
-            .key = "Depth",
-            .value = data.valueBuffers[3].data(),
-            .icon = modulationStored && slot->modulationDepth <= 0.0f
-                ? ::standalone::icons::STATUS_PAUSED
-                : ::standalone::icons::KNOB,
-            .iconFont = standalone_fonts.icons_14,
-            .iconColor = modulationStored && slot->modulationDepth <= 0.0f
-                ? ::standalone::theme::color::MACRO_PAUSED
-                : ::standalone::theme::color::MACRO_MODULATION,
-        },
+        {},
     }};
     data.selectedIndex = source.macroEdit.focusedRow.get();
     uint32_t revision =
@@ -605,117 +683,182 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         return data;
     }
 
-    std::snprintf(data.valueBuffers[0].data(), data.valueBuffers[0].size(), "%s", sourceStateLabel(slot, manualOverride));
-    ms::ui::KeyValueSparkline curveSparkline{};
-    if (phase == core::state::MacroEditFlowPhase::AUTOMATION && automationStored) {
-        const auto curveSummary = core::state::macro::macroAutomationCurveWindowSummary(
-            slot->automation,
-            source.pages.automation.pointPool
+    const auto detailContext = sourceDetailContext(slot, manualOverride);
+    if (phase == core::state::MacroEditFlowPhase::AUTOMATION) {
+        formatAutomationState(
+            data.valueBuffers[0].data(),
+            data.valueBuffers[0].size(),
+            slot,
+            manualOverride
         );
-        curveSparkline = buildCurveSparkline(
-            slot->automation,
-            source.pages.automation.pointPool
-        );
-        formatBeatDuration(
+        ms::ui::KeyValueSparkline curveSparkline{};
+        if (automationStored) {
+            const auto curveSummary =
+                core::state::macro::macroAutomationCurveWindowSummary(
+                    slot->automation,
+                    source.pages.automation.pointPool
+                );
+            curveSparkline = buildCurveSparkline(
+                slot->automation,
+                source.pages.automation.pointPool
+            );
+            formatBeatDuration(
+                data.valueBuffers[2].data(),
+                data.valueBuffers[2].size(),
+                slot->automation.durationTicks,
+                " beats"
+            );
+            formatBeatDuration(
+                data.valueBuffers[3].data(),
+                data.valueBuffers[3].size(),
+                slot->automation.windowOffsetTicks,
+                " beats"
+            );
+            formatCurveSummary(
+                data.valueBuffers[4].data(),
+                data.valueBuffers[4].size(),
+                curveSummary
+            );
+        }
+        std::snprintf(
             data.valueBuffers[1].data(),
             data.valueBuffers[1].size(),
-            slot->automation.durationTicks,
-            " beats"
+            "%s",
+            "Preview impact"
         );
-        formatBeatDuration(
+        std::snprintf(
+            data.valueBuffers[5].data(),
+            data.valueBuffers[5].size(),
+            "%s",
+            "Restore control"
+        );
+        std::snprintf(
+            data.valueBuffers[6].data(),
+            data.valueBuffers[6].size(),
+            "%s",
+            "Enable both"
+        );
+
+        const auto layout =
+            core::ui::macro::buildAutomationDetailLayout(detailContext);
+        for (uint8_t i = 0; i < layout.count; ++i) {
+            ms::ui::KeyValueRow row{};
+            switch (layout.items[i]) {
+                case core::ui::macro::AutomationDetailItem::PLAYBACK:
+                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
+                    break;
+                case core::ui::macro::AutomationDetailItem::RESUME:
+                    row = {.key = "Resume control", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_SUSPENDED};
+                    break;
+                case core::ui::macro::AutomationDetailItem::CONVERT_TO_MODULATION:
+                    row = {.key = "Convert to Mod", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION};
+                    break;
+                case core::ui::macro::AutomationDetailItem::LENGTH:
+                    row = {.key = "Length", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::LENGTH, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::STEP_LENGTH};
+                    break;
+                case core::ui::macro::AutomationDetailItem::OFFSET:
+                    row = {.key = "Offset", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::OFFSET, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::STEP_OFFSET};
+                    break;
+                case core::ui::macro::AutomationDetailItem::CURVE:
+                    row = {.key = "Curve", .value = data.valueBuffers[4].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION, .sparkline = curveSparkline};
+                    break;
+                case core::ui::macro::AutomationDetailItem::ENABLE_BOTH:
+                    row = {.key = "Automation + Mod", .value = data.valueBuffers[6].data(), .icon = ::standalone::icons::ACTION_APPLY, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION};
+                    break;
+            }
+            data.rows[i] = row;
+        }
+        data.rowCount = layout.count;
+        data.selectedIndex = std::min<int>(
+            source.macroEdit.automationFocusedRow.get(),
+            std::max(0, data.rowCount - 1)
+        );
+    } else {
+        formatModulationState(
+            data.valueBuffers[0].data(),
+            data.valueBuffers[0].size(),
+            slot,
+            manualOverride
+        );
+        const bool paused = detailContext.modulationPlayback &&
+            slot != nullptr && slot->modulationDepth <= 0.0f;
+        std::snprintf(
+            data.valueBuffers[1].data(),
+            data.valueBuffers[1].size(),
+            modulationStored ? "%u%%" : "-",
+            modulationStored
+                ? static_cast<unsigned>(slot->modulationDepth * 100.0f + 0.5f)
+                : 0U
+        );
+        std::snprintf(
             data.valueBuffers[2].data(),
             data.valueBuffers[2].size(),
-            slot->automation.windowOffsetTicks,
-            " beats"
+            "%s",
+            "Bipolar shape"
         );
-        formatCurveSummary(
+        std::snprintf(
             data.valueBuffers[3].data(),
             data.valueBuffers[3].size(),
-            curveSummary
+            "%s",
+            modulationStored
+                ? modulationOriginLabel(slot->modulation.modulationOrigin)
+                : "None"
         );
-        data.meta[0] = '\0';
-        size_t metaPos = appendBeatDurationCompact(
-            data.meta.data(),
-            data.meta.size(),
-            0,
-            slot->automation.durationTicks,
-            "b"
+        std::snprintf(data.valueBuffers[4].data(), data.valueBuffers[4].size(), "%s", "Restore control");
+        std::snprintf(data.valueBuffers[5].data(), data.valueBuffers[5].size(), "%s", "Enable both");
+        const auto modulationSparkline = modulationStored
+            ? buildModulationSparkline(
+                  slot->modulation,
+                  source.pages.automation.pointPool
+              )
+            : ms::ui::KeyValueSparkline{};
+        const auto layout =
+            core::ui::macro::buildModulationDetailLayout(detailContext);
+        for (uint8_t i = 0; i < layout.count; ++i) {
+            ms::ui::KeyValueRow row{};
+            switch (layout.items[i]) {
+                case core::ui::macro::ModulationDetailItem::PLAYBACK:
+                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = detailContext.modulationSuspended ? ::standalone::icons::STATUS_SUSPENDED : (paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::MACRO_MODULATION), .iconFont = standalone_fonts.icons_14, .iconColor = detailContext.modulationSuspended ? ::standalone::theme::color::MACRO_SUSPENDED : (paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION)};
+                    break;
+                case core::ui::macro::ModulationDetailItem::RESUME:
+                    row = {.key = "Resume control", .value = data.valueBuffers[4].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_SUSPENDED};
+                    break;
+                case core::ui::macro::ModulationDetailItem::DEPTH:
+                    row = {.key = "Depth", .value = data.valueBuffers[1].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
+                    break;
+                case core::ui::macro::ModulationDetailItem::CURVE:
+                    row = {.key = "Shape", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = modulationSparkline};
+                    break;
+                case core::ui::macro::ModulationDetailItem::ORIGIN:
+                    row = {.key = "Origin", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::TEXT_SECONDARY};
+                    break;
+                case core::ui::macro::ModulationDetailItem::ENABLE_BOTH:
+                    row = {.key = "Automation + Mod", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::ACTION_APPLY, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION};
+                    break;
+            }
+            data.rows[i] = row;
+        }
+        data.rowCount = layout.count;
+        data.selectedIndex = std::min<int>(
+            source.macroEdit.modulationFocusedRow.get(),
+            std::max(0, data.rowCount - 1)
         );
-        if (curveSummary.sourceDurationTicks != slot->automation.durationTicks) {
-            metaPos = appendText(data.meta.data(), data.meta.size(), metaPos, "/");
-            metaPos = appendBeatDurationCompact(
-                data.meta.data(),
-                data.meta.size(),
-                metaPos,
-                curveSummary.sourceDurationTicks,
-                "b"
-            );
-        }
-        if (curveSummary.windowOffsetTicks > 0) {
-            metaPos = appendText(data.meta.data(), data.meta.size(), metaPos, " +");
-            appendBeatDurationCompact(
-                data.meta.data(),
-                data.meta.size(),
-                metaPos,
-                curveSummary.windowOffsetTicks,
-                "b"
-            );
-            metaPos = std::strlen(data.meta.data());
-        } else if (!curveSummary.wraps) {
-            std::snprintf(
-                data.meta.data() + metaPos,
-                data.meta.size() - metaPos,
-                " %uP",
-                static_cast<unsigned>(slot->automation.pointCount)
-            );
-            metaPos = std::strlen(data.meta.data());
-        }
-        if (curveSummary.wraps) {
-            appendText(data.meta.data(), data.meta.size(), metaPos, " Loop");
-        }
-    } else if (phase == core::state::MacroEditFlowPhase::AUTOMATION) {
-        std::snprintf(data.valueBuffers[1].data(), data.valueBuffers[1].size(), "%s", "-");
-        std::snprintf(data.valueBuffers[2].data(), data.valueBuffers[2].size(), "%s", "-");
-        std::snprintf(data.valueBuffers[3].data(), data.valueBuffers[3].size(), "%s", "-");
-    }
 
-    if (phase == core::state::MacroEditFlowPhase::AUTOMATION) {
-        std::snprintf(data.valueBuffers[4].data(), data.valueBuffers[4].size(), "%s", manualOverride || (slot != nullptr && core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation)) ? "Ready" : "Stable");
-        std::snprintf(data.valueBuffers[5].data(), data.valueBuffers[5].size(), "%s", automationStored && modulationStored ? "Enable both" : "Needs both");
-        std::snprintf(data.valueBuffers[6].data(), data.valueBuffers[6].size(), "%s", automationStored ? "Preview" : "No automation");
-        data.rows = {{
-            {.key = "State", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION},
-            {.key = "Length", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::LENGTH, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::STEP_LENGTH},
-            {.key = "Offset", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::OFFSET, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::STEP_OFFSET},
-            {.key = "Curve", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION, .sparkline = curveSparkline},
-            {.key = "Resume", .value = data.valueBuffers[4].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Auto + Mod", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::ACTION_APPLY, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Convert auto", .value = data.valueBuffers[6].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-        }};
-        data.selectedIndex = source.macroEdit.automationFocusedRow.get();
-        data.rowCount = 7;
-    } else {
-        const bool paused = modulationStored && slot->modulationDepth <= 0.0f;
-        std::snprintf(data.valueBuffers[1].data(), data.valueBuffers[1].size(), "%s", !modulationStored ? "-" : (paused ? "Paused · 0%" : ""));
-        if (modulationStored && !paused) {
-            std::snprintf(data.valueBuffers[1].data(), data.valueBuffers[1].size(), "%u%%", static_cast<unsigned>(slot->modulationDepth * 100.0f + 0.5f));
+        if (formatConflict(
+                data.valueBuffers[6].data(),
+                data.valueBuffers[6].size(),
+                source,
+                macroIndex,
+                automationStored || modulationStored,
+                manualOverride
+            )) {
+            std::snprintf(
+                data.meta.data(),
+                data.meta.size(),
+                "Mod · %.16s",
+                data.valueBuffers[6].data()
+            );
         }
-        std::snprintf(data.valueBuffers[2].data(), data.valueBuffers[2].size(), "%s", modulationStored ? modulationOriginLabel(slot->modulation.modulationOrigin) : "None");
-        std::snprintf(data.valueBuffers[3].data(), data.valueBuffers[3].size(), "%s", manualOverride || (slot != nullptr && core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation)) ? "Ready" : "Stable");
-        std::snprintf(data.valueBuffers[4].data(), data.valueBuffers[4].size(), "%s", automationStored && modulationStored ? "Enable both" : "Needs both");
-        std::snprintf(data.valueBuffers[5].data(), data.valueBuffers[5].size(), "%s", automationStored ? "Preview" : "No automation");
-        const bool conflict = formatConflict(data.valueBuffers[6].data(), data.valueBuffers[6].size(), source, macroIndex, automationStored || modulationStored, manualOverride);
-        data.rows = {{
-            {.key = "State", .value = data.valueBuffers[0].data(), .icon = slot != nullptr && core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation) ? ::standalone::icons::STATUS_SUSPENDED : (paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::MACRO_MODULATION), .iconFont = standalone_fonts.icons_14, .iconColor = slot != nullptr && core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation) ? ::standalone::theme::color::MACRO_SUSPENDED : ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Depth", .value = data.valueBuffers[1].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Source", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Resume", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Auto + Mod", .value = data.valueBuffers[4].data(), .icon = ::standalone::icons::ACTION_APPLY, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Convert auto", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Conflict", .value = data.valueBuffers[6].data(), .icon = conflict ? ::standalone::icons::STATUS_CONFLICT : ::standalone::icons::ACTION_VALIDATE, .iconFont = standalone_fonts.icons_14, .iconColor = conflict ? ::standalone::theme::color::MACRO_CONFLICT : ::standalone::theme::color::MACRO_CC_COLOR},
-        }};
-        data.selectedIndex = source.macroEdit.modulationFocusedRow.get();
-        data.rowCount = conflict ? 7 : 6;
     }
     uint32_t revision =
         (static_cast<uint32_t>(macroIndex & 0x07U) << 29) |

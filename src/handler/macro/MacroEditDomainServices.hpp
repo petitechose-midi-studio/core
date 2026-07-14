@@ -70,6 +70,8 @@ public:
     MacroSourceMode sourceModeFor(uint8_t index) const;
     bool manualOverrideActiveFor(uint8_t index) const;
     void setManualOverride(uint8_t index, bool active) const;
+    bool setAutomationPlayback(uint8_t index, bool active) const;
+    bool setModulationPlayback(uint8_t index, bool active) const;
     bool clearAutomation(uint8_t index) const;
     bool removeAutomation(uint8_t index) const;
     bool copyAutomation(uint8_t index) const;
