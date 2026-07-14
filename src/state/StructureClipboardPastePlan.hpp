@@ -4,7 +4,11 @@
 #include <cstdint>
 
 #include "state/StructureClipboardState.hpp"
-#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
+
+namespace core::state::sequencer {
+struct SequencerState;
+}
 
 namespace core::state {
 
@@ -48,6 +52,8 @@ struct ClipboardTransferPlanEntry {
     uint8_t targetMidiChannel = 0;
     bool targetRouteValid = false;
     bool targetMuted = false;
+    uint8_t inheritedLaneCount = 0;
+    uint8_t pinnedLaneCount = 0;
     ClipboardTransferTargetKind targetKind = ClipboardTransferTargetKind::FREE;
 };
 
@@ -74,6 +80,8 @@ struct ClipboardTransferPlan {
     uint8_t firstTarget = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t lastTarget = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t bindingPolicy = 0;
+    uint8_t inheritedLaneCount = 0;
+    uint8_t pinnedLaneCount = 0;
     ClipboardTransferAvailability availability = ClipboardTransferAvailability::DISABLED;
     ClipboardTransferReason reason = ClipboardTransferReason::EMPTY_CLIPBOARD;
     std::array<ClipboardTransferPlanEntry, MAX_ENTRIES> entries{};
@@ -91,6 +99,21 @@ ClipboardTransferPlan buildSequencerTrackClipboardTransferPlan(
     uint8_t targetTrack,
     uint16_t pendingTrackMask = 0,
     const core::state::sequencer::SequencerState* activeEditor = nullptr
+);
+
+/**
+ * Stable Track-paste identity, excluding destination route fields which are
+ * deliberately refreshed at preflight/commit time.
+ */
+bool sameSequencerTrackClipboardTransferIdentity(
+    const ClipboardTransferPlan& lhs,
+    const ClipboardTransferPlan& rhs
+);
+
+/** Complete bounded value comparison, including live destination routes. */
+bool sameSequencerTrackClipboardTransferPlan(
+    const ClipboardTransferPlan& lhs,
+    const ClipboardTransferPlan& rhs
 );
 
 struct SequencerPageSelectionPastePlanEntry {

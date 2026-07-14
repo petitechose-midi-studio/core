@@ -105,6 +105,14 @@ uint16_t macroAutomationStoredPointCount(const MacroAutomationCurveRef& curve,
                                          const MacroAutomationPointPool& pool);
 uint16_t macroAutomationStoredPointCount(const MacroAutomationSlotState& state,
                                          const MacroAutomationPointPool& pool);
+/**
+ * Validates every source invariant required by the slot-copy mutations.
+ * A false result is detected before destination pool compaction or slot writes.
+ */
+bool macroAutomationSlotStateValidForMutation(
+    const MacroAutomationSlotState& state,
+    const MacroAutomationPointPool& pool
+);
 void macroAutomationCompactPool(MacroAutomationBankState& bank);
 // `slot` must be owned by `bank`; compaction rewrites pool offsets through bank entries.
 bool macroAutomationAssignAutomation(MacroAutomationBankState& bank,
@@ -136,8 +144,15 @@ bool macroAutomationCopySlotState(MacroAutomationPointPool& destPool,
                                   const MacroAutomationPointPool& sourcePool,
                                   const MacroAutomationSlotState& source);
 bool macroAutomationCopySlotState(MacroAutomationBankState& destBank,
-                                  MacroAutomationSlotState& dest,
-                                  const MacroAutomationPointPool& sourcePool,
-                                  const MacroAutomationSlotState& source);
+                                   MacroAutomationSlotState& dest,
+                                   const MacroAutomationPointPool& sourcePool,
+                                   const MacroAutomationSlotState& source);
+/** Replaces only Modulation and Depth, preserving target Automation. */
+bool macroAutomationCopyModulationState(
+    MacroAutomationBankState& destBank,
+    MacroAutomationSlotState& dest,
+    const MacroAutomationPointPool& sourcePool,
+    const MacroAutomationSlotState& source
+);
 
 }  // namespace core::state::macro

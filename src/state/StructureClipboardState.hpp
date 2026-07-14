@@ -8,6 +8,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 
 namespace core::state {
@@ -29,6 +30,14 @@ enum class StructureClipboardKind : uint8_t {
     SEQUENCER_PAGE_SELECTION = 7,
     SEQUENCER_TRACK_SELECTION = 8,
     MACRO_AUTOMATION = 9,
+    MACRO_SLOT = 10,
+    MACRO_MODULATION = 11,
+};
+
+enum class MacroClipboardPayloadKind : uint8_t {
+    LEGACY_AUTOMATION = 0,
+    SLOT,
+    MODULATION,
 };
 
 enum class SequencerStepContentClipboardKind : uint8_t {
@@ -106,6 +115,7 @@ struct SequencerTrackSelectionClipboardEntry {
     uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     core::state::sequencer::SequencerPatternSnapshot snapshot{};
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
+    core::state::sequencer::SequencerCcLaneBankPtr ccLanes;
 };
 
 struct SequencerTrackSelectionClipboard {
@@ -128,8 +138,15 @@ struct MacroAutomationClipboardEntry {
 struct MacroAutomationClipboard {
     bool valid = false;
     bool trackScope = false;
+    MacroClipboardPayloadKind payloadKind =
+        MacroClipboardPayloadKind::LEGACY_AUTOMATION;
     uint8_t sourceTrack = core::state::macro::TRACK_COUNT;
     uint8_t sourcePage = core::state::macro::PAGE_COUNT;
+    uint8_t sourceMacro = core::state::macro::MACRO_COUNT;
+    bool sourceMacroActive = false;
+    bool sourceSlotPresent = false;
+    uint8_t sourceCc = 0;
+    float sourceStaticValue = 0.0f;
     uint8_t count = 0;
     core::state::macro::MacroAutomationPointPool pointPool{};
     std::array<
@@ -158,6 +175,7 @@ struct StructureClipboardState {
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     core::app::ExtmemUniquePtr<core::state::SequencerTrackSelectionClipboard> sequencerTrackSelection;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
+    core::state::sequencer::SequencerCcLaneBankPtr sequencerCcLanes;
     core::state::sequencer::SequencerGraphNodeId sequencerStepContentNodeId =
         oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     SequencerStepContentClipboardKind sequencerStepContentKind =
@@ -183,6 +201,18 @@ struct StructureClipboardState {
         const core::state::macro::MacroAutomationSlotState& slot
     );
 
+    /** Stores the complete typed Slot: destination, base and both sources. */
+    [[nodiscard]] bool storeMacroSlot(
+        const core::state::macro::MacroPagesState& pages,
+        const core::state::macro::MacroAutomationSlotAddress& address
+    );
+
+    /** Stores only Modulation shape/timing/depth for target-preserving paste. */
+    [[nodiscard]] bool storeMacroModulation(
+        const core::state::macro::MacroAutomationBankState& automation,
+        const core::state::macro::MacroAutomationSlotAddress& address
+    );
+
     [[nodiscard]] bool storeSequencerPage(
         const core::state::SequencerPageClipboard& page,
         const oc::note::sequencer::StepSequencerGraph* graph
@@ -191,7 +221,8 @@ struct StructureClipboardState {
     [[nodiscard]] bool storeSequencerTrack(
         const core::state::sequencer::SequencerPatternSnapshot& track,
         const oc::note::sequencer::StepSequencerGraph* graph,
-        uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+        uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
+        const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr
     );
 
     [[nodiscard]] bool storeSequencerStepContent(
@@ -222,6 +253,20 @@ struct StructureClipboardState {
                macroAutomationSet->valid &&
                macroAutomationSet->count > 0 &&
                macroAutomationSet->entries[0].state.automation.active;
+    }
+    bool hasMacroSlot() const {
+        return kind.get() == StructureClipboardKind::MACRO_SLOT &&
+               macroAutomationSet && macroAutomationSet->valid &&
+               macroAutomationSet->payloadKind == MacroClipboardPayloadKind::SLOT &&
+               macroAutomationSet->count == 1;
+    }
+    bool hasMacroModulation() const {
+        return kind.get() == StructureClipboardKind::MACRO_MODULATION &&
+               macroAutomationSet && macroAutomationSet->valid &&
+               macroAutomationSet->payloadKind == MacroClipboardPayloadKind::MODULATION &&
+               macroAutomationSet->count == 1 &&
+               macroAutomationSet->entries[0].valid &&
+               macroAutomationSet->entries[0].state.modulation.active;
     }
     bool hasSequencerPage() const {
         return kind.get() == StructureClipboardKind::SEQUENCER_PAGE && sequencerPage.valid;

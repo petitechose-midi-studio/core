@@ -57,7 +57,12 @@ add_library(midi_studio_core_native STATIC ${MS_CORE_NATIVE_SOURCES})
 target_compile_definitions(midi_studio_core_native PUBLIC OC_LOG)
 target_include_directories(midi_studio_core_native
     PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    PRIVATE
+        # Native Core tests intentionally compile a small set of UI projection
+        # sources. Their font/icon headers include LVGL types, supplied by the
+        # same deterministic stub used by the individual test executables.
+        "${CMAKE_CURRENT_SOURCE_DIR}/test")
 target_link_libraries(midi_studio_core_native PUBLIC oc_note_native oc_framework_native)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreProjectFileTool.cmake")
@@ -87,6 +92,12 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-memory-budget.py")
     set_tests_properties(check_TeensyMemoryBudgetParser PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_TeensyDiagnosticsPlacement
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-diagnostics-placement.py")
+    set_tests_properties(check_TeensyDiagnosticsPlacement PROPERTIES LABELS core)
 
     file(GLOB MS_CORE_NATIVE_TESTS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_*/test_main.cpp")

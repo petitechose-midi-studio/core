@@ -19,9 +19,14 @@ file(GLOB_RECURSE MS_CORE_NATIVE_SOURCES CONFIGURE_DEPENDS
     ${MS_CORE_NATIVE_SOURCE_PATTERNS})
 
 set(MS_CORE_NATIVE_EXTRA_SOURCES
+    "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroOverlayInvalidationBindings.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/SequencerEncoderSyncCoordinator.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/common/GlobalTrackNavigationStripModel.cpp"
+    "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerStepPresetPickerPresentation.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/sequencer/StepContentBadgeProjection.cpp")
+list(APPEND MS_CORE_NATIVE_EXTRA_SOURCES
+    "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerTrackPastePreflightViewModel.cpp"
+    "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerTrackPastePendingViewModel.cpp")
 
 list(APPEND MS_CORE_NATIVE_SOURCES ${MS_CORE_NATIVE_EXTRA_SOURCES})
 
@@ -39,6 +44,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectSnapshotPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectStatePersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerPersistenceCodec.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/SequencerCcLanePersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerPersistenceEnvelope.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/MacroEditState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/StructureClipboardPastePlan.cpp"
@@ -46,6 +52,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/StructureSelectionState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroAutomationDomain.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroAutomationState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/macro/MacroHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroPagesState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSnapshotLifecycle.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSlug.cpp"
@@ -54,6 +61,8 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentStepOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentViewInternal.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentViewOps.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerCcLaneDomain.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerCcLanePatternOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphAssetCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphChildOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphContentOps.cpp"

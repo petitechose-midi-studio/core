@@ -20,8 +20,10 @@
 #include "state/ViewSelectorState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
+#include "ui/sequencer/SequencerTrackPastePreflightCard.hpp"
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/sequencer/StepGrid.hpp"
@@ -49,6 +51,7 @@ public:
         core::state::SequencerSettingsState& sequencerSettings;
         core::state::DataManagerState& dataManager;
         core::state::project::ProjectNavigationState& projectNavigation;
+        core::state::sequencer::SequencerTrackActivationQueue& trackActivations;
     };
 
     explicit SequencerView(lv_obj_t* parent, StateRefs stateRefs);
@@ -69,11 +72,12 @@ private:
         RENDER_BOTTOM_ACTION_STRIP = 1U << 4,
         RENDER_HISTORY_FEEDBACK = 1U << 5,
         RENDER_GRID = 1U << 6,
+        RENDER_TRACK_PASTE_PREFLIGHT = 1U << 7,
     };
     static constexpr uint32_t RENDER_ALL =
         RENDER_HEADER_TOP | RENDER_HEADER_STRIP | RENDER_SELECTOR_OVERLAY |
         RENDER_LEFT_ACTION_STRIP | RENDER_BOTTOM_ACTION_STRIP |
-        RENDER_HISTORY_FEEDBACK | RENDER_GRID;
+        RENDER_HISTORY_FEEDBACK | RENDER_GRID | RENDER_TRACK_PASTE_PREFLIGHT;
 
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
@@ -81,6 +85,7 @@ private:
     void createPropertySelectionOverlay();
     void createActionStrips();
     void createHistoryToast();
+    void createTrackPastePreflightCard();
     static void onStepGridGeometryInvalidated(void* userData);
     bool bindToState();
     void bindHeaderState();
@@ -92,6 +97,8 @@ private:
     void bindBottomActionStripState();
     void bindHistoryFeedbackState();
     void bindTrackSwitchReadyState();
+    void bindTrackPastePreflightState();
+    void bindClipboardState();
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
 
@@ -107,6 +114,8 @@ private:
     void requestBottomActionStripRender();
     void requestHistoryFeedbackRender();
     void requestGridRender();
+    void requestTrackPastePreflightRender();
+    void requestClipboardDependentRenders();
     static bool canDrainRender(void* context);
     static void drainRender(void* context, uint32_t flags);
     void markAllDirty();
@@ -116,15 +125,17 @@ private:
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
-    oc::state::StaticWatchGroup<21> header_watcher_;
-    oc::state::StaticWatchGroup<23> header_strip_watcher_;
-    oc::state::StaticWatchGroup<35> grid_watcher_;
+    oc::state::StaticWatchGroup<20> header_watcher_;
+    oc::state::StaticWatchGroup<22> header_strip_watcher_;
+    oc::state::StaticWatchGroup<34> grid_watcher_;
     oc::state::StaticWatchGroup<19> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<8> overlay_visibility_watcher_;
     oc::state::StaticWatchGroup<11> left_action_strip_watcher_;
-    oc::state::StaticWatchGroup<22> bottom_action_strip_watcher_;
+    oc::state::StaticWatchGroup<21> bottom_action_strip_watcher_;
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
+    oc::state::StaticWatchGroup<29> track_paste_preflight_watcher_;
+    oc::state::StaticWatchGroup<1> clipboard_watcher_;
 
     core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
         render_scheduler_;
@@ -141,6 +152,9 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::StepGrid> step_grid_;
+    core::app::ExtmemUniquePtr<
+        core::ui::sequencer::SequencerTrackPastePreflightCard>
+        track_paste_preflight_card_;
     lv_obj_t* history_toast_ = nullptr;
     lv_obj_t* history_toast_line1_ = nullptr;
     lv_obj_t* history_toast_line2_ = nullptr;

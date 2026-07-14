@@ -10,8 +10,14 @@
 #include <oc/time/Time.hpp>
 
 #include "state/StructureSelectionState.hpp"
+#include "state/StructureClipboardPastePlan.hpp"
+#include "state/contextual/GuardedActionState.hpp"
+#include "state/contextual/OperationFeedbackState.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/SequencerCcLaneDomain.hpp"
+#include "state/sequencer/SequencerStepPresetModel.hpp"
+#include "state/sequencer/SequencerUiStateFwd.hpp"
 #include "state/sequencer/StepProperty.hpp"
 
 namespace core::state::sequencer {
@@ -30,12 +36,6 @@ enum class PatternQuickControlItem : uint8_t {
     LENGTH = 2,
     SWING = 3,
     NUDGE = 4,
-};
-
-enum class SequencerContentViewKind : uint8_t {
-    ROOT = 0,
-    MICRO_SEQUENCE,
-    CYCLE_STATES,
 };
 
 enum class SequencerChordEditField : uint8_t {
@@ -139,6 +139,9 @@ enum class SequencerStepPresetPickerMode : uint8_t {
 enum class SequencerStepPresetFeedback : uint8_t {
     NONE = 0,
     SAVED,
+    APPLIED,
+    QUEUED,
+    CANCELLED,
     EMPTY,
     INCOMPATIBLE,
     FAILED,
@@ -147,6 +150,8 @@ enum class SequencerStepPresetFeedback : uint8_t {
 struct SequencerStepPresetPickerState {
     static constexpr uint8_t ENTRY_CAPACITY = 15;
     static constexpr uint8_t ID_SIZE = core::state::project::ProjectMetadata::ID_SIZE;
+    static constexpr uint8_t NAME_SIZE =
+        SequencerStepPresetDescriptor::NAME_SIZE;
 
     Signal<bool> visible{false};
     Signal<SequencerStepPresetPickerMode> mode{
@@ -155,20 +160,127 @@ struct SequencerStepPresetPickerState {
     Signal<uint8_t> selectedIndex{0};
     Signal<uint8_t> entryCount{0};
     Signal<bool> truncated{false};
+    Signal<bool> hasPreviousPage{false};
+    Signal<bool> hasNextPage{false};
+    Signal<uint16_t> totalEntryCount{0};
+    Signal<bool> detailVisible{false};
+    Signal<uint8_t> detailFocus{0};
+    Signal<bool> inspecting{false};
+    Signal<uint8_t> previewStateIndex{0};
+    Signal<uint32_t> previewGeneration{0};
     Signal<SequencerStepPresetFeedback> feedback{
         SequencerStepPresetFeedback::NONE
     };
+    Signal<core::state::contextual::GuardedActionState, 4> actionGuard{};
+    Signal<core::state::contextual::OperationFeedbackState, 4>
+        operationFeedback{};
     Signal<uint32_t> revision{0};
     std::array<std::array<char, ID_SIZE>, ENTRY_CAPACITY> entryIds{};
+    std::array<std::array<char, NAME_SIZE>, ENTRY_CAPACITY> entryNames{};
+    std::array<bool, ENTRY_CAPACITY> entryMetadataReadable{};
+    SequencerStepPresetTarget frozenTarget{};
+    SequencerStepPresetDescriptor descriptor{};
+    // Correlates QUEUED feedback with its exact APPLIED/CANCELLED terminal
+    // state. Retained until the picker resets or another operation begins.
+    uint32_t operationActivationGeneration = 0;
 
     void open(SequencerStepPresetPickerMode nextMode);
     void reset();
     void setFeedback(SequencerStepPresetFeedback nextFeedback);
-    void setEntry(uint8_t index, const char* id);
+    void setEntry(
+        uint8_t index,
+        const char* id,
+        const char* semanticName = nullptr,
+        bool metadataReadable = false
+    );
     const char* entryId(uint8_t index) const;
+    const char* entryName(uint8_t index) const;
+    bool entryHasReadableMetadata(uint8_t index) const;
     uint8_t itemCount() const;
+    uint8_t newAssetItemOffset() const;
+    bool selectedItemIsNewAsset() const;
     uint8_t existingEntryIndexForSelectedItem() const;
     void clampSelection();
+    void bump();
+};
+
+enum class SequencerCcLaneUiMode : uint8_t {
+    CLOSED = 0,
+    LANE_SELECTOR,
+    ADD_LANE_DRAFT,
+    LANE_GRID,
+    LANE_SETTINGS,
+};
+
+enum class SequencerCcLaneDraftField : uint8_t {
+    CONTROLLER = 0,
+    ROUTE_POLICY,
+    PINNED_CHANNEL,
+    MINIMUM,
+    MAXIMUM,
+    INITIAL,
+    COUNT,
+};
+
+enum class SequencerCcLaneActionSlot : uint8_t {
+    BOTTOM_LEFT = 0,
+    BOTTOM_CENTER,
+    BOTTOM_RIGHT,
+    COUNT,
+};
+
+/**
+ * Session-only projection for the complete route-aware CC-lane workflow.
+ *
+ * Draft fields never write Pattern data. Preview facts are explicit so LVGL
+ * and the semantic UX recorder render the same Authored/Resolved/Source/
+ * Route/Conflict truth without reconstructing it independently.
+ */
+struct SequencerCcLaneUiState {
+    static constexpr uint16_t ACTION_GUARD_MS = 650;
+
+    // ExclusiveVisibilityStack owns presentation and input authority through
+    // this signal. `mode` remains the semantic workflow state.
+    Signal<bool> overlayVisible{false};
+    Signal<uint32_t, 8> revision{0};
+    SequencerCcLaneUiMode mode = SequencerCcLaneUiMode::CLOSED;
+    uint8_t selectorIndex = 0;
+    uint8_t focusedLane = 0;
+    uint8_t focusedStep = 0;
+    SequencerCcLaneDraftField focusedField =
+        SequencerCcLaneDraftField::CONTROLLER;
+    SequencerCcLaneDraft draft{};
+    bool draftDirty = false;
+
+    bool hasAuthoredValue = false;
+    uint8_t authoredValue = 0;
+    bool hasResolvedValue = false;
+    uint8_t resolvedValue = 0;
+    core::state::shared::MidiCcCandidateClass winnerClass =
+        core::state::shared::MidiCcCandidateClass::SEQUENCER_CC_LANE;
+    bool routeValid = true;
+    bool laneConflict = false;
+    bool macroConflict = false;
+    bool acceptedMacroConflict = false;
+    bool liveProjection = false;
+
+    std::array<
+        core::state::contextual::ContextActionSpec,
+        static_cast<size_t>(SequencerCcLaneActionSlot::COUNT)> actions{};
+    Signal<core::state::contextual::GuardedActionState, 4> actionGuard{};
+    Signal<core::state::contextual::OperationFeedbackState, 4>
+        operationFeedback{};
+
+    [[nodiscard]] bool visible() const {
+        return mode != SequencerCcLaneUiMode::CLOSED;
+    }
+    [[nodiscard]] const core::state::contextual::ContextActionSpec& action(
+        SequencerCcLaneActionSlot slot
+    ) const {
+        return actions[static_cast<size_t>(slot)];
+    }
+    void bump();
+    void reset();
 };
 
 struct SequencerStepPropertyInlineSelectorState {
@@ -179,6 +291,10 @@ struct SequencerStepPropertyInlineSelectorState {
     int snapshotIndex = 0;
     uint8_t localVariationStepIndex = 0;
     bool snapshotValid = false;
+    // A modal shortcut is opened by a long-press while another scope owns the
+    // button. Its physical release is delivered after the scope switches back
+    // to the sequencer view and must not immediately close this selector.
+    bool suppressOpeningRelease = false;
 
     void reset();
 };
@@ -317,12 +433,50 @@ struct SequencerStepSelectionState {
     }
 };
 
+/**
+ * One bounded Track-paste interaction snapshot.
+ *
+ * Only revision is observable: the guard, feedback and exact 16-entry plan
+ * change together, preventing presenters from observing a mixed generation.
+ * The clipboard payload itself is synchronously materialized by the transfer
+ * transaction; kind/revision and the complete mapping snapshot retain its
+ * immutable UI/semantic provenance while activation is queued.
+ */
+struct SequencerTrackPasteUiState {
+    Signal<uint32_t, 8> revision{0};
+    core::state::contextual::GuardedActionState guard{};
+    core::state::contextual::OperationFeedbackState feedback{};
+    core::state::ClipboardTransferPlan plan{};
+    core::state::StructureClipboardKind clipboardKind =
+        core::state::StructureClipboardKind::NONE;
+    uint32_t clipboardRevision = 0;
+    uint32_t interactionGeneration = 0;
+    uint32_t operationGeneration = 0;
+    uint32_t activationGeneration = 0;
+    uint8_t focusedIndex = 0;
+    bool detailVisible = false;
+    bool buttonOwned = false;
+    bool commitConsumed = false;
+    bool selectionContext = false;
+
+    [[nodiscard]] bool gestureActive() const {
+        return guard.phase ==
+                   core::state::contextual::GuardedActionPhase::PRESSED ||
+               guard.phase ==
+                   core::state::contextual::GuardedActionPhase::ARMED;
+    }
+    [[nodiscard]] bool inspectable() const { return plan.hasEntries(); }
+    void bump();
+    void reset();
+};
+
 struct SequencerStructureUiState {
     Signal<bool, 4> previewAddPageSlot{false};
     Signal<uint8_t, 4> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
     SequencerStepSelectionState stepSelection;
+    SequencerTrackPasteUiState trackPaste;
 
     SequencerStructureUiState();
     ~SequencerStructureUiState();

@@ -17,8 +17,10 @@
 #include "state/PatternPitchSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/StatusBarState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
@@ -39,18 +41,26 @@ class SequencerStepEditOverlay;
 namespace core::context::standalone {
 class PatternPitchSettingsOverlayPresenter;
 class OverlayPresentationRegistry;
+class SequencerCcLaneOverlayPresenter;
 class SequencerEncoderSyncCoordinator;
 class SequencerOverlayPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
+class MidiCcGlobalFrameCoordinator;
 class PatternPitchSettingsHandler;
+class SequencerCcLaneHandler;
+class SequencerCcLaneWorkflow;
 class SequencerMacroPropertyHandler;
 class SequencerPatternQuickControlsHandler;
 class SequencerPropertySelectorHandler;
 class SequencerStepEditHandler;
 class SequencerStepHandler;
 }  // namespace core::handler
+
+namespace core::state::macro {
+struct MacroPagesState;
+}
 
 namespace core::context::standalone {
 
@@ -76,6 +86,10 @@ public:
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::handler::SequencerHistoryDomainServices history;
+        core::state::sequencer::SequencerTrackActivationQueue* trackActivations = nullptr;
+        core::state::StatusBarState* statusBar = nullptr;
+        const core::state::macro::MacroPagesState* macroPages = nullptr;
+        const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
     };
 
     SequencerFeatureModule(StateRefs stateRefs,
@@ -98,6 +112,7 @@ public:
     SequencerFeatureModule& operator=(const SequencerFeatureModule&) = delete;
 
     [[nodiscard]] bool valid() const { return valid_; }
+    void update(uint32_t nowMs);
     void resetEncoderSync();
     void syncEncodersNow();
 
@@ -106,6 +121,9 @@ private:
     core::validation::ux::StructureUxTraceState structure_ux_trace_state_;
     core::context::standalone::ux::SequencerPropertySelectorUxSurface
         property_selector_ux_surface_;
+    core::context::standalone::ux::SequencerStepPresetUxSurface
+        step_preset_ux_surface_;
+    core::context::standalone::ux::SequencerCcLaneUxSurface cc_lane_ux_surface_;
     core::context::standalone::ux::SequencerQuickControlsUxSurface quick_controls_ux_surface_;
     core::context::standalone::ux::SequencerStructureUxSurface structure_ux_surface_;
     core::context::standalone::ux::SequencerStepEditUxSurface step_edit_ux_surface_;
@@ -121,10 +139,16 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
         step_preset_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
+        cc_lane_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
+        cc_lane_action_strip_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         pattern_pitch_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         pattern_pitch_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerOverlayPresenter> presenter_;
+    core::app::ExtmemUniquePtr<core::context::standalone::SequencerCcLaneOverlayPresenter>
+        cc_lane_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::PatternPitchSettingsOverlayPresenter>
         pattern_pitch_settings_presenter_;
     core::app::ExtmemUniquePtr<core::handler::SequencerStepHandler> step_handler_;
@@ -133,6 +157,10 @@ private:
     core::app::ExtmemUniquePtr<core::handler::SequencerStepEditHandler> step_edit_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerPropertySelectorHandler>
         property_selector_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerCcLaneWorkflow>
+        cc_lane_workflow_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerCcLaneHandler>
+        cc_lane_handler_;
     core::app::ExtmemUniquePtr<core::handler::PatternPitchSettingsHandler>
         pattern_pitch_settings_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerMacroPropertyHandler>

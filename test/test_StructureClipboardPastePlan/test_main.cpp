@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "state/StructureClipboardPastePlan.hpp"
+#include "state/sequencer/SequencerState.hpp"
 
 namespace {
 
@@ -279,6 +280,43 @@ void test_track_selection_plan_allows_mixed_identity_mapping() {
     std::cout << "[PASS] test_track_selection_plan_allows_mixed_identity_mapping\n";
 }
 
+void test_track_plan_identity_allows_only_live_route_refresh() {
+    core::state::StructureClipboardState clipboard;
+    storeSingleTrackClipboard(clipboard, 0);
+    core::state::sequencer::SequencerTrackBankState tracks;
+    tracks.reset();
+    tracks.track(4).midiChannel.set(3);
+    const auto original = core::state::buildSequencerTrackClipboardTransferPlan(
+        clipboard,
+        tracks,
+        4
+    );
+    assert(original.canCommit());
+
+    tracks.track(4).midiChannel.set(8);
+    const auto rerouted = core::state::buildSequencerTrackClipboardTransferPlan(
+        clipboard,
+        tracks,
+        4
+    );
+    assert(core::state::sameSequencerTrackClipboardTransferIdentity(
+        original,
+        rerouted
+    ));
+    assert(!core::state::sameSequencerTrackClipboardTransferPlan(
+        original,
+        rerouted
+    ));
+
+    auto changedTarget = rerouted;
+    changedTarget.entries[0].targetTrack = 5;
+    changedTarget.targetMask = 0x0020;
+    assert(!core::state::sameSequencerTrackClipboardTransferIdentity(
+        original,
+        changedTarget
+    ));
+}
+
 void test_page_selection_paste_plan_projects_offsets_and_overwrite() {
     core::state::SequencerPageSelectionClipboard clipboard;
     clipboard.valid = true;
@@ -345,6 +383,7 @@ int main() {
     test_track_selection_plan_rejects_out_of_range_without_partial_projection();
     test_track_plan_reports_same_target_pending_invalid_and_missing_route();
     test_track_selection_plan_allows_mixed_identity_mapping();
+    test_track_plan_identity_allows_only_live_route_refresh();
     test_page_selection_paste_plan_projects_offsets_and_overwrite();
     test_page_selection_paste_plan_clips_after_page_limit();
     return 0;

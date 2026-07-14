@@ -7,6 +7,7 @@
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
+#include <oc/context/OverlayManager.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
@@ -18,6 +19,8 @@
 #include "app/OverlayTypes.hpp"
 
 namespace core::handler {
+
+class SequencerCcLaneWorkflow;
 
 class SequencerPropertySelectorHandler {
 public:
@@ -38,11 +41,16 @@ public:
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         oc::type::ScopeID scopeId,
-        NowProvider nowProvider
+        NowProvider nowProvider,
+        SequencerCcLaneWorkflow* ccLaneWorkflow = nullptr,
+        oc::context::OverlayManager<core::ui::OverlayType>* overlayManager = nullptr
     );
 
     SequencerPropertySelectorHandler(const SequencerPropertySelectorHandler&) = delete;
     SequencerPropertySelectorHandler& operator=(const SequencerPropertySelectorHandler&) = delete;
+
+    /** Open the shared property grammar focused on CC lanes from Lane Grid. */
+    void openCcLaneShortcut();
 
 private:
     void setupBindings();
@@ -54,6 +62,7 @@ private:
     void navigate(float delta);
     void setActiveVariationRange(float normalized);
     void configureOptForSelectedProperty();
+    void enterCcLaneSelector();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;
@@ -66,6 +75,8 @@ private:
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
     NowProvider now_provider_ = nullptr;
+    SequencerCcLaneWorkflow* cc_lane_workflow_ = nullptr;
+    oc::context::OverlayManager<core::ui::OverlayType>* overlay_manager_ = nullptr;
     oc::note::sequencer::StepSequencerVariationRanges snapshot_variation_ranges_{};
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     bool history_snapshot_valid_ = false;

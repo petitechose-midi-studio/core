@@ -11,6 +11,7 @@
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
@@ -30,6 +31,8 @@ enum class SequencerTrackTransferStatus : uint8_t {
 struct SequencerTrackTransferResult {
     SequencerTrackTransferStatus status = SequencerTrackTransferStatus::DISABLED;
     core::state::ClipboardTransferPlan plan{};
+    uint32_t activationGeneration = 0;
+    uint32_t operationId = 0;
 
     bool applied() const { return status == SequencerTrackTransferStatus::APPLIED; }
 };
@@ -42,6 +45,7 @@ struct SequencerTrackTransferResult {
 struct PreparedSequencerTrackTransfer {
     using GraphPtr =
         core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>;
+    using CcLanePtr = core::state::sequencer::SequencerCcLaneBankPtr;
 
     SequencerTrackTransferStatus status = SequencerTrackTransferStatus::DISABLED;
     core::state::ClipboardTransferPlan plan{};
@@ -52,10 +56,16 @@ struct PreparedSequencerTrackTransfer {
     uint16_t historyMask = 0;
     uint8_t previousActiveTrack = 0;
     uint8_t previousActiveMidiChannel = 0;
+    core::state::sequencer::SequencerTrackActivationQueue* activationQueue = nullptr;
+    core::state::sequencer::SequencerTrackActivationBatch activationBatch{};
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr history;
     std::array<GraphPtr, core::state::ClipboardTransferPlan::MAX_ENTRIES> bankGraphs{};
+    std::array<CcLanePtr, core::state::ClipboardTransferPlan::MAX_ENTRIES>
+        bankCcLanes{};
     GraphPtr editorGraph;
+    CcLanePtr editorCcLanes;
     GraphPtr outgoingActiveGraph;
+    CcLanePtr outgoingActiveCcLanes;
 
     PreparedSequencerTrackTransfer() = default;
     ~PreparedSequencerTrackTransfer() = default;
@@ -76,7 +86,9 @@ PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
     uint8_t targetTrack,
-    uint16_t pendingTrackMask = 0
+    uint16_t pendingTrackMask = 0,
+    core::state::sequencer::SequencerTrackActivationQueue* activationQueue = nullptr,
+    bool transportPlaying = false
 );
 
 SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
@@ -95,7 +107,9 @@ SequencerTrackTransferResult executeSequencerTrackTransfer(
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
     uint8_t targetTrack,
-    uint16_t pendingTrackMask = 0
+    uint16_t pendingTrackMask = 0,
+    core::state::sequencer::SequencerTrackActivationQueue* activationQueue = nullptr,
+    bool transportPlaying = false
 );
 
 }  // namespace core::handler

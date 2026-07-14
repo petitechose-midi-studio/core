@@ -2,9 +2,12 @@
 #undef NDEBUG
 #endif
 
+#include <array>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <iostream>
+#include <limits>
 
 #include "../../src/state/macro/MacroAutomationState.hpp"
 
@@ -231,6 +234,64 @@ void test_macro_automation_copy_failure_preserves_existing_destination() {
     std::cout << "[PASS] test_macro_automation_copy_failure_preserves_existing_destination\n";
 }
 
+void test_macro_automation_invalid_copy_source_is_rejected_before_any_write() {
+    macro::MacroAutomationBankState sourceBank;
+    auto* source = macro::macroAutomationGetOrCreateSlot(
+        sourceBank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(source != nullptr);
+    macro::MacroAutomationLane sourceLane;
+    assert(macro::macroAutomationAppendPoint(sourceLane, 0.0f, 0.2f));
+    assert(macro::macroAutomationAppendPoint(sourceLane, 1.0f, 0.8f));
+    assert(macro::macroAutomationAssignAutomation(sourceBank, *source, sourceLane));
+
+    macro::MacroAutomationBankState destBank;
+    auto* dest = macro::macroAutomationGetOrCreateSlot(
+        destBank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 1, .macro = 0}
+    );
+    assert(dest != nullptr);
+    macro::MacroAutomationLane destLane;
+    assert(macro::macroAutomationAppendPoint(destLane, 0.0f, 0.1f));
+    assert(macro::macroAutomationAppendPoint(destLane, 2.0f, 0.9f));
+    assert(macro::macroAutomationAssignAutomation(destBank, *dest, destLane));
+    auto* neighbour = macro::macroAutomationGetOrCreateSlot(
+        destBank,
+        macro::MacroAutomationSlotAddress{.track = 0, .page = 2, .macro = 0}
+    );
+    assert(neighbour != nullptr);
+    assert(macro::macroAutomationAssignAutomation(destBank, *neighbour, destLane));
+
+    auto assertBankUnchangedAfterRejectedCopy = [&]() {
+        std::array<unsigned char, sizeof(destBank)> before{};
+        std::memcpy(before.data(), &destBank, sizeof(destBank));
+        assert(!macro::macroAutomationSlotStateValidForMutation(
+            *source,
+            sourceBank.pointPool
+        ));
+        assert(!macro::macroAutomationCopySlotState(
+            destBank,
+            *dest,
+            sourceBank.pointPool,
+            *source
+        ));
+        assert(std::memcmp(before.data(), &destBank, sizeof(destBank)) == 0);
+    };
+
+    source->automation.playbackState =
+        static_cast<macro::MacroCurvePlaybackState>(0xFFU);
+    assertBankUnchangedAfterRejectedCopy();
+
+    source->automation.playbackState = macro::MacroCurvePlaybackState::ACTIVE;
+    source->modulationDepth = std::numeric_limits<float>::quiet_NaN();
+    assertBankUnchangedAfterRejectedCopy();
+
+    std::cout
+        << "[PASS] "
+        << "test_macro_automation_invalid_copy_source_is_rejected_before_any_write\n";
+}
+
 void test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window() {
     macro::MacroAutomationBankState bank;
     auto* slot = macro::macroAutomationGetOrCreateSlot(
@@ -425,6 +486,7 @@ int main() {
     test_macro_automation_replacement_reclaims_existing_curve_capacity();
     test_macro_automation_compaction_preserves_multicurve_references();
     test_macro_automation_copy_failure_preserves_existing_destination();
+    test_macro_automation_invalid_copy_source_is_rejected_before_any_write();
     test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window();
     test_conversion_preview_is_non_mutating_and_commit_is_atomic();
     test_conversion_requires_overwrite_confirmation_and_rejects_stale_plan();

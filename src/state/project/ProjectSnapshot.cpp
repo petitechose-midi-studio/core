@@ -240,11 +240,14 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     state.projectNavigation.notifyContentChanged();
     state.clearPendingSequencerApply();
     state.clearSequencerHistory();
+    state.macroHistory.clear();
     state.statusBar.pageName.set(state.pages.activePageData().name);
     // Manual is Project-scoped runtime intent: it survives navigation and UI
     // teardown, but never crosses a load boundary or enters persistence.
     state.macroUi.resetInteraction();
     state.macroUi.resetProjectRuntime();
+    state.requestMacroRuntimeOwnerActivation();
+    state.requestSequencerRuntimeProjectReset();
     return true;
 }
 

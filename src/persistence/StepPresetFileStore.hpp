@@ -25,12 +25,25 @@ struct StepPresetFileLoadResult {
 
 struct StepPresetFileListEntry {
     char id[core::state::project::ProjectMetadata::ID_SIZE] = {};
+    char semanticName[
+        core::state::sequencer::SequencerStepGraphPreset::SEMANTIC_NAME_SIZE
+    ] = {};
     uint32_t sizeBytes = 0;
+    bool metadataReadable = false;
+    bool metadataDefaulted = false;
 };
 
 struct StepPresetFileListResult {
     uint8_t count = 0;
     bool truncated = false;
+    bool hasPrevious = false;
+    bool hasNext = false;
+    uint16_t totalCount = 0;
+};
+
+enum class StepPresetFilePageDirection : uint8_t {
+    FORWARD = 0,
+    BACKWARD,
 };
 
 /**
@@ -64,12 +77,32 @@ public:
         uint16_t& outSize
     );
 
+    /**
+     * Removes one preset and every private atomic-write sidecar associated
+     * with its exact technical id. The current file is removed last so a
+     * failed cleanup cannot make the preset disappear or later resurrect it.
+     */
+    oc::type::Result<void> remove(const char* presetId);
+
     oc::type::Result<StepPresetFileListResult> list(
         StepPresetFileListEntry* entries,
         uint8_t capacity
     );
 
+    /**
+     * Returns a globally alphabetic cursor page without retaining the whole
+     * directory. FORWARD keeps the first `capacity` ids after anchorExclusive;
+     * BACKWARD keeps the last `capacity` ids before it.
+     */
+    oc::type::Result<StepPresetFileListResult> listPage(
+        StepPresetFileListEntry* entries,
+        uint8_t capacity,
+        const char* anchorExclusive,
+        StepPresetFilePageDirection direction
+    );
+
     oc::type::Result<void> nextPresetId(char* out, size_t outSize);
+    oc::type::Result<bool> exists(const char* presetId);
 
     static bool validPresetId(const char* presetId);
 
@@ -83,6 +116,11 @@ private:
 
     static bool buildPaths_(const char* presetId, PresetPaths& out);
     static bool listVisitor_(const oc::interface::DirectoryEntry& entry, void* context);
+    bool buildListEntry_(
+        const char* presetId,
+        uint32_t sizeBytes,
+        StepPresetFileListEntry& out
+    );
 
     ProductFileService& files_;
 };

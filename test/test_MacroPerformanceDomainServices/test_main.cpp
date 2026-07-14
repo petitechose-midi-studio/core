@@ -93,6 +93,43 @@ core::state::macro::MacroAutomationSlotState* configureModulation(
     return slot;
 }
 
+void assertCurvePayloadEquals(
+    const core::state::macro::MacroAutomationCurveRef& expected,
+    const core::state::macro::MacroAutomationPointPool& expectedPool,
+    const core::state::macro::MacroAutomationCurveRef& actual,
+    const core::state::macro::MacroAutomationPointPool& actualPool,
+    bool signedValues
+) {
+    assert(expected.active == actual.active);
+    assert(expected.playbackState == actual.playbackState);
+    assert(expected.pointCount == actual.pointCount);
+    assert(expected.sourceDurationTicks == actual.sourceDurationTicks);
+    assert(expected.durationTicks == actual.durationTicks);
+    assert(expected.windowOffsetTicks == actual.windowOffsetTicks);
+    assert(expected.interpolation == actual.interpolation);
+    assert(expected.modulationOrigin == actual.modulationOrigin);
+    for (uint16_t i = 0; i < expected.pointCount; ++i) {
+        core::state::macro::MacroCurvePoint expectedPoint{};
+        core::state::macro::MacroCurvePoint actualPoint{};
+        assert(core::state::macro::macroAutomationReadPoint(
+            expected,
+            expectedPool,
+            i,
+            signedValues,
+            expectedPoint
+        ));
+        assert(core::state::macro::macroAutomationReadPoint(
+            actual,
+            actualPool,
+            i,
+            signedValues,
+            actualPoint
+        ));
+        assert(std::fabs(expectedPoint.beat - actualPoint.beat) < 0.0001f);
+        assert(std::fabs(expectedPoint.value - actualPoint.value) < 0.0001f);
+    }
+}
+
 void test_runtime_values_are_forwarded_and_clamped() {
     CoreStorages storage;
 
@@ -685,6 +722,291 @@ void test_macro_edit_automation_lifecycle_actions() {
     std::cout << "[PASS] test_macro_edit_automation_lifecycle_actions\n";
 }
 
+void test_modulation_copy_paste_preserves_target_and_exact_payload() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
+    auto& page = state.pages.activePageData();
+    page.setMacroActive(0, true);
+    page.setMacroActive(1, true);
+    page.cc[0] = 74;
+    page.values[0] = 0.21f;
+    page.cc[1] = 11;
+    page.values[1] = 0.66f;
+
+    const auto sourceAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    const auto targetAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 1,
+    };
+    configureAutomation(state.pages.automation, sourceAddress);
+    auto* source = configureModulation(state.pages.automation, sourceAddress, 0.37f);
+    source->modulation.playbackState =
+        core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    source->modulation.modulationOrigin =
+        core::state::macro::MacroModulationOrigin::CONVERTED_FIRST;
+
+    auto* target = configureAutomation(state.pages.automation, targetAddress);
+    core::state::macro::MacroAutomationLane distinctTargetAutomation;
+    assert(core::state::macro::macroAutomationAppendPoint(
+        distinctTargetAutomation, 0.0f, 0.1f
+    ));
+    assert(core::state::macro::macroAutomationAppendPoint(
+        distinctTargetAutomation, 1.0f, 0.9f
+    ));
+    assert(core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *target,
+        distinctTargetAutomation
+    ));
+    target = configureModulation(state.pages.automation, targetAddress, 0.82f);
+    const auto targetAutomationBefore = target->automation;
+    std::array<core::state::macro::MacroCurvePoint, 2> targetAutomationPoints{};
+    for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
+        assert(core::state::macro::macroAutomationReadPoint(
+            targetAutomationBefore,
+            state.pages.automation.pointPool,
+            i,
+            false,
+            targetAutomationPoints[i]
+        ));
+    }
+
+    assert(edit.copyModulation(0));
+    assert(state.structureClipboard.hasMacroModulation());
+    const auto plan = edit.preflightModulationPaste(1);
+    assert(plan.actionable());
+    assert(plan.requiresOverwrite());
+    assert(!edit.pasteModulation(1, false));
+    assert(std::fabs(edit.modulationDepth(1) - 0.82f) < 0.0001f);
+    assert(edit.pasteModulation(1, true));
+
+    source = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        sourceAddress
+    );
+    target = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        targetAddress
+    );
+    assert(source != nullptr && target != nullptr);
+    assert(page.cc[1] == 11);
+    assert(std::fabs(page.values[1] - 0.66f) < 0.0001f);
+    assert(target->automation.pointCount == targetAutomationPoints.size());
+    for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
+        core::state::macro::MacroCurvePoint actual{};
+        assert(core::state::macro::macroAutomationReadPoint(
+            target->automation,
+            state.pages.automation.pointPool,
+            i,
+            false,
+            actual
+        ));
+        assert(std::fabs(actual.beat - targetAutomationPoints[i].beat) < 0.0001f);
+        assert(std::fabs(actual.value - targetAutomationPoints[i].value) < 0.0001f);
+    }
+    assertCurvePayloadEquals(
+        source->modulation,
+        state.pages.automation.pointPool,
+        target->modulation,
+        state.pages.automation.pointPool,
+        true
+    );
+    assert(std::fabs(target->modulationDepth - 0.37f) < 0.0001f);
+
+    std::cout
+        << "[PASS] test_modulation_copy_paste_preserves_target_and_exact_payload\n";
+}
+
+void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
+    auto& page = state.pages.activePageData();
+    page.setMacroActive(0, true);
+    page.setMacroActive(2, true);
+    page.cc[0] = 74;
+    page.values[0] = 0.42f;
+    page.cc[2] = 7;
+    page.values[2] = 0.91f;
+    const auto sourceAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    const auto targetAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 2,
+    };
+    configureAutomation(state.pages.automation, sourceAddress);
+    auto* source = configureModulation(state.pages.automation, sourceAddress, 0.43f);
+    source->automation.playbackState = core::state::macro::MacroCurvePlaybackState::OFF;
+    source->modulation.modulationOrigin =
+        core::state::macro::MacroModulationOrigin::CONVERTED_MIN;
+    configureAutomation(state.pages.automation, targetAddress);
+    configureModulation(state.pages.automation, targetAddress, 0.9f);
+
+    assert(edit.copySlot(0));
+    const auto plan = edit.preflightSlotPaste(2);
+    assert(plan.actionable());
+    assert(plan.requiresOverwrite());
+    assert(edit.pasteSlot(2, true));
+
+    source = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        sourceAddress
+    );
+    auto* target = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        targetAddress
+    );
+    assert(source != nullptr && target != nullptr);
+    assert(page.isMacroActive(2));
+    assert(page.cc[2] == 74);
+    assert(std::fabs(page.values[2] - 0.42f) < 0.0001f);
+    assertCurvePayloadEquals(
+        source->automation,
+        state.pages.automation.pointPool,
+        target->automation,
+        state.pages.automation.pointPool,
+        false
+    );
+    assertCurvePayloadEquals(
+        source->modulation,
+        state.pages.automation.pointPool,
+        target->modulation,
+        state.pages.automation.pointPool,
+        true
+    );
+    assert(std::fabs(target->modulationDepth - 0.43f) < 0.0001f);
+
+    std::cout
+        << "[PASS] test_typed_slot_copy_paste_preserves_automation_and_modulation\n";
+}
+
+void test_page_and_track_copy_preserve_automation_and_modulation() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto structure = core::handler::MacroStructureDomainServices::fromCoreState(state);
+    const auto source = core::state::macro::MacroAutomationSlotAddress{
+        .track = 0,
+        .page = 0,
+        .macro = 0,
+    };
+    const auto pageTarget = core::state::macro::MacroAutomationSlotAddress{
+        .track = 0,
+        .page = 1,
+        .macro = 0,
+    };
+    const auto trackTarget = core::state::macro::MacroAutomationSlotAddress{
+        .track = 1,
+        .page = 0,
+        .macro = 0,
+    };
+    state.pages.pageData(0, 0).setMacroActive(0, true);
+    state.pages.pageData(0, 0).cc[0] = 74;
+    state.pages.pageData(0, 0).values[0] = 0.36f;
+    configureAutomation(state.pages.automation, source);
+    auto* sourceSlot = configureModulation(state.pages.automation, source, 0.33f);
+    sourceSlot->automation.playbackState =
+        core::state::macro::MacroCurvePlaybackState::OFF;
+    sourceSlot->modulation.modulationOrigin =
+        core::state::macro::MacroModulationOrigin::CONVERTED_MEAN;
+
+    assert(state.structureClipboard.storeMacroPage(
+        state.pages.pageData(0, 0),
+        state.pages.automation,
+        0,
+        0
+    ));
+    assert(structure.pastePage(
+        1,
+        state.structureClipboard.macroPage,
+        state.structureClipboard.macroAutomationSet.get()
+    ));
+    sourceSlot = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        source
+    );
+    auto* targetSlot = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        pageTarget
+    );
+    assert(sourceSlot != nullptr && targetSlot != nullptr);
+    assertCurvePayloadEquals(
+        sourceSlot->automation,
+        state.pages.automation.pointPool,
+        targetSlot->automation,
+        state.pages.automation.pointPool,
+        false
+    );
+    assertCurvePayloadEquals(
+        sourceSlot->modulation,
+        state.pages.automation.pointPool,
+        targetSlot->modulation,
+        state.pages.automation.pointPool,
+        true
+    );
+    assert(std::fabs(targetSlot->modulationDepth - 0.33f) < 0.0001f);
+    assert(state.pages.pageData(0, 1).cc[0] == 74);
+    assert(std::fabs(state.pages.pageData(0, 1).values[0] - 0.36f) < 0.0001f);
+
+    assert(state.structureClipboard.storeMacroTrack(
+        state.pages.tracks[0],
+        state.pages.automation,
+        0
+    ));
+    assert(structure.pasteTrack(
+        1,
+        state.structureClipboard.macroTrack,
+        state.structureClipboard.macroAutomationSet.get()
+    ));
+    sourceSlot = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        source
+    );
+    targetSlot = core::state::macro::macroAutomationFindMutableSlot(
+        state.pages.automation,
+        trackTarget
+    );
+    assert(sourceSlot != nullptr && targetSlot != nullptr);
+    assertCurvePayloadEquals(
+        sourceSlot->automation,
+        state.pages.automation.pointPool,
+        targetSlot->automation,
+        state.pages.automation.pointPool,
+        false
+    );
+    assertCurvePayloadEquals(
+        sourceSlot->modulation,
+        state.pages.automation.pointPool,
+        targetSlot->modulation,
+        state.pages.automation.pointPool,
+        true
+    );
+    assert(std::fabs(targetSlot->modulationDepth - 0.33f) < 0.0001f);
+    assert(state.pages.pageData(1, 0).cc[0] == 74);
+    assert(std::fabs(state.pages.pageData(1, 0).values[0] - 0.36f) < 0.0001f);
+
+    std::cout
+        << "[PASS] test_page_and_track_copy_preserve_automation_and_modulation\n";
+}
+
 void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings,
@@ -759,10 +1081,16 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
     structure.switchToTrack(0);
     structure.switchToPage(0);
     assert(performance.manualOverrideActiveFor(0));
+    const uint32_t revisionBeforeSamePayloadPaste =
+        state.project.metadata.modifiedCounter;
+    const uint8_t undoBeforeSamePayloadPaste = state.macroHistory.undoCount();
     assert(edit.copyAutomation(0));
     assert(edit.pasteAutomation(0));
     assert(!state.macroUi.manualOverrides.activeFor(source));
     assert(state.macroUi.manualOverrides.activeFor(unrelated));
+    assert(state.project.metadata.modifiedCounter ==
+           revisionBeforeSamePayloadPaste);
+    assert(state.macroHistory.undoCount() == undoBeforeSamePayloadPaste);
 
     assert(performance.takeManualControl(0, 0.6f));
     assert(edit.clearAutomation(0));
@@ -798,6 +1126,9 @@ int main() {
     test_recording_suspends_modulation_non_destructively_and_resume_enables_auto_mod();
     test_failed_first_recording_does_not_leave_an_empty_slot();
     test_macro_edit_automation_lifecycle_actions();
+    test_modulation_copy_paste_preserves_target_and_exact_payload();
+    test_typed_slot_copy_paste_preserves_automation_and_modulation();
+    test_page_and_track_copy_preserve_automation_and_modulation();
     test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries();
     std::cout << "\nAll MacroPerformanceDomainServices tests passed.\n";
     return 0;

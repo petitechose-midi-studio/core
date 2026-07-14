@@ -15,6 +15,7 @@
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepHandler.hpp"
+#include "../../src/handler/transport/TransportHandler.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
@@ -48,7 +49,16 @@ struct SequencerStepHarness {
     oc::api::ButtonAPI buttons;
     oc::api::EncoderAPI encoders;
     core::handler::SequencerStepHandler handler;
+    core::handler::TransportHandler transportHandler;
     core::handler::SequencerPatternQuickControlsHandler quickControlsHandler;
+
+    static core::handler::TransportHandler::ViewScopes transportScopes() {
+        core::handler::TransportHandler::ViewScopes scopes{};
+        scopes.fill(static_cast<oc::type::ScopeID>(UINT16_MAX));
+        scopes[static_cast<size_t>(core::ui::ViewType::SEQUENCER)] =
+            SEQUENCER_SCOPE;
+        return scopes;
+    }
 
     SequencerStepHarness()
         : state(storages.settings,
@@ -69,10 +79,17 @@ struct SequencerStepHarness {
                   state.structureClipboard,
                   core::handler::SharedTrackDomainServices::fromCoreState(state),
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+                  &state.sequencerTrackActivations,
+                  &state.statusBar,
               },
               encoders,
               buttons,
               SEQUENCER_SCOPE
+          )
+        , transportHandler(
+              core::handler::TransportHandler::StateRefs{state.statusBar},
+              buttons,
+              transportScopes()
           )
         , quickControlsHandler(
               core::handler::SequencerPatternQuickControlsHandler::StateRefs{
@@ -87,11 +104,14 @@ struct SequencerStepHarness {
               SEQUENCER_SCOPE
           ) {
         g_now_ms = 0;
+        oc::time::setProvider(mockTimeMs);
+        handler.update(g_now_ms);
     }
 
     void tick(uint32_t nowMs) {
         g_now_ms = nowMs;
         inputBinding.processTick();
+        handler.update(g_now_ms);
     }
 
     void press(Config::ButtonID id) {
@@ -114,6 +134,7 @@ struct SequencerStepHarness {
     void advance(uint32_t ms) {
         g_now_ms += ms;
         inputBinding.processTick();
+        handler.update(g_now_ms);
     }
 
     void turn(Config::EncoderID id, float value) {
@@ -972,6 +993,204 @@ void test_track_paste_clamps_focus_to_short_source_before_history_commit() {
         << "[PASS] test_track_paste_clamps_focus_to_short_source_before_history_commit\n";
 }
 
+void test_track_paste_mid_hold_release_cancels_without_mutation_or_history() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 0);
+    h.state.sequencer.pattern.note[0] = 81;
+    h.state.sequencerTracks.track(1).note[0] = 44;
+    h.state.sequencerTracks.track(1).midiChannel.set(6);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.pattern.note[0] == 44);
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    );
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::LATCH_THRESHOLD_MS);
+    assert(h.state.sequencer.structureUi.trackPaste.guard.phase ==
+           core::state::contextual::GuardedActionPhase::ARMED);
+    h.advance(250);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencer.pattern.note[0] == 44);
+    assert(h.state.sequencerTracks.track(1).note[0] == 44);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == undoBefore);
+    assert(h.state.sequencer.structureUi.trackPaste.feedback.status ==
+           core::state::contextual::OperationFeedbackStatus::CANCELLED);
+    h.advance(1);
+    assert(h.state.sequencer.structureUi.trackPaste.feedback.status ==
+           core::state::contextual::OperationFeedbackStatus::CANCELLED);
+}
+
+void test_track_paste_commits_once_at_absolute_long_threshold() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 0);
+    h.state.sequencer.pattern.note[0] = 83;
+    h.state.sequencerTracks.track(1).note[0] = 45;
+    h.state.sequencerTracks.track(1).midiChannel.set(7);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
+    assert(h.state.sequencer.pattern.note[0] == 45);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 0);
+    h.advance(1);
+    assert(h.state.sequencer.pattern.note[0] == 83);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 1);
+    assert(h.state.sequencer.structureUi.trackPaste.guard.phase ==
+           core::state::contextual::GuardedActionPhase::COMMITTED);
+    h.advance(500);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 1);
+}
+
+void test_track_paste_left_top_cancels_and_consumes_later_release() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 0);
+    h.state.sequencer.pattern.note[0] = 84;
+    h.state.sequencerTracks.track(1).note[0] = 46;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::LATCH_THRESHOLD_MS);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.sequencer.pattern.note[0] == 46);
+    assert(h.state.sequencerHistory.undoCount(
+        core::state::sequencer::SequencerHistoryScope::Structure
+    ) == 0);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+}
+
+void test_track_paste_details_nav_keeps_target_and_never_toggles_transport() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0015, 0);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    auto& selection = h.state.trackNavigation.selection;
+    selection.active.set(true);
+    selection.scope.set(core::state::StructureSelectionScope::TRACK);
+    selection.cursorIndex.set(0);
+    selection.selectedMask.set(0x0005);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    selection.cursorIndex.set(4);
+    h.advance(0);
+    assert(h.state.sequencer.structureUi.trackPaste.plan.count == 2);
+
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(!h.state.statusBar.playing.get());
+    assert(h.state.statusBar.transportLocked.get());
+    assert(h.state.sequencer.structureUi.trackPaste.detailVisible);
+    h.advance(0);
+    assert(!h.state.statusBar.transportLocked.get());
+
+    const uint8_t targetBefore = selection.cursorIndex.get();
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(selection.cursorIndex.get() == targetBefore);
+    assert(h.state.sequencer.structureUi.trackPaste.focusedIndex == 1);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.structureUi.trackPaste.detailVisible);
+    assert(selection.active.get());
+    assert(selection.cursorIndex.get() == targetBefore);
+}
+
+void test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 0);
+    h.state.sequencer.pattern.note[0] = 85;
+    h.state.sequencerTracks.track(1).note[0] = 47;
+    h.state.sequencerTracks.track(1).midiChannel.set(3);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::LATCH_THRESHOLD_MS);
+    h.state.sequencer.pattern.midiChannel.set(8);
+    h.advance(1);
+    assert(h.state.sequencer.structureUi.trackPaste.plan.entries[0]
+               .targetMidiChannel == 8);
+    h.advance(
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS -
+        Config::Timing::LATCH_THRESHOLD_MS - 1U
+    );
+    assert(h.state.sequencer.pattern.note[0] == 85);
+    assert(h.state.sequencer.pattern.midiChannel.get() == 8);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    const auto frozenPlan = h.state.sequencer.structureUi.trackPaste.plan;
+    const uint32_t frozenGeneration =
+        h.state.sequencer.structureUi.trackPaste.activationGeneration;
+    assert(frozenGeneration != 0);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);  // Copy the destination after commit.
+    h.advance(0);
+    assert(core::state::sameSequencerTrackClipboardTransferPlan(
+        h.state.sequencer.structureUi.trackPaste.plan,
+        frozenPlan
+    ));
+    assert(h.state.sequencer.structureUi.trackPaste.activationGeneration ==
+           frozenGeneration);
+}
+
+void test_multi_track_paste_waits_for_every_exact_activation() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0015, 0);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    auto& selection = h.state.trackNavigation.selection;
+    selection.active.set(true);
+    selection.scope.set(core::state::StructureSelectionScope::TRACK);
+    selection.cursorIndex.set(0);
+    selection.selectedMask.set(0x0005);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    selection.cursorIndex.set(4);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    auto& paste = h.state.sequencer.structureUi.trackPaste;
+    const uint32_t generation = paste.activationGeneration;
+    assert(generation != 0);
+    assert(paste.plan.count == 2);
+    assert(paste.feedback.status ==
+           core::state::contextual::OperationFeedbackStatus::QUEUED);
+
+    const auto publication =
+        h.state.sequencerTrackActivations.captureRuntimePublication();
+    h.state.sequencerTrackActivations.applyRuntimePublication(publication);
+    assert(h.state.sequencerTrackActivations.markAppliedFromRealtime(4, generation));
+    h.state.sequencerTrackActivations.publishRealtimeTelemetry();
+    h.handler.update(g_now_ms);
+    assert(paste.feedback.status ==
+           core::state::contextual::OperationFeedbackStatus::QUEUED);
+
+    assert(h.state.sequencerTrackActivations.markAppliedFromRealtime(5, generation));
+    h.state.sequencerTrackActivations.publishRealtimeTelemetry();
+    h.handler.update(g_now_ms);
+    assert(paste.feedback.status ==
+           core::state::contextual::OperationFeedbackStatus::APPLIED);
+}
+
 void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
@@ -1600,6 +1819,12 @@ int main() {
     test_track_selection_paste_is_dense_atomic_and_one_history_entry();
     test_out_of_range_track_selection_paste_changes_nothing();
     test_track_paste_clamps_focus_to_short_source_before_history_commit();
+    test_track_paste_mid_hold_release_cancels_without_mutation_or_history();
+    test_track_paste_commits_once_at_absolute_long_threshold();
+    test_track_paste_left_top_cancels_and_consumes_later_release();
+    test_track_paste_details_nav_keeps_target_and_never_toggles_transport();
+    test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan();
+    test_multi_track_paste_waits_for_every_exact_activation();
     test_deleted_track_slot_can_be_recreated_at_any_gap();
     test_created_page_is_undoable_and_redoable();
     test_created_track_is_undoable_and_redoable();

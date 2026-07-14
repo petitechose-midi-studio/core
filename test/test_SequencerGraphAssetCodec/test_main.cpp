@@ -4,8 +4,10 @@
 
 #include <array>
 #include <cassert>
+#include <cstring>
 #include <cstdint>
 #include <iostream>
+#include <vector>
 
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphAssetCodec.hpp"
@@ -42,6 +44,9 @@ using core::state::sequencer::setNodeNoteOffset;
 using core::state::sequencer::setNodeNudgeOffset;
 using core::state::sequencer::setNodeProbabilityOffset;
 using core::state::sequencer::setNodeVelocityOffset;
+using core::state::sequencer::setStepGraphPresetMetadata;
+using core::state::sequencer::SequencerPitchEditMode;
+using oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC;
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
 using oc::note::sequencer::STEP_NODE_CHORD_MODE;
@@ -370,6 +375,174 @@ void test_focused_workflow_saves_and_loads_step_graph_preset() {
     std::cout << "[PASS] test_focused_workflow_saves_and_loads_step_graph_preset\n";
 }
 
+void test_mixed_pitch_policy_roundtrip_preserves_every_node() {
+    SequencerState source;
+    source.pattern.length.set(8);
+    source.pattern.setPitchEditMode(SequencerPitchEditMode::CHROMATIC);
+    const auto root = rootStepNodeId(0);
+    const auto micro = createMicroSequence(source.pattern, root, 2);
+    assert(micro.ok);
+
+    auto* graph = source.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const uint16_t relativeChild = sequence->firstStepNode;
+    assert(graph->stepNodes[root].has(STEP_NODE_PITCH_CHROMATIC));
+    assert(graph->stepNodes[relativeChild].has(STEP_NODE_PITCH_CHROMATIC));
+
+    source.pattern.setPitchEditMode(SequencerPitchEditMode::SCALE_DEGREES);
+    assert(setNodeNoteOffset(source.pattern, relativeChild, 1));
+    assert(!graph->stepNodes[relativeChild].has(STEP_NODE_PITCH_CHROMATIC));
+    assert(graph->stepNodes[root].has(STEP_NODE_PITCH_CHROMATIC));
+
+    SequencerStepGraphPreset preset{};
+    assert(captureStepGraphPreset(source, 0, preset, nullptr));
+    assert(setStepGraphPresetMetadata(
+        preset,
+        "mixed-policy",
+        "Mixed policy",
+        SequencerStepGraphPreset::ScalePolicy::CHROMATIC,
+        {}
+    ));
+    assert(preset.mixedPitchPolicy);
+
+    std::array<uint8_t, 4096> bytes{};
+    const auto encoded = encodeStepGraphPreset(preset, bytes.data(), bytes.size());
+    assert(encoded.ok());
+
+    SequencerStepGraphPreset decoded{};
+    SequencerGraphAssetReport report{};
+    assert(decodeStepGraphPreset(bytes.data(), encoded.bytesWritten, decoded, &report));
+    assert(decoded.mixedPitchPolicy);
+    assert(reportHas(
+        report,
+        core::state::sequencer::SEQUENCER_GRAPH_ASSET_REPORT_PITCH_POLICY_MIXED
+    ));
+    assert(decoded.graph.stepNodes[0].has(STEP_NODE_PITCH_CHROMATIC));
+    const auto* decodedSequence = decoded.graph.sequence(0);
+    assert(decodedSequence != nullptr);
+    assert(!decoded.graph.stepNodes[decodedSequence->firstStepNode]
+                .has(STEP_NODE_PITCH_CHROMATIC));
+
+    std::array<uint8_t, 4096> secondBytes{};
+    const auto reencoded = encodeStepGraphPreset(
+        decoded,
+        secondBytes.data(),
+        secondBytes.size()
+    );
+    assert(reencoded.ok());
+    SequencerStepGraphPreset roundtripped{};
+    assert(decodeStepGraphPreset(
+        secondBytes.data(),
+        reencoded.bytesWritten,
+        roundtripped,
+        nullptr
+    ));
+    assert(roundtripped.graph.stepNodes[0].flags == decoded.graph.stepNodes[0].flags);
+    assert(roundtripped.graph.stepNodes[decodedSequence->firstStepNode].flags ==
+           decoded.graph.stepNodes[decodedSequence->firstStepNode].flags);
+
+    std::cout << "[PASS] test_mixed_pitch_policy_roundtrip_preserves_every_node\n";
+}
+
+void test_v1_decode_materializes_chromatic_runtime_policy() {
+    SequencerState source;
+    source.pattern.length.set(8);
+    source.pattern.setPitchEditMode(SequencerPitchEditMode::SCALE_DEGREES);
+    assert(setNodeNoteOffset(source.pattern, rootStepNodeId(0), 1));
+
+    SequencerStepGraphPreset preset{};
+    assert(captureStepGraphPreset(source, 0, preset, nullptr));
+    assert(setStepGraphPresetMetadata(
+        preset,
+        "legacy-fixture",
+        "Legacy fixture",
+        SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE,
+        {}
+    ));
+    std::array<uint8_t, 4096> v2{};
+    const auto encoded = encodeStepGraphPreset(preset, v2.data(), v2.size());
+    assert(encoded.ok());
+
+    constexpr size_t v1Header = core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE;
+    constexpr size_t v2Header = core::state::sequencer::STEP_GRAPH_PRESET_HEADER_SIZE;
+    std::vector<uint8_t> v1;
+    v1.reserve(encoded.bytesWritten - (v2Header - v1Header));
+    v1.insert(v1.end(), v2.begin(), v2.begin() + v1Header);
+    v1.insert(v1.end(), v2.begin() + v2Header, v2.begin() + encoded.bytesWritten);
+    v1[4] = 1;  // format version
+    v1[6] = static_cast<uint8_t>(v1Header);
+
+    SequencerStepGraphPreset decoded{};
+    SequencerGraphAssetReport report{};
+    assert(decodeStepGraphPreset(v1.data(), v1.size(), decoded, &report));
+    assert(decoded.metadataDefaulted);
+    assert(decoded.scalePolicy == SequencerStepGraphPreset::ScalePolicy::CHROMATIC);
+    assert(!decoded.mixedPitchPolicy);
+    for (uint16_t i = 0; i < decoded.graph.stepNodeCount; ++i) {
+        assert(decoded.graph.stepNodes[i].has(STEP_NODE_PITCH_CHROMATIC));
+    }
+
+    std::cout << "[PASS] test_v1_decode_materializes_chromatic_runtime_policy\n";
+}
+
+void test_v2_metadata_is_bounded_valid_utf8_and_nonempty() {
+    SequencerState source;
+    source.pattern.length.set(8);
+    SequencerStepGraphPreset preset{};
+    assert(captureStepGraphPreset(source, 0, preset, nullptr));
+
+    std::array<uint8_t, 1024> bytes{};
+    auto invalid = preset;
+    invalid.semanticName[0] = '\0';
+    assert(!encodeStepGraphPreset(invalid, bytes.data(), bytes.size()).ok());
+
+    invalid = preset;
+    std::memset(invalid.semanticName, 'a', sizeof(invalid.semanticName));
+    assert(!encodeStepGraphPreset(invalid, bytes.data(), bytes.size()).ok());
+
+    invalid = preset;
+    invalid.semanticName[0] = '\x01';
+    invalid.semanticName[1] = '\0';
+    assert(!encodeStepGraphPreset(invalid, bytes.data(), bytes.size()).ok());
+
+    invalid = preset;
+    invalid.semanticName[0] = static_cast<char>(0xC3);
+    invalid.semanticName[1] = '(';
+    invalid.semanticName[2] = '\0';
+    assert(!encodeStepGraphPreset(invalid, bytes.data(), bytes.size()).ok());
+
+    assert(setStepGraphPresetMetadata(
+        preset,
+        "quoted-name",
+        "Nom \"A\" \\ scene",
+        SequencerStepGraphPreset::ScalePolicy::CHROMATIC,
+        {}
+    ));
+    const auto encoded = encodeStepGraphPreset(preset, bytes.data(), bytes.size());
+    assert(encoded.ok());
+    SequencerStepGraphPreset decoded{};
+    assert(decodeStepGraphPreset(bytes.data(), encoded.bytesWritten, decoded, nullptr));
+    assert(std::strcmp(decoded.semanticName, "Nom \"A\" \\ scene") == 0);
+
+    constexpr size_t semanticOffset =
+        core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE + 4U +
+        SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
+    auto corruptBytes = bytes;
+    corruptBytes[semanticOffset] = static_cast<uint8_t>(0xC3);
+    corruptBytes[semanticOffset + 1U] = static_cast<uint8_t>('(');
+    corruptBytes[semanticOffset + 2U] = 0;
+    assert(!decodeStepGraphPreset(
+        corruptBytes.data(),
+        encoded.bytesWritten,
+        decoded,
+        nullptr
+    ));
+
+    std::cout << "[PASS] test_v2_metadata_is_bounded_valid_utf8_and_nonempty\n";
+}
+
 }  // namespace
 
 int main() {
@@ -378,6 +551,9 @@ int main() {
     test_context_mismatch_is_reported();
     test_decode_rejects_invalid_buffers();
     test_focused_workflow_saves_and_loads_step_graph_preset();
+    test_mixed_pitch_policy_roundtrip_preserves_every_node();
+    test_v1_decode_materializes_chromatic_runtime_policy();
+    test_v2_metadata_is_bounded_valid_utf8_and_nonempty();
     std::cout << "[PASS] SequencerGraphAssetCodec tests\n";
     return 0;
 }

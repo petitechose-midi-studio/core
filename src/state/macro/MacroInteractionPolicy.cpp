@@ -94,6 +94,11 @@ FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomLeftRelease(
     if (!performanceAvailable(context) || context.previewingAddSlot) {
         return MacroInteractionAction::NONE;
     }
+    if (context.navigationFocus == core::state::StructureNavigationFocus::STEP) {
+        // Slot scope reserves the destructive gesture for the guarded hold.
+        // Source-specific Clear actions live in their typed detail overlays.
+        return MacroInteractionAction::NONE;
+    }
     return MacroInteractionAction::CLEAR_STRUCTURE;
 }
 
@@ -170,7 +175,8 @@ FLASHMEM MacroActionStripPolicy MacroInteractionPolicy::actionStrip(
         policy.bottomLeft = context.previewingAddSlot
             ? MacroInteractionVisibility::DIM
             : MacroInteractionVisibility::ACTIVE;
-        policy.bottomRight = context.previewingAddSlot
+        policy.bottomRight = context.previewingAddSlot &&
+                !context.compatibleClipboardAvailable
             ? MacroInteractionVisibility::DIM
             : MacroInteractionVisibility::ACTIVE;
         return policy;

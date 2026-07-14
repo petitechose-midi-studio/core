@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-#include "handler/common/MidiCcRuntimeAggregator.hpp"
+#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/macro/MacroConstants.hpp"
 #include "state/macro/MacroPagesState.hpp"
@@ -12,7 +12,7 @@
 namespace core::handler {
 
 /**
- * Macro-domain adapter for the shared Gate 6 destination aggregator.
+ * Macro-domain author adapter for the singular Gate 8 LIVE coordinator.
  *
  * It rebuilds one complete active-page Macro frame for every publication so
  * duplicate destinations are resolved together. Computed values are staged by
@@ -29,7 +29,7 @@ public:
     MacroMidiCcRuntimeAdapter(
         StateRefs state,
         MacroPerformanceDomainServices services,
-        MidiCcRuntimeAggregator& aggregator
+        MidiCcGlobalFrameCoordinator& coordinator
     );
 
     MacroMidiCcRuntimeAdapter(const MacroMidiCcRuntimeAdapter&) = delete;
@@ -41,17 +41,10 @@ public:
     void clearComputedValues();
 
     /** Publishes the staged automation frame as Live runtime output. */
-    MidiCcRuntimePublishResult publishComputedFrame();
+    MidiCcGlobalFrameResult publishComputedFrame();
 
     /** Publishes one immediate encoder/manual movement with highest priority. */
-    MidiCcRuntimePublishResult publishLiveManual(uint8_t macroIndex, uint8_t value);
-
-    /** Publishes identical source/winner facts without MIDI side effects. */
-    MidiCcRuntimePublishResult publishPreview();
-
-    [[nodiscard]] const core::state::shared::MidiCcResolutionTelemetry& telemetry() const {
-        return aggregator_.telemetry();
-    }
+    MidiCcGlobalFrameResult publishLiveManual(uint8_t macroIndex, uint8_t value);
 
     static constexpr uint16_t stableAddress(
         uint8_t track,
@@ -68,8 +61,7 @@ public:
 private:
     static constexpr uint8_t NO_TRANSIENT_LIVE_MACRO = 0xFF;
 
-    MidiCcRuntimePublishResult publishFrame_(
-        core::state::shared::MidiCcResolutionMode mode,
+    MidiCcGlobalFrameResult publishFrame_(
         uint8_t transientLiveMacro,
         uint8_t transientLiveValue
     );
@@ -77,8 +69,12 @@ private:
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
     MacroPerformanceDomainServices services_;
-    MidiCcRuntimeAggregator& aggregator_;
+    MidiCcGlobalFrameCoordinator& coordinator_;
     std::array<uint8_t, core::state::macro::MACRO_COUNT> computed_values_{};
+    std::array<
+        core::state::shared::MidiCcCandidate,
+        core::state::macro::MACRO_COUNT * 2U
+    > candidates_{};
     uint16_t computed_valid_mask_ = 0;
 };
 

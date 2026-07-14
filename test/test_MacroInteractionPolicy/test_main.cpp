@@ -54,7 +54,7 @@ void test_selector_modes_are_exclusive() {
     std::cout << "[PASS] test_selector_modes_are_exclusive\n";
 }
 
-void test_macro_slot_focus_only_routes_navigation_and_property_selector() {
+void test_macro_slot_focus_routes_guarded_typed_slot_actions() {
     MacroInteractionContext context{};
     context.navigationFocus = core::state::StructureNavigationFocus::STEP;
 
@@ -67,13 +67,15 @@ void test_macro_slot_focus_only_routes_navigation_and_property_selector() {
     assert(MacroInteractionPolicy::leftBottomPress(context) ==
            MacroInteractionAction::OPEN_SLOT_PROPERTIES);
     assert(MacroInteractionPolicy::bottomLeftRelease(context) ==
-           MacroInteractionAction::CLEAR_STRUCTURE);
+           MacroInteractionAction::NONE);
     assert(MacroInteractionPolicy::bottomRightRelease(context) ==
            MacroInteractionAction::COPY_STRUCTURE);
 
     context.canRemoveStructure = true;
     assert(MacroInteractionPolicy::bottomLeftLongPress(context) ==
            MacroInteractionAction::REMOVE_STRUCTURE);
+    assert(MacroInteractionPolicy::actionStrip(context).bottomLeft ==
+           MacroInteractionVisibility::ACTIVE);
 
     context.compatibleClipboardAvailable = true;
     assert(MacroInteractionPolicy::bottomRightLongPress(context) ==
@@ -92,7 +94,7 @@ void test_macro_slot_focus_only_routes_navigation_and_property_selector() {
     assert(strip.bottomLeft == MacroInteractionVisibility::DIM);
     assert(strip.bottomRight == MacroInteractionVisibility::DIM);
 
-    std::cout << "[PASS] test_macro_slot_focus_only_routes_navigation_and_property_selector\n";
+    std::cout << "[PASS] test_macro_slot_focus_routes_guarded_typed_slot_actions\n";
 }
 
 void test_selection_and_blocking_overlay_contracts() {
@@ -141,7 +143,7 @@ void test_selection_and_blocking_overlay_contracts() {
 int main() {
     test_performance_mode_routes_structure_and_selectors();
     test_selector_modes_are_exclusive();
-    test_macro_slot_focus_only_routes_navigation_and_property_selector();
+    test_macro_slot_focus_routes_guarded_typed_slot_actions();
     test_selection_and_blocking_overlay_contracts();
     std::cout << "\nAll MacroInteractionPolicy tests passed.\n";
     return 0;

@@ -1,0 +1,99 @@
+# UX workflow: route-aware Sequencer CC lane authoring.
+# Purpose: proves the discoverable property entry, silent draft, stopped
+# Preview vs playing Live projection, Inherited/Pin settings, authored/resolved
+# values, and guarded Remove press/arm/cancel/apply grammar.
+# Expect: capture_changed:cc_lane_draft_silent=cc_lane_grid_preview, capture_changed:cc_lane_grid_preview=cc_lane_grid_live, capture_changed:cc_lane_remove_pressed=cc_lane_remove_cancelled, capture_changed:cc_lane_remove_armed=cc_lane_removed
+# Expect: semantic:cc_lane_property_selected:mode=sequencer.property_selector, semantic:cc_lane_property_selected:property=cc_lanes
+# Expect: semantic:cc_lane_selector_empty:mode=sequencer.cc_lane.selector, semantic:cc_lane_selector_empty:overlay=seq_cc_lane, semantic:cc_lane_selector_empty:target_route_valid=0
+# Expect: semantic:cc_lane_selector_empty:reason=no_route, semantic:cc_lane_selector_empty:conflict=0
+# Expect: semantic:cc_lane_draft_silent:mode=sequencer.cc_lane.add_draft, semantic:cc_lane_draft_silent:property=controller, semantic:cc_lane_draft_silent:projection=preview, semantic:cc_lane_draft_silent:target_route_valid=1
+# Expect: semantic:cc_lane_grid_preview:mode=sequencer.cc_lane.grid, semantic:cc_lane_grid_preview:effect=create_cc_lane, semantic:cc_lane_grid_preview:outcome=applied, semantic:cc_lane_grid_preview:value_label=--
+# Expect: semantic:cc_lane_authored_resolved:authored_value=64, semantic:cc_lane_authored_resolved:resolved_value=64
+# Expect: semantic:cc_lane_grid_live:mode=sequencer.cc_lane.grid, semantic:cc_lane_grid_live:projection=live, semantic:cc_lane_grid_live:playing=true
+# Expect: semantic:cc_lane_settings_inherited:mode=sequencer.cc_lane.settings, semantic:cc_lane_settings_inherited:route_policy=inherit_track, semantic:cc_lane_settings_inherited:projection=preview, semantic:cc_lane_settings_inherited:playing=false
+# Expect: semantic:cc_lane_settings_pinned:property=route_policy, semantic:cc_lane_settings_pinned:route_policy=pinned
+# Expect: semantic:cc_lane_pinned_applied:effect=apply_cc_lane_settings, semantic:cc_lane_pinned_applied:outcome=applied, semantic:cc_lane_pinned_applied:route_policy=pinned
+# Expect: semantic:cc_lane_remove_pressed:effect=press_remove_cc_lane, semantic:cc_lane_remove_pressed:outcome=pressed
+# Expect: semantic:cc_lane_remove_cancelled:effect=cancel_remove_cc_lane, semantic:cc_lane_remove_cancelled:outcome=cancelled
+# Expect: semantic:cc_lane_remove_armed:effect=arm_remove_cc_lane, semantic:cc_lane_remove_armed:outcome=armed
+# Expect: semantic:cc_lane_removed:effect=remove_cc_lane, semantic:cc_lane_removed:outcome=applied, semantic:cc_lane_removed:target_route_valid=0
+# Expect: semantic:cc_lane_removed:reason=no_route, semantic:cc_lane_removed:conflict=0
+
+0 scenario sequencer
+50 capture screen cc_lane_sequencer_ready
+
+# The default scenario starts at Track scope, where property selection is
+# intentionally unavailable. Enter Pattern first, then open the shared
+# musical-property selector and walk to CC Lanes (sixth item).
+120 tap NAV 60
+300 button LEFT_BOTTOM down
+420 encoder NAV 1
+500 encoder NAV 1
+580 encoder NAV 1
+660 encoder NAV 1
+740 encoder NAV 1
+840 capture screen cc_lane_property_selected
+920 tap NAV 60
+1080 button LEFT_BOTTOM up
+1200 capture screen cc_lane_selector_empty
+
+# Enter Add Lane. The draft is a Preview only and must stay musically silent.
+1300 tap NAV 60
+1500 capture screen cc_lane_draft_silent
+1600 encoder OPT 1
+1800 capture screen cc_lane_draft_edited
+1900 tap BOTTOM_RIGHT 60
+2140 capture screen cc_lane_grid_preview
+
+# Turning OPT on `--` authors Initial at the focused step and exposes the
+# Authored/Resolved pair without making a stopped projection look Live.
+2240 encoder OPT 1
+2460 capture screen cc_lane_authored_resolved
+
+# Close the lane grammar, start transport, then reopen the same lane. The
+# projection label must change to Live only while playback is actually active.
+2560 tap LEFT_TOP 60
+2700 tap LEFT_TOP 60
+2880 tap BOTTOM_CENTER 60
+3160 button LEFT_BOTTOM down
+3240 encoder NAV 1
+3560 tap NAV 60
+3660 button LEFT_BOTTOM up
+3760 tap NAV 60
+4000 capture screen cc_lane_grid_live
+
+# Return to the main view, stop transport, and reopen the committed lane.
+4100 tap LEFT_TOP 60
+4240 tap LEFT_TOP 60
+4420 tap BOTTOM_CENTER 60
+4620 button LEFT_BOTTOM down
+4700 encoder NAV 1
+5020 tap NAV 60
+5120 button LEFT_BOTTOM up
+5220 tap NAV 60
+5420 tap BOTTOM_CENTER 60
+5640 capture screen cc_lane_settings_inherited
+
+# Route is the second field. Toggle Inherit -> Pin and expose the temporary
+# Channel setting only when it is useful.
+5720 encoder NAV 1
+5800 encoder OPT 1
+6000 capture screen cc_lane_settings_pinned
+6080 tap BOTTOM_RIGHT 60
+6300 capture screen cc_lane_pinned_applied
+
+# Re-enter Settings. A short destructive hold is cancelled; a complete hold
+# moves through Pressed and Armed before the lane disappears.
+6380 tap BOTTOM_CENTER 60
+6540 button BOTTOM_LEFT down
+6640 capture screen cc_lane_remove_pressed
+6720 button BOTTOM_LEFT up
+6920 capture screen cc_lane_remove_cancelled
+
+7020 button BOTTOM_LEFT down
+7120 capture screen cc_lane_remove_pressed_again
+7420 tick
+7460 capture screen cc_lane_remove_armed
+8120 tick
+8180 button BOTTOM_LEFT up
+8420 capture screen cc_lane_removed

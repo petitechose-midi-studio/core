@@ -9,6 +9,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
@@ -16,6 +17,8 @@
 #include "ui/sequencer/SequencerQuickControlVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
+#include "ui/font/StandaloneIcons.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::sequencer {
 
@@ -206,6 +209,30 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
     const auto& sequencer = source.sequencer;
 
     if (sequencer.stepPropertyInlineSelector.selecting.get()) {
+        constexpr int CC_LANES_PROPERTY_INDEX =
+            static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
+        if (sequencer.stepPropertyInlineSelector.selectedIndex.get() ==
+            CC_LANES_PROPERTY_INDEX) {
+            StepPropertySelectionOverlayProps props{
+                .visible = true,
+                .customContent = true,
+                .icon = standalone::icons::MIDI_CC,
+                .label = "CC lanes",
+                .useValueText = true,
+                .color = standalone::theme::color::MACRO_CC_COLOR,
+            };
+            const auto* bank = sequencer.pattern.ccLanes.get();
+            const uint8_t count = bank
+                ? core::state::sequencer::sequencerCcLaneCount(*bank)
+                : 0;
+            std::snprintf(
+                props.valueText.data(),
+                props.valueText.size(),
+                "%u/4  NAV",
+                static_cast<unsigned>(count)
+            );
+            return props;
+        }
         if (sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.get()) {
             const auto property = sequencer.activeStepProperty.get();
             StepPropertySelectionOverlayProps props{

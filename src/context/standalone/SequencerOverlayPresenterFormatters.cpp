@@ -732,97 +732,12 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     return props;
 }
 
-FLASHMEM const char* stepPresetFeedbackLabel(
-    core::state::sequencer::SequencerStepPresetFeedback feedback
-) {
-    using Feedback = core::state::sequencer::SequencerStepPresetFeedback;
-    switch (feedback) {
-        case Feedback::SAVED:
-            return "Saved";
-        case Feedback::EMPTY:
-            return "No preset";
-        case Feedback::INCOMPATIBLE:
-            return "Incompatible";
-        case Feedback::FAILED:
-            return "Failed";
-        case Feedback::NONE:
-        default:
-            return "";
-    }
-}
-
 FLASHMEM StepPresetPickerRenderData buildStepPresetPickerRenderData(
     const Source& source
 ) {
-    StepPresetPickerRenderData data{};
-    const auto& picker = source.sequencer.stepPresetPicker;
-    if (!picker.visible.get()) {
-        return data;
-    }
-
-    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
-    const bool saveMode = picker.mode.get() == Mode::SAVE;
-    data.visible = true;
-    data.title = saveMode ? "Save Step Preset" : "Load Step Preset";
-
-    int itemIndex = 0;
-    if (saveMode) {
-        std::snprintf(
-            data.itemBuffers[itemIndex].data(),
-            data.itemBuffers[itemIndex].size(),
-            "New Step Preset"
-        );
-        data.items[itemIndex] = data.itemBuffers[itemIndex].data();
-        ++itemIndex;
-    }
-
-    const uint8_t entryCount = picker.entryCount.get();
-    for (uint8_t i = 0; i < entryCount && itemIndex < static_cast<int>(data.items.size()); ++i) {
-        std::snprintf(
-            data.itemBuffers[itemIndex].data(),
-            data.itemBuffers[itemIndex].size(),
-            "%s",
-            picker.entryId(i)
-        );
-        data.items[itemIndex] = data.itemBuffers[itemIndex].data();
-        ++itemIndex;
-    }
-
-    if (itemIndex == 0) {
-        std::snprintf(
-            data.itemBuffers[0].data(),
-            data.itemBuffers[0].size(),
-            "No Step Presets"
-        );
-        data.items[0] = data.itemBuffers[0].data();
-        itemIndex = 1;
-    }
-    data.itemCount = itemIndex;
-    data.selectedIndex = std::clamp<int>(picker.selectedIndex.get(), 0, itemIndex - 1);
-
-    const char* feedback = stepPresetFeedbackLabel(picker.feedback.get());
-    if (feedback[0] != '\0') {
-        std::snprintf(data.meta.data(), data.meta.size(), "%s", feedback);
-    } else if (picker.truncated.get()) {
-        std::snprintf(data.meta.data(), data.meta.size(), "More on SD");
-    } else {
-        std::snprintf(
-            data.meta.data(),
-            data.meta.size(),
-            "Step %02u",
-            static_cast<unsigned>(source.sequencer.stepEdit.stepIndex.get() + 1U)
-        );
-    }
-
-    uint32_t revision = picker.revision.get();
-    revision = mixRevision(revision, picker.visible.get() ? 1U : 0U);
-    revision = mixRevision(revision, static_cast<uint32_t>(picker.mode.get()));
-    revision = mixRevision(revision, picker.selectedIndex.get());
-    revision = mixRevision(revision, picker.entryCount.get());
-    revision = mixRevision(revision, picker.truncated.get() ? 1U : 0U);
-    revision = mixRevision(revision, static_cast<uint32_t>(picker.feedback.get()));
-    data.dataRevision = revision;
-    return data;
+    return core::ui::sequencer::buildSequencerStepPresetPickerPresentation(
+        source.sequencer
+    );
 }
 
 FLASHMEM core::ui::ContextActionStripProps buildStepPresetActionStripProps(
@@ -835,9 +750,31 @@ FLASHMEM core::ui::ContextActionStripProps buildStepPresetActionStripProps(
         return props;
     }
 
-    using Mode = core::state::sequencer::SequencerStepPresetPickerMode;
-    const bool saveMode = picker.mode.get() == Mode::SAVE;
-    const bool canLoad = picker.entryCount.get() > 0;
+    const auto action = core::ui::sequencer::
+        buildSequencerStepPresetActionPresentation(picker);
+    using ActionVisual = core::ui::sequencer::SequencerStepPresetActionVisual;
+    using ActionTone = core::ui::sequencer::SequencerStepPresetActionTone;
+    const auto visual = [&]() {
+        switch (action.visual) {
+            case ActionVisual::ACTIVE: return Visual::ACTIVE;
+            case ActionVisual::PRESSED: return Visual::PRESSED;
+            case ActionVisual::ARMED: return Visual::ARMED;
+            case ActionVisual::CANCELLED: return Visual::CANCELLED;
+            case ActionVisual::APPLIED: return Visual::APPLIED;
+            case ActionVisual::DISABLED:
+            default: return Visual::DISABLED;
+        }
+    }();
+    const auto tone = [&]() {
+        switch (action.tone) {
+            case ActionTone::CONSTRUCTIVE: return Tone::CONSTRUCTIVE;
+            case ActionTone::DESTRUCTIVE: return Tone::DESTRUCTIVE;
+            case ActionTone::POSITIVE: return Tone::POSITIVE;
+            case ActionTone::WARNING: return Tone::WARNING;
+            case ActionTone::NEUTRAL:
+            default: return Tone::NEUTRAL;
+        }
+    }();
 
     props.visible = true;
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
@@ -847,14 +784,27 @@ FLASHMEM core::ui::ContextActionStripProps buildStepPresetActionStripProps(
     );
     props.slots[1] = core::ui::makeStandaloneIconStripSlot(
         ::standalone::icons::STORAGE,
-        saveMode ? Visual::ARMED : Visual::ACTIVE,
+        action.saveIcon ? Visual::ARMED : Visual::ACTIVE,
         Tone::CONSTRUCTIVE
     );
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::ACTION_VALIDATE,
-        (saveMode || canLoad) ? Visual::ACTIVE : Visual::DISABLED,
-        Tone::POSITIVE
+        action.statusIcon != nullptr
+            ? action.statusIcon
+            : (action.overwriteIcon
+                ? ::standalone::icons::ACTION_OVERWRITE
+                : (action.saveIcon
+                    ? ::standalone::icons::STORAGE
+                    : ::standalone::icons::ACTION_APPLY)),
+        visual,
+        tone
     );
+    props.slots[2].holdActive = action.holdActive;
+    props.slots[2].holdStartedAtMs = action.holdStartedAtMs;
+    props.slots[2].holdDurationMs = action.holdDurationMs;
+    if (action.showLabel) {
+        props.slots[2].showLabel = true;
+        props.slots[2].labelText = action.label;
+    }
     return props;
 }
 

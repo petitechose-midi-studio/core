@@ -23,8 +23,22 @@ SequencerGraphPresetWorkflowResult saveFocusedStepGraphPreset(
     uint16_t capacity
 );
 
+SequencerGraphPresetWorkflowResult saveStepGraphPresetAt(
+    const SequencerState& sequencer,
+    uint8_t step,
+    uint8_t* out,
+    uint16_t capacity
+);
+
 SequencerGraphPresetWorkflowResult loadFocusedStepGraphPreset(
     SequencerState& sequencer,
+    const uint8_t* data,
+    uint16_t size
+);
+
+SequencerGraphPresetWorkflowResult loadStepGraphPresetAt(
+    SequencerState& sequencer,
+    uint8_t step,
     const uint8_t* data,
     uint16_t size
 );

@@ -196,8 +196,15 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::CLEAR_STRUCTURE); })
+        .when([this]() {
+            return ignore_next_bottom_left_release_ ||
+                   structure_workflow_.hasHoldAction(
+                       core::state::StructureHoldAction::REMOVE
+                   ) ||
+                   policyAllows(MacroAction::CLEAR_STRUCTURE);
+        })
         .then([this]() {
+            const bool clearAllowed = policyAllows(MacroAction::CLEAR_STRUCTURE);
             structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
                 ignore_next_bottom_left_release_ = false;
@@ -206,6 +213,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #endif
                 return;
             }
+            // Macro Slot scope reserves this gesture for the guarded Remove
+            // hold. Releasing early only cancels the pending hold; source-level
+            // Clear remains an explicit action in the typed detail overlay.
+            if (!clearAllowed) return;
             structure_workflow_.eraseCurrentStructure();
             performance_workflow_.refreshEncoders();
         });

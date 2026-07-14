@@ -150,6 +150,17 @@ void configureAutomation(core::state::CoreState& state, uint8_t macroIndex = 0) 
     ));
 }
 
+void test_registers_one_press_and_one_release_binding_per_macro() {
+    MacroValueHarness h;
+
+    assert(
+        h.inputBinding.buttonBindingCount() ==
+        core::state::macro::MACRO_COUNT * 2U
+    );
+
+    std::cout << "[PASS] test_registers_one_press_and_one_release_binding_per_macro\n";
+}
+
 void test_macro_encoder_updates_value_and_sends_cc() {
     MacroValueHarness h;
 
@@ -435,6 +446,7 @@ void test_post_record_input_guard_survives_millisecond_rollover() {
 
 int main() {
     oc::time::setProvider(mockTimeMs);
+    test_registers_one_press_and_one_release_binding_per_macro();
     test_macro_encoder_updates_value_and_sends_cc();
     test_macro_encoder_sanitizes_non_finite_values_before_midi_conversion();
     test_macro_encoder_does_not_activate_empty_or_add_slots();

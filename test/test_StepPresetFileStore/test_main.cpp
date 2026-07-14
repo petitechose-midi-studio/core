@@ -169,10 +169,62 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     std::cout << "[PASS] test_step_preset_file_store_roundtrip_and_lists_files\n";
 }
 
+void test_remove_is_exact_and_cleans_atomic_sidecars() {
+    resetTestRoot();
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    assert(filesystem.init());
+    ProductFileService productFiles(filesystem);
+    assert(productFiles.init());
+    StepPresetFileStore store(productFiles);
+
+    SequencerState source;
+    prepareSource(source);
+    std::array<uint8_t, StepPresetFileStore::MAX_FILE_SIZE> payload{};
+    const auto encoded = saveFocusedStepGraphPreset(
+        source,
+        payload.data(),
+        static_cast<uint16_t>(payload.size())
+    );
+    assert(encoded.ok());
+    assert(store.save("step-preset-007", payload.data(), encoded.bytesWritten));
+
+    const char* const backup =
+        "library/step-presets/step-preset-007.mssp.bak";
+    const char* const tmp = "tmp/step-preset-007.mssp.tmp";
+    assert(productFiles.write(backup, 0, payload.data(), encoded.bytesWritten));
+    assert(productFiles.flush(backup));
+    assert(productFiles.write(tmp, 0, payload.data(), encoded.bytesWritten));
+    assert(productFiles.flush(tmp));
+
+    const auto invalid = store.remove("../step-preset-007");
+    assert(!invalid);
+    assert(invalid.error().code == oc::type::ErrorCode::INVALID_ARGUMENT);
+
+    assert(store.remove("step-preset-007"));
+    const auto exists = store.exists("step-preset-007");
+    assert(exists);
+    assert(!exists.value());
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "library" / "step-presets" /
+        "step-preset-007.mssp.bak"
+    ));
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "step-preset-007.mssp.tmp"
+    ));
+
+    const auto missing = store.remove("step-preset-007");
+    assert(!missing);
+    assert(missing.error().code == oc::type::ErrorCode::RESOURCE_NOT_FOUND);
+
+    resetTestRoot();
+    std::cout << "[PASS] test_remove_is_exact_and_cleans_atomic_sidecars\n";
+}
+
 }  // namespace
 
 int main() {
     test_step_preset_file_store_roundtrip_and_lists_files();
+    test_remove_is_exact_and_cleans_atomic_sidecars();
     std::cout << "[PASS] StepPresetFileStore tests\n";
     return 0;
 }

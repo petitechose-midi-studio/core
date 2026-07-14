@@ -1,5 +1,7 @@
 #include "handler/macro/MacroStructureDomainServices.hpp"
 
+#include <utility>
+
 #include <config/PlatformCompat.hpp>
 
 #include "handler/macro/MacroAutomationClipboardOps.hpp"
@@ -169,6 +171,7 @@ FLASHMEM MacroStructureDomainServices::MacroStructureDomainServices(
     , status_bar_(&state.statusBar)
     , shared_track_active_(&state.sharedTrackActive)
     , shared_track_enabled_mask_(&state.sharedTrackEnabledMask)
+    , history_(state.history)
     , operations_(operations) {}
 
 FLASHMEM MacroStructureDomainServices MacroStructureDomainServices::fromCoreState(
@@ -183,6 +186,7 @@ FLASHMEM MacroStructureDomainServices MacroStructureDomainServices::fromCoreStat
             state.statusBar,
             state.sharedTrackActive,
             state.sharedTrackEnabledMask,
+            &state.macroHistory,
         },
         Operations{
             &state,
@@ -204,6 +208,7 @@ FLASHMEM MacroStructureDomainServices::StateRefs MacroStructureDomainServices::s
         *status_bar_,
         *shared_track_active_,
         *shared_track_enabled_mask_,
+        history_,
     };
 }
 
@@ -522,15 +527,7 @@ FLASHMEM bool MacroStructureDomainServices::activateMacroSlot(uint8_t index) con
 
 FLASHMEM bool MacroStructureDomainServices::macroAutomationActive(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = pages_->currentActiveTrack(),
-            .page = pages_->currentActivePage(),
-            .macro = index,
-        }
-    );
-    return slot != nullptr && slot->automation.active;
+    return pages_->isMacroSlotActive(index);
 }
 
 FLASHMEM bool MacroStructureDomainServices::clearMacroAutomation(uint8_t index) const {
@@ -566,14 +563,34 @@ FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index)
         .page = pages_->currentActivePage(),
         .macro = index,
     };
+    if (!pages_->isMacroSlotActive(index)) return false;
     flushMutationCoalescing(operations_);
-    const bool removed = core::state::macro::macroAutomationClearSlot(
+    auto change = history_ != nullptr
+        ? history_->prepare(
+              *pages_,
+              address,
+              core::state::macro::MacroHistoryActionKind::REMOVE_SLOT
+          )
+        : core::state::macro::MacroHistoryChangePtr{};
+    if (history_ != nullptr && !change) return false;
+    (void)core::state::macro::macroAutomationClearSlot(
         pages_->automation,
         address
     );
-    if (!removed) return false;
+    auto& page = pages_->activePageData();
+    page.setMacroActive(index, false);
+    page.cc[index] = 0;
+    page.values[index] = 0.5f;
+    pages_->updateActiveConfigs();
+    if (history_ != nullptr && !history_->commitPrepared(
+            *pages_,
+            std::move(change)
+        )) {
+        return false;
+    }
 
     clearManualForAddress(stateRefs_(), address);
+    core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, 0.5f);
     macro_ui_->refreshManualOverrideMask(
         pages_->currentActiveTrack(),
         pages_->currentActivePage()
@@ -588,8 +605,8 @@ FLASHMEM bool MacroStructureDomainServices::copyMacroAutomation(
 ) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
 
-    return automation_clipboard_ops::copySlotAutomationToClipboard(
-        pages_->automation,
+    return automation_clipboard_ops::copySlotToClipboard(
+        *pages_,
         core::state::macro::MacroAutomationSlotAddress{
             .track = pages_->currentActiveTrack(),
             .page = pages_->currentActivePage(),
@@ -610,18 +627,45 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
         .page = pages_->currentActivePage(),
         .macro = index,
     };
-    if (!automation_clipboard_ops::hasFirstClipboardAutomation(clipboard)) return false;
+    const auto plan = automation_clipboard_ops::preflightSlotPaste(
+        *pages_,
+        address,
+        clipboard
+    );
+    if (!plan.actionable()) return false;
 
     flushMutationCoalescing(operations_);
-    if (!automation_clipboard_ops::pasteFirstClipboardAutomationToSlot(
-            pages_->automation,
+    auto change = history_ != nullptr
+        ? history_->prepare(
+              *pages_,
+              address,
+              core::state::macro::MacroHistoryActionKind::PASTE_SLOT
+          )
+        : core::state::macro::MacroHistoryChangePtr{};
+    if (history_ != nullptr && !change) return false;
+    if (!automation_clipboard_ops::pasteSlotFromClipboard(
+            *pages_,
             address,
-            clipboard
+            clipboard,
+            true
+        )) {
+        if (change) {
+            (void)core::state::macro::applyMacroSlotHistorySnapshot(
+                *pages_,
+                change->before
+            );
+        }
+        return false;
+    }
+    if (history_ != nullptr && !history_->commitPrepared(
+            *pages_,
+            std::move(change)
         )) {
         return false;
     }
 
     clearManualForAddress(stateRefs_(), address);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(*macros_, *pages_);
     macro_ui_->refreshManualOverrideMask(
         pages_->currentActiveTrack(),
         pages_->currentActivePage()

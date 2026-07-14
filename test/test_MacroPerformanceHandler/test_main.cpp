@@ -773,49 +773,85 @@ void test_macro_track_copy_preserves_multiple_pages_and_automations() {
     std::cout << "[PASS] test_macro_track_copy_preserves_multiple_pages_and_automations\n";
 }
 
-void test_macro_slot_focus_manages_local_automation_clipboard() {
+void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     MacroPerformanceHarness h;
 
     configureMacroAutomation(h.state, 0, 0, 0, 0.42f);
+    auto& page = h.state.pages.activePageData();
+    page.setMacroActive(0, true);
+    page.cc[0] = 74;
+    page.values[0] = 0.37f;
+    h.state.pages.updateActiveConfigs();
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     h.state.macroUi.focusedMacroSlot.set(0);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
-    assert(h.clipboard.hasMacroAutomation());
+    assert(h.clipboard.hasMacroSlot());
+    assert(!h.clipboard.hasMacroAutomation());
+    assert(h.clipboard.macroAutomationSet->sourceMacroActive);
+    assert(h.clipboard.macroAutomationSet->sourceSlotPresent);
+    assert(h.clipboard.macroAutomationSet->sourceCc == 74);
+    assert(std::fabs(h.clipboard.macroAutomationSet->sourceStaticValue - 0.37f) <
+           0.0001f);
 
+    // A short release cancels the destructive hold. It must neither clear the
+    // Automation source nor leave the visual hold state armed.
     h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::REMOVE);
     h.release(Config::ButtonID::BOTTOM_LEFT);
-    const auto* cleared = core::state::macro::macroAutomationFindSlot(
+    const auto* unchanged = core::state::macro::macroAutomationFindSlot(
         h.state.pages.automation,
         core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
     );
-    assert(cleared != nullptr);
-    assert(!cleared->automation.active);
-
-    h.press(Config::ButtonID::BOTTOM_RIGHT);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::BOTTOM_RIGHT);
-    const auto* pasted = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
-    );
-    assert(pasted != nullptr);
-    assert(pasted->automation.active);
+    assert(unchanged != nullptr);
+    assert(unchanged->automation.active);
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(!h.state.pages.activePageData().isMacroActive(0));
     assert(core::state::macro::macroAutomationFindSlot(
                h.state.pages.automation,
-               core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+               core::state::macro::MacroAutomationSlotAddress{
+                   .track = 0,
+                   .page = 0,
+                   .macro = 0,
+               }
            ) == nullptr);
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.tick(2 * Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    const auto* restored = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(restored != nullptr);
+    assert(restored->automation.active);
+    core::state::macro::MacroCurvePoint restoredPoint{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        restored->automation,
+        h.state.pages.automation.pointPool,
+        0,
+        false,
+        restoredPoint
+    ));
+    assert(std::fabs(restoredPoint.value - 0.42f) < 0.0001f);
+    assert(h.state.pages.activePageData().isMacroActive(0));
+    assert(h.state.pages.activePageData().cc[0] == 74);
+    assert(std::fabs(h.state.pages.activePageData().values[0] - 0.37f) < 0.0001f);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_macro_slot_focus_manages_local_automation_clipboard\n";
+    std::cout << "[PASS] test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove\n";
 }
 
 void test_left_bottom_toggles_macro_slot_property_selector() {
@@ -915,7 +951,7 @@ int main() {
     test_macro_selection_duplicate_copies_track_into_first_free_slot();
     test_macro_track_copy_and_long_press_paste_to_add_slot();
     test_macro_track_copy_preserves_multiple_pages_and_automations();
-    test_macro_slot_focus_manages_local_automation_clipboard();
+    test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove();
     test_left_bottom_toggles_macro_slot_property_selector();
     test_left_top_cancels_macro_slot_property_selector_without_committing_preview();
     test_left_center_is_reserved_and_does_not_open_macro_set_controls();

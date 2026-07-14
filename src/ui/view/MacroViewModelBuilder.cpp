@@ -268,7 +268,7 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
             .showIcon = true,
             .icon = applied ? standalone::icons::ACTION_VALIDATE
                             : (cancelled ? standalone::icons::ACTION_CANCEL
-                                         : standalone::icons::ACTION_CLEAR),
+                                         : standalone::icons::ACTION_REMOVE),
             .holdActive = armed,
             .holdStartedAtMs = source.macroUi.selectionDeleteGuard.get().pressedAtMs,
             .holdDurationMs = context.selectionDeleteAction.guard.durationMs,
@@ -304,7 +304,7 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
         .tone = ContextActionStripTone::DESTRUCTIVE,
         .showIcon = true,
         .icon = removeHoldActive ? standalone::icons::ACTION_CANCEL
-                                 : standalone::icons::ACTION_CLEAR,
+                                 : standalone::icons::ACTION_REMOVE,
         .holdActive = removeHoldActive,
         .holdStartedAtMs = holdState.startedAtMs.get(),
         .holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS,

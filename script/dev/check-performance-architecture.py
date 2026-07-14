@@ -7,6 +7,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOT = ROOT / "src"
+PLATFORMIO = ROOT / "platformio.ini"
+DIAGNOSTICS_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_diagnostics.ld"
+MEMORY_GATE = ROOT / "script" / "pio" / "check_memory_budget.py"
 
 FORBIDDEN_LEGACY = (
     "PERF_LOG",
@@ -59,6 +62,63 @@ def relative(path: Path) -> str:
 
 def main() -> int:
     errors: list[str] = []
+
+    platformio = PLATFORMIO.read_text(encoding="utf-8")
+    diagnostics_env = re.search(
+        r"\[env:dev_diagnostics\](.*?)(?=\n\[env:|\Z)",
+        platformio,
+        flags=re.DOTALL,
+    )
+    if diagnostics_env is None:
+        errors.append("platformio.ini: missing dev_diagnostics environment")
+    elif (
+        "board_build.ldscript = script/pio/imxrt1062_t41_diagnostics.ld"
+        not in diagnostics_env.group(1)
+    ):
+        errors.append(
+            "platformio.ini: dev_diagnostics must use its dedicated linker script"
+        )
+
+    if not DIAGNOSTICS_LINKER.exists():
+        errors.append("script/pio: missing diagnostics linker script")
+    else:
+        linker = DIAGNOSTICS_LINKER.read_text(encoding="utf-8")
+        for object_name in (
+            "PerformanceReporter.cpp.o(.text* .rodata*)",
+            "MemoryFootprintReporter.cpp.o(.text* .rodata*)",
+            "CoreStateDiagnostics.cpp.o(.text* .rodata*)",
+        ):
+            if object_name not in linker:
+                errors.append(
+                    "script/pio/imxrt1062_t41_diagnostics.ld: "
+                    f"missing Flash placement for {object_name}"
+                )
+
+    memory_gate = MEMORY_GATE.read_text(encoding="utf-8")
+    if "diagnostics_elf_violations" not in memory_gate:
+        errors.append(
+            "script/pio/check_memory_budget.py: missing post-link diagnostics placement gate"
+        )
+
+    reporter = (SOURCE_ROOT / "diagnostics" / "PerformanceReporter.cpp").read_text(
+        encoding="utf-8"
+    )
+    if "DMAMEM uint8_t reporterStorage" not in reporter:
+        errors.append(
+            "diagnostics/PerformanceReporter.cpp: samples and counters must stay in RAM2"
+        )
+
+    state_diagnostics = (
+        SOURCE_ROOT / "state" / "CoreStateDiagnostics.cpp"
+    ).read_text(encoding="utf-8")
+    if "#if OC_ENABLE_STATS" not in state_diagnostics:
+        errors.append(
+            "state/CoreStateDiagnostics.cpp: signal labels must remain diagnostics-only"
+        )
+    if "FLASHMEM void configureDebugLabels" not in state_diagnostics:
+        errors.append(
+            "state/CoreStateDiagnostics.cpp: label registration must execute from Flash"
+        )
 
     for path in source_files():
         content = path.read_text(encoding="utf-8")

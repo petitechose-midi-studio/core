@@ -12,6 +12,13 @@
 #include "state/MacroState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/StructureClipboardState.hpp"
+#include "state/shared/MidiCcDestinationResolver.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
+
+namespace core::handler {
+class MidiCcGlobalFrameCoordinator;
+}
 
 namespace core::context::standalone::macro_overlay_presenter {
 
@@ -26,6 +33,8 @@ struct Source {
     core::state::macro::MacroPagesState& pages;
     core::state::macro::MacroUiState& macroUi;
     oc::state::Signal<uint32_t>& configRevision;
+    core::state::StructureClipboardState* clipboard = nullptr;
+    const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
 };
 
 struct StaticItems {
@@ -36,21 +45,22 @@ struct StaticItems {
 };
 
 struct EditRenderData {
-    std::array<std::array<char, 16>, 2> valueBuffers{};
-    std::array<ms::ui::KeyValueRow, 2> rows{};
-    std::array<char, 16> title{};
-    std::array<char, 16> meta{};
+    std::array<std::array<char, 32>, 4> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 4> rows{};
+    std::array<char, 24> title{};
+    std::array<char, 24> meta{};
     uint32_t dataRevision = 0;
     int selectedIndex = 0;
 };
 
 struct AutomationRenderData {
-    std::array<std::array<char, 24>, 4> valueBuffers{};
-    std::array<ms::ui::KeyValueRow, 4> rows{};
-    std::array<char, 16> title{};
-    std::array<char, 16> meta{};
+    std::array<std::array<char, 32>, 7> valueBuffers{};
+    std::array<ms::ui::KeyValueRow, 7> rows{};
+    std::array<char, 24> title{};
+    std::array<char, 24> meta{};
     uint32_t dataRevision = 0;
     int selectedIndex = 0;
+    int rowCount = 0;
     bool visible = false;
 };
 
@@ -70,5 +80,7 @@ AutomationRenderData buildAutomationRenderData(const Source& source);
 SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items);
 SelectorRenderData buildPageSelectorRenderData(const Source& source);
 SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items);
+core::ui::ContextActionStripProps buildEditActionStripProps(const Source& source);
+core::ui::ContextActionStripProps buildDetailActionStripProps(const Source& source);
 
 }  // namespace core::context::standalone::macro_overlay_presenter

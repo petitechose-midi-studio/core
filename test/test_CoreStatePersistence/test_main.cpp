@@ -12,6 +12,7 @@
 #include "../../src/state/DataManagerWorkflow.hpp"
 #include "../../src/state/macro/MacroPersistenceWorkflow.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
@@ -43,6 +44,30 @@ void addGraphContent(core::state::sequencer::SequencerPatternState& pattern,
         static_cast<uint16_t>(sequence->firstStepNode + 1),
         noteOffset
     ));
+}
+
+void addCcLane(core::state::sequencer::SequencerPatternState& pattern,
+               uint8_t lane,
+               uint8_t controller,
+               uint8_t step,
+               uint8_t value) {
+    namespace seq = core::state::sequencer;
+    auto* bank = seq::ensureSequencerCcLaneBank(pattern);
+    assert(bank != nullptr);
+    const seq::SequencerCcLaneDraft draft{
+        .destination = seq::SequencerCcLaneDestination{
+            .controller = controller,
+            .minimum = 0,
+            .maximum = 127,
+            .routePolicy = seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK,
+            .pinnedPort = 0,
+            .pinnedChannel = 0,
+        },
+        .initialValue = 64,
+    };
+    assert(seq::createSequencerCcLane(*bank, lane, draft).changed());
+    assert(seq::setSequencerCcLaneEvent(*bank, lane, step, value).changed());
+    pattern.ccLaneRevision.set(bank->revision);
 }
 
 bool hasGraphContent(const core::state::sequencer::SequencerPatternState& pattern,
@@ -825,7 +850,14 @@ void test_queued_sequencer_load_clears_history_when_applied() {
                                  storage.sequencerSetLibrary);
 
     state.sequencer.pattern.length.set(8);
+    addCcLane(state.sequencer.pattern, 0, 74, 3, 92);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 12));
+
+    core::state::sequencer::installSequencerCcLaneBank(
+        state.sequencer.pattern,
+        {}
+    );
+    assert(core::state::sequencer::sequencerCcLaneView(state.sequencer.pattern) == nullptr);
 
     recordLengthHistory(state, 16);
     assert(state.sequencerHistory.undoCount() == 1);
@@ -845,12 +877,93 @@ void test_queued_sequencer_load_clears_history_when_applied() {
     state.sequencer.playheadStep.set(4);
     state.update();
     assert(state.sequencer.pattern.length.get() == 8);
+    const auto* restored =
+        core::state::sequencer::sequencerCcLaneView(state.sequencer.pattern);
+    assert(restored != nullptr);
+    assert(restored->lanes[0].destination.controller == 74);
+    assert(restored->lanes[0].activeMask.test(3));
+    assert(restored->lanes[0].values[3] == 92);
+    const auto* activeTrackCopy = core::state::sequencer::sequencerCcLaneView(
+        state.sequencerTracks.track(state.sequencerTracks.activeTrackIndex())
+    );
+    assert(activeTrackCopy != nullptr);
+    assert(activeTrackCopy->lanes[0].values[3] == 92);
     assert(state.sequencerHistory.undoCount() == 0);
     assert(state.sequencerHistory.redoCount() == 0);
 
     drainNotifications();
 
     std::cout << "[PASS] test_queued_sequencer_load_clears_history_when_applied\n";
+}
+
+void test_queued_full_bank_apply_preserves_every_cc_lane_payload() {
+    CoreStorages storage;
+    storage.initAll();
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    core::state::sequencer::SequencerTrackBankState stagedBank;
+    core::state::sequencer::SequencerState staged;
+    addCcLane(staged.pattern, 0, 74, 0, 81);
+    addCcLane(stagedBank.track(0), 0, 74, 0, 81);
+    addCcLane(stagedBank.track(5), 1, 71, 7, 103);
+
+    state.statusBar.playing.set(true);
+    state.sequencer.playheadStep.set(2);
+    assert(state.queuePendingSequencerBankApply(stagedBank, staged));
+    assert(state.hasPendingSequencerApply());
+    state.sequencer.playheadStep.set(3);
+    state.update();
+    assert(!state.hasPendingSequencerApply());
+
+    const auto* active =
+        core::state::sequencer::sequencerCcLaneView(state.sequencer.pattern);
+    const auto* track0 =
+        core::state::sequencer::sequencerCcLaneView(state.sequencerTracks.track(0));
+    const auto* track5 =
+        core::state::sequencer::sequencerCcLaneView(state.sequencerTracks.track(5));
+    assert(active != nullptr && active->lanes[0].values[0] == 81);
+    assert(track0 != nullptr && track0->lanes[0].values[0] == 81);
+    assert(track5 != nullptr && track5->lanes[1].values[7] == 103);
+
+    drainNotifications();
+    std::cout
+        << "[PASS] test_queued_full_bank_apply_preserves_every_cc_lane_payload\n";
+}
+
+void test_new_project_boundary_publishes_runtime_reset_and_clears_activation() {
+    CoreStorages storage;
+    storage.initAll();
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    core::state::sequencer::SequencerTrackActivationBatch activation;
+    assert(state.sequencerTrackActivations.prepare(
+        0x0001,
+        state.currentSharedTrackEnabledMask(),
+        state.sequencerTracks.currentMutedMask(),
+        true,
+        activation
+    ));
+    assert(state.sequencerTrackActivations.armPrepared(activation));
+    state.sequencerTrackActivations.publishPrepared(activation);
+    assert(state.sequencerTrackActivations.pendingTrackMask() == 0x0001);
+    const uint32_t before = state.sequencerRuntimeProjectRevision.get();
+
+    state.resetMusicalProject();
+    assert(state.sequencerRuntimeProjectRevision.get() != before);
+    assert(state.sequencerTrackActivations.pendingTrackMask() == 0);
+    assert(state.sequencerTrackActivations.telemetry(0).status ==
+           core::state::sequencer::SequencerTrackActivationStatus::IDLE);
+    assert(state.sequencerTrackActivations.realtimeView(0).disposition ==
+           core::state::sequencer::SequencerTrackActivationRealtimeView::
+               Disposition::NORMAL);
+
+    drainNotifications();
+    std::cout
+        << "[PASS] test_new_project_boundary_publishes_runtime_reset_and_clears_activation\n";
 }
 
 void test_sequencer_set_load_merge_preserves_existing_steps() {
@@ -988,6 +1101,8 @@ int main() {
     test_sequencer_save_and_erase_keep_history();
     test_sequencer_load_clears_history_after_apply();
     test_queued_sequencer_load_clears_history_when_applied();
+    test_queued_full_bank_apply_preserves_every_cc_lane_payload();
+    test_new_project_boundary_publishes_runtime_reset_and_clears_activation();
     test_sequencer_set_load_merge_preserves_existing_steps();
     test_sequencer_set_load_merge_is_quantized_when_playing();
 

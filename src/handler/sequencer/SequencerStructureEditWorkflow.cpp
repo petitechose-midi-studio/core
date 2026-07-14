@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #include <config/TimeCompat.hpp>
 
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
@@ -20,10 +21,19 @@
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
+#include "state/sequencer/SequencerTrackTransferAction.hpp"
 
 namespace core::handler {
 
 namespace structure_slots = core::state::shared;
+namespace contextual = core::state::contextual;
+
+namespace {
+
+constexpr uint32_t TRACK_PASTE_CANCELLED_MS = 700;
+constexpr uint32_t TRACK_PASTE_APPLIED_MS = 1200;
+
+}  // namespace
 
 FLASHMEM SequencerStructureEditWorkflow::SequencerStructureEditWorkflow(StateRefs state)
     : sequencer_(state.sequencer)
@@ -33,7 +43,9 @@ FLASHMEM SequencerStructureEditWorkflow::SequencerStructureEditWorkflow(StateRef
     , project_navigation_(state.projectNavigation)
     , structure_clipboard_(state.structureClipboard)
     , shared_tracks_(state.sharedTracks)
-    , history_(state.history) {}
+    , history_(state.history)
+    , track_activations_(state.trackActivations)
+    , status_bar_(state.statusBar) {}
 
 FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
@@ -53,7 +65,7 @@ FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const 
 
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteCurrentStructure() const {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        return structure_clipboard_.hasSequencerTrack();
+        return buildTrackPastePlan(false).canCommit();
     }
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
         return canPasteFocusedStep();
@@ -65,6 +77,10 @@ FLASHMEM void SequencerStructureEditWorkflow::beginHoldAction(
     core::state::StructureHoldAction action
 ) {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
+        if (action == core::state::StructureHoldAction::PASTE) {
+            beginTrackPasteAction(trackPasteSelectionContext(), core::time_compat::millis());
+            return;
+        }
         track_ui_.hold.begin(action, core::time_compat::millis());
         return;
     }
@@ -74,6 +90,463 @@ FLASHMEM void SequencerStructureEditWorkflow::beginHoldAction(
 FLASHMEM void SequencerStructureEditWorkflow::clearHoldAction() {
     track_ui_.hold.clear();
     sequencer_.structureUi.pageHold.clear();
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::trackPasteSelectionContext() const {
+    return track_ui_.selection.active.get() &&
+           track_ui_.selection.scope.get() ==
+               core::state::StructureSelectionScope::TRACK;
+}
+
+FLASHMEM uint8_t SequencerStructureEditWorkflow::trackPasteTarget(
+    bool selectionContext
+) const {
+    if (selectionContext) {
+        return core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+            track_ui_.selection.cursorIndex.get()
+        );
+    }
+    return sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
+}
+
+FLASHMEM core::state::ClipboardTransferPlan
+SequencerStructureEditWorkflow::buildTrackPastePlan(bool selectionContext) const {
+    return core::state::buildSequencerTrackClipboardTransferPlan(
+        structure_clipboard_,
+        tracks_,
+        trackPasteTarget(selectionContext),
+        track_activations_ != nullptr ? track_activations_->pendingTrackMask() : 0,
+        &sequencer_
+    );
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::setTrackPasteFeedback(
+    contextual::OperationFeedbackStatus status,
+    contextual::ContextActionReason reason,
+    contextual::OperationFeedbackExpiryPolicy expiry,
+    uint32_t nowMs,
+    uint32_t durationMs
+) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    contextual::setOperationFeedback(
+        paste.feedback,
+        contextual::ContextActionId::PASTE,
+        {
+            .kind = contextual::ContextEntityKind::TRACK,
+            .track = paste.plan.firstSource,
+            .item = paste.plan.sourceMask,
+        },
+        {
+            .kind = contextual::ContextEntityKind::TRACK,
+            .track = paste.plan.firstTarget,
+            .item = paste.plan.targetMask,
+        },
+        status,
+        reason,
+        expiry,
+        nowMs,
+        durationMs
+    );
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::beginTrackPasteAction(
+    bool selectionContext,
+    uint32_t nowMs
+) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    const auto plan = buildTrackPastePlan(selectionContext);
+    if (!plan.canCommit()) return false;
+
+    uint32_t nextGeneration = paste.interactionGeneration + 1U;
+    if (nextGeneration == 0) ++nextGeneration;
+    paste.guard = {};
+    paste.feedback = {};
+    paste.plan = plan;
+    paste.clipboardKind = structure_clipboard_.kind.get();
+    paste.clipboardRevision = structure_clipboard_.revision.get();
+    paste.interactionGeneration = nextGeneration;
+    paste.operationGeneration = 0;
+    paste.activationGeneration = 0;
+    paste.focusedIndex = 0;
+    paste.detailVisible = false;
+    paste.buttonOwned = true;
+    paste.commitConsumed = false;
+    paste.selectionContext = selectionContext;
+    if (!contextual::beginGuardedActionPress(
+            paste.guard,
+            nowMs,
+            static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        )) {
+        paste.buttonOwned = false;
+        return false;
+    }
+    setTrackPasteFeedback(
+        contextual::OperationFeedbackStatus::PRESSED,
+        core::state::sequencer::contextualReasonForTrackTransfer(plan.reason),
+        contextual::OperationFeedbackExpiryPolicy::MANUAL,
+        nowMs
+    );
+    paste.bump();
+    return true;
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(
+    uint32_t nowMs
+) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    if (paste.feedback.status == contextual::OperationFeedbackStatus::QUEUED ||
+        paste.feedback.status == contextual::OperationFeedbackStatus::APPLIED) {
+        return;
+    }
+
+    // A terminal transient is user feedback, not a new preflight. Preserve it
+    // until its own expiry policy clears it; the following update can then
+    // restore PREVIEW from the live clipboard/target pair.
+    if (!paste.buttonOwned && paste.feedback.active &&
+        (paste.feedback.status == contextual::OperationFeedbackStatus::CANCELLED ||
+         paste.feedback.status == contextual::OperationFeedbackStatus::BLOCKED ||
+         paste.feedback.status == contextual::OperationFeedbackStatus::FAILED ||
+         paste.feedback.status == contextual::OperationFeedbackStatus::CONFLICT)) {
+        return;
+    }
+
+    if (paste.buttonOwned || paste.gestureActive()) {
+        const auto live = core::state::buildSequencerTrackClipboardTransferPlan(
+            structure_clipboard_,
+            tracks_,
+            paste.plan.firstTarget,
+            track_activations_ != nullptr ? track_activations_->pendingTrackMask() : 0,
+            &sequencer_
+        );
+        if (paste.clipboardKind != structure_clipboard_.kind.get() ||
+            paste.clipboardRevision != structure_clipboard_.revision.get() ||
+            !live.canCommit() ||
+            !core::state::sameSequencerTrackClipboardTransferIdentity(
+                paste.plan,
+                live
+            )) {
+            if (contextual::cancelGuardedAction(paste.guard)) {
+                paste.detailVisible = false;
+                setTrackPasteFeedback(
+                    contextual::OperationFeedbackStatus::BLOCKED,
+                    contextual::ContextActionReason::STALE_TARGET,
+                    contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+                    nowMs,
+                    TRACK_PASTE_CANCELLED_MS
+                );
+                paste.bump();
+            }
+            return;
+        }
+        if (!core::state::sameSequencerTrackClipboardTransferPlan(paste.plan, live)) {
+            paste.plan = live;
+            if (paste.focusedIndex >= paste.plan.count) paste.focusedIndex = 0;
+            paste.bump();
+        }
+        return;
+    }
+
+    const bool trackContext = trackPasteSelectionContext() ||
+        navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK;
+    const auto live = trackContext
+        ? buildTrackPastePlan(trackPasteSelectionContext())
+        : core::state::ClipboardTransferPlan{};
+    if (!trackContext || !live.canCommit()) {
+        const bool changed = paste.plan.hasEntries() || paste.detailVisible ||
+            paste.feedback.active;
+        paste.plan = {};
+        paste.clipboardKind = core::state::StructureClipboardKind::NONE;
+        paste.clipboardRevision = 0;
+        paste.focusedIndex = 0;
+        paste.detailVisible = false;
+        contextual::clearOperationFeedback(paste.feedback);
+        if (changed) paste.bump();
+        return;
+    }
+
+    const bool planChanged =
+        !core::state::sameSequencerTrackClipboardTransferPlan(paste.plan, live);
+    const bool feedbackChanged =
+        paste.feedback.status != contextual::OperationFeedbackStatus::PREVIEW;
+    if (!planChanged && !feedbackChanged) return;
+    paste.plan = live;
+    paste.clipboardKind = structure_clipboard_.kind.get();
+    paste.clipboardRevision = structure_clipboard_.revision.get();
+    if (paste.focusedIndex >= paste.plan.count) paste.focusedIndex = 0;
+    setTrackPasteFeedback(
+        contextual::OperationFeedbackStatus::PREVIEW,
+        core::state::sequencer::contextualReasonForTrackTransfer(live.reason),
+        contextual::OperationFeedbackExpiryPolicy::MANUAL,
+        nowMs
+    );
+    paste.bump();
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::updateTrackPasteActivation(
+    uint32_t nowMs
+) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    if (track_activations_ == nullptr || paste.activationGeneration == 0 ||
+        paste.feedback.status != contextual::OperationFeedbackStatus::QUEUED ||
+        !paste.plan.hasEntries()) {
+        return;
+    }
+
+    uint8_t applied = 0;
+    bool cancelled = false;
+    for (uint8_t i = 0; i < paste.plan.count; ++i) {
+        const auto telemetry = track_activations_->telemetry(
+            paste.plan.entries[i].targetTrack
+        );
+        if (telemetry.generation != paste.activationGeneration ||
+            telemetry.origin !=
+                core::state::sequencer::SequencerTrackActivationOrigin::TRACK_PASTE) {
+            return;
+        }
+        if (telemetry.status ==
+            core::state::sequencer::SequencerTrackActivationStatus::APPLIED) {
+            ++applied;
+        } else if (telemetry.status ==
+                   core::state::sequencer::SequencerTrackActivationStatus::CANCELLED) {
+            cancelled = true;
+        } else if (telemetry.status !=
+                   core::state::sequencer::SequencerTrackActivationStatus::QUEUED) {
+            return;
+        }
+    }
+
+    if (cancelled) {
+        setTrackPasteFeedback(
+            contextual::OperationFeedbackStatus::CANCELLED,
+            contextual::ContextActionReason::FAILED,
+            contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+            nowMs,
+            TRACK_PASTE_CANCELLED_MS
+        );
+        paste.bump();
+    } else if (applied == paste.plan.count) {
+        setTrackPasteFeedback(
+            contextual::OperationFeedbackStatus::APPLIED,
+            contextual::ContextActionReason::NONE,
+            contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+            nowMs,
+            TRACK_PASTE_APPLIED_MS
+        );
+        paste.bump();
+    }
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::commitTrackPaste(uint32_t nowMs) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    if (paste.commitConsumed || !paste.plan.canCommit()) return false;
+    paste.commitConsumed = true;
+    history_.commitCoalescedPatternEdit();
+
+    const auto result = executeSequencerTrackTransfer(
+        tracks_,
+        sequencer_,
+        structure_clipboard_,
+        shared_tracks_,
+        history_,
+        paste.plan.firstTarget,
+        0,
+        track_activations_,
+        status_bar_ != nullptr && status_bar_->playing.get()
+    );
+    paste.plan = result.plan;
+    paste.activationGeneration = result.activationGeneration;
+    paste.operationGeneration = result.operationId != 0
+        ? result.operationId
+        : paste.interactionGeneration;
+    paste.focusedIndex = 0;
+
+    if (!result.applied()) {
+        auto reason = core::state::sequencer::contextualReasonForTrackTransfer(
+            result.plan.reason
+        );
+        if (reason == contextual::ContextActionReason::NONE) {
+            switch (result.status) {
+                case SequencerTrackTransferStatus::STALE:
+                    reason = contextual::ContextActionReason::STALE_TARGET;
+                    break;
+                case SequencerTrackTransferStatus::NO_CHANGE:
+                    reason = contextual::ContextActionReason::NO_ACTION;
+                    break;
+                case SequencerTrackTransferStatus::HISTORY_UNAVAILABLE:
+                    reason = contextual::ContextActionReason::HISTORY_UNAVAILABLE;
+                    break;
+                case SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE:
+                    reason = contextual::ContextActionReason::ALLOCATION_UNAVAILABLE;
+                    break;
+                default:
+                    reason = contextual::ContextActionReason::FAILED;
+                    break;
+            }
+        }
+        setTrackPasteFeedback(
+            contextual::OperationFeedbackStatus::BLOCKED,
+            reason,
+            contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+            nowMs,
+            TRACK_PASTE_CANCELLED_MS
+        );
+        paste.bump();
+        return false;
+    }
+
+    setTrackPasteFeedback(
+        result.activationGeneration != 0
+            ? contextual::OperationFeedbackStatus::QUEUED
+            : contextual::OperationFeedbackStatus::APPLIED,
+        contextual::ContextActionReason::NONE,
+        result.activationGeneration != 0
+            ? contextual::OperationFeedbackExpiryPolicy::WHEN_RESOLVED
+            : contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        result.activationGeneration != 0 ? 0 : TRACK_PASTE_APPLIED_MS
+    );
+    if (paste.selectionContext) {
+        cancelSelectionMode();
+    } else {
+        syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
+    }
+    paste.bump();
+    return true;
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::update(uint32_t nowMs) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    updateTrackPasteActivation(nowMs);
+
+    if (contextual::updateOperationFeedback(paste.feedback, nowMs)) {
+        paste.bump();
+    }
+
+    if (!paste.buttonOwned) {
+        refreshTrackPastePreview(nowMs);
+        return;
+    }
+
+    refreshTrackPastePreview(nowMs);
+    if (paste.guard.phase == contextual::GuardedActionPhase::PRESSED &&
+        (nowMs - paste.guard.pressedAtMs) >= Config::Timing::LATCH_THRESHOLD_MS) {
+        // Guard progress is anchored to the physical press so COMMITTED occurs
+        // at the absolute long-press threshold, not one threshold later.
+        if (contextual::armGuardedAction(paste.guard, paste.guard.pressedAtMs)) {
+            setTrackPasteFeedback(
+                contextual::OperationFeedbackStatus::ARMED,
+                core::state::sequencer::contextualReasonForTrackTransfer(
+                    paste.plan.reason
+                ),
+                contextual::OperationFeedbackExpiryPolicy::MANUAL,
+                nowMs
+            );
+            paste.bump();
+        }
+    }
+    if (paste.guard.phase == contextual::GuardedActionPhase::ARMED &&
+        contextual::updateGuardedAction(paste.guard, nowMs)) {
+        if (paste.guard.phase == contextual::GuardedActionPhase::COMMITTED) {
+            commitTrackPaste(nowMs);
+        } else {
+            paste.bump();
+        }
+    }
+}
+
+FLASHMEM contextual::GuardedActionRelease
+SequencerStructureEditWorkflow::releaseTrackPasteAction(uint32_t nowMs) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    // Copy remains the unconditional tap action, even when no compatible
+    // clipboard exists and therefore no guarded paste press was acquired.
+    if (!paste.buttonOwned) return contextual::GuardedActionRelease::TAP;
+
+    update(nowMs);
+    const auto phase = paste.guard.phase;
+    auto release = contextual::releaseGuardedAction(paste.guard, nowMs);
+    if (phase == contextual::GuardedActionPhase::CANCELLED) {
+        release = contextual::GuardedActionRelease::CANCELLED;
+    }
+    paste.buttonOwned = false;
+
+    if (release == contextual::GuardedActionRelease::TAP) {
+        paste.detailVisible = false;
+        paste.plan = {};
+        contextual::clearOperationFeedback(paste.feedback);
+    } else if (release == contextual::GuardedActionRelease::CANCELLED) {
+        paste.detailVisible = false;
+        setTrackPasteFeedback(
+            contextual::OperationFeedbackStatus::CANCELLED,
+            contextual::ContextActionReason::NONE,
+            contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+            nowMs,
+            TRACK_PASTE_CANCELLED_MS
+        );
+    }
+    paste.bump();
+    return release;
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::cancelTrackPasteAction(
+    uint32_t nowMs
+) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    bool changed = false;
+    if (paste.detailVisible) {
+        paste.detailVisible = false;
+        paste.focusedIndex = 0;
+        changed = true;
+    }
+    if (contextual::cancelGuardedAction(paste.guard)) {
+        setTrackPasteFeedback(
+            contextual::OperationFeedbackStatus::CANCELLED,
+            contextual::ContextActionReason::NONE,
+            contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+            nowMs,
+            TRACK_PASTE_CANCELLED_MS
+        );
+        changed = true;
+    }
+    if (changed) paste.bump();
+    return changed;
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::trackPasteGestureActive() const {
+    return sequencer_.structureUi.trackPaste.gestureActive();
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::trackPasteNavigationBlocked() const {
+    const auto& paste = sequencer_.structureUi.trackPaste;
+    return paste.buttonOwned || paste.gestureActive() || paste.detailVisible;
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::trackPastePlanInspectable() const {
+    const auto& paste = sequencer_.structureUi.trackPaste;
+    return paste.inspectable() && paste.plan.canCommit() && paste.feedback.active;
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::trackPasteDetailsVisible() const {
+    return sequencer_.structureUi.trackPaste.detailVisible;
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::toggleTrackPasteDetails() {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    if (!trackPastePlanInspectable()) return;
+    paste.detailVisible = !paste.detailVisible;
+    if (paste.focusedIndex >= paste.plan.count) paste.focusedIndex = 0;
+    paste.bump();
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::navigateTrackPasteDetails(
+    float delta
+) {
+    auto& paste = sequencer_.structureUi.trackPaste;
+    if (!paste.detailVisible || paste.plan.count == 0 || delta == 0.0f) return;
+    const int direction = delta > 0.0f ? 1 : -1;
+    const int count = paste.plan.count;
+    const int next = (static_cast<int>(paste.focusedIndex) + direction + count) % count;
+    paste.focusedIndex = static_cast<uint8_t>(next);
+    paste.bump();
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure() {
@@ -161,7 +634,8 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
         if (!structure_clipboard_.storeSequencerTrack(
             snapshot,
             core::state::sequencer::graphView(sequencer_.pattern),
-            currentActiveTrack()
+            currentActiveTrack(),
+            core::state::sequencer::sequencerCcLaneView(sequencer_.pattern)
         )) {
             return;
         }
@@ -196,7 +670,10 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
                 structure_clipboard_,
                 shared_tracks_,
                 history_,
-                targetTrack
+                targetTrack,
+                0,
+                track_activations_,
+                status_bar_ != nullptr && status_bar_->playing.get()
             );
         if (!result.applied()) return;
         syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
@@ -234,7 +711,9 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
 
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteSelection() const {
     if (track_ui_.selection.active.get()) {
-        return structure_clipboard_.hasSequencerTrackSelection();
+        return track_ui_.selection.scope.get() ==
+                   core::state::StructureSelectionScope::TRACK &&
+               buildTrackPastePlan(true).canCommit();
     }
     if (sequencer_.structureUi.pageSelection.active.get()) {
         return structure_clipboard_.hasSequencerPageSelection();
@@ -415,7 +894,10 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
                 structure_clipboard_,
                 shared_tracks_,
                 history_,
-                cursorTrack
+                cursorTrack,
+                0,
+                track_activations_,
+                status_bar_ != nullptr && status_bar_->playing.get()
             );
         if (!result.applied()) return;
         cancelSelectionMode();

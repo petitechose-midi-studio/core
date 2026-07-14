@@ -1,8 +1,18 @@
+#include <algorithm>
 #include <cstdint>
+#include <cwctype>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
 
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectMigration.hpp"
@@ -18,6 +28,7 @@ struct Args {
     std::string command;
     std::string inputPath;
     std::string outputPath;
+    std::string semanticName;
     bool json = false;
     bool allowPartial = false;
 };
@@ -114,8 +125,17 @@ const char* codeName(project_file::LoadCode code) {
     }
 }
 
+std::filesystem::path pathFromUtf8(const std::string& text) {
+    std::u8string utf8;
+    utf8.reserve(text.size());
+    for (const unsigned char byte : text) {
+        utf8.push_back(static_cast<char8_t>(byte));
+    }
+    return std::filesystem::path(utf8);
+}
+
 bool readFile(const std::string& path, std::vector<uint8_t>& out) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    std::ifstream file(pathFromUtf8(path), std::ios::binary | std::ios::ate);
     if (!file) return false;
     const auto size = file.tellg();
     if (size < 0) return false;
@@ -126,7 +146,7 @@ bool readFile(const std::string& path, std::vector<uint8_t>& out) {
 }
 
 bool writeFile(const std::string& path, const uint8_t* data, uint32_t size) {
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    std::ofstream file(pathFromUtf8(path), std::ios::binary | std::ios::trunc);
     if (!file) return false;
     if (size == 0) return true;
     file.write(reinterpret_cast<const char*>(data), size);
@@ -213,8 +233,48 @@ void printUsage() {
               << "  ms-core-file-tool validate <file.mspj> [--json]\n"
               << "  ms-core-file-tool migrate <file.mspj> --out <file.mspj> "
                  "[--json] [--allow-partial]\n"
-              << "  ms-core-file-tool inspect-step-graph-preset <file.msgp> [--json]\n"
-              << "  ms-core-file-tool validate-step-graph-preset <file.msgp> [--json]\n";
+              << "  ms-core-file-tool inspect-step-graph-preset <file.mssp> [--json]\n"
+              << "  ms-core-file-tool validate-step-graph-preset <file.mssp> [--json]\n"
+              << "  ms-core-file-tool rename-step-graph-preset <in.mssp> "
+                 "--name <semantic-name> --out <staged.mssp> [--json]\n";
+}
+
+bool sameOutputPath(const std::string& lhs, const std::string& rhs) {
+    std::error_code lhsError;
+    std::error_code rhsError;
+    const auto lhsPath = std::filesystem::absolute(
+        pathFromUtf8(lhs),
+        lhsError
+    ).lexically_normal();
+    const auto rhsPath = std::filesystem::absolute(
+        pathFromUtf8(rhs),
+        rhsError
+    ).lexically_normal();
+    if (lhsError || rhsError) return lhs == rhs;
+#ifdef _WIN32
+    auto lhsText = lhsPath.wstring();
+    auto rhsText = rhsPath.wstring();
+    const auto lower = [](wchar_t value) {
+        return static_cast<wchar_t>(std::towlower(value));
+    };
+    std::transform(lhsText.begin(), lhsText.end(), lhsText.begin(), lower);
+    std::transform(rhsText.begin(), rhsText.end(), rhsText.begin(), lower);
+    if (lhsText == rhsText) return true;
+#else
+    if (lhsPath == rhsPath) return true;
+#endif
+
+    // Lexically distinct paths can still name the same existing file through
+    // a hard link, symlink, junction, or normalized filesystem alias. Refuse
+    // those as output targets before the input is read or any truncating open
+    // can occur. Missing destinations are expected and simply compare false.
+    std::error_code equivalentError;
+    const bool equivalent = std::filesystem::equivalent(
+        lhsPath,
+        rhsPath,
+        equivalentError
+    );
+    return !equivalentError && equivalent;
 }
 
 bool parseArgs(int argc, char** argv, Args& out) {
@@ -229,6 +289,8 @@ bool parseArgs(int argc, char** argv, Args& out) {
             out.allowPartial = true;
         } else if (arg == "--out" && i + 1 < argc) {
             out.outputPath = argv[++i];
+        } else if (arg == "--name" && i + 1 < argc) {
+            out.semanticName = argv[++i];
         } else {
             return false;
         }
@@ -239,17 +301,20 @@ bool parseArgs(int argc, char** argv, Args& out) {
         !step_graph_preset_tool::isStepGraphPresetCommand(out.command)) {
         return false;
     }
-    if (out.command == "migrate" && out.outputPath.empty()) return false;
-    if (out.command != "migrate" && !out.outputPath.empty()) return false;
+    const bool renamePreset = out.command == "rename-step-graph-preset";
+    if ((out.command == "migrate" || renamePreset) && out.outputPath.empty()) return false;
+    if (out.command != "migrate" && !renamePreset && !out.outputPath.empty()) return false;
+    const bool writesOutput = out.command == "migrate" || renamePreset;
+    if (writesOutput && sameOutputPath(out.inputPath, out.outputPath)) return false;
+    if (renamePreset && out.semanticName.empty()) return false;
+    if (!renamePreset && !out.semanticName.empty()) return false;
     if (step_graph_preset_tool::isStepGraphPresetCommand(out.command) && out.allowPartial) {
         return false;
     }
     return true;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
+int runMain(int argc, char** argv) {
     Args args;
     if (!parseArgs(argc, argv, args)) {
         printUsage();
@@ -263,11 +328,27 @@ int main(int argc, char** argv) {
     }
 
     if (step_graph_preset_tool::isStepGraphPresetCommand(args.command)) {
-        return step_graph_preset_tool::runStepGraphPresetCommand(
+        std::vector<uint8_t> output;
+        const int exitCode = step_graph_preset_tool::runStepGraphPresetCommand(
             args.command,
             input,
-            args.json
+            args.semanticName,
+            args.json,
+            args.command == "rename-step-graph-preset" ? &output : nullptr
         );
+        if (exitCode == 0 && args.command == "rename-step-graph-preset") {
+            if (output.empty() ||
+                !writeFile(
+                    args.outputPath,
+                    output.data(),
+                    static_cast<uint32_t>(output.size())
+                )) {
+                std::cerr << "Failed to write staged output file: "
+                          << args.outputPath << "\n";
+                return 73;
+            }
+        }
+        return exitCode;
     }
 
     project_file::LoadReport report{};
@@ -302,3 +383,56 @@ int main(int argc, char** argv) {
     }
     return statusExitCode(result.status);
 }
+
+#ifdef _WIN32
+std::string utf8FromWide(const wchar_t* text) {
+    if (text == nullptr) return {};
+    const int size = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        text,
+        -1,
+        nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+    if (size <= 0) return {};
+    std::string result(static_cast<size_t>(size), '\0');
+    if (WideCharToMultiByte(
+            CP_UTF8,
+            WC_ERR_INVALID_CHARS,
+            text,
+            -1,
+            result.data(),
+            size,
+            nullptr,
+            nullptr
+        ) <= 0) {
+        return {};
+    }
+    result.resize(static_cast<size_t>(size - 1));
+    return result;
+}
+#endif
+
+}  // namespace
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t** wideArgv) {
+    SetConsoleOutputCP(CP_UTF8);
+    std::vector<std::string> storage;
+    storage.reserve(static_cast<size_t>(argc));
+    std::vector<char*> argv;
+    argv.reserve(static_cast<size_t>(argc));
+    for (int i = 0; i < argc; ++i) {
+        storage.push_back(utf8FromWide(wideArgv[i]));
+    }
+    for (auto& argument : storage) argv.push_back(argument.data());
+    return runMain(argc, argv.data());
+}
+#else
+int main(int argc, char** argv) {
+    return runMain(argc, argv);
+}
+#endif

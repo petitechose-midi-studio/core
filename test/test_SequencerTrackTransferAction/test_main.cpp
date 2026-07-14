@@ -1,8 +1,11 @@
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 
 #include "state/sequencer/SequencerTrackTransferAction.hpp"
+#include "ui/sequencer/SequencerTrackPastePendingViewModel.hpp"
+#include "validation/ux/SequencerTrackTransferSemanticProjection.hpp"
 
 namespace {
 
@@ -119,12 +122,49 @@ void test_blocked_reasons_are_mapped_without_changing_copy() {
     std::cout << "[PASS] test_blocked_reasons_are_mapped_without_changing_copy\n";
 }
 
+void test_paste_pending_view_model_and_semantic_projection_are_explicit() {
+    auto pending = basePlan();
+    pending.availability = ClipboardTransferAvailability::DISABLED;
+    pending.reason = ClipboardTransferReason::PASTE_PENDING;
+
+    const auto viewModel =
+        core::ui::sequencer::buildSequencerTrackPastePendingViewModel(pending);
+    assert(viewModel.visible);
+    assert(viewModel.label != nullptr);
+    assert(std::strcmp(viewModel.label, "Paste pending") == 0);
+
+    const auto action =
+        core::state::sequencer::buildSequencerTrackTransferActionSpec(
+            pending,
+            4,
+            true,
+            GUARD_MS
+        );
+    assert(!canExecute(action.hold));
+    assert(action.hold.reason == ContextActionReason::PENDING);
+    assert(std::strcmp(
+        core::validation::ux::sequencerTrackTransferSemanticReason(
+            action.hold.reason
+        ),
+        "paste_pending"
+    ) == 0);
+
+    const auto readyViewModel =
+        core::ui::sequencer::buildSequencerTrackPastePendingViewModel(basePlan());
+    assert(!readyViewModel.visible);
+    assert(readyViewModel.label == nullptr);
+
+    std::cout
+        << "[PASS] test_paste_pending_view_model_and_semantic_projection_are_explicit\n";
+}
+
 }  // namespace
 
 int main() {
     test_free_target_uses_copy_at_rest_and_guarded_green_paste();
     test_overwrite_and_no_route_are_explicit_amber_impacts();
     test_blocked_reasons_are_mapped_without_changing_copy();
+    test_paste_pending_view_model_and_semantic_projection_are_explicit();
     std::cout << "All SequencerTrackTransferAction tests passed\n";
     return 0;
 }

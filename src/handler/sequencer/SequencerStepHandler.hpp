@@ -17,6 +17,7 @@
 #include "handler/sequencer/SequencerStructureEditWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::validation::ux {
@@ -44,6 +45,8 @@ public:
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
         SequencerHistoryDomainServices history;
+        core::state::sequencer::SequencerTrackActivationQueue* trackActivations = nullptr;
+        core::state::StatusBarState* statusBar = nullptr;
     };
 
     SequencerStepHandler(StateRefs state,
@@ -56,12 +59,14 @@ public:
 #endif
     );
 
-    ~SequencerStepHandler() = default;
+    ~SequencerStepHandler();
 
     SequencerStepHandler(const SequencerStepHandler&) = delete;
     SequencerStepHandler& operator=(const SequencerStepHandler&) = delete;
     SequencerStepHandler(SequencerStepHandler&&) = delete;
     SequencerStepHandler& operator=(SequencerStepHandler&&) = delete;
+
+    void update(uint32_t nowMs);
 
 private:
     void setupBindings();
@@ -72,6 +77,11 @@ private:
     bool currentStructureBottomActionsAvailable() const;
     bool focusedStepHasChildContent() const;
     bool canPasteFocusedStepContent() const;
+    bool trackFocusActive() const;
+    bool trackSelectionActive() const;
+    void acquireDetailsTransportLock();
+    void deferDetailsTransportUnlock();
+    void restoreDetailsTransportLock();
     void clearFocusedStepContent();
     void copyFocusedStepContent();
     void pasteFocusedStepContent();
@@ -82,6 +92,11 @@ private:
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::StructureClipboardState& structure_clipboard_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    core::state::TrackNavigationState& track_ui_;
+    core::state::StatusBarState* status_bar_ = nullptr;
     SequencerStructureNavigationWorkflow navigation_workflow_;
     SequencerStructureEditWorkflow edit_workflow_;
     SequencerHistoryDomainServices history_;
@@ -91,6 +106,9 @@ private:
     ButtonReleaseLatch<1> nav_release_latch_;
     ButtonReleaseLatch<8> step_selection_macro_release_latch_;
     ButtonReleaseLatch<2> bottom_action_release_latch_;
+    bool details_button_owned_ = false;
+    bool details_transport_lock_owned_ = false;
+    bool details_unlock_pending_ = false;
 #if defined(MS_UX_RECORDER)
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif

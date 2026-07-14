@@ -101,6 +101,9 @@ int main(int argc, char** argv) {
                 coreState->projectNavigation,
                 coreState->statusBar,
                 coreState->midiSync,
+                coreState->sequencerTrackActivations,
+                &coreState->midiCcCoordinator,
+                &coreState->sequencerRuntimeProjectRevision,
             },
             *app.midiAPI(),
             app.eventBus()

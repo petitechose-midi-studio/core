@@ -110,6 +110,7 @@ FLASHMEM void DataManagerPresenter::renderOverlay() {
         .rows = data.rows.data(),
         .rowCount = static_cast<int>(data.rows.size()),
         .selectedIndex = data.selectedIndex,
+        .dimUnselected = false,
         .visible = true,
         .dataRevision = data.dataRevision,
     });
@@ -129,6 +130,8 @@ FLASHMEM void DataManagerPresenter::renderDialog() {
         .itemCount = data.itemCount,
         .selectedIndex = data.selectedIndex,
         .showIndexColumn = false,
+        .dimUnselected = false,
+        .backdropOpacity = LV_OPA_COVER,
         .visible = true,
         .dataRevision = data.dataRevision,
     });

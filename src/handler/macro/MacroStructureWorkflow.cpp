@@ -403,6 +403,15 @@ FLASHMEM void MacroStructureWorkflow::beginHoldAction(core::state::StructureHold
     macro_ui_.pageHold.begin(action, core::time_compat::millis());
 }
 
+FLASHMEM bool MacroStructureWorkflow::hasHoldAction(
+    core::state::StructureHoldAction action
+) const {
+    // Inspect both owners so a physical release still closes the gesture if
+    // another input changed focus while the button was held.
+    return track_ui_.hold.action.get() == action ||
+           macro_ui_.pageHold.action.get() == action;
+}
+
 FLASHMEM void MacroStructureWorkflow::clearHoldAction() {
     track_ui_.hold.clear();
     macro_ui_.pageHold.clear();
@@ -505,7 +514,6 @@ FLASHMEM void MacroStructureWorkflow::pasteCurrentStructure() {
     }
 
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
-        if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return;
         if (services_.pasteMacroAutomation(macro_ui_.focusedMacroSlot.get(), structure_clipboard_)) {
             syncPreviewToCurrentContext();
         }

@@ -15,12 +15,12 @@ constexpr uint16_t macroBit(uint8_t index) {
 MacroMidiCcRuntimeAdapter::MacroMidiCcRuntimeAdapter(
     StateRefs state,
     MacroPerformanceDomainServices services,
-    MidiCcRuntimeAggregator& aggregator
+    MidiCcGlobalFrameCoordinator& coordinator
 )
     : pages_(state.pages)
     , macro_ui_(state.macroUi)
     , services_(services)
-    , aggregator_(aggregator) {}
+    , coordinator_(coordinator) {}
 
 void MacroMidiCcRuntimeAdapter::beginComputedFrame() {
     computed_valid_mask_ = 0;
@@ -39,38 +39,45 @@ void MacroMidiCcRuntimeAdapter::clearComputedValues() {
     computed_valid_mask_ = 0;
 }
 
-MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishComputedFrame() {
+MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishComputedFrame() {
     return publishFrame_(
-        core::state::shared::MidiCcResolutionMode::LIVE,
         NO_TRANSIENT_LIVE_MACRO,
         0
     );
 }
 
-MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishLiveManual(
+MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
     uint8_t macroIndex,
     uint8_t value
 ) {
     if (macroIndex >= core::state::macro::MACRO_COUNT || value > 127U) {
-        return MidiCcRuntimePublishResult{};
+        return MidiCcGlobalFrameResult{};
     }
-    return publishFrame_(core::state::shared::MidiCcResolutionMode::LIVE, macroIndex, value);
+    return publishFrame_(macroIndex, value);
 }
 
-MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishPreview() {
-    return publishFrame_(
-        core::state::shared::MidiCcResolutionMode::PREVIEW,
-        NO_TRANSIENT_LIVE_MACRO,
-        0
-    );
-}
-
-MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishFrame_(
-    core::state::shared::MidiCcResolutionMode mode,
+MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishFrame_(
     uint8_t transientLiveMacro,
     uint8_t transientLiveValue
 ) {
-    aggregator_.beginFrame(mode);
+    uint16_t candidateCount = 0;
+    const auto appendCandidate = [this, &candidateCount](
+        core::state::shared::MidiCcCandidateClass candidateClass,
+        const core::state::shared::MidiCcDestination& destination,
+        uint16_t address,
+        uint8_t value
+    ) {
+        if (candidateCount >= candidates_.size()) return false;
+        candidates_[candidateCount++] = core::state::shared::MidiCcCandidate{
+            .destination = destination,
+            .author = core::state::shared::MidiCcAuthor{
+                .candidateClass = candidateClass,
+                .stableAddress = address,
+            },
+            .localValue = value,
+        };
+        return true;
+    };
 
     if (services_.isActivePageEnabled()) {
         const uint8_t track = pages_.currentActiveTrack();
@@ -81,7 +88,7 @@ MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishFrame_(
             const auto& config = services_.activeConfig(i);
             const auto destination = core::state::shared::MidiCcDestination{
                 .identity = core::state::shared::MidiCcDestinationIdentity{
-                    .port = aggregator_.outputPort(),
+                    .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
                     .channel = config.channel,
                     .controller = config.cc,
                 },
@@ -104,45 +111,56 @@ MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishFrame_(
                 const uint8_t manualValue = transientLive
                     ? transientLiveValue
                     : core::midi::toCC(stableManualValue);
-                (void)aggregator_.addLiveManual(destination, address, manualValue);
+                if (!appendCandidate(
+                        core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
+                        destination,
+                        address,
+                        manualValue
+                    )) return MidiCcGlobalFrameResult{};
 
                 // A recording replaces the old lane entirely. A Manual
                 // override keeps the computed local contribution visible as a
                 // deterministic loser for conflict/detail telemetry.
                 if (manualOverride && !recording && computedSource && computedValid) {
-                    (void)aggregator_.addMacroComputed(
+                    if (!appendCandidate(
+                        core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED,
                         destination,
                         address,
                         computed_values_[i]
-                    );
+                    )) return MidiCcGlobalFrameResult{};
                 }
                 continue;
             }
 
             if (computedSource) {
                 if (computedValid) {
-                    (void)aggregator_.addMacroComputed(
+                    if (!appendCandidate(
+                        core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED,
                         destination,
                         address,
                         computed_values_[i]
-                    );
+                    )) return MidiCcGlobalFrameResult{};
                 }
                 continue;
             }
 
-            (void)aggregator_.addMacroStatic(
+            if (!appendCandidate(
+                core::state::shared::MidiCcCandidateClass::MACRO_STATIC,
                 destination,
                 address,
                 core::midi::toCC(pages_.activePageData().values[i])
-            );
+            )) return MidiCcGlobalFrameResult{};
         }
     }
 
-    auto result = aggregator_.publish();
-    if (result.ok() && result.sentCount > 0) {
-        services_.pulseCcOut();
+    if (!coordinator_.publishPersistentAuthors(candidates_.data(), candidateCount)) {
+        return MidiCcGlobalFrameResult{};
     }
-    return result;
+    return {
+        .status = MidiCcGlobalFrameStatus::OK,
+        .resolveStatus = core::state::shared::MidiCcResolveStatus::OK,
+        .candidateCount = candidateCount,
+    };
 }
 
 }  // namespace core::handler

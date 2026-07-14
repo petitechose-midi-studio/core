@@ -9,23 +9,6 @@ namespace core::state::macro {
 
 namespace structure_slots = core::state::shared;
 
-namespace {
-
-FLASHMEM bool macroSlotAutomationActive(const MacroPagesState& pages, uint8_t macroIndex) {
-    if (macroIndex >= MACRO_COUNT) return false;
-    const auto* slot = macroAutomationFindSlot(
-        pages.automation,
-        MacroAutomationSlotAddress{
-            .track = pages.currentActiveTrack(),
-            .page = pages.currentActivePage(),
-            .macro = macroIndex,
-        }
-    );
-    return slot != nullptr && slot->automation.active;
-}
-
-}  // namespace
-
 FLASHMEM bool macroInteractionSelectionActive(
     const MacroInteractionContextSource& source
 ) {
@@ -55,8 +38,8 @@ FLASHMEM bool macroInteractionCanPasteStructure(
         case core::state::StructureNavigationFocus::TRACK:
             return source.structureClipboard.hasMacroTrack();
         case core::state::StructureNavigationFocus::STEP:
-            return !source.pages.isMacroAddSlot(source.macroUi.focusedMacroSlot.get()) &&
-                   source.structureClipboard.hasMacroAutomation();
+            return source.macroUi.focusedMacroSlot.get() < MACRO_COUNT &&
+                   source.structureClipboard.hasMacroSlot();
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return source.structureClipboard.hasMacroPage();
@@ -72,8 +55,7 @@ FLASHMEM bool macroInteractionCanRemoveStructure(
                    structure_slots::countEnabled(source.enabledTrackMask, TRACK_COUNT) > 1U;
         case core::state::StructureNavigationFocus::STEP:
             return !source.pages.isMacroAddSlot(source.macroUi.focusedMacroSlot.get()) &&
-                   macroSlotAutomationActive(
-                       source.pages,
+                   source.pages.isMacroSlotActive(
                        source.macroUi.focusedMacroSlot.get()
                    );
         case core::state::StructureNavigationFocus::PAGE:

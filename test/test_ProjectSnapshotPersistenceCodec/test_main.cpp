@@ -563,6 +563,37 @@ void configureProjectSession(core::state::CoreState& state) {
     configureProjectGraphContent(state.sequencer.pattern);
 }
 
+oc::note::sequencer::StepSequencerGraph makeMaxDensityProjectGraph() {
+    using namespace oc::note::sequencer;
+
+    StepSequencerGraph graph;
+    graph.reset();
+    graph.enabled = true;
+    graph.rootSequenceId = 0;
+    graph.stepNodeCount = StepSequencerGraphLimits::MAX_STEP_NODES;
+    graph.sequenceCount = StepSequencerGraphLimits::MAX_SEQUENCES;
+    graph.cycleSetCount = StepSequencerGraphLimits::MAX_CYCLE_SETS;
+
+    graph.sequences[0].kind = StepSequencerSequenceKind::RootPattern;
+    graph.sequences[0].firstStepNode = 0;
+    graph.sequences[0].length =
+        core::state::sequencer::SequencerPatternState::MAX_STEPS;
+    for (uint16_t i = 1; i < graph.sequenceCount; ++i) {
+        graph.sequences[i].kind = StepSequencerSequenceKind::MicroSequence;
+        graph.sequences[i].firstStepNode = 0;
+        graph.sequences[i].length = 1;
+    }
+    for (uint16_t i = 0; i < graph.cycleSetCount; ++i) {
+        graph.cycleSets[i].firstStateNode = 0;
+        graph.cycleSets[i].length = 1;
+    }
+    for (uint16_t i = 0; i < graph.stepNodeCount; ++i) {
+        graph.stepNodes[i].flags = STEP_NODE_NOTE_OFFSET;
+        graph.stepNodes[i].noteOffset = static_cast<int8_t>(i % 12U);
+    }
+    return graph;
+}
+
 void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
     assert(std::strcmp(state.project.metadata.id.data(), "p777") == 0);
     assert(std::strcmp(state.project.metadata.name.data(), "p777") == 0);
@@ -706,10 +737,76 @@ void test_project_snapshot_roundtrip_restores_runtime_state() {
 
     test_support::CoreStorages targetStorages;
     auto targetState = makeCoreState(targetStorages);
+    const uint32_t beforeRuntimeOwnerRevision =
+        targetState.macroRuntimeOwnerRevision.get();
+    const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = targetState.pages.currentActiveTrack(),
+        .page = targetState.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(targetState.macroUi.manualOverrides.activate(manualAddress, 0.73f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
     assert(project::applyProjectSnapshot(targetState, loadedSnapshot));
+    assert(targetState.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision + 1U);
+    assert(!targetState.macroUi.manualOverrides.activeFor(manualAddress));
     assertRuntimeMatchesConfigured(targetState);
 
     std::cout << "[PASS] test_project_snapshot_roundtrip_restores_runtime_state\n";
+}
+
+void test_project_snapshot_roundtrips_sequencer_chunk_larger_than_u16() {
+    using namespace core::state::sequencer;
+
+    test_support::CoreStorages sourceStorages;
+    auto sourceState = makeCoreState(sourceStorages);
+    const auto graph = makeMaxDensityProjectGraph();
+    const uint8_t activeTrack = sourceState.sequencerTracks.activeTrackIndex();
+    for (uint8_t track = 0; track < sourceState.sequencerTracks.TRACK_COUNT; ++track) {
+        auto& pattern = track == activeTrack
+            ? sourceState.sequencer.pattern
+            : sourceState.sequencerTracks.track(track);
+        assert(copyGraph(pattern, &graph, static_cast<uint32_t>(track) + 1U));
+    }
+
+    project::ProjectSnapshot sourceSnapshot;
+    assert(project::captureProjectSnapshot(sourceState, sourceSnapshot));
+    auto envelope = core::app::makeExtmemUnique<
+        core::persistence::sequencer_codec::EnvelopeBuffer>();
+    assert(envelope);
+    const auto encodedEnvelope =
+        test_support::encodeProjectSequencerSnapshot(sourceSnapshot.sequencer, *envelope);
+    assert(encodedEnvelope.ok);
+    assert(encodedEnvelope.size > UINT16_MAX);
+
+    auto projectBytes = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectSnapshotScratchSize>>();
+    assert(projectBytes);
+    const auto encodedProject = snapshot_codec::encodeProjectSnapshot(
+        sourceSnapshot,
+        projectBytes->data(),
+        static_cast<uint32_t>(projectBytes->size())
+    );
+    assert(encodedProject.status == project_file::Status::OK);
+
+    project::ProjectSnapshot loadedSnapshot;
+    project_file::LoadReport report{};
+    const auto decodedProject = snapshot_codec::decodeProjectSnapshot(
+        projectBytes->data(),
+        encodedProject.bytesWritten,
+        loadedSnapshot,
+        &report
+    );
+    assert(decodedProject.ok);
+    assert(decodedProject.loadStatus == project_file::LoadStatus::OK);
+    assert(decodedProject.overwriteSafe);
+    assert(report.ok());
+    assert(sameMusicalHistorySnapshot(
+        sourceSnapshot.sequencer,
+        loadedSnapshot.sequencer
+    ));
+
+    std::cout
+        << "[PASS] test_project_snapshot_roundtrips_sequencer_chunk_larger_than_u16\n";
 }
 
 void test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool() {
@@ -1084,6 +1181,73 @@ void test_project_snapshot_future_sequencer_chunk_blocks_overwrite() {
     std::cout << "[PASS] test_project_snapshot_future_sequencer_chunk_blocks_overwrite\n";
 }
 
+void test_project_snapshot_future_or_corrupt_sequencer_envelope_blocks_overwrite() {
+    test_support::CoreStorages sourceStorages;
+    auto sourceState = makeCoreState(sourceStorages);
+    configureProjectSession(sourceState);
+
+    auto envelope = core::app::makeExtmemUnique<
+        core::persistence::sequencer_codec::EnvelopeBuffer
+    >();
+    auto container = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectSnapshotScratchSize>
+    >();
+    assert(envelope && container);
+    project::ProjectSnapshot sourceSnapshot;
+    assert(project::captureProjectSnapshot(sourceState, sourceSnapshot));
+    const auto encodedSequencer =
+        test_support::encodeProjectSequencerSnapshot(sourceSnapshot.sequencer, *envelope);
+    assert(encodedSequencer.ok);
+    assert(envelope->bytes[4] ==
+           core::persistence::sequencer_codec::PITCH_POLICY_ENVELOPE_VERSION);
+
+    const auto assertUnsafe = [&](project_file::LoadCode expectedCode) {
+        const project_file::ChunkView chunks[] = {{
+            .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
+            .versionMajor = snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
+            .versionMinor = snapshot_codec::PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = envelope->bytes.data(),
+            .size = encodedSequencer.size,
+        }};
+        const auto encoded = project_file::encode(
+            chunks,
+            1,
+            0,
+            container->data(),
+            container->size()
+        );
+        assert(encoded.status == project_file::Status::OK);
+
+        project::ProjectSnapshot loaded;
+        project_file::LoadReport report{};
+        const auto decoded = snapshot_codec::decodeProjectSnapshot(
+            container->data(),
+            encoded.bytesWritten,
+            loaded,
+            &report
+        );
+        assert(decoded.ok);
+        assert(decoded.loadStatus == project_file::LoadStatus::PARTIAL);
+        assert(!decoded.overwriteSafe);
+        assert(reportHas(report, expectedCode));
+        assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
+    };
+
+    envelope->bytes[4] = static_cast<uint8_t>(
+        core::persistence::sequencer_codec::CC_LANE_ENVELOPE_VERSION + 1U
+    );
+    assertUnsafe(project_file::LoadCode::CHUNK_PAYLOAD_INVALID);
+
+    envelope->bytes[4] =
+        core::persistence::sequencer_codec::PITCH_POLICY_ENVELOPE_VERSION;
+    envelope->bytes[10] = 1U;
+    assertUnsafe(project_file::LoadCode::CHUNK_PAYLOAD_INVALID);
+
+    std::cout
+        << "[PASS] test_project_snapshot_future_or_corrupt_sequencer_envelope_blocks_overwrite\n";
+}
+
 void test_project_snapshot_stale_macro_state_chunk_defaults_and_blocks_overwrite() {
     using MacroStatePayload =
         std::array<uint8_t, snapshot_codec::PROJECT_MACRO_STATE_PAYLOAD_SIZE>;
@@ -1189,12 +1353,14 @@ int main() {
     std::cout << "==============================================\n\n";
 
     test_project_snapshot_roundtrip_restores_runtime_state();
+    test_project_snapshot_roundtrips_sequencer_chunk_larger_than_u16();
     test_project_sequencer_snapshot_encoder_is_deterministic();
     test_project_snapshot_roundtrip_preserves_dense_macro_automation_pool();
     test_project_snapshot_rejects_invalid_automation_lifecycle_metadata();
     test_project_snapshot_migrates_macro_automation_v14_lifecycle_defaults();
     test_project_snapshot_decode_defaults_missing_macro_and_sequencer_chunks();
     test_project_snapshot_future_sequencer_chunk_blocks_overwrite();
+    test_project_snapshot_future_or_corrupt_sequencer_envelope_blocks_overwrite();
     test_project_snapshot_stale_macro_state_chunk_defaults_and_blocks_overwrite();
     test_project_snapshot_stale_sequencer_chunk_defaults_and_blocks_overwrite();
 

@@ -1,0 +1,59 @@
+# UX workflow: Step Preset semantic states and temporary feedback.
+# Purpose: keeps every transient state explicit without permanently loading the
+# picker: semantic browse names, mixed pitch details, overwrite guard phases,
+# cancellation, applied/queued outcomes, and actionable Save failures.
+# Expect: capture_changed:step_preset_browse=step_preset_browse_page_2, capture_changed:step_preset_detail_mixed=step_preset_preview_next, capture_changed:step_preset_overwrite_ready=step_preset_overwrite_pressed, capture_changed:step_preset_overwrite_pressed=step_preset_overwrite_armed, capture_changed:step_preset_applied=step_preset_queued, capture_changed:step_preset_save_capacity=step_preset_save_stale, capture_changed:step_preset_save_stale=step_preset_save_storage_failed
+# Expect: capture_match:step_preset_applied=step_preset_applied_stable, capture_match:step_preset_save_stale=step_preset_save_stale_stable
+# Expect: semantic:step_preset_detail_mixed:surface_context=true, semantic:step_preset_detail_mixed:mode=sequencer.step_preset.load.detail, semantic:step_preset_detail_mixed:source=orbit-a, semantic:step_preset_detail_mixed:target=step, semantic:step_preset_detail_mixed:target_step=5
+# Expect: semantic:step_preset_detail_mixed:route_policy=preserve_destination, semantic:step_preset_detail_mixed:projection=preview, semantic:step_preset_detail_mixed:property=pitch_policy, semantic:step_preset_detail_mixed:value_label=mixed, semantic:step_preset_detail_mixed:reason=adapted
+# Expect: semantic:step_preset_queued:outcome=queued, semantic:step_preset_queued:activation_origin=step_preset, semantic:step_preset_queued:activation_generation=1, semantic:step_preset_queued:playing=true
+# Expect: semantic:step_preset_applied:outcome=applied, semantic:step_preset_applied:activation_origin=step_preset, semantic:step_preset_applied:activation_generation=1, semantic:step_preset_applied:playing=true
+# Expect: semantic:step_preset_cancelled:outcome=cancelled, semantic:step_preset_cancelled:activation_origin=step_preset, semantic:step_preset_cancelled:activation_generation=1, semantic:step_preset_cancelled:playing=true
+# Expect: semantic:step_preset_save_capacity:mode=sequencer.step_preset.save, semantic:step_preset_save_capacity:outcome=failed, semantic:step_preset_save_capacity:reason=capacity
+# Expect: semantic:step_preset_save_stale:mode=sequencer.step_preset.save, semantic:step_preset_save_stale:outcome=failed, semantic:step_preset_save_stale:reason=stale_target
+# Expect: semantic:step_preset_save_storage_failed:mode=sequencer.step_preset.save, semantic:step_preset_save_storage_failed:outcome=failed, semantic:step_preset_save_storage_failed:reason=storage_unavailable
+
+0 scenario seq-step-preset-browse
+80 capture screen step_preset_browse
+
+160 scenario seq-step-preset-browse-page-2
+240 capture screen step_preset_browse_page_2
+
+320 scenario seq-step-preset-detail-mixed
+400 capture screen step_preset_detail_mixed
+
+480 scenario seq-step-preset-preview-next
+560 capture screen step_preset_preview_next
+
+640 scenario seq-step-preset-overwrite-ready
+720 capture screen step_preset_overwrite_ready
+
+800 scenario seq-step-preset-overwrite-pressed
+880 capture screen step_preset_overwrite_pressed
+
+960 scenario seq-step-preset-overwrite-armed
+1040 capture screen step_preset_overwrite_armed
+
+1120 scenario seq-step-preset-cancelled
+1200 capture screen step_preset_cancelled
+
+1280 scenario seq-step-preset-applied
+1360 capture screen step_preset_applied
+1365 capture screen step_preset_applied_stable
+
+1440 scenario seq-step-preset-queued
+1520 capture screen step_preset_queued
+
+1600 scenario seq-step-preset-save-capacity
+1680 capture screen step_preset_save_capacity
+
+1760 scenario seq-step-preset-save-stale
+1840 capture screen step_preset_save_stale
+1845 capture screen step_preset_save_stale_stable
+
+1920 scenario seq-step-preset-save-storage-failed
+2000 capture screen step_preset_save_storage_failed
+
+# One real dispatched action keeps the synthetic projection workflow subject to
+# the same binding-trace gate as user-driven workflows.
+2080 tap BOTTOM_LEFT 60

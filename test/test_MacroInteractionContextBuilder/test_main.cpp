@@ -137,7 +137,7 @@ void test_track_focus_uses_shared_track_mask_and_clipboard() {
     std::cout << "[PASS] test_track_focus_uses_shared_track_mask_and_clipboard\n";
 }
 
-void test_step_focus_tracks_add_slot_and_automation_clipboard() {
+void test_step_focus_requires_typed_slot_clipboard() {
     Harness h;
     h.macroUi.focusedMacroSlot.set(1);
 
@@ -162,6 +162,23 @@ void test_step_focus_tracks_add_slot_and_automation_clipboard() {
     assert(slot != nullptr);
     assert(h.clipboard.storeMacroAutomation(h.pages.automation, *slot));
 
+    const auto legacyAutomation = core::state::macro::buildMacroInteractionContext(
+        h.source(StructureNavigationFocus::STEP)
+    );
+    assert(!legacyAutomation.previewingAddSlot);
+    assert(!legacyAutomation.compatibleClipboardAvailable);
+    assert(legacyAutomation.canRemoveStructure);
+
+    assert(h.clipboard.storeMacroSlot(
+        h.pages,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.pages.currentActiveTrack(),
+            .page = h.pages.currentActivePage(),
+            .macro = 1,
+        }
+    ));
+    assert(h.clipboard.hasMacroSlot());
+
     const auto activeSlot = core::state::macro::buildMacroInteractionContext(
         h.source(StructureNavigationFocus::STEP)
     );
@@ -169,7 +186,7 @@ void test_step_focus_tracks_add_slot_and_automation_clipboard() {
     assert(activeSlot.compatibleClipboardAvailable);
     assert(activeSlot.canRemoveStructure);
 
-    std::cout << "[PASS] test_step_focus_tracks_add_slot_and_automation_clipboard\n";
+    std::cout << "[PASS] test_step_focus_requires_typed_slot_clipboard\n";
 }
 
 }  // namespace
@@ -178,7 +195,7 @@ int main() {
     test_page_focus_projects_selection_preview_and_remove();
     test_selection_delete_preflight_disables_empty_and_delete_all();
     test_track_focus_uses_shared_track_mask_and_clipboard();
-    test_step_focus_tracks_add_slot_and_automation_clipboard();
+    test_step_focus_requires_typed_slot_clipboard();
     std::cout << "\nAll MacroInteractionContextBuilder tests passed.\n";
     return 0;
 }

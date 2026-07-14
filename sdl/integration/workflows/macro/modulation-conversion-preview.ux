@@ -1,0 +1,48 @@
+# UX workflow: inspect and apply the non-audible Automation-to-Modulation preview.
+# Purpose: validates semantic policy feedback, tap Apply on an empty target,
+# guarded Overwrite on an existing target, and Modulation-only Clear.
+# Expect: capture_changed:modulation_empty=modulation_applied, capture_changed:overwrite_preview=modulation_overwritten, capture_changed:modulation_overwritten=modulation_cleared
+# Expect: semantic:overwrite_pressed:outcome=pressed, semantic:overwrite_armed:outcome=armed, semantic:modulation_overwritten:outcome=applied
+# Expect: semantic:overwrite_pressed:projection=non_audible_preview, semantic:modulation_overwritten:route_policy=live_manual>cc_lane>macro_computed>macro_static
+
+0 scenario macro-automation-curve-shape
+80 capture screen automation_source
+
+# Open Macro Edit and enter the Modulation detail.
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 encoder NAV 1
+1580 encoder NAV 1
+1720 tap NAV 60
+1920 capture screen modulation_empty
+
+# Focus Convert automation, preview Mean, then select First.
+2050 encoder NAV 1
+2160 encoder NAV 1
+2270 encoder NAV 1
+2380 encoder NAV 1
+2490 encoder NAV 1
+2630 tap NAV 60
+2830 capture screen preview_mean_empty
+2960 encoder NAV 1
+3130 capture screen preview_first_empty
+
+# Empty destination: tap Apply. The preview is silent and closes on commit.
+3280 tap BOTTOM_RIGHT 60
+3510 capture screen modulation_applied
+
+# Re-open conversion: the existing Modulation requires guarded Overwrite.
+3650 tap NAV 60
+3850 capture screen overwrite_preview
+3990 button BOTTOM_RIGHT down
+4100 capture screen overwrite_pressed
+4240 tick
+4320 capture screen overwrite_armed
+5070 tick
+5130 button BOTTOM_RIGHT up
+5390 capture screen modulation_overwritten
+
+# Clear affects only Modulation; the source Automation and destination survive.
+5540 tap BOTTOM_LEFT 60
+5790 capture screen modulation_cleared

@@ -19,13 +19,17 @@ class UxScenarioRunner {
 public:
     using ScenarioApplier = std::function<bool(const char*)>;
     using StateTick = std::function<void()>;
+    using CaptureObserver = std::function<void(const char*)>;
+    using ScenarioObserver = std::function<void()>;
 
     bool run(const UxRunOptions& options,
              sdl::SdlEnvironment& env,
              oc::app::OpenControlApp& app,
              core::state::CoreState& state,
              ScenarioApplier scenarioApplier,
-             StateTick stateTick = {});
+             StateTick stateTick = {},
+             CaptureObserver captureObserver = {},
+             ScenarioObserver scenarioObserver = {});
 
     const std::string& error() const { return error_; }
 

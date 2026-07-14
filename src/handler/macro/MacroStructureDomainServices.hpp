@@ -8,6 +8,7 @@
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroUiState.hpp"
 
 namespace core::state {
@@ -39,6 +40,7 @@ public:
         core::state::StatusBarState& statusBar;
         oc::state::Signal<uint8_t, 8>& sharedTrackActive;
         oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
+        core::state::macro::MacroHistoryService* history = nullptr;
     };
 
     struct Operations {
@@ -91,6 +93,7 @@ private:
     core::state::StatusBarState* status_bar_ = nullptr;
     oc::state::Signal<uint8_t, 8>* shared_track_active_ = nullptr;
     oc::state::Signal<uint16_t, 16>* shared_track_enabled_mask_ = nullptr;
+    core::state::macro::MacroHistoryService* history_ = nullptr;
     Operations operations_{};
 };
 

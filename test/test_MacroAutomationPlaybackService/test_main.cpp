@@ -408,6 +408,128 @@ void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
     std::cout << "[PASS] test_reactivating_slot_or_lane_resends_value_superseded_while_inactive\n";
 }
 
+void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureModulation(state, 1.0f);
+    state.pages.activePageData().values[0] = 0.5f;
+    state.pages.activePageData().cc[0] = 74;
+    state.pages.updateActiveConfigs();
+    state.statusBar.tempo.set(60.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    core::handler::MacroAutomationPlaybackService playback(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            state.pages,
+            state.macroUi,
+            state.statusBar,
+            &state.macroRuntimeOwnerRevision,
+        },
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+
+    playback.update(1000);
+    assert(midiTransport.lastValue >= 95 && midiTransport.lastValue <= 96);
+    playback.update(1500);
+    assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
+
+    const uint32_t stableOwnerRevision = state.macroRuntimeOwnerRevision.get();
+    state.macroUi.focusedMacroSlot.set(1);
+    playback.update(1750);
+    assert(midiTransport.lastValue >= 47 && midiTransport.lastValue <= 48);
+    assert(state.macroRuntimeOwnerRevision.get() == stableOwnerRevision);
+
+    const int beforePageNavigation = midiTransport.ccCount;
+    state.pages.setActivePage(1);
+    playback.update(2000);
+    assert(midiTransport.ccCount == beforePageNavigation);
+    state.pages.setActivePage(0);
+    playback.update(2250);
+    assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
+    assert(state.macroRuntimeOwnerRevision.get() == stableOwnerRevision);
+
+    const int beforeTrackNavigation = midiTransport.ccCount;
+    state.pages.syncSharedTrackState(0x0003U, 1);
+    playback.update(2500);
+    assert(midiTransport.ccCount == beforeTrackNavigation);
+    state.pages.syncSharedTrackState(0x0003U, 0);
+    playback.update(2750);
+    assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
+    assert(state.macroRuntimeOwnerRevision.get() == stableOwnerRevision);
+
+    state.statusBar.playing.set(false);
+    const int beforeStop = midiTransport.ccCount;
+    playback.update(3000);
+    playback.update(3500);
+    assert(midiTransport.ccCount == beforeStop);
+
+    state.statusBar.playing.set(true);
+    playback.update(4000);
+    assert(midiTransport.ccCount == beforeStop + 1);
+    assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
+    playback.update(4750);
+    assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
+    assert(state.macroRuntimeOwnerRevision.get() == stableOwnerRevision);
+
+    state.requestMacroRuntimeOwnerActivation();
+    assert(state.macroRuntimeOwnerRevision.get() == stableOwnerRevision + 1U);
+    playback.update(5000);
+    assert(midiTransport.lastValue >= 95 && midiTransport.lastValue <= 96);
+    playback.update(5500);
+    assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
+
+    state.requestMacroRuntimeOwnerActivation();
+    playback.reset();
+    playback.update(6000);
+    assert(midiTransport.lastValue >= 95 && midiTransport.lastValue <= 96);
+    playback.update(6500);
+    assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
+
+    std::cout << "[PASS] test_runtime_owner_epoch_is_independent_from_navigation_and_transport\n";
+}
+
+void test_runtime_owner_activation_preserves_manual_ownership() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureModulation(state, 1.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    core::handler::MacroAutomationPlaybackService playback(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            state.pages,
+            state.macroUi,
+            state.statusBar,
+            &state.macroRuntimeOwnerRevision,
+        },
+        services,
+        midi
+    );
+
+    assert(services.takeManualControl(0, 0.42f));
+    state.requestMacroRuntimeOwnerActivation();
+    playback.update(1000);
+
+    float manualValue = 0.0f;
+    assert(services.manualOverrideValueFor(0, manualValue));
+    assert(std::fabs(manualValue - 0.42f) < 0.0001f);
+    assert(std::fabs(state.macros[0].value.get() - 0.42f) < 0.0001f);
+    assert(midiTransport.ccCount == 0);
+
+    std::cout << "[PASS] test_runtime_owner_activation_preserves_manual_ownership\n";
+}
+
 }  // namespace
 
 int main() {
@@ -418,6 +540,8 @@ int main() {
     test_modulation_only_playback_and_depth_zero_remain_computed();
     test_recording_session_suspends_existing_lane_playback_for_the_macro_slot();
     test_reactivating_slot_or_lane_resends_value_superseded_while_inactive();
+    test_runtime_owner_epoch_is_independent_from_navigation_and_transport();
+    test_runtime_owner_activation_preserves_manual_ownership();
 
     std::cout << "\nAll MacroAutomationPlaybackService tests passed.\n";
     return 0;

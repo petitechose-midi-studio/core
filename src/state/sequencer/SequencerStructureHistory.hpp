@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 
 namespace core::state::sequencer {
 
@@ -34,6 +35,10 @@ struct SequencerHistoryTrackStructureChange {
     // Track paste sets this for its destinations so Undo/Redo restores musical
     // content without rolling routing back to the captured snapshot.
     uint16_t preserveDestinationBindingsMask = 0;
+    // Stable Track paste operation identity. Each audible Undo/Redo transition
+    // receives a fresh generation, while stacked operations may safely rebind
+    // the single realtime slot for a Track.
+    SequencerTrackActivationHistoryRef activation{};
     SequencerHistoryTrackStructureSnapshot before;
     SequencerHistoryTrackStructureSnapshot after;
 

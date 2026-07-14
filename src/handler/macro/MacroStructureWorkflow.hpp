@@ -58,6 +58,7 @@ public:
     bool commitSelectionDeleteGuard(uint32_t nowMs);
     bool cancelSelectionDeleteGuard(uint32_t nowMs);
     void beginHoldAction(core::state::StructureHoldAction action);
+    [[nodiscard]] bool hasHoldAction(core::state::StructureHoldAction action) const;
     void clearHoldAction();
     void eraseCurrentStructure();
     void removeCurrentStructure();

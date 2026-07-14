@@ -92,6 +92,7 @@ MacroPerformanceDomainServices::MacroPerformanceDomainServices(
     , macro_ui_(&state.macroUi)
     , config_revision_(&state.configRevision)
     , status_bar_(&state.statusBar)
+    , history_(state.history)
     , operations_(operations) {}
 
 MacroPerformanceDomainServices MacroPerformanceDomainServices::fromCoreState(
@@ -104,6 +105,7 @@ MacroPerformanceDomainServices MacroPerformanceDomainServices::fromCoreState(
             state.macroUi,
             state.configRevision,
             state.statusBar,
+            &state.macroHistory,
         },
         Operations{
             .context = &state,
@@ -278,6 +280,33 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
         nowMs,
         status_bar_->tempo.get()
     );
+    if (recording.preserveDuration) {
+        core::state::macro::macroAutomationFinalizeRecordingWithDuration(
+            recording.lane,
+            duration,
+            core::state::macro::macroAutomationBeatsFromTicks(recording.targetDurationTicks)
+        );
+    } else {
+        core::state::macro::macroAutomationFinalizeRecording(recording.lane, duration);
+    }
+
+    auto historyChange = history_ != nullptr
+        ? history_->prepare(
+              *pages_,
+              recording.address,
+              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
+          )
+        : core::state::macro::MacroHistoryChangePtr{};
+    if (history_ != nullptr && !historyChange) {
+        restoreManualAfterFailedRecording_(recording);
+        recording.reset();
+        macro_ui_->automationRecordingStatus.set(
+            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
+        );
+        bumpAutomationRecordingRevision(*macro_ui_);
+        return false;
+    }
+
     const bool hadSlot = core::state::macro::macroAutomationFindSlot(
         pages_->automation,
         recording.address
@@ -296,16 +325,6 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
         return false;
     }
 
-    if (recording.preserveDuration) {
-        core::state::macro::macroAutomationFinalizeRecordingWithDuration(
-            recording.lane,
-            duration,
-            core::state::macro::macroAutomationBeatsFromTicks(recording.targetDurationTicks)
-        );
-    } else {
-        core::state::macro::macroAutomationFinalizeRecording(recording.lane, duration);
-    }
-
     if (!core::state::macro::macroAutomationAssignAutomation(
             pages_->automation,
             *slot,
@@ -315,6 +334,12 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
             core::state::macro::macroAutomationClearSlot(
                 pages_->automation,
                 recording.address
+            );
+        }
+        if (historyChange) {
+            (void)core::state::macro::applyMacroSlotHistorySnapshot(
+                *pages_,
+                historyChange->before
             );
         }
         restoreManualAfterFailedRecording_(recording);
@@ -329,6 +354,18 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
         core::state::macro::macroCurveStored(slot->modulation)) {
         slot->modulation.playbackState =
             core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    }
+    if (history_ != nullptr && !history_->commitPrepared(
+            *pages_,
+            std::move(historyChange)
+        )) {
+        restoreManualAfterFailedRecording_(recording);
+        recording.reset();
+        macro_ui_->automationRecordingStatus.set(
+            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
+        );
+        bumpAutomationRecordingRevision(*macro_ui_);
+        return false;
     }
     (void)macro_ui_->manualOverrides.resume(recording.address);
     refreshManualProjection_();

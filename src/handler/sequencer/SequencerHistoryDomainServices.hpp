@@ -20,6 +20,14 @@ public:
         void* context,
         core::state::sequencer::SequencerHistoryPatternChangePtr change
     );
+    using CanRecordPatternFn = bool (*)(
+        void* context,
+        const core::state::sequencer::SequencerHistoryPatternChange& change
+    );
+    using RecordPreparedPatternFn = void (*)(
+        void* context,
+        core::state::sequencer::SequencerHistoryPatternChangePtr change
+    );
     using RecordFullBankFn = bool (*)(
         void* context,
         core::state::sequencer::SequencerHistoryFullBankChangePtr change
@@ -49,6 +57,8 @@ public:
         RecordPatternFn recordPattern = nullptr;
         RecordPatternFn recordFlatPattern = nullptr;
         RecordPatternChangeFn recordPatternChange = nullptr;
+        CanRecordPatternFn canRecordPattern = nullptr;
+        RecordPreparedPatternFn recordPreparedPattern = nullptr;
         RecordStructureFn recordStructure = nullptr;
         CanRecordStructureFn canRecordStructure = nullptr;
         RecordPreparedStructureFn recordPreparedStructure = nullptr;
@@ -75,6 +85,13 @@ public:
         core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
     ) const;
     bool recordPattern(
+        core::state::sequencer::SequencerHistoryPatternChangePtr change
+    ) const;
+    bool canRecordPattern(
+        const core::state::sequencer::SequencerHistoryPatternChange& change
+    ) const;
+    // Precondition: canRecordPattern(change) was true and change is unchanged.
+    void recordPreparedPattern(
         core::state::sequencer::SequencerHistoryPatternChangePtr change
     ) const;
     bool recordFullBank(

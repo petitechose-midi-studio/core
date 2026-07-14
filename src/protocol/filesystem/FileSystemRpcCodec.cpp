@@ -27,6 +27,8 @@ FLASHMEM bool FileSystemRpcCodec::isFileSystemRequestId(uint8_t messageId) {
         case FileSystemRpcMessageId::MKDIR_REQUEST:
         case FileSystemRpcMessageId::DELETE_REQUEST:
         case FileSystemRpcMessageId::RENAME_REQUEST:
+        case FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST:
+        case FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST:
             return true;
         default:
             return false;
@@ -79,6 +81,14 @@ FLASHMEM const char* FileSystemRpcCodec::messageName(FileSystemRpcMessageId mess
             return "FsRenameRequest";
         case FileSystemRpcMessageId::RENAME_RESPONSE:
             return "FsRenameResponse";
+        case FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST:
+            return "FsConditionalReplaceRequest";
+        case FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE:
+            return "FsConditionalReplaceResponse";
+        case FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST:
+            return "FsConditionalDeleteRequest";
+        case FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE:
+            return "FsConditionalDeleteResponse";
         case FileSystemRpcMessageId::ERROR_RESPONSE:
         default:
             return "FsErrorResponse";
@@ -299,6 +309,48 @@ FLASHMEM size_t FileSystemRpcCodec::encodeRenameRequest(
     return writer.position();
 }
 
+FLASHMEM size_t FileSystemRpcCodec::encodeConditionalReplaceRequest(
+    uint16_t requestId,
+    uint32_t operationId,
+    const char* currentPath,
+    const char* stagingPath,
+    const uint8_t expectedSourceSha256[FILESYSTEM_RPC_SHA256_SIZE],
+    const uint8_t replacementSha256[FILESYSTEM_RPC_SHA256_SIZE],
+    uint8_t* out,
+    size_t outSize
+) {
+    if (!expectedSourceSha256 || !replacementSha256) return 0;
+    ByteWriter writer(out, outSize);
+    if (!writeFrameHeader(writer, FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST, requestId) ||
+        !writer.writeU32(operationId) ||
+        !writer.writeBytes(expectedSourceSha256, FILESYSTEM_RPC_SHA256_SIZE) ||
+        !writer.writeBytes(replacementSha256, FILESYSTEM_RPC_SHA256_SIZE) ||
+        !writer.writeString(currentPath, oc::interface::FILESYSTEM_MAX_PATH_LENGTH) ||
+        !writer.writeString(stagingPath, oc::interface::FILESYSTEM_MAX_PATH_LENGTH)) {
+        return 0;
+    }
+    return writer.position();
+}
+
+FLASHMEM size_t FileSystemRpcCodec::encodeConditionalDeleteRequest(
+    uint16_t requestId,
+    uint32_t operationId,
+    const char* path,
+    const uint8_t expectedSourceSha256[FILESYSTEM_RPC_SHA256_SIZE],
+    uint8_t* out,
+    size_t outSize
+) {
+    if (!expectedSourceSha256) return 0;
+    ByteWriter writer(out, outSize);
+    if (!writeFrameHeader(writer, FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST, requestId) ||
+        !writer.writeU32(operationId) ||
+        !writer.writeBytes(expectedSourceSha256, FILESYSTEM_RPC_SHA256_SIZE) ||
+        !writer.writeString(path, oc::interface::FILESYSTEM_MAX_PATH_LENGTH)) {
+        return 0;
+    }
+    return writer.position();
+}
+
 FLASHMEM Result<FileSystemRpcStatResponse> FileSystemRpcCodec::decodeStatResponse(
     const uint8_t* data,
     size_t size
@@ -508,6 +560,48 @@ FLASHMEM Result<FileSystemRpcCapabilitiesResponse> FileSystemRpcCodec::decodeCap
         );
     }
     return Result<FileSystemRpcCapabilitiesResponse>::ok(response);
+}
+
+FLASHMEM Result<FileSystemRpcConditionalMutationResponse>
+FileSystemRpcCodec::decodeConditionalMutationResponse(const uint8_t* data, size_t size) {
+    auto frame = decodeFrame(data, size);
+    if (!frame ||
+        frame.value().schema != FILESYSTEM_RPC_SCHEMA ||
+        (frame.value().messageId != FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE &&
+         frame.value().messageId != FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE)) {
+        return Result<FileSystemRpcConditionalMutationResponse>::err(
+            {ErrorCode::INVALID_ARGUMENT, "not conditional mutation response"}
+        );
+    }
+
+    ByteReader reader(frame.value().payload, frame.value().payloadSize);
+    uint8_t rawStatus = 0;
+    uint8_t rawOutcome = 0;
+    uint8_t rawSubject = 0;
+    FileSystemRpcConditionalMutationResponse response{};
+    response.requestId = frame.value().requestId;
+    response.messageId = frame.value().messageId;
+    const uint8_t* observed = nullptr;
+    if (!reader.readU8(rawStatus) ||
+        !reader.readU8(rawOutcome) ||
+        !reader.readU8(rawSubject) ||
+        !reader.readU32(response.operationId) ||
+        !reader.readBytes(observed, FILESYSTEM_RPC_SHA256_SIZE) ||
+        reader.remaining() != 0 ||
+        rawStatus > static_cast<uint8_t>(FileSystemRpcStatus::PRECONDITION_FAILED) ||
+        rawOutcome > static_cast<uint8_t>(FileSystemRpcMutationOutcome::ALREADY_APPLIED) ||
+        rawSubject > static_cast<uint8_t>(FileSystemRpcMutationSubject::STAGING)) {
+        return Result<FileSystemRpcConditionalMutationResponse>::err(
+            {ErrorCode::INVALID_ARGUMENT, "bad conditional mutation response"}
+        );
+    }
+    response.status = static_cast<FileSystemRpcStatus>(rawStatus);
+    response.outcome = static_cast<FileSystemRpcMutationOutcome>(rawOutcome);
+    response.subject = static_cast<FileSystemRpcMutationSubject>(rawSubject);
+    for (size_t i = 0; i < FILESYSTEM_RPC_SHA256_SIZE; ++i) {
+        response.observedSha256[i] = observed[i];
+    }
+    return Result<FileSystemRpcConditionalMutationResponse>::ok(response);
 }
 
 

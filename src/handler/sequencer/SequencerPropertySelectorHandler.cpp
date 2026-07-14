@@ -8,6 +8,7 @@
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
 
 namespace core::handler {
 using ButtonID = Config::ButtonID;
@@ -19,7 +20,8 @@ using StepProperty = core::state::sequencer::StepProperty;
 
 namespace {
 constexpr int PROPERTY_COUNT =
-    static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
+    static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 2;
+constexpr int CC_LANES_PROPERTY_INDEX = PROPERTY_COUNT - 1;
 
 inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::SequencerState& sequencer) {
     return [&sequencer]() { return sequencer.stepPropertyInlineSelector.selecting.get(); };
@@ -206,7 +208,9 @@ FLASHMEM SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     oc::type::ScopeID scopeId,
-    NowProvider nowProvider
+    NowProvider nowProvider,
+    SequencerCcLaneWorkflow* ccLaneWorkflow,
+    oc::context::OverlayManager<core::ui::OverlayType>* overlayManager
 )
     : overlays_(state.overlays)
     , sequencer_(state.sequencer)
@@ -216,7 +220,9 @@ FLASHMEM SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId)
-    , now_provider_(nowProvider) {
+    , now_provider_(nowProvider)
+    , cc_lane_workflow_(ccLaneWorkflow)
+    , overlay_manager_(overlayManager) {
     setupBindings();
 }
 
@@ -283,6 +289,17 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
         .when(selectingPredicate(sequencer_))
         .then([this](float normalized) { setActiveVariationRange(normalized); });
 
+    buttons_.button(ButtonID::NAV)
+        .release()
+        .scope(scope_id_)
+        .when([this]() {
+            return sequencer_.stepPropertyInlineSelector.selecting.get() &&
+                   sequencer_.stepPropertyInlineSelector.selectedIndex.get() ==
+                       CC_LANES_PROPERTY_INDEX &&
+                   cc_lane_workflow_ != nullptr && overlay_manager_ != nullptr;
+        })
+        .then([this]() { enterCcLaneSelector(); });
+
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
@@ -311,6 +328,21 @@ FLASHMEM void SequencerPropertySelectorHandler::open() {
     configureOptForSelectedProperty();
 }
 
+FLASHMEM void SequencerPropertySelectorHandler::openCcLaneShortcut() {
+    history_.commitCoalescedPatternEdit();
+
+    auto& selector = sequencer_.stepPropertyInlineSelector;
+    selector.reset();
+    selector.selecting.set(true);
+    selector.selectedIndex.set(CC_LANES_PROPERTY_INDEX);
+    selector.snapshotIndex = static_cast<int>(sequencer_.activeStepProperty.get());
+    selector.snapshotValid = true;
+    selector.suppressOpeningRelease = true;
+    snapshot_variation_ranges_ = sequencer_.pattern.variationRanges;
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+}
+
 FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
     if (!nav::hasTurnDelta(delta)) return;
@@ -318,6 +350,9 @@ FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
     const int current = sequencer_.stepPropertyInlineSelector.selectedIndex.get();
     const int next = nav::nextWrappedIndex(delta, current, PROPERTY_COUNT);
     sequencer_.stepPropertyInlineSelector.selectedIndex.set(next);
+    if (next == CC_LANES_PROPERTY_INDEX) {
+        return;
+    }
     sequencer_.activeStepProperty.set(
         static_cast<core::state::sequencer::StepProperty>(next)
     );
@@ -330,6 +365,10 @@ FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
 
 FLASHMEM void SequencerPropertySelectorHandler::closeApply() {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
+    if (sequencer_.stepPropertyInlineSelector.suppressOpeningRelease) {
+        sequencer_.stepPropertyInlineSelector.suppressOpeningRelease = false;
+        return;
+    }
     const bool localVariationEdit =
         sequencer_.stepPropertyInlineSelector.macroLocalVariationEditActive.get();
     if (localVariationEdit) {
@@ -385,6 +424,10 @@ FLASHMEM void SequencerPropertySelectorHandler::closeCancel() {
 
 FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float normalized) {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
+    if (sequencer_.stepPropertyInlineSelector.selectedIndex.get() ==
+        CC_LANES_PROPERTY_INDEX) {
+        return;
+    }
 
     const auto property = sequencer_.activeStepProperty.get();
     const uint8_t range = input_utils::normalizedToVariationRange(property, normalized);
@@ -394,6 +437,10 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
 }
 
 FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty() {
+    if (sequencer_.stepPropertyInlineSelector.selectedIndex.get() ==
+        CC_LANES_PROPERTY_INDEX) {
+        return;
+    }
     const auto property = sequencer_.activeStepProperty.get();
     const auto config = input_utils::encoderConfigForVariationRange(property);
     encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
@@ -406,6 +453,14 @@ FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty(
             sequencer_.variationRangeForProperty(property)
         )
     );
+}
+
+FLASHMEM void SequencerPropertySelectorHandler::enterCcLaneSelector() {
+    if (cc_lane_workflow_ == nullptr || overlay_manager_ == nullptr) return;
+
+    closeApply();
+    cc_lane_workflow_->openLaneSelector();
+    overlay_manager_->show(core::ui::OverlayType::SEQ_CC_LANE, false);
 }
 
 }  // namespace core::handler

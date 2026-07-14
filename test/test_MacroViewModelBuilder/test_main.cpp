@@ -59,7 +59,7 @@ core::state::macro::MacroAutomationSlotState& configureAutomation(
     return *slot;
 }
 
-void test_macro_slot_focus_shows_local_automation_actions() {
+void test_macro_slot_focus_shows_guarded_slot_actions() {
     CoreStorages storage;
     core::state::CoreState state(
         storage.settings,
@@ -75,15 +75,18 @@ void test_macro_slot_focus_shows_local_automation_actions() {
     assert(props.visible);
     assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[0].tone == ContextActionStripTone::DESTRUCTIVE);
-    assert(props.slots[0].icon == standalone::icons::ACTION_CLEAR);
+    assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
+    assert(!props.slots[0].holdActive);
+    assert(props.slots[0].holdDurationMs ==
+           Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[2].tone == ContextActionStripTone::NEUTRAL);
     assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
 
-    std::cout << "[PASS] test_macro_slot_focus_shows_local_automation_actions\n";
+    std::cout << "[PASS] test_macro_slot_focus_shows_guarded_slot_actions\n";
 }
 
-void test_macro_slot_focus_shows_paste_when_automation_clipboard_is_available() {
+void test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard() {
     CoreStorages storage;
     core::state::CoreState state(
         storage.settings,
@@ -97,14 +100,28 @@ void test_macro_slot_focus_shows_paste_when_automation_clipboard_is_available() 
     auto& slot = configureAutomation(state, 0, 0.42f);
     assert(state.structureClipboard.storeMacroAutomation(state.pages.automation, slot));
 
-    const auto props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
+    auto props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
+    assert(props.visible);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[2].tone == ContextActionStripTone::NEUTRAL);
+    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+
+    assert(state.structureClipboard.storeMacroSlot(
+        state.pages,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    ));
+    props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(props.visible);
     assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[2].visualState == ContextActionStripVisualState::ARMED);
     assert(props.slots[2].tone == ContextActionStripTone::CONSTRUCTIVE);
     assert(props.slots[2].icon == standalone::icons::ACTION_PASTE);
 
-    std::cout << "[PASS] test_macro_slot_focus_shows_paste_when_automation_clipboard_is_available\n";
+    std::cout << "[PASS] test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard\n";
 }
 
 void test_macro_add_slot_focus_dims_structure_actions() {
@@ -148,6 +165,7 @@ void test_macro_selection_delete_strip_projects_guard_lifecycle() {
     assert(props.slots[0].visualState ==
            ContextActionStripVisualState::AVAILABLE);
     assert(props.slots[0].tone == ContextActionStripTone::DESTRUCTIVE);
+    assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
     assert(!props.slots[0].holdActive);
 
     core::state::contextual::GuardedActionState guard;
@@ -222,8 +240,8 @@ void test_macro_selection_delete_strip_projects_disabled_and_applied() {
 }  // namespace
 
 int main() {
-    test_macro_slot_focus_shows_local_automation_actions();
-    test_macro_slot_focus_shows_paste_when_automation_clipboard_is_available();
+    test_macro_slot_focus_shows_guarded_slot_actions();
+    test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard();
     test_macro_add_slot_focus_dims_structure_actions();
     test_macro_selection_delete_strip_projects_guard_lifecycle();
     test_macro_selection_delete_strip_projects_disabled_and_applied();

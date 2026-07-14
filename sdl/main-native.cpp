@@ -19,7 +19,9 @@
 
 #include <cstdio>
 #include <array>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -39,6 +41,7 @@
 #include "persistence/SequencerPersistence.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
+#include "validation/ux/SemanticUxRecorder.hpp"
 
 namespace {
 
@@ -61,6 +64,32 @@ bool removeStorageFilesForUxRun() {
     }
     return ok;
 }
+
+class NdjsonSemanticUxSink final : public core::validation::ux::SemanticUxLineSink {
+public:
+    bool open(const std::filesystem::path& path) {
+        stream_.open(path, std::ios::out | std::ios::trunc);
+        failed_ = !stream_.is_open();
+        return !failed_;
+    }
+
+    void writeLine(const char* line) override {
+        if (failed_ || !line) return;
+        constexpr char prefix[] = "UXR ";
+        const char* json = std::strncmp(line, prefix, sizeof(prefix) - 1U) == 0
+            ? line + sizeof(prefix) - 1U
+            : line;
+        stream_ << json << '\n';
+        stream_.flush();
+        failed_ = !stream_.good();
+    }
+
+    bool good() const { return !failed_; }
+
+private:
+    std::ofstream stream_;
+    bool failed_ = false;
+};
 
 void reportProjectSessionRestore(
     const core::persistence::ProjectSessionRestoreService::Result& result
@@ -163,6 +192,8 @@ int main(int argc, char** argv) {
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
     std::string bindingTracePath;
     sdl::integration::InputBindingTraceWriter bindingTrace;
+    NdjsonSemanticUxSink semanticTrace;
+    core::validation::ux::SemanticUxRecorder semanticRecorder;
 
     if (uxScript) {
         std::filesystem::create_directories(uxOutput);
@@ -171,6 +202,12 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "Failed to open binding trace: %s\n", bindingTrace.error().c_str());
             return 1;
         }
+        if (!semanticTrace.open(std::filesystem::path(uxOutput) /
+                                "semantic-trace.ndjson")) {
+            std::fprintf(stderr, "Failed to open semantic UX trace\n");
+            return 1;
+        }
+        semanticRecorder.configure({.sink = &semanticTrace, .enabled = true});
     }
 
     // UX workflows must not inherit clock/transport traffic from the user's
@@ -195,8 +232,12 @@ int main(int argc, char** argv) {
             }))
         .controllers(env.inputMapper())
         .inputConfig(Config::Input::CONFIG)
-        .inputTrace([&bindingTrace](const oc::core::input::InputBindingTraceEvent& event) {
+        .inputTrace([&](const oc::core::input::InputBindingTraceEvent& event) {
             bindingTrace.write(event);
+            semanticRecorder.onBindingTrace(
+                event,
+                core::validation::ux::makeSemanticUxSnapshot(coreState)
+            );
         });
 
     if (!app.midiAPI()) {
@@ -212,6 +253,9 @@ int main(int argc, char** argv) {
                 coreState.projectNavigation,
                 coreState.statusBar,
                 coreState.midiSync,
+                coreState.sequencerTrackActivations,
+                &coreState.midiCcCoordinator,
+                &coreState.sequencerRuntimeProjectRevision,
             },
             *app.midiAPI(),
             app.eventBus()
@@ -242,10 +286,22 @@ int main(int argc, char** argv) {
             [&coreState](const char* scenario) {
                 return sdl::integration::applyCaptureScenario(coreState, scenario);
             },
-            [&projectSessionRuntime]() {
+            [&projectSessionRuntime, &semanticRecorder, &coreState]() {
                 projectSessionRuntime.update();
+                semanticRecorder.flush(SDL_GetTicks(), coreState);
+            },
+            [&semanticRecorder, &coreState](const char* label) {
+                semanticRecorder.capture(SDL_GetTicks(), label, coreState);
+            },
+            [&semanticRecorder]() {
+                semanticRecorder.resetCaptureContext(true);
             }
         );
+        semanticRecorder.flush(SDL_GetTicks(), coreState);
+        if (!semanticTrace.good()) {
+            std::fprintf(stderr, "Failed to write semantic UX trace\n");
+            return 1;
+        }
         if (!ok) {
             std::fprintf(stderr, "UX scenario failed: %s\n", runner.error().c_str());
             return 1;

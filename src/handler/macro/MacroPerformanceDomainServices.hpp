@@ -8,6 +8,7 @@
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroUiState.hpp"
 
 namespace core::state {
@@ -38,6 +39,7 @@ public:
         core::state::macro::MacroUiState& macroUi;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
+        core::state::macro::MacroHistoryService* history = nullptr;
     };
 
     struct Operations {
@@ -99,6 +101,7 @@ private:
     core::state::macro::MacroUiState* macro_ui_ = nullptr;
     oc::state::Signal<uint32_t>* config_revision_ = nullptr;
     core::state::StatusBarState* status_bar_ = nullptr;
+    core::state::macro::MacroHistoryService* history_ = nullptr;
     Operations operations_{};
 };
 

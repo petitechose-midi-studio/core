@@ -1,0 +1,46 @@
+# UX workflow: operate the visible Modulation source lifecycle.
+# Purpose: validates Manual, Resume, Auto + Mod, and the semantic 0% Paused
+# state without deleting either stored curve.
+# Expect: capture_changed:auto_mod_active=manual_override, capture_changed:manual_override=sources_resumed, capture_changed:sources_resumed=depth_paused, capture_changed:depth_paused=depth_restored
+# Expect: semantic:auto_mod_active:source=auto_mod, semantic:manual_override:source=manual, semantic:sources_resumed:source=auto_mod
+# Expect: semantic:depth_paused:effect=edit_modulation_depth, semantic:depth_paused:source=auto_mod, semantic:depth_restored:source=auto_mod
+# Expect: semantic:auto_mod_active:route_policy=live_manual>cc_lane>macro_computed>macro_static
+
+0 scenario macro-auto-mod
+80 capture screen source_grid
+
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 encoder NAV 1
+1580 encoder NAV 1
+1720 tap NAV 60
+1920 capture screen auto_mod_active
+
+# State row: select Manual without deleting Automation or Modulation.
+# Encoder script values are physical turn deltas. Drive past the lower bound
+# so the three-state selector deterministically lands on Manual.
+2070 encoder OPT -4.00
+2270 capture screen manual_override
+
+# Resume is an explicit row action and restores the stored sources.
+2400 encoder NAV 1
+2510 encoder NAV 1
+2620 encoder NAV 1
+2760 tap NAV 60
+2980 capture screen sources_resumed
+
+# Auto + Mod is the next explicit row action and remains one domain mutation.
+3110 encoder NAV 1
+3250 tap NAV 60
+3440 capture screen auto_mod_enabled
+
+# Wrap to Depth. A depth of 0% is Paused, not deleted; restore it directly.
+3570 encoder NAV 1
+3680 encoder NAV 1
+3790 encoder NAV 1
+3930 encoder OPT -4.00
+4140 capture screen depth_paused
+# The SDL encoder has 333 virtual ticks here; +2.17 restores 65% from zero.
+4280 encoder OPT 2.17
+4510 capture screen depth_restored

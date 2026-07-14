@@ -25,6 +25,7 @@ FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
     : pages_(state.pages)
     , macro_ui_(state.macroUi)
     , status_bar_(state.statusBar)
+    , runtime_owner_revision_(state.runtimeOwnerRevision)
     , services_(services)
     , midi_runtime_(&midiRuntime) {
     reset();
@@ -38,6 +39,7 @@ FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
     : pages_(state.pages)
     , macro_ui_(state.macroUi)
     , status_bar_(state.statusBar)
+    , runtime_owner_revision_(state.runtimeOwnerRevision)
     , services_(services)
     , direct_midi_fallback_(&midi) {
     reset();
@@ -48,37 +50,69 @@ void MacroAutomationPlaybackService::reset() {
     update_scheduled_ = false;
     last_update_ms_ = 0;
     next_due_ms_ = 0;
+    consumed_runtime_owner_revision_ =
+        runtime_owner_revision_ != nullptr ? runtime_owner_revision_->get() : 0U;
     playback_beat_ = 0.0f;
     cached_track_ = 0xFF;
     cached_page_ = 0xFF;
-    invalidateSentCache_();
-    if (midi_runtime_ != nullptr) {
-        midi_runtime_->clearComputedValues();
-    }
+    invalidateComputedRuntime_();
 }
 
 void MacroAutomationPlaybackService::invalidateSentCache_() {
     sent_cc_values_.fill(INVALID_CC_VALUE);
 }
 
+void MacroAutomationPlaybackService::invalidateComputedRuntime_() {
+    invalidateSentCache_();
+    if (midi_runtime_ != nullptr) {
+        midi_runtime_->clearComputedValues();
+    }
+}
+
+void MacroAutomationPlaybackService::syncActivePageRuntimeProjection_(uint8_t track,
+                                                                       uint8_t page) {
+    macro_ui_.refreshManualOverrideMask(track, page);
+    // Page/Track sync projects the persisted base into MacroState. Restore the
+    // runtime-only Manual value when returning to an overridden slot.
+    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
+        float manualValue = 0.0f;
+        if (services_.manualOverrideValueFor(i, manualValue)) {
+            services_.setResolvedValue(i, manualValue);
+        }
+    }
+}
+
+void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_(uint32_t nowMs) {
+    if (runtime_owner_revision_ == nullptr) return;
+
+    const uint32_t revision = runtime_owner_revision_->get();
+    if (revision == consumed_runtime_owner_revision_) return;
+
+    consumed_runtime_owner_revision_ = revision;
+    playback_beat_ = 0.0f;
+    last_update_ms_ = nowMs;
+    was_playing_ = status_bar_.playing.get();
+    cached_track_ = pages_.currentActiveTrack();
+    cached_page_ = pages_.currentActivePage();
+    syncActivePageRuntimeProjection_(cached_track_, cached_page_);
+    invalidateComputedRuntime_();
+}
+
 void MacroAutomationPlaybackService::updatePlaybackBeat_(uint32_t nowMs) {
     const bool playing = status_bar_.playing.get();
     if (!playing) {
-        was_playing_ = false;
-        playback_beat_ = 0.0f;
-        last_update_ms_ = nowMs;
-        invalidateSentCache_();
-        if (midi_runtime_ != nullptr) {
-            midi_runtime_->clearComputedValues();
+        if (was_playing_) {
+            invalidateComputedRuntime_();
         }
+        was_playing_ = false;
+        last_update_ms_ = nowMs;
         return;
     }
 
     if (!was_playing_) {
         was_playing_ = true;
-        playback_beat_ = 0.0f;
         last_update_ms_ = nowMs;
-        invalidateSentCache_();
+        invalidateComputedRuntime_();
         return;
     }
 
@@ -96,25 +130,15 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     next_due_ms_ = nowMs + UPDATE_PERIOD_MS;
     OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
 
+    consumeRuntimeOwnerActivation_(nowMs);
     updatePlaybackBeat_(nowMs);
     const uint8_t track = pages_.currentActiveTrack();
     const uint8_t page = pages_.currentActivePage();
     if (track != cached_track_ || page != cached_page_) {
         cached_track_ = track;
         cached_page_ = page;
-        macro_ui_.refreshManualOverrideMask(track, page);
-        invalidateSentCache_();
-        if (midi_runtime_ != nullptr) {
-            midi_runtime_->clearComputedValues();
-        }
-        // Page/Track sync projects the persisted base into MacroState. Restore
-        // the runtime-only Manual value when returning to an overridden slot.
-        for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-            float manualValue = 0.0f;
-            if (services_.manualOverrideValueFor(i, manualValue)) {
-                services_.setResolvedValue(i, manualValue);
-            }
-        }
+        syncActivePageRuntimeProjection_(track, page);
+        invalidateComputedRuntime_();
     }
     if (!status_bar_.playing.get()) return;
 

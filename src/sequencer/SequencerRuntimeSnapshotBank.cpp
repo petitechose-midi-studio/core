@@ -4,6 +4,7 @@
 #include <oc/realtime/InterruptGuard.hpp>
 
 #include "state/project/ProjectDomainRules.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::sequencer {
@@ -18,15 +19,61 @@ FLASHMEM SequencerRuntimeSnapshotBank::SequencerRuntimeSnapshotBank(
     , project_navigation_(projectNavigation) {}
 
 uint8_t SequencerRuntimeSnapshotBank::refresh() {
+    last_refresh_succeeded_ = false;
     const uint8_t currentIndex = active_index_;
     const uint8_t writeIndex = static_cast<uint8_t>(currentIndex ^ 0x1U);
     auto& runtimeSnapshot = snapshots_[writeIndex];
     auto& writeSignatures = track_signatures_[writeIndex];
+    auto& laneSourceSignatures = lane_source_signatures_[writeIndex];
 
     const uint8_t activeTrack =
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
             track_bank_.activeTrackIndex()
         );
+
+    uint16_t lanePresentMask = 0;
+    for (uint8_t i = 0;
+         i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+         ++i) {
+        const auto& source = (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
+        if (core::state::sequencer::sequencerCcLaneView(source) != nullptr) {
+            lanePresentMask = static_cast<uint16_t>(lanePresentMask | (1U << i));
+        }
+    }
+    if (lanePresentMask != 0 && !lane_snapshots_[writeIndex]) {
+        lane_snapshots_[writeIndex] =
+            core::app::makeExtmemUnique<SequencerCcLaneRuntimeProjectSnapshot>();
+        if (!lane_snapshots_[writeIndex]) {
+            // Keep the currently committed flat+lane generation intact and
+            // retry from the non-realtime update path on the next refresh.
+            return currentIndex;
+        }
+    }
+    if (lane_snapshots_[writeIndex]) {
+        auto& lanes = *lane_snapshots_[writeIndex];
+        if (lanes.presentMask != lanePresentMask) {
+            lanes.presentMask = lanePresentMask;
+        }
+        for (uint8_t i = 0; i < lanes.tracks.size(); ++i) {
+            const auto& sourcePattern =
+                (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
+            const auto* source =
+                core::state::sequencer::sequencerCcLaneView(sourcePattern);
+            const uint32_t sourceRevision = sourcePattern.ccLaneRevision.get();
+            auto& signature = laneSourceSignatures[i];
+            if (signature.matches(source, sourceRevision)) {
+                continue;
+            }
+            if (source == nullptr) {
+                lanes.tracks[i] = {};
+            } else {
+                lanes.tracks[i] = *source;
+            }
+            signature.identity = source;
+            signature.revision = sourceRevision;
+            ++lane_payload_write_count_;
+        }
+    }
 
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
@@ -63,6 +110,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
         writeSignatures[i] = signature;
     }
 
+    last_refresh_succeeded_ = true;
     return writeIndex;
 }
 
@@ -75,6 +123,11 @@ const SequencerRuntimeSnapshotBank::Snapshot& SequencerRuntimeSnapshotBank::snap
     uint8_t snapshotIndex
 ) const {
     return snapshots_[snapshotIndex & 0x1U];
+}
+
+const SequencerCcLaneRuntimeProjectSnapshot*
+SequencerRuntimeSnapshotBank::laneSnapshot(uint8_t snapshotIndex) const {
+    return lane_snapshots_[snapshotIndex & 0x1U].get();
 }
 
 const SequencerRuntimeSnapshotBank::Snapshot& SequencerRuntimeSnapshotBank::activeSnapshot() const {

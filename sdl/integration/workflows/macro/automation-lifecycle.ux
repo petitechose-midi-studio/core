@@ -1,7 +1,12 @@
 # UX workflow: manage the lifecycle of a macro automation lane.
-# Purpose: validates access through Macro Edit > Automation and bottom actions:
-# copy, remove, paste, clear.
-# Expect: capture_changed:macro_ready=automation_recorded, capture_changed:automation_state_manual=automation_state_auto, capture_match:automation_overlay_active=automation_pasted, capture_match:automation_removed=automation_cleared
+# Purpose: validates access through Macro Edit > Automation, source-state
+# switching, typed Slot copy, guarded removal, explicit retargeting, and restore.
+# Expect: capture_changed:macro_ready=automation_recorded, capture_changed:automation_state_manual=automation_state_auto, capture_match:automation_overlay_active=automation_pasted
+# Expect: capture_changed:empty_slot_target=slot_restored
+# Expect: capture_match:slot_pasted=slot_restored
+# Expect: semantic:automation_overlay_active:mode=macro.automation_editor, semantic:automation_overlay_active:source=automation
+# Expect: semantic:automation_pasted:mode=macro.automation_editor, semantic:automation_pasted:source=automation
+# Expect: semantic:slot_pasted:effect=paste_macro_slot, semantic:slot_pasted:target=macro
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready
@@ -30,17 +35,30 @@
 3800 encoder OPT 2.00
 3950 capture screen automation_state_auto
 
-# Copy automation, remove it, then paste it back from the clipboard.
+# Copy the complete Slot, then remove it with the guarded action. Removing the
+# target closes both Macro Edit surfaces and returns input authority to the grid.
 4100 tap BOTTOM_RIGHT 60
 4300 button BOTTOM_LEFT down
 5400 tick
 5500 button BOTTOM_LEFT up
 5750 capture screen automation_removed
-5950 button BOTTOM_RIGHT down
-7050 tick
-7150 button BOTTOM_RIGHT up
-7400 capture screen automation_pasted
 
-# Clear leaves the macro with no active automation.
-7600 tap BOTTOM_LEFT 60
-7850 capture screen automation_cleared
+# Retarget the now-empty Macro 1 explicitly (Track > Page > Slot), then hold
+# Paste. This is the same navigation grammar used for every Macro Slot target.
+5950 tap NAV 60
+6130 tap NAV 60
+6350 capture screen empty_slot_target
+6500 button BOTTOM_RIGHT down
+7600 tick
+7650 capture screen slot_pasted
+7700 button BOTTOM_RIGHT up
+7950 capture screen slot_restored
+
+# Reopen the restored Automation detail. The typed round trip must reproduce
+# the exact source presentation and its Automation semantic source.
+8100 button MACRO_1 down
+9200 tick
+9300 button MACRO_1 up
+9450 encoder NAV 1
+9600 tap NAV 60
+9850 capture screen automation_pasted

@@ -573,6 +573,9 @@ FLASHMEM bool buildSequencerEnvelope(
         source.graphs[i] = (i == activeTrack)
             ? snapshot.sequencer.editorGraph.get()
             : snapshot.sequencer.bankGraphs[i].get();
+        source.ccLanes[i] = (i == activeTrack)
+            ? snapshot.sequencer.editorCcLanes.get()
+            : snapshot.sequencer.bankCcLanes[i].get();
     }
 
     const auto encoded = sequencer_codec::fillProjectSequencerEnvelope(
@@ -625,7 +628,7 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
 
     if (!sequencer_codec::applyProjectSequencerEnvelope(
             chunk->data,
-            static_cast<uint16_t>(chunk->size),
+            chunk->size,
             *bank,
             *active
         ) ||

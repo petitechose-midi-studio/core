@@ -1,7 +1,12 @@
 # UX workflow: Step Preset picker from Step Editor.
-# Purpose: validates picker access, file-backed Save/Load mode, generated
-# preset id feedback, and returning to the Step Editor after loading a preset.
-# Expect: capture_changed:step_preset_picker_load_empty=step_preset_picker_save_mode, capture_changed:step_2_editor_open=step_preset_loaded_to_step_2
+# Purpose: validates picker access, file-backed Save/Load, explicit overwrite
+# guard/cancel/commit feedback, free-target Apply feedback, auto-return, and Undo.
+# Expect: capture_changed:step_preset_picker_load_empty=step_preset_picker_save_mode, capture_changed:step_preset_overwrite_ready=step_preset_overwrite_armed, capture_changed:step_2_editor_open=step_preset_applied_to_step_2, capture_changed:step_2_after_apply=step_2_after_preset_undo
+# Expect: semantic:step_preset_picker_saved:effect=save_step_preset, semantic:step_preset_picker_saved:outcome=applied, semantic:step_preset_picker_saved:mode=sequencer.step_preset.save, semantic:step_preset_picker_saved:source=*
+# Expect: semantic:step_preset_overwrite_pressed:outcome=pressed, semantic:step_preset_overwrite_armed:outcome=armed, semantic:step_preset_overwrite_cancelled:outcome=cancelled, semantic:step_preset_overwritten:outcome=applied
+# Expect: semantic:step_preset_overwrite_pressed:effect=save_step_preset, semantic:step_preset_overwrite_pressed:route_policy=preserve_destination, semantic:step_preset_overwrite_pressed:projection=preview, semantic:step_preset_overwrite_pressed:target_step=0
+# Expect: semantic:step_preset_applied_to_step_2:effect=apply_step_preset, semantic:step_preset_applied_to_step_2:outcome=applied, semantic:step_preset_applied_to_step_2:route_policy=preserve_destination, semantic:step_preset_applied_to_step_2:target_step=1
+# Expect: semantic:step_preset_queued_for_boundary:effect=apply_step_preset, semantic:step_preset_queued_for_boundary:outcome=queued, semantic:step_preset_queued_for_boundary:reason=pending, semantic:step_preset_queued_for_boundary:playing=true, semantic:step_preset_queued_for_boundary:target_step=2
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -24,16 +29,64 @@
 2350 tap BOTTOM_RIGHT 60
 2650 capture screen step_preset_picker_saved
 
-# Return to the Step Editor, close it, then load step-preset-001 onto step 2.
-2750 tap LEFT_TOP 60
-3000 capture screen returned_to_step_editor
-3100 tap MACRO_1 60
-3350 capture screen step_editor_closed
-3450 button MACRO_2 down
-4500 tick
-4550 capture screen step_2_editor_open
-4600 button MACRO_2 up
-4700 tap BOTTOM_CENTER 60
-4950 capture screen step_preset_picker_load_existing
-5050 tap BOTTOM_RIGHT 60
-5350 capture screen step_preset_loaded_to_step_2
+# Re-enter Save mode, focus the existing preset, then prove that a short hold
+# cancels while a complete hold overwrites and reports success.
+2750 tap BOTTOM_CENTER 60
+2950 encoder NAV 1
+3150 capture screen step_preset_overwrite_ready
+3250 button BOTTOM_RIGHT down
+3400 capture screen step_preset_overwrite_pressed
+3500 tick
+3550 capture screen step_preset_overwrite_armed
+3600 button BOTTOM_RIGHT up
+3800 capture screen step_preset_overwrite_cancelled
+
+3850 button BOTTOM_RIGHT down
+4000 capture screen step_preset_overwrite_pressed_again
+4100 tick
+4150 capture screen step_preset_overwrite_armed_again
+4900 tick
+4950 capture screen step_preset_overwritten
+5000 button BOTTOM_RIGHT up
+
+# Return to the Step Editor, close it, then load the preset onto empty step 2.
+5100 tap LEFT_TOP 60
+5300 capture screen returned_to_step_editor
+5400 tap MACRO_1 60
+5600 capture screen step_editor_closed
+5700 button MACRO_2 down
+6750 tick
+6800 capture screen step_2_editor_open
+6850 button MACRO_2 up
+6950 tap BOTTOM_CENTER 60
+7200 capture screen step_preset_picker_load_existing
+7300 tap BOTTOM_RIGHT 60
+7500 capture screen step_preset_applied_to_step_2
+8700 capture screen returned_after_applied_feedback
+
+# Close Step Edit and undo the exact preset action from the shared history layer.
+8800 tap MACRO_2 60
+9000 capture screen step_2_after_apply
+9100 button LEFT_CENTER down
+10100 tick
+10150 capture screen preset_undo_layer
+10200 tap LEFT_TOP 60
+11700 capture screen step_2_after_preset_undo
+11800 button LEFT_CENTER up
+12000 capture screen preset_undo_layer_closed
+
+# While transport is running, applying to another empty step stays explicit as
+# queued instead of pretending that the audible runtime changed immediately.
+12100 tap BOTTOM_CENTER 60
+12300 button MACRO_3 down
+13400 tick
+13450 capture screen step_3_editor_playing
+13500 button MACRO_3 up
+13600 tap BOTTOM_CENTER 60
+13850 capture screen step_preset_load_while_playing
+13950 tap BOTTOM_RIGHT 60
+14100 capture screen step_preset_queued_for_boundary
+14200 tap LEFT_TOP 60
+14400 tap MACRO_3 60
+14600 tap BOTTOM_CENTER 60
+14800 capture screen transport_stopped_after_queued_apply

@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 
+#include "app/ExtmemAllocator.hpp"
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
@@ -10,6 +11,32 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::sequencer {
+
+/**
+ * Immutable Pattern-owned CC payload published with one flat runtime snapshot.
+ * The two frames are allocated lazily in EXTMEM only after a Project contains
+ * at least one lane; empty projects retain only two pointers in RAM2.
+ */
+struct SequencerCcLaneRuntimeProjectSnapshot {
+    static constexpr uint8_t TRACK_COUNT =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+
+    uint16_t presentMask = 0;
+    std::array<
+        core::state::sequencer::SequencerCcLaneBank,
+        TRACK_COUNT
+    > tracks{};
+
+    [[nodiscard]] const core::state::sequencer::SequencerCcLaneBank* lanesForTrack(
+        uint8_t track
+    ) const {
+        if (track >= TRACK_COUNT ||
+            (presentMask & static_cast<uint16_t>(1U << track)) == 0) {
+            return nullptr;
+        }
+        return &tracks[track];
+    }
+};
 
 /**
  * Double-buffered sequencer snapshot bridge for runtime lanes.
@@ -30,6 +57,15 @@ public:
     void commit(uint8_t snapshotIndex);
 
     const Snapshot& snapshot(uint8_t snapshotIndex) const;
+    const SequencerCcLaneRuntimeProjectSnapshot* laneSnapshot(
+        uint8_t snapshotIndex
+    ) const;
+    [[nodiscard]] bool lastRefreshSucceeded() const {
+        return last_refresh_succeeded_;
+    }
+    [[nodiscard]] uint32_t lanePayloadWriteCount() const {
+        return lane_payload_write_count_;
+    }
     const Snapshot& activeSnapshot() const;
     uint8_t activeIndex() const { return active_index_; }
 
@@ -38,13 +74,38 @@ private:
         SequencerRuntimeStateSignature,
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>;
 
+    struct LaneSourceSignature {
+        const core::state::sequencer::SequencerCcLaneBank* identity = nullptr;
+        uint32_t revision = 0;
+
+        [[nodiscard]] bool matches(
+            const core::state::sequencer::SequencerCcLaneBank* source,
+            uint32_t sourceRevision
+        ) const {
+            if (identity == nullptr && source == nullptr) return true;
+            return identity == source && revision == sourceRevision;
+        }
+    };
+    using LaneSourceSignatures = std::array<
+        LaneSourceSignature,
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>;
+
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::project::ProjectNavigationState& project_navigation_;
     std::array<Snapshot, 2> snapshots_{};
     // Each double-buffer slot can lag independently; signatures are per slot.
     std::array<TrackSignatures, 2> track_signatures_{};
+    std::array<LaneSourceSignatures, 2> lane_source_signatures_{};
+    std::array<
+        core::app::ExtmemUniquePtr<SequencerCcLaneRuntimeProjectSnapshot>,
+        2
+    > lane_snapshots_{};
     volatile uint8_t active_index_ = 0;
+    uint32_t lane_payload_write_count_ = 0;
+    bool last_refresh_succeeded_ = true;
 };
+
+static_assert(sizeof(SequencerCcLaneRuntimeProjectSnapshot) <= 12U * 1024U);
 
 }  // namespace core::sequencer

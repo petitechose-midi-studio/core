@@ -20,7 +20,7 @@
 #include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
-#include "handler/common/MidiCcRuntimeAggregator.hpp"
+#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroAutomationPlaybackService.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
@@ -30,6 +30,7 @@
 #include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "sequencer/RealtimeMidiQueue.hpp"
 #include "support/InputTestHardware.hpp"
 
 namespace {
@@ -98,7 +99,8 @@ struct Harness {
     oc::api::MidiAPI midi;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::handler::MacroPerformanceDomainServices services;
-    core::handler::MidiCcRuntimeAggregator aggregator;
+    core::sequencer::RealtimeMidiQueue queue;
+    core::handler::MidiCcGlobalFrameCoordinator coordinator;
     core::handler::MacroMidiCcRuntimeAdapter adapter;
     core::handler::MacroValueHandler valueHandler;
     core::handler::MacroAutomationPlaybackService playback;
@@ -119,14 +121,14 @@ struct Harness {
               },
               core::handler::MacroPerformanceDomainServices::Operations{}
           )
-        , aggregator(midi)
+        , coordinator(queue)
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   pages,
                   macroUi,
               },
               services,
-              aggregator
+              coordinator
           )
         , valueHandler(
               core::handler::MacroValueHandler::StateRefs{
@@ -159,6 +161,14 @@ struct Harness {
         configureAutomation(1);
         statusBar.tempo.set(60.0f);
         statusBar.playing.set(true);
+    }
+
+    core::handler::MidiCcGlobalFrameResult resolveAndDrain(
+        uint32_t deadlineUs
+    ) {
+        const auto result = coordinator.resolveLive(deadlineUs);
+        queue.drainDue(midi, deadlineUs, UINT32_MAX);
+        return result;
     }
 
     void configureAutomation(uint8_t macroIndex) {
@@ -194,6 +204,7 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     Harness h;
 
     h.playback.update(1000);
+    assert(h.resolveAndDrain(1000).ok());
     assert(h.transport.count == 1);
     assert(h.transport.messages[0].channel == 0);
     assert(h.transport.messages[0].controller == 74);
@@ -201,46 +212,68 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
 
     g_now_ms = 1100;
     h.turn(1, 1.0f);
+    assert(h.resolveAndDrain(1100).ok());
     assert(h.transport.count == 2);
     assert(h.transport.messages[1].value == 127);
     assert((h.macroUi.automationManualOverrideMask.get() & 0x0002) != 0);
 
-    const auto& manualTelemetry = h.adapter.telemetry();
-    assert(manualTelemetry.destinationCount == 1);
-    assert(manualTelemetry.destinations[0].winner.author.candidateClass ==
-           core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
-    assert(manualTelemetry.destinations[0].winner.author.stableAddress == 1);
-    assert(manualTelemetry.destinations[0].conflict);
+    {
+        auto telemetry = h.coordinator.readTelemetry();
+        assert(telemetry);
+        assert(telemetry->destinationCount == 1);
+        assert(telemetry->destinations[0].winner.author.candidateClass ==
+               core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
+        assert(telemetry->destinations[0].winner.author.stableAddress == 1);
+        assert(telemetry->destinations[0].conflict);
+    }
 
     // Playback evaluates both automation lanes at the next 16 ms frame, but
     // Manual remains the final 127. The shared cache prevents a second send.
     h.playback.update(1500);
+    assert(h.resolveAndDrain(1500).ok());
     assert(h.transport.count == 2);
-    const auto& playbackTelemetry = h.adapter.telemetry();
-    assert(playbackTelemetry.candidateCount == 3);
-    assert(playbackTelemetry.destinations[0].winner.author.candidateClass ==
-           core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
-    assert(playbackTelemetry.destinations[0].finalValue == 127);
+    {
+        auto telemetry = h.coordinator.readTelemetry();
+        assert(telemetry);
+        assert(telemetry->candidateCount == 3);
+        assert(telemetry->destinations[0].winner.author.candidateClass ==
+               core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
+        assert(telemetry->destinations[0].finalValue == 127);
+    }
 
     h.statusBar.playing.set(false);
     h.playback.update(2000);
+    assert(h.resolveAndDrain(2000).ok());
     assert(h.transport.count == 2);
     assert(h.services.manualOverrideActiveFor(1));
 
     h.statusBar.playing.set(true);
     h.playback.update(2200);
+    assert(h.resolveAndDrain(2200).ok());
     assert(h.transport.count == 2);
     assert(h.services.manualOverrideActiveFor(1));
-    assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==
-           core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
+    {
+        auto telemetry = h.coordinator.readTelemetry();
+        assert(telemetry);
+        assert(telemetry->destinations[0].winner.author.candidateClass ==
+               core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
+    }
 
     assert(h.services.resumeComputedSources(1));
     h.playback.update(4200);
+    assert(h.resolveAndDrain(4200).ok());
     assert(h.transport.count == 3);
-    assert(h.transport.messages[2].value == 0);
-    assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==
-           core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED);
-    assert(h.adapter.telemetry().destinations[0].winner.author.stableAddress == 0);
+    // Stop/start preserves the automation phase. The 500 ms accumulated
+    // before the stop therefore resumes at the middle of this one-beat ramp.
+    assert(h.transport.messages[2].value == 64);
+    {
+        auto telemetry = h.coordinator.readTelemetry();
+        assert(telemetry);
+        assert(telemetry->destinations[0].finalValue == 64);
+        assert(telemetry->destinations[0].winner.author.candidateClass ==
+               core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED);
+        assert(telemetry->destinations[0].winner.author.stableAddress == 0);
+    }
 
     std::cout << "[PASS] test_manual_and_playback_share_one_resolved_destination_cache\n";
 }

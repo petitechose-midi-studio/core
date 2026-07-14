@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -72,6 +74,30 @@ def assert_report(
         raise AssertionError(f"{label}: exit expected {expected_exit}, got {exit_code}")
 
 
+def assert_output_alias_refused(
+    tool: Path,
+    source: Path,
+    output: Path,
+    *,
+    label: str,
+) -> None:
+    before = source.read_bytes()
+    completed = subprocess.run(
+        [str(tool), "migrate", str(source), "--out", str(output), "--json"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 64:
+        raise AssertionError(
+            f"{label}: same-file output must be refused with usage exit 64, "
+            f"got {completed.returncode}: {completed.stdout}{completed.stderr}"
+        )
+    if source.read_bytes() != before:
+        raise AssertionError(f"{label}: refused migrate modified its input")
+
+
 def main() -> int:
     args = parse_args()
     repo_root = args.repo_root.resolve()
@@ -99,11 +125,38 @@ def main() -> int:
         "v1_1/current-from-stale-sequencer.mspj",
         exit_code,
         report,
-        status="current",
-        load_status="ok",
+        status="migrated",
+        load_status="migrated",
         overwrite_safe=True,
         expected_exit=0,
     )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "migration-source.mspj"
+        source.write_bytes(current.read_bytes())
+        assert_output_alias_refused(
+            tool,
+            source,
+            source,
+            label="migrate exact input/output",
+        )
+
+        if sys.platform.startswith("win"):
+            assert_output_alias_refused(
+                tool,
+                source,
+                Path(str(source).swapcase()),
+                label="migrate case-insensitive input/output",
+            )
+
+        hardlink = Path(tmp) / "migration-hardlink.mspj"
+        os.link(source, hardlink)
+        assert_output_alias_refused(
+            tool,
+            source,
+            hardlink,
+            label="migrate hardlink output alias",
+        )
 
     print("project fixture host-tool validation passed")
     return 0

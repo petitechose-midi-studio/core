@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include <oc/api/MidiAPI.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/StatusBarState.hpp"
@@ -21,6 +22,7 @@ public:
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
         core::state::StatusBarState& statusBar;
+        const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr;
     };
 
     MacroAutomationPlaybackService(StateRefs state,
@@ -40,12 +42,16 @@ public:
     void reset();
 
 private:
+    void consumeRuntimeOwnerActivation_(uint32_t nowMs);
     void updatePlaybackBeat_(uint32_t nowMs);
+    void syncActivePageRuntimeProjection_(uint8_t track, uint8_t page);
+    void invalidateComputedRuntime_();
     void invalidateSentCache_();
 
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
     core::state::StatusBarState& status_bar_;
+    const oc::state::Signal<uint32_t>* runtime_owner_revision_ = nullptr;
     MacroPerformanceDomainServices services_;
     MacroMidiCcRuntimeAdapter* midi_runtime_ = nullptr;
     oc::api::MidiAPI* direct_midi_fallback_ = nullptr;
@@ -54,6 +60,7 @@ private:
     bool update_scheduled_ = false;
     uint32_t last_update_ms_ = 0;
     uint32_t next_due_ms_ = 0;
+    uint32_t consumed_runtime_owner_revision_ = 0;
     float playback_beat_ = 0.0f;
     uint8_t cached_track_ = 0xFF;
     uint8_t cached_page_ = 0xFF;

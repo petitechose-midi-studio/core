@@ -379,6 +379,17 @@ FLASHMEM uint16_t macroAutomationStoredPointCount(
     );
 }
 
+FLASHMEM bool macroAutomationSlotStateValidForMutation(
+    const MacroAutomationSlotState& state,
+    const MacroAutomationPointPool& pool
+) {
+    return curveValidForMutation(state.automation, pool) &&
+           curveValidForMutation(state.modulation, pool) &&
+           macroAutomationCurveLifecycleValid(state.automation) &&
+           macroModulationCurveLifecycleValid(state.modulation) &&
+           std::isfinite(state.modulationDepth);
+}
+
 FLASHMEM void MacroAutomationBankState::clear() {
     entryCount = 0;
     entries = {};
@@ -579,6 +590,7 @@ FLASHMEM void macroAutomationClearAutomation(MacroAutomationBankState& bank,
 FLASHMEM void macroAutomationClearModulation(MacroAutomationBankState& bank,
                                              MacroAutomationSlotState& slot) {
     slot.modulation = {};
+    slot.modulationDepth = 0.0f;
     macroAutomationCompactPool(bank);
 }
 
@@ -690,8 +702,11 @@ FLASHMEM bool macroAutomationCopySlotState(MacroAutomationPointPool& destPool,
                                            MacroAutomationSlotState& dest,
                                            const MacroAutomationPointPool& sourcePool,
                                            const MacroAutomationSlotState& source) {
+    if (!macroAutomationSlotStateValidForMutation(source, sourcePool)) {
+        return false;
+    }
     MacroAutomationSlotState next{};
-    next.modulationDepth = source.modulationDepth;
+    next.modulationDepth = macroAutomationClamp01(source.modulationDepth);
     const uint16_t required = macroAutomationStoredPointCount(source, sourcePool);
     const uint16_t freeCount =
         static_cast<uint16_t>(MACRO_AUTOMATION_POINT_POOL_CAPACITY - destPool.used);
@@ -706,6 +721,11 @@ FLASHMEM bool macroAutomationCopySlotState(MacroAutomationBankState& destBank,
                                            MacroAutomationSlotState& dest,
                                            const MacroAutomationPointPool& sourcePool,
                                            const MacroAutomationSlotState& source) {
+    // Source admission must be complete before clearing `dest`: compaction
+    // rewrites offsets throughout the bank and cannot be rolled back locally.
+    if (!macroAutomationSlotStateValidForMutation(source, sourcePool)) {
+        return false;
+    }
     const uint16_t oldCount = macroAutomationStoredPointCount(dest, destBank.pointPool);
     const uint16_t required = macroAutomationStoredPointCount(source, sourcePool);
     const uint16_t freeCount =
@@ -718,6 +738,45 @@ FLASHMEM bool macroAutomationCopySlotState(MacroAutomationBankState& destBank,
     dest = {};
     macroAutomationCompactPool(destBank);
     return macroAutomationCopySlotState(destBank.pointPool, dest, sourcePool, source);
+}
+
+FLASHMEM bool macroAutomationCopyModulationState(
+    MacroAutomationBankState& destBank,
+    MacroAutomationSlotState& dest,
+    const MacroAutomationPointPool& sourcePool,
+    const MacroAutomationSlotState& source
+) {
+    if (!curveValidForMutation(source.modulation, sourcePool) ||
+        !macroModulationCurveLifecycleValid(source.modulation) ||
+        !macroCurveStored(source.modulation) ||
+        !std::isfinite(source.modulationDepth)) {
+        return false;
+    }
+
+    const uint16_t oldCount = macroAutomationStoredPointCount(
+        dest.modulation,
+        destBank.pointPool
+    );
+    const uint16_t required = source.modulation.pointCount;
+    const uint16_t freeCount = static_cast<uint16_t>(
+        MACRO_AUTOMATION_POINT_POOL_CAPACITY - destBank.pointPool.used
+    );
+    if (static_cast<uint32_t>(required) >
+        static_cast<uint32_t>(freeCount) + oldCount) {
+        return false;
+    }
+
+    // Validation and capacity admission are complete before the first write;
+    // the single curve copy below is therefore infallible.
+    dest.modulation = {};
+    macroAutomationCompactPool(destBank);
+    MacroAutomationCurveRef next{};
+    if (!copyCurve(destBank.pointPool, next, sourcePool, source.modulation)) {
+        return false;
+    }
+    dest.modulation = next;
+    dest.modulationDepth = macroAutomationClamp01(source.modulationDepth);
+    return true;
 }
 
 }  // namespace core::state::macro

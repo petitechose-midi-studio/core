@@ -6,12 +6,11 @@
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
-#include <oc/api/MidiAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
-#include "handler/common/MidiCcRuntimeAggregator.hpp"
+#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/macro/MacroAutomationPlaybackService.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
@@ -43,6 +42,10 @@ class MacroOverlayPresenter;
 class OverlayPresentationRegistry;
 
 }  // namespace core::context::standalone
+
+namespace core::ui {
+class ContextActionStrip;
+}
 
 namespace core::handler {
 class MacroAutomationHandler;
@@ -76,6 +79,8 @@ public:
         core::state::StructureClipboardState& structureClipboard;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
+        const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr;
+        core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
     };
 
     MacroFeatureModule(StateRefs stateRefs,
@@ -86,7 +91,6 @@ public:
                        OverlayPresentationRegistry& overlayPresentations,
                        oc::api::EncoderAPI& encoders,
                        oc::api::ButtonAPI& buttons,
-                       oc::api::MidiAPI& midi,
                        lv_obj_t* mainZone,
                        lv_obj_t* macroViewScope
 #if defined(MS_UX_RECORDER)
@@ -100,8 +104,6 @@ public:
     MacroFeatureModule& operator=(const MacroFeatureModule&) = delete;
 
     [[nodiscard]] bool valid() const { return valid_; }
-    [[nodiscard]] const core::state::shared::MidiCcResolutionTelemetry*
-    midiCcTelemetry() const;
     void onCC(uint8_t channel, uint8_t cc, uint8_t value);
     void onNoteIn();
     void update(uint32_t nowMs);
@@ -117,12 +119,13 @@ private:
 
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> edit_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> automation_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> edit_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
+        automation_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> edit_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> page_selector_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> target_selector_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::MacroOverlayPresenter> presenter_;
-    core::app::ExtmemUniquePtr<core::handler::MidiCcRuntimeAggregator>
-        midi_cc_runtime_;
     core::app::ExtmemUniquePtr<core::handler::MacroMidiCcRuntimeAdapter>
         macro_midi_runtime_;
     std::unique_ptr<core::handler::MacroValueHandler> value_handler_;
@@ -131,6 +134,7 @@ private:
     core::app::ExtmemUniquePtr<core::handler::MacroPerformanceHandler> performance_handler_;
     core::app::ExtmemUniquePtr<core::handler::MacroEditHandler> edit_handler_;
     core::app::ExtmemUniquePtr<core::handler::MacroAutomationHandler> automation_handler_;
+    uint32_t last_telemetry_refresh_ms_ = 0;
     bool valid_ = false;
 };
 

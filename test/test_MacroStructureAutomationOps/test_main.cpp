@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 
 #include "../../src/handler/macro/MacroStructureAutomationOps.hpp"
@@ -176,6 +177,61 @@ void test_track_structure_copy_captures_all_page_automations() {
     std::cout << "[PASS] test_track_structure_copy_captures_all_page_automations\n";
 }
 
+void test_malformed_clipboard_is_rejected_before_destination_mutation() {
+    macro::MacroAutomationBankState bank;
+    const auto destAddress = macro::MacroAutomationSlotAddress{
+        .track = 4,
+        .page = 3,
+        .macro = 2,
+    };
+    assignLane(bank, destAddress, 3);
+    const auto before = bank;
+
+    core::state::MacroAutomationClipboard clipboard;
+    clipboard.valid = true;
+    clipboard.trackScope = false;
+    clipboard.count = 1;
+    auto& entry = clipboard.entries[0];
+    entry.valid = true;
+    entry.sourceMacro = 1;
+    entry.state.automation.active = true;
+    entry.state.automation.pointOffset =
+        macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY;
+    entry.state.automation.pointCount = 1;
+
+    assert(!ops::replacePageFromClipboard(
+        bank,
+        destAddress.track,
+        destAddress.page,
+        &clipboard
+    ));
+    assert(std::memcmp(&bank, &before, sizeof(bank)) == 0);
+
+    clipboard.count = static_cast<uint8_t>(clipboard.entries.size() + 1U);
+    assert(!ops::replacePageFromClipboard(
+        bank,
+        destAddress.track,
+        destAddress.page,
+        &clipboard
+    ));
+    assert(std::memcmp(&bank, &before, sizeof(bank)) == 0);
+
+    clipboard.count = 0;
+    clipboard.pointPool.used = static_cast<uint16_t>(
+        clipboard.pointPool.points.size() + 1U
+    );
+    assert(!ops::replacePageFromClipboard(
+        bank,
+        destAddress.track,
+        destAddress.page,
+        &clipboard
+    ));
+    assert(std::memcmp(&bank, &before, sizeof(bank)) == 0);
+
+    std::cout
+        << "[PASS] test_malformed_clipboard_is_rejected_before_destination_mutation\n";
+}
+
 }  // namespace
 
 int main() {
@@ -184,6 +240,7 @@ int main() {
     test_empty_page_clipboard_replaces_existing_automation_with_empty_scope();
     test_empty_structure_copy_does_not_allocate_automation_clipboard();
     test_track_structure_copy_captures_all_page_automations();
+    test_malformed_clipboard_is_rejected_before_destination_mutation();
 
     std::cout << "\nAll MacroStructureAutomationOps tests passed.\n";
     return 0;

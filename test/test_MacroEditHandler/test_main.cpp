@@ -264,7 +264,7 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     std::cout << "[PASS] test_macro_edit_buffered_and_selector_flows_commit_on_transition\n";
 }
 
-void test_macro_edit_automation_row_restores_auto_without_clearing_lane() {
+void test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane() {
     MacroEditHarness h;
 
     auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
@@ -295,11 +295,16 @@ void test_macro_edit_automation_row_restores_auto_without_clearing_lane() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroEdit.focusedRow.get() == 1);
 
+    // Summary rows are navigation targets, not hidden value controls. The
+    // dedicated Automation detail owns Manual/Auto so the same encoder grammar
+    // is used for every source lifecycle operation.
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) != 0);
-
-    h.turn(Config::EncoderID::OPT, 1.0f);
     assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) == 0);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::AUTOMATION);
+    assert(h.overlays.current() == core::ui::OverlayType::MACRO_AUTOMATION);
 
     const auto* preserved = core::state::macro::macroAutomationFindSlot(
         h.state.pages.automation,
@@ -315,7 +320,51 @@ void test_macro_edit_automation_row_restores_auto_without_clearing_lane() {
 
     h.flushState();
 
-    std::cout << "[PASS] test_macro_edit_automation_row_restores_auto_without_clearing_lane\n";
+    std::cout
+        << "[PASS] test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane\n";
+}
+
+void test_remove_waits_for_owner_scope_release_without_fallback_dispatch() {
+    for (const auto focus : {
+             core::state::StructureNavigationFocus::TRACK,
+             core::state::StructureNavigationFocus::PAGE,
+         }) {
+        MacroEditHarness h;
+        uint8_t fallbackReleaseCount = 0;
+        h.buttons.button(Config::ButtonID::BOTTOM_LEFT)
+            .release()
+            .scope(MacroEditHarness::MACRO_VIEW_SCOPE)
+            .then([&fallbackReleaseCount]() { ++fallbackReleaseCount; });
+
+        h.state.structureNavigationFocus.set(focus);
+        openMacroEdit(
+            h,
+            0,
+            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 200U
+        );
+        assert(h.state.pages.isMacroSlotActive(0));
+
+        h.tick(1400);
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.handler.update(2400);
+
+        // Visible progress may be complete, but no mutation or scope
+        // transition occurs before the owning overlay receives the release.
+        assert(h.state.macroEdit.contextGuard.get().phase ==
+               core::state::contextual::GuardedActionPhase::COMMITTED);
+        assert(h.state.pages.isMacroSlotActive(0));
+        assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
+
+        h.tick(2450);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        assert(!h.state.pages.isMacroSlotActive(0));
+        assert(h.overlays.current() == core::ui::OverlayType::NONE);
+        assert(fallbackReleaseCount == 0);
+
+        h.flushState();
+    }
+    std::cout
+        << "[PASS] test_remove_waits_for_owner_scope_release_without_fallback_dispatch\n";
 }
 
 }  // namespace
@@ -324,7 +373,8 @@ int main() {
     test_quick_release_keeps_macro_edit_open_and_left_top_closes();
     test_slow_release_closes_macro_edit_immediately();
     test_macro_edit_buffered_and_selector_flows_commit_on_transition();
-    test_macro_edit_automation_row_restores_auto_without_clearing_lane();
+    test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane();
+    test_remove_waits_for_owner_scope_release_without_fallback_dispatch();
     std::cout << "\nAll MacroEditHandler tests passed.\n";
     return 0;
 }

@@ -19,6 +19,7 @@ from teensy_memory_budget import (  # noqa: E402
     parse_teensy_size,
     summary,
 )
+from teensy_diagnostics_placement import diagnostics_placement_violations  # noqa: E402
 
 
 def project_option(action_env, name: str, default: int) -> int:
@@ -32,6 +33,31 @@ def teensy_size_path(action_env) -> Path:
         if candidate.exists():
             return candidate
     raise RuntimeError(f"teensy_size not found under {package_dir}")
+
+
+def arm_nm_path(action_env) -> Path:
+    package_dir = Path(
+        action_env.PioPlatform().get_package_dir("toolchain-gccarmnoneeabi-teensy")
+    )
+    for name in ("arm-none-eabi-nm", "arm-none-eabi-nm.exe"):
+        candidate = package_dir / "bin" / name
+        if candidate.exists():
+            return candidate
+    raise RuntimeError(f"arm-none-eabi-nm not found under {package_dir}")
+
+
+def diagnostics_elf_violations(action_env, elf_path: Path) -> tuple[str, ...]:
+    if str(action_env.get("PIOENV", "")) != "dev_diagnostics":
+        return ()
+    result = subprocess.run(
+        [str(arm_nm_path(action_env)), "-S", "--radix=d", "-C", str(elf_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"arm-none-eabi-nm failed for {elf_path}:\n{result.stderr}")
+    return diagnostics_placement_violations(result.stdout)
 
 
 def check_memory_budget(target, source, env) -> None:
@@ -55,7 +81,10 @@ def check_memory_budget(target, source, env) -> None:
         extram_min_free=project_option(env, "custom_extram_min_free", 2097152),
     )
     print(summary(usage, budget))
-    violations = budget_violations(usage, budget)
+    violations = budget_violations(usage, budget) + diagnostics_elf_violations(
+        env,
+        elf_path,
+    )
     if violations:
         details = "\n".join(f"  - {item}" for item in violations)
         raise RuntimeError(f"Teensy memory budget exceeded:\n{details}")

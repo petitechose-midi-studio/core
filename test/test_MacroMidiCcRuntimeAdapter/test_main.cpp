@@ -12,18 +12,18 @@
 #include <oc/interface/IMidi.hpp>
 #include <oc/type/Result.hpp>
 
-#include "handler/common/MidiCcRuntimeAggregator.hpp"
+#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "sequencer/RealtimeMidiQueue.hpp"
 
 namespace {
 
 using core::state::shared::MidiCcCandidateClass;
-using core::state::shared::MidiCcResolutionMode;
 
 class MockMidiTransport final : public oc::interface::IMidi {
 public:
@@ -71,7 +71,8 @@ struct Harness {
     MockMidiTransport transport;
     oc::api::MidiAPI midi;
     core::handler::MacroPerformanceDomainServices services;
-    core::handler::MidiCcRuntimeAggregator aggregator;
+    core::sequencer::RealtimeMidiQueue queue;
+    core::handler::MidiCcGlobalFrameCoordinator coordinator;
     core::handler::MacroMidiCcRuntimeAdapter adapter;
 
     Harness()
@@ -86,14 +87,14 @@ struct Harness {
               },
               core::handler::MacroPerformanceDomainServices::Operations{}
           )
-        , aggregator(midi)
+        , coordinator(queue)
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   pages,
                   macroUi,
               },
               services,
-              aggregator
+              coordinator
           ) {
         pages.setMacroSlotActive(0, true);
         pages.setMacroSlotActive(1, true);
@@ -102,6 +103,12 @@ struct Harness {
         pages.updateActiveConfigs();
         macros[0].value.set(0.20f);
         macros[1].value.set(0.80f);
+    }
+
+    core::handler::MidiCcGlobalFrameResult resolveAndDrain(uint32_t deadlineUs = 0) {
+        const auto result = coordinator.resolveLive(deadlineUs);
+        queue.drainDue(midi, deadlineUs, UINT32_MAX);
+        return result;
     }
 
     void addAutomation(uint8_t macroIndex) {
@@ -152,24 +159,26 @@ void test_manual_publish_collects_every_active_macro_in_one_frame() {
     const auto result = h.adapter.publishLiveManual(1, 100);
     assert(result.ok());
     assert(result.candidateCount == 2);
-    assert(result.destinationCount == 1);
-    assert(result.conflictCount == 1);
-    assert(result.sentCount == 1);
+    const auto resolved = h.resolveAndDrain();
+    assert(resolved.destinationCount == 1);
+    assert(resolved.conflictCount == 1);
+    assert(resolved.queuedEmissionCount == 1);
     assert(h.transport.count == 1);
     assert(h.transport.messages[0].value == 100);
 
-    const auto& telemetry = h.adapter.telemetry();
-    assert(telemetry.destinations[0].winner.author.candidateClass ==
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry);
+    assert(telemetry->destinations[0].winner.author.candidateClass ==
            MidiCcCandidateClass::LIVE_MANUAL);
-    assert(telemetry.destinations[0].winner.author.stableAddress == 1);
-    assert(telemetry.losers[0].author.candidateClass ==
+    assert(telemetry->destinations[0].winner.author.stableAddress == 1);
+    assert(telemetry->losers[0].author.candidateClass ==
            MidiCcCandidateClass::MACRO_STATIC);
-    assert(telemetry.losers[0].author.stableAddress == 0);
+    assert(telemetry->losers[0].author.stableAddress == 0);
 
     std::cout << "[PASS] test_manual_publish_collects_every_active_macro_in_one_frame\n";
 }
 
-void test_computed_macro_beats_static_duplicate_and_preview_is_silent() {
+void test_computed_macro_beats_static_duplicate() {
     Harness h;
     h.addAutomation(1);
 
@@ -178,21 +187,14 @@ void test_computed_macro_beats_static_duplicate_and_preview_is_silent() {
     const auto live = h.adapter.publishComputedFrame();
     assert(live.ok());
     assert(live.candidateCount == 2);
-    assert(live.sentCount == 1);
+    assert(h.resolveAndDrain().queuedEmissionCount == 1);
     assert(h.transport.messages[0].value == 90);
-    assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry);
+    assert(telemetry->destinations[0].winner.author.candidateClass ==
            MidiCcCandidateClass::MACRO_COMPUTED);
 
-    h.adapter.beginComputedFrame();
-    assert(h.adapter.setComputedValue(1, 91));
-    const auto preview = h.adapter.publishPreview();
-    assert(preview.ok());
-    assert(preview.sentCount == 0);
-    assert(h.transport.count == 1);
-    assert(h.adapter.telemetry().mode == MidiCcResolutionMode::PREVIEW);
-    assert(h.adapter.telemetry().destinations[0].finalValue == 91);
-
-    std::cout << "[PASS] test_computed_macro_beats_static_duplicate_and_preview_is_silent\n";
+    std::cout << "[PASS] test_computed_macro_beats_static_duplicate\n";
 }
 
 void test_manual_override_keeps_computed_contribution_as_loser() {
@@ -205,17 +207,18 @@ void test_manual_override_keeps_computed_contribution_as_loser() {
     const auto result = h.adapter.publishComputedFrame();
     assert(result.ok());
     assert(result.candidateCount == 3);
-    assert(result.sentCount == 1);
+    assert(h.resolveAndDrain().queuedEmissionCount == 1);
     assert(h.transport.messages[0].value >= 95 && h.transport.messages[0].value <= 96);
 
-    const auto& telemetry = h.adapter.telemetry();
-    assert(telemetry.destinations[0].winner.author.candidateClass ==
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry);
+    assert(telemetry->destinations[0].winner.author.candidateClass ==
            MidiCcCandidateClass::LIVE_MANUAL);
-    assert(telemetry.destinations[0].loserCount == 2);
-    assert(telemetry.losers[0].author.candidateClass ==
+    assert(telemetry->destinations[0].loserCount == 2);
+    assert(telemetry->losers[0].author.candidateClass ==
            MidiCcCandidateClass::MACRO_COMPUTED);
-    assert(telemetry.losers[0].localValue == 20);
-    assert(telemetry.losers[1].author.candidateClass ==
+    assert(telemetry->losers[0].localValue == 20);
+    assert(telemetry->losers[1].author.candidateClass ==
            MidiCcCandidateClass::MACRO_STATIC);
 
     std::cout << "[PASS] test_manual_override_keeps_computed_contribution_as_loser\n";
@@ -231,9 +234,11 @@ void test_modulation_only_depth_zero_is_classified_as_computed() {
     const auto result = h.adapter.publishComputedFrame();
     assert(result.ok());
     assert(result.candidateCount == 1);
-    assert(result.sentCount == 1);
+    assert(h.resolveAndDrain().queuedEmissionCount == 1);
     assert(h.transport.messages[0].value == 32);
-    assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry);
+    assert(telemetry->destinations[0].winner.author.candidateClass ==
            MidiCcCandidateClass::MACRO_COMPUTED);
     assert(h.services.computedSourcePlaybackActiveFor(1));
 
@@ -249,7 +254,8 @@ void test_disabling_automation_restores_persisted_static_base_not_runtime_projec
 
     h.adapter.beginComputedFrame();
     assert(h.adapter.setComputedValue(1, 100));
-    assert(h.adapter.publishComputedFrame().sentCount == 1);
+    assert(h.adapter.publishComputedFrame().ok());
+    assert(h.resolveAndDrain().queuedEmissionCount == 1);
     assert(h.transport.messages[0].value == 100);
 
     const auto address = core::state::macro::MacroAutomationSlotAddress{
@@ -267,10 +273,12 @@ void test_disabling_automation_restores_persisted_static_base_not_runtime_projec
     h.adapter.beginComputedFrame();
     const auto fallback = h.adapter.publishComputedFrame();
     assert(fallback.ok());
-    assert(fallback.sentCount == 1);
+    assert(h.resolveAndDrain().queuedEmissionCount == 1);
     assert(h.transport.count == 2);
     assert(h.transport.messages[1].value >= 31 && h.transport.messages[1].value <= 32);
-    assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry);
+    assert(telemetry->destinations[0].winner.author.candidateClass ==
            MidiCcCandidateClass::MACRO_STATIC);
 
     std::cout << "[PASS] test_disabling_automation_restores_persisted_static_base_not_runtime_projection\n";
@@ -278,19 +286,22 @@ void test_disabling_automation_restores_persisted_static_base_not_runtime_projec
 
 void test_disabled_page_flushes_to_an_empty_bounded_frame_without_midi() {
     Harness h;
-    assert(h.adapter.publishLiveManual(0, 60).sentCount == 1);
+    assert(h.adapter.publishLiveManual(0, 60).ok());
+    assert(h.resolveAndDrain().queuedEmissionCount == 1);
     h.pages.setPageEnabled(h.pages.currentActivePage(), false);
 
     const auto disabled = h.adapter.publishLiveManual(0, 61);
     assert(disabled.ok());
     assert(disabled.candidateCount == 0);
-    assert(disabled.destinationCount == 0);
-    assert(disabled.sentCount == 0);
+    const auto disabledResolved = h.resolveAndDrain();
+    assert(disabledResolved.destinationCount == 0);
+    assert(disabledResolved.queuedEmissionCount == 0);
     assert(h.transport.count == 1);
 
     h.pages.setPageEnabled(h.pages.currentActivePage(), true);
     const auto restored = h.adapter.publishLiveManual(0, 60);
-    assert(restored.sentCount == 1);
+    assert(restored.ok());
+    assert(h.resolveAndDrain().queuedEmissionCount == 1);
     assert(h.transport.count == 2);
 
     std::cout << "[PASS] test_disabled_page_flushes_to_an_empty_bounded_frame_without_midi\n";
@@ -324,7 +335,7 @@ void test_macro_stable_address_covers_full_v1_domain_without_collision() {
 
 int main() {
     test_manual_publish_collects_every_active_macro_in_one_frame();
-    test_computed_macro_beats_static_duplicate_and_preview_is_silent();
+    test_computed_macro_beats_static_duplicate();
     test_manual_override_keeps_computed_contribution_as_loser();
     test_modulation_only_depth_zero_is_classified_as_computed();
     test_disabling_automation_restores_persisted_static_base_not_runtime_projection();

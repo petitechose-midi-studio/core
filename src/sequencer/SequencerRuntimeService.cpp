@@ -10,7 +10,10 @@
 #include <oc/type/Event.hpp>
 
 #include "config/TimeCompat.hpp"
+#include "app/ExtmemAllocator.hpp"
+#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
+#include "sequencer/SequencerCcLaneRuntime.hpp"
 #include "sequencer/SequencerInternalTimerLane.hpp"
 #include "sequencer/SequencerPlaybackService.hpp"
 #include "sequencer/SequencerTiming.hpp"
@@ -23,11 +26,35 @@ public:
                           core::state::StatusBarState& statusBar,
                           oc::api::MidiAPI& midi,
                           SequencerRuntimeSnapshotBank& snapshotBank,
-                          const SequencerRuntimeGraphBank& graphBank)
-        : playback(sequencer, statusBar, midiQueue, graphBank)
+                          const SequencerRuntimeGraphBank& graphBank,
+                          core::state::sequencer::SequencerTrackActivationQueue&
+                              trackActivations)
+        : ccLaneRuntime(core::app::makeExtmemUnique<SequencerCcLaneRuntime>())
+        , ccCoordinator(
+              core::app::makeExtmemUnique<
+                  core::handler::MidiCcGlobalFrameCoordinator>(midiQueue)
+          )
+        , playback(sequencer,
+                   statusBar,
+                   midiQueue,
+                   graphBank,
+                   &trackActivations,
+                   ccLaneRuntime.get(),
+                   ccCoordinator.get())
         , timer(midi, midiQueue, snapshotBank, playback) {}
 
+    [[nodiscard]] bool valid() const {
+        return ccLaneRuntime != nullptr && ccCoordinator != nullptr;
+    }
+
+    core::handler::MidiCcGlobalFrameCoordinator* coordinator() const {
+        return ccCoordinator.get();
+    }
+
     RealtimeMidiQueue midiQueue{};
+    core::app::ExtmemUniquePtr<SequencerCcLaneRuntime> ccLaneRuntime;
+    core::app::ExtmemUniquePtr<core::handler::MidiCcGlobalFrameCoordinator>
+        ccCoordinator;
     SequencerPlaybackService playback;
     SequencerInternalTimerLane timer;
 };
@@ -82,6 +109,14 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     , track_bank_state_(state.trackBank)
     , status_bar_state_(state.statusBar)
     , midi_sync_state_(state.midiSync)
+    , track_activations_(state.trackActivations)
+    , cc_coordinator_publication_(state.ccCoordinatorPublication)
+    , runtime_project_revision_(state.runtimeProjectRevision)
+    , consumed_runtime_project_revision_(
+          state.runtimeProjectRevision != nullptr
+              ? state.runtimeProjectRevision->get()
+              : 0
+      )
     , midi_clock_sync_(midi)
     , snapshot_bank_(state.sequencer, state.trackBank, state.projectNavigation)
     , realtime_lane_(new (std::nothrow) SequencerRealtimeLane(
@@ -89,37 +124,59 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
           state.statusBar,
           midi,
           snapshot_bank_,
-          runtime_graph_bank_
+          runtime_graph_bank_,
+          state.trackActivations
       )) {
-    if (!realtime_lane_) failSequencerRuntimeAllocation();
+    if (!realtime_lane_ || !realtime_lane_->valid()) {
+        failSequencerRuntimeAllocation();
+    }
+    if (cc_coordinator_publication_ != nullptr) {
+        *cc_coordinator_publication_ = realtime_lane_->coordinator();
+    }
     // Initial flat state remains useful even if PSRAM is unavailable: root
     // steps can still play and the graph bank will retry on later updates.
     (void)runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
     const uint8_t initialSnapshotIndex = snapshot_bank_.refresh();
-    runtime_graph_bank_.publishPrepared([this, initialSnapshotIndex]() {
-        snapshot_bank_.commit(initialSnapshotIndex);
-    });
+    if (snapshot_bank_.lastRefreshSucceeded()) {
+        runtime_graph_bank_.publishPrepared([this, initialSnapshotIndex]() {
+            snapshot_bank_.commit(initialSnapshotIndex);
+        });
+    } else {
+        runtime_graph_bank_.discardPrepared();
+    }
     subscribeToMidiEvents_();
 }
 
 FLASHMEM SequencerRuntimeService::~SequencerRuntimeService() {
     stop();
     unsubscribeFromMidiEvents_();
+    if (cc_coordinator_publication_ != nullptr &&
+        *cc_coordinator_publication_ == realtime_lane_->coordinator()) {
+        *cc_coordinator_publication_ = nullptr;
+    }
 }
 
 void SequencerRuntimeService::update() {
     OC_PERF_SCOPE(perfRuntime, "sequencer.runtime");
+    consumeProjectRuntimeReset_();
     const uint32_t nowUs = core::time_compat::micros();
     const uint32_t nowMs = oc::time::millis();
     const auto clockConfig = captureClockSyncRuntimeConfig_();
     const uint32_t tickPeriodUs = tickPeriodUsForTempo(clockConfig.tempo);
-    const bool graphGenerationReady =
+    const auto activationPublication =
+        track_activations_.captureRuntimePublication();
+    bool graphGenerationReady =
         runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
     // Keep graph and flat data on the same published generation. On a rare
     // PSRAM allocation failure, retain the previous pair and retry next loop.
-    const uint8_t snapshotIndex = graphGenerationReady
+    uint8_t snapshotIndex = graphGenerationReady
         ? snapshot_bank_.refresh()
         : snapshot_bank_.activeIndex();
+    if (graphGenerationReady && !snapshot_bank_.lastRefreshSucceeded()) {
+        runtime_graph_bank_.discardPrepared();
+        graphGenerationReady = false;
+        snapshotIndex = snapshot_bank_.activeIndex();
+    }
     const auto& runtimeSnapshot = snapshot_bank_.snapshot(snapshotIndex);
 
     bool timerOwnsTransport = false;
@@ -134,8 +191,13 @@ void SequencerRuntimeService::update() {
 
 #ifdef ARDUINO
     if (timerOwnsTransport) {
-        runtime_graph_bank_.publishPrepared([this, &clockConfig, snapshotIndex]() {
+        runtime_graph_bank_.publishPrepared([this, &clockConfig, snapshotIndex,
+                                             &activationPublication,
+                                             graphGenerationReady]() {
             realtime_lane_->timer.publishRealtimeInputs(clockConfig, snapshotIndex);
+            if (graphGenerationReady) {
+                track_activations_.applyRuntimePublication(activationPublication);
+            }
         });
 
         if (resyncRequested) {
@@ -150,15 +212,25 @@ void SequencerRuntimeService::update() {
         }
     } else {
         realtime_lane_->timer.stop();
-        runtime_graph_bank_.publishPrepared([this, snapshotIndex]() {
+        runtime_graph_bank_.publishPrepared([this, snapshotIndex,
+                                             &activationPublication,
+                                             graphGenerationReady]() {
             snapshot_bank_.commit(snapshotIndex);
+            if (graphGenerationReady) {
+                track_activations_.applyRuntimePublication(activationPublication);
+            }
         });
     }
 #endif
 
 #ifndef ARDUINO
-    runtime_graph_bank_.publishPrepared([this, snapshotIndex]() {
+    runtime_graph_bank_.publishPrepared([this, snapshotIndex,
+                                         &activationPublication,
+                                         graphGenerationReady]() {
         snapshot_bank_.commit(snapshotIndex);
+        if (graphGenerationReady) {
+            track_activations_.applyRuntimePublication(activationPublication);
+        }
     });
 #endif
 
@@ -174,7 +246,10 @@ void SequencerRuntimeService::update() {
                                         midi_clock_sync_.tick(),
                                         midi_clock_sync_.playing(),
                                         nowUs,
-                                        tickPeriodUs);
+                                        tickPeriodUs,
+                                        true,
+                                        snapshot_bank_.laneSnapshot(snapshotIndex));
+        track_activations_.publishRealtimeTelemetry();
         drainRealtimeMidiQueue_(core::time_compat::micros());
         realtime_lane_->playback.publishUiState(nowMs);
     }
@@ -185,6 +260,18 @@ void SequencerRuntimeService::update() {
         midi_clock_sync_.takeUiProjectionSnapshot(),
         nowMs
     );
+}
+
+void SequencerRuntimeService::consumeProjectRuntimeReset_() {
+    if (runtime_project_revision_ == nullptr) return;
+    const uint32_t revision = runtime_project_revision_->get();
+    if (revision == consumed_runtime_project_revision_) return;
+#ifdef ARDUINO
+    realtime_lane_->timer.stop();
+#endif
+    stopPlayback_();
+    realtime_lane_->playback.resetCcProject();
+    consumed_runtime_project_revision_ = revision;
 }
 
 FLASHMEM void SequencerRuntimeService::stop() {
@@ -242,6 +329,7 @@ void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
     }
 
     publishRuntimeTelemetry(sequencer_state_, runtimeTelemetry);
+    track_activations_.publishRealtimeTelemetry();
     realtime_lane_->playback.publishUiProjection(uiProjection, nowMs);
 #else
     realtime_lane_->playback.publishUiState(nowMs);
@@ -263,6 +351,7 @@ void SequencerRuntimeService::stopPlayback_() {
     // then drain each track's immediate panic note-offs before the next track
     // can fill the bounded realtime queue.
     realtime_lane_->midiQueue.clear();
+    realtime_lane_->playback.markCcTransportStopped();
     midi_.serviceOutput(UINT32_MAX);
     for (uint8_t track = 0; track < SequencerPlaybackService::TRACK_COUNT; ++track) {
         realtime_lane_->playback.stopTrack(track);

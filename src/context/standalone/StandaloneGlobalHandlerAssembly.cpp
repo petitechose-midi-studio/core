@@ -36,7 +36,7 @@ public:
     )
 #if defined(MS_UX_RECORDER)
         : view_selector_ux_surface_(state.activeView, state.viewSelector),
-          transport_ux_surface_(state.statusBar)
+          transport_ux_surface_(state.statusBar, state.overlays)
 #endif
     {
         if (!viewSelectorElement) return;

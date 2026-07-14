@@ -78,17 +78,21 @@ FLASHMEM void MacroValueHandler::setupBindings() {
         buttons_.button(Config::MACRO_BUTTONS[i])
             .press()
             .scope(scope_id_)
-            .when([this]() { return shouldHandleAutomationRecordPress(); })
+            .when([this]() {
+                return shouldHandleAutomationRecordPress() ||
+                       shouldHandleAutomationRestorePress();
+            })
             .then([this, i]() {
-                if (!ensureActiveSlot(i)) return;
-                macro_button_held_[i] = true;
+                // These modes are mutually exclusive (Clutch off records;
+                // Clutch + Automation restores). A single binding preserves
+                // one press owner and avoids duplicating eight registry rows.
+                if (shouldHandleAutomationRecordPress()) {
+                    if (!ensureActiveSlot(i)) return;
+                    macro_button_held_[i] = true;
+                    return;
+                }
+                restoreAutomation(i);
             });
-
-        buttons_.button(Config::MACRO_BUTTONS[i])
-            .press()
-            .scope(scope_id_)
-            .when([this]() { return shouldHandleAutomationRestorePress(); })
-            .then([this, i]() { restoreAutomation(i); });
 
         buttons_.button(Config::MACRO_BUTTONS[i])
             .release()

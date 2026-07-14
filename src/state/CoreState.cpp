@@ -356,6 +356,11 @@ FLASHMEM void syncSequencerStructureUiFromRestoredHistory(CoreState& state) {
     state.sequencer.structureUi.syncPreviewPage(state.sequencer.visiblePage());
 }
 
+constexpr uint32_t nextNonZeroRuntimeRevision(uint32_t current) {
+    const uint32_t next = current + 1U;
+    return next == 0U ? 1U : next;
+}
+
 }  // namespace
 
 FLASHMEM MacroDomainState::MacroDomainState(oc::interface::IStorage& libraryStorage)
@@ -400,11 +405,15 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , settings(settingsStorage)
     , macros(*macroDomain_.runtime)
     , pages(*macroDomain_.pages)
+    , macroHistory(macroDomain_.history)
+    , macroRuntimeOwnerRevision(macroDomain_.runtimeOwnerRevision)
     , configRevision(macroDomain_.configRevision)
     , macroPersistence(macroDomain_.persistence)
     , sequencer(*sequencerDomain_.editor)
     , sequencerTracks(*sequencerDomain_.tracks)
     , sequencerHistory(sequencerDomain_.history)
+    , sequencerTrackActivations(sequencerDomain_.trackActivations)
+    , sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision)
     , sequencerPersistence(sequencerDomain_.persistence)
     , project(project_)
     , overlays(systemUi_->overlays)
@@ -456,6 +465,17 @@ FLASHMEM void CoreState::resetStandaloneTransientUi() {
 FLASHMEM void CoreState::resetMusicalProject() {
     commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::resetMusicalProject(*this);
+}
+
+FLASHMEM void CoreState::requestMacroRuntimeOwnerActivation() {
+    macroRuntimeOwnerRevision.set(nextNonZeroRuntimeRevision(macroRuntimeOwnerRevision.get()));
+}
+
+FLASHMEM void CoreState::requestSequencerRuntimeProjectReset() {
+    sequencerTrackActivations.reset();
+    sequencerRuntimeProjectRevision.set(
+        nextNonZeroRuntimeRevision(sequencerRuntimeProjectRevision.get())
+    );
 }
 
 void CoreState::markMacroValueEdited(uint8_t index) {
@@ -753,9 +773,28 @@ bool CoreState::hasPendingSequencerPatternHistoryCoalescing() const {
 FLASHMEM bool CoreState::undoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
+    sequencer::SequencerTrackActivationHistoryPlan activation;
+    const bool hasActivation = sequencerHistory.peekUndoTrackActivation(activation);
+    sequencer::SequencerTrackActivationHistoryTransition activationTransition;
+    if (hasActivation && !sequencerTrackActivations.prepareHistoryTransition(
+            activation.reference,
+            sequencer::SequencerTrackActivationTarget::BEFORE,
+            activation.targetEnabledMask,
+            activation.targetMutedMask,
+            statusBar.playing.get(),
+            activationTransition
+        )) {
+        return false;
+    }
     const auto result = sequencerHistory.undoWithResult(sequencerTracks, sequencer);
     if (!result.applied) {
+        if (hasActivation) {
+            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
+        }
         return false;
+    }
+    if (hasActivation) {
+        sequencerTrackActivations.commitHistoryTransition(activationTransition);
     }
 
     markSequencerProjectMutated_();
@@ -770,9 +809,28 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
 FLASHMEM bool CoreState::redoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
+    sequencer::SequencerTrackActivationHistoryPlan activation;
+    const bool hasActivation = sequencerHistory.peekRedoTrackActivation(activation);
+    sequencer::SequencerTrackActivationHistoryTransition activationTransition;
+    if (hasActivation && !sequencerTrackActivations.prepareHistoryTransition(
+            activation.reference,
+            sequencer::SequencerTrackActivationTarget::AFTER,
+            activation.targetEnabledMask,
+            activation.targetMutedMask,
+            statusBar.playing.get(),
+            activationTransition
+        )) {
+        return false;
+    }
     const auto result = sequencerHistory.redoWithResult(sequencerTracks, sequencer);
     if (!result.applied) {
+        if (hasActivation) {
+            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
+        }
         return false;
+    }
+    if (hasActivation) {
+        sequencerTrackActivations.commitHistoryTransition(activationTransition);
     }
 
     markSequencerProjectMutated_();

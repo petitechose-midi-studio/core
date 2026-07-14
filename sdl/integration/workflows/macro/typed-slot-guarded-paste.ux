@@ -1,0 +1,43 @@
+# UX workflow: copy and paste one complete Macro Slot with an explicit guard.
+# Purpose: proves that Copy remains the resting action, Paste appears only
+# while pressed, an early armed release is non-mutating, and a full hold copies
+# Destination, Automation, Modulation, Depth, and base value together.
+# Expect: capture_match:source_slot=source_after_copy, capture_match:empty_target=target_after_cancel, capture_changed:empty_target=slot_pasted
+# Expect: semantic:paste_pressed:outcome=pressed, semantic:paste_armed:outcome=armed, semantic:paste_cancelled:outcome=cancelled
+# Expect: semantic:paste_armed_full:outcome=armed, semantic:slot_pasted:outcome=applied
+
+0 scenario macro-auto-mod
+80 capture screen source_grid
+
+# Open Macro 1, whose Slot contains Automation + Modulation at 65% Depth.
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1500 capture screen source_slot
+
+# A tap copies. The resting strip deliberately remains Copy after the tap.
+1650 tap BOTTOM_RIGHT 60
+1850 capture screen source_after_copy
+
+# Select empty Macro 2 as the exact paste target.
+2000 tap LEFT_BOTTOM 60
+2160 encoder NAV 1
+2320 tap LEFT_BOTTOM 60
+2520 capture screen empty_target
+
+# Press exposes Paste. Release after arming but before completion: no mutation.
+2670 button BOTTOM_RIGHT down
+2780 capture screen paste_pressed
+2920 tick
+3000 capture screen paste_armed
+3070 button BOTTOM_RIGHT up
+3250 capture screen paste_cancelled
+3900 tick
+4050 capture screen target_after_cancel
+
+# A complete hold commits exactly once; release cannot replay the mutation.
+4200 button BOTTOM_RIGHT down
+4440 capture screen paste_armed_full
+5260 tick
+5320 button BOTTOM_RIGHT up
+5570 capture screen slot_pasted

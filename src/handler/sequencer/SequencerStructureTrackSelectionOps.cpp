@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
@@ -101,6 +102,10 @@ captureTrackSelectionClipboard(
         if (!core::state::cloneSequencerGraph(
                 entry.graph,
                 core::state::sequencer::graphView(tracks.track(track))
+            ) ||
+            !core::state::sequencer::cloneSequencerCcLaneBank(
+                entry.ccLanes,
+                core::state::sequencer::sequencerCcLaneView(tracks.track(track))
             )) {
             return nullptr;
         }

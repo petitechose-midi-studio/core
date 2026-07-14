@@ -13,14 +13,20 @@ namespace core::protocol::filesystem {
 
 inline constexpr uint8_t FILESYSTEM_RPC_SCHEMA = 1;
 inline constexpr uint8_t FILESYSTEM_RPC_ID_MIN = 0xE0;
-inline constexpr uint8_t FILESYSTEM_RPC_ID_MAX = 0xF7;
+inline constexpr uint8_t FILESYSTEM_RPC_ID_MAX = 0xFB;
 inline constexpr size_t FILESYSTEM_RPC_MAX_CHUNK_SIZE = 30720;
 inline constexpr size_t FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE = 32512;
 inline constexpr uint8_t FILESYSTEM_RPC_MAX_LIST_ENTRIES = 8;
+inline constexpr size_t FILESYSTEM_RPC_SHA256_SIZE = 32;
 inline constexpr uint32_t FILESYSTEM_RPC_DEFAULT_WRITE_TIMEOUT_MS = 30'000;
 inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_CAPABILITIES = 1u << 0;
 inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS = 1u << 1;
 inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT = 1u << 2;
+// Schema 1 remains wire-compatible. Clients MUST discover this optional
+// extension before sending message ids 0xF8..0xFB to older firmware.
+inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS = 1u << 3;
+inline constexpr const char* FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH =
+    "tmp/rpc-conditional.journal.corrupt";
 
 enum class FileSystemRpcMessageId : uint8_t {
     STAT_REQUEST = 0xE0,
@@ -46,6 +52,10 @@ enum class FileSystemRpcMessageId : uint8_t {
     RENAME_RESPONSE = 0xF5,
     CAPABILITIES_REQUEST = 0xF6,
     CAPABILITIES_RESPONSE = 0xF7,
+    CONDITIONAL_REPLACE_REQUEST = 0xF8,
+    CONDITIONAL_REPLACE_RESPONSE = 0xF9,
+    CONDITIONAL_DELETE_REQUEST = 0xFA,
+    CONDITIONAL_DELETE_RESPONSE = 0xFB,
 };
 
 enum class FileSystemRpcStatus : uint8_t {
@@ -58,6 +68,26 @@ enum class FileSystemRpcStatus : uint8_t {
     STORAGE_ERROR = 6,
     INVALID_STATE = 7,
     UNSUPPORTED = 8,
+    PRECONDITION_FAILED = 9,
+};
+
+enum class FileSystemRpcConditionalRecoveryState : uint8_t {
+    NOT_CHECKED = 0,
+    READY,
+    CORRUPT_JOURNAL_QUARANTINED,
+    BLOCKED,
+};
+
+enum class FileSystemRpcMutationOutcome : uint8_t {
+    NONE = 0,
+    APPLIED = 1,
+    ALREADY_APPLIED = 2,
+};
+
+enum class FileSystemRpcMutationSubject : uint8_t {
+    NONE = 0,
+    SOURCE = 1,
+    STAGING = 2,
 };
 
 enum class FileSystemRpcFileType : uint8_t {
@@ -130,6 +160,16 @@ struct FileSystemRpcCapabilitiesResponse {
     uint32_t featureFlags = 0;
 };
 
+struct FileSystemRpcConditionalMutationResponse {
+    uint16_t requestId = 0;
+    FileSystemRpcMessageId messageId = FileSystemRpcMessageId::ERROR_RESPONSE;
+    FileSystemRpcStatus status = FileSystemRpcStatus::INVALID_MESSAGE;
+    FileSystemRpcMutationOutcome outcome = FileSystemRpcMutationOutcome::NONE;
+    FileSystemRpcMutationSubject subject = FileSystemRpcMutationSubject::NONE;
+    uint32_t operationId = 0;
+    uint8_t observedSha256[FILESYSTEM_RPC_SHA256_SIZE] = {};
+};
+
 class FileSystemRpcCodec {
 public:
     static bool isFileSystemMessageId(uint8_t messageId);
@@ -192,6 +232,24 @@ public:
                                       const char* toPath,
                                       uint8_t* out,
                                       size_t outSize);
+    static size_t encodeConditionalReplaceRequest(
+        uint16_t requestId,
+        uint32_t operationId,
+        const char* currentPath,
+        const char* stagingPath,
+        const uint8_t expectedSourceSha256[FILESYSTEM_RPC_SHA256_SIZE],
+        const uint8_t replacementSha256[FILESYSTEM_RPC_SHA256_SIZE],
+        uint8_t* out,
+        size_t outSize
+    );
+    static size_t encodeConditionalDeleteRequest(
+        uint16_t requestId,
+        uint32_t operationId,
+        const char* path,
+        const uint8_t expectedSourceSha256[FILESYSTEM_RPC_SHA256_SIZE],
+        uint8_t* out,
+        size_t outSize
+    );
 
     static oc::type::Result<FileSystemRpcStatResponse> decodeStatResponse(const uint8_t* data,
                                                                           size_t size);
@@ -207,6 +265,8 @@ public:
         const uint8_t* data,
         size_t size
     );
+    static oc::type::Result<FileSystemRpcConditionalMutationResponse>
+    decodeConditionalMutationResponse(const uint8_t* data, size_t size);
 };
 
 class FileSystemRpcHandler {
@@ -231,6 +291,12 @@ public:
     void update(uint32_t nowMs);
     bool hasActiveWriteSession() const;
     void abortWriteSession();
+    FileSystemRpcConditionalRecoveryState conditionalRecoveryState() const {
+        return conditionalRecoveryState_;
+    }
+    FileSystemRpcStatus conditionalRecoveryStatus() const {
+        return conditionalRecoveryStatus_;
+    }
 
 private:
     static constexpr size_t PATH_BUFFER_SIZE = oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1;
@@ -281,6 +347,12 @@ private:
     oc::type::Result<size_t> handleRename_(const FileSystemRpcFrame& frame,
                                            uint8_t* response,
                                            size_t responseSize);
+    oc::type::Result<size_t> handleConditionalReplace_(const FileSystemRpcFrame& frame,
+                                                       uint8_t* response,
+                                                       size_t responseSize);
+    oc::type::Result<size_t> handleConditionalDelete_(const FileSystemRpcFrame& frame,
+                                                      uint8_t* response,
+                                                      size_t responseSize);
     oc::type::Result<size_t> encodeError_(uint16_t requestId,
                                           FileSystemRpcStatus status,
                                           uint8_t* response,
@@ -289,10 +361,15 @@ private:
     void expireWriteSession_(uint32_t nowMs);
     void clearWriteSession_();
     bool copySessionPath_(const char* path, uint16_t sessionId);
+    FileSystemRpcStatus recoverConditionalMutation_();
 
     core::persistence::ProductFileService& files_;
     Config config_;
     WriteSession writeSession_{};
+    bool conditionalRecoveryChecked_ = false;
+    FileSystemRpcConditionalRecoveryState conditionalRecoveryState_ =
+        FileSystemRpcConditionalRecoveryState::NOT_CHECKED;
+    FileSystemRpcStatus conditionalRecoveryStatus_ = FileSystemRpcStatus::OK;
 };
 
 class FileSystemRpcEndpoint {

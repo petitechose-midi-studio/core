@@ -1,5 +1,6 @@
 #include "persistence/StepPresetFileStore.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -19,11 +20,89 @@ struct StepPresetListContext {
     StepPresetFileStore* store = nullptr;
     StepPresetFileListEntry* entries = nullptr;
     uint8_t capacity = 0;
+    StepPresetFileListEntry anchor{};
+    bool hasAnchor = false;
+    StepPresetFilePageDirection direction = StepPresetFilePageDirection::FORWARD;
+    uint16_t eligibleCount = 0;
     StepPresetFileListResult result{};
 };
 
+FLASHMEM int compareTextCaseFolded(const char* lhs, const char* rhs) {
+    size_t i = 0;
+    while (lhs[i] != '\0' && rhs[i] != '\0') {
+        auto left = static_cast<unsigned char>(lhs[i]);
+        auto right = static_cast<unsigned char>(rhs[i]);
+        if (left >= 'A' && left <= 'Z') left = static_cast<unsigned char>(left + 32U);
+        if (right >= 'A' && right <= 'Z') right = static_cast<unsigned char>(right + 32U);
+        if (left != right) return left < right ? -1 : 1;
+        ++i;
+    }
+    if (lhs[i] == rhs[i]) return 0;
+    return lhs[i] == '\0' ? -1 : 1;
+}
+
+FLASHMEM int compareEntries(
+    const StepPresetFileListEntry& lhs,
+    const StepPresetFileListEntry& rhs
+) {
+    const int byName = compareTextCaseFolded(lhs.semanticName, rhs.semanticName);
+    return byName != 0 ? byName : std::strcmp(lhs.id, rhs.id);
+}
+
+FLASHMEM void deriveSemanticName(
+    const char* presetId,
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0) return;
+    out[0] = '\0';
+    size_t written = 0;
+    bool capitalize = true;
+    for (size_t i = 0; presetId != nullptr && presetId[i] != '\0' &&
+         written + 1U < outSize; ++i) {
+        char ch = presetId[i];
+        if (ch == '-' || ch == '_' || ch == '.') {
+            if (written > 0 && out[written - 1U] != ' ') out[written++] = ' ';
+            capitalize = true;
+            continue;
+        }
+        if (capitalize && ch >= 'a' && ch <= 'z') {
+            ch = static_cast<char>(ch - 'a' + 'A');
+        }
+        out[written++] = ch;
+        capitalize = false;
+    }
+    while (written > 0 && out[written - 1U] == ' ') --written;
+    out[written] = '\0';
+}
+
 FLASHMEM oc::type::Result<void> invalid(const char* context) {
     return oc::type::Result<void>::err({ErrorCode::INVALID_ARGUMENT, context});
+}
+
+FLASHMEM void insertSorted(
+    StepPresetFileListEntry* entries,
+    uint8_t count,
+    StepPresetFileListEntry entry
+) {
+    uint8_t insert = count;
+    while (insert > 0 && compareEntries(entries[insert - 1U], entry) > 0) {
+        entries[insert] = entries[insert - 1U];
+        --insert;
+    }
+    entries[insert] = entry;
+}
+
+FLASHMEM void sortEntries(StepPresetFileListEntry* entries, uint8_t count) {
+    for (uint8_t i = 1; i < count; ++i) {
+        const auto current = entries[i];
+        uint8_t insert = i;
+        while (insert > 0 && compareEntries(entries[insert - 1U], current) > 0) {
+            entries[insert] = entries[insert - 1U];
+            --insert;
+        }
+        entries[insert] = current;
+    }
 }
 
 }  // namespace
@@ -58,6 +137,56 @@ FLASHMEM bool StepPresetFileStore::buildPaths_(const char* presetId, PresetPaths
            );
 }
 
+FLASHMEM bool StepPresetFileStore::buildListEntry_(
+    const char* presetId,
+    uint32_t sizeBytes,
+    StepPresetFileListEntry& out
+) {
+    out = {};
+    if (!validPresetId(presetId) || sizeBytes == 0 || sizeBytes > MAX_FILE_SIZE) {
+        return false;
+    }
+    std::strncpy(out.id, presetId, sizeof(out.id) - 1U);
+    out.sizeBytes = sizeBytes;
+    deriveSemanticName(presetId, out.semanticName, sizeof(out.semanticName));
+
+    PresetPaths paths{};
+    if (!buildPaths_(presetId, paths)) return false;
+    uint8_t header[state::sequencer::STEP_GRAPH_PRESET_HEADER_SIZE]{};
+    const size_t readSize = std::min<size_t>(sizeBytes, sizeof(header));
+    const auto read = files_.read(paths.current, 0, header, readSize);
+    if (!read || read.value() != readSize) return true;
+
+    state::sequencer::SequencerStepGraphPresetMetadataView metadata{};
+    state::sequencer::SequencerGraphAssetReport report{};
+    if (!state::sequencer::decodeStepGraphPresetMetadata(
+            header,
+            static_cast<uint16_t>(readSize),
+            metadata,
+            &report
+        )) {
+        return true;
+    }
+    out.metadataDefaulted = metadata.metadataDefaulted;
+    if (metadata.metadataDefaulted) {
+        out.metadataReadable = true;
+        return true;
+    }
+    if (std::strcmp(metadata.technicalId, presetId) != 0 ||
+        !state::sequencer::validStepGraphPresetSemanticName(
+            metadata.semanticName
+        )) {
+        return true;
+    }
+    std::strncpy(
+        out.semanticName,
+        metadata.semanticName,
+        sizeof(out.semanticName) - 1U
+    );
+    out.metadataReadable = true;
+    return true;
+}
+
 FLASHMEM bool StepPresetFileStore::listVisitor_(
     const oc::interface::DirectoryEntry& entry,
     void* context
@@ -86,15 +215,44 @@ FLASHMEM bool StepPresetFileStore::listVisitor_(
     if (!info || info.value().type != oc::interface::FileType::FILE) return true;
     if (info.value().sizeBytes == 0 || info.value().sizeBytes > MAX_FILE_SIZE) return true;
 
-    if (list->result.count >= list->capacity) {
-        list->result.truncated = true;
+    if (list->result.totalCount < UINT16_MAX) {
+        ++list->result.totalCount;
+    }
+
+    StepPresetFileListEntry candidate{};
+    if (!list->store->buildListEntry_(
+            presetId,
+            info.value().sizeBytes,
+            candidate
+        )) {
         return true;
     }
 
-    auto& target = list->entries[list->result.count++];
-    std::strncpy(target.id, presetId, sizeof(target.id) - 1U);
-    target.id[sizeof(target.id) - 1U] = '\0';
-    target.sizeBytes = info.value().sizeBytes;
+    const int anchorOrder = list->hasAnchor
+        ? compareEntries(candidate, list->anchor)
+        : 1;
+    const bool eligible = list->direction == StepPresetFilePageDirection::FORWARD
+        ? (!list->hasAnchor || anchorOrder > 0)
+        : (list->hasAnchor && anchorOrder < 0);
+    if (!eligible) return true;
+
+    if (list->eligibleCount < UINT16_MAX) ++list->eligibleCount;
+
+    if (list->result.count < list->capacity) {
+        insertSorted(list->entries, list->result.count, candidate);
+        ++list->result.count;
+        return true;
+    }
+
+    if (list->direction == StepPresetFilePageDirection::FORWARD) {
+        if (compareEntries(candidate, list->entries[list->capacity - 1U]) < 0) {
+            list->entries[list->capacity - 1U] = candidate;
+            sortEntries(list->entries, list->capacity);
+        }
+    } else if (compareEntries(candidate, list->entries[0]) > 0) {
+        list->entries[0] = candidate;
+        sortEntries(list->entries, list->capacity);
+    }
     return true;
 }
 
@@ -199,9 +357,57 @@ FLASHMEM oc::type::Result<StepPresetFileLoadResult> StepPresetFileStore::load(
     return oc::type::Result<StepPresetFileLoadResult>::ok(result);
 }
 
+FLASHMEM oc::type::Result<void> StepPresetFileStore::remove(
+    const char* presetId
+) {
+    PresetPaths paths{};
+    if (!buildPaths_(presetId, paths)) {
+        return invalid("invalid step preset id");
+    }
+    if (files_.writeSessionActive()) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, "step preset write session active"}
+        );
+    }
+
+    // Establish that the exact public asset exists before touching private
+    // sidecars. A directory or another unexpected object is never treated as
+    // a deletable preset.
+    const auto currentInfo = files_.stat(paths.current);
+    if (!currentInfo) {
+        return oc::type::Result<void>::err(currentInfo.error());
+    }
+    if (currentInfo.value().type != oc::interface::FileType::FILE) {
+        return invalid("step preset path is not a file");
+    }
+
+    // Remove recovery material first. Thus every failure before the final
+    // remove leaves the current preset addressable, while success cannot be
+    // undone by backup recovery on the next load.
+    auto removedTmp = removeProductFileIfExists(files_, paths.tmp);
+    if (!removedTmp) return removedTmp;
+    auto removedBackup = removeProductFileIfExists(files_, paths.backup);
+    if (!removedBackup) return removedBackup;
+    return files_.remove(paths.current);
+}
+
 FLASHMEM oc::type::Result<StepPresetFileListResult> StepPresetFileStore::list(
     StepPresetFileListEntry* entries,
     uint8_t capacity
+) {
+    return listPage(
+        entries,
+        capacity,
+        nullptr,
+        StepPresetFilePageDirection::FORWARD
+    );
+}
+
+FLASHMEM oc::type::Result<StepPresetFileListResult> StepPresetFileStore::listPage(
+    StepPresetFileListEntry* entries,
+    uint8_t capacity,
+    const char* anchorExclusive,
+    StepPresetFilePageDirection direction
 ) {
     if (entries == nullptr && capacity > 0) {
         return oc::type::Result<StepPresetFileListResult>::err(
@@ -210,6 +416,18 @@ FLASHMEM oc::type::Result<StepPresetFileListResult> StepPresetFileStore::list(
     }
     if (capacity == 0) {
         return oc::type::Result<StepPresetFileListResult>::ok(StepPresetFileListResult{});
+    }
+    if (anchorExclusive != nullptr && anchorExclusive[0] != '\0' &&
+        !validPresetId(anchorExclusive)) {
+        return oc::type::Result<StepPresetFileListResult>::err(
+            {ErrorCode::INVALID_ARGUMENT, "invalid step preset page anchor"}
+        );
+    }
+    if (direction == StepPresetFilePageDirection::BACKWARD &&
+        (anchorExclusive == nullptr || anchorExclusive[0] == '\0')) {
+        return oc::type::Result<StepPresetFileListResult>::err(
+            {ErrorCode::INVALID_ARGUMENT, "missing backward page anchor"}
+        );
     }
 
     auto ensureDir = files_.createDirectory(DIRECTORY);
@@ -221,20 +439,51 @@ FLASHMEM oc::type::Result<StepPresetFileListResult> StepPresetFileStore::list(
         entries[i] = StepPresetFileListEntry{};
     }
 
-    StepPresetListContext context{this, entries, capacity, StepPresetFileListResult{}};
+    StepPresetFileListEntry anchor{};
+    const bool hasAnchor = anchorExclusive != nullptr && anchorExclusive[0] != '\0';
+    if (hasAnchor) {
+        PresetPaths paths{};
+        if (!buildPaths_(anchorExclusive, paths)) {
+            return oc::type::Result<StepPresetFileListResult>::err(
+                {ErrorCode::INVALID_ARGUMENT, "invalid step preset page anchor"}
+            );
+        }
+        const auto info = files_.stat(paths.current);
+        if (!info) {
+            return oc::type::Result<StepPresetFileListResult>::err(info.error());
+        }
+        if (info.value().type != oc::interface::FileType::FILE ||
+            !buildListEntry_(anchorExclusive, info.value().sizeBytes, anchor)) {
+            return oc::type::Result<StepPresetFileListResult>::err(
+                {ErrorCode::INVALID_ARGUMENT, "missing page anchor"}
+            );
+        }
+    }
+
+    StepPresetListContext context{
+        this,
+        entries,
+        capacity,
+        anchor,
+        hasAnchor,
+        direction,
+        0,
+        StepPresetFileListResult{},
+    };
     auto listed = files_.list(DIRECTORY, listVisitor_, &context);
     if (!listed) {
         return oc::type::Result<StepPresetFileListResult>::err(listed.error());
     }
-    for (uint8_t i = 1; i < context.result.count; ++i) {
-        StepPresetFileListEntry current = entries[i];
-        uint8_t insert = i;
-        while (insert > 0 && std::strcmp(entries[insert - 1U].id, current.id) > 0) {
-            entries[insert] = entries[insert - 1U];
-            --insert;
-        }
-        entries[insert] = current;
+    if (direction == StepPresetFilePageDirection::FORWARD) {
+        context.result.hasPrevious = hasAnchor &&
+            context.result.totalCount > context.eligibleCount;
+        context.result.hasNext = context.eligibleCount > context.result.count;
+    } else {
+        context.result.hasPrevious = context.eligibleCount > context.result.count;
+        context.result.hasNext = hasAnchor &&
+            context.result.totalCount > context.eligibleCount;
     }
+    context.result.truncated = context.result.hasPrevious || context.result.hasNext;
     return oc::type::Result<StepPresetFileListResult>::ok(context.result);
 }
 
@@ -282,6 +531,24 @@ FLASHMEM oc::type::Result<void> StepPresetFileStore::nextPresetId(
 
     return oc::type::Result<void>::err(
         {ErrorCode::RESOURCE_EXHAUSTED, "step preset id space exhausted"}
+    );
+}
+
+FLASHMEM oc::type::Result<bool> StepPresetFileStore::exists(const char* presetId) {
+    PresetPaths paths{};
+    if (!buildPaths_(presetId, paths)) {
+        return oc::type::Result<bool>::err(
+            {ErrorCode::INVALID_ARGUMENT, "invalid step preset id"}
+        );
+    }
+
+    auto info = files_.stat(paths.current);
+    if (!info && info.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
+        return oc::type::Result<bool>::ok(false);
+    }
+    if (!info) return oc::type::Result<bool>::err(info.error());
+    return oc::type::Result<bool>::ok(
+        info.value().type == oc::interface::FileType::FILE
     );
 }
 
