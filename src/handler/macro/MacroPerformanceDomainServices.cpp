@@ -116,6 +116,42 @@ MacroPerformanceDomainServices MacroPerformanceDomainServices::fromCoreState(
     };
 }
 
+core::state::macro::MacroAutomationSlotAddress
+MacroPerformanceDomainServices::activeAddress_(uint8_t index) const {
+    return core::state::macro::MacroAutomationSlotAddress{
+        .track = pages_->currentActiveTrack(),
+        .page = pages_->currentActivePage(),
+        .macro = index,
+    };
+}
+
+void MacroPerformanceDomainServices::refreshManualProjection_() const {
+    macro_ui_->refreshManualOverrideMask(
+        pages_->currentActiveTrack(),
+        pages_->currentActivePage()
+    );
+}
+
+void MacroPerformanceDomainServices::restoreManualAfterFailedRecording_(
+    const core::state::macro::MacroUiState::AutomationRecordingState& recording
+) const {
+    if (recording.restoreManualOnFailure) {
+        const auto status = macro_ui_->manualOverrides.activate(
+            recording.address,
+            recording.previousManualValue
+        );
+        if (status != core::state::macro::MacroManualOverrideState::ActivateStatus::INVALID_ADDRESS &&
+            status != core::state::macro::MacroManualOverrideState::ActivateStatus::CAPACITY_EXHAUSTED &&
+            core::state::macro::macroAutomationAddressEquals(
+                recording.address,
+                activeAddress_(recording.address.macro)
+            )) {
+            setResolvedValue(recording.address.macro, recording.previousManualValue);
+        }
+    }
+    refreshManualProjection_();
+}
+
 float MacroPerformanceDomainServices::runtimeValue(uint8_t index) const {
     return core::state::macro::MacroWorkflow::runtimeValue(*macros_, index);
 }
@@ -144,33 +180,43 @@ bool MacroPerformanceDomainServices::beginAutomationRecording(uint8_t index,
     if (recording.active) return false;
 
     recording.reset();
-    recording.active = true;
-    macro_ui_->automationRecordingStatus.set(
-        core::state::macro::MacroAutomationRecordingStatus::RECORDING
+    recording.address = activeAddress_(index);
+    recording.restoreManualOnFailure = macro_ui_->manualOverrides.valueFor(
+        recording.address,
+        recording.previousManualValue
     );
-    recording.address = {
-        .track = pages_->currentActiveTrack(),
-        .page = pages_->currentActivePage(),
-        .macro = index,
-    };
     const auto* existing = core::state::macro::macroAutomationFindSlot(
         pages_->automation,
         recording.address
     );
-    if (existing != nullptr && existing->automation.active) {
+    if (existing != nullptr && core::state::macro::macroCurveStored(existing->automation)) {
         recording.preserveDuration = true;
         recording.targetDurationTicks = existing->automation.durationTicks;
     }
-    setAutomationManualOverride(index, false);
+    recording.suspendModulationOnCommit =
+        existing != nullptr &&
+        core::state::macro::macroCurvePlaybackActive(existing->modulation);
+
+    // Recording owns the final value for the duration of the gesture. Keep the
+    // previous Manual value so cancel/failure can restore the stable state.
+    (void)macro_ui_->manualOverrides.resume(recording.address);
+    refreshManualProjection_();
+    recording.active = true;
+    macro_ui_->automationRecordingStatus.set(
+        core::state::macro::MacroAutomationRecordingStatus::RECORDING
+    );
     recording.startedAtMs = nowMs;
     const bool appended = core::state::macro::macroAutomationAppendPoint(
         recording.lane,
         0.0f,
-        runtimeValue(index)
+        recording.restoreManualOnFailure
+            ? recording.previousManualValue
+            : runtimeValue(index)
     );
     if (appended) {
         bumpAutomationRecordingRevision(*macro_ui_);
     } else {
+        restoreManualAfterFailedRecording_(recording);
         recording.reset();
         macro_ui_->automationRecordingStatus.set(
             core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
@@ -183,7 +229,13 @@ bool MacroPerformanceDomainServices::recordAutomationPoint(uint8_t index,
                                                            uint32_t nowMs,
                                                            float value) const {
     auto& recording = macro_ui_->automationRecording;
-    if (!recording.active || recording.address.macro != index) return false;
+    if (!recording.active ||
+        !core::state::macro::macroAutomationAddressEquals(
+            recording.address,
+            activeAddress_(index)
+        )) {
+        return false;
+    }
 
     const float beat = core::state::macro::macroAutomationElapsedBeats(
         recording.startedAtMs,
@@ -212,6 +264,7 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
     auto& recording = macro_ui_->automationRecording;
     if (!recording.active) return false;
     if (recording.lane.pointCount < 2) {
+        restoreManualAfterFailedRecording_(recording);
         recording.reset();
         macro_ui_->automationRecordingStatus.set(
             core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT
@@ -234,6 +287,7 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
         recording.address
     );
     if (slot == nullptr) {
+        restoreManualAfterFailedRecording_(recording);
         recording.reset();
         macro_ui_->automationRecordingStatus.set(
             core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
@@ -263,6 +317,7 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
                 recording.address
             );
         }
+        restoreManualAfterFailedRecording_(recording);
         recording.reset();
         macro_ui_->automationRecordingStatus.set(
             core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
@@ -270,7 +325,13 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
         bumpAutomationRecordingRevision(*macro_ui_);
         return false;
     }
-    setAutomationManualOverride(recording.address.macro, false);
+    if (recording.suspendModulationOnCommit &&
+        core::state::macro::macroCurveStored(slot->modulation)) {
+        slot->modulation.playbackState =
+            core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    }
+    (void)macro_ui_->manualOverrides.resume(recording.address);
+    refreshManualProjection_();
     recording.reset();
     macro_ui_->automationRecordingStatus.set(
         core::state::macro::MacroAutomationRecordingStatus::IDLE
@@ -284,6 +345,7 @@ bool MacroPerformanceDomainServices::commitAutomationRecording(uint32_t nowMs) c
 
 bool MacroPerformanceDomainServices::cancelAutomationRecording() const {
     if (!macro_ui_->automationRecording.active) return false;
+    restoreManualAfterFailedRecording_(macro_ui_->automationRecording);
     macro_ui_->automationRecording.reset();
     macro_ui_->automationRecordingStatus.set(
         core::state::macro::MacroAutomationRecordingStatus::IDLE
@@ -293,39 +355,85 @@ bool MacroPerformanceDomainServices::cancelAutomationRecording() const {
 }
 
 bool MacroPerformanceDomainServices::automationRecordingActiveFor(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
     const auto& recording = macro_ui_->automationRecording;
-    return recording.active && recording.address.macro == index;
+    return recording.active &&
+           core::state::macro::macroAutomationAddressEquals(
+               recording.address,
+               activeAddress_(index)
+           );
+}
+
+bool MacroPerformanceDomainServices::computedSourcePlaybackActiveFor(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        pages_->automation,
+        activeAddress_(index)
+    );
+    return slot != nullptr &&
+           (core::state::macro::macroCurvePlaybackActive(slot->automation) ||
+            core::state::macro::macroCurvePlaybackActive(slot->modulation));
 }
 
 bool MacroPerformanceDomainServices::automationActiveFor(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
     const auto* slot = core::state::macro::macroAutomationFindSlot(
         pages_->automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = pages_->currentActiveTrack(),
-            .page = pages_->currentActivePage(),
-            .macro = index,
-        }
+        activeAddress_(index)
     );
-    return slot != nullptr && slot->automation.active;
+    return slot != nullptr && core::state::macro::macroCurveStored(slot->automation);
 }
 
-bool MacroPerformanceDomainServices::automationManualOverrideActiveFor(uint8_t index) const {
+bool MacroPerformanceDomainServices::manualOverrideActiveFor(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
-    const uint16_t bit = static_cast<uint16_t>(1U << index);
-    return (macro_ui_->automationManualOverrideMask.get() & bit) != 0;
+    return macro_ui_->manualOverrides.activeFor(activeAddress_(index));
 }
 
-void MacroPerformanceDomainServices::setAutomationManualOverride(uint8_t index,
-                                                                 bool active) const {
-    if (index >= core::state::macro::MACRO_COUNT) return;
-    const uint16_t bit = static_cast<uint16_t>(1U << index);
-    uint16_t mask = macro_ui_->automationManualOverrideMask.get();
-    const uint16_t next = active
-        ? static_cast<uint16_t>(mask | bit)
-        : static_cast<uint16_t>(mask & ~bit);
-    if (next == mask) return;
-    macro_ui_->automationManualOverrideMask.set(next);
+bool MacroPerformanceDomainServices::manualOverrideValueFor(
+    uint8_t index,
+    float& outValue
+) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    return macro_ui_->manualOverrides.valueFor(activeAddress_(index), outValue);
+}
+
+bool MacroPerformanceDomainServices::takeManualControl(uint8_t index, float value) const {
+    if (index >= core::state::macro::MACRO_COUNT ||
+        !pages_->isMacroSlotActive(index) ||
+        !computedSourcePlaybackActiveFor(index)) {
+        return false;
+    }
+    const auto status = macro_ui_->manualOverrides.activate(activeAddress_(index), value);
+    if (status == core::state::macro::MacroManualOverrideState::ActivateStatus::INVALID_ADDRESS ||
+        status == core::state::macro::MacroManualOverrideState::ActivateStatus::CAPACITY_EXHAUSTED) {
+        return false;
+    }
+    float sanitized = value;
+    (void)manualOverrideValueFor(index, sanitized);
+    setResolvedValue(index, sanitized);
+    refreshManualProjection_();
+    return true;
+}
+
+bool MacroPerformanceDomainServices::resumeComputedSources(uint8_t index) const {
+    if (index >= core::state::macro::MACRO_COUNT) return false;
+    const auto address = activeAddress_(index);
+    bool resumed = macro_ui_->manualOverrides.resume(address);
+    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
+        pages_->automation,
+        address
+    );
+    if (slot != nullptr &&
+        core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation)) {
+        slot->modulation.playbackState = core::state::macro::MacroCurvePlaybackState::ACTIVE;
+        resumed = true;
+        bumpAutomationRecordingRevision(*macro_ui_);
+        if (operations_.markProjectMutated != nullptr) {
+            operations_.markProjectMutated(operations_.context);
+        }
+    }
+    if (resumed) refreshManualProjection_();
+    return resumed;
 }
 
 bool MacroPerformanceDomainServices::isMacroSlotActive(uint8_t index) const {
@@ -394,6 +502,13 @@ bool MacroPerformanceDomainServices::isActivePageEnabled() const {
 void MacroPerformanceDomainServices::switchToPage(uint8_t pageIndex) const {
     if (operations_.switchToPage != nullptr) {
         operations_.switchToPage(operations_.context, pageIndex);
+        refreshManualProjection_();
+        for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
+            float manualValue = 0.0f;
+            if (manualOverrideValueFor(i, manualValue)) {
+                setResolvedValue(i, manualValue);
+            }
+        }
     }
 }
 

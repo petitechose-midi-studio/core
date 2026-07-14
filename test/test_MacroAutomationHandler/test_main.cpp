@@ -126,7 +126,7 @@ void test_state_row_restores_auto_without_clearing_lane() {
     MacroAutomationHarness h;
     h.configureAutomation();
     h.openAutomationEditor();
-    h.state.macroUi.automationManualOverrideMask.set(0x0001);
+    h.services.setManualOverride(0, true);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
 
@@ -152,7 +152,7 @@ void test_clear_automation_clears_manual_override() {
     MacroAutomationHarness h;
     h.configureAutomation();
     h.openAutomationEditor();
-    h.state.macroUi.automationManualOverrideMask.set(0x0001);
+    h.services.setManualOverride(0, true);
 
     h.release(Config::ButtonID::BOTTOM_LEFT);
 

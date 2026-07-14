@@ -112,7 +112,7 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
     const float clamped = std::clamp(normalized, 0.0f, 1.0f);
     const uint8_t row = macro_edit_.automationFocusedRow.get();
     if (row == ROW_STATE) {
-        services_.setAutomationManualOverride(index, clamped < 0.5f);
+        services_.setManualOverride(index, clamped < 0.5f);
         return;
     }
     if (row == ROW_LENGTH) {
@@ -140,7 +140,7 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
     if (row == ROW_STATE) {
         steps = 2;
         const uint8_t index = macroIndex();
-        position = services_.automationManualOverrideActiveFor(index) ? 0.0f : 1.0f;
+        position = services_.manualOverrideActiveFor(index) ? 0.0f : 1.0f;
     } else if (row == ROW_LENGTH) {
         const auto range = macroAutomationLengthEditRange(coarse_edit_active_);
         steps = range.stepCount;

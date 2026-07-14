@@ -116,12 +116,30 @@ void test_snapshot_capture_apply_restores_project_session() {
     project::ProjectSnapshot snapshot;
     assert(project::captureProjectSnapshot(state, snapshot));
 
+    const auto capturedProjectAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(capturedProjectAddress, 0.91f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+
     state.resetMusicalProject();
     assert(state.statusBar.tempo.get() == 120.0f);
     assert(state.sequencer.pattern.length.get() == sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(state.sharedTrackActive.get() == 0);
+    assert(state.macroUi.manualOverrides.entryCount == 0);
+
+    const auto resetProjectAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(resetProjectAddress, 0.13f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
 
     assert(project::applyProjectSnapshot(state, snapshot));
+    assert(state.macroUi.manualOverrides.entryCount == 0);
 
     assert(std::strcmp(state.project.metadata.id.data(), "p123") == 0);
     assert(std::strcmp(state.project.metadata.name.data(), "p123") == 0);

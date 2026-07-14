@@ -5,6 +5,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroRuntimeState.hpp"
 #include "state/StructureSelectionState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
@@ -39,6 +40,9 @@ struct MacroUiState {
         uint32_t startedAtMs = 0;
         bool preserveDuration = false;
         uint16_t targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
+        bool restoreManualOnFailure = false;
+        float previousManualValue = 0.0f;
+        bool suspendModulationOnCommit = false;
         MacroAutomationLane lane{};
 
         void reset() {
@@ -47,6 +51,9 @@ struct MacroUiState {
             startedAtMs = 0;
             preserveDuration = false;
             targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
+            restoreManualOnFailure = false;
+            previousManualValue = 0.0f;
+            suspendModulationOnCommit = false;
             lane = {};
         }
     };
@@ -60,6 +67,7 @@ struct MacroUiState {
         MacroAutomationRecordingStatus::IDLE
     };
     oc::state::Signal<uint16_t, 4> automationManualOverrideMask{0};
+    MacroManualOverrideState manualOverrides;
     oc::state::Signal<uint8_t, 4> focusedMacroSlot{0};
     oc::state::Signal<bool, 2> previewAddPageSlot{false};
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
@@ -78,7 +86,13 @@ struct MacroUiState {
         previewPageIndex.set(pageIndex);
     }
 
+    /** Resets overlays/focus while retaining Project-scoped Manual entries. */
+    void resetInteraction();
+    /** Clears runtime Manual only at a Project load/create/reset boundary. */
+    void resetProjectRuntime();
+    /** Backward-compatible full reset; project lifecycle integration owns use. */
     void reset();
+    void refreshManualOverrideMask(uint8_t track, uint8_t page);
 };
 
 inline int performancePropertyIndex(MacroPerformanceProperty property) {

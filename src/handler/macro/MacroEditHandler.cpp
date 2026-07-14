@@ -367,7 +367,7 @@ FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
     } else if (row == ROW_AUTOMATION) {
         const uint8_t macroIndex = macro_edit_.editingIndex.get();
         if (!services_.automationActiveFor(macroIndex)) return;
-        services_.setAutomationManualOverride(macroIndex, value <= 0);
+        services_.setManualOverride(macroIndex, value <= 0);
     }
 }
 
@@ -375,7 +375,7 @@ FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
     if (row == ROW_AUTOMATION) {
         const uint8_t macroIndex = macro_edit_.editingIndex.get();
         if (!services_.automationActiveFor(macroIndex)) return 0;
-        return services_.automationManualOverrideActiveFor(macroIndex) ? 0 : 1;
+        return services_.manualOverrideActiveFor(macroIndex) ? 0 : 1;
     }
     return static_cast<int>(macro_edit_.tempCC.get());
 }

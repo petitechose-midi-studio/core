@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -80,6 +81,13 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     state.sequencer.patternQuickControls.selecting.set(true);
     state.overlays.show(core::ui::OverlayType::DATA_MANAGER, false);
     state.overlays.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
+    const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(manualAddress, 0.73f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
 
     const uint32_t beforeRevision = state.configRevision.get();
     state.factoryReset();
@@ -94,6 +102,7 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     assert(!state.sequencer.stepInlineFeedback.visible.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(std::strcmp(state.dataManager.feedback.get(), "") == 0);
+    assert(!state.macroUi.manualOverrides.activeFor(manualAddress));
     assert(std::strcmp(state.statusBar.pageName.get(), state.pages.activePageData().name) == 0);
     assert(
         state.configRevision.get() ==
@@ -203,6 +212,23 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.trackNavigation.selection.cursorIndex.set(7);
     state.trackNavigation.selection.selectedMask.set(0x0080);
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), 3);
+    const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(manualAddress, 0.61f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+    // Recording temporarily removes Manual. A view/context teardown cancels
+    // the gesture and must restore the prior Project-scoped runtime state.
+    state.macroUi.automationRecording.active = true;
+    state.macroUi.automationRecording.address = manualAddress;
+    state.macroUi.automationRecording.restoreManualOnFailure = true;
+    state.macroUi.automationRecording.previousManualValue = 0.61f;
+    assert(state.macroUi.manualOverrides.resume(manualAddress));
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.93f);
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::MACRO);
 
     state.resetStandaloneTransientUi();
 
@@ -219,6 +245,12 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(!state.trackNavigation.selection.active.get());
     assert(state.trackNavigation.selection.cursorIndex.get() == 0);
+    float manualValue = 0.0f;
+    assert(state.macroUi.manualOverrides.valueFor(manualAddress, manualValue));
+    assert(manualValue > 0.60f && manualValue < 0.62f);
+    assert(std::fabs(state.macros[0].value.get() - manualValue) < 0.0005f);
+    assert((state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0U);
+    assert(!state.macroUi.automationRecording.active);
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
 }
 

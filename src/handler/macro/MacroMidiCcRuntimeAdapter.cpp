@@ -90,22 +90,26 @@ MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishFrame_(
             const uint16_t address = stableAddress(track, page, i);
             const bool transientLive = i == transientLiveMacro;
             const bool recording = services_.automationRecordingActiveFor(i);
-            const bool manualOverride = services_.automationManualOverrideActiveFor(i);
+            const bool manualOverride = services_.manualOverrideActiveFor(i);
             const bool manual = transientLive || recording || manualOverride;
-            const bool automation = services_.automationActiveFor(i);
+            const bool computedSource = services_.computedSourcePlaybackActiveFor(i);
             const bool computedValid =
                 (computed_valid_mask_ & macroBit(i)) != 0;
 
             if (manual) {
+                float stableManualValue = services_.runtimeValue(i);
+                if (manualOverride && !recording) {
+                    (void)services_.manualOverrideValueFor(i, stableManualValue);
+                }
                 const uint8_t manualValue = transientLive
                     ? transientLiveValue
-                    : core::midi::toCC(services_.runtimeValue(i));
+                    : core::midi::toCC(stableManualValue);
                 (void)aggregator_.addLiveManual(destination, address, manualValue);
 
                 // A recording replaces the old lane entirely. A Manual
                 // override keeps the computed local contribution visible as a
                 // deterministic loser for conflict/detail telemetry.
-                if (manualOverride && !recording && automation && computedValid) {
+                if (manualOverride && !recording && computedSource && computedValid) {
                     (void)aggregator_.addMacroComputed(
                         destination,
                         address,
@@ -115,7 +119,7 @@ MidiCcRuntimePublishResult MacroMidiCcRuntimeAdapter::publishFrame_(
                 continue;
             }
 
-            if (automation) {
+            if (computedSource) {
                 if (computedValid) {
                     (void)aggregator_.addMacroComputed(
                         destination,

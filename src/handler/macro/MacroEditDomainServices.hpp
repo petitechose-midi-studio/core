@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "state/MacroState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
@@ -28,6 +29,7 @@ public:
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState* macroUi = nullptr;
         core::state::StructureClipboardState* clipboard = nullptr;
+        core::state::MacroState* macros = nullptr;
     };
 
     struct Operations {
@@ -48,8 +50,8 @@ public:
     const core::state::macro::MacroAutomationSlotState* automationSlot(uint8_t index) const;
     bool automationClipboardAvailable() const;
     bool automationActiveFor(uint8_t index) const;
-    bool automationManualOverrideActiveFor(uint8_t index) const;
-    void setAutomationManualOverride(uint8_t index, bool active) const;
+    bool manualOverrideActiveFor(uint8_t index) const;
+    void setManualOverride(uint8_t index, bool active) const;
     bool clearAutomation(uint8_t index) const;
     bool removeAutomation(uint8_t index) const;
     bool copyAutomation(uint8_t index) const;
@@ -61,6 +63,7 @@ private:
     core::state::macro::MacroPagesState* pages_ = nullptr;
     core::state::macro::MacroUiState* macro_ui_ = nullptr;
     core::state::StructureClipboardState* clipboard_ = nullptr;
+    core::state::MacroState* macros_ = nullptr;
     Operations operations_{};
 };
 

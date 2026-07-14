@@ -123,6 +123,27 @@ struct Harness {
             lane
         ));
     }
+
+    void addModulation(uint8_t macroIndex, float depth) {
+        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+            pages.automation,
+            core::state::macro::MacroAutomationSlotAddress{
+                .track = pages.currentActiveTrack(),
+                .page = pages.currentActivePage(),
+                .macro = macroIndex,
+            }
+        );
+        assert(slot != nullptr);
+        core::state::macro::MacroModulationShape shape;
+        assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.2f));
+        assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, 0.2f));
+        assert(core::state::macro::macroAutomationAssignModulation(
+            pages.automation,
+            *slot,
+            shape
+        ));
+        slot->modulationDepth = depth;
+    }
 };
 
 void test_manual_publish_collects_every_active_macro_in_one_frame() {
@@ -177,8 +198,7 @@ void test_computed_macro_beats_static_duplicate_and_preview_is_silent() {
 void test_manual_override_keeps_computed_contribution_as_loser() {
     Harness h;
     h.addAutomation(1);
-    h.macros[1].value.set(0.75f);
-    h.macroUi.automationManualOverrideMask.set(0x0002);
+    assert(h.services.takeManualControl(1, 0.75f));
 
     h.adapter.beginComputedFrame();
     assert(h.adapter.setComputedValue(1, 20));
@@ -199,6 +219,25 @@ void test_manual_override_keeps_computed_contribution_as_loser() {
            MidiCcCandidateClass::MACRO_STATIC);
 
     std::cout << "[PASS] test_manual_override_keeps_computed_contribution_as_loser\n";
+}
+
+void test_modulation_only_depth_zero_is_classified_as_computed() {
+    Harness h;
+    h.pages.setMacroSlotActive(0, false);
+    h.addModulation(1, 0.0f);
+
+    h.adapter.beginComputedFrame();
+    assert(h.adapter.setComputedValue(1, 32));
+    const auto result = h.adapter.publishComputedFrame();
+    assert(result.ok());
+    assert(result.candidateCount == 1);
+    assert(result.sentCount == 1);
+    assert(h.transport.messages[0].value == 32);
+    assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==
+           MidiCcCandidateClass::MACRO_COMPUTED);
+    assert(h.services.computedSourcePlaybackActiveFor(1));
+
+    std::cout << "[PASS] test_modulation_only_depth_zero_is_classified_as_computed\n";
 }
 
 void test_disabling_automation_restores_persisted_static_base_not_runtime_projection() {
@@ -287,6 +326,7 @@ int main() {
     test_manual_publish_collects_every_active_macro_in_one_frame();
     test_computed_macro_beats_static_duplicate_and_preview_is_silent();
     test_manual_override_keeps_computed_contribution_as_loser();
+    test_modulation_only_depth_zero_is_classified_as_computed();
     test_disabling_automation_restores_persisted_static_base_not_runtime_projection();
     test_disabled_page_flushes_to_an_empty_bounded_frame_without_midi();
     test_macro_stable_address_covers_full_v1_domain_without_collision();

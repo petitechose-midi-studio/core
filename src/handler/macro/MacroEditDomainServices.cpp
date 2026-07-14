@@ -27,17 +27,26 @@ void markProjectMutatedFromCoreState(void* context) {
     state->markProjectMutated();
 }
 
+bool computedSourcePlaybackActive(
+    const core::state::macro::MacroAutomationSlotState* slot
+) {
+    return slot != nullptr &&
+           (core::state::macro::macroCurvePlaybackActive(slot->automation) ||
+            core::state::macro::macroCurvePlaybackActive(slot->modulation));
+}
+
 }  // namespace
 
 MacroEditDomainServices::MacroEditDomainServices(StateRefs state, Operations operations)
     : pages_(&state.pages)
     , macro_ui_(state.macroUi)
     , clipboard_(state.clipboard)
+    , macros_(state.macros)
     , operations_(operations) {}
 
 MacroEditDomainServices MacroEditDomainServices::fromCoreState(core::state::CoreState& state) {
     return MacroEditDomainServices{
-        StateRefs{state.pages, &state.macroUi, &state.structureClipboard},
+        StateRefs{state.pages, &state.macroUi, &state.structureClipboard, &state.macros},
         Operations{
             &state,
             setConfigFromCoreState,
@@ -92,21 +101,43 @@ bool MacroEditDomainServices::automationActiveFor(uint8_t index) const {
     return slot != nullptr && slot->automation.active;
 }
 
-bool MacroEditDomainServices::automationManualOverrideActiveFor(uint8_t index) const {
+bool MacroEditDomainServices::manualOverrideActiveFor(uint8_t index) const {
     if (macro_ui_ == nullptr || index >= core::state::macro::MACRO_COUNT) return false;
-    return (macro_ui_->automationManualOverrideMask.get() &
-            static_cast<uint16_t>(1U << index)) != 0;
+    return macro_ui_->manualOverrides.activeFor(automationAddress(index));
 }
 
-void MacroEditDomainServices::setAutomationManualOverride(uint8_t index, bool active) const {
+void MacroEditDomainServices::setManualOverride(uint8_t index, bool active) const {
     if (macro_ui_ == nullptr || index >= core::state::macro::MACRO_COUNT) return;
-    const uint16_t bit = static_cast<uint16_t>(1U << index);
-    const uint16_t current = macro_ui_->automationManualOverrideMask.get();
-    const uint16_t next = active
-        ? static_cast<uint16_t>(current | bit)
-        : static_cast<uint16_t>(current & ~bit);
-    if (next == current) return;
-    macro_ui_->automationManualOverrideMask.set(next);
+    const auto address = automationAddress(index);
+    if (active) {
+        const auto* slot = automationSlot(index);
+        if (!computedSourcePlaybackActive(slot)) return;
+        const float value = macros_ != nullptr
+            ? core::state::macro::MacroWorkflow::runtimeValue(*macros_, index)
+            : pages_->activePageData().values[index];
+        (void)macro_ui_->manualOverrides.activate(address, value);
+    } else {
+        (void)macro_ui_->manualOverrides.resume(address);
+        auto* slot = core::state::macro::macroAutomationFindMutableSlot(
+            pages_->automation,
+            address
+        );
+        if (slot != nullptr &&
+            core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation)) {
+            slot->modulation.playbackState =
+                core::state::macro::MacroCurvePlaybackState::ACTIVE;
+            macro_ui_->automationRecordingRevision.set(
+                macro_ui_->automationRecordingRevision.get() + 1U
+            );
+            if (operations_.markProjectMutated != nullptr) {
+                operations_.markProjectMutated(operations_.context);
+            }
+        }
+    }
+    macro_ui_->refreshManualOverrideMask(
+        pages_->currentActiveTrack(),
+        pages_->currentActivePage()
+    );
 }
 
 bool MacroEditDomainServices::clearAutomation(uint8_t index) const {
@@ -123,7 +154,13 @@ bool MacroEditDomainServices::clearAutomation(uint8_t index) const {
         operations_.markProjectMutated(operations_.context);
     }
     if (macro_ui_ != nullptr) {
-        setAutomationManualOverride(index, false);
+        if (!computedSourcePlaybackActive(slot)) {
+            (void)macro_ui_->manualOverrides.resume(automationAddress(index));
+            macro_ui_->refreshManualOverrideMask(
+                pages_->currentActiveTrack(),
+                pages_->currentActivePage()
+            );
+        }
         macro_ui_->automationRecordingRevision.set(macro_ui_->automationRecordingRevision.get() + 1U);
     }
     return true;
@@ -142,7 +179,11 @@ bool MacroEditDomainServices::removeAutomation(uint8_t index) const {
         operations_.markProjectMutated(operations_.context);
     }
     if (macro_ui_ != nullptr) {
-        setAutomationManualOverride(index, false);
+        (void)macro_ui_->manualOverrides.resume(automationAddress(index));
+        macro_ui_->refreshManualOverrideMask(
+            pages_->currentActiveTrack(),
+            pages_->currentActivePage()
+        );
         macro_ui_->automationRecordingRevision.set(macro_ui_->automationRecordingRevision.get() + 1U);
     }
     return true;
@@ -171,7 +212,11 @@ bool MacroEditDomainServices::pasteAutomation(uint8_t index) const {
         operations_.markProjectMutated(operations_.context);
     }
     if (macro_ui_ != nullptr) {
-        setAutomationManualOverride(index, false);
+        (void)macro_ui_->manualOverrides.resume(automationAddress(index));
+        macro_ui_->refreshManualOverrideMask(
+            pages_->currentActiveTrack(),
+            pages_->currentActivePage()
+        );
         macro_ui_->automationRecordingRevision.set(macro_ui_->automationRecordingRevision.get() + 1U);
     }
     return true;

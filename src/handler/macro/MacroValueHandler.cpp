@@ -1,6 +1,6 @@
 #include "MacroValueHandler.hpp"
 
-#include <algorithm>
+#include <cmath>
 
 #include <config/PlatformCompat.hpp>
 #include <config/Timing.hpp>
@@ -10,6 +10,7 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
+#include "state/macro/MacroAutomationDomain.hpp"
 
 namespace core::handler {
 
@@ -94,7 +95,10 @@ FLASHMEM void MacroValueHandler::setupBindings() {
             .scope(scope_id_)
             .then([this, i]() {
                 macro_button_held_[i] = false;
-                if (!services_.automationRecordingActiveFor(i)) return;
+                if (!macro_ui_.automationRecording.active ||
+                    macro_ui_.automationRecording.address.macro != i) {
+                    return;
+                }
                 const uint32_t nowMs = core::time_compat::millis();
                 services_.commitAutomationRecording(nowMs);
                 post_record_guard_active_[i] = true;
@@ -145,25 +149,28 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     const uint32_t nowMs = core::time_compat::millis();
     if (!ensureActiveSlot(index)) return;
     if (shouldIgnorePostRecordTurn(index, nowMs)) return;
-    if (shouldStartAutomationRecording(index)) {
-        services_.beginAutomationRecording(index, nowMs);
-    }
-    const bool recordingActive = services_.automationRecordingActiveFor(index);
 
-    const float clamped = std::clamp(value, 0.0f, 1.0f);
-    const uint8_t cc_value = core::midi::toCC(clamped);
+    const float sanitized = core::state::macro::macroAutomationClamp01(value);
+    const uint8_t cc_value = core::midi::toCC(sanitized);
     const float quantized = core::midi::fromCC(cc_value);
 
     if (std::abs(services_.runtimeValue(index) - quantized) < 0.0005f) return;
 
-    if (!recordingActive && services_.automationActiveFor(index)) {
-        services_.setAutomationManualOverride(index, true);
+    // A hold alone is inert. Recording starts only after a value movement has
+    // crossed the same quantized threshold used for output.
+    if (shouldStartAutomationRecording(index)) {
+        (void)services_.beginAutomationRecording(index, nowMs);
     }
+    const bool recordingActive = services_.automationRecordingActiveFor(index);
 
-    // Update state (triggers UI update, marks dirty for persistence)
-    services_.setManualValue(index, quantized);
     if (recordingActive) {
+        services_.setResolvedValue(index, quantized);
         services_.recordAutomationPoint(index, nowMs, quantized);
+    } else if (services_.computedSourcePlaybackActiveFor(index)) {
+        if (!services_.takeManualControl(index, quantized)) return;
+    } else {
+        // Static-only movement authors the durable base value.
+        services_.setManualValue(index, quantized);
     }
 
     if (!services_.isActivePageEnabled()) return;
@@ -184,7 +191,7 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
 void MacroValueHandler::handleConfigChange(uint8_t index, float value) {
     if (!ensureActiveSlot(index)) return;
-    const float normalized = std::clamp(value, 0.0f, 1.0f);
+    const float normalized = core::state::macro::macroAutomationClamp01(value);
     const auto current = services_.activeConfig(index);
 
     switch (macro_ui_.activeProperty.get()) {
@@ -206,8 +213,7 @@ void MacroValueHandler::handleConfigChange(uint8_t index, float value) {
 
 void MacroValueHandler::restoreAutomation(uint8_t index) {
     if (!ensureActiveSlot(index)) return;
-    if (!services_.automationActiveFor(index)) return;
-    services_.setAutomationManualOverride(index, false);
+    (void)services_.resumeComputedSources(index);
 }
 
 }  // namespace core::handler

@@ -222,8 +222,20 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
            core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
     assert(playbackTelemetry.destinations[0].finalValue == 127);
 
-    h.services.setAutomationManualOverride(1, false);
-    h.playback.update(3000);
+    h.statusBar.playing.set(false);
+    h.playback.update(2000);
+    assert(h.transport.count == 2);
+    assert(h.services.manualOverrideActiveFor(1));
+
+    h.statusBar.playing.set(true);
+    h.playback.update(2200);
+    assert(h.transport.count == 2);
+    assert(h.services.manualOverrideActiveFor(1));
+    assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==
+           core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
+
+    assert(h.services.resumeComputedSources(1));
+    h.playback.update(4200);
     assert(h.transport.count == 3);
     assert(h.transport.messages[2].value == 0);
     assert(h.adapter.telemetry().destinations[0].winner.author.candidateClass ==

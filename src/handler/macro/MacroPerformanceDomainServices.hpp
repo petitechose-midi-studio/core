@@ -8,12 +8,10 @@
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroUiState.hpp"
 
 namespace core::state {
 struct CoreState;
-namespace macro {
-struct MacroUiState;
-}
 }
 
 namespace core::handler {
@@ -64,9 +62,15 @@ public:
     bool commitAutomationRecording(uint32_t nowMs) const;
     bool cancelAutomationRecording() const;
     bool automationRecordingActiveFor(uint8_t index) const;
+    /// True when Automation or Modulation is stored and enabled for playback.
+    bool computedSourcePlaybackActiveFor(uint8_t index) const;
     bool automationActiveFor(uint8_t index) const;
-    bool automationManualOverrideActiveFor(uint8_t index) const;
-    void setAutomationManualOverride(uint8_t index, bool active) const;
+    bool manualOverrideActiveFor(uint8_t index) const;
+    bool manualOverrideValueFor(uint8_t index, float& outValue) const;
+    /// Takes final-value ownership without changing the persisted static base.
+    bool takeManualControl(uint8_t index, float value) const;
+    /// Releases Manual and restores the exact enabled computed-source set.
+    bool resumeComputedSources(uint8_t index) const;
     bool isMacroSlotActive(uint8_t index) const;
     bool isMacroAddSlot(uint8_t index) const;
     bool activateMacroSlot(uint8_t index) const;
@@ -84,6 +88,12 @@ public:
     void pulseNoteIn() const;
 
 private:
+    core::state::macro::MacroAutomationSlotAddress activeAddress_(uint8_t index) const;
+    void refreshManualProjection_() const;
+    void restoreManualAfterFailedRecording_(
+        const core::state::macro::MacroUiState::AutomationRecordingState& recording
+    ) const;
+
     core::state::MacroState* macros_ = nullptr;
     core::state::macro::MacroPagesState* pages_ = nullptr;
     core::state::macro::MacroUiState* macro_ui_ = nullptr;

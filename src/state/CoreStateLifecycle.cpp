@@ -19,6 +19,27 @@ namespace {
 using StepSequencerGraph = oc::note::sequencer::StepSequencerGraph;
 using GraphPtr = core::app::ExtmemUniquePtr<StepSequencerGraph>;
 
+FLASHMEM void reprojectActiveMacroManualOverrides(CoreState& state) {
+    const uint8_t track = state.pages.currentActiveTrack();
+    const uint8_t page = state.pages.currentActivePage();
+    state.macroUi.refreshManualOverrideMask(track, page);
+
+    for (uint8_t macro = 0; macro < core::state::macro::MACRO_COUNT; ++macro) {
+        float manualValue = 0.0f;
+        if (!state.macroUi.manualOverrides.valueFor(
+                core::state::macro::MacroAutomationSlotAddress{
+                    .track = track,
+                    .page = page,
+                    .macro = macro,
+                },
+                manualValue
+            )) {
+            continue;
+        }
+        core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, macro, manualValue);
+    }
+}
+
 FLASHMEM void installCapturedGraph(sequencer::SequencerPatternState& target,
                                    GraphPtr& graph,
                                    uint32_t revision) {
@@ -138,7 +159,8 @@ FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     });
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroEdit.reset();
-    state.macroUi.reset();
+    state.macroUi.resetInteraction();
+    state.macroUi.resetProjectRuntime();
     state.trackNavigation.reset();
 }
 
@@ -163,7 +185,9 @@ FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.patternPitchSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
     state.dataManager.feedback.set("");
-    state.macroUi.reset();
+    // Factory reset already cleared Project-scoped Macro runtime in
+    // resetMacroDomain_. This second pass owns UI/session state only.
+    state.macroUi.resetInteraction();
     state.projectNavigation.reset();
     state.trackNavigation.reset();
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
@@ -195,7 +219,8 @@ FLASHMEM void CoreStateLifecycle::flushProjectMutationCoalescing(CoreState& stat
 
 FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.macroEdit.reset();
-    state.macroUi.reset();
+    state.macroUi.resetInteraction();
+    reprojectActiveMacroManualOverrides(state);
     state.trackNavigation.reset();
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     state.structureClipboard.clear();
@@ -234,7 +259,8 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.statusBar.pageName.set(state.pages.activePageData().name);
 
     state.macroEdit.reset();
-    state.macroUi.reset();
+    state.macroUi.resetInteraction();
+    state.macroUi.resetProjectRuntime();
     state.trackNavigation.reset();
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     state.structureClipboard.clear();

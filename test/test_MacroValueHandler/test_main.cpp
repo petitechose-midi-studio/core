@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
@@ -17,6 +18,7 @@
 
 #include "../../src/handler/macro/MacroValueHandler.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -165,6 +167,33 @@ void test_macro_encoder_updates_value_and_sends_cc() {
     std::cout << "[PASS] test_macro_encoder_updates_value_and_sends_cc\n";
 }
 
+void test_macro_encoder_sanitizes_non_finite_values_before_midi_conversion() {
+    const float invalidValues[] = {
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(),
+    };
+
+    for (const float invalid : invalidValues) {
+        MacroValueHarness h;
+
+        h.turn(Config::EncoderID::MACRO_1, invalid);
+
+        assert(std::isfinite(h.state.macros[0].value.get()));
+        assert(std::fabs(h.state.macros[0].value.get()) < 0.0005f);
+        assert(std::isfinite(h.state.pages.activePageData().values[0]));
+        assert(std::fabs(h.state.pages.activePageData().values[0]) < 0.0005f);
+        assert(h.midiTransport.ccCount == 1);
+        assert(h.midiTransport.lastValue == 0);
+
+        core::state::macro::MacroWorkflow::setRuntimeValue(h.state.macros, 0, invalid);
+        assert(std::isfinite(h.state.macros[0].value.get()));
+        assert(std::fabs(h.state.macros[0].value.get()) < 0.0005f);
+    }
+
+    std::cout << "[PASS] test_macro_encoder_sanitizes_non_finite_values_before_midi_conversion\n";
+}
+
 void test_macro_encoder_does_not_activate_empty_or_add_slots() {
     MacroValueHarness h;
 
@@ -301,10 +330,20 @@ void test_turning_an_automated_macro_enters_manual_override() {
     MacroValueHarness h;
 
     configureAutomation(h.state);
+    const float persistedBase = h.state.pages.activePageData().values[0];
 
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
 
     assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) != 0);
+    assert(h.state.macroUi.manualOverrides.activeFor(
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        }
+    ));
+    assert(std::fabs(h.state.pages.activePageData().values[0] - persistedBase) < 0.0001f);
+    assert(!h.state.hasPendingProjectMutationCoalescing());
     assert(h.midiTransport.ccCount == 1);
     assert(h.midiTransport.lastValue == 127);
 
@@ -320,7 +359,8 @@ void test_macro_automation_property_button_restores_auto_without_clearing_lane()
     h.state.macroUi.activeProperty.set(
         core::state::macro::MacroPerformanceProperty::AUTOMATION
     );
-    h.state.macroUi.automationManualOverrideMask.set(0x0001);
+    auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(h.state);
+    assert(services.takeManualControl(0, 0.7f));
 
     h.press(Config::ButtonID::MACRO_1);
     assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) == 0);
@@ -396,6 +436,7 @@ void test_post_record_input_guard_survives_millisecond_rollover() {
 int main() {
     oc::time::setProvider(mockTimeMs);
     test_macro_encoder_updates_value_and_sends_cc();
+    test_macro_encoder_sanitizes_non_finite_values_before_midi_conversion();
     test_macro_encoder_does_not_activate_empty_or_add_slots();
     test_macro_value_handler_respects_modal_guards();
     test_macro_encoder_feeds_armed_automation_recording();

@@ -39,6 +39,27 @@ FLASHMEM bool setSharedTrackState(Operations operations, uint16_t enabledMask, u
 FLASHMEM void syncActivePagePresentation(StateRefs state) {
     state.statusBar.pageName.set(state.pages.activePageData().name);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.macroUi.refreshManualOverrideMask(
+        state.pages.currentActiveTrack(),
+        state.pages.currentActivePage()
+    );
+    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
+        float manualValue = 0.0f;
+        if (state.macroUi.manualOverrides.valueFor(
+                core::state::macro::MacroAutomationSlotAddress{
+                    .track = state.pages.currentActiveTrack(),
+                    .page = state.pages.currentActivePage(),
+                    .macro = i,
+                },
+                manualValue
+            )) {
+            core::state::macro::MacroWorkflow::setRuntimeValue(
+                state.macros,
+                i,
+                manualValue
+            );
+        }
+    }
 }
 
 FLASHMEM void finalizeStructureChange(StateRefs state, Operations operations) {
@@ -91,6 +112,21 @@ FLASHMEM void clearAutomationForTrack(core::state::macro::MacroAutomationBankSta
     core::state::macro::macroAutomationClearTrack(bank, track);
 }
 
+FLASHMEM void clearManualForPage(StateRefs state, uint8_t track, uint8_t page) {
+    (void)state.macroUi.manualOverrides.clearPage(track, page);
+}
+
+FLASHMEM void clearManualForTrack(StateRefs state, uint8_t track) {
+    (void)state.macroUi.manualOverrides.clearTrack(track);
+}
+
+FLASHMEM void clearManualForAddress(
+    StateRefs state,
+    const core::state::macro::MacroAutomationSlotAddress& address
+) {
+    (void)state.macroUi.manualOverrides.clearAddress(address);
+}
+
 FLASHMEM void flushMutationCoalescingFromCoreState(void* context) {
     auto* state = static_cast<core::state::CoreState*>(context);
     if (state == nullptr) return;
@@ -128,6 +164,7 @@ FLASHMEM MacroStructureDomainServices::MacroStructureDomainServices(
 )
     : macros_(&state.macros)
     , pages_(&state.pages)
+    , macro_ui_(&state.macroUi)
     , config_revision_(&state.configRevision)
     , status_bar_(&state.statusBar)
     , shared_track_active_(&state.sharedTrackActive)
@@ -141,6 +178,7 @@ FLASHMEM MacroStructureDomainServices MacroStructureDomainServices::fromCoreStat
         StateRefs{
             state.macros,
             state.pages,
+            state.macroUi,
             state.configRevision,
             state.statusBar,
             state.sharedTrackActive,
@@ -161,6 +199,7 @@ FLASHMEM MacroStructureDomainServices::StateRefs MacroStructureDomainServices::s
     return StateRefs{
         *macros_,
         *pages_,
+        *macro_ui_,
         *config_revision_,
         *status_bar_,
         *shared_track_active_,
@@ -171,12 +210,14 @@ FLASHMEM MacroStructureDomainServices::StateRefs MacroStructureDomainServices::s
 FLASHMEM void MacroStructureDomainServices::switchToPage(uint8_t pageIndex) const {
     if (operations_.switchToPage != nullptr) {
         operations_.switchToPage(operations_.context, pageIndex);
+        syncActivePagePresentation(stateRefs_());
     }
 }
 
 FLASHMEM void MacroStructureDomainServices::switchToTrack(uint8_t trackIndex) const {
     if (operations_.switchToTrack != nullptr) {
         operations_.switchToTrack(operations_.context, trackIndex);
+        syncActivePagePresentation(stateRefs_());
     }
 }
 
@@ -205,6 +246,11 @@ FLASHMEM bool MacroStructureDomainServices::deleteActivePage() const {
         pages_->currentActiveTrack(),
         pages_->currentActivePage()
     );
+    clearManualForPage(
+        stateRefs_(),
+        pages_->currentActiveTrack(),
+        pages_->currentActivePage()
+    );
     applyPageStructureMutation(stateRefs_(), operations_, mutation.nextMask, mutation.nextActive);
     return true;
 }
@@ -218,6 +264,7 @@ FLASHMEM bool MacroStructureDomainServices::deleteActiveTrack() const {
     if (!mutation.changed) return false;
 
     clearAutomationForTrack(pages_->automation, activeTrack());
+    clearManualForTrack(stateRefs_(), activeTrack());
     applyTrackStructureMutation(stateRefs_(), operations_, mutation.nextMask, mutation.nextActive);
     return true;
 }
@@ -235,6 +282,7 @@ FLASHMEM bool MacroStructureDomainServices::deleteSelectedPages(uint16_t selecte
     for (uint8_t page = 0; page < core::state::macro::PAGE_COUNT; ++page) {
         if ((deleteMask & structure_slots::slotBit(page)) != 0) {
             clearAutomationForPage(pages_->automation, pages_->currentActiveTrack(), page);
+            clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), page);
         }
     }
     applyPageStructureMutation(stateRefs_(), operations_, mutation.nextMask, mutation.nextActive);
@@ -254,6 +302,7 @@ FLASHMEM bool MacroStructureDomainServices::deleteSelectedTracks(uint16_t select
     for (uint8_t track = 0; track < core::state::macro::TRACK_COUNT; ++track) {
         if ((deleteMask & structure_slots::slotBit(track)) != 0) {
             clearAutomationForTrack(pages_->automation, track);
+            clearManualForTrack(stateRefs_(), track);
         }
     }
     applyTrackStructureMutation(stateRefs_(), operations_, mutation.nextMask, mutation.nextActive);
@@ -275,6 +324,11 @@ FLASHMEM bool MacroStructureDomainServices::duplicateSelectedPages(uint16_t sele
                 )) {
                 return false;
             }
+            clearManualForPage(
+                stateRefs_(),
+                pages_->currentActiveTrack(),
+                dest
+            );
             pages_->activeTrackData().pages[dest] = pages_->activeTrackData().pages[source];
             return true;
         }
@@ -305,6 +359,7 @@ FLASHMEM bool MacroStructureDomainServices::duplicateSelectedTracks(uint16_t sel
                 )) {
                 return false;
             }
+            clearManualForTrack(stateRefs_(), dest);
             pages_->tracks[dest] = pages_->tracks[source];
             return true;
         }
@@ -329,6 +384,7 @@ FLASHMEM bool MacroStructureDomainServices::erasePage(uint8_t pageIndex) const {
     flushMutationCoalescing(operations_);
     pages_->activeTrackData().pages[pageIndex].initDefault(pageIndex);
     clearAutomationForPage(pages_->automation, pages_->currentActiveTrack(), pageIndex);
+    clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), pageIndex);
     if (pages_->currentActivePage() == pageIndex) {
         pages_->setActivePage(pageIndex);
         syncActivePagePresentation(stateRefs_());
@@ -344,6 +400,7 @@ FLASHMEM bool MacroStructureDomainServices::eraseTrack(uint8_t trackIndex) const
     flushMutationCoalescing(operations_);
     pages_->tracks[trackIndex].initDefaults(trackIndex);
     clearAutomationForTrack(pages_->automation, trackIndex);
+    clearManualForTrack(stateRefs_(), trackIndex);
     if (activeTrack() == trackIndex) {
         setSharedTrackState(operations_, trackEnabledMask(), trackIndex);
         syncActivePagePresentation(stateRefs_());
@@ -367,6 +424,7 @@ FLASHMEM bool MacroStructureDomainServices::pastePage(
     )) {
         return false;
     }
+    clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), pageIndex);
     flushMutationCoalescing(operations_);
     pages_->activeTrackData().pages[pageIndex] = pageData;
     pages_->activeTrackData().setPageEnabled(pageIndex, true);
@@ -390,6 +448,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteTrack(
         )) {
         return false;
     }
+    clearManualForTrack(stateRefs_(), trackIndex);
     flushMutationCoalescing(operations_);
     pages_->tracks[trackIndex] = trackData;
     applyTrackStructureState(
@@ -415,6 +474,7 @@ FLASHMEM bool MacroStructureDomainServices::createNextPage() const {
     const uint8_t index = static_cast<uint8_t>(nextPage);
     pages_->activeTrackData().pages[index].initDefault(index);
     clearAutomationForPage(pages_->automation, pages_->currentActiveTrack(), index);
+    clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), index);
     applyPageStructureMutation(
         stateRefs_(),
         operations_,
@@ -432,6 +492,7 @@ FLASHMEM bool MacroStructureDomainServices::createTrack(uint8_t trackIndex) cons
 
     pages_->tracks[trackIndex].initDefaults(trackIndex);
     clearAutomationForTrack(pages_->automation, trackIndex);
+    clearManualForTrack(stateRefs_(), trackIndex);
     applyTrackStructureMutation(
         stateRefs_(),
         operations_,
@@ -474,35 +535,49 @@ FLASHMEM bool MacroStructureDomainServices::macroAutomationActive(uint8_t index)
 
 FLASHMEM bool MacroStructureDomainServices::clearMacroAutomation(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = pages_->currentActiveTrack(),
+        .page = pages_->currentActivePage(),
+        .macro = index,
+    };
     auto* slot = core::state::macro::macroAutomationFindMutableSlot(
         pages_->automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = pages_->currentActiveTrack(),
-            .page = pages_->currentActivePage(),
-            .macro = index,
-        }
+        address
     );
     if (slot == nullptr || !slot->automation.active) return false;
 
     flushMutationCoalescing(operations_);
     core::state::macro::macroAutomationClearAutomation(pages_->automation, *slot);
+    if (!core::state::macro::macroCurvePlaybackActive(slot->modulation)) {
+        clearManualForAddress(stateRefs_(), address);
+    }
+    macro_ui_->refreshManualOverrideMask(
+        pages_->currentActiveTrack(),
+        pages_->currentActivePage()
+    );
     persistConfigChange(stateRefs_(), operations_);
     return true;
 }
 
 FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = pages_->currentActiveTrack(),
+        .page = pages_->currentActivePage(),
+        .macro = index,
+    };
     flushMutationCoalescing(operations_);
     const bool removed = core::state::macro::macroAutomationClearSlot(
         pages_->automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = pages_->currentActiveTrack(),
-            .page = pages_->currentActivePage(),
-            .macro = index,
-        }
+        address
     );
     if (!removed) return false;
 
+    clearManualForAddress(stateRefs_(), address);
+    macro_ui_->refreshManualOverrideMask(
+        pages_->currentActiveTrack(),
+        pages_->currentActivePage()
+    );
     persistConfigChange(stateRefs_(), operations_);
     return true;
 }
@@ -546,6 +621,11 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
         return false;
     }
 
+    clearManualForAddress(stateRefs_(), address);
+    macro_ui_->refreshManualOverrideMask(
+        pages_->currentActiveTrack(),
+        pages_->currentActivePage()
+    );
     persistConfigChange(stateRefs_(), operations_);
     return true;
 }

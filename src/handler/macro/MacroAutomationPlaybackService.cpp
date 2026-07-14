@@ -97,22 +97,28 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
 
     updatePlaybackBeat_(nowMs);
-    if (!status_bar_.playing.get()) return;
-
     const uint8_t track = pages_.currentActiveTrack();
     const uint8_t page = pages_.currentActivePage();
     if (track != cached_track_ || page != cached_page_) {
         cached_track_ = track;
         cached_page_ = page;
-        macro_ui_.automationManualOverrideMask.set(0);
+        macro_ui_.refreshManualOverrideMask(track, page);
         invalidateSentCache_();
         if (midi_runtime_ != nullptr) {
             midi_runtime_->clearComputedValues();
         }
+        // Page/Track sync projects the persisted base into MacroState. Restore
+        // the runtime-only Manual value when returning to an overridden slot.
+        for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
+            float manualValue = 0.0f;
+            if (services_.manualOverrideValueFor(i, manualValue)) {
+                services_.setResolvedValue(i, manualValue);
+            }
+        }
     }
+    if (!status_bar_.playing.get()) return;
 
     const auto& pageData = pages_.activePageData();
-    const uint16_t manualOverrideMask = macro_ui_.automationManualOverrideMask.get();
     if (midi_runtime_ != nullptr) {
         midi_runtime_->beginComputedFrame();
     }
@@ -134,7 +140,9 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             .macro = i,
         };
         const auto* slot = core::state::macro::macroAutomationFindSlot(pages_.automation, address);
-        if (slot == nullptr || !slot->automation.active) {
+        if (slot == nullptr ||
+            (!core::state::macro::macroCurvePlaybackActive(slot->automation) &&
+             !core::state::macro::macroCurvePlaybackActive(slot->modulation))) {
             sent_cc_values_[i] = INVALID_CC_VALUE;
             continue;
         }
@@ -146,17 +154,19 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             playback_beat_
         );
         const uint8_t ccValue = core::midi::toCC(resolved.resolved);
+        float manualValue = 0.0f;
+        const bool manualOverride = services_.manualOverrideValueFor(i, manualValue);
         if (midi_runtime_ != nullptr) {
             (void)midi_runtime_->setComputedValue(i, ccValue);
-            const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
-            if ((manualOverrideMask & overrideBit) == 0) {
-                services_.setResolvedValue(i, core::midi::fromCC(ccValue));
-            }
+            services_.setResolvedValue(
+                i,
+                manualOverride ? manualValue : core::midi::fromCC(ccValue)
+            );
             continue;
         }
 
-        const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
-        if ((manualOverrideMask & overrideBit) != 0) {
+        if (manualOverride) {
+            services_.setResolvedValue(i, manualValue);
             sent_cc_values_[i] = INVALID_CC_VALUE;
             continue;
         }
