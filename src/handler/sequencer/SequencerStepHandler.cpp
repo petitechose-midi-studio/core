@@ -3,6 +3,7 @@
 #include <config/App.hpp>
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
+#include <config/TimeCompat.hpp>
 
 #include <utility>
 
@@ -25,6 +26,9 @@ FLASHMEM SequencerStepHandler::SequencerStepHandler(StateRefs state,
 )
     : sequencer_(state.sequencer)
     , structure_clipboard_(state.structureClipboard)
+    , navigation_focus_(state.navigationFocus)
+    , track_ui_(state.trackNavigation)
+    , status_bar_(state.statusBar)
     , navigation_workflow_(
           SequencerStructureNavigationWorkflow::StateRefs{
               state.sequencer,
@@ -45,6 +49,8 @@ FLASHMEM SequencerStepHandler::SequencerStepHandler(StateRefs state,
               state.structureClipboard,
               state.sharedTracks,
               state.history,
+              state.trackActivations,
+              state.statusBar,
           }
     )
     , history_(state.history)
@@ -58,7 +64,90 @@ FLASHMEM SequencerStepHandler::SequencerStepHandler(StateRefs state,
     setupBindings();
 }
 
+FLASHMEM SequencerStepHandler::~SequencerStepHandler() {
+    restoreDetailsTransportLock();
+}
+
+FLASHMEM void SequencerStepHandler::update(uint32_t nowMs) {
+    edit_workflow_.update(nowMs);
+    if (details_unlock_pending_) {
+        restoreDetailsTransportLock();
+    }
+}
+
+FLASHMEM bool SequencerStepHandler::trackFocusActive() const {
+    return navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK;
+}
+
+FLASHMEM bool SequencerStepHandler::trackSelectionActive() const {
+    return track_ui_.selection.active.get() &&
+           track_ui_.selection.scope.get() ==
+               core::state::StructureSelectionScope::TRACK &&
+           !sequencer_.structureUi.stepSelection.active.get();
+}
+
+FLASHMEM void SequencerStepHandler::acquireDetailsTransportLock() {
+    details_button_owned_ = true;
+    details_unlock_pending_ = false;
+    if (status_bar_ == nullptr || status_bar_->transportLocked.get()) return;
+    status_bar_->transportLocked.set(true);
+    details_transport_lock_owned_ = true;
+}
+
+FLASHMEM void SequencerStepHandler::deferDetailsTransportUnlock() {
+    details_unlock_pending_ = true;
+}
+
+FLASHMEM void SequencerStepHandler::restoreDetailsTransportLock() {
+    if (details_transport_lock_owned_ && status_bar_ != nullptr) {
+        status_bar_->transportLocked.set(false);
+    }
+    details_button_owned_ = false;
+    details_transport_lock_owned_ = false;
+    details_unlock_pending_ = false;
+}
+
 FLASHMEM void SequencerStepHandler::setupBindings() {
+    encoders_.encoder(Config::EncoderID::NAV)
+        .turn()
+        .scope(scope_id_)
+        .when([this]() { return edit_workflow_.trackPasteDetailsVisible(); })
+        .then([this](float delta) {
+            edit_workflow_.navigateTrackPasteDetails(delta);
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
+        .press()
+        .scope(scope_id_)
+        .when([this]() {
+            return !details_button_owned_ &&
+                   edit_workflow_.trackPastePlanInspectable();
+        })
+        .then([this]() { acquireDetailsTransportLock(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
+        .release()
+        .scope(scope_id_)
+        .when([this]() { return details_button_owned_; })
+        .then([this]() {
+            if (edit_workflow_.trackPastePlanInspectable()) {
+                edit_workflow_.toggleTrackPasteDetails();
+            }
+            // Keep Transport locked until every release binding has observed
+            // this event; update() restores it on the following main-loop pass.
+            deferDetailsTransportUnlock();
+        });
+
+    buttons_.button(Config::ButtonID::LEFT_TOP)
+        .release()
+        .scope(scope_id_)
+        .when([this]() {
+            return edit_workflow_.trackPasteNavigationBlocked();
+        })
+        .then([this]() {
+            edit_workflow_.cancelTrackPasteAction(core::time_compat::millis());
+        });
+
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         buttons_.button(Config::MACRO_BUTTONS[i])
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
@@ -97,6 +186,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .when([this]() {
             return core::state::sequencer::isChildContentView(sequencer_) &&
                    navigation_workflow_.allowsMainBindings() &&
+                   !edit_workflow_.trackPasteNavigationBlocked() &&
                    !navigation_workflow_.stepFocusActive();
         })
         .then([this](float delta) {
@@ -118,7 +208,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return navigation_workflow_.selectionActive();
+            return navigation_workflow_.selectionActive() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
         })
         .then([this](float delta) { navigation_workflow_.navigateSelection(delta); });
 
@@ -128,6 +219,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .when([this]() {
             return core::state::sequencer::isChildContentView(sequencer_) &&
                    navigation_workflow_.allowsMainBindings() &&
+                   !edit_workflow_.trackPasteNavigationBlocked() &&
                    navigation_workflow_.stepFocusActive();
         })
         .then([this](float delta) {
@@ -140,7 +232,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
         })
         .then([this](float delta) {
             history_.commitCoalescedPatternEdit();
@@ -150,7 +243,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.allowsMainBindings(); })
+        .when([this]() {
+            return navigation_workflow_.allowsMainBindings() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
+        })
         .then([this]() {
             history_.commitCoalescedPatternEdit();
             nav_release_latch_.arm(Config::ButtonID::NAV);
@@ -160,7 +256,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .when([this]() {
+            return navigation_workflow_.selectionActive() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
+        })
         .then([this]() {
             if (nav_release_latch_.consume(Config::ButtonID::NAV)) {
                 return;
@@ -173,7 +272,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return core::state::sequencer::isRootContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
         })
         .then([this]() {
             if (nav_release_latch_.consume(Config::ButtonID::NAV)) {
@@ -192,7 +292,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return core::state::sequencer::isChildContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
         })
         .then([this]() {
             if (nav_release_latch_.consume(Config::ButtonID::NAV)) {
@@ -206,7 +307,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return core::state::sequencer::isChildContentView(sequencer_) &&
-                   navigation_workflow_.allowsMainBindings();
+                   navigation_workflow_.allowsMainBindings() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
         })
         .then([this]() {
             history_.commitCoalescedPatternEdit();
@@ -262,7 +364,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when([this]() { return navigation_workflow_.selectionActive(); })
+        .when([this]() {
+            return navigation_workflow_.selectionActive() &&
+                   !edit_workflow_.trackPasteNavigationBlocked();
+        })
         .then([this]() { navigation_workflow_.cancelSelectionMode(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
@@ -423,6 +528,14 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                     return;
                 }
                 edit_workflow_.copyStepSelection();
+            } else if (trackSelectionActive()) {
+                const auto release = edit_workflow_.releaseTrackPasteAction(
+                    core::time_compat::millis()
+                );
+                if (release ==
+                    core::state::contextual::GuardedActionRelease::TAP) {
+                    edit_workflow_.copySelection();
+                }
             } else {
                 edit_workflow_.clearHoldAction();
                 if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
@@ -440,6 +553,16 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
+            if (trackFocusActive()) {
+                const auto release = edit_workflow_.releaseTrackPasteAction(
+                    core::time_compat::millis()
+                );
+                if (release ==
+                    core::state::contextual::GuardedActionRelease::TAP) {
+                    edit_workflow_.copyCurrentStructure();
+                }
+                return;
+            }
             edit_workflow_.clearHoldAction();
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
 #if defined(MS_UX_RECORDER)
@@ -471,6 +594,7 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .when([this]() {
             return navigation_workflow_.selectionActive() &&
                    !sequencer_.structureUi.stepSelection.active.get() &&
+                   !trackSelectionActive() &&
                    edit_workflow_.canPasteSelection();
         })
         .then([this]() {
@@ -486,7 +610,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return currentStructureBottomActionsAvailable(); })
+        .when([this]() {
+            return currentStructureBottomActionsAvailable() &&
+                   !trackFocusActive();
+        })
         .then([this]() {
             edit_workflow_.clearHoldAction();
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);

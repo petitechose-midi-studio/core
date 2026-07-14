@@ -21,6 +21,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleMkdir_(
     FileSystemRpcStatus status = FileSystemRpcStatus::OK;
     if (!readPath(reader, path, sizeof(path)) || reader.remaining() != 0) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
+    } else if (internal::isConditionalMutationReservedPath(files_, path)) {
+        status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
         auto result = files_.createDirectory(path);
         if (!result) {
@@ -50,6 +52,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleDelete_(
     if (!reader.readBool(recursive) ||
         !readPath(reader, path, sizeof(path)) ||
         reader.remaining() != 0) {
+        status = FileSystemRpcStatus::INVALID_ARGUMENT;
+    } else if (internal::isConditionalMutationReservedPath(files_, path)) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
         const auto mode = recursive
@@ -83,6 +87,9 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleRename_(
     if (!readPath(reader, fromPath, sizeof(fromPath)) ||
         !readPath(reader, toPath, sizeof(toPath)) ||
         reader.remaining() != 0) {
+        status = FileSystemRpcStatus::INVALID_ARGUMENT;
+    } else if (internal::isConditionalMutationReservedPath(files_, fromPath) ||
+               internal::isConditionalMutationReservedPath(files_, toPath)) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
         auto result = files_.rename(fromPath, toPath);

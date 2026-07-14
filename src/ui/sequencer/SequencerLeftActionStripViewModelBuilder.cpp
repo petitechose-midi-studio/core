@@ -110,6 +110,20 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     StripProps props;
     props.visible = true;
 
+    if (source.sequencer.ccLaneUi.mode ==
+        core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CANCEL,
+            Visual::ACTIVE
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::MIDI_CC,
+            Visual::ACTIVE
+        );
+        return props;
+    }
+
     if (selectingStructure) {
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CANCEL,

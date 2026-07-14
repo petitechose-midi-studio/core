@@ -8,8 +8,10 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerChordState.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/shared/MidiCcDestinationResolver.hpp"
 
 namespace core::state::sequencer {
 
@@ -30,9 +32,9 @@ FLASHMEM uint8_t sanitizeStepsPerBeat(uint8_t spb) {
 }
 
 FLASHMEM uint8_t sanitizeMidiChannel(uint8_t channel) {
-    return (channel > 15U)
-               ? SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED
-               : channel;
+    return channel <= 15U
+        ? channel
+        : core::state::shared::MidiCcDestinationIdentity::INVALID_CHANNEL;
 }
 
 FLASHMEM uint8_t sanitizeMidi7(uint8_t value) {
@@ -163,6 +165,81 @@ FLASHMEM oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length) {
     return oc::note::sequencer::StepBitMask128::prefixMask(length);
 }
 
+namespace {
+
+enum class MidiChannelApplyPolicy : uint8_t {
+    REPLACE_FROM_SNAPSHOT,
+    PRESERVE_DESTINATION,
+};
+
+FLASHMEM void applySnapshotImpl(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    MidiChannelApplyPolicy midiChannelPolicy
+) {
+    const uint8_t length = sanitizeSequencerLength(snapshot.length);
+
+    target.length.set(length);
+    target.stepsPerBeat.set(sanitizeStepsPerBeat(snapshot.stepsPerBeat));
+    if (midiChannelPolicy == MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT) {
+        target.midiChannel.set(sanitizeMidiChannel(snapshot.midiChannel));
+    }
+    target.enabledMask.set(snapshot.enabledMask & lengthMask(length));
+    target.setPatternVariationRanges(snapshot.variationRanges);
+    target.setPatternScalePolicy(snapshot.scalePolicy);
+    target.setPatternScaleOverride(snapshot.scaleOverride);
+    target.setPitchEditMode(snapshot.pitchEditMode);
+    target.setPatternSwingOffsetPercent(snapshot.swingOffsetPercent);
+    target.setPatternNudgePercent(snapshot.patternNudgePercent);
+    target.patternTimingRevision.set(snapshot.patternTimingRevision);
+    target.graph.reset();
+    target.graphRevision.set(snapshot.graphRevision);
+
+    for (uint8_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
+        writeStep(target, i, readSanitizedStep(snapshot, i));
+    }
+
+    target.bumpStepDataRevision();
+}
+
+FLASHMEM void applySnapshotPreservingGraphImpl(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    MidiChannelApplyPolicy midiChannelPolicy
+) {
+    auto graph = std::move(target.graph);
+    applySnapshotImpl(target, snapshot, midiChannelPolicy);
+    target.graph = std::move(graph);
+}
+
+FLASHMEM void applySnapshotToEditorImpl(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    MidiChannelApplyPolicy midiChannelPolicy
+) {
+    const uint8_t length = sanitizeSequencerLength(snapshot.length);
+    const uint8_t focusedBefore = target.focusedStep.get();
+
+    applySnapshotImpl(target.pattern, snapshot, midiChannelPolicy);
+
+    const uint8_t focused =
+        (focusedBefore >= length) ? static_cast<uint8_t>(length - 1U) : focusedBefore;
+    target.focusedStep.set(focused);
+    target.page.set(target.pageForStep(focused));
+}
+
+FLASHMEM void applySnapshotToEditorPreservingGraphImpl(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    MidiChannelApplyPolicy midiChannelPolicy
+) {
+    auto graph = std::move(target.pattern.graph);
+    applySnapshotToEditorImpl(target, snapshot, midiChannelPolicy);
+    target.pattern.graph = std::move(graph);
+}
+
+}  // namespace
+
 FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out) {
     out.length = sanitizeSequencerLength(source.length.get());
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
@@ -195,36 +272,22 @@ FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatt
 }
 
 FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot) {
-    const uint8_t length = sanitizeSequencerLength(snapshot.length);
-
-    target.length.set(length);
-    target.stepsPerBeat.set(sanitizeStepsPerBeat(snapshot.stepsPerBeat));
-    target.midiChannel.set(sanitizeMidiChannel(snapshot.midiChannel));
-    target.enabledMask.set(snapshot.enabledMask & lengthMask(length));
-    target.setPatternVariationRanges(snapshot.variationRanges);
-    target.setPatternScalePolicy(snapshot.scalePolicy);
-    target.setPatternScaleOverride(snapshot.scaleOverride);
-    target.setPitchEditMode(snapshot.pitchEditMode);
-    target.setPatternSwingOffsetPercent(snapshot.swingOffsetPercent);
-    target.setPatternNudgePercent(snapshot.patternNudgePercent);
-    target.patternTimingRevision.set(snapshot.patternTimingRevision);
-    target.graph.reset();
-    target.graphRevision.set(snapshot.graphRevision);
-
-    for (uint8_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
-        writeStep(target, i, readSanitizedStep(snapshot, i));
-    }
-
-    target.bumpStepDataRevision();
+    applySnapshotImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
+    );
 }
 
 FLASHMEM void applySnapshotPreservingGraph(
     SequencerPatternState& target,
     const SequencerPatternSnapshot& snapshot
 ) {
-    auto graph = std::move(target.graph);
-    applySnapshot(target, snapshot);
-    target.graph = std::move(graph);
+    applySnapshotPreservingGraphImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
+    );
 }
 
 FLASHMEM bool copyPatternState(
@@ -233,7 +296,23 @@ FLASHMEM bool copyPatternState(
 ) {
     SequencerPatternSnapshot snapshot;
     captureSnapshot(source, snapshot);
-    return applySnapshotWithGraph(target, snapshot, graphView(source));
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
+    const auto* sourceGraph = graphView(source);
+    if (sourceGraph != nullptr) {
+        graph = core::app::makeExtmemUnique<
+            oc::note::sequencer::StepSequencerGraph
+        >(*sourceGraph);
+        if (!graph) return false;
+    }
+    SequencerCcLaneBankPtr ccLanes;
+    if (!cloneSequencerCcLaneBank(ccLanes, source.ccLanes.get())) return false;
+
+    applySnapshot(target, snapshot);
+    target.graph = std::move(graph);
+    target.graphRevision.set(snapshot.graphRevision);
+    installSequencerCcLaneBank(target, std::move(ccLanes));
+    target.ccLaneRevision.set(source.ccLaneRevision.get());
+    return true;
 }
 
 FLASHMEM bool applySnapshotWithGraph(
@@ -248,34 +327,79 @@ FLASHMEM bool applySnapshotWithGraph(
     return true;
 }
 
-FLASHMEM void copyPatternStatePreservingGraph(
+FLASHMEM bool applyTrackContentSnapshotWithGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    if (!copyGraph(target, graph, snapshot.graphRevision)) return false;
+    applySnapshotPreservingGraphImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::PRESERVE_DESTINATION
+    );
+    return true;
+}
+
+FLASHMEM void installTrackContentSnapshotWithOwnedGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
+) {
+    applySnapshotImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::PRESERVE_DESTINATION
+    );
+    target.graph = std::move(graph);
+    target.graphRevision.set(snapshot.graphRevision);
+}
+
+FLASHMEM void installTrackContentSnapshotWithOwnedPayload(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
+    SequencerCcLaneBankPtr ccLanes
+) {
+    installTrackContentSnapshotWithOwnedGraph(
+        target,
+        snapshot,
+        std::move(graph)
+    );
+    installSequencerCcLaneBank(target, std::move(ccLanes));
+}
+
+FLASHMEM bool copyPatternStatePreservingGraph(
     SequencerPatternState& target,
     const SequencerPatternState& source
 ) {
+    SequencerCcLaneBankPtr ccLanes;
+    if (!cloneSequencerCcLaneBank(ccLanes, source.ccLanes.get())) return false;
     SequencerPatternSnapshot snapshot;
     captureSnapshot(source, snapshot);
     applySnapshotPreservingGraph(target, snapshot);
+    installSequencerCcLaneBank(target, std::move(ccLanes));
+    target.ccLaneRevision.set(source.ccLaneRevision.get());
+    return true;
 }
 
 FLASHMEM void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
-    const uint8_t length = sanitizeSequencerLength(snapshot.length);
-    const uint8_t focusedBefore = target.focusedStep.get();
-
-    applySnapshot(target.pattern, snapshot);
-
-    const uint8_t focused =
-        (focusedBefore >= length) ? static_cast<uint8_t>(length - 1U) : focusedBefore;
-    target.focusedStep.set(focused);
-    target.page.set(target.pageForStep(focused));
+    applySnapshotToEditorImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
+    );
 }
 
 FLASHMEM void applySnapshotToEditorPreservingGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot
 ) {
-    auto graph = std::move(target.pattern.graph);
-    applySnapshotToEditor(target, snapshot);
-    target.pattern.graph = std::move(graph);
+    applySnapshotToEditorPreservingGraphImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
+    );
 }
 
 FLASHMEM bool applySnapshotToEditorWithGraph(
@@ -288,6 +412,48 @@ FLASHMEM bool applySnapshotToEditorWithGraph(
     return true;
 }
 
+FLASHMEM bool applyTrackContentSnapshotToEditorWithGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    if (!copyGraph(target.pattern, graph, snapshot.graphRevision)) return false;
+    applySnapshotToEditorPreservingGraphImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::PRESERVE_DESTINATION
+    );
+    return true;
+}
+
+FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
+) {
+    applySnapshotToEditorImpl(
+        target,
+        snapshot,
+        MidiChannelApplyPolicy::PRESERVE_DESTINATION
+    );
+    target.pattern.graph = std::move(graph);
+    target.pattern.graphRevision.set(snapshot.graphRevision);
+}
+
+FLASHMEM void installTrackContentSnapshotToEditorWithOwnedPayload(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
+    SequencerCcLaneBankPtr ccLanes
+) {
+    installTrackContentSnapshotToEditorWithOwnedGraph(
+        target,
+        snapshot,
+        std::move(graph)
+    );
+    installSequencerCcLaneBank(target.pattern, std::move(ccLanes));
+}
+
 FLASHMEM void installPatternStateToEditor(
     SequencerState& target,
     SequencerPatternState& staged
@@ -295,9 +461,12 @@ FLASHMEM void installPatternStateToEditor(
     SequencerPatternSnapshot snapshot;
     captureSnapshot(staged, snapshot);
     auto graph = std::move(staged.graph);
+    auto ccLanes = std::move(staged.ccLanes);
     applySnapshotToEditor(target, snapshot);
     target.pattern.graph = std::move(graph);
     target.pattern.graphRevision.set(snapshot.graphRevision);
+    installSequencerCcLaneBank(target.pattern, std::move(ccLanes));
+    target.pattern.ccLaneRevision.set(staged.ccLaneRevision.get());
 }
 
 FLASHMEM void mergePatternStateIntoCurrent(
@@ -307,9 +476,12 @@ FLASHMEM void mergePatternStateIntoCurrent(
     SequencerPatternSnapshot snapshot;
     captureSnapshot(staged, snapshot);
     auto graph = std::move(staged.graph);
+    auto ccLanes = std::move(staged.ccLanes);
     mergeSnapshotIntoCurrent(target, snapshot);
     target.pattern.graph = std::move(graph);
     target.pattern.graphRevision.set(snapshot.graphRevision);
+    installSequencerCcLaneBank(target.pattern, std::move(ccLanes));
+    target.pattern.ccLaneRevision.set(staged.ccLaneRevision.get());
 }
 
 FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot) {

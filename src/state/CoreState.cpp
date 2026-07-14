@@ -244,7 +244,9 @@ FLASHMEM void formatHistoryStructureValue(
 FLASHMEM void showSequencerHistoryFeedback(
     sequencer::SequencerState& sequencerState,
     const sequencer::SequencerHistoryApplyResult& result,
-    uint32_t nowMs
+    uint32_t nowMs,
+    const char* actionOverride = nullptr,
+    const char* statusOverride = nullptr
 ) {
     if (!result.applied) return;
 
@@ -266,7 +268,9 @@ FLASHMEM void showSequencerHistoryFeedback(
         std::snprintf(line1, sizeof(line1), "%s", direction);
     }
 
-    if (descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+    if (actionOverride != nullptr) {
+        std::snprintf(line2, sizeof(line2), "%s", actionOverride);
+    } else if (descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
         std::snprintf(
             line2,
             sizeof(line2),
@@ -285,7 +289,9 @@ FLASHMEM void showSequencerHistoryFeedback(
         std::snprintf(line2, sizeof(line2), "%s", historyActionLabel(descriptor.kind));
     }
 
-    if (descriptor.hasValue) {
+    if (statusOverride != nullptr) {
+        std::snprintf(line3, sizeof(line3), "%s", statusOverride);
+    } else if (descriptor.hasValue) {
         const int32_t fromValue = result.direction == sequencer::SequencerHistoryDirection::Undo
             ? descriptor.afterValue
             : descriptor.beforeValue;
@@ -356,6 +362,11 @@ FLASHMEM void syncSequencerStructureUiFromRestoredHistory(CoreState& state) {
     state.sequencer.structureUi.syncPreviewPage(state.sequencer.visiblePage());
 }
 
+constexpr uint32_t nextNonZeroRuntimeRevision(uint32_t current) {
+    const uint32_t next = current + 1U;
+    return next == 0U ? 1U : next;
+}
+
 }  // namespace
 
 FLASHMEM MacroDomainState::MacroDomainState(oc::interface::IStorage& libraryStorage)
@@ -400,11 +411,15 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , settings(settingsStorage)
     , macros(*macroDomain_.runtime)
     , pages(*macroDomain_.pages)
+    , macroHistory(macroDomain_.history)
+    , macroRuntimeOwnerRevision(macroDomain_.runtimeOwnerRevision)
     , configRevision(macroDomain_.configRevision)
     , macroPersistence(macroDomain_.persistence)
     , sequencer(*sequencerDomain_.editor)
     , sequencerTracks(*sequencerDomain_.tracks)
     , sequencerHistory(sequencerDomain_.history)
+    , sequencerTrackActivations(sequencerDomain_.trackActivations)
+    , sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision)
     , sequencerPersistence(sequencerDomain_.persistence)
     , project(project_)
     , overlays(systemUi_->overlays)
@@ -456,6 +471,17 @@ FLASHMEM void CoreState::resetStandaloneTransientUi() {
 FLASHMEM void CoreState::resetMusicalProject() {
     commitSequencerPatternHistoryCoalescing();
     CoreStateLifecycle::resetMusicalProject(*this);
+}
+
+FLASHMEM void CoreState::requestMacroRuntimeOwnerActivation() {
+    macroRuntimeOwnerRevision.set(nextNonZeroRuntimeRevision(macroRuntimeOwnerRevision.get()));
+}
+
+FLASHMEM void CoreState::requestSequencerRuntimeProjectReset() {
+    sequencerTrackActivations.reset();
+    sequencerRuntimeProjectRevision.set(
+        nextNonZeroRuntimeRevision(sequencerRuntimeProjectRevision.get())
+    );
 }
 
 void CoreState::markMacroValueEdited(uint8_t index) {
@@ -634,6 +660,22 @@ FLASHMEM bool CoreState::recordSequencerStructureHistory(
     return true;
 }
 
+FLASHMEM bool CoreState::canRecordSequencerStructureHistory(
+    const sequencer::SequencerHistoryTrackStructureChange& change
+) const {
+    return sequencerHistory.canRecordStructure(change);
+}
+
+FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
+    sequencer::SequencerHistoryTrackStructureChangePtr change
+) {
+    sequencerHistory.recordPreparedStructure(std::move(change));
+    // The prepared Track transaction has already synchronized its bank/editor
+    // state. Marking the project dirty is allocation-free and deliberately
+    // avoids markSequencerProjectMutated_()/refreshSharedTrackStateFromSequencer().
+    markProjectMutated();
+}
+
 FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step,
     sequencer::StepProperty property,
@@ -737,15 +779,56 @@ bool CoreState::hasPendingSequencerPatternHistoryCoalescing() const {
 FLASHMEM bool CoreState::undoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
+    sequencer::SequencerTrackActivationHistoryPlan activation;
+    const bool hasActivation = sequencerHistory.peekUndoTrackActivation(activation);
+    sequencer::SequencerTrackActivationHistoryTransition activationTransition;
+    if (hasActivation && !sequencerTrackActivations.prepareHistoryTransition(
+            activation.reference,
+            sequencer::SequencerTrackActivationTarget::BEFORE,
+            activation.targetEnabledMask,
+            activation.targetMutedMask,
+            statusBar.playing.get(),
+            activationTransition
+        )) {
+        return false;
+    }
     const auto result = sequencerHistory.undoWithResult(sequencerTracks, sequencer);
     if (!result.applied) {
+        if (hasActivation) {
+            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
+        }
         return false;
+    }
+    if (hasActivation) {
+        sequencerTrackActivations.commitHistoryTransition(activationTransition);
     }
 
     markSequencerProjectMutated_();
     sequencer::refreshContentView(sequencer);
     sequencer.contentView.bump();
-    showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
+    const bool trackPaste = hasActivation &&
+        activation.reference.origin ==
+            sequencer::SequencerTrackActivationOrigin::TRACK_PASTE;
+    const uint16_t audibleMask = static_cast<uint16_t>(
+        activation.targetEnabledMask &
+        static_cast<uint16_t>(~activation.targetMutedMask)
+    );
+    const bool waitsForLoop = hasActivation && statusBar.playing.get() &&
+        (activationTransition.queuedMask & audibleMask) != 0;
+    const bool cancelsPending = hasActivation &&
+        activationTransition.cancelledMask != 0 &&
+        activationTransition.queuedMask == 0;
+    showSequencerHistoryFeedback(
+        sequencer,
+        result,
+        oc::time::millis(),
+        trackPaste ? "Track Paste" : nullptr,
+        waitsForLoop
+            ? "At next loop"
+            : (cancelsPending
+                ? "Pending cancelled"
+                : (trackPaste ? "Applied" : nullptr))
+    );
     refreshSharedTrackStateFromSequencer();
     syncSequencerStructureUiFromRestoredHistory(*this);
     return true;
@@ -754,15 +837,56 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
 FLASHMEM bool CoreState::redoSequencerHistory() {
     commitSequencerPatternHistoryCoalescing();
 
+    sequencer::SequencerTrackActivationHistoryPlan activation;
+    const bool hasActivation = sequencerHistory.peekRedoTrackActivation(activation);
+    sequencer::SequencerTrackActivationHistoryTransition activationTransition;
+    if (hasActivation && !sequencerTrackActivations.prepareHistoryTransition(
+            activation.reference,
+            sequencer::SequencerTrackActivationTarget::AFTER,
+            activation.targetEnabledMask,
+            activation.targetMutedMask,
+            statusBar.playing.get(),
+            activationTransition
+        )) {
+        return false;
+    }
     const auto result = sequencerHistory.redoWithResult(sequencerTracks, sequencer);
     if (!result.applied) {
+        if (hasActivation) {
+            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
+        }
         return false;
+    }
+    if (hasActivation) {
+        sequencerTrackActivations.commitHistoryTransition(activationTransition);
     }
 
     markSequencerProjectMutated_();
     sequencer::refreshContentView(sequencer);
     sequencer.contentView.bump();
-    showSequencerHistoryFeedback(sequencer, result, oc::time::millis());
+    const bool trackPaste = hasActivation &&
+        activation.reference.origin ==
+            sequencer::SequencerTrackActivationOrigin::TRACK_PASTE;
+    const uint16_t audibleMask = static_cast<uint16_t>(
+        activation.targetEnabledMask &
+        static_cast<uint16_t>(~activation.targetMutedMask)
+    );
+    const bool waitsForLoop = hasActivation && statusBar.playing.get() &&
+        (activationTransition.queuedMask & audibleMask) != 0;
+    const bool cancelsPending = hasActivation &&
+        activationTransition.cancelledMask != 0 &&
+        activationTransition.queuedMask == 0;
+    showSequencerHistoryFeedback(
+        sequencer,
+        result,
+        oc::time::millis(),
+        trackPaste ? "Track Paste" : nullptr,
+        waitsForLoop
+            ? "At next loop"
+            : (cancelsPending
+                ? "Pending cancelled"
+                : (trackPaste ? "Applied" : nullptr))
+    );
     refreshSharedTrackStateFromSequencer();
     syncSequencerStructureUiFromRestoredHistory(*this);
     return true;
@@ -805,6 +929,17 @@ uint8_t CoreState::currentSharedActiveTrack() const {
 
 bool CoreState::setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack) {
     return setSharedTrackState_(enabledMask, activeTrack, true);
+}
+
+void CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack) {
+    const auto result = shared::SharedTrackCoordinator::publishPreparedSequencerState(
+        sharedTrackRefs(*this),
+        enabledMask,
+        activeTrack
+    );
+    if (result.changed) {
+        requestSharedTrackPersist_();
+    }
 }
 
 bool CoreState::refreshSharedTrackStateFromMacroPages() {

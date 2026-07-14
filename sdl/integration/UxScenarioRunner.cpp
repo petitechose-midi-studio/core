@@ -91,7 +91,9 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
                            oc::app::OpenControlApp& app,
                            core::state::CoreState& state,
                            ScenarioApplier scenarioApplier,
-                           StateTick stateTick) {
+                           StateTick stateTick,
+                           CaptureObserver captureObserver,
+                           ScenarioObserver scenarioObserver) {
     error_.clear();
     if (!options.scriptPath || options.scriptPath[0] == '\0') {
         error_ = "missing UX script path";
@@ -182,6 +184,7 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
                     error_ = "line " + std::to_string(action.line) + ": capture failed";
                     return false;
                 }
+                if (captureObserver) captureObserver(action.id.c_str());
                 capturePath = path.string();
                 break;
             }
@@ -191,6 +194,7 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
                     error_ = "line " + std::to_string(action.line) + ": scenario failed `" + action.id + "`";
                     return false;
                 }
+                if (scenarioObserver) scenarioObserver();
                 break;
 
             case UxActionKind::Tick:

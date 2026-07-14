@@ -3,6 +3,7 @@
 #endif
 
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -22,6 +23,10 @@
 #include "../../src/handler/sequencer/SequencerInputUtils.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
+#include "../../src/sequencer/RealtimeMidiQueue.hpp"
+#include "../../src/sequencer/SequencerPlaybackService.hpp"
+#include "../../src/sequencer/SequencerRuntimeGraphBank.hpp"
+#include "../../src/sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerChordUiOps.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
@@ -33,9 +38,14 @@
 namespace {
 
 uint32_t g_now_ms = 0;
+uint32_t g_step_preset_time_lag_ms = 0;
 
 uint32_t mockTimeMs() {
     return g_now_ms;
+}
+
+uint32_t mockStepPresetTimeMs() {
+    return g_now_ms - g_step_preset_time_lag_ms;
 }
 
 using test_support::TestButtonHardware;
@@ -133,7 +143,8 @@ struct SequencerStepEditHarness {
                   buttons,
                   SEQUENCER_SCOPE,
                   OVERLAY_SCOPE,
-                  STEP_PRESET_SCOPE)
+                  STEP_PRESET_SCOPE,
+                  mockStepPresetTimeMs)
         , quickControlsHandler(
               core::handler::SequencerPatternQuickControlsHandler::StateRefs{
                   state.overlays,
@@ -154,6 +165,7 @@ struct SequencerStepEditHarness {
         overlays.registerCleanup(core::ui::OverlayType::SEQ_STEP_PRESET, STEP_PRESET_SCOPE);
         state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
         g_now_ms = 0;
+        g_step_preset_time_lag_ms = 0;
     }
 
     void tick(uint32_t nowMs) {
@@ -1569,6 +1581,10 @@ void test_step_preset_picker_saves_and_loads_focused_step() {
         h.state.sequencer.stepPresetPicker.feedback.get() ==
         core::state::sequencer::SequencerStepPresetFeedback::SAVED
     );
+    assert(
+        h.state.sequencer.stepPresetPicker.operationFeedback.get().action ==
+        core::state::contextual::ContextActionId::SAVE
+    );
     assert(h.state.sequencer.stepPresetPicker.entryCount.get() == 1);
     assert(std::strcmp(h.state.sequencer.stepPresetPicker.entryId(0), "step-preset-001") == 0);
     assert(std::filesystem::exists(
@@ -1587,10 +1603,19 @@ void test_step_preset_picker_saves_and_loads_focused_step() {
     focusStepEditRow(h, NOTE_ROW);
     h.turn(Config::EncoderID::OPT, 72.0f / 127.0f);
     h.tap(Config::ButtonID::BOTTOM_CENTER);
-    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
 
-    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
-    assert(!h.state.sequencer.stepPresetPicker.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_PRESET);
+    assert(h.state.sequencer.stepPresetPicker.visible.get());
+    assert(
+        h.state.sequencer.stepPresetPicker.feedback.get() ==
+        core::state::sequencer::SequencerStepPresetFeedback::APPLIED
+    );
+    assert(
+        h.state.sequencer.stepPresetPicker.operationFeedback.get().status ==
+        core::state::contextual::OperationFeedbackStatus::APPLIED
+    );
     assert(h.state.sequencer.pattern.isEnabled(5));
     assert(h.state.sequencer.pattern.note[5] == 67);
     assert(h.state.sequencer.pattern.velocity[5] == 96);
@@ -1612,8 +1637,419 @@ void test_step_preset_picker_saves_and_loads_focused_step() {
     assert(targetChild->noteOffset == 6);
     assert(h.state.sequencerHistory.undoCount() == 2);
 
+    // A completed hold may outlive the temporary feedback deadline. Keep the
+    // picker authoritative until the physical release is consumed; otherwise
+    // the release can fall through to the parent Step Editor and overwrite its
+    // typed clipboard action.
+    h.advance(Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS);
+    h.handler.update(g_now_ms);
+    assert(h.state.sequencer.stepPresetPicker.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_PRESET);
+
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    h.handler.update(g_now_ms);
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+    assert(!h.state.sequencer.stepPresetPicker.visible.get());
+
     resetTestRoot();
     std::cout << "[PASS] test_step_preset_picker_saves_and_loads_focused_step\n";
+}
+
+void test_step_preset_overwrite_accepts_authoritative_long_press_with_clock_lag() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.setEnabled(0, true);
+    assert(h.state.sequencer.setStepDataAt(0, 60, 80, 100, 0, 100));
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    auto presets = core::handler::SequencerStepPresetDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+    const auto initialTarget = presets.captureTarget();
+    assert(initialTarget.valid);
+    assert(presets.savePreset("clock-lag-overwrite", initialTarget, false).ok());
+
+    // The overwrite stores the current step, which is deliberately different
+    // from the initial asset content.
+    assert(h.state.sequencer.setStepDataAt(0, 67, 96, 140, -2, 84));
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    auto& picker = h.state.sequencer.stepPresetPicker;
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerStepPresetPickerMode::LOAD);
+    assert(picker.entryCount.get() == 1);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerStepPresetPickerMode::SAVE);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(!picker.selectedItemIsNewAsset());
+    assert(std::strcmp(
+        picker.entryId(picker.existingEntryIndexForSelectedItem()),
+        "clock-lag-overwrite"
+    ) == 0);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    const uint32_t pressedAt = g_now_ms;
+
+    // InputBinding owns the physical LONG_PRESS threshold. Reproduce the SDL
+    // trace in which its callback fires at 1000 ms while the workflow's clock
+    // sample is still 12 ms behind. A completed physical hold must remain
+    // authoritative and must not be converted to a cancellation on release.
+    g_step_preset_time_lag_ms = 12;
+    h.tick(pressedAt + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    g_step_preset_time_lag_ms = 0;
+
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerStepPresetFeedback::SAVED);
+    const auto feedback = picker.operationFeedback.get();
+    assert(feedback.active);
+    assert(feedback.action == core::state::contextual::ContextActionId::SAVE);
+    assert(feedback.status ==
+           core::state::contextual::OperationFeedbackStatus::APPLIED);
+    assert(picker.actionGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::IDLE);
+
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(picker.operationFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::APPLIED);
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerStepPresetFeedback::SAVED);
+
+    resetTestRoot();
+    std::cout
+        << "[PASS] test_step_preset_overwrite_accepts_authoritative_long_press_with_clock_lag\n";
+}
+
+void test_step_preset_picker_pages_without_mutating_and_restores_load_focus() {
+    SequencerStepEditHarness h;
+    auto presets = core::handler::SequencerStepPresetDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+    const auto target = presets.captureTarget();
+    constexpr uint8_t pageCapacity =
+        core::state::sequencer::SequencerStepPresetPickerState::ENTRY_CAPACITY;
+    constexpr uint8_t presetCount = static_cast<uint8_t>(pageCapacity + 2U);
+
+    core::sequencer::RealtimeMidiQueue midiQueue;
+    core::sequencer::SequencerRuntimeGraphBank runtimeGraphBank;
+    core::sequencer::SequencerRuntimeSnapshotBank runtimeSnapshotBank{
+        h.state.sequencer,
+        h.state.sequencerTracks,
+        h.state.projectNavigation,
+    };
+    core::sequencer::SequencerPlaybackService playback{
+        h.state.sequencer,
+        h.state.statusBar,
+        midiQueue,
+        runtimeGraphBank,
+    };
+    uint32_t runtimeTick = 0;
+    const auto assertSilentRuntime = [&]() {
+        assert(runtimeGraphBank.prepare(h.state.sequencer, h.state.sequencerTracks));
+        const uint8_t snapshotIndex = runtimeSnapshotBank.refresh();
+        assert(runtimeSnapshotBank.lastRefreshSucceeded());
+        runtimeGraphBank.publishPrepared([&]() {
+            runtimeSnapshotBank.commit(snapshotIndex);
+        });
+        playback.update(
+            runtimeSnapshotBank.activeSnapshot(),
+            runtimeTick,
+            true,
+            runtimeTick * 1000U,
+            1000U,
+            false,
+            runtimeSnapshotBank.laneSnapshot(runtimeSnapshotBank.activeIndex())
+        );
+        assert(midiQueue.size() == 0);
+        ++runtimeTick;
+    };
+
+    for (uint8_t i = 0; i < presetCount; ++i) {
+        char id[24]{};
+        std::snprintf(id, sizeof(id), "page-preset-%02u", static_cast<unsigned>(i));
+        const auto saved = presets.savePreset(id, target, false);
+        assert(saved.ok());
+    }
+
+    const uint8_t noteBefore = h.state.sequencer.pattern.note[0];
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assertSilentRuntime();
+
+    auto& picker = h.state.sequencer.stepPresetPicker;
+    assert(picker.entryCount.get() == pageCapacity);
+    assert(!picker.hasPreviousPage.get());
+    assert(picker.hasNextPage.get());
+    assert(picker.totalEntryCount.get() == presetCount);
+    assert(std::strcmp(picker.entryId(0), "page-preset-00") == 0);
+
+    // Detail and example browsing are visual inspection only. Exercise the
+    // real playback boundary after each gesture so a future audition path
+    // cannot silently enqueue MIDI.
+    h.tap(Config::ButtonID::NAV);
+    assert(picker.detailVisible.get());
+    assertSilentRuntime();
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assertSilentRuntime();
+    h.tap(Config::ButtonID::NAV);
+    assert(!picker.detailVisible.get());
+    assertSilentRuntime();
+
+    // Walking past the last visible row loads the next alphabetical page; no
+    // asset becomes unreachable because of the bounded embedded page size.
+    for (uint8_t i = 0; i < pageCapacity; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assertSilentRuntime();
+    assert(picker.entryCount.get() == 2);
+    assert(picker.hasPreviousPage.get());
+    assert(!picker.hasNextPage.get());
+    assert(picker.selectedIndex.get() == 0);
+    char secondPageFirst[24]{};
+    std::snprintf(
+        secondPageFirst,
+        sizeof(secondPageFirst),
+        "page-preset-%02u",
+        static_cast<unsigned>(pageCapacity)
+    );
+    assert(std::strcmp(picker.entryId(0), secondPageFirst) == 0);
+
+    // Load/Save is a mode change, not a browse reset. Returning to Load keeps
+    // the page, focus, and frozen target selected by the user.
+    const auto frozenTarget = picker.frozenTarget;
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerStepPresetPickerMode::SAVE);
+    assertSilentRuntime();
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerStepPresetPickerMode::LOAD);
+    assertSilentRuntime();
+    assert(std::strcmp(picker.entryId(0), secondPageFirst) == 0);
+    assert(picker.selectedIndex.get() == 0);
+    assert(core::state::sequencer::sequencerStepPresetTargetHash(
+               picker.frozenTarget
+           ) == core::state::sequencer::sequencerStepPresetTargetHash(frozenTarget));
+
+    // Browsing and changing modes are strictly non-mutating.
+    assert(h.state.sequencer.pattern.note[0] == noteBefore);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assertSilentRuntime();
+    assert(picker.entryCount.get() == pageCapacity);
+    assert(picker.selectedIndex.get() == static_cast<uint8_t>(pageCapacity - 1U));
+    char firstPageLast[24]{};
+    std::snprintf(
+        firstPageLast,
+        sizeof(firstPageLast),
+        "page-preset-%02u",
+        static_cast<unsigned>(pageCapacity - 1U)
+    );
+    assert(std::strcmp(
+        picker.entryId(static_cast<uint8_t>(pageCapacity - 1U)),
+        firstPageLast
+    ) == 0);
+
+    resetTestRoot();
+    std::cout
+        << "[PASS] test_step_preset_picker_pages_without_mutating_and_restores_load_focus\n";
+}
+
+void test_step_preset_save_selects_new_asset_beyond_first_page() {
+    SequencerStepEditHarness h;
+    auto presets = core::handler::SequencerStepPresetDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+    const auto target = presets.captureTarget();
+    constexpr uint8_t pageCapacity =
+        core::state::sequencer::SequencerStepPresetPickerState::ENTRY_CAPACITY;
+    constexpr uint8_t existingPresetCount =
+        static_cast<uint8_t>(pageCapacity + 2U);
+
+    // These names sort before the auto-generated "Step Preset 001", forcing
+    // the new asset beyond the first bounded picker page.
+    for (uint8_t i = 0; i < existingPresetCount; ++i) {
+        char id[24]{};
+        std::snprintf(id, sizeof(id), "page-preset-%02u", static_cast<unsigned>(i));
+        assert(presets.savePreset(id, target, false).ok());
+    }
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+
+    auto& picker = h.state.sequencer.stepPresetPicker;
+    assert(picker.entryCount.get() == pageCapacity);
+    assert(picker.hasNextPage.get());
+    for (uint8_t i = 0; i < picker.entryCount.get(); ++i) {
+        assert(std::strcmp(picker.entryId(i), "step-preset-001") != 0);
+    }
+
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerStepPresetPickerMode::SAVE);
+    assert(picker.selectedItemIsNewAsset());
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerStepPresetPickerMode::LOAD);
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerStepPresetFeedback::SAVED);
+    assert(picker.totalEntryCount.get() ==
+           static_cast<uint16_t>(existingPresetCount + 1U));
+    assert(picker.hasPreviousPage.get());
+    assert(picker.selectedIndex.get() < picker.entryCount.get());
+    assert(std::strcmp(
+        picker.entryId(picker.selectedIndex.get()),
+        "step-preset-001"
+    ) == 0);
+    assert(picker.descriptor.valid);
+    assert(std::strcmp(picker.descriptor.technicalId, "step-preset-001") == 0);
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "library" / "step-presets" /
+        "step-preset-001.mssp"
+    ));
+
+    resetTestRoot();
+    std::cout
+        << "[PASS] test_step_preset_save_selects_new_asset_beyond_first_page\n";
+}
+
+void test_step_preset_queued_feedback_resolves_to_applied_and_auto_closes() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setEnabled(0, true);
+    assert(h.state.sequencer.setStepDataAt(0, 70, 96, 120, 0, 100));
+
+    auto presets = core::handler::SequencerStepPresetDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+    const auto target = presets.captureTarget();
+    assert(target.valid && target.trackIndex == 0 && target.stepIndex == 0);
+    assert(presets.savePreset("queued-ui", target, false).ok());
+
+    assert(h.state.sequencer.setStepDataAt(0, 41, 12, 40, 4, 84));
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(h.state.sequencer.stepPresetPicker.visible.get());
+    assert(std::strcmp(
+        h.state.sequencer.stepPresetPicker.entryId(0),
+        "queued-ui"
+    ) == 0);
+
+    h.state.statusBar.playing.set(true);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+
+    auto& picker = h.state.sequencer.stepPresetPicker;
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerStepPresetFeedback::QUEUED);
+    assert(picker.operationFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::QUEUED);
+    assert(picker.operationActivationGeneration != 0);
+    const uint32_t activationGeneration = picker.operationActivationGeneration;
+    const auto queuedTelemetry = h.state.sequencerTrackActivations.telemetry(0);
+    assert(queuedTelemetry.generation == activationGeneration);
+    assert(queuedTelemetry.origin == core::state::sequencer::
+        SequencerTrackActivationOrigin::STEP_PRESET);
+    assert(h.state.sequencer.pattern.note[0] == 70);
+    assert(h.state.sequencerTrackActivations.pendingTrackMask() == 0x0001);
+
+    // Consume the physical release before the queued runtime generation
+    // resolves, so it cannot fall through to the parent Step Editor.
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    const auto publication =
+        h.state.sequencerTrackActivations.captureRuntimePublication();
+    h.state.sequencerTrackActivations.applyRuntimePublication(publication);
+    const auto realtime = h.state.sequencerTrackActivations.realtimeView(0);
+    assert(realtime.disposition == core::state::sequencer::
+        SequencerTrackActivationRealtimeView::Disposition::STAGED);
+    assert(h.state.sequencerTrackActivations.markAppliedFromRealtime(
+        0,
+        realtime.generation
+    ));
+    assert(h.state.sequencerTrackActivations.publishRealtimeTelemetry());
+
+    ++g_now_ms;
+    h.handler.update(g_now_ms);
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerStepPresetFeedback::APPLIED);
+    assert(picker.operationFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::APPLIED);
+    assert(picker.operationActivationGeneration == activationGeneration);
+    assert(picker.visible.get());
+
+    g_now_ms += Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS;
+    h.handler.update(g_now_ms);
+    assert(!picker.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+
+    resetTestRoot();
+    std::cout
+        << "[PASS] test_step_preset_queued_feedback_resolves_to_applied_and_auto_closes\n";
+}
+
+void test_step_preset_queued_feedback_resolves_to_cancelled_on_undo() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setEnabled(0, true);
+    assert(h.state.sequencer.setStepDataAt(0, 72, 96, 120, 0, 100));
+
+    auto presets = core::handler::SequencerStepPresetDomainServices::fromCoreState(
+        h.state,
+        h.productFiles
+    );
+    const auto target = presets.captureTarget();
+    assert(presets.savePreset("queued-cancel", target, false).ok());
+    assert(h.state.sequencer.setStepDataAt(0, 43, 12, 40, 4, 84));
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    h.state.statusBar.playing.set(true);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    auto& picker = h.state.sequencer.stepPresetPicker;
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerStepPresetFeedback::QUEUED);
+    const uint32_t activationGeneration = picker.operationActivationGeneration;
+    assert(activationGeneration != 0);
+    assert(h.state.sequencer.pattern.note[0] == 72);
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.note[0] == 43);
+
+    ++g_now_ms;
+    h.handler.update(g_now_ms);
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerStepPresetFeedback::CANCELLED);
+    assert(picker.operationFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::CANCELLED);
+    assert(picker.operationActivationGeneration == activationGeneration);
+    const auto cancelledTelemetry = h.state.sequencerTrackActivations.telemetry(0);
+    assert(cancelledTelemetry.status == core::state::sequencer::
+        SequencerTrackActivationStatus::CANCELLED);
+    assert(cancelledTelemetry.generation == activationGeneration);
+    assert(cancelledTelemetry.origin == core::state::sequencer::
+        SequencerTrackActivationOrigin::STEP_PRESET);
+    assert(picker.visible.get());
+
+    g_now_ms += Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS;
+    h.handler.update(g_now_ms);
+    assert(!picker.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+
+    resetTestRoot();
+    std::cout
+        << "[PASS] test_step_preset_queued_feedback_resolves_to_cancelled_on_undo\n";
 }
 
 }  // namespace
@@ -1646,6 +2082,11 @@ int main() {
     test_left_top_close_keeps_live_edit_and_records_history();
     test_step_edit_does_not_open_when_blocked();
     test_step_preset_picker_saves_and_loads_focused_step();
+    test_step_preset_overwrite_accepts_authoritative_long_press_with_clock_lag();
+    test_step_preset_picker_pages_without_mutating_and_restores_load_focus();
+    test_step_preset_save_selects_new_asset_beyond_first_page();
+    test_step_preset_queued_feedback_resolves_to_applied_and_auto_closes();
+    test_step_preset_queued_feedback_resolves_to_cancelled_on_undo();
 
     std::cout << "\nAll SequencerStepEditHandler tests passed.\n";
     return 0;

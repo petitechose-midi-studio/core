@@ -10,7 +10,9 @@ bool isStepGraphPresetCommand(const std::string& command);
 int runStepGraphPresetCommand(
     const std::string& command,
     const std::vector<uint8_t>& input,
-    bool json
+    const std::string& semanticName,
+    bool json,
+    std::vector<uint8_t>* output = nullptr
 );
 
 }  // namespace core::tools::ms_core_file_tool

@@ -76,6 +76,8 @@ public:
     MacroEditHandler(MacroEditHandler&&) = delete;
     MacroEditHandler& operator=(MacroEditHandler&&) = delete;
 
+    void update(uint32_t nowMs);
+
 private:
     void setupBindings();
 
@@ -102,6 +104,12 @@ private:
     int valueCountForRow(uint8_t row) const;
     void commitEditedConfig();
     void configureOptForFocusedRow();
+    void copyFocusedDomain();
+    void beginBottomRightAction();
+    void releaseBottomRightAction();
+    void beginBottomLeftAction();
+    void releaseBottomLeftAction();
+    void commitGuardedAction(uint32_t nowMs);
 
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
@@ -117,6 +125,7 @@ private:
     oc::type::ScopeID page_selector_scope_ = 0;
     oc::type::ScopeID macro_selector_scope_ = 0;
     NowProvider now_provider_ = nullptr;
+    bool ignore_next_left_bottom_release_ = false;
 };
 
 }  // namespace core::handler

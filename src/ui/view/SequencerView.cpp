@@ -7,6 +7,8 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
+#include "ui/sequencer/SequencerCcLaneGridViewModelBuilder.hpp"
+#include "ui/sequencer/SequencerTrackPasteProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
 
@@ -30,7 +32,10 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     createPropertySelectionOverlay();
     if (!property_selection_overlay_ || !property_selection_overlay_->getElement()) return;
     createGrid();
-    if (!step_grid_ || !step_grid_->getElement()) return;
+    if (!step_grid_ || !step_grid_->getElement() ||
+        !cc_lane_grid_ || !cc_lane_grid_->getElement()) return;
+    createTrackPastePreflightCard();
+    if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
     ensureRenderScheduler();
     if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;
     initialized_ = true;
@@ -39,6 +44,8 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
 FLASHMEM SequencerView::~SequencerView() {
     render_scheduler_.reset();
 
+    track_paste_preflight_card_.reset();
+    cc_lane_grid_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
     property_selection_overlay_.reset();
@@ -86,6 +93,10 @@ FLASHMEM void SequencerView::createGrid() {
         center_column_,
         onStepGridGeometryInvalidated,
         this
+    );
+    cc_lane_grid_ = core::app::makeExtmemUnique<SequencerCcLaneGrid>(
+        center_column_,
+        SequencerCcLaneGridLayout::EMBEDDED
     );
 }
 
@@ -146,6 +157,13 @@ FLASHMEM void SequencerView::createHistoryToast() {
     lv_obj_set_style_text_color(history_toast_line3_, lv_color_hex(theme::color::TEXT_SECONDARY), 0);
 }
 
+FLASHMEM void SequencerView::createTrackPastePreflightCard() {
+    if (!container_) return;
+    track_paste_preflight_card_ =
+        core::app::makeExtmemUnique<
+            core::ui::sequencer::SequencerTrackPastePreflightCard>(container_);
+}
+
 FLASHMEM void SequencerView::createActionStrips() {
     if (!frame_ || !body_container_) return;
     frame_->createInteractionRow();
@@ -185,17 +203,23 @@ FLASHMEM bool SequencerView::bindToState() {
     bindBottomActionStripState();
     bindHistoryFeedbackState();
     bindTrackSwitchReadyState();
+    bindTrackPastePreflightState();
+    bindClipboardState();
 
     const bool bound =
         header_watcher_.subscriptionCount() == header_watcher_.capacity() &&
         header_strip_watcher_.subscriptionCount() == header_strip_watcher_.capacity() &&
         grid_watcher_.subscriptionCount() == grid_watcher_.capacity() &&
+        grid_tick_watcher_.subscriptionCount() == grid_tick_watcher_.capacity() &&
         selector_overlay_watcher_.subscriptionCount() == selector_overlay_watcher_.capacity() &&
         overlay_visibility_watcher_.subscriptionCount() == overlay_visibility_watcher_.capacity() &&
         left_action_strip_watcher_.subscriptionCount() == left_action_strip_watcher_.capacity() &&
         bottom_action_strip_watcher_.subscriptionCount() == bottom_action_strip_watcher_.capacity() &&
         history_feedback_watcher_.subscriptionCount() == history_feedback_watcher_.capacity() &&
-        track_switch_ready_watcher_.subscriptionCount() == track_switch_ready_watcher_.capacity();
+        track_switch_ready_watcher_.subscriptionCount() == track_switch_ready_watcher_.capacity() &&
+        track_paste_preflight_watcher_.subscriptionCount() ==
+            track_paste_preflight_watcher_.capacity() &&
+        clipboard_watcher_.subscriptionCount() == clipboard_watcher_.capacity();
     if (!bound) return false;
 
     markAllDirty();
@@ -210,7 +234,6 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
         state_refs_.structureNavigationFocus,
-        state_refs_.structureClipboard.revision,
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
@@ -227,7 +250,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -240,7 +264,6 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.sharedTrackEnabledMask,
         state_refs_.sequencer.pattern.length,
         state_refs_.sequencer.page,
-        state_refs_.structureClipboard.revision,
         state_refs_.structureNavigationFocus,
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
@@ -272,7 +295,6 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.focusedStep,
         state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.playheadStep,
-        state_refs_.sequencer.playheadStepTickOffset,
         state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.probabilityCycleRevision,
         state_refs_.sequencer.variationTelemetryRevision,
@@ -287,7 +309,6 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.patternVariationFeedback.visible,
         state_refs_.sequencer.patternVariationFeedback.property,
         state_refs_.structureNavigationFocus,
-        state_refs_.structureClipboard.revision,
         state_refs_.projectNavigation.contentRevision,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.structureUi.stepSelection.cursorStep,
@@ -301,7 +322,14 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.contentView.sequenceId,
         state_refs_.sequencer.contentView.cycleSetId,
         state_refs_.sequencer.contentView.depth,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.ccLaneUi.revision
+    );
+    grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
+        *this, 11, "SequencerView.gridTick"
+    );
+    grid_tick_watcher_.watch(
+        state_refs_.sequencer.playheadStepTickOffset
     );
 }
 
@@ -328,7 +356,8 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.pattern.length,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -363,7 +392,8 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.structureUi.pageSelection.active,
         state_refs_.sequencer.structureUi.pageSelection.scope,
         state_refs_.sequencer.structureUi.stepSelection.active,
-        state_refs_.sequencer.contentView.kind
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -373,11 +403,9 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
     );
     bottom_action_strip_watcher_.watchAll(
         state_refs_.structureNavigationFocus,
-        state_refs_.structureClipboard.revision,
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.sequencer.structureUi.previewAddPageSlot,
-        state_refs_.trackNavigation.hold.action,
-        state_refs_.trackNavigation.hold.startedAtMs,
+        state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.sequencer.structureUi.pageHold.action,
         state_refs_.sequencer.structureUi.pageHold.startedAtMs,
         state_refs_.trackNavigation.selection.active,
@@ -393,7 +421,11 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.pattern.patternVariationRevision,
         state_refs_.sequencer.contentView.kind,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.trackActivations.telemetryRevision(),
+        state_refs_.sequencer.ccLaneUi.revision,
+        state_refs_.sequencer.ccLaneUi.actionGuard,
+        state_refs_.sequencer.ccLaneUi.operationFeedback
     );
 }
 
@@ -414,6 +446,46 @@ FLASHMEM void SequencerView::bindTrackSwitchReadyState() {
     track_switch_ready_watcher_.watchAll(
         state_refs_.sharedTrackActive
     );
+}
+
+FLASHMEM void SequencerView::bindTrackPastePreflightState() {
+    track_paste_preflight_watcher_.bind<
+        &SequencerView::requestTrackPastePreflightRender>(
+        *this,
+        9,
+        "SequencerView.trackPastePreflight"
+    );
+    track_paste_preflight_watcher_.watchAll(
+        state_refs_.structureNavigationFocus,
+        state_refs_.trackNavigation.previewAddSlot,
+        state_refs_.trackNavigation.previewTrackIndex,
+        state_refs_.sequencer.structureUi.trackPaste.revision,
+        state_refs_.trackNavigation.selection.active,
+        state_refs_.trackNavigation.selection.scope,
+        state_refs_.trackNavigation.selection.cursorIndex,
+        state_refs_.sharedTrackActive,
+        state_refs_.tracks.activeTrackSignal(),
+        state_refs_.tracks.enabledMaskSignal(),
+        state_refs_.tracks.mutedMaskSignal(),
+        state_refs_.sequencer.pattern.midiChannel,
+        state_refs_.trackActivations.telemetryRevision()
+    );
+    for (uint8_t track = 0;
+         track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        track_paste_preflight_watcher_.watch(
+            state_refs_.tracks.track(track).midiChannel
+        );
+    }
+}
+
+FLASHMEM void SequencerView::bindClipboardState() {
+    clipboard_watcher_.bind<&SequencerView::requestClipboardDependentRenders>(
+        *this,
+        10,
+        "SequencerView.clipboard"
+    );
+    clipboard_watcher_.watch(state_refs_.structureClipboard.revision);
 }
 
 FLASHMEM void SequencerView::ensureRenderScheduler() {
@@ -449,6 +521,9 @@ bool SequencerView::hasBlockingOverlay() const {
 void SequencerView::handleOverlayVisibilityChanged() {
     if (!render_scheduler_) return;
     if (hasBlockingOverlay()) {
+        if (track_paste_preflight_card_) {
+            track_paste_preflight_card_->render({});
+        }
         render_scheduler_->pause();
         return;
     }
@@ -501,6 +576,28 @@ void SequencerView::requestGridRender() {
     requestRender(RENDER_GRID);
 }
 
+void SequencerView::requestGridTickRender() {
+    if (state_refs_.sequencer.ccLaneUi.mode !=
+        core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID) {
+        requestRender(RENDER_GRID);
+    }
+}
+
+void SequencerView::requestTrackPastePreflightRender() {
+    requestRender(RENDER_TRACK_PASTE_PREFLIGHT);
+}
+
+void SequencerView::requestClipboardDependentRenders() {
+    requestRender(
+        RENDER_HEADER_TOP |
+        RENDER_HEADER_STRIP |
+        RENDER_LEFT_ACTION_STRIP |
+        RENDER_BOTTOM_ACTION_STRIP |
+        RENDER_GRID |
+        RENDER_TRACK_PASTE_PREFLIGHT
+    );
+}
+
 void SequencerView::markAllDirty() {
     requestRender(RENDER_ALL);
 }
@@ -526,10 +623,13 @@ void SequencerView::render(uint32_t flags) {
         (flags & RENDER_HISTORY_FEEDBACK) != 0 && history_toast_;
     const bool needsHeaderTop = (flags & RENDER_HEADER_TOP) != 0 && header_bar_;
     const bool needsHeaderStrip = (flags & RENDER_HEADER_STRIP) != 0 && header_bar_;
-    const bool needsGrid = (flags & RENDER_GRID) != 0 && step_grid_;
+    const bool needsGrid = (flags & RENDER_GRID) != 0 && step_grid_ && cc_lane_grid_;
+    const bool needsTrackPastePreflight =
+        (flags & RENDER_TRACK_PASTE_PREFLIGHT) != 0 &&
+        track_paste_preflight_card_;
     if (!needsSelectorOverlay && !needsLeftActionStrip &&
         !needsBottomActionStrip && !needsHistoryToast && !needsHeaderTop &&
-        !needsHeaderStrip && !needsGrid) {
+        !needsHeaderStrip && !needsGrid && !needsTrackPastePreflight) {
         return;
     }
 
@@ -560,12 +660,24 @@ void SequencerView::render(uint32_t flags) {
     }
 
     if (needsGrid) {
-        const auto gridProps = sequencer::buildStepGridProps(source);
-        step_grid_->render(gridProps);
+        const auto ccLaneProps = sequencer::buildSequencerCcLaneGridProps(source);
+        if (ccLaneProps.visible) {
+            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            cc_lane_grid_->render(ccLaneProps);
+        } else {
+            cc_lane_grid_->render({.visible = false});
+            lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            step_grid_->render(sequencer::buildStepGridProps(source));
+        }
     }
 
     if (needsHistoryToast) {
         renderHistoryToast();
+    }
+    if (needsTrackPastePreflight) {
+        track_paste_preflight_card_->render(
+            sequencer::projectSequencerTrackPastePreflight(source)
+        );
     }
 }
 
@@ -590,6 +702,9 @@ void SequencerView::renderHistoryToast() {
     lv_label_set_text(history_toast_line2_, feedback.line2.data());
     lv_label_set_text(history_toast_line3_, feedback.line3.data());
     lv_obj_align(history_toast_, LV_ALIGN_TOP_MID, 0, 34);
+    // Outcome feedback has priority over any contextual paste card occupying
+    // the same temporary-information zone.
+    lv_obj_move_foreground(history_toast_);
     lv_obj_clear_flag(history_toast_, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -604,6 +719,7 @@ sequencer::SequencerViewModelSource SequencerView::modelSource() const {
         .structureClipboard = state_refs_.structureClipboard,
         .statusBar = state_refs_.statusBar,
         .projectNavigation = state_refs_.projectNavigation,
+        .trackActivations = state_refs_.trackActivations,
     };
 }
 

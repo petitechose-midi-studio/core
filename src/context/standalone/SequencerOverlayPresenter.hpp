@@ -66,8 +66,8 @@ private:
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
     oc::state::StaticWatchGroup<13> step_edit_watcher_;
     oc::state::StaticWatchGroup<3> step_edit_action_watcher_;
-    oc::state::StaticWatchGroup<8> step_preset_watcher_;
-    oc::state::StaticWatchGroup<4> step_preset_action_watcher_;
+    oc::state::StaticWatchGroup<15> step_preset_watcher_;
+    oc::state::StaticWatchGroup<8> step_preset_action_watcher_;
 };
 
 }  // namespace core::context::standalone

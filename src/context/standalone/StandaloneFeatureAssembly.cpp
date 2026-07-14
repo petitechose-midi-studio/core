@@ -64,6 +64,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.structureClipboard,
             state.configRevision,
             state.statusBar,
+            &state.macroRuntimeOwnerRevision,
+            state.midiCcCoordinator,
         },
         core::handler::MacroEditDomainServices::fromCoreState(state),
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
@@ -72,7 +74,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         overlayPresentations,
         encoders,
         buttons,
-        midi,
         overlayRoot,
         macroViewElement
 #if defined(MS_UX_RECORDER)
@@ -96,6 +97,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.sequencer,
             state.sequencerTracks,
             core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+            &state.sequencerTrackActivations,
+            &state.statusBar,
+            &state.pages,
+            state.midiCcCoordinator,
         },
         core::handler::SharedTrackDomainServices::fromCoreState(state),
         core::handler::SequencerStepPresetDomainServices::fromCoreState(state, productFiles),
@@ -210,6 +215,9 @@ void StandaloneFeatureAssembly::onMacroNoteIn() const {
 void StandaloneFeatureAssembly::update(uint32_t nowMs) const {
     if (macro_feature_) {
         macro_feature_->update(nowMs);
+    }
+    if (sequencer_feature_) {
+        sequencer_feature_->update(nowMs);
     }
 }
 

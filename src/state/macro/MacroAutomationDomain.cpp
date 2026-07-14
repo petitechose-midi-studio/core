@@ -377,6 +377,19 @@ FLASHMEM void simplifyLaneByLinearError(MacroAutomationLane& lane) {
     lane.active = write > 0;
 }
 
+FLASHMEM void collapseConstantLane(MacroAutomationLane& lane) {
+    if (lane.pointCount <= 1U) return;
+    const float first = lane.points[0].value;
+    for (uint16_t i = 1; i < lane.pointCount; ++i) {
+        if (std::fabs(lane.points[i].value - first) >
+            kAutomationSimplifyMaxError) {
+            return;
+        }
+    }
+    lane.pointCount = 1;
+    lane.active = true;
+}
+
 FLASHMEM void decimateLaneForContinuedRecording(MacroAutomationLane& lane) {
     const uint16_t count =
         std::min<uint16_t>(lane.pointCount, MACRO_AUTOMATION_RECORDING_MAX_POINTS);
@@ -393,6 +406,7 @@ FLASHMEM void decimateLaneForContinuedRecording(MacroAutomationLane& lane) {
 FLASHMEM void rationalizeRecordedLane(MacroAutomationLane& lane) {
     snapLaneToTickGrid(lane);
     simplifyLaneByLinearError(lane);
+    collapseConstantLane(lane);
 }
 
 }  // namespace
@@ -405,6 +419,84 @@ FLASHMEM float macroAutomationClamp01(float value) {
 FLASHMEM float macroAutomationClampSigned(float value) {
     if (!std::isfinite(value)) return 0.0f;
     return std::clamp(value, -1.0f, 1.0f);
+}
+
+FLASHMEM bool macroCurvePlaybackStateValid(MacroCurvePlaybackState state) {
+    switch (state) {
+        case MacroCurvePlaybackState::ACTIVE:
+        case MacroCurvePlaybackState::OFF:
+        case MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD:
+            return true;
+        default:
+            return false;
+    }
+}
+
+FLASHMEM bool macroModulationOriginValid(MacroModulationOrigin origin) {
+    switch (origin) {
+        case MacroModulationOrigin::NATIVE:
+        case MacroModulationOrigin::CONVERTED_MEAN:
+        case MacroModulationOrigin::CONVERTED_FIRST:
+        case MacroModulationOrigin::CONVERTED_MIN:
+            return true;
+        default:
+            return false;
+    }
+}
+
+FLASHMEM void macroAutomationNormalizeLegacyPlayback(
+    MacroAutomationSlotState& state
+) {
+    // SUSPENDED_AFTER_RECORD belonged to the former coupled-source lifecycle.
+    // A stored Modulation loop is now interrupted only by an explicit user
+    // action, so every restoration boundary upgrades this value to ACTIVE.
+    if (state.modulation.playbackState ==
+        MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD) {
+        state.modulation.playbackState = MacroCurvePlaybackState::ACTIVE;
+    }
+}
+
+FLASHMEM bool macroAutomationCurveLifecycleValid(
+    const MacroAutomationCurveRef& curve
+) {
+    return macroCurvePlaybackStateValid(curve.playbackState) &&
+           curve.playbackState != MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD &&
+           curve.modulationOrigin == MacroModulationOrigin::NATIVE;
+}
+
+FLASHMEM bool macroModulationCurveLifecycleValid(
+    const MacroAutomationCurveRef& curve
+) {
+    return macroCurvePlaybackStateValid(curve.playbackState) &&
+           macroModulationOriginValid(curve.modulationOrigin);
+}
+
+FLASHMEM bool macroCurveStored(const MacroAutomationCurveRef& curve) {
+    return curve.active && curve.pointCount > 0;
+}
+
+FLASHMEM bool macroCurvePlaybackActive(const MacroAutomationCurveRef& curve) {
+    return macroCurveStored(curve) &&
+           curve.playbackState == MacroCurvePlaybackState::ACTIVE;
+}
+
+FLASHMEM bool macroCurveSuspendedAfterRecord(const MacroAutomationCurveRef& curve) {
+    return macroCurveStored(curve) &&
+           curve.playbackState == MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+}
+
+FLASHMEM MacroModulationOrigin macroModulationOriginForConversion(
+    MacroAutomationConversionPolicy policy
+) {
+    switch (policy) {
+        case MacroAutomationConversionPolicy::FIRST:
+            return MacroModulationOrigin::CONVERTED_FIRST;
+        case MacroAutomationConversionPolicy::MIN:
+            return MacroModulationOrigin::CONVERTED_MIN;
+        case MacroAutomationConversionPolicy::MEAN:
+        default:
+            return MacroModulationOrigin::CONVERTED_MEAN;
+    }
 }
 
 FLASHMEM float macroAutomationElapsedBeats(
@@ -665,59 +757,25 @@ FLASHMEM MacroAutomationCurveWindowSummary macroAutomationCurveWindowSummary(
     return summary;
 }
 
-FLASHMEM bool macroAutomationConvertToModulation(
-    const MacroAutomationLane& automation,
-    MacroAutomationConversionPolicy policy,
-    MacroModulationShape& outShape
-) {
-    outShape = MacroModulationShape{};
-    if (!automation.active || automation.pointCount == 0) return false;
-
-    const uint16_t count =
-        std::min<uint16_t>(automation.pointCount, MACRO_AUTOMATION_RECORDING_MAX_POINTS);
-    float reference = 0.0f;
-    switch (policy) {
-        case MacroAutomationConversionPolicy::FIRST:
-            reference = macroAutomationClamp01(automation.points[0].value);
-            break;
-        case MacroAutomationConversionPolicy::MIN:
-            reference = 1.0f;
-            for (uint16_t i = 0; i < count; ++i) {
-                reference = std::min(reference, macroAutomationClamp01(automation.points[i].value));
-            }
-            break;
-        case MacroAutomationConversionPolicy::MEAN:
-        default:
-            for (uint16_t i = 0; i < count; ++i) {
-                reference += macroAutomationClamp01(automation.points[i].value);
-            }
-            reference /= static_cast<float>(count);
-            break;
-    }
-
-    outShape.durationBeats = sanitizeDuration(automation.durationBeats);
-    outShape.interpolation = automation.interpolation;
-    for (uint16_t i = 0; i < count; ++i) {
-        const float relative = macroAutomationClamp01(automation.points[i].value) - reference;
-        macroModulationAppendPoint(outShape, automation.points[i].beat, relative);
-    }
-    outShape.active = outShape.pointCount > 0;
-    return outShape.active;
-}
-
 FLASHMEM MacroResolvedValue macroResolveValue(float staticValue,
                                               const MacroAutomationSlotState& slot,
                                               const MacroAutomationPointPool& pool,
-                                              float beat) {
+                                              float beat,
+                                              bool automationPlaybackEnabled) {
     MacroResolvedValue result{};
-    result.automationActive = slot.automation.active;
-    result.modulationActive = slot.modulation.active && slot.modulationDepth > 0.0f;
-    result.base = macroAutomationEvaluate(
-        slot.automation,
-        pool,
-        beat,
-        macroAutomationClamp01(staticValue)
-    );
+    result.automationStored = macroCurveStored(slot.automation);
+    result.modulationStored = macroCurveStored(slot.modulation);
+    result.automationActive = automationPlaybackEnabled &&
+        macroCurvePlaybackActive(slot.automation);
+    result.modulationSuspended = macroCurveSuspendedAfterRecord(slot.modulation);
+    result.modulationPausedDepthZero =
+        macroCurvePlaybackActive(slot.modulation) && slot.modulationDepth <= 0.0f;
+    result.modulationActive =
+        macroCurvePlaybackActive(slot.modulation) && slot.modulationDepth > 0.0f;
+    const float staticBase = macroAutomationClamp01(staticValue);
+    result.base = result.automationActive
+        ? macroAutomationEvaluate(slot.automation, pool, beat, staticBase)
+        : staticBase;
     result.modulation = result.modulationActive
         ? macroModulationEvaluate(slot.modulation, pool, beat) *
               macroAutomationClamp01(slot.modulationDepth)

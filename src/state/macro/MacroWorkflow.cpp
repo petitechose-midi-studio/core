@@ -1,10 +1,10 @@
 #include "state/macro/MacroWorkflow.hpp"
 
-#include <algorithm>
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/macro/MacroAutomationDomain.hpp"
 
 namespace core::state::macro {
 
@@ -33,7 +33,7 @@ FLASHMEM void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& 
         pos = oc::type::text::appendUnsigned(label, sizeof(label), pos, i + 1);
         oc::type::text::terminate(label, sizeof(label), pos);
         macros.slots[i].label.set(label);
-        macros.slots[i].value.set(std::clamp(pageData.values[i], 0.0f, 1.0f));
+        setRuntimeValue(macros, i, pageData.values[i]);
     }
 }
 
@@ -125,7 +125,7 @@ FLASHMEM bool MacroWorkflow::activateMacroSlot(core::state::MacroState& macros,
 
 void MacroWorkflow::setRuntimeValue(core::state::MacroState& macros, uint8_t index, float value) {
     if (index >= MACRO_COUNT) return;
-    macros.slots[index].value.set(std::clamp(value, 0.0f, 1.0f));
+    macros.slots[index].value.set(macroAutomationClamp01(value));
 }
 
 float MacroWorkflow::runtimeValue(const core::state::MacroState& macros, uint8_t index) {

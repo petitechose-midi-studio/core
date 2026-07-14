@@ -19,6 +19,18 @@ using internal::writeFrameHeader;
 
 namespace {
 
+FLASHMEM bool isRecoverySafeRequest(FileSystemRpcMessageId messageId) {
+    switch (messageId) {
+        case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
+        case FileSystemRpcMessageId::STAT_REQUEST:
+        case FileSystemRpcMessageId::LIST_REQUEST:
+        case FileSystemRpcMessageId::READ_REQUEST:
+            return true;
+        default:
+            return false;
+    }
+}
+
 struct ListBuildContext {
     ByteWriter* writer = nullptr;
     uint16_t startIndex = 0;
@@ -88,6 +100,29 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
         return encodeError_(frame.value().requestId, FileSystemRpcStatus::UNSUPPORTED, response, responseSize);
     }
 
+    if (!conditionalRecoveryChecked_) {
+        const auto recoveryStatus = recoverConditionalMutation_();
+        conditionalRecoveryChecked_ = true;
+        conditionalRecoveryStatus_ = recoveryStatus;
+        if (recoveryStatus == FileSystemRpcStatus::OK) {
+            if (conditionalRecoveryState_ !=
+                FileSystemRpcConditionalRecoveryState::CORRUPT_JOURNAL_QUARANTINED) {
+                conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::READY;
+            }
+        } else {
+            conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
+        }
+    }
+    if (conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::BLOCKED &&
+        !isRecoverySafeRequest(frame.value().messageId)) {
+        return encodeError_(
+            frame.value().requestId,
+            conditionalRecoveryStatus_,
+            response,
+            responseSize
+        );
+    }
+
     switch (frame.value().messageId) {
         case FileSystemRpcMessageId::STAT_REQUEST:
             return handleStat_(frame.value(), response, responseSize);
@@ -111,6 +146,10 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
             return handleDelete_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::RENAME_REQUEST:
             return handleRename_(frame.value(), response, responseSize);
+        case FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST:
+            return handleConditionalReplace_(frame.value(), response, responseSize);
+        case FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST:
+            return handleConditionalDelete_(frame.value(), response, responseSize);
         default:
             return encodeError_(frame.value().requestId, FileSystemRpcStatus::INVALID_MESSAGE, response, responseSize);
     }
@@ -145,7 +184,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleCapabilities_(
     constexpr uint32_t features =
         FILESYSTEM_RPC_FEATURE_CAPABILITIES |
         FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS |
-        FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT;
+        FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT |
+        FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS;
     if (!writeFrameHeader(writer, FileSystemRpcMessageId::CAPABILITIES_RESPONSE, frame.requestId) ||
         !writer.writeU8(static_cast<uint8_t>(FileSystemRpcStatus::OK)) ||
         !writer.writeU8(FILESYSTEM_RPC_SCHEMA) ||

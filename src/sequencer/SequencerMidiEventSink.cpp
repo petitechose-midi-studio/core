@@ -74,29 +74,12 @@ bool SequencerMidiEventSink::enqueueNoteOff_(const SequencerEvent& event) {
 }
 
 bool SequencerMidiEventSink::enqueueAllNotesOff_() {
-    queue_.cancelPendingEvents(track_index_);
-
-    for (uint8_t channel = 0; channel < active_notes_by_channel_.size(); ++channel) {
-        auto& activeNotes = active_notes_by_channel_[channel];
-        if (!activeNotes.any()) continue;
-        for (uint8_t note = 0; note < 128; ++note) {
-            if (!activeNotes.test(note)) continue;
-
-            RealtimeMidiEvent midiEvent{};
-            midiEvent.deadlineUs = current_time_us_;
-            midiEvent.type = RealtimeMidiEventType::NoteOff;
-            midiEvent.channel = channel;
-            midiEvent.note = note;
-            midiEvent.velocity = 0;
-            midiEvent.trackIndex = track_index_;
-
-            if (!queue_.push(midiEvent)) {
-                return false;
-            }
-        }
-    }
-
-    return true;
+    return queue_.replaceTrackEventsWithNoteOffBatch(
+        track_index_,
+        current_time_us_,
+        active_notes_by_channel_.data(),
+        active_notes_by_channel_.size()
+    ).ok();
 }
 
 uint32_t SequencerMidiEventSink::deadlineForTick_(uint32_t tick) const {
@@ -122,13 +105,18 @@ void SequencerMidiEventSink::markNoteInactive_(uint8_t channel, uint8_t note) {
 void SequencerMidiEventSink::onRealtimeMidiEventDispatched(
     const RealtimeMidiEvent& event
 ) {
-    if (event.type == RealtimeMidiEventType::NoteOn) {
-        markNoteActive_(event.channel, event.note);
-        if (observer_ != nullptr) {
-            observer_->onNoteOn(track_index_, event.velocity);
-        }
-    } else {
-        markNoteInactive_(event.channel, event.note);
+    switch (event.type) {
+        case RealtimeMidiEventType::NoteOn:
+            markNoteActive_(event.channel, event.note);
+            if (observer_ != nullptr) {
+                observer_->onNoteOn(track_index_, event.velocity);
+            }
+            break;
+        case RealtimeMidiEventType::NoteOff:
+            markNoteInactive_(event.channel, event.note);
+            break;
+        case RealtimeMidiEventType::ControlChange:
+            break;
     }
 }
 

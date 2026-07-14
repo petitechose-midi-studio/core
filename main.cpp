@@ -210,12 +210,8 @@ public:
 };
 
 SerialSemanticUxSink semanticUxSink;
-core::validation::ux::SemanticUxRecorder semanticUxRecorder{
-    core::validation::ux::SemanticUxRecorderOptions{
-        .sink = &semanticUxSink,
-        .enabled = true,
-    }
-};
+core::app::ExtmemUniquePtr<core::validation::ux::SemanticUxRecorder>
+    semanticUxRecorder;
 
 }  // namespace
 #endif
@@ -324,6 +320,20 @@ static FLASHMEM void initApp() {
     }
     projectSessionAutosaveService.emplace(*projectSessionStore);
 
+#if defined(MS_UX_RECORDER)
+    semanticUxRecorder =
+        core::app::makeExtmemUnique<core::validation::ux::SemanticUxRecorder>(
+            core::validation::ux::SemanticUxRecorderOptions{
+                .sink = &semanticUxSink,
+                .enabled = true,
+            }
+        );
+    if (!semanticUxRecorder) {
+        OC_LOG_ERROR("Semantic UX recorder init failed: EXTMEM allocation failed");
+        while (true) {}
+    }
+#endif
+
     oc::hal::teensy::AppBuilder appBuilder;
     appBuilder.midi()
         .frames()
@@ -338,11 +348,12 @@ static FLASHMEM void initApp() {
 
 #if defined(MS_UX_RECORDER)
     appBuilder.inputTrace([](const oc::core::input::InputBindingTraceEvent& event) {
+        if (!semanticUxRecorder) return;
         if (!coreState) {
-            semanticUxRecorder.onBindingTrace(event);
+            semanticUxRecorder->onBindingTrace(event);
             return;
         }
-        semanticUxRecorder.onBindingTrace(
+        semanticUxRecorder->onBindingTrace(
             event,
             core::validation::ux::makeSemanticUxSnapshot(*coreState)
         );
@@ -364,6 +375,9 @@ static FLASHMEM void initApp() {
             coreState->projectNavigation,
             coreState->statusBar,
             coreState->midiSync,
+            coreState->sequencerTrackActivations,
+            &coreState->midiCcCoordinator,
+            &coreState->sequencerRuntimeProjectRevision,
         },
         *app->midiAPI(),
         app->eventBus()
@@ -517,7 +531,9 @@ void loop() {
         }
 
 #if defined(MS_UX_RECORDER)
-        semanticUxRecorder.flush(millis(), *coreState);
+        if (semanticUxRecorder) {
+            semanticUxRecorder->flush(millis(), *coreState);
+        }
 #endif
 
         // Refresh LVGL at lower frequency to reduce CPU load.

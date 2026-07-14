@@ -67,6 +67,15 @@ bool SdlEnvironment::init(int argc, char** argv) {
     bridge_->init();
     renderer_ = bridge_->getRenderer();
 
+    if (bridge_->getDisplay()) {
+        lv_display_add_event_cb(
+            bridge_->getDisplay(),
+            displayFlushStartCb,
+            LV_EVENT_FLUSH_START,
+            this
+        );
+    }
+
     if (renderer_) {
         SDL_RenderSetLogicalSize(renderer_, LVGL_SIZE, LVGL_SIZE);
     }
@@ -157,52 +166,96 @@ void SdlEnvironment::refresh() {
     bridge_->refresh();
 }
 
-bool SdlEnvironment::saveScreenshotBmp(const char* path, ScreenshotScope scope) {
-    if (!renderer_ || !path || path[0] == '\0') return false;
+void SdlEnvironment::displayFlushStartCb(lv_event_t* event) {
+    auto* self = static_cast<SdlEnvironment*>(lv_event_get_user_data(event));
+    if (!self || !self->bridge_ || !self->bridge_->getDisplay()) return;
 
-    int width = 0;
-    int height = 0;
-    if (SDL_GetRendererOutputSize(renderer_, &width, &height) != 0 || width <= 0 || height <= 0) {
+    // FLUSH_START is sent synchronously before LVGL rotates a double buffer,
+    // so buf_active is the complete frame being presented, not the next draw
+    // buffer. Drawing and capture both run on this thread.
+    self->lastFlushedBuffer_ =
+        lv_display_get_buf_active(self->bridge_->getDisplay());
+}
+
+bool SdlEnvironment::saveScreenshotBmp(const char* path, ScreenshotScope scope) {
+    if (!path || path[0] == '\0' || !lastFlushedBuffer_ ||
+        !lastFlushedBuffer_->data) {
         return false;
     }
 
-    SDL_Rect sourceRect{0, 0, width, height};
-    if (scope == ScreenshotScope::Screen && layout_) {
-        const int logicalSize = layout_->panelSize + 40;
-        const int panelOffset = (logicalSize - layout_->panelSize) / 2;
-        const float scaleX = static_cast<float>(width) / static_cast<float>(logicalSize);
-        const float scaleY = static_cast<float>(height) / static_cast<float>(logicalSize);
-        sourceRect.x = static_cast<int>((panelOffset + layout_->screenX) * scaleX);
-        sourceRect.y = static_cast<int>((panelOffset + layout_->screenY) * scaleY);
-        sourceRect.w = static_cast<int>(layout_->screenW * scaleX);
-        sourceRect.h = static_cast<int>(layout_->screenH * scaleY);
+    const lv_image_header_t& header = lastFlushedBuffer_->header;
+    const auto colorFormat = static_cast<lv_color_format_t>(header.cf);
+    Uint32 sdlPixelFormat = SDL_PIXELFORMAT_UNKNOWN;
+    switch (colorFormat) {
+        case LV_COLOR_FORMAT_XRGB8888:
+            sdlPixelFormat = SDL_PIXELFORMAT_XRGB8888;
+            break;
+        case LV_COLOR_FORMAT_ARGB8888:
+            sdlPixelFormat = SDL_PIXELFORMAT_ARGB8888;
+            break;
+        default:
+            // The desktop LVGL configuration is 32-bit. Failing explicitly is
+            // safer than falling back to SDL_RenderReadPixels after Present,
+            // whose result is backend-dependent and can be a stale backbuffer.
+            return false;
     }
 
-    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(
+    const int width = static_cast<int>(header.w);
+    const int height = static_cast<int>(header.h);
+    const int pitch = static_cast<int>(header.stride);
+    if (width <= 0 || height <= 0 || pitch <= 0) return false;
+
+    SDL_Rect sourceRect{0, 0, width, height};
+    if (scope == ScreenshotScope::Screen && layout_) {
+        const int panelOffsetX = (width - layout_->panelSize) / 2;
+        const int panelOffsetY = (height - layout_->panelSize) / 2;
+        sourceRect.x = panelOffsetX + layout_->screenX;
+        sourceRect.y = panelOffsetY + layout_->screenY;
+        sourceRect.w = layout_->screenW;
+        sourceRect.h = layout_->screenH;
+    }
+
+    if (sourceRect.x < 0 || sourceRect.y < 0 || sourceRect.w <= 0 ||
+        sourceRect.h <= 0 || sourceRect.x + sourceRect.w > width ||
+        sourceRect.y + sourceRect.h > height) {
+        return false;
+    }
+
+    SDL_Surface* source = SDL_CreateRGBSurfaceWithFormatFrom(
+        lastFlushedBuffer_->data,
+        width,
+        height,
+        32,
+        pitch,
+        sdlPixelFormat
+    );
+    if (!source) return false;
+    SDL_SetSurfaceBlendMode(source, SDL_BLENDMODE_NONE);
+
+    SDL_Surface* capture = SDL_CreateRGBSurfaceWithFormat(
         0,
         sourceRect.w,
         sourceRect.h,
         32,
         SDL_PIXELFORMAT_ARGB8888
     );
-    if (!surface) return false;
+    if (!capture) {
+        SDL_FreeSurface(source);
+        return false;
+    }
 
-    const int readResult = SDL_RenderReadPixels(
-        renderer_,
-        &sourceRect,
-        SDL_PIXELFORMAT_ARGB8888,
-        surface->pixels,
-        surface->pitch
-    );
-    const int saveResult = (readResult == 0) ? SDL_SaveBMP(surface, path) : -1;
-    SDL_FreeSurface(surface);
-    return readResult == 0 && saveResult == 0;
+    const int blitResult = SDL_BlitSurface(source, &sourceRect, capture, nullptr);
+    const int saveResult = blitResult == 0 ? SDL_SaveBMP(capture, path) : -1;
+    SDL_FreeSurface(capture);
+    SDL_FreeSurface(source);
+    return blitResult == 0 && saveResult == 0;
 }
 
 void SdlEnvironment::shutdown() {
     input_.reset();
     hwSim_.reset();
     layout_.reset();
+    lastFlushedBuffer_ = nullptr;
     bridge_.reset();
 
     SDL_Quit();

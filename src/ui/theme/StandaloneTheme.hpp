@@ -83,6 +83,10 @@ constexpr uint32_t MACRO_CC_COLOR = 0x77CC77;    // Muted green
 constexpr uint32_t MACRO_AUTOMATION = 0xCC7777;         // Muted red automation lane
 constexpr uint32_t MACRO_AUTOMATION_RECORDING = 0xE06A6A;  // Stronger red recording lane
 constexpr uint32_t MACRO_AUTOMATION_MANUAL = 0xD1A35A;  // Muted amber manual override
+constexpr uint32_t MACRO_MODULATION = 0x9A7BD1;         // Relative modulation / violet
+constexpr uint32_t MACRO_PAUSED = 0x8BA8BE;             // Stored but depth-paused
+constexpr uint32_t MACRO_SUSPENDED = 0xD1A35A;          // Suspended/waiting attention
+constexpr uint32_t MACRO_CONFLICT = 0xD1A35A;           // Winner/loser warning
 constexpr lv_opa_t MACRO_PREFIX_OPA = LV_OPA_60; // Prefix opacity (dim)
 
 using base_theme::color::getMacroColor;

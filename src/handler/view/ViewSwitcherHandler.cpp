@@ -24,6 +24,7 @@ FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     , sequencer_content_view_(state.sequencerContentView)
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
+    , cc_lane_ui_(state.ccLaneUi)
     , track_structure_selection_(state.trackStructureSelection)
     , macro_page_selection_(state.macroPageSelection)
     , sequencer_page_selection_(state.sequencerPageSelection)
@@ -109,7 +110,8 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
 
     return !pattern_quick_controls_.selecting.get() &&
            !pattern_quick_controls_.physicalHoldActive.get() &&
-           !step_property_inline_selector_.selecting.get();
+           !step_property_inline_selector_.selecting.get() &&
+           !cc_lane_ui_.visible();
 }
 
 FLASHMEM void ViewSwitcherHandler::openSelector() {

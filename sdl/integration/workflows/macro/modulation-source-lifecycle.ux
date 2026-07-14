@@ -1,0 +1,61 @@
+# UX workflow: operate independent Automation and Modulation lifecycles.
+# Purpose: validates the combined editor preview, Manual takeover of Automation
+# only, explicit Resume Auto, persistent Modulation, binary Modulation playback,
+# and the semantic 0% Paused state without deleting either stored curve.
+# Expect: capture_changed:auto_mod_active=manual_override_grid, capture_changed:manual_override_grid=manual_macro_editor, capture_changed:manual_macro_editor=manual_automation_detail, capture_changed:manual_automation_detail=automation_resumed
+# Expect: capture_changed:automation_resumed=modulation_playback_off, capture_changed:modulation_playback_off=auto_mod_restored, capture_changed:auto_mod_restored=depth_paused, capture_changed:depth_paused=depth_restored
+# Expect: semantic:auto_mod_active:source=auto_mod, semantic:manual_override_grid:source=manual_modulation, semantic:manual_automation_detail:source=manual_modulation
+# Expect: semantic:automation_resumed:source=auto_mod, semantic:modulation_playback_off:effect=edit_modulation_playback, semantic:modulation_playback_off:source=automation
+# Expect: semantic:auto_mod_restored:effect=edit_modulation_playback, semantic:auto_mod_restored:source=auto_mod
+# Expect: semantic:depth_paused:effect=edit_modulation_depth, semantic:depth_paused:source=auto_mod, semantic:depth_restored:source=auto_mod
+# Expect: semantic:auto_mod_active:route_policy=live_manual>cc_lane>macro_computed>macro_static
+
+0 scenario macro-auto-mod
+80 capture screen source_grid
+
+# Open the combined Macro editor. The three direct domains and the superposed
+# A / Base / Mod / Out preview are visible before entering a detail context.
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 capture screen macro_editor
+1580 encoder NAV 1
+1710 encoder NAV 1
+1840 tap NAV 60
+2060 capture screen auto_mod_active
+
+# A physical Macro gesture takes over only the absolute Base. The Modulation
+# loop remains audible and visible.
+2200 tap LEFT_TOP 60
+2360 tap LEFT_TOP 60
+2540 encoder MACRO_1 0.25
+2740 capture screen manual_override_grid
+
+# Resume lives only in Automation detail and is explicitly named Resume Auto.
+2880 button MACRO_1 down
+3940 tick
+4000 button MACRO_1 up
+4140 capture screen manual_macro_editor
+4270 encoder NAV 1
+4400 tap NAV 60
+4620 capture screen manual_automation_detail
+4760 encoder NAV 1
+4900 tap NAV 60
+5120 capture screen automation_resumed
+
+# Return to the top editor, enter Modulation, and stop/restart it explicitly.
+5260 tap LEFT_TOP 60
+5400 encoder NAV 1
+5530 tap NAV 60
+5670 encoder OPT -4.00
+5890 capture screen modulation_playback_off
+6030 encoder OPT 4.00
+6250 capture screen auto_mod_restored
+
+# Depth 0% is Paused, not deleted; restore the original 65% directly.
+6390 encoder NAV 1
+6530 encoder OPT -4.00
+6750 capture screen depth_paused
+# The SDL encoder has 333 virtual ticks here; +2.17 restores 65% from zero.
+6890 encoder OPT 2.17
+7110 capture screen depth_restored

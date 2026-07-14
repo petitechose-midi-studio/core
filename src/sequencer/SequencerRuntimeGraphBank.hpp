@@ -44,6 +44,9 @@ public:
         publishPrepared([]() {});
     }
 
+    /** Abandons an unpublished generation when its companion snapshot failed. */
+    void discardPrepared() { discardPrepared_(); }
+
     const oc::note::sequencer::StepSequencerGraph* graphForTrack(
         uint8_t trackIndex
     ) const;

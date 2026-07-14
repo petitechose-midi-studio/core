@@ -2,28 +2,12 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/macro/MacroSelectionDeleteAction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::state::macro {
 
 namespace structure_slots = core::state::shared;
-
-namespace {
-
-FLASHMEM bool macroSlotAutomationActive(const MacroPagesState& pages, uint8_t macroIndex) {
-    if (macroIndex >= MACRO_COUNT) return false;
-    const auto* slot = macroAutomationFindSlot(
-        pages.automation,
-        MacroAutomationSlotAddress{
-            .track = pages.currentActiveTrack(),
-            .page = pages.currentActivePage(),
-            .macro = macroIndex,
-        }
-    );
-    return slot != nullptr && slot->automation.active;
-}
-
-}  // namespace
 
 FLASHMEM bool macroInteractionSelectionActive(
     const MacroInteractionContextSource& source
@@ -54,8 +38,8 @@ FLASHMEM bool macroInteractionCanPasteStructure(
         case core::state::StructureNavigationFocus::TRACK:
             return source.structureClipboard.hasMacroTrack();
         case core::state::StructureNavigationFocus::STEP:
-            return !source.pages.isMacroAddSlot(source.macroUi.focusedMacroSlot.get()) &&
-                   source.structureClipboard.hasMacroAutomation();
+            return source.macroUi.focusedMacroSlot.get() < MACRO_COUNT &&
+                   source.structureClipboard.hasMacroSlot();
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return source.structureClipboard.hasMacroPage();
@@ -71,8 +55,7 @@ FLASHMEM bool macroInteractionCanRemoveStructure(
                    structure_slots::countEnabled(source.enabledTrackMask, TRACK_COUNT) > 1U;
         case core::state::StructureNavigationFocus::STEP:
             return !source.pages.isMacroAddSlot(source.macroUi.focusedMacroSlot.get()) &&
-                   macroSlotAutomationActive(
-                       source.pages,
+                   source.pages.isMacroSlotActive(
                        source.macroUi.focusedMacroSlot.get()
                    );
         case core::state::StructureNavigationFocus::PAGE:
@@ -88,6 +71,26 @@ FLASHMEM bool macroInteractionCanRemoveStructure(
 FLASHMEM MacroInteractionContext buildMacroInteractionContext(
     const MacroInteractionContextSource& source
 ) {
+    const bool trackSelection = source.trackNavigation.selection.active.get();
+    const auto& selection = trackSelection
+        ? source.trackNavigation.selection
+        : source.macroUi.pageSelection;
+    const auto selectionScope = trackSelection
+        ? core::state::StructureSelectionScope::TRACK
+        : core::state::StructureSelectionScope::PAGE;
+    const uint16_t selectionEnabledMask = trackSelection
+        ? source.enabledTrackMask
+        : source.pages.currentEnabledPageMask();
+    const auto selectionDeleteAction = buildMacroSelectionDeleteActionSpec({
+        .active = macroInteractionSelectionActive(source),
+        .scope = selectionScope,
+        .selectedMask = selection.selectedMask.get(),
+        .enabledMask = selectionEnabledMask,
+        .currentIndex = selection.cursorIndex.get(),
+        .activeTrack = source.pages.currentActiveTrack(),
+        .activePage = source.pages.currentActivePage(),
+    });
+
     return MacroInteractionContext{
         .navigationFocus = source.navigationFocus,
         .blockingOverlay = source.blockingOverlay,
@@ -96,6 +99,7 @@ FLASHMEM MacroInteractionContext buildMacroInteractionContext(
         .previewingAddSlot = macroInteractionPreviewingAddSlot(source),
         .compatibleClipboardAvailable = macroInteractionCanPasteStructure(source),
         .canRemoveStructure = macroInteractionCanRemoveStructure(source),
+        .selectionDeleteAction = selectionDeleteAction,
     };
 }
 

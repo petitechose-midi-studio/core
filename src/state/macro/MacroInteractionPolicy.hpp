@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "state/StructureSelectionState.hpp"
+#include "state/contextual/ContextActionSpec.hpp"
 
 namespace core::state::macro {
 
@@ -30,8 +31,9 @@ enum class MacroInteractionAction : uint8_t {
 
 enum class MacroInteractionVisibility : uint8_t {
     HIDDEN = 0,
-    DIM = 1,
-    ACTIVE = 2,
+    DISABLED,
+    DIM,
+    ACTIVE,
 };
 
 struct MacroInteractionContext {
@@ -43,6 +45,7 @@ struct MacroInteractionContext {
     bool previewingAddSlot = false;
     bool compatibleClipboardAvailable = false;
     bool canRemoveStructure = false;
+    core::state::contextual::ContextActionSpec selectionDeleteAction{};
 };
 
 struct MacroActionStripPolicy {

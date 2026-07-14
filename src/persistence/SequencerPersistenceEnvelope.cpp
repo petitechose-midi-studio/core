@@ -9,6 +9,8 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/SequencerPersistenceCodec.hpp"
+#include "persistence/SequencerCcLanePersistenceCodec.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphAssetRecords.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
@@ -19,6 +21,7 @@ namespace {
 
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
+using oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC;
 using oc::note::sequencer::StepSequencerChordMode;
 using oc::note::sequencer::StepSequencerChordSpec;
 using oc::note::sequencer::StepSequencerCycleStateSet;
@@ -29,11 +32,14 @@ using oc::note::sequencer::StepSequencerSequenceKind;
 using oc::note::sequencer::StepSequencerStepNode;
 
 constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
-constexpr uint8_t kEnvelopeVersion = 3;
+constexpr uint8_t kLegacyEnvelopeVersion = LEGACY_ENVELOPE_VERSION;
+constexpr uint8_t kPitchPolicyEnvelopeVersion = PITCH_POLICY_ENVELOPE_VERSION;
+constexpr uint8_t kCcLaneEnvelopeVersion = CC_LANE_ENVELOPE_VERSION;
+constexpr uint8_t kLegacyCcLaneEnvelopeVersion =
+    LEGACY_CC_LANE_ENVELOPE_VERSION;
 constexpr uint16_t kEnvelopeHeaderSize = 12;
 constexpr uint16_t kSectionHeaderSize = 10;
 constexpr uint8_t kNoTrack = 0xFF;
-constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
 
 enum class EnvelopeKind : uint8_t {
     Pattern = 1,
@@ -48,11 +54,12 @@ enum class SectionId : uint16_t {
     GraphSequences = 16,
     GraphStepNodes = 17,
     GraphCycleSets = 18,
+    CcLaneBank = 19,
 };
 
 struct EnvelopeHeader {
     uint32_t magic = kEnvelopeMagic;
-    uint8_t version = kEnvelopeVersion;
+    uint8_t version = kLegacyEnvelopeVersion;
     uint8_t kind = 0;
     uint16_t headerSize = kEnvelopeHeaderSize;
     uint16_t sectionCount = 0;
@@ -72,6 +79,7 @@ using SequenceRecord = core::state::sequencer::SequencerGraphSequenceRecord;
 using StepNodeRecord = core::state::sequencer::SequencerGraphStepNodeRecord;
 using CycleSetRecord = core::state::sequencer::SequencerGraphCycleSetRecord;
 using GraphPtr = core::app::ExtmemUniquePtr<StepSequencerGraph>;
+using CcLanePtr = state::sequencer::SequencerCcLaneBankPtr;
 
 struct SectionView {
     const uint8_t* data = nullptr;
@@ -84,6 +92,7 @@ struct GraphSectionViews {
     SectionView sequences{};
     SectionView stepNodes{};
     SectionView cycleSets{};
+    SectionView ccLaneBank{};
 };
 
 FLASHMEM bool assignSectionView(SectionView& target, const SectionView& source) {
@@ -94,14 +103,17 @@ FLASHMEM bool assignSectionView(SectionView& target, const SectionView& source) 
 
 class EnvelopeWriter {
 public:
-    EnvelopeWriter(uint8_t* out, uint32_t capacity, EnvelopeKind kind)
+    EnvelopeWriter(uint8_t* out,
+                   uint32_t capacity,
+                   EnvelopeKind kind,
+                   uint8_t version)
         : out_(out), capacity_(capacity) {
         if (out_ == nullptr || capacity_ < kEnvelopeHeaderSize) {
             ok_ = false;
             return;
         }
         appendU32_(kEnvelopeMagic);
-        appendU8_(kEnvelopeVersion);
+        appendU8_(version);
         appendU8_(static_cast<uint8_t>(kind));
         appendU16_(kEnvelopeHeaderSize);
         appendU16_(0);
@@ -221,6 +233,63 @@ FLASHMEM bool hasPersistableGraph(const StepSequencerGraph* graph) {
         }
     }
     return false;
+}
+
+FLASHMEM bool graphRequiresPitchPolicyEnvelope(const StepSequencerGraph* graph) {
+    if (graph == nullptr || !graph->enabled) return false;
+    const uint16_t count = static_cast<uint16_t>(
+        std::min<uint16_t>(graph->stepNodeCount, graph->stepNodes.size())
+    );
+    for (uint16_t i = 0; i < count; ++i) {
+        if (graph->stepNodes[i].has(STEP_NODE_PITCH_CHROMATIC)) return true;
+    }
+    return false;
+}
+
+FLASHMEM uint8_t envelopeVersionForGraph(const StepSequencerGraph* graph) {
+    return graphRequiresPitchPolicyEnvelope(graph)
+        ? kPitchPolicyEnvelopeVersion
+        : kLegacyEnvelopeVersion;
+}
+
+FLASHMEM bool hasPersistableCcLanes(
+    const state::sequencer::SequencerCcLaneBank* lanes
+) {
+    return lanes != nullptr &&
+           state::sequencer::sequencerCcLaneCount(*lanes) > 0;
+}
+
+FLASHMEM uint8_t envelopeVersionForPattern(
+    const StepSequencerGraph* graph,
+    const state::sequencer::SequencerCcLaneBank* lanes
+) {
+    return hasPersistableCcLanes(lanes)
+        ? kCcLaneEnvelopeVersion
+        : envelopeVersionForGraph(graph);
+}
+
+FLASHMEM bool addCcLaneSection(
+    EnvelopeWriter& writer,
+    const state::sequencer::SequencerCcLaneBank* lanes,
+    uint8_t track
+) {
+    if (!hasPersistableCcLanes(lanes)) return true;
+    uint8_t* data = nullptr;
+    if (!writer.reserveSection(
+            SectionId::CcLaneBank,
+            track,
+            SEQUENCER_CC_LANE_BANK_RECORD_SIZE,
+            1,
+            SEQUENCER_CC_LANE_BANK_RECORD_SIZE,
+            data
+        )) {
+        return false;
+    }
+    return encodeSequencerCcLaneBankRecord(
+        *lanes,
+        data,
+        SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    );
 }
 
 FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
@@ -390,9 +459,13 @@ FLASHMEM bool readEnvelopeHeader(const uint8_t* data,
 
 FLASHMEM bool isHeaderValid(const EnvelopeHeader& header, EnvelopeKind kind) {
     return header.magic == kEnvelopeMagic &&
-           header.version == kEnvelopeVersion &&
+           (header.version == kLegacyEnvelopeVersion ||
+            header.version == kPitchPolicyEnvelopeVersion ||
+            header.version == kLegacyCcLaneEnvelopeVersion ||
+            header.version == kCcLaneEnvelopeVersion) &&
            header.kind == static_cast<uint8_t>(kind) &&
-           header.headerSize == kEnvelopeHeaderSize;
+           header.headerSize == kEnvelopeHeaderSize &&
+           header.reserved0 == 0;
 }
 
 FLASHMEM bool readSectionHeader(const uint8_t* data,
@@ -411,6 +484,7 @@ FLASHMEM bool readSectionHeader(const uint8_t* data,
         !readU16(data, size, offset, out.byteSize)) {
         return false;
     }
+    if (out.reserved0 != 0) return false;
     if (out.byteSize > size - offset) {
         return false;
     }
@@ -422,12 +496,14 @@ FLASHMEM bool findSections(const uint8_t* data,
                            EnvelopeKind kind,
                            SectionId flatId,
                            SectionView& flat,
-                           std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>* graphViews) {
+                           std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>* graphViews,
+                           uint8_t& envelopeVersion) {
     if (data == nullptr || size < kEnvelopeHeaderSize) return false;
 
     EnvelopeHeader header{};
     if (!readEnvelopeHeader(data, size, header)) return false;
     if (!isHeaderValid(header, kind)) return false;
+    envelopeVersion = header.version;
 
     uint32_t offset = header.headerSize;
     for (uint16_t i = 0; i < header.sectionCount; ++i) {
@@ -456,9 +532,20 @@ FLASHMEM bool findSections(const uint8_t* data,
                 case SectionId::GraphCycleSets:
                     if (!assignSectionView(graph.cycleSets, view)) return false;
                     break;
-                default:
+                case SectionId::CcLaneBank:
+                    if (header.version < kLegacyCcLaneEnvelopeVersion ||
+                        !assignSectionView(graph.ccLaneBank, view)) {
+                        return false;
+                    }
                     break;
+                default:
+                    return false;
             }
+        } else {
+            // Unknown or misplaced sections cannot be preserved by this
+            // decoder. Refuse the envelope so the containing project becomes
+            // explicitly partial/non-overwrite-safe instead of losing bytes.
+            return false;
         }
 
         offset += section.byteSize;
@@ -496,7 +583,11 @@ FLASHMEM bool graphIsPersistableAfterSanitize(const StepSequencerGraph& graph) {
     return hasPersistableGraph(&graph);
 }
 
-FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& out) {
+FLASHMEM bool decodeGraphSections(
+    const GraphSectionViews& sections,
+    uint8_t envelopeVersion,
+    GraphPtr& out
+) {
     out.reset();
     const bool hasAnyGraphSection =
         sections.sequences.data != nullptr ||
@@ -505,7 +596,7 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
     if (!hasAnyGraphSection) return true;
 
     if (sections.sequences.data == nullptr || sections.stepNodes.data == nullptr) {
-        return true;
+        return false;
     }
     if (!sectionHasExactRecordShape(
             sections.sequences,
@@ -515,14 +606,14 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
             sections.stepNodes,
             state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
         )) {
-        return true;
+        return false;
     }
     if (sections.cycleSets.data != nullptr &&
         !sectionHasExactRecordShape(
             sections.cycleSets,
             state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
         )) {
-        return true;
+        return false;
     }
 
     if (sections.sequences.count == 0 ||
@@ -530,7 +621,7 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
         sections.stepNodes.count < state::sequencer::SequencerPatternState::MAX_STEPS ||
         sections.stepNodes.count > StepSequencerGraphLimits::MAX_STEP_NODES ||
         sections.cycleSets.count > StepSequencerGraphLimits::MAX_CYCLE_SETS) {
-        return true;
+        return false;
     }
 
     auto graph = core::app::makeExtmemUnique<StepSequencerGraph>();
@@ -549,7 +640,7 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
                 state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
                 record
             )) {
-            return true;
+            return false;
         }
         graph->sequences[i] = StepSequencerSequence{
             .kind = static_cast<StepSequencerSequenceKind>(record.kind),
@@ -567,7 +658,7 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
                 state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
                 record
             )) {
-            return true;
+            return false;
         }
         const StepSequencerChordSpec chordSpec = sanitizeChordSpec({
             .voiceCount = record.chordVoiceCount,
@@ -595,6 +686,12 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
             .childSequenceId = record.childSequenceId,
             .cycleSetId = record.cycleSetId,
         };
+        if (envelopeVersion < kPitchPolicyEnvelopeVersion &&
+            graph->stepNodes[i].has(STEP_NODE_PITCH_CHROMATIC)) {
+            // A legacy envelope claiming the new semantic bit is never safe to
+            // interpret or overwrite. Current writers always upgrade to v4.
+            return false;
+        }
         graph->stepNodes[i].localVariation.clamp();
     }
 
@@ -606,7 +703,7 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
                 state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
                 record
             )) {
-            return true;
+            return false;
         }
         graph->cycleSets[i] = StepSequencerCycleStateSet{
             .firstStateNode = record.firstStateNode,
@@ -620,29 +717,63 @@ FLASHMEM bool decodeGraphSections(const GraphSectionViews& sections, GraphPtr& o
         root->kind != StepSequencerSequenceKind::RootPattern ||
         root->firstStepNode != 0 ||
         root->length != state::sequencer::SequencerPatternState::MAX_STEPS) {
-        return true;
+        return false;
     }
 
     for (uint16_t i = 0; i < graph->stepNodeCount; ++i) {
-        auto& node = graph->stepNodes[i];
+        const auto& node = graph->stepNodes[i];
         if ((node.flags & STEP_NODE_CHILD_SEQUENCE) != 0 &&
             !linkSequenceValid(*graph, node.childSequenceId)) {
-            node.flags = static_cast<uint16_t>(node.flags & ~STEP_NODE_CHILD_SEQUENCE);
-            node.childSequenceId = kInvalidId;
+            return false;
         }
         if ((node.flags & STEP_NODE_CYCLE_SET) != 0 &&
             !linkCycleSetValid(*graph, node.cycleSetId)) {
-            node.flags = static_cast<uint16_t>(node.flags & ~STEP_NODE_CYCLE_SET);
-            node.cycleSetId = kInvalidId;
+            return false;
         }
     }
 
     if (!graphIsPersistableAfterSanitize(*graph)) {
-        return true;
+        return false;
     }
 
     out = std::move(graph);
     return true;
+}
+
+FLASHMEM bool decodeCcLaneSection(
+    const GraphSectionViews& sections,
+    uint8_t envelopeVersion,
+    CcLanePtr& out
+) {
+    out.reset();
+    if (sections.ccLaneBank.data == nullptr) return true;
+    const bool supportedRecord = sectionHasExactRecordShape(
+        sections.ccLaneBank,
+        SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    ) || sectionHasExactRecordShape(
+        sections.ccLaneBank,
+        LEGACY_V2_SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    ) || sectionHasExactRecordShape(
+        sections.ccLaneBank,
+        LEGACY_SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    );
+    if (envelopeVersion < kLegacyCcLaneEnvelopeVersion ||
+        sections.ccLaneBank.count != 1 ||
+        !supportedRecord) {
+        return false;
+    }
+
+    state::sequencer::SequencerCcLaneBank decoded{};
+    if (!decodeSequencerCcLaneBankRecord(
+            sections.ccLaneBank.data,
+            sections.ccLaneBank.byteSize,
+            decoded
+        )) {
+        return false;
+    }
+    if (state::sequencer::sequencerCcLaneCount(decoded) == 0) return true;
+    out = core::app::makeExtmemUnique<state::sequencer::SequencerCcLaneBank>(decoded);
+    return static_cast<bool>(out);
 }
 
 FLASHMEM void installDecodedGraph(state::sequencer::SequencerPatternState& target,
@@ -686,10 +817,22 @@ FLASHMEM uint8_t setActiveTrack(const SectionView& flat) {
 
 FLASHMEM bool decodeTrackGraphs(
     const std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>& sections,
+    uint8_t envelopeVersion,
     std::array<GraphPtr, PERSISTED_TRACK_COUNT>& graphs
 ) {
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        if (!decodeGraphSections(sections[i], graphs[i])) return false;
+        if (!decodeGraphSections(sections[i], envelopeVersion, graphs[i])) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool decodeTrackCcLanes(
+    const std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>& sections,
+    uint8_t envelopeVersion,
+    std::array<CcLanePtr, PERSISTED_TRACK_COUNT>& lanes
+) {
+    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
+        if (!decodeCcLaneSection(sections[i], envelopeVersion, lanes[i])) return false;
     }
     return true;
 }
@@ -703,6 +846,19 @@ FLASHMEM bool cloneActiveGraph(const std::array<GraphPtr, PERSISTED_TRACK_COUNT>
     return static_cast<bool>(out);
 }
 
+FLASHMEM bool cloneActiveCcLanes(
+    const std::array<CcLanePtr, PERSISTED_TRACK_COUNT>& lanes,
+    uint8_t activeTrack,
+    CcLanePtr& out
+) {
+    out.reset();
+    if (activeTrack >= lanes.size() || !lanes[activeTrack]) return true;
+    return state::sequencer::cloneSequencerCcLaneBank(
+        out,
+        lanes[activeTrack].get()
+    );
+}
+
 FLASHMEM void installTrackGraphs(
     std::array<GraphPtr, PERSISTED_TRACK_COUNT>& graphs,
     GraphPtr activeGraph,
@@ -713,6 +869,24 @@ FLASHMEM void installTrackGraphs(
         installDecodedGraph(trackBank.track(i), std::move(graphs[i]));
     }
     installDecodedGraph(active.pattern, std::move(activeGraph));
+}
+
+FLASHMEM void installTrackCcLanes(
+    std::array<CcLanePtr, PERSISTED_TRACK_COUNT>& lanes,
+    CcLanePtr activeLanes,
+    state::sequencer::SequencerTrackBankState& trackBank,
+    state::sequencer::SequencerState& active
+) {
+    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
+        state::sequencer::installSequencerCcLaneBank(
+            trackBank.track(i),
+            std::move(lanes[i])
+        );
+    }
+    state::sequencer::installSequencerCcLaneBank(
+        active.pattern,
+        std::move(activeLanes)
+    );
 }
 
 FLASHMEM const state::sequencer::SequencerPatternState& sourceTrack(
@@ -732,7 +906,14 @@ FLASHMEM EnvelopeEncodeResult fillPatternEnvelope(
     uint8_t* out,
     uint32_t capacity
 ) {
-    EnvelopeWriter writer(out, capacity, EnvelopeKind::Pattern);
+    const auto* graph = state::sequencer::graphView(source);
+    const auto* lanes = state::sequencer::sequencerCcLaneView(source);
+    EnvelopeWriter writer(
+        out,
+        capacity,
+        EnvelopeKind::Pattern,
+        envelopeVersionForPattern(graph, lanes)
+    );
     uint8_t* flat = nullptr;
     if (!writer.reserveSection(SectionId::FlatPattern,
                                kNoTrack,
@@ -743,7 +924,8 @@ FLASHMEM EnvelopeEncodeResult fillPatternEnvelope(
         !fillPatternPayload(source, flat, PATTERN_PAYLOAD_SIZE)) {
         return {};
     }
-    if (!addGraphSections(writer, state::sequencer::graphView(source), 0)) {
+    if (!addGraphSections(writer, graph, 0) ||
+        !addCcLaneSection(writer, lanes, 0)) {
         return {};
     }
     return writer.finish();
@@ -754,7 +936,16 @@ FLASHMEM bool applyPatternEnvelope(const uint8_t* data,
                                    state::sequencer::SequencerPatternState& target) {
     SectionView flat{};
     std::array<GraphSectionViews, PERSISTED_TRACK_COUNT> graphs{};
-    if (!findSections(data, size, EnvelopeKind::Pattern, SectionId::FlatPattern, flat, &graphs)) {
+    uint8_t envelopeVersion = 0;
+    if (!findSections(
+            data,
+            size,
+            EnvelopeKind::Pattern,
+            SectionId::FlatPattern,
+            flat,
+            &graphs,
+            envelopeVersion
+        )) {
         return false;
     }
     if (!sectionHasExactRecordShape(flat, PATTERN_PAYLOAD_SIZE) || flat.count != 1) {
@@ -762,9 +953,14 @@ FLASHMEM bool applyPatternEnvelope(const uint8_t* data,
     }
 
     GraphPtr graph;
-    if (!decodeGraphSections(graphs[0], graph)) return false;
+    CcLanePtr lanes;
+    if (!decodeGraphSections(graphs[0], envelopeVersion, graph) ||
+        !decodeCcLaneSection(graphs[0], envelopeVersion, lanes)) {
+        return false;
+    }
     if (!applyPatternPayload(flat.data, flat.byteSize, target)) return false;
     installDecodedGraph(target, std::move(graph));
+    state::sequencer::installSequencerCcLaneBank(target, std::move(lanes));
     return true;
 }
 
@@ -774,7 +970,26 @@ FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
     uint32_t capacity
 ) {
     if (source.flat == nullptr) return {};
-    EnvelopeWriter writer(out, capacity, EnvelopeKind::ProjectSequencer);
+    uint8_t envelopeVersion = kLegacyEnvelopeVersion;
+    for (const auto* lanes : source.ccLanes) {
+        if (hasPersistableCcLanes(lanes)) {
+            envelopeVersion = kCcLaneEnvelopeVersion;
+            break;
+        }
+    }
+    for (const auto* graph : source.graphs) {
+        if (envelopeVersion == kCcLaneEnvelopeVersion) break;
+        if (graphRequiresPitchPolicyEnvelope(graph)) {
+            envelopeVersion = kPitchPolicyEnvelopeVersion;
+            break;
+        }
+    }
+    EnvelopeWriter writer(
+        out,
+        capacity,
+        EnvelopeKind::ProjectSequencer,
+        envelopeVersion
+    );
     uint8_t* flat = nullptr;
     if (!writer.reserveSection(SectionId::FlatProjectSequencer,
                                kNoTrack,
@@ -792,7 +1007,10 @@ FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
         return {};
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        if (!addGraphSections(writer, source.graphs[i], i)) return {};
+        if (!addGraphSections(writer, source.graphs[i], i) ||
+            !addCcLaneSection(writer, source.ccLanes[i], i)) {
+            return {};
+        }
     }
     return writer.finish();
 }
@@ -803,12 +1021,14 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
                                             state::sequencer::SequencerState& active) {
     SectionView flat{};
     std::array<GraphSectionViews, PERSISTED_TRACK_COUNT> graphs{};
+    uint8_t envelopeVersion = 0;
     if (!findSections(data,
                       size,
                       EnvelopeKind::ProjectSequencer,
                       SectionId::FlatProjectSequencer,
                       flat,
-                      &graphs)) {
+                      &graphs,
+                      envelopeVersion)) {
         return false;
     }
     if (!sectionHasExactRecordShape(flat, PROJECT_SEQUENCER_PAYLOAD_SIZE) || flat.count != 1) {
@@ -816,16 +1036,21 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
     }
 
     std::array<GraphPtr, PERSISTED_TRACK_COUNT> decodedGraphs{};
+    std::array<CcLanePtr, PERSISTED_TRACK_COUNT> decodedLanes{};
     GraphPtr activeGraph;
+    CcLanePtr activeLanes;
     const uint8_t activeTrack = projectActiveTrack(flat);
-    if (!decodeTrackGraphs(graphs, decodedGraphs) ||
-        !cloneActiveGraph(decodedGraphs, activeTrack, activeGraph)) {
+    if (!decodeTrackGraphs(graphs, envelopeVersion, decodedGraphs) ||
+        !decodeTrackCcLanes(graphs, envelopeVersion, decodedLanes) ||
+        !cloneActiveGraph(decodedGraphs, activeTrack, activeGraph) ||
+        !cloneActiveCcLanes(decodedLanes, activeTrack, activeLanes)) {
         return false;
     }
     if (!applyProjectSequencerPayload(flat.data, flat.byteSize, trackBank, active)) {
         return false;
     }
     installTrackGraphs(decodedGraphs, std::move(activeGraph), trackBank, active);
+    installTrackCcLanes(decodedLanes, std::move(activeLanes), trackBank, active);
     return true;
 }
 
@@ -835,7 +1060,25 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
     uint8_t* out,
     uint32_t capacity
 ) {
-    EnvelopeWriter writer(out, capacity, EnvelopeKind::Set);
+    uint8_t envelopeVersion = kLegacyEnvelopeVersion;
+    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
+        if (hasPersistableCcLanes(
+                state::sequencer::sequencerCcLaneView(sourceTrack(trackBank, active, i))
+            )) {
+            envelopeVersion = kCcLaneEnvelopeVersion;
+            break;
+        }
+    }
+    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
+        if (envelopeVersion == kCcLaneEnvelopeVersion) break;
+        if (graphRequiresPitchPolicyEnvelope(
+                state::sequencer::graphView(sourceTrack(trackBank, active, i))
+            )) {
+            envelopeVersion = kPitchPolicyEnvelopeVersion;
+            break;
+        }
+    }
+    EnvelopeWriter writer(out, capacity, EnvelopeKind::Set, envelopeVersion);
     uint8_t* flat = nullptr;
     if (!writer.reserveSection(SectionId::FlatSet,
                                kNoTrack,
@@ -847,9 +1090,15 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
         return {};
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
+        const auto& track = sourceTrack(trackBank, active, i);
         if (!addGraphSections(
                 writer,
-                state::sequencer::graphView(sourceTrack(trackBank, active, i)),
+                state::sequencer::graphView(track),
+                i
+            ) ||
+            !addCcLaneSection(
+                writer,
+                state::sequencer::sequencerCcLaneView(track),
                 i
             )) {
             return {};
@@ -864,7 +1113,16 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
                                state::sequencer::SequencerState& active) {
     SectionView flat{};
     std::array<GraphSectionViews, PERSISTED_TRACK_COUNT> graphs{};
-    if (!findSections(data, size, EnvelopeKind::Set, SectionId::FlatSet, flat, &graphs)) {
+    uint8_t envelopeVersion = 0;
+    if (!findSections(
+            data,
+            size,
+            EnvelopeKind::Set,
+            SectionId::FlatSet,
+            flat,
+            &graphs,
+            envelopeVersion
+        )) {
         return false;
     }
     if (!sectionHasExactRecordShape(flat, SET_PAYLOAD_SIZE) || flat.count != 1) {
@@ -872,16 +1130,21 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
     }
 
     std::array<GraphPtr, PERSISTED_TRACK_COUNT> decodedGraphs{};
+    std::array<CcLanePtr, PERSISTED_TRACK_COUNT> decodedLanes{};
     GraphPtr activeGraph;
+    CcLanePtr activeLanes;
     const uint8_t activeTrack = setActiveTrack(flat);
-    if (!decodeTrackGraphs(graphs, decodedGraphs) ||
-        !cloneActiveGraph(decodedGraphs, activeTrack, activeGraph)) {
+    if (!decodeTrackGraphs(graphs, envelopeVersion, decodedGraphs) ||
+        !decodeTrackCcLanes(graphs, envelopeVersion, decodedLanes) ||
+        !cloneActiveGraph(decodedGraphs, activeTrack, activeGraph) ||
+        !cloneActiveCcLanes(decodedLanes, activeTrack, activeLanes)) {
         return false;
     }
     if (!applySetPayload(flat.data, flat.byteSize, trackBank, active)) {
         return false;
     }
     installTrackGraphs(decodedGraphs, std::move(activeGraph), trackBank, active);
+    installTrackCcLanes(decodedLanes, std::move(activeLanes), trackBank, active);
     return true;
 }
 

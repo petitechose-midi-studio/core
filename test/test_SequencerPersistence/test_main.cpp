@@ -543,7 +543,24 @@ void test_pattern_envelope_rejects_incompatible_header() {
 
     buffer.bytes[0] = originalMagic;
     const uint8_t originalVersion = buffer.bytes[4];
-    buffer.bytes[4] = static_cast<uint8_t>(originalVersion + 1);
+    buffer.bytes[4] = static_cast<uint8_t>(
+        core::persistence::sequencer_codec::CC_LANE_ENVELOPE_VERSION + 1U
+    );
+    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
+        buffer.bytes.data(),
+        encoded.size,
+        loaded.pattern
+    ));
+
+    buffer.bytes[4] = originalVersion;
+    buffer.bytes[10] = 1;
+    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
+        buffer.bytes.data(),
+        encoded.size,
+        loaded.pattern
+    ));
+    buffer.bytes[10] = 0;
+    buffer.bytes[kEnvelopeHeaderSize + 3U] = 1;
     assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
         buffer.bytes.data(),
         encoded.size,
@@ -553,7 +570,83 @@ void test_pattern_envelope_rejects_incompatible_header() {
     std::cout << "[PASS] test_pattern_envelope_rejects_incompatible_header\n";
 }
 
-void test_pattern_envelope_ignores_unknown_future_section() {
+void test_pitch_policy_feature_selects_version_and_rejects_downgrade() {
+    core::state::sequencer::SequencerState relativeSource;
+    configurePattern(
+        relativeSource,
+        16,
+        4,
+        1,
+        0,
+        core::state::sequencer::StepProperty::NOTE
+    );
+    relativeSource.pattern.setPitchEditMode(
+        core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES
+    );
+    addGraphContent(relativeSource.pattern);
+
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer relativeBuffer{};
+    const auto relativeEncoded = core::persistence::sequencer_codec::fillPatternEnvelope(
+        relativeSource.pattern,
+        relativeBuffer.bytes.data(),
+        relativeBuffer.bytes.size()
+    );
+    assert(relativeEncoded.ok);
+    assert(relativeBuffer.bytes[4] ==
+           core::persistence::sequencer_codec::LEGACY_ENVELOPE_VERSION);
+
+    core::state::sequencer::SequencerState chromaticSource;
+    configurePattern(
+        chromaticSource,
+        16,
+        4,
+        1,
+        0,
+        core::state::sequencer::StepProperty::NOTE
+    );
+    addGraphContent(chromaticSource.pattern);
+    const auto* graph = core::state::sequencer::graphView(chromaticSource.pattern);
+    assert(graph != nullptr);
+    assert(graph->stepNodes[0].has(
+        oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC
+    ));
+
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer chromaticBuffer{};
+    const auto chromaticEncoded = core::persistence::sequencer_codec::fillPatternEnvelope(
+        chromaticSource.pattern,
+        chromaticBuffer.bytes.data(),
+        chromaticBuffer.bytes.size()
+    );
+    assert(chromaticEncoded.ok);
+    assert(chromaticBuffer.bytes[4] ==
+           core::persistence::sequencer_codec::PITCH_POLICY_ENVELOPE_VERSION);
+
+    core::state::sequencer::SequencerState loaded;
+    loaded.reset();
+    assert(core::persistence::sequencer_codec::applyPatternEnvelope(
+        chromaticBuffer.bytes.data(),
+        chromaticEncoded.size,
+        loaded.pattern
+    ));
+    const auto* restored = core::state::sequencer::graphView(loaded.pattern);
+    assert(restored != nullptr);
+    assert(restored->stepNodes[0].has(
+        oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC
+    ));
+
+    chromaticBuffer.bytes[4] =
+        core::persistence::sequencer_codec::LEGACY_ENVELOPE_VERSION;
+    loaded.reset();
+    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
+        chromaticBuffer.bytes.data(),
+        chromaticEncoded.size,
+        loaded.pattern
+    ));
+
+    std::cout << "[PASS] test_pitch_policy_feature_selects_version_and_rejects_downgrade\n";
+}
+
+void test_pattern_envelope_rejects_unknown_future_section() {
     core::state::sequencer::SequencerState source;
     configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
@@ -591,18 +684,16 @@ void test_pattern_envelope_ignores_unknown_future_section() {
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
-    assert(core::persistence::sequencer_codec::applyPatternEnvelope(
+    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
         buffer.bytes.data(),
         extendedSize,
         loaded.pattern
     ));
-    assertPatternEquals(loaded, 16, 4, 1);
-    assertGraphContent(loaded.pattern);
 
-    std::cout << "[PASS] test_pattern_envelope_ignores_unknown_future_section\n";
+    std::cout << "[PASS] test_pattern_envelope_rejects_unknown_future_section\n";
 }
 
-void test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern() {
+void test_pattern_envelope_rejects_invalid_graph_section() {
     core::state::sequencer::SequencerState source;
     configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
@@ -624,24 +715,23 @@ void test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern(
     );
     assert(static_cast<uint16_t>(firstGraphSectionOffset + 5) < encoded.size);
 
-    // Corrupt graph metadata only. The flat pattern should remain loadable.
+    // A malformed graph section cannot be preserved on re-save, so the whole
+    // envelope must be rejected instead of silently dropping graph content.
     buffer.bytes[firstGraphSectionOffset + 4] = 1;
     buffer.bytes[firstGraphSectionOffset + 5] = 0;
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
-    assert(core::persistence::sequencer_codec::applyPatternEnvelope(
+    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
         buffer.bytes.data(),
         encoded.size,
         loaded.pattern
     ));
-    assertPatternEquals(loaded, 16, 4, 1);
-    assert(core::state::sequencer::graphView(loaded.pattern) == nullptr);
 
-    std::cout << "[PASS] test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern\n";
+    std::cout << "[PASS] test_pattern_envelope_rejects_invalid_graph_section\n";
 }
 
-void test_pattern_envelope_sanitizes_broken_graph_links() {
+void test_pattern_envelope_rejects_broken_graph_links() {
     core::state::sequencer::SequencerState source;
     configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
@@ -684,23 +774,13 @@ void test_pattern_envelope_sanitizes_broken_graph_links() {
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
-    assert(core::persistence::sequencer_codec::applyPatternEnvelope(
+    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
         buffer.bytes.data(),
         encoded.size,
         loaded.pattern
     ));
-    assertPatternEquals(loaded, 16, 4, 1);
 
-    const auto* graph = core::state::sequencer::graphView(loaded.pattern);
-    assert(graph != nullptr);
-    const auto* rootTwo = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
-    assert(rootTwo != nullptr);
-    assert(!rootTwo->has(STEP_NODE_CHILD_SEQUENCE));
-    const auto* rootFour = graph->stepNode(core::state::sequencer::rootStepNodeId(4));
-    assert(rootFour != nullptr);
-    assert(!rootFour->has(STEP_NODE_CYCLE_SET));
-
-    std::cout << "[PASS] test_pattern_envelope_sanitizes_broken_graph_links\n";
+    std::cout << "[PASS] test_pattern_envelope_rejects_broken_graph_links\n";
 }
 
 void test_pattern_library_masks_enabled_bits_outside_length() {
@@ -906,7 +986,10 @@ void test_set_library_roundtrips_max_density_graphs() {
         envelope.size()
     );
     assert(encoded.ok);
-    assert(encoded.size == core::persistence::sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE);
+    assert(encoded.size ==
+           core::persistence::sequencer_codec::MAX_SET_ENVELOPE_PAYLOAD_SIZE -
+               core::persistence::sequencer_codec::PERSISTED_TRACK_COUNT *
+                   core::persistence::sequencer_codec::MAX_CC_LANE_ENVELOPE_SIZE);
     assert(encoded.size > 65535U);
 
     assert(persistence.saveSetSlot(0, sourceTrackBank, source));
@@ -1058,9 +1141,10 @@ int main() {
     test_pattern_library_flat_pattern_does_not_allocate_graph();
     test_pattern_library_local_variation_only_allocates_graph();
     test_pattern_envelope_rejects_incompatible_header();
-    test_pattern_envelope_ignores_unknown_future_section();
-    test_pattern_envelope_ignores_invalid_graph_section_but_keeps_flat_pattern();
-    test_pattern_envelope_sanitizes_broken_graph_links();
+    test_pitch_policy_feature_selects_version_and_rejects_downgrade();
+    test_pattern_envelope_rejects_unknown_future_section();
+    test_pattern_envelope_rejects_invalid_graph_section();
+    test_pattern_envelope_rejects_broken_graph_links();
     test_pattern_library_masks_enabled_bits_outside_length();
     test_set_library_save_load_erase();
     test_set_library_graph_roundtrip_for_active_and_bank_tracks();

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "handler/common/SharedTrackDomainServices.hpp"
-#include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -30,14 +29,6 @@ bool createSequencerStructureTrack(
 bool toggleSequencerStructureTrackMute(
     core::state::sequencer::SequencerTrackBankState& tracks,
     uint8_t track
-);
-
-bool pasteCurrentSequencerStructureTrack(
-    core::state::sequencer::SequencerTrackBankState& tracks,
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::TrackNavigationState& trackUi,
-    const SharedTrackDomainServices& sharedTracks,
-    const core::state::StructureClipboardState& structureClipboard
 );
 
 }  // namespace core::handler

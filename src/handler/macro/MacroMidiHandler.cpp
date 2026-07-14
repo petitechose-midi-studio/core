@@ -34,14 +34,24 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
     // Convert CC value to normalized float
     const float normalized = core::midi::fromCC(value);
 
-    if (!services_.automationRecordingActiveFor(macroIndex) &&
-        services_.automationActiveFor(macroIndex)) {
-        services_.setAutomationManualOverride(macroIndex, true);
+    bool accepted = true;
+    if (services_.automationRecordingActiveFor(macroIndex)) {
+        // Encoder input remains the recording author; external CC still gets
+        // the same audible Base + Modulation projection.
+        services_.setResolvedValue(
+            macroIndex,
+            services_.resolveManualValue(macroIndex, normalized)
+        );
+    } else if (services_.automationPlaybackActiveFor(macroIndex)) {
+        accepted = services_.takeManualControl(macroIndex, normalized);
+    } else {
+        services_.setManualValue(macroIndex, normalized);
+        services_.setResolvedValue(
+            macroIndex,
+            services_.resolveManualValue(macroIndex, normalized)
+        );
     }
-
-    // Incoming mapped CC is a manual performance input and updates the
-    // persistable base value, unlike automation-resolved playback.
-    services_.setManualValue(macroIndex, normalized);
+    if (!accepted) return;
 
     // Sync hardware surface only when the Macro view is active.
     // When another view repurposes macro encoders (e.g., Sequencer), we must

@@ -4,12 +4,16 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
+#include "ui/macro/MacroEditorOverlay.hpp"
+
 namespace core::context::standalone {
 
 FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
     StateRefs stateRefs,
-    ms::ui::VirtualListKeyValueOverlay& macroEditOverlay,
+    core::ui::MacroEditorOverlay& macroEditOverlay,
     ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
+    core::ui::ContextActionStrip& macroEditActionStrip,
+    core::ui::ContextActionStrip& macroAutomationActionStrip,
     ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
     ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
     ms::ui::VirtualListSelectorOverlay& macroTargetSelectorOverlay
@@ -17,6 +21,8 @@ FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
     : state_refs_(stateRefs)
     , macro_edit_overlay_(macroEditOverlay)
     , macro_automation_overlay_(macroAutomationOverlay)
+    , macro_edit_action_strip_(macroEditActionStrip)
+    , macro_automation_action_strip_(macroAutomationActionStrip)
     , macro_edit_selector_overlay_(macroEditSelectorOverlay)
     , page_selector_overlay_(pageSelectorOverlay)
     , macro_target_selector_overlay_(macroTargetSelectorOverlay)
@@ -27,77 +33,31 @@ FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
       ) {}
 
 FLASHMEM bool MacroOverlayPresenter::bind() {
-    bool bound = render_scheduler_.valid();
-    edit_watcher_.bind<&MacroOverlayPresenter::requestEditRender>(
-        *this, 0, "MacroOverlay.edit"
+    if (!render_scheduler_.valid()) return false;
+    return invalidation_bindings_.bind(
+        macro_overlay_invalidation::StateRefs{
+            state_refs_.macroEdit,
+            state_refs_.pages,
+            state_refs_.macroUi,
+            state_refs_.configRevision,
+            state_refs_.clipboard,
+        },
+        this,
+        &MacroOverlayPresenter::requestRenderFlags
     );
-    bound = edit_watcher_.watchAll(
-        state_refs_.macroEdit.visible,
-        state_refs_.macroEdit.flowPhase,
-        state_refs_.macroEdit.editingIndex,
-        state_refs_.macroEdit.tempChannel,
-        state_refs_.macroEdit.tempCC,
-        state_refs_.macroEdit.focusedRow,
-        state_refs_.macroUi.automationRecordingRevision,
-        state_refs_.macroUi.automationManualOverrideMask
-    ) && bound;
-
-    automation_watcher_.bind<&MacroOverlayPresenter::requestAutomationRender>(
-        *this, 1, "MacroOverlay.automation"
-    );
-    bound = automation_watcher_.watchAll(
-        state_refs_.macroEdit.automationVisible,
-        state_refs_.macroEdit.editingIndex,
-        state_refs_.macroEdit.automationFocusedRow,
-        state_refs_.macroUi.automationRecordingRevision,
-        state_refs_.macroUi.automationManualOverrideMask
-    ) && bound;
-
-    edit_selector_watcher_.bind<&MacroOverlayPresenter::requestEditSelectorRender>(
-        *this, 2, "MacroOverlay.editSelector"
-    );
-    bound = edit_selector_watcher_.watchAll(
-        state_refs_.macroEdit.flowPhase,
-        state_refs_.macroEdit.selector.editingRow,
-        state_refs_.macroEdit.selector.selectedIndex
-    ) && bound;
-
-    page_selector_watcher_.bind<&MacroOverlayPresenter::requestPageSelectorRender>(
-        *this, 3, "MacroOverlay.pageSelector"
-    );
-    bound = page_selector_watcher_.watchAll(
-        state_refs_.macroEdit.flowPhase,
-        state_refs_.pages.selector.selectedIndex
-    ) && bound;
-
-    macro_target_selector_watcher_.bind<&MacroOverlayPresenter::requestTargetSelectorRender>(
-        *this, 4, "MacroOverlay.targetSelector"
-    );
-    bound = macro_target_selector_watcher_.watchAll(
-        state_refs_.macroEdit.flowPhase,
-        state_refs_.macroEdit.macroSelector.selectedIndex
-    ) && bound;
-    return bound;
 }
 
-FLASHMEM void MacroOverlayPresenter::requestEditRender() {
-    render_scheduler_.request(RENDER_EDIT);
+void MacroOverlayPresenter::refreshRuntimeTelemetry() {
+    if (state_refs_.macroEdit.automationVisible.get() &&
+        state_refs_.macroEdit.flowPhase.get() ==
+            core::state::MacroEditFlowPhase::MODULATION) {
+        render_scheduler_.request(macro_overlay_invalidation::RENDER_AUTOMATION);
+    }
 }
 
-FLASHMEM void MacroOverlayPresenter::requestAutomationRender() {
-    render_scheduler_.request(RENDER_AUTOMATION);
-}
-
-FLASHMEM void MacroOverlayPresenter::requestEditSelectorRender() {
-    render_scheduler_.request(RENDER_EDIT_SELECTOR);
-}
-
-FLASHMEM void MacroOverlayPresenter::requestPageSelectorRender() {
-    render_scheduler_.request(RENDER_PAGE_SELECTOR);
-}
-
-FLASHMEM void MacroOverlayPresenter::requestTargetSelectorRender() {
-    render_scheduler_.request(RENDER_TARGET_SELECTOR);
+FLASHMEM void MacroOverlayPresenter::requestRenderFlags(void* context, uint32_t flags) {
+    auto* self = static_cast<MacroOverlayPresenter*>(context);
+    if (self) self->render_scheduler_.request(flags);
 }
 
 FLASHMEM void MacroOverlayPresenter::drainRenderQueue(void* context, uint32_t flags) {
@@ -106,11 +66,19 @@ FLASHMEM void MacroOverlayPresenter::drainRenderQueue(void* context, uint32_t fl
 }
 
 FLASHMEM void MacroOverlayPresenter::renderPending(uint32_t flags) {
-    if ((flags & RENDER_EDIT) != 0) renderEdit();
-    if ((flags & RENDER_AUTOMATION) != 0) renderAutomation();
-    if ((flags & RENDER_EDIT_SELECTOR) != 0) renderEditSelector();
-    if ((flags & RENDER_PAGE_SELECTOR) != 0) renderPageSelector();
-    if ((flags & RENDER_TARGET_SELECTOR) != 0) renderTargetSelector();
+    if ((flags & macro_overlay_invalidation::RENDER_EDIT) != 0) renderEdit();
+    if ((flags & macro_overlay_invalidation::RENDER_AUTOMATION) != 0) {
+        renderAutomation();
+    }
+    if ((flags & macro_overlay_invalidation::RENDER_EDIT_SELECTOR) != 0) {
+        renderEditSelector();
+    }
+    if ((flags & macro_overlay_invalidation::RENDER_PAGE_SELECTOR) != 0) {
+        renderPageSelector();
+    }
+    if ((flags & macro_overlay_invalidation::RENDER_TARGET_SELECTOR) != 0) {
+        renderTargetSelector();
+    }
 }
 
 FLASHMEM void MacroOverlayPresenter::renderEdit() {
@@ -119,26 +87,35 @@ FLASHMEM void MacroOverlayPresenter::renderEdit() {
                              core::state::MacroEditFlowPhase::EDIT;
     if (!visible) {
         macro_edit_overlay_.render({.visible = false});
+        macro_edit_action_strip_.render({.visible = false});
         return;
     }
 
-    const auto data = macro_overlay_presenter::buildEditRenderData(state_refs_);
+    macro_overlay_presenter::buildEditRenderData(state_refs_, edit_render_data_);
+    const auto& data = edit_render_data_;
 
     macro_edit_overlay_.render({
+        .visible = true,
         .title = data.title.data(),
         .meta = data.meta.data(),
-        .rows = data.rows.data(),
-        .rowCount = static_cast<int>(data.rows.size()),
-        .selectedIndex = data.selectedIndex,
-        .visible = true,
+        .destination = data.valueBuffers[0].data(),
+        .automation = data.valueBuffers[1].data(),
+        .modulation = data.valueBuffers[2].data(),
+        .selectedDomain = data.selectedIndex,
+        .preview = &data.preview,
+        .previewRevision = data.previewRevision,
         .dataRevision = data.dataRevision,
     });
+    macro_edit_action_strip_.render(
+        macro_overlay_presenter::buildEditActionStripProps(state_refs_)
+    );
 }
 
 FLASHMEM void MacroOverlayPresenter::renderAutomation() {
     const auto data = macro_overlay_presenter::buildAutomationRenderData(state_refs_);
     if (!data.visible) {
         macro_automation_overlay_.render({.visible = false});
+        macro_automation_action_strip_.render({.visible = false});
         return;
     }
 
@@ -146,11 +123,15 @@ FLASHMEM void MacroOverlayPresenter::renderAutomation() {
         .title = data.title.data(),
         .meta = data.meta.data(),
         .rows = data.rows.data(),
-        .rowCount = static_cast<int>(data.rows.size()),
+        .rowCount = data.rowCount,
         .selectedIndex = data.selectedIndex,
+        .dimUnselected = false,
         .visible = true,
         .dataRevision = data.dataRevision,
     });
+    macro_automation_action_strip_.render(
+        macro_overlay_presenter::buildDetailActionStripProps(state_refs_)
+    );
 }
 
 FLASHMEM void MacroOverlayPresenter::renderEditSelector() {

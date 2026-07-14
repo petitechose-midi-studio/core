@@ -70,7 +70,7 @@ struct Harness {
     }
 };
 
-void test_mapped_cc_takes_manual_ownership_and_updates_base_value() {
+void test_mapped_cc_takes_manual_ownership_and_authors_absolute_base() {
     Harness harness;
 
     harness.handler.onCC(0, 74, 100);
@@ -84,7 +84,8 @@ void test_mapped_cc_takes_manual_ownership_and_updates_base_value() {
     assert((harness.state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0);
     assert(harness.state.hasPendingProjectMutationCoalescing());
 
-    std::cout << "[PASS] test_mapped_cc_takes_manual_ownership_and_updates_base_value\n";
+    std::cout
+        << "[PASS] test_mapped_cc_takes_manual_ownership_and_authors_absolute_base\n";
 }
 
 void test_inactive_macro_slot_does_not_accept_mapped_cc() {
@@ -102,7 +103,7 @@ void test_inactive_macro_slot_does_not_accept_mapped_cc() {
 }  // namespace
 
 int main() {
-    test_mapped_cc_takes_manual_ownership_and_updates_base_value();
+    test_mapped_cc_takes_manual_ownership_and_authors_absolute_base();
     test_inactive_macro_slot_does_not_accept_mapped_cc();
 
     std::cout << "\nAll MacroMidiHandler tests passed.\n";

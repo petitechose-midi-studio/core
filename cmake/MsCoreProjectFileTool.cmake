@@ -28,4 +28,10 @@ function(ms_core_add_project_file_tool)
     target_include_directories(ms-core-file-tool
         PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    if(MINGW)
+        # The host tool accepts UTF-8 semantic names and paths. Enter through
+        # wmain so Windows supplies lossless Unicode arguments before Core
+        # validates/serializes them as UTF-8.
+        target_link_options(ms-core-file-tool PRIVATE -municode)
+    endif()
 endfunction()

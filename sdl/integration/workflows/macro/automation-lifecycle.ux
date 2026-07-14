@@ -1,7 +1,15 @@
 # UX workflow: manage the lifecycle of a macro automation lane.
-# Purpose: validates access through Macro Edit > Automation and bottom actions:
-# copy, remove, paste, clear.
-# Expect: capture_changed:macro_ready=automation_recorded, capture_changed:automation_state_manual=automation_state_auto, capture_match:automation_overlay_active=automation_pasted, capture_match:automation_removed=automation_cleared
+# Purpose: validates access through Macro Edit > Automation, explicit playback
+# control without deleting the stored curve, typed Automation copy, guarded
+# source-only clear, and restore without touching the Macro destination.
+# Expect: capture_changed:macro_ready=automation_recorded, capture_changed:automation_overlay_active=automation_playback_off, capture_changed:automation_playback_off=automation_playback_on
+# Expect: capture_changed:automation_playback_on=automation_cleared, capture_changed:automation_cleared=automation_paste_armed, capture_changed:automation_cleared=automation_restored
+# Expect: capture_match:automation_overlay_active=automation_restored_settled
+# Expect: semantic:automation_overlay_active:mode=macro.automation_editor, semantic:automation_overlay_active:source=automation
+# Expect: semantic:automation_playback_off:effect=edit_automation_playback, semantic:automation_playback_off:source=macro_static, semantic:automation_playback_on:source=automation
+# Expect: semantic:automation_cleared:effect=clear_automation, semantic:automation_cleared:outcome=applied, semantic:automation_cleared:target=automation
+# Expect: semantic:automation_paste_armed:effect=arm_paste_automation, semantic:automation_paste_armed:outcome=armed
+# Expect: semantic:automation_restored:effect=paste_automation, semantic:automation_restored:outcome=applied, semantic:automation_restored:source=automation
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready
@@ -23,24 +31,28 @@
 3100 tap NAV 60
 3350 capture screen automation_overlay_active
 
-# State row is editable: low value enters Manual, high value restores Auto
-# without clearing the underlying automation lane.
+# Playback is a binary, explicit source control. Off keeps the curve stored;
+# On resumes it without changing its points.
 3500 encoder OPT -2.00
-3650 capture screen automation_state_manual
+3650 capture screen automation_playback_off
 3800 encoder OPT 2.00
-3950 capture screen automation_state_auto
+3950 capture screen automation_playback_on
 
-# Copy automation, remove it, then paste it back from the clipboard.
+# Copy only Automation, then hold Clear. The destination and Macro Slot stay
+# present, and the detail remains open with an explicit empty source state.
 4100 tap BOTTOM_RIGHT 60
 4300 button BOTTOM_LEFT down
 5400 tick
+5450 capture screen automation_clear_armed
 5500 button BOTTOM_LEFT up
-5750 capture screen automation_removed
+5750 capture screen automation_cleared
+
+# Hold Paste in the same semantic context. The guarded preview names
+# Automation, then the typed round trip restores only that source.
 5950 button BOTTOM_RIGHT down
 7050 tick
-7150 button BOTTOM_RIGHT up
-7400 capture screen automation_pasted
-
-# Clear leaves the macro with no active automation.
-7600 tap BOTTOM_LEFT 60
-7850 capture screen automation_cleared
+7110 capture screen automation_paste_armed
+7170 button BOTTOM_RIGHT up
+7390 capture screen automation_restored
+8500 tick
+8700 capture screen automation_restored_settled

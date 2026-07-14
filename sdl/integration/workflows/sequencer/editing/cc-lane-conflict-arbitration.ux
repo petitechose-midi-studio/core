@@ -1,0 +1,37 @@
+# UX workflow: live Macro/Sequencer CC conflict arbitration.
+# Purpose: proves the same destination is detected in preflight, then resolved
+# by the singular runtime arbiter once the authored lane becomes Live.
+# Expect: semantic:cc_conflict_preview:mode=sequencer.cc_lane.grid, semantic:cc_conflict_preview:conflict=1
+# Expect: semantic:cc_conflict_preview:reason=macro_conflict, semantic:cc_conflict_preview:winner=sequencer_cc_lane
+# Expect: semantic:cc_conflict_preview:winner_source=preflight, semantic:cc_conflict_preview:projection=preview
+# Expect: semantic:cc_conflict_live:mode=sequencer.cc_lane.grid, semantic:cc_conflict_live:conflict=1
+# Expect: semantic:cc_conflict_live:reason=macro_conflict, semantic:cc_conflict_live:winner=sequencer_cc_lane
+# Expect: semantic:cc_conflict_live:winner_source=runtime_telemetry, semantic:cc_conflict_live:projection=live
+# Expect: semantic:cc_conflict_live:target_route=4, semantic:cc_conflict_live:target_route_valid=1
+# Expect: capture_changed:cc_conflict_preview=cc_conflict_live
+
+0 scenario seq-cc-macro-conflict
+80 capture screen cc_conflict_ready
+
+# Enter Pattern, open the shared property selector, and reach CC Lanes.
+160 tap NAV 60
+340 button LEFT_BOTTOM down
+420 encoder NAV 1
+500 encoder NAV 1
+580 encoder NAV 1
+660 encoder NAV 1
+740 encoder NAV 1
+840 tap NAV 60
+940 button LEFT_BOTTOM up
+1260 capture screen cc_conflict_preview
+
+# Close the lane context, start transport, then reopen the same lane. Step 1
+# repeats every musical boundary so the runtime coordinator publishes both
+# authors before the Live capture.
+1360 tap LEFT_TOP 60
+1680 tap BOTTOM_CENTER 60
+2180 button LEFT_BOTTOM down
+2260 encoder NAV 1
+2580 tap NAV 60
+2680 button LEFT_BOTTOM up
+3300 capture screen cc_conflict_live

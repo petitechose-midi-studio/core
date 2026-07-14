@@ -239,6 +239,78 @@ void test_all_notes_off_tracks_more_than_thirty_two_active_notes() {
     std::cout << "[PASS] test_all_notes_off_tracks_more_than_thirty_two_active_notes\n";
 }
 
+void test_all_notes_off_atomically_handles_128_active_notes() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    for (uint8_t note = 0; note < 128U; ++note) {
+        assert(sink.emitSequencerEvent(
+            noteEvent(SequencerEventType::NoteOn, 4, 0, note, 90)
+        ));
+    }
+    assert(queue.size() == 128);
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 128);
+
+    assert(sink.emitSequencerEvent({
+        .tick = 4,
+        .type = SequencerEventType::AllNotesOff,
+    }));
+    assert(queue.size() == 128);
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == 256);
+    for (size_t i = 128; i < 256; ++i) {
+        assert(transport.messages[i].type == RealtimeMidiEventType::NoteOff);
+    }
+}
+
+void test_all_notes_off_rejects_one_over_queue_capacity_without_partial_panic() {
+    core::sequencer::RealtimeMidiQueue queue;
+    Observer observer;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0, &observer);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(4, 4000, 25);
+    const size_t activeNoteCount = queue.capacity();
+    assert(activeNoteCount <=
+           static_cast<size_t>(core::sequencer::SequencerMidiEventSink::MIDI_CHANNEL_COUNT) *
+               128U);
+    for (size_t index = 0; index < activeNoteCount; ++index) {
+        const auto channel = static_cast<uint8_t>(index / 128U);
+        const auto note = static_cast<uint8_t>(index % 128U);
+        assert(sink.emitSequencerEvent(
+            noteEvent(SequencerEventType::NoteOn, 4, channel, note, 90)
+        ));
+        // Bound the setup independently from the production queue capacity;
+        // the panic preflight below is what this test intentionally saturates.
+        if (note == 127U) drainDue(queue, midi, 4000);
+    }
+    drainDue(queue, midi, 4000);
+    assert(transport.messages.size() == activeNoteCount);
+
+    // An unrelated queued event proves failed preflight mutates no queue data.
+    assert(queue.push(core::sequencer::RealtimeMidiEvent{
+        .deadlineUs = 5000,
+        .type = RealtimeMidiEventType::NoteOff,
+        .channel = 2,
+        .note = 10,
+        .velocity = 0,
+        .trackIndex = 1,
+    }));
+    assert(!sink.emitSequencerEvent({
+        .tick = 4,
+        .type = SequencerEventType::AllNotesOff,
+    }));
+    assert(queue.size() == 1);
+    assert(queue.diagnostics().criticalNoteOffOverflowCount == 1);
+    assert(queue.cancelPendingEvents(1) == 1);
+}
+
 void test_all_notes_off_tracks_same_pitch_per_channel() {
     core::sequencer::RealtimeMidiQueue queue;
     Observer observer;
@@ -415,6 +487,8 @@ int main() {
     test_all_notes_off_cancels_notes_that_were_never_dispatched();
     test_all_notes_off_flushes_active_chord_voices();
     test_all_notes_off_tracks_more_than_thirty_two_active_notes();
+    test_all_notes_off_atomically_handles_128_active_notes();
+    test_all_notes_off_rejects_one_over_queue_capacity_without_partial_panic();
     test_all_notes_off_tracks_same_pitch_per_channel();
     test_retrigger_same_pitch_keeps_latest_note_active();
     test_all_notes_off_releases_note_before_long_gate_note_off_arrives();

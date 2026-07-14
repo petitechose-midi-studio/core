@@ -23,11 +23,14 @@
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
+#include "config/TimeCompat.hpp"
 
 namespace core::handler {
 
 class SequencerStepEditHandler {
 public:
+    using TimeProviderFn = uint32_t (*)();
+
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         core::state::sequencer::SequencerState& sequencer;
@@ -48,7 +51,8 @@ public:
         oc::api::ButtonAPI& buttons,
         oc::type::ScopeID sequencerViewScope,
         oc::type::ScopeID overlayScope,
-        oc::type::ScopeID stepPresetOverlayScope
+        oc::type::ScopeID stepPresetOverlayScope,
+        TimeProviderFn timeProvider = core::time_compat::millis
     );
 
     // Non-copyable, non-movable
@@ -56,6 +60,8 @@ public:
     SequencerStepEditHandler& operator=(const SequencerStepEditHandler&) = delete;
     SequencerStepEditHandler(SequencerStepEditHandler&&) = delete;
     SequencerStepEditHandler& operator=(SequencerStepEditHandler&&) = delete;
+
+    void update(uint32_t nowMs);
 
 private:
     void setupBindings();
@@ -95,8 +101,13 @@ private:
     void openStepPresetPicker();
     void closeStepPresetPicker();
     void moveStepPresetItem(float delta);
+    void moveStepPresetPreviewState(float delta);
+    void toggleStepPresetDetail();
     void toggleStepPresetMode();
-    void executeStepPresetAction();
+    void beginStepPresetActionGuard();
+    void releaseStepPresetAction();
+    void commitStepPresetActionGuard();
+    void handleStepPresetOutcome(SequencerStepPresetPickerOutcome outcome);
 
     // Long-press opens while still pressed; ignore the release that follows.
     ButtonReleaseLatch<8> open_release_latch_;
@@ -121,6 +132,10 @@ private:
     oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID overlay_scope_ = 0;
     oc::type::ScopeID step_preset_overlay_scope_ = 0;
+    TimeProviderFn time_provider_ = core::time_compat::millis;
+    bool step_preset_action_press_active_ = false;
+    bool step_preset_auto_close_pending_ = false;
+    uint32_t step_preset_auto_close_at_ms_ = 0;
 };
 
 }  // namespace core::handler

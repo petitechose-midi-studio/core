@@ -1,7 +1,9 @@
 #include <cassert>
+#include <cstring>
 #include <iostream>
 
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
+#include "ui/sequencer/SequencerActionStripVisuals.hpp"
 
 using namespace core::state;
 using namespace core::state::sequencer;
@@ -247,6 +249,20 @@ void expectsOverlayBlocksMainSurfaceEditing() {
     assert(policy.bottomRightVisibility == Visibility::HIDDEN);
 }
 
+void expectsDestructiveAndMuteIconsToRemainSemanticallyDistinct() {
+    using core::ui::sequencer::interactionActionIcon;
+    const char* mute = interactionActionIcon(Action::MUTE_CURRENT_TRACK);
+    const char* clear = interactionActionIcon(Action::CLEAR_STEP_CONTENT);
+    const char* reset = interactionActionIcon(Action::RESET_CURRENT_STEP_SHALLOW);
+    const char* remove = interactionActionIcon(Action::REMOVE_CURRENT_STRUCTURE);
+
+    assert(mute && clear && reset && remove);
+    assert(std::strcmp(mute, clear) != 0);
+    assert(std::strcmp(clear, reset) != 0);
+    assert(std::strcmp(reset, remove) != 0);
+    assert(std::strcmp(clear, remove) != 0);
+}
+
 }  // namespace
 
 int main() {
@@ -258,6 +274,7 @@ int main() {
     expectsStepEditorOverridesEverything();
     expectsAvailabilityHelpers();
     expectsOverlayBlocksMainSurfaceEditing();
+    expectsDestructiveAndMuteIconsToRemainSemanticallyDistinct();
 
     std::cout << "SequencerInteractionPolicy tests passed\n";
     return 0;

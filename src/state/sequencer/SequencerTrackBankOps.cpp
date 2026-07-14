@@ -7,6 +7,7 @@
 #include <config/PlatformCompat.hpp>
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::state::sequencer {
@@ -30,15 +31,16 @@ FLASHMEM bool copyEditorToPattern(SequencerPatternState& target, const Sequencer
     return copyPatternState(target, source.pattern);
 }
 
+}  // namespace
+
 FLASHMEM void resetTransientTrackState(SequencerState& state) {
     state.stepEdit.reset();
+    state.ccLaneUi.reset();
     state.stepPropertyInlineSelector.reset();
     state.stepInlineFeedback.reset();
     state.patternQuickControls.reset();
     state.contentView.reset();
 }
-
-}  // namespace
 
 FLASHMEM bool initializeTrackBankFromActive(
     SequencerTrackBankState& bank,
@@ -69,8 +71,7 @@ FLASHMEM bool storeActiveTrackPreservingGraph(
         return copyEditorToPattern(target, active);
     }
 
-    copyPatternStatePreservingGraph(target, active.pattern);
-    return true;
+    return copyPatternStatePreservingGraph(target, active.pattern);
 }
 
 FLASHMEM bool switchActiveTrack(
@@ -139,19 +140,34 @@ FLASHMEM void installTrackBankState(
 
     std::array<core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>,
                SequencerTrackBankState::TRACK_COUNT> graphs{};
+    std::array<SequencerCcLaneBankPtr, SequencerTrackBankState::TRACK_COUNT>
+        ccLaneBanks{};
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         graphs[i] = std::move(stagedBank.track(i).graph);
+        ccLaneBanks[i] = std::move(stagedBank.track(i).ccLanes);
     }
     auto editorGraph = std::move(stagedActive.pattern.graph);
+    auto editorCcLanes = std::move(stagedActive.pattern.ccLanes);
 
     applyTrackBankSnapshot(bank, active, snapshot);
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         bank.track(i).graph = std::move(graphs[i]);
         bank.track(i).graphRevision.set(snapshot.tracks[i].graphRevision);
+        installSequencerCcLaneBank(
+            bank.track(i),
+            std::move(ccLaneBanks[i])
+        );
+        bank.track(i).ccLaneRevision.set(
+            stagedBank.track(i).ccLaneRevision.get()
+        );
     }
     const uint8_t activeTrack = bank.activeTrackIndex();
     active.pattern.graph = std::move(editorGraph);
     active.pattern.graphRevision.set(snapshot.tracks[activeTrack].graphRevision);
+    installSequencerCcLaneBank(active.pattern, std::move(editorCcLanes));
+    active.pattern.ccLaneRevision.set(
+        stagedActive.pattern.ccLaneRevision.get()
+    );
 }
 
 }  // namespace core::state::sequencer

@@ -116,6 +116,7 @@ public:
     [[nodiscard]] bool isRunning() const { return running_; }
 
 private:
+    static void displayFlushStartCb(lv_event_t* event);
     void setupKeyboardMappings();
     lv_obj_t* getScreenArea() const;
 
@@ -125,6 +126,10 @@ private:
     std::unique_ptr<desktop::HwLayout> layout_;
 
     SDL_Renderer* renderer_ = nullptr;
+    // SDL's renderer backbuffer is undefined after SDL_RenderPresent(). Keep
+    // the full LVGL buffer that was actually handed to the display driver so
+    // deterministic captures never read a recycled swapchain image.
+    lv_draw_buf_t* lastFlushedBuffer_ = nullptr;
     bool running_ = false;
 };
 

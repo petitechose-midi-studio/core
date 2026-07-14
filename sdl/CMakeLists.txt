@@ -238,6 +238,12 @@ target_compile_definitions(${APP_EXE_NAME} PRIVATE
     # affects the standalone LEFT/BOTTOM button handlers.
     OC_MAX_BUTTON_BINDINGS=256
     OC_MAX_ENCODER_BINDINGS=96)
+
+# Native Core workflows persist semantic facts beside real LVGL captures.
+# Firmware keeps the recorder opt-in through the dedicated PlatformIO target.
+if(BUILD_NATIVE AND APP_ID STREQUAL "core")
+    target_compile_definitions(${APP_EXE_NAME} PRIVATE MS_UX_RECORDER)
+endif()
 target_link_libraries(${APP_EXE_NAME} PRIVATE lvgl libremidi)
 
 # ==============================================================================

@@ -11,6 +11,9 @@
 
 #include <oc/state/Signal.hpp>
 
+#include "state/macro/MacroAutomationState.hpp"
+#include "state/contextual/ContextualActionModels.hpp"
+
 namespace core::state {
 
 enum class MacroEditFlowPhase : uint8_t {
@@ -20,6 +23,21 @@ enum class MacroEditFlowPhase : uint8_t {
     PAGE_SELECTOR = 3,
     TARGET_SELECTOR = 4,
     AUTOMATION = 5,
+    MODULATION = 6,
+    CONVERT_PREVIEW = 7,
+};
+
+enum class MacroSlotProperty : uint8_t {
+    DESTINATION = 0,
+    AUTOMATION,
+    MODULATION,
+    DEPTH,
+};
+
+enum class MacroContextButton : uint8_t {
+    NONE = 0,
+    BOTTOM_LEFT,
+    BOTTOM_RIGHT,
 };
 
 /**
@@ -46,7 +64,7 @@ struct MacroEditState {
     /// Current editable CC value shown by the overlay (0-127)
     oc::state::Signal<uint8_t> tempCC{0};
 
-    /// Focused row in overlay (0 = CC, 1 = automation)
+    /// Focused Slot property (Destination, Automation, Modulation, Depth).
     oc::state::Signal<uint8_t> focusedRow{0};
 
     struct ValueSelectorState {
@@ -72,6 +90,29 @@ struct MacroEditState {
 
     /// Focused row in the automation lifecycle overlay.
     oc::state::Signal<uint8_t, 4> automationFocusedRow{0};
+    /// Focused row in the modulation lifecycle overlay.
+    oc::state::Signal<uint8_t, 4> modulationFocusedRow{0};
+
+    struct ConversionPreviewState {
+        core::state::macro::MacroAutomationConversionPolicy policy =
+            core::state::macro::MacroAutomationConversionPolicy::MEAN;
+        core::state::macro::MacroAutomationConversionPlan plan{};
+        oc::state::Signal<uint32_t, 4> revision{0};
+
+        void reset();
+        void setPlan(
+            const core::state::macro::MacroAutomationConversionPlan& next
+        );
+    } conversionPreview;
+
+    /** Shared guarded-action lifecycle for the contextual bottom strip. */
+    oc::state::Signal<core::state::contextual::GuardedActionState, 6>
+        contextGuard{};
+    oc::state::Signal<core::state::contextual::OperationFeedbackState, 6>
+        contextFeedback{};
+    oc::state::Signal<MacroContextButton, 6> contextButton{
+        MacroContextButton::NONE
+    };
 
     /// Runtime decision state for long-press open release policy
     uint8_t openedByMacroIndex = 0;
@@ -113,6 +154,16 @@ struct MacroEditState {
     void openAutomation();
 
     void closeAutomation();
+
+    void openModulation(uint8_t focusedRow = 0);
+
+    void closeModulation();
+
+    void openConvertPreview(
+        const core::state::macro::MacroAutomationConversionPlan& plan
+    );
+
+    void closeConvertPreview();
 
     void loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc);
 

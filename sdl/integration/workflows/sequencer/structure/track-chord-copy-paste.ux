@@ -2,6 +2,38 @@
 # Purpose: validates that track clipboard preserves the full sequencer graph,
 # including local chord state attached to root step nodes.
 # Expect: capture_changed:track_2_paste_preview=track_2_chord_pasted
+# Expect: semantic:track_2_paste_pressed:surface_context=true
+# Expect: semantic:track_2_paste_pressed:effect=arm_paste_current_structure
+# Expect: semantic:track_2_paste_pressed:route_policy=preserve_destination
+# Expect: semantic:track_2_paste_pressed:source_mask=1, semantic:track_2_paste_pressed:target_mask=2
+# Expect: semantic:track_2_paste_hold_applied:effect=paste_current_structure
+# Expect: semantic:track_2_paste_hold_applied:target_route_valid=true
+# Expect: semantic:track_2_paste_hold_applied:outcome=applied
+# Expect: semantic:track_2_paste_hold_applied:activation_origin=track_paste
+# Expect: semantic:track_2_paste_hold_applied:activation_generation=*
+# Expect: capture_changed:track_paste_summary=track_paste_details_1, capture_changed:track_paste_details_1=track_paste_details_2
+# Expect: capture_changed:track_paste_armed_cancel=track_paste_cancelled, capture_changed:track_paste_queued=track_paste_applied
+# Expect: semantic:track_paste_summary:surface_context=true, semantic:track_paste_summary:outcome=preview
+# Expect: semantic:track_paste_summary:source_mask=5, semantic:track_paste_summary:target_mask=48
+# Expect: semantic:track_paste_summary:create_mask=32, semantic:track_paste_summary:overwrite_mask=16
+# Expect: semantic:track_paste_summary:route_policy=preserve_destination, semantic:track_paste_summary:mapping_count=2
+# Expect: semantic:track_paste_summary:mapping_index=0, semantic:track_paste_summary:source_track=0
+# Expect: semantic:track_paste_summary:target_track=4, semantic:track_paste_summary:target_kind=overwrite
+# Expect: semantic:track_paste_summary:target_route=8, semantic:track_paste_summary:target_route_valid=true
+# Expect: semantic:track_paste_summary:inherited_lane_count=1, semantic:track_paste_summary:pinned_lane_count=1
+# Expect: semantic:track_paste_details_2:mapping_count=2, semantic:track_paste_details_2:mapping_index=1
+# Expect: semantic:track_paste_details_2:source_track=2, semantic:track_paste_details_2:target_track=5
+# Expect: semantic:track_paste_details_2:target_kind=free, semantic:track_paste_details_2:target_route=10
+# Expect: semantic:track_paste_details_2:target_route_valid=true, semantic:track_paste_details_2:inherited_lane_count=1
+# Expect: semantic:track_paste_details_2:pinned_lane_count=0, semantic:track_paste_details_2:operation_status=preview
+# Expect: semantic:track_paste_armed_cancel:outcome=armed, semantic:track_paste_armed_cancel:operation_status=armed
+# Expect: semantic:track_paste_cancelled:outcome=cancelled, semantic:track_paste_cancelled:operation_status=cancelled
+# Expect: semantic:track_paste_queued:outcome=queued, semantic:track_paste_queued:operation_status=queued
+# Expect: semantic:track_paste_queued:operation_origin=track_paste, semantic:track_paste_queued:operation_generation=*
+# Expect: semantic:track_paste_queued:activation_origin=track_paste, semantic:track_paste_queued:activation_generation=*
+# Expect: semantic:track_paste_applied:outcome=applied, semantic:track_paste_applied:operation_status=applied
+# Expect: semantic:track_paste_applied:operation_origin=track_paste, semantic:track_paste_applied:operation_generation=*
+# Expect: semantic:track_paste_applied:activation_origin=track_paste, semantic:track_paste_applied:activation_generation=*
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -37,7 +69,60 @@
 4500 encoder NAV 1
 4750 capture screen track_2_paste_preview
 4850 button BOTTOM_RIGHT down
+5000 capture screen track_2_paste_pressed
 5900 tick
 5950 capture screen track_2_paste_hold_applied
 6000 button BOTTOM_RIGHT up
 6300 capture screen track_2_chord_pasted
+
+# Prepare a deterministic multi-Track proof surface. Sources T1/T3 are
+# non-contiguous. T5 exists and is muted (overwrite); T6 is free. Destination
+# routes are Ch9/Ch11. Source CC footprint is 2 inherited + 1 pinned lanes.
+6800 scenario seq-track-paste-multi
+6950 capture screen track_paste_multi_sources
+
+# Start transport before a compatible clipboard exists. Once the paste plan is
+# visible, BOTTOM_CENTER becomes Details and must never toggle transport.
+7050 tap BOTTOM_CENTER 60
+7250 capture screen track_paste_transport_playing
+
+# Copy the selected non-contiguous Tracks, then move the paste anchor to T5.
+7350 tap BOTTOM_RIGHT 60
+7550 capture screen track_paste_selection_copied
+7650 encoder NAV 1
+7730 encoder NAV 1
+8150 capture screen track_paste_summary
+
+# Details keeps the paste anchor fixed while NAV cycles the exact mappings.
+8250 tap BOTTOM_CENTER 60
+8450 capture screen track_paste_details_1
+8550 encoder NAV 1
+8750 capture screen track_paste_details_2
+8850 tap BOTTOM_CENTER 60
+9050 capture screen track_paste_summary_restored
+
+# An armed release is explicitly non-mutating and leaves a short Cancelled
+# confirmation before restoring the same preflight.
+9150 button BOTTOM_RIGHT down
+9250 capture screen track_paste_pressed_cancel
+9500 tick
+9550 capture screen track_paste_armed_cancel
+9750 button BOTTOM_RIGHT up
+9950 capture screen track_paste_cancelled
+10900 capture screen track_paste_preview_after_cancel
+
+# A complete hold commits once. With transport running, editor changes remain
+# Queued until the exact activation batch is published at the loop boundary.
+11100 button BOTTOM_RIGHT down
+11250 capture screen track_paste_pressed_commit
+11450 capture screen track_paste_armed_commit
+12120 tick
+12140 scenario seq-track-paste-project-queued
+12160 capture screen track_paste_queued
+12220 button BOTTOM_RIGHT up
+
+# SDL may cross the local-loop boundary inside one capture frame. These two
+# projections preserve the exact plan and operation ID from the real commit,
+# with one correlated capture generation making Queued -> Applied provable.
+12320 scenario seq-track-paste-project-applied
+12520 capture screen track_paste_applied

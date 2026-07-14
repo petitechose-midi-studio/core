@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "config/Timing.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
 #include "SequencerStepChordEditorWorkflow.hpp"
@@ -68,7 +69,8 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     oc::api::ButtonAPI& buttons,
     oc::type::ScopeID sequencerViewScope,
     oc::type::ScopeID overlayScope,
-    oc::type::ScopeID stepPresetOverlayScope
+    oc::type::ScopeID stepPresetOverlayScope,
+    TimeProviderFn timeProvider
 )
     : overlay_state_(state.overlays)
     , sequencer_(state.sequencer)
@@ -85,6 +87,7 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     , sequencer_view_scope_(sequencerViewScope)
     , overlay_scope_(overlayScope)
     , step_preset_overlay_scope_(stepPresetOverlayScope)
+    , time_provider_(timeProvider ? timeProvider : core::time_compat::millis)
 {
     setupBindings();
 }
@@ -243,10 +246,15 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .scope(step_preset_overlay_scope_)
         .then([this](float delta) { moveStepPresetItem(delta); });
 
+    encoders_.encoder(Config::EncoderID::OPT)
+        .turn()
+        .scope(step_preset_overlay_scope_)
+        .then([this](float delta) { moveStepPresetPreviewState(delta); });
+
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(step_preset_overlay_scope_)
-        .then([this]() { executeStepPresetAction(); });
+        .then([this]() { toggleStepPresetDetail(); });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
@@ -269,9 +277,32 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .then([this]() { toggleStepPresetMode(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .press()
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { beginStepPresetActionGuard(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(step_preset_overlay_scope_)
-        .then([this]() { executeStepPresetAction(); });
+        .then([this]() { releaseStepPresetAction(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(step_preset_overlay_scope_)
+        .then([this]() { commitStepPresetActionGuard(); });
+}
+
+void SequencerStepEditHandler::update(uint32_t nowMs) {
+    const auto pickerOutcome = step_preset_picker_.update(nowMs);
+    if (pickerOutcome == SequencerStepPresetPickerOutcome::APPLIED ||
+        pickerOutcome == SequencerStepPresetPickerOutcome::CANCELLED) {
+        handleStepPresetOutcome(pickerOutcome);
+    }
+    if (step_preset_auto_close_pending_ &&
+        !step_preset_action_press_active_ &&
+        oc::time::deadlineReachedMs(nowMs, step_preset_auto_close_at_ms_)) {
+        closeStepPresetPicker();
+    }
 }
 
 FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
@@ -667,35 +698,102 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
 }
 
 FLASHMEM void SequencerStepEditHandler::openStepPresetPicker() {
+    step_preset_auto_close_pending_ = false;
+    step_preset_auto_close_at_ms_ = 0;
     step_preset_picker_.open();
 }
 
 FLASHMEM void SequencerStepEditHandler::closeStepPresetPicker() {
+    step_preset_action_press_active_ = false;
+    step_preset_auto_close_pending_ = false;
+    step_preset_auto_close_at_ms_ = 0;
     step_preset_picker_.close();
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::moveStepPresetItem(float delta) {
+    step_preset_auto_close_pending_ = false;
     step_preset_picker_.move(delta);
 }
 
+FLASHMEM void SequencerStepEditHandler::moveStepPresetPreviewState(float delta) {
+    step_preset_auto_close_pending_ = false;
+    step_preset_picker_.movePreviewState(delta);
+}
+
+FLASHMEM void SequencerStepEditHandler::toggleStepPresetDetail() {
+    step_preset_auto_close_pending_ = false;
+    step_preset_picker_.toggleDetail();
+}
+
 FLASHMEM void SequencerStepEditHandler::toggleStepPresetMode() {
+    step_preset_auto_close_pending_ = false;
     step_preset_picker_.toggleMode();
 }
 
-FLASHMEM void SequencerStepEditHandler::executeStepPresetAction() {
+FLASHMEM void SequencerStepEditHandler::beginStepPresetActionGuard() {
+    step_preset_auto_close_pending_ = false;
+    step_preset_action_press_active_ =
+        step_preset_picker_.beginActionGuard(time_provider_());
+}
+
+FLASHMEM void SequencerStepEditHandler::releaseStepPresetAction() {
+    if (step_preset_action_press_active_) {
+        step_preset_action_press_active_ = false;
+        (void)step_preset_picker_.cancelActionGuard(time_provider_());
+        return;
+    }
+
     if (step_preset_picker_.shouldCommitBeforeLoad()) {
         commitStepEditHistory();
         history_.commitCoalescedPatternEdit();
     }
 
-    const auto outcome = step_preset_picker_.execute();
-    if (outcome != SequencerStepPresetPickerOutcome::LOADED) return;
+    handleStepPresetOutcome(step_preset_picker_.executeTap(time_provider_()));
+}
+
+FLASHMEM void SequencerStepEditHandler::commitStepPresetActionGuard() {
+    if (!step_preset_action_press_active_) return;
+
+    if (step_preset_picker_.shouldCommitBeforeLoad()) {
+        commitStepEditHistory();
+        history_.commitCoalescedPatternEdit();
+    }
+
+    handleStepPresetOutcome(
+        step_preset_picker_.commitActionGuard(time_provider_())
+    );
+}
+
+FLASHMEM void SequencerStepEditHandler::handleStepPresetOutcome(
+    SequencerStepPresetPickerOutcome outcome
+) {
+    if (outcome == SequencerStepPresetPickerOutcome::SAVED) {
+        // Save confirmation and the new semantic asset row remain visible in
+        // the temporary picker until the user dismisses it.
+        return;
+    }
+    if (outcome != SequencerStepPresetPickerOutcome::APPLIED &&
+        outcome != SequencerStepPresetPickerOutcome::QUEUED &&
+        outcome != SequencerStepPresetPickerOutcome::CANCELLED) {
+        return;
+    }
 
     sequencer_.invalidateVariationTelemetry();
     history_snapshot_valid_ =
         core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
-    closeStepPresetPicker();
+    if (outcome == SequencerStepPresetPickerOutcome::QUEUED) return;
+
+    // Keep the result visible just long enough to be perceived, then return to
+    // the Step Editor automatically. Any deliberate picker navigation cancels
+    // this deadline so the user remains in control without an extra dismiss.
+    step_preset_auto_close_at_ms_ =
+        time_provider_() + (
+            outcome == SequencerStepPresetPickerOutcome::CANCELLED
+                ? Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
+                : Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+        );
+    step_preset_auto_close_pending_ = true;
 }
 
 }  // namespace core::handler

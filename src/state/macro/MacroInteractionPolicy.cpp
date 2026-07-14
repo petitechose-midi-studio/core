@@ -90,8 +90,13 @@ FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomLeftRelease(
     const MacroInteractionContext& context
 ) {
     if (context.blockingOverlay) return MacroInteractionAction::NONE;
-    if (context.selectionActive) return MacroInteractionAction::DELETE_SELECTION;
+    if (context.selectionActive) return MacroInteractionAction::NONE;
     if (!performanceAvailable(context) || context.previewingAddSlot) {
+        return MacroInteractionAction::NONE;
+    }
+    if (context.navigationFocus == core::state::StructureNavigationFocus::STEP) {
+        // Slot scope reserves the destructive gesture for the guarded hold.
+        // Source-specific Clear actions live in their typed detail overlays.
         return MacroInteractionAction::NONE;
     }
     return MacroInteractionAction::CLEAR_STRUCTURE;
@@ -100,6 +105,12 @@ FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomLeftRelease(
 FLASHMEM MacroInteractionAction MacroInteractionPolicy::bottomLeftLongPress(
     const MacroInteractionContext& context
 ) {
+    if (context.selectionActive) {
+        return core::state::contextual::canExecute(
+            context.selectionDeleteAction.hold
+        ) ? MacroInteractionAction::DELETE_SELECTION
+          : MacroInteractionAction::NONE;
+    }
     if (!performanceAvailable(context) || context.previewingAddSlot || !context.canRemoveStructure) {
         return MacroInteractionAction::NONE;
     }
@@ -142,7 +153,10 @@ FLASHMEM MacroActionStripPolicy MacroInteractionPolicy::actionStrip(
     if (context.selectionActive) {
         policy.leftCenter = MacroInteractionVisibility::HIDDEN;
         policy.leftBottom = MacroInteractionVisibility::HIDDEN;
-        policy.bottomLeft = MacroInteractionVisibility::ACTIVE;
+        policy.bottomLeft = core::state::contextual::canExecute(
+            context.selectionDeleteAction.hold
+        ) ? MacroInteractionVisibility::ACTIVE
+          : MacroInteractionVisibility::DISABLED;
         policy.bottomRight = MacroInteractionVisibility::ACTIVE;
         return policy;
     }
@@ -161,7 +175,8 @@ FLASHMEM MacroActionStripPolicy MacroInteractionPolicy::actionStrip(
         policy.bottomLeft = context.previewingAddSlot
             ? MacroInteractionVisibility::DIM
             : MacroInteractionVisibility::ACTIVE;
-        policy.bottomRight = context.previewingAddSlot
+        policy.bottomRight = context.previewingAddSlot &&
+                !context.compatibleClipboardAvailable
             ? MacroInteractionVisibility::DIM
             : MacroInteractionVisibility::ACTIVE;
         return policy;

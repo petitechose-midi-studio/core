@@ -2,6 +2,8 @@
 #include <cstring>
 #include <cstdint>
 #include <iostream>
+#include <array>
+#include <type_traits>
 
 #include "../../src/state/sequencer/SequencerUiState.hpp"
 
@@ -114,6 +116,36 @@ void test_history_feedback_shows_and_expires() {
     std::cout << "[PASS] test_history_feedback_shows_and_expires\n";
 }
 
+void test_track_paste_has_one_bounded_revision_subscription_surface() {
+    using State = core::state::sequencer::SequencerTrackPasteUiState;
+    static_assert(std::is_standard_layout_v<
+        core::state::contextual::GuardedActionState>);
+    static_assert(std::is_trivially_copyable_v<
+        core::state::contextual::OperationFeedbackState>);
+    static_assert(decltype(State::revision)::maxSubscribers() == 8);
+
+    State state;
+    std::array<oc::state::Subscription, 8> subscriptions{};
+    uint8_t notifications = 0;
+    for (auto& subscription : subscriptions) {
+        subscription = state.revision.subscribe(
+            [&notifications](const uint32_t&) { ++notifications; }
+        );
+        assert(subscription.isValid());
+    }
+    assert(state.revision.subscriberCount() == 8);
+    state.bump();
+    oc::state::NotificationQueue::instance().flush();
+    assert(notifications == 8);
+
+    state.plan.count = 1;
+    state.detailVisible = true;
+    state.reset();
+    assert(state.revision.subscriberCount() == 8);
+    assert(state.plan.count == 0);
+    assert(!state.detailVisible);
+}
+
 }  // namespace
 
 int main() {
@@ -122,6 +154,7 @@ int main() {
     test_pattern_quick_controls_reset_clears_physical_hold_layer();
     test_pattern_quick_controls_feedback_shows_and_expires();
     test_history_feedback_shows_and_expires();
+    test_track_paste_has_one_bounded_revision_subscription_surface();
 
     std::cout << "\nAll SequencerUiState tests passed.\n";
     return 0;

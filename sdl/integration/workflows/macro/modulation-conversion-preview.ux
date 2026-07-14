@@ -1,0 +1,56 @@
+# UX workflow: inspect and apply Automation-to-Modulation conversion.
+# Purpose: proves the primary Automation > Convert path, explicit silent impact
+# preview, tap Apply on an empty target, guarded overwrite, and Modulation clear.
+# Expect: capture_changed:preview_mean_empty=modulation_applied, capture_changed:overwrite_preview=modulation_overwritten, capture_changed:modulation_detail=modulation_cleared
+# Expect: semantic:overwrite_pressed:outcome=pressed, semantic:overwrite_armed:outcome=armed, semantic:modulation_overwritten:outcome=applied
+# Expect: semantic:modulation_clear_armed:effect=arm_clear_modulation, semantic:modulation_clear_armed:outcome=armed, semantic:modulation_cleared:effect=clear_modulation, semantic:modulation_cleared:outcome=applied
+# Expect: semantic:overwrite_pressed:projection=non_audible_preview, semantic:modulation_overwritten:route_policy=live_manual>cc_lane>macro_computed>macro_static
+
+0 scenario macro-automation-curve-shape
+80 capture screen automation_source
+
+# Open Macro Edit, focus Automation, and enter its source detail.
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 encoder NAV 1
+1580 tap NAV 60
+1780 capture screen automation_detail
+
+# Convert is directly below Playback. Entering it opens a non-audible preview
+# that states the policy, reference value, and post-conversion source states.
+1900 encoder NAV 1
+2020 tap NAV 60
+2220 capture screen preview_mean_empty
+2340 encoder NAV 1
+2500 capture screen preview_first_empty
+
+# Empty destination: tap Apply. Automation stays stored but Playback is Off;
+# the new Modulation source is On.
+2640 tap BOTTOM_RIGHT 60
+2860 capture screen modulation_applied
+
+# A successful conversion lands in the new Modulation detail. Return to the
+# parent, reopen Automation, and select Convert again. The existing Modulation
+# destination now requires a guarded overwrite.
+3000 tap LEFT_TOP 60
+3160 tap NAV 60
+3320 encoder NAV 1
+3460 tap NAV 60
+3680 capture screen overwrite_preview
+3820 button BOTTOM_RIGHT down
+3940 capture screen overwrite_pressed
+4700 tick
+4760 capture screen overwrite_armed
+4940 tick
+5000 button BOTTOM_RIGHT up
+5220 capture screen modulation_overwritten
+
+# Overwrite also lands in Modulation detail. Clear only that source; the
+# stored Automation curve and the Macro destination remain intact.
+5360 capture screen modulation_detail
+5500 button BOTTOM_LEFT down
+6600 tick
+6660 capture screen modulation_clear_armed
+6720 button BOTTOM_LEFT up
+6940 capture screen modulation_cleared

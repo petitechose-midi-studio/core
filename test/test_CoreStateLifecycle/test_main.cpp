@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -80,8 +81,16 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     state.sequencer.patternQuickControls.selecting.set(true);
     state.overlays.show(core::ui::OverlayType::DATA_MANAGER, false);
     state.overlays.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
+    const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(manualAddress, 0.73f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
 
     const uint32_t beforeRevision = state.configRevision.get();
+    const uint32_t beforeRuntimeOwnerRevision = state.macroRuntimeOwnerRevision.get();
     state.factoryReset();
 
     assert(state.activeView.get() == core::ui::ViewType::MACRO);
@@ -94,6 +103,8 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     assert(!state.sequencer.stepInlineFeedback.visible.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(std::strcmp(state.dataManager.feedback.get(), "") == 0);
+    assert(!state.macroUi.manualOverrides.activeFor(manualAddress));
+    assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision + 1U);
     assert(std::strcmp(state.statusBar.pageName.get(), state.pages.activePageData().name) == 0);
     assert(
         state.configRevision.get() ==
@@ -203,7 +214,25 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.trackNavigation.selection.cursorIndex.set(7);
     state.trackNavigation.selection.selectedMask.set(0x0080);
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), 3);
+    const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(manualAddress, 0.61f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+    // Recording temporarily removes Manual. A view/context teardown cancels
+    // the gesture and must restore the prior Project-scoped runtime state.
+    state.macroUi.automationRecording.active = true;
+    state.macroUi.automationRecording.address = manualAddress;
+    state.macroUi.automationRecording.restoreManualOnFailure = true;
+    state.macroUi.automationRecording.previousManualValue = 0.61f;
+    assert(state.macroUi.manualOverrides.resume(manualAddress));
+    core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.93f);
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::MACRO);
 
+    const uint32_t beforeRuntimeOwnerRevision = state.macroRuntimeOwnerRevision.get();
     state.resetStandaloneTransientUi();
 
     assert(!state.macroEdit.visible.get());
@@ -219,7 +248,46 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(!state.trackNavigation.selection.active.get());
     assert(state.trackNavigation.selection.cursorIndex.get() == 0);
+    float manualValue = 0.0f;
+    assert(state.macroUi.manualOverrides.valueFor(manualAddress, manualValue));
+    assert(manualValue > 0.60f && manualValue < 0.62f);
+    assert(std::fabs(state.macros[0].value.get() - manualValue) < 0.0005f);
+    assert((state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0U);
+    assert(!state.macroUi.automationRecording.active);
+    assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision);
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
+}
+
+void test_musical_project_reset_activates_one_new_macro_runtime_owner() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    const uint32_t beforeRevision = state.macroRuntimeOwnerRevision.get();
+    state.resetMusicalProject();
+    assert(state.macroRuntimeOwnerRevision.get() == beforeRevision + 1U);
+
+    std::cout << "[PASS] test_musical_project_reset_activates_one_new_macro_runtime_owner\n";
+}
+
+void test_macro_runtime_owner_revision_skips_zero_on_wrap() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    state.macroRuntimeOwnerRevision.set(0xFFFF'FFFFU);
+    state.requestMacroRuntimeOwnerActivation();
+    assert(state.macroRuntimeOwnerRevision.get() == 1U);
+    state.requestMacroRuntimeOwnerActivation();
+    assert(state.macroRuntimeOwnerRevision.get() == 2U);
+
+    std::cout << "[PASS] test_macro_runtime_owner_revision_skips_zero_on_wrap\n";
 }
 
 }  // namespace
@@ -231,6 +299,8 @@ int main() {
     test_core_state_update_expires_inline_feedback();
     test_core_state_update_expires_status_bar_pulses();
     test_reset_standalone_transient_ui_clears_context_owned_state();
+    test_musical_project_reset_activates_one_new_macro_runtime_owner();
+    test_macro_runtime_owner_revision_skips_zero_on_wrap();
     std::cout << "\nAll CoreState lifecycle tests passed.\n";
     return 0;
 }

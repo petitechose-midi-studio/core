@@ -1,13 +1,38 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <oc/state/Signal.hpp>
 
 #include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroRuntimeState.hpp"
 #include "state/StructureSelectionState.hpp"
+#include "state/contextual/GuardedActionState.hpp"
+#include "state/contextual/OperationFeedbackState.hpp"
 
 namespace core::state::macro {
+
+constexpr uint8_t kMacroRuntimeProjectionDirtyAll = 0xFF;
+
+inline uint32_t nextMacroRuntimeProjectionRevision(
+    uint32_t current,
+    uint8_t dirtyIndex = kMacroRuntimeProjectionDirtyAll
+) {
+    uint32_t generation = ((current >> 8) + 1U) & 0x00FFFFFFU;
+    if (generation == 0U) generation = 1U;
+    return (generation << 8) | dirtyIndex;
+}
+
+inline bool macroRuntimeProjectionRevisionTargetsAll(uint32_t revision) {
+    return static_cast<uint8_t>(revision & 0xFFU) ==
+        kMacroRuntimeProjectionDirtyAll;
+}
+
+inline int macroRuntimeProjectionRevisionDirtyIndex(uint32_t revision) {
+    const uint8_t dirtyIndex = static_cast<uint8_t>(revision & 0xFFU);
+    return dirtyIndex < MACRO_COUNT ? static_cast<int>(dirtyIndex) : -1;
+}
 
 /**
  * Session-only macro UI state.
@@ -31,12 +56,25 @@ enum class MacroAutomationRecordingStatus : uint8_t {
 };
 
 struct MacroUiState {
+    struct RuntimeValueProjection {
+        float base = 0.0f;
+        float modulation = 0.0f;
+        float resolved = 0.0f;
+        float modulationDepth = 0.0f;
+        bool valid = false;
+        bool modulationActive = false;
+        bool clippedLow = false;
+        bool clippedHigh = false;
+    };
+
     struct AutomationRecordingState {
         bool active = false;
         MacroAutomationSlotAddress address{};
         uint32_t startedAtMs = 0;
         bool preserveDuration = false;
         uint16_t targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
+        bool restoreManualOnFailure = false;
+        float previousManualValue = 0.0f;
         MacroAutomationLane lane{};
 
         void reset() {
@@ -45,6 +83,8 @@ struct MacroUiState {
             startedAtMs = 0;
             preserveDuration = false;
             targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
+            restoreManualOnFailure = false;
+            previousManualValue = 0.0f;
             lane = {};
         }
     };
@@ -58,11 +98,18 @@ struct MacroUiState {
         MacroAutomationRecordingStatus::IDLE
     };
     oc::state::Signal<uint16_t, 4> automationManualOverrideMask{0};
+    oc::state::Signal<uint32_t, 3> runtimeProjectionRevision{0};
+    MacroManualOverrideState manualOverrides;
+    std::array<RuntimeValueProjection, MACRO_COUNT> runtimeProjections{};
     oc::state::Signal<uint8_t, 4> focusedMacroSlot{0};
     oc::state::Signal<bool, 2> previewAddPageSlot{false};
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
+    oc::state::Signal<core::state::contextual::GuardedActionState, 4>
+        selectionDeleteGuard{};
+    oc::state::Signal<core::state::contextual::OperationFeedbackState, 4>
+        selectionDeleteFeedback{};
     AutomationRecordingState automationRecording;
 
     MacroUiState();
@@ -72,7 +119,17 @@ struct MacroUiState {
         previewPageIndex.set(pageIndex);
     }
 
+    /** Resets overlays/focus while retaining Project-scoped Manual entries. */
+    void resetInteraction();
+    /** Clears runtime Manual only at a Project load/create/reset boundary. */
+    void resetProjectRuntime();
+    /** Backward-compatible full reset; project lifecycle integration owns use. */
     void reset();
+    void refreshManualOverrideMask(uint8_t track, uint8_t page);
+    void setRuntimeProjection(uint8_t macro,
+                              const MacroResolvedValue& value,
+                              float modulationDepth);
+    void clearRuntimeProjections();
 };
 
 inline int performancePropertyIndex(MacroPerformanceProperty property) {

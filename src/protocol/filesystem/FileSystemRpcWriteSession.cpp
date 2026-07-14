@@ -56,6 +56,19 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
         return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
     }
 
+    if (internal::isConditionalMutationReservedPath(files_, path)) {
+        const size_t size = encodeWriteResponse(
+            FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
+            frame.requestId,
+            FileSystemRpcStatus::INVALID_ARGUMENT,
+            sessionId,
+            0,
+            response,
+            responseSize
+        );
+        return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+    }
+
     clearWriteSession_();
     if (!copySessionPath_(path, sessionId)) {
         const size_t size = encodeWriteResponse(
@@ -139,7 +152,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteChunk_(
     if (!writeSession_.active || writeSession_.sessionId != sessionId) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else if (offset != writeSession_.writtenBytes ||
-               offset + size > writeSession_.expectedSize) {
+               offset > writeSession_.expectedSize ||
+               static_cast<uint32_t>(size) > writeSession_.expectedSize - offset) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
         auto written = files_.appendWrite(chunk, size);

@@ -124,6 +124,35 @@ void test_apply_clears_muted_bits_for_disabled_sequencer_tracks() {
     std::cout << "[PASS] test_apply_clears_muted_bits_for_disabled_sequencer_tracks\n";
 }
 
+void test_publish_prepared_state_does_not_replace_preinstalled_editor_content() {
+    oc::state::Signal<uint8_t, 8> activeTrack{0};
+    oc::state::Signal<uint16_t, 16> enabledMask{0x0001};
+    auto pages = std::make_unique<core::state::macro::MacroPagesState>();
+    auto sequencerTracks = std::make_unique<core::state::sequencer::SequencerTrackBankState>();
+    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>();
+
+    sequencer->pattern.note[0] = 91;
+    sequencerTracks->track(2).note[0] = 72;
+    const auto result =
+        core::state::shared::SharedTrackCoordinator::publishPreparedSequencerState(
+            refsFor(activeTrack, enabledMask, *pages, *sequencerTracks, *sequencer),
+            0x0005,
+            2
+        );
+
+    assert(result.ok);
+    assert(result.changed);
+    assert(activeTrack.get() == 2);
+    assert(enabledMask.get() == 0x0005);
+    assert(sequencerTracks->activeTrackIndex() == 2);
+    assert(pages->currentActiveTrack() == 2);
+    assert(sequencer->pattern.note[0] == 91);
+    assert(sequencerTracks->track(2).note[0] == 72);
+
+    std::cout
+        << "[PASS] test_publish_prepared_state_does_not_replace_preinstalled_editor_content\n";
+}
+
 }  // namespace
 
 int main() {
@@ -131,6 +160,7 @@ int main() {
     test_apply_switches_to_first_enabled_track_when_active_is_disabled();
     test_noop_still_keeps_domain_caches_aligned();
     test_apply_clears_muted_bits_for_disabled_sequencer_tracks();
+    test_publish_prepared_state_does_not_replace_preinstalled_editor_content();
 
     std::cout << "All SharedTrackCoordinator tests passed\n";
     return 0;

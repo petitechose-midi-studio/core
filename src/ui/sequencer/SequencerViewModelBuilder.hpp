@@ -8,6 +8,7 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/common/TrackNavigationStrip.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
@@ -36,6 +37,7 @@ struct SequencerViewModelSource {
     const core::state::StructureClipboardState& structureClipboard;
     const core::state::StatusBarState& statusBar;
     const core::state::project::ProjectNavigationState& projectNavigation;
+    const core::state::sequencer::SequencerTrackActivationQueue& trackActivations;
 };
 
 SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source);

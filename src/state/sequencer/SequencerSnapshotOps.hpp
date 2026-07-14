@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 
@@ -37,10 +38,38 @@ void applySnapshotPreservingGraph(
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
+/**
+ * Applies copied Track musical content and graph while retaining the MIDI
+ * channel owned by the destination Track.
+ */
+[[nodiscard]] bool applyTrackContentSnapshotWithGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+);
+
+/**
+ * Installs already-cloned Track content without allocating. The destination
+ * MIDI channel remains authoritative.
+ */
+void installTrackContentSnapshotWithOwnedGraph(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
+);
+
 // Copies scalar pattern state when graph revisions are already synchronized.
-void copyPatternStatePreservingGraph(
+[[nodiscard]] bool copyPatternStatePreservingGraph(
     SequencerPatternState& target,
     const SequencerPatternState& source
+);
+
+/** Installs a complete copied Track payload, including Pattern-owned CC lanes. */
+void installTrackContentSnapshotWithOwnedPayload(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
+    SequencerCcLaneBankPtr ccLanes
 );
 
 void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot);
@@ -54,6 +83,29 @@ void applySnapshotToEditorPreservingGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
     const oc::note::sequencer::StepSequencerGraph* graph
+);
+
+/**
+ * Applies copied Track musical content and graph to the active editor while
+ * retaining the MIDI channel owned by the destination Track.
+ */
+[[nodiscard]] bool applyTrackContentSnapshotToEditorWithGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const oc::note::sequencer::StepSequencerGraph* graph
+);
+
+void installTrackContentSnapshotToEditorWithOwnedGraph(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
+);
+
+void installTrackContentSnapshotToEditorWithOwnedPayload(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
+    SequencerCcLaneBankPtr ccLanes
 );
 
 // Installs a decoded/staged pattern without allocating another graph copy.

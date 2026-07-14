@@ -64,15 +64,22 @@ FLASHMEM bool clipboardUsage(const core::state::MacroAutomationClipboard* clipbo
     if (clipboard == nullptr) return true;
     if (clipboard->trackScope != trackScope) return false;
     if (!clipboard->valid) return clipboard->count == 0;
+    if (clipboard->count > clipboard->entries.size() ||
+        clipboard->pointPool.used > clipboard->pointPool.points.size()) {
+        return false;
+    }
 
-    const uint8_t count = std::min<uint8_t>(
-        clipboard->count,
-        macro::MACRO_AUTOMATION_SLOT_CAPACITY
-    );
+    const uint8_t count = clipboard->count;
     for (uint8_t i = 0; i < count; ++i) {
         const auto& entry = clipboard->entries[i];
         if (!entry.valid || entry.sourceMacro >= macro::MACRO_COUNT) return false;
         if (trackScope && entry.sourcePage >= macro::PAGE_COUNT) return false;
+        if (!macro::macroAutomationSlotStateValidForMutation(
+                entry.state,
+                clipboard->pointPool
+            )) {
+            return false;
+        }
         if (!macro::macroAutomationSlotHasContent(entry.state)) continue;
 
         for (uint8_t previous = 0; previous < i; ++previous) {
@@ -207,10 +214,7 @@ FLASHMEM bool replaceScopeFromClipboard(
     clearScope(bank, dest);
     if (clipboard == nullptr || !clipboard->valid) return true;
 
-    const uint8_t count = std::min<uint8_t>(
-        clipboard->count,
-        macro::MACRO_AUTOMATION_SLOT_CAPACITY
-    );
+    const uint8_t count = clipboard->count;
     for (uint8_t i = 0; i < count; ++i) {
         const auto& entry = clipboard->entries[i];
         if (!entry.valid || !macro::macroAutomationSlotHasContent(entry.state)) continue;

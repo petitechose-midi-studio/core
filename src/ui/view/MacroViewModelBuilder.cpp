@@ -6,6 +6,7 @@
 #include "config/Timing.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
+#include "state/macro/MacroSelectionDeleteAction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -52,11 +53,34 @@ ContextActionStripVisualState macroVisual(
     switch (visibility) {
         case core::state::macro::MacroInteractionVisibility::ACTIVE:
             return ContextActionStripVisualState::ACTIVE;
+        case core::state::macro::MacroInteractionVisibility::DISABLED:
+            return ContextActionStripVisualState::DISABLED;
         case core::state::macro::MacroInteractionVisibility::DIM:
             return ContextActionStripVisualState::DIM;
         case core::state::macro::MacroInteractionVisibility::HIDDEN:
         default:
             return ContextActionStripVisualState::HIDDEN;
+    }
+}
+
+ContextActionStripVisualState selectionDeleteVisual(
+    core::state::macro::MacroSelectionDeletePresentationState state
+) {
+    using Presentation = core::state::macro::MacroSelectionDeletePresentationState;
+    switch (state) {
+        case Presentation::AVAILABLE:
+            return ContextActionStripVisualState::AVAILABLE;
+        case Presentation::PRESSED:
+            return ContextActionStripVisualState::PRESSED;
+        case Presentation::ARMED:
+            return ContextActionStripVisualState::ARMED;
+        case Presentation::CANCELLED:
+            return ContextActionStripVisualState::CANCELLED;
+        case Presentation::APPLIED:
+            return ContextActionStripVisualState::APPLIED;
+        case Presentation::DISABLED:
+        default:
+            return ContextActionStripVisualState::DISABLED;
     }
 }
 
@@ -213,20 +237,53 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
     ContextActionStripProps props;
     props.visible = true;
 
-    if (source.trackNavigation.selection.active.get() || source.macroUi.pageSelection.active.get()) {
+    const auto selectionFeedback = source.macroUi.selectionDeleteFeedback.get();
+    const bool appliedSelectionDeleteFeedback =
+        selectionFeedback.active &&
+        selectionFeedback.action == core::state::contextual::ContextActionId::REMOVE &&
+        selectionFeedback.status ==
+            core::state::contextual::OperationFeedbackStatus::APPLIED;
+    if (source.trackNavigation.selection.active.get() ||
+        source.macroUi.pageSelection.active.get() ||
+        appliedSelectionDeleteFeedback) {
+        const auto context = macroInteractionContext(source);
+        const auto presentation = appliedSelectionDeleteFeedback
+            ? core::state::macro::MacroSelectionDeletePresentationState::APPLIED
+            : core::state::macro::macroSelectionDeletePresentationState(
+                context.selectionDeleteAction,
+                source.macroUi.selectionDeleteGuard.get(),
+                selectionFeedback
+            );
+        const bool armed = presentation ==
+            core::state::macro::MacroSelectionDeletePresentationState::ARMED;
+        const bool cancelled = presentation ==
+            core::state::macro::MacroSelectionDeletePresentationState::CANCELLED;
+        const bool applied = presentation ==
+            core::state::macro::MacroSelectionDeletePresentationState::APPLIED;
         props.slots[0] = {
-            .visualState = ContextActionStripVisualState::ACTIVE,
-            .tone = ContextActionStripTone::DESTRUCTIVE,
+            .visualState = selectionDeleteVisual(presentation),
+            .tone = applied ? ContextActionStripTone::POSITIVE
+                            : (cancelled ? ContextActionStripTone::WARNING
+                                         : ContextActionStripTone::DESTRUCTIVE),
             .showIcon = true,
-            .icon = standalone::icons::ACTION_CLEAR
+            .icon = applied ? standalone::icons::ACTION_VALIDATE
+                            : (cancelled ? standalone::icons::ACTION_CANCEL
+                                         : standalone::icons::ACTION_REMOVE),
+            .holdActive = armed,
+            .holdStartedAtMs = source.macroUi.selectionDeleteGuard.get().pressedAtMs,
+            .holdDurationMs = context.selectionDeleteAction.guard.durationMs,
         };
         props.slots[1].visualState = ContextActionStripVisualState::HIDDEN;
-        props.slots[2] = {
-            .visualState = ContextActionStripVisualState::ACTIVE,
-            .tone = ContextActionStripTone::CONSTRUCTIVE,
-            .showIcon = true,
-            .icon = standalone::icons::ACTION_COPY
-        };
+        if (appliedSelectionDeleteFeedback) {
+            props.slots[2].visualState = ContextActionStripVisualState::HIDDEN;
+        } else {
+            props.slots[2] = {
+                .visualState = ContextActionStripVisualState::ACTIVE,
+                .tone = ContextActionStripTone::CONSTRUCTIVE,
+                .showIcon = true,
+                .icon = standalone::icons::ACTION_COPY
+            };
+        }
         return props;
     }
 
@@ -247,7 +304,7 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
         .tone = ContextActionStripTone::DESTRUCTIVE,
         .showIcon = true,
         .icon = removeHoldActive ? standalone::icons::ACTION_CANCEL
-                                 : standalone::icons::ACTION_CLEAR,
+                                 : standalone::icons::ACTION_REMOVE,
         .holdActive = removeHoldActive,
         .holdStartedAtMs = holdState.startedAtMs.get(),
         .holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS,
@@ -294,12 +351,40 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             source.macroUi.automationRecording.address.track == source.pages.currentActiveTrack() &&
             source.macroUi.automationRecording.address.page == source.pages.currentActivePage() &&
             source.macroUi.automationRecording.address.macro == i;
+        const bool automationStored = automation != nullptr &&
+            core::state::macro::macroCurveStored(automation->automation);
+        const bool modulationStored = automation != nullptr &&
+            core::state::macro::macroCurveStored(automation->modulation);
+        const bool automationPlayback = automationStored &&
+            core::state::macro::macroCurvePlaybackActive(
+                automation->automation
+            );
+        const bool modulationPlayback = modulationStored &&
+            core::state::macro::macroCurvePlaybackActive(
+                automation->modulation
+            );
+        const bool modulationPaused = modulationPlayback &&
+            automation->modulationDepth <= 0.0f;
+        const auto& projection = source.macroUi.runtimeProjections[i];
+        const float fallbackValue = source.macros.slots[i].value.get();
         frame.macros[i] = {
-            .value = source.macros.slots[i].value.get(),
+            .value = projection.valid ? projection.resolved : fallbackValue,
+            .baseValue = projection.valid ? projection.base : fallbackValue,
+            .modulationDelta = projection.valid ? projection.modulation : 0.0f,
+            .modulationDepth = automation != nullptr
+                ? automation->modulationDepth
+                : 0.0f,
             .cc = config.cc,
-            .automationActive = active && automation != nullptr && automation->automation.active,
+            .automationStored = active && automationStored,
+            .automationActive = active && automationPlayback && !manualOverride,
+            .modulationStored = active && modulationStored,
+            .modulationActive = active && modulationPlayback &&
+                !modulationPaused,
+            .modulationPaused = active && modulationPaused,
             .automationRecording = active && recording,
             .automationManualOverride = active && manualOverride,
+            .clippedLow = projection.valid && projection.clippedLow,
+            .clippedHigh = projection.valid && projection.clippedHigh,
             .active = active,
             .addSlot = addSlot,
             .focused = focused,

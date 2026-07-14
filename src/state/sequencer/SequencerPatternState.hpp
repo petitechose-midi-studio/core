@@ -11,6 +11,7 @@
 #include <oc/note/sequencer/StepSequencerState.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "SequencerCcLaneDomain.hpp"
 #include "SequencerScaleState.hpp"
 #include "StepProperty.hpp"
 
@@ -50,6 +51,9 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     /// Bumps when hierarchical step content changes.
     Signal<uint32_t> graphRevision{0};
 
+    /// Bumps when Pattern-owned CC lane content or settings change.
+    Signal<uint32_t> ccLaneRevision{0};
+
     /// Signed delta added to the project swing for this pattern.
     Signal<int8_t, 6> swingOffsetPercent{0};
 
@@ -63,6 +67,10 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
     SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::CHROMATIC;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
+    // Four sparse lanes are materialized only when used. The editor and every
+    // bank Track live in EXTMEM, while each 648-byte bank is independently
+    // allocated so an empty Project pays only one pointer per Pattern.
+    core::app::ExtmemUniquePtr<SequencerCcLaneBank> ccLanes;
 
     ~SequencerPatternState();
 
@@ -116,6 +124,10 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
 
     void bumpGraphRevision() {
         graphRevision.set(graphRevision.get() + 1);
+    }
+
+    void bumpCcLaneRevision() {
+        ccLaneRevision.set(ccLaneRevision.get() + 1);
     }
 
     void bumpPatternTimingRevision() {

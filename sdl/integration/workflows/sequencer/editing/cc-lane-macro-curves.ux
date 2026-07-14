@@ -1,0 +1,42 @@
+# UX workflow: edit a CC lane directly with the eight Macro controls.
+# Purpose: proves the 1:1 visible-step mapping, direct value authoring, Macro
+# button toggle, direct hold+turn transition editing, and connected Linear preview.
+# Expect: capture_changed:cc_lane_grid=macro_3_authored, capture_changed:macro_3_authored=macro_5_toggled, capture_changed:macro_5_toggled=transition_linear_selected, capture_changed:transition_linear_selected=linear_curve_applied
+# Expect: semantic:macro_3_authored:mode=sequencer.cc_lane.grid, semantic:macro_3_authored:effect=edit_visible_cc_event, semantic:macro_3_authored:target_step=2
+# Expect: semantic:transition_linear_selected:mode=sequencer.cc_lane.transition_picker, semantic:transition_linear_selected:effect=select_cc_transition, semantic:transition_linear_selected:property=cc_transition, semantic:transition_linear_selected:target_step=2, semantic:transition_linear_selected:authored_value=1
+
+0 scenario sequencer
+
+# Enter Pattern > property selector > CC Lanes, add the default lane, and land
+# in the eight-step grid.
+120 tap NAV 60
+300 button LEFT_BOTTOM down
+420 encoder NAV 1
+500 encoder NAV 1
+580 encoder NAV 1
+660 encoder NAV 1
+740 encoder NAV 1
+920 tap NAV 60
+1080 button LEFT_BOTTOM up
+1300 tap NAV 60
+1600 encoder OPT 1
+1900 tap BOTTOM_RIGHT 60
+2140 capture screen cc_lane_grid
+
+# Macro 3 writes visible step 3 directly. Macro 5 button toggles visible step 5,
+# creating a clear destination for the transition owned by step 3.
+2240 encoder MACRO_3 1.00
+2460 capture screen macro_3_authored
+2580 button MACRO_5 down
+2700 button MACRO_5 up
+2920 capture screen macro_5_toggled
+
+# Hold Macro 3 and turn that same encoder to Linear. The temporary picker
+# appears only during the gesture; physical release applies and returns to the
+# uncluttered grid without a second control.
+3040 button MACRO_3 down
+3220 encoder MACRO_3 1.00
+3440 capture screen transition_linear_selected
+3580 button MACRO_3 up
+3660 tick
+3880 capture screen linear_curve_applied

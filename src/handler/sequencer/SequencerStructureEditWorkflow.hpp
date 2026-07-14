@@ -8,8 +8,10 @@
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/StatusBarState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
@@ -35,6 +37,8 @@ public:
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
         SequencerHistoryDomainServices history;
+        core::state::sequencer::SequencerTrackActivationQueue* trackActivations = nullptr;
+        core::state::StatusBarState* statusBar = nullptr;
     };
 
     explicit SequencerStructureEditWorkflow(StateRefs state);
@@ -45,8 +49,19 @@ public:
     bool canRemoveCurrentStructure() const;
     bool canPasteCurrentStructure() const;
 
+    void update(uint32_t nowMs);
     void beginHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
+    core::state::contextual::GuardedActionRelease releaseTrackPasteAction(
+        uint32_t nowMs
+    );
+    bool cancelTrackPasteAction(uint32_t nowMs);
+    bool trackPasteGestureActive() const;
+    bool trackPasteNavigationBlocked() const;
+    bool trackPastePlanInspectable() const;
+    bool trackPasteDetailsVisible() const;
+    void toggleTrackPasteDetails();
+    void navigateTrackPasteDetails(float delta);
     void applyBottomLeftTapCurrentStructure();
     void toggleTrackSelectionMute();
     void removeCurrentStructure();
@@ -85,6 +100,22 @@ private:
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
     bool applyTrackState(uint16_t enabledMask, uint8_t activeTrack);
+    bool trackPasteSelectionContext() const;
+    uint8_t trackPasteTarget(bool selectionContext) const;
+    core::state::ClipboardTransferPlan buildTrackPastePlan(
+        bool selectionContext
+    ) const;
+    bool beginTrackPasteAction(bool selectionContext, uint32_t nowMs);
+    void refreshTrackPastePreview(uint32_t nowMs);
+    void updateTrackPasteActivation(uint32_t nowMs);
+    void setTrackPasteFeedback(
+        core::state::contextual::OperationFeedbackStatus status,
+        core::state::contextual::ContextActionReason reason,
+        core::state::contextual::OperationFeedbackExpiryPolicy expiry,
+        uint32_t nowMs,
+        uint32_t durationMs = 0
+    );
+    bool commitTrackPaste(uint32_t nowMs);
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
@@ -96,6 +127,8 @@ private:
     core::state::StructureClipboardState& structure_clipboard_;
     SharedTrackDomainServices shared_tracks_;
     SequencerHistoryDomainServices history_;
+    core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
+    core::state::StatusBarState* status_bar_ = nullptr;
 };
 
 }  // namespace core::handler

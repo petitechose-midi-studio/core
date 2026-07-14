@@ -95,7 +95,8 @@ void SequencerInternalTimerLane::onTimer_() {
                      playing,
                      playbackStartUs,
                      tickPeriodUsForTempo(config.tempo),
-                     false);
+                     false,
+                     snapshot_bank_.laneSnapshot(inputIndex));
     drainRealtimeMidiQueue_(core::time_compat::micros());
     OC_PERF_UNITS(perfTimer, pendingClockCount, playing ? 1U : 0U);
 }

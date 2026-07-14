@@ -127,7 +127,7 @@ void test_finalize_recording_preserves_audible_turning_points() {
     std::cout << "[PASS] test_finalize_recording_preserves_audible_turning_points\n";
 }
 
-void test_finalize_recording_coalesces_same_tick_with_last_value() {
+void test_finalize_recording_coalesces_same_tick_and_constant_tail() {
     using namespace core::state::macro;
 
     MacroAutomationLane lane;
@@ -138,13 +138,13 @@ void test_finalize_recording_coalesces_same_tick_with_last_value() {
     macroAutomationFinalizeRecording(lane, 1.0f);
 
     assert(lane.active);
-    assert(lane.pointCount == 2);
+    // The last value written on the snapped tick is authoritative. Because the
+    // remainder is constant, one point is the exact and most compact lane.
+    assert(lane.pointCount == 1);
     assert(near(lane.points[0].beat, 0.0f));
     assert(near(lane.points[0].value, 0.8f));
-    assert(near(lane.points[1].beat, 0.5f));
-    assert(near(lane.points[1].value, 0.8f));
 
-    std::cout << "[PASS] test_finalize_recording_coalesces_same_tick_with_last_value\n";
+    std::cout << "[PASS] test_finalize_recording_coalesces_same_tick_and_constant_tail\n";
 }
 
 void test_linear_interpolation_and_tail_hold_are_deterministic() {
@@ -195,44 +195,6 @@ void test_points_must_be_appended_in_musical_order() {
     std::cout << "[PASS] test_points_must_be_appended_in_musical_order\n";
 }
 
-void test_automation_conversion_policies_make_relative_shapes() {
-    using namespace core::state::macro;
-
-    MacroAutomationLane lane;
-    lane.durationBeats = 4.0f;
-    assert(macroAutomationAppendPoint(lane, 0.0f, 0.25f));
-    assert(macroAutomationAppendPoint(lane, 2.0f, 0.75f));
-
-    MacroModulationShape meanShape;
-    assert(macroAutomationConvertToModulation(
-        lane,
-        MacroAutomationConversionPolicy::MEAN,
-        meanShape
-    ));
-    assert(near(meanShape.points[0].value, -0.25f));
-    assert(near(meanShape.points[1].value, 0.25f));
-
-    MacroModulationShape firstShape;
-    assert(macroAutomationConvertToModulation(
-        lane,
-        MacroAutomationConversionPolicy::FIRST,
-        firstShape
-    ));
-    assert(near(firstShape.points[0].value, 0.0f));
-    assert(near(firstShape.points[1].value, 0.5f));
-
-    MacroModulationShape minShape;
-    assert(macroAutomationConvertToModulation(
-        lane,
-        MacroAutomationConversionPolicy::MIN,
-        minShape
-    ));
-    assert(near(minShape.points[0].value, 0.0f));
-    assert(near(minShape.points[1].value, 0.5f));
-
-    std::cout << "[PASS] test_automation_conversion_policies_make_relative_shapes\n";
-}
-
 void test_resolve_static_automation_modulation_and_depth() {
     using namespace core::state::macro;
 
@@ -267,6 +229,32 @@ void test_resolve_static_automation_modulation_and_depth() {
     assert(near(atMiddle.modulation, 0.1f));
     assert(near(atMiddle.resolved, 0.9f));
 
+    motion->automation.playbackState = MacroCurvePlaybackState::OFF;
+    const auto modulationOnly = macroResolveValue(0.6f, *motion, bank.pointPool, 0.0f);
+    assert(modulationOnly.automationStored);
+    assert(!modulationOnly.automationActive);
+    assert(modulationOnly.modulationStored);
+    assert(modulationOnly.modulationActive);
+    assert(near(modulationOnly.base, 0.6f));
+    assert(near(modulationOnly.resolved, 0.5f));
+
+    motion->modulationDepth = 0.0f;
+    const auto paused = macroResolveValue(0.6f, *motion, bank.pointPool, 0.0f);
+    assert(paused.modulationStored);
+    assert(!paused.modulationActive);
+    assert(paused.modulationPausedDepthZero);
+    assert(!paused.modulationSuspended);
+    assert(near(paused.resolved, 0.6f));
+
+    motion->modulationDepth = 0.2f;
+    motion->modulation.playbackState = MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    const auto suspended = macroResolveValue(0.6f, *motion, bank.pointPool, 0.0f);
+    assert(suspended.modulationStored);
+    assert(!suspended.modulationActive);
+    assert(!suspended.modulationPausedDepthZero);
+    assert(suspended.modulationSuspended);
+    assert(near(suspended.resolved, 0.6f));
+
     MacroAutomationSlotState noMotion;
     const auto staticOnly = macroResolveValue(0.6f, noMotion, bank.pointPool, 1.0f);
     assert(!staticOnly.automationActive);
@@ -275,6 +263,30 @@ void test_resolve_static_automation_modulation_and_depth() {
     assert(near(staticOnly.resolved, 0.6f));
 
     std::cout << "[PASS] test_resolve_static_automation_modulation_and_depth\n";
+}
+
+void test_curve_lifecycle_roles_reject_automation_only_invalid_states() {
+    using namespace core::state::macro;
+
+    MacroAutomationCurveRef curve;
+    assert(macroAutomationCurveLifecycleValid(curve));
+    assert(macroModulationCurveLifecycleValid(curve));
+
+    curve.playbackState = MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    assert(!macroAutomationCurveLifecycleValid(curve));
+    assert(macroModulationCurveLifecycleValid(curve));
+
+    curve.playbackState = MacroCurvePlaybackState::OFF;
+    curve.modulationOrigin = MacroModulationOrigin::CONVERTED_MIN;
+    assert(!macroAutomationCurveLifecycleValid(curve));
+    assert(macroModulationCurveLifecycleValid(curve));
+
+    curve.modulationOrigin = static_cast<MacroModulationOrigin>(0xFF);
+    assert(!macroAutomationCurveLifecycleValid(curve));
+    assert(!macroModulationCurveLifecycleValid(curve));
+
+    std::cout
+        << "[PASS] test_curve_lifecycle_roles_reject_automation_only_invalid_states\n";
 }
 
 void test_persisted_curve_duration_resize_uses_non_destructive_window() {
@@ -404,12 +416,12 @@ int main() {
     test_finalize_recording_simplifies_dense_linear_motion();
     test_recording_reduces_dense_input_instead_of_truncating();
     test_finalize_recording_preserves_audible_turning_points();
-    test_finalize_recording_coalesces_same_tick_with_last_value();
+    test_finalize_recording_coalesces_same_tick_and_constant_tail();
     test_linear_interpolation_and_tail_hold_are_deterministic();
     test_loop_boundary_keeps_start_point_authoritative();
     test_points_must_be_appended_in_musical_order();
-    test_automation_conversion_policies_make_relative_shapes();
     test_resolve_static_automation_modulation_and_depth();
+    test_curve_lifecycle_roles_reject_automation_only_invalid_states();
     test_persisted_curve_duration_resize_uses_non_destructive_window();
     test_curve_window_summary_matches_persisted_window_semantics();
 

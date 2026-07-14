@@ -22,7 +22,8 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
-    oc::type::ScopeID scopeId
+    oc::type::ScopeID scopeId,
+    TimeProviderFn timeProvider
 #if defined(MS_UX_RECORDER)
     ,
     core::validation::ux::StructureUxTraceState* uxTraceState
@@ -54,6 +55,7 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     , encoders_(encoders)
     , buttons_(buttons)
     , scope_id_(scopeId)
+    , time_provider_(timeProvider ? timeProvider : core::time_compat::millis)
 #if defined(MS_UX_RECORDER)
     , ux_trace_state_(uxTraceState)
 #endif
@@ -159,12 +161,20 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return policyAllows(MacroAction::CLEAR_STRUCTURE) ||
-                   policyAllows(MacroAction::REMOVE_STRUCTURE);
+                   policyAllows(MacroAction::REMOVE_STRUCTURE) ||
+                   policyAllows(MacroAction::DELETE_SELECTION);
         })
         .then([this]() {
+            ignore_next_bottom_left_release_ = false;
+            selection_delete_press_active_ = false;
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
+            if (policyAllows(MacroAction::DELETE_SELECTION)) {
+                selection_delete_press_active_ =
+                    structure_workflow_.beginSelectionDeleteGuard(time_provider_());
+                return;
+            }
             if (structure_workflow_.canRemoveCurrentStructure()) {
                 structure_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
             }
@@ -173,17 +183,28 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::DELETE_SELECTION); })
+        .when([this]() { return selection_delete_press_active_; })
         .then([this]() {
-            structure_workflow_.deleteSelection();
-            performance_workflow_.refreshEncoders();
+            selection_delete_press_active_ = false;
+            structure_workflow_.cancelSelectionDeleteGuard(time_provider_());
+            // The gesture began as selection deletion. Consume this physical
+            // release even if another input changed the interaction context
+            // while the button was held.
+            ignore_next_bottom_left_release_ = true;
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::CLEAR_STRUCTURE); })
+        .when([this]() {
+            return ignore_next_bottom_left_release_ ||
+                   structure_workflow_.hasHoldAction(
+                       core::state::StructureHoldAction::REMOVE
+                   ) ||
+                   policyAllows(MacroAction::CLEAR_STRUCTURE);
+        })
         .then([this]() {
+            const bool clearAllowed = policyAllows(MacroAction::CLEAR_STRUCTURE);
             structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
                 ignore_next_bottom_left_release_ = false;
@@ -192,6 +213,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #endif
                 return;
             }
+            // Macro Slot scope reserves this gesture for the guarded Remove
+            // hold. Releasing early only cancels the pending hold; source-level
+            // Clear remains an explicit action in the typed detail overlay.
+            if (!clearAllowed) return;
             structure_workflow_.eraseCurrentStructure();
             performance_workflow_.refreshEncoders();
         });
@@ -199,8 +224,26 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::REMOVE_STRUCTURE); })
+        .when([this]() {
+            return policyAllows(MacroAction::REMOVE_STRUCTURE) ||
+                   policyAllows(MacroAction::DELETE_SELECTION);
+        })
         .then([this]() {
+            if (policyAllows(MacroAction::DELETE_SELECTION)) {
+                const bool applied = structure_workflow_.commitSelectionDeleteGuard(
+                    time_provider_()
+                );
+                if (applied) {
+                    ignore_next_bottom_left_release_ = true;
+#if defined(MS_UX_RECORDER)
+                    if (ux_trace_state_) {
+                        ux_trace_state_->ignoreNextBottomLeftRelease = true;
+                    }
+#endif
+                    performance_workflow_.refreshEncoders();
+                }
+                return;
+            }
             structure_workflow_.clearHoldAction();
             ignore_next_bottom_left_release_ = true;
 #if defined(MS_UX_RECORDER)
@@ -272,6 +315,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .then([this]() { performance_workflow_.cancelClutch(); });
 }
 
+void MacroPerformanceHandler::update(uint32_t nowMs) {
+    structure_workflow_.updateSelectionDeleteGuard(nowMs);
+}
+
 core::state::macro::MacroInteractionContext
 MacroPerformanceHandler::interactionContext() const {
     return structure_workflow_.interactionContext(
@@ -318,7 +365,7 @@ bool MacroPerformanceHandler::policyAllows(
         case MacroAction::PASTE_STRUCTURE:
             return MacroPolicy::bottomRightLongPress(context) == action;
         case MacroAction::DELETE_SELECTION:
-            return MacroPolicy::bottomLeftRelease(context) == action;
+            return MacroPolicy::bottomLeftLongPress(context) == action;
         case MacroAction::DUPLICATE_SELECTION:
             return MacroPolicy::bottomRightRelease(context) == action;
         case MacroAction::NONE:

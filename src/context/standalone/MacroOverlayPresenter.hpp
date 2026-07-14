@@ -1,7 +1,6 @@
 #pragma once
 
-#include <oc/state/StaticSignalWatcher.hpp>
-
+#include "context/standalone/MacroOverlayInvalidationBindings.hpp"
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
 
@@ -9,6 +8,10 @@ namespace ms::ui {
 class VirtualListKeyValueOverlay;
 class VirtualListSelectorOverlay;
 }  // namespace ms::ui
+
+namespace core::ui {
+class MacroEditorOverlay;
+}
 
 namespace core::context::standalone {
 
@@ -23,27 +26,20 @@ public:
     using StateRefs = macro_overlay_presenter::Source;
 
     MacroOverlayPresenter(StateRefs stateRefs,
-                          ms::ui::VirtualListKeyValueOverlay& macroEditOverlay,
+                          core::ui::MacroEditorOverlay& macroEditOverlay,
                           ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
+                          core::ui::ContextActionStrip& macroEditActionStrip,
+                          core::ui::ContextActionStrip& macroAutomationActionStrip,
                           ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
                           ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
                           ms::ui::VirtualListSelectorOverlay& macroTargetSelectorOverlay);
 
     [[nodiscard]] bool bind();
+    void refreshRuntimeTelemetry();
 
 private:
-    static constexpr uint32_t RENDER_EDIT = 1U << 0;
-    static constexpr uint32_t RENDER_AUTOMATION = 1U << 1;
-    static constexpr uint32_t RENDER_EDIT_SELECTOR = 1U << 2;
-    static constexpr uint32_t RENDER_PAGE_SELECTOR = 1U << 3;
-    static constexpr uint32_t RENDER_TARGET_SELECTOR = 1U << 4;
-
+    static void requestRenderFlags(void* context, uint32_t flags);
     static void drainRenderQueue(void* context, uint32_t flags);
-    void requestEditRender();
-    void requestAutomationRender();
-    void requestEditSelectorRender();
-    void requestPageSelectorRender();
-    void requestTargetSelectorRender();
     void renderPending(uint32_t flags);
     void renderEdit();
     void renderAutomation();
@@ -53,17 +49,18 @@ private:
     void initializeStaticItems_();
 
     StateRefs state_refs_;
-    ms::ui::VirtualListKeyValueOverlay& macro_edit_overlay_;
+    core::ui::MacroEditorOverlay& macro_edit_overlay_;
     ms::ui::VirtualListKeyValueOverlay& macro_automation_overlay_;
+    core::ui::ContextActionStrip& macro_edit_action_strip_;
+    core::ui::ContextActionStrip& macro_automation_action_strip_;
     ms::ui::VirtualListSelectorOverlay& macro_edit_selector_overlay_;
     ms::ui::VirtualListSelectorOverlay& page_selector_overlay_;
     ms::ui::VirtualListSelectorOverlay& macro_target_selector_overlay_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
-    oc::state::StaticWatchGroup<8> edit_watcher_;
-    oc::state::StaticWatchGroup<5> automation_watcher_;
-    oc::state::StaticWatchGroup<3> edit_selector_watcher_;
-    oc::state::StaticWatchGroup<2> page_selector_watcher_;
-    oc::state::StaticWatchGroup<2> macro_target_selector_watcher_;
+    macro_overlay_invalidation::Bindings invalidation_bindings_;
+    // Presenter instances live in EXTMEM; keeping the sizeable preview here
+    // avoids rebuilding it through multiple RAM1 stack copies per render.
+    macro_overlay_presenter::EditRenderData edit_render_data_{};
     bool static_items_initialized_ = false;
     macro_overlay_presenter::StaticItems static_items_{};
 };

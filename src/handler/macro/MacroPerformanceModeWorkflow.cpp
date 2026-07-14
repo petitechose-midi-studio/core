@@ -21,7 +21,7 @@ float normalizedForProperty(const core::handler::MacroPerformanceDomainServices&
 
     if (property == core::state::macro::MacroPerformanceProperty::AUTOMATION) {
         if (!services.automationActiveFor(index)) return 0.0f;
-        return services.automationManualOverrideActiveFor(index) ? 0.0f : 1.0f;
+        return services.manualOverrideActiveFor(index) ? 0.0f : 1.0f;
     }
 
     return services.runtimeValue(index);

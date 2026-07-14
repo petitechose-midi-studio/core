@@ -8,6 +8,8 @@
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroHistory.hpp"
+#include "state/macro/MacroUiState.hpp"
 
 namespace core::state {
 struct CoreState;
@@ -33,10 +35,12 @@ public:
     struct StateRefs {
         core::state::MacroState& macros;
         core::state::macro::MacroPagesState& pages;
+        core::state::macro::MacroUiState& macroUi;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
         oc::state::Signal<uint8_t, 8>& sharedTrackActive;
         oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
+        core::state::macro::MacroHistoryService* history = nullptr;
     };
 
     struct Operations {
@@ -84,10 +88,12 @@ private:
 
     core::state::MacroState* macros_ = nullptr;
     core::state::macro::MacroPagesState* pages_ = nullptr;
+    core::state::macro::MacroUiState* macro_ui_ = nullptr;
     oc::state::Signal<uint32_t>* config_revision_ = nullptr;
     core::state::StatusBarState* status_bar_ = nullptr;
     oc::state::Signal<uint8_t, 8>* shared_track_active_ = nullptr;
     oc::state::Signal<uint16_t, 16>* shared_track_enabled_mask_ = nullptr;
+    core::state::macro::MacroHistoryService* history_ = nullptr;
     Operations operations_{};
 };
 

@@ -218,6 +218,8 @@ FLASHMEM void SequencerPatternState::reset() {
     bumpPatternTimingRevision();
     graph.reset();
     bumpGraphRevision();
+    ccLanes.reset();
+    bumpCcLaneRevision();
 }
 
 FLASHMEM void SequencerState::reset() {
@@ -238,6 +240,7 @@ FLASHMEM void SequencerState::reset() {
 
     stepEdit.reset();
     stepPresetPicker.reset();
+    ccLaneUi.reset();
     stepPropertyInlineSelector.reset();
     stepInlineFeedback.reset();
     patternVariationFeedback.reset();

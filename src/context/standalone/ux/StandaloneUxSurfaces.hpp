@@ -2,12 +2,16 @@
 
 #if defined(MS_UX_RECORDER)
 
+#include <array>
 #include <cstdint>
 
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
+#include "state/contextual/ContextActionSpec.hpp"
 #include "state/StructureSelectionState.hpp"
 #include "validation/ux/SemanticUxSurface.hpp"
 
@@ -27,6 +31,7 @@ struct MacroUiState;
 }
 namespace sequencer {
 struct SequencerState;
+class SequencerTrackActivationQueue;
 struct SequencerTrackBankState;
 }
 }
@@ -35,12 +40,18 @@ namespace core::validation::ux {
 struct StructureUxTraceState;
 }
 
+namespace core::handler {
+class MidiCcGlobalFrameCoordinator;
+}
+
 namespace core::context::standalone::ux {
 
 namespace priority {
 constexpr uint8_t DEVICE_SETTINGS = 10;
 constexpr uint8_t VIEW_SELECTOR = 15;
 constexpr uint8_t TRANSPORT = 20;
+constexpr uint8_t SEQUENCER_STEP_PRESET = 23;
+constexpr uint8_t SEQUENCER_CC_LANE = 24;
 constexpr uint8_t SEQUENCER_STEP_EDIT = 25;
 constexpr uint8_t SEQUENCER_PROPERTY_SELECTOR = 30;
 constexpr uint8_t SEQUENCER_QUICK_CONTROLS = 35;
@@ -85,7 +96,10 @@ private:
 
 class TransportUxSurface final : public core::validation::ux::SemanticUxSurface {
 public:
-    explicit TransportUxSurface(core::state::StatusBarState& statusBar);
+    TransportUxSurface(
+        core::state::StatusBarState& statusBar,
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays
+    );
 
     bool captureSemanticUxContext(
         const oc::core::input::InputBindingTraceEvent& event,
@@ -94,6 +108,7 @@ public:
 
 private:
     core::state::StatusBarState& status_bar_;
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
 };
 
 class SequencerPropertySelectorUxSurface final : public core::validation::ux::SemanticUxSurface {
@@ -111,6 +126,48 @@ public:
 private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::sequencer::SequencerState& sequencer_;
+};
+
+class SequencerCcLaneUxSurface final : public core::validation::ux::SemanticUxSurface {
+public:
+    SequencerCcLaneUxSurface(
+        core::state::sequencer::SequencerState& sequencer,
+        core::state::sequencer::SequencerTrackBankState& tracks,
+        const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator
+    );
+
+    bool captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent& event,
+        core::validation::ux::SemanticUxContext& out
+    ) const override;
+
+private:
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
+    const core::handler::MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
+    mutable std::array<
+        core::state::contextual::ContextActionSpec,
+        3>
+        gesture_specs_{};
+};
+
+class SequencerStepPresetUxSurface final
+    : public core::validation::ux::SemanticUxSurface {
+public:
+    explicit SequencerStepPresetUxSurface(
+        core::state::sequencer::SequencerState& sequencer,
+        const core::state::sequencer::SequencerTrackActivationQueue* trackActivations
+    );
+
+    bool captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent& event,
+        core::validation::ux::SemanticUxContext& out
+    ) const override;
+
+private:
+    core::state::sequencer::SequencerState& sequencer_;
+    const core::state::sequencer::SequencerTrackActivationQueue*
+        track_activations_ = nullptr;
 };
 
 class SequencerStepGridUxSurface final : public core::validation::ux::SemanticUxSurface {
@@ -195,6 +252,7 @@ public:
         core::state::StructureClipboardState& structureClipboard,
         core::state::sequencer::SequencerState& sequencer,
         core::state::sequencer::SequencerTrackBankState& tracks,
+        const core::state::sequencer::SequencerTrackActivationQueue* trackActivations,
         const core::validation::ux::StructureUxTraceState* traceState
     );
 
@@ -212,6 +270,7 @@ private:
     core::state::StructureClipboardState& structure_clipboard_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
+    const core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
     const core::validation::ux::StructureUxTraceState* trace_state_ = nullptr;
 };
 
@@ -292,7 +351,10 @@ public:
                        core::state::MacroEditState& macroEdit,
                        core::state::macro::MacroPagesState& pages,
                        core::state::macro::MacroUiState& macroUi,
-                       oc::state::Signal<uint32_t>& configRevision);
+                       oc::state::Signal<uint32_t>& configRevision,
+                       core::state::StructureClipboardState& structureClipboard,
+                       const core::handler::MidiCcGlobalFrameCoordinator*
+                           midiCcCoordinator);
 
     bool captureSemanticUxContext(
         const oc::core::input::InputBindingTraceEvent& event,
@@ -305,6 +367,8 @@ private:
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
     oc::state::Signal<uint32_t>& config_revision_;
+    core::state::StructureClipboardState& structure_clipboard_;
+    const core::handler::MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
     core::context::standalone::macro_overlay_presenter::StaticItems static_items_;
 };
 

@@ -56,7 +56,10 @@ lv_opa_t contentOpacity(ContextActionStripVisualState state) {
         case ContextActionStripVisualState::DIM:
             return LV_OPA_60;
         case ContextActionStripVisualState::ACTIVE:
+        case ContextActionStripVisualState::PRESSED:
         case ContextActionStripVisualState::ARMED:
+        case ContextActionStripVisualState::CANCELLED:
+        case ContextActionStripVisualState::APPLIED:
             return LV_OPA_COVER;
         case ContextActionStripVisualState::HIDDEN:
         default:
@@ -72,8 +75,12 @@ lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     switch (state) {
         case ContextActionStripVisualState::ACTIVE:
             return LV_OPA_70;
+        case ContextActionStripVisualState::PRESSED:
         case ContextActionStripVisualState::ARMED:
+        case ContextActionStripVisualState::APPLIED:
             return LV_OPA_COVER;
+        case ContextActionStripVisualState::CANCELLED:
+            return LV_OPA_30;
         default:
             return LV_OPA_TRANSP;
     }
@@ -327,6 +334,7 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
         setCachedText(slot.label, slot.hold_text, slotLabel(props));
         const lv_font_t* labelFont =
             (props.visualState == ContextActionStripVisualState::ACTIVE ||
+             props.visualState == ContextActionStripVisualState::PRESSED ||
              props.visualState == ContextActionStripVisualState::ARMED)
                 ? fonts.inter_13_bold
                 : fonts.inter_13_medium;

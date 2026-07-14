@@ -78,7 +78,8 @@ struct MacroPerformanceHarness {
               overlays,
               encoders,
               buttons,
-              MACRO_VIEW_SCOPE
+              MACRO_VIEW_SCOPE,
+              mockTimeMs
           ) {
         g_now_ms = 0;
         overlays.setActiveViewProvider([]() { return MACRO_VIEW_SCOPE; });
@@ -91,6 +92,7 @@ struct MacroPerformanceHarness {
     void tick(uint32_t nowMs) {
         g_now_ms = nowMs;
         inputBinding.processTick();
+        handler.update(nowMs);
     }
 
     void press(Config::ButtonID id) {
@@ -271,7 +273,7 @@ void test_macro_slot_focus_creates_add_slot_only_on_nav_confirm() {
     std::cout << "[PASS] test_macro_slot_focus_creates_add_slot_only_on_nav_confirm\n";
 }
 
-void test_nav_selection_mode_deletes_selected_macro_page() {
+void test_macro_page_selection_delete_guard_cancels_early_and_applies_at_threshold() {
     MacroPerformanceHarness h;
 
     h.state.pages.activeTrackData().enabledPageMask = 0x0003;
@@ -298,18 +300,89 @@ void test_nav_selection_mode_deletes_selected_macro_page() {
     h.state.macroUi.pageSelection.selectedMask.set(0x0002);
     assert(h.state.macroUi.pageSelection.selectedMask.get() == 0x0002);
 
+    const uint32_t mutationBeforeCancel = h.state.project.metadata.modifiedCounter;
+    const uint8_t historyBeforeCancel = h.state.sequencerHistory.undoCount();
+    constexpr uint32_t earlyStart = 2000;
+    h.tick(earlyStart);
     h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::PRESSED);
+    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::PRESSED);
+
+    h.tick(earlyStart + Config::Timing::LATCH_THRESHOLD_MS - 1U);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::PRESSED);
     h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
+    assert(h.state.pages.currentActivePage() == 1);
+    assert(h.state.macroUi.pageSelection.active.get());
+    assert(h.state.macroUi.pageSelection.selectedMask.get() == 0x0002);
+    assert(h.state.project.metadata.modifiedCounter == mutationBeforeCancel);
+    assert(h.state.sequencerHistory.undoCount() == historyBeforeCancel);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::CANCELLED);
+    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::CANCELLED);
+
+    h.tick(
+        earlyStart + Config::Timing::LATCH_THRESHOLD_MS - 1U +
+        Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
+    );
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::IDLE);
+    assert(!h.state.macroUi.selectionDeleteFeedback.get().active);
+
+    constexpr uint32_t applyStart = 4000;
+    h.tick(applyStart);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.tick(applyStart + Config::Timing::LATCH_THRESHOLD_MS);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::ARMED);
+    assert(h.state.macroUi.selectionDeleteGuard.get().progressPermille ==
+           Config::Timing::LATCH_THRESHOLD_MS);
+    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::ARMED);
+    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
+    assert(h.state.macroUi.pageSelection.active.get());
+
+    // Exercise the scheduler boundary where the shared guard reaches its
+    // terminal threshold immediately before the input long-press callback.
+    auto boundaryGuard = h.state.macroUi.selectionDeleteGuard.get();
+    assert(core::state::contextual::updateGuardedAction(
+        boundaryGuard,
+        applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    ));
+    assert(boundaryGuard.phase ==
+           core::state::contextual::GuardedActionPhase::COMMITTED);
+    h.state.macroUi.selectionDeleteGuard.set(boundaryGuard);
+
+    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     assert(h.state.pages.currentEnabledPageMask() == 0x0001);
     assert(h.state.pages.currentActivePage() == 0);
     assert(!h.state.macroUi.pageSelection.active.get());
+    assert(h.state.project.metadata.modifiedCounter == mutationBeforeCancel + 1U);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::IDLE);
+    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::APPLIED);
+
+    const uint32_t mutationAfterApply = h.state.project.metadata.modifiedCounter;
+    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
+    assert(h.state.project.metadata.modifiedCounter == mutationAfterApply);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 2U);
+    assert(h.state.project.metadata.modifiedCounter == mutationAfterApply);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0001);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_nav_selection_mode_deletes_selected_macro_page\n";
+    std::cout
+        << "[PASS] test_macro_page_selection_delete_guard_cancels_early_and_applies_at_threshold\n";
 }
 
-void test_nav_selection_mode_deletes_selected_macro_track() {
+void test_macro_track_selection_delete_applies_only_after_guard_threshold() {
     MacroPerformanceHarness h;
 
     h.state.setSharedTrackState(0x0003, h.state.currentSharedActiveTrack());
@@ -338,7 +411,23 @@ void test_nav_selection_mode_deletes_selected_macro_track() {
     h.state.trackNavigation.selection.selectedMask.set(0x0002);
     assert(h.state.trackNavigation.selection.selectedMask.get() == 0x0002);
 
+    constexpr uint32_t applyStart = 3000;
+    h.tick(applyStart);
     h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.tick(applyStart + Config::Timing::LATCH_THRESHOLD_MS);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::ARMED);
+    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0003);
+    assert(h.state.trackNavigation.selection.active.get());
+
+    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0001);
+    assert(h.state.pages.currentActiveTrack() == 0);
+    assert(!h.state.trackNavigation.selection.active.get());
+    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::APPLIED);
+
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.pages.currentTrackEnabledMask() == 0x0001);
     assert(h.state.pages.currentActiveTrack() == 0);
@@ -346,7 +435,87 @@ void test_nav_selection_mode_deletes_selected_macro_track() {
 
     drainNotifications();
 
-    std::cout << "[PASS] test_nav_selection_mode_deletes_selected_macro_track\n";
+    std::cout
+        << "[PASS] test_macro_track_selection_delete_applies_only_after_guard_threshold\n";
+}
+
+void test_macro_selection_delete_release_cannot_fall_through_after_context_cancel() {
+    MacroPerformanceHarness h;
+
+    h.state.pages.activeTrackData().enabledPageMask = 0x0003;
+    h.state.pages.syncActiveTrackCache();
+    h.state.macroUi.pageSelection.active.set(true);
+    h.state.macroUi.pageSelection.scope.set(
+        core::state::StructureSelectionScope::PAGE
+    );
+    h.state.macroUi.pageSelection.cursorIndex.set(1);
+    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
+
+    const uint32_t mutationBefore = h.state.project.metadata.modifiedCounter;
+    h.tick(2000);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::PRESSED);
+
+    // Cancel selection through another control while delete is still held.
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.macroUi.pageSelection.active.get());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
+
+    // The release belongs to the old guarded gesture and must not be
+    // reinterpreted as CLEAR_STRUCTURE in the newly active context.
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
+    assert(h.state.project.metadata.modifiedCounter == mutationBefore);
+
+    drainNotifications();
+
+    std::cout
+        << "[PASS] test_macro_selection_delete_release_cannot_fall_through_after_context_cancel\n";
+}
+
+void test_macro_selection_delete_release_cancels_committed_guard_without_mutation() {
+    MacroPerformanceHarness h;
+
+    h.state.pages.activeTrackData().enabledPageMask = 0x0003;
+    h.state.pages.syncActiveTrackCache();
+    h.state.macroUi.pageSelection.active.set(true);
+    h.state.macroUi.pageSelection.scope.set(
+        core::state::StructureSelectionScope::PAGE
+    );
+    h.state.macroUi.pageSelection.cursorIndex.set(1);
+    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
+
+    constexpr uint32_t start = 6000;
+    h.tick(start);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.tick(start + Config::Timing::LATCH_THRESHOLD_MS);
+
+    auto boundaryGuard = h.state.macroUi.selectionDeleteGuard.get();
+    assert(core::state::contextual::updateGuardedAction(
+        boundaryGuard,
+        start + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    ));
+    assert(boundaryGuard.phase ==
+           core::state::contextual::GuardedActionPhase::COMMITTED);
+    h.state.macroUi.selectionDeleteGuard.set(boundaryGuard);
+
+    const uint32_t mutationBefore = h.state.project.metadata.modifiedCounter;
+    g_now_ms = start + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
+    assert(h.state.macroUi.pageSelection.active.get());
+    assert(h.state.project.metadata.modifiedCounter == mutationBefore);
+    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::CANCELLED);
+    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::CANCELLED);
+
+    drainNotifications();
+
+    std::cout
+        << "[PASS] test_macro_selection_delete_release_cancels_committed_guard_without_mutation\n";
 }
 
 void test_macro_page_copy_and_long_press_paste() {
@@ -604,49 +773,85 @@ void test_macro_track_copy_preserves_multiple_pages_and_automations() {
     std::cout << "[PASS] test_macro_track_copy_preserves_multiple_pages_and_automations\n";
 }
 
-void test_macro_slot_focus_manages_local_automation_clipboard() {
+void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     MacroPerformanceHarness h;
 
     configureMacroAutomation(h.state, 0, 0, 0, 0.42f);
+    auto& page = h.state.pages.activePageData();
+    page.setMacroActive(0, true);
+    page.cc[0] = 74;
+    page.values[0] = 0.37f;
+    h.state.pages.updateActiveConfigs();
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     h.state.macroUi.focusedMacroSlot.set(0);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
-    assert(h.clipboard.hasMacroAutomation());
+    assert(h.clipboard.hasMacroSlot());
+    assert(!h.clipboard.hasMacroAutomation());
+    assert(h.clipboard.macroAutomationSet->sourceMacroActive);
+    assert(h.clipboard.macroAutomationSet->sourceSlotPresent);
+    assert(h.clipboard.macroAutomationSet->sourceCc == 74);
+    assert(std::fabs(h.clipboard.macroAutomationSet->sourceStaticValue - 0.37f) <
+           0.0001f);
 
+    // A short release cancels the destructive hold. It must neither clear the
+    // Automation source nor leave the visual hold state armed.
     h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::REMOVE);
     h.release(Config::ButtonID::BOTTOM_LEFT);
-    const auto* cleared = core::state::macro::macroAutomationFindSlot(
+    const auto* unchanged = core::state::macro::macroAutomationFindSlot(
         h.state.pages.automation,
         core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
     );
-    assert(cleared != nullptr);
-    assert(!cleared->automation.active);
-
-    h.press(Config::ButtonID::BOTTOM_RIGHT);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::BOTTOM_RIGHT);
-    const auto* pasted = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
-    );
-    assert(pasted != nullptr);
-    assert(pasted->automation.active);
+    assert(unchanged != nullptr);
+    assert(unchanged->automation.active);
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(!h.state.pages.activePageData().isMacroActive(0));
     assert(core::state::macro::macroAutomationFindSlot(
                h.state.pages.automation,
-               core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+               core::state::macro::MacroAutomationSlotAddress{
+                   .track = 0,
+                   .page = 0,
+                   .macro = 0,
+               }
            ) == nullptr);
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.tick(2 * Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    const auto* restored = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    );
+    assert(restored != nullptr);
+    assert(restored->automation.active);
+    core::state::macro::MacroCurvePoint restoredPoint{};
+    assert(core::state::macro::macroAutomationReadPoint(
+        restored->automation,
+        h.state.pages.automation.pointPool,
+        0,
+        false,
+        restoredPoint
+    ));
+    assert(std::fabs(restoredPoint.value - 0.42f) < 0.0001f);
+    assert(h.state.pages.activePageData().isMacroActive(0));
+    assert(h.state.pages.activePageData().cc[0] == 74);
+    assert(std::fabs(h.state.pages.activePageData().values[0] - 0.37f) < 0.0001f);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_macro_slot_focus_manages_local_automation_clipboard\n";
+    std::cout << "[PASS] test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove\n";
 }
 
 void test_left_bottom_toggles_macro_slot_property_selector() {
@@ -737,14 +942,16 @@ int main() {
     test_macro_track_cursor_can_cross_gaps_and_reach_any_track();
     test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse();
     test_macro_slot_focus_creates_add_slot_only_on_nav_confirm();
-    test_nav_selection_mode_deletes_selected_macro_page();
-    test_nav_selection_mode_deletes_selected_macro_track();
+    test_macro_page_selection_delete_guard_cancels_early_and_applies_at_threshold();
+    test_macro_track_selection_delete_applies_only_after_guard_threshold();
+    test_macro_selection_delete_release_cannot_fall_through_after_context_cancel();
+    test_macro_selection_delete_release_cancels_committed_guard_without_mutation();
     test_macro_page_copy_and_long_press_paste();
     test_macro_selection_duplicate_copies_page_into_first_free_slot();
     test_macro_selection_duplicate_copies_track_into_first_free_slot();
     test_macro_track_copy_and_long_press_paste_to_add_slot();
     test_macro_track_copy_preserves_multiple_pages_and_automations();
-    test_macro_slot_focus_manages_local_automation_clipboard();
+    test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove();
     test_left_bottom_toggles_macro_slot_property_selector();
     test_left_top_cancels_macro_slot_property_selector_without_committing_preview();
     test_left_center_is_reserved_and_does_not_open_macro_set_controls();

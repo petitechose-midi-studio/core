@@ -7,19 +7,24 @@
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::state::sequencer {
 
 using SequencerHistoryGraphPtr =
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>;
+using SequencerHistoryCcLanePtr = SequencerCcLaneBankPtr;
 
 struct SequencerHistoryPatternSnapshot {
     SequencerPatternSnapshot flat{};
     uint8_t focusedStep = 0;
     SequencerHistoryGraphPtr graph;
+    SequencerHistoryCcLanePtr ccLanes;
+    bool ccLanesCaptured = false;
 
     SequencerHistoryPatternSnapshot();
     ~SequencerHistoryPatternSnapshot();
@@ -36,6 +41,9 @@ struct SequencerHistoryTrackBankSnapshot {
     StepProperty activeStepProperty = StepProperty::NOTE;
     SequencerHistoryGraphPtr editorGraph;
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
+    SequencerHistoryCcLanePtr editorCcLanes;
+    std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT>
+        bankCcLanes{};
 
     SequencerHistoryTrackBankSnapshot();
     ~SequencerHistoryTrackBankSnapshot();
@@ -77,6 +85,12 @@ enum class SequencerHistoryActionKind : uint8_t {
     ProjectScaleSettings,
     PageStructure,
     TrackStructure,
+    CcLaneCreate,
+    CcLaneEventEdit,
+    CcLaneEventClear,
+    CcLaneSettings,
+    CcLaneRemove,
+    CcLaneTransitionEdit,
     FullBank,
 };
 
@@ -85,6 +99,7 @@ struct SequencerHistoryDescriptor {
 
     SequencerHistoryActionKind kind = SequencerHistoryActionKind::PatternEdit;
     uint8_t trackIndex = INVALID_INDEX;
+    uint8_t laneIndex = INVALID_INDEX;
     uint8_t stepIndex = INVALID_INDEX;
     StepProperty property = StepProperty::NOTE;
     bool hasValue = false;
@@ -102,6 +117,12 @@ struct SequencerHistoryPatternChange {
     uint8_t trackIndex = 0;
     SequencerHistoryPatternStorage storage = SequencerHistoryPatternStorage::FullGraph;
     SequencerHistoryDescriptor descriptor{};
+    // Deferred runtime activation owned by this exact history operation. Pattern
+    // snapshots do not carry Track enabled/muted state, so the unchanged target
+    // masks are retained explicitly for safe Undo/Redo boundary planning.
+    SequencerTrackActivationHistoryRef activation{};
+    uint16_t activationTargetEnabledMask = 0;
+    uint16_t activationTargetMutedMask = 0;
     SequencerHistoryPatternSnapshot before;
     SequencerHistoryPatternSnapshot after;
 
@@ -247,6 +268,11 @@ public:
         SequencerHistoryDescriptor descriptor = {}
     );
     bool recordPattern(SequencerHistoryPatternChangePtr change);
+    // Side-effect-free admission check for a fully prepared Pattern change.
+    bool canRecordPattern(const SequencerHistoryPatternChange& change) const;
+    // Precondition: canRecordPattern(change) was true and change was not
+    // modified afterwards. Under that contract this commit cannot fail.
+    void recordPreparedPattern(SequencerHistoryPatternChangePtr change);
 
     bool recordFlatPattern(
         uint8_t trackIndex,
@@ -273,6 +299,12 @@ public:
         SequencerHistoryDescriptor descriptor = {}
     );
     bool recordFullBank(SequencerHistoryFullBankChangePtr change);
+    // Side-effect-free admission check for a fully prepared change. Callers
+    // must repeat it if snapshot graph ownership changes before recording.
+    bool canRecordStructure(const SequencerHistoryTrackStructureChange& change) const;
+    // Precondition: canRecordStructure(change) was true and change was not
+    // modified afterwards. Under that contract this commit cannot fail.
+    void recordPreparedStructure(SequencerHistoryTrackStructureChangePtr change);
     bool recordStructure(SequencerHistoryTrackStructureChangePtr change);
 
     bool canUndo() const { return undo_count_ > 0; }
@@ -284,6 +316,8 @@ public:
                                                SequencerState& active);
     SequencerHistoryApplyResult redoWithResult(SequencerTrackBankState& bank,
                                                SequencerState& active);
+    bool peekUndoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
+    bool peekRedoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
 
     void clear();
 
@@ -301,6 +335,7 @@ private:
 
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);
+    void commitPreparedEntry(SequencerHistoryEntry entry);
     bool recordEntry(SequencerHistoryEntry entry);
     bool recordPatternWithStorage(
         uint8_t trackIndex,

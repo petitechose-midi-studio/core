@@ -8,6 +8,7 @@
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphAssetRecords.hpp"
 #include "state/sequencer/SequencerGraphOpsInternal.hpp"
+#include "state/project/ProjectSlug.hpp"
 
 namespace core::state::sequencer {
 
@@ -26,17 +27,21 @@ using oc::note::sequencer::StepSequencerStepNode;
 using namespace graph_ops_internal;
 
 constexpr uint32_t kStepGraphPresetMagic = 0x31504753;  // "SGP1"
-constexpr uint8_t kStepGraphPresetVersion = 1;
+constexpr uint8_t kStepGraphPresetV1 = 1;
+constexpr uint8_t kStepGraphPresetVersion =
+    SequencerStepGraphPreset::CURRENT_FORMAT_VERSION;
 constexpr uint8_t kStepGraphPresetKind = 1;
 constexpr uint8_t kStepGraphPresetFlagRootContext = 1U << 0;
 constexpr uint8_t kStepGraphPresetFlagRootValues = 1U << 1;
 constexpr uint16_t kAssetRootNodeId = SequencerStepGraphPreset::ASSET_ROOT_NODE_ID;
+constexpr uint8_t kStepGraphPresetScalePolicyMask = 0x01U;
+constexpr uint8_t kStepGraphPresetScalePolicyMixed = 0x80U;
 
 struct StepGraphPresetHeader {
     uint32_t magic = kStepGraphPresetMagic;
     uint8_t version = kStepGraphPresetVersion;
     uint8_t kind = kStepGraphPresetKind;
-    uint8_t headerSize = STEP_GRAPH_PRESET_HEADER_SIZE;
+    uint8_t headerSize = static_cast<uint8_t>(STEP_GRAPH_PRESET_HEADER_SIZE);
     uint8_t flags = kStepGraphPresetFlagRootContext;
     uint8_t enabled = 0;
     uint8_t note = SequencerState::DEFAULT_NOTE;
@@ -49,6 +54,23 @@ struct StepGraphPresetHeader {
     uint8_t cycleSetCount = 0;
     uint16_t reserved0 = 0;
 };
+
+struct StepGraphPresetMetadata {
+    uint8_t scalePolicy = static_cast<uint8_t>(
+        SequencerStepGraphPreset::ScalePolicy::CHROMATIC
+    );
+    uint8_t sourceScaleRoot = 0;
+    uint8_t sourceScaleType = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleType::Chromatic
+    );
+    uint8_t sourceScaleMode = static_cast<uint8_t>(
+        oc::note::sequencer::StepSequencerScaleConstraintMode::Free
+    );
+    char technicalId[SequencerStepGraphPreset::TECHNICAL_ID_SIZE] = {};
+    char semanticName[SequencerStepGraphPreset::SEMANTIC_NAME_SIZE] = {};
+};
+
+static_assert(STEP_GRAPH_PRESET_HEADER_SIZE <= UINT8_MAX);
 
 FLASHMEM void setReportStatus(
     SequencerGraphAssetReport* report,
@@ -219,7 +241,7 @@ FLASHMEM bool readU32(const uint8_t* data, uint16_t size, uint16_t& offset, uint
     return true;
 }
 
-FLASHMEM bool writeHeader(PresetWriter& writer, const StepGraphPresetHeader& header) {
+FLASHMEM bool writeBaseHeader(PresetWriter& writer, const StepGraphPresetHeader& header) {
     return writer.writeU32(header.magic) &&
            writer.writeU8(header.version) &&
            writer.writeU8(header.kind) &&
@@ -237,10 +259,10 @@ FLASHMEM bool writeHeader(PresetWriter& writer, const StepGraphPresetHeader& hea
            writer.writeU16(header.reserved0);
 }
 
-FLASHMEM bool readHeader(const uint8_t* data,
-                         uint16_t size,
-                         uint16_t& offset,
-                         StepGraphPresetHeader& header) {
+FLASHMEM bool readBaseHeader(const uint8_t* data,
+                             uint16_t size,
+                             uint16_t& offset,
+                             StepGraphPresetHeader& header) {
     return readU32(data, size, offset, header.magic) &&
            readU8(data, size, offset, header.version) &&
            readU8(data, size, offset, header.kind) &&
@@ -256,6 +278,197 @@ FLASHMEM bool readHeader(const uint8_t* data,
            readU8(data, size, offset, header.sequenceCount) &&
            readU8(data, size, offset, header.cycleSetCount) &&
            readU16(data, size, offset, header.reserved0);
+}
+
+FLASHMEM bool writeMetadata(
+    PresetWriter& writer,
+    const StepGraphPresetMetadata& metadata
+) {
+    return writer.writeU8(metadata.scalePolicy) &&
+           writer.writeU8(metadata.sourceScaleRoot) &&
+           writer.writeU8(metadata.sourceScaleType) &&
+           writer.writeU8(metadata.sourceScaleMode) &&
+           writer.append(metadata.technicalId, sizeof(metadata.technicalId)) &&
+           writer.append(metadata.semanticName, sizeof(metadata.semanticName));
+}
+
+FLASHMEM bool readMetadata(
+    const uint8_t* data,
+    uint16_t size,
+    uint16_t& offset,
+    StepGraphPresetMetadata& metadata
+) {
+    if (!readU8(data, size, offset, metadata.scalePolicy) ||
+        !readU8(data, size, offset, metadata.sourceScaleRoot) ||
+        !readU8(data, size, offset, metadata.sourceScaleType) ||
+        !readU8(data, size, offset, metadata.sourceScaleMode)) {
+        return false;
+    }
+    constexpr uint16_t technicalSize =
+        static_cast<uint16_t>(sizeof(metadata.technicalId));
+    constexpr uint16_t semanticSize =
+        static_cast<uint16_t>(sizeof(metadata.semanticName));
+    if (offset > size || technicalSize > static_cast<uint16_t>(size - offset)) {
+        return false;
+    }
+    std::memcpy(metadata.technicalId, data + offset, technicalSize);
+    offset = static_cast<uint16_t>(offset + technicalSize);
+    if (semanticSize > static_cast<uint16_t>(size - offset)) return false;
+    std::memcpy(metadata.semanticName, data + offset, semanticSize);
+    offset = static_cast<uint16_t>(offset + semanticSize);
+    return true;
+}
+
+template <size_t N>
+FLASHMEM bool fixedTextValid(const char (&text)[N], bool allowEmpty) {
+    if (text[N - 1U] != '\0') return false;
+    const size_t length = std::strlen(text);
+    if (!allowEmpty && length == 0) return false;
+    for (size_t i = 0; i < length; ++i) {
+        const auto byte = static_cast<unsigned char>(text[i]);
+        if (byte < 32U || byte == 127U) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool boundedTextLength(
+    const char* text,
+    size_t capacity,
+    size_t& length
+) {
+    length = 0;
+    if (text == nullptr || capacity == 0) return false;
+    while (length < capacity && text[length] != '\0') ++length;
+    return length < capacity;
+}
+
+FLASHMEM bool validUtf8Text(const char* text, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        const uint8_t first = static_cast<uint8_t>(text[offset]);
+        uint32_t codePoint = 0;
+        size_t width = 0;
+        if (first < 0x80U) {
+            codePoint = first;
+            width = 1;
+        } else if (first >= 0xC2U && first <= 0xDFU) {
+            codePoint = static_cast<uint32_t>(first & 0x1FU);
+            width = 2;
+        } else if (first >= 0xE0U && first <= 0xEFU) {
+            codePoint = static_cast<uint32_t>(first & 0x0FU);
+            width = 3;
+        } else if (first >= 0xF0U && first <= 0xF4U) {
+            codePoint = static_cast<uint32_t>(first & 0x07U);
+            width = 4;
+        } else {
+            return false;
+        }
+        if (width > length - offset) return false;
+        for (size_t i = 1; i < width; ++i) {
+            const uint8_t continuation = static_cast<uint8_t>(text[offset + i]);
+            if ((continuation & 0xC0U) != 0x80U) return false;
+            codePoint = (codePoint << 6U) | (continuation & 0x3FU);
+        }
+        const bool overlong =
+            (width == 2 && codePoint < 0x80U) ||
+            (width == 3 && codePoint < 0x800U) ||
+            (width == 4 && codePoint < 0x10000U);
+        if (overlong || codePoint > 0x10FFFFU ||
+            (codePoint >= 0xD800U && codePoint <= 0xDFFFU) ||
+            codePoint < 0x20U ||
+            (codePoint >= 0x7FU && codePoint <= 0x9FU)) {
+            return false;
+        }
+        offset += width;
+    }
+    return true;
+}
+
+FLASHMEM bool sameScaleSettings(
+    oc::note::sequencer::StepSequencerScaleSettings lhs,
+    oc::note::sequencer::StepSequencerScaleSettings rhs
+) {
+    lhs.clamp();
+    rhs.clamp();
+    return lhs.root == rhs.root && lhs.type == rhs.type && lhs.mode == rhs.mode;
+}
+
+FLASHMEM int floorDiv12(int value) {
+    if (value >= 0) return value / 12;
+    return -static_cast<int>((-value + 11) / 12);
+}
+
+FLASHMEM uint8_t scaleDegreeForPitchClass(
+    oc::note::sequencer::StepSequencerScaleSettings scale,
+    uint8_t notePitchClass
+) {
+    scale.clamp();
+    const uint8_t relative = static_cast<uint8_t>(
+        (notePitchClass + 12U - scale.root) % 12U
+    );
+    const uint16_t mask = oc::note::sequencer::scaleMask(scale.type);
+    uint8_t degree = 0;
+    for (uint8_t interval = 0; interval < relative; ++interval) {
+        if ((mask & static_cast<uint16_t>(1U << interval)) != 0) ++degree;
+    }
+    return degree;
+}
+
+FLASHMEM uint8_t scaleIntervalForDegree(
+    oc::note::sequencer::StepSequencerScaleSettings scale,
+    uint8_t degree
+) {
+    scale.clamp();
+    const uint16_t mask = oc::note::sequencer::scaleMask(scale.type);
+    uint8_t seen = 0;
+    for (uint8_t interval = 0; interval < 12; ++interval) {
+        if ((mask & static_cast<uint16_t>(1U << interval)) == 0) continue;
+        if (seen == degree) return interval;
+        ++seen;
+    }
+    return 0;
+}
+
+FLASHMEM uint8_t scaleDegreeCount(
+    oc::note::sequencer::StepSequencerScaleSettings scale
+) {
+    scale.clamp();
+    const uint16_t mask = oc::note::sequencer::scaleMask(scale.type);
+    uint8_t count = 0;
+    for (uint8_t interval = 0; interval < 12; ++interval) {
+        if ((mask & static_cast<uint16_t>(1U << interval)) != 0) ++count;
+    }
+    return count == 0 ? 1 : count;
+}
+
+FLASHMEM bool nodeUsesChromaticPitch(const StepSequencerStepNode& node) {
+    return node.has(oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC);
+}
+
+FLASHMEM bool graphHasMixedPitchPolicy(
+    const SequencerStepGraphPreset& preset,
+    SequencerStepGraphPreset::ScalePolicy defaultPolicy
+) {
+    const bool defaultChromatic =
+        defaultPolicy == SequencerStepGraphPreset::ScalePolicy::CHROMATIC;
+    for (uint16_t i = 0; i < preset.graph.stepNodeCount; ++i) {
+        if (nodeUsesChromaticPitch(preset.graph.stepNodes[i]) != defaultChromatic) {
+            return true;
+        }
+    }
+    return false;
+}
+
+FLASHMEM void materializeLegacyPitchPolicy(SequencerStepGraphPreset& preset) {
+    // v1 carried no policy. Its documented compatibility default is
+    // chromatic, so the in-memory payload must carry that exact behavior into
+    // preview and runtime Apply instead of merely displaying a warning label.
+    for (uint16_t i = 0; i < preset.graph.stepNodeCount; ++i) {
+        preset.graph.stepNodes[i].flags = static_cast<uint16_t>(
+            preset.graph.stepNodes[i].flags |
+            oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC
+        );
+    }
 }
 
 FLASHMEM bool appendSequenceRecord(PresetWriter& writer,
@@ -456,6 +669,14 @@ FLASHMEM void SequencerGraphAssetReport::reset() {
 
 FLASHMEM void SequencerStepGraphPreset::reset() {
     valid = false;
+    formatVersion = CURRENT_FORMAT_VERSION;
+    metadataDefaulted = false;
+    mixedPitchPolicy = false;
+    technicalId[0] = '\0';
+    semanticName[0] = '\0';
+    scalePolicy = ScalePolicy::CHROMATIC;
+    sourceScale = {};
+    sourceScale.clamp();
     rootContext = true;
     rootValuesValid = false;
     enabled = false;
@@ -501,6 +722,19 @@ FLASHMEM bool captureStepGraphPreset(
     out.valid = true;
     out.rootContext = rootContext;
     out.rootValuesValid = rootContext;
+    if (!setStepGraphPresetMetadata(
+            out,
+            "unsaved",
+            "Untitled",
+            sequencer.pattern.pitchEditMode == SequencerPitchEditMode::SCALE_DEGREES
+                ? SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
+                : SequencerStepGraphPreset::ScalePolicy::CHROMATIC,
+            {}
+        )) {
+        out.reset();
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
+        return false;
+    }
     if (rootContext) {
         out.enabled = sequencer.pattern.isEnabled(step);
         out.note = sequencer.pattern.note[step];
@@ -613,7 +847,11 @@ FLASHMEM SequencerGraphAssetEncodeResult encodeStepGraphPreset(
         out == nullptr ||
         preset.graph.stepNode(kAssetRootNodeId) == nullptr ||
         (preset.rootValuesValid && !preset.rootContext) ||
-        !linksValid(preset.graph)) {
+        !linksValid(preset.graph) ||
+        !fixedTextValid(preset.technicalId, false) ||
+        !fixedTextValid(preset.semanticName, false) ||
+        !validStepGraphPresetTechnicalId(preset.technicalId) ||
+        !validStepGraphPresetSemanticName(preset.semanticName)) {
         return {.status = SequencerGraphAssetStatus::INVALID_ARGUMENT, .bytesWritten = 0};
     }
 
@@ -635,8 +873,35 @@ FLASHMEM SequencerGraphAssetEncodeResult encodeStepGraphPreset(
     header.sequenceCount = preset.graph.sequenceCount;
     header.cycleSetCount = preset.graph.cycleSetCount;
 
+    StepGraphPresetMetadata metadata{};
+    const bool mixedPitchPolicy = graphHasMixedPitchPolicy(
+        preset,
+        preset.scalePolicy
+    );
+    metadata.scalePolicy = static_cast<uint8_t>(preset.scalePolicy);
+    if (mixedPitchPolicy) {
+        metadata.scalePolicy = static_cast<uint8_t>(
+            metadata.scalePolicy | kStepGraphPresetScalePolicyMixed
+        );
+    }
+    auto sourceScale = preset.sourceScale;
+    sourceScale.clamp();
+    metadata.sourceScaleRoot = sourceScale.root;
+    metadata.sourceScaleType = static_cast<uint8_t>(sourceScale.type);
+    metadata.sourceScaleMode = static_cast<uint8_t>(sourceScale.mode);
+    std::memcpy(
+        metadata.technicalId,
+        preset.technicalId,
+        sizeof(metadata.technicalId)
+    );
+    std::memcpy(
+        metadata.semanticName,
+        preset.semanticName,
+        sizeof(metadata.semanticName)
+    );
+
     PresetWriter writer(out, capacity);
-    if (!writeHeader(writer, header)) {
+    if (!writeBaseHeader(writer, header) || !writeMetadata(writer, metadata)) {
         return {.status = SequencerGraphAssetStatus::BUFFER_TOO_SMALL, .bytesWritten = 0};
     }
 
@@ -670,6 +935,92 @@ FLASHMEM SequencerGraphAssetEncodeResult encodeStepGraphPreset(
           };
 }
 
+FLASHMEM bool decodeStepGraphPresetMetadata(
+    const uint8_t* data,
+    uint16_t size,
+    SequencerStepGraphPresetMetadataView& out,
+    SequencerGraphAssetReport* report
+) {
+    out = {};
+    if (report != nullptr) report->reset();
+    if (data == nullptr || size < STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
+        return false;
+    }
+
+    uint16_t offset = 0;
+    StepGraphPresetHeader header{};
+    if (!readBaseHeader(data, size, offset, header) ||
+        offset != STEP_GRAPH_PRESET_V1_HEADER_SIZE ||
+        header.magic != kStepGraphPresetMagic ||
+        header.kind != kStepGraphPresetKind) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
+    }
+    if (header.version != kStepGraphPresetV1 &&
+        header.version != kStepGraphPresetVersion) {
+        setReportStatus(report, SequencerGraphAssetStatus::UNSUPPORTED_VERSION);
+        return false;
+    }
+    if (header.version == kStepGraphPresetV1) {
+        if (header.headerSize != STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
+            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+            return false;
+        }
+        out.formatVersion = kStepGraphPresetV1;
+        out.metadataDefaulted = true;
+        return true;
+    }
+
+    if (header.headerSize != STEP_GRAPH_PRESET_HEADER_SIZE ||
+        size < STEP_GRAPH_PRESET_HEADER_SIZE) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
+    }
+    StepGraphPresetMetadata metadata{};
+    const uint8_t allowedPolicyBits = static_cast<uint8_t>(
+        kStepGraphPresetScalePolicyMask | kStepGraphPresetScalePolicyMixed
+    );
+    if (!readMetadata(data, size, offset, metadata) ||
+        offset != STEP_GRAPH_PRESET_HEADER_SIZE ||
+        (metadata.scalePolicy & static_cast<uint8_t>(~allowedPolicyBits)) != 0 ||
+        !fixedTextValid(metadata.technicalId, false) ||
+        !fixedTextValid(metadata.semanticName, false) ||
+        !validStepGraphPresetTechnicalId(metadata.technicalId) ||
+        !validStepGraphPresetSemanticName(metadata.semanticName)) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
+    }
+    out.formatVersion = kStepGraphPresetVersion;
+    out.mixedPitchPolicy =
+        (metadata.scalePolicy & kStepGraphPresetScalePolicyMixed) != 0;
+    out.scalePolicy = static_cast<SequencerStepGraphPreset::ScalePolicy>(
+        metadata.scalePolicy & kStepGraphPresetScalePolicyMask
+    );
+    out.sourceScale = {
+        .root = metadata.sourceScaleRoot,
+        .type = static_cast<oc::note::sequencer::StepSequencerScaleType>(
+            metadata.sourceScaleType
+        ),
+        .mode = static_cast<oc::note::sequencer::StepSequencerScaleConstraintMode>(
+            metadata.sourceScaleMode
+        ),
+    };
+    const auto rawRoot = out.sourceScale.root;
+    const auto rawType = out.sourceScale.type;
+    const auto rawMode = out.sourceScale.mode;
+    out.sourceScale.clamp();
+    if (out.sourceScale.root != rawRoot || out.sourceScale.type != rawType ||
+        out.sourceScale.mode != rawMode) {
+        out = {};
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
+    }
+    std::memcpy(out.technicalId, metadata.technicalId, sizeof(out.technicalId));
+    std::memcpy(out.semanticName, metadata.semanticName, sizeof(out.semanticName));
+    return true;
+}
+
 FLASHMEM bool decodeStepGraphPreset(
     const uint8_t* data,
     uint16_t size,
@@ -678,27 +1029,94 @@ FLASHMEM bool decodeStepGraphPreset(
 ) {
     if (report != nullptr) report->reset();
     out.reset();
-    if (data == nullptr || size < STEP_GRAPH_PRESET_HEADER_SIZE) {
+    if (data == nullptr || size < STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
         return false;
     }
 
     uint16_t offset = 0;
     StepGraphPresetHeader header{};
-    if (!readHeader(data, size, offset, header) ||
-        offset != STEP_GRAPH_PRESET_HEADER_SIZE) {
+    if (!readBaseHeader(data, size, offset, header) ||
+        offset != STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
     }
     if (header.magic != kStepGraphPresetMagic ||
-        header.kind != kStepGraphPresetKind ||
-        header.headerSize != STEP_GRAPH_PRESET_HEADER_SIZE) {
+        header.kind != kStepGraphPresetKind) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
     }
-    if (header.version != kStepGraphPresetVersion) {
+    if (header.version != kStepGraphPresetV1 &&
+        header.version != kStepGraphPresetVersion) {
         setReportStatus(report, SequencerGraphAssetStatus::UNSUPPORTED_VERSION);
         return false;
+    }
+
+    if (header.version == kStepGraphPresetV1) {
+        if (header.headerSize != STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
+            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+            return false;
+        }
+        out.formatVersion = kStepGraphPresetV1;
+        out.metadataDefaulted = true;
+        out.scalePolicy = SequencerStepGraphPreset::ScalePolicy::CHROMATIC;
+        out.sourceScale = {};
+    } else {
+        if (header.headerSize != STEP_GRAPH_PRESET_HEADER_SIZE ||
+            size < STEP_GRAPH_PRESET_HEADER_SIZE) {
+            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+            return false;
+        }
+        StepGraphPresetMetadata metadata{};
+        const uint8_t allowedPolicyBits = static_cast<uint8_t>(
+            kStepGraphPresetScalePolicyMask | kStepGraphPresetScalePolicyMixed
+        );
+        if (!readMetadata(data, size, offset, metadata) ||
+            offset != STEP_GRAPH_PRESET_HEADER_SIZE ||
+            (metadata.scalePolicy & static_cast<uint8_t>(~allowedPolicyBits)) != 0 ||
+            !fixedTextValid(metadata.technicalId, false) ||
+            !fixedTextValid(metadata.semanticName, false) ||
+            !validStepGraphPresetTechnicalId(metadata.technicalId) ||
+            !validStepGraphPresetSemanticName(metadata.semanticName)) {
+            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+            return false;
+        }
+        out.formatVersion = kStepGraphPresetVersion;
+        out.metadataDefaulted = false;
+        out.mixedPitchPolicy =
+            (metadata.scalePolicy & kStepGraphPresetScalePolicyMixed) != 0;
+        out.scalePolicy = static_cast<SequencerStepGraphPreset::ScalePolicy>(
+            metadata.scalePolicy & kStepGraphPresetScalePolicyMask
+        );
+        out.sourceScale = {
+            .root = metadata.sourceScaleRoot,
+            .type = static_cast<oc::note::sequencer::StepSequencerScaleType>(
+                metadata.sourceScaleType
+            ),
+            .mode = static_cast<oc::note::sequencer::StepSequencerScaleConstraintMode>(
+                metadata.sourceScaleMode
+            ),
+        };
+        const auto rawRoot = out.sourceScale.root;
+        const auto rawType = out.sourceScale.type;
+        const auto rawMode = out.sourceScale.mode;
+        out.sourceScale.clamp();
+        if (out.sourceScale.root != rawRoot || out.sourceScale.type != rawType ||
+            out.sourceScale.mode != rawMode) {
+            out.reset();
+            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+            return false;
+        }
+        std::memcpy(
+            out.technicalId,
+            metadata.technicalId,
+            sizeof(out.technicalId)
+        );
+        std::memcpy(
+            out.semanticName,
+            metadata.semanticName,
+            sizeof(out.semanticName)
+        );
     }
 
     out.rootContext = (header.flags & kStepGraphPresetFlagRootContext) != 0;
@@ -721,6 +1139,16 @@ FLASHMEM bool decodeStepGraphPreset(
         return false;
     }
 
+    if (out.metadataDefaulted) {
+        materializeLegacyPitchPolicy(out);
+        out.mixedPitchPolicy = false;
+    } else if (graphHasMixedPitchPolicy(out, out.scalePolicy) !=
+               out.mixedPitchPolicy) {
+        out.reset();
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
+    }
+
     out.valid = true;
     if (report != nullptr) {
         if (out.rootValuesValid) {
@@ -731,8 +1159,117 @@ FLASHMEM bool decodeStepGraphPreset(
         report->flags = static_cast<uint16_t>(
             report->flags | SEQUENCER_GRAPH_ASSET_REPORT_GRAPH_PAYLOAD
         );
+        if (out.mixedPitchPolicy) {
+            report->flags = static_cast<uint16_t>(
+                report->flags |
+                SEQUENCER_GRAPH_ASSET_REPORT_PITCH_POLICY_MIXED
+            );
+        }
         fillReportCounts(report, out.graph);
     }
+    return true;
+}
+
+FLASHMEM bool validStepGraphPresetTechnicalId(const char* technicalId) {
+    size_t length = 0;
+    return boundedTextLength(
+               technicalId,
+               SequencerStepGraphPreset::TECHNICAL_ID_SIZE,
+               length
+           ) &&
+           length > 0 &&
+           core::state::project::validProjectSlug(technicalId);
+}
+
+FLASHMEM bool validStepGraphPresetSemanticName(const char* semanticName) {
+    size_t length = 0;
+    if (!boundedTextLength(
+            semanticName,
+            SequencerStepGraphPreset::SEMANTIC_NAME_SIZE,
+            length
+        ) ||
+        length == 0 ||
+        semanticName[0] == ' ' || semanticName[length - 1U] == ' ') {
+        return false;
+    }
+    return validUtf8Text(semanticName, length);
+}
+
+FLASHMEM bool setStepGraphPresetMetadata(
+    SequencerStepGraphPreset& preset,
+    const char* technicalId,
+    const char* semanticName,
+    SequencerStepGraphPreset::ScalePolicy scalePolicy,
+    oc::note::sequencer::StepSequencerScaleSettings sourceScale
+) {
+    if (!validStepGraphPresetTechnicalId(technicalId) ||
+        !validStepGraphPresetSemanticName(semanticName) ||
+        scalePolicy > SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE) {
+        return false;
+    }
+    sourceScale.clamp();
+    std::memset(preset.technicalId, 0, sizeof(preset.technicalId));
+    std::memset(preset.semanticName, 0, sizeof(preset.semanticName));
+    std::strncpy(
+        preset.technicalId,
+        technicalId,
+        sizeof(preset.technicalId) - 1U
+    );
+    std::strncpy(
+        preset.semanticName,
+        semanticName,
+        sizeof(preset.semanticName) - 1U
+    );
+    preset.formatVersion = SequencerStepGraphPreset::CURRENT_FORMAT_VERSION;
+    preset.metadataDefaulted = false;
+    preset.scalePolicy = scalePolicy;
+    preset.sourceScale = sourceScale;
+    preset.mixedPitchPolicy = graphHasMixedPitchPolicy(preset, scalePolicy);
+    return true;
+}
+
+FLASHMEM bool adaptStepGraphPresetPitchToDestination(
+    SequencerStepGraphPreset& preset,
+    oc::note::sequencer::StepSequencerScaleSettings destinationScale,
+    bool* changed
+) {
+    if (changed != nullptr) *changed = false;
+    if (!preset.valid) return false;
+    if (preset.scalePolicy == SequencerStepGraphPreset::ScalePolicy::CHROMATIC ||
+        !preset.rootContext || !preset.rootValuesValid) {
+        return true;
+    }
+
+    auto sourceScale = preset.sourceScale;
+    sourceScale.clamp();
+    destinationScale.clamp();
+    const uint8_t sourceNote =
+        oc::note::sequencer::resolveScaleNote(preset.note, sourceScale).outputNote;
+    const int sourceRelative = static_cast<int>(sourceNote) - sourceScale.root;
+    const int sourceOctave = floorDiv12(sourceRelative);
+    const uint8_t sourceDegree = scaleDegreeForPitchClass(
+        sourceScale,
+        oc::note::sequencer::pitchClass(sourceNote)
+    );
+    const uint8_t destinationDegreeCount = scaleDegreeCount(destinationScale);
+    const int destinationOctave = sourceOctave +
+        static_cast<int>(sourceDegree / destinationDegreeCount);
+    const uint8_t destinationDegree = static_cast<uint8_t>(
+        sourceDegree % destinationDegreeCount
+    );
+    const int destinationNote = static_cast<int>(destinationScale.root) +
+        destinationOctave * 12 +
+        scaleIntervalForDegree(destinationScale, destinationDegree);
+    const uint8_t adapted = oc::note::sequencer::clampScaleMidiNote(destinationNote);
+    if (changed != nullptr) {
+        *changed = adapted != preset.note ||
+            !sameScaleSettings(sourceScale, destinationScale);
+    }
+    preset.note = adapted;
+    // The in-memory copy now describes behavior in the destination context;
+    // keeping this scale lets deterministic previews resolve nested offsets
+    // with the same semantics as runtime playback.
+    preset.sourceScale = destinationScale;
     return true;
 }
 

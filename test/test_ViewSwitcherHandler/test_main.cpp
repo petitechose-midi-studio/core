@@ -60,6 +60,7 @@ struct ViewSwitcherHarness {
                       state.sequencer.contentView,
                       state.sequencer.patternQuickControls,
                       state.sequencer.stepPropertyInlineSelector,
+                      state.sequencer.ccLaneUi,
                       state.trackNavigation.selection,
                       state.macroUi.pageSelection,
                       state.sequencer.structureUi.pageSelection,
@@ -289,6 +290,15 @@ void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
         ViewSwitcherHarness h;
         h.state.activeView.set(core::ui::ViewType::SEQUENCER);
         h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
+        h.tap(Config::ButtonID::LEFT_TOP);
+        assert(!h.state.viewSelector.visible.get());
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.sequencer.ccLaneUi.mode =
+            core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID;
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
     }

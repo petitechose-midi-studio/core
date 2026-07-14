@@ -11,7 +11,9 @@
 #include "state/macro/MacroAutomationDomain.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 
 namespace sdl::integration {
@@ -178,6 +180,62 @@ void configureMacroAutomation(core::state::CoreState& state,
         *slot,
         lane
     );
+}
+
+void configureMacroModulation(core::state::CoreState& state,
+                              uint8_t track,
+                              uint8_t page,
+                              uint8_t macro,
+                              float depth = 0.65f) {
+    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = track,
+            .page = page,
+            .macro = macro,
+        }
+    );
+    if (slot == nullptr) return;
+
+    core::state::macro::MacroModulationShape shape;
+    shape.durationBeats = 4.0f;
+    if (!core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.25f)) return;
+    if (!core::state::macro::macroModulationAppendPoint(shape, 2.0f, 0.35f)) return;
+    if (!core::state::macro::macroModulationAppendPoint(shape, 4.0f, -0.25f)) return;
+    if (!core::state::macro::macroAutomationAssignModulation(
+            state.pages.automation,
+            *slot,
+            shape
+        )) {
+        return;
+    }
+    slot->modulationDepth = core::state::macro::macroAutomationClamp01(depth);
+}
+
+void prepareMacroAutoModScenario(core::state::CoreState& state) {
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& track = state.pages.tracks[0];
+    track.channel = 5;
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    auto& page = track.pages[0];
+    page.cc[0] = 74;
+    page.values[0] = 0.42f;
+    page.setMacroActive(0, true);
+    std::snprintf(page.name, sizeof(page.name), "%s", "Auto + Mod");
+
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    configureMacroAutomation(state, 0, 0, 0, 0.42f, 4.0f);
+    configureMacroModulation(state, 0, 0, 0, 0.65f);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
 void configureMacroAutomationShape(core::state::CoreState& state,
@@ -629,6 +687,410 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
     state.sequencer.probabilityCycleIndex = 0;
 }
 
+void prepareStepPresetCaptureBase(
+    core::state::CoreState& state,
+    core::state::sequencer::SequencerStepPresetPickerMode mode =
+        core::state::sequencer::SequencerStepPresetPickerMode::LOAD
+) {
+    using namespace core::state::sequencer;
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.overlays.hideAll();
+    state.sequencer.stepEdit.visible.set(true);
+    state.sequencer.stepEdit.stepIndex.set(5);
+    state.sequencer.focusedStep.set(5);
+    state.overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT, false);
+
+    auto& picker = state.sequencer.stepPresetPicker;
+    picker.reset();
+    picker.open(mode);
+    picker.frozenTarget.valid = true;
+    picker.frozenTarget.trackIndex = 0;
+    picker.frozenTarget.stepIndex = 5;
+    picker.frozenTarget.projectRevision = state.project.metadata.modifiedCounter;
+    std::snprintf(
+        picker.frozenTarget.contextLabel,
+        sizeof(picker.frozenTarget.contextLabel),
+        "%s",
+        "Track 1 - Step 06"
+    );
+    picker.setEntry(0, "orbit-a", "Orbit", true);
+    picker.setEntry(1, "orbit-b", "Orbit", true);
+    picker.setEntry(2, "pulse-grid", "Pulse Grid", true);
+    picker.setEntry(3, "legacy-shape", nullptr, false);
+    picker.setEntry(4, "glass-cycle", "Glass Cycle", true);
+    picker.setEntry(5, "human-hat", "Human Hat", true);
+    picker.entryCount.set(6);
+    picker.totalEntryCount.set(23);
+    picker.truncated.set(true);
+    picker.hasNextPage.set(true);
+    picker.selectedIndex.set(mode == SequencerStepPresetPickerMode::SAVE ? 1 : 0);
+
+    auto& descriptor = picker.descriptor;
+    descriptor.valid = true;
+    std::snprintf(
+        descriptor.semanticName,
+        sizeof(descriptor.semanticName),
+        "%s",
+        "Orbit"
+    );
+    std::snprintf(
+        descriptor.technicalId,
+        sizeof(descriptor.technicalId),
+        "%s",
+        "orbit-a"
+    );
+    descriptor.contentFlags = STEP_PRESET_CONTENT_STEP_VALUES |
+        STEP_PRESET_CONTENT_GRAPH | STEP_PRESET_CONTENT_MICRO_SEQUENCE |
+        STEP_PRESET_CONTENT_CYCLE;
+    descriptor.stepNodeCount = 9;
+    descriptor.sequenceCount = 2;
+    descriptor.cycleSetCount = 1;
+    descriptor.scalePolicy = SequencerStepPresetScalePolicy::SCALE_RELATIVE;
+    descriptor.mixedPitchPolicy = true;
+    descriptor.adaptation = SequencerStepPresetAdaptation::DESTINATION_SCALE;
+    descriptor.footprint = SequencerStepPresetFootprint::REPLACE;
+    descriptor.compatibility = SequencerStepPresetCompatibility::WARNING_ADAPTED;
+    descriptor.previewStateIndex = 1;
+    descriptor.previewStateCount = 4;
+    descriptor.previewNote = 62;
+    std::snprintf(
+        descriptor.contentSummary,
+        sizeof(descriptor.contentSummary),
+        "%s",
+        "Values + Micro + Cycle"
+    );
+    std::snprintf(
+        descriptor.adaptationSummary,
+        sizeof(descriptor.adaptationSummary),
+        "%s",
+        "C major -> D minor"
+    );
+    std::snprintf(
+        descriptor.replaceFacts,
+        sizeof(descriptor.replaceFacts),
+        "%s",
+        "Step values + child graph"
+    );
+    std::snprintf(
+        descriptor.preserveFacts,
+        sizeof(descriptor.preserveFacts),
+        "%s",
+        "Track route, scale, other steps"
+    );
+    std::snprintf(
+        descriptor.compatibilityReason,
+        sizeof(descriptor.compatibilityReason),
+        "%s",
+        "Pitch follows destination scale"
+    );
+    std::snprintf(
+        descriptor.previewSummary,
+        sizeof(descriptor.previewSummary),
+        "%s",
+        "Preview 2/4 - D4"
+    );
+    picker.bump();
+    state.overlays.show(core::ui::OverlayType::SEQ_STEP_PRESET, true);
+}
+
+void setStepPresetOperationFeedback(
+    core::state::CoreState& state,
+    core::state::contextual::ContextActionId action,
+    core::state::contextual::OperationFeedbackStatus status,
+    core::state::contextual::ContextActionReason reason
+) {
+    core::state::contextual::OperationFeedbackState feedback{};
+    feedback.active = true;
+    feedback.action = action;
+    feedback.status = status;
+    feedback.reason = reason;
+    feedback.expiryPolicy =
+        core::state::contextual::OperationFeedbackExpiryPolicy::MANUAL;
+    feedback.shownAtMs = SDL_GetTicks();
+    state.sequencer.stepPresetPicker.operationFeedback.set(feedback);
+    state.sequencer.stepPresetPicker.bump();
+}
+
+void prepareStepPresetOperationScenario(
+    core::state::CoreState& state,
+    core::state::contextual::OperationFeedbackStatus status,
+    core::state::contextual::ContextActionReason reason,
+    bool saveMode = false
+) {
+    using namespace core::state::sequencer;
+    prepareStepPresetCaptureBase(
+        state,
+        saveMode ? SequencerStepPresetPickerMode::SAVE
+                 : SequencerStepPresetPickerMode::LOAD
+    );
+    auto& picker = state.sequencer.stepPresetPicker;
+    if (saveMode) {
+        picker.selectedIndex.set(0);
+        picker.descriptor = {};
+    }
+    setStepPresetOperationFeedback(
+        state,
+        saveMode ? core::state::contextual::ContextActionId::SAVE
+                 : core::state::contextual::ContextActionId::APPLY,
+        status,
+        reason
+    );
+}
+
+bool prepareStepPresetActivationScenario(
+    core::state::CoreState& state,
+    core::state::contextual::OperationFeedbackStatus status,
+    core::state::contextual::ContextActionReason reason
+) {
+    using namespace core::state::sequencer;
+    using FeedbackStatus =
+        core::state::contextual::OperationFeedbackStatus;
+    prepareStepPresetOperationScenario(state, status, reason);
+    state.statusBar.playing.set(true);
+
+    auto& queue = state.sequencerTrackActivations;
+    queue.reset();
+    SequencerTrackActivationBatch batch;
+    if (!queue.prepare(
+            0x0001,
+            0x0001,
+            0,
+            true,
+            batch,
+            SequencerTrackActivationOrigin::STEP_PRESET
+        ) || !queue.armPrepared(batch)) {
+        return false;
+    }
+    queue.publishPrepared(batch);
+    state.sequencer.stepPresetPicker.operationActivationGeneration =
+        batch.generation;
+
+    if (status == FeedbackStatus::APPLIED) {
+        const auto publication = queue.captureRuntimePublication();
+        queue.applyRuntimePublication(publication);
+        const auto realtime = queue.realtimeView(0);
+        if (!queue.markAppliedFromRealtime(0, realtime.generation) ||
+            !queue.publishRealtimeTelemetry()) {
+            return false;
+        }
+    } else if (status == FeedbackStatus::CANCELLED) {
+        const SequencerTrackActivationHistoryRef reference{
+            .trackMask = batch.trackMask,
+            .operationId = batch.operationId,
+            .origin = batch.origin,
+        };
+        SequencerTrackActivationHistoryTransition transition;
+        if (!queue.prepareHistoryTransition(
+                reference,
+                SequencerTrackActivationTarget::BEFORE,
+                0x0001,
+                0,
+                true,
+                transition
+            )) {
+            return false;
+        }
+        queue.commitHistoryTransition(transition);
+    }
+
+    const auto telemetry = queue.telemetry(0);
+    const bool statusMatches =
+        (status == FeedbackStatus::QUEUED &&
+         telemetry.status == SequencerTrackActivationStatus::QUEUED) ||
+        (status == FeedbackStatus::APPLIED &&
+         telemetry.status == SequencerTrackActivationStatus::APPLIED) ||
+        (status == FeedbackStatus::CANCELLED &&
+         telemetry.status == SequencerTrackActivationStatus::CANCELLED);
+    return statusMatches && telemetry.generation == batch.generation &&
+        telemetry.origin == SequencerTrackActivationOrigin::STEP_PRESET;
+}
+
+bool addSequencerCaptureLane(
+    core::state::sequencer::SequencerPatternState& pattern,
+    uint8_t laneIndex,
+    uint8_t controller,
+    core::state::sequencer::SequencerCcLaneRoutePolicy routePolicy,
+    uint8_t pinnedChannel = 0
+) {
+    using namespace core::state::sequencer;
+    auto* bank = ensureSequencerCcLaneBank(pattern);
+    if (bank == nullptr) return false;
+    SequencerCcLaneDraft draft;
+    draft.destination.controller = controller;
+    draft.destination.routePolicy = routePolicy;
+    draft.destination.pinnedChannel = pinnedChannel;
+    draft.initialValue = 64;
+    return createSequencerCcLane(*bank, laneIndex, draft).changed();
+}
+
+bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) {
+    using namespace core::state;
+    using namespace core::state::sequencer;
+
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.overlays.hideAll();
+    state.statusBar.playing.set(false);
+    state.sequencer.reset();
+    state.sequencerTracks.reset();
+    state.trackNavigation.reset();
+    state.sequencer.ccLaneUi.reset();
+    // The fresh scenario already owns T1; synchronizing the same state is a
+    // valid no-op, not a preparation failure.
+    (void)state.setSharedTrackState(0x0001, 0);
+    state.structureNavigationFocus.set(StructureNavigationFocus::TRACK);
+
+    state.sequencer.pattern.length.set(1);
+    state.sequencer.pattern.midiChannel.set(4);  // Ch5.
+    state.sequencer.setStepDataAt(0, 60, 100, 75, 0);
+    enableSequencerStep(state.sequencer, 0);
+    if (!addSequencerCaptureLane(
+            state.sequencer.pattern,
+            0,
+            74,
+            SequencerCcLaneRoutePolicy::INHERIT_TRACK
+        )) {
+        return false;
+    }
+    auto* lanes = ensureSequencerCcLaneBank(state.sequencer.pattern);
+    if (lanes == nullptr ||
+        !setSequencerCcLaneEvent(*lanes, 0, 0, 96).changed()) {
+        return false;
+    }
+    state.sequencer.pattern.bumpCcLaneRevision();
+
+    auto& macroTrack = state.pages.tracks[0];
+    macroTrack.channel = 4;
+    macroTrack.activePage = 0;
+    macroTrack.enabledPageMask = 0x0001;
+    auto& page = macroTrack.pages[0];
+    page.cc[0] = 74;
+    page.values[0] = 0.25f;
+    page.setMacroActive(0, true);
+    std::snprintf(page.name, sizeof(page.name), "%s", "CC conflict");
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.statusBar.pageName.set(page.name);
+    return true;
+}
+
+bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
+    using namespace core::state;
+    using namespace core::state::sequencer;
+
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.overlays.hideAll();
+    state.statusBar.playing.set(false);
+    state.sequencerTrackActivations.reset();
+    state.structureClipboard.clear();
+    state.sequencer.structureUi.trackPaste.reset();
+    state.sequencerTracks.reset();
+    state.trackNavigation.reset();
+
+    // Sources T1/T3, overwrite destination T5, and free destination T6.
+    // This makes the compact and per-mapping projections prove both target
+    // kinds without relying on persisted user state.
+    if (!state.setSharedTrackState(0x0015, 0)) return false;
+    state.structureNavigationFocus.set(StructureNavigationFocus::TRACK);
+    state.trackNavigation.syncPreviewTrack(0);
+
+    state.sequencer.pattern.midiChannel.set(1);
+    state.sequencer.setStepDataAt(0, 60, 104, 75, 0);
+    enableSequencerStep(state.sequencer, 0);
+    if (!addSequencerCaptureLane(
+            state.sequencer.pattern,
+            0,
+            74,
+            SequencerCcLaneRoutePolicy::INHERIT_TRACK
+        ) ||
+        !addSequencerCaptureLane(
+            state.sequencer.pattern,
+            1,
+            71,
+            SequencerCcLaneRoutePolicy::PINNED,
+            3
+        )) {
+        return false;
+    }
+
+    auto& sourceThree = state.sequencerTracks.track(2);
+    sourceThree.midiChannel.set(4);
+    sourceThree.note[0] = 67;
+    sourceThree.velocity[0] = 88;
+    sourceThree.gate[0] = 75;
+    sourceThree.setEnabled(0, true);
+    if (!addSequencerCaptureLane(
+            sourceThree,
+            0,
+            1,
+            SequencerCcLaneRoutePolicy::INHERIT_TRACK
+        )) {
+        return false;
+    }
+
+    state.sequencerTracks.track(4).midiChannel.set(8);   // T5 -> Ch9.
+    state.sequencerTracks.track(5).midiChannel.set(10);  // T6 -> Ch11.
+    state.sequencerTracks.setTrackMuted(4, true);
+
+    auto& selection = state.trackNavigation.selection;
+    selection.active.set(true);
+    selection.scope.set(StructureSelectionScope::TRACK);
+    selection.cursorIndex.set(0);
+    selection.selectedMask.set(0x0005);
+    return true;
+}
+
+bool projectSequencerTrackPasteActivationScenario(
+    core::state::CoreState& state,
+    core::state::contextual::OperationFeedbackStatus status
+) {
+    namespace contextual = core::state::contextual;
+    auto& paste = state.sequencer.structureUi.trackPaste;
+    if (paste.activationGeneration == 0 || paste.operationGeneration == 0 ||
+        !paste.plan.hasEntries() ||
+        (status != contextual::OperationFeedbackStatus::QUEUED &&
+         status != contextual::OperationFeedbackStatus::APPLIED)) {
+        return false;
+    }
+
+    // SDL can resolve a local-loop activation inside the capture frame. Keep
+    // the already-committed operation and frozen plan, but detach runtime
+    // telemetry and use one capture-only generation so both user-visible
+    // lifecycle projections remain correlated and deterministic.
+    if (status == contextual::OperationFeedbackStatus::QUEUED) {
+        state.sequencerTrackActivations.reset();
+        uint32_t projectedGeneration = paste.activationGeneration + 1U;
+        if (projectedGeneration == 0) projectedGeneration = 1;
+        paste.activationGeneration = projectedGeneration;
+    }
+    contextual::setOperationFeedback(
+        paste.feedback,
+        contextual::ContextActionId::PASTE,
+        {
+            .kind = contextual::ContextEntityKind::TRACK,
+            .track = paste.plan.firstSource,
+            .item = paste.plan.sourceMask,
+        },
+        {
+            .kind = contextual::ContextEntityKind::TRACK,
+            .track = paste.plan.firstTarget,
+            .item = paste.plan.targetMask,
+        },
+        status,
+        contextual::ContextActionReason::NONE,
+        status == contextual::OperationFeedbackStatus::QUEUED
+            ? contextual::OperationFeedbackExpiryPolicy::WHEN_RESOLVED
+            : contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        SDL_GetTicks(),
+        status == contextual::OperationFeedbackStatus::APPLIED ? 1400U : 0U
+    );
+    paste.bump();
+    return true;
+}
+
 }  // namespace
 
 bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
@@ -648,6 +1110,11 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "macro-automation-curve-shape") == 0) {
         prepareMacroAutomationCurveShapeScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-auto-mod") == 0) {
+        prepareMacroAutoModScenario(state);
         return true;
     }
 
@@ -673,6 +1140,28 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     if (std::strcmp(scenario, "sequencer") == 0) {
         state.activeView.set(core::ui::ViewType::SEQUENCER);
         return true;
+    }
+
+    if (std::strcmp(scenario, "seq-track-paste-multi") == 0) {
+        return prepareSequencerTrackPasteCaptureScenario(state);
+    }
+
+    if (std::strcmp(scenario, "seq-cc-macro-conflict") == 0) {
+        return prepareSequencerCcLaneMacroConflictScenario(state);
+    }
+
+    if (std::strcmp(scenario, "seq-track-paste-project-queued") == 0) {
+        return projectSequencerTrackPasteActivationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::QUEUED
+        );
+    }
+
+    if (std::strcmp(scenario, "seq-track-paste-project-applied") == 0) {
+        return projectSequencerTrackPasteActivationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::APPLIED
+        );
     }
 
     if (std::strcmp(scenario, "seq-step-edit") == 0) {
@@ -783,6 +1272,157 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "seq-local-random-nested-runtime") == 0) {
         prepareSequencerNestedLocalRandomRuntimeScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-browse") == 0) {
+        prepareStepPresetCaptureBase(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-browse-page-2") == 0) {
+        prepareStepPresetCaptureBase(state);
+        auto& picker = state.sequencer.stepPresetPicker;
+        picker.setEntry(0, "late-bloom", "Late Bloom", true);
+        picker.setEntry(1, "mono-drift", "Mono Drift", true);
+        picker.setEntry(2, "odd-pulse", "Odd Pulse", true);
+        picker.setEntry(3, "rain-grid", "Rain Grid", true);
+        picker.setEntry(4, "soft-ratchet", "Soft Ratchet", true);
+        picker.setEntry(5, "wide-cycle", "Wide Cycle", true);
+        picker.hasPreviousPage.set(true);
+        picker.hasNextPage.set(false);
+        std::snprintf(
+            picker.descriptor.semanticName,
+            sizeof(picker.descriptor.semanticName),
+            "%s",
+            "Late Bloom"
+        );
+        std::snprintf(
+            picker.descriptor.technicalId,
+            sizeof(picker.descriptor.technicalId),
+            "%s",
+            "late-bloom"
+        );
+        picker.bump();
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-detail-mixed") == 0) {
+        prepareStepPresetCaptureBase(state);
+        state.sequencer.stepPresetPicker.detailVisible.set(true);
+        state.sequencer.stepPresetPicker.detailFocus.set(3);
+        state.sequencer.stepPresetPicker.bump();
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-preview-next") == 0) {
+        prepareStepPresetCaptureBase(state);
+        auto& picker = state.sequencer.stepPresetPicker;
+        picker.detailVisible.set(true);
+        picker.detailFocus.set(4);
+        picker.descriptor.previewStateIndex = 2;
+        picker.descriptor.previewNote = 65;
+        std::snprintf(
+            picker.descriptor.previewSummary,
+            sizeof(picker.descriptor.previewSummary),
+            "%s",
+            "Preview 3/4 - F4"
+        );
+        picker.bump();
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-overwrite-ready") == 0) {
+        prepareStepPresetCaptureBase(
+            state,
+            core::state::sequencer::SequencerStepPresetPickerMode::SAVE
+        );
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-overwrite-pressed") == 0 ||
+        std::strcmp(scenario, "seq-step-preset-overwrite-armed") == 0) {
+        prepareStepPresetCaptureBase(
+            state,
+            core::state::sequencer::SequencerStepPresetPickerMode::SAVE
+        );
+        auto guard = state.sequencer.stepPresetPicker.actionGuard.get();
+        guard.phase = std::strcmp(
+            scenario,
+            "seq-step-preset-overwrite-pressed"
+        ) == 0
+            ? core::state::contextual::GuardedActionPhase::PRESSED
+            : core::state::contextual::GuardedActionPhase::ARMED;
+        guard.pressedAtMs = SDL_GetTicks();
+        guard.armedAtMs = SDL_GetTicks();
+        guard.guardDurationMs = 1000;
+        guard.progressPermille = guard.phase ==
+                core::state::contextual::GuardedActionPhase::ARMED
+            ? 450
+            : 120;
+        state.sequencer.stepPresetPicker.actionGuard.set(guard);
+        setStepPresetOperationFeedback(
+            state,
+            core::state::contextual::ContextActionId::SAVE,
+            guard.phase == core::state::contextual::GuardedActionPhase::ARMED
+                ? core::state::contextual::OperationFeedbackStatus::ARMED
+                : core::state::contextual::OperationFeedbackStatus::PRESSED,
+            core::state::contextual::ContextActionReason::NONE
+        );
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-cancelled") == 0) {
+        return prepareStepPresetActivationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::CANCELLED,
+            core::state::contextual::ContextActionReason::NONE
+        );
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-applied") == 0) {
+        return prepareStepPresetActivationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::APPLIED,
+            core::state::contextual::ContextActionReason::ADAPTED
+        );
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-queued") == 0) {
+        return prepareStepPresetActivationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::QUEUED,
+            core::state::contextual::ContextActionReason::PENDING
+        );
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-save-capacity") == 0) {
+        prepareStepPresetOperationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::FAILED,
+            core::state::contextual::ContextActionReason::CAPACITY,
+            true
+        );
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-save-stale") == 0) {
+        prepareStepPresetOperationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::FAILED,
+            core::state::contextual::ContextActionReason::STALE_TARGET,
+            true
+        );
+        return true;
+    }
+
+    if (std::strcmp(scenario, "seq-step-preset-save-storage-failed") == 0) {
+        prepareStepPresetOperationScenario(
+            state,
+            core::state::contextual::OperationFeedbackStatus::FAILED,
+            core::state::contextual::ContextActionReason::STORAGE_UNAVAILABLE,
+            true
+        );
         return true;
     }
 

@@ -1,9 +1,12 @@
 #include "validation/ux/SemanticUxRecorder.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 #include "config/InputIDs.hpp"
+#include "config/PlatformCompat.hpp"
 #include "state/CoreState.hpp"
 #include "validation/ux/SemanticUxContext.hpp"
 #include "validation/ux/SemanticUxNames.hpp"
@@ -11,18 +14,29 @@
 namespace core::validation::ux {
 namespace {
 
-int32_t milliFromFloat(float value) {
-    const float scaled = value * 1000.0f;
-    return static_cast<int32_t>(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
+FLASHMEM int32_t milliFromFloat(float value) {
+    if (!std::isfinite(value)) return 0;
+
+    const double scaled = static_cast<double>(value) * 1000.0;
+    const double rounded = scaled >= 0.0
+        ? std::floor(scaled + 0.5)
+        : std::ceil(scaled - 0.5);
+    constexpr double minimum =
+        static_cast<double>(std::numeric_limits<int32_t>::min());
+    constexpr double maximum =
+        static_cast<double>(std::numeric_limits<int32_t>::max());
+    if (rounded <= minimum) return std::numeric_limits<int32_t>::min();
+    if (rounded >= maximum) return std::numeric_limits<int32_t>::max();
+    return static_cast<int32_t>(rounded);
 }
 
-EncoderValueKind valueKindForEncoder(oc::type::EncoderID id) {
+FLASHMEM EncoderValueKind valueKindForEncoder(oc::type::EncoderID id) {
     return id == static_cast<oc::type::EncoderID>(Config::EncoderID::NAV)
                ? EncoderValueKind::Delta
                : EncoderValueKind::Absolute;
 }
 
-const char* valueKindName(EncoderValueKind kind) {
+FLASHMEM const char* valueKindName(EncoderValueKind kind) {
     switch (kind) {
         case EncoderValueKind::Delta:
             return "delta";
@@ -32,26 +46,176 @@ const char* valueKindName(EncoderValueKind kind) {
     return "absolute";
 }
 
-void appendField(char* out, std::size_t size, const char* key, const char* value) {
-    if (!value || value[0] == '\0') return;
-    const std::size_t used = std::strlen(out);
-    if (used >= size) return;
-    std::snprintf(out + used, size - used, ",\"%s\":\"%s\"", key, value);
+FLASHMEM std::size_t escapedJsonLength(const char* value) {
+    if (!value) return 0;
+
+    std::size_t length = 0;
+    for (const unsigned char* cursor =
+             reinterpret_cast<const unsigned char*>(value);
+         *cursor != '\0';
+         ++cursor) {
+        switch (*cursor) {
+            case '"':
+            case '\\':
+            case '\b':
+            case '\f':
+            case '\n':
+            case '\r':
+            case '\t':
+                length += 2U;
+                break;
+            default:
+                length += *cursor < 0x20U ? 6U : 1U;
+                break;
+        }
+    }
+    return length;
 }
 
-void appendIntField(char* out, std::size_t size, const char* key, int value) {
-    const std::size_t used = std::strlen(out);
-    if (used >= size) return;
-    std::snprintf(out + used, size - used, ",\"%s\":%d", key, value);
+FLASHMEM void appendEscapedJson(char* out, std::size_t& used, const char* value) {
+    static constexpr char HEX_DIGITS[] = "0123456789abcdef";
+    if (!value) return;
+
+    for (const unsigned char* cursor =
+             reinterpret_cast<const unsigned char*>(value);
+         *cursor != '\0';
+         ++cursor) {
+        switch (*cursor) {
+            case '"':
+                out[used++] = '\\';
+                out[used++] = '"';
+                break;
+            case '\\':
+                out[used++] = '\\';
+                out[used++] = '\\';
+                break;
+            case '\b':
+                out[used++] = '\\';
+                out[used++] = 'b';
+                break;
+            case '\f':
+                out[used++] = '\\';
+                out[used++] = 'f';
+                break;
+            case '\n':
+                out[used++] = '\\';
+                out[used++] = 'n';
+                break;
+            case '\r':
+                out[used++] = '\\';
+                out[used++] = 'r';
+                break;
+            case '\t':
+                out[used++] = '\\';
+                out[used++] = 't';
+                break;
+            default:
+                if (*cursor < 0x20U) {
+                    out[used++] = '\\';
+                    out[used++] = 'u';
+                    out[used++] = '0';
+                    out[used++] = '0';
+                    out[used++] = HEX_DIGITS[(*cursor >> 4U) & 0x0FU];
+                    out[used++] = HEX_DIGITS[*cursor & 0x0FU];
+                } else {
+                    out[used++] = static_cast<char>(*cursor);
+                }
+                break;
+        }
+    }
 }
 
-void appendBoolField(char* out, std::size_t size, const char* key, bool value) {
+FLASHMEM void appendField(char* out, std::size_t size, const char* key, const char* value) {
+    if (!out || size == 0U || !key || key[0] == '\0' || !value ||
+        value[0] == '\0') {
+        return;
+    }
     const std::size_t used = std::strlen(out);
     if (used >= size) return;
-    std::snprintf(out + used, size - used, ",\"%s\":%u", key, value ? 1U : 0U);
+
+    const std::size_t keyLength = escapedJsonLength(key);
+    const std::size_t valueLength = escapedJsonLength(value);
+    constexpr std::size_t JSON_FIELD_PUNCTUATION = 6U;  // ,"":""
+    const std::size_t available = size - used;
+    if (keyLength >= available) return;
+    std::size_t remaining = available - keyLength;
+    if (valueLength >= remaining) return;
+    remaining -= valueLength;
+    if (JSON_FIELD_PUNCTUATION >= remaining) return;
+
+    std::size_t cursor = used;
+    out[cursor++] = ',';
+    out[cursor++] = '"';
+    appendEscapedJson(out, cursor, key);
+    out[cursor++] = '"';
+    out[cursor++] = ':';
+    out[cursor++] = '"';
+    appendEscapedJson(out, cursor, value);
+    out[cursor++] = '"';
+    out[cursor] = '\0';
 }
 
-void formatContextFields(char* out,
+FLASHMEM void appendRawField(
+    char* out,
+    std::size_t size,
+    const char* key,
+    const char* rawValue
+) {
+    if (!out || size == 0U || !key || key[0] == '\0' || !rawValue ||
+        rawValue[0] == '\0') {
+        return;
+    }
+    const std::size_t used = std::strlen(out);
+    if (used >= size) return;
+
+    const std::size_t keyLength = escapedJsonLength(key);
+    const std::size_t valueLength = std::strlen(rawValue);
+    constexpr std::size_t JSON_FIELD_PUNCTUATION = 4U;  // ,"":
+    const std::size_t available = size - used;
+    if (keyLength >= available) return;
+    std::size_t remaining = available - keyLength;
+    if (valueLength >= remaining) return;
+    remaining -= valueLength;
+    if (JSON_FIELD_PUNCTUATION >= remaining) return;
+
+    std::size_t cursor = used;
+    out[cursor++] = ',';
+    out[cursor++] = '"';
+    appendEscapedJson(out, cursor, key);
+    out[cursor++] = '"';
+    out[cursor++] = ':';
+    std::memcpy(out + cursor, rawValue, valueLength);
+    cursor += valueLength;
+    out[cursor] = '\0';
+}
+
+FLASHMEM void appendIntField(char* out, std::size_t size, const char* key, int value) {
+    char encoded[16]{};
+    const int written = std::snprintf(encoded, sizeof(encoded), "%d", value);
+    if (written <= 0 || static_cast<std::size_t>(written) >= sizeof(encoded)) return;
+    appendRawField(out, size, key, encoded);
+}
+
+FLASHMEM void appendUint32Field(char* out,
+                       std::size_t size,
+                       const char* key,
+                       uint32_t value) {
+    char encoded[16]{};
+    const int written = std::snprintf(
+        encoded,
+        sizeof(encoded),
+        "%lu",
+        static_cast<unsigned long>(value)
+    );
+    if (written <= 0 || static_cast<std::size_t>(written) >= sizeof(encoded)) return;
+    appendRawField(out, size, key, encoded);
+}
+
+FLASHMEM void appendBoolField(char* out, std::size_t size, const char* key, bool value) {
+    appendRawField(out, size, key, value ? "1" : "0");
+}
+
+FLASHMEM void formatContextFields(char* out,
                          std::size_t size,
                          const SemanticUxContext& pre,
                          const SemanticUxContext& post) {
@@ -89,6 +253,95 @@ void formatContextFields(char* out,
     } else if (pre.targetMask >= 0) {
         appendIntField(out, size, "target_mask", static_cast<int>(pre.targetMask));
     }
+    const SemanticUxContext& transfer = post.sourceMask >= 0 ? post : pre;
+    if (transfer.sourceMask >= 0) {
+        appendIntField(out, size, "source_mask", static_cast<int>(transfer.sourceMask));
+    }
+    if (transfer.createMask >= 0) {
+        appendIntField(out, size, "create_mask", static_cast<int>(transfer.createMask));
+    }
+    if (transfer.overwriteMask >= 0) {
+        appendIntField(out, size, "overwrite_mask", static_cast<int>(transfer.overwriteMask));
+    }
+    appendField(
+        out,
+        size,
+        "route_policy",
+        post.routePolicy ? post.routePolicy : pre.routePolicy
+    );
+    appendField(out, size, "projection", post.projection ? post.projection : pre.projection);
+    appendField(out, size, "source", post.source ? post.source : pre.source);
+    appendField(out, size, "winner", post.winner ? post.winner : pre.winner);
+    appendField(
+        out,
+        size,
+        "winner_source",
+        post.winnerSource ? post.winnerSource : pre.winnerSource
+    );
+    const SemanticUxContext& activation =
+        post.hasActivationGeneration ? post : pre;
+    if (activation.hasActivationGeneration && activation.activationOrigin &&
+        activation.activationGeneration != 0) {
+        appendField(
+            out,
+            size,
+            "activation_origin",
+            activation.activationOrigin
+        );
+        appendUint32Field(
+            out,
+            size,
+            "activation_generation",
+            activation.activationGeneration
+        );
+    }
+    const SemanticUxContext& mapping = post.mappingCount >= 0 ? post : pre;
+    if (mapping.mappingIndex >= 0) {
+        appendIntField(out, size, "mapping_index", static_cast<int>(mapping.mappingIndex));
+    }
+    if (mapping.mappingCount >= 0) {
+        appendIntField(out, size, "mapping_count", static_cast<int>(mapping.mappingCount));
+    }
+    if (mapping.sourceTrack >= 0) {
+        appendIntField(out, size, "source_track", static_cast<int>(mapping.sourceTrack));
+    }
+    if (mapping.targetTrack >= 0) {
+        appendIntField(out, size, "target_track", static_cast<int>(mapping.targetTrack));
+    }
+    appendField(out, size, "target_kind", mapping.targetKind);
+    if (mapping.inheritedLaneCount >= 0) {
+        appendIntField(
+            out,
+            size,
+            "inherited_lane_count",
+            static_cast<int>(mapping.inheritedLaneCount)
+        );
+    }
+    if (mapping.pinnedLaneCount >= 0) {
+        appendIntField(
+            out,
+            size,
+            "pinned_lane_count",
+            static_cast<int>(mapping.pinnedLaneCount)
+        );
+    }
+    const SemanticUxContext& operation =
+        post.operationOrigin || post.hasOperationGeneration || post.operationStatus ? post : pre;
+    appendField(out, size, "operation_origin", operation.operationOrigin);
+    if (operation.hasOperationGeneration && operation.operationGeneration != 0) {
+        appendUint32Field(
+            out,
+            size,
+            "operation_generation",
+            operation.operationGeneration
+        );
+    }
+    appendField(out, size, "operation_status", operation.operationStatus);
+    const SemanticUxContext& route = post.hasTargetRoute ? post : pre;
+    if (route.hasTargetRoute) {
+        appendIntField(out, size, "target_route", static_cast<int>(route.targetRoute));
+        appendBoolField(out, size, "target_route_valid", route.targetRouteValid);
+    }
     if (pre.property) appendField(out, size, "pre_property", pre.property);
     appendField(out, size, "property", sameSurface && post.property ? post.property : pre.property);
     appendField(
@@ -97,6 +350,16 @@ void formatContextFields(char* out,
         "value_label",
         sameSurface && post.valueLabel[0] ? post.valueLabel : pre.valueLabel
     );
+    const SemanticUxContext& conflict = post.hasConflict ? post : pre;
+    if (conflict.hasConflict) appendBoolField(out, size, "conflict", conflict.conflict);
+    const SemanticUxContext& authored = post.hasAuthoredValue ? post : pre;
+    if (authored.hasAuthoredValue) {
+        appendIntField(out, size, "authored_value", authored.authoredValue);
+    }
+    const SemanticUxContext& resolvedValue = post.hasResolvedValue ? post : pre;
+    if (resolvedValue.hasResolvedValue) {
+        appendIntField(out, size, "resolved_value", resolvedValue.resolvedValue);
+    }
     if (post.hasStepOn) {
         appendBoolField(out, size, "step_on", post.stepOn);
     } else if (pre.hasStepOn) {
@@ -113,9 +376,55 @@ void formatContextFields(char* out,
     }
 }
 
+FLASHMEM bool hasSemanticContext(const SemanticUxContext& context) {
+    return context.mode || context.effect || context.outcome || context.reason ||
+           context.target || context.routePolicy || context.projection ||
+           context.source || context.winner || context.winnerSource ||
+           context.property ||
+           context.valueLabel[0] != '\0' || context.targetIndex >= 0 ||
+           context.targetStep >= 0 || context.targetMask >= 0 ||
+           context.sourceMask >= 0 || context.createMask >= 0 ||
+           context.overwriteMask >= 0 || context.hasTargetRoute ||
+           context.hasActivationGeneration || context.mappingIndex >= 0 ||
+           context.mappingCount >= 0 || context.sourceTrack >= 0 ||
+           context.targetTrack >= 0 || context.targetKind ||
+           context.inheritedLaneCount >= 0 || context.pinnedLaneCount >= 0 ||
+           context.operationOrigin || context.hasOperationGeneration ||
+           context.operationStatus ||
+           context.hasConflict || context.hasAuthoredValue ||
+           context.hasResolvedValue || context.hasStepOn ||
+           context.hasResolvedStep;
+}
+
+FLASHMEM bool isIgnoredSemanticContext(const SemanticUxContext& context) {
+    return (context.outcome && std::strcmp(context.outcome, "ignored") == 0) ||
+           (context.effect && std::strcmp(context.effect, "release_ignored") == 0);
+}
+
+FLASHMEM void copyCaptureLabel(char (&out)[65], const char* label) {
+    std::size_t written = 0;
+    if (label) {
+        for (const char* cursor = label; *cursor != '\0' && written + 1U < sizeof(out);
+             ++cursor) {
+            const unsigned char value = static_cast<unsigned char>(*cursor);
+            const bool safe = (value >= 'a' && value <= 'z') ||
+                              (value >= 'A' && value <= 'Z') ||
+                              (value >= '0' && value <= '9') || value == '-' ||
+                              value == '_';
+            out[written++] = safe ? static_cast<char>(value) : '_';
+        }
+    }
+    if (written == 0) {
+        constexpr char fallback[] = "capture";
+        std::memcpy(out, fallback, sizeof(fallback));
+        return;
+    }
+    out[written] = '\0';
+}
+
 }  // namespace
 
-SemanticUxSnapshot makeSemanticUxSnapshot(const core::state::CoreState& state) {
+FLASHMEM SemanticUxSnapshot makeSemanticUxSnapshot(const core::state::CoreState& state) {
     return SemanticUxSnapshot{
         .view = state.activeView.get(),
         .overlay = state.overlays.current(),
@@ -127,28 +436,28 @@ SemanticUxSnapshot makeSemanticUxSnapshot(const core::state::CoreState& state) {
     };
 }
 
-SemanticUxRecorder::SemanticUxRecorder(SemanticUxRecorderOptions options) {
+FLASHMEM SemanticUxRecorder::SemanticUxRecorder(SemanticUxRecorderOptions options) {
     configure(options);
 }
 
-void SemanticUxRecorder::configure(SemanticUxRecorderOptions options) {
+FLASHMEM void SemanticUxRecorder::configure(SemanticUxRecorderOptions options) {
     sink_ = options.sink;
     enabled_ = options.enabled;
 }
 
-void SemanticUxRecorder::setEnabled(bool enabled) {
+FLASHMEM void SemanticUxRecorder::setEnabled(bool enabled) {
     enabled_ = enabled;
 }
 
-bool SemanticUxRecorder::enabled() const {
+FLASHMEM bool SemanticUxRecorder::enabled() const {
     return enabled_;
 }
 
-void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTraceEvent& event) {
+FLASHMEM void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTraceEvent& event) {
     onBindingTrace(event, SemanticUxSnapshot{});
 }
 
-void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTraceEvent& event,
+FLASHMEM void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTraceEvent& event,
                                         const SemanticUxSnapshot& preSnapshot) {
     if (!enabled_ || sink_ == nullptr) {
         return;
@@ -185,11 +494,11 @@ void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBindingTrace
     enqueue_(record);
 }
 
-void SemanticUxRecorder::flush(uint32_t nowMs, const core::state::CoreState& state) {
+FLASHMEM void SemanticUxRecorder::flush(uint32_t nowMs, const core::state::CoreState& state) {
     flush(nowMs, makeSemanticUxSnapshot(state));
 }
 
-void SemanticUxRecorder::flush(uint32_t nowMs, const SemanticUxSnapshot& snapshot) {
+FLASHMEM void SemanticUxRecorder::flush(uint32_t nowMs, const SemanticUxSnapshot& snapshot) {
     if (!enabled_ || sink_ == nullptr) {
         return;
     }
@@ -205,15 +514,38 @@ void SemanticUxRecorder::flush(uint32_t nowMs, const SemanticUxSnapshot& snapsho
     }
 }
 
-std::size_t SemanticUxRecorder::pendingCount() const {
+FLASHMEM void SemanticUxRecorder::capture(uint32_t nowMs,
+                                 const char* label,
+                                 const core::state::CoreState& state) {
+    capture(nowMs, label, makeSemanticUxSnapshot(state));
+}
+
+FLASHMEM void SemanticUxRecorder::capture(uint32_t nowMs,
+                                 const char* label,
+                                 const SemanticUxSnapshot& snapshot) {
+    if (!enabled_ || sink_ == nullptr) return;
+
+    // Keep sequence order deterministic even if a caller forgot to flush the
+    // input record before taking the screenshot.
+    flush(nowMs, snapshot);
+    writeCapture_(nowMs, label, snapshot);
+}
+
+FLASHMEM void SemanticUxRecorder::resetCaptureContext(bool allowCurrentSurfaceProjection) {
+    has_last_semantic_event_ = false;
+    last_semantic_sequence_ = 0;
+    allow_state_projection_capture_ = allowCurrentSurfaceProjection;
+}
+
+FLASHMEM std::size_t SemanticUxRecorder::pendingCount() const {
     return count_;
 }
 
-uint32_t SemanticUxRecorder::droppedCount() const {
+FLASHMEM uint32_t SemanticUxRecorder::droppedCount() const {
     return dropped_count_;
 }
 
-bool SemanticUxRecorder::enqueue_(const PendingRecord& record) {
+FLASHMEM bool SemanticUxRecorder::enqueue_(const PendingRecord& record) {
     if (count_ == CAPACITY) {
         ++dropped_count_;
         return false;
@@ -225,7 +557,7 @@ bool SemanticUxRecorder::enqueue_(const PendingRecord& record) {
     return true;
 }
 
-bool SemanticUxRecorder::pop_(PendingRecord& record) {
+FLASHMEM bool SemanticUxRecorder::pop_(PendingRecord& record) {
     if (count_ == 0) {
         return false;
     }
@@ -236,7 +568,7 @@ bool SemanticUxRecorder::pop_(PendingRecord& record) {
     return true;
 }
 
-void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
+FLASHMEM void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
                                       const PendingRecord& record,
                                       const SemanticUxSnapshot& postSnapshot) {
     SemanticUxContext postContext{};
@@ -244,10 +576,19 @@ void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
         provider->captureSemanticUxContext(record.traceEvent, postContext);
     }
 
-    char contextFields[640];
+    const SemanticUxContext& meaningfulContext =
+        hasSemanticContext(postContext) ? postContext : record.preContext;
+    if (hasSemanticContext(meaningfulContext) &&
+        !isIgnoredSemanticContext(meaningfulContext)) {
+        last_semantic_event_ = record.traceEvent;
+        last_semantic_sequence_ = record.sequence;
+        has_last_semantic_event_ = true;
+    }
+
+    char contextFields[1536];
     formatContextFields(contextFields, sizeof(contextFields), record.preContext, postContext);
 
-    char line[1600];
+    char line[2560];
     if (record.kind == RecordKind::Encoder) {
         std::snprintf(
             line,
@@ -327,7 +668,61 @@ void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
     sink_->writeLine(line);
 }
 
-void SemanticUxRecorder::writeDropReport_(uint32_t nowMs) {
+FLASHMEM void SemanticUxRecorder::writeCapture_(uint32_t nowMs,
+                                       const char* label,
+                                       const SemanticUxSnapshot& snapshot) {
+    SemanticUxContext context{};
+    if (has_last_semantic_event_) {
+        if (auto* provider = currentSemanticUxContextProvider()) {
+            provider->captureSemanticUxContext(last_semantic_event_, context);
+        }
+    } else if (allow_state_projection_capture_) {
+        oc::core::input::InputBindingTraceEvent projectionEvent{};
+        projectionEvent.buttonId =
+            std::numeric_limits<oc::type::ButtonID>::max();
+        projectionEvent.encoderId =
+            std::numeric_limits<oc::type::EncoderID>::max();
+        if (auto* provider = currentSemanticUxContextProvider()) {
+            provider->captureSemanticUxContext(projectionEvent, context);
+        }
+    }
+    allow_state_projection_capture_ = false;
+    const bool surfaceContext = hasSemanticContext(context);
+
+    char contextFields[1536];
+    formatContextFields(contextFields, sizeof(contextFields), context, context);
+
+    char safeLabel[65];
+    copyCaptureLabel(safeLabel, label);
+
+    char line[2560];
+    std::snprintf(
+        line,
+        sizeof(line),
+        "UXR {\"seq\":%lu,\"ms\":%lu,\"kind\":\"capture\","
+        "\"label\":\"%s\",\"surface_context\":%s,\"source_seq\":%lu,"
+        "\"view\":\"%s\",\"overlay\":\"%s\",\"playing\":%s,"
+        "\"playhead\":%d,\"page\":%u,\"shared_track\":%u,"
+        "\"shared_mask\":%u%s}",
+        static_cast<unsigned long>(next_sequence_++),
+        static_cast<unsigned long>(nowMs),
+        safeLabel,
+        surfaceContext ? "true" : "false",
+        static_cast<unsigned long>(surfaceContext ? last_semantic_sequence_ : 0U),
+        viewName(snapshot.view),
+        overlayName(snapshot.overlay),
+        snapshot.playing ? "true" : "false",
+        static_cast<int>(snapshot.playheadStep),
+        static_cast<unsigned int>(snapshot.sequencerPage),
+        static_cast<unsigned int>(snapshot.sharedTrack),
+        static_cast<unsigned int>(snapshot.sharedTrackMask),
+        contextFields
+    );
+    line[sizeof(line) - 1U] = '\0';
+    sink_->writeLine(line);
+}
+
+FLASHMEM void SemanticUxRecorder::writeDropReport_(uint32_t nowMs) {
     char line[96];
     std::snprintf(
         line,

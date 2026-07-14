@@ -1,7 +1,12 @@
-# UX workflow: manage focused macro-slot automation from the macro grid.
-# Purpose: validates quick local clear/remove/copy/paste on the focused macro
-# slot, without entering Macro Edit.
-# Expect: capture_changed:macro_2_automation_copied=macro_2_automation_cleared, capture_match:macro_2_automation_copied=macro_2_automation_pasted, capture_match:macro_2_automation_cleared=macro_2_automation_removed
+# UX workflow: manage a focused typed Macro Slot from the macro grid.
+# Purpose: validates tap Copy, early-release Remove cancellation, hold Paste,
+# and guarded whole-Slot Remove without entering Macro Edit.
+# Expect: capture_match:macro_2_slot_copied=macro_2_remove_cancelled, capture_match:macro_2_slot_copied=macro_2_slot_pasted
+# Expect: capture_match:macro_2_slot_pasted=macro_2_paste_settled, capture_changed:macro_2_slot_copied=macro_2_slot_removed
+# Expect: capture_match:macro_2_slot_removed=macro_2_remove_settled
+# Expect: semantic:macro_2_remove_cancelled:effect=cancel_remove_macro_slot, semantic:macro_2_remove_cancelled:outcome=cancelled
+# Expect: semantic:macro_2_slot_pasted:effect=paste_macro_slot, semantic:macro_2_slot_pasted:outcome=applied
+# Expect: semantic:macro_2_slot_removed:effect=remove_macro_slot, semantic:macro_2_slot_removed:outcome=applied
 
 0 scenario macro-track-multipage-automation
 80 capture screen source_macro_grid
@@ -12,20 +17,24 @@
 460 encoder NAV 1
 620 capture screen macro_2_focused
 
-# Copy the focused slot automation.
+# Tap copies the complete focused Slot.
 760 tap BOTTOM_RIGHT 60
-920 capture screen macro_2_automation_copied
+920 capture screen macro_2_slot_copied
 
-# Clear the focused slot automation, then paste it back.
+# A short Remove press is explicitly cancelled and leaves the Slot unchanged.
 1060 tap BOTTOM_LEFT 60
-1220 capture screen macro_2_automation_cleared
+1220 capture screen macro_2_remove_cancelled
+
+# Holding Paste applies the typed Slot once; release is consumed.
 1360 button BOTTOM_RIGHT down
 2500 tick
+2550 capture screen macro_2_slot_pasted
 2600 button BOTTOM_RIGHT up
-2850 capture screen macro_2_automation_pasted
+2850 capture screen macro_2_paste_settled
 
-# Remove the whole automation slot entry with the guarded long action.
+# Guarded Remove deletes the whole Slot once; release cannot replay it.
 3000 button BOTTOM_LEFT down
 4140 tick
+4190 capture screen macro_2_slot_removed
 4240 button BOTTOM_LEFT up
-4490 capture screen macro_2_automation_removed
+4490 capture screen macro_2_remove_settled

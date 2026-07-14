@@ -7,11 +7,22 @@
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerMidiEventSink.hpp"
+#include "sequencer/SequencerCcLaneRuntime.hpp"
 #include "sequencer/SequencerRuntimeGraphBank.hpp"
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
+
+namespace core::sequencer {
+
+struct SequencerCcLaneRuntimeProjectSnapshot;
+}
+
+namespace core::handler {
+class MidiCcGlobalFrameCoordinator;
+}
 
 namespace core::sequencer {
 
@@ -28,6 +39,7 @@ public:
 
     struct UiProjectionSnapshot {
         bool noteOutPulse = false;
+        bool ccOutPulse = false;
         bool beatPulse = false;
         std::array<uint8_t, TRACK_COUNT> trackVelocity{};
     };
@@ -35,16 +47,24 @@ public:
     SequencerPlaybackService(core::state::sequencer::SequencerState& sequencer,
                              core::state::StatusBarState& statusBar,
                              RealtimeMidiQueue& midiQueue,
-                             const SequencerRuntimeGraphBank& runtimeGraphBank);
+                             const SequencerRuntimeGraphBank& runtimeGraphBank,
+                             core::state::sequencer::SequencerTrackActivationQueue*
+                                 trackActivations = nullptr,
+                             SequencerCcLaneRuntime* ccLaneRuntime = nullptr,
+                             core::handler::MidiCcGlobalFrameCoordinator*
+                                 ccCoordinator = nullptr);
 
     void update(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
                 uint32_t tick,
                 bool playing,
                 uint32_t nowUs,
                 uint32_t tickPeriodUs,
-                bool publishRuntimeState = true);
+                bool publishRuntimeState = true,
+                const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot = nullptr);
     void stopTrack(uint8_t trackIndex);
     void completeStop();
+    void markCcTransportStopped();
+    void resetCcProject();
     void publishUiProjection(const UiProjectionSnapshot& projection, uint32_t nowMs);
     UiProjectionSnapshot takeUiProjectionSnapshot();
     SequencerRuntimeTelemetrySnapshot copyActiveRuntimeTelemetry() const;
@@ -55,6 +75,7 @@ private:
 
     struct PendingUiProjection {
         bool noteOutPulse = false;
+        bool ccOutPulse = false;
         bool beatPulse = false;
         std::array<uint8_t, TRACK_COUNT> trackVelocity{};
 
@@ -74,12 +95,40 @@ private:
 
     void handleActiveTrackSwitch_();
     void syncRuntimeStates_(
-        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        uint32_t tick,
+        bool playing
+    );
+    bool isLocalLoopBoundary_(uint8_t trackIndex, uint32_t tick) const;
+    void syncRuntimeMasksForTrack_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        uint8_t trackIndex
+    );
+    void applyStagedTrack_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        uint8_t trackIndex,
+        uint32_t generation,
+        uint32_t tick,
+        bool playing
+    );
+    void processCcRuntime_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const SequencerCcLaneRuntimeProjectSnapshot* laneSnapshot,
+        uint32_t tick,
+        bool playing,
+        uint32_t nowUs
+    );
+    static uint8_t ccTicksPerStep_(
+        const core::state::sequencer::SequencerPatternSnapshot& pattern
     );
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::StatusBarState& status_bar_;
+    RealtimeMidiQueue& midi_queue_;
     const SequencerRuntimeGraphBank& runtime_graph_bank_;
+    core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
+    SequencerCcLaneRuntime* cc_lane_runtime_ = nullptr;
+    core::handler::MidiCcGlobalFrameCoordinator* cc_coordinator_ = nullptr;
     PendingUiProjection pending_ui_projection_{};
     PendingNoteActivityObserver note_activity_observer_{pending_ui_projection_};
     // SequencerRealtimeLane owns this service in one RAM2 allocation. Keeping
@@ -98,6 +147,8 @@ private:
 
     int16_t last_playhead_ = -1;
     uint8_t last_active_track_ = 0;
+    uint32_t last_cc_tick_ = 0;
+    bool cc_transport_playing_ = false;
 };
 
 }  // namespace core::sequencer

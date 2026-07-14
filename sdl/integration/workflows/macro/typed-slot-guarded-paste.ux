@@ -1,0 +1,52 @@
+# UX workflow: copy and paste one Macro Destination with an explicit guard.
+# Purpose: proves that the focused Destination context transports only CC,
+# Paste appears only while pressed, an early armed release is non-mutating,
+# and a full hold preserves the target Track channel and source curves.
+# Whole-Slot copy/paste remains covered from Macro Performance.
+# Expect: capture_match:source_destination=source_after_copy, capture_match:target_destination=target_after_cancel, capture_changed:target_destination=destination_pasted
+# Expect: semantic:paste_pressed:effect=arm_paste_macro_destination, semantic:paste_pressed:outcome=pressed, semantic:paste_armed:outcome=armed, semantic:paste_cancelled:outcome=cancelled
+# Expect: semantic:paste_armed_full:outcome=armed, semantic:destination_pasted:effect=paste_macro_destination, semantic:destination_pasted:outcome=applied, semantic:destination_pasted:target=macro_destination
+
+0 scenario macro-auto-mod
+80 capture screen source_grid
+
+# Create Macro 2 through the normal add-slot grammar so Destination paste has
+# a real, user-visible target and never creates a hidden Slot implicitly.
+120 tap NAV 60
+240 tap NAV 60
+360 encoder NAV 1
+480 tap NAV 60
+
+# Open Macro 1 on its Destination row. Automation and Modulation are visible
+# but deliberately outside this clipboard payload.
+700 button MACRO_1 down
+1760 tick
+1820 button MACRO_1 up
+2020 capture screen source_destination
+
+# A tap copies. The resting strip deliberately remains Copy after the tap.
+2170 tap BOTTOM_RIGHT 60
+2370 capture screen source_after_copy
+
+# Select Macro 2 as the exact Destination target.
+2520 tap LEFT_BOTTOM 60
+2680 encoder NAV 1
+2840 tap LEFT_BOTTOM 60
+3040 capture screen target_destination
+
+# Press exposes Paste. Release after arming but before completion: no mutation.
+3190 button BOTTOM_RIGHT down
+3300 capture screen paste_pressed
+3440 tick
+3520 capture screen paste_armed
+3590 button BOTTOM_RIGHT up
+3770 capture screen paste_cancelled
+4420 tick
+4570 capture screen target_after_cancel
+
+# A complete hold commits the CC once; release cannot replay the mutation.
+4720 button BOTTOM_RIGHT down
+4960 capture screen paste_armed_full
+5780 tick
+5840 button BOTTOM_RIGHT up
+6090 capture screen destination_pasted

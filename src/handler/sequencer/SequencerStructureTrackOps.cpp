@@ -2,8 +2,6 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
@@ -35,8 +33,10 @@ FLASHMEM bool createSequencerStructureTrack(
     }
 
     if (!core::state::sequencer::storeActiveTrack(tracks, sequencer)) return false;
-    tracks.track(index).reset();
-    tracks.track(index).midiChannel.set(index);
+    auto& destination = tracks.track(index);
+    const uint8_t destinationMidiChannel = destination.midiChannel.get();
+    destination.reset();
+    destination.midiChannel.set(destinationMidiChannel);
     return sharedTracks.setState(
         static_cast<uint16_t>(enabledMask | structure_slots::slotBit(index)),
         index
@@ -51,29 +51,6 @@ FLASHMEM bool toggleSequencerStructureTrackMute(
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(track);
     const bool nextMuted = !tracks.isTrackMuted(index);
     return tracks.setTrackMuted(index, nextMuted);
-}
-
-FLASHMEM bool pasteCurrentSequencerStructureTrack(
-    core::state::sequencer::SequencerTrackBankState& tracks,
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::TrackNavigationState& trackUi,
-    const SharedTrackDomainServices& sharedTracks,
-    const core::state::StructureClipboardState& structureClipboard
-) {
-    if (!structureClipboard.hasSequencerTrack()) return false;
-    if (trackUi.previewAddSlot.get() &&
-        !createSequencerStructureTrack(sequencer, tracks, trackUi, sharedTracks)) {
-        return false;
-    }
-
-    if (!core::state::sequencer::applySnapshotToEditorWithGraph(
-        sequencer,
-        structureClipboard.sequencerTrack,
-        structureClipboard.sequencerGraph.get()
-    )) {
-        return false;
-    }
-    return core::state::sequencer::storeActiveTrack(tracks, sequencer);
 }
 
 }  // namespace core::handler

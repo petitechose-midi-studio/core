@@ -3,6 +3,7 @@
 
 #include "../../src/sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "../../src/state/project/ProjectNavigationState.hpp"
+#include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankState.hpp"
 
@@ -86,6 +87,75 @@ void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
     assert(bank.activeSnapshot().tracks[0].note[0] == 72);
 
     std::cout << "[PASS] test_refresh_keeps_alternating_buffers_current_without_full_copy\n";
+}
+
+void test_refresh_skips_unchanged_cc_lane_payloads_per_buffer() {
+    using namespace core::state::sequencer;
+
+    SequencerState sequencer;
+    SequencerTrackBankState trackBank;
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{
+        sequencer,
+        trackBank,
+        projectNavigation,
+    };
+
+    auto* lanes = ensureSequencerCcLaneBank(sequencer.pattern);
+    assert(lanes != nullptr);
+    SequencerCcLaneDraft draft;
+    draft.destination.controller = 74;
+    assert(createSequencerCcLane(*lanes, 0, draft).changed());
+    sequencer.pattern.bumpCcLaneRevision();
+
+    uint8_t index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 1);
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 2);
+
+    // Both alternating buffers now carry the same immutable lane generation.
+    // Stable refreshes must not copy the 16 Track payloads again.
+    index = bank.refresh();
+    bank.commit(index);
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 2);
+
+    assert(setSequencerCcLaneEvent(*lanes, 0, 3, 96).changed());
+    sequencer.pattern.bumpCcLaneRevision();
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 3);
+    const auto* activeLanes = bank.laneSnapshot(index);
+    assert(activeLanes != nullptr);
+    const auto* activeTrackLanes = activeLanes->lanesForTrack(0);
+    assert(activeTrackLanes != nullptr);
+    assert(activeTrackLanes->lanes[0].values[3] == 96);
+
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 4);
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 4);
+
+    sequencer.pattern.ccLanes.reset();
+    sequencer.pattern.bumpCcLaneRevision();
+    index = bank.refresh();
+    bank.commit(index);
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 6);
+    assert(bank.laneSnapshot(index) != nullptr);
+    assert(bank.laneSnapshot(index)->lanesForTrack(0) == nullptr);
+
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.lanePayloadWriteCount() == 6);
+
+    std::cout << "[PASS] test_refresh_skips_unchanged_cc_lane_payloads_per_buffer\n";
 }
 
 void test_refresh_captures_inactive_bank_track() {
@@ -289,6 +359,7 @@ int main() {
     test_refresh_captures_active_editor_state();
     test_refresh_preserves_active_snapshot_until_commit();
     test_refresh_keeps_alternating_buffers_current_without_full_copy();
+    test_refresh_skips_unchanged_cc_lane_payloads_per_buffer();
     test_refresh_captures_inactive_bank_track();
     test_refresh_switches_active_track_sources();
     test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload();

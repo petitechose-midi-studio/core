@@ -12,18 +12,21 @@ inline const char* interactionActionIcon(
     switch (action) {
         case Action::MUTE_CURRENT_TRACK:
         case Action::MUTE_TRACK_SELECTION:
+            return standalone::icons::TRACK_MUTE;
         case Action::CLEAR_CURRENT_STRUCTURE:
-        case Action::REMOVE_CURRENT_STRUCTURE:
-        case Action::RESET_CURRENT_STEP_SHALLOW:
-        case Action::RESET_CURRENT_STEP_DEEP:
         case Action::CLEAR_STEP_CONTENT:
         case Action::CLEAR_SELECTION:
+            return standalone::icons::ACTION_CLEAR;
+        case Action::REMOVE_CURRENT_STRUCTURE:
         case Action::DELETE_SELECTION:
+        case Action::REMOVE_STEP_EDITOR_CONTEXT:
+            return standalone::icons::ACTION_REMOVE;
+        case Action::RESET_CURRENT_STEP_SHALLOW:
+        case Action::RESET_CURRENT_STEP_DEEP:
         case Action::RESET_STEP_SELECTION_SHALLOW:
         case Action::RESET_STEP_SELECTION_DEEP:
         case Action::RESET_STEP_EDITOR_ROW:
-        case Action::REMOVE_STEP_EDITOR_CONTEXT:
-            return standalone::icons::ACTION_CLEAR;
+            return standalone::icons::ACTION_RESET;
         case Action::COPY_CURRENT_STEP:
         case Action::COPY_CURRENT_STRUCTURE:
         case Action::COPY_STEP_CONTENT:

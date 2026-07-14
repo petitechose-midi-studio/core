@@ -63,7 +63,14 @@ FLASHMEM bool SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepPresetPicker.selectedIndex,
         state_refs_.sequencer.stepPresetPicker.entryCount,
         state_refs_.sequencer.stepPresetPicker.truncated,
+        state_refs_.sequencer.stepPresetPicker.hasPreviousPage,
+        state_refs_.sequencer.stepPresetPicker.hasNextPage,
+        state_refs_.sequencer.stepPresetPicker.totalEntryCount,
+        state_refs_.sequencer.stepPresetPicker.detailVisible,
+        state_refs_.sequencer.stepPresetPicker.detailFocus,
         state_refs_.sequencer.stepPresetPicker.feedback,
+        state_refs_.sequencer.stepPresetPicker.operationFeedback,
+        state_refs_.sequencer.stepPresetPicker.actionGuard,
         state_refs_.sequencer.stepPresetPicker.revision,
         state_refs_.sequencer.stepEdit.stepIndex
     ) && bound;
@@ -74,7 +81,11 @@ FLASHMEM bool SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepPresetPicker.visible,
         state_refs_.sequencer.stepPresetPicker.mode,
         state_refs_.sequencer.stepPresetPicker.selectedIndex,
-        state_refs_.sequencer.stepPresetPicker.entryCount
+        state_refs_.sequencer.stepPresetPicker.entryCount,
+        state_refs_.sequencer.stepPresetPicker.hasPreviousPage,
+        state_refs_.sequencer.stepPresetPicker.revision,
+        state_refs_.sequencer.stepPresetPicker.actionGuard,
+        state_refs_.sequencer.stepPresetPicker.operationFeedback
     ) && bound;
     return bound;
 }
@@ -146,12 +157,13 @@ FLASHMEM void SequencerOverlayPresenter::renderStepPresetPicker() {
     }
 
     step_preset_overlay_.render({
-        .title = data.title,
+        .title = data.title.data(),
         .meta = data.meta.data(),
         .items = data.items.data(),
         .itemCount = data.itemCount,
         .selectedIndex = data.selectedIndex,
         .showIndexColumn = false,
+        .dimUnselected = false,
         .visible = true,
         .dataRevision = data.dataRevision,
     });

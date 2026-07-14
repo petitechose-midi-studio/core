@@ -60,6 +60,22 @@ public:
     void flush(uint32_t nowMs, const core::state::CoreState& state);
     void flush(uint32_t nowMs, const SemanticUxSnapshot& snapshot);
 
+    // Records the semantic state rendered by a named SDL capture. The context
+    // is re-read from the active surface with the last meaningful dispatched
+    // gesture, so capture evidence cannot drift away from the live UI model.
+    void capture(uint32_t nowMs,
+                 const char* label,
+                 const core::state::CoreState& state);
+    void capture(uint32_t nowMs,
+                 const char* label,
+                 const SemanticUxSnapshot& snapshot);
+
+    // Capture scenarios may replace the complete state without dispatching an
+    // input gesture. Do not let a gesture from the previous scenario claim
+    // semantic ownership of the new capture. An explicit projection opt-in
+    // lets the next capture describe that synthetic surface with source_seq=0.
+    void resetCaptureContext(bool allowCurrentSurfaceProjection = false);
+
     std::size_t pendingCount() const;
     uint32_t droppedCount() const;
 
@@ -93,6 +109,9 @@ private:
     void writeRecord_(uint32_t nowMs,
                       const PendingRecord& record,
                       const SemanticUxSnapshot& snapshot);
+    void writeCapture_(uint32_t nowMs,
+                       const char* label,
+                       const SemanticUxSnapshot& snapshot);
     void writeDropReport_(uint32_t nowMs);
 
     std::array<PendingRecord, CAPACITY> queue_{};
@@ -102,6 +121,10 @@ private:
     uint32_t next_sequence_ = 1;
     uint32_t dropped_count_ = 0;
     uint32_t reported_dropped_count_ = 0;
+    oc::core::input::InputBindingTraceEvent last_semantic_event_{};
+    uint32_t last_semantic_sequence_ = 0;
+    bool has_last_semantic_event_ = false;
+    bool allow_state_projection_capture_ = false;
     SemanticUxLineSink* sink_ = nullptr;
     bool enabled_ = false;
 };

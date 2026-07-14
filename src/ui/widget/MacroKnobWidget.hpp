@@ -39,10 +39,21 @@ public:
     }
 
     void setValue(float value);
+    void setResolvedComponents(float baseValue,
+                               float modulationDelta,
+                               float modulationDepth,
+                               float resolvedValue,
+                               bool clippedLow,
+                               bool clippedHigh);
     void setConfig(uint8_t cc);
     void setAutomationActive(bool active);
     void setAutomationRecording(bool active);
     void setAutomationManualOverride(bool active);
+    void setSourceIndicators(bool automationStored,
+                             bool automationActive,
+                             bool modulationStored,
+                             bool modulationActive,
+                             bool modulationPaused);
     void setSlotState(bool active, bool addSlot);
     void setFocused(bool focused);
 
@@ -63,6 +74,12 @@ private:
     bool buildArcGeometry(ArcGeometry& geometry) const;
     void invalidateValueArc();
     void invalidateArcRange(lv_value_precise_t startAngle, lv_value_precise_t endAngle);
+    void invalidateArcRangeAt(lv_value_precise_t startAngle,
+                              lv_value_precise_t endAngle,
+                              uint16_t radius,
+                              lv_coord_t width);
+    void invalidateRailRange(lv_value_precise_t startAngle,
+                             lv_value_precise_t endAngle);
     void invalidateArcDelta(uint16_t previousAngle, uint16_t nextAngle);
     void drawArc(lv_layer_t* layer, lv_obj_t* target) const;
     static void onArcDrawEvent(lv_event_t* event);
@@ -77,6 +94,10 @@ private:
     uint16_t rendered_value_angle_ = 0xFFFF;
     uint8_t current_cc_ = 0xFF;
     bool automation_active_ = false;
+    bool automation_stored_ = false;
+    bool modulation_stored_ = false;
+    bool modulation_active_ = false;
+    bool modulation_paused_ = false;
     bool automation_recording_ = false;
     bool automation_manual_override_ = false;
     bool slot_active_ = true;
@@ -84,6 +105,11 @@ private:
     bool focused_ = false;
     bool config_labels_visible_ = true;
     float current_value_ = 0.0f;
+    float base_value_ = 0.0f;
+    float modulation_delta_ = 0.0f;
+    float modulation_depth_ = 0.0f;
+    bool clipped_low_ = false;
+    bool clipped_high_ = false;
 };
 
 }  // namespace core::ui

@@ -43,13 +43,19 @@
 #include "persistence/MacroPersistence.hpp"
 #include "persistence/SequencerPersistence.hpp"
 #include "macro/MacroPagesState.hpp"
+#include "macro/MacroHistory.hpp"
 #include "macro/MacroUiState.hpp"
 #include "sequencer/SequencerState.hpp"
 #include "sequencer/SequencerHistory.hpp"
 #include "sequencer/SequencerSnapshots.hpp"
+#include "sequencer/SequencerTrackActivationQueue.hpp"
 #include "sequencer/SequencerTrackBankState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectState.hpp"
+
+namespace core::handler {
+class MidiCcGlobalFrameCoordinator;
+}
 
 namespace core::state {
 
@@ -65,6 +71,8 @@ struct CoreStateLifecycle;
 struct MacroDomainState {
     core::app::ExtmemUniquePtr<MacroState> runtime;
     core::app::ExtmemUniquePtr<macro::MacroPagesState> pages;
+    macro::MacroHistoryService history;
+    oc::state::Signal<uint32_t> runtimeOwnerRevision{1};
     oc::state::Signal<uint32_t> configRevision{0};
     persistence::MacroPersistence persistence;
     bool persistenceReady = false;
@@ -93,10 +101,19 @@ struct SequencerDomainState {
         sequencer::SequencerTrackBankSnapshot bankSnapshot{};
         core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> patternGraph;
         core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> activeTrackGraph;
+        core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank> patternCcLanes;
+        core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank> activeTrackCcLanes;
+        uint32_t patternCcLaneRevision = 0;
         std::array<
             core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>,
             sequencer::SequencerTrackBankState::TRACK_COUNT
         > bankGraphs{};
+        std::array<
+            core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank>,
+            sequencer::SequencerTrackBankState::TRACK_COUNT
+        > bankCcLanes{};
+        std::array<uint32_t, sequencer::SequencerTrackBankState::TRACK_COUNT>
+            bankCcLaneRevisions{};
     };
 
     struct PendingApplyDeleter {
@@ -135,6 +152,8 @@ struct SequencerDomainState {
     core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
     sequencer::SequencerHistoryService history;
+    sequencer::SequencerTrackActivationQueue trackActivations;
+    oc::state::Signal<uint32_t> runtimeProjectRevision{1};
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
@@ -217,6 +236,8 @@ public:
     /// Macro domain aliases
     MacroState& macros;
     macro::MacroPagesState& pages;
+    macro::MacroHistoryService& macroHistory;
+    oc::state::Signal<uint32_t>& macroRuntimeOwnerRevision;
     oc::state::Signal<uint32_t>& configRevision;
     persistence::MacroPersistence& macroPersistence;
 
@@ -224,7 +245,14 @@ public:
     sequencer::SequencerState& sequencer;
     sequencer::SequencerTrackBankState& sequencerTracks;
     sequencer::SequencerHistoryService& sequencerHistory;
+    sequencer::SequencerTrackActivationQueue& sequencerTrackActivations;
+    oc::state::Signal<uint32_t>& sequencerRuntimeProjectRevision;
     persistence::SequencerPersistence& sequencerPersistence;
+
+    // Published by the singular SequencerRuntimeService. Feature modules may
+    // produce immutable CC author frames through this non-owning handle, but
+    // CoreState never owns or destroys the realtime coordinator.
+    core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
 
     /// Shared UI/system domain aliases
     project::ProjectState& project;
@@ -286,6 +314,8 @@ public:
     void flushProjectMutationCoalescing();
     void resetStandaloneTransientUi();
     void resetMusicalProject();
+    void requestMacroRuntimeOwnerActivation();
+    void requestSequencerRuntimeProjectReset();
     void markMacroValueEdited(uint8_t index);
     void markProjectMutated();
     void requestProjectSessionSave();
@@ -307,6 +337,12 @@ public:
                                     sequencer::SequencerHistoryTrackBankSnapshot after,
                                     sequencer::SequencerHistoryDescriptor descriptor = {});
     bool recordSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
+    bool canRecordSequencerStructureHistory(
+        const sequencer::SequencerHistoryTrackStructureChange& change
+    ) const;
+    void recordPreparedSequencerStructureHistory(
+        sequencer::SequencerHistoryTrackStructureChangePtr change
+    );
     bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
                                                           sequencer::StepProperty property,
@@ -330,6 +366,7 @@ public:
     uint16_t currentSharedTrackEnabledMask() const;
     uint8_t currentSharedActiveTrack() const;
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
+    void publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack);
     bool refreshSharedTrackStateFromMacroPages();
     bool refreshSharedTrackStateFromSequencer();
 

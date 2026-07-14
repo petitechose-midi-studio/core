@@ -202,6 +202,52 @@ void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
     std::cout << "[PASS] test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision\n";
 }
 
+void test_track_content_snapshot_preserves_destination_midi_channel() {
+    SequencerState source;
+    source.pattern.midiChannel.set(3);
+    setStep(source, 0, 74, 103, 88, -2, 79, true);
+    createRootMicroSequence(source, 0, 2);
+
+    core::state::sequencer::SequencerPatternSnapshot snapshot;
+    core::state::sequencer::captureSnapshot(source.pattern, snapshot);
+    const auto* sourceGraph = core::state::sequencer::graphView(source.pattern);
+    assert(sourceGraph != nullptr);
+
+    SequencerState bankTarget;
+    bankTarget.pattern.midiChannel.set(10);
+    assert(core::state::sequencer::applyTrackContentSnapshotWithGraph(
+        bankTarget.pattern,
+        snapshot,
+        sourceGraph
+    ));
+    assert(bankTarget.pattern.midiChannel.get() == 10);
+    assertStep(bankTarget, 0, 74, 103, 88, -2, 79, true);
+    assert(rootStepHasMicroSequence(bankTarget, 0));
+
+    SequencerState editorTarget;
+    editorTarget.pattern.midiChannel.set(12);
+    assert(core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
+        editorTarget,
+        snapshot,
+        sourceGraph
+    ));
+    assert(editorTarget.pattern.midiChannel.get() == 12);
+    assertStep(editorTarget, 0, 74, 103, 88, -2, 79, true);
+    assert(rootStepHasMicroSequence(editorTarget, 0));
+
+    SequencerState genericTarget;
+    genericTarget.pattern.midiChannel.set(14);
+    assert(core::state::sequencer::applySnapshotToEditorWithGraph(
+        genericTarget,
+        snapshot,
+        sourceGraph
+    ));
+    assert(genericTarget.pattern.midiChannel.get() == 3);
+
+    std::cout
+        << "[PASS] test_track_content_snapshot_preserves_destination_midi_channel\n";
+}
+
 }  // namespace
 
 int main() {
@@ -213,6 +259,7 @@ int main() {
     test_remove_page_shifts_child_content();
     test_rotate_pattern_moves_payload_and_mask();
     test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision();
+    test_track_content_snapshot_preserves_destination_midi_channel();
 
     std::cout << "All SequencerSnapshotOps tests passed\n";
     return 0;

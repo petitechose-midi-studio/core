@@ -228,6 +228,9 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         snapshot.sharedTrackActive
     );
     state.pages.automation = *snapshot.macroAutomation;
+    for (auto& entry : state.pages.automation.entries) {
+        core::state::macro::macroAutomationNormalizeLegacyPlayback(entry.state);
+    }
     core::state::macro::macroAutomationCompactPool(state.pages.automation);
     state.pages.syncSharedTrackState(
         state.sequencerTracks.currentEnabledMask(),
@@ -240,7 +243,14 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     state.projectNavigation.notifyContentChanged();
     state.clearPendingSequencerApply();
     state.clearSequencerHistory();
+    state.macroHistory.clear();
     state.statusBar.pageName.set(state.pages.activePageData().name);
+    // Manual is Project-scoped runtime intent: it survives navigation and UI
+    // teardown, but never crosses a load boundary or enters persistence.
+    state.macroUi.resetInteraction();
+    state.macroUi.resetProjectRuntime();
+    state.requestMacroRuntimeOwnerActivation();
+    state.requestSequencerRuntimeProjectReset();
     return true;
 }
 

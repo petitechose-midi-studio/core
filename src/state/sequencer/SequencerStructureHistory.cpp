@@ -6,6 +6,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state::sequencer {
@@ -131,10 +132,14 @@ FLASHMEM bool captureHistoryStructureSnapshotUsingReservedGraphs(
 FLASHMEM bool applyHistoryStructureSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
-    const SequencerHistoryTrackStructureSnapshot& snapshot
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    uint16_t preserveDestinationBindingsMask
 ) {
     const uint16_t capturedMask = sequencerHistorySanitizeTrackMask(
         static_cast<uint16_t>(snapshot.capturedTrackMask | sequencerHistoryTrackBit(snapshot.activeTrack))
+    );
+    const uint16_t preservedBindingsMask = static_cast<uint16_t>(
+        preserveDestinationBindingsMask & capturedMask & kTrackMaskAll
     );
     const uint8_t targetActive = SequencerTrackBankState::clampTrackIndex(
         snapshot.activeTrack
@@ -143,15 +148,44 @@ FLASHMEM bool applyHistoryStructureSnapshot(
         return false;
     }
 
+    // The active editor is authoritative for its Track. Its bank slot can be
+    // stale until a Track switch, so capture destination bindings from the
+    // editor for that one Track and from the bank for every other Track.
+    std::array<uint8_t, SequencerTrackBankState::TRACK_COUNT> preservedMidiChannels{};
+    const uint8_t currentActive = bank.activeTrackIndex();
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((preservedBindingsMask & sequencerHistoryTrackBit(i)) == 0) continue;
+        preservedMidiChannels[i] = i == currentActive
+            ? active.pattern.midiChannel.get()
+            : bank.track(i).midiChannel.get();
+    }
+
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
     SequencerHistoryGraphPtr editorGraph;
+    std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT>
+        bankCcLanes{};
+    SequencerHistoryCcLanePtr editorCcLanes;
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         if ((capturedMask & sequencerHistoryTrackBit(i)) == 0) {
             continue;
         }
         if (!cloneSnapshotGraph(snapshot.tracks[i], bankGraphs[i])) return false;
+        if (snapshot.tracks[i].ccLanesCaptured &&
+            !cloneSequencerCcLaneBank(
+                bankCcLanes[i],
+                snapshot.tracks[i].ccLanes.get()
+            )) {
+            return false;
+        }
     }
     if (!cloneSnapshotGraph(snapshot.tracks[targetActive], editorGraph)) {
+        return false;
+    }
+    if (snapshot.tracks[targetActive].ccLanesCaptured &&
+        !cloneSequencerCcLaneBank(
+            editorCcLanes,
+            snapshot.tracks[targetActive].ccLanes.get()
+        )) {
         return false;
     }
 
@@ -163,6 +197,12 @@ FLASHMEM bool applyHistoryStructureSnapshot(
             std::move(bankGraphs[i]),
             snapshot.tracks[i].flat.graphRevision
         );
+        if (snapshot.tracks[i].ccLanesCaptured) {
+            installSequencerCcLaneBank(
+                bank.track(i),
+                std::move(bankCcLanes[i])
+            );
+        }
     }
 
     applySnapshotToEditor(active, snapshot.tracks[targetActive].flat);
@@ -171,10 +211,21 @@ FLASHMEM bool applyHistoryStructureSnapshot(
         std::move(editorGraph),
         snapshot.tracks[targetActive].flat.graphRevision
     );
+    if (snapshot.tracks[targetActive].ccLanesCaptured) {
+        installSequencerCcLaneBank(active.pattern, std::move(editorCcLanes));
+    }
     bank.syncSharedTrackState(snapshot.enabledMask, targetActive);
     bank.setMutedMask(snapshot.mutedMask);
     active.focusedStep.set(snapshot.focusedStep);
     active.page.set(snapshot.page);
+
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((preservedBindingsMask & sequencerHistoryTrackBit(i)) == 0) continue;
+        bank.track(i).midiChannel.set(preservedMidiChannels[i]);
+    }
+    if ((preservedBindingsMask & sequencerHistoryTrackBit(targetActive)) != 0) {
+        active.pattern.midiChannel.set(preservedMidiChannels[targetActive]);
+    }
     return true;
 }
 

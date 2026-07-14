@@ -128,6 +128,7 @@ private:
     std::array<bool, MACRO_COUNT> rendered_automation_active_{};
     std::array<bool, MACRO_COUNT> rendered_automation_recording_{};
     std::array<bool, MACRO_COUNT> rendered_automation_manual_override_{};
+    std::array<uint8_t, MACRO_COUNT> rendered_source_state_{};
     std::array<bool, MACRO_COUNT> rendered_active_{};
     std::array<bool, MACRO_COUNT> rendered_add_slot_{};
     std::array<bool, MACRO_COUNT> rendered_focused_{};

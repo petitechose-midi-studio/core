@@ -2,24 +2,38 @@
 
 #if defined(MS_UX_RECORDER)
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <limits>
+
+#include <config/PlatformCompat.hpp>
 
 #include "config/InputIDs.hpp"
+#include "config/Timing.hpp"
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
+#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "state/contextual/GuardedActionState.hpp"
+#include "state/contextual/OperationFeedbackState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
+#include "state/sequencer/SequencerTrackTransferAction.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
+#include "state/sequencer/SequencerStepPresetModel.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
+#include "validation/ux/SequencerCcLaneSemanticGesture.hpp"
+#include "validation/ux/SequencerTrackTransferSemanticProjection.hpp"
 
 namespace core::context::standalone::ux {
 namespace interaction_policy = core::handler::sequencer::interaction_policy;
@@ -28,7 +42,7 @@ namespace {
 using SequencerAction = core::state::sequencer::SequencerInteractionAction;
 using SequencerScope = core::state::sequencer::SequencerInteractionScope;
 
-bool isButton(const oc::core::input::InputBindingTraceEvent& event,
+FLASHMEM bool isButton(const oc::core::input::InputBindingTraceEvent& event,
               Config::ButtonID button,
               oc::core::input::ButtonBindingType type) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
@@ -36,47 +50,198 @@ bool isButton(const oc::core::input::InputBindingTraceEvent& event,
            event.buttonType == type;
 }
 
-bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
+FLASHMEM bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
            event.encoderId == static_cast<oc::type::EncoderID>(encoder);
 }
 
-bool isMacroButtonRelease(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
+FLASHMEM bool isSemanticStateProjection(
+    const oc::core::input::InputBindingTraceEvent& event
+) {
+    return event.buttonId == std::numeric_limits<oc::type::ButtonID>::max() &&
+           event.encoderId == std::numeric_limits<oc::type::EncoderID>::max();
+}
+
+FLASHMEM bool ccLaneActionGesture(
+    const oc::core::input::InputBindingTraceEvent& event,
+    core::state::sequencer::SequencerCcLaneActionSlot& slot,
+    core::validation::ux::SequencerCcLaneGesturePhase& phase
+) {
+    using ButtonType = oc::core::input::ButtonBindingType;
+    if (event.domain != oc::core::input::InputBindingTraceDomain::Button ||
+        (event.buttonType != ButtonType::PRESS &&
+         event.buttonType != ButtonType::RELEASE)) {
+        return false;
+    }
+
+    if (event.buttonId ==
+        static_cast<oc::type::ButtonID>(Config::ButtonID::BOTTOM_LEFT)) {
+        slot = core::state::sequencer::SequencerCcLaneActionSlot::BOTTOM_LEFT;
+    } else if (event.buttonId ==
+               static_cast<oc::type::ButtonID>(Config::ButtonID::BOTTOM_CENTER)) {
+        slot = core::state::sequencer::SequencerCcLaneActionSlot::BOTTOM_CENTER;
+    } else if (event.buttonId ==
+               static_cast<oc::type::ButtonID>(Config::ButtonID::BOTTOM_RIGHT)) {
+        slot = core::state::sequencer::SequencerCcLaneActionSlot::BOTTOM_RIGHT;
+    } else {
+        return false;
+    }
+
+    phase = event.buttonType == ButtonType::PRESS
+        ? core::validation::ux::SequencerCcLaneGesturePhase::PRESS
+        : core::validation::ux::SequencerCcLaneGesturePhase::RELEASE;
+    return true;
+}
+
+FLASHMEM const char* ccWinnerName(
+    core::state::shared::MidiCcCandidateClass candidateClass
+) {
+    using Candidate = core::state::shared::MidiCcCandidateClass;
+    switch (candidateClass) {
+        case Candidate::LIVE_MANUAL: return "live_manual";
+        case Candidate::SEQUENCER_CC_LANE: return "sequencer_cc_lane";
+        case Candidate::MACRO_COMPUTED: return "macro_computed";
+        case Candidate::MACRO_STATIC: return "macro_static";
+    }
+    return nullptr;
+}
+
+FLASHMEM bool isMacroButtonRelease(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
            event.buttonType == oc::core::input::ButtonBindingType::RELEASE &&
            Config::macroButtonIndex(event.buttonId, index);
 }
 
-bool isMacroEncoderTurn(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
+FLASHMEM bool isMacroEncoderTurn(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
            Config::macroEncoderIndex(event.encoderId, index);
 }
 
-void copyIndexLabel(char (&out)[16], unsigned value) {
+FLASHMEM void copyIndexLabel(char (&out)[16], unsigned value) {
     std::snprintf(out, sizeof(out), "%u", value + 1U);
 }
 
-void copyValueLabel(char (&out)[16], const char* value) {
+FLASHMEM void copyValueLabel(char (&out)[16], const char* value) {
     if (!value) return;
     std::snprintf(out, sizeof(out), "%s", value);
 }
 
-bool isAddSlot(const core::validation::ux::SemanticUxContext& out) {
+FLASHMEM bool isAddSlot(const core::validation::ux::SemanticUxContext& out) {
     return out.property && std::strcmp(out.property, "add_slot") == 0;
 }
 
-void markNoop(core::validation::ux::SemanticUxContext& out, const char* reason) {
+FLASHMEM void markNoop(core::validation::ux::SemanticUxContext& out, const char* reason) {
     out.outcome = "noop";
     out.reason = reason;
 }
 
-void markIgnored(core::validation::ux::SemanticUxContext& out, const char* reason) {
+FLASHMEM void markIgnored(core::validation::ux::SemanticUxContext& out, const char* reason) {
     out.effect = "release_ignored";
     out.outcome = "ignored";
     out.reason = reason;
 }
 
-const char* actionName(SequencerAction action) {
+FLASHMEM const char* stepPresetActionName(
+    core::state::contextual::ContextActionId action
+) {
+    using Action = core::state::contextual::ContextActionId;
+    switch (action) {
+        case Action::APPLY: return "apply_step_preset";
+        case Action::SAVE: return "save_step_preset";
+        case Action::LOAD: return "load_step_presets";
+        default: return nullptr;
+    }
+}
+
+FLASHMEM const char* contextActionReasonName(
+    core::state::contextual::ContextActionReason reason
+) {
+    using Reason = core::state::contextual::ContextActionReason;
+    switch (reason) {
+        case Reason::NONE: return nullptr;
+        case Reason::NO_ACTION: return "no_action";
+        case Reason::EMPTY_SELECTION: return "empty_selection";
+        case Reason::MINIMUM_CARDINALITY: return "minimum_cardinality";
+        case Reason::EMPTY_CLIPBOARD: return "empty_clipboard";
+        case Reason::WRONG_PAYLOAD: return "wrong_payload";
+        case Reason::INVALID_PAYLOAD: return "invalid_payload";
+        case Reason::ADAPTED: return "adapted";
+        case Reason::DEFAULTED: return "defaulted";
+        case Reason::CORRUPT_ASSET: return "corrupt_asset";
+        case Reason::UNSUPPORTED_VERSION: return "unsupported_version";
+        case Reason::STALE_TARGET: return "stale_target";
+        case Reason::SAME_SOURCE_TARGET: return "same_source_target";
+        case Reason::OUT_OF_RANGE: return "out_of_range";
+        case Reason::CAPACITY: return "capacity";
+        case Reason::PENDING: return "pending";
+        case Reason::NO_ROUTE: return "no_route";
+        case Reason::INCOMPATIBLE: return "incompatible";
+        case Reason::HISTORY_UNAVAILABLE: return "history_unavailable";
+        case Reason::STORAGE_UNAVAILABLE: return "storage_unavailable";
+        case Reason::ALLOCATION_UNAVAILABLE: return "allocation_unavailable";
+        case Reason::CONFLICT: return "conflict";
+        case Reason::READ_ONLY: return "read_only";
+        case Reason::TRANSPORT_STATE: return "transport_state";
+        case Reason::FAILED: return "failed";
+    }
+    return "unknown";
+}
+
+FLASHMEM const char* stepPresetCompatibilityReasonName(
+    core::state::sequencer::SequencerStepPresetCompatibility compatibility
+) {
+    using Compatibility =
+        core::state::sequencer::SequencerStepPresetCompatibility;
+    switch (compatibility) {
+        case Compatibility::UNKNOWN: return "compatibility_unknown";
+        case Compatibility::READY: return nullptr;
+        case Compatibility::WARNING_ADAPTED: return "adapted";
+        case Compatibility::WARNING_DEFAULTED: return "defaulted";
+        case Compatibility::BLOCKED_CONTEXT: return "wrong_context";
+        case Compatibility::BLOCKED_CAPACITY: return "capacity";
+        case Compatibility::CORRUPT: return "corrupt_asset";
+        case Compatibility::UNSUPPORTED_VERSION: return "unsupported_version";
+        case Compatibility::STORAGE_UNAVAILABLE: return "storage_unavailable";
+        case Compatibility::STALE_TARGET: return "stale_target";
+    }
+    return "compatibility_unknown";
+}
+
+FLASHMEM const char* operationOutcomeName(
+    core::state::contextual::OperationFeedbackStatus status
+) {
+    using Status = core::state::contextual::OperationFeedbackStatus;
+    switch (status) {
+        case Status::PREVIEW: return "preview";
+        case Status::PRESSED: return "pressed";
+        case Status::ARMED: return "armed";
+        case Status::QUEUED: return "queued";
+        case Status::APPLIED: return "applied";
+        case Status::CANCELLED: return "cancelled";
+        case Status::BLOCKED: return "blocked";
+        case Status::WARNING: return "warning";
+        case Status::CONFLICT: return "conflict";
+        case Status::FAILED: return "failed";
+        case Status::NONE: return nullptr;
+    }
+    return nullptr;
+}
+
+FLASHMEM const char* guardedActionOutcomeName(
+    core::state::contextual::GuardedActionPhase phase
+) {
+    using Phase = core::state::contextual::GuardedActionPhase;
+    switch (phase) {
+        case Phase::PRESSED: return "pressed";
+        case Phase::ARMED:
+        case Phase::COMMITTED: return "armed";
+        case Phase::CANCELLED: return "cancelled";
+        case Phase::IDLE: return nullptr;
+    }
+    return nullptr;
+}
+
+FLASHMEM const char* actionName(SequencerAction action) {
     switch (action) {
         case SequencerAction::MOVE_TRACK:
             return "move_track";
@@ -184,7 +349,7 @@ const char* actionName(SequencerAction action) {
     }
 }
 
-const char* armActionName(SequencerAction action) {
+FLASHMEM const char* armActionName(SequencerAction action) {
     switch (action) {
         case SequencerAction::REMOVE_CURRENT_STRUCTURE:
             return "arm_remove_current_structure";
@@ -231,13 +396,113 @@ const char* armActionName(SequencerAction action) {
     }
 }
 
-bool isSelectionScope(SequencerScope scope) {
+FLASHMEM bool isPasteAction(SequencerAction action) {
+    return action == SequencerAction::PASTE_CURRENT_STRUCTURE ||
+           action == SequencerAction::PASTE_SELECTION;
+}
+
+FLASHMEM void fillTrackTransferFacts(
+    const core::state::ClipboardTransferPlan& plan,
+    const core::state::sequencer::SequencerTrackPasteUiState* lifecycle,
+    core::validation::ux::SemanticUxContext& out
+) {
+    out.sourceMask = plan.sourceMask;
+    out.targetMask = plan.targetMask;
+    out.createMask = plan.createMask;
+    out.overwriteMask = plan.overwriteMask;
+    out.routePolicy = "preserve_destination";
+    if (plan.count > 0) {
+        const uint8_t focused = lifecycle != nullptr
+            ? std::min<uint8_t>(
+                  lifecycle->focusedIndex,
+                  static_cast<uint8_t>(plan.count - 1U)
+              )
+            : 0;
+        const auto& entry = plan.entries[focused];
+        out.mappingIndex = focused;
+        out.mappingCount = plan.count;
+        out.sourceTrack = entry.sourceTrack;
+        out.targetTrack = entry.targetTrack;
+        out.targetKind =
+            entry.targetKind == core::state::ClipboardTransferTargetKind::FREE
+            ? "free"
+            : "overwrite";
+        out.inheritedLaneCount = entry.inheritedLaneCount;
+        out.pinnedLaneCount = entry.pinnedLaneCount;
+        out.hasTargetRoute = true;
+        out.targetRoute = entry.targetMidiChannel;
+        out.targetRouteValid = entry.targetRouteValid;
+    }
+    if (lifecycle == nullptr) return;
+    using Feedback = core::state::contextual::OperationFeedbackStatus;
+    out.operationOrigin = "track_paste";
+    if (lifecycle->operationGeneration != 0) {
+        out.hasOperationGeneration = true;
+        out.operationGeneration = lifecycle->operationGeneration;
+    }
+    switch (lifecycle->feedback.status) {
+        case Feedback::PREVIEW: out.operationStatus = "preview"; break;
+        case Feedback::PRESSED: out.operationStatus = "pressed"; break;
+        case Feedback::ARMED: out.operationStatus = "armed"; break;
+        case Feedback::QUEUED: out.operationStatus = "queued"; break;
+        case Feedback::APPLIED: out.operationStatus = "applied"; break;
+        case Feedback::CANCELLED: out.operationStatus = "cancelled"; break;
+        case Feedback::BLOCKED: out.operationStatus = "blocked"; break;
+        case Feedback::WARNING: out.operationStatus = "warning"; break;
+        case Feedback::CONFLICT: out.operationStatus = "conflict"; break;
+        case Feedback::FAILED: out.operationStatus = "failed"; break;
+        case Feedback::NONE:
+        default: out.operationStatus = nullptr; break;
+    }
+    if (lifecycle->activationGeneration != 0) {
+        out.activationOrigin = "track_paste";
+        out.hasActivationGeneration = true;
+        out.activationGeneration = lifecycle->activationGeneration;
+    }
+}
+
+FLASHMEM bool fillTrackPasteActivationFacts(
+    const core::state::sequencer::SequencerTrackActivationTelemetry& telemetry,
+    uint32_t expectedGeneration,
+    core::validation::ux::SemanticUxContext& out
+) {
+    using Origin = core::state::sequencer::SequencerTrackActivationOrigin;
+    using Status = core::state::sequencer::SequencerTrackActivationStatus;
+    if (telemetry.origin != Origin::TRACK_PASTE || telemetry.generation == 0 ||
+        telemetry.generation != expectedGeneration) {
+        return false;
+    }
+
+    switch (telemetry.status) {
+        case Status::QUEUED:
+            out.outcome = "queued";
+            out.reason = "paste_pending";
+            break;
+        case Status::APPLIED:
+            out.outcome = "applied";
+            out.reason = nullptr;
+            break;
+        case Status::CANCELLED:
+            out.outcome = "cancelled";
+            out.reason = "activation_cancelled";
+            break;
+        case Status::IDLE:
+            return false;
+    }
+
+    out.activationOrigin = "track_paste";
+    out.hasActivationGeneration = true;
+    out.activationGeneration = telemetry.generation;
+    return true;
+}
+
+FLASHMEM bool isSelectionScope(SequencerScope scope) {
     return scope == SequencerScope::TRACK_SELECTION ||
            scope == SequencerScope::PATTERN_SELECTION ||
            scope == SequencerScope::STEP_SELECTION;
 }
 
-const char* modeForScope(SequencerScope scope) {
+FLASHMEM const char* modeForScope(SequencerScope scope) {
     switch (scope) {
         case SequencerScope::TRACK:
             return "sequencer.track";
@@ -262,7 +527,7 @@ const char* modeForScope(SequencerScope scope) {
     return "sequencer";
 }
 
-core::state::StructureSelectionScope selectionScopeForPolicyScope(SequencerScope scope) {
+FLASHMEM core::state::StructureSelectionScope selectionScopeForPolicyScope(SequencerScope scope) {
     switch (scope) {
         case SequencerScope::TRACK_SELECTION:
             return core::state::StructureSelectionScope::TRACK;
@@ -274,24 +539,24 @@ core::state::StructureSelectionScope selectionScopeForPolicyScope(SequencerScope
     }
 }
 
-bool policyScopeTargetsTrack(SequencerScope scope) {
+FLASHMEM bool policyScopeTargetsTrack(SequencerScope scope) {
     return scope == SequencerScope::TRACK ||
            scope == SequencerScope::TRACK_SELECTION;
 }
 
-bool policyScopeTargetsStep(SequencerScope scope) {
+FLASHMEM bool policyScopeTargetsStep(SequencerScope scope) {
     return scope == SequencerScope::STEP ||
            scope == SequencerScope::STEP_SELECTION ||
            scope == SequencerScope::STEP_EDITOR;
 }
 
-const char* targetForPolicyScope(SequencerScope scope) {
+FLASHMEM const char* targetForPolicyScope(SequencerScope scope) {
     if (policyScopeTargetsTrack(scope)) return "track";
     if (policyScopeTargetsStep(scope)) return "step";
     return "pattern";
 }
 
-SequencerAction structureActionForEvent(
+FLASHMEM SequencerAction structureActionForEvent(
     const core::state::sequencer::SequencerInteractionPolicy& policy,
     const oc::core::input::InputBindingTraceEvent& event
 ) {
@@ -330,25 +595,13 @@ SequencerAction structureActionForEvent(
     return SequencerAction::NONE;
 }
 
-uint16_t sequencerPageMask(const core::state::sequencer::SequencerState& sequencer) {
+FLASHMEM uint16_t sequencerPageMask(const core::state::sequencer::SequencerState& sequencer) {
     const uint8_t count = sequencer.activePageCount();
     if (count >= 16U) return 0xffffU;
     return static_cast<uint16_t>((1U << count) - 1U);
 }
 
-const char* structureTarget(core::state::StructureNavigationFocus focus) {
-    switch (focus) {
-        case core::state::StructureNavigationFocus::STEP:
-            return "step";
-        case core::state::StructureNavigationFocus::TRACK:
-            return "track";
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
-            return "page";
-    }
-}
-
-const char* structureTarget(core::state::StructureSelectionScope scope) {
+FLASHMEM const char* structureTarget(core::state::StructureSelectionScope scope) {
     switch (scope) {
         case core::state::StructureSelectionScope::STEP:
             return "step";
@@ -360,7 +613,7 @@ const char* structureTarget(core::state::StructureSelectionScope scope) {
     }
 }
 
-bool fillResolvedStepUxContext(
+FLASHMEM bool fillResolvedStepUxContext(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::sequencer::SequencerTrackBankState& tracks,
     uint8_t step,
@@ -409,12 +662,12 @@ bool fillResolvedStepUxContext(
 
 }  // namespace
 
-SequencerPropertySelectorUxSurface::SequencerPropertySelectorUxSurface(
+FLASHMEM SequencerPropertySelectorUxSurface::SequencerPropertySelectorUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::sequencer::SequencerState& sequencer
 ) : active_view_(activeView), sequencer_(sequencer) {}
 
-bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -427,21 +680,38 @@ bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
 
     out.mode = "sequencer.property_selector";
     out.target = "property";
-    out.property = core::state::sequencer::stepPropertyName(sequencer_.activeStepProperty.get());
+    constexpr int CC_LANES_PROPERTY_INDEX =
+        static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
+    const bool ccLanes = sequencer_.stepPropertyInlineSelector.selectedIndex.get() ==
+        CC_LANES_PROPERTY_INDEX;
+    out.property = ccLanes
+        ? "cc_lanes"
+        : core::state::sequencer::stepPropertyName(sequencer_.activeStepProperty.get());
     std::snprintf(
         out.valueLabel,
         sizeof(out.valueLabel),
         "%u",
-        static_cast<unsigned>(
-            sequencer_.variationRangeForProperty(sequencer_.activeStepProperty.get())
-        )
+        static_cast<unsigned>(ccLanes
+            ? (core::state::sequencer::sequencerCcLaneView(sequencer_.pattern)
+                ? core::state::sequencer::sequencerCcLaneCount(
+                    *core::state::sequencer::sequencerCcLaneView(sequencer_.pattern))
+                : 0U)
+            : sequencer_.variationRangeForProperty(sequencer_.activeStepProperty.get()))
     );
     if (opening) {
         out.effect = "open_property_selector";
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_property";
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
-        out.effect = "edit_variation_range";
+        out.effect = ccLanes ? "noop" : "edit_variation_range";
+        if (ccLanes) {
+            out.outcome = "noop";
+            out.reason = "enter_with_nav";
+        }
+    } else if (ccLanes &&
+               isButton(event, Config::ButtonID::NAV,
+                        oc::core::input::ButtonBindingType::RELEASE)) {
+        out.effect = "enter_cc_lane_selector";
     } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "apply_property";
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
@@ -450,12 +720,480 @@ bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerQuickControlsUxSurface::SequencerQuickControlsUxSurface(
+FLASHMEM SequencerStepPresetUxSurface::SequencerStepPresetUxSurface(
+    core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackActivationQueue* trackActivations
+) : sequencer_(sequencer), track_activations_(trackActivations) {}
+
+FLASHMEM bool SequencerStepPresetUxSurface::captureSemanticUxContext(
+    const oc::core::input::InputBindingTraceEvent& event,
+    core::validation::ux::SemanticUxContext& out
+) const {
+    namespace seq = core::state::sequencer;
+    namespace contextual = core::state::contextual;
+
+    const auto& picker = sequencer_.stepPresetPicker;
+    if (!picker.visible.get()) return false;
+
+    const auto feedback = picker.operationFeedback.get();
+    const bool feedbackIsSave = feedback.active &&
+        feedback.action == contextual::ContextActionId::SAVE;
+    const bool saveMode = feedbackIsSave ||
+        (!feedback.active &&
+         picker.mode.get() == seq::SequencerStepPresetPickerMode::SAVE);
+    if (picker.detailVisible.get()) {
+        out.mode = saveMode
+            ? "sequencer.step_preset.save.detail"
+            : "sequencer.step_preset.load.detail";
+    } else {
+        out.mode = saveMode
+            ? "sequencer.step_preset.save"
+            : "sequencer.step_preset.load";
+    }
+
+    const bool focusedAsset = picker.entryCount.get() > 0 &&
+        !picker.selectedItemIsNewAsset() &&
+        picker.existingEntryIndexForSelectedItem() < picker.entryCount.get();
+    const auto spec = seq::buildSequencerStepPresetActionSpec(
+        saveMode,
+        picker.selectedItemIsNewAsset(),
+        focusedAsset,
+        picker.frozenTarget,
+        picker.descriptor
+    );
+    const auto variant = contextual::hasHoldAction(spec)
+        ? spec.hold
+        : spec.tap;
+    const auto action = feedback.active ? feedback.action : variant.action;
+
+    out.target = "step";
+    out.targetIndex = static_cast<int16_t>(picker.selectedIndex.get());
+    if (picker.frozenTarget.valid) {
+        out.targetStep = static_cast<int16_t>(picker.frozenTarget.stepIndex);
+    }
+    // Step presets deliberately describe content, never a destination MIDI
+    // route. The frozen destination therefore remains authoritative on apply.
+    out.routePolicy = "preserve_destination";
+    out.projection = "preview";
+    if (picker.descriptor.valid && picker.descriptor.technicalId[0] != '\0') {
+        out.source = picker.descriptor.technicalId;
+    } else if (focusedAsset) {
+        out.source = picker.entryId(picker.existingEntryIndexForSelectedItem());
+    } else if (saveMode && picker.selectedItemIsNewAsset()) {
+        out.source = "new_step_preset";
+    } else {
+        out.source = "no_step_preset";
+    }
+
+    if (picker.detailVisible.get() && picker.descriptor.valid) {
+        switch (picker.detailFocus.get()) {
+            case 0:
+                out.property = "target_context";
+                copyValueLabel(out.valueLabel, picker.frozenTarget.contextLabel);
+                break;
+            case 1:
+                out.property = "content";
+                copyValueLabel(out.valueLabel, picker.descriptor.contentSummary);
+                break;
+            case 2:
+                out.property = "impact";
+                copyValueLabel(
+                    out.valueLabel,
+                    picker.descriptor.footprint == seq::SequencerStepPresetFootprint::REPLACE
+                        ? "replace"
+                        : "add"
+                );
+                break;
+            case 3:
+                out.property = "pitch_policy";
+                copyValueLabel(
+                    out.valueLabel,
+                    picker.descriptor.mixedPitchPolicy
+                        ? "mixed"
+                        : (picker.descriptor.scalePolicy ==
+                               seq::SequencerStepPresetScalePolicy::SCALE_RELATIVE
+                            ? "scale_relative"
+                            : "chromatic")
+                );
+                break;
+            case 4:
+            default:
+                out.property = "preview_state";
+                std::snprintf(
+                    out.valueLabel,
+                    sizeof(out.valueLabel),
+                    "%u/%u",
+                    static_cast<unsigned>(picker.previewStateIndex.get() + 1U),
+                    static_cast<unsigned>(
+                        picker.descriptor.previewStateCount > 0
+                            ? picker.descriptor.previewStateCount
+                            : 1U
+                    )
+                );
+                break;
+        }
+    } else if (picker.descriptor.valid) {
+        // Technical IDs are validated slugs and therefore safe for the
+        // allocation-free NDJSON recorder. The user-facing semantic name is
+        // already visible in the capture and may contain arbitrary UTF-8.
+        out.property = "asset_id";
+        copyValueLabel(out.valueLabel, out.source);
+    } else if (picker.selectedItemIsNewAsset()) {
+        out.property = "new_asset";
+        copyValueLabel(out.valueLabel, "unsaved");
+    } else {
+        out.property = "asset_id";
+        copyValueLabel(out.valueLabel, out.source);
+    }
+
+    if (feedback.active) {
+        out.outcome = operationOutcomeName(feedback.status);
+        out.reason = contextActionReasonName(feedback.reason);
+    } else {
+        out.outcome = guardedActionOutcomeName(picker.actionGuard.get().phase);
+        out.reason = contextActionReasonName(variant.reason);
+        if (!out.outcome) {
+            switch (variant.availability) {
+                case contextual::ContextActionAvailability::AVAILABLE:
+                    out.outcome = "ready";
+                    break;
+                case contextual::ContextActionAvailability::WARNING:
+                    out.outcome = "warning";
+                    break;
+                case contextual::ContextActionAvailability::DISABLED:
+                    out.outcome = "blocked";
+                    break;
+            }
+        }
+    }
+    if (feedback.active && picker.operationActivationGeneration != 0 &&
+        picker.frozenTarget.valid && track_activations_ != nullptr) {
+        using FeedbackStatus = contextual::OperationFeedbackStatus;
+        using ActivationStatus = seq::SequencerTrackActivationStatus;
+        const auto telemetry = track_activations_->telemetry(
+            picker.frozenTarget.trackIndex
+        );
+        const bool terminalMatches =
+            (feedback.status == FeedbackStatus::QUEUED &&
+             telemetry.status == ActivationStatus::QUEUED) ||
+            (feedback.status == FeedbackStatus::APPLIED &&
+             telemetry.status == ActivationStatus::APPLIED) ||
+            (feedback.status == FeedbackStatus::CANCELLED &&
+             telemetry.status == ActivationStatus::CANCELLED);
+        if (terminalMatches &&
+            telemetry.generation == picker.operationActivationGeneration &&
+            telemetry.origin == seq::SequencerTrackActivationOrigin::STEP_PRESET) {
+            out.activationOrigin = "step_preset";
+            out.hasActivationGeneration = true;
+            out.activationGeneration = telemetry.generation;
+        }
+    }
+    if (!out.reason && picker.descriptor.valid) {
+        out.reason = stepPresetCompatibilityReasonName(
+            picker.descriptor.compatibility
+        );
+    }
+    out.hasConflict = true;
+    out.conflict = feedback.active &&
+        (feedback.status == contextual::OperationFeedbackStatus::CONFLICT ||
+         feedback.reason == contextual::ContextActionReason::CONFLICT);
+
+    using ButtonType = oc::core::input::ButtonBindingType;
+    const bool actionGesture =
+        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::PRESS) ||
+        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE) ||
+        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::LONG_PRESS);
+    if (isEncoder(event, Config::EncoderID::NAV)) {
+        out.effect = picker.detailVisible.get()
+            ? "focus_step_preset_detail"
+            : "select_step_preset_asset";
+    } else if (isEncoder(event, Config::EncoderID::OPT)) {
+        if (picker.detailVisible.get() && picker.detailFocus.get() == 4U) {
+            out.effect = "select_step_preset_preview_state";
+        } else {
+            out.effect = "noop";
+            out.outcome = "noop";
+            out.reason = "preview_state_not_focused";
+        }
+    } else if (isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE)) {
+        out.effect = picker.detailVisible.get()
+            ? "show_step_preset_details"
+            : "hide_step_preset_details";
+    } else if (isButton(event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE) ||
+               isButton(event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE) ||
+               isButton(event, Config::ButtonID::BOTTOM_LEFT, ButtonType::RELEASE)) {
+        out.effect = "close_step_preset_picker";
+    } else if (isButton(
+                   event,
+                   Config::ButtonID::BOTTOM_CENTER,
+                   ButtonType::RELEASE
+               )) {
+        out.effect = saveMode
+            ? "show_step_preset_save_mode"
+            : "show_step_preset_load_mode";
+    } else if (actionGesture) {
+        out.effect = stepPresetActionName(action);
+    }
+    return true;
+}
+
+FLASHMEM SequencerCcLaneUxSurface::SequencerCcLaneUxSurface(
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator
+) : sequencer_(sequencer),
+    tracks_(tracks),
+    midi_cc_coordinator_(midiCcCoordinator) {}
+
+FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
+    const oc::core::input::InputBindingTraceEvent& event,
+    core::validation::ux::SemanticUxContext& out
+) const {
+    namespace seq = core::state::sequencer;
+    const auto& ui = sequencer_.ccLaneUi;
+    seq::SequencerCcLaneActionSlot actionSlot =
+        seq::SequencerCcLaneActionSlot::COUNT;
+    core::validation::ux::SequencerCcLaneGesturePhase actionPhase =
+        core::validation::ux::SequencerCcLaneGesturePhase::PRESS;
+    const bool actionGesture = ccLaneActionGesture(event, actionSlot, actionPhase);
+    if (actionGesture &&
+        actionPhase == core::validation::ux::SequencerCcLaneGesturePhase::PRESS &&
+        ui.visible()) {
+        gesture_specs_[static_cast<size_t>(actionSlot)] = ui.action(actionSlot);
+    }
+    if (!ui.visible()) {
+        if (!actionGesture ||
+            actionPhase != core::validation::ux::SequencerCcLaneGesturePhase::RELEASE ||
+            !ui.operationFeedback.get().active) {
+            return false;
+        }
+        const auto semantic =
+            core::validation::ux::classifySequencerCcLaneGesture(
+                gesture_specs_[static_cast<size_t>(actionSlot)],
+                ui.actionGuard.get(),
+                ui.operationFeedback.get(),
+                actionPhase
+            );
+        out.mode = "sequencer.cc_lane.closed";
+        out.target = "cc_lane";
+        out.targetIndex = ui.focusedLane;
+        out.source = "sequencer_cc_lane";
+        out.effect = semantic.effect;
+        out.outcome = semantic.outcome;
+        out.reason = core::validation::ux::sequencerCcLaneSemanticReasonName(
+            semantic.reason
+        );
+        out.hasConflict = true;
+        out.conflict = ui.laneConflict || ui.macroConflict;
+        out.hasTargetRoute = true;
+        out.targetRouteValid = ui.routeValid;
+        if (!out.reason && !ui.routeValid) out.reason = "no_route";
+        return true;
+    }
+
+    switch (ui.mode) {
+        case seq::SequencerCcLaneUiMode::LANE_SELECTOR:
+            out.mode = "sequencer.cc_lane.selector";
+            break;
+        case seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT:
+            out.mode = "sequencer.cc_lane.add_draft";
+            break;
+        case seq::SequencerCcLaneUiMode::LANE_GRID:
+            out.mode = "sequencer.cc_lane.grid";
+            break;
+        case seq::SequencerCcLaneUiMode::TRANSITION_PICKER:
+            out.mode = "sequencer.cc_lane.transition_picker";
+            break;
+        case seq::SequencerCcLaneUiMode::LANE_SETTINGS:
+            out.mode = "sequencer.cc_lane.settings";
+            break;
+        case seq::SequencerCcLaneUiMode::CLOSED:
+            return false;
+    }
+
+    out.target = "cc_lane";
+    out.targetIndex = ui.focusedLane;
+    out.projection = ui.liveProjection ? "live" : "preview";
+    out.source = "sequencer_cc_lane";
+    out.hasConflict = true;
+    out.conflict = ui.laneConflict || ui.macroConflict;
+    out.hasTargetRoute = true;
+    out.targetRouteValid = ui.routeValid;
+
+    const seq::SequencerCcLane* lane = nullptr;
+    const auto* bank = seq::sequencerCcLaneView(sequencer_.pattern);
+    if (bank && ui.focusedLane < bank->lanes.size() &&
+        bank->lanes[ui.focusedLane].occupied) {
+        lane = &bank->lanes[ui.focusedLane];
+    }
+    const auto& destination =
+        (ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
+         ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS)
+            ? ui.draft.destination
+            : (lane ? lane->destination : ui.draft.destination);
+    out.routePolicy = destination.routePolicy == seq::SequencerCcLaneRoutePolicy::PINNED
+        ? "pinned" : "inherit_track";
+    out.targetRoute = destination.routePolicy == seq::SequencerCcLaneRoutePolicy::PINNED
+        ? destination.pinnedChannel : sequencer_.pattern.midiChannel.get();
+
+    // Winner is meaningful only for a real collision. Prefer the singular
+    // runtime arbiter's telemetry, which also distinguishes Live Manual and
+    // computed/static Macro authors. Draft-only fallback names the current
+    // owner without pretending that the not-yet-created lane already won.
+    if (out.conflict) {
+        const core::state::shared::MidiCcDestinationIdentity targetIdentity{
+            .port = destination.routePolicy == seq::SequencerCcLaneRoutePolicy::PINNED
+                ? destination.pinnedPort
+                : core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+            .channel = out.targetRoute,
+            .controller = destination.controller,
+        };
+        if (midi_cc_coordinator_ != nullptr) {
+            const auto telemetryView = midi_cc_coordinator_->readTelemetry();
+            const size_t destinationCount = telemetryView &&
+                    telemetryView->destinationCount <
+                        telemetryView->destinations.size()
+                ? telemetryView->destinationCount
+                : (telemetryView ? telemetryView->destinations.size() : 0U);
+            for (size_t i = 0; i < destinationCount; ++i) {
+                if (!core::state::shared::sameMidiCcDestinationIdentity(
+                        telemetryView->destinations[i].destination.identity,
+                        targetIdentity
+                    )) {
+                    continue;
+                }
+                out.winner = ccWinnerName(
+                    telemetryView->destinations[i].winner.author.candidateClass
+                );
+                out.winnerSource = "runtime_telemetry";
+                break;
+            }
+        }
+        if (!out.winner) {
+            if (ui.laneConflict) {
+                out.winner = "existing_cc_lane";
+                out.winnerSource = "preflight";
+            } else if (ui.macroConflict) {
+                const bool committedLane = lane != nullptr &&
+                    ui.mode != seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT;
+                out.winner = committedLane ? "sequencer_cc_lane" : "macro";
+                out.winnerSource = "preflight";
+            }
+        }
+    }
+    out.property = "cc_value";
+    if (ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID) {
+        out.targetStep = ui.focusedStep;
+        out.hasAuthoredValue = ui.hasAuthoredValue;
+        out.authoredValue = ui.authoredValue;
+        out.hasResolvedValue = ui.hasResolvedValue;
+        out.resolvedValue = ui.resolvedValue;
+        std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s",
+                      ui.hasAuthoredValue ? "authored" : "--");
+    } else if (ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER) {
+        out.property = "cc_transition";
+        out.targetStep = ui.transitionStep;
+        out.hasAuthoredValue = true;
+        out.authoredValue = static_cast<int32_t>(ui.selectedTransition);
+    } else if (ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
+               ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) {
+        switch (ui.focusedField) {
+            case seq::SequencerCcLaneDraftField::CONTROLLER: out.property = "controller"; break;
+            case seq::SequencerCcLaneDraftField::ROUTE_POLICY: out.property = "route_policy"; break;
+            case seq::SequencerCcLaneDraftField::PINNED_CHANNEL: out.property = "channel"; break;
+            case seq::SequencerCcLaneDraftField::MINIMUM: out.property = "minimum"; break;
+            case seq::SequencerCcLaneDraftField::MAXIMUM: out.property = "maximum"; break;
+            case seq::SequencerCcLaneDraftField::INITIAL: out.property = "initial"; break;
+            case seq::SequencerCcLaneDraftField::ADVANCED: out.property = "advanced"; break;
+            case seq::SequencerCcLaneDraftField::COUNT: break;
+        }
+    }
+
+    uint8_t macroEncoderIndex = 0;
+    const bool macroEncoder = isMacroEncoderTurn(event, macroEncoderIndex);
+    uint8_t macroButtonIndex = 0;
+    const bool macroButtonRelease =
+        isMacroButtonRelease(event, macroButtonIndex);
+
+    if (macroEncoder) {
+        out.effect = ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER
+            ? "select_cc_transition"
+            : "edit_visible_cc_event";
+    } else if (macroButtonRelease) {
+        out.effect = ui.transitionAppliedFeedback
+            ? "apply_cc_transition"
+            : "toggle_visible_cc_event";
+    } else if (isEncoder(event, Config::EncoderID::NAV)) {
+        out.effect = ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID
+            ? "focus_cc_step"
+            : (ui.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR
+                ? "select_cc_lane"
+                : (ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER
+                    ? "select_cc_transition" : "focus_cc_field"));
+    } else if (isEncoder(event, Config::EncoderID::OPT)) {
+        if (ui.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR) {
+            out.effect = "noop";
+            out.outcome = "noop";
+            out.reason = "no_lane_selected_edit";
+        } else {
+            out.effect = ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID
+                ? "edit_cc_event" : "edit_cc_draft";
+        }
+    } else if (actionGesture) {
+        const auto& gestureSpec = actionPhase ==
+                core::validation::ux::SequencerCcLaneGesturePhase::RELEASE
+            ? gesture_specs_[static_cast<size_t>(actionSlot)]
+            : ui.action(actionSlot);
+        const auto semantic =
+            core::validation::ux::classifySequencerCcLaneGesture(
+                gestureSpec,
+                ui.actionGuard.get(),
+                ui.operationFeedback.get(),
+                actionPhase
+            );
+        out.effect = semantic.effect;
+        out.outcome = semantic.outcome;
+        out.reason =
+            core::validation::ux::sequencerCcLaneSemanticReasonName(
+                semantic.reason
+            );
+    } else if (isButton(event, Config::ButtonID::NAV,
+                        oc::core::input::ButtonBindingType::RELEASE)) {
+        if (ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID) {
+            out.effect = ui.transitionAppliedFeedback
+                ? "apply_cc_transition"
+                : "toggle_cc_event";
+        } else if (ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER) {
+            out.effect = "apply_cc_transition";
+        } else if ((ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
+                    ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) &&
+                   ui.focusedField == seq::SequencerCcLaneDraftField::ADVANCED) {
+            out.effect = "toggle_cc_advanced";
+        } else {
+            out.effect = "enter_cc_lane";
+        }
+    } else if (isButton(event, Config::ButtonID::LEFT_TOP,
+                        oc::core::input::ButtonBindingType::RELEASE)) {
+        out.effect = "back_cc_lane";
+    } else if (isButton(event, Config::ButtonID::LEFT_CENTER,
+                        oc::core::input::ButtonBindingType::LONG_PRESS)) {
+        out.effect = "open_property_selector_from_cc_lane";
+    }
+    if (!out.reason) {
+        if (!ui.routeValid) out.reason = "no_route";
+        else if (ui.laneConflict) out.reason = "lane_duplicate";
+        else if (ui.macroConflict) out.reason = "macro_conflict";
+    }
+    (void)tracks_;
+    return true;
+}
+
+FLASHMEM SequencerQuickControlsUxSurface::SequencerQuickControlsUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::sequencer::SequencerState& sequencer
 ) : active_view_(activeView), sequencer_(sequencer) {}
 
-bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -495,7 +1233,7 @@ bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerStructureUxSurface::SequencerStructureUxSurface(
+FLASHMEM SequencerStructureUxSurface::SequencerStructureUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     oc::state::Signal<
         core::state::StructureNavigationFocus,
@@ -504,6 +1242,7 @@ SequencerStructureUxSurface::SequencerStructureUxSurface(
     core::state::StructureClipboardState& structureClipboard,
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::sequencer::SequencerTrackActivationQueue* trackActivations,
     const core::validation::ux::StructureUxTraceState* traceState
 ) : active_view_(activeView),
     navigation_focus_(navigationFocus),
@@ -511,9 +1250,10 @@ SequencerStructureUxSurface::SequencerStructureUxSurface(
     structure_clipboard_(structureClipboard),
     sequencer_(sequencer),
     tracks_(tracks),
+    track_activations_(trackActivations),
     trace_state_(traceState) {}
 
-bool SequencerStructureUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -523,7 +1263,21 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
 
     const bool leftTopRelease =
         isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE);
+    const bool stateProjection = isSemanticStateProjection(event);
+    const bool trackPasteDetailsEvent =
+        isButton(
+            event,
+            Config::ButtonID::BOTTOM_CENTER,
+            oc::core::input::ButtonBindingType::PRESS
+        ) ||
+        isButton(
+            event,
+            Config::ButtonID::BOTTOM_CENTER,
+            oc::core::input::ButtonBindingType::RELEASE
+        );
     const bool structureEvent =
+        stateProjection ||
+        trackPasteDetailsEvent ||
         isEncoder(event, Config::EncoderID::NAV) ||
         isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
         isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::LONG_PRESS) ||
@@ -544,7 +1298,8 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         navigation_focus_.get()
     );
     const auto action = structureActionForEvent(policy, event);
-    if (action == SequencerAction::NONE) {
+    if (action == SequencerAction::NONE && !stateProjection &&
+        !trackPasteDetailsEvent) {
         return false;
     }
 
@@ -585,14 +1340,14 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         selectionActive ? scope == core::state::StructureSelectionScope::TRACK
                         : policyScopeTargetsTrack(policy.scope);
     const uint16_t targetMask = targetTrack ? tracks_.currentEnabledMask() : sequencerPageMask(sequencer_);
-    const bool canPaste = targetTrack ? structure_clipboard_.hasSequencerTrack()
-                                      : structure_clipboard_.hasSequencerPage();
     out.targetMask = targetMask;
 
     if (targetTrack) {
         index = track_navigation_.selection.active.get()
             ? track_navigation_.selection.cursorIndex.get()
-            : track_navigation_.previewTrackIndex.get();
+            : (track_navigation_.previewAddSlot.get()
+                   ? track_navigation_.previewTrackIndex.get()
+                   : tracks_.activeTrackIndex());
         out.property = track_navigation_.previewAddSlot.get() && !selectionActive
             ? "add_slot"
             : (selectionActive ? "selection" : "existing");
@@ -607,6 +1362,130 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
     out.targetIndex = static_cast<int16_t>(index);
     copyIndexLabel(out.valueLabel, index);
 
+    core::state::ClipboardTransferPlan trackTransferPlan{};
+    core::state::contextual::ContextActionSpec trackTransferAction{};
+    const auto* trackPasteLifecycle = targetTrack
+        ? &sequencer_.structureUi.trackPaste
+        : nullptr;
+    bool canPaste = selectionActive
+        ? structure_clipboard_.hasSequencerPageSelection()
+        : structure_clipboard_.hasSequencerPage();
+    if (targetTrack) {
+        trackTransferPlan = core::state::buildSequencerTrackClipboardTransferPlan(
+            structure_clipboard_,
+            tracks_,
+            index,
+            track_activations_ != nullptr
+                ? track_activations_->pendingTrackMask()
+                : 0,
+            &sequencer_
+        );
+        if (trackPasteLifecycle->feedback.active &&
+            trackPasteLifecycle->plan.hasEntries()) {
+            trackTransferPlan = trackPasteLifecycle->plan;
+        }
+        const uint16_t selectedEnabledMask = static_cast<uint16_t>(
+            track_navigation_.selection.selectedMask.get() &
+            tracks_.currentEnabledMask()
+        );
+        trackTransferAction =
+            core::state::sequencer::buildSequencerTrackTransferActionSpec(
+                trackTransferPlan,
+                index,
+                selectionActive ? selectedEnabledMask != 0
+                                : !track_navigation_.previewAddSlot.get(),
+                static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+            );
+        canPaste = core::state::contextual::canExecute(trackTransferAction.hold);
+    }
+
+    const bool trackPasteLifecycleEvent =
+        targetTrack && isPasteAction(action) &&
+        (isButton(
+             event,
+             Config::ButtonID::BOTTOM_RIGHT,
+             oc::core::input::ButtonBindingType::PRESS
+         ) ||
+         isButton(
+             event,
+             Config::ButtonID::BOTTOM_RIGHT,
+             oc::core::input::ButtonBindingType::RELEASE
+         ) ||
+         isButton(
+             event,
+             Config::ButtonID::BOTTOM_RIGHT,
+             oc::core::input::ButtonBindingType::LONG_PRESS
+         ));
+    bool projectedTrackPasteActivation = false;
+    if (trackPasteLifecycleEvent && track_activations_ != nullptr &&
+        trackPasteLifecycle->activationGeneration != 0 &&
+        trackTransferPlan.hasEntries()) {
+        const uint8_t focused = std::min<uint8_t>(
+            trackPasteLifecycle->focusedIndex,
+            static_cast<uint8_t>(trackTransferPlan.count - 1U)
+        );
+        const uint8_t activationTarget =
+            trackTransferPlan.entries[focused].targetTrack;
+        if (activationTarget <
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
+            projectedTrackPasteActivation = fillTrackPasteActivationFacts(
+                track_activations_->telemetry(activationTarget),
+                trackPasteLifecycle->activationGeneration,
+                out
+            );
+        }
+    }
+
+    const bool projectedTrackPasteLifecycle =
+        targetTrack && trackPasteLifecycle->feedback.active &&
+        trackTransferPlan.hasEntries();
+    if (projectedTrackPasteLifecycle) {
+        fillTrackTransferFacts(trackTransferPlan, trackPasteLifecycle, out);
+        if (track_activations_ != nullptr &&
+            trackPasteLifecycle->activationGeneration != 0) {
+            const uint8_t focused = std::min<uint8_t>(
+                trackPasteLifecycle->focusedIndex,
+                static_cast<uint8_t>(trackTransferPlan.count - 1U)
+            );
+            const uint8_t target = trackTransferPlan.entries[focused].targetTrack;
+            if (target < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
+                projectedTrackPasteActivation = fillTrackPasteActivationFacts(
+                    track_activations_->telemetry(target),
+                    trackPasteLifecycle->activationGeneration,
+                    out
+                ) || projectedTrackPasteActivation;
+            }
+        }
+        if (!projectedTrackPasteActivation) {
+            out.outcome = operationOutcomeName(trackPasteLifecycle->feedback.status);
+        }
+
+        using Feedback = core::state::contextual::OperationFeedbackStatus;
+        const auto status = trackPasteLifecycle->feedback.status;
+        if (status == Feedback::PRESSED || status == Feedback::ARMED) {
+            out.effect = selectionActive
+                ? "arm_paste_selection"
+                : "arm_paste_current_structure";
+            return true;
+        }
+        if (status == Feedback::QUEUED || status == Feedback::APPLIED) {
+            out.effect = selectionActive
+                ? "paste_selection"
+                : "paste_current_structure";
+            return true;
+        }
+        if (status == Feedback::CANCELLED) {
+            out.effect = "cancel_track_paste";
+            return true;
+        }
+        if (stateProjection || trackPasteLifecycle->detailVisible) {
+            out.effect = trackPasteLifecycle->detailVisible
+                ? "inspect_track_paste_details"
+                : "inspect_track_paste_summary";
+            return true;
+        }
+    }
+
     if (selectionActive) {
         out.effect = isButton(
             event,
@@ -619,6 +1498,24 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         )
             ? armActionName(action)
             : actionName(action);
+        if (targetTrack && isPasteAction(action)) {
+            fillTrackTransferFacts(trackTransferPlan, trackPasteLifecycle, out);
+            if (!projectedTrackPasteActivation && !canPaste) {
+                markNoop(
+                    out,
+                    core::validation::ux::sequencerTrackTransferSemanticReason(
+                        trackTransferAction.hold.reason
+                    )
+                );
+            } else if (!projectedTrackPasteActivation &&
+                       trackTransferAction.hold.availability ==
+                       core::state::contextual::ContextActionAvailability::WARNING) {
+                out.outcome = "warning";
+                out.reason = core::validation::ux::sequencerTrackTransferSemanticReason(
+                    trackTransferAction.hold.reason
+                );
+            }
+        }
         return true;
     }
 
@@ -650,8 +1547,25 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
         out.effect = armActionName(action);
-        if (!canPaste) {
-            markNoop(out, "clipboard_empty");
+        if (targetTrack && isPasteAction(action)) {
+            fillTrackTransferFacts(trackTransferPlan, trackPasteLifecycle, out);
+        }
+        if (isPasteAction(action) && !canPaste) {
+            markNoop(
+                out,
+                targetTrack
+                    ? core::validation::ux::sequencerTrackTransferSemanticReason(
+                          trackTransferAction.hold.reason
+                      )
+                    : "clipboard_empty"
+            );
+        } else if (targetTrack && isPasteAction(action) &&
+                   trackTransferAction.hold.availability ==
+                       core::state::contextual::ContextActionAvailability::WARNING) {
+            out.outcome = "warning";
+            out.reason = core::validation::ux::sequencerTrackTransferSemanticReason(
+                trackTransferAction.hold.reason
+            );
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = actionName(action);
@@ -662,8 +1576,18 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
         }
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
         out.effect = actionName(action);
-        if (!canPaste) {
-            markNoop(out, "clipboard_empty");
+        if (targetTrack && isPasteAction(action)) {
+            fillTrackTransferFacts(trackTransferPlan, trackPasteLifecycle, out);
+        }
+        if (!projectedTrackPasteActivation && isPasteAction(action) && !canPaste) {
+            markNoop(
+                out,
+                targetTrack
+                    ? core::validation::ux::sequencerTrackTransferSemanticReason(
+                          trackTransferAction.hold.reason
+                      )
+                    : "clipboard_empty"
+            );
         }
     } else {
         out.effect = actionName(action);
@@ -671,7 +1595,7 @@ bool SequencerStructureUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerStepGridUxSurface::SequencerStepGridUxSurface(
+FLASHMEM SequencerStepGridUxSurface::SequencerStepGridUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     oc::state::Signal<
         core::state::StructureNavigationFocus,
@@ -685,7 +1609,7 @@ SequencerStepGridUxSurface::SequencerStepGridUxSurface(
     sequencer_(sequencer),
     tracks_(tracks) {}
 
-bool SequencerStepGridUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerStepGridUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -746,7 +1670,7 @@ bool SequencerStepGridUxSurface::captureSemanticUxContext(
     return true;
 }
 
-SequencerStepEditUxSurface::SequencerStepEditUxSurface(
+FLASHMEM SequencerStepEditUxSurface::SequencerStepEditUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     oc::state::Signal<
         core::state::StructureNavigationFocus,
@@ -760,7 +1684,7 @@ SequencerStepEditUxSurface::SequencerStepEditUxSurface(
     sequencer_(sequencer),
     tracks_(tracks) {}
 
-bool SequencerStepEditUxSurface::captureSemanticUxContext(
+FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {

@@ -95,8 +95,44 @@ void configureProjectSession(core::state::CoreState& state) {
     assert(state.setSharedTrackState(0x0003, 1));
     auto& page = state.pages.activePageData();
     std::strncpy(page.name, "Snapshot", sizeof(page.name) - 1);
+    page.setMacroActive(0, true);
     page.cc[0] = 74;
     page.values[0] = 0.75f;
+
+    const auto automationAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    auto* automationSlot = core::state::macro::macroAutomationGetOrCreateSlot(
+        state.pages.automation,
+        automationAddress
+    );
+    assert(automationSlot != nullptr);
+    core::state::macro::MacroAutomationLane automation;
+    assert(core::state::macro::macroAutomationAppendPoint(automation, 0.0f, 0.2f));
+    assert(core::state::macro::macroAutomationAppendPoint(automation, 2.0f, 0.8f));
+    assert(core::state::macro::macroAutomationAssignAutomation(
+        state.pages.automation,
+        *automationSlot,
+        automation
+    ));
+    automationSlot->automation.playbackState =
+        core::state::macro::MacroCurvePlaybackState::OFF;
+
+    core::state::macro::MacroModulationShape modulation;
+    assert(core::state::macro::macroModulationAppendPoint(modulation, 0.0f, -0.4f));
+    assert(core::state::macro::macroModulationAppendPoint(modulation, 2.0f, 0.3f));
+    assert(core::state::macro::macroAutomationAssignModulation(
+        state.pages.automation,
+        *automationSlot,
+        modulation
+    ));
+    automationSlot->modulation.playbackState =
+        core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    automationSlot->modulation.modulationOrigin =
+        core::state::macro::MacroModulationOrigin::CONVERTED_MEAN;
+    automationSlot->modulationDepth = 0.37f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
     state.sequencer.pattern.length.set(15);
@@ -116,12 +152,30 @@ void test_snapshot_capture_apply_restores_project_session() {
     project::ProjectSnapshot snapshot;
     assert(project::captureProjectSnapshot(state, snapshot));
 
+    const auto capturedProjectAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(capturedProjectAddress, 0.91f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+
     state.resetMusicalProject();
     assert(state.statusBar.tempo.get() == 120.0f);
     assert(state.sequencer.pattern.length.get() == sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(state.sharedTrackActive.get() == 0);
+    assert(state.macroUi.manualOverrides.entryCount == 0);
+
+    const auto resetProjectAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    assert(state.macroUi.manualOverrides.activate(resetProjectAddress, 0.13f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
 
     assert(project::applyProjectSnapshot(state, snapshot));
+    assert(state.macroUi.manualOverrides.entryCount == 0);
 
     assert(std::strcmp(state.project.metadata.id.data(), "p123") == 0);
     assert(std::strcmp(state.project.metadata.name.data(), "p123") == 0);
@@ -151,6 +205,27 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(state.pages.activePageData().values[0] == 0.75f);
     assert(state.pages.activeConfigs[0].cc == 74);
     assert(state.macros.slots[0].value.get() == 0.75f);
+
+    const auto* restoredAutomation =
+        core::state::macro::macroAutomationFindSlot(
+            state.pages.automation,
+            core::state::macro::MacroAutomationSlotAddress{
+                .track = state.pages.currentActiveTrack(),
+                .page = state.pages.currentActivePage(),
+                .macro = 0,
+            }
+        );
+    assert(restoredAutomation != nullptr);
+    assert(core::state::macro::macroCurveStored(restoredAutomation->automation));
+    assert(restoredAutomation->automation.playbackState ==
+           core::state::macro::MacroCurvePlaybackState::OFF);
+    assert(core::state::macro::macroCurveStored(restoredAutomation->modulation));
+    assert(restoredAutomation->modulation.playbackState ==
+           core::state::macro::MacroCurvePlaybackState::ACTIVE);
+    assert(restoredAutomation->modulation.modulationOrigin ==
+           core::state::macro::MacroModulationOrigin::CONVERTED_MEAN);
+    assert(restoredAutomation->modulationDepth > 0.3699f &&
+           restoredAutomation->modulationDepth < 0.3701f);
 
     assert(state.sequencer.pattern.length.get() == 15);
     assert(state.sequencer.pattern.stepsPerBeat.get() == 6);

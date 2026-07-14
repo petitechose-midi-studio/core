@@ -31,6 +31,10 @@ namespace core::state::sequencer {
     const SequencerState& active
 );
 
+// Clears editor-only state when a prepared transaction changes the active
+// Track without going through switchActiveTrack().
+void resetTransientTrackState(SequencerState& state);
+
 bool switchActiveTrack(SequencerTrackBankState& bank, SequencerState& active, uint8_t nextTrack);
 
 void captureTrackBankSnapshot(

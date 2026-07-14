@@ -11,6 +11,20 @@ FLASHMEM SequencerGraphPresetWorkflowResult saveFocusedStepGraphPreset(
     uint8_t* out,
     uint16_t capacity
 ) {
+    return saveStepGraphPresetAt(
+        sequencer,
+        sequencer.focusedStep.get(),
+        out,
+        capacity
+    );
+}
+
+FLASHMEM SequencerGraphPresetWorkflowResult saveStepGraphPresetAt(
+    const SequencerState& sequencer,
+    uint8_t step,
+    uint8_t* out,
+    uint16_t capacity
+) {
     SequencerGraphPresetWorkflowResult result{};
 
     auto preset = core::app::makeExtmemUnique<SequencerStepGraphPreset>();
@@ -21,7 +35,7 @@ FLASHMEM SequencerGraphPresetWorkflowResult saveFocusedStepGraphPreset(
     }
     if (!captureStepGraphPreset(
             sequencer,
-            sequencer.focusedStep.get(),
+            step,
             *preset,
             &result.report
         )) {
@@ -40,6 +54,20 @@ FLASHMEM SequencerGraphPresetWorkflowResult loadFocusedStepGraphPreset(
     const uint8_t* data,
     uint16_t size
 ) {
+    return loadStepGraphPresetAt(
+        sequencer,
+        sequencer.focusedStep.get(),
+        data,
+        size
+    );
+}
+
+FLASHMEM SequencerGraphPresetWorkflowResult loadStepGraphPresetAt(
+    SequencerState& sequencer,
+    uint8_t step,
+    const uint8_t* data,
+    uint16_t size
+) {
     SequencerGraphPresetWorkflowResult result{};
 
     auto preset = core::app::makeExtmemUnique<SequencerStepGraphPreset>();
@@ -54,7 +82,7 @@ FLASHMEM SequencerGraphPresetWorkflowResult loadFocusedStepGraphPreset(
     }
     if (!applyStepGraphPreset(
             sequencer,
-            sequencer.focusedStep.get(),
+            step,
             *preset,
             &result.report
         )) {

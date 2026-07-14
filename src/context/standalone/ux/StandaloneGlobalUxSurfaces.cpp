@@ -4,6 +4,8 @@
 
 #include <cstdio>
 
+#include <config/PlatformCompat.hpp>
+
 #include "config/InputIDs.hpp"
 #include "state/DeviceSettingsState.hpp"
 #include "state/MidiSyncState.hpp"
@@ -16,7 +18,7 @@
 namespace core::context::standalone::ux {
 namespace {
 
-bool isButton(const oc::core::input::InputBindingTraceEvent& event,
+FLASHMEM bool isButton(const oc::core::input::InputBindingTraceEvent& event,
               Config::ButtonID button,
               oc::core::input::ButtonBindingType type) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
@@ -24,12 +26,12 @@ bool isButton(const oc::core::input::InputBindingTraceEvent& event,
            event.buttonType == type;
 }
 
-bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
+FLASHMEM bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
            event.encoderId == static_cast<oc::type::EncoderID>(encoder);
 }
 
-void copyValueLabel(char (&out)[16], const char* value) {
+FLASHMEM void copyValueLabel(char (&out)[16], const char* value) {
     if (!value) return;
     std::snprintf(out, sizeof(out), "%s", value);
 }
@@ -39,7 +41,7 @@ constexpr const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
 constexpr const char* const FALLBACK_ITEMS[] = {"150 ms", "250 ms", "500 ms", "750 ms", "1000 ms", "1500 ms", "2000 ms"};
 constexpr const char* const LOCK_ITEMS[] = {"1", "2", "3", "4", "6", "8", "12", "24"};
 
-void selectorItemsForRow(uint8_t row, const char* const*& items, int& itemCount) {
+FLASHMEM void selectorItemsForRow(uint8_t row, const char* const*& items, int& itemCount) {
     switch (row) {
         case 0:
             items = MODE_ITEMS;
@@ -66,12 +68,12 @@ void selectorItemsForRow(uint8_t row, const char* const*& items, int& itemCount)
 
 }  // namespace
 
-ViewSelectorUxSurface::ViewSelectorUxSurface(
+FLASHMEM ViewSelectorUxSurface::ViewSelectorUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::ViewSelectorState& viewSelector
 ) : active_view_(activeView), view_selector_(viewSelector) {}
 
-bool ViewSelectorUxSurface::captureSemanticUxContext(
+FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -108,12 +110,12 @@ bool ViewSelectorUxSurface::captureSemanticUxContext(
     return true;
 }
 
-DeviceSettingsUxSurface::DeviceSettingsUxSurface(
+FLASHMEM DeviceSettingsUxSurface::DeviceSettingsUxSurface(
     core::state::DeviceSettingsState& deviceSettings,
     core::state::MidiSyncState& midiSync
 ) : device_settings_(deviceSettings), midi_sync_(midiSync) {}
 
-bool DeviceSettingsUxSurface::captureSemanticUxContext(
+FLASHMEM bool DeviceSettingsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
@@ -172,13 +174,20 @@ bool DeviceSettingsUxSurface::captureSemanticUxContext(
     return false;
 }
 
-TransportUxSurface::TransportUxSurface(core::state::StatusBarState& statusBar)
-    : status_bar_(statusBar) {}
+FLASHMEM TransportUxSurface::TransportUxSurface(
+    core::state::StatusBarState& statusBar,
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays
+)
+    : status_bar_(statusBar), overlays_(overlays) {}
 
-bool TransportUxSurface::captureSemanticUxContext(
+FLASHMEM bool TransportUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
+    // Contextual overlays own BOTTOM_CENTER while visible (for example
+    // CC-lane Settings). The global transport binding does not dispatch there,
+    // so the recorder must not infer transport semantics from the physical ID.
+    if (overlays_.hasVisible()) return false;
     if (!isButton(event, Config::ButtonID::BOTTOM_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
         return false;
     }

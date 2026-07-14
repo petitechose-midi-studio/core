@@ -3,6 +3,8 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <iterator>
+#include <vector>
 
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/interface/ITransport.hpp>
@@ -14,7 +16,9 @@ namespace {
 
 using core::persistence::ProductFileService;
 using core::protocol::filesystem::FileSystemRpcCodec;
+using core::protocol::filesystem::FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CAPABILITIES;
+using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS;
 using core::protocol::filesystem::FILESYSTEM_RPC_MAX_CHUNK_SIZE;
@@ -22,10 +26,76 @@ using core::protocol::filesystem::FILESYSTEM_RPC_MAX_LIST_ENTRIES;
 using core::protocol::filesystem::FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE;
 using core::protocol::filesystem::FILESYSTEM_RPC_SCHEMA;
 using core::protocol::filesystem::FileSystemRpcFileType;
+using core::protocol::filesystem::FileSystemRpcConditionalRecoveryState;
 using core::protocol::filesystem::FileSystemRpcMessageId;
 using core::protocol::filesystem::FileSystemRpcEndpoint;
 using core::protocol::filesystem::FileSystemRpcHandler;
+using core::protocol::filesystem::FileSystemRpcMutationOutcome;
+using core::protocol::filesystem::FileSystemRpcMutationSubject;
 using core::protocol::filesystem::FileSystemRpcStatus;
+
+constexpr uint8_t SHA256_OLD[32] = {
+    0xcb, 0xa0, 0x6b, 0x57, 0x36, 0xfa, 0xf6, 0x7e,
+    0x54, 0xb0, 0x7b, 0x56, 0x1e, 0xae, 0x94, 0x39,
+    0x5e, 0x77, 0x4c, 0x51, 0x7a, 0x7d, 0x91, 0x0a,
+    0x54, 0x36, 0x9e, 0x12, 0x63, 0xcc, 0xfb, 0xd4,
+};
+constexpr uint8_t SHA256_NEW[32] = {
+    0x11, 0x50, 0x7a, 0x0e, 0x2f, 0x5e, 0x69, 0xd5,
+    0xdf, 0xa4, 0x0a, 0x62, 0xa1, 0xbd, 0x7b, 0x6e,
+    0xe5, 0x7e, 0x6b, 0xcd, 0x85, 0xc6, 0x7c, 0x9b,
+    0x84, 0x31, 0xb3, 0x6f, 0xff, 0x21, 0xc4, 0x37,
+};
+constexpr uint8_t SHA256_TAMPERED[32] = {
+    0xd1, 0x21, 0xbe, 0x31, 0x03, 0x00, 0x7b, 0x41,
+    0xed, 0xf9, 0x6f, 0x82, 0x62, 0x92, 0x5f, 0x8c,
+    0x7d, 0x61, 0x89, 0x4a, 0xfe, 0x9a, 0x04, 0x18,
+    0x43, 0xb6, 0x31, 0xf6, 0x94, 0x45, 0xbc, 0x57,
+};
+constexpr uint8_t SHA256_DELETE_ME[32] = {
+    0xaf, 0x77, 0xc0, 0x87, 0x9d, 0x9c, 0xc6, 0x96,
+    0x81, 0x60, 0x0b, 0xb1, 0x7f, 0xa8, 0xfe, 0xdc,
+    0xcf, 0xe7, 0xae, 0x60, 0x5b, 0x65, 0x97, 0x4f,
+    0xee, 0x79, 0x25, 0x81, 0xed, 0x63, 0xa8, 0x4c,
+};
+
+uint32_t journalCrc32(const uint8_t* data, size_t size) {
+    uint32_t crc = 0xFFFFFFFFU;
+    for (size_t i = 0; i < size; ++i) {
+        crc ^= data[i];
+        for (uint8_t bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1U) ^ (0xEDB88320U & (0U - (crc & 1U)));
+        }
+    }
+    return ~crc;
+}
+
+void appendU32(std::vector<uint8_t>& bytes, uint32_t value) {
+    bytes.push_back(static_cast<uint8_t>(value));
+    bytes.push_back(static_cast<uint8_t>(value >> 8U));
+    bytes.push_back(static_cast<uint8_t>(value >> 16U));
+    bytes.push_back(static_cast<uint8_t>(value >> 24U));
+}
+
+std::vector<uint8_t> makeCrcInvalidConditionalDeleteJournal() {
+    static constexpr uint8_t magic[] = {'F', 'S', 'T', 'X'};
+    static constexpr uint8_t zeroDigest[32] = {};
+    static constexpr char currentPath[] = "projects/preserved.bin";
+
+    std::vector<uint8_t> bytes;
+    bytes.insert(bytes.end(), std::begin(magic), std::end(magic));
+    bytes.push_back(1);  // Journal version.
+    bytes.push_back(2);  // Conditional delete.
+    appendU32(bytes, 0x10203040U);
+    bytes.insert(bytes.end(), std::begin(SHA256_OLD), std::end(SHA256_OLD));
+    bytes.insert(bytes.end(), std::begin(zeroDigest), std::end(zeroDigest));
+    bytes.push_back(static_cast<uint8_t>(sizeof(currentPath) - 1U));
+    bytes.insert(bytes.end(), currentPath, currentPath + sizeof(currentPath) - 1U);
+    bytes.push_back(0);  // Delete journals have no staging path.
+    appendU32(bytes, journalCrc32(bytes.data(), bytes.size()));
+    bytes.back() ^= 0x80U;
+    return bytes;
+}
 
 uint32_t g_now_ms = 0;
 
@@ -101,6 +171,165 @@ struct Harness {
     }
 };
 
+void assertProductFileEquals(
+    ProductFileService& service,
+    const char* path,
+    const uint8_t* expected,
+    size_t expectedSize
+) {
+    const auto info = service.stat(path);
+    assert(info);
+    assert(info.value().type == oc::interface::FileType::FILE);
+    assert(info.value().sizeBytes == expectedSize);
+    std::vector<uint8_t> actual(expectedSize);
+    if (expectedSize > 0) {
+        const auto read = service.read(path, 0, actual.data(), actual.size());
+        assert(read && read.value() == expectedSize);
+        assert(std::memcmp(actual.data(), expected, expectedSize) == 0);
+    }
+}
+
+void assertCorruptJournalIsQuarantinedOnce(
+    const uint8_t* journal,
+    size_t journalSize
+) {
+    resetTestRoot();
+    Harness h;
+    static constexpr uint8_t projectData[] = {'m', 'u', 's', 'i', 'c'};
+    static constexpr uint8_t backupData[] = {'b', 'a', 'c', 'k', 'u', 'p'};
+    static constexpr uint8_t stagingData[] = {'s', 't', 'a', 'g', 'e'};
+    static constexpr uint8_t staleEvidence[] = {'o', 'l', 'd'};
+    assert(h.service.write(
+        "projects/preserved.bin",
+        0,
+        projectData,
+        sizeof(projectData)
+    ));
+    assert(h.service.write(
+        "tmp/rpc-conditional.backup",
+        0,
+        backupData,
+        sizeof(backupData)
+    ));
+    assert(h.service.write(
+        "tmp/user-step-preset-stage.mssp",
+        0,
+        stagingData,
+        sizeof(stagingData)
+    ));
+    assert(h.service.write(
+        FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
+        0,
+        staleEvidence,
+        sizeof(staleEvidence)
+    ));
+    assert(h.service.write(
+        "tmp/rpc-conditional.journal",
+        0,
+        journal,
+        journalSize
+    ));
+
+    assert(h.handler.conditionalRecoveryState() ==
+           FileSystemRpcConditionalRecoveryState::NOT_CHECKED);
+    size_t requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
+        80,
+        h.request,
+        sizeof(h.request)
+    );
+    size_t responseSize = h.transact(requestSize);
+    const auto capabilities = FileSystemRpcCodec::decodeCapabilitiesResponse(
+        h.response,
+        responseSize
+    );
+    assert(capabilities && capabilities.value().status == FileSystemRpcStatus::OK);
+    assert(h.handler.conditionalRecoveryState() ==
+           FileSystemRpcConditionalRecoveryState::CORRUPT_JOURNAL_QUARANTINED);
+    assert(h.handler.conditionalRecoveryStatus() == FileSystemRpcStatus::OK);
+
+    assert(!h.service.stat("tmp/rpc-conditional.journal"));
+    assertProductFileEquals(
+        h.service,
+        FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
+        journal,
+        journalSize
+    );
+    assertProductFileEquals(
+        h.service,
+        "projects/preserved.bin",
+        projectData,
+        sizeof(projectData)
+    );
+    assertProductFileEquals(
+        h.service,
+        "tmp/rpc-conditional.backup",
+        backupData,
+        sizeof(backupData)
+    );
+    assertProductFileEquals(
+        h.service,
+        "tmp/user-step-preset-stage.mssp",
+        stagingData,
+        sizeof(stagingData)
+    );
+
+    requestSize = FileSystemRpcCodec::encodeStatRequest(
+        81,
+        "projects/preserved.bin",
+        h.request,
+        sizeof(h.request)
+    );
+    responseSize = h.transact(requestSize);
+    const auto stat = FileSystemRpcCodec::decodeStatResponse(h.response, responseSize);
+    assert(stat && stat.value().status == FileSystemRpcStatus::OK);
+    assert(stat.value().sizeBytes == sizeof(projectData));
+
+    requestSize = FileSystemRpcCodec::encodeReadRequest(
+        82,
+        "projects/preserved.bin",
+        0,
+        sizeof(projectData),
+        h.request,
+        sizeof(h.request)
+    );
+    responseSize = h.transact(requestSize);
+    const auto read = FileSystemRpcCodec::decodeReadResponse(h.response, responseSize);
+    assert(read && read.value().status == FileSystemRpcStatus::OK);
+    assert(read.value().bytesRead == sizeof(projectData));
+    assert(std::memcmp(read.value().data, projectData, sizeof(projectData)) == 0);
+
+    // A fresh handler sees no durable journal to replay. The fixed quarantine
+    // evidence remains intact, so the same corruption cannot loop on reboot.
+    FileSystemRpcHandler restarted(h.service);
+    requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
+        83,
+        h.request,
+        sizeof(h.request)
+    );
+    const auto handled = restarted.handleFrame(
+        h.request,
+        requestSize,
+        0,
+        h.response,
+        sizeof(h.response)
+    );
+    assert(handled);
+    const auto restartedCapabilities = FileSystemRpcCodec::decodeCapabilitiesResponse(
+        h.response,
+        handled.value()
+    );
+    assert(restartedCapabilities &&
+           restartedCapabilities.value().status == FileSystemRpcStatus::OK);
+    assert(restarted.conditionalRecoveryState() ==
+           FileSystemRpcConditionalRecoveryState::READY);
+    assertProductFileEquals(
+        h.service,
+        FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
+        journal,
+        journalSize
+    );
+}
+
 struct FaultInjectingFileSystem : oc::interface::IFileSystem {
     explicit FaultInjectingFileSystem(const char* rootPath)
         : delegate(rootPath) {}
@@ -130,9 +359,26 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         const char* path,
         oc::interface::RemoveMode mode = oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY
     ) override {
+        if (failConditionalBackupRemove && path &&
+            std::strcmp(path, "/midi-studio/tmp/rpc-conditional.backup") == 0) {
+            return oc::type::Result<void>::err(
+                {oc::type::ErrorCode::STORAGE_WRITE_FAILED, "forced conditional cleanup failure"}
+            );
+        }
         return delegate.remove(path, mode);
     }
     oc::type::Result<void> rename(const char* fromPath, const char* toPath) override {
+        if (failConditionalJournalPromotion && fromPath && toPath &&
+            std::strcmp(
+                fromPath,
+                "/midi-studio/tmp/rpc-conditional.journal.tmp"
+            ) == 0 &&
+            std::strcmp(toPath, "/midi-studio/tmp/rpc-conditional.journal") == 0) {
+            return oc::type::Result<void>::err(
+                {oc::type::ErrorCode::STORAGE_WRITE_FAILED,
+                 "forced conditional journal promotion failure"}
+            );
+        }
         if (failTmpPromotion && fromPath && toPath &&
             std::strstr(fromPath, "/midi-studio/tmp/rpc-write-") != nullptr &&
             std::strstr(toPath, "/midi-studio/projects/") != nullptr) {
@@ -145,6 +391,20 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
             std::strstr(toPath, "/midi-studio/projects/") != nullptr) {
             return oc::type::Result<void>::err(
                 {oc::type::ErrorCode::STORAGE_WRITE_FAILED, "forced backup restore failure"}
+            );
+        }
+        if (failConditionalPromotion && fromPath && toPath &&
+            std::strcmp(fromPath, "/midi-studio/tmp/step-preset-stage.mssp") == 0 &&
+            std::strcmp(toPath, "/midi-studio/library/step-presets/demo.mssp") == 0) {
+            return oc::type::Result<void>::err(
+                {oc::type::ErrorCode::STORAGE_WRITE_FAILED, "forced conditional promotion failure"}
+            );
+        }
+        if (failConditionalRestore && fromPath && toPath &&
+            std::strcmp(fromPath, "/midi-studio/tmp/rpc-conditional.backup") == 0 &&
+            std::strcmp(toPath, "/midi-studio/library/step-presets/demo.mssp") == 0) {
+            return oc::type::Result<void>::err(
+                {oc::type::ErrorCode::STORAGE_WRITE_FAILED, "forced conditional restore failure"}
             );
         }
         return delegate.rename(fromPath, toPath);
@@ -194,6 +454,10 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
     bool failFinalStat = false;
     bool failTmpPromotion = false;
     bool failBackupRestore = false;
+    bool failConditionalPromotion = false;
+    bool failConditionalRestore = false;
+    bool failConditionalBackupRemove = false;
+    bool failConditionalJournalPromotion = false;
 };
 
 FileSystemRpcStatus writeFileViaRpc(
@@ -327,6 +591,7 @@ void test_capabilities_roundtrip() {
     assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_CAPABILITIES) != 0);
     assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS) != 0);
     assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT) != 0);
+    assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS) != 0);
 
     std::cout << "[PASS] test_capabilities_roundtrip\n";
 }
@@ -876,6 +1141,596 @@ void test_file_management_operations() {
     std::cout << "[PASS] test_file_management_operations\n";
 }
 
+void test_conditional_replace_is_cas_and_idempotent() {
+    resetTestRoot();
+    Harness h;
+    assert(h.service.write(
+        "library/step-presets/demo.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("old"),
+        3
+    ));
+    assert(h.service.write(
+        "tmp/step-preset-stage.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("new"),
+        3
+    ));
+
+    size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        60,
+        0x12345678U,
+        "library/step-presets/demo.mssp",
+        "tmp/step-preset-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    size_t responseSize = h.transact(requestSize);
+    auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        h.response,
+        responseSize
+    );
+    assert(mutation);
+    assert(mutation.value().requestId == 60);
+    assert(mutation.value().operationId == 0x12345678U);
+    assert(mutation.value().status == FileSystemRpcStatus::OK);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::APPLIED);
+    assert(mutation.value().subject == FileSystemRpcMutationSubject::NONE);
+
+    uint8_t loaded[8] = {};
+    auto read = h.service.read("library/step-presets/demo.mssp", 0, loaded, sizeof(loaded));
+    assert(read && read.value() == 3);
+    assert(std::memcmp(loaded, "new", 3) == 0);
+    assert(!h.service.stat("tmp/step-preset-stage.mssp"));
+    assert(!h.service.stat("tmp/rpc-conditional.backup"));
+    assert(!h.service.stat("tmp/rpc-conditional.journal"));
+
+    requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        61,
+        0x12345678U,
+        "library/step-presets/demo.mssp",
+        "tmp/step-preset-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        h.request,
+        sizeof(h.request)
+    );
+    responseSize = h.transact(requestSize);
+    mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(h.response, responseSize);
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::OK);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::ALREADY_APPLIED);
+
+    std::cout << "[PASS] test_conditional_replace_is_cas_and_idempotent\n";
+}
+
+void test_conditional_replace_rejects_source_and_staging_mismatch() {
+    resetTestRoot();
+    Harness h;
+    assert(h.service.write(
+        "library/step-presets/demo.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("old"),
+        3
+    ));
+    assert(h.service.write(
+        "tmp/step-preset-stage.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("tampered"),
+        8
+    ));
+
+    size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        62,
+        2,
+        "library/step-presets/demo.mssp",
+        "tmp/step-preset-stage.mssp",
+        SHA256_TAMPERED,
+        SHA256_NEW,
+        h.request,
+        sizeof(h.request)
+    );
+    size_t responseSize = h.transact(requestSize);
+    auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        h.response,
+        responseSize
+    );
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::PRECONDITION_FAILED);
+    assert(mutation.value().subject == FileSystemRpcMutationSubject::SOURCE);
+    assert(std::memcmp(mutation.value().observedSha256, SHA256_OLD, 32) == 0);
+
+    requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        63,
+        3,
+        "library/step-presets/demo.mssp",
+        "tmp/step-preset-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        h.request,
+        sizeof(h.request)
+    );
+    responseSize = h.transact(requestSize);
+    mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(h.response, responseSize);
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::PRECONDITION_FAILED);
+    assert(mutation.value().subject == FileSystemRpcMutationSubject::STAGING);
+    assert(std::memcmp(mutation.value().observedSha256, SHA256_TAMPERED, 32) == 0);
+
+    uint8_t loaded[8] = {};
+    auto read = h.service.read("library/step-presets/demo.mssp", 0, loaded, sizeof(loaded));
+    assert(read && read.value() == 3 && std::memcmp(loaded, "old", 3) == 0);
+    assert(!h.service.stat("tmp/rpc-conditional.backup"));
+    assert(!h.service.stat("tmp/rpc-conditional.journal"));
+
+    std::cout << "[PASS] test_conditional_replace_rejects_source_and_staging_mismatch\n";
+}
+
+void test_conditional_replace_rejects_case_alias_of_same_fat_path() {
+    resetTestRoot();
+    Harness h;
+    assert(h.service.write(
+        "tmp/conditional-alias.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("new"),
+        3
+    ));
+
+    const size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        64,
+        0x414C4941U,
+        "tmp/conditional-alias.mssp",
+        "TMP/CONDITIONAL-ALIAS.MSSP",
+        SHA256_NEW,
+        SHA256_NEW,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0);
+    const size_t responseSize = h.transact(requestSize);
+    const auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        h.response,
+        responseSize
+    );
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    uint8_t loaded[8] = {};
+    const auto read = h.service.read(
+        "tmp/conditional-alias.mssp",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
+    assert(read && read.value() == 3);
+    assert(std::memcmp(loaded, "new", 3) == 0);
+    assert(!h.service.stat("tmp/rpc-conditional.backup"));
+    assert(!h.service.stat("tmp/rpc-conditional.journal"));
+
+    std::cout << "[PASS] test_conditional_replace_rejects_case_alias_of_same_fat_path\n";
+}
+
+void test_conditional_delete_is_cas_and_idempotent() {
+    resetTestRoot();
+    Harness h;
+    assert(h.service.write(
+        "library/step-presets/delete.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("delete-me"),
+        9
+    ));
+
+    size_t requestSize = FileSystemRpcCodec::encodeConditionalDeleteRequest(
+        64,
+        0x87654321U,
+        "library/step-presets/delete.mssp",
+        SHA256_DELETE_ME,
+        h.request,
+        sizeof(h.request)
+    );
+    size_t responseSize = h.transact(requestSize);
+    auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        h.response,
+        responseSize
+    );
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::OK);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::APPLIED);
+    assert(!h.service.stat("library/step-presets/delete.mssp"));
+    assert(!h.service.stat("tmp/rpc-conditional.backup"));
+    assert(!h.service.stat("tmp/rpc-conditional.journal"));
+
+    requestSize = FileSystemRpcCodec::encodeConditionalDeleteRequest(
+        65,
+        0x87654321U,
+        "library/step-presets/delete.mssp",
+        SHA256_DELETE_ME,
+        h.request,
+        sizeof(h.request)
+    );
+    responseSize = h.transact(requestSize);
+    mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(h.response, responseSize);
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::OK);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::ALREADY_APPLIED);
+
+    std::cout << "[PASS] test_conditional_delete_is_cas_and_idempotent\n";
+}
+
+void test_conditional_replace_recovers_interrupted_promotion() {
+    resetTestRoot();
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    FileSystemRpcHandler handler(service);
+    assert(service.write(
+        "library/step-presets/demo.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("old"),
+        3
+    ));
+    assert(service.write(
+        "tmp/step-preset-stage.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("new"),
+        3
+    ));
+    filesystem.failConditionalPromotion = true;
+    filesystem.failConditionalRestore = true;
+
+    uint8_t request[1024] = {};
+    uint8_t response[1024] = {};
+    size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        66,
+        4,
+        "library/step-presets/demo.mssp",
+        "tmp/step-preset-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        request,
+        sizeof(request)
+    );
+    auto handled = handler.handleFrame(request, requestSize, 0, response, sizeof(response));
+    assert(handled);
+    auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        response,
+        handled.value()
+    );
+    assert(mutation && mutation.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(!service.stat("library/step-presets/demo.mssp"));
+    assert(service.stat("tmp/rpc-conditional.backup"));
+    assert(service.stat("tmp/rpc-conditional.journal"));
+    assert(service.stat("tmp/step-preset-stage.mssp"));
+
+    filesystem.failConditionalPromotion = false;
+    filesystem.failConditionalRestore = false;
+    requestSize = FileSystemRpcCodec::encodeStatRequest(
+        67,
+        "library/step-presets/demo.mssp",
+        request,
+        sizeof(request)
+    );
+    handled = handler.handleFrame(request, requestSize, 1, response, sizeof(response));
+    assert(handled);
+    auto stat = FileSystemRpcCodec::decodeStatResponse(response, handled.value());
+    assert(stat && stat.value().status == FileSystemRpcStatus::OK);
+
+    uint8_t loaded[8] = {};
+    auto read = service.read("library/step-presets/demo.mssp", 0, loaded, sizeof(loaded));
+    assert(read && read.value() == 3 && std::memcmp(loaded, "new", 3) == 0);
+    assert(!service.stat("tmp/rpc-conditional.backup"));
+    assert(!service.stat("tmp/rpc-conditional.journal"));
+
+    std::cout << "[PASS] test_conditional_replace_recovers_interrupted_promotion\n";
+}
+
+void test_conditional_delete_recovers_interrupted_cleanup() {
+    resetTestRoot();
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    FileSystemRpcHandler handler(service);
+    assert(service.write(
+        "library/step-presets/delete.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("delete-me"),
+        9
+    ));
+    filesystem.failConditionalBackupRemove = true;
+
+    uint8_t request[1024] = {};
+    uint8_t response[1024] = {};
+    size_t requestSize = FileSystemRpcCodec::encodeConditionalDeleteRequest(
+        68,
+        5,
+        "library/step-presets/delete.mssp",
+        SHA256_DELETE_ME,
+        request,
+        sizeof(request)
+    );
+    auto handled = handler.handleFrame(request, requestSize, 0, response, sizeof(response));
+    assert(handled);
+    auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        response,
+        handled.value()
+    );
+    assert(mutation && mutation.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(!service.stat("library/step-presets/delete.mssp"));
+    assert(service.stat("tmp/rpc-conditional.backup"));
+    assert(service.stat("tmp/rpc-conditional.journal"));
+
+    filesystem.failConditionalBackupRemove = false;
+    requestSize = FileSystemRpcCodec::encodeStatRequest(
+        69,
+        "library/step-presets/delete.mssp",
+        request,
+        sizeof(request)
+    );
+    handled = handler.handleFrame(request, requestSize, 1, response, sizeof(response));
+    assert(handled);
+    auto stat = FileSystemRpcCodec::decodeStatResponse(response, handled.value());
+    assert(stat && stat.value().status == FileSystemRpcStatus::NOT_FOUND);
+    assert(!service.stat("tmp/rpc-conditional.backup"));
+    assert(!service.stat("tmp/rpc-conditional.journal"));
+
+    std::cout << "[PASS] test_conditional_delete_recovers_interrupted_cleanup\n";
+}
+
+void test_conditional_journal_promotion_failure_is_non_mutating() {
+    resetTestRoot();
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    FileSystemRpcHandler handler(service);
+    assert(service.write(
+        "library/step-presets/demo.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("old"),
+        3
+    ));
+    assert(service.write(
+        "tmp/step-preset-stage.mssp",
+        0,
+        reinterpret_cast<const uint8_t*>("new"),
+        3
+    ));
+    filesystem.failConditionalJournalPromotion = true;
+
+    uint8_t request[1024] = {};
+    uint8_t response[1024] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        70,
+        6,
+        "library/step-presets/demo.mssp",
+        "tmp/step-preset-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        request,
+        sizeof(request)
+    );
+    const auto handled = handler.handleFrame(
+        request,
+        requestSize,
+        0,
+        response,
+        sizeof(response)
+    );
+    assert(handled);
+    const auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        response,
+        handled.value()
+    );
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::NONE);
+
+    uint8_t loaded[8] = {};
+    auto read = service.read(
+        "library/step-presets/demo.mssp",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
+    assert(read && read.value() == 3 && std::memcmp(loaded, "old", 3) == 0);
+    read = service.read(
+        "tmp/step-preset-stage.mssp",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
+    assert(read && read.value() == 3 && std::memcmp(loaded, "new", 3) == 0);
+    assert(!service.stat("tmp/rpc-conditional.backup"));
+    assert(!service.stat("tmp/rpc-conditional.journal"));
+    assert(!service.stat("tmp/rpc-conditional.journal.tmp"));
+
+    std::cout
+        << "[PASS] test_conditional_journal_promotion_failure_is_non_mutating\n";
+}
+
+void test_orphan_conditional_journal_staging_is_cleaned_on_recovery() {
+    resetTestRoot();
+    Harness h;
+    const uint8_t partial[] = {'F', 'S', 'T', 'X'};
+    assert(h.service.write(
+        "tmp/rpc-conditional.journal.tmp",
+        0,
+        partial,
+        sizeof(partial)
+    ));
+
+    const size_t requestSize = FileSystemRpcCodec::encodeStatRequest(
+        71,
+        "projects/missing.bin",
+        h.request,
+        sizeof(h.request)
+    );
+    const size_t responseSize = h.transact(requestSize);
+    const auto stat = FileSystemRpcCodec::decodeStatResponse(
+        h.response,
+        responseSize
+    );
+    assert(stat && stat.value().status == FileSystemRpcStatus::NOT_FOUND);
+    assert(!h.service.stat("tmp/rpc-conditional.journal.tmp"));
+
+    std::cout
+        << "[PASS] test_orphan_conditional_journal_staging_is_cleaned_on_recovery\n";
+}
+
+void test_truncated_conditional_journal_is_quarantined_once() {
+    static constexpr uint8_t truncated[] = {'F', 'S', 'T', 'X'};
+    assertCorruptJournalIsQuarantinedOnce(truncated, sizeof(truncated));
+    std::cout
+        << "[PASS] test_truncated_conditional_journal_is_quarantined_once\n";
+}
+
+void test_bad_crc_conditional_journal_is_quarantined_once() {
+    const auto badCrc = makeCrcInvalidConditionalDeleteJournal();
+    assertCorruptJournalIsQuarantinedOnce(badCrc.data(), badCrc.size());
+    std::cout
+        << "[PASS] test_bad_crc_conditional_journal_is_quarantined_once\n";
+}
+
+void test_conditional_replace_rejects_fat_short_name_alias_syntax() {
+    resetTestRoot();
+    Harness h;
+    size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        72,
+        7,
+        "tmp/CURRENT~1.MSS",
+        "tmp/normal-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        h.request,
+        sizeof(h.request)
+    );
+    size_t responseSize = h.transact(requestSize);
+    auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        h.response,
+        responseSize
+    );
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        73,
+        8,
+        "tmp/current.mssp",
+        "tmp/NORMAL~1.MSS",
+        SHA256_OLD,
+        SHA256_NEW,
+        h.request,
+        sizeof(h.request)
+    );
+    responseSize = h.transact(requestSize);
+    mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        h.response,
+        responseSize
+    );
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    std::cout
+        << "[PASS] test_conditional_replace_rejects_fat_short_name_alias_syntax\n";
+}
+
+void test_conditional_transaction_paths_are_protocol_reserved() {
+    resetTestRoot();
+    Harness h;
+    const size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        70,
+        0x2000,
+        "tmp/rpc-conditional.journal",
+        4,
+        h.request,
+        sizeof(h.request)
+    );
+    const size_t responseSize = h.transact(requestSize);
+    auto write = FileSystemRpcCodec::decodeWriteResponse(h.response, responseSize);
+    assert(write);
+    assert(write.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+    assert(!h.handler.hasActiveWriteSession());
+
+    size_t nextRequestSize = FileSystemRpcCodec::encodeMkdirRequest(
+        71,
+        "tmp/rpc-conditional.backup",
+        h.request,
+        sizeof(h.request)
+    );
+    size_t nextResponseSize = h.transact(nextRequestSize);
+    auto status = FileSystemRpcCodec::decodeStatusResponse(
+        h.response,
+        nextResponseSize
+    );
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    nextRequestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        72,
+        "tmp/rpc-conditional.journal",
+        false,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    const uint8_t byte = 1;
+    assert(h.service.write("tmp/source.bin", 0, &byte, 1));
+    nextRequestSize = FileSystemRpcCodec::encodeRenameRequest(
+        73,
+        "tmp/source.bin",
+        "tmp/rpc-conditional.backup",
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+    assert(h.service.stat("tmp/source.bin"));
+
+    nextRequestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        74,
+        0x2001,
+        "TMP/RPC-CONDITIONAL.JOURNAL",
+        4,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    write = FileSystemRpcCodec::decodeWriteResponse(h.response, nextResponseSize);
+    assert(write && write.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+    assert(!h.handler.hasActiveWriteSession());
+
+    nextRequestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        75,
+        0x2002,
+        "TMP/RPC-CO~1.JOU",
+        4,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    write = FileSystemRpcCodec::decodeWriteResponse(h.response, nextResponseSize);
+    assert(write && write.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+    assert(!h.handler.hasActiveWriteSession());
+
+    nextRequestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        76,
+        "tmp/RPC-CO~2.BAC",
+        false,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    std::cout << "[PASS] test_conditional_transaction_paths_are_protocol_reserved\n";
+}
+
 void test_endpoint_answers_only_filesystem_requests() {
     resetTestRoot();
 
@@ -985,6 +1840,18 @@ int main() {
     test_invalid_path_maps_to_error_status();
     test_read_error_response_is_decodable();
     test_file_management_operations();
+    test_conditional_replace_is_cas_and_idempotent();
+    test_conditional_replace_rejects_source_and_staging_mismatch();
+    test_conditional_replace_rejects_case_alias_of_same_fat_path();
+    test_conditional_delete_is_cas_and_idempotent();
+    test_conditional_replace_recovers_interrupted_promotion();
+    test_conditional_delete_recovers_interrupted_cleanup();
+    test_conditional_journal_promotion_failure_is_non_mutating();
+    test_orphan_conditional_journal_staging_is_cleaned_on_recovery();
+    test_truncated_conditional_journal_is_quarantined_once();
+    test_bad_crc_conditional_journal_is_quarantined_once();
+    test_conditional_replace_rejects_fat_short_name_alias_syntax();
+    test_conditional_transaction_paths_are_protocol_reserved();
     test_endpoint_answers_only_filesystem_requests();
     test_endpoint_update_expires_abandoned_write_session();
 

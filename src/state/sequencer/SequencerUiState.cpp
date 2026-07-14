@@ -39,6 +39,13 @@ FLASHMEM void SequencerStepPresetPickerState::open(
 ) {
     mode.set(nextMode);
     selectedIndex.set(0);
+    detailVisible.set(false);
+    detailFocus.set(0);
+    inspecting.set(false);
+    previewStateIndex.set(0);
+    operationActivationGeneration = 0;
+    actionGuard.set({});
+    operationFeedback.set({});
     feedback.set(SequencerStepPresetFeedback::NONE);
     revision.set(revision.get() + 1U);
     visible.set(true);
@@ -50,10 +57,25 @@ FLASHMEM void SequencerStepPresetPickerState::reset() {
     selectedIndex.set(0);
     entryCount.set(0);
     truncated.set(false);
+    hasPreviousPage.set(false);
+    hasNextPage.set(false);
+    totalEntryCount.set(0);
+    detailVisible.set(false);
+    detailFocus.set(0);
+    inspecting.set(false);
+    previewStateIndex.set(0);
+    previewGeneration.set(0);
     feedback.set(SequencerStepPresetFeedback::NONE);
-    for (auto& id : entryIds) {
-        id[0] = '\0';
+    actionGuard.set({});
+    operationFeedback.set({});
+    for (uint8_t i = 0; i < ENTRY_CAPACITY; ++i) {
+        entryIds[i][0] = '\0';
+        entryNames[i][0] = '\0';
+        entryMetadataReadable[i] = false;
     }
+    frozenTarget = {};
+    descriptor = {};
+    operationActivationGeneration = 0;
     revision.set(revision.get() + 1U);
 }
 
@@ -64,32 +86,59 @@ FLASHMEM void SequencerStepPresetPickerState::setFeedback(
     revision.set(revision.get() + 1U);
 }
 
-FLASHMEM void SequencerStepPresetPickerState::setEntry(uint8_t index, const char* id) {
+FLASHMEM void SequencerStepPresetPickerState::setEntry(
+    uint8_t index,
+    const char* id,
+    const char* semanticName,
+    bool metadataReadable
+) {
     if (index >= ENTRY_CAPACITY) return;
     const char* source = id ? id : "";
     std::strncpy(entryIds[index].data(), source, ID_SIZE - 1U);
     entryIds[index][ID_SIZE - 1U] = '\0';
+    source = semanticName ? semanticName : "";
+    std::strncpy(entryNames[index].data(), source, NAME_SIZE - 1U);
+    entryNames[index][NAME_SIZE - 1U] = '\0';
+    entryMetadataReadable[index] = metadataReadable;
 }
 
 FLASHMEM const char* SequencerStepPresetPickerState::entryId(uint8_t index) const {
     return index < ENTRY_CAPACITY ? entryIds[index].data() : "";
 }
 
+FLASHMEM const char* SequencerStepPresetPickerState::entryName(uint8_t index) const {
+    return index < ENTRY_CAPACITY ? entryNames[index].data() : "";
+}
+
+FLASHMEM bool SequencerStepPresetPickerState::entryHasReadableMetadata(
+    uint8_t index
+) const {
+    return index < ENTRY_CAPACITY && entryMetadataReadable[index];
+}
+
 FLASHMEM uint8_t SequencerStepPresetPickerState::itemCount() const {
     const uint8_t existing = entryCount.get();
-    if (mode.get() == SequencerStepPresetPickerMode::SAVE) {
-        const uint16_t withNew = static_cast<uint16_t>(existing) + 1U;
+    const uint8_t offset = newAssetItemOffset();
+    if (offset > 0) {
+        const uint16_t withNew = static_cast<uint16_t>(existing) + offset;
         return withNew > 255U ? 255U : static_cast<uint8_t>(withNew);
     }
     return existing;
 }
 
+FLASHMEM uint8_t SequencerStepPresetPickerState::newAssetItemOffset() const {
+    return mode.get() == SequencerStepPresetPickerMode::SAVE &&
+           !hasPreviousPage.get() ? 1U : 0U;
+}
+
+FLASHMEM bool SequencerStepPresetPickerState::selectedItemIsNewAsset() const {
+    return newAssetItemOffset() > 0 && selectedIndex.get() == 0;
+}
+
 FLASHMEM uint8_t SequencerStepPresetPickerState::existingEntryIndexForSelectedItem() const {
     const uint8_t selected = selectedIndex.get();
-    if (mode.get() == SequencerStepPresetPickerMode::SAVE) {
-        return selected == 0 ? 0 : static_cast<uint8_t>(selected - 1U);
-    }
-    return selected;
+    const uint8_t offset = newAssetItemOffset();
+    return selected < offset ? 0 : static_cast<uint8_t>(selected - offset);
 }
 
 FLASHMEM void SequencerStepPresetPickerState::clampSelection() {
@@ -103,12 +152,50 @@ FLASHMEM void SequencerStepPresetPickerState::clampSelection() {
     }
 }
 
+FLASHMEM void SequencerStepPresetPickerState::bump() {
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerCcLaneUiState::bump() {
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerCcLaneUiState::reset() {
+    overlayVisible.set(false);
+    mode = SequencerCcLaneUiMode::CLOSED;
+    selectorIndex = 0;
+    focusedLane = 0;
+    focusedStep = 0;
+    transitionStep = 0;
+    selectedTransition = SequencerCcLaneTransition::HOLD;
+    transitionAppliedFeedback = false;
+    focusedField = SequencerCcLaneDraftField::CONTROLLER;
+    draft = {};
+    draftDirty = false;
+    advancedSettings = false;
+    hasAuthoredValue = false;
+    authoredValue = 0;
+    hasResolvedValue = false;
+    resolvedValue = 0;
+    winnerClass = core::state::shared::MidiCcCandidateClass::SEQUENCER_CC_LANE;
+    routeValid = true;
+    laneConflict = false;
+    macroConflict = false;
+    acceptedMacroConflict = false;
+    liveProjection = false;
+    actions = {};
+    actionGuard.set({});
+    operationFeedback.set({});
+    bump();
+}
+
 FLASHMEM void SequencerStepPropertyInlineSelectorState::reset() {
     selecting.set(false);
     macroLocalVariationEditActive.set(false);
     selectedIndex.set(0);
     localVariationStepIndex = 0;
     snapshotValid = false;
+    suppressOpeningRelease = false;
 }
 
 FLASHMEM void SequencerStepInlineFeedbackState::show(
@@ -205,6 +292,27 @@ FLASHMEM bool SequencerStepSelectionState::selected(uint8_t step) const {
     return selectedMask.get().test(step);
 }
 
+FLASHMEM void SequencerTrackPasteUiState::bump() {
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerTrackPasteUiState::reset() {
+    guard = {};
+    feedback = {};
+    plan = {};
+    clipboardKind = core::state::StructureClipboardKind::NONE;
+    clipboardRevision = 0;
+    interactionGeneration = 0;
+    operationGeneration = 0;
+    activationGeneration = 0;
+    focusedIndex = 0;
+    detailVisible = false;
+    buttonOwned = false;
+    commitConsumed = false;
+    selectionContext = false;
+    bump();
+}
+
 FLASHMEM SequencerStructureUiState::SequencerStructureUiState() = default;
 FLASHMEM SequencerStructureUiState::~SequencerStructureUiState() = default;
 
@@ -214,6 +322,7 @@ FLASHMEM void SequencerStructureUiState::reset() {
     pageHold.clear();
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     stepSelection.reset();
+    trackPaste.reset();
 }
 
 }  // namespace core::state::sequencer

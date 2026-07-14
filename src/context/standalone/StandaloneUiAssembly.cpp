@@ -337,6 +337,7 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
             core_state_.sequencerSettings,
             core_state_.dataManager,
             core_state_.projectNavigation,
+            core_state_.sequencerTrackActivations,
         }
     );
     if (!sequencer_view_ || !sequencer_view_->valid()) {

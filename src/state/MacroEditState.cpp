@@ -15,6 +15,20 @@ FLASHMEM void MacroEditState::MacroSelectorState::reset() {
     selectedIndex.set(0);
 }
 
+FLASHMEM void MacroEditState::ConversionPreviewState::reset() {
+    policy = core::state::macro::MacroAutomationConversionPolicy::MEAN;
+    plan = {};
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void MacroEditState::ConversionPreviewState::setPlan(
+    const core::state::macro::MacroAutomationConversionPlan& next
+) {
+    policy = next.policy;
+    plan = next;
+    revision.set(revision.get() + 1U);
+}
+
 FLASHMEM void MacroEditState::reset() {
     visible.set(false);
     automationVisible.set(false);
@@ -26,6 +40,11 @@ FLASHMEM void MacroEditState::reset() {
     selector.reset();
     macroSelector.reset();
     automationFocusedRow.set(0);
+    modulationFocusedRow.set(0);
+    conversionPreview.reset();
+    contextGuard.set({});
+    contextFeedback.set({});
+    contextButton.set(MacroContextButton::NONE);
     openedByMacroIndex = 0;
     openedAtMs = 0;
     pendingOpenReleaseDecision = false;
@@ -101,6 +120,34 @@ FLASHMEM void MacroEditState::closeAutomation() {
     automationVisible.set(false);
     automationFocusedRow.set(0);
     flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
+                                : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::openModulation(uint8_t focusedRow) {
+    visible.set(true);
+    automationVisible.set(true);
+    modulationFocusedRow.set(focusedRow);
+    flowPhase.set(MacroEditFlowPhase::MODULATION);
+}
+
+FLASHMEM void MacroEditState::closeModulation() {
+    automationVisible.set(false);
+    modulationFocusedRow.set(0);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
+                                : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::openConvertPreview(
+    const core::state::macro::MacroAutomationConversionPlan& plan
+) {
+    visible.set(true);
+    automationVisible.set(true);
+    conversionPreview.setPlan(plan);
+    flowPhase.set(MacroEditFlowPhase::CONVERT_PREVIEW);
+}
+
+FLASHMEM void MacroEditState::closeConvertPreview() {
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
                                 : MacroEditFlowPhase::CLOSED);
 }
 

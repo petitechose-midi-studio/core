@@ -26,6 +26,9 @@ encodeProjectSequencerSnapshot(
         source.graphs[i] = (i == activeTrack)
             ? snapshot.editorGraph.get()
             : snapshot.bankGraphs[i].get();
+        source.ccLanes[i] = (i == activeTrack)
+            ? snapshot.editorCcLanes.get()
+            : snapshot.bankCcLanes[i].get();
     }
     return codec::fillProjectSequencerEnvelope(source, out, capacity);
 }
