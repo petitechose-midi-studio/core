@@ -69,6 +69,9 @@ public:
     MacroValueHandler(const MacroValueHandler&) = delete;
     MacroValueHandler& operator=(const MacroValueHandler&) = delete;
 
+    /** Samples an active recording at the shared bounded playback cadence. */
+    void update(uint32_t nowMs);
+
 private:
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
@@ -94,6 +97,8 @@ private:
     std::array<bool, core::state::macro::MACRO_COUNT> macro_button_held_{};
     std::array<bool, core::state::macro::MACRO_COUNT> post_record_guard_active_{};
     std::array<uint32_t, core::state::macro::MACRO_COUNT> post_record_guard_until_ms_{};
+    uint32_t last_record_sample_ms_ = 0;
+    bool record_sample_clock_active_ = false;
 };
 
 }  // namespace core::handler

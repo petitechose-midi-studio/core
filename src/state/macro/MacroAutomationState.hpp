@@ -54,6 +54,7 @@ struct MacroAutomationConversionPlan {
     MacroAutomationSlotAddress address{};
     MacroAutomationConversionPolicy policy = MacroAutomationConversionPolicy::MEAN;
     float reference = 0.0f;
+    float normalizationAmplitude = 0.0f;
     float expectedStaticBase = 0.0f;
     uint16_t pointCount = 0;
     uint16_t reclaimablePointCount = 0;
@@ -147,6 +148,13 @@ bool macroAutomationCopySlotState(MacroAutomationBankState& destBank,
                                    MacroAutomationSlotState& dest,
                                    const MacroAutomationPointPool& sourcePool,
                                    const MacroAutomationSlotState& source);
+/** Replaces only Automation, preserving target Modulation and Depth. */
+bool macroAutomationCopyAutomationState(
+    MacroAutomationBankState& destBank,
+    MacroAutomationSlotState& dest,
+    const MacroAutomationPointPool& sourcePool,
+    const MacroAutomationSlotState& source
+);
 /** Replaces only Modulation and Depth, preserving target Automation. */
 bool macroAutomationCopyModulationState(
     MacroAutomationBankState& destBank,

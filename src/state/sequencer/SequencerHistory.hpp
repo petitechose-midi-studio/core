@@ -90,6 +90,7 @@ enum class SequencerHistoryActionKind : uint8_t {
     CcLaneEventClear,
     CcLaneSettings,
     CcLaneRemove,
+    CcLaneTransitionEdit,
     FullBank,
 };
 

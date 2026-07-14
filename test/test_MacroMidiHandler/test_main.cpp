@@ -70,23 +70,22 @@ struct Harness {
     }
 };
 
-void test_mapped_cc_takes_runtime_manual_ownership_without_rewriting_base() {
+void test_mapped_cc_takes_manual_ownership_and_authors_absolute_base() {
     Harness harness;
-    const float persistedBase = harness.state.pages.activePageData().values[0];
 
     harness.handler.onCC(0, 74, 100);
 
     const float expected = core::midi::fromCC(100);
     assert(std::fabs(harness.state.macros[0].value.get() - expected) < 0.0001f);
-    assert(std::fabs(harness.state.pages.activePageData().values[0] - persistedBase) < 0.0001f);
+    assert(std::fabs(harness.state.pages.activePageData().values[0] - expected) < 0.0001f);
     assert(std::fabs(
         harness.encoders.getPosition(Config::MACRO_ENCODERS[0]) - expected
     ) < 0.0001f);
     assert((harness.state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0);
-    assert(!harness.state.hasPendingProjectMutationCoalescing());
+    assert(harness.state.hasPendingProjectMutationCoalescing());
 
     std::cout
-        << "[PASS] test_mapped_cc_takes_runtime_manual_ownership_without_rewriting_base\n";
+        << "[PASS] test_mapped_cc_takes_manual_ownership_and_authors_absolute_base\n";
 }
 
 void test_inactive_macro_slot_does_not_accept_mapped_cc() {
@@ -104,7 +103,7 @@ void test_inactive_macro_slot_does_not_accept_mapped_cc() {
 }  // namespace
 
 int main() {
-    test_mapped_cc_takes_runtime_manual_ownership_without_rewriting_base();
+    test_mapped_cc_takes_manual_ownership_and_authors_absolute_base();
     test_inactive_macro_slot_does_not_accept_mapped_cc();
 
     std::cout << "\nAll MacroMidiHandler tests passed.\n";

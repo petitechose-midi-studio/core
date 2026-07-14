@@ -357,6 +357,7 @@ void test_conversion_preview_is_non_mutating_and_commit_is_atomic() {
     assert(!plan.overwritesModulation);
     assert(plan.pointCount == 2);
     assert(near(plan.reference, 0.5f));
+    assert(near(plan.normalizationAmplitude, 0.25f));
     assert(near(staticBase, 0.33f));
     assert(bank.pointPool.used == usedBefore);
     assert(slot->automation.pointOffset == automationBefore.pointOffset);
@@ -374,8 +375,12 @@ void test_conversion_preview_is_non_mutating_and_commit_is_atomic() {
     assert(slot->modulation.active);
     assert(slot->modulation.playbackState == macro::MacroCurvePlaybackState::ACTIVE);
     assert(slot->modulation.modulationOrigin == macro::MacroModulationOrigin::CONVERTED_MEAN);
-    assert(near(slot->modulationDepth, 1.0f));
-    assert(near(macro::macroModulationEvaluate(slot->modulation, bank.pointPool, 0.0f), -0.25f));
+    assert(near(slot->modulationDepth, 0.25f));
+    assert(near(macro::macroModulationEvaluate(
+        slot->modulation,
+        bank.pointPool,
+        0.0f
+    ), -1.0f));
     macro::MacroCurvePoint convertedTail{};
     assert(macro::macroAutomationReadPoint(
         slot->modulation,
@@ -384,9 +389,57 @@ void test_conversion_preview_is_non_mutating_and_commit_is_atomic() {
         true,
         convertedTail
     ));
-    assert(near(convertedTail.value, 0.25f));
+    assert(near(convertedTail.value, 1.0f));
 
     std::cout << "[PASS] test_conversion_preview_is_non_mutating_and_commit_is_atomic\n";
+}
+
+void test_conversion_mean_is_time_weighted_and_preserves_output() {
+    macro::MacroAutomationBankState bank;
+    const macro::MacroAutomationSlotAddress address{.track = 0, .page = 1, .macro = 2};
+    auto* slot = macro::macroAutomationGetOrCreateSlot(bank, address);
+    assert(slot != nullptr);
+
+    macro::MacroAutomationLane lane;
+    lane.durationBeats = 4.0f;
+    assert(macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
+    assert(macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
+    assert(macro::macroAutomationAppendPoint(lane, 4.0f, 1.0f));
+    assert(macro::macroAutomationAssignAutomation(bank, *slot, lane));
+
+    float staticBase = 0.4f;
+    const auto plan = macro::macroAutomationPreflightConversion(
+        bank,
+        address,
+        macro::MacroAutomationConversionPolicy::MEAN,
+        staticBase
+    );
+    assert(plan.actionable());
+    // Integral: 0.5 beat for the ramp, then 3 beats at 1.0.
+    assert(near(plan.reference, 0.875f));
+    assert(near(plan.normalizationAmplitude, 0.875f));
+
+    const float beforeAtHalf = macro::macroAutomationEvaluate(
+        slot->automation,
+        bank.pointPool,
+        0.5f,
+        staticBase
+    );
+    assert(macro::macroAutomationApplyConversion(bank, staticBase, plan, false));
+    slot = macro::macroAutomationFindMutableSlot(bank, address);
+    assert(slot != nullptr);
+    const auto resolvedAtHalf = macro::macroResolveValue(
+        staticBase,
+        *slot,
+        bank.pointPool,
+        0.5f,
+        true
+    );
+    assert(near(resolvedAtHalf.resolved, beforeAtHalf));
+    assert(slot->automation.playbackState == macro::MacroCurvePlaybackState::OFF);
+    assert(slot->modulation.playbackState == macro::MacroCurvePlaybackState::ACTIVE);
+
+    std::cout << "[PASS] conversion mean is time-weighted and preserves output\n";
 }
 
 void test_conversion_requires_overwrite_confirmation_and_rejects_stale_plan() {
@@ -489,6 +542,7 @@ int main() {
     test_macro_automation_invalid_copy_source_is_rejected_before_any_write();
     test_macro_automation_dense_curve_evaluates_interpolation_and_wrapped_window();
     test_conversion_preview_is_non_mutating_and_commit_is_atomic();
+    test_conversion_mean_is_time_weighted_and_preserves_output();
     test_conversion_requires_overwrite_confirmation_and_rejects_stale_plan();
     test_conversion_pool_exhaustion_has_no_partial_mutation();
 

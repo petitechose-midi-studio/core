@@ -7,6 +7,7 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
+#include "ui/sequencer/SequencerCcLaneGridViewModelBuilder.hpp"
 #include "ui/sequencer/SequencerTrackPasteProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
@@ -31,7 +32,8 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     createPropertySelectionOverlay();
     if (!property_selection_overlay_ || !property_selection_overlay_->getElement()) return;
     createGrid();
-    if (!step_grid_ || !step_grid_->getElement()) return;
+    if (!step_grid_ || !step_grid_->getElement() ||
+        !cc_lane_grid_ || !cc_lane_grid_->getElement()) return;
     createTrackPastePreflightCard();
     if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
     ensureRenderScheduler();
@@ -43,6 +45,7 @@ FLASHMEM SequencerView::~SequencerView() {
     render_scheduler_.reset();
 
     track_paste_preflight_card_.reset();
+    cc_lane_grid_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
     property_selection_overlay_.reset();
@@ -90,6 +93,10 @@ FLASHMEM void SequencerView::createGrid() {
         center_column_,
         onStepGridGeometryInvalidated,
         this
+    );
+    cc_lane_grid_ = core::app::makeExtmemUnique<SequencerCcLaneGrid>(
+        center_column_,
+        SequencerCcLaneGridLayout::EMBEDDED
     );
 }
 
@@ -203,6 +210,7 @@ FLASHMEM bool SequencerView::bindToState() {
         header_watcher_.subscriptionCount() == header_watcher_.capacity() &&
         header_strip_watcher_.subscriptionCount() == header_strip_watcher_.capacity() &&
         grid_watcher_.subscriptionCount() == grid_watcher_.capacity() &&
+        grid_tick_watcher_.subscriptionCount() == grid_tick_watcher_.capacity() &&
         selector_overlay_watcher_.subscriptionCount() == selector_overlay_watcher_.capacity() &&
         overlay_visibility_watcher_.subscriptionCount() == overlay_visibility_watcher_.capacity() &&
         left_action_strip_watcher_.subscriptionCount() == left_action_strip_watcher_.capacity() &&
@@ -242,7 +250,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -286,7 +295,6 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.focusedStep,
         state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.playheadStep,
-        state_refs_.sequencer.playheadStepTickOffset,
         state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.probabilityCycleRevision,
         state_refs_.sequencer.variationTelemetryRevision,
@@ -314,7 +322,14 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.contentView.sequenceId,
         state_refs_.sequencer.contentView.cycleSetId,
         state_refs_.sequencer.contentView.depth,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.ccLaneUi.revision
+    );
+    grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
+        *this, 11, "SequencerView.gridTick"
+    );
+    grid_tick_watcher_.watch(
+        state_refs_.sequencer.playheadStepTickOffset
     );
 }
 
@@ -341,7 +356,8 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.pattern.length,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -376,7 +392,8 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.structureUi.pageSelection.active,
         state_refs_.sequencer.structureUi.pageSelection.scope,
         state_refs_.sequencer.structureUi.stepSelection.active,
-        state_refs_.sequencer.contentView.kind
+        state_refs_.sequencer.contentView.kind,
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -405,7 +422,10 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.pattern.patternVariationRevision,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.revision,
-        state_refs_.trackActivations.telemetryRevision()
+        state_refs_.trackActivations.telemetryRevision(),
+        state_refs_.sequencer.ccLaneUi.revision,
+        state_refs_.sequencer.ccLaneUi.actionGuard,
+        state_refs_.sequencer.ccLaneUi.operationFeedback
     );
 }
 
@@ -556,6 +576,13 @@ void SequencerView::requestGridRender() {
     requestRender(RENDER_GRID);
 }
 
+void SequencerView::requestGridTickRender() {
+    if (state_refs_.sequencer.ccLaneUi.mode !=
+        core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID) {
+        requestRender(RENDER_GRID);
+    }
+}
+
 void SequencerView::requestTrackPastePreflightRender() {
     requestRender(RENDER_TRACK_PASTE_PREFLIGHT);
 }
@@ -596,7 +623,7 @@ void SequencerView::render(uint32_t flags) {
         (flags & RENDER_HISTORY_FEEDBACK) != 0 && history_toast_;
     const bool needsHeaderTop = (flags & RENDER_HEADER_TOP) != 0 && header_bar_;
     const bool needsHeaderStrip = (flags & RENDER_HEADER_STRIP) != 0 && header_bar_;
-    const bool needsGrid = (flags & RENDER_GRID) != 0 && step_grid_;
+    const bool needsGrid = (flags & RENDER_GRID) != 0 && step_grid_ && cc_lane_grid_;
     const bool needsTrackPastePreflight =
         (flags & RENDER_TRACK_PASTE_PREFLIGHT) != 0 &&
         track_paste_preflight_card_;
@@ -633,8 +660,15 @@ void SequencerView::render(uint32_t flags) {
     }
 
     if (needsGrid) {
-        const auto gridProps = sequencer::buildStepGridProps(source);
-        step_grid_->render(gridProps);
+        const auto ccLaneProps = sequencer::buildSequencerCcLaneGridProps(source);
+        if (ccLaneProps.visible) {
+            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            cc_lane_grid_->render(ccLaneProps);
+        } else {
+            cc_lane_grid_->render({.visible = false});
+            lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            step_grid_->render(sequencer::buildStepGridProps(source));
+        }
     }
 
     if (needsHistoryToast) {

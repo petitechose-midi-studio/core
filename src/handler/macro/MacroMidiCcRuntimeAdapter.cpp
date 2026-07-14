@@ -98,41 +98,34 @@ MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishFrame_(
             const bool transientLive = i == transientLiveMacro;
             const bool recording = services_.automationRecordingActiveFor(i);
             const bool manualOverride = services_.manualOverrideActiveFor(i);
-            const bool manual = transientLive || recording || manualOverride;
             const bool computedSource = services_.computedSourcePlaybackActiveFor(i);
             const bool computedValid =
                 (computed_valid_mask_ & macroBit(i)) != 0;
 
-            if (manual) {
-                float stableManualValue = services_.runtimeValue(i);
-                if (manualOverride && !recording) {
-                    (void)services_.manualOverrideValueFor(i, stableManualValue);
-                }
-                const uint8_t manualValue = transientLive
-                    ? transientLiveValue
-                    : core::midi::toCC(stableManualValue);
+            if (transientLive) {
                 if (!appendCandidate(
                         core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
                         destination,
                         address,
-                        manualValue
+                        transientLiveValue
                     )) return MidiCcGlobalFrameResult{};
+                continue;
+            }
 
-                // A recording replaces the old lane entirely. A Manual
-                // override keeps the computed local contribution visible as a
-                // deterministic loser for conflict/detail telemetry.
-                if (manualOverride && !recording && computedSource && computedValid) {
-                    if (!appendCandidate(
-                        core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED,
+            if ((recording || manualOverride) && computedValid) {
+                // Manual/recording keeps Live priority for duplicate MIDI
+                // destinations, but the value is the canonical resolved
+                // Base + Modulation result staged by playback.
+                if (!appendCandidate(
+                        core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
                         destination,
                         address,
                         computed_values_[i]
                     )) return MidiCcGlobalFrameResult{};
-                }
                 continue;
             }
 
-            if (computedSource) {
+            if (computedSource || recording || manualOverride) {
                 if (computedValid) {
                     if (!appendCandidate(
                         core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED,

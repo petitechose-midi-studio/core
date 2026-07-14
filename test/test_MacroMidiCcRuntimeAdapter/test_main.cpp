@@ -197,16 +197,19 @@ void test_computed_macro_beats_static_duplicate() {
     std::cout << "[PASS] test_computed_macro_beats_static_duplicate\n";
 }
 
-void test_manual_override_keeps_computed_contribution_as_loser() {
+void test_manual_override_publishes_one_resolved_live_author() {
     Harness h;
     h.addAutomation(1);
     assert(h.services.takeManualControl(1, 0.75f));
 
     h.adapter.beginComputedFrame();
-    assert(h.adapter.setComputedValue(1, 20));
+    // Playback stages the canonical audible Base + Modulation value. The
+    // adapter preserves Live priority without publishing a second author for
+    // the same macro.
+    assert(h.adapter.setComputedValue(1, 96));
     const auto result = h.adapter.publishComputedFrame();
     assert(result.ok());
-    assert(result.candidateCount == 3);
+    assert(result.candidateCount == 2);
     assert(h.resolveAndDrain().queuedEmissionCount == 1);
     assert(h.transport.messages[0].value >= 95 && h.transport.messages[0].value <= 96);
 
@@ -214,14 +217,11 @@ void test_manual_override_keeps_computed_contribution_as_loser() {
     assert(telemetry);
     assert(telemetry->destinations[0].winner.author.candidateClass ==
            MidiCcCandidateClass::LIVE_MANUAL);
-    assert(telemetry->destinations[0].loserCount == 2);
+    assert(telemetry->destinations[0].loserCount == 1);
     assert(telemetry->losers[0].author.candidateClass ==
-           MidiCcCandidateClass::MACRO_COMPUTED);
-    assert(telemetry->losers[0].localValue == 20);
-    assert(telemetry->losers[1].author.candidateClass ==
            MidiCcCandidateClass::MACRO_STATIC);
 
-    std::cout << "[PASS] test_manual_override_keeps_computed_contribution_as_loser\n";
+    std::cout << "[PASS] test_manual_override_publishes_one_resolved_live_author\n";
 }
 
 void test_modulation_only_depth_zero_is_classified_as_computed() {
@@ -336,7 +336,7 @@ void test_macro_stable_address_covers_full_v1_domain_without_collision() {
 int main() {
     test_manual_publish_collects_every_active_macro_in_one_frame();
     test_computed_macro_beats_static_duplicate();
-    test_manual_override_keeps_computed_contribution_as_loser();
+    test_manual_override_publishes_one_resolved_live_author();
     test_modulation_only_depth_zero_is_classified_as_computed();
     test_disabling_automation_restores_persisted_static_base_not_runtime_projection();
     test_disabled_page_flushes_to_an_empty_bounded_frame_without_midi();

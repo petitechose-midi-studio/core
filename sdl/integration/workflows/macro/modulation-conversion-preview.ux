@@ -3,6 +3,7 @@
 # preview, tap Apply on an empty target, guarded overwrite, and Modulation clear.
 # Expect: capture_changed:preview_mean_empty=modulation_applied, capture_changed:overwrite_preview=modulation_overwritten, capture_changed:modulation_detail=modulation_cleared
 # Expect: semantic:overwrite_pressed:outcome=pressed, semantic:overwrite_armed:outcome=armed, semantic:modulation_overwritten:outcome=applied
+# Expect: semantic:modulation_clear_armed:effect=arm_clear_modulation, semantic:modulation_clear_armed:outcome=armed, semantic:modulation_cleared:effect=clear_modulation, semantic:modulation_cleared:outcome=applied
 # Expect: semantic:overwrite_pressed:projection=non_audible_preview, semantic:modulation_overwritten:route_policy=live_manual>cc_lane>macro_computed>macro_static
 
 0 scenario macro-automation-curve-shape
@@ -48,5 +49,8 @@
 # Overwrite also lands in Modulation detail. Clear only that source; the
 # stored Automation curve and the Macro destination remain intact.
 5360 capture screen modulation_detail
-5500 tap BOTTOM_LEFT 60
-5720 capture screen modulation_cleared
+5500 button BOTTOM_LEFT down
+6600 tick
+6660 capture screen modulation_clear_armed
+6720 button BOTTOM_LEFT up
+6940 capture screen modulation_cleared

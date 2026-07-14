@@ -197,7 +197,7 @@ void test_update_period_remains_bounded_across_millisecond_rollover() {
     std::cout << "[PASS] test_update_period_remains_bounded_across_millisecond_rollover\n";
 }
 
-void test_manual_override_suspends_playback_for_the_macro_slot() {
+void test_manual_override_replaces_automation_base_until_resume() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -226,18 +226,18 @@ void test_manual_override_suspends_playback_for_the_macro_slot() {
 
     assert(services.takeManualControl(0, 0.42f));
     playback.update(1500);
-    assert(midiTransport.ccCount == 1);
+    assert(midiTransport.ccCount == 2);
     assert(std::fabs(state.macros[0].value.get() - 0.42f) < 0.0001f);
 
     // At beat 2 the lane wraps to its initial value. Restoring automation
     // must still resend it because manual input superseded the prior output.
     assert(services.resumeComputedSources(0));
     playback.update(3000);
-    assert(midiTransport.ccCount == 2);
+    assert(midiTransport.ccCount == 3);
     assert(midiTransport.lastValue == 0);
     assert(std::fabs(state.macros[0].value.get() - 0.0f) < 0.0001f);
 
-    std::cout << "[PASS] test_manual_override_suspends_playback_for_the_macro_slot\n";
+    std::cout << "[PASS] test_manual_override_replaces_automation_base_until_resume\n";
 }
 
 void test_modulation_only_playback_and_depth_zero_remain_computed() {
@@ -299,50 +299,56 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
     std::cout << "[PASS] test_modulation_only_playback_and_depth_zero_remain_computed\n";
 }
 
-void test_recording_session_suspends_existing_lane_playback_for_the_macro_slot() {
+void test_recording_keeps_modulation_audible_and_active_after_commit() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
     configureAutomation(state);
+    configureModulation(state, 1.0f);
     state.statusBar.tempo.set(60.0f);
     state.statusBar.playing.set(true);
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
+    const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     core::handler::MacroAutomationPlaybackService playback(
         core::handler::MacroAutomationPlaybackService::StateRefs{
             state.pages,
             state.macroUi,
             state.statusBar,
         },
-        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        services,
         midi
     );
 
     playback.update(1000);
     assert(midiTransport.ccCount == 1);
+    assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
 
-    state.macros[0].value.set(0.42f);
-    state.macroUi.automationRecording.active = true;
-    state.macroUi.automationRecording.address = {
-        .track = state.pages.currentActiveTrack(),
-        .page = state.pages.currentActivePage(),
-        .macro = 0,
-    };
-
-    playback.update(1500);
-    assert(midiTransport.ccCount == 1);
-    assert(std::fabs(state.macros[0].value.get() - 0.42f) < 0.0001f);
-
-    state.macroUi.automationRecording.active = false;
-    playback.update(3000);
+    assert(services.beginAutomationRecording(0, 1100));
+    assert(services.recordAutomationPoint(0, 1200, 0.4f));
+    playback.update(1250);
     assert(midiTransport.ccCount == 2);
-    assert(midiTransport.lastValue == 0);
-    assert(std::fabs(state.macros[0].value.get() - 0.0f) < 0.0001f);
+    assert(midiTransport.lastValue >= 66 && midiTransport.lastValue <= 67);
+    const auto projection = state.macroUi.runtimeProjections[0];
+    assert(projection.valid && projection.modulationActive);
+    assert(std::fabs(projection.base - 0.4f) < 0.0001f);
+    assert(std::fabs(projection.modulation - 0.125f) < 0.01f);
 
-    std::cout << "[PASS] test_recording_session_suspends_existing_lane_playback_for_the_macro_slot\n";
+    assert(services.recordAutomationPoint(0, 1600, 0.6f));
+    assert(services.commitAutomationRecording(2000));
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        state.pages.automation,
+        {state.pages.currentActiveTrack(), state.pages.currentActivePage(), 0}
+    );
+    assert(slot != nullptr);
+    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
+    assert(slot->modulation.playbackState ==
+           core::state::macro::MacroCurvePlaybackState::ACTIVE);
+
+    std::cout << "[PASS] recording captures raw Base while Modulation stays audible\n";
 }
 
 void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
@@ -500,6 +506,7 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
                                  storage.macroLibrary,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
+    configureAutomation(state);
     configureModulation(state, 1.0f);
     state.statusBar.playing.set(true);
 
@@ -524,8 +531,8 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
     float manualValue = 0.0f;
     assert(services.manualOverrideValueFor(0, manualValue));
     assert(std::fabs(manualValue - 0.42f) < 0.0001f);
-    assert(std::fabs(state.macros[0].value.get() - 0.42f) < 0.0001f);
-    assert(midiTransport.ccCount == 0);
+    assert(std::fabs(state.macros[0].value.get() - 0.67f) < 0.01f);
+    assert(midiTransport.ccCount == 1);
 
     std::cout << "[PASS] test_runtime_owner_activation_preserves_manual_ownership\n";
 }
@@ -536,9 +543,9 @@ int main() {
     test_playback_updates_runtime_and_sends_cc_when_value_changes();
     test_playback_stops_when_transport_is_stopped();
     test_update_period_remains_bounded_across_millisecond_rollover();
-    test_manual_override_suspends_playback_for_the_macro_slot();
+    test_manual_override_replaces_automation_base_until_resume();
     test_modulation_only_playback_and_depth_zero_remain_computed();
-    test_recording_session_suspends_existing_lane_playback_for_the_macro_slot();
+    test_recording_keeps_modulation_audible_and_active_after_commit();
     test_reactivating_slot_or_lane_resends_value_superseded_while_inactive();
     test_runtime_owner_epoch_is_independent_from_navigation_and_transport();
     test_runtime_owner_activation_preserves_manual_ownership();

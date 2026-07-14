@@ -363,6 +363,12 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
 FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) return;
 
+    if (sequencer_.ccLaneUi.visible()) {
+        invalidateOptEncoderCache();
+        macro_position_valid_.fill(false);
+        return;
+    }
+
     if (overlays_.hasVisible()) {
         invalidateOptEncoderCache();
         return;

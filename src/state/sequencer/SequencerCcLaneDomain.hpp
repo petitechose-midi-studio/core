@@ -22,6 +22,15 @@ enum class SequencerCcLaneConflictPolicy : uint8_t {
     FIXED_PRIORITY = 0,
 };
 
+/** Shape owned by an authored event until the next authored event. */
+enum class SequencerCcLaneTransition : uint8_t {
+    HOLD = 0,
+    LINEAR,
+    EASE_IN,
+    EASE_OUT,
+    EASE_IN_OUT,
+};
+
 /**
  * Persisted destination and edit range for one lane.
  *
@@ -54,6 +63,9 @@ struct SequencerCcLane {
     SequencerCcLaneDestination destination{};
     oc::note::sequencer::StepBitMask128 activeMask{};
     std::array<uint8_t, 128> values{};
+    // Three bits per step. This keeps all five semantic shapes bounded while
+    // leaving the lane payload compact in PSRAM (48 bytes for 128 steps).
+    std::array<uint8_t, 48> transitions{};
 };
 
 /**
@@ -63,7 +75,7 @@ struct SequencerCcLane {
  * materialize it lazily. Embedding 17 copies in CoreState would consume RAM1.
  */
 struct SequencerCcLaneBank {
-    static constexpr uint8_t FORMAT_VERSION = 1;
+    static constexpr uint8_t FORMAT_VERSION = 3;
     static constexpr uint8_t MAX_LANES = 4;
     static constexpr uint8_t MAX_STEPS = 128;
 
@@ -164,6 +176,31 @@ SequencerCcLaneMutationResult clearSequencerCcLaneEvent(
     uint8_t step
 );
 
+[[nodiscard]] SequencerCcLaneTransition sequencerCcLaneTransition(
+    const SequencerCcLane& lane,
+    uint8_t step
+);
+
+/** Canonical outgoing-transition math shared by runtime and presentation. */
+[[nodiscard]] float sequencerCcLaneShapeProgress(
+    SequencerCcLaneTransition transition,
+    float progress
+);
+
+[[nodiscard]] uint8_t interpolateSequencerCcLaneValue(
+    uint8_t sourceValue,
+    uint8_t targetValue,
+    SequencerCcLaneTransition transition,
+    float progress
+);
+
+SequencerCcLaneMutationResult setSequencerCcLaneTransition(
+    SequencerCcLaneBank& bank,
+    uint8_t laneIndex,
+    uint8_t step,
+    SequencerCcLaneTransition transition
+);
+
 SequencerCcLaneMutationResult removeSequencerCcLane(
     SequencerCcLaneBank& bank,
     uint8_t laneIndex
@@ -194,7 +231,7 @@ static_assert(std::is_standard_layout_v<SequencerCcLane>);
 static_assert(std::is_trivially_copyable_v<SequencerCcLane>);
 static_assert(std::is_standard_layout_v<SequencerCcLaneBank>);
 static_assert(std::is_trivially_copyable_v<SequencerCcLaneBank>);
-static_assert(sizeof(SequencerCcLane) <= 160U);
-static_assert(sizeof(SequencerCcLaneBank) <= 656U);
+static_assert(sizeof(SequencerCcLane) <= 208U);
+static_assert(sizeof(SequencerCcLaneBank) <= 848U);
 
 }  // namespace core::state::sequencer

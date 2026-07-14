@@ -10,6 +10,7 @@
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
+#include "state/sequencer/SequencerCcLanePropertySelection.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
@@ -209,26 +210,42 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
     const auto& sequencer = source.sequencer;
 
     if (sequencer.stepPropertyInlineSelector.selecting.get()) {
-        constexpr int CC_LANES_PROPERTY_INDEX =
-            static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
-        if (sequencer.stepPropertyInlineSelector.selectedIndex.get() ==
-            CC_LANES_PROPERTY_INDEX) {
+        const int selectedIndex =
+            sequencer.stepPropertyInlineSelector.selectedIndex.get();
+        if (selectedIndex >=
+            core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT) {
             StepPropertySelectionOverlayProps props{
                 .visible = true,
                 .customContent = true,
                 .icon = standalone::icons::MIDI_CC,
-                .label = "CC lanes",
+                .label = "CC lane",
                 .useValueText = true,
                 .color = standalone::theme::color::MACRO_CC_COLOR,
             };
-            const auto* bank = sequencer.pattern.ccLanes.get();
+            const auto* bank =
+                core::state::sequencer::sequencerCcLaneView(sequencer.pattern);
+            const int8_t laneIndex =
+                core::state::sequencer::sequencerPropertySelectionLaneAt(
+                    bank,
+                    selectedIndex
+                );
+            if (laneIndex >= 0 && bank != nullptr) {
+                const auto& lane = bank->lanes[static_cast<uint8_t>(laneIndex)];
+                std::snprintf(
+                    props.valueText.data(),
+                    props.valueText.size(),
+                    "CC %u",
+                    static_cast<unsigned>(lane.destination.controller)
+                );
+                return props;
+            }
             const uint8_t count = bank
                 ? core::state::sequencer::sequencerCcLaneCount(*bank)
                 : 0;
             std::snprintf(
                 props.valueText.data(),
                 props.valueText.size(),
-                "%u/4  NAV",
+                "+ Add · %u/4",
                 static_cast<unsigned>(count)
             );
             return props;

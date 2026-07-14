@@ -1,6 +1,7 @@
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include <config/PlatformCompat.hpp>
 
@@ -10,6 +11,55 @@ namespace {
 
 FLASHMEM bool validMidi7(uint8_t value) {
     return value <= 127U;
+}
+
+FLASHMEM bool validTransition(SequencerCcLaneTransition transition) {
+    return static_cast<uint8_t>(transition) <=
+        static_cast<uint8_t>(SequencerCcLaneTransition::EASE_IN_OUT);
+}
+
+constexpr uint8_t TRANSITION_BITS = 3U;
+constexpr uint8_t TRANSITION_MASK = 0x07U;
+
+FLASHMEM uint8_t packedTransitionValue(
+    const SequencerCcLane& lane,
+    uint8_t step
+) {
+    const uint16_t bit = static_cast<uint16_t>(step) * TRANSITION_BITS;
+    const uint8_t byte = static_cast<uint8_t>(bit / 8U);
+    const uint8_t shift = static_cast<uint8_t>(bit % 8U);
+    uint16_t packed = lane.transitions[byte];
+    if (shift > 5U && byte + 1U < lane.transitions.size()) {
+        packed = static_cast<uint16_t>(
+            packed | static_cast<uint16_t>(lane.transitions[byte + 1U] << 8U)
+        );
+    }
+    return static_cast<uint8_t>((packed >> shift) & TRANSITION_MASK);
+}
+
+FLASHMEM void setPackedTransitionValue(
+    SequencerCcLane& lane,
+    uint8_t step,
+    uint8_t value
+) {
+    const uint16_t bit = static_cast<uint16_t>(step) * TRANSITION_BITS;
+    const uint8_t byte = static_cast<uint8_t>(bit / 8U);
+    const uint8_t shift = static_cast<uint8_t>(bit % 8U);
+    uint16_t packed = lane.transitions[byte];
+    if (shift > 5U && byte + 1U < lane.transitions.size()) {
+        packed = static_cast<uint16_t>(
+            packed | static_cast<uint16_t>(lane.transitions[byte + 1U] << 8U)
+        );
+    }
+    const uint16_t mask = static_cast<uint16_t>(TRANSITION_MASK << shift);
+    packed = static_cast<uint16_t>(
+        (packed & static_cast<uint16_t>(~mask)) |
+        (static_cast<uint16_t>(value & TRANSITION_MASK) << shift)
+    );
+    lane.transitions[byte] = static_cast<uint8_t>(packed & 0xFFU);
+    if (shift > 5U && byte + 1U < lane.transitions.size()) {
+        lane.transitions[byte + 1U] = static_cast<uint8_t>(packed >> 8U);
+    }
 }
 
 FLASHMEM bool sameDestination(
@@ -99,6 +149,11 @@ FLASHMEM bool validSequencerCcLane(const SequencerCcLane& lane) {
     }
 
     for (uint8_t step = 0; step < SequencerCcLaneBank::MAX_STEPS; ++step) {
+        if (!validTransition(static_cast<SequencerCcLaneTransition>(
+                packedTransitionValue(lane, step)
+            ))) {
+            return false;
+        }
         if (!lane.activeMask.test(step)) continue;
         if (lane.values[step] < lane.destination.minimum ||
             lane.values[step] > lane.destination.maximum) {
@@ -284,8 +339,96 @@ FLASHMEM SequencerCcLaneMutationResult clearSequencerCcLaneEvent(
 
     lane.activeMask.setBit(step, false);
     lane.values[step] = 0;
+    setPackedTransitionValue(lane, step, 0U);
     ++bank.revision;
     return result(SequencerCcLaneMutationStatus::OK, laneIndex);
+}
+
+FLASHMEM SequencerCcLaneTransition sequencerCcLaneTransition(
+    const SequencerCcLane& lane,
+    uint8_t step
+) {
+    if (step >= SequencerCcLaneBank::MAX_STEPS) {
+        return SequencerCcLaneTransition::HOLD;
+    }
+    return static_cast<SequencerCcLaneTransition>(
+        packedTransitionValue(lane, step)
+    );
+}
+
+FLASHMEM float sequencerCcLaneShapeProgress(
+    SequencerCcLaneTransition transition,
+    float progress
+) {
+    if (!std::isfinite(progress)) progress = 0.0f;
+    progress = std::clamp(progress, 0.0f, 1.0f);
+    switch (transition) {
+        case SequencerCcLaneTransition::LINEAR:
+            return progress;
+        case SequencerCcLaneTransition::EASE_IN:
+            return progress * progress;
+        case SequencerCcLaneTransition::EASE_OUT: {
+            const float inverse = 1.0f - progress;
+            return 1.0f - inverse * inverse;
+        }
+        case SequencerCcLaneTransition::EASE_IN_OUT:
+            // Smoothstep: zero slope at both authored endpoints.
+            return progress * progress * (3.0f - 2.0f * progress);
+        case SequencerCcLaneTransition::HOLD:
+        default:
+            return 0.0f;
+    }
+}
+
+FLASHMEM uint8_t interpolateSequencerCcLaneValue(
+    uint8_t sourceValue,
+    uint8_t targetValue,
+    SequencerCcLaneTransition transition,
+    float progress
+) {
+    const float shaped = sequencerCcLaneShapeProgress(transition, progress);
+    const float value = static_cast<float>(sourceValue) +
+        (static_cast<float>(targetValue) - sourceValue) * shaped;
+    return static_cast<uint8_t>(std::clamp<int>(
+        static_cast<int>(std::lround(value)),
+        0,
+        127
+    ));
+}
+
+FLASHMEM SequencerCcLaneMutationResult setSequencerCcLaneTransition(
+    SequencerCcLaneBank& bank,
+    uint8_t laneIndex,
+    uint8_t step,
+    SequencerCcLaneTransition transition
+) {
+    if (laneIndex >= bank.lanes.size()) {
+        return result(SequencerCcLaneMutationStatus::INVALID_LANE, laneIndex);
+    }
+    if (step >= SequencerCcLaneBank::MAX_STEPS) {
+        return result(SequencerCcLaneMutationStatus::INVALID_STEP, laneIndex);
+    }
+    auto& lane = bank.lanes[laneIndex];
+    if (!lane.occupied) {
+        return result(SequencerCcLaneMutationStatus::LANE_EMPTY, laneIndex);
+    }
+    if (!lane.activeMask.test(step) || !validTransition(transition)) {
+        return result(SequencerCcLaneMutationStatus::INVALID_DESTINATION, laneIndex);
+    }
+    if (sequencerCcLaneTransition(lane, step) == transition) {
+        return result(SequencerCcLaneMutationStatus::NO_CHANGE, laneIndex);
+    }
+    setPackedTransitionValue(
+        lane,
+        step,
+        static_cast<uint8_t>(transition)
+    );
+    ++bank.revision;
+    return result(
+        SequencerCcLaneMutationStatus::OK,
+        laneIndex,
+        static_cast<uint8_t>(transition)
+    );
 }
 
 FLASHMEM SequencerCcLaneMutationResult removeSequencerCcLane(
@@ -334,7 +477,8 @@ FLASHMEM bool sameSequencerCcLaneMusicalData(
            lhs.initialValue == rhs.initialValue &&
            sameDestination(lhs.destination, rhs.destination) &&
            lhs.activeMask == rhs.activeMask &&
-           lhs.values == rhs.values;
+           lhs.values == rhs.values &&
+           lhs.transitions == rhs.transitions;
 }
 
 FLASHMEM bool sameSequencerCcLaneBankMusicalData(

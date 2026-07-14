@@ -17,7 +17,7 @@ inline SequencerInteractionContext makeSequencerInteractionContext(
     SequencerInteractionContext context{};
     context.navigationFocus = navigationFocus;
     context.childContentView = isChildContentView(sequencer);
-    context.overlayVisible = overlayVisible;
+    context.overlayVisible = overlayVisible || sequencer.ccLaneUi.visible();
     context.previewingAddSlot = navigationFocus == core::state::StructureNavigationFocus::TRACK
         ? trackUi.previewAddSlot.get()
         : navigationFocus == core::state::StructureNavigationFocus::PAGE

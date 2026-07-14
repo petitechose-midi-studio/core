@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include <config/PlatformCompat.hpp>
+
 #include "handler/macro/MacroAutomationClipboardOps.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
@@ -116,10 +118,22 @@ bool MacroEditDomainServices::automationStoredFor(uint8_t index) const {
            core::state::macro::macroCurveStored(slot->automation);
 }
 
+bool MacroEditDomainServices::automationPlaybackActiveFor(uint8_t index) const {
+    const auto* slot = automationSlot(index);
+    return slot != nullptr &&
+           core::state::macro::macroCurvePlaybackActive(slot->automation);
+}
+
 bool MacroEditDomainServices::modulationStoredFor(uint8_t index) const {
     const auto* slot = automationSlot(index);
     return slot != nullptr &&
            core::state::macro::macroCurveStored(slot->modulation);
+}
+
+bool MacroEditDomainServices::modulationPlaybackActiveFor(uint8_t index) const {
+    const auto* slot = automationSlot(index);
+    return slot != nullptr &&
+           core::state::macro::macroCurvePlaybackActive(slot->modulation);
 }
 
 float MacroEditDomainServices::modulationDepth(uint8_t index) const {
@@ -266,7 +280,7 @@ bool MacroEditDomainServices::setModulationPlayback(
     return true;
 }
 
-bool MacroEditDomainServices::clearAutomation(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::clearAutomation(uint8_t index) const {
     const auto address = automationAddress(index);
     auto* slot = core::state::macro::macroAutomationFindMutableSlot(
         pages_->automation,
@@ -280,7 +294,7 @@ bool MacroEditDomainServices::clearAutomation(uint8_t index) const {
         ? history_->prepare(
               *pages_,
               address,
-              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
+              core::state::macro::MacroHistoryActionKind::CLEAR_AUTOMATION
           )
         : core::state::macro::MacroHistoryChangePtr{};
     if (history_ != nullptr && !change) return false;
@@ -338,7 +352,7 @@ bool MacroEditDomainServices::removeAutomation(uint8_t index) const {
     return true;
 }
 
-bool MacroEditDomainServices::copyAutomation(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::copyAutomation(uint8_t index) const {
     if (clipboard_ == nullptr) return false;
     return automation_clipboard_ops::copySlotAutomationToClipboard(
         pages_->automation,
@@ -347,22 +361,91 @@ bool MacroEditDomainServices::copyAutomation(uint8_t index) const {
     );
 }
 
-bool MacroEditDomainServices::pasteAutomation(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::copyDestination(uint8_t index) const {
+    return clipboard_ != nullptr &&
+           automation_clipboard_ops::copyDestinationToClipboard(
+               *pages_,
+               automationAddress(index),
+               *clipboard_
+           );
+}
+
+automation_clipboard_ops::MacroTypedPastePreflight
+MacroEditDomainServices::preflightDestinationPaste(uint8_t index) const {
+    if (clipboard_ == nullptr) return {};
+    return automation_clipboard_ops::preflightDestinationPaste(
+        *pages_,
+        automationAddress(index),
+        *clipboard_
+    );
+}
+
+FLASHMEM bool MacroEditDomainServices::pasteDestination(
+    uint8_t index,
+    bool overwriteConfirmed
+) const {
     if (clipboard_ == nullptr) return false;
+    const auto plan = preflightDestinationPaste(index);
+    if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
+        return false;
+    }
     const auto address = automationAddress(index);
     auto change = history_ != nullptr
         ? history_->prepare(
               *pages_,
               address,
-              core::state::macro::MacroHistoryActionKind::PASTE_SLOT
+              core::state::macro::MacroHistoryActionKind::PASTE_DESTINATION
           )
         : core::state::macro::MacroHistoryChangePtr{};
     if (history_ != nullptr && !change) return false;
-    if (!automation_clipboard_ops::pasteFirstClipboardAutomationToSlot(
-        pages_->automation,
-        address,
+    const uint8_t cc = clipboard_->macroAutomationSet->sourceCc;
+    const uint8_t channel = activeConfig(index).channel;
+    if (!setConfig(index, channel, cc)) return false;
+    if (history_ != nullptr &&
+        !history_->commitPrepared(*pages_, std::move(change))) {
+        return false;
+    }
+    return true;
+}
+
+automation_clipboard_ops::MacroTypedPastePreflight
+MacroEditDomainServices::preflightAutomationPaste(uint8_t index) const {
+    if (clipboard_ == nullptr) return {};
+    return automation_clipboard_ops::preflightAutomationPaste(
+        *pages_,
+        automationAddress(index),
         *clipboard_
-    )) {
+    );
+}
+
+FLASHMEM bool MacroEditDomainServices::pasteAutomation(uint8_t index) const {
+    return pasteAutomation(index, true);
+}
+
+FLASHMEM bool MacroEditDomainServices::pasteAutomation(
+    uint8_t index,
+    bool overwriteConfirmed
+) const {
+    if (clipboard_ == nullptr) return false;
+    const auto address = automationAddress(index);
+    const auto plan = preflightAutomationPaste(index);
+    if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
+        return false;
+    }
+    auto change = history_ != nullptr
+        ? history_->prepare(
+              *pages_,
+              address,
+              core::state::macro::MacroHistoryActionKind::PASTE_AUTOMATION
+          )
+        : core::state::macro::MacroHistoryChangePtr{};
+    if (history_ != nullptr && !change) return false;
+    if (!automation_clipboard_ops::pasteAutomationFromClipboard(
+            *pages_,
+            address,
+            *clipboard_,
+            overwriteConfirmed
+        )) {
         if (change) {
             (void)core::state::macro::applyMacroSlotHistorySnapshot(
                 *pages_,
@@ -417,7 +500,7 @@ MacroEditDomainServices::preflightConversion(
     );
 }
 
-bool MacroEditDomainServices::applyConversion(
+FLASHMEM bool MacroEditDomainServices::applyConversion(
     uint8_t index,
     const core::state::macro::MacroAutomationConversionPlan& plan,
     bool overwriteConfirmed
@@ -469,83 +552,11 @@ bool MacroEditDomainServices::applyConversion(
     return true;
 }
 
-bool MacroEditDomainServices::enableAutoMod(uint8_t index) const {
-    const auto address = automationAddress(index);
-    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
-        pages_->automation,
-        address
-    );
-    if (slot == nullptr ||
-        !core::state::macro::macroCurveStored(slot->automation) ||
-        !core::state::macro::macroCurveStored(slot->modulation)) {
-        return false;
-    }
-    if (core::state::macro::macroCurvePlaybackActive(slot->automation) &&
-        core::state::macro::macroCurvePlaybackActive(slot->modulation) &&
-        !manualOverrideActiveFor(index)) {
-        return false;
-    }
-    auto change = history_ != nullptr
-        ? history_->prepare(
-              *pages_,
-              address,
-              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (history_ != nullptr && !change) return false;
-    slot->automation.playbackState =
-        core::state::macro::MacroCurvePlaybackState::ACTIVE;
-    slot->modulation.playbackState =
-        core::state::macro::MacroCurvePlaybackState::ACTIVE;
-    if (history_ != nullptr && !history_->commitPrepared(*pages_, std::move(change))) {
-        return false;
-    }
-    if (macro_ui_ != nullptr) {
-        (void)macro_ui_->manualOverrides.resume(address);
-        macro_ui_->refreshManualOverrideMask(
-            pages_->currentActiveTrack(),
-            pages_->currentActivePage()
-        );
-        macro_ui_->automationRecordingRevision.set(
-            macro_ui_->automationRecordingRevision.get() + 1U
-        );
-    }
-    if (operations_.markProjectMutated != nullptr) {
-        operations_.markProjectMutated(operations_.context);
-    }
-    return true;
-}
-
 bool MacroEditDomainServices::resumeSources(uint8_t index) const {
     if (macro_ui_ == nullptr || index >= core::state::macro::MACRO_COUNT) return false;
     const auto address = automationAddress(index);
     const bool hadManual = macro_ui_->manualOverrides.activeFor(address);
-    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
-        pages_->automation,
-        address
-    );
-    const bool suspended = slot != nullptr &&
-        core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation);
-    if (!hadManual && !suspended) return false;
-
-    auto change = suspended && history_ != nullptr
-        ? history_->prepare(
-              *pages_,
-              address,
-              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (suspended && history_ != nullptr && !change) return false;
-    if (suspended) {
-        slot->modulation.playbackState =
-            core::state::macro::MacroCurvePlaybackState::ACTIVE;
-        if (history_ != nullptr && !history_->commitPrepared(
-                *pages_,
-                std::move(change)
-            )) {
-            return false;
-        }
-    }
+    if (!hadManual) return false;
     (void)macro_ui_->manualOverrides.resume(address);
     macro_ui_->refreshManualOverrideMask(
         pages_->currentActiveTrack(),
@@ -554,13 +565,10 @@ bool MacroEditDomainServices::resumeSources(uint8_t index) const {
     macro_ui_->automationRecordingRevision.set(
         macro_ui_->automationRecordingRevision.get() + 1U
     );
-    if (suspended && operations_.markProjectMutated != nullptr) {
-        operations_.markProjectMutated(operations_.context);
-    }
     return true;
 }
 
-bool MacroEditDomainServices::clearModulation(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::clearModulation(uint8_t index) const {
     const auto address = automationAddress(index);
     auto* slot = core::state::macro::macroAutomationFindMutableSlot(
         pages_->automation,
@@ -583,9 +591,6 @@ bool MacroEditDomainServices::clearModulation(uint8_t index) const {
         return false;
     }
     if (macro_ui_ != nullptr) {
-        if (!computedSourcePlaybackActive(slot)) {
-            (void)macro_ui_->manualOverrides.resume(address);
-        }
         macro_ui_->refreshManualOverrideMask(
             pages_->currentActiveTrack(),
             pages_->currentActivePage()
@@ -600,7 +605,7 @@ bool MacroEditDomainServices::clearModulation(uint8_t index) const {
     return true;
 }
 
-bool MacroEditDomainServices::removeSlot(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::removeSlot(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT ||
         !pages_->isMacroSlotActive(index)) {
         return false;
@@ -628,7 +633,6 @@ bool MacroEditDomainServices::removeSlot(uint8_t index) const {
         return false;
     }
     if (macro_ui_ != nullptr) {
-        (void)macro_ui_->manualOverrides.resume(address);
         macro_ui_->refreshManualOverrideMask(
             pages_->currentActiveTrack(),
             pages_->currentActivePage()
@@ -697,7 +701,6 @@ bool MacroEditDomainServices::pasteSlot(
         return false;
     }
     if (macro_ui_ != nullptr) {
-        (void)macro_ui_->manualOverrides.resume(address);
         macro_ui_->refreshManualOverrideMask(
             pages_->currentActiveTrack(),
             pages_->currentActivePage()
@@ -718,7 +721,7 @@ bool MacroEditDomainServices::pasteSlot(
     return true;
 }
 
-bool MacroEditDomainServices::copyModulation(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::copyModulation(uint8_t index) const {
     return clipboard_ != nullptr &&
            automation_clipboard_ops::copyModulationToClipboard(
                pages_->automation,
@@ -737,7 +740,7 @@ MacroEditDomainServices::preflightModulationPaste(uint8_t index) const {
     );
 }
 
-bool MacroEditDomainServices::pasteModulation(
+FLASHMEM bool MacroEditDomainServices::pasteModulation(
     uint8_t index,
     bool overwriteConfirmed
 ) const {
@@ -769,7 +772,6 @@ bool MacroEditDomainServices::pasteModulation(
         return false;
     }
     if (macro_ui_ != nullptr) {
-        (void)macro_ui_->manualOverrides.resume(address);
         macro_ui_->refreshManualOverrideMask(
             pages_->currentActiveTrack(),
             pages_->currentActivePage()

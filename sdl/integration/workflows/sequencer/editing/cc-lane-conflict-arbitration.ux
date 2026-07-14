@@ -23,18 +23,15 @@
 740 encoder NAV 1
 840 tap NAV 60
 940 button LEFT_BOTTOM up
-1040 tap NAV 60
 1260 capture screen cc_conflict_preview
 
 # Close the lane context, start transport, then reopen the same lane. Step 1
 # repeats every musical boundary so the runtime coordinator publishes both
 # authors before the Live capture.
 1360 tap LEFT_TOP 60
-1500 tap LEFT_TOP 60
 1680 tap BOTTOM_CENTER 60
 2180 button LEFT_BOTTOM down
 2260 encoder NAV 1
 2580 tap NAV 60
 2680 button LEFT_BOTTOM up
-2780 tap NAV 60
 3300 capture screen cc_conflict_live

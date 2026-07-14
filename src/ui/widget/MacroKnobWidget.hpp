@@ -34,12 +34,17 @@ public:
     lv_obj_t* getElement() const override { return container_; }
     [[nodiscard]] bool valid() const {
         return container_ && knob_ && config_label_container_ && add_label_ &&
-               automation_source_label_ && modulation_source_label_ &&
                cc_prefix_ && cc_prefix_->getElement() &&
                cc_value_ && cc_value_->getElement();
     }
 
     void setValue(float value);
+    void setResolvedComponents(float baseValue,
+                               float modulationDelta,
+                               float modulationDepth,
+                               float resolvedValue,
+                               bool clippedLow,
+                               bool clippedHigh);
     void setConfig(uint8_t cc);
     void setAutomationActive(bool active);
     void setAutomationRecording(bool active);
@@ -48,8 +53,7 @@ public:
                              bool automationActive,
                              bool modulationStored,
                              bool modulationActive,
-                             bool modulationPaused,
-                             bool modulationSuspended);
+                             bool modulationPaused);
     void setSlotState(bool active, bool addSlot);
     void setFocused(bool focused);
 
@@ -63,15 +67,19 @@ private:
     void createUI(lv_obj_t* parent);
     void createContainer(lv_obj_t* parent);
     void createConfigLabels();
-    void createSourceIndicators();
     void setConfigLabelsVisible(bool visible);
     void updateAutomationTrackColor();
-    void updateSourceIndicators();
     void updateFocusFrame();
     void updateSlotVisibility();
     bool buildArcGeometry(ArcGeometry& geometry) const;
     void invalidateValueArc();
     void invalidateArcRange(lv_value_precise_t startAngle, lv_value_precise_t endAngle);
+    void invalidateArcRangeAt(lv_value_precise_t startAngle,
+                              lv_value_precise_t endAngle,
+                              uint16_t radius,
+                              lv_coord_t width);
+    void invalidateRailRange(lv_value_precise_t startAngle,
+                             lv_value_precise_t endAngle);
     void invalidateArcDelta(uint16_t previousAngle, uint16_t nextAngle);
     void drawArc(lv_layer_t* layer, lv_obj_t* target) const;
     static void onArcDrawEvent(lv_event_t* event);
@@ -80,8 +88,6 @@ private:
     lv_obj_t* knob_ = nullptr;
     lv_obj_t* config_label_container_ = nullptr;
     lv_obj_t* add_label_ = nullptr;
-    lv_obj_t* automation_source_label_ = nullptr;
-    lv_obj_t* modulation_source_label_ = nullptr;
     core::app::ExtmemUniquePtr<oc::ui::lvgl::Label> cc_prefix_;
     core::app::ExtmemUniquePtr<oc::ui::lvgl::Label> cc_value_;
     uint32_t track_color_ = 0;
@@ -92,7 +98,6 @@ private:
     bool modulation_stored_ = false;
     bool modulation_active_ = false;
     bool modulation_paused_ = false;
-    bool modulation_suspended_ = false;
     bool automation_recording_ = false;
     bool automation_manual_override_ = false;
     bool slot_active_ = true;
@@ -100,6 +105,11 @@ private:
     bool focused_ = false;
     bool config_labels_visible_ = true;
     float current_value_ = 0.0f;
+    float base_value_ = 0.0f;
+    float modulation_delta_ = 0.0f;
+    float modulation_depth_ = 0.0f;
+    bool clipped_low_ = false;
+    bool clipped_high_ = false;
 };
 
 }  // namespace core::ui

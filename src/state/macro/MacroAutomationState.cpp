@@ -173,6 +173,107 @@ FLASHMEM bool bankValidForMutation(const MacroAutomationBankState& bank) {
     return cursor == bank.pointPool.used;
 }
 
+FLASHMEM double curveIntegralToTick(
+    const MacroAutomationCurveRef& automation,
+    const MacroAutomationPointPool& pool,
+    uint16_t targetTick
+) {
+    if (!curveRangeValid(automation, pool) || targetTick == 0U) return 0.0;
+    const uint16_t count = automation.pointCount;
+    const auto pointAt = [&](uint16_t index) -> const MacroPackedCurvePoint& {
+        return pool.points[static_cast<uint16_t>(automation.pointOffset + index)];
+    };
+    const auto valueAt = [&](uint16_t index) {
+        return static_cast<double>(
+            macroAutomationUnpackValue(pointAt(index).value, false)
+        );
+    };
+
+    const auto& first = pointAt(0);
+    const double firstValue = valueAt(0);
+    if (targetTick <= first.tick) {
+        return firstValue * static_cast<double>(targetTick);
+    }
+    double integral = firstValue * static_cast<double>(first.tick);
+    for (uint16_t i = 1; i < count; ++i) {
+        const auto& previous = pointAt(static_cast<uint16_t>(i - 1U));
+        const auto& current = pointAt(i);
+        const double previousValue = valueAt(static_cast<uint16_t>(i - 1U));
+        const double currentValue = valueAt(i);
+        if (targetTick <= current.tick) {
+            const uint16_t elapsed = static_cast<uint16_t>(
+                targetTick - previous.tick
+            );
+            const uint16_t span = static_cast<uint16_t>(
+                current.tick - previous.tick
+            );
+            const double endValue = span == 0U
+                ? currentValue
+                : previousValue + (currentValue - previousValue) *
+                    (static_cast<double>(elapsed) / static_cast<double>(span));
+            return integral +
+                (previousValue + endValue) * 0.5 *
+                    static_cast<double>(elapsed);
+        }
+        integral += (previousValue + currentValue) * 0.5 *
+            static_cast<double>(current.tick - previous.tick);
+    }
+
+    const auto& last = pointAt(static_cast<uint16_t>(count - 1U));
+    if (targetTick > last.tick) {
+        integral += valueAt(static_cast<uint16_t>(count - 1U)) *
+            static_cast<double>(targetTick - last.tick);
+    }
+    return integral;
+}
+
+FLASHMEM float timeWeightedCurveMean(
+    const MacroAutomationCurveRef& automation,
+    const MacroAutomationPointPool& pool
+) {
+    if (!curveRangeValid(automation, pool)) return 0.0f;
+    const auto& last = pool.points[static_cast<uint16_t>(
+        automation.pointOffset + automation.pointCount - 1U
+    )];
+    const uint16_t sourceTicks = std::max<uint16_t>({
+        automation.sourceDurationTicks,
+        last.tick,
+        1U,
+    });
+    const uint16_t durationTicks = automation.durationTicks == 0U
+        ? MACRO_AUTOMATION_TICKS_PER_BEAT
+        : automation.durationTicks;
+    const uint16_t offset = static_cast<uint16_t>(
+        automation.windowOffsetTicks % sourceTicks
+    );
+    const double cycleIntegral = curveIntegralToTick(
+        automation,
+        pool,
+        sourceTicks
+    );
+    const uint32_t fullCycles = durationTicks / sourceTicks;
+    uint16_t remainder = static_cast<uint16_t>(durationTicks % sourceTicks);
+    double integral = cycleIntegral * static_cast<double>(fullCycles);
+    if (remainder > 0U) {
+        const uint16_t firstLength = std::min<uint16_t>(
+            remainder,
+            static_cast<uint16_t>(sourceTicks - offset)
+        );
+        integral += curveIntegralToTick(
+            automation,
+            pool,
+            static_cast<uint16_t>(offset + firstLength)
+        ) - curveIntegralToTick(automation, pool, offset);
+        remainder = static_cast<uint16_t>(remainder - firstLength);
+        if (remainder > 0U) {
+            integral += curveIntegralToTick(automation, pool, remainder);
+        }
+    }
+    return macroAutomationClamp01(static_cast<float>(
+        integral / static_cast<double>(durationTicks)
+    ));
+}
+
 FLASHMEM float conversionReference(const MacroAutomationCurveRef& automation,
                                    const MacroAutomationPointPool& pool,
                                    MacroAutomationConversionPolicy policy) {
@@ -192,16 +293,24 @@ FLASHMEM float conversionReference(const MacroAutomationCurveRef& automation,
         return macroAutomationUnpackValue(minimum, false);
     }
 
-    uint32_t sum = 0;
-    for (uint16_t i = 0; i < count; ++i) {
-        const int16_t value =
-            pool.points[static_cast<uint16_t>(automation.pointOffset + i)].value;
-        sum += static_cast<uint16_t>(std::max<int16_t>(0, value));
+    return timeWeightedCurveMean(automation, pool);
+}
+
+FLASHMEM float conversionAmplitude(
+    const MacroAutomationCurveRef& automation,
+    const MacroAutomationPointPool& pool,
+    float reference
+) {
+    if (!curveRangeValid(automation, pool)) return 0.0f;
+    float amplitude = 0.0f;
+    for (uint16_t i = 0; i < automation.pointCount; ++i) {
+        const float value = macroAutomationUnpackValue(
+            pool.points[static_cast<uint16_t>(automation.pointOffset + i)].value,
+            false
+        );
+        amplitude = std::max(amplitude, std::fabs(value - reference));
     }
-    return macroAutomationClamp01(
-        static_cast<float>(sum) /
-        (static_cast<float>(count) * 32767.0f)
-    );
+    return macroAutomationClamp01(amplitude);
 }
 
 FLASHMEM bool conversionPolicyValid(MacroAutomationConversionPolicy policy) {
@@ -627,6 +736,11 @@ FLASHMEM MacroAutomationConversionPlan macroAutomationPreflightConversion(
     );
     plan.overwritesModulation = macroCurveStored(slot->modulation);
     plan.reference = conversionReference(slot->automation, bank.pointPool, policy);
+    plan.normalizationAmplitude = conversionAmplitude(
+        slot->automation,
+        bank.pointPool,
+        plan.reference
+    );
     plan.sourceFingerprint = curveFingerprint(slot->automation, bank.pointPool);
     plan.targetFingerprint = modulationTargetFingerprint(*slot, bank.pointPool);
 
@@ -663,7 +777,10 @@ FLASHMEM bool macroAutomationApplyConversion(
         current.targetFingerprint != plan.targetFingerprint ||
         current.pointCount != plan.pointCount ||
         current.overwritesModulation != plan.overwritesModulation ||
-        std::fabs(current.reference - plan.reference) > 0.000001f) {
+        std::fabs(current.reference - plan.reference) > 0.000001f ||
+        std::fabs(
+            current.normalizationAmplitude - plan.normalizationAmplitude
+        ) > 0.000001f) {
         return false;
     }
     if (current.overwritesModulation && !overwriteConfirmed) return false;
@@ -681,9 +798,12 @@ FLASHMEM bool macroAutomationApplyConversion(
         const auto& sourcePoint =
             bank.pointPool.points[static_cast<uint16_t>(source.pointOffset + i)];
         const float absolute = macroAutomationUnpackValue(sourcePoint.value, false);
+        const float normalized = current.normalizationAmplitude > 0.000001f
+            ? (absolute - current.reference) / current.normalizationAmplitude
+            : 0.0f;
         bank.pointPool.points[static_cast<uint16_t>(start + i)] = MacroPackedCurvePoint{
             .tick = sourcePoint.tick,
-            .value = macroAutomationPackValue(absolute - current.reference, true),
+            .value = macroAutomationPackValue(normalized, true),
         };
     }
     bank.pointPool.used = static_cast<uint16_t>(start + source.pointCount);
@@ -692,7 +812,7 @@ FLASHMEM bool macroAutomationApplyConversion(
     slot->modulation.pointOffset = start;
     slot->modulation.playbackState = MacroCurvePlaybackState::ACTIVE;
     slot->modulation.modulationOrigin = macroModulationOriginForConversion(plan.policy);
-    slot->modulationDepth = 1.0f;
+    slot->modulationDepth = current.normalizationAmplitude;
     slot->automation.playbackState = MacroCurvePlaybackState::OFF;
     staticBase = current.reference;
     return true;
@@ -738,6 +858,40 @@ FLASHMEM bool macroAutomationCopySlotState(MacroAutomationBankState& destBank,
     dest = {};
     macroAutomationCompactPool(destBank);
     return macroAutomationCopySlotState(destBank.pointPool, dest, sourcePool, source);
+}
+
+FLASHMEM bool macroAutomationCopyAutomationState(
+    MacroAutomationBankState& destBank,
+    MacroAutomationSlotState& dest,
+    const MacroAutomationPointPool& sourcePool,
+    const MacroAutomationSlotState& source
+) {
+    if (!curveValidForMutation(source.automation, sourcePool) ||
+        !macroCurveStored(source.automation)) {
+        return false;
+    }
+
+    const uint16_t oldCount = macroAutomationStoredPointCount(
+        dest.automation,
+        destBank.pointPool
+    );
+    const uint16_t required = source.automation.pointCount;
+    const uint16_t freeCount = static_cast<uint16_t>(
+        MACRO_AUTOMATION_POINT_POOL_CAPACITY - destBank.pointPool.used
+    );
+    if (static_cast<uint32_t>(required) >
+        static_cast<uint32_t>(freeCount) + oldCount) {
+        return false;
+    }
+
+    dest.automation = {};
+    macroAutomationCompactPool(destBank);
+    MacroAutomationCurveRef next{};
+    if (!copyCurve(destBank.pointPool, next, sourcePool, source.automation)) {
+        return false;
+    }
+    dest.automation = next;
+    return true;
 }
 
 FLASHMEM bool macroAutomationCopyModulationState(

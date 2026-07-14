@@ -209,6 +209,7 @@ enum class SequencerCcLaneUiMode : uint8_t {
     LANE_SELECTOR,
     ADD_LANE_DRAFT,
     LANE_GRID,
+    TRANSITION_PICKER,
     LANE_SETTINGS,
 };
 
@@ -248,6 +249,12 @@ struct SequencerCcLaneUiState {
     uint8_t selectorIndex = 0;
     uint8_t focusedLane = 0;
     uint8_t focusedStep = 0;
+    uint8_t transitionStep = 0;
+    SequencerCcLaneTransition selectedTransition =
+        SequencerCcLaneTransition::HOLD;
+    // Short-lived confirmation only; cleared with OperationFeedback expiry or
+    // the next CC-grid interaction. It never enters project persistence.
+    bool transitionAppliedFeedback = false;
     SequencerCcLaneDraftField focusedField =
         SequencerCcLaneDraftField::CONTROLLER;
     SequencerCcLaneDraft draft{};

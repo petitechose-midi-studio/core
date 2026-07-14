@@ -106,6 +106,6 @@ private:
     bool last_refresh_succeeded_ = true;
 };
 
-static_assert(sizeof(SequencerCcLaneRuntimeProjectSnapshot) <= 12U * 1024U);
+static_assert(sizeof(SequencerCcLaneRuntimeProjectSnapshot) <= 16U * 1024U);
 
 }  // namespace core::sequencer

@@ -14,6 +14,7 @@
 #include "handler/macro/MacroPerformanceHandler.hpp"
 #include "handler/macro/MacroValueHandler.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/macro/MacroEditorOverlay.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
@@ -90,7 +91,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
 #endif
     if (!mainZone || !macroViewScope) return;
 
-    edit_overlay_ = core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(mainZone);
+    edit_overlay_ = core::app::makeExtmemUnique<core::ui::MacroEditorOverlay>(mainZone);
     if (!edit_overlay_ || !edit_overlay_->getElement()) return;
     edit_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
         edit_overlay_->getElement(),
@@ -303,6 +304,9 @@ void MacroFeatureModule::onNoteIn() {
 }
 
 void MacroFeatureModule::update(uint32_t nowMs) {
+    if (value_handler_) {
+        value_handler_->update(nowMs);
+    }
     if (performance_handler_) {
         performance_handler_->update(nowMs);
     }

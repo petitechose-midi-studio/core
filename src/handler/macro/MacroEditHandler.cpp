@@ -51,6 +51,20 @@ core::state::contextual::ContextEntityRef slotRef(
     };
 }
 
+core::state::contextual::ContextEntityRef rowRef(
+    const core::state::macro::MacroPagesState& pages,
+    uint8_t macroIndex,
+    uint8_t row
+) {
+    auto ref = slotRef(pages, macroIndex);
+    if (row == ROW_AUTOMATION) {
+        ref.kind = core::state::contextual::ContextEntityKind::AUTOMATION_LANE;
+    } else if (row == ROW_MODULATION) {
+        ref.kind = core::state::contextual::ContextEntityKind::MODULATION_LANE;
+    }
+    return ref;
+}
+
 float clampNormalized(float value) {
     return std::clamp(value, 0.0f, 1.0f);
 }
@@ -275,6 +289,7 @@ FLASHMEM void MacroEditHandler::handleOpeningMacroRelease(uint8_t macroIndex) {
 }
 
 FLASHMEM void MacroEditHandler::closeOverlay() {
+    services_.endDepthGesture();
     commitEditedConfig();
 
     // Close any stacked macro-edit related selector first, then the main overlay.
@@ -303,6 +318,12 @@ FLASHMEM void MacroEditHandler::moveFocus(float delta) {
 
     const int current = static_cast<int>(macro_edit_.focusedRow.get());
     const int next = nav::nextWrappedIndex(delta, current, ROW_COUNT);
+    if (current == ROW_CC && next != current) {
+        commitEditedConfig();
+    }
+    if (current == ROW_MODULATION && next != current) {
+        services_.endDepthGesture();
+    }
     macro_edit_.focusedRow.set(static_cast<uint8_t>(next));
 
     configureOptForFocusedRow();
@@ -314,7 +335,6 @@ FLASHMEM void MacroEditHandler::setFocusedValue(float normalized) {
         macro_edit_, now_provider_ ? now_provider_() : 0U, true
     );
     const uint8_t row = macro_edit_.focusedRow.get();
-    if (row != ROW_CC) return;
     const int count = valueCountForRow(row);
 
     const float clamped = clampNormalized(normalized);
@@ -331,11 +351,13 @@ FLASHMEM void MacroEditHandler::openValueSelector() {
 
     const uint8_t row = macro_edit_.focusedRow.get();
     if (row == ROW_AUTOMATION) {
+        services_.endDepthGesture();
         edit.openAutomation();
         overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, true);
         return;
     }
     if (row == ROW_MODULATION) {
+        services_.endDepthGesture();
         edit.openModulation();
         overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, true);
         return;
@@ -471,15 +493,35 @@ FLASHMEM void MacroEditHandler::setValueForRow(uint8_t row, int value) {
     if (row == ROW_CC) {
         const int clamped = std::clamp(value, 0, 127);
         macro_edit_.tempCC.set(static_cast<uint8_t>(clamped));
+        return;
+    }
+
+    const uint8_t index = macro_edit_.editingIndex.get();
+    if (row == ROW_AUTOMATION && services_.automationStoredFor(index)) {
+        (void)services_.setAutomationPlayback(index, value != 0);
+    } else if (row == ROW_MODULATION && services_.modulationStoredFor(index)) {
+        const int clamped = std::clamp(value, 0, 100);
+        (void)services_.setModulationDepth(
+            index,
+            static_cast<float>(clamped) / 100.0f
+        );
     }
 }
 
 FLASHMEM int MacroEditHandler::valueForRow(uint8_t row) const {
+    const uint8_t index = macro_edit_.editingIndex.get();
+    if (row == ROW_AUTOMATION) {
+        return services_.automationPlaybackActiveFor(index) ? 1 : 0;
+    }
+    if (row == ROW_MODULATION) {
+        return static_cast<int>(services_.modulationDepth(index) * 100.0f + 0.5f);
+    }
     return static_cast<int>(macro_edit_.tempCC.get());
 }
 
 FLASHMEM int MacroEditHandler::valueCountForRow(uint8_t row) const {
-    if (row != ROW_CC) return 1;
+    if (row == ROW_AUTOMATION) return 2;
+    if (row == ROW_MODULATION) return 101;
     return 128;
 }
 
@@ -507,15 +549,32 @@ FLASHMEM void MacroEditHandler::configureOptForFocusedRow() {
     encoders_.setPosition(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT), position);
 }
 
-FLASHMEM void MacroEditHandler::copySlot() {
+FLASHMEM void MacroEditHandler::copyFocusedDomain() {
     if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
-    (void)services_.copySlot(macro_edit_.editingIndex.get());
+    const uint8_t index = macro_edit_.editingIndex.get();
+    const uint8_t row = macro_edit_.focusedRow.get();
+    if (row == ROW_CC) {
+        commitEditedConfig();
+        (void)services_.copyDestination(index);
+    } else if (row == ROW_AUTOMATION) {
+        (void)services_.copyAutomation(index);
+    } else if (row == ROW_MODULATION) {
+        services_.endDepthGesture();
+        (void)services_.copyModulation(index);
+    }
 }
 
 FLASHMEM void MacroEditHandler::beginBottomRightAction() {
     if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
     const uint8_t index = macro_edit_.editingIndex.get();
-    const auto plan = services_.preflightSlotPaste(index);
+    const uint8_t row = macro_edit_.focusedRow.get();
+    if (row == ROW_CC) commitEditedConfig();
+    if (row == ROW_MODULATION) services_.endDepthGesture();
+    const auto plan = row == ROW_CC
+        ? services_.preflightDestinationPaste(index)
+        : (row == ROW_AUTOMATION
+               ? services_.preflightAutomationPaste(index)
+               : services_.preflightModulationPaste(index));
     const auto action = plan.actionable()
         ? (plan.requiresOverwrite()
                ? core::state::contextual::ContextActionId::OVERWRITE
@@ -525,8 +584,8 @@ FLASHMEM void MacroEditHandler::beginBottomRightAction() {
         macro_edit_,
         core::state::MacroContextButton::BOTTOM_RIGHT,
         action,
-        {.kind = core::state::contextual::ContextEntityKind::MACRO_SLOT},
-        slotRef(pages_, index),
+        rowRef(pages_, index, row),
+        rowRef(pages_, index, row),
         now_provider_ ? now_provider_() : 0U,
         static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
     );
@@ -541,7 +600,7 @@ FLASHMEM void MacroEditHandler::releaseBottomRightAction() {
         nowMs
     );
     if (release == core::state::contextual::GuardedActionRelease::TAP) {
-        copySlot();
+        copyFocusedDomain();
     } else if (release ==
                core::state::contextual::GuardedActionRelease::COMMITTED) {
         commitGuardedAction(nowMs);
@@ -551,12 +610,23 @@ FLASHMEM void MacroEditHandler::releaseBottomRightAction() {
 FLASHMEM void MacroEditHandler::beginBottomLeftAction() {
     if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
     const uint8_t index = macro_edit_.editingIndex.get();
+    const uint8_t row = macro_edit_.focusedRow.get();
+    if (row == ROW_CC) commitEditedConfig();
+    if (row == ROW_MODULATION) services_.endDepthGesture();
+    const bool sourceStored = row == ROW_AUTOMATION
+        ? services_.automationStoredFor(index)
+        : (row == ROW_MODULATION && services_.modulationStoredFor(index));
+    const auto action = row == ROW_CC
+        ? core::state::contextual::ContextActionId::REMOVE
+        : (sourceStored ? core::state::contextual::ContextActionId::CLEAR
+                        : core::state::contextual::ContextActionId::NONE);
+    const auto target = rowRef(pages_, index, row);
     (void)macro::MacroGuardedActionWorkflow::begin(
         macro_edit_,
         core::state::MacroContextButton::BOTTOM_LEFT,
-        core::state::contextual::ContextActionId::REMOVE,
-        slotRef(pages_, index),
-        slotRef(pages_, index),
+        action,
+        target,
+        target,
         now_provider_ ? now_provider_() : 0U,
         static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
     );
@@ -565,11 +635,29 @@ FLASHMEM void MacroEditHandler::beginBottomLeftAction() {
 FLASHMEM void MacroEditHandler::releaseBottomLeftAction() {
     if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
     const uint32_t nowMs = now_provider_ ? now_provider_() : 0U;
-    if (macro::MacroGuardedActionWorkflow::release(
+    const auto release = macro::MacroGuardedActionWorkflow::release(
             macro_edit_,
             core::state::MacroContextButton::BOTTOM_LEFT,
             nowMs
-        ) == core::state::contextual::GuardedActionRelease::COMMITTED) {
+        );
+    if (release == core::state::contextual::GuardedActionRelease::TAP) {
+        const uint8_t index = macro_edit_.editingIndex.get();
+        const uint8_t row = macro_edit_.focusedRow.get();
+        if (row == ROW_AUTOMATION && services_.automationStoredFor(index)) {
+            (void)services_.setAutomationPlayback(
+                index,
+                !services_.automationPlaybackActiveFor(index)
+            );
+            configureOptForFocusedRow();
+        } else if (row == ROW_MODULATION &&
+                   services_.modulationStoredFor(index)) {
+            (void)services_.setModulationPlayback(
+                index,
+                !services_.modulationPlaybackActiveFor(index)
+            );
+        }
+    } else if (release ==
+               core::state::contextual::GuardedActionRelease::COMMITTED) {
         commitGuardedAction(nowMs);
     }
 }
@@ -577,30 +665,58 @@ FLASHMEM void MacroEditHandler::releaseBottomLeftAction() {
 FLASHMEM void MacroEditHandler::commitGuardedAction(uint32_t nowMs) {
     const auto feedback = macro_edit_.contextFeedback.get();
     const uint8_t index = macro_edit_.editingIndex.get();
-    if (feedback.target != slotRef(pages_, index)) {
+    const uint8_t row = macro_edit_.focusedRow.get();
+    if (feedback.target != rowRef(pages_, index, row)) {
         macro::MacroGuardedActionWorkflow::complete(macro_edit_, false, nowMs);
         return;
     }
 
     bool applied = false;
     if (feedback.action == core::state::contextual::ContextActionId::REMOVE) {
+        if (row != ROW_CC) {
+            macro::MacroGuardedActionWorkflow::complete(macro_edit_, false, nowMs);
+            return;
+        }
         applied = services_.removeSlot(index);
         macro::MacroGuardedActionWorkflow::complete(macro_edit_, applied, nowMs);
         if (applied) closeOverlay();
         return;
     }
+    if (feedback.action == core::state::contextual::ContextActionId::CLEAR) {
+        if (row == ROW_AUTOMATION) {
+            applied = services_.clearAutomation(index);
+        } else if (row == ROW_MODULATION) {
+            services_.endDepthGesture();
+            applied = services_.clearModulation(index);
+        }
+        macro::MacroGuardedActionWorkflow::complete(macro_edit_, applied, nowMs);
+        configureOptForFocusedRow();
+        return;
+    }
     if (feedback.action == core::state::contextual::ContextActionId::PASTE ||
         feedback.action == core::state::contextual::ContextActionId::OVERWRITE) {
-        const auto plan = services_.preflightSlotPaste(index);
+        const auto plan = row == ROW_CC
+            ? services_.preflightDestinationPaste(index)
+            : (row == ROW_AUTOMATION
+                   ? services_.preflightAutomationPaste(index)
+                   : services_.preflightModulationPaste(index));
         const bool matchingPlan = plan.actionable() &&
             (plan.requiresOverwrite() ==
              (feedback.action == core::state::contextual::ContextActionId::OVERWRITE));
         if (matchingPlan) {
-            applied = services_.pasteSlot(index, plan.requiresOverwrite());
-            if (applied) {
+            if (row == ROW_CC) {
+                applied = services_.pasteDestination(index, plan.requiresOverwrite());
+            } else if (row == ROW_AUTOMATION) {
+                applied = services_.pasteAutomation(index, plan.requiresOverwrite());
+            } else {
+                services_.endDepthGesture();
+                applied = services_.pasteModulation(index, plan.requiresOverwrite());
+            }
+            if (applied && row == ROW_CC) {
                 const auto& config = services_.activeConfig(index);
                 macro_edit_.loadActiveConfig(index, config.channel, config.cc);
             }
+            if (applied) configureOptForFocusedRow();
         }
     }
     macro::MacroGuardedActionWorkflow::complete(macro_edit_, applied, nowMs);

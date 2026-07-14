@@ -35,6 +35,8 @@ constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
 constexpr uint8_t kLegacyEnvelopeVersion = LEGACY_ENVELOPE_VERSION;
 constexpr uint8_t kPitchPolicyEnvelopeVersion = PITCH_POLICY_ENVELOPE_VERSION;
 constexpr uint8_t kCcLaneEnvelopeVersion = CC_LANE_ENVELOPE_VERSION;
+constexpr uint8_t kLegacyCcLaneEnvelopeVersion =
+    LEGACY_CC_LANE_ENVELOPE_VERSION;
 constexpr uint16_t kEnvelopeHeaderSize = 12;
 constexpr uint16_t kSectionHeaderSize = 10;
 constexpr uint8_t kNoTrack = 0xFF;
@@ -459,6 +461,7 @@ FLASHMEM bool isHeaderValid(const EnvelopeHeader& header, EnvelopeKind kind) {
     return header.magic == kEnvelopeMagic &&
            (header.version == kLegacyEnvelopeVersion ||
             header.version == kPitchPolicyEnvelopeVersion ||
+            header.version == kLegacyCcLaneEnvelopeVersion ||
             header.version == kCcLaneEnvelopeVersion) &&
            header.kind == static_cast<uint8_t>(kind) &&
            header.headerSize == kEnvelopeHeaderSize &&
@@ -530,7 +533,7 @@ FLASHMEM bool findSections(const uint8_t* data,
                     if (!assignSectionView(graph.cycleSets, view)) return false;
                     break;
                 case SectionId::CcLaneBank:
-                    if (header.version < kCcLaneEnvelopeVersion ||
+                    if (header.version < kLegacyCcLaneEnvelopeVersion ||
                         !assignSectionView(graph.ccLaneBank, view)) {
                         return false;
                     }
@@ -744,12 +747,19 @@ FLASHMEM bool decodeCcLaneSection(
 ) {
     out.reset();
     if (sections.ccLaneBank.data == nullptr) return true;
-    if (envelopeVersion < kCcLaneEnvelopeVersion ||
+    const bool supportedRecord = sectionHasExactRecordShape(
+        sections.ccLaneBank,
+        SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    ) || sectionHasExactRecordShape(
+        sections.ccLaneBank,
+        LEGACY_V2_SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    ) || sectionHasExactRecordShape(
+        sections.ccLaneBank,
+        LEGACY_SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    );
+    if (envelopeVersion < kLegacyCcLaneEnvelopeVersion ||
         sections.ccLaneBank.count != 1 ||
-        !sectionHasExactRecordShape(
-            sections.ccLaneBank,
-            SEQUENCER_CC_LANE_BANK_RECORD_SIZE
-        )) {
+        !supportedRecord) {
         return false;
     }
 

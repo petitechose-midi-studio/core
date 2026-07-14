@@ -16,8 +16,8 @@ namespace core::handler {
  *
  * It rebuilds one complete active-page Macro frame for every publication so
  * duplicate destinations are resolved together. Computed values are staged by
- * MacroAutomationPlaybackService; Manual keeps both its live value and the
- * staged computed contribution visible when an automation lane is overridden.
+ * MacroAutomationPlaybackService. Manual takeover is resolved as
+ * Base + Modulation before publication, so Modulation remains audible.
  */
 class MacroMidiCcRuntimeAdapter final {
 public:
@@ -43,7 +43,7 @@ public:
     /** Publishes the staged automation frame as Live runtime output. */
     MidiCcGlobalFrameResult publishComputedFrame();
 
-    /** Publishes one immediate encoder/manual movement with highest priority. */
+    /** Publishes one immediate already-resolved encoder/manual movement. */
     MidiCcGlobalFrameResult publishLiveManual(uint8_t macroIndex, uint8_t value);
 
     static constexpr uint16_t stableAddress(

@@ -269,7 +269,7 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     auto props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(props.automationStored && props.automationActive);
     assert(props.modulationStored && props.modulationActive);
-    assert(!props.modulationPaused && !props.modulationSuspended);
+    assert(!props.modulationPaused);
 
     slot.automation.playbackState =
         core::state::macro::MacroCurvePlaybackState::OFF;
@@ -280,7 +280,19 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     state.macroUi.automationManualOverrideMask.set(0x0001);
     props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(props.automationStored && !props.automationActive);
-    assert(props.modulationStored && !props.modulationActive);
+    assert(props.modulationStored && props.modulationActive);
+
+    core::state::macro::MacroResolvedValue projection{};
+    projection.base = 0.4f;
+    projection.modulation = 0.2f;
+    projection.resolved = 0.6f;
+    projection.modulationActive = true;
+    state.macroUi.setRuntimeProjection(0, projection, 0.75f);
+    props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
+    assert(std::fabs(props.baseValue - 0.4f) < 0.0001f);
+    assert(std::fabs(props.modulationDelta - 0.2f) < 0.0001f);
+    assert(std::fabs(props.value - 0.6f) < 0.0001f);
+    assert(std::fabs(props.modulationDepth - 0.75f) < 0.0001f);
 
     state.macroUi.automationManualOverrideMask.set(0);
     slot.modulation.playbackState =
@@ -288,11 +300,51 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(props.modulationStored);
     assert(!props.modulationActive);
-    assert(props.modulationSuspended);
 
     std::cout
         << "[PASS] "
         << "test_macro_grid_distinguishes_stored_playback_modulation_and_manual\n";
+}
+
+void test_runtime_projection_revision_targets_one_macro_or_all() {
+    CoreStorages storage;
+    core::state::CoreState state(
+        storage.settings,
+        storage.macroLibrary,
+        storage.sequencerPatternLibrary,
+        storage.sequencerSetLibrary
+    );
+
+    core::state::macro::MacroResolvedValue projection{};
+    projection.base = 0.25f;
+    projection.resolved = 0.25f;
+    state.macroUi.setRuntimeProjection(3, projection, 0.0f);
+
+    const uint32_t slotRevision =
+        state.macroUi.runtimeProjectionRevision.get();
+    assert(!core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
+        slotRevision
+    ));
+    assert(core::state::macro::macroRuntimeProjectionRevisionDirtyIndex(
+        slotRevision
+    ) == 3);
+
+    state.macroUi.setRuntimeProjection(3, projection, 0.0f);
+    assert(state.macroUi.runtimeProjectionRevision.get() == slotRevision);
+
+    state.macroUi.clearRuntimeProjections();
+    const uint32_t clearRevision =
+        state.macroUi.runtimeProjectionRevision.get();
+    assert(core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
+        clearRevision
+    ));
+    assert(core::state::macro::macroRuntimeProjectionRevisionDirtyIndex(
+        clearRevision
+    ) == -1);
+
+    std::cout
+        << "[PASS] "
+        << "test_runtime_projection_revision_targets_one_macro_or_all\n";
 }
 
 }  // namespace
@@ -304,6 +356,7 @@ int main() {
     test_macro_selection_delete_strip_projects_guard_lifecycle();
     test_macro_selection_delete_strip_projects_disabled_and_applied();
     test_macro_grid_distinguishes_stored_playback_modulation_and_manual();
+    test_runtime_projection_revision_targets_one_macro_or_all();
     std::cout << "\nAll MacroViewModelBuilder tests passed.\n";
     return 0;
 }

@@ -62,8 +62,7 @@ private:
     void navigate(float delta);
     void setActiveVariationRange(float normalized);
     void configureOptForSelectedProperty();
-    void enterCcLaneSelector();
-    void enterCcLaneShortcut();
+    void applySelectedCcLaneProperty(int selectedIndex);
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;
@@ -81,6 +80,7 @@ private:
     oc::note::sequencer::StepSequencerVariationRanges snapshot_variation_ranges_{};
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     bool history_snapshot_valid_ = false;
+    bool restore_cc_lane_on_cancel_ = false;
 };
 
 }  // namespace core::handler

@@ -4,11 +4,13 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
+#include "ui/macro/MacroEditorOverlay.hpp"
+
 namespace core::context::standalone {
 
 FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
     StateRefs stateRefs,
-    ms::ui::VirtualListKeyValueOverlay& macroEditOverlay,
+    core::ui::MacroEditorOverlay& macroEditOverlay,
     ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
     core::ui::ContextActionStrip& macroEditActionStrip,
     core::ui::ContextActionStrip& macroAutomationActionStrip,
@@ -89,16 +91,19 @@ FLASHMEM void MacroOverlayPresenter::renderEdit() {
         return;
     }
 
-    const auto data = macro_overlay_presenter::buildEditRenderData(state_refs_);
+    macro_overlay_presenter::buildEditRenderData(state_refs_, edit_render_data_);
+    const auto& data = edit_render_data_;
 
     macro_edit_overlay_.render({
+        .visible = true,
         .title = data.title.data(),
         .meta = data.meta.data(),
-        .rows = data.rows.data(),
-        .rowCount = data.rowCount,
-        .selectedIndex = data.selectedIndex,
-        .dimUnselected = false,
-        .visible = true,
+        .destination = data.valueBuffers[0].data(),
+        .automation = data.valueBuffers[1].data(),
+        .modulation = data.valueBuffers[2].data(),
+        .selectedDomain = data.selectedIndex,
+        .preview = &data.preview,
+        .previewRevision = data.previewRevision,
         .dataRevision = data.dataRevision,
     });
     macro_edit_action_strip_.render(

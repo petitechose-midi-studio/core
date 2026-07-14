@@ -135,6 +135,73 @@ void testMutationsAreStrictAndAtomic() {
     assert(std::memcmp(&bank, &rangedStable, sizeof(bank)) == 0);
 }
 
+void testTransitionsAreOwnedByEventsAndInterpolateAtMusicalTicks() {
+    assert(seq::interpolateSequencerCcLaneValue(
+        0, 100, seq::SequencerCcLaneTransition::HOLD, 0.5f
+    ) == 0);
+    assert(seq::interpolateSequencerCcLaneValue(
+        0, 100, seq::SequencerCcLaneTransition::LINEAR, 0.5f
+    ) == 50);
+    assert(seq::interpolateSequencerCcLaneValue(
+        0, 100, seq::SequencerCcLaneTransition::EASE_IN, 0.5f
+    ) == 25);
+    assert(seq::interpolateSequencerCcLaneValue(
+        0, 100, seq::SequencerCcLaneTransition::EASE_OUT, 0.5f
+    ) == 75);
+    assert(seq::interpolateSequencerCcLaneValue(
+        0, 100, seq::SequencerCcLaneTransition::EASE_IN_OUT, 0.25f
+    ) == 16);
+
+    RuntimeFixture h;
+    createWithEvent(h.banks[0], 0, 74, 0, 0);
+    assert(seq::setSequencerCcLaneEvent(h.banks[0], 0, 2, 100).changed());
+    assert(seq::sequencerCcLaneTransition(h.banks[0].lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::HOLD);
+    assert(seq::setSequencerCcLaneTransition(
+        h.banks[0], 0, 0, seq::SequencerCcLaneTransition::LINEAR
+    ).changed());
+
+    h.inputs[0].patternLength = 4;
+    h.inputs[0].ticksPerStep = 4;
+    h.inputs[0].tickInStep = 0;
+    h.inputs[0].step = 0;
+    h.inputs[0].stepTriggered = true;
+    auto frame = h.tick();
+    assert(frame.candidates[0].localValue == 0);
+
+    h.inputs[0].step = 1;
+    h.inputs[0].tickInStep = 0;
+    h.inputs[0].stepTriggered = false;
+    frame = h.tick();
+    assert(frame.candidates[0].localValue == 50);
+    assert(frame.contributions[0].valueChangedThisTick);
+
+    assert(seq::setSequencerCcLaneTransition(
+        h.banks[0], 0, 0, seq::SequencerCcLaneTransition::EASE_IN
+    ).changed());
+    h.runtime.resetProject();
+    h.inputs[0].step = 0;
+    h.inputs[0].stepTriggered = true;
+    (void)h.tick();
+    h.inputs[0].step = 1;
+    h.inputs[0].stepTriggered = false;
+    frame = h.tick();
+    assert(frame.candidates[0].localValue == 25);
+
+    // Three-bit packing is exercised on steps whose field crosses a byte.
+    assert(seq::setSequencerCcLaneTransition(
+        h.banks[0], 0, 2, seq::SequencerCcLaneTransition::EASE_IN_OUT
+    ).changed());
+    assert(seq::sequencerCcLaneTransition(h.banks[0].lanes[0], 2) ==
+           seq::SequencerCcLaneTransition::EASE_IN_OUT);
+    assert(seq::sequencerCcLaneTransition(h.banks[0].lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::EASE_IN);
+
+    assert(seq::clearSequencerCcLaneEvent(h.banks[0], 0, 0).changed());
+    assert(seq::sequencerCcLaneTransition(h.banks[0].lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::HOLD);
+}
+
 void testFourLaneCapacityAndCanonicalDecode() {
     seq::SequencerCcLaneBank bank{};
     for (uint8_t lane = 0; lane < seq::SequencerCcLaneBank::MAX_LANES; ++lane) {
@@ -479,7 +546,7 @@ void testWorstCase64LanesAndResolverPriority() {
     assert(resolved.destinations[0].loserCount == 2);
 
     assert(sizeof(core::sequencer::SequencerCcLaneRuntime) <= 4096U);
-    assert(sizeof(seq::SequencerCcLaneBank) <= 656U);
+    assert(sizeof(seq::SequencerCcLaneBank) <= 848U);
 }
 
 }  // namespace
@@ -487,6 +554,7 @@ void testWorstCase64LanesAndResolverPriority() {
 int main() {
     testCreateIsSilentAndInitialIsEditProposal();
     testMutationsAreStrictAndAtomic();
+    testTransitionsAreOwnedByEventsAndInterpolateAtMusicalTicks();
     testFourLaneCapacityAndCanonicalDecode();
     testInheritedPinnedAndNoRouteResolution();
     testGlobalDuplicatePreflightAcrossAllPatterns();

@@ -10,6 +10,7 @@
 
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 
 namespace core::ui::sequencer {
 
@@ -131,7 +132,11 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
 
     const bool microContext = core::state::sequencer::isMicroSequenceContentView(sequencer);
     const bool cycleContext = core::state::sequencer::isCycleStatesContentView(sequencer);
-    const char* leftText = microContext
+    const bool ccLaneGrid = sequencer.ccLaneUi.mode ==
+        core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID;
+    const char* leftText = ccLaneGrid
+        ? "CC lane"
+        : microContext
         ? "Micro"
         : (cycleContext
                ? "Cycle"
@@ -139,7 +144,22 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                       ? "Step"
                       : ((selectingTrack || focusingTrack) ? "Track" : "Pattern")));
     std::array<char, 12> badgeText{};
-    if (!source.trackNavigation.selection.active.get() &&
+    if (ccLaneGrid) {
+        const auto* bank =
+            core::state::sequencer::sequencerCcLaneView(sequencer.pattern);
+        if (bank != nullptr && sequencer.ccLaneUi.focusedLane < bank->lanes.size() &&
+            bank->lanes[sequencer.ccLaneUi.focusedLane].occupied) {
+            std::snprintf(
+                badgeText.data(),
+                badgeText.size(),
+                "%u",
+                static_cast<unsigned>(
+                    bank->lanes[sequencer.ccLaneUi.focusedLane]
+                        .destination.controller
+                )
+            );
+        }
+    } else if (!source.trackNavigation.selection.active.get() &&
         !sequencer.structureUi.pageSelection.active.get() &&
         !sequencer.structureUi.stepSelection.active.get()) {
         const char* badge = clipboardBadge(source.structureClipboard);

@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
+#include "handler/macro/MacroAutomationTiming.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
 
@@ -12,7 +13,6 @@ namespace core::handler {
 
 namespace {
 
-constexpr uint32_t UPDATE_PERIOD_MS = 16;
 constexpr uint8_t INVALID_CC_VALUE = 0xFF;
 
 }  // namespace
@@ -72,14 +72,7 @@ void MacroAutomationPlaybackService::invalidateComputedRuntime_() {
 void MacroAutomationPlaybackService::syncActivePageRuntimeProjection_(uint8_t track,
                                                                        uint8_t page) {
     macro_ui_.refreshManualOverrideMask(track, page);
-    // Page/Track sync projects the persisted base into MacroState. Restore the
-    // runtime-only Manual value when returning to an overridden slot.
-    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        float manualValue = 0.0f;
-        if (services_.manualOverrideValueFor(i, manualValue)) {
-            services_.setResolvedValue(i, manualValue);
-        }
-    }
+    macro_ui_.clearRuntimeProjections();
 }
 
 void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_(uint32_t nowMs) {
@@ -127,7 +120,7 @@ void MacroAutomationPlaybackService::updatePlaybackBeat_(uint32_t nowMs) {
 void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     if (update_scheduled_ && !oc::time::deadlineReachedMs(nowMs, next_due_ms_)) return;
     update_scheduled_ = true;
-    next_due_ms_ = nowMs + UPDATE_PERIOD_MS;
+    next_due_ms_ = nowMs + macro::MACRO_AUTOMATION_UPDATE_PERIOD_MS;
     OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
 
     consumeRuntimeOwnerActivation_(nowMs);
@@ -151,53 +144,53 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             sent_cc_values_[i] = INVALID_CC_VALUE;
             continue;
         }
-        if (macro_ui_.automationRecording.active &&
+        const bool recording = macro_ui_.automationRecording.active &&
             macro_ui_.automationRecording.address.track == track &&
             macro_ui_.automationRecording.address.page == page &&
-            macro_ui_.automationRecording.address.macro == i) {
-            sent_cc_values_[i] = INVALID_CC_VALUE;
-            continue;
-        }
+            macro_ui_.automationRecording.address.macro == i;
         const auto address = core::state::macro::MacroAutomationSlotAddress{
             .track = track,
             .page = page,
             .macro = i,
         };
         const auto* slot = core::state::macro::macroAutomationFindSlot(pages_.automation, address);
-        if (slot == nullptr ||
-            (!core::state::macro::macroCurvePlaybackActive(slot->automation) &&
-             !core::state::macro::macroCurvePlaybackActive(slot->modulation))) {
+        if (slot == nullptr && !recording) {
             sent_cc_values_[i] = INVALID_CC_VALUE;
             continue;
         }
 
-        const auto resolved = core::state::macro::macroResolveValue(
-            std::clamp(pageData.values[i], 0.0f, 1.0f),
-            *slot,
-            pages_.automation.pointPool,
-            playback_beat_
-        );
-        const uint8_t ccValue = core::midi::toCC(resolved.resolved);
+        const core::state::macro::MacroAutomationSlotState emptySlot{};
+        const auto& resolvedSlot = slot != nullptr ? *slot : emptySlot;
+        float absoluteBase = std::clamp(pageData.values[i], 0.0f, 1.0f);
         float manualValue = 0.0f;
         const bool manualOverride = services_.manualOverrideValueFor(i, manualValue);
-        if (midi_runtime_ != nullptr) {
-            (void)midi_runtime_->setComputedValue(i, ccValue);
-            services_.setResolvedValue(
-                i,
-                manualOverride ? manualValue : core::midi::fromCC(ccValue)
-            );
-            continue;
-        }
-
-        if (manualOverride) {
-            services_.setResolvedValue(i, manualValue);
+        const bool hasActiveSource = slot != nullptr &&
+            (core::state::macro::macroCurvePlaybackActive(slot->automation) ||
+             core::state::macro::macroCurvePlaybackActive(slot->modulation));
+        if (!recording && !manualOverride && !hasActiveSource) {
             sent_cc_values_[i] = INVALID_CC_VALUE;
             continue;
         }
+        if (recording || manualOverride) {
+            absoluteBase = services_.absoluteBaseValue(i);
+        }
+        const auto resolved = core::state::macro::macroResolveValue(
+            absoluteBase,
+            resolvedSlot,
+            pages_.automation.pointPool,
+            playback_beat_,
+            !recording && !manualOverride
+        );
+        const uint8_t ccValue = core::midi::toCC(resolved.resolved);
+        services_.setResolvedValue(i, resolved);
+        if (midi_runtime_ != nullptr) {
+            (void)midi_runtime_->setComputedValue(i, ccValue);
+            continue;
+        }
+
         if (sent_cc_values_[i] == ccValue) continue;
         if (direct_midi_fallback_ == nullptr) continue;
 
-        services_.setResolvedValue(i, core::midi::fromCC(ccValue));
         const auto& config = services_.activeConfig(i);
         direct_midi_fallback_->sendCC(config.channel, config.cc, ccValue);
         services_.pulseCcOut();

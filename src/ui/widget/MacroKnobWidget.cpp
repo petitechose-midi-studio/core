@@ -9,8 +9,6 @@
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
-#include "ui/font/StandaloneFonts.hpp"
-#include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
@@ -18,7 +16,6 @@ namespace core::ui {
 namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 namespace stheme = standalone::theme;
-namespace icons = standalone::icons;
 
 namespace {
 
@@ -28,21 +25,21 @@ constexpr int16_t KNOB_END_ANGLE = 45;
 constexpr float KNOB_ARC_WIDTH_RATIO = 0.11f;
 constexpr lv_coord_t KNOB_MIN_ARC_WIDTH = 3;
 constexpr lv_coord_t KNOB_EDGE_PAD = 2;
+constexpr lv_coord_t KNOB_RAIL_RESERVE = 2;
 constexpr lv_opa_t KNOB_BACKGROUND_OPA = LV_OPA_60;
 constexpr uint16_t INVALID_VALUE_ANGLE = 0xFFFF;
+constexpr lv_coord_t MODULATION_RAIL_WIDTH = 2;
+constexpr uint16_t MODULATION_IDLE_MARK_DEGREES = 6;
 
 uint32_t automationTrackColor(bool slotActive,
                               bool automationActive,
-                              bool modulationActive,
                               bool automationRecording,
                               bool manualOverride) {
     if (!slotActive) return theme::color::KNOB_VALUE;
     if (automationRecording) return stheme::color::MACRO_AUTOMATION_RECORDING;
     if (manualOverride) return stheme::color::MACRO_AUTOMATION_MANUAL;
     if (automationActive) return stheme::color::MACRO_AUTOMATION;
-    return modulationActive
-        ? stheme::color::MACRO_MODULATION
-        : theme::color::KNOB_VALUE;
+    return theme::color::KNOB_VALUE;
 }
 
 float clampNormalized(float value) {
@@ -53,6 +50,53 @@ uint16_t valueAngle(float value) {
     return static_cast<uint16_t>(
         std::round(KNOB_START_ANGLE + clampNormalized(value) * KNOB_ARC_SWEEP_DEGREES)
     );
+}
+
+FLASHMEM void drawRadialTick(
+    lv_layer_t* layer,
+    lv_point_t center,
+    uint16_t radius,
+    lv_coord_t arcWidth,
+    uint16_t angle,
+    uint32_t color,
+    lv_opa_t opacity
+) {
+    const int16_t normalizedAngle = static_cast<int16_t>(angle % 360U);
+    const int32_t cosAngle = lv_trigo_cos(normalizedAngle);
+    const int32_t sinAngle = lv_trigo_sin(normalizedAngle);
+    const int32_t halfWidth = arcWidth / 2;
+    const int32_t innerRadius = std::max<int32_t>(
+        0,
+        static_cast<int32_t>(radius) - halfWidth - 1
+    );
+    const int32_t outerRadius = static_cast<int32_t>(radius) + halfWidth + 1;
+    lv_point_precise_t points[2] = {
+        {
+            static_cast<lv_value_precise_t>(
+                center.x + ((cosAngle * innerRadius) >> LV_TRIGO_SHIFT)
+            ),
+            static_cast<lv_value_precise_t>(
+                center.y + ((sinAngle * innerRadius) >> LV_TRIGO_SHIFT)
+            ),
+        },
+        {
+            static_cast<lv_value_precise_t>(
+                center.x + ((cosAngle * outerRadius) >> LV_TRIGO_SHIFT)
+            ),
+            static_cast<lv_value_precise_t>(
+                center.y + ((sinAngle * outerRadius) >> LV_TRIGO_SHIFT)
+            ),
+        },
+    };
+    lv_draw_line_dsc_t lineDsc;
+    lv_draw_line_dsc_init(&lineDsc);
+    lineDsc.base.layer = layer;
+    lineDsc.points = points;
+    lineDsc.point_cnt = 2;
+    lineDsc.width = 1;
+    lineDsc.color = lv_color_hex(color);
+    lineDsc.opa = opacity;
+    lv_draw_line(layer, &lineDsc);
 }
 
 }  // namespace
@@ -71,8 +115,6 @@ MacroKnobWidget::~MacroKnobWidget() {
     knob_ = nullptr;
     config_label_container_ = nullptr;
     add_label_ = nullptr;
-    automation_source_label_ = nullptr;
-    modulation_source_label_ = nullptr;
 }
 
 FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
@@ -92,7 +134,6 @@ FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
     track_color_ = theme::color::KNOB_VALUE;
 
     createConfigLabels();
-    createSourceIndicators();
 
     add_label_ = lv_label_create(container_);
     if (!add_label_) return;
@@ -105,24 +146,6 @@ FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
     lv_obj_add_flag(add_label_, LV_OBJ_FLAG_FLOATING);
     lv_obj_center(add_label_);
     lv_obj_add_flag(add_label_, LV_OBJ_FLAG_HIDDEN);
-}
-
-FLASHMEM void MacroKnobWidget::createSourceIndicators() {
-    if (!container_) return;
-    const auto create = [this](const char* text, lv_coord_t x) {
-        lv_obj_t* label = lv_label_create(container_);
-        if (!label) return static_cast<lv_obj_t*>(nullptr);
-        lv_label_set_text(label, text);
-        if (fonts.inter_12_medium) {
-            lv_obj_set_style_text_font(label, fonts.inter_12_medium, 0);
-        }
-        lv_obj_add_flag(label, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(label, LV_ALIGN_TOP_RIGHT, x, 1);
-        lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
-        return label;
-    };
-    automation_source_label_ = create("A", -15);
-    modulation_source_label_ = create("M", -3);
 }
 
 FLASHMEM void MacroKnobWidget::createContainer(lv_obj_t* parent) {
@@ -147,11 +170,10 @@ FLASHMEM void MacroKnobWidget::createConfigLabels() {
     style::apply(config_label_container_).transparent().noScroll();
     lv_obj_set_size(config_label_container_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_add_flag(config_label_container_, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(config_label_container_, LV_ALIGN_CENTER, 0, 6);
+    lv_obj_align(config_label_container_, LV_ALIGN_BOTTOM_MID, 0, -2);
     lv_obj_set_layout(config_label_container_, LV_LAYOUT_GRID);
 
-    static constexpr lv_coord_t COL_WIDTH = 18;
-    static const int32_t colDsc[] = {COL_WIDTH, COL_WIDTH, LV_GRID_TEMPLATE_LAST};
+    static const int32_t colDsc[] = {20, 24, LV_GRID_TEMPLATE_LAST};
     static const int32_t rowDsc[] = {LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(config_label_container_, colDsc, rowDsc);
     lv_obj_set_style_pad_column(config_label_container_, 2, 0);
@@ -163,10 +185,10 @@ FLASHMEM void MacroKnobWidget::createConfigLabels() {
         .autoScroll(false)
         .ownsLvglObjects(false);
     style::apply(cc_prefix_->getElement()).textOpa(stheme::color::MACRO_PREFIX_OPA);
-    if (standalone_fonts.icons_12) {
-        cc_prefix_->font(standalone_fonts.icons_12);
+    if (fonts.inter_12_medium) {
+        cc_prefix_->font(fonts.inter_12_medium);
     }
-    cc_prefix_->setText(icons::MIDI_CC);
+    cc_prefix_->setText("CC");
     lv_obj_set_grid_cell(
         cc_prefix_->getElement(),
         LV_GRID_ALIGN_STRETCH, 0, 1,
@@ -199,6 +221,58 @@ void MacroKnobWidget::setValue(float value) {
     invalidateArcDelta(previousAngle, nextAngle);
 }
 
+void MacroKnobWidget::setResolvedComponents(
+    float baseValue,
+    float modulationDelta,
+    float modulationDepth,
+    float resolvedValue,
+    bool clippedLow,
+    bool clippedHigh
+) {
+    const uint16_t previousBaseAngle = valueAngle(base_value_);
+    const uint16_t previousOutputAngle = rendered_value_angle_ == INVALID_VALUE_ANGLE
+        ? valueAngle(current_value_)
+        : rendered_value_angle_;
+    const bool previousClipped = clipped_low_ || clipped_high_;
+    const float nextBase = clampNormalized(baseValue);
+    const float nextDelta = std::clamp(modulationDelta, -1.0f, 1.0f);
+    const float nextDepth = clampNormalized(modulationDepth);
+    const float nextOutput = clampNormalized(resolvedValue);
+    const uint16_t nextBaseAngle = valueAngle(nextBase);
+    const uint16_t nextOutputAngle = valueAngle(nextOutput);
+    const bool nextClipped = clippedLow || clippedHigh;
+
+    base_value_ = nextBase;
+    modulation_delta_ = nextDelta;
+    modulation_depth_ = nextDepth;
+    clipped_low_ = clippedLow;
+    clipped_high_ = clippedHigh;
+    current_value_ = nextOutput;
+    rendered_value_angle_ = nextOutputAngle;
+
+    if (!knob_ || lv_obj_has_flag(knob_, LV_OBJ_FLAG_HIDDEN)) return;
+
+    if (modulation_active_) {
+        if (previousBaseAngle != nextBaseAngle) {
+            invalidateArcDelta(previousBaseAngle, nextBaseAngle);
+        }
+        if (previousBaseAngle != nextBaseAngle ||
+            previousOutputAngle != nextOutputAngle ||
+            previousClipped != nextClipped) {
+            invalidateRailRange(
+                std::min(previousBaseAngle, previousOutputAngle),
+                std::max(previousBaseAngle, previousOutputAngle)
+            );
+            invalidateRailRange(
+                std::min(nextBaseAngle, nextOutputAngle),
+                std::max(nextBaseAngle, nextOutputAngle)
+            );
+        }
+    } else if (previousOutputAngle != nextOutputAngle) {
+        invalidateArcDelta(previousOutputAngle, nextOutputAngle);
+    }
+}
+
 void MacroKnobWidget::setConfig(uint8_t cc) {
     if (!cc_value_ || current_cc_ == cc) return;
     cc_value_->setText(static_cast<int>(cc));
@@ -208,7 +282,6 @@ void MacroKnobWidget::setConfig(uint8_t cc) {
 void MacroKnobWidget::setAutomationActive(bool active) {
     if (!knob_ || automation_active_ == active) return;
     automation_active_ = active;
-    updateSourceIndicators();
     updateAutomationTrackColor();
 }
 
@@ -229,8 +302,7 @@ void MacroKnobWidget::setSourceIndicators(
     bool automationActive,
     bool modulationStored,
     bool modulationActive,
-    bool modulationPaused,
-    bool modulationSuspended
+    bool modulationPaused
 ) {
     const bool arcChanged = automation_active_ != automationActive ||
         modulation_active_ != modulationActive;
@@ -238,17 +310,25 @@ void MacroKnobWidget::setSourceIndicators(
         automation_active_ != automationActive ||
         modulation_stored_ != modulationStored ||
         modulation_active_ != modulationActive ||
-        modulation_paused_ != modulationPaused ||
-        modulation_suspended_ != modulationSuspended;
+        modulation_paused_ != modulationPaused;
     if (!visualChanged) return;
     automation_stored_ = automationStored;
     automation_active_ = automationActive;
     modulation_stored_ = modulationStored;
     modulation_active_ = modulationActive;
     modulation_paused_ = modulationPaused;
-    modulation_suspended_ = modulationSuspended;
-    updateSourceIndicators();
-    if (arcChanged) updateAutomationTrackColor();
+    if (arcChanged) {
+        updateAutomationTrackColor();
+        const uint16_t baseAngle = valueAngle(base_value_);
+        const uint16_t outputAngle = rendered_value_angle_ == INVALID_VALUE_ANGLE
+            ? valueAngle(current_value_)
+            : rendered_value_angle_;
+        invalidateArcRange(baseAngle, outputAngle);
+        invalidateRailRange(
+            std::min(baseAngle, outputAngle),
+            std::max(baseAngle, outputAngle)
+        );
+    }
 }
 
 void MacroKnobWidget::setSlotState(bool active, bool addSlot) {
@@ -269,49 +349,12 @@ void MacroKnobWidget::updateAutomationTrackColor() {
     const uint32_t nextColor = automationTrackColor(
         slot_active_,
         automation_active_,
-        modulation_active_,
         automation_recording_,
         automation_manual_override_
     );
     if (track_color_ == nextColor) return;
     track_color_ = nextColor;
     invalidateValueArc();
-}
-
-void MacroKnobWidget::updateSourceIndicators() {
-    if (!automation_source_label_ || !modulation_source_label_) return;
-    const auto render = [this](
-        lv_obj_t* label,
-        bool stored,
-        uint32_t color,
-        lv_opa_t opacity
-    ) {
-        if (!slot_active_ || !stored) {
-            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
-            return;
-        }
-        lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
-        lv_obj_set_style_text_opa(label, opacity, 0);
-        lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
-    };
-    render(
-        automation_source_label_,
-        automation_stored_,
-        stheme::color::MACRO_AUTOMATION,
-        automation_active_ ? LV_OPA_COVER : LV_OPA_40
-    );
-    render(
-        modulation_source_label_,
-        modulation_stored_,
-        modulation_suspended_
-            ? stheme::color::MACRO_SUSPENDED
-            : (modulation_paused_
-                ? stheme::color::MACRO_PAUSED
-                : stheme::color::MACRO_MODULATION),
-        (modulation_active_ || modulation_paused_ || modulation_suspended_)
-            ? LV_OPA_COVER
-            : LV_OPA_40
-    );
 }
 
 void MacroKnobWidget::updateFocusFrame() {
@@ -335,7 +378,6 @@ void MacroKnobWidget::updateSlotVisibility() {
     }
 
     setConfigLabelsVisible(slot_active_);
-    updateSourceIndicators();
 
     if (!add_label_) return;
     if (!slot_active_ && add_slot_) {
@@ -371,7 +413,12 @@ bool MacroKnobWidget::buildArcGeometry(ArcGeometry& geometry) const {
         static_cast<lv_coord_t>(std::round(static_cast<float>(size) * KNOB_ARC_WIDTH_RATIO))
     );
     const lv_coord_t radius = static_cast<lv_coord_t>(
-        std::max<lv_coord_t>(1, static_cast<lv_coord_t>(size / 2 - arcWidth / 2 - KNOB_EDGE_PAD))
+        std::max<lv_coord_t>(
+            1,
+            static_cast<lv_coord_t>(
+                size / 2 - arcWidth / 2 - KNOB_EDGE_PAD - KNOB_RAIL_RESERVE
+            )
+        )
     );
 
     geometry.center = lv_point_t{
@@ -386,9 +433,11 @@ bool MacroKnobWidget::buildArcGeometry(ArcGeometry& geometry) const {
 void MacroKnobWidget::invalidateValueArc() {
     if (!knob_ || lv_obj_has_flag(knob_, LV_OBJ_FLAG_HIDDEN)) return;
 
-    const uint16_t angle = rendered_value_angle_ == INVALID_VALUE_ANGLE
-        ? valueAngle(current_value_)
-        : rendered_value_angle_;
+    const uint16_t angle = modulation_active_
+        ? valueAngle(base_value_)
+        : (rendered_value_angle_ == INVALID_VALUE_ANGLE
+            ? valueAngle(current_value_)
+            : rendered_value_angle_);
     invalidateArcRange(KNOB_START_ANGLE, angle);
 }
 
@@ -402,22 +451,69 @@ void MacroKnobWidget::invalidateArcRange(lv_value_precise_t startAngle, lv_value
         return;
     }
 
-    if (startAngle > endAngle) {
-        std::swap(startAngle, endAngle);
+    invalidateArcRangeAt(
+        startAngle,
+        endAngle,
+        geometry.radius,
+        geometry.width
+    );
+}
+
+FLASHMEM void MacroKnobWidget::invalidateArcRangeAt(
+    lv_value_precise_t startAngle,
+    lv_value_precise_t endAngle,
+    uint16_t radius,
+    lv_coord_t width
+) {
+    if (!knob_ || lv_obj_has_flag(knob_, LV_OBJ_FLAG_HIDDEN)) return;
+
+    ArcGeometry geometry;
+    if (!buildArcGeometry(geometry)) {
+        lv_obj_invalidate(knob_);
+        return;
+    }
+
+    if (startAngle > endAngle) std::swap(startAngle, endAngle);
+    if (startAngle == endAngle) {
+        if (endAngle < KNOB_START_ANGLE + KNOB_ARC_SWEEP_DEGREES) {
+            endAngle += MODULATION_IDLE_MARK_DEGREES;
+        } else {
+            startAngle -= MODULATION_IDLE_MARK_DEGREES;
+        }
     }
 
     lv_area_t area{};
     lv_draw_arc_get_area(
         geometry.center.x,
         geometry.center.y,
-        geometry.radius,
+        radius,
         startAngle,
         endAngle,
-        geometry.width,
+        width,
         true,
         &area
     );
     oc::ui::lvgl::invalidateStaticSurfaceArea(knob_, area);
+}
+
+FLASHMEM void MacroKnobWidget::invalidateRailRange(
+    lv_value_precise_t startAngle,
+    lv_value_precise_t endAngle
+) {
+    ArcGeometry geometry;
+    if (!buildArcGeometry(geometry)) {
+        if (knob_) lv_obj_invalidate(knob_);
+        return;
+    }
+    const uint16_t railRadius = static_cast<uint16_t>(
+        geometry.radius + geometry.width / 2 + MODULATION_RAIL_WIDTH
+    );
+    invalidateArcRangeAt(
+        startAngle,
+        endAngle,
+        railRadius,
+        static_cast<lv_coord_t>(MODULATION_RAIL_WIDTH + 2)
+    );
 }
 
 void MacroKnobWidget::invalidateArcDelta(uint16_t previousAngle, uint16_t nextAngle) {
@@ -428,7 +524,7 @@ void MacroKnobWidget::invalidateArcDelta(uint16_t previousAngle, uint16_t nextAn
     invalidateArcRange(previousAngle, nextAngle);
 }
 
-void MacroKnobWidget::drawArc(lv_layer_t* layer, lv_obj_t* target) const {
+FLASHMEM void MacroKnobWidget::drawArc(lv_layer_t* layer, lv_obj_t* target) const {
     if (!layer || !target) return;
 
     ArcGeometry geometry;
@@ -448,14 +544,54 @@ void MacroKnobWidget::drawArc(lv_layer_t* layer, lv_obj_t* target) const {
     arcDsc.end_angle = KNOB_END_ANGLE;
     lv_draw_arc(layer, &arcDsc);
 
+    const uint16_t baseAngle = valueAngle(base_value_);
+    const uint16_t outputAngle = rendered_value_angle_ == INVALID_VALUE_ANGLE
+        ? valueAngle(current_value_)
+        : rendered_value_angle_;
+    // Absolute Base is the neutral/Automation component.
     arcDsc.color = lv_color_hex(track_color_);
     arcDsc.opa = LV_OPA_COVER;
     arcDsc.start_angle = KNOB_START_ANGLE;
-    arcDsc.end_angle = static_cast<lv_value_precise_t>(
-        rendered_value_angle_ == INVALID_VALUE_ANGLE ? valueAngle(current_value_)
-                                                     : rendered_value_angle_
-    );
+    arcDsc.end_angle = modulation_active_ ? baseAngle : outputAngle;
     lv_draw_arc(layer, &arcDsc);
+
+    if (modulation_active_) {
+        // Signed instantaneous contribution from Base to audible Out. The
+        // thin outer rail remains distinct from the absolute source arc.
+        arcDsc.radius = static_cast<uint16_t>(
+            geometry.radius + geometry.width / 2 + MODULATION_RAIL_WIDTH
+        );
+        arcDsc.color = lv_color_hex(
+            (clipped_low_ || clipped_high_)
+                ? stheme::color::MACRO_CONFLICT
+                : stheme::color::MACRO_MODULATION
+        );
+        arcDsc.opa = LV_OPA_COVER;
+        arcDsc.width = MODULATION_RAIL_WIDTH;
+        arcDsc.rounded = 0;
+        arcDsc.start_angle = std::min(baseAngle, outputAngle);
+        arcDsc.end_angle = std::max(baseAngle, outputAngle);
+        if (arcDsc.start_angle == arcDsc.end_angle) {
+            if (arcDsc.end_angle < KNOB_START_ANGLE + KNOB_ARC_SWEEP_DEGREES) {
+                arcDsc.end_angle += MODULATION_IDLE_MARK_DEGREES;
+            } else {
+                arcDsc.start_angle -= MODULATION_IDLE_MARK_DEGREES;
+            }
+        }
+        lv_draw_arc(layer, &arcDsc);
+
+        // A single neutral cap identifies the audible Out value without
+        // introducing a second competing trajectory.
+        drawRadialTick(
+            layer,
+            geometry.center,
+            arcDsc.radius,
+            static_cast<lv_coord_t>(MODULATION_RAIL_WIDTH + 2),
+            outputAngle,
+            stheme::color::TEXT_PRIMARY,
+            LV_OPA_COVER
+        );
+    }
 }
 
 void MacroKnobWidget::onArcDrawEvent(lv_event_t* event) {

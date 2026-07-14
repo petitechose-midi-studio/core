@@ -62,7 +62,7 @@ struct MidiCcGlobalFrameDiagnostics {
  * Singular Gate 8 classic-CC arbitration and queue bridge.
  *
  * Producers publish complete, immutable frames. Manual entries are ordinary
- * persistent LIVE_MANUAL candidates: they remain present until Gate 7 Resume
+ * persistent LIVE_MANUAL candidates: they remain present until Gate 7 Resume Auto
  * removes them. The single consumer composes Manual/Macro + all 64 lane holds,
  * resolves once, and atomically replaces pending CC in RealtimeMidiQueue.
  *

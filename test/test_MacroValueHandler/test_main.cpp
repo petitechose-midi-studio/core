@@ -337,12 +337,52 @@ void test_macro_button_hold_records_value_automation() {
     std::cout << "[PASS] test_macro_button_hold_records_value_automation\n";
 }
 
+void test_recording_cadence_preserves_plateau_before_later_motion() {
+    MacroValueHarness h;
+    h.state.statusBar.tempo.set(120.0f);
+
+    h.press(Config::ButtonID::MACRO_1);
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_1, 0.2f);
+    assert(h.state.macroUi.automationRecording.active);
+
+    // No encoder event occurs during this hold. The shared 16 ms sampler must
+    // still author a stationary anchor before the next movement.
+    h.handler.update(400);
+    g_now_ms = 500;
+    h.turn(Config::EncoderID::MACRO_1, 0.8f);
+    g_now_ms = 600;
+    h.release(Config::ButtonID::MACRO_1);
+
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
+    );
+    assert(slot != nullptr);
+    assert(slot->automation.pointCount >= 3U);
+    const float held = core::state::macro::macroAutomationEvaluate(
+        slot->automation,
+        h.state.pages.automation.pointPool,
+        0.3f,
+        0.5f
+    );
+    const float afterMotion = core::state::macro::macroAutomationEvaluate(
+        slot->automation,
+        h.state.pages.automation.pointPool,
+        0.9f,
+        0.5f
+    );
+    assert(held < 0.3f);
+    assert(afterMotion > 0.7f);
+
+    std::cout
+        << "[PASS] recording cadence preserves hold before later motion\n";
+}
+
 void test_turning_an_automated_macro_enters_manual_override() {
     MacroValueHarness h;
 
     configureAutomation(h.state);
-    const float persistedBase = h.state.pages.activePageData().values[0];
-
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
 
     assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) != 0);
@@ -353,8 +393,8 @@ void test_turning_an_automated_macro_enters_manual_override() {
             .macro = 0,
         }
     ));
-    assert(std::fabs(h.state.pages.activePageData().values[0] - persistedBase) < 0.0001f);
-    assert(!h.state.hasPendingProjectMutationCoalescing());
+    assert(std::fabs(h.state.pages.activePageData().values[0] - 1.0f) < 0.0001f);
+    assert(h.state.hasPendingProjectMutationCoalescing());
     assert(h.midiTransport.ccCount == 1);
     assert(h.midiTransport.lastValue == 127);
 
@@ -453,6 +493,7 @@ int main() {
     test_macro_value_handler_respects_modal_guards();
     test_macro_encoder_feeds_armed_automation_recording();
     test_macro_button_hold_records_value_automation();
+    test_recording_cadence_preserves_plateau_before_later_motion();
     test_turning_an_automated_macro_enters_manual_override();
     test_macro_automation_property_button_restores_auto_without_clearing_lane();
     test_macro_button_hold_without_turn_discards_recording();

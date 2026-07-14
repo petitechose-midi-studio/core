@@ -176,7 +176,7 @@ void test_manual_value_updates_base_and_stages_project_mutation() {
     std::cout << "[PASS] test_manual_value_updates_base_and_stages_project_mutation\n";
 }
 
-void test_manual_override_is_runtime_only_and_addressed_by_slot() {
+void test_manual_override_persists_absolute_base_and_is_addressed_by_slot() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -197,8 +197,8 @@ void test_manual_override_is_runtime_only_and_addressed_by_slot() {
     float manualValue = 0.0f;
     assert(services.manualOverrideValueFor(0, manualValue));
     assert(std::fabs(manualValue - 0.75f) < 0.0001f);
-    assert(std::fabs(state.pages.activePageData().values[0] - 0.25f) < 0.0001f);
-    assert(!state.hasPendingProjectMutationCoalescing());
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.75f) < 0.0001f);
+    assert(state.hasPendingProjectMutationCoalescing());
     assert(!state.project.metadata.dirty);
 
     services.switchToPage(1);
@@ -213,6 +213,7 @@ void test_manual_override_is_runtime_only_and_addressed_by_slot() {
     services.setResolvedValue(0, 0.1f);
     assert(services.takeManualControl(0, 0.4f));
     assert((state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0);
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.4f) < 0.0001f);
 
     services.switchToPage(0);
     assert(services.manualOverrideValueFor(0, manualValue));
@@ -221,7 +222,7 @@ void test_manual_override_is_runtime_only_and_addressed_by_slot() {
     assert((state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0);
     assert(state.macroUi.manualOverrides.activeFor(secondAddress));
 
-    std::cout << "[PASS] test_manual_override_is_runtime_only_and_addressed_by_slot\n";
+    std::cout << "[PASS] test_manual_override_persists_absolute_base_and_is_addressed_by_slot\n";
 }
 
 void test_config_changes_mark_project_dirty_and_bump_revision() {
@@ -430,7 +431,9 @@ void test_automation_recording_commits_to_current_macro_slot() {
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     state.statusBar.tempo.set(120.0f);
-    services.setResolvedValue(0, 0.25f);
+    // Recording captures the authored absolute Base, never a potentially
+    // modulated runtime Out projection.
+    services.setManualValue(0, 0.25f);
 
     assert(services.beginAutomationRecording(0, 1000));
     assert(state.macroUi.automationRecordingStatus.get() ==
@@ -577,7 +580,7 @@ void test_failed_or_cancelled_recording_restores_previous_manual_state() {
     std::cout << "[PASS] test_failed_or_cancelled_recording_restores_previous_manual_state\n";
 }
 
-void test_recording_suspends_modulation_non_destructively_and_resume_enables_auto_mod() {
+void test_recording_preserves_active_modulation_without_resume() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -619,7 +622,8 @@ void test_recording_suspends_modulation_non_destructively_and_resume_enables_aut
     );
     assert(slot != nullptr);
     assert(core::state::macro::macroCurvePlaybackActive(slot->automation));
-    assert(core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation));
+    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
+    assert(!core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation));
     assert(std::fabs(slot->modulationDepth - 0.37f) < 0.0001f);
     assert(slot->modulation.pointCount == modulationBefore.pointCount);
     assert(slot->modulation.durationTicks == modulationBefore.durationTicks);
@@ -645,16 +649,15 @@ void test_recording_suspends_modulation_non_destructively_and_resume_enables_aut
     assert(!services.manualOverrideActiveFor(0));
 
     const uint32_t modifiedBeforeResume = state.project.metadata.modifiedCounter;
-    assert(services.resumeComputedSources(0));
+    assert(!services.resumeComputedSources(0));
     assert(core::state::macro::macroCurvePlaybackActive(slot->automation));
     assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
-    assert(state.project.metadata.modifiedCounter == modifiedBeforeResume + 1U);
+    assert(state.project.metadata.modifiedCounter == modifiedBeforeResume);
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
-    assert(!services.resumeComputedSources(0));
 
     std::cout
-        << "[PASS] test_recording_suspends_modulation_non_destructively_and_resume_enables_auto_mod\n";
+        << "[PASS] test_recording_preserves_active_modulation_without_resume\n";
 }
 
 void test_failed_first_recording_does_not_leave_an_empty_slot() {
@@ -1113,7 +1116,7 @@ int main() {
     oc::time::setProvider(mockTimeMs);
     test_runtime_values_are_forwarded_and_clamped();
     test_manual_value_updates_base_and_stages_project_mutation();
-    test_manual_override_is_runtime_only_and_addressed_by_slot();
+    test_manual_override_persists_absolute_base_and_is_addressed_by_slot();
     test_config_changes_mark_project_dirty_and_bump_revision();
     test_switch_to_page_updates_runtime_status_and_marks_project_dirty();
     test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid();
@@ -1123,7 +1126,7 @@ int main() {
     test_automation_recording_cancel_discards_session();
     test_automation_recording_without_motion_does_not_create_slot();
     test_failed_or_cancelled_recording_restores_previous_manual_state();
-    test_recording_suspends_modulation_non_destructively_and_resume_enables_auto_mod();
+    test_recording_preserves_active_modulation_without_resume();
     test_failed_first_recording_does_not_leave_an_empty_slot();
     test_macro_edit_automation_lifecycle_actions();
     test_modulation_copy_paste_preserves_target_and_exact_payload();

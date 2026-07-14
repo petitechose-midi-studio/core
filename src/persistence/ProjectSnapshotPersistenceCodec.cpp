@@ -191,9 +191,13 @@ FLASHMEM bool writeMacroAutomationSlotState(binary::Writer& writer,
 FLASHMEM bool readMacroAutomationSlotState(binary::Reader& reader,
                                            macro::MacroAutomationSlotState& state,
                                            bool legacyV14) {
-    return readMacroAutomationCurveRef(reader, state.automation, legacyV14) &&
-           readMacroAutomationCurveRef(reader, state.modulation, legacyV14) &&
-           reader.readFloat32(state.modulationDepth);
+    if (!readMacroAutomationCurveRef(reader, state.automation, legacyV14) ||
+        !readMacroAutomationCurveRef(reader, state.modulation, legacyV14) ||
+        !reader.readFloat32(state.modulationDepth)) {
+        return false;
+    }
+    macro::macroAutomationNormalizeLegacyPlayback(state);
+    return true;
 }
 
 FLASHMEM bool fillMacroAutomationPayload(

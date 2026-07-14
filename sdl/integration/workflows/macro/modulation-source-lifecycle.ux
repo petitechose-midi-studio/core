@@ -1,56 +1,61 @@
-# UX workflow: operate the visible Modulation source lifecycle.
-# Purpose: validates Manual override from the performance grid, contextual
-# Resume, binary Modulation playback, Enable both, and the semantic 0% Paused
-# state without deleting either stored curve.
-# Expect: capture_changed:auto_mod_active=manual_override_grid, capture_changed:manual_override_detail=sources_resumed, capture_changed:sources_resumed=modulation_playback_off, capture_changed:modulation_playback_off=auto_mod_restored, capture_changed:auto_mod_restored=depth_paused, capture_changed:depth_paused=depth_restored
-# Expect: semantic:auto_mod_active:source=auto_mod, semantic:manual_override_detail:source=manual, semantic:sources_resumed:source=auto_mod
-# Expect: semantic:modulation_playback_off:effect=edit_modulation_playback, semantic:modulation_playback_off:source=automation, semantic:auto_mod_restored:source=auto_mod
+# UX workflow: operate independent Automation and Modulation lifecycles.
+# Purpose: validates the combined editor preview, Manual takeover of Automation
+# only, explicit Resume Auto, persistent Modulation, binary Modulation playback,
+# and the semantic 0% Paused state without deleting either stored curve.
+# Expect: capture_changed:auto_mod_active=manual_override_grid, capture_changed:manual_override_grid=manual_macro_editor, capture_changed:manual_macro_editor=manual_automation_detail, capture_changed:manual_automation_detail=automation_resumed
+# Expect: capture_changed:automation_resumed=modulation_playback_off, capture_changed:modulation_playback_off=auto_mod_restored, capture_changed:auto_mod_restored=depth_paused, capture_changed:depth_paused=depth_restored
+# Expect: semantic:auto_mod_active:source=auto_mod, semantic:manual_override_grid:source=manual_modulation, semantic:manual_automation_detail:source=manual_modulation
+# Expect: semantic:automation_resumed:source=auto_mod, semantic:modulation_playback_off:effect=edit_modulation_playback, semantic:modulation_playback_off:source=automation
+# Expect: semantic:auto_mod_restored:effect=edit_modulation_playback, semantic:auto_mod_restored:source=auto_mod
 # Expect: semantic:depth_paused:effect=edit_modulation_depth, semantic:depth_paused:source=auto_mod, semantic:depth_restored:source=auto_mod
 # Expect: semantic:auto_mod_active:route_policy=live_manual>cc_lane>macro_computed>macro_static
 
 0 scenario macro-auto-mod
 80 capture screen source_grid
 
+# Open the combined Macro editor. The three direct domains and the superposed
+# A / Base / Mod / Out preview are visible before entering a detail context.
 180 button MACRO_1 down
 1240 tick
 1300 button MACRO_1 up
-1450 encoder NAV 1
+1450 capture screen macro_editor
 1580 encoder NAV 1
-1720 tap NAV 60
-1920 capture screen auto_mod_active
+1710 encoder NAV 1
+1840 tap NAV 60
+2060 capture screen auto_mod_active
 
-# Manual override follows the same grammar as Automation: leave the editor and
-# turn the physical Macro. No destructive source-state selector is involved.
-2070 tap LEFT_TOP 60
-2230 tap LEFT_TOP 60
-2410 encoder MACRO_1 0.25
-2610 capture screen manual_override_grid
+# A physical Macro gesture takes over only the absolute Base. The Modulation
+# loop remains audible and visible.
+2200 tap LEFT_TOP 60
+2360 tap LEFT_TOP 60
+2540 encoder MACRO_1 0.25
+2740 capture screen manual_override_grid
 
-# Reopen Modulation. Resume only appears while control is overridden and
-# restores both stored sources in one tap.
-2750 button MACRO_1 down
-3810 tick
-3870 button MACRO_1 up
-4010 encoder NAV 1
-4140 encoder NAV 1
-4280 tap NAV 60
-4500 capture screen manual_override_detail
-4640 encoder NAV 1
-4780 tap NAV 60
-5000 capture screen sources_resumed
+# Resume lives only in Automation detail and is explicitly named Resume Auto.
+2880 button MACRO_1 down
+3940 tick
+4000 button MACRO_1 up
+4140 capture screen manual_macro_editor
+4270 encoder NAV 1
+4400 tap NAV 60
+4620 capture screen manual_automation_detail
+4760 encoder NAV 1
+4900 tap NAV 60
+5120 capture screen automation_resumed
 
-# Turning Playback Off keeps Modulation stored and exposes the contextual
-# Enable both action. One backwards NAV step reaches that last row.
-5140 encoder OPT -4.00
-5360 capture screen modulation_playback_off
-5500 encoder NAV -1
-5640 tap NAV 60
-5860 capture screen auto_mod_restored
+# Return to the top editor, enter Modulation, and stop/restart it explicitly.
+5260 tap LEFT_TOP 60
+5400 encoder NAV 1
+5530 tap NAV 60
+5670 encoder OPT -4.00
+5890 capture screen modulation_playback_off
+6030 encoder OPT 4.00
+6250 capture screen auto_mod_restored
 
 # Depth 0% is Paused, not deleted; restore the original 65% directly.
-6000 encoder NAV 1
-6140 encoder OPT -4.00
-6360 capture screen depth_paused
+6390 encoder NAV 1
+6530 encoder OPT -4.00
+6750 capture screen depth_paused
 # The SDL encoder has 333 virtual ticks here; +2.17 restores 65% from zero.
-6500 encoder OPT 2.17
-6740 capture screen depth_restored
+6890 encoder OPT 2.17
+7110 capture screen depth_restored

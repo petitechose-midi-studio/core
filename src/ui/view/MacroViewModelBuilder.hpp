@@ -40,15 +40,19 @@ struct MacroViewModelSource {
 
 struct MacroWidgetProps {
     float value = 0.5f;
+    float baseValue = 0.5f;
+    float modulationDelta = 0.0f;
+    float modulationDepth = 0.0f;
     uint8_t cc = 0;
     bool automationStored = false;
     bool automationActive = false;
     bool modulationStored = false;
     bool modulationActive = false;
     bool modulationPaused = false;
-    bool modulationSuspended = false;
     bool automationRecording = false;
     bool automationManualOverride = false;
+    bool clippedLow = false;
+    bool clippedHigh = false;
     bool active = true;
     bool addSlot = false;
     bool focused = false;

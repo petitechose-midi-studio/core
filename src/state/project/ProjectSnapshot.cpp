@@ -228,6 +228,9 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         snapshot.sharedTrackActive
     );
     state.pages.automation = *snapshot.macroAutomation;
+    for (auto& entry : state.pages.automation.entries) {
+        core::state::macro::macroAutomationNormalizeLegacyPlayback(entry.state);
+    }
     core::state::macro::macroAutomationCompactPool(state.pages.automation);
     state.pages.syncSharedTrackState(
         state.sequencerTracks.currentEnabledMask(),

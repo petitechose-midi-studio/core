@@ -26,6 +26,9 @@ public:
     SequencerCcLaneWorkflow(StateRefs state, SequencerCcLaneDomainServices services);
 
     void openLaneSelector();
+    bool openLane(uint8_t lane);
+    bool openAddDraft();
+    void suspendGridForPropertySelector(uint32_t nowMs);
     void closeOneLevel(uint32_t nowMs);
     void moveSelector(float delta);
     bool activateSelector();
@@ -34,8 +37,16 @@ public:
     bool activateDraftField();
     void editDraft(float delta);
     void moveFocusedStep(float delta, uint32_t nowMs);
+    bool focusStep(uint8_t step, uint32_t nowMs);
     bool toggleFocusedEvent(uint32_t nowMs);
     bool editFocusedEvent(float delta, uint32_t nowMs);
+    bool editVisibleEvent(uint8_t indexInWindow, float normalized, uint32_t nowMs);
+    bool toggleVisibleEvent(uint8_t indexInWindow, uint32_t nowMs);
+    bool openTransitionPicker(uint8_t indexInWindow, uint32_t nowMs);
+    void moveTransition(float delta);
+    bool selectTransitionNormalized(float normalized);
+    bool applyTransition(uint32_t nowMs);
+    void cancelTransition();
 
     bool executeTap(
         core::state::sequencer::SequencerCcLaneActionSlot slot,
@@ -75,6 +86,8 @@ private:
     bool stageCurrentBank_(LaneBankPtr& out, bool materializeEmpty) const;
     bool applyDraft_(bool macroConflictAuthorized, uint32_t nowMs);
     bool clearFocusedEvent_(uint32_t nowMs);
+    bool setFocusedEventValue_(uint8_t value, uint32_t nowMs);
+    bool focusVisibleStep_(uint8_t indexInWindow, uint32_t nowMs);
     bool removeCurrentLane_(uint32_t nowMs);
     void openAddDraft_();
     void openGrid_(uint8_t lane);

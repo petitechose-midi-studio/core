@@ -38,6 +38,7 @@ public:
         core::state::sequencer::SequencerPatternQuickControlsState& patternQuickControls;
         core::state::sequencer::SequencerStepPropertyInlineSelectorState&
             stepPropertyInlineSelector;
+        core::state::sequencer::SequencerCcLaneUiState& ccLaneUi;
         core::state::StructureSelectionState& trackStructureSelection;
         core::state::StructureSelectionState& macroPageSelection;
         core::state::StructureSelectionState& sequencerPageSelection;
@@ -74,6 +75,7 @@ private:
     core::state::sequencer::SequencerPatternQuickControlsState& pattern_quick_controls_;
     core::state::sequencer::SequencerStepPropertyInlineSelectorState&
         step_property_inline_selector_;
+    core::state::sequencer::SequencerCcLaneUiState& cc_lane_ui_;
     core::state::StructureSelectionState& track_structure_selection_;
     core::state::StructureSelectionState& macro_page_selection_;
     core::state::StructureSelectionState& sequencer_page_selection_;

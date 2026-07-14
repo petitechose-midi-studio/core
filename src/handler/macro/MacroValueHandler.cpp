@@ -8,6 +8,7 @@
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "handler/macro/MacroAutomationTiming.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
@@ -19,6 +20,12 @@ namespace input_utils = core::handler::sequencer::input_utils;
 namespace {
 
 constexpr uint32_t POST_RECORD_INPUT_GUARD_MS = 120;
+
+float quantizedMidi7(float value) {
+    return core::midi::fromCC(core::midi::toCC(
+        core::state::macro::macroAutomationClamp01(value)
+    ));
+}
 
 }  // namespace
 
@@ -104,7 +111,13 @@ FLASHMEM void MacroValueHandler::setupBindings() {
                     return;
                 }
                 const uint32_t nowMs = core::time_compat::millis();
+                (void)services_.recordAutomationPoint(
+                    i,
+                    nowMs,
+                    quantizedMidi7(services_.absoluteBaseValue(i))
+                );
                 services_.commitAutomationRecording(nowMs);
+                record_sample_clock_active_ = false;
                 post_record_guard_active_[i] = true;
                 post_record_guard_until_ms_[i] = nowMs + POST_RECORD_INPUT_GUARD_MS;
             });
@@ -158,29 +171,38 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     const uint8_t cc_value = core::midi::toCC(sanitized);
     const float quantized = core::midi::fromCC(cc_value);
 
-    if (std::abs(services_.runtimeValue(index) - quantized) < 0.0005f) return;
+    if (std::abs(services_.absoluteBaseValue(index) - quantized) < 0.0005f) return;
 
     // A hold alone is inert. Recording starts only after a value movement has
     // crossed the same quantized threshold used for output.
     if (shouldStartAutomationRecording(index)) {
-        (void)services_.beginAutomationRecording(index, nowMs);
+        if (services_.beginAutomationRecording(index, nowMs)) {
+            last_record_sample_ms_ = nowMs;
+            record_sample_clock_active_ = true;
+        }
     }
     const bool recordingActive = services_.automationRecordingActiveFor(index);
 
     if (recordingActive) {
-        services_.setResolvedValue(index, quantized);
         services_.recordAutomationPoint(index, nowMs, quantized);
-    } else if (services_.computedSourcePlaybackActiveFor(index)) {
+    } else if (services_.automationPlaybackActiveFor(index)) {
         if (!services_.takeManualControl(index, quantized)) return;
     } else {
-        // Static-only movement authors the durable base value.
+        // Manual movement always authors the durable absolute base. A running
+        // Modulation lane remains audible around that base.
         services_.setManualValue(index, quantized);
     }
+
+    const auto resolved = services_.resolveManualValue(index, quantized);
+    services_.setResolvedValue(index, resolved);
 
     if (!services_.isActivePageEnabled()) return;
 
     if (midi_runtime_ != nullptr) {
-        (void)midi_runtime_->publishLiveManual(index, cc_value);
+        (void)midi_runtime_->publishLiveManual(
+            index,
+            core::midi::toCC(resolved.resolved)
+        );
         return;
     }
 
@@ -188,7 +210,11 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     // adapter so duplicate Macro destinations resolve as one complete frame.
     if (direct_midi_fallback_ != nullptr) {
         const auto& config = services_.activeConfig(index);
-        direct_midi_fallback_->sendCC(config.channel, config.cc, cc_value);
+        direct_midi_fallback_->sendCC(
+            config.channel,
+            config.cc,
+            core::midi::toCC(resolved.resolved)
+        );
         services_.pulseCcOut();
     }
 }
@@ -218,6 +244,32 @@ void MacroValueHandler::handleConfigChange(uint8_t index, float value) {
 void MacroValueHandler::restoreAutomation(uint8_t index) {
     if (!ensureActiveSlot(index)) return;
     (void)services_.resumeComputedSources(index);
+}
+
+void MacroValueHandler::update(uint32_t nowMs) {
+    const auto& recording = macro_ui_.automationRecording;
+    if (!recording.active) {
+        record_sample_clock_active_ = false;
+        return;
+    }
+    if (!record_sample_clock_active_) {
+        last_record_sample_ms_ = recording.startedAtMs;
+        record_sample_clock_active_ = true;
+    }
+    if ((nowMs - last_record_sample_ms_) <
+        macro::MACRO_AUTOMATION_UPDATE_PERIOD_MS) {
+        return;
+    }
+
+    const uint8_t index = recording.address.macro;
+    (void)services_.recordAutomationPoint(
+        index,
+        nowMs,
+        quantizedMidi7(services_.absoluteBaseValue(index))
+    );
+    // Even a saturated/reduced temporary lane remains bounded to one attempt
+    // per cadence; never retry at the 1920 Hz app-loop rate.
+    last_record_sample_ms_ = nowMs;
 }
 
 }  // namespace core::handler

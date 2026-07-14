@@ -1,16 +1,15 @@
 # UX workflow: route-aware Sequencer CC lane authoring.
-# Purpose: proves the discoverable property entry, progressive silent draft,
-# eight-step authored grid, stopped vs telemetry-backed Live truth, Track/Fixed
-# routing, and guarded Remove press/arm/cancel/apply grammar.
+# Purpose: proves the dynamic property entry, progressive silent draft, direct
+# Step Grid editing, stopped vs telemetry-backed Live truth, Track/Fixed routing,
+# and guarded Remove press/arm/cancel/apply grammar.
 # Expect: capture_changed:cc_lane_draft_silent=cc_lane_grid_preview, capture_changed:cc_lane_grid_preview=cc_lane_grid_live, capture_changed:cc_lane_remove_pressed=cc_lane_remove_cancelled, capture_changed:cc_lane_remove_armed=cc_lane_removed
 # Expect: semantic:cc_lane_property_selected:mode=sequencer.property_selector, semantic:cc_lane_property_selected:property=cc_lanes
-# Expect: semantic:cc_lane_selector_empty:mode=sequencer.cc_lane.selector, semantic:cc_lane_selector_empty:overlay=seq_cc_lane, semantic:cc_lane_selector_empty:target_route_valid=0
-# Expect: semantic:cc_lane_selector_empty:reason=no_route, semantic:cc_lane_selector_empty:conflict=0
+# Expect: semantic:cc_lane_add_draft:mode=sequencer.cc_lane.add_draft, semantic:cc_lane_add_draft:overlay=seq_cc_lane, semantic:cc_lane_add_draft:target_route_valid=1
 # Expect: semantic:cc_lane_draft_silent:mode=sequencer.cc_lane.add_draft, semantic:cc_lane_draft_silent:property=controller, semantic:cc_lane_draft_silent:projection=preview, semantic:cc_lane_draft_silent:target_route_valid=1
 # Expect: semantic:cc_lane_grid_preview:mode=sequencer.cc_lane.grid, semantic:cc_lane_grid_preview:effect=create_cc_lane, semantic:cc_lane_grid_preview:outcome=applied, semantic:cc_lane_grid_preview:value_label=--
 # Expect: semantic:cc_lane_authored_resolved:effect=toggle_cc_event, semantic:cc_lane_authored_resolved:authored_value=64, semantic:cc_lane_authored_resolved:projection=preview
 # Expect: semantic:cc_lane_grid_live:mode=sequencer.cc_lane.grid, semantic:cc_lane_grid_live:projection=live, semantic:cc_lane_grid_live:playing=true
-# Expect: semantic:cc_lane_settings_inherited:mode=sequencer.cc_lane.settings, semantic:cc_lane_settings_inherited:route_policy=inherit_track, semantic:cc_lane_settings_inherited:projection=preview, semantic:cc_lane_settings_inherited:playing=false
+# Expect: semantic:cc_lane_settings_inherited:mode=sequencer.cc_lane.settings, semantic:cc_lane_settings_inherited:route_policy=inherit_track, semantic:cc_lane_settings_inherited:projection=preview, semantic:cc_lane_settings_inherited:playing=true
 # Expect: semantic:cc_lane_settings_pinned:property=route_policy, semantic:cc_lane_settings_pinned:route_policy=pinned
 # Expect: semantic:cc_lane_pinned_applied:effect=apply_cc_lane_settings, semantic:cc_lane_pinned_applied:outcome=applied, semantic:cc_lane_pinned_applied:route_policy=pinned
 # Expect: semantic:cc_lane_remove_pressed:effect=press_remove_cc_lane, semantic:cc_lane_remove_pressed:outcome=pressed
@@ -24,7 +23,7 @@
 
 # The default scenario starts at Track scope, where property selection is
 # intentionally unavailable. Enter Pattern first, then open the shared
-# musical-property selector and walk to CC Lanes (sixth item).
+# musical-property selector and walk to `+ CC lane` (sixth item).
 120 tap NAV 60
 300 button LEFT_BOTTOM down
 420 encoder NAV 1
@@ -35,7 +34,7 @@
 840 capture screen cc_lane_property_selected
 920 tap NAV 60
 1080 button LEFT_BOTTOM up
-1200 capture screen cc_lane_selector_empty
+1200 capture screen cc_lane_add_draft
 
 # Enter Add Lane. The draft is a Preview only and must stay musically silent.
 1300 tap NAV 60
@@ -50,50 +49,49 @@
 2240 tap NAV 60
 2460 capture screen cc_lane_authored_resolved
 
-# Close the lane grammar, start transport, then reopen the same lane. The
-# projection label must change to Live only while playback is actually active.
+# Close the lane grid, start transport, then reopen the existing `CC n`
+# property through the same selector. The projection changes to Live only while
+# playback is actually active.
 2560 tap LEFT_TOP 60
-2700 tap LEFT_TOP 60
-2880 tap BOTTOM_CENTER 60
-3160 button LEFT_BOTTOM down
-3240 encoder NAV 1
-3560 tap NAV 60
-3660 button LEFT_BOTTOM up
-3760 tap NAV 60
-4000 capture screen cc_lane_grid_live
+2740 tap BOTTOM_CENTER 60
+3020 button LEFT_BOTTOM down
+3100 encoder NAV 1
+3520 tap NAV 60
+3600 button LEFT_BOTTOM up
+3820 capture screen cc_lane_grid_live
 
-# Return to the main view, stop transport, and reopen the committed lane.
-4100 tap LEFT_TOP 60
-4240 tap LEFT_TOP 60
-4420 tap BOTTOM_CENTER 60
-4620 button LEFT_BOTTOM down
-4700 encoder NAV 1
-5020 tap NAV 60
-5120 button LEFT_BOTTOM up
-5220 tap NAV 60
-5420 tap BOTTOM_CENTER 60
-5640 capture screen cc_lane_settings_inherited
+# Settings is a secondary panel, opened explicitly from the lane grid.
+3940 tap BOTTOM_RIGHT 60
+4180 capture screen cc_lane_settings_inherited
 
 # Route is the second field. Toggle Track -> Fixed and expose the temporary
 # Channel setting only when it is useful.
-5720 encoder NAV 1
-5800 encoder OPT 1
-6000 capture screen cc_lane_settings_pinned
-6080 tap BOTTOM_RIGHT 60
-6300 capture screen cc_lane_pinned_applied
+4260 encoder NAV 1
+4340 encoder OPT 1
+4540 capture screen cc_lane_settings_pinned
+4620 tap BOTTOM_RIGHT 60
+4840 capture screen cc_lane_pinned_applied
 
-# Re-enter Settings. A short destructive hold is cancelled; a complete hold
-# moves through Pressed and Armed before the lane disappears.
-6380 tap BOTTOM_CENTER 60
-6540 button BOTTOM_LEFT down
-6640 capture screen cc_lane_remove_pressed
-6720 button BOTTOM_LEFT up
-6920 capture screen cc_lane_remove_cancelled
+# Stop transport outside the lane, reopen it, then re-enter Settings. A short
+# destructive hold is cancelled; a complete hold moves through Pressed and
+# Armed before the lane disappears.
+4940 tap LEFT_TOP 60
+5100 tap BOTTOM_CENTER 60
+5260 button LEFT_BOTTOM down
+5340 encoder NAV 1
+5760 tap NAV 60
+5840 button LEFT_BOTTOM up
+5960 tap BOTTOM_RIGHT 60
 
-7020 button BOTTOM_LEFT down
-7120 capture screen cc_lane_remove_pressed_again
-7420 tick
-7460 capture screen cc_lane_remove_armed
-8120 tick
-8180 button BOTTOM_LEFT up
-8420 capture screen cc_lane_removed
+6120 button BOTTOM_LEFT down
+6220 capture screen cc_lane_remove_pressed
+6300 button BOTTOM_LEFT up
+6500 capture screen cc_lane_remove_cancelled
+
+6600 button BOTTOM_LEFT down
+6700 capture screen cc_lane_remove_pressed_again
+7000 tick
+7040 capture screen cc_lane_remove_armed
+7700 tick
+7760 button BOTTOM_LEFT up
+8000 capture screen cc_lane_removed

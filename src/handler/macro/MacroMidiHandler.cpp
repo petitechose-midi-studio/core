@@ -36,13 +36,20 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
 
     bool accepted = true;
     if (services_.automationRecordingActiveFor(macroIndex)) {
-        // Do not rewrite the persisted base while a recording gesture owns the
-        // live result. Encoder recording remains the point-authoring path.
-        services_.setResolvedValue(macroIndex, normalized);
-    } else if (services_.computedSourcePlaybackActiveFor(macroIndex)) {
+        // Encoder input remains the recording author; external CC still gets
+        // the same audible Base + Modulation projection.
+        services_.setResolvedValue(
+            macroIndex,
+            services_.resolveManualValue(macroIndex, normalized)
+        );
+    } else if (services_.automationPlaybackActiveFor(macroIndex)) {
         accepted = services_.takeManualControl(macroIndex, normalized);
     } else {
         services_.setManualValue(macroIndex, normalized);
+        services_.setResolvedValue(
+            macroIndex,
+            services_.resolveManualValue(macroIndex, normalized)
+        );
     }
     if (!accepted) return;
 

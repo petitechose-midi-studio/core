@@ -257,13 +257,15 @@ void test_conversion_is_one_turn_away_and_switches_playback_truth() {
     assert(!core::state::macro::macroCurvePlaybackActive(slot->automation));
     assert(core::state::macro::macroCurveStored(slot->modulation));
     assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
-    assert(slot->modulationDepth == 1.0f);
+    // The triangular 0 -> 1 -> 0 automation is centered on 0.5 and has a
+    // symmetric amplitude of 0.5. Conversion preserves that audible range.
+    assert(slot->modulationDepth == 0.5f);
 
     std::cout
         << "[PASS] test_conversion_is_one_turn_away_and_switches_playback_truth\n";
 }
 
-void test_modulation_tap_clear_preserves_automation_and_destination() {
+void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
     MacroAutomationHarness h;
     h.configureAutomation();
     h.configureModulation();
@@ -283,31 +285,46 @@ void test_modulation_tap_clear_preserves_automation_and_destination() {
     );
     assert(slot != nullptr);
     assert(slot->automation.active);
+    assert(slot->modulation.active);
+    assert(!core::state::macro::macroCurvePlaybackActive(slot->modulation));
+    assert(slot->modulationDepth == 0.5f);
+    assert(h.state.pages.isMacroSlotActive(0));
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    const uint32_t clearAt =
+        100U + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    h.setNow(clearAt);
+    h.handler.update(clearAt);
+    assert(h.state.macroEdit.contextFeedback.get().action ==
+           core::state::contextual::ContextActionId::CLEAR);
+    h.setNow(clearAt + 10U);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(slot->automation.active);
     assert(!slot->modulation.active);
     assert(slot->modulationDepth == 0.0f);
     assert(h.state.pages.isMacroSlotActive(0));
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATION);
 
     h.flushState();
 
-    std::cout << "[PASS] test_modulation_tap_clear_preserves_automation_and_destination\n";
+    std::cout
+        << "[PASS] modulation tap toggles and hold clears only Modulation\n";
 }
 
-void seedTypedSlotPaste(MacroAutomationHarness& h) {
+void seedTypedAutomationPaste(MacroAutomationHarness& h) {
     h.configureAutomation(0, 2.0f);
-    const auto source = core::state::macro::MacroAutomationSlotAddress{
-        .track = h.state.pages.currentActiveTrack(),
-        .page = h.state.pages.currentActivePage(),
-        .macro = 0,
-    };
-    assert(h.state.structureClipboard.storeMacroSlot(h.state.pages, source));
+    assert(h.services.copyAutomation(0));
     h.configureAutomation(1, 4.0f);
+    h.configureModulation(1, 0.75f);
     h.openAutomationEditor(1);
 }
 
 void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
     namespace clipboard_ops = core::handler::macro::automation_clipboard_ops;
     MacroAutomationHarness h;
-    seedTypedSlotPaste(h);
+    seedTypedAutomationPaste(h);
     auto& payload = *h.state.structureClipboard.macroAutomationSet;
     auto& source = payload.entries[0].state;
     const auto address = core::state::macro::MacroAutomationSlotAddress{
@@ -323,13 +340,13 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
             &h.state.pages.automation,
             sizeof(h.state.pages.automation)
         );
-        const auto plan = clipboard_ops::preflightSlotPaste(
+        const auto plan = clipboard_ops::preflightAutomationPaste(
             h.state.pages,
             address,
             h.state.structureClipboard
         );
         assert(plan.status == clipboard_ops::MacroTypedPasteStatus::INVALID_PAYLOAD);
-        assert(!clipboard_ops::pasteSlotFromClipboard(
+        assert(!clipboard_ops::pasteAutomationFromClipboard(
             h.state.pages,
             address,
             h.state.structureClipboard,
@@ -358,13 +375,13 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
 
 void test_typed_paste_quick_release_keeps_copy_semantics() {
     MacroAutomationHarness h;
-    seedTypedSlotPaste(h);
+    seedTypedAutomationPaste(h);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.setNow(100);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.structureClipboard.hasMacroSlot());
+    assert(h.state.structureClipboard.hasMacroAutomation());
     assert(h.state.structureClipboard.macroAutomationSet->sourceMacro == 1);
     const auto* target = core::state::macro::macroAutomationFindSlot(
         h.state.pages.automation,
@@ -379,7 +396,7 @@ void test_typed_paste_quick_release_keeps_copy_semantics() {
 
 void test_typed_paste_early_armed_release_cancels_without_copy_or_mutation() {
     MacroAutomationHarness h;
-    seedTypedSlotPaste(h);
+    seedTypedAutomationPaste(h);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.handler.update(250);
@@ -404,7 +421,7 @@ void test_typed_paste_early_armed_release_cancels_without_copy_or_mutation() {
 
 void test_typed_paste_commits_once_after_full_guard() {
     MacroAutomationHarness h;
-    seedTypedSlotPaste(h);
+    seedTypedAutomationPaste(h);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.handler.update(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -425,12 +442,14 @@ void test_typed_paste_commits_once_after_full_guard() {
     assert(core::state::macro::macroAutomationBeatsFromTicks(
         target->automation.durationTicks
     ) == 2.0f);
+    assert(core::state::macro::macroCurveStored(target->modulation));
+    assert(target->modulationDepth == 0.75f);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::APPLIED);
     std::cout << "[PASS] test_typed_paste_commits_once_after_full_guard\n";
 }
 
-void test_remove_slot_closes_detail_and_parent_editor_surfaces() {
+void test_hold_clear_automation_keeps_slot_and_detail_surface() {
     MacroAutomationHarness h;
     h.configureAutomation();
     h.overlays.show(core::ui::OverlayType::MACRO_EDIT);
@@ -444,25 +463,28 @@ void test_remove_slot_closes_detail_and_parent_editor_surfaces() {
     assert(h.state.macroEdit.contextButton.get() ==
            core::state::MacroContextButton::BOTTOM_LEFT);
     assert(h.state.macroEdit.contextFeedback.get().action ==
-           core::state::contextual::ContextActionId::REMOVE);
+           core::state::contextual::ContextActionId::CLEAR);
     assert(h.state.macroEdit.contextGuard.get().phase ==
            core::state::contextual::GuardedActionPhase::COMMITTED);
     h.setNow(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 10U);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
-    assert(!h.state.pages.isMacroSlotActive(0));
-    assert(!h.state.macroEdit.visible.get());
+    assert(h.state.pages.isMacroSlotActive(0));
+    assert(h.state.macroEdit.visible.get());
     assert(h.state.macroEdit.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::CLOSED);
-    assert(!h.overlays.hasVisible());
+           core::state::MacroEditFlowPhase::AUTOMATION);
+    assert(h.overlays.hasVisible());
+    const auto* slot = h.services.automationSlot(0);
+    assert(slot != nullptr);
+    assert(!core::state::macro::macroCurveStored(slot->automation));
 
     std::cout
-        << "[PASS] test_remove_slot_closes_detail_and_parent_editor_surfaces\n";
+        << "[PASS] Automation hold-clear preserves Slot and detail surface\n";
 }
 
 void test_navigation_cancels_completed_guard_before_release_without_mutation() {
     MacroAutomationHarness h;
-    seedTypedSlotPaste(h);
+    seedTypedAutomationPaste(h);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.handler.update(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -589,12 +611,12 @@ int main() {
     test_modulation_entry_synchronizes_opt_to_playback_state();
     test_contextual_resume_row_restores_sources_and_disappears();
     test_conversion_is_one_turn_away_and_switches_playback_truth();
-    test_modulation_tap_clear_preserves_automation_and_destination();
+    test_modulation_tap_toggles_and_hold_clears_only_modulation();
     test_typed_paste_preflight_rejects_invalid_payload_without_mutation();
     test_typed_paste_quick_release_keeps_copy_semantics();
     test_typed_paste_early_armed_release_cancels_without_copy_or_mutation();
     test_typed_paste_commits_once_after_full_guard();
-    test_remove_slot_closes_detail_and_parent_editor_surfaces();
+    test_hold_clear_automation_keeps_slot_and_detail_surface();
     test_navigation_cancels_completed_guard_before_release_without_mutation();
     test_length_row_resizes_automation_duration_without_scaling_points();
     test_left_center_enables_coarse_length_and_offset_steps_temporarily();

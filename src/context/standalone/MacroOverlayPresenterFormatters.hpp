@@ -15,6 +15,7 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/shared/MidiCcDestinationResolver.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/macro/MacroEditorPreviewModel.hpp"
 
 namespace core::handler {
 class MidiCcGlobalFrameCoordinator;
@@ -50,8 +51,10 @@ struct EditRenderData {
     std::array<char, 24> title{};
     std::array<char, 24> meta{};
     uint32_t dataRevision = 0;
+    uint32_t previewRevision = UINT32_MAX;
     int selectedIndex = 0;
     int rowCount = 3;
+    core::ui::MacroEditorPreviewModel preview{};
 };
 
 struct AutomationRenderData {
@@ -76,6 +79,7 @@ struct SelectorRenderData {
 };
 
 void initializeStaticItems(StaticItems& items);
+void buildEditRenderData(Source& source, EditRenderData& data);
 EditRenderData buildEditRenderData(Source& source);
 AutomationRenderData buildAutomationRenderData(const Source& source);
 SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items);

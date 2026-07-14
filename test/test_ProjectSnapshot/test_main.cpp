@@ -221,7 +221,7 @@ void test_snapshot_capture_apply_restores_project_session() {
            core::state::macro::MacroCurvePlaybackState::OFF);
     assert(core::state::macro::macroCurveStored(restoredAutomation->modulation));
     assert(restoredAutomation->modulation.playbackState ==
-           core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD);
+           core::state::macro::MacroCurvePlaybackState::ACTIVE);
     assert(restoredAutomation->modulation.modulationOrigin ==
            core::state::macro::MacroModulationOrigin::CONVERTED_MEAN);
     assert(restoredAutomation->modulationDepth > 0.3699f &&

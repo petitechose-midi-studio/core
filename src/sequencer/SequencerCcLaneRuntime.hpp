@@ -14,6 +14,9 @@ struct SequencerCcLaneTrackRuntimeInput {
     const core::state::sequencer::SequencerCcLaneBank* lanes = nullptr;
     core::state::sequencer::SequencerCcTrackRoute route{};
     uint8_t step = 0;
+    uint8_t patternLength = 128;
+    uint8_t tickInStep = 0;
+    uint8_t ticksPerStep = 1;
     bool enabled = false;
     bool muted = false;
     bool stepTriggered = false;
@@ -34,6 +37,7 @@ struct SequencerCcLaneRuntimeContribution {
     core::state::shared::MidiCcDestination destination{};
     uint8_t heldValue = 0;
     bool authoredEventThisTick = false;
+    bool valueChangedThisTick = false;
     bool routeMigratedThisTick = false;
 };
 
@@ -105,6 +109,7 @@ private:
         core::state::shared::MidiCcDestination lastDestination{};
         uint16_t lifecycleGeneration = 0;
         uint8_t heldValue = 0;
+        uint8_t sourceStep = 0;
         bool occupiedObserved = false;
         bool hasHeldValue = false;
         bool hasResolvedDestination = false;

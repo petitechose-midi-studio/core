@@ -23,6 +23,7 @@
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
+#include "ui/sequencer/SequencerCcLaneGrid.hpp"
 #include "ui/sequencer/SequencerTrackPastePreflightCard.hpp"
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/sequencer/StepPropertySelectionOverlay.hpp"
@@ -114,6 +115,7 @@ private:
     void requestBottomActionStripRender();
     void requestHistoryFeedbackRender();
     void requestGridRender();
+    void requestGridTickRender();
     void requestTrackPastePreflightRender();
     void requestClipboardDependentRenders();
     static bool canDrainRender(void* context);
@@ -125,13 +127,14 @@ private:
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
-    oc::state::StaticWatchGroup<20> header_watcher_;
+    oc::state::StaticWatchGroup<21> header_watcher_;
     oc::state::StaticWatchGroup<22> header_strip_watcher_;
     oc::state::StaticWatchGroup<34> grid_watcher_;
-    oc::state::StaticWatchGroup<19> selector_overlay_watcher_;
+    oc::state::StaticWatchGroup<1> grid_tick_watcher_;
+    oc::state::StaticWatchGroup<20> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<8> overlay_visibility_watcher_;
-    oc::state::StaticWatchGroup<11> left_action_strip_watcher_;
-    oc::state::StaticWatchGroup<21> bottom_action_strip_watcher_;
+    oc::state::StaticWatchGroup<12> left_action_strip_watcher_;
+    oc::state::StaticWatchGroup<24> bottom_action_strip_watcher_;
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
     oc::state::StaticWatchGroup<29> track_paste_preflight_watcher_;
@@ -152,6 +155,7 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::StepGrid> step_grid_;
+    core::app::ExtmemUniquePtr<core::ui::SequencerCcLaneGrid> cc_lane_grid_;
     core::app::ExtmemUniquePtr<
         core::ui::sequencer::SequencerTrackPastePreflightCard>
         track_paste_preflight_card_;

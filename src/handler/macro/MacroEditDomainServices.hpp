@@ -64,7 +64,9 @@ public:
     bool automationClipboardAvailable() const;
     bool automationActiveFor(uint8_t index) const;
     bool automationStoredFor(uint8_t index) const;
+    bool automationPlaybackActiveFor(uint8_t index) const;
     bool modulationStoredFor(uint8_t index) const;
+    bool modulationPlaybackActiveFor(uint8_t index) const;
     float modulationDepth(uint8_t index) const;
     core::state::macro::MacroModulationOrigin modulationOrigin(uint8_t index) const;
     MacroSourceMode sourceModeFor(uint8_t index) const;
@@ -74,8 +76,15 @@ public:
     bool setModulationPlayback(uint8_t index, bool active) const;
     bool clearAutomation(uint8_t index) const;
     bool removeAutomation(uint8_t index) const;
+    bool copyDestination(uint8_t index) const;
+    macro::automation_clipboard_ops::MacroTypedPastePreflight
+        preflightDestinationPaste(uint8_t index) const;
+    bool pasteDestination(uint8_t index, bool overwriteConfirmed) const;
     bool copyAutomation(uint8_t index) const;
     bool pasteAutomation(uint8_t index) const;
+    macro::automation_clipboard_ops::MacroTypedPastePreflight
+        preflightAutomationPaste(uint8_t index) const;
+    bool pasteAutomation(uint8_t index, bool overwriteConfirmed) const;
     core::state::macro::MacroAutomationConversionPlan preflightConversion(
         uint8_t index,
         core::state::macro::MacroAutomationConversionPolicy policy
@@ -85,7 +94,6 @@ public:
         const core::state::macro::MacroAutomationConversionPlan& plan,
         bool overwriteConfirmed
     ) const;
-    bool enableAutoMod(uint8_t index) const;
     bool resumeSources(uint8_t index) const;
     bool clearModulation(uint8_t index) const;
     bool removeSlot(uint8_t index) const;

@@ -9,6 +9,7 @@
 #include <limits>
 
 #include <config/InputIDs.hpp>
+#include <config/Timing.hpp>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -100,6 +101,7 @@ struct Harness {
         overlays,
         encoders,
         buttons,
+        SEQUENCER_SCOPE,
         CC_LANE_SCOPE,
         mockTimeMs,
     };
@@ -114,6 +116,35 @@ struct Harness {
         const auto id = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
         encoderHw.setPosition(id, normalized);
         eventBus.emit(oc::core::event::EncoderChangedEvent(id, normalized));
+    }
+
+    void turnMacro(uint8_t index, float normalized) {
+        const auto id = static_cast<oc::type::EncoderID>(Config::MACRO_ENCODERS[index]);
+        encoderHw.setPosition(id, normalized);
+        eventBus.emit(oc::core::event::EncoderChangedEvent(id, normalized));
+    }
+
+    void turnNav(float delta) {
+        const auto id = static_cast<oc::type::EncoderID>(Config::EncoderID::NAV);
+        eventBus.emit(oc::core::event::EncoderChangedEvent(id, delta));
+    }
+
+    void press(Config::ButtonID id) {
+        const auto button = static_cast<oc::type::ButtonID>(id);
+        buttonHw.setPressed(button, true);
+        eventBus.emit(oc::core::event::ButtonPressEvent(button, true));
+    }
+
+    void release(Config::ButtonID id) {
+        const auto button = static_cast<oc::type::ButtonID>(id);
+        buttonHw.setPressed(button, false);
+        eventBus.emit(oc::core::event::ButtonReleaseEvent(button));
+    }
+
+    void advance(uint32_t elapsedMs) {
+        g_now_ms += elapsedMs;
+        inputBinding.processTick();
+        handler.update(g_now_ms);
     }
 };
 
@@ -534,16 +565,81 @@ void test_handler_owns_a_centered_directional_opt_contract() {
     std::cout << "[PASS] CC-lane handler owns centered directional OPT safely\n";
 }
 
+void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() {
+    Harness h;
+    openAdd(h);
+    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
+    h.overlays.show(core::ui::OverlayType::SEQ_CC_LANE);
+    h.handler.update(20);
+
+    h.turnMacro(1, 1.0f);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank != nullptr);
+    assert(bank->lanes[0].activeMask.test(1));
+    assert(bank->lanes[0].values[1] == 127);
+
+    h.press(Config::ButtonID::MACRO_2);
+    h.handler.update(g_now_ms);
+    h.release(Config::ButtonID::MACRO_2);
+    h.handler.update(g_now_ms);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(!bank->lanes[0].activeMask.test(1));
+
+    h.turnMacro(1, 0.75f);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank->lanes[0].activeMask.test(1));
+    assert(bank->lanes[0].values[1] == 95);
+
+    h.press(Config::ButtonID::MACRO_2);
+    h.handler.update(g_now_ms);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
+    assert(h.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::TRANSITION_PICKER);
+    h.release(Config::ButtonID::MACRO_2);
+    h.handler.update(g_now_ms);
+    assert(h.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::TRANSITION_PICKER);
+
+    h.turnNav(1.0f);
+    assert(h.state.sequencer.ccLaneUi.selectedTransition ==
+           seq::SequencerCcLaneTransition::LINEAR);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(seq::sequencerCcLaneTransition(bank->lanes[0], 1) ==
+           seq::SequencerCcLaneTransition::LINEAR);
+
+    // The frequent path is direct: hold the matching Macro button, turn the
+    // same encoder, inspect the temporary picker, and commit on release.
+    h.press(Config::ButtonID::MACRO_2);
+    h.handler.update(g_now_ms);
+    h.turnMacro(1, 1.0f);
+    assert(h.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::TRANSITION_PICKER);
+    assert(h.state.sequencer.ccLaneUi.selectedTransition ==
+           seq::SequencerCcLaneTransition::EASE_IN_OUT);
+    h.release(Config::ButtonID::MACRO_2);
+    h.handler.update(g_now_ms);
+    assert(h.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::LANE_GRID);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(seq::sequencerCcLaneTransition(bank->lanes[0], 1) ==
+           seq::SequencerCcLaneTransition::EASE_IN_OUT);
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] eight Macro controls map 1:1 to values, toggles and shapes\n";
+}
+
 void test_handler_registers_only_guard_capable_action_presses() {
     Harness h;
 
-    // NAV release, three action releases, Back release, two guarded presses
-    // (Remove/clear and conflict-confirm Apply), plus the property long press.
-    // Settings is tap-only and must not consume a redundant press binding.
-    // The seventh property binding is the Pattern-scope hold shortcut that
-    // enters CC lanes without changing the normal short-press grammar.
-    constexpr std::size_t PROPERTY_SELECTOR_BINDINGS = 7U;
-    assert(h.inputBinding.buttonBindingCount() == PROPERTY_SELECTOR_BINDINGS + 8U);
+    // The property grammar has no CC-only long press or NAV shortcut: five
+    // button bindings cover open/apply/cancel. CC owns eight overlay bindings
+    // plus seven main-grid bindings; Macro keys remain polled only in context.
+    constexpr std::size_t PROPERTY_SELECTOR_BINDINGS = 5U;
+    constexpr std::size_t CC_LANE_BINDINGS = 15U;
+    assert(h.inputBinding.buttonBindingCount() ==
+           PROPERTY_SELECTOR_BINDINGS + CC_LANE_BINDINGS);
 
     test_support::drainNotifications();
     std::cout << "[PASS] CC-lane action bindings stay bounded\n";
@@ -558,6 +654,7 @@ int main() {
     test_lane_duplicate_blocks_but_macro_conflict_uses_amber_hold();
     test_live_projection_requires_the_lane_in_committed_runtime_telemetry();
     test_handler_owns_a_centered_directional_opt_contract();
+    test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape();
     test_handler_registers_only_guard_capable_action_presses();
     test_semantic_gesture_classifier_never_claims_early_hold_mutation();
     test_guard_release_promotes_elapsed_hold_without_periodic_update();

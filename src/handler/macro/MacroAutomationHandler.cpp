@@ -1,7 +1,6 @@
 #include "handler/macro/MacroAutomationHandler.hpp"
 
 #include <algorithm>
-#include <array>
 
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
@@ -35,8 +34,6 @@ detail_ui::MacroSourceDetailContext detailContext(
         .modulationPlayback =
             core::state::macro::macroCurvePlaybackActive(slot->modulation),
         .manualOverride = services.manualOverrideActiveFor(macroIndex),
-        .modulationSuspended =
-            core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation),
     };
 }
 
@@ -71,6 +68,18 @@ core::state::contextual::ContextEntityRef slotRef(
         .page = pages.currentActivePage(),
         .item = macroIndex,
     };
+}
+
+core::state::contextual::ContextEntityRef sourceRef(
+    const core::state::macro::MacroPagesState& pages,
+    uint8_t macroIndex,
+    bool modulation
+) {
+    auto ref = slotRef(pages, macroIndex);
+    ref.kind = modulation
+        ? core::state::contextual::ContextEntityKind::MODULATION_LANE
+        : core::state::contextual::ContextEntityKind::AUTOMATION_LANE;
+    return ref;
 }
 
 }  // namespace
@@ -310,30 +319,48 @@ FLASHMEM void MacroAutomationHandler::backToMacroEdit() {
     else macro_edit_.closeAutomation();
 }
 
-FLASHMEM void MacroAutomationHandler::clearAutomation() {
+FLASHMEM void MacroAutomationHandler::toggleFocusedPlayback() {
     if (!active()) return;
     if (conversionPreviewActive()) return;
+    const uint8_t index = macroIndex();
     if (modulationDetailActive()) {
-        (void)services_.clearModulation(macroIndex());
+        if (services_.modulationStoredFor(index)) {
+            (void)services_.setModulationPlayback(
+                index,
+                !services_.modulationPlaybackActiveFor(index)
+            );
+        }
+    } else if (services_.automationStoredFor(index)) {
+        (void)services_.setAutomationPlayback(
+            index,
+            !services_.automationPlaybackActiveFor(index)
+        );
     }
+    configureOptForFocusedRow();
 }
 
-FLASHMEM void MacroAutomationHandler::copyAutomation() {
+FLASHMEM void MacroAutomationHandler::copyFocusedSource() {
     if (!active()) return;
     if (conversionPreviewActive()) return;
     if (modulationDetailActive()) {
         (void)services_.copyModulation(macroIndex());
     } else {
-        (void)services_.copySlot(macroIndex());
+        (void)services_.copyAutomation(macroIndex());
     }
 }
 
 FLASHMEM void MacroAutomationHandler::beginBottomLeftAction() {
     if (!active()) return;
-    const auto action = automationDetailActive()
-        ? core::state::contextual::ContextActionId::REMOVE
+    if (conversionPreviewActive()) return;
+    services_.endDepthGesture();
+    const uint8_t index = macroIndex();
+    const bool modulation = modulationDetailActive();
+    const bool stored = modulation ? services_.modulationStoredFor(index)
+                                   : services_.automationStoredFor(index);
+    const auto action = stored
+        ? core::state::contextual::ContextActionId::CLEAR
         : core::state::contextual::ContextActionId::NONE;
-    const auto target = slotRef(pages_, macroIndex());
+    const auto target = sourceRef(pages_, index, modulation);
     (void)macro::MacroGuardedActionWorkflow::begin(
         macro_edit_,
         core::state::MacroContextButton::BOTTOM_LEFT,
@@ -354,7 +381,7 @@ FLASHMEM void MacroAutomationHandler::releaseBottomLeftAction() {
         nowMs
     );
     if (release == core::state::contextual::GuardedActionRelease::TAP) {
-        clearAutomation();
+        toggleFocusedPlayback();
     } else if (release ==
                core::state::contextual::GuardedActionRelease::COMMITTED) {
         commitGuardedAction(nowMs);
@@ -374,21 +401,22 @@ FLASHMEM void MacroAutomationHandler::beginBottomRightAction() {
     } else {
         const auto plan = modulationDetailActive()
             ? services_.preflightModulationPaste(macroIndex())
-            : services_.preflightSlotPaste(macroIndex());
+            : services_.preflightAutomationPaste(macroIndex());
         if (plan.actionable()) {
             action = plan.requiresOverwrite()
                 ? core::state::contextual::ContextActionId::OVERWRITE
                 : core::state::contextual::ContextActionId::PASTE;
         }
     }
+    const auto target = conversionPreviewActive()
+        ? sourceRef(pages_, macroIndex(), true)
+        : sourceRef(pages_, macroIndex(), modulationDetailActive());
     (void)macro::MacroGuardedActionWorkflow::begin(
         macro_edit_,
         core::state::MacroContextButton::BOTTOM_RIGHT,
         action,
-        {.kind = modulationDetailActive()
-             ? core::state::contextual::ContextEntityKind::MODULATION_LANE
-             : core::state::contextual::ContextEntityKind::MACRO_SLOT},
-        slotRef(pages_, macroIndex()),
+        target,
+        target,
         now_provider_ ? now_provider_() : 0U,
         static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
     );
@@ -409,7 +437,7 @@ FLASHMEM void MacroAutomationHandler::releaseBottomRightAction() {
                 macro_edit_, applied, nowMs
             );
         } else {
-            copyAutomation();
+            copyFocusedSource();
         }
     } else if (release ==
                core::state::contextual::GuardedActionRelease::COMMITTED) {
@@ -420,29 +448,23 @@ FLASHMEM void MacroAutomationHandler::releaseBottomRightAction() {
 FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
     const auto feedback = macro_edit_.contextFeedback.get();
     const uint8_t index = macroIndex();
-    if (feedback.target != slotRef(pages_, index)) {
+    const auto expectedTarget = conversionPreviewActive()
+        ? sourceRef(pages_, index, true)
+        : sourceRef(pages_, index, modulationDetailActive());
+    if (feedback.target != expectedTarget) {
         macro::MacroGuardedActionWorkflow::complete(macro_edit_, false, nowMs);
         return;
     }
 
     bool applied = false;
-    if (feedback.action == core::state::contextual::ContextActionId::REMOVE &&
-        automationDetailActive()) {
-        applied = services_.removeSlot(index);
+    if (feedback.action == core::state::contextual::ContextActionId::CLEAR &&
+        !conversionPreviewActive()) {
+        services_.endDepthGesture();
+        applied = modulationDetailActive()
+            ? services_.clearModulation(index)
+            : services_.clearAutomation(index);
         macro::MacroGuardedActionWorkflow::complete(macro_edit_, applied, nowMs);
-        if (applied) {
-            // Removing the edited Slot invalidates both the detail surface and
-            // its parent editor. Pop the complete owned stack so no inactive
-            // Macro Edit surface remains presented over the grid.
-            modal::hideWhileCurrentIn(
-                overlays_,
-                std::array{
-                    core::ui::OverlayType::MACRO_AUTOMATION,
-                    core::ui::OverlayType::MACRO_EDIT,
-                }
-            );
-            macro_edit_.closeEditor();
-        }
+        configureOptForFocusedRow();
         return;
     }
 
@@ -460,18 +482,15 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
                 applied = services_.pasteModulation(index, expectedOverwrite);
             }
         } else if (automationDetailActive()) {
-            const auto plan = services_.preflightSlotPaste(index);
+            const auto plan = services_.preflightAutomationPaste(index);
             if (plan.actionable() &&
                 plan.requiresOverwrite() == expectedOverwrite) {
-                applied = services_.pasteSlot(index, expectedOverwrite);
-                if (applied) {
-                    const auto& config = services_.activeConfig(index);
-                    macro_edit_.loadActiveConfig(index, config.channel, config.cc);
-                }
+                applied = services_.pasteAutomation(index, expectedOverwrite);
             }
         }
     }
     macro::MacroGuardedActionWorkflow::complete(macro_edit_, applied, nowMs);
+    if (applied && !conversionPreviewActive()) configureOptForFocusedRow();
 }
 
 FLASHMEM void MacroAutomationHandler::update(uint32_t nowMs) {
@@ -499,38 +518,20 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
         macro_edit_, now_provider_ ? now_provider_() : 0U, false
     );
     const auto context = detailContext(services_, macroIndex());
-    bool resume = false;
-    bool autoMod = false;
+    bool resumeAutomation = false;
     bool convert = false;
     if (modulationDetailActive()) {
-        const auto layout = detail_ui::buildModulationDetailLayout(context);
-        const auto item = layout.at(macro_edit_.modulationFocusedRow.get());
-        resume = item == detail_ui::ModulationDetailItem::RESUME;
-        autoMod = item == detail_ui::ModulationDetailItem::ENABLE_BOTH;
+        return;
     } else {
         const auto layout = detail_ui::buildAutomationDetailLayout(context);
         const auto item = layout.at(macro_edit_.automationFocusedRow.get());
-        resume = item == detail_ui::AutomationDetailItem::RESUME;
-        autoMod = item == detail_ui::AutomationDetailItem::ENABLE_BOTH;
+        resumeAutomation = item == detail_ui::AutomationDetailItem::RESUME;
         convert =
             item == detail_ui::AutomationDetailItem::CONVERT_TO_MODULATION;
     }
-    if (resume) {
+    if (resumeAutomation) {
         if (services_.resumeSources(macroIndex())) {
-            if (modulationDetailActive()) {
-                macro_edit_.modulationFocusedRow.set(0);
-            } else {
-                macro_edit_.automationFocusedRow.set(0);
-            }
-            configureOptForFocusedRow();
-        }
-    } else if (autoMod) {
-        if (services_.enableAutoMod(macroIndex())) {
-            if (modulationDetailActive()) {
-                macro_edit_.modulationFocusedRow.set(0);
-            } else {
-                macro_edit_.automationFocusedRow.set(0);
-            }
+            macro_edit_.automationFocusedRow.set(0);
             configureOptForFocusedRow();
         }
     } else if (convert) {

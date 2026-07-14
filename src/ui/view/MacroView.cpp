@@ -25,8 +25,7 @@ uint8_t sourceStateBits(const MacroWidgetProps& props) {
         (props.automationActive ? 1U << 1U : 0U) |
         (props.modulationStored ? 1U << 2U : 0U) |
         (props.modulationActive ? 1U << 3U : 0U) |
-        (props.modulationPaused ? 1U << 4U : 0U) |
-        (props.modulationSuspended ? 1U << 5U : 0U)
+        (props.modulationPaused ? 1U << 4U : 0U)
     );
 }
 
@@ -181,6 +180,28 @@ FLASHMEM bool MacroView::bindToState() {
     subscriptions_.push_back(
         state_refs_.macroUi.automationManualOverrideMask.subscribe([this](uint16_t) {
             markConfigDirtyIfChanged();
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.runtimeProjectionRevision.subscribe([this](uint32_t revision) {
+            if (core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
+                    revision
+                )) {
+                requestRender(RENDER_VALUE_MASK);
+                return;
+            }
+
+            const int dirtyIndex =
+                core::state::macro::macroRuntimeProjectionRevisionDirtyIndex(
+                    revision
+                );
+            if (dirtyIndex >= 0) {
+                markDirty(static_cast<uint8_t>(dirtyIndex));
+                return;
+            }
+
+            requestRender(RENDER_VALUE_MASK);
         })
     );
 
@@ -642,7 +663,7 @@ void MacroView::processRenderFlags(uint32_t flags) {
     }
 
     MacroViewFrameState frame{};
-    if (hasConfigDirty) {
+    if (hasConfigDirty || hasValueDirty) {
         frame = buildMacroViewFrameState(source);
     }
 
@@ -651,12 +672,22 @@ void MacroView::processRenderFlags(uint32_t flags) {
         const bool configDirty = (flags & configRenderFlag(i)) != 0;
         if (valueDirty || configDirty) {
             if (macros_[i]) {
-                invalidation.include(macros_[i]->getElement());
+                // Hot value changes perform their own exact arc invalidation.
+                // Structural batching is only required when retained labels,
+                // visibility, focus, or source styling can change.
+                if (configDirty) {
+                    invalidation.include(macros_[i]->getElement());
+                }
                 if (valueDirty) {
-                    const float value = hasConfigDirty
-                        ? frame.macros[i].value
-                        : state_refs_.macros.slots[i].value.get();
-                    macros_[i]->setValue(value);
+                    const auto& props = frame.macros[i];
+                    macros_[i]->setResolvedComponents(
+                        props.baseValue,
+                        props.modulationDelta,
+                        props.modulationDepth,
+                        props.value,
+                        props.clippedLow,
+                        props.clippedHigh
+                    );
                 }
                 if (configDirty) {
                     const auto& props = frame.macros[i];
@@ -677,8 +708,7 @@ void MacroView::processRenderFlags(uint32_t flags) {
                             props.automationActive,
                             props.modulationStored,
                             props.modulationActive,
-                            props.modulationPaused,
-                            props.modulationSuspended
+                            props.modulationPaused
                         );
                         rendered_source_state_[i] = nextSourceState;
                         rendered_automation_active_[i] = props.automationActive;

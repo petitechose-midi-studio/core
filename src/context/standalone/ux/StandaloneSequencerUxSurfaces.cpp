@@ -951,7 +951,45 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
 ) const {
     namespace seq = core::state::sequencer;
     const auto& ui = sequencer_.ccLaneUi;
-    if (!ui.visible()) return false;
+    seq::SequencerCcLaneActionSlot actionSlot =
+        seq::SequencerCcLaneActionSlot::COUNT;
+    core::validation::ux::SequencerCcLaneGesturePhase actionPhase =
+        core::validation::ux::SequencerCcLaneGesturePhase::PRESS;
+    const bool actionGesture = ccLaneActionGesture(event, actionSlot, actionPhase);
+    if (actionGesture &&
+        actionPhase == core::validation::ux::SequencerCcLaneGesturePhase::PRESS &&
+        ui.visible()) {
+        gesture_specs_[static_cast<size_t>(actionSlot)] = ui.action(actionSlot);
+    }
+    if (!ui.visible()) {
+        if (!actionGesture ||
+            actionPhase != core::validation::ux::SequencerCcLaneGesturePhase::RELEASE ||
+            !ui.operationFeedback.get().active) {
+            return false;
+        }
+        const auto semantic =
+            core::validation::ux::classifySequencerCcLaneGesture(
+                gesture_specs_[static_cast<size_t>(actionSlot)],
+                ui.actionGuard.get(),
+                ui.operationFeedback.get(),
+                actionPhase
+            );
+        out.mode = "sequencer.cc_lane.closed";
+        out.target = "cc_lane";
+        out.targetIndex = ui.focusedLane;
+        out.source = "sequencer_cc_lane";
+        out.effect = semantic.effect;
+        out.outcome = semantic.outcome;
+        out.reason = core::validation::ux::sequencerCcLaneSemanticReasonName(
+            semantic.reason
+        );
+        out.hasConflict = true;
+        out.conflict = ui.laneConflict || ui.macroConflict;
+        out.hasTargetRoute = true;
+        out.targetRouteValid = ui.routeValid;
+        if (!out.reason && !ui.routeValid) out.reason = "no_route";
+        return true;
+    }
 
     switch (ui.mode) {
         case seq::SequencerCcLaneUiMode::LANE_SELECTOR:
@@ -962,6 +1000,9 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
             break;
         case seq::SequencerCcLaneUiMode::LANE_GRID:
             out.mode = "sequencer.cc_lane.grid";
+            break;
+        case seq::SequencerCcLaneUiMode::TRANSITION_PICKER:
+            out.mode = "sequencer.cc_lane.transition_picker";
             break;
         case seq::SequencerCcLaneUiMode::LANE_SETTINGS:
             out.mode = "sequencer.cc_lane.settings";
@@ -1049,6 +1090,11 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
         out.resolvedValue = ui.resolvedValue;
         std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s",
                       ui.hasAuthoredValue ? "authored" : "--");
+    } else if (ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER) {
+        out.property = "cc_transition";
+        out.targetStep = ui.transitionStep;
+        out.hasAuthoredValue = true;
+        out.authoredValue = static_cast<int32_t>(ui.selectedTransition);
     } else if (ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
                ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) {
         switch (ui.focusedField) {
@@ -1063,17 +1109,27 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
         }
     }
 
-    seq::SequencerCcLaneActionSlot actionSlot =
-        seq::SequencerCcLaneActionSlot::COUNT;
-    core::validation::ux::SequencerCcLaneGesturePhase actionPhase =
-        core::validation::ux::SequencerCcLaneGesturePhase::PRESS;
-    const bool actionGesture = ccLaneActionGesture(event, actionSlot, actionPhase);
+    uint8_t macroEncoderIndex = 0;
+    const bool macroEncoder = isMacroEncoderTurn(event, macroEncoderIndex);
+    uint8_t macroButtonIndex = 0;
+    const bool macroButtonRelease =
+        isMacroButtonRelease(event, macroButtonIndex);
 
-    if (isEncoder(event, Config::EncoderID::NAV)) {
+    if (macroEncoder) {
+        out.effect = ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER
+            ? "select_cc_transition"
+            : "edit_visible_cc_event";
+    } else if (macroButtonRelease) {
+        out.effect = ui.transitionAppliedFeedback
+            ? "apply_cc_transition"
+            : "toggle_visible_cc_event";
+    } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID
             ? "focus_cc_step"
             : (ui.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR
-                ? "select_cc_lane" : "focus_cc_field");
+                ? "select_cc_lane"
+                : (ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER
+                    ? "select_cc_transition" : "focus_cc_field"));
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
         if (ui.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR) {
             out.effect = "noop";
@@ -1084,9 +1140,13 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
                 ? "edit_cc_event" : "edit_cc_draft";
         }
     } else if (actionGesture) {
+        const auto& gestureSpec = actionPhase ==
+                core::validation::ux::SequencerCcLaneGesturePhase::RELEASE
+            ? gesture_specs_[static_cast<size_t>(actionSlot)]
+            : ui.action(actionSlot);
         const auto semantic =
             core::validation::ux::classifySequencerCcLaneGesture(
-                ui.action(actionSlot),
+                gestureSpec,
                 ui.actionGuard.get(),
                 ui.operationFeedback.get(),
                 actionPhase
@@ -1100,7 +1160,11 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
     } else if (isButton(event, Config::ButtonID::NAV,
                         oc::core::input::ButtonBindingType::RELEASE)) {
         if (ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID) {
-            out.effect = "toggle_cc_event";
+            out.effect = ui.transitionAppliedFeedback
+                ? "apply_cc_transition"
+                : "toggle_cc_event";
+        } else if (ui.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER) {
+            out.effect = "apply_cc_transition";
         } else if ((ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
                     ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) &&
                    ui.focusedField == seq::SequencerCcLaneDraftField::ADVANCED) {

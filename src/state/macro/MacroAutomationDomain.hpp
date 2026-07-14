@@ -29,6 +29,8 @@ enum class MacroAutomationConversionPolicy : uint8_t {
 enum class MacroCurvePlaybackState : uint8_t {
     ACTIVE = 0,
     OFF = 1,
+    // Read-only compatibility value. New interactions never create it;
+    // persisted Modulation is normalized to ACTIVE on load.
     SUSPENDED_AFTER_RECORD = 2,
 };
 
@@ -120,6 +122,7 @@ float macroAutomationClamp01(float value);
 float macroAutomationClampSigned(float value);
 bool macroCurvePlaybackStateValid(MacroCurvePlaybackState state);
 bool macroModulationOriginValid(MacroModulationOrigin origin);
+void macroAutomationNormalizeLegacyPlayback(MacroAutomationSlotState& state);
 bool macroAutomationCurveLifecycleValid(const MacroAutomationCurveRef& curve);
 bool macroModulationCurveLifecycleValid(const MacroAutomationCurveRef& curve);
 bool macroCurveStored(const MacroAutomationCurveRef& curve);
@@ -169,13 +172,10 @@ MacroAutomationCurveWindowSummary macroAutomationCurveWindowSummary(
     const MacroAutomationCurveRef& lane,
     const MacroAutomationPointPool& pool);
 
-bool macroAutomationConvertToModulation(const MacroAutomationLane& automation,
-                                        MacroAutomationConversionPolicy policy,
-                                        MacroModulationShape& outShape);
-
 MacroResolvedValue macroResolveValue(float staticValue,
                                      const MacroAutomationSlotState& slot,
                                      const MacroAutomationPointPool& pool,
-                                     float beat);
+                                     float beat,
+                                     bool automationPlaybackEnabled = true);
 
 }  // namespace core::state::macro

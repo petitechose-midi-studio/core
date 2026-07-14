@@ -363,24 +363,28 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             core::state::macro::macroCurvePlaybackActive(
                 automation->modulation
             );
-        const bool modulationSuspended = modulationStored &&
-            core::state::macro::macroCurveSuspendedAfterRecord(
-                automation->modulation
-            );
         const bool modulationPaused = modulationPlayback &&
             automation->modulationDepth <= 0.0f;
+        const auto& projection = source.macroUi.runtimeProjections[i];
+        const float fallbackValue = source.macros.slots[i].value.get();
         frame.macros[i] = {
-            .value = source.macros.slots[i].value.get(),
+            .value = projection.valid ? projection.resolved : fallbackValue,
+            .baseValue = projection.valid ? projection.base : fallbackValue,
+            .modulationDelta = projection.valid ? projection.modulation : 0.0f,
+            .modulationDepth = automation != nullptr
+                ? automation->modulationDepth
+                : 0.0f,
             .cc = config.cc,
             .automationStored = active && automationStored,
             .automationActive = active && automationPlayback && !manualOverride,
             .modulationStored = active && modulationStored,
             .modulationActive = active && modulationPlayback &&
-                !modulationPaused && !manualOverride,
-            .modulationPaused = active && modulationPaused && !manualOverride,
-            .modulationSuspended = active && modulationSuspended,
+                !modulationPaused,
+            .modulationPaused = active && modulationPaused,
             .automationRecording = active && recording,
             .automationManualOverride = active && manualOverride,
+            .clippedLow = projection.valid && projection.clippedLow,
+            .clippedHigh = projection.valid && projection.clippedHigh,
             .active = active,
             .addSlot = addSlot,
             .focused = focused,

@@ -44,6 +44,38 @@ bool pasteFirstClipboardAutomationToSlot(
     const core::state::StructureClipboardState& clipboard
 );
 
+MacroTypedPastePreflight preflightAutomationPaste(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard
+);
+
+bool pasteAutomationFromClipboard(
+    core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard,
+    bool overwriteConfirmed
+);
+
+bool copyDestinationToClipboard(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    core::state::StructureClipboardState& clipboard
+);
+
+MacroTypedPastePreflight preflightDestinationPaste(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard
+);
+
+bool pasteDestinationFromClipboard(
+    core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard,
+    bool overwriteConfirmed
+);
+
 bool copySlotToClipboard(
     const core::state::macro::MacroPagesState& pages,
     const core::state::macro::MacroAutomationSlotAddress& address,

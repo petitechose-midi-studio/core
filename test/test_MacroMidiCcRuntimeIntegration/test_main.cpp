@@ -227,15 +227,16 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
         assert(telemetry->destinations[0].conflict);
     }
 
-    // Playback evaluates both automation lanes at the next 16 ms frame, but
-    // Manual remains the final 127. The shared cache prevents a second send.
+    // Playback evaluates both lanes at the next 16 ms frame. The manual lane
+    // stays a single Live author carrying its resolved Base + Modulation Out,
+    // and the shared cache prevents a second send.
     h.playback.update(1500);
     assert(h.resolveAndDrain(1500).ok());
     assert(h.transport.count == 2);
     {
         auto telemetry = h.coordinator.readTelemetry();
         assert(telemetry);
-        assert(telemetry->candidateCount == 3);
+        assert(telemetry->candidateCount == 2);
         assert(telemetry->destinations[0].winner.author.candidateClass ==
                core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
         assert(telemetry->destinations[0].finalValue == 127);

@@ -264,7 +264,7 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     std::cout << "[PASS] test_macro_edit_buffered_and_selector_flows_commit_on_transition\n";
 }
 
-void test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane() {
+void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
     MacroEditHarness h;
 
     auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
@@ -295,11 +295,26 @@ void test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane() 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroEdit.focusedRow.get() == 1);
 
-    // Summary rows are navigation targets, not hidden value controls. The
-    // dedicated Automation detail owns Manual/Auto so the same encoder grammar
-    // is used for every source lifecycle operation.
+    // OPT is the direct, semantic control for the focused summary row. It
+    // changes playback state without deleting or rewriting the recorded lane.
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) == 0);
+    assert(!h.services.automationPlaybackActiveFor(0));
+
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = h.state.pages.currentActiveTrack(),
+        .page = h.state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    const auto* disabled = core::state::macro::macroAutomationFindSlot(
+        h.state.pages.automation,
+        address
+    );
+    assert(disabled != nullptr);
+    assert(disabled->automation.active);
+    assert(disabled->automation.pointCount == 2);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.services.automationPlaybackActiveFor(0));
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
@@ -308,11 +323,7 @@ void test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane() 
 
     const auto* preserved = core::state::macro::macroAutomationFindSlot(
         h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = h.state.pages.currentActivePage(),
-            .macro = 0,
-        }
+        address
     );
     assert(preserved != nullptr);
     assert(preserved->automation.active);
@@ -321,7 +332,7 @@ void test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane() 
     h.flushState();
 
     std::cout
-        << "[PASS] test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane\n";
+        << "[PASS] test_macro_edit_automation_row_exposes_direct_playback_and_detail\n";
 }
 
 void test_remove_waits_for_owner_scope_release_without_fallback_dispatch() {
@@ -373,7 +384,7 @@ int main() {
     test_quick_release_keeps_macro_edit_open_and_left_top_closes();
     test_slow_release_closes_macro_edit_immediately();
     test_macro_edit_buffered_and_selector_flows_commit_on_transition();
-    test_macro_edit_automation_row_delegates_to_detail_without_mutating_lane();
+    test_macro_edit_automation_row_exposes_direct_playback_and_detail();
     test_remove_waits_for_owner_scope_release_without_fallback_dispatch();
     std::cout << "\nAll MacroEditHandler tests passed.\n";
     return 0;

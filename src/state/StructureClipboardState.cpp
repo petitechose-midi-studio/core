@@ -216,7 +216,7 @@ FLASHMEM bool StructureClipboardState::storeMacroAutomation(
     const core::state::macro::MacroAutomationBankState& automation,
     const core::state::macro::MacroAutomationSlotState& slot
 ) {
-    if (!core::state::macro::macroAutomationSlotHasContent(slot)) {
+    if (!core::state::macro::macroCurveStored(slot.automation)) {
         return rejectClipboardStore(*this);
     }
 
@@ -225,14 +225,52 @@ FLASHMEM bool StructureClipboardState::storeMacroAutomation(
         return rejectClipboardStore(*this);
     }
 
-    if (!clipboard->append(0, 0, automation.pointPool, slot)) {
+    core::state::macro::MacroAutomationSlotState automationOnly{};
+    automationOnly.automation = slot.automation;
+    if (!clipboard->append(0, 0, automation.pointPool, automationOnly)) {
         return rejectClipboardStore(*this);
     }
 
     releaseOwnedPayloads(*this);
-    clipboard->payloadKind = MacroClipboardPayloadKind::LEGACY_AUTOMATION;
+    clipboard->payloadKind = MacroClipboardPayloadKind::AUTOMATION;
     macroAutomationSet = std::move(clipboard);
     commitClipboardKind(*this, StructureClipboardKind::MACRO_AUTOMATION);
+    return true;
+}
+
+FLASHMEM bool StructureClipboardState::storeMacroDestination(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address
+) {
+    if (!core::state::macro::macroAutomationAddressValid(address)) {
+        return rejectClipboardStore(*this);
+    }
+    const auto& page = pages.pageData(address.track, address.page);
+    if (!page.isMacroActive(address.macro)) {
+        return rejectClipboardStore(*this);
+    }
+
+    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
+    if (!clipboard) return rejectClipboardStore(*this);
+    const core::state::macro::MacroAutomationSlotState empty{};
+    if (!clipboard->append(
+            address.page,
+            address.macro,
+            pages.automation.pointPool,
+            empty
+        )) {
+        return rejectClipboardStore(*this);
+    }
+    clipboard->payloadKind = MacroClipboardPayloadKind::DESTINATION;
+    clipboard->sourceTrack = address.track;
+    clipboard->sourcePage = address.page;
+    clipboard->sourceMacro = address.macro;
+    clipboard->sourceMacroActive = true;
+    clipboard->sourceCc = page.cc[address.macro];
+
+    releaseOwnedPayloads(*this);
+    macroAutomationSet = std::move(clipboard);
+    commitClipboardKind(*this, StructureClipboardKind::MACRO_DESTINATION);
     return true;
 }
 

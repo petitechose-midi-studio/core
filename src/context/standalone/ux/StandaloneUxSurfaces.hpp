@@ -2,6 +2,7 @@
 
 #if defined(MS_UX_RECORDER)
 
+#include <array>
 #include <cstdint>
 
 #include <oc/state/ExclusiveVisibilityStack.hpp>
@@ -10,6 +11,7 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
+#include "state/contextual/ContextActionSpec.hpp"
 #include "state/StructureSelectionState.hpp"
 #include "validation/ux/SemanticUxSurface.hpp"
 
@@ -143,6 +145,10 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
     const core::handler::MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
+    mutable std::array<
+        core::state::contextual::ContextActionSpec,
+        3>
+        gesture_specs_{};
 };
 
 class SequencerStepPresetUxSurface final

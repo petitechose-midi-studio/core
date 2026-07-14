@@ -104,7 +104,7 @@ private:
     int valueCountForRow(uint8_t row) const;
     void commitEditedConfig();
     void configureOptForFocusedRow();
-    void copySlot();
+    void copyFocusedDomain();
     void beginBottomRightAction();
     void releaseBottomRightAction();
     void beginBottomLeftAction();

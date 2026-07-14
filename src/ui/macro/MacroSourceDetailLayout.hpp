@@ -13,7 +13,6 @@ struct MacroSourceDetailContext {
     bool automationPlayback = false;
     bool modulationPlayback = false;
     bool manualOverride = false;
-    bool modulationSuspended = false;
 };
 
 enum class AutomationDetailItem : uint8_t {
@@ -23,16 +22,13 @@ enum class AutomationDetailItem : uint8_t {
     LENGTH,
     OFFSET,
     CURVE,
-    ENABLE_BOTH,
 };
 
 enum class ModulationDetailItem : uint8_t {
     PLAYBACK = 0,
-    RESUME,
     DEPTH,
     CURVE,
     ORIGIN,
-    ENABLE_BOTH,
 };
 
 template <typename Item, size_t Capacity>
@@ -50,18 +46,12 @@ struct MacroSourceDetailLayout {
 };
 
 using AutomationDetailLayout =
-    MacroSourceDetailLayout<AutomationDetailItem, 7>;
+    MacroSourceDetailLayout<AutomationDetailItem, 6>;
 using ModulationDetailLayout =
-    MacroSourceDetailLayout<ModulationDetailItem, 6>;
+    MacroSourceDetailLayout<ModulationDetailItem, 4>;
 
-inline bool needsResume(const MacroSourceDetailContext& context) {
-    return context.manualOverride || context.modulationSuspended;
-}
-
-inline bool needsEnableBoth(const MacroSourceDetailContext& context) {
-    return context.automationStored && context.modulationStored &&
-           (context.manualOverride || context.modulationSuspended ||
-            !context.automationPlayback || !context.modulationPlayback);
+inline bool needsAutomationResume(const MacroSourceDetailContext& context) {
+    return context.manualOverride;
 }
 
 inline AutomationDetailLayout buildAutomationDetailLayout(
@@ -69,7 +59,7 @@ inline AutomationDetailLayout buildAutomationDetailLayout(
 ) {
     AutomationDetailLayout out;
     out.append(AutomationDetailItem::PLAYBACK);
-    if (needsResume(context)) out.append(AutomationDetailItem::RESUME);
+    if (needsAutomationResume(context)) out.append(AutomationDetailItem::RESUME);
     if (context.automationStored) {
         // Conversion is a primary semantic action, so it stays above the
         // lower-frequency window-edit controls.
@@ -77,9 +67,6 @@ inline AutomationDetailLayout buildAutomationDetailLayout(
         out.append(AutomationDetailItem::LENGTH);
         out.append(AutomationDetailItem::OFFSET);
         out.append(AutomationDetailItem::CURVE);
-    }
-    if (needsEnableBoth(context)) {
-        out.append(AutomationDetailItem::ENABLE_BOTH);
     }
     return out;
 }
@@ -89,14 +76,10 @@ inline ModulationDetailLayout buildModulationDetailLayout(
 ) {
     ModulationDetailLayout out;
     out.append(ModulationDetailItem::PLAYBACK);
-    if (needsResume(context)) out.append(ModulationDetailItem::RESUME);
     if (context.modulationStored) {
         out.append(ModulationDetailItem::DEPTH);
         out.append(ModulationDetailItem::CURVE);
         out.append(ModulationDetailItem::ORIGIN);
-    }
-    if (needsEnableBoth(context)) {
-        out.append(ModulationDetailItem::ENABLE_BOTH);
     }
     return out;
 }

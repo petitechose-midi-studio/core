@@ -55,10 +55,18 @@ public:
     static MacroPerformanceDomainServices fromCoreState(core::state::CoreState& state);
 
     float runtimeValue(uint8_t index) const;
+    /// Current physical/absolute base, independent from audible Modulation.
+    float absoluteBaseValue(uint8_t index) const;
     /// Apply user/MIDI input to both runtime feedback and persisted base intent.
     void setManualValue(uint8_t index, float value) const;
     /// Apply computed playback feedback without changing persisted base intent.
     void setResolvedValue(uint8_t index, float value) const;
+    /// Apply one canonical Base + Modulation + Out projection.
+    void setResolvedValue(uint8_t index,
+                          const core::state::macro::MacroResolvedValue& value) const;
+    /// Resolve a physical absolute value with the currently-running modulation.
+    core::state::macro::MacroResolvedValue resolveManualValue(uint8_t index,
+                                                               float value) const;
     bool beginAutomationRecording(uint8_t index, uint32_t nowMs) const;
     bool recordAutomationPoint(uint8_t index, uint32_t nowMs, float value) const;
     bool commitAutomationRecording(uint32_t nowMs) const;
@@ -67,11 +75,12 @@ public:
     /// True when Automation or Modulation is stored and enabled for playback.
     bool computedSourcePlaybackActiveFor(uint8_t index) const;
     bool automationActiveFor(uint8_t index) const;
+    bool automationPlaybackActiveFor(uint8_t index) const;
     bool manualOverrideActiveFor(uint8_t index) const;
     bool manualOverrideValueFor(uint8_t index, float& outValue) const;
-    /// Takes final-value ownership without changing the persisted static base.
+    /// Disengages Automation only; Modulation remains active around this base.
     bool takeManualControl(uint8_t index, float value) const;
-    /// Releases Manual and restores the exact enabled computed-source set.
+    /// Releases the Automation takeover. Modulation never needs resuming.
     bool resumeComputedSources(uint8_t index) const;
     bool isMacroSlotActive(uint8_t index) const;
     bool isMacroAddSlot(uint8_t index) const;

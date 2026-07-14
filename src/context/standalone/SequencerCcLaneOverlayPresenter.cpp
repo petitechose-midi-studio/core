@@ -14,6 +14,7 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerCcLaneRouting.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/SequencerCcLaneGridProjection.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -133,6 +134,17 @@ const char* winnerLabel(core::state::shared::MidiCcCandidateClass winner) {
     return "";
 }
 
+const char* transitionLabel(seq::SequencerCcLaneTransition transition) {
+    switch (transition) {
+        case seq::SequencerCcLaneTransition::HOLD: return "Hold";
+        case seq::SequencerCcLaneTransition::LINEAR: return "Linear";
+        case seq::SequencerCcLaneTransition::EASE_IN: return "Ease In";
+        case seq::SequencerCcLaneTransition::EASE_OUT: return "Ease Out";
+        case seq::SequencerCcLaneTransition::EASE_IN_OUT: return "Ease In/Out";
+    }
+    return "Hold";
+}
+
 }  // namespace
 
 FLASHMEM SequencerCcLaneOverlayPresenter::SequencerCcLaneOverlayPresenter(
@@ -202,7 +214,8 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
     const auto feedback = ui.operationFeedback.get();
     const char* feedbackText = feedbackLabel(feedback);
 
-    if (ui.mode != Mode::LANE_GRID) {
+    if (ui.mode != Mode::LANE_GRID &&
+        ui.mode != Mode::TRANSITION_PICKER) {
         grid_.render({.visible = false});
     }
 
@@ -324,11 +337,17 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
                 ? ::standalone::theme::color::MACRO_CC_COLOR
                 : ::standalone::theme::color::MACRO_SUSPENDED;
         }
-        if (feedbackText[0]) {
-            std::snprintf(hint_.data(), hint_.size(), "%s · NAV toggle · OPT value",
+        if (ui.transitionAppliedFeedback) {
+            std::snprintf(
+                hint_.data(), hint_.size(), "Step %u · %s applied",
+                static_cast<unsigned>(ui.transitionStep + 1U),
+                transitionLabel(ui.selectedTransition)
+            );
+        } else if (feedbackText[0]) {
+            std::snprintf(hint_.data(), hint_.size(), "%s · knobs value · press toggle",
                           feedbackText);
         } else {
-            std::snprintf(hint_.data(), hint_.size(), "Steps %u-%u · NAV toggle · OPT value",
+            std::snprintf(hint_.data(), hint_.size(), "Steps %u-%u · knobs value · hold+turn shape",
                           static_cast<unsigned>(start + 1U),
                           static_cast<unsigned>(end));
         }
@@ -354,9 +373,70 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
                     playhead >= 0 && step == static_cast<uint8_t>(playhead),
                 .step = step,
                 .value = authored ? lane->values[step] : lane->initialValue,
+                .transition = authored
+                    ? seq::sequencerCcLaneTransition(*lane, step)
+                    : seq::SequencerCcLaneTransition::HOLD,
             };
+            if (cell + 1U < GRID_WINDOW) {
+                const uint8_t nextStep = static_cast<uint8_t>(step + 1U);
+                if (visible && nextStep < length) {
+                    gridProps.segments[cell] =
+                        core::ui::sequencer::projectSequencerCcLaneGridSegment(
+                            *lane,
+                            step,
+                            length
+                        );
+                }
+            }
+        }
+        if (!ui.transitionAppliedFeedback && feedbackText[0] == '\0' &&
+            ui.focusedStep < length && lane->activeMask.test(ui.focusedStep)) {
+            const auto span =
+                core::ui::sequencer::sequencerCcLaneProjectionSpanAtStep(
+                    *lane,
+                    ui.focusedStep,
+                    length
+                );
+            if (span.valid) {
+                gridProps.contextualHint = true;
+                gridProps.hintSourceStep = ui.focusedStep;
+                gridProps.hintTargetStep = span.target;
+                gridProps.hintTransition = seq::sequencerCcLaneTransition(
+                    *lane,
+                    ui.focusedStep
+                );
+            }
         }
         grid_.render(gridProps);
+        return;
+    } else if (ui.mode == Mode::TRANSITION_PICKER) {
+        std::snprintf(title_.data(), title_.size(), "Step %u · Transition",
+                      static_cast<unsigned>(ui.transitionStep + 1U));
+        std::snprintf(meta_.data(), meta_.size(), "To next authored event");
+        std::snprintf(
+            hint_.data(),
+            hint_.size(),
+            "Held knob/NAV choose · release/press apply"
+        );
+        overlay_.render({
+            .title = "",
+            .meta = "",
+            .rows = nullptr,
+            .rowCount = 0,
+            .selectedIndex = 0,
+            .visible = true,
+            .dataRevision = ui.revision.get(),
+        });
+        grid_.render({
+            .visible = true,
+            .title = title_.data(),
+            .meta = meta_.data(),
+            .hint = hint_.data(),
+            .accentColor = ::standalone::theme::color::MACRO_CC_COLOR,
+            .statusColor = ::standalone::theme::color::MACRO_CC_COLOR,
+            .transitionPicker = true,
+            .pickerSelection = ui.selectedTransition,
+        });
         return;
     } else {
         const auto& draft = ui.draft;

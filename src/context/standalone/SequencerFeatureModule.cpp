@@ -364,6 +364,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         overlays,
         encoders,
         buttons,
+        sequencerViewScopeId,
         oc::ui::lvgl::scopeID(cc_lane_overlay_->getElement()),
         oc::time::millis
     );

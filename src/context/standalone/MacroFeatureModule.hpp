@@ -45,6 +45,7 @@ class OverlayPresentationRegistry;
 
 namespace core::ui {
 class ContextActionStrip;
+class MacroEditorOverlay;
 }
 
 namespace core::handler {
@@ -117,7 +118,7 @@ private:
     core::context::standalone::ux::MacroValueUxSurface macro_value_ux_surface_;
 #endif
 
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> edit_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::MacroEditorOverlay> edit_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> automation_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> edit_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>

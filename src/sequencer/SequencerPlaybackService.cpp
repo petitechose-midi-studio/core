@@ -214,6 +214,9 @@ void SequencerPlaybackService::processCcRuntime_(
                         pattern.midiChannel
                     ),
                     .step = static_cast<uint8_t>((tick / ticksPerStep) % length),
+                    .patternLength = length,
+                    .tickInStep = static_cast<uint8_t>(tick % ticksPerStep),
+                    .ticksPerStep = ticksPerStep,
                     .enabled = (snapshot.enabledMask & static_cast<uint16_t>(1U << track)) != 0,
                     .muted = (snapshot.mutedMask & static_cast<uint16_t>(1U << track)) != 0,
                     .stepTriggered = (tick % ticksPerStep) == 0,

@@ -297,6 +297,22 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         ? source.trackNavigation.selection.selectedMask.get()
         : source.sequencer.structureUi.pageSelection.selectedMask.get();
 
+    if (source.sequencer.ccLaneUi.mode ==
+        core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CLEAR,
+            source.sequencer.ccLaneUi.hasAuthoredValue
+                ? Visual::ACTIVE
+                : Visual::DISABLED
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::SETTINGS_GEAR,
+            Visual::ACTIVE
+        );
+        return props;
+    }
+
     if (selectingPatternVariation) {
         const auto property = source.sequencer.activeStepProperty.get();
         const uint8_t range = source.sequencer.variationRangeForProperty(property);

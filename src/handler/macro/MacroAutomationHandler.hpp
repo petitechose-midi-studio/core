@@ -49,8 +49,8 @@ private:
     void configureOptForFocusedRow();
     void setCoarseEditActive(bool active);
     void backToMacroEdit();
-    void clearAutomation();
-    void copyAutomation();
+    void toggleFocusedPlayback();
+    void copyFocusedSource();
     void beginBottomLeftAction();
     void releaseBottomLeftAction();
     void beginBottomRightAction();

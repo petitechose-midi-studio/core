@@ -82,9 +82,20 @@ FLASHMEM bool copySlotAutomationToClipboard(
     core::state::StructureClipboardState& clipboard
 ) {
     const auto* slot = core::state::macro::macroAutomationFindSlot(bank, address);
-    if (slot == nullptr || !slot->automation.active) return false;
+    if (slot == nullptr || !core::state::macro::macroCurveStored(slot->automation)) {
+        return false;
+    }
 
-    return clipboard.storeMacroAutomation(bank, *slot);
+    if (!clipboard.storeMacroAutomation(bank, *slot) ||
+        !clipboard.macroAutomationSet) {
+        return false;
+    }
+    clipboard.macroAutomationSet->sourceTrack = address.track;
+    clipboard.macroAutomationSet->sourcePage = address.page;
+    clipboard.macroAutomationSet->sourceMacro = address.macro;
+    clipboard.macroAutomationSet->sourceMacroActive = true;
+    clipboard.macroAutomationSet->sourceSlotPresent = true;
+    return true;
 }
 
 FLASHMEM bool pasteFirstClipboardAutomationToSlot(
@@ -100,7 +111,7 @@ FLASHMEM bool pasteFirstClipboardAutomationToSlot(
     auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(bank, address);
     if (slot == nullptr) return false;
 
-    if (!core::state::macro::macroAutomationCopySlotState(
+    if (!core::state::macro::macroAutomationCopyAutomationState(
             bank,
             *slot,
             clipboard.macroAutomationSet->pointPool,
@@ -112,6 +123,130 @@ FLASHMEM bool pasteFirstClipboardAutomationToSlot(
         return false;
     }
 
+    return true;
+}
+
+FLASHMEM MacroTypedPastePreflight preflightAutomationPaste(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard
+) {
+    MacroTypedPastePreflight rejected{};
+    if (!core::state::macro::macroAutomationAddressValid(address) ||
+        !pages.pageData(address.track, address.page).isMacroActive(address.macro)) {
+        rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
+        return rejected;
+    }
+    if (!clipboard.hasMacroAutomation() || !clipboard.macroAutomationSet) {
+        rejected.status = MacroTypedPasteStatus::EMPTY_CLIPBOARD;
+        return rejected;
+    }
+    const auto& payload = *clipboard.macroAutomationSet;
+    if (!slotPayloadValid(payload) ||
+        !core::state::macro::macroCurveStored(payload.entries[0].state.automation)) {
+        rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
+        return rejected;
+    }
+    const auto* target = core::state::macro::macroAutomationFindSlot(
+        pages.automation,
+        address
+    );
+    const uint16_t required = payload.entries[0].state.automation.pointCount;
+    const uint16_t reclaimable = target != nullptr
+        ? core::state::macro::macroAutomationStoredPointCount(
+              target->automation,
+              pages.automation.pointPool
+          )
+        : 0;
+    const bool populated = target != nullptr &&
+        core::state::macro::macroCurveStored(target->automation);
+    return preflightCapacity(
+        pages,
+        address,
+        required,
+        reclaimable,
+        true,
+        populated
+    );
+}
+
+FLASHMEM bool pasteAutomationFromClipboard(
+    core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard,
+    bool overwriteConfirmed
+) {
+    const auto plan = preflightAutomationPaste(pages, address, clipboard);
+    if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
+        return false;
+    }
+    auto* target = core::state::macro::macroAutomationGetOrCreateSlot(
+        pages.automation,
+        address
+    );
+    if (target == nullptr) return false;
+    const auto& payload = *clipboard.macroAutomationSet;
+    return core::state::macro::macroAutomationCopyAutomationState(
+        pages.automation,
+        *target,
+        payload.pointPool,
+        payload.entries[0].state
+    );
+}
+
+FLASHMEM bool copyDestinationToClipboard(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    core::state::StructureClipboardState& clipboard
+) {
+    return clipboard.storeMacroDestination(pages, address);
+}
+
+FLASHMEM MacroTypedPastePreflight preflightDestinationPaste(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard
+) {
+    MacroTypedPastePreflight plan{};
+    if (!core::state::macro::macroAutomationAddressValid(address) ||
+        !pages.pageData(address.track, address.page).isMacroActive(address.macro)) {
+        plan.status = MacroTypedPasteStatus::INVALID_TARGET;
+        return plan;
+    }
+    if (!clipboard.hasMacroDestination() || !clipboard.macroAutomationSet) {
+        plan.status = MacroTypedPasteStatus::EMPTY_CLIPBOARD;
+        return plan;
+    }
+    const auto& payload = *clipboard.macroAutomationSet;
+    if (!slotPayloadValid(payload) || payload.sourceCc > 127) {
+        plan.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
+        return plan;
+    }
+    if (pages.pageData(address.track, address.page).cc[address.macro] ==
+        payload.sourceCc) {
+        plan.status = MacroTypedPasteStatus::INVALID_TARGET;
+        return plan;
+    }
+    plan.status = MacroTypedPasteStatus::OVERWRITE_REQUIRED;
+    return plan;
+}
+
+FLASHMEM bool pasteDestinationFromClipboard(
+    core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard,
+    bool overwriteConfirmed
+) {
+    const auto plan = preflightDestinationPaste(pages, address, clipboard);
+    if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
+        return false;
+    }
+    auto& page = pages.pageData(address.track, address.page);
+    page.cc[address.macro] = clipboard.macroAutomationSet->sourceCc;
+    if (pages.currentActiveTrack() == address.track &&
+        pages.currentActivePage() == address.page) {
+        pages.updateActiveConfigs();
+    }
     return true;
 }
 

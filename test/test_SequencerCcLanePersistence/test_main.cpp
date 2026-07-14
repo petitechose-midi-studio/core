@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -26,6 +27,11 @@ uint16_t readU16(const uint8_t* data) {
         static_cast<uint16_t>(data[0]) |
         static_cast<uint16_t>(static_cast<uint16_t>(data[1]) << 8U)
     );
+}
+
+void writeU16(uint8_t* data, uint16_t value) {
+    data[0] = static_cast<uint8_t>(value & 0xFFU);
+    data[1] = static_cast<uint8_t>((value >> 8U) & 0xFFU);
 }
 
 uint32_t findSectionHeader(
@@ -62,6 +68,12 @@ void authorTwoLanes(seq::SequencerPatternState& pattern) {
     assert(seq::createSequencerCcLane(*bank, 0, inherited).changed());
     assert(seq::setSequencerCcLaneEvent(*bank, 0, 0, 64).changed());
     assert(seq::setSequencerCcLaneEvent(*bank, 0, 127, 110).changed());
+    assert(seq::setSequencerCcLaneTransition(
+        *bank, 0, 0, seq::SequencerCcLaneTransition::LINEAR
+    ).changed());
+    assert(seq::setSequencerCcLaneTransition(
+        *bank, 0, 127, seq::SequencerCcLaneTransition::EASE_IN_OUT
+    ).changed());
 
     seq::SequencerCcLaneDraft pinned{};
     pinned.destination.controller = 1;
@@ -74,6 +86,9 @@ void authorTwoLanes(seq::SequencerPatternState& pattern) {
     pinned.acceptedMacroConflict = true;
     assert(seq::createSequencerCcLane(*bank, 1, pinned).changed());
     assert(seq::setSequencerCcLaneEvent(*bank, 1, 3, 99).changed());
+    assert(seq::setSequencerCcLaneTransition(
+        *bank, 1, 3, seq::SequencerCcLaneTransition::EASE_OUT
+    ).changed());
     pattern.bumpCcLaneRevision();
 }
 
@@ -85,8 +100,12 @@ void assertTwoLanes(const seq::SequencerPatternState& pattern) {
            seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK);
     assert(bank->lanes[0].activeMask.test(0));
     assert(bank->lanes[0].values[0] == 64);
+    assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::LINEAR);
     assert(bank->lanes[0].activeMask.test(127));
     assert(bank->lanes[0].values[127] == 110);
+    assert(seq::sequencerCcLaneTransition(bank->lanes[0], 127) ==
+           seq::SequencerCcLaneTransition::EASE_IN_OUT);
     assert(bank->lanes[1].destination.routePolicy ==
            seq::SequencerCcLaneRoutePolicy::PINNED);
     assert(bank->lanes[1].destination.pinnedPort == 2);
@@ -94,6 +113,8 @@ void assertTwoLanes(const seq::SequencerPatternState& pattern) {
     assert(bank->lanes[1].acceptedMacroConflict);
     assert(bank->lanes[1].activeMask.test(3));
     assert(bank->lanes[1].values[3] == 99);
+    assert(seq::sequencerCcLaneTransition(bank->lanes[1], 3) ==
+           seq::SequencerCcLaneTransition::EASE_OUT);
 }
 
 void test_record_roundtrip_and_atomic_rejection() {
@@ -108,6 +129,73 @@ void test_record_roundtrip_and_atomic_rejection() {
     seq::SequencerCcLaneBank decoded{};
     assert(codec::decodeSequencerCcLaneBankRecord(bytes.data(), bytes.size(), decoded));
     assert(seq::sameSequencerCcLaneBankMusicalData(source, decoded));
+
+    // V1 records have the same 156-byte lane prefix and no transition bytes.
+    // Decoding them must preserve every event and migrate all shapes to Hold.
+    std::array<uint8_t, codec::LEGACY_SEQUENCER_CC_LANE_BANK_RECORD_SIZE>
+        legacyBytes{};
+    std::copy_n(bytes.data(), 5U, legacyBytes.data());
+    legacyBytes[0] = 1U;
+    constexpr size_t V1_LANE_SIZE = 156U;
+    constexpr size_t V3_LANE_SIZE = 204U;
+    for (size_t lane = 0; lane < seq::SequencerCcLaneBank::MAX_LANES; ++lane) {
+        std::copy_n(
+            bytes.data() + 5U + lane * V3_LANE_SIZE,
+            V1_LANE_SIZE,
+            legacyBytes.data() + 5U + lane * V1_LANE_SIZE
+        );
+    }
+    seq::SequencerCcLaneBank migrated{};
+    assert(codec::decodeSequencerCcLaneBankRecord(
+        legacyBytes.data(), legacyBytes.size(), migrated
+    ));
+    assert(migrated.lanes[0].values[0] == 64);
+    assert(seq::sequencerCcLaneTransition(migrated.lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::HOLD);
+    assert(seq::sequencerCcLaneTransition(migrated.lanes[1], 3) ==
+           seq::SequencerCcLaneTransition::HOLD);
+
+    // V2 packed four shapes on two bits. Repack a true V2 record and verify
+    // that all representable shapes migrate into the V3 three-bit layout.
+    std::array<uint8_t, codec::LEGACY_V2_SEQUENCER_CC_LANE_BANK_RECORD_SIZE>
+        legacyV2Bytes{};
+    std::copy_n(bytes.data(), 5U, legacyV2Bytes.data());
+    legacyV2Bytes[0] = 2U;
+    constexpr size_t V2_LANE_SIZE = 188U;
+    for (size_t laneIndex = 0;
+         laneIndex < seq::SequencerCcLaneBank::MAX_LANES;
+         ++laneIndex) {
+        std::copy_n(
+            bytes.data() + 5U + laneIndex * V3_LANE_SIZE,
+            V1_LANE_SIZE,
+            legacyV2Bytes.data() + 5U + laneIndex * V2_LANE_SIZE
+        );
+        const auto& lane = source.lanes[laneIndex];
+        auto* transitions = legacyV2Bytes.data() + 5U +
+            laneIndex * V2_LANE_SIZE + V1_LANE_SIZE;
+        for (uint8_t step = 0; step < seq::SequencerCcLaneBank::MAX_STEPS; ++step) {
+            const auto shape = seq::sequencerCcLaneTransition(lane, step);
+            const uint8_t value = shape == seq::SequencerCcLaneTransition::EASE_IN_OUT
+                ? 0U
+                : static_cast<uint8_t>(shape);
+            transitions[step / 4U] = static_cast<uint8_t>(
+                transitions[step / 4U] |
+                static_cast<uint8_t>(value << ((step % 4U) * 2U))
+            );
+        }
+    }
+    seq::SequencerCcLaneBank migratedV2{};
+    assert(codec::decodeSequencerCcLaneBankRecord(
+        legacyV2Bytes.data(),
+        legacyV2Bytes.size(),
+        migratedV2
+    ));
+    assert(seq::sequencerCcLaneTransition(migratedV2.lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::LINEAR);
+    assert(seq::sequencerCcLaneTransition(migratedV2.lanes[1], 3) ==
+           seq::SequencerCcLaneTransition::EASE_OUT);
+    assert(seq::sequencerCcLaneTransition(migratedV2.lanes[0], 127) ==
+           seq::SequencerCcLaneTransition::HOLD);
 
     seq::SequencerCcLaneBank sentinel = decoded;
     const auto canonicalBytes = bytes;
@@ -125,7 +213,7 @@ void test_record_roundtrip_and_atomic_rejection() {
     std::cout << "[PASS] fixed CC lane record roundtrip and atomic rejection\n";
 }
 
-void test_pattern_v5_roundtrip_legacy_clear_and_malformed_atomicity() {
+void test_pattern_v6_roundtrip_v5_migration_and_malformed_atomicity() {
     seq::SequencerState source{};
     source.reset();
     source.pattern.midiChannel.set(2);
@@ -153,6 +241,76 @@ void test_pattern_v5_roundtrip_legacy_clear_and_malformed_atomicity() {
         0
     );
     assert(ccHeader < encoded.size);
+
+    // The CC section is last for this graph-free Pattern. Replace its V3
+    // payload with a real V2 payload under the legacy v5 envelope header.
+    std::array<uint8_t, codec::LEGACY_V2_SEQUENCER_CC_LANE_BANK_RECORD_SIZE>
+        legacyV2Record{};
+    const auto* sourceBank = seq::sequencerCcLaneView(source.pattern);
+    assert(sourceBank != nullptr);
+    std::array<uint8_t, codec::SEQUENCER_CC_LANE_BANK_RECORD_SIZE> currentRecord{};
+    assert(codec::encodeSequencerCcLaneBankRecord(
+        *sourceBank,
+        currentRecord.data(),
+        currentRecord.size()
+    ));
+    std::copy_n(currentRecord.data(), 5U, legacyV2Record.data());
+    legacyV2Record[0] = 2U;
+    constexpr size_t PREFIX_SIZE = 156U;
+    constexpr size_t CURRENT_LANE_SIZE = 204U;
+    constexpr size_t LEGACY_V2_LANE_SIZE = 188U;
+    for (size_t laneIndex = 0;
+         laneIndex < seq::SequencerCcLaneBank::MAX_LANES;
+         ++laneIndex) {
+        std::copy_n(
+            currentRecord.data() + 5U + laneIndex * CURRENT_LANE_SIZE,
+            PREFIX_SIZE,
+            legacyV2Record.data() + 5U + laneIndex * LEGACY_V2_LANE_SIZE
+        );
+        auto* packed = legacyV2Record.data() + 5U +
+            laneIndex * LEGACY_V2_LANE_SIZE + PREFIX_SIZE;
+        for (uint8_t step = 0; step < seq::SequencerCcLaneBank::MAX_STEPS; ++step) {
+            const auto shape = seq::sequencerCcLaneTransition(
+                sourceBank->lanes[laneIndex],
+                step
+            );
+            const uint8_t value = shape == seq::SequencerCcLaneTransition::EASE_IN_OUT
+                ? 0U
+                : static_cast<uint8_t>(shape);
+            packed[step / 4U] = static_cast<uint8_t>(
+                packed[step / 4U] |
+                static_cast<uint8_t>(value << ((step % 4U) * 2U))
+            );
+        }
+    }
+    auto legacyEnvelope = buffer;
+    legacyEnvelope.bytes[4] = codec::LEGACY_CC_LANE_ENVELOPE_VERSION;
+    writeU16(
+        legacyEnvelope.bytes.data() + ccHeader + 4U,
+        codec::LEGACY_V2_SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    );
+    writeU16(
+        legacyEnvelope.bytes.data() + ccHeader + 8U,
+        codec::LEGACY_V2_SEQUENCER_CC_LANE_BANK_RECORD_SIZE
+    );
+    std::copy(
+        legacyV2Record.begin(),
+        legacyV2Record.end(),
+        legacyEnvelope.bytes.begin() + ccHeader + kSectionHeaderSize
+    );
+    const uint32_t legacyEnvelopeSize = ccHeader + kSectionHeaderSize +
+        codec::LEGACY_V2_SEQUENCER_CC_LANE_BANK_RECORD_SIZE;
+    seq::SequencerState migratedEnvelope{};
+    migratedEnvelope.reset();
+    assert(codec::applyPatternEnvelope(
+        legacyEnvelope.bytes.data(),
+        legacyEnvelopeSize,
+        migratedEnvelope.pattern
+    ));
+    assert(seq::sequencerCcLaneTransition(
+        seq::sequencerCcLaneView(migratedEnvelope.pattern)->lanes[1],
+        3
+    ) == seq::SequencerCcLaneTransition::EASE_OUT);
     // Bank header (5) + lane route-policy field (9).
     buffer.bytes[ccHeader + kSectionHeaderSize + 14U] = 0xFF;
 
@@ -197,7 +355,7 @@ void test_pattern_v5_roundtrip_legacy_clear_and_malformed_atomicity() {
         unchanged.pattern
     ));
     assert(unchanged.pattern.midiChannel.get() == 9);
-    std::cout << "[PASS] Pattern v5, legacy migration, future/malformed rejection\n";
+    std::cout << "[PASS] Pattern v6, v5 migration, future/malformed rejection\n";
 }
 
 void test_project_and_set_roundtrip_every_track_owner() {
@@ -283,7 +441,7 @@ void test_project_and_set_roundtrip_every_track_owner() {
 
 int main() {
     test_record_roundtrip_and_atomic_rejection();
-    test_pattern_v5_roundtrip_legacy_clear_and_malformed_atomicity();
+    test_pattern_v6_roundtrip_v5_migration_and_malformed_atomicity();
     test_project_and_set_roundtrip_every_track_owner();
     std::cout << "All Sequencer CC lane persistence tests passed.\n";
     return 0;

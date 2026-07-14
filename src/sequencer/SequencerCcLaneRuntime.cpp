@@ -1,5 +1,7 @@
 #include "sequencer/SequencerCcLaneRuntime.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::sequencer {
@@ -27,6 +29,67 @@ FLASHMEM bool sameDestination(
 ) {
     return lhs.routeValidity == rhs.routeValidity &&
            sameIdentity(lhs.identity, rhs.identity);
+}
+
+FLASHMEM bool findNextEvent(
+    const core::state::sequencer::SequencerCcLane& lane,
+    uint8_t sourceStep,
+    uint8_t patternLength,
+    uint8_t& outStep,
+    uint8_t& outDistance
+) {
+    for (uint16_t distance = 1; distance <= patternLength; ++distance) {
+        const uint8_t candidate = static_cast<uint8_t>(
+            (static_cast<uint16_t>(sourceStep) + distance) % patternLength
+        );
+        if (!lane.activeMask.test(candidate)) continue;
+        outStep = candidate;
+        outDistance = static_cast<uint8_t>(distance);
+        return true;
+    }
+    return false;
+}
+
+FLASHMEM uint8_t interpolateLaneValue(
+    const core::state::sequencer::SequencerCcLane& lane,
+    const SequencerCcLaneTrackRuntimeInput& input,
+    uint8_t sourceStep
+) {
+    const uint8_t sourceValue = lane.values[sourceStep];
+    const auto transition = core::state::sequencer::sequencerCcLaneTransition(
+        lane,
+        sourceStep
+    );
+    if (transition ==
+        core::state::sequencer::SequencerCcLaneTransition::HOLD) {
+        return sourceValue;
+    }
+
+    uint8_t targetStep = sourceStep;
+    uint8_t distance = 0;
+    if (!findNextEvent(lane, sourceStep, input.patternLength, targetStep, distance) ||
+        distance == 0) {
+        return sourceValue;
+    }
+    const uint8_t elapsedSteps = static_cast<uint8_t>(
+        (static_cast<uint16_t>(input.step) + input.patternLength - sourceStep) %
+        input.patternLength
+    );
+    const uint16_t elapsedTicks = static_cast<uint16_t>(
+        static_cast<uint16_t>(elapsedSteps) * input.ticksPerStep + input.tickInStep
+    );
+    const uint16_t durationTicks = static_cast<uint16_t>(
+        static_cast<uint16_t>(distance) * input.ticksPerStep
+    );
+    const float progress = durationTicks > 0
+        ? static_cast<float>(elapsedTicks) / static_cast<float>(durationTicks)
+        : 0.0f;
+    return core::state::sequencer::interpolateSequencerCcLaneValue(
+        sourceValue,
+        lane.values[targetStep],
+        transition,
+        progress
+    );
 }
 
 }  // namespace
@@ -115,7 +178,11 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
             continue;
         }
         if (!core::state::sequencer::validSequencerCcLaneBank(*input.lanes) ||
-            input.step >= SequencerCcLaneBank::MAX_STEPS) {
+            input.patternLength == 0 ||
+            input.patternLength > SequencerCcLaneBank::MAX_STEPS ||
+            input.step >= input.patternLength ||
+            input.ticksPerStep == 0 ||
+            input.tickInStep >= input.ticksPerStep) {
             pending_frame_ = {};
             pending_frame_.status = SequencerCcLaneRuntimeStatus::INVALID_INPUT;
             out = pending_frame_;
@@ -146,10 +213,19 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
             bool authoredEvent = false;
             if (input.stepTriggered && lane.activeMask.test(input.step)) {
                 runtime.heldValue = lane.values[input.step];
+                runtime.sourceStep = input.step;
                 runtime.hasHeldValue = true;
                 authoredEvent = true;
             }
             if (!runtime.hasHeldValue) continue;
+
+            const uint8_t previousValue = runtime.heldValue;
+            runtime.heldValue = interpolateLaneValue(
+                lane,
+                input,
+                runtime.sourceStep
+            );
+            const bool valueChanged = runtime.heldValue != previousValue;
 
             const auto resolved =
                 core::state::sequencer::resolveSequencerCcLaneDestination(
@@ -198,6 +274,7 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
                     .destination = resolved.destination,
                     .heldValue = runtime.heldValue,
                     .authoredEventThisTick = authoredEvent,
+                    .valueChangedThisTick = valueChanged,
                     .routeMigratedThisTick = routeMigrated,
                 };
             if (authoredEvent) ++pending_frame_.authoredEventCount;

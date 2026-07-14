@@ -32,12 +32,14 @@ enum class StructureClipboardKind : uint8_t {
     MACRO_AUTOMATION = 9,
     MACRO_SLOT = 10,
     MACRO_MODULATION = 11,
+    MACRO_DESTINATION = 12,
 };
 
 enum class MacroClipboardPayloadKind : uint8_t {
-    LEGACY_AUTOMATION = 0,
+    AUTOMATION = 0,
     SLOT,
     MODULATION,
+    DESTINATION,
 };
 
 enum class SequencerStepContentClipboardKind : uint8_t {
@@ -139,7 +141,7 @@ struct MacroAutomationClipboard {
     bool valid = false;
     bool trackScope = false;
     MacroClipboardPayloadKind payloadKind =
-        MacroClipboardPayloadKind::LEGACY_AUTOMATION;
+        MacroClipboardPayloadKind::AUTOMATION;
     uint8_t sourceTrack = core::state::macro::TRACK_COUNT;
     uint8_t sourcePage = core::state::macro::PAGE_COUNT;
     uint8_t sourceMacro = core::state::macro::MACRO_COUNT;
@@ -201,6 +203,12 @@ struct StructureClipboardState {
         const core::state::macro::MacroAutomationSlotState& slot
     );
 
+    /** Stores only the destination CC. Track/channel ownership stays external. */
+    [[nodiscard]] bool storeMacroDestination(
+        const core::state::macro::MacroPagesState& pages,
+        const core::state::macro::MacroAutomationSlotAddress& address
+    );
+
     /** Stores the complete typed Slot: destination, base and both sources. */
     [[nodiscard]] bool storeMacroSlot(
         const core::state::macro::MacroPagesState& pages,
@@ -252,7 +260,15 @@ struct StructureClipboardState {
                macroAutomationSet &&
                macroAutomationSet->valid &&
                macroAutomationSet->count > 0 &&
+               macroAutomationSet->payloadKind == MacroClipboardPayloadKind::AUTOMATION &&
                macroAutomationSet->entries[0].state.automation.active;
+    }
+    bool hasMacroDestination() const {
+        return kind.get() == StructureClipboardKind::MACRO_DESTINATION &&
+               macroAutomationSet && macroAutomationSet->valid &&
+               macroAutomationSet->payloadKind == MacroClipboardPayloadKind::DESTINATION &&
+               macroAutomationSet->sourceMacroActive &&
+               macroAutomationSet->sourceCc <= 127;
     }
     bool hasMacroSlot() const {
         return kind.get() == StructureClipboardKind::MACRO_SLOT &&

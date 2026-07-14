@@ -166,6 +166,9 @@ FLASHMEM void SequencerCcLaneUiState::reset() {
     selectorIndex = 0;
     focusedLane = 0;
     focusedStep = 0;
+    transitionStep = 0;
+    selectedTransition = SequencerCcLaneTransition::HOLD;
+    transitionAppliedFeedback = false;
     focusedField = SequencerCcLaneDraftField::CONTROLLER;
     draft = {};
     draftDirty = false;

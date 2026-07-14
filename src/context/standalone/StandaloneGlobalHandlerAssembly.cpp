@@ -76,6 +76,7 @@ public:
                 state.sequencer.contentView,
                 state.sequencer.patternQuickControls,
                 state.sequencer.stepPropertyInlineSelector,
+                state.sequencer.ccLaneUi,
                 state.trackNavigation.selection,
                 state.macroUi.pageSelection,
                 state.sequencer.structureUi.pageSelection,

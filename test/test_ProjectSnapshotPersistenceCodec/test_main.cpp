@@ -112,6 +112,13 @@ core::state::macro::MacroCurvePlaybackState denseModulationPlaybackState(uint8_t
         : core::state::macro::MacroCurvePlaybackState::ACTIVE;
 }
 
+core::state::macro::MacroCurvePlaybackState expectedDenseModulationPlaybackState(
+    uint8_t /*index*/
+) {
+    // Legacy suspension is normalized to an audible independent Modulation.
+    return core::state::macro::MacroCurvePlaybackState::ACTIVE;
+}
+
 core::state::macro::MacroModulationOrigin denseModulationOrigin(uint8_t index) {
     return (index % 8U) == 0U
         ? core::state::macro::MacroModulationOrigin::CONVERTED_MEAN
@@ -217,7 +224,8 @@ void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
 
         if (denseMacroAutomationHasModulation(i)) {
             assert(slot->modulation.active);
-            assert(slot->modulation.playbackState == denseModulationPlaybackState(i));
+            assert(slot->modulation.playbackState ==
+                   expectedDenseModulationPlaybackState(i));
             assert(slot->modulation.modulationOrigin == denseModulationOrigin(i));
             assert(slot->modulation.pointCount == 3);
             assert(std::fabs(

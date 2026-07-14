@@ -231,23 +231,18 @@ FLASHMEM void formatAutomationState(
         std::snprintf(out, outSize, "%s", "Stored · Off");
         return;
     }
-    std::snprintf(out, outSize, "%s", manual ? "On · Manual" : "On");
+    std::snprintf(out, outSize, "%s", manual ? "Manual · Auto on" : "On");
 }
 
 FLASHMEM void formatModulationState(
     char* out,
     size_t outSize,
-    const core::state::macro::MacroAutomationSlotState* slot,
-    bool manual
+    const core::state::macro::MacroAutomationSlotState* slot
 ) {
     if (out == nullptr || outSize == 0) return;
     if (slot == nullptr ||
         !core::state::macro::macroCurveStored(slot->modulation)) {
         std::snprintf(out, outSize, "%s", "Off");
-        return;
-    }
-    if (core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation)) {
-        std::snprintf(out, outSize, "%s", "Suspended");
         return;
     }
     if (!core::state::macro::macroCurvePlaybackActive(slot->modulation)) {
@@ -256,10 +251,6 @@ FLASHMEM void formatModulationState(
     }
     if (slot->modulationDepth <= 0.0f) {
         std::snprintf(out, outSize, "%s", "Paused · 0%%");
-        return;
-    }
-    if (manual) {
-        std::snprintf(out, outSize, "%s", "On · Manual");
         return;
     }
     std::snprintf(
@@ -285,8 +276,6 @@ FLASHMEM core::ui::macro::MacroSourceDetailContext sourceDetailContext(
         .modulationPlayback =
             core::state::macro::macroCurvePlaybackActive(slot->modulation),
         .manualOverride = manual,
-        .modulationSuspended =
-            core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation),
     };
 }
 
@@ -445,6 +434,9 @@ FLASHMEM void projectGuardedAction(
     } else if (feedback.action == core::state::contextual::ContextActionId::REMOVE) {
         slot.icon = ::standalone::icons::ACTION_REMOVE;
         slot.tone = core::ui::ContextActionStripTone::DESTRUCTIVE;
+    } else if (feedback.action == core::state::contextual::ContextActionId::CLEAR) {
+        slot.icon = ::standalone::icons::ACTION_CLEAR;
+        slot.tone = core::ui::ContextActionStripTone::DESTRUCTIVE;
     }
 
     switch (feedback.status) {
@@ -499,8 +491,7 @@ FLASHMEM void initializeStaticItems(StaticItems& items) {
     }
 }
 
-FLASHMEM EditRenderData buildEditRenderData(Source& source) {
-    EditRenderData data{};
+FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
     const uint8_t macroIndex = source.macroEdit.editingIndex.get();
     const uint8_t cc = source.macroEdit.tempCC.get();
     size_t titlePos = oc::type::text::appendString(
@@ -545,6 +536,34 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
         core::state::macro::macroCurveStored(slot->automation);
     const bool modulationStored = slot != nullptr &&
         core::state::macro::macroCurveStored(slot->modulation);
+    uint32_t baseBits = 0;
+    std::memcpy(
+        &baseBits,
+        &source.pages.activePageData().values[macroIndex],
+        sizeof(baseBits)
+    );
+    uint32_t previewRevision = mixRevision(
+        source.configRevision.get(),
+        static_cast<uint32_t>(macroIndex) |
+            (static_cast<uint32_t>(source.pages.currentActivePage()) << 8U) |
+            (static_cast<uint32_t>(source.pages.currentActiveTrack()) << 16U) |
+            (manualOverride ? (1UL << 24U) : 0U)
+    );
+    previewRevision = mixRevision(previewRevision, baseBits);
+    previewRevision = mixRevision(
+        previewRevision,
+        source.macroUi.automationRecordingRevision.get()
+    );
+    if (data.previewRevision != previewRevision) {
+        core::ui::buildMacroEditorPreviewModel(
+            source.pages.activePageData().values[macroIndex],
+            slot,
+            source.pages.automation.pointPool,
+            manualOverride,
+            data.preview
+        );
+        data.previewRevision = previewRevision;
+    }
     formatAutomationState(
         data.valueBuffers[1].data(),
         data.valueBuffers[1].size(),
@@ -554,8 +573,7 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
     formatModulationState(
         data.valueBuffers[2].data(),
         data.valueBuffers[2].size(),
-        slot,
-        manualOverride
+        slot
     );
 
     data.rows = {{
@@ -594,15 +612,32 @@ FLASHMEM EditRenderData buildEditRenderData(Source& source) {
     if (slot != nullptr) {
         revision = mixRevision(revision, slot->automation.pointCount);
         revision = mixRevision(revision, slot->modulation.pointCount);
+        revision = mixRevision(
+            revision,
+            static_cast<uint32_t>(slot->automation.playbackState)
+        );
+        revision = mixRevision(
+            revision,
+            static_cast<uint32_t>(slot->modulation.playbackState)
+        );
         uint32_t depthBits = 0;
         std::memcpy(&depthBits, &slot->modulationDepth, sizeof(depthBits));
         revision = mixRevision(revision, depthBits);
     }
+    revision = mixRevision(revision, baseBits);
     data.dataRevision = mixRevision(
-        revision,
-        source.macroUi.automationRecordingRevision.get()
+        mixRevision(
+            revision,
+            source.macroUi.automationRecordingRevision.get()
+        ),
+        data.previewRevision
     );
 
+}
+
+FLASHMEM EditRenderData buildEditRenderData(Source& source) {
+    EditRenderData data{};
+    buildEditRenderData(source, data);
     return data;
 }
 
@@ -730,13 +765,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             data.valueBuffers[5].data(),
             data.valueBuffers[5].size(),
             "%s",
-            "Restore control"
-        );
-        std::snprintf(
-            data.valueBuffers[6].data(),
-            data.valueBuffers[6].size(),
-            "%s",
-            "Enable both"
+            "Resume Auto"
         );
 
         const auto layout =
@@ -748,7 +777,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                     row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
                     break;
                 case core::ui::macro::AutomationDetailItem::RESUME:
-                    row = {.key = "Resume control", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_SUSPENDED};
+                    row = {.key = "Automation", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
                     break;
                 case core::ui::macro::AutomationDetailItem::CONVERT_TO_MODULATION:
                     row = {.key = "Convert to Mod", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION};
@@ -762,9 +791,6 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 case core::ui::macro::AutomationDetailItem::CURVE:
                     row = {.key = "Curve", .value = data.valueBuffers[4].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION, .sparkline = curveSparkline};
                     break;
-                case core::ui::macro::AutomationDetailItem::ENABLE_BOTH:
-                    row = {.key = "Automation + Mod", .value = data.valueBuffers[6].data(), .icon = ::standalone::icons::ACTION_APPLY, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION};
-                    break;
             }
             data.rows[i] = row;
         }
@@ -777,8 +803,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         formatModulationState(
             data.valueBuffers[0].data(),
             data.valueBuffers[0].size(),
-            slot,
-            manualOverride
+            slot
         );
         const bool paused = detailContext.modulationPlayback &&
             slot != nullptr && slot->modulationDepth <= 0.0f;
@@ -804,8 +829,6 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 ? modulationOriginLabel(slot->modulation.modulationOrigin)
                 : "None"
         );
-        std::snprintf(data.valueBuffers[4].data(), data.valueBuffers[4].size(), "%s", "Restore control");
-        std::snprintf(data.valueBuffers[5].data(), data.valueBuffers[5].size(), "%s", "Enable both");
         const auto modulationSparkline = modulationStored
             ? buildModulationSparkline(
                   slot->modulation,
@@ -818,10 +841,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             ms::ui::KeyValueRow row{};
             switch (layout.items[i]) {
                 case core::ui::macro::ModulationDetailItem::PLAYBACK:
-                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = detailContext.modulationSuspended ? ::standalone::icons::STATUS_SUSPENDED : (paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::MACRO_MODULATION), .iconFont = standalone_fonts.icons_14, .iconColor = detailContext.modulationSuspended ? ::standalone::theme::color::MACRO_SUSPENDED : (paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION)};
-                    break;
-                case core::ui::macro::ModulationDetailItem::RESUME:
-                    row = {.key = "Resume control", .value = data.valueBuffers[4].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_SUSPENDED};
+                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
                     break;
                 case core::ui::macro::ModulationDetailItem::DEPTH:
                     row = {.key = "Depth", .value = data.valueBuffers[1].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
@@ -831,9 +851,6 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                     break;
                 case core::ui::macro::ModulationDetailItem::ORIGIN:
                     row = {.key = "Origin", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::TEXT_SECONDARY};
-                    break;
-                case core::ui::macro::ModulationDetailItem::ENABLE_BOTH:
-                    row = {.key = "Automation + Mod", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::ACTION_APPLY, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION};
                     break;
             }
             data.rows[i] = row;
@@ -899,15 +916,46 @@ FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
     }
 
     props.visible = true;
-    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::ACTION_REMOVE,
-        Visual::ACTIVE,
-        Tone::DESTRUCTIVE
+    const uint8_t row = std::min<uint8_t>(source.macroEdit.focusedRow.get(), 2U);
+    const auto address = currentAddress(source);
+    const auto* slot = core::state::macro::macroAutomationFindSlot(
+        source.pages.automation,
+        address
     );
-    props.slots[1] = scopeLabel("Slot");
+    const bool automationStored = slot != nullptr &&
+        core::state::macro::macroCurveStored(slot->automation);
+    const bool modulationStored = slot != nullptr &&
+        core::state::macro::macroCurveStored(slot->modulation);
+    const bool automationPlayback = automationStored &&
+        core::state::macro::macroCurvePlaybackActive(slot->automation);
+    const bool modulationPlayback = modulationStored &&
+        core::state::macro::macroCurvePlaybackActive(slot->modulation);
+
+    if (row == 0U) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::ACTION_REMOVE,
+            Visual::ACTIVE,
+            Tone::DESTRUCTIVE
+        );
+        props.slots[1] = scopeLabel("Destination");
+    } else {
+        const bool stored = row == 1U ? automationStored : modulationStored;
+        const bool playback = row == 1U ? automationPlayback : modulationPlayback;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            playback
+                ? (row == 1U ? ::standalone::icons::MACRO_AUTOMATION
+                             : ::standalone::icons::MACRO_MODULATION)
+                : ::standalone::icons::STATUS_PAUSED,
+            stored ? Visual::ACTIVE : Visual::DISABLED,
+            Tone::NEUTRAL
+        );
+        props.slots[1] = scopeLabel(row == 1U ? "Automation" : "Modulation");
+    }
+    const bool canCopy = row == 0U ||
+        (row == 1U ? automationStored : modulationStored);
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         ::standalone::icons::ACTION_COPY,
-        Visual::ACTIVE,
+        canCopy ? Visual::ACTIVE : Visual::DISABLED,
         Tone::NEUTRAL
     );
     projectGuardedAction(
@@ -956,17 +1004,24 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         address
     );
     const bool modulation = phase == core::state::MacroEditFlowPhase::MODULATION;
+    const bool automationStored = slot != nullptr &&
+        core::state::macro::macroCurveStored(slot->automation);
     const bool modulationStored = slot != nullptr &&
         core::state::macro::macroCurveStored(slot->modulation);
-    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        modulation ? ::standalone::icons::ACTION_CLEAR
-                   : ::standalone::icons::ACTION_REMOVE,
-        modulationStored || !modulation ? Visual::ACTIVE : Visual::DISABLED,
-        Tone::DESTRUCTIVE
+    const bool stored = modulation ? modulationStored : automationStored;
+    const bool playback = stored && core::state::macro::macroCurvePlaybackActive(
+        modulation ? slot->modulation : slot->automation
     );
-    props.slots[1] = scopeLabel(modulation ? "Modulation" : "Slot");
-    const bool canCopy = modulation ? modulationStored
-                                    : source.pages.isMacroSlotActive(address.macro);
+    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+        playback
+            ? (modulation ? ::standalone::icons::MACRO_MODULATION
+                          : ::standalone::icons::MACRO_AUTOMATION)
+            : ::standalone::icons::STATUS_PAUSED,
+        stored ? Visual::ACTIVE : Visual::DISABLED,
+        Tone::NEUTRAL
+    );
+    props.slots[1] = scopeLabel(modulation ? "Modulation" : "Automation");
+    const bool canCopy = stored;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         ::standalone::icons::ACTION_COPY,
         canCopy ? Visual::ACTIVE : Visual::DISABLED,

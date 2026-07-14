@@ -16,7 +16,8 @@ namespace core::persistence::sequencer_codec {
 
 inline constexpr uint8_t LEGACY_ENVELOPE_VERSION = 3;
 inline constexpr uint8_t PITCH_POLICY_ENVELOPE_VERSION = 4;
-inline constexpr uint8_t CC_LANE_ENVELOPE_VERSION = 5;
+inline constexpr uint8_t LEGACY_CC_LANE_ENVELOPE_VERSION = 5;
+inline constexpr uint8_t CC_LANE_ENVELOPE_VERSION = 6;
 inline constexpr uint32_t ENVELOPE_HEADER_SIZE = 12;
 inline constexpr uint32_t ENVELOPE_SECTION_HEADER_SIZE = 10;
 inline constexpr uint32_t MAX_GRAPH_ENVELOPE_SIZE =
@@ -43,9 +44,9 @@ inline constexpr uint32_t MAX_SET_ENVELOPE_PAYLOAD_SIZE =
 inline constexpr uint32_t MAX_ENVELOPE_PAYLOAD_SIZE =
     MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE;
 
-static_assert(MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE == 14705U);
-static_assert(MAX_SET_ENVELOPE_PAYLOAD_SIZE == 234960U);
-static_assert(MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 235023U);
+static_assert(MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE == 14897U);
+static_assert(MAX_SET_ENVELOPE_PAYLOAD_SIZE == 238032U);
+static_assert(MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 238095U);
 
 template<uint32_t Capacity>
 struct FixedEnvelopeBuffer {
