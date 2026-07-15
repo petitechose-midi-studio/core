@@ -1,15 +1,14 @@
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
 #include <array>
-#include <cmath>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "persistence/LegacyMacroAutomationPersistenceCodec.hpp"
 #include "persistence/MacroTrackBankPersistenceCodec.hpp"
-#include "persistence/PersistenceBinaryCodec.hpp"
 #include "persistence/ProjectStatePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -44,12 +43,9 @@ namespace project_file = core::persistence::project_file;
 namespace project_state_codec = core::persistence::project_state_codec;
 namespace macro_track_codec = core::persistence::macro_track_codec;
 namespace sequencer_codec = core::persistence::sequencer_codec;
-namespace binary = core::persistence::binary_codec;
+namespace legacy_macro_codec =
+    core::persistence::macro_automation_legacy_codec;
 namespace macro = core::state::macro;
-
-FLASHMEM bool validateMacroAutomationBank(
-    const core::state::macro::MacroAutomationBankState& bank
-);
 
 FLASHMEM void resetMacroTracks(core::state::project::ProjectSnapshot& target) {
     for (uint8_t i = 0; i < target.macroTracks.size(); ++i) {
@@ -123,134 +119,6 @@ FLASHMEM void reportMissingOptional(project_file::LoadReport* report, project_fi
     reportDefaulted(report, id);
 }
 
-FLASHMEM uint32_t macroAutomationPayloadSize(uint8_t entryCount, uint16_t pointCount) {
-    return PROJECT_MACRO_AUTOMATION_HEADER_SIZE +
-           static_cast<uint32_t>(entryCount) * PROJECT_MACRO_AUTOMATION_ENTRY_SIZE +
-           static_cast<uint32_t>(pointCount) * PROJECT_MACRO_AUTOMATION_POINT_SIZE;
-}
-
-FLASHMEM bool writeMacroAutomationCurveRef(binary::Writer& writer,
-                                           const macro::MacroAutomationCurveRef& curve) {
-    return writer.writeU8(curve.active ? 1U : 0U) &&
-           writer.writeU8(static_cast<uint8_t>(curve.playbackState)) &&
-           writer.writeU16(curve.pointOffset) &&
-           writer.writeU16(curve.pointCount) &&
-           writer.writeU16(curve.sourceDurationTicks) &&
-           writer.writeU16(curve.durationTicks) &&
-           writer.writeU16(curve.windowOffsetTicks) &&
-           writer.writeU8(static_cast<uint8_t>(curve.interpolation)) &&
-           writer.writeU8(static_cast<uint8_t>(curve.modulationOrigin));
-}
-
-FLASHMEM bool readMacroAutomationCurveRef(binary::Reader& reader,
-                                          macro::MacroAutomationCurveRef& curve,
-                                          bool legacyV14) {
-    uint8_t active = 0;
-    uint8_t playbackState = 0;
-    uint8_t interpolation = 0;
-    uint8_t modulationOrigin = 0;
-    if (!reader.readU8(active) ||
-        !reader.readU8(playbackState) ||
-        !reader.readU16(curve.pointOffset) ||
-        !reader.readU16(curve.pointCount) ||
-        !reader.readU16(curve.sourceDurationTicks) ||
-        !reader.readU16(curve.durationTicks) ||
-        !reader.readU16(curve.windowOffsetTicks) ||
-        !reader.readU8(interpolation) ||
-        !reader.readU8(modulationOrigin)) {
-        return false;
-    }
-    if (interpolation != static_cast<uint8_t>(macro::MacroAutomationInterpolation::LINEAR)) {
-        return false;
-    }
-    if (legacyV14 && (playbackState != 0U || modulationOrigin != 0U)) {
-        return false;
-    }
-    curve.active = active != 0;
-    curve.interpolation = static_cast<macro::MacroAutomationInterpolation>(interpolation);
-    curve.playbackState = legacyV14
-        ? macro::MacroCurvePlaybackState::ACTIVE
-        : static_cast<macro::MacroCurvePlaybackState>(playbackState);
-    curve.modulationOrigin = legacyV14
-        ? macro::MacroModulationOrigin::NATIVE
-        : static_cast<macro::MacroModulationOrigin>(modulationOrigin);
-    if (!macro::macroCurvePlaybackStateValid(curve.playbackState) ||
-        !macro::macroModulationOriginValid(curve.modulationOrigin)) {
-        return false;
-    }
-    return true;
-}
-
-FLASHMEM bool writeMacroAutomationSlotState(binary::Writer& writer,
-                                            const macro::MacroAutomationSlotState& state) {
-    return writeMacroAutomationCurveRef(writer, state.automation) &&
-           writeMacroAutomationCurveRef(writer, state.modulation) &&
-           writer.writeFloat32(state.modulationDepth);
-}
-
-FLASHMEM bool readMacroAutomationSlotState(binary::Reader& reader,
-                                           macro::MacroAutomationSlotState& state,
-                                           bool legacyV14) {
-    if (!readMacroAutomationCurveRef(reader, state.automation, legacyV14) ||
-        !readMacroAutomationCurveRef(reader, state.modulation, legacyV14) ||
-        !reader.readFloat32(state.modulationDepth)) {
-        return false;
-    }
-    macro::macroAutomationNormalizeLegacyPlayback(state);
-    return true;
-}
-
-FLASHMEM bool fillMacroAutomationPayload(
-    const core::state::project::ProjectSnapshot& snapshot,
-    uint8_t* out,
-    uint32_t outCapacity,
-    uint32_t& outSize
-) {
-    outSize = 0;
-    if (out == nullptr) return false;
-
-    if (!snapshot.macroAutomation) return false;
-    const auto& bank = *snapshot.macroAutomation;
-    if (!validateMacroAutomationBank(bank)) return false;
-
-    const uint8_t entryCount = bank.entryCount;
-    const uint16_t pointCount = bank.pointPool.used;
-    const uint32_t required = macroAutomationPayloadSize(entryCount, pointCount);
-    if (required > outCapacity || required > PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE) {
-        return false;
-    }
-
-    binary::Writer writer(out, outCapacity);
-    if (!writer.writeU8(entryCount) ||
-        !writer.writeU8(0) ||
-        !writer.writeU16(pointCount) ||
-        !writer.writeU32(0)) {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < entryCount; ++i) {
-        const auto& source = bank.entries[i];
-        if (!writer.writeU8(source.address.track) ||
-            !writer.writeU8(source.address.page) ||
-            !writer.writeU8(source.address.macro) ||
-            !writer.writeU8(0) ||
-            !writeMacroAutomationSlotState(writer, source.state)) {
-            return false;
-        }
-    }
-
-    for (uint16_t i = 0; i < pointCount; ++i) {
-        const auto& point = bank.pointPool.points[i];
-        if (!writer.writeU16(point.tick) || !writer.writeI16(point.value)) {
-            return false;
-        }
-    }
-
-    if (!writer.ok() || writer.offset() != required) return false;
-    outSize = writer.offset();
-    return true;
-}
-
 FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
                              core::state::project::ProjectSnapshot& target,
                              project_file::LoadReport* report) {
@@ -298,204 +166,6 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
     return true;
 }
 
-FLASHMEM bool validateMacroAutomationCurve(
-    const core::state::macro::MacroAutomationCurveRef& curve,
-    const core::state::macro::MacroAutomationPointPool& pool
-) {
-    if (!core::state::macro::macroCurvePlaybackStateValid(curve.playbackState) ||
-        !core::state::macro::macroModulationOriginValid(curve.modulationOrigin)) {
-        return false;
-    }
-    if (!curve.active) return curve.pointCount == 0;
-    if (curve.durationTicks == 0 || curve.sourceDurationTicks == 0 || curve.pointCount == 0) {
-        return false;
-    }
-    if (curve.windowOffsetTicks > curve.sourceDurationTicks) return false;
-    if (curve.pointOffset >= pool.used) return false;
-    const uint32_t end =
-        static_cast<uint32_t>(curve.pointOffset) + static_cast<uint32_t>(curve.pointCount);
-    if (end > pool.used || end > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
-        return false;
-    }
-    uint16_t previousTick = 0;
-    for (uint16_t i = 0; i < curve.pointCount; ++i) {
-        const auto& point = pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
-        if (point.tick > curve.sourceDurationTicks) return false;
-        if (i > 0 && point.tick < previousTick) return false;
-        previousTick = point.tick;
-    }
-    return true;
-}
-
-struct MacroAutomationCurveRange {
-    uint16_t start = 0;
-    uint16_t end = 0;
-};
-
-FLASHMEM bool appendMacroAutomationCurveRange(
-    const core::state::macro::MacroAutomationCurveRef& curve,
-    std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
-    uint8_t& count
-) {
-    if (!curve.active) return true;
-    if (count >= ranges.size()) return false;
-    ranges[count++] = MacroAutomationCurveRange{
-        .start = curve.pointOffset,
-        .end = static_cast<uint16_t>(curve.pointOffset + curve.pointCount),
-    };
-    return true;
-}
-
-FLASHMEM void sortMacroAutomationRanges(
-    std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
-    uint8_t count
-) {
-    for (uint8_t i = 1; i < count; ++i) {
-        const auto current = ranges[i];
-        uint8_t j = i;
-        while (j > 0 && ranges[j - 1U].start > current.start) {
-            ranges[j] = ranges[j - 1U];
-            --j;
-        }
-        ranges[j] = current;
-    }
-}
-
-FLASHMEM bool macroAutomationPoolIsFullyCovered(
-    const std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
-    uint8_t count,
-    uint16_t poolUsed
-) {
-    if (poolUsed == 0) return count == 0;
-    if (count == 0 || ranges[0].start != 0) return false;
-    uint16_t cursor = 0;
-    for (uint8_t i = 0; i < count; ++i) {
-        if (ranges[i].start != cursor || ranges[i].end <= ranges[i].start) return false;
-        cursor = ranges[i].end;
-    }
-    return cursor == poolUsed;
-}
-
-FLASHMEM bool validateMacroAutomationBank(
-    const core::state::macro::MacroAutomationBankState& bank
-) {
-    if (bank.entryCount > core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
-    if (bank.pointPool.used > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
-        return false;
-    }
-    std::array<
-        MacroAutomationCurveRange,
-        core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2> ranges{};
-    uint8_t rangeCount = 0;
-    const uint8_t count = bank.entryCount;
-    for (uint8_t i = 0; i < count; ++i) {
-        const auto& entry = bank.entries[i];
-        if (!entry.active) return false;
-        if (!core::state::macro::macroAutomationAddressValid(entry.address)) return false;
-        for (uint8_t j = static_cast<uint8_t>(i + 1U); j < count; ++j) {
-            if (bank.entries[j].active &&
-                core::state::macro::macroAutomationAddressEquals(
-                    entry.address,
-                    bank.entries[j].address
-                )) {
-                return false;
-            }
-        }
-        if (!core::state::macro::macroAutomationCurveLifecycleValid(
-                entry.state.automation
-            ) ||
-            !core::state::macro::macroModulationCurveLifecycleValid(
-                entry.state.modulation
-            )) {
-            return false;
-        }
-        if (!validateMacroAutomationCurve(entry.state.automation, bank.pointPool)) return false;
-        if (!validateMacroAutomationCurve(entry.state.modulation, bank.pointPool)) return false;
-        if (!std::isfinite(entry.state.modulationDepth) ||
-            entry.state.modulationDepth < 0.0f ||
-            entry.state.modulationDepth > 1.0f) {
-            return false;
-        }
-        if (!appendMacroAutomationCurveRange(entry.state.automation, ranges, rangeCount)) {
-            return false;
-        }
-        if (!appendMacroAutomationCurveRange(entry.state.modulation, ranges, rangeCount)) {
-            return false;
-        }
-    }
-    sortMacroAutomationRanges(ranges, rangeCount);
-    return macroAutomationPoolIsFullyCovered(ranges, rangeCount, bank.pointPool.used);
-}
-
-FLASHMEM bool readMacroAutomationPayload(const uint8_t* data,
-                                          uint32_t size,
-                                          macro::MacroAutomationBankState& out,
-                                          bool legacyV14) {
-    out.clear();
-    if (data == nullptr || size < PROJECT_MACRO_AUTOMATION_HEADER_SIZE) return false;
-
-    binary::Reader reader(data, size);
-    uint8_t entryCount = 0;
-    uint8_t reserved0 = 0;
-    uint16_t pointCount = 0;
-    uint32_t reserved1 = 0;
-    if (!reader.readU8(entryCount) ||
-        !reader.readU8(reserved0) ||
-        !reader.readU16(pointCount) ||
-        !reader.readU32(reserved1)) {
-        return false;
-    }
-    (void)reserved0;
-    (void)reserved1;
-
-    if (entryCount > macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
-    if (pointCount > macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
-        return false;
-    }
-
-    const uint32_t required = macroAutomationPayloadSize(
-        entryCount,
-        pointCount
-    );
-    if (required != size || required > PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE) {
-        return false;
-    }
-
-    out.entryCount = entryCount;
-    for (uint8_t i = 0; i < entryCount; ++i) {
-        macro::MacroAutomationSlotAddress address{};
-        macro::MacroAutomationSlotState state{};
-        uint8_t reservedEntry = 0;
-        if (!reader.readU8(address.track) ||
-            !reader.readU8(address.page) ||
-            !reader.readU8(address.macro) ||
-            !reader.readU8(reservedEntry) ||
-            !readMacroAutomationSlotState(reader, state, legacyV14)) {
-            return false;
-        }
-        (void)reservedEntry;
-
-        out.entries[i] = macro::MacroAutomationSlotEntry{
-            .active = true,
-            .address = address,
-            .state = state,
-        };
-    }
-
-    out.pointPool.used = pointCount;
-    for (uint16_t i = 0; i < pointCount; ++i) {
-        uint16_t tick = 0;
-        int16_t value = 0;
-        if (!reader.readU16(tick) || !reader.readI16(value)) return false;
-        out.pointPool.points[i] = macro::MacroPackedCurvePoint{
-            .tick = tick,
-            .value = value,
-        };
-    }
-
-    return reader.ok() && reader.offset() == size && validateMacroAutomationBank(out);
-}
-
 FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chunk,
                                        core::state::project::ProjectSnapshot& target,
                                        project_file::LoadReport* report) {
@@ -527,11 +197,11 @@ FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chu
         target.macroAutomation->clear();
         return false;
     }
-    if (!readMacroAutomationPayload(
+    if (!legacy_macro_codec::decodeIntoPending(
             chunk->data,
             chunk->size,
-            *target.macroAutomation,
-            legacyV14
+            chunk->versionMinor,
+            *target.macroAutomation
         )) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
@@ -722,8 +392,9 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
     uint32_t macroAutomationSize = 0;
-    if (!fillMacroAutomationPayload(
-            snapshot,
+    if (!snapshot.macroAutomation ||
+        !legacy_macro_codec::encodeV15(
+            *snapshot.macroAutomation,
             scratch.macroAutomation.data(),
             static_cast<uint32_t>(scratch.macroAutomation.size()),
             macroAutomationSize

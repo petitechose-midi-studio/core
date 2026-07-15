@@ -38,6 +38,9 @@ set(MS_CORE_PROJECT_FILE_OPEN_CONTROL_SOURCES
 
 set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectChunkMigration.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/LegacyMacroAutomationPersistenceCodec.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/ProjectControlLegacyMigration.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/ProjectControlPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectFileContainer.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectMigration.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/MacroTrackBankPersistenceCodec.cpp"
@@ -54,6 +57,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroAutomationState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroPagesState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectModulationDomainOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSnapshotLifecycle.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSlug.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectState.cpp"

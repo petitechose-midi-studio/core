@@ -59,6 +59,8 @@ struct ProjectCurveArena {
 };
 
 /** Reserved now so the shared arena sizing cannot regress during MAUT lift. */
+inline constexpr uint8_t PROJECT_AUTOMATION_CURVE_FLAG_ENABLED = 0x01U;
+
 struct ProjectAutomationCurveEntry {
     ModulationDestination destination{};
     ProjectCurveId curveId{};

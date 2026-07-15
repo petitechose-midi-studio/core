@@ -285,7 +285,21 @@ FLASHMEM bool selectedForSplit(
 }
 
 FLASHMEM bool validSourceName(const ModulatorSourceState& source) {
-    return source.name[0] != '\0' && source.name.back() == '\0';
+    if (source.name[0] == '\0') return false;
+    bool terminated = false;
+    for (char value : source.name) {
+        if (terminated && value != '\0') return false;
+        if (value == '\0') terminated = true;
+    }
+    return terminated;
+}
+
+template <size_t Capacity>
+FLASHMEM bool allZero(const std::array<uint8_t, Capacity>& values) {
+    for (uint8_t value : values) {
+        if (value != 0U) return false;
+    }
+    return true;
 }
 
 }  // namespace
@@ -339,8 +353,7 @@ FLASHMEM bool validProjectCurveSpec(
 ) {
     if (points == nullptr || pointCount == 0 ||
         spec.sourceDurationTicks == 0 || spec.durationTicks == 0 ||
-        static_cast<uint32_t>(spec.windowOffsetTicks) + spec.durationTicks >
-            spec.sourceDurationTicks ||
+        spec.windowOffsetTicks > spec.sourceDurationTicks ||
         spec.interpolation != ProjectCurveInterpolation::LINEAR ||
         static_cast<uint8_t>(spec.valueDomain) >
             static_cast<uint8_t>(ProjectCurveValueDomain::BIPOLAR) ||
@@ -355,7 +368,7 @@ FLASHMEM bool validProjectCurveSpec(
              points[index].value < 0)) {
             return false;
         }
-        if (index > 0 && points[index - 1U].tick >= points[index].tick) {
+        if (index > 0 && points[index - 1U].tick > points[index].tick) {
             return false;
         }
     }
@@ -1022,12 +1035,32 @@ FLASHMEM bool validProjectModulationDomain(
     if (state.sourceCount > PROJECT_MODULATOR_CAPACITY ||
         state.outputBindingCount > PROJECT_MODULATION_BINDING_CAPACITY ||
         state.triggerBindingCount > PROJECT_MODULATION_TRIGGER_CAPACITY ||
+        state.reserved != 0U ||
         arena.recordCount > PROJECT_CURVE_LIVE_CAPACITY ||
         arena.recordCount > PROJECT_CURVE_RECORD_CAPACITY ||
         arena.pointCount > PROJECT_CURVE_POINT_CAPACITY ||
         (automation != nullptr &&
-         automation->entryCount > PROJECT_AUTOMATION_ENTRY_CAPACITY)) {
+         (automation->entryCount > PROJECT_AUTOMATION_ENTRY_CAPACITY ||
+          automation->reserved != 0U))) {
         return false;
+    }
+
+    if (automation != nullptr) {
+        for (uint16_t entry = 0; entry < automation->entryCount; ++entry) {
+            const auto& current = automation->entries[entry];
+            if (!modulationDestinationValid(current.destination) ||
+                !valid(current.curveId) ||
+                (current.flags & ~PROJECT_AUTOMATION_CURVE_FLAG_ENABLED) != 0U ||
+                !allZero(current.reserved)) {
+                return false;
+            }
+            for (uint16_t prior = 0; prior < entry; ++prior) {
+                if (automation->entries[prior].destination ==
+                    current.destination) {
+                    return false;
+                }
+            }
+        }
     }
 
     for (uint16_t index = 0; index < state.sourceCount; ++index) {
@@ -1035,6 +1068,8 @@ FLASHMEM bool validProjectModulationDomain(
         if (!valid(source.id) || !validSourceName(source) ||
             !validModulatorReach(source.reach) || source.schemaVersion != 1U ||
             (source.flags & ~SOURCE_FLAGS) != 0U ||
+            !allZero(source.reserved) ||
+            !allZero(source.parameters.reserved) ||
             static_cast<uint8_t>(source.kind) >
                 static_cast<uint8_t>(ModulatorKind::LFO)) {
             return false;
@@ -1048,17 +1083,25 @@ FLASHMEM bool validProjectModulationDomain(
         }
         if (source.kind == ModulatorKind::LFO) {
             if (valid(source.parameters.recordedCurveId) ||
-                !validLfoParameters(source.parameters.lfo)) {
+                !validLfoParameters(source.parameters.lfo) ||
+                source.parameters.lfo.reserved != 0U) {
                 return false;
             }
-        } else if (!valid(source.parameters.recordedCurveId) ||
-                   curveIndex(arena, source.parameters.recordedCurveId) < 0) {
-            return false;
-        } else if (findProjectCurve(
-                       arena,
-                       source.parameters.recordedCurveId
-                   )->valueDomain != ProjectCurveValueDomain::BIPOLAR) {
-            return false;
+        } else {
+            const ModulatorLfoParameters defaultLfo{};
+            if (!valid(source.parameters.recordedCurveId) ||
+                curveIndex(arena, source.parameters.recordedCurveId) < 0 ||
+                findProjectCurve(
+                    arena,
+                    source.parameters.recordedCurveId
+                )->valueDomain != ProjectCurveValueDomain::BIPOLAR ||
+                std::memcmp(
+                    &source.parameters.lfo,
+                    &defaultLfo,
+                    sizeof(ModulatorLfoParameters)
+                ) != 0) {
+                return false;
+            }
         }
     }
 
@@ -1073,6 +1116,7 @@ FLASHMEM bool validProjectModulationDomain(
                 static_cast<uint8_t>(ModulationInputRange::UNIPOLAR) ||
             binding.transfer != ModulationTransfer::LINEAR ||
             (binding.flags & ~BINDING_FLAGS) != 0U ||
+            !allZero(binding.reserved) ||
             (state.nextBindingId != 0 &&
              binding.id.value >= state.nextBindingId)) {
             return false;
@@ -1093,6 +1137,7 @@ FLASHMEM bool validProjectModulationDomain(
             findProjectModulator(state, trigger.sourceId) == nullptr ||
             !validTriggerRef(trigger.trigger) ||
             (trigger.flags & ~TRIGGER_FLAGS) != 0U ||
+            !allZero(trigger.reserved) ||
             (state.nextBindingId != 0 &&
              trigger.id.value >= state.nextBindingId)) {
             return false;
@@ -1150,14 +1195,9 @@ FLASHMEM bool validProjectModulationDomain(
         }
         if (automation != nullptr) {
             for (uint16_t entry = 0; entry < automation->entryCount; ++entry) {
-                if (!modulationDestinationValid(
-                        automation->entries[entry].destination
-                    ) || !valid(automation->entries[entry].curveId) ||
-                    automation->entries[entry].flags != 0U) {
-                    return false;
-                }
                 if (automation->entries[entry].curveId == curve.id) {
-                    if (curve.valueDomain != ProjectCurveValueDomain::ABSOLUTE) {
+                    if (curve.valueDomain != ProjectCurveValueDomain::ABSOLUTE ||
+                        curve.origin != ProjectCurveOrigin::NATIVE) {
                         return false;
                     }
                     ++references;
@@ -1172,12 +1212,6 @@ FLASHMEM bool validProjectModulationDomain(
         for (uint16_t entry = 0; entry < automation->entryCount; ++entry) {
             if (curveIndex(arena, automation->entries[entry].curveId) < 0) {
                 return false;
-            }
-            for (uint16_t prior = 0; prior < entry; ++prior) {
-                if (automation->entries[prior].destination ==
-                    automation->entries[entry].destination) {
-                    return false;
-                }
             }
         }
     }

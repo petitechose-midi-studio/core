@@ -157,6 +157,31 @@ void testExactMemoryContract() {
            159516U);
 }
 
+void testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints() {
+    const std::array<mod::ProjectPackedCurvePoint, 3> points{{
+        {0U, -12000},
+        {0U, -8000},
+        {192U, 12000},
+    }};
+    mod::ProjectCurveSpec spec{};
+    spec.sourceDurationTicks = 192U;
+    spec.durationTicks = 768U;
+    spec.windowOffsetTicks = 192U;
+    spec.valueDomain = mod::ProjectCurveValueDomain::BIPOLAR;
+    assert(mod::validProjectCurveSpec(
+        spec,
+        points.data(),
+        static_cast<uint16_t>(points.size())
+    ));
+
+    spec.windowOffsetTicks = 193U;
+    assert(!mod::validProjectCurveSpec(
+        spec,
+        points.data(),
+        static_cast<uint16_t>(points.size())
+    ));
+}
+
 void testStableIdsDuplicateAndDelete() {
     Fixture fixture;
     const auto first = addLfo(fixture, projectReach(), "First");
@@ -749,6 +774,7 @@ void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
 
 int main() {
     testExactMemoryContract();
+    testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints();
     testStableIdsDuplicateAndDelete();
     testReachAndDuplicateBindingAreStrictAndAtomic();
     testAdvertised128SourcesAnd512BindingsCompileWithoutTruncation();
