@@ -1,0 +1,767 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
+#include <array>
+#include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <memory>
+#include <vector>
+
+#include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/modulation/ProjectModulationRuntimePlan.hpp"
+
+namespace {
+
+namespace mod = core::state::modulation;
+
+struct Fixture {
+    std::unique_ptr<mod::ProjectModulationState> state =
+        std::make_unique<mod::ProjectModulationState>();
+    std::unique_ptr<mod::ProjectCurveArena> arena =
+        std::make_unique<mod::ProjectCurveArena>();
+};
+
+mod::ModulatorReach projectReach() {
+    mod::ModulatorReach reach{};
+    reach.kind = mod::ModulatorReachKind::PROJECT;
+    return reach;
+}
+
+mod::ModulatorReach macroReach(uint8_t track, uint8_t page, uint8_t macro) {
+    mod::ModulatorReach reach{};
+    reach.kind = mod::ModulatorReachKind::MACRO;
+    reach.track = track;
+    reach.page = page;
+    reach.macro = macro;
+    return reach;
+}
+
+mod::ModulatorReach trackReach(uint16_t trackMask) {
+    mod::ModulatorReach reach{};
+    reach.kind = mod::ModulatorReachKind::TRACK_SET;
+    reach.trackMask = trackMask;
+    return reach;
+}
+
+mod::ModulationDestination destination(
+    uint8_t track,
+    uint8_t page,
+    uint8_t macro
+) {
+    return {
+        mod::ModulationDestinationKind::MACRO_SLOT,
+        track,
+        page,
+        macro,
+    };
+}
+
+mod::ModulatorId addLfo(
+    Fixture& fixture,
+    const mod::ModulatorReach& reach = projectReach(),
+    const char* name = "LFO"
+) {
+    mod::ModulatorLfoDraft draft{};
+    draft.name = name;
+    draft.reach = reach;
+    const auto created = mod::createLfoModulator(*fixture.state, draft);
+    assert(created.changed());
+    return created.sourceId;
+}
+
+mod::ModulationBindingId addBinding(
+    Fixture& fixture,
+    mod::ModulatorId source,
+    const mod::ModulationDestination& target,
+    int16_t amount = 16384,
+    mod::ModulationInputRange range = mod::ModulationInputRange::BIPOLAR,
+    bool enabled = true
+) {
+    mod::ModulationBindingDraft draft{};
+    draft.sourceId = source;
+    draft.destination = target;
+    draft.amountQ15 = amount;
+    draft.inputRange = range;
+    draft.enabled = enabled;
+    const auto created = mod::addProjectModulationBinding(*fixture.state, draft);
+    assert(created.changed());
+    return created.bindingId;
+}
+
+std::vector<mod::ProjectPackedCurvePoint> linearPoints(uint16_t count) {
+    std::vector<mod::ProjectPackedCurvePoint> points(count);
+    for (uint16_t index = 0; index < count; ++index) {
+        points[index].tick = index;
+        points[index].value = static_cast<int16_t>(
+            static_cast<int32_t>(index % 32767U) - 16383
+        );
+    }
+    return points;
+}
+
+mod::ProjectCurveSpec curveSpec(uint16_t duration) {
+    mod::ProjectCurveSpec spec{};
+    spec.sourceDurationTicks = duration;
+    spec.durationTicks = duration;
+    spec.valueDomain = mod::ProjectCurveValueDomain::BIPOLAR;
+    return spec;
+}
+
+mod::ModulatorId addRecorded(
+    Fixture& fixture,
+    const std::vector<mod::ProjectPackedCurvePoint>& points,
+    const mod::ModulatorReach& reach = projectReach(),
+    const char* name = "Shape"
+) {
+    mod::RecordedShapeDraft draft{};
+    draft.name = name;
+    draft.reach = reach;
+    draft.curve = curveSpec(
+        static_cast<uint16_t>(points.empty() ? 1U : points.size())
+    );
+    draft.points = points.data();
+    draft.pointCount = static_cast<uint16_t>(points.size());
+    const auto created = mod::createRecordedShapeModulator(
+        *fixture.state,
+        *fixture.arena,
+        draft
+    );
+    assert(created.changed());
+    return created.sourceId;
+}
+
+mod::ProjectModulationCompileContext allMacrosOnPage(uint8_t page) {
+    mod::ProjectModulationCompileContext context{};
+    context.enabledTrackMask = 0xFFFFU;
+    context.activePage.fill(page);
+    context.activeMacroMask.fill(0xFFU);
+    return context;
+}
+
+bool near(float lhs, float rhs, float epsilon = 0.0001f) {
+    return std::fabs(lhs - rhs) <= epsilon;
+}
+
+void testExactMemoryContract() {
+    assert(sizeof(mod::ProjectModulationState) == 20496U);
+    assert(sizeof(mod::ProjectAutomationCurveDirectory) == 1540U);
+    assert(sizeof(mod::ProjectCurveArena) == 137480U);
+    assert(sizeof(mod::ProjectModulationRuntimePlan) == 14860U);
+    assert(sizeof(mod::ProjectModulationState) +
+               sizeof(mod::ProjectAutomationCurveDirectory) +
+               sizeof(mod::ProjectCurveArena) ==
+           159516U);
+}
+
+void testStableIdsDuplicateAndDelete() {
+    Fixture fixture;
+    const auto first = addLfo(fixture, projectReach(), "First");
+    const auto keeper = addLfo(fixture, projectReach(), "Keeper");
+    assert(first.value == 1U && keeper.value == 2U);
+
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = keeper;
+    trigger.trigger.kind = mod::ModulationTriggerKind::TRANSPORT_START;
+    assert(mod::addProjectModulationTrigger(*fixture.state, trigger).changed());
+
+    assert(mod::deleteProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        first
+    ).changed());
+    assert(mod::findProjectModulator(*fixture.state, keeper) != nullptr);
+
+    const auto third = addLfo(fixture, projectReach(), "Third");
+    assert(third.value == 3U);
+    const auto clone = mod::duplicateProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        keeper,
+        "Clone"
+    );
+    assert(clone.changed() && clone.sourceId.value == 4U);
+    // Central Source duplicate copies the portable definition, not project
+    // addresses. Scope Split separately clones a trigger to preserve sound.
+    assert(fixture.state->triggerBindingCount == 1U);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testReachAndDuplicateBindingAreStrictAndAtomic() {
+    Fixture fixture;
+    const auto source = addLfo(fixture, macroReach(2, 3, 4));
+    addBinding(fixture, source, destination(2, 3, 4));
+
+    const auto stable = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
+    mod::ModulationBindingDraft outside{};
+    outside.sourceId = source;
+    outside.destination = destination(2, 3, 5);
+    outside.amountQ15 = 1000;
+    assert(mod::addProjectModulationBinding(*fixture.state, outside).status ==
+           mod::ProjectModulationStatus::REACH_VIOLATION);
+    assert(std::memcmp(
+        fixture.state.get(),
+        stable.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+
+    mod::ModulationBindingDraft duplicate{};
+    duplicate.sourceId = source;
+    duplicate.destination = destination(2, 3, 4);
+    duplicate.amountQ15 = -8000;
+    assert(mod::addProjectModulationBinding(*fixture.state, duplicate).status ==
+           mod::ProjectModulationStatus::DUPLICATE_BINDING);
+    assert(std::memcmp(
+        fixture.state.get(),
+        stable.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+
+    assert(mod::setProjectModulatorReach(
+        *fixture.state,
+        source,
+        macroReach(1, 0, 0)
+    ).status == mod::ProjectModulationStatus::REACH_VIOLATION);
+    assert(std::memcmp(
+        fixture.state.get(),
+        stable.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+}
+
+void testAdvertised128SourcesAnd512BindingsCompileWithoutTruncation() {
+    Fixture fixture;
+    for (uint16_t sourceIndex = 0;
+         sourceIndex < mod::PROJECT_MODULATOR_CAPACITY;
+         ++sourceIndex) {
+        const auto source = addLfo(fixture);
+        for (uint8_t offset = 0; offset < 4U; ++offset) {
+            // Every source contributes to Macro 1, proving that 512 is a
+            // project-wide budget rather than an implicit per-Macro cap. The
+            // remaining edges cover every other live destination.
+            const uint16_t address = offset == 0U
+                ? 0U
+                : static_cast<uint16_t>(
+                    1U + (sourceIndex * 3U + offset - 1U) % 127U
+                );
+            addBinding(
+                fixture,
+                source,
+                destination(
+                    static_cast<uint8_t>(address / 8U),
+                    0,
+                    static_cast<uint8_t>(address % 8U)
+                )
+            );
+        }
+    }
+    assert(fixture.state->sourceCount == 128U);
+    assert(fixture.state->outputBindingCount == 512U);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+
+    const auto fullState = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
+    mod::ModulatorLfoDraft overflowSource{};
+    overflowSource.reach = projectReach();
+    assert(mod::createLfoModulator(*fixture.state, overflowSource).status ==
+           mod::ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED);
+    assert(std::memcmp(
+        fixture.state.get(),
+        fullState.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+
+    mod::ModulationBindingDraft overflowBinding{};
+    overflowBinding.sourceId = fixture.state->sources[0].id;
+    overflowBinding.destination = destination(0, 1, 0);
+    overflowBinding.amountQ15 = 1000;
+    assert(mod::addProjectModulationBinding(
+        *fixture.state,
+        overflowBinding
+    ).status == mod::ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED);
+    assert(std::memcmp(
+        fixture.state.get(),
+        fullState.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    const auto compiled = mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        allMacrosOnPage(0),
+        *plan
+    );
+    assert(compiled.compiled());
+    assert(plan->sourceCount == 128U);
+    assert(plan->bindingCount == 512U);
+    assert(plan->destinationCount == 128U);
+    assert(plan->inactiveBindingCount == 0U);
+    uint16_t compiledBindingTotal = 0;
+    for (uint16_t index = 0; index < plan->destinationCount; ++index) {
+        compiledBindingTotal = static_cast<uint16_t>(
+            compiledBindingTotal + plan->destinations[index].bindingCount
+        );
+    }
+    assert(compiledBindingTotal == 512U);
+    assert(plan->destinations[0].stableAddress == 0U);
+    assert(plan->destinations[0].bindingCount == 128U);
+
+    std::array<float, mod::PROJECT_MODULATOR_CAPACITY> values{};
+    values.fill(1.0f);
+    const auto resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        0,
+        values.data(),
+        0.0f
+    );
+    assert(resolved.valid && resolved.clipped);
+    assert(resolved.contributionCount == 128U);
+    assert(near(resolved.value, 1.0f));
+}
+
+void testInactivePagesAreExplicitlyExcluded() {
+    Fixture fixture;
+    const auto source = addLfo(fixture);
+    addBinding(fixture, source, destination(0, 0, 0));
+    addBinding(fixture, source, destination(0, 1, 1));
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    auto context = allMacrosOnPage(0);
+    auto compiled = mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        context,
+        *plan
+    );
+    assert(compiled.compiled());
+    assert(plan->sourceCount == 1U);
+    assert(plan->bindingCount == 1U);
+    assert(plan->destinationCount == 1U);
+    assert(plan->inactiveBindingCount == 1U);
+
+    context.activePage[0] = 1;
+    compiled = mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        context,
+        *plan
+    );
+    assert(compiled.compiled());
+    assert(plan->bindingCount == 1U && plan->inactiveBindingCount == 1U);
+    assert(plan->destinations[0].destination.page == 1U);
+}
+
+void testRuntimeCompilationFailureDoesNotPublishPartialPlan() {
+    Fixture fixture;
+    const auto source = addLfo(fixture);
+    addBinding(fixture, source, destination(0, 0, 0));
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        allMacrosOnPage(0),
+        *plan
+    ).compiled());
+    const auto stablePlan = std::make_unique<mod::ProjectModulationRuntimePlan>(
+        *plan
+    );
+
+    auto invalidContext = allMacrosOnPage(0);
+    invalidContext.activePage[0] = mod::PROJECT_MODULATION_PAGE_COUNT;
+    assert(mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        invalidContext,
+        *plan
+    ).status == mod::ProjectModulationCompileStatus::INVALID_CONTEXT);
+    assert(std::memcmp(plan.get(), stablePlan.get(), sizeof(*plan)) == 0);
+
+    fixture.state->outputBindings[0].sourceId = {9999U};
+    assert(mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        allMacrosOnPage(0),
+        *plan
+    ).status == mod::ProjectModulationCompileStatus::INVALID_DOMAIN);
+    assert(std::memcmp(plan.get(), stablePlan.get(), sizeof(*plan)) == 0);
+}
+
+void testSplitSharesAFullCurveWithoutCopyingPoints() {
+    Fixture fixture;
+    const auto points = linearPoints(mod::PROJECT_CURVE_POINT_CAPACITY);
+    const auto source = addRecorded(fixture, points);
+    const auto retainedBinding = addBinding(
+        fixture,
+        source,
+        destination(0, 0, 0)
+    );
+    const auto movedBinding = addBinding(
+        fixture,
+        source,
+        destination(1, 0, 0)
+    );
+    (void)retainedBinding;
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = source;
+    assert(mod::addProjectModulationTrigger(*fixture.state, trigger).changed());
+
+    mod::ModulatorSplitRequest split{};
+    split.sourceId = source;
+    split.cloneName = "Track 2 Shape";
+    split.retainedReach = trackReach(1U << 0U);
+    split.cloneReach = trackReach(1U << 1U);
+    split.bindingIdsToMove = &movedBinding;
+    split.bindingCountToMove = 1;
+    const auto created = mod::splitProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        split
+    );
+    assert(created.changed());
+    assert(fixture.state->sourceCount == 2U);
+    assert(fixture.arena->recordCount == 1U);
+    assert(fixture.arena->pointCount == mod::PROJECT_CURVE_POINT_CAPACITY);
+    assert(fixture.arena->records[0].referenceCount == 2U);
+    assert(fixture.state->triggerBindingCount == 2U);
+    assert(fixture.state->triggerBindings[0].id !=
+           fixture.state->triggerBindings[1].id);
+    assert(fixture.state->sources[0].parameters.recordedCurveId ==
+           fixture.state->sources[1].parameters.recordedCurveId);
+    assert(fixture.state->outputBindings[1].sourceId == created.sourceId);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testSharedCurveEditUsesCopyOnWrite() {
+    Fixture fixture;
+    const auto originalPoints = linearPoints(3);
+    const auto original = addRecorded(fixture, originalPoints);
+    const auto clone = mod::duplicateProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        original,
+        "Variant"
+    );
+    assert(clone.changed());
+    const auto originalCurve = fixture.state->sources[0].parameters.recordedCurveId;
+    assert(fixture.arena->records[0].referenceCount == 2U);
+
+    auto replacement = linearPoints(2);
+    replacement[1].value = 12345;
+    const auto replaced = mod::replaceRecordedShapeCurve(
+        *fixture.state,
+        *fixture.arena,
+        clone.sourceId,
+        curveSpec(2),
+        replacement.data(),
+        static_cast<uint16_t>(replacement.size())
+    );
+    assert(replaced.changed());
+    assert(replaced.curveId != originalCurve);
+    assert(fixture.arena->recordCount == 2U);
+    assert(fixture.arena->pointCount == 5U);
+    assert(mod::findProjectCurve(*fixture.arena, originalCurve)->referenceCount == 1U);
+    assert(mod::findProjectCurve(*fixture.arena, replaced.curveId)->referenceCount == 1U);
+    assert(fixture.arena->points[2].value == originalPoints[2].value);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testDeleteRemovesEdgesAndCompactsCurveArenaWithStableIds() {
+    Fixture fixture;
+    auto firstPoints = linearPoints(3);
+    auto survivorPoints = linearPoints(2);
+    survivorPoints[0].value = -1234;
+    survivorPoints[1].value = 5678;
+    const auto removed = addRecorded(fixture, firstPoints, projectReach(), "A");
+    const auto survivor = addRecorded(
+        fixture,
+        survivorPoints,
+        projectReach(),
+        "B"
+    );
+    const auto survivorCurve =
+        fixture.state->sources[1].parameters.recordedCurveId;
+    addBinding(fixture, removed, destination(0, 0, 0));
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = removed;
+    assert(mod::addProjectModulationTrigger(*fixture.state, trigger).changed());
+
+    assert(mod::deleteProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        removed
+    ).changed());
+    assert(fixture.state->sourceCount == 1U);
+    assert(fixture.state->sources[0].id == survivor);
+    assert(fixture.state->outputBindingCount == 0U);
+    assert(fixture.state->triggerBindingCount == 0U);
+    assert(fixture.arena->recordCount == 1U);
+    assert(fixture.arena->pointCount == survivorPoints.size());
+    assert(fixture.arena->records[0].id == survivorCurve);
+    assert(fixture.arena->records[0].pointOffset == 0U);
+    assert(std::memcmp(
+        fixture.arena->points.data(),
+        survivorPoints.data(),
+        survivorPoints.size() * sizeof(mod::ProjectPackedCurvePoint)
+    ) == 0);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testFullSharedCurveCowFailureIsAtomic() {
+    Fixture fixture;
+    const auto points = linearPoints(mod::PROJECT_CURVE_POINT_CAPACITY);
+    const auto original = addRecorded(fixture, points);
+    const auto clone = mod::duplicateProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        original,
+        "Variant"
+    );
+    assert(clone.changed());
+    const auto stableState = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
+    const auto stableArena = std::make_unique<mod::ProjectCurveArena>(
+        *fixture.arena
+    );
+
+    const std::array<mod::ProjectPackedCurvePoint, 2> replacement{{
+        {0, -1000},
+        {1, 1000},
+    }};
+    const auto failed = mod::replaceRecordedShapeCurve(
+        *fixture.state,
+        *fixture.arena,
+        clone.sourceId,
+        curveSpec(2),
+        replacement.data(),
+        static_cast<uint16_t>(replacement.size())
+    );
+    assert(failed.status ==
+           mod::ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED);
+    assert(std::memcmp(
+        fixture.state.get(),
+        stableState.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+    assert(std::memcmp(
+        fixture.arena.get(),
+        stableArena.get(),
+        sizeof(*fixture.arena)
+    ) == 0);
+}
+
+void testUniqueCurveCanReclaimItsFullPoolRange() {
+    Fixture fixture;
+    const auto original = linearPoints(mod::PROJECT_CURVE_POINT_CAPACITY);
+    const auto source = addRecorded(fixture, original);
+    const auto curveId = fixture.state->sources[0].parameters.recordedCurveId;
+    auto replacement = linearPoints(mod::PROJECT_CURVE_POINT_CAPACITY - 1U);
+    replacement.back().value = 16000;
+    const auto replaced = mod::replaceRecordedShapeCurve(
+        *fixture.state,
+        *fixture.arena,
+        source,
+        curveSpec(static_cast<uint16_t>(replacement.size())),
+        replacement.data(),
+        static_cast<uint16_t>(replacement.size())
+    );
+    assert(replaced.changed() && replaced.curveId == curveId);
+    assert(fixture.arena->recordCount == 1U);
+    assert(fixture.arena->pointCount == replacement.size());
+    assert(fixture.arena->points[fixture.arena->pointCount - 1U].value == 16000);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testFailedSplitLeavesDomainUntouched() {
+    Fixture fixture;
+    const auto source = addLfo(fixture);
+    addBinding(fixture, source, destination(0, 0, 0));
+    const auto moved = addBinding(fixture, source, destination(1, 0, 0));
+    const auto stableState = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
+    const auto stableArena = std::make_unique<mod::ProjectCurveArena>(
+        *fixture.arena
+    );
+
+    mod::ModulatorSplitRequest split{};
+    split.sourceId = source;
+    split.retainedReach = macroReach(0, 0, 0);
+    split.cloneReach = macroReach(2, 0, 0);  // moved binding actually targets T2
+    split.bindingIdsToMove = &moved;
+    split.bindingCountToMove = 1;
+    assert(mod::splitProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        split
+    ).status == mod::ProjectModulationStatus::REACH_VIOLATION);
+    assert(std::memcmp(
+        fixture.state.get(),
+        stableState.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+    assert(std::memcmp(
+        fixture.arena.get(),
+        stableArena.get(),
+        sizeof(*fixture.arena)
+    ) == 0);
+}
+
+void testRuntimeSumClampOrderingAndEnableFlags() {
+    Fixture fixture;
+    const auto destination0 = destination(0, 0, 0);
+    const auto bipolar = addLfo(fixture);
+    const auto unipolar = addLfo(fixture);
+    const auto dormant = addLfo(fixture);
+    addBinding(fixture, bipolar, destination0, 16384);
+    addBinding(
+        fixture,
+        unipolar,
+        destination0,
+        16384,
+        mod::ModulationInputRange::UNIPOLAR
+    );
+    addBinding(fixture, dormant, destination0, -16384, mod::ModulationInputRange::BIPOLAR, false);
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        allMacrosOnPage(0),
+        *plan
+    ).compiled());
+    assert(plan->destinationCount == 1U && plan->bindingCount == 3U);
+    assert(plan->bindings[plan->bindingOrder[0]].id.value <
+           plan->bindings[plan->bindingOrder[1]].id.value);
+
+    std::array<float, mod::PROJECT_MODULATOR_CAPACITY> values{};
+    values[0] = 1.0f;
+    values[1] = 0.0f;  // unipolar projection is 0.5
+    values[2] = 1.0f;
+    auto resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        0,
+        values.data(),
+        0.5f
+    );
+    assert(resolved.valid && resolved.clipped);
+    assert(resolved.contributionCount == 2U);
+    assert(near(resolved.modulation, 0.75002f, 0.0001f));
+    assert(near(resolved.value, 1.0f));
+
+    plan->sources[0].flags = 0;
+    resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        0,
+        values.data(),
+        0.5f
+    );
+    assert(resolved.valid && !resolved.clipped);
+    assert(resolved.contributionCount == 1U);
+    assert(near(resolved.value, 0.75001f, 0.0001f));
+
+    plan->bindings[1].flags = 0;
+    resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        0,
+        values.data(),
+        0.5f
+    );
+    assert(resolved.contributionCount == 0U);
+    assert(near(resolved.value, 0.5f));
+
+    assert(mod::setProjectModulatorEnabled(
+        *fixture.state,
+        bipolar,
+        false
+    ).changed());
+    assert(mod::updateProjectModulationBinding(
+        *fixture.state,
+        fixture.state->outputBindings[1].id,
+        16384,
+        mod::ModulationInputRange::UNIPOLAR,
+        mod::ModulationTransfer::LINEAR,
+        false
+    ).changed());
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
+    Fixture fixture;
+    const auto first = addLfo(fixture);
+    const auto second = addLfo(fixture);
+    addBinding(fixture, first, destination(0, 0, 0));
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+
+    const auto secondId = fixture.state->sources[1].id;
+    fixture.state->sources[1].id = first;
+    assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+    fixture.state->sources[1].id = secondId;
+
+    fixture.state->outputBindings[0].sourceId = {9999U};
+    assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+    fixture.state->outputBindings[0].sourceId = first;
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+
+    Fixture curveFixture;
+    const auto points = linearPoints(2);
+    const auto recorded = addRecorded(curveFixture, points);
+    ++curveFixture.arena->records[0].referenceCount;
+    assert(!mod::validProjectModulationDomain(
+        *curveFixture.state,
+        *curveFixture.arena
+    ));
+    --curveFixture.arena->records[0].referenceCount;
+
+    const auto stableArena = std::make_unique<mod::ProjectCurveArena>(
+        *curveFixture.arena
+    );
+    curveFixture.state->sources[0].parameters.recordedCurveId = {9999U};
+    const auto malformedState = std::make_unique<mod::ProjectModulationState>(
+        *curveFixture.state
+    );
+    assert(mod::deleteProjectModulator(
+        *curveFixture.state,
+        *curveFixture.arena,
+        recorded
+    ).status == mod::ProjectModulationStatus::INVARIANT_VIOLATION);
+    assert(std::memcmp(
+        curveFixture.state.get(),
+        malformedState.get(),
+        sizeof(*curveFixture.state)
+    ) == 0);
+    assert(std::memcmp(
+        curveFixture.arena.get(),
+        stableArena.get(),
+        sizeof(*curveFixture.arena)
+    ) == 0);
+    (void)second;
+}
+
+}  // namespace
+
+int main() {
+    testExactMemoryContract();
+    testStableIdsDuplicateAndDelete();
+    testReachAndDuplicateBindingAreStrictAndAtomic();
+    testAdvertised128SourcesAnd512BindingsCompileWithoutTruncation();
+    testInactivePagesAreExplicitlyExcluded();
+    testRuntimeCompilationFailureDoesNotPublishPartialPlan();
+    testSplitSharesAFullCurveWithoutCopyingPoints();
+    testSharedCurveEditUsesCopyOnWrite();
+    testDeleteRemovesEdgesAndCompactsCurveArenaWithStableIds();
+    testFullSharedCurveCowFailureIsAtomic();
+    testUniqueCurveCanReclaimItsFullPoolRange();
+    testFailedSplitLeavesDomainUntouched();
+    testRuntimeSumClampOrderingAndEnableFlags();
+    testValidatorRejectsDanglingDuplicateAndBadReferenceCount();
+    std::cout << "All Project modulation domain tests passed.\n";
+    return 0;
+}
