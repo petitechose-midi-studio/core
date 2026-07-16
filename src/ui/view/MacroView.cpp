@@ -1,5 +1,6 @@
 #include "MacroView.hpp"
 
+#include <algorithm>
 #include <cstddef>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
@@ -25,7 +26,11 @@ uint8_t sourceStateBits(const MacroWidgetProps& props) {
         (props.automationActive ? 1U << 1U : 0U) |
         (props.modulationStored ? 1U << 2U : 0U) |
         (props.modulationActive ? 1U << 3U : 0U) |
-        (props.modulationPaused ? 1U << 4U : 0U)
+        (props.modulationPaused ? 1U << 4U : 0U) |
+        (static_cast<uint8_t>(std::min<uint8_t>(
+             props.modulationSourceCount,
+             7U
+         )) << 5U)
     );
 }
 
@@ -185,6 +190,12 @@ FLASHMEM bool MacroView::bindToState() {
 
     subscriptions_.push_back(
         state_refs_.macroUi.runtimeProjectionRevision.subscribe([this](uint32_t revision) {
+            if (core::state::macro::macroRuntimeProjectionRevisionTargetsConfig(
+                    revision
+                )) {
+                markConfigDirtyIfChanged();
+                return;
+            }
             if (core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
                     revision
                 )) {
@@ -708,7 +719,8 @@ void MacroView::processRenderFlags(uint32_t flags) {
                             props.automationActive,
                             props.modulationStored,
                             props.modulationActive,
-                            props.modulationPaused
+                            props.modulationPaused,
+                            props.modulationSourceCount
                         );
                         rendered_source_state_[i] = nextSourceState;
                         rendered_automation_active_[i] = props.automationActive;

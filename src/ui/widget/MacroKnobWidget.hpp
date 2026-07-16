@@ -53,7 +53,8 @@ public:
                              bool automationActive,
                              bool modulationStored,
                              bool modulationActive,
-                             bool modulationPaused);
+                             bool modulationPaused,
+                             uint8_t modulationSourceCount = 0);
     void setSlotState(bool active, bool addSlot);
     void setFocused(bool focused);
 
@@ -71,6 +72,7 @@ private:
     void updateAutomationTrackColor();
     void updateFocusFrame();
     void updateSlotVisibility();
+    void updateAuxiliaryLabel();
     bool buildArcGeometry(ArcGeometry& geometry) const;
     void invalidateValueArc();
     void invalidateArcRange(lv_value_precise_t startAngle, lv_value_precise_t endAngle);
@@ -98,6 +100,7 @@ private:
     bool modulation_stored_ = false;
     bool modulation_active_ = false;
     bool modulation_paused_ = false;
+    uint8_t modulation_source_count_ = 0;
     bool automation_recording_ = false;
     bool automation_manual_override_ = false;
     bool slot_active_ = true;

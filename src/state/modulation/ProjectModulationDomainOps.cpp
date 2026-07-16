@@ -1,6 +1,7 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 
@@ -515,6 +516,66 @@ FLASHMEM ModulatorSourceState* findProjectModulator(
     return index < 0 ? nullptr : &state.sources[static_cast<uint16_t>(index)];
 }
 
+FLASHMEM const ModulationBindingState* findProjectModulationBinding(
+    const ProjectModulationState& state,
+    ModulationBindingId id
+) {
+    const int16_t index = outputBindingIndex(state, id);
+    return index >= 0
+        ? &state.outputBindings[static_cast<uint16_t>(index)]
+        : nullptr;
+}
+
+FLASHMEM ModulationBindingState* findProjectModulationBinding(
+    ProjectModulationState& state,
+    ModulationBindingId id
+) {
+    const int16_t index = outputBindingIndex(state, id);
+    return index >= 0
+        ? &state.outputBindings[static_cast<uint16_t>(index)]
+        : nullptr;
+}
+
+FLASHMEM void formatNextProjectLfoName(
+    const ProjectModulationState& state,
+    char* out,
+    size_t outSize
+) {
+    formatNextProjectModulatorName(state, ModulatorKind::LFO, out, outSize);
+}
+
+FLASHMEM void formatNextProjectModulatorName(
+    const ProjectModulationState& state,
+    ModulatorKind kind,
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0U) return;
+    const char* prefix = kind == ModulatorKind::LFO ? "LFO" : "Motion";
+    for (uint16_t ordinal = 1; ordinal <= PROJECT_MODULATOR_CAPACITY; ++ordinal) {
+        std::snprintf(
+            out,
+            outSize,
+            "%s %u",
+            prefix,
+            static_cast<unsigned>(ordinal)
+        );
+        bool used = false;
+        for (uint16_t index = 0; index < state.sourceCount; ++index) {
+            if (std::strncmp(
+                    state.sources[index].name.data(),
+                    out,
+                    PROJECT_MODULATOR_NAME_CAPACITY
+                ) == 0) {
+                used = true;
+                break;
+            }
+        }
+        if (!used) return;
+    }
+    std::snprintf(out, outSize, "%s", prefix);
+}
+
 FLASHMEM const ProjectCurveRecord* findProjectCurve(
     const ProjectCurveArena& arena,
     ProjectCurveId id
@@ -1020,11 +1081,36 @@ FLASHMEM ProjectModulationResult setProjectModulatorEnabled(
     if (source == nullptr) {
         return result(ProjectModulationStatus::INVALID_ID, sourceId);
     }
-    const uint8_t flags = enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
+    const uint8_t flags = enabled
+        ? static_cast<uint8_t>(source->flags | PROJECT_MODULATOR_FLAG_ENABLED)
+        : static_cast<uint8_t>(source->flags & ~PROJECT_MODULATOR_FLAG_ENABLED);
     if (source->flags == flags) {
         return result(ProjectModulationStatus::NO_CHANGE, sourceId);
     }
     source->flags = flags;
+    return result(ProjectModulationStatus::OK, sourceId);
+}
+
+FLASHMEM ProjectModulationResult setProjectLfoParameters(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const ModulatorLfoParameters& parameters
+) {
+    auto* source = findProjectModulator(state, sourceId);
+    if (source == nullptr) {
+        return result(ProjectModulationStatus::INVALID_ID, sourceId);
+    }
+    if (source->kind != ModulatorKind::LFO || !validLfoParameters(parameters)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
+    }
+    if (std::memcmp(
+            &source->parameters.lfo,
+            &parameters,
+            sizeof(parameters)
+        ) == 0) {
+        return result(ProjectModulationStatus::NO_CHANGE, sourceId);
+    }
+    source->parameters.lfo = parameters;
     return result(ProjectModulationStatus::OK, sourceId);
 }
 

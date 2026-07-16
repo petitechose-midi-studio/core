@@ -23,7 +23,28 @@ struct ProjectModulatorAuditionState {
     ModulationDestination destination{};
     uint32_t generation = 0;
     bool active = false;
-    std::array<uint8_t, 3> reserved{};
+    bool sourceCreated = false;
+    std::array<uint8_t, 2> reserved{};
+};
+
+inline constexpr uint8_t PROJECT_MODULATION_FOCUS_CACHE_CAPACITY = 8;
+
+/** Transient LRU focus keyed by logical Macro destination. */
+struct ProjectModulationFocusEntry {
+    ModulationDestination destination{};
+    ModulationBindingId bindingId{};
+    uint16_t stamp = 0;
+    bool active = false;
+    uint8_t reserved = 0;
+};
+
+struct ProjectModulationFocusState {
+    std::array<
+        ProjectModulationFocusEntry,
+        PROJECT_MODULATION_FOCUS_CACHE_CAPACITY
+    > entries{};
+    uint16_t clock = 0;
+    uint16_t reserved = 0;
 };
 
 /**
@@ -40,22 +61,15 @@ struct ProjectControlState {
     ProjectControlRuntimeState runtime{};
     std::array<float, PROJECT_MODULATOR_CAPACITY> sourceScratch{};
     ProjectModulatorAuditionState audition{};
+    ProjectModulationFocusState focus{};
     uint32_t authoredRevision = 1;
     uint32_t compiledRevision = 0;
     uint32_t runtimeContextHash = 0;
     uint32_t reserved = 0;
 
-    void clear() {
-        authored.clear();
-        plan = {};
-        runtime = {};
-        sourceScratch.fill(0.0f);
-        audition = {};
-        authoredRevision = 1;
-        compiledRevision = 0;
-        runtimeContextHash = 0;
-        reserved = 0;
-    }
+    ProjectControlState();
+
+    void clear();
 
     void markAuthoredMutation() {
         ++authoredRevision;
@@ -64,7 +78,9 @@ struct ProjectControlState {
 };
 
 static_assert(sizeof(ProjectModulatorAuditionState) == 20U);
-static_assert(sizeof(ProjectControlState) == 181096U);
+static_assert(sizeof(ProjectModulationFocusEntry) == 12U);
+static_assert(sizeof(ProjectModulationFocusState) == 100U);
+static_assert(sizeof(ProjectControlState) == 181196U);
 static_assert(std::is_trivially_copyable_v<ProjectControlState>);
 
 }  // namespace core::state::modulation

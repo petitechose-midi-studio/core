@@ -44,6 +44,10 @@ private:
     bool modulationDetailActive() const;
     bool conversionPreviewActive() const;
     bool lfoAuditionActive() const;
+    bool modulatorCreateActive() const;
+    bool modulatorPickerActive() const;
+    bool existingModulatorAuditionActive() const;
+    bool modulatorAuditionActive() const;
     uint8_t macroIndex() const;
     void moveFocus(float delta);
     void editFocusedValue(float normalized);
@@ -62,8 +66,10 @@ private:
     void selectConversionPolicy(float delta);
     bool applyConversion(bool overwriteGesture);
     bool startLfoAudition();
-    bool cancelLfoAudition();
-    bool applyLfoAudition();
+    bool openModulatorPicker();
+    bool startExistingModulatorAudition();
+    bool cancelModulatorAudition();
+    bool applyModulatorAudition();
 
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;

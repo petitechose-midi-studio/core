@@ -377,6 +377,11 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             .modulationDepth = controlSlotValid
                 ? controlSlot.legacy.modulationDepth
                 : 0.0f,
+            .modulationSourceCount = static_cast<uint8_t>(
+                controlSlotValid
+                    ? std::min<uint16_t>(controlSlot.modulationCount, 7U)
+                    : 0U
+            ),
             .cc = config.cc,
             .automationStored = active && automationStored,
             .automationActive = active && automationPlayback && !manualOverride,

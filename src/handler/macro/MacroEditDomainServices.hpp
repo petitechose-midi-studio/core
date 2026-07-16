@@ -74,7 +74,12 @@ public:
     bool manualOverrideActiveFor(uint8_t index) const;
     void setManualOverride(uint8_t index, bool active) const;
     bool setAutomationPlayback(uint8_t index, bool active) const;
+    /** Aggregate bypass/restore for every assignment on the Macro. */
     bool setModulationPlayback(uint8_t index, bool active) const;
+    const core::state::modulation::ModulationBindingState*
+        focusedModulationBindingState(uint8_t index) const;
+    bool setFocusedModulationPlayback(uint8_t index, bool active) const;
+    bool removeFocusedModulation(uint8_t index) const;
     bool clearAutomation(uint8_t index) const;
     bool removeAutomation(uint8_t index) const;
     bool copyDestination(uint8_t index) const;
@@ -103,20 +108,33 @@ public:
         preflightSlotPaste(uint8_t index) const;
     bool pasteSlot(uint8_t index, bool overwriteConfirmed) const;
     bool copyModulation(uint8_t index) const;
+    [[nodiscard]] bool hasModulationAssignmentClipboard() const;
     macro::automation_clipboard_ops::MacroTypedPastePreflight
         preflightModulationPaste(uint8_t index) const;
     bool pasteModulation(uint8_t index, bool overwriteConfirmed) const;
     core::state::modulation::ProjectModulationResult beginDefaultLfoAudition(
         uint8_t index
     ) const;
+    core::state::modulation::ProjectModulationResult
+        beginExistingModulatorAudition(
+            uint8_t index,
+            core::state::modulation::ModulatorId sourceId
+        ) const;
     bool setLfoAuditionShape(
         uint8_t index,
         core::state::modulation::ModulatorLfoShape shape
     ) const;
     bool setLfoAuditionPeriodTicks(uint8_t index, uint32_t periodTicks) const;
-    bool setLfoAuditionDepthQ15(uint8_t index, int16_t depthQ15) const;
-    bool cancelLfoAudition(uint8_t index) const;
-    bool applyLfoAudition(uint8_t index) const;
+    bool setModulatorAuditionDepthQ15(uint8_t index, int16_t depthQ15) const;
+    bool cancelModulatorAudition(uint8_t index) const;
+    bool applyModulatorAudition(uint8_t index) const;
+    core::state::modulation::ModulationBindingId focusedModulationBinding(
+        uint8_t index
+    ) const;
+    bool focusModulationBinding(
+        uint8_t index,
+        core::state::modulation::ModulationBindingId bindingId
+    ) const;
     bool setModulationDepth(uint8_t index, float depth) const;
     void endDepthGesture() const;
     bool undo() const;
@@ -125,6 +143,7 @@ public:
     bool setAutomationWindowOffsetBeats(uint8_t index, float offsetBeats) const;
 
 private:
+    void publishModulationMutation_() const;
     core::state::macro::MacroPagesState* pages_ = nullptr;
     core::state::macro::MacroUiState* macro_ui_ = nullptr;
     core::state::StructureClipboardState* clipboard_ = nullptr;

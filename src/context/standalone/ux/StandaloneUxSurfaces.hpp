@@ -26,8 +26,12 @@ struct StructureClipboardState;
 struct TrackNavigationState;
 struct ViewSelectorState;
 namespace macro {
+class MacroHistoryService;
 struct MacroPagesState;
 struct MacroUiState;
+}
+namespace project {
+struct ProjectNavigationState;
 }
 namespace sequencer {
 struct SequencerState;
@@ -58,6 +62,7 @@ constexpr uint8_t SEQUENCER_QUICK_CONTROLS = 35;
 constexpr uint8_t SEQUENCER_STRUCTURE = 40;
 constexpr uint8_t SEQUENCER_STEP_GRID = 50;
 constexpr uint8_t MACRO_STRUCTURE = 52;
+constexpr uint8_t PROJECT_MODULATORS = 53;
 constexpr uint8_t MACRO_PERFORMANCE = 54;
 constexpr uint8_t MACRO_EDIT = 55;
 constexpr uint8_t MACRO_VALUE = 60;
@@ -370,6 +375,30 @@ private:
     core::state::StructureClipboardState& structure_clipboard_;
     const core::handler::MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
     core::context::standalone::macro_overlay_presenter::StaticItems static_items_;
+};
+
+class ProjectModulatorsUxSurface final
+    : public core::validation::ux::SemanticUxSurface {
+public:
+    ProjectModulatorsUxSurface(
+        oc::state::Signal<core::ui::ViewType, 8>& activeView,
+        core::state::project::ProjectNavigationState& navigation,
+        core::state::macro::MacroPagesState& pages,
+        core::state::StructureClipboardState& clipboard,
+        core::state::macro::MacroHistoryService& history
+    );
+
+    bool captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent& event,
+        core::validation::ux::SemanticUxContext& out
+    ) const override;
+
+private:
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    core::state::project::ProjectNavigationState& navigation_;
+    core::state::macro::MacroPagesState& pages_;
+    core::state::StructureClipboardState& clipboard_;
+    core::state::macro::MacroHistoryService& history_;
 };
 
 class DataManagerUxSurface final : public core::validation::ux::SemanticUxSurface {

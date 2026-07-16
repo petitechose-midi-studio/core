@@ -26,6 +26,9 @@ enum class MacroEditFlowPhase : uint8_t {
     MODULATION = 6,
     CONVERT_PREVIEW = 7,
     LFO_AUDITION = 8,
+    MODULATOR_PICKER = 9,
+    EXISTING_MODULATOR_AUDITION = 10,
+    MODULATOR_CREATE = 11,
 };
 
 enum class MacroSlotProperty : uint8_t {
@@ -160,11 +163,23 @@ struct MacroEditState {
 
     void closeModulation();
 
+    void openModulatorCreate();
+
+    void closeModulatorCreate(uint8_t focusedRow);
+
     void openLfoAudition();
 
-    void cancelLfoAudition();
+    void cancelLfoAudition(uint8_t focusedRow = 0);
 
-    void applyLfoAudition();
+    void openModulatorPicker(int selectedIndex = 0);
+
+    void closeModulatorPicker(uint8_t focusedRow = 1);
+
+    void openExistingModulatorAudition();
+
+    void cancelExistingModulatorAudition();
+
+    void applyModulatorAudition();
 
     void openConvertPreview(
         const core::state::macro::MacroAutomationConversionPlan& plan

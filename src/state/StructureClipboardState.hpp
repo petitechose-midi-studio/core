@@ -35,6 +35,8 @@ enum class StructureClipboardKind : uint8_t {
     MACRO_SLOT = 10,
     MACRO_MODULATION = 11,
     MACRO_DESTINATION = 12,
+    MACRO_MODULATION_ASSIGNMENT = 13,
+    PROJECT_MODULATOR_SOURCE = 14,
 };
 
 enum class MacroClipboardPayloadKind : uint8_t {
@@ -166,6 +168,32 @@ struct MacroAutomationClipboard {
                 bool includeModulation = true);
 };
 
+/**
+ * Detached edge payload. The Project source remains shared and is referenced
+ * by stable ID; Paste only creates or updates an assignment on the target.
+ */
+struct MacroModulationAssignmentClipboard {
+    bool valid = false;
+    core::state::modulation::ModulatorId sourceId{};
+    core::state::modulation::ModulationBindingState binding{};
+    std::array<
+        char,
+        core::state::modulation::PROJECT_MODULATOR_NAME_CAPACITY
+    > sourceName{};
+};
+
+/** Stable shared-source reference used by Project registry Copy/Paste. */
+struct ProjectModulatorSourceClipboard {
+    bool valid = false;
+    core::state::modulation::ModulatorId sourceId{};
+    core::state::modulation::ModulatorKind kind =
+        core::state::modulation::ModulatorKind::LFO;
+    std::array<
+        char,
+        core::state::modulation::PROJECT_MODULATOR_NAME_CAPACITY
+    > sourceName{};
+};
+
 struct StructureClipboardState {
     oc::state::Signal<StructureClipboardKind, 4> kind{StructureClipboardKind::NONE};
     oc::state::Signal<uint32_t, 8> revision{0};
@@ -173,6 +201,10 @@ struct StructureClipboardState {
     core::state::macro::MacroPageData macroPage{};
     core::state::macro::MacroTrackData macroTrack{};
     core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard> macroAutomationSet;
+    core::app::ExtmemUniquePtr<
+        core::state::MacroModulationAssignmentClipboard
+    > macroModulationAssignment;
+    ProjectModulatorSourceClipboard projectModulatorSource{};
     core::state::SequencerPageClipboard sequencerPage{};
     core::state::SequencerStepsClipboard sequencerSteps{};
     core::state::SequencerPageSelectionClipboard sequencerPageSelection{};
@@ -223,6 +255,17 @@ struct StructureClipboardState {
     [[nodiscard]] bool storeMacroModulation(
         const core::state::modulation::ProjectControlState& control,
         const core::state::macro::MacroAutomationSlotAddress& address
+    );
+
+    /** Stores one focused edge without copying its shared Project source. */
+    [[nodiscard]] bool storeMacroModulationAssignment(
+        const core::state::modulation::ProjectControlState& control,
+        const core::state::macro::MacroAutomationSlotAddress& address,
+        core::state::modulation::ModulationBindingId bindingId
+    );
+    [[nodiscard]] bool storeProjectModulatorSource(
+        const core::state::modulation::ProjectControlState& control,
+        core::state::modulation::ModulatorId sourceId
     );
 
     [[nodiscard]] bool storeSequencerPage(
@@ -287,6 +330,23 @@ struct StructureClipboardState {
                macroAutomationSet->count == 1 &&
                macroAutomationSet->entries[0].valid &&
                macroAutomationSet->entries[0].state.modulation.active;
+    }
+    bool hasMacroModulationAssignment() const {
+        return kind.get() ==
+                   StructureClipboardKind::MACRO_MODULATION_ASSIGNMENT &&
+               macroModulationAssignment &&
+               macroModulationAssignment->valid &&
+               core::state::modulation::valid(
+                   macroModulationAssignment->sourceId
+               ) &&
+               core::state::modulation::valid(
+                   macroModulationAssignment->binding.id
+               );
+    }
+    bool hasProjectModulatorSource() const {
+        return kind.get() == StructureClipboardKind::PROJECT_MODULATOR_SOURCE &&
+               projectModulatorSource.valid &&
+               core::state::modulation::valid(projectModulatorSource.sourceId);
     }
     bool hasSequencerPage() const {
         return kind.get() == StructureClipboardKind::SEQUENCER_PAGE && sequencerPage.valid;

@@ -60,6 +60,8 @@ struct EditRenderData {
 struct AutomationRenderData {
     std::array<std::array<char, 32>, 7> valueBuffers{};
     std::array<ms::ui::KeyValueRow, 7> rows{};
+    ms::ui::KeyValueRowProvider rowProvider = nullptr;
+    void* rowProviderContext = nullptr;
     std::array<char, 24> title{};
     std::array<char, 24> meta{};
     uint32_t dataRevision = 0;

@@ -52,7 +52,11 @@ void MacroOverlayPresenter::refreshRuntimeTelemetry() {
         (state_refs_.macroEdit.flowPhase.get() ==
              core::state::MacroEditFlowPhase::MODULATION ||
          state_refs_.macroEdit.flowPhase.get() ==
-             core::state::MacroEditFlowPhase::LFO_AUDITION)) {
+             core::state::MacroEditFlowPhase::LFO_AUDITION ||
+         state_refs_.macroEdit.flowPhase.get() ==
+             core::state::MacroEditFlowPhase::MODULATOR_PICKER ||
+         state_refs_.macroEdit.flowPhase.get() ==
+             core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION)) {
         render_scheduler_.request(macro_overlay_invalidation::RENDER_AUTOMATION);
     }
 }
@@ -125,6 +129,8 @@ FLASHMEM void MacroOverlayPresenter::renderAutomation() {
         .title = data.title.data(),
         .meta = data.meta.data(),
         .rows = data.rows.data(),
+        .rowProvider = data.rowProvider,
+        .rowProviderContext = data.rowProviderContext,
         .rowCount = data.rowCount,
         .selectedIndex = data.selectedIndex,
         .dimUnselected = false,

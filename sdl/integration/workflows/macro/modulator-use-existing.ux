@@ -1,0 +1,43 @@
+# UX workflow: reuse an existing project modulator from a Macro destination.
+# Purpose: proves silent source browsing, explicit audible audition, exact Cancel,
+# direct signed Depth editing, and one-tap Apply without leaving Macro context.
+# Expect: capture_changed:modulator_picker_default=modulator_picker_focused, capture_changed:modulator_picker_focused=existing_audition_default, capture_changed:existing_audition_default=existing_audition_edited, capture_changed:existing_audition_edited=modulator_picker_restored, capture_changed:modulator_picker_restored=existing_applied
+# Expect: semantic:modulator_picker_focused:effect=focus_existing_modulator, semantic:modulator_picker_focused:projection=silent_selection
+# Expect: semantic:existing_audition_default:effect=start_existing_modulator_audition, semantic:existing_audition_default:projection=audible_audition
+# Expect: semantic:existing_audition_edited:effect=edit_existing_modulator_depth, semantic:modulator_picker_restored:effect=cancel_existing_modulator
+# Expect: semantic:existing_applied:effect=apply_existing_modulator
+
+0 scenario macro-reusable-modulators
+80 capture screen macro_ready
+
+# Reuse the learned Macro > Modulation path.
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+
+# Creation choice: Use Existing is immediately next to New LFO.
+1810 encoder NAV 1
+1930 tap NAV 60
+2150 capture screen modulator_picker_default
+
+# Browsing changes only focus and preview; it must remain silent.
+2270 encoder NAV 1
+2490 capture screen modulator_picker_focused
+
+# Explicit selection starts a destination-local audible audition.
+2610 tap NAV 60
+2830 capture screen existing_audition_default
+2950 encoder OPT 0.75
+3170 capture screen existing_audition_edited
+
+# Back cancels only the provisional edge and returns to the same source focus.
+3290 tap LEFT_TOP 60
+3510 capture screen modulator_picker_restored
+
+# Re-entering and applying creates the reusable assignment.
+3630 tap NAV 60
+3850 tap BOTTOM_RIGHT 60
+4070 capture screen existing_applied

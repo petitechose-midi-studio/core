@@ -1,5 +1,7 @@
 #include "handler/macro/MacroAutomationClipboardOps.hpp"
 
+#include <limits>
+
 #include <config/PlatformCompat.hpp>
 
 #include "state/modulation/ProjectControlMacroOps.hpp"
@@ -378,6 +380,52 @@ FLASHMEM bool copyModulationToClipboard(
     return clipboard.storeMacroModulation(control, address);
 }
 
+FLASHMEM bool copyModulationAssignmentToClipboard(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    core::state::modulation::ModulationBindingId bindingId,
+    core::state::StructureClipboardState& clipboard
+) {
+    return clipboard.storeMacroModulationAssignment(
+        control,
+        address,
+        bindingId
+    );
+}
+
+FLASHMEM bool modulationAssignmentDraftFromClipboard(
+    const core::state::StructureClipboardState& clipboard,
+    const core::state::modulation::ModulationDestination& destination,
+    core::state::modulation::ModulationBindingDraft& out
+) {
+    using namespace core::state::modulation;
+    if (!clipboard.hasMacroModulationAssignment() ||
+        !clipboard.macroModulationAssignment ||
+        !modulationDestinationValid(destination)) {
+        return false;
+    }
+    const auto& payload = *clipboard.macroModulationAssignment;
+    const auto& binding = payload.binding;
+    if (!payload.valid || binding.sourceId != payload.sourceId ||
+        binding.amountQ15 == std::numeric_limits<int16_t>::min() ||
+        static_cast<uint8_t>(binding.inputRange) >
+            static_cast<uint8_t>(ModulationInputRange::UNIPOLAR) ||
+        binding.transfer != ModulationTransfer::LINEAR) {
+        return false;
+    }
+    out = {
+        .sourceId = payload.sourceId,
+        .destination = destination,
+        .amountQ15 = binding.amountQ15,
+        .inputRange = binding.inputRange,
+        .transfer = binding.transfer,
+        .slewMs = binding.slewMs,
+        .enabled = (binding.flags &
+                    PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U,
+    };
+    return true;
+}
+
 FLASHMEM MacroTypedPastePreflight preflightModulationPaste(
     const core::state::macro::MacroPagesState& pages,
     const core::state::macro::MacroAutomationSlotAddress& address,
@@ -388,6 +436,47 @@ FLASHMEM MacroTypedPastePreflight preflightModulationPaste(
         !pages.pageData(address.track, address.page).isMacroActive(address.macro)) {
         rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
         return rejected;
+    }
+    if (clipboard.hasMacroModulationAssignment()) {
+        using namespace core::state::modulation;
+        ModulationBindingDraft draft{};
+        if (!modulationAssignmentDraftFromClipboard(
+                clipboard,
+                projectControlDestination(address),
+                draft
+            )) {
+            rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
+            return rejected;
+        }
+        const auto& graph = pages.control.authored.modulation;
+        const auto* source = findProjectModulator(graph, draft.sourceId);
+        if (source == nullptr) {
+            rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
+            return rejected;
+        }
+        if (!modulatorReachContains(source->reach, draft.destination)) {
+            rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
+            return rejected;
+        }
+        bool duplicate = false;
+        for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+            const auto& existing = graph.outputBindings[index];
+            if (existing.sourceId == draft.sourceId &&
+                existing.destination == draft.destination) {
+                duplicate = true;
+                break;
+            }
+        }
+        return preflightCapacity(
+            pages,
+            0U,
+            0U,
+            0U,
+            0U,
+            duplicate ? 0U : 1U,
+            0U,
+            duplicate
+        );
     }
     if (!clipboard.hasMacroModulation() || !clipboard.macroAutomationSet) {
         rejected.status = MacroTypedPasteStatus::EMPTY_CLIPBOARD;
@@ -435,6 +524,44 @@ FLASHMEM bool pasteModulationFromClipboard(
     const auto plan = preflightModulationPaste(pages, address, clipboard);
     if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
         return false;
+    }
+    if (clipboard.hasMacroModulationAssignment()) {
+        using namespace core::state::modulation;
+        ModulationBindingDraft draft{};
+        if (!modulationAssignmentDraftFromClipboard(
+                clipboard,
+                projectControlDestination(address),
+                draft
+            )) {
+            return false;
+        }
+        auto& graph = pages.control.authored.modulation;
+        for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+            auto& existing = graph.outputBindings[index];
+            if (existing.sourceId != draft.sourceId ||
+                existing.destination != draft.destination) {
+                continue;
+            }
+            if (!overwriteConfirmed ||
+                !updateProjectModulationBinding(
+                    graph,
+                    existing.id,
+                    draft.amountQ15,
+                    draft.inputRange,
+                    draft.transfer,
+                    draft.enabled,
+                    draft.slewMs
+                ).changed()) {
+                return false;
+            }
+            pages.control.markAuthoredMutation();
+            return true;
+        }
+        if (overwriteConfirmed || !addProjectModulationBinding(graph, draft).changed()) {
+            return false;
+        }
+        pages.control.markAuthoredMutation();
+        return true;
     }
     const auto& payload = *clipboard.macroAutomationSet;
     const auto& state = payload.entries[0].state;

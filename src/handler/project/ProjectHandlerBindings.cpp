@@ -31,33 +31,31 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .scope(project_view_scope_)
         .when([this]() {
             return canHandleProjectInput() &&
-                   !projectConfirmationActive() &&
-                   !isProjectNameEditorNode(navigation_.currentNode.get());
+                   (isProjectNameEditorNode(navigation_.currentNode.get()) ||
+                    !projectConfirmationActive());
         })
-        .then([this]() { enterPhysicalHoldLayer(); });
-
-    buttons_.button(ButtonID::LEFT_CENTER)
-        .press()
-        .scope(project_view_scope_)
-        .when([this]() {
-            return regularProjectInputActive() &&
-                   isProjectNameEditorNode(navigation_.currentNode.get());
-        })
-        .then([this]() { enterProjectNameShift(); });
+        .then([this]() {
+            if (isProjectNameEditorNode(navigation_.currentNode.get())) {
+                enterProjectNameShift();
+            } else {
+                enterPhysicalHoldLayer();
+            }
+        });
 
     buttons_.button(ButtonID::LEFT_CENTER)
         .release()
         .scope(project_view_scope_)
         .when([this]() {
-            return canHandleProjectInput() && navigation_.projectNameShiftActive;
+            return canHandleProjectInput() &&
+                   (navigation_.projectNameShiftActive || physicalHoldActive());
         })
-        .then([this]() { leaveProjectNameShift(); });
-
-    buttons_.button(ButtonID::LEFT_CENTER)
-        .release()
-        .scope(project_view_scope_)
-        .when([this]() { return physicalHoldActive(); })
-        .then([this]() { leavePhysicalHoldLayer(); });
+        .then([this]() {
+            if (navigation_.projectNameShiftActive) {
+                leaveProjectNameShift();
+            } else {
+                leavePhysicalHoldLayer();
+            }
+        });
 
     encoders_.encoder(EncoderID::NAV)
         .turn()
@@ -84,13 +82,35 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .then([this]() { consumeRedo(); });
 
     buttons_.button(ButtonID::BOTTOM_LEFT)
+        .press()
+        .scope(project_view_scope_)
+        .when([this]() {
+            const auto node = navigation_.currentNode.get();
+            return regularProjectInputActive() &&
+                   (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
+                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                    node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS);
+        })
+        .then([this]() { beginModulatorBottomLeft(); });
+
+    buttons_.button(ButtonID::BOTTOM_LEFT)
         .release()
         .scope(project_view_scope_)
         .when([this]() {
-            return regularProjectInputActive() &&
-                   isProjectNameEditorNode(navigation_.currentNode.get());
+            if (!regularProjectInputActive()) return false;
+            const auto node = navigation_.currentNode.get();
+            return isProjectNameEditorNode(node) ||
+                   node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
+                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                   node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS;
         })
-        .then([this]() { backspaceProjectName(navigation_); });
+        .then([this]() {
+            if (isProjectNameEditorNode(navigation_.currentNode.get())) {
+                backspaceProjectName(navigation_);
+            } else {
+                releaseModulatorBottomLeft();
+            }
+        });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .release()
@@ -115,13 +135,33 @@ FLASHMEM void ProjectHandler::setupBindings() {
         });
 
     buttons_.button(ButtonID::BOTTOM_RIGHT)
+        .press()
+        .scope(project_view_scope_)
+        .when([this]() {
+            const auto node = navigation_.currentNode.get();
+            return regularProjectInputActive() &&
+                   (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
+                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+        })
+        .then([this]() { beginModulatorBottomRight(); });
+
+    buttons_.button(ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(project_view_scope_)
         .when([this]() {
-            return regularProjectInputActive() &&
-                   isProjectNameEditorNode(navigation_.currentNode.get());
+            if (!regularProjectInputActive()) return false;
+            const auto node = navigation_.currentNode.get();
+            return isProjectNameEditorNode(node) ||
+                   node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
+                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL;
         })
-        .then([this]() { commitProjectNameEditor(); });
+        .then([this]() {
+            if (isProjectNameEditorNode(navigation_.currentNode.get())) {
+                commitProjectNameEditor();
+            } else {
+                releaseModulatorBottomRight();
+            }
+        });
 }
 
 

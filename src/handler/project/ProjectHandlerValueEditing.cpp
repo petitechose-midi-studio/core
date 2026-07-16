@@ -1,5 +1,11 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
 
+#include <algorithm>
+
+#include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "state/project/ProjectModulatorMenuModel.hpp"
+
 #include <cmath>
 #include <utility>
 
@@ -192,7 +198,124 @@ FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
            setFocusedMusicScaleValue(normalized) ||
            setFocusedTransportValue(normalized) ||
            setFocusedStorageValue(normalized) || setFocusedRoutingValue(normalized) ||
+           setFocusedModulatorValue(normalized) ||
            setFocusedNameEditorValue(normalized);
+}
+
+FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
+    using namespace core::state::modulation;
+    using Item = core::state::project::modulators::SourceDetailItem;
+    if (navigation_.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS) {
+        auto* binding = focusedModulationBinding();
+        if (!binding) return false;
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            binding->destination.track,
+            binding->destination.page,
+            binding->destination.macro,
+        };
+        const float depth = clampNormalized(normalized) * 2.0f - 1.0f;
+        if (macro_history_.setModulationBindingDepthCoalesced(
+                pages_, address, binding->id, depth
+            )) {
+            publishModulatorMutation(false);
+        }
+        return true;
+    }
+    auto* source = focusedModulator();
+    if (!source) return false;
+
+    const auto node = navigation_.currentNode.get();
+    Item item = Item::RATE;
+    if (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        item = core::state::project::modulators::sourceDetailLayout(source->kind).at(
+            navigation_.focusedRow.get()
+        );
+    } else if (node != core::state::project::ProjectNodeId::MODULATORS_ROOT) {
+        return false;
+    }
+
+    const float value = clampNormalized(normalized);
+    if (item == Item::ENABLED) {
+        const bool enabled = value >= 0.5f;
+        if (macro_history_.setProjectModulatorEnabled(
+                pages_, source->id, enabled
+            )) {
+            publishModulatorMutation(false);
+        }
+        return true;
+    }
+    if (item == Item::REACH) {
+        const ModulatorReach reach = value >= 0.5f
+            ? ModulatorReach{.kind = ModulatorReachKind::PROJECT}
+            : core::state::project::modulators::tightestSourceReach(
+                  pages_.control.authored.modulation,
+                  source->id
+              );
+        if (macro_history_.setProjectModulatorReach(
+                pages_, source->id, reach
+            )) {
+            publishModulatorMutation(false);
+        }
+        return true;
+    }
+    if (source->kind != ModulatorKind::LFO) return false;
+
+    auto parameters = source->parameters.lfo;
+    switch (item) {
+        case Item::SHAPE:
+            parameters.shape = static_cast<ModulatorLfoShape>(
+                normalizedToIndex(
+                    value,
+                    core::ui::macro::lfo_audition::SHAPE_COUNT
+                )
+            );
+            break;
+        case Item::RATE:
+            if (parameters.timing == ModulatorTimingMode::FREE) {
+                parameters.freePeriodMs = PROJECT_MODULATOR_FREE_PERIODS_MS[
+                    static_cast<size_t>(normalizedToIndex(
+                        value,
+                        static_cast<int>(PROJECT_MODULATOR_FREE_PERIODS_MS.size())
+                    ))
+                ];
+            } else {
+                parameters.periodTicks =
+                    core::ui::macro::lfo_audition::RATE_PERIOD_TICKS[
+                        static_cast<size_t>(normalizedToIndex(
+                            value,
+                            core::ui::macro::lfo_audition::RATE_COUNT
+                        ))
+                    ];
+            }
+            break;
+        case Item::TIMING:
+            parameters.timing = value >= 0.5f
+                ? ModulatorTimingMode::FREE
+                : ModulatorTimingMode::SYNC;
+            break;
+        case Item::PHASE: {
+            const int32_t phase = static_cast<int32_t>(value * 65534.0f + 0.5f) -
+                32767;
+            parameters.phaseQ15 = static_cast<int16_t>(
+                std::clamp<int32_t>(phase, -32767, 32767)
+            );
+            break;
+        }
+        case Item::RETRIGGER:
+            parameters.retrigger = static_cast<ModulatorRetriggerPolicy>(
+                normalizedToIndex(value, 3)
+            );
+            break;
+        default:
+            return false;
+    }
+    if (macro_history_.setProjectLfoParametersCoalesced(
+            pages_, source->id, parameters
+        )) {
+        publishModulatorMutation(false);
+    }
+    return true;
 }
 
 FLASHMEM bool ProjectHandler::setFocusedNameEditorValue(float normalized) {

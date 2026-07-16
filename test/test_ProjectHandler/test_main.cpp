@@ -92,12 +92,17 @@ struct ProjectHandlerHarness {
           })
         , handler(core::handler::ProjectHandler::StateRefs{
                       state.overlays,
+                      state.activeView,
                       state.projectNavigation,
                       state.sequencer,
                       state.sequencerTracks,
                       state.statusBar,
                       state.midiSync,
-                      core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+                       state.pages,
+                       state.configRevision,
+                       state.macroHistory,
+                       state.structureClipboard,
+                       core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                       core::handler::ProjectLifecycleDomainServices::fromCoreState(
                           state,
                           productFiles
@@ -106,7 +111,8 @@ struct ProjectHandlerHarness {
                   sequencerSettings,
                   encoders,
                   buttons,
-                  PROJECT_SCOPE) {
+                  PROJECT_SCOPE,
+                  mockTimeMs) {
         std::error_code ec;
         std::filesystem::remove_all(projectHandlerFsRoot(), ec);
         assert(productFiles.init());
@@ -1250,6 +1256,182 @@ void test_rename_current_project_rejects_existing_target_without_mutating_state(
     std::cout << "[PASS] test_rename_current_project_rejects_existing_target_without_mutating_state\n";
 }
 
+void enterModulatorsRoot(ProjectHandlerHarness& h) {
+    using namespace core::state::project;
+    auto& navigation = h.state.projectNavigation;
+    navigation.activeTab.set(ProjectTab::MODULATORS);
+    navigation.currentNode.set(ProjectNodeId::MODULATORS_ROOT);
+    navigation.depth.set(0);
+    navigation.focusedRow.set(0);
+    navigation.pathStack[0] = ProjectNodeId::MODULATORS_ROOT;
+    h.state.activeView.set(core::ui::ViewType::PROJECT);
+}
+
+void projectModulatorUndo(ProjectHandlerHarness& h) {
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_CENTER);
+}
+
+void test_project_modulator_creation_and_destination_workflow() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    assert(h.state.projectNavigation.creatingModulatorSource);
+    h.tap(Config::ButtonID::NAV);
+
+    auto& graph = h.state.pages.control.authored.modulation;
+    assert(graph.sourceCount == 1U);
+    assert(graph.outputBindingCount == 1U);
+    assert(graph.sources[0].reach.kind == ModulatorReachKind::MACRO);
+    assert(graph.outputBindings[0].amountQ15 == 8192);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATIONS);
+    assert(h.state.macroHistory.undoCount() == 1U);
+
+    h.state.pages.pageData(0, 0).setMacroActive(1, true);
+    h.turn(Config::EncoderID::NAV, 1.0f);  // + Destination
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Macro 2
+    h.tap(Config::ButtonID::NAV);
+    assert(graph.outputBindingCount == 2U);
+    assert(graph.sources[0].reach.kind == ModulatorReachKind::TRACK_SET);
+    assert(graph.sources[0].reach.trackMask == 1U);
+    assert(h.state.macroHistory.undoCount() == 2U);
+
+    projectModulatorUndo(h);
+    assert(graph.outputBindingCount == 1U);
+    assert(graph.sources[0].reach.kind == ModulatorReachKind::MACRO);
+    std::cout << "[PASS] Project creates and assigns LFOs destination-first\n";
+}
+
+void test_project_modulator_explicit_unassigned_creation() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 8.0f);
+    h.tap(Config::ButtonID::NAV);
+
+    auto& graph = h.state.pages.control.authored.modulation;
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATORS_ROOT);
+    assert(graph.sourceCount == 1U);
+    assert(graph.outputBindingCount == 0U);
+    assert(graph.sources[0].reach.kind == ModulatorReachKind::DETACHED);
+    assert(h.state.macroHistory.undoCount() == 1U);
+    projectModulatorUndo(h);
+    assert(graph.sourceCount == 0U);
+    std::cout << "[PASS] Unassigned source creation stays explicit and undoable\n";
+}
+
+void test_project_modulator_source_copy_and_guarded_paste() {
+    using namespace core::state::modulation;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+
+    ModulatorLfoDraft draft{};
+    draft.name = "LFO 1";
+    draft.reach = {.kind = ModulatorReachKind::PROJECT};
+    draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
+    auto& graph = h.state.pages.control.authored.modulation;
+    const auto created = createLfoModulator(graph, draft);
+    assert(created.changed());
+    h.state.projectNavigation.notifyContentChanged();
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.handler.update(g_now_ms);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    h.handler.update(g_now_ms);
+    assert(h.state.structureClipboard.hasProjectModulatorSource());
+    assert(h.state.structureClipboard.projectModulatorSource.sourceId ==
+           created.sourceId);
+    assert(graph.sourceCount == 1U);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.handler.update(g_now_ms);
+    g_now_ms += Config::Timing::LATCH_THRESHOLD_MS +
+                Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    h.handler.update(g_now_ms);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    h.handler.update(g_now_ms);
+
+    assert(graph.sourceCount == 2U);
+    assert(std::strcmp(graph.sources[1].name.data(), "LFO 2") == 0);
+    assert(h.state.projectNavigation.selectedModulator == graph.sources[1].id);
+    assert(h.state.macroHistory.undoCount() == 1U);
+    projectModulatorUndo(h);
+    assert(graph.sourceCount == 1U);
+    assert(graph.sources[0].id == created.sourceId);
+    std::cout << "[PASS] Project Source Copy/Paste is typed and guarded\n";
+}
+
+void test_project_modulator_reach_page_splits_one_track_with_one_undo() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+
+    ModulatorLfoDraft draft{};
+    draft.name = "Slow Tide";
+    draft.reach = {.kind = ModulatorReachKind::PROJECT};
+    draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
+    auto& graph = h.state.pages.control.authored.modulation;
+    const auto created = createLfoModulator(graph, draft);
+    assert(created.changed());
+    ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = {
+        .kind = ModulationDestinationKind::MACRO_SLOT,
+        .track = 0,
+        .page = 0,
+        .macro = 0,
+    };
+    binding.amountQ15 = 8192;
+    assert(addProjectModulationBinding(graph, binding).changed());
+    binding.destination.track = 1;
+    binding.destination.macro = 1;
+    const auto moved = addProjectModulationBinding(graph, binding);
+    assert(moved.changed());
+    h.state.projectNavigation.notifyContentChanged();
+
+    h.tap(Config::ButtonID::NAV);       // Source detail
+    h.turn(Config::EncoderID::NAV, 7.0f);  // Reach
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_REACH);
+    h.turn(Config::EncoderID::NAV, 3.0f);  // Split T2
+    h.tap(Config::ButtonID::NAV);
+
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATORS_ROOT);
+    assert(graph.sourceCount == 2U);
+    assert(graph.outputBindingCount == 2U);
+    assert(graph.outputBindings[0].sourceId == created.sourceId);
+    assert(graph.outputBindings[1].sourceId != created.sourceId);
+    assert(graph.sources[0].reach.kind == ModulatorReachKind::MACRO);
+    assert(graph.sources[1].reach.kind == ModulatorReachKind::MACRO);
+    assert(graph.sources[1].reach.track == 1U);
+    assert(std::strcmp(graph.sources[1].name.data(), "T2 Slow Tide") == 0);
+    assert(h.state.macroHistory.undoCount() == 1U);
+
+    projectModulatorUndo(h);
+    assert(graph.sourceCount == 1U);
+    assert(graph.outputBindingCount == 2U);
+    assert(graph.outputBindings[0].sourceId == created.sourceId);
+    assert(graph.outputBindings[1].sourceId == created.sourceId);
+    assert(graph.sources[0].reach.kind == ModulatorReachKind::PROJECT);
+    std::cout << "[PASS] Reach page Split is explicit and one exact Undo\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1282,6 +1464,10 @@ int main() {
     test_manual_save_as_rejects_invalid_and_duplicate_slugs();
     test_rename_current_project_moves_catalogue_file();
     test_rename_current_project_rejects_existing_target_without_mutating_state();
+    test_project_modulator_creation_and_destination_workflow();
+    test_project_modulator_explicit_unassigned_creation();
+    test_project_modulator_source_copy_and_guarded_paste();
+    test_project_modulator_reach_page_splits_one_track_with_one_undo();
 
     std::cout << "\nAll ProjectHandler tests passed.\n";
     return 0;

@@ -14,6 +14,7 @@
 #include "state/macro/MacroAutomationDomain.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -170,6 +171,222 @@ void prepareMacroAutomationCleanScenario(core::state::CoreState& state) {
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
+core::state::modulation::ModulatorId addReusableLfo(
+    core::state::CoreState& state,
+    const char* name,
+    core::state::modulation::ModulatorLfoShape shape,
+    uint32_t periodTicks,
+    uint8_t accent
+) {
+    using namespace core::state::modulation;
+    ModulatorLfoDraft draft{};
+    draft.name = name;
+    draft.reach = {.kind = ModulatorReachKind::PROJECT};
+    draft.parameters.periodTicks = periodTicks;
+    draft.parameters.shape = shape;
+    draft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
+    draft.parameters.timing = ModulatorTimingMode::SYNC;
+    draft.accent = accent;
+    return createLfoModulator(
+        state.pages.control.authored.modulation,
+        draft
+    ).sourceId;
+}
+
+void prepareMacroReusableModulatorsScenario(core::state::CoreState& state) {
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& track = state.pages.tracks[0];
+    track.channel = 5;
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    auto& page = track.pages[0];
+    page.cc[0] = 74;
+    page.values[0] = 0.42f;
+    page.setMacroActive(0, true);
+    std::snprintf(page.name, sizeof(page.name), "%s", "Reusable LFOs");
+
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    const auto slowTide = addReusableLfo(
+        state,
+        "Slow Tide",
+        core::state::modulation::ModulatorLfoShape::SINE,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT * 4U,
+        0
+    );
+    const auto pulseLift = addReusableLfo(
+        state,
+        "Pulse Lift",
+        core::state::modulation::ModulatorLfoShape::TRIANGLE,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT,
+        1
+    );
+    if (core::state::modulation::valid(slowTide) ||
+        core::state::modulation::valid(pulseLift)) {
+        state.pages.control.markAuthoredMutation();
+    }
+
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
+core::state::modulation::ModulationBindingId bindReusableModulator(
+    core::state::CoreState& state,
+    core::state::modulation::ModulatorId sourceId,
+    int16_t amountQ15
+) {
+    using namespace core::state::modulation;
+    ModulationBindingDraft draft{};
+    draft.sourceId = sourceId;
+    draft.destination = projectControlDestination({
+        .track = 0,
+        .page = 0,
+        .macro = 0,
+    });
+    draft.amountQ15 = amountQ15;
+    draft.inputRange = ModulationInputRange::BIPOLAR;
+    draft.enabled = true;
+    return addProjectModulationBinding(
+        state.pages.control.authored.modulation,
+        draft
+    ).bindingId;
+}
+
+void prepareMacroMultiModulationScenario(core::state::CoreState& state) {
+    prepareMacroReusableModulatorsScenario(state);
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount < 2U) return;
+    const auto drift = addReusableLfo(
+        state,
+        "Drift",
+        core::state::modulation::ModulatorLfoShape::SAW_DOWN,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT * 2U,
+        2
+    );
+    const auto slowBinding = bindReusableModulator(
+        state,
+        graph.sources[0].id,
+        8192
+    );
+    const auto pulseBinding = bindReusableModulator(
+        state,
+        graph.sources[1].id,
+        -13107
+    );
+    (void)slowBinding;
+    if (core::state::modulation::valid(drift)) {
+        (void)bindReusableModulator(state, drift, 4915);
+    }
+    state.pages.control.markAuthoredMutation();
+    if (core::state::modulation::valid(pulseBinding)) {
+        (void)core::state::modulation::setProjectControlFocusedModulationBinding(
+            state.pages.control,
+            {.track = 0, .page = 0, .macro = 0},
+            pulseBinding
+        );
+    }
+}
+
+void prepareProjectModulatorsScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
+    prepareMacroReusableModulatorsScenario(state);
+    auto& page = state.pages.tracks[0].pages[0];
+    auto& track2Page = state.pages.tracks[1].pages[0];
+    page.cc[1] = 71;
+    page.cc[2] = 10;
+    page.values[1] = 0.58f;
+    page.values[2] = 0.33f;
+    page.setMacroActive(1, true);
+    page.setMacroActive(2, true);
+    track2Page.cc[1] = 74;
+    track2Page.values[1] = 0.46f;
+    track2Page.setMacroActive(1, true);
+
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount >= 2U) {
+        graph.sources[0].reach = {
+            .trackMask = 0x0003,
+            .kind = ModulatorReachKind::TRACK_SET,
+        };
+        graph.sources[1].reach = {
+            .kind = ModulatorReachKind::MACRO,
+            .track = 0,
+            .page = 0,
+            .macro = 2,
+        };
+        const auto addBinding = [&](ModulatorId sourceId,
+                                    uint8_t track,
+                                    uint8_t macro,
+                                    int16_t depthQ15) {
+            ModulationBindingDraft draft{};
+            draft.sourceId = sourceId;
+            draft.destination = projectControlDestination({
+                .track = track,
+                .page = 0,
+                .macro = macro,
+            });
+            draft.amountQ15 = depthQ15;
+            draft.inputRange = ModulationInputRange::BIPOLAR;
+            draft.enabled = true;
+            return addProjectModulationBinding(graph, draft).changed();
+        };
+        (void)addBinding(graph.sources[0].id, 0, 0, 8192);
+        (void)addBinding(graph.sources[0].id, 1, 1, -4096);
+        (void)addBinding(graph.sources[1].id, 0, 2, 2621);
+        state.pages.control.markAuthoredMutation();
+    }
+
+    state.macroHistory.clear();
+    state.structureClipboard.clear();
+    state.projectNavigation.reset();
+    state.activeView.set(core::ui::ViewType::PROJECT);
+    state.overlays.hideAll();
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
+void prepareMacroModulationAssignmentCopyScenario(
+    core::state::CoreState& state
+) {
+    prepareMacroReusableModulatorsScenario(state);
+    auto& page = state.pages.tracks[0].pages[0];
+    page.cc[1] = 71;
+    page.values[1] = 0.58f;
+    page.setMacroActive(1, true);
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount == 0U) return;
+    const auto binding = bindReusableModulator(
+        state,
+        graph.sources[0].id,
+        -13107
+    );
+    state.pages.control.markAuthoredMutation();
+    if (core::state::modulation::valid(binding)) {
+        (void)core::state::modulation::setProjectControlFocusedModulationBinding(
+            state.pages.control,
+            {.track = 0, .page = 0, .macro = 0},
+            binding
+        );
+    }
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.configRevision.set(
+        core::state::macro::nextMacroConfigRevision(
+            state.configRevision.get()
+        )
+    );
 }
 
 void configureMacroAutomation(core::state::CoreState& state,
@@ -1127,6 +1344,26 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "macro-auto-mod") == 0) {
         prepareMacroAutoModScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-reusable-modulators") == 0) {
+        prepareMacroReusableModulatorsScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-multi-modulation") == 0) {
+        prepareMacroMultiModulationScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-modulation-assignment-copy") == 0) {
+        prepareMacroModulationAssignmentCopyScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "project-modulators") == 0) {
+        prepareProjectModulatorsScenario(state);
         return true;
     }
 

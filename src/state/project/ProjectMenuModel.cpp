@@ -406,6 +406,21 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
         case ProjectNodeId::ROUTING_ROOT:
             page.meta = "ROUTING";
             return;
+        case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+            page.meta = "MODULATORS > SOURCE";
+            return;
+        case ProjectNodeId::MODULATOR_REACH:
+            page.meta = "MODULATORS > REACH";
+            return;
+        case ProjectNodeId::MODULATOR_DESTINATIONS:
+            page.meta = "MODULATORS > DESTINATIONS";
+            return;
+        case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+            page.meta = "MODULATORS > ADD DESTINATION";
+            return;
+        case ProjectNodeId::MODULATORS_ROOT:
+            page.meta = "MODULATORS";
+            return;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
             page.meta = "NEW PROJECT?";
             return;
@@ -538,6 +553,13 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
         case ProjectNodeId::ROUTING_ROOT:
             buildRoutingRows(page, context);
             break;
+        case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+        case ProjectNodeId::MODULATOR_REACH:
+        case ProjectNodeId::MODULATOR_DESTINATIONS:
+        case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+        case ProjectNodeId::MODULATORS_ROOT:
+            // These pages are rendered by the bounded virtual source registry.
+            break;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
             buildNewProjectConfirmRows(page, context);
             break;
@@ -569,7 +591,19 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
     return page;
 }
 
-FLASHMEM uint8_t projectCurrentRowCount(const ProjectNavigationState& navigation) {
+FLASHMEM uint16_t projectCurrentRowCount(const ProjectNavigationState& navigation,
+                                         uint16_t modulatorSourceCount,
+                                         uint16_t modulatorDetailRowCount) {
+    if (navigation.currentNode.get() == ProjectNodeId::MODULATORS_ROOT) {
+        return static_cast<uint16_t>(modulatorSourceCount + 1U);
+    }
+    if (navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_REACH ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS ||
+        navigation.currentNode.get() ==
+            ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        return modulatorDetailRowCount;
+    }
     return buildProjectMenuPage(navigation).rowCount;
 }
 

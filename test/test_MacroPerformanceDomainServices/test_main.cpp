@@ -764,6 +764,11 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         state.pages.control,
         sourceAddress
     );
+    assert(core::state::modulation::setProjectModulatorReach(
+        state.pages.control.authored.modulation,
+        source.modulationSourceId,
+        {.kind = core::state::modulation::ModulatorReachKind::PROJECT}
+    ).changed());
     auto* sourceCurve = test_support::project_control::mutableCurve(
         state.pages.control,
         source.modulationCurveId
@@ -787,6 +792,7 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     ));
     target = configureModulation(state.pages.control, targetAddress, 0.82f);
     const auto targetAutomationBefore = target.automationCurveId;
+    const auto targetModulationBefore = target.modulationCurveId;
     std::array<core::state::macro::MacroCurvePoint, 2> targetAutomationPoints{};
     for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
         targetAutomationPoints[i] = test_support::project_control::readCurvePoint(
@@ -797,14 +803,18 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         );
     }
 
+    const auto sourceBindingBefore =
+        state.pages.control.authored.modulation.outputBindings[0];
+    const auto targetBindingBefore =
+        state.pages.control.authored.modulation.outputBindings[1];
+    const uint16_t sourceCountBefore =
+        state.pages.control.authored.modulation.sourceCount;
     assert(edit.copyModulation(0));
-    assert(state.structureClipboard.hasMacroModulation());
+    assert(state.structureClipboard.hasMacroModulationAssignment());
     const auto plan = edit.preflightModulationPaste(1);
     assert(plan.actionable());
-    assert(plan.requiresOverwrite());
-    assert(!edit.pasteModulation(1, false));
-    assert(std::fabs(edit.modulationDepth(1) - 0.82f) < 0.0001f);
-    assert(edit.pasteModulation(1, true));
+    assert(!plan.requiresOverwrite());
+    assert(edit.pasteModulation(1, false));
 
     source = test_support::project_control::readSlot(
         state.pages.control,
@@ -816,6 +826,24 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     );
     assert(page.cc[1] == 11);
     assert(std::fabs(page.values[1] - 0.66f) < 0.0001f);
+    const auto& graph = state.pages.control.authored.modulation;
+    assert(graph.sourceCount == sourceCountBefore);
+    assert(graph.outputBindingCount == 3U);
+    assert(std::memcmp(
+        &graph.outputBindings[0],
+        &sourceBindingBefore,
+        sizeof(sourceBindingBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &graph.outputBindings[1],
+        &targetBindingBefore,
+        sizeof(targetBindingBefore)
+    ) == 0);
+    const auto& pastedBinding = graph.outputBindings[2];
+    assert(pastedBinding.sourceId == source.modulationSourceId);
+    assert(pastedBinding.destination ==
+           core::state::modulation::projectControlDestination(targetAddress));
+    assert(pastedBinding.amountQ15 == sourceBindingBefore.amountQ15);
     assert(target.automationCurveId == targetAutomationBefore);
     assert(target.legacy.automation.pointCount == targetAutomationPoints.size());
     for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
@@ -828,16 +856,12 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         assert(std::fabs(actual.beat - targetAutomationPoints[i].beat) < 0.0001f);
         assert(std::fabs(actual.value - targetAutomationPoints[i].value) < 0.0001f);
     }
-    assertCurvePayloadEquals(
-        state.pages.control,
-        source.modulationCurveId,
-        target.modulationCurveId,
-        true
-    );
-    assert(std::fabs(target.legacy.modulationDepth - 0.37f) < 0.0001f);
+    assert(target.modulationCount == 2U);
+    assert(target.modulationCurveId == targetModulationBefore);
+    assert(std::fabs(target.legacy.modulationDepth - 0.82f) < 0.0001f);
 
     std::cout
-        << "[PASS] test_modulation_copy_paste_preserves_target_and_exact_payload\n";
+        << "[PASS] modulation assignment Paste preserves target and shares source\n";
 }
 
 void test_typed_slot_copy_paste_preserves_automation_and_modulation() {

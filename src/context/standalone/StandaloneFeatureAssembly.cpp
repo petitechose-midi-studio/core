@@ -123,11 +123,16 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::app::makeExtmemUnique<core::context::standalone::ProjectFeatureModule>(
             core::context::standalone::ProjectFeatureModule::StateRefs{
                 state.overlays,
+                state.activeView,
                 state.projectNavigation,
                 state.sequencer,
                 state.sequencerTracks,
                 state.statusBar,
                 state.midiSync,
+                state.pages,
+                state.configRevision,
+                state.macroHistory,
+                state.structureClipboard,
                 core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                 core::handler::ProjectLifecycleDomainServices::fromCoreState(
                     state,
@@ -143,6 +148,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             encoders,
             buttons,
             projectViewElement
+#if defined(MS_UX_RECORDER)
+            ,
+            uxRegistry
+#endif
         );
     if (!project_feature_ || !project_feature_->valid()) return;
 #if OC_ENABLE_STATS
@@ -218,6 +227,9 @@ void StandaloneFeatureAssembly::update(uint32_t nowMs) const {
     }
     if (sequencer_feature_) {
         sequencer_feature_->update(nowMs);
+    }
+    if (project_feature_) {
+        project_feature_->update(nowMs);
     }
 }
 

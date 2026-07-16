@@ -10,6 +10,7 @@
 
 #include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
@@ -231,6 +232,317 @@ FLASHMEM ms::ui::KeyValueSparkline buildLfoSparkline(
             break;
     }
     return sparkline;
+}
+
+FLASHMEM uint16_t sourceUsageCount(
+    const core::state::modulation::ProjectModulationState& graph,
+    core::state::modulation::ModulatorId sourceId
+) {
+    uint16_t count = 0;
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        if (graph.outputBindings[index].sourceId == sourceId) ++count;
+    }
+    return count;
+}
+
+FLASHMEM bool sourceAssignedTo(
+    const core::state::modulation::ProjectModulationState& graph,
+    core::state::modulation::ModulatorId sourceId,
+    const core::state::modulation::ModulationDestination& destination
+) {
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        const auto& binding = graph.outputBindings[index];
+        if (binding.sourceId == sourceId &&
+            binding.destination == destination) {
+            return true;
+        }
+    }
+    return false;
+}
+
+FLASHMEM void formatReachCompact(
+    char* out,
+    size_t outSize,
+    const core::state::modulation::ModulatorReach& reach
+) {
+    using Kind = core::state::modulation::ModulatorReachKind;
+    switch (reach.kind) {
+        case Kind::MACRO:
+            std::snprintf(
+                out,
+                outSize,
+                "M%u",
+                static_cast<unsigned>(reach.macro) + 1U
+            );
+            break;
+        case Kind::TRACK_SET: {
+            uint8_t first = 0;
+            uint8_t count = 0;
+            for (uint8_t track = 0; track < 16U; ++track) {
+                if ((reach.trackMask & static_cast<uint16_t>(1U << track)) == 0U) {
+                    continue;
+                }
+                if (count == 0U) first = track;
+                ++count;
+            }
+            std::snprintf(
+                out,
+                outSize,
+                count > 1U ? "T%u+" : "T%u",
+                static_cast<unsigned>(first) + 1U
+            );
+            break;
+        }
+        case Kind::PROJECT:
+            std::snprintf(out, outSize, "%s", "All");
+            break;
+        case Kind::DETACHED:
+        default:
+            std::snprintf(out, outSize, "%s", "None");
+            break;
+    }
+}
+
+FLASHMEM const char* lfoRateCompact(uint8_t index) {
+    static constexpr const char* labels[] = {
+        "1/16", "1/8", "1/4", "1/2", "1 bar", "2 bars"
+    };
+    return labels[std::min<uint8_t>(
+        index,
+        static_cast<uint8_t>(
+            core::ui::macro::lfo_audition::RATE_COUNT - 1U
+        )
+    )];
+}
+
+FLASHMEM ms::ui::KeyValueSparkline buildSourceSparkline(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::modulation::ModulatorSourceState& source
+) {
+    if (source.kind == core::state::modulation::ModulatorKind::LFO) {
+        return buildLfoSparkline(
+            source.parameters.lfo.shape,
+            liveSourceValue(control, source.id)
+        );
+    }
+    const auto curveId = source.parameters.recordedCurveId;
+    const auto* record = core::state::modulation::findProjectCurve(
+        control.authored.curves,
+        curveId
+    );
+    if (record == nullptr) return {};
+    core::state::macro::MacroAutomationCurveRef curve{};
+    curve.active = true;
+    curve.pointOffset = record->pointOffset;
+    curve.pointCount = record->pointCount;
+    curve.sourceDurationTicks = record->sourceDurationTicks;
+    curve.durationTicks = record->durationTicks;
+    curve.windowOffsetTicks = record->windowOffsetTicks;
+    auto sparkline = buildCurveSparkline(control, curveId, curve);
+    sparkline.centerLine = true;
+    sparkline.liveMarker = true;
+    sparkline.liveValue = static_cast<uint8_t>(std::lround(
+        std::clamp(
+            liveSourceValue(control, source.id) * 0.5f + 0.5f,
+            0.0f,
+            1.0f
+        ) * 255.0f
+    ));
+    return sparkline;
+}
+
+FLASHMEM void provideModulatorPickerRow(
+    void* context,
+    int index,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    auto* source = static_cast<Source*>(context);
+    if (source == nullptr || index < 0) return;
+    const auto& graph = source->pages.control.authored.modulation;
+    if (index >= static_cast<int>(graph.sourceCount)) return;
+    const auto& modulator = graph.sources[static_cast<uint16_t>(index)];
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = source->pages.currentActiveTrack(),
+        .page = source->pages.currentActivePage(),
+        .macro = source->macroEdit.editingIndex.get(),
+    };
+    const auto destination =
+        core::state::modulation::projectControlDestination(address);
+    const bool inReach = core::state::modulation::modulatorReachContains(
+        modulator.reach,
+        destination
+    );
+    const bool assigned = sourceAssignedTo(graph, modulator.id, destination);
+    const uint16_t usage = sourceUsageCount(graph, modulator.id);
+    char reach[12]{};
+    formatReachCompact(reach, sizeof(reach), modulator.reach);
+    const char* primary = "Motion";
+    if (modulator.kind == core::state::modulation::ModulatorKind::LFO) {
+        primary = lfoRateCompact(
+            core::ui::macro::lfo_audition::rateIndex(
+                modulator.parameters.lfo.periodTicks
+            )
+        );
+    }
+    out.sparkline = buildSourceSparkline(source->pages.control, modulator);
+    std::snprintf(out.key.data(), out.key.size(), "%s", modulator.name.data());
+    if (assigned) {
+        std::snprintf(
+            out.value.data(),
+            out.value.size(),
+            "Assigned · x%u",
+            static_cast<unsigned>(usage)
+        );
+    } else if (!inReach) {
+        std::snprintf(
+            out.value.data(),
+            out.value.size(),
+            "Reach %s · x%u",
+            reach,
+            static_cast<unsigned>(usage)
+        );
+    } else {
+        std::snprintf(
+            out.value.data(),
+            out.value.size(),
+            "%s · %s · x%u",
+            primary,
+            reach,
+            static_cast<unsigned>(usage)
+        );
+    }
+    std::snprintf(
+        out.icon.data(),
+        out.icon.size(),
+        "%s",
+        modulator.kind == core::state::modulation::ModulatorKind::LFO
+            ? ::standalone::icons::MACRO_MODULATION
+            : ::standalone::icons::MACRO_AUTOMATION
+    );
+    out.iconFont = standalone_fonts.icons_14;
+    const bool enabled =
+        (modulator.flags &
+         core::state::modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
+    out.iconColor = inReach && enabled
+        ? ::standalone::theme::color::MACRO_MODULATION
+        : ::standalone::theme::color::TEXT_SECONDARY;
+}
+
+FLASHMEM void provideModulationAssignmentRow(
+    void* context,
+    int rowIndex,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    auto* source = static_cast<Source*>(context);
+    if (source == nullptr || rowIndex < 0) return;
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = source->pages.currentActiveTrack(),
+        .page = source->pages.currentActivePage(),
+        .macro = source->macroEdit.editingIndex.get(),
+    };
+    const auto destination =
+        core::state::modulation::projectControlDestination(address);
+    const auto& graph = source->pages.control.authored.modulation;
+    uint16_t count = 0;
+    uint16_t enabledCount = 0;
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        const auto& binding = graph.outputBindings[index];
+        if (binding.destination != destination) continue;
+        ++count;
+        if ((binding.flags & core::state::modulation::
+                PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U) {
+            ++enabledCount;
+        }
+    }
+    if (count == 0U) return;
+    const int firstAssignmentRow = count > 1U ? 1 : 0;
+    const int addSourceRow = firstAssignmentRow + static_cast<int>(count);
+    if (count > 1U && rowIndex == 0) {
+        std::snprintf(out.key.data(), out.key.size(), "%s", "All Modulation");
+        std::snprintf(
+            out.value.data(),
+            out.value.size(),
+            "%s",
+            enabledCount == 0U ? "Off"
+                : (enabledCount == count ? "On" : "Mixed")
+        );
+        std::snprintf(
+            out.icon.data(),
+            out.icon.size(),
+            "%s",
+            enabledCount > 0U ? ::standalone::icons::MACRO_MODULATION
+                              : ::standalone::icons::STATUS_PAUSED
+        );
+        out.iconFont = standalone_fonts.icons_14;
+        out.iconColor = enabledCount > 0U
+            ? ::standalone::theme::color::MACRO_MODULATION
+            : ::standalone::theme::color::TEXT_SECONDARY;
+        return;
+    }
+    if (rowIndex == addSourceRow) {
+        std::snprintf(out.key.data(), out.key.size(), "%s", "+ Source");
+        std::snprintf(out.value.data(), out.value.size(), "%s", "Add");
+        std::snprintf(
+            out.icon.data(),
+            out.icon.size(),
+            "%s",
+            ::standalone::icons::ACTION_PLACE_TARGET
+        );
+        out.iconFont = standalone_fonts.icons_14;
+        out.iconColor = ::standalone::theme::color::MACRO_MODULATION;
+        return;
+    }
+
+    const int targetOrdinal = rowIndex - firstAssignmentRow;
+    if (targetOrdinal < 0) return;
+    int ordinal = 0;
+    const core::state::modulation::ModulationBindingState* selected = nullptr;
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        const auto& binding = graph.outputBindings[index];
+        if (binding.destination != destination) continue;
+        if (ordinal++ == targetOrdinal) {
+            selected = &binding;
+            break;
+        }
+    }
+    if (selected == nullptr) return;
+    const auto* modulator = core::state::modulation::findProjectModulator(
+        graph,
+        selected->sourceId
+    );
+    if (modulator == nullptr) return;
+    const bool edgeEnabled =
+        (selected->flags & core::state::modulation::
+            PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
+    const bool sourceEnabled =
+        (modulator->flags & core::state::modulation::
+            PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
+    const int depth = static_cast<int>(std::lround(
+        std::clamp(
+            static_cast<float>(selected->amountQ15) / 32767.0f,
+            -1.0f,
+            1.0f
+        ) * 100.0f
+    ));
+    std::snprintf(out.key.data(), out.key.size(), "%s", modulator->name.data());
+    std::snprintf(
+        out.value.data(),
+        out.value.size(),
+        edgeEnabled ? "%+d%%" : "%+d%% Off",
+        depth
+    );
+    std::snprintf(
+        out.icon.data(),
+        out.icon.size(),
+        "%s",
+        modulator->kind == core::state::modulation::ModulatorKind::LFO
+            ? ::standalone::icons::MACRO_MODULATION
+            : ::standalone::icons::MACRO_AUTOMATION
+    );
+    out.iconFont = standalone_fonts.icons_14;
+    out.iconColor = edgeEnabled && sourceEnabled
+        ? ::standalone::theme::color::MACRO_MODULATION
+        : ::standalone::theme::color::TEXT_SECONDARY;
 }
 
 FLASHMEM ms::ui::KeyValueSparkline buildModulationSparkline(
@@ -635,22 +947,63 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         data.valueBuffers[2].size(),
         slot
     );
-    if (slot != nullptr && slot->modulationCount == 1U) {
+    core::state::modulation::ModulationBindingId focusedBindingId{};
+    const core::state::modulation::ModulationBindingState* focusedBinding =
+        nullptr;
+    if (slot != nullptr && slot->modulationStored) {
+        focusedBindingId =
+            core::state::modulation::projectControlFocusedModulationBinding(
+                source.pages.control,
+                address
+            );
+        focusedBinding = core::state::modulation::findProjectModulationBinding(
+            source.pages.control.authored.modulation,
+            focusedBindingId
+        );
+    }
+    if (slot != nullptr && focusedBinding != nullptr) {
         const auto* modulator = core::state::modulation::findProjectModulator(
             source.pages.control.authored.modulation,
-            slot->modulationSourceId
+            focusedBinding->sourceId
         );
         if (modulator != nullptr) {
             const int depth = static_cast<int>(std::lround(
-                std::clamp(slot->legacy.modulationDepth, -1.0f, 1.0f) * 100.0f
+                std::clamp(
+                    static_cast<float>(focusedBinding->amountQ15) / 32767.0f,
+                    -1.0f,
+                    1.0f
+                ) * 100.0f
             ));
-            std::snprintf(
-                data.valueBuffers[2].data(),
-                data.valueBuffers[2].size(),
-                "%s · %+d%%",
-                modulator->name.data(),
-                depth
-            );
+            if (slot->modulationCount == 1U) {
+                std::snprintf(
+                    data.valueBuffers[2].data(),
+                    data.valueBuffers[2].size(),
+                    "%s  %+d%%",
+                    modulator->name.data(),
+                    depth
+                );
+            } else {
+                uint16_t position = 1;
+                const auto& graph = source.pages.control.authored.modulation;
+                for (uint16_t index = 0;
+                     index < graph.outputBindingCount;
+                     ++index) {
+                    const auto& candidate = graph.outputBindings[index];
+                    if (candidate.destination == focusedBinding->destination &&
+                        candidate.id.value < focusedBinding->id.value) {
+                        ++position;
+                    }
+                }
+                std::snprintf(
+                    data.valueBuffers[2].data(),
+                    data.valueBuffers[2].size(),
+                    "%s  %+d%%  %u/%u",
+                    modulator->name.data(),
+                    depth,
+                    static_cast<unsigned>(position),
+                    static_cast<unsigned>(slot->modulationCount)
+                );
+            }
         }
     }
 
@@ -705,6 +1058,13 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
             sizeof(depthBits)
         );
         revision = mixRevision(revision, depthBits);
+    }
+    revision = mixRevision(revision, focusedBindingId.value);
+    if (focusedBinding != nullptr) {
+        revision = mixRevision(
+            revision,
+            static_cast<uint16_t>(focusedBinding->amountQ15)
+        );
     }
     revision = mixRevision(revision, source.pages.control.authoredRevision);
     revision = mixRevision(revision, baseBits);
@@ -773,7 +1133,117 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         (source.macroUi.automationManualOverrideMask.get() &
          static_cast<uint16_t>(1U << macroIndex)) != 0;
 
-    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION) {
+    if (phase == core::state::MacroEditFlowPhase::MODULATOR_PICKER) {
+        const auto& graph = source.pages.control.authored.modulation;
+        std::snprintf(data.title.data(), data.title.size(), "%s", "Use Existing");
+        std::snprintf(data.meta.data(), data.meta.size(), "%s", "Focus is silent");
+        data.rowCount = static_cast<int>(graph.sourceCount);
+        data.selectedIndex = data.rowCount > 0
+            ? std::clamp(
+                  source.macroEdit.macroSelector.selectedIndex.get(),
+                  0,
+                  data.rowCount - 1
+              )
+            : 0;
+        data.rowProvider = &provideModulatorPickerRow;
+        data.rowProviderContext = const_cast<Source*>(&source);
+        uint32_t revision = mixRevision(
+            source.pages.control.authoredRevision,
+            static_cast<uint32_t>(data.selectedIndex)
+        );
+        const int first = std::max(0, data.selectedIndex - 2);
+        const int last = std::min(data.rowCount, first + 5);
+        for (int index = first; index < last; ++index) {
+            const auto& modulator = graph.sources[static_cast<uint16_t>(index)];
+            const uint32_t live = static_cast<uint32_t>(std::lround(
+                std::clamp(
+                    liveSourceValue(source.pages.control, modulator.id) * 0.5f +
+                        0.5f,
+                    0.0f,
+                    1.0f
+                ) * 63.0f
+            ));
+            revision = mixRevision(
+                revision,
+                modulator.id.value ^ (live << 24U)
+            );
+        }
+        data.dataRevision = revision;
+        data.visible = data.rowCount > 0;
+        return data;
+    }
+
+    if (phase ==
+        core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION) {
+        const auto& audition = source.pages.control.audition;
+        const auto* modulator = audition.active && !audition.sourceCreated
+            ? core::state::modulation::findProjectModulator(
+                  source.pages.control.authored.modulation,
+                  audition.sourceId
+              )
+            : nullptr;
+        const auto* binding = audition.active
+            ? core::state::modulation::findProjectModulationBinding(
+                  source.pages.control.authored.modulation,
+                  audition.bindingId
+              )
+            : nullptr;
+        if (modulator == nullptr || binding == nullptr) return data;
+        std::snprintf(
+            data.title.data(),
+            data.title.size(),
+            "%s",
+            modulator->name.data()
+        );
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            "%s",
+            "Audition · Existing"
+        );
+        const int16_t depth =
+            core::ui::macro::lfo_audition::depthQ15ToPercent(
+                binding->amountQ15
+            );
+        std::snprintf(
+            data.valueBuffers[1].data(),
+            data.valueBuffers[1].size(),
+            "%+d%%",
+            static_cast<int>(depth)
+        );
+        data.rows = {{
+            {.key = "Source", .value = "", .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = buildSourceSparkline(source.pages.control, *modulator)},
+            {.key = "Depth", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+            {},
+            {},
+            {},
+            {},
+            {},
+        }};
+        data.rowCount = 2;
+        data.selectedIndex = std::min<int>(
+            source.macroEdit.modulationFocusedRow.get(),
+            1
+        );
+        const uint32_t live = static_cast<uint32_t>(std::lround(
+            std::clamp(
+                liveSourceValue(source.pages.control, modulator->id) * 0.5f +
+                    0.5f,
+                0.0f,
+                1.0f
+            ) * 255.0f
+        ));
+        data.dataRevision = mixRevision(
+            mixRevision(source.pages.control.authoredRevision, audition.generation),
+            live | (static_cast<uint32_t>(data.selectedIndex) << 8U)
+        );
+        data.visible = true;
+        return data;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION ||
+        phase ==
+            core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION) {
         const auto& audition = source.pages.control.audition;
         const auto* modulator = audition.active
             ? core::state::modulation::findProjectModulator(
@@ -892,9 +1362,40 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
     }
 
     if (phase == core::state::MacroEditFlowPhase::MODULATION &&
-        !modulationStored) {
+        modulationStored) {
+        const uint16_t count = slotView.modulationCount;
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            count == 1U ? "1 assignment" : "%u assignments",
+            static_cast<unsigned>(count)
+        );
+        data.rowCount = static_cast<int>(count) + (count > 1U ? 2 : 1);
+        data.selectedIndex = std::clamp(
+            static_cast<int>(source.macroEdit.modulationFocusedRow.get()),
+            0,
+            data.rowCount - 1
+        );
+        data.rowProvider = &provideModulationAssignmentRow;
+        data.rowProviderContext = const_cast<Source*>(&source);
+        data.dataRevision = mixRevision(
+            source.pages.control.authoredRevision,
+            static_cast<uint32_t>(data.selectedIndex)
+        );
+        data.visible = true;
+        return data;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE ||
+        (phase == core::state::MacroEditFlowPhase::MODULATION &&
+         !modulationStored)) {
         const bool reusable =
             source.pages.control.authored.modulation.sourceCount > 0U;
+        if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE) {
+            std::snprintf(
+                data.meta.data(), data.meta.size(), "%s", "Add source"
+            );
+        }
         std::snprintf(
             data.valueBuffers[0].data(),
             data.valueBuffers[0].size(),
@@ -1211,10 +1712,14 @@ FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
     }
     const bool canCopy = row == 0U ||
         (row == 1U ? automationStored : modulationStored);
+    const bool canPasteAssignment = row == 2U && !modulationStored &&
+        source.clipboard != nullptr &&
+        source.clipboard->hasMacroModulationAssignment();
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::ACTION_COPY,
-        canCopy ? Visual::ACTIVE : Visual::DISABLED,
-        Tone::NEUTRAL
+        canPasteAssignment ? ::standalone::icons::ACTION_PASTE
+                           : ::standalone::icons::ACTION_COPY,
+        (canCopy || canPasteAssignment) ? Visual::ACTIVE : Visual::DISABLED,
+        canPasteAssignment ? Tone::CONSTRUCTIVE : Tone::NEUTRAL
     );
     projectGuardedAction(
         props.slots[0], source, core::state::MacroContextButton::BOTTOM_LEFT
@@ -1236,7 +1741,16 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
 
     props.visible = true;
     const auto phase = source.macroEdit.flowPhase.get();
-    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION) {
+    if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE ||
+        phase == core::state::MacroEditFlowPhase::MODULATOR_PICKER) {
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1] = scopeLabel("Choose source");
+        props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
+    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION ||
+        phase ==
+            core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION) {
         props.slots[0].visualState = Visual::HIDDEN;
         props.slots[1] = scopeLabel("Audition");
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
@@ -1283,6 +1797,87 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
     const bool modulation = phase == core::state::MacroEditFlowPhase::MODULATION;
     const bool automationStored = slotReadable && slot.automationStored;
     const bool modulationStored = slotReadable && slot.modulationStored;
+    if (modulation && modulationStored) {
+        const uint16_t count = slot.modulationCount;
+        const int firstAssignmentRow = count > 1U ? 1 : 0;
+        const int addSourceRow = firstAssignmentRow + static_cast<int>(count);
+        const int row = std::clamp(
+            static_cast<int>(source.macroEdit.modulationFocusedRow.get()),
+            0,
+            addSourceRow
+        );
+        if (row == addSourceRow) {
+            props.slots[0].visualState = Visual::HIDDEN;
+            props.slots[1] = scopeLabel("Add source");
+            props.slots[2].visualState = Visual::HIDDEN;
+            return props;
+        }
+        if (count > 1U && row == 0) {
+            const bool anyEnabled = slot.activeModulationCount > 0U;
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                anyEnabled ? ::standalone::icons::MACRO_MODULATION
+                           : ::standalone::icons::STATUS_PAUSED,
+                Visual::ACTIVE,
+                Tone::NEUTRAL
+            );
+            props.slots[1] = scopeLabel("All Modulation");
+            props.slots[2].visualState = Visual::DISABLED;
+            projectGuardedAction(
+                props.slots[0],
+                source,
+                core::state::MacroContextButton::BOTTOM_LEFT
+            );
+            return props;
+        }
+
+        const int targetOrdinal = row - firstAssignmentRow;
+        const auto destination =
+            core::state::modulation::projectControlDestination(address);
+        const auto& graph = source.pages.control.authored.modulation;
+        const core::state::modulation::ModulationBindingState* binding = nullptr;
+        int ordinal = 0;
+        for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+            const auto& candidate = graph.outputBindings[index];
+            if (candidate.destination != destination) continue;
+            if (ordinal++ == targetOrdinal) {
+                binding = &candidate;
+                break;
+            }
+        }
+        const auto* modulator = binding != nullptr
+            ? core::state::modulation::findProjectModulator(
+                  graph,
+                  binding->sourceId
+              )
+            : nullptr;
+        if (binding == nullptr || modulator == nullptr) return props;
+        const bool enabled =
+            (binding->flags & core::state::modulation::
+                PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            enabled ? ::standalone::icons::MACRO_MODULATION
+                    : ::standalone::icons::STATUS_PAUSED,
+            Visual::ACTIVE,
+            Tone::NEUTRAL
+        );
+        props.slots[1] = scopeLabel(modulator->name.data());
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::ACTION_COPY,
+            Visual::ACTIVE,
+            Tone::NEUTRAL
+        );
+        projectGuardedAction(
+            props.slots[0],
+            source,
+            core::state::MacroContextButton::BOTTOM_LEFT
+        );
+        projectGuardedAction(
+            props.slots[2],
+            source,
+            core::state::MacroContextButton::BOTTOM_RIGHT
+        );
+        return props;
+    }
     const bool stored = modulation ? modulationStored : automationStored;
     const bool playback = stored && (modulation
         ? slot.activeModulationCount > 0U
@@ -1296,11 +1891,15 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         Tone::NEUTRAL
     );
     props.slots[1] = scopeLabel(modulation ? "Modulation" : "Automation");
+    const bool canPasteAssignment = modulation && !stored &&
+        source.clipboard != nullptr &&
+        source.clipboard->hasMacroModulationAssignment();
     const bool canCopy = stored;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::ACTION_COPY,
-        canCopy ? Visual::ACTIVE : Visual::DISABLED,
-        Tone::NEUTRAL
+        canPasteAssignment ? ::standalone::icons::ACTION_PASTE
+                           : ::standalone::icons::ACTION_COPY,
+        (canCopy || canPasteAssignment) ? Visual::ACTIVE : Visual::DISABLED,
+        canPasteAssignment ? Tone::CONSTRUCTIVE : Tone::NEUTRAL
     );
     projectGuardedAction(
         props.slots[0], source, core::state::MacroContextButton::BOTTOM_LEFT

@@ -120,18 +120,18 @@ void test_depth_turns_coalesce_without_extra_entries() {
     std::cout << "[PASS] Depth turns coalesce to one action\n";
 }
 
-void test_stale_live_state_blocks_undo_without_overwrite() {
+void test_assignment_undo_preserves_unrelated_macro_fields() {
     macro::MacroPagesState pages;
     seedCurves(pages);
     macro::MacroHistoryService history;
     assert(history.setModulationDepthCoalesced(pages, kAddress, 0.4f));
     history.endCoalescing();
     pages.pageData(0, 0).cc[1] = 99;
-    assert(!history.undo(pages));
+    assert(history.undo(pages));
     assert(pages.pageData(0, 0).cc[1] == 99);
     const auto slot = test_support::project_control::readSlot(pages.control, kAddress);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.4f) < 0.0001f);
-    std::cout << "[PASS] stale live state blocks unsafe Undo\n";
+    assert(std::fabs(slot.legacy.modulationDepth - 0.65f) < 0.0001f);
+    std::cout << "[PASS] assignment Undo preserves unrelated Macro fields\n";
 }
 
 void test_history_admission_rejects_oversized_slot() {
@@ -243,6 +243,176 @@ core::state::modulation::ModulationBindingDraft defaultBindingDraft() {
     draft.amountQ15 = 8192;
     draft.inputRange = ModulationInputRange::BIPOLAR;
     return draft;
+}
+
+core::state::modulation::ModulatorId addProjectLfo(
+    macro::MacroPagesState& pages,
+    const char* name
+) {
+    using namespace core::state::modulation;
+    auto draft = defaultLfoDraft();
+    draft.name = name;
+    draft.reach = {.kind = ModulatorReachKind::PROJECT};
+    const auto result = createLfoModulator(
+        pages.control.authored.modulation,
+        draft
+    );
+    assert(result.changed());
+    pages.control.markAuthoredMutation();
+    return result.sourceId;
+}
+
+core::state::modulation::ModulationBindingId addBinding(
+    macro::MacroPagesState& pages,
+    core::state::modulation::ModulatorId sourceId,
+    const macro::MacroAutomationSlotAddress& address,
+    int16_t amountQ15,
+    bool enabled = true
+) {
+    using namespace core::state::modulation;
+    auto draft = defaultBindingDraft();
+    draft.sourceId = sourceId;
+    draft.destination = projectControlDestination(address);
+    draft.amountQ15 = amountQ15;
+    draft.enabled = enabled;
+    const auto result = addProjectModulationBinding(
+        pages.control.authored.modulation,
+        draft
+    );
+    assert(result.changed());
+    pages.control.markAuthoredMutation();
+    return result.bindingId;
+}
+
+void test_assignment_history_is_destination_scoped_and_order_stable() {
+    using namespace core::state::modulation;
+    constexpr macro::MacroAutomationSlotAddress kOtherAddress{
+        .track = 1,
+        .page = 2,
+        .macro = 3,
+    };
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto firstSource = addProjectLfo(pages, "First");
+    const auto unrelatedSource = addProjectLfo(pages, "Unrelated");
+    const auto secondSource = addProjectLfo(pages, "Second");
+    const auto first = addBinding(pages, firstSource, kAddress, 4096);
+    const auto unrelated = addBinding(
+        pages,
+        unrelatedSource,
+        kOtherAddress,
+        12288
+    );
+    const auto second = addBinding(pages, secondSource, kAddress, -8192);
+    const auto before = pages.control.authored.modulation;
+
+    assert(history.setModulationBindingDepthCoalesced(
+        pages,
+        kAddress,
+        second,
+        -0.75f
+    ));
+    history.endCoalescing();
+    const auto afterDepth = pages.control.authored.modulation;
+    assert(findProjectModulationBinding(afterDepth, first)->amountQ15 == 4096);
+    assert(findProjectModulationBinding(afterDepth, unrelated)->amountQ15 == 12288);
+    assert(findProjectModulationBinding(afterDepth, second)->amountQ15 < -24000);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &afterDepth,
+        sizeof(afterDepth)
+    ) == 0);
+
+    assert(history.setAllModulationBindingsEnabled(pages, kAddress, false));
+    const auto afterBypass = pages.control.authored.modulation;
+    assert((findProjectModulationBinding(afterBypass, first)->flags &
+            PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U);
+    assert((findProjectModulationBinding(afterBypass, second)->flags &
+            PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U);
+    assert((findProjectModulationBinding(afterBypass, unrelated)->flags &
+            PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &afterDepth,
+        sizeof(afterDepth)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &afterBypass,
+        sizeof(afterBypass)
+    ) == 0);
+    std::cout << "[PASS] assignment history is destination-scoped and order-stable\n";
+}
+
+void test_assignment_remove_and_clear_keep_roots_and_unrelated_edges() {
+    using namespace core::state::modulation;
+    constexpr macro::MacroAutomationSlotAddress kOtherAddress{
+        .track = 1,
+        .page = 2,
+        .macro = 3,
+    };
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto firstSource = addProjectLfo(pages, "First");
+    const auto unrelatedSource = addProjectLfo(pages, "Unrelated");
+    const auto secondSource = addProjectLfo(pages, "Second");
+    const auto first = addBinding(pages, firstSource, kAddress, 4096);
+    const auto unrelated = addBinding(
+        pages,
+        unrelatedSource,
+        kOtherAddress,
+        12288
+    );
+    const auto second = addBinding(pages, secondSource, kAddress, -8192);
+    const auto before = pages.control.authored.modulation;
+
+    assert(history.removeModulationBinding(pages, kAddress, first));
+    const auto afterRemove = pages.control.authored.modulation;
+    assert(afterRemove.sourceCount == 3U);
+    assert(afterRemove.outputBindingCount == 2U);
+    assert(afterRemove.outputBindings[0].id == unrelated);
+    assert(afterRemove.outputBindings[1].id == second);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &afterRemove,
+        sizeof(afterRemove)
+    ) == 0);
+    assert(history.undo(pages));
+
+    assert(history.clearModulationBindings(pages, kAddress));
+    const auto afterClear = pages.control.authored.modulation;
+    assert(afterClear.sourceCount == 3U);
+    assert(afterClear.outputBindingCount == 1U);
+    assert(afterClear.outputBindings[0].id == unrelated);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &afterClear,
+        sizeof(afterClear)
+    ) == 0);
+    std::cout << "[PASS] assignment remove/clear retain roots and unrelated edges\n";
 }
 
 void test_lfo_audition_cancel_is_byte_stable_and_history_free() {
@@ -362,19 +532,521 @@ void test_lfo_audition_capacity_failure_has_no_partial_state() {
     std::cout << "[PASS] LFO capacity failure is an exact no-op\n";
 }
 
+void test_existing_modulator_cancel_preserves_root_and_is_byte_stable() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto created = createLfoModulator(
+        pages.control.authored.modulation,
+        defaultLfoDraft()
+    );
+    assert(created.changed());
+    const auto before = pages.control.authored.modulation;
+    const uint32_t beforeRevision = pages.control.authoredRevision;
+
+    const auto begun = history.beginExistingModulatorAudition(
+        pages,
+        kAddress,
+        created.sourceId,
+        defaultBindingDraft()
+    );
+    assert(begun.changed());
+    assert(!pages.control.audition.sourceCreated);
+    assert(pages.control.authored.modulation.sourceCount == 1U);
+    pages.control.authored.modulation.outputBindings[0].amountQ15 = -8192;
+    pages.control.markAuthoredMutation();
+
+    assert(history.cancelModulatorAudition(pages, kAddress));
+    assert(history.undoCount() == 0U);
+    assert(pages.control.authoredRevision == beforeRevision);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    std::cout << "[PASS] existing-source Cancel preserves root byte-for-byte\n";
+}
+
+void test_existing_modulator_apply_undo_redo_moves_only_binding() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto created = createLfoModulator(
+        pages.control.authored.modulation,
+        defaultLfoDraft()
+    );
+    assert(created.changed());
+    const auto root = pages.control.authored.modulation.sources[0];
+
+    const auto begun = history.beginExistingModulatorAudition(
+        pages,
+        kAddress,
+        created.sourceId,
+        defaultBindingDraft()
+    );
+    assert(begun.changed());
+    pages.control.authored.modulation.outputBindings[0].amountQ15 = -12288;
+    pages.control.markAuthoredMutation();
+    assert(history.commitModulatorAudition(pages, kAddress));
+    assert(history.undoCount() == 1U);
+    const auto committedBinding =
+        pages.control.authored.modulation.outputBindings[0];
+
+    assert(history.undo(pages));
+    assert(pages.control.authored.modulation.sourceCount == 1U);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(std::memcmp(
+        &pages.control.authored.modulation.sources[0],
+        &root,
+        sizeof(root)
+    ) == 0);
+
+    assert(history.redo(pages));
+    assert(pages.control.authored.modulation.sourceCount == 1U);
+    assert(pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(std::memcmp(
+        &pages.control.authored.modulation.sources[0],
+        &root,
+        sizeof(root)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation.outputBindings[0],
+        &committedBinding,
+        sizeof(committedBinding)
+    ) == 0);
+    std::cout << "[PASS] existing-source Apply Undo/Redo changes only the edge\n";
+}
+
+void test_project_source_edits_coalesce_and_restore_exact_source() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto created = createLfoModulator(
+        pages.control.authored.modulation,
+        defaultLfoDraft()
+    );
+    assert(created.changed());
+    const auto original = pages.control.authored.modulation.sources[0];
+
+    auto parameters = original.parameters.lfo;
+    parameters.periodTicks = 192;
+    assert(history.setProjectLfoParametersCoalesced(
+        pages, created.sourceId, parameters
+    ));
+    parameters.periodTicks = 96;
+    assert(history.setProjectLfoParametersCoalesced(
+        pages, created.sourceId, parameters
+    ));
+    assert(history.undoCount() == 1U);
+    history.endCoalescing();
+
+    assert(history.setProjectModulatorEnabled(
+        pages, created.sourceId, false
+    ));
+    assert(history.undoCount() == 2U);
+    assert(history.undo(pages));
+    const auto* source = findProjectModulator(
+        pages.control.authored.modulation,
+        created.sourceId
+    );
+    assert(source != nullptr);
+    assert((source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U);
+    assert(source->parameters.lfo.periodTicks == 96U);
+
+    assert(history.undo(pages));
+    source = findProjectModulator(
+        pages.control.authored.modulation,
+        created.sourceId
+    );
+    assert(source != nullptr);
+    assert(std::memcmp(source, &original, sizeof(original)) == 0);
+    assert(history.redo(pages));
+    assert(history.redo(pages));
+    source = findProjectModulator(
+        pages.control.authored.modulation,
+        created.sourceId
+    );
+    assert(source != nullptr);
+    assert(source->parameters.lfo.periodTicks == 96U);
+    assert((source->flags & PROJECT_MODULATOR_FLAG_ENABLED) == 0U);
+    std::cout << "[PASS] Project source edits coalesce and Undo exactly\n";
+}
+
+void test_unassigned_lfo_creation_is_one_undo_action() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    auto draft = defaultLfoDraft();
+    draft.reach = {};
+    const auto created = history.createUnassignedLfo(pages, draft);
+    assert(created.changed());
+    assert(pages.control.authored.modulation.sourceCount == 1U);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(history.undoCount() == 1U);
+    assert(history.undo(pages));
+    assert(pages.control.authored.modulation.sourceCount == 0U);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(history.redo(pages));
+    assert(pages.control.authored.modulation.sourceCount == 1U);
+    assert(pages.control.authored.modulation.sources[0].id == created.sourceId);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    std::cout << "[PASS] explicit Unassigned LFO creation is one Undo action\n";
+}
+
+void test_existing_assignment_reach_widening_cancel_and_undo_are_exact() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto created = createLfoModulator(
+        pages.control.authored.modulation,
+        defaultLfoDraft()
+    );
+    assert(created.changed());
+    const auto original = pages.control.authored.modulation.sources[0];
+    constexpr macro::MacroAutomationSlotAddress other{
+        .track = 3,
+        .page = 0,
+        .macro = 2,
+    };
+    auto binding = defaultBindingDraft();
+    binding.destination = projectControlDestination(other);
+    const ModulatorReach widened{
+        .trackMask = static_cast<uint16_t>((1U << 0U) | (1U << 3U)),
+        .kind = ModulatorReachKind::TRACK_SET,
+    };
+
+    auto begun = history.beginExistingModulatorAudition(
+        pages, other, created.sourceId, binding, &widened
+    );
+    assert(begun.changed());
+    assert(history.cancelModulatorAudition(pages, other));
+    assert(std::memcmp(
+        &pages.control.authored.modulation.sources[0],
+        &original,
+        sizeof(original)
+    ) == 0);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+
+    begun = history.beginExistingModulatorAudition(
+        pages, other, created.sourceId, binding, &widened
+    );
+    assert(begun.changed());
+    assert(history.commitModulatorAudition(pages, other));
+    assert(pages.control.authored.modulation.sources[0].reach.kind ==
+           ModulatorReachKind::TRACK_SET);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation.sources[0],
+        &original,
+        sizeof(original)
+    ) == 0);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(history.redo(pages));
+    assert(pages.control.authored.modulation.sources[0].reach.trackMask ==
+           widened.trackMask);
+    assert(pages.control.authored.modulation.outputBindingCount == 1U);
+    std::cout << "[PASS] Reach widening Cancel and Undo restore the root\n";
+}
+
+void test_project_modulator_split_is_one_exact_undo_action() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    constexpr std::array<ProjectPackedCurvePoint, 3> points{{
+        {0, -12000},
+        {192, 8000},
+        {384, -4000},
+    }};
+    RecordedShapeDraft sourceDraft{};
+    sourceDraft.name = "Slow Tide";
+    sourceDraft.reach = {.kind = ModulatorReachKind::PROJECT};
+    sourceDraft.curve = {
+        .sourceDurationTicks = 384,
+        .durationTicks = 384,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    sourceDraft.points = points.data();
+    sourceDraft.pointCount = static_cast<uint16_t>(points.size());
+    const auto created = createRecordedShapeModulator(
+        pages.control.authored.modulation,
+        pages.control.authored.curves,
+        sourceDraft
+    );
+    assert(created.changed());
+
+    constexpr macro::MacroAutomationSlotAddress movedAddress{
+        .track = 1,
+        .page = 0,
+        .macro = 2,
+    };
+    const auto retainedBinding = addBinding(
+        pages,
+        created.sourceId,
+        kAddress,
+        8192
+    );
+    const auto movedBinding = addBinding(
+        pages,
+        created.sourceId,
+        movedAddress,
+        -4096
+    );
+    (void)retainedBinding;
+    ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    assert(addProjectModulationTrigger(
+        pages.control.authored.modulation,
+        trigger
+    ).changed());
+
+    const auto graphBefore = pages.control.authored.modulation;
+    const auto arenaBefore = pages.control.authored.curves;
+    const ModulatorSplitRequest request{
+        .sourceId = created.sourceId,
+        .cloneName = "Slow Tide T2",
+        .retainedReach = {
+            .kind = ModulatorReachKind::MACRO,
+            .track = kAddress.track,
+            .page = kAddress.page,
+            .macro = kAddress.macro,
+        },
+        .cloneReach = {
+            .kind = ModulatorReachKind::MACRO,
+            .track = movedAddress.track,
+            .page = movedAddress.page,
+            .macro = movedAddress.macro,
+        },
+        .bindingIdsToMove = &movedBinding,
+        .bindingCountToMove = 1,
+    };
+    const auto split = history.splitProjectModulator(pages, request);
+    assert(split.changed());
+    assert(history.undoCount() == 1U);
+    const auto graphAfter = pages.control.authored.modulation;
+    const auto arenaAfter = pages.control.authored.curves;
+    assert(graphAfter.sourceCount == 2U);
+    assert(graphAfter.triggerBindingCount == 2U);
+    assert(graphAfter.outputBindings[1].sourceId == split.sourceId);
+    assert(arenaAfter.recordCount == 1U);
+    assert(arenaAfter.records[0].referenceCount == 2U);
+
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.curves,
+        &arenaBefore,
+        sizeof(arenaBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.curves,
+        &arenaAfter,
+        sizeof(arenaAfter)
+    ) == 0);
+    std::cout << "[PASS] Project source Split is one exact Undo/Redo action\n";
+}
+
+void test_root_delete_undo_restores_graph_and_recorded_curve_exactly() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    constexpr std::array<ProjectPackedCurvePoint, 3> points{{
+        {0, -12000},
+        {192, 8000},
+        {384, -4000},
+    }};
+    RecordedShapeDraft draft{};
+    draft.name = "Motion 1";
+    draft.reach = defaultLfoDraft().reach;
+    draft.curve = {
+        .sourceDurationTicks = 384,
+        .durationTicks = 384,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    draft.points = points.data();
+    draft.pointCount = static_cast<uint16_t>(points.size());
+    const auto created = createRecordedShapeModulator(
+        pages.control.authored.modulation,
+        pages.control.authored.curves,
+        draft
+    );
+    assert(created.changed());
+    auto binding = defaultBindingDraft();
+    binding.sourceId = created.sourceId;
+    assert(addProjectModulationBinding(
+        pages.control.authored.modulation,
+        binding
+    ).changed());
+    const auto graphBefore = pages.control.authored.modulation;
+    const auto arenaBefore = pages.control.authored.curves;
+
+    const auto removed = history.deleteProjectModulator(
+        pages,
+        created.sourceId
+    );
+    assert(removed.changed());
+    assert(pages.control.authored.modulation.sourceCount == 0U);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored.curves.recordCount == 0U);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.curves,
+        &arenaBefore,
+        sizeof(arenaBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(pages.control.authored.modulation.sourceCount == 0U);
+    assert(pages.control.authored.curves.recordCount == 0U);
+    std::cout << "[PASS] root delete Undo restores graph and curve exactly\n";
+}
+
+void test_root_delete_undo_restores_shared_curve_reference() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    constexpr std::array<ProjectPackedCurvePoint, 2> points{{
+        {0, -1000},
+        {384, 1000},
+    }};
+    RecordedShapeDraft draft{};
+    draft.name = "Motion 1";
+    draft.reach = defaultLfoDraft().reach;
+    draft.curve = {
+        .sourceDurationTicks = 384,
+        .durationTicks = 384,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    draft.points = points.data();
+    draft.pointCount = static_cast<uint16_t>(points.size());
+    const auto created = createRecordedShapeModulator(
+        pages.control.authored.modulation,
+        pages.control.authored.curves,
+        draft
+    );
+    assert(created.changed());
+    const auto clone = duplicateProjectModulator(
+        pages.control.authored.modulation,
+        pages.control.authored.curves,
+        created.sourceId,
+        "Motion 2"
+    );
+    assert(clone.changed());
+    const auto graphBefore = pages.control.authored.modulation;
+    const auto arenaBefore = pages.control.authored.curves;
+    assert(history.deleteProjectModulator(pages, created.sourceId).changed());
+    assert(pages.control.authored.curves.records[0].referenceCount == 1U);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.curves,
+        &arenaBefore,
+        sizeof(arenaBefore)
+    ) == 0);
+    std::cout << "[PASS] shared curve reference is exact across delete Undo\n";
+}
+
+void test_recorded_source_duplicate_undo_restores_shared_reference() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    constexpr std::array<ProjectPackedCurvePoint, 2> points{{
+        {0, -5000},
+        {384, 5000},
+    }};
+    RecordedShapeDraft draft{};
+    draft.name = "Motion 1";
+    draft.reach = defaultLfoDraft().reach;
+    draft.curve = {
+        .sourceDurationTicks = 384,
+        .durationTicks = 384,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    draft.points = points.data();
+    draft.pointCount = static_cast<uint16_t>(points.size());
+    const auto created = createRecordedShapeModulator(
+        pages.control.authored.modulation,
+        pages.control.authored.curves,
+        draft
+    );
+    assert(created.changed());
+    const auto graphBefore = pages.control.authored.modulation;
+    const auto arenaBefore = pages.control.authored.curves;
+    const auto duplicate = history.duplicateProjectModulator(
+        pages,
+        created.sourceId,
+        "Motion 2"
+    );
+    assert(duplicate.changed());
+    const auto graphAfter = pages.control.authored.modulation;
+    const auto arenaAfter = pages.control.authored.curves;
+    assert(arenaAfter.records[0].referenceCount == 2U);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.curves,
+        &arenaBefore,
+        sizeof(arenaBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.curves,
+        &arenaAfter,
+        sizeof(arenaAfter)
+    ) == 0);
+    std::cout << "[PASS] recorded source duplicate shares and Undo restores\n";
+}
+
 }  // namespace
 
 int main() {
     test_snapshot_roundtrip_restores_exact_slot();
     test_clear_is_one_undo_redo_action();
     test_depth_turns_coalesce_without_extra_entries();
-    test_stale_live_state_blocks_undo_without_overwrite();
+    test_assignment_undo_preserves_unrelated_macro_fields();
     test_history_admission_rejects_oversized_slot();
     test_history_evicts_oldest_entry_at_fixed_limit();
     test_new_mutation_after_undo_clears_redo_stack();
     test_lfo_audition_cancel_is_byte_stable_and_history_free();
     test_lfo_audition_apply_is_one_compact_undo_redo_action();
     test_lfo_audition_capacity_failure_has_no_partial_state();
+    test_existing_modulator_cancel_preserves_root_and_is_byte_stable();
+    test_existing_modulator_apply_undo_redo_moves_only_binding();
+    test_project_source_edits_coalesce_and_restore_exact_source();
+    test_unassigned_lfo_creation_is_one_undo_action();
+    test_existing_assignment_reach_widening_cancel_and_undo_are_exact();
+    test_project_modulator_split_is_one_exact_undo_action();
+    test_root_delete_undo_restores_graph_and_recorded_curve_exactly();
+    test_root_delete_undo_restores_shared_curve_reference();
+    test_recorded_source_duplicate_undo_restores_shared_reference();
+    test_assignment_history_is_destination_scoped_and_order_stable();
+    test_assignment_remove_and_clear_keep_roots_and_unrelated_edges();
     std::cout << "All MacroHistory tests passed\n";
     return 0;
 }

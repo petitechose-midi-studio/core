@@ -35,6 +35,18 @@ struct ProjectControlMacroSlotView {
     ProjectControlMacroSlotView& out
 );
 
+/** Resolves and remembers one stable assignment focus for a logical Macro. */
+[[nodiscard]] ModulationBindingId projectControlFocusedModulationBinding(
+    ProjectControlState& control,
+    const macro::MacroAutomationSlotAddress& address
+);
+
+[[nodiscard]] bool setProjectControlFocusedModulationBinding(
+    ProjectControlState& control,
+    const macro::MacroAutomationSlotAddress& address,
+    ModulationBindingId bindingId
+);
+
 [[nodiscard]] bool setProjectControlAutomationEnabled(
     ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,

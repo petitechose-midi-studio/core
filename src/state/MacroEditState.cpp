@@ -137,6 +137,19 @@ FLASHMEM void MacroEditState::closeModulation() {
                                 : MacroEditFlowPhase::CLOSED);
 }
 
+FLASHMEM void MacroEditState::openModulatorCreate() {
+    visible.set(true);
+    automationVisible.set(true);
+    modulationFocusedRow.set(0);
+    flowPhase.set(MacroEditFlowPhase::MODULATOR_CREATE);
+}
+
+FLASHMEM void MacroEditState::closeModulatorCreate(uint8_t focusedRow) {
+    modulationFocusedRow.set(focusedRow);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
+                                : MacroEditFlowPhase::CLOSED);
+}
+
 FLASHMEM void MacroEditState::openLfoAudition() {
     visible.set(true);
     automationVisible.set(true);
@@ -144,13 +157,39 @@ FLASHMEM void MacroEditState::openLfoAudition() {
     flowPhase.set(MacroEditFlowPhase::LFO_AUDITION);
 }
 
-FLASHMEM void MacroEditState::cancelLfoAudition() {
-    modulationFocusedRow.set(0);
+FLASHMEM void MacroEditState::cancelLfoAudition(uint8_t focusedRow) {
+    modulationFocusedRow.set(focusedRow);
     flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
                                 : MacroEditFlowPhase::CLOSED);
 }
 
-FLASHMEM void MacroEditState::applyLfoAudition() {
+FLASHMEM void MacroEditState::openModulatorPicker(int selectedIndex) {
+    visible.set(true);
+    automationVisible.set(true);
+    macroSelector.selectedIndex.set(selectedIndex);
+    flowPhase.set(MacroEditFlowPhase::MODULATOR_PICKER);
+}
+
+FLASHMEM void MacroEditState::closeModulatorPicker(uint8_t focusedRow) {
+    modulationFocusedRow.set(focusedRow);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
+                                : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::openExistingModulatorAudition() {
+    visible.set(true);
+    automationVisible.set(true);
+    modulationFocusedRow.set(1);
+    flowPhase.set(MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION);
+}
+
+FLASHMEM void MacroEditState::cancelExistingModulatorAudition() {
+    modulationFocusedRow.set(0);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATOR_PICKER
+                                : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::applyModulatorAudition() {
     automationVisible.set(false);
     modulationFocusedRow.set(0);
     flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT

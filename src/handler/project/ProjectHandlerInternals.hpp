@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -30,6 +31,11 @@ constexpr float PROJECT_OPT_PERCENT_STEPS_PER_TURN = 18.0f;
 constexpr float PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW =
     (600.0f * 4.0f) /
     static_cast<float>(core::state::project::PROJECT_NAME_KEYBOARD_ROW_COUNT);
+inline constexpr std::array<uint32_t, 8> PROJECT_MODULATOR_FREE_PERIODS_MS{{
+    125U, 250U, 500U, 1000U, 2000U, 4000U, 8000U, 16000U,
+}};
+
+FLASHMEM uint8_t projectModulatorFreePeriodIndex(uint32_t periodMs);
 
 FLASHMEM int signedStepCount(float delta);
 FLASHMEM int clampInt(int value, int low, int high);

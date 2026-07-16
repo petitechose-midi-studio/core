@@ -6,6 +6,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::state {
 
@@ -146,6 +147,7 @@ namespace {
 
 FLASHMEM void releaseOwnedPayloads(core::state::StructureClipboardState& clipboard) {
     clipboard.macroAutomationSet.reset();
+    clipboard.macroModulationAssignment.reset();
     clipboard.sequencerTrackSelection.reset();
     clipboard.sequencerGraph.reset();
     clipboard.sequencerCcLanes.reset();
@@ -224,6 +226,7 @@ FLASHMEM void StructureClipboardState::clear() {
     sequencerPage.reset();
     sequencerSteps.reset();
     sequencerPageSelection.reset();
+    projectModulatorSource = {};
     sequencerStepContentNodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     sequencerStepContentKind = SequencerStepContentClipboardKind::NONE;
     revision.set(revision.get() + 1U);
@@ -406,6 +409,70 @@ FLASHMEM bool StructureClipboardState::storeMacroModulation(
     releaseOwnedPayloads(*this);
     macroAutomationSet = std::move(clipboard);
     commitClipboardKind(*this, StructureClipboardKind::MACRO_MODULATION);
+    return true;
+}
+
+FLASHMEM bool StructureClipboardState::storeMacroModulationAssignment(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    core::state::modulation::ModulationBindingId bindingId
+) {
+    using namespace core::state::modulation;
+    if (!core::state::macro::macroAutomationAddressValid(address)) {
+        return rejectClipboardStore(*this);
+    }
+    const auto* binding = findProjectModulationBinding(
+        control.authored.modulation,
+        bindingId
+    );
+    if (binding == nullptr ||
+        binding->destination != projectControlDestination(address)) {
+        return rejectClipboardStore(*this);
+    }
+    const auto* source = findProjectModulator(
+        control.authored.modulation,
+        binding->sourceId
+    );
+    if (source == nullptr) return rejectClipboardStore(*this);
+
+    auto payload = core::app::makeExtmemUnique<
+        core::state::MacroModulationAssignmentClipboard
+    >();
+    if (!payload) return rejectClipboardStore(*this);
+    payload->valid = true;
+    payload->sourceId = source->id;
+    payload->binding = *binding;
+    payload->sourceName = source->name;
+
+    releaseOwnedPayloads(*this);
+    macroModulationAssignment = std::move(payload);
+    commitClipboardKind(
+        *this,
+        StructureClipboardKind::MACRO_MODULATION_ASSIGNMENT
+    );
+    return true;
+}
+
+FLASHMEM bool StructureClipboardState::storeProjectModulatorSource(
+    const core::state::modulation::ProjectControlState& control,
+    core::state::modulation::ModulatorId sourceId
+) {
+    const auto* source = core::state::modulation::findProjectModulator(
+        control.authored.modulation,
+        sourceId
+    );
+    if (!source) return rejectClipboardStore(*this);
+    releaseOwnedPayloads(*this);
+    projectModulatorSource = {
+        .valid = true,
+        .sourceId = source->id,
+        .kind = source->kind,
+        .sourceName = source->name,
+    };
+    commitClipboardKind(
+        *this,
+        StructureClipboardKind::PROJECT_MODULATOR_SOURCE
+    );
     return true;
 }
 

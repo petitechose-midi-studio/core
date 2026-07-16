@@ -358,7 +358,34 @@ FLASHMEM void MacroEditHandler::openValueSelector() {
     }
     if (row == ROW_MODULATION) {
         services_.endDepthGesture();
-        edit.openModulation();
+        uint8_t focusedRow = 0;
+        core::state::modulation::ProjectControlMacroSlotView slot{};
+        const uint8_t macroIndex = macro_edit_.editingIndex.get();
+        const auto address = services_.automationAddress(macroIndex);
+        if (core::state::modulation::readProjectControlMacroSlot(
+                pages_.control,
+                address,
+                slot
+            ) && slot.modulationCount > 0U) {
+            const auto focused = services_.focusedModulationBinding(macroIndex);
+            const auto destination =
+                core::state::modulation::projectControlDestination(address);
+            const uint8_t firstRow = slot.modulationCount > 1U ? 1U : 0U;
+            uint16_t ordinal = 0;
+            const auto& graph = pages_.control.authored.modulation;
+            for (uint16_t bindingIndex = 0;
+                 bindingIndex < graph.outputBindingCount;
+                 ++bindingIndex) {
+                const auto& binding = graph.outputBindings[bindingIndex];
+                if (binding.destination != destination) continue;
+                if (binding.id == focused) {
+                    focusedRow = static_cast<uint8_t>(firstRow + ordinal);
+                    break;
+                }
+                ++ordinal;
+            }
+        }
+        edit.openModulation(focusedRow);
         overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, true);
         return;
     }

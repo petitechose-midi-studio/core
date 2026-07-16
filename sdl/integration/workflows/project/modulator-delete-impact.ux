@@ -1,0 +1,30 @@
+# UX workflow: guarded Project source deletion with named impact.
+# Purpose: proves that an early release is an exact Cancel and a completed hold
+# deletes one source plus exactly its two assignments as one Undoable action.
+# Expect: capture_changed:modulators_registry=delete_impact_armed, capture_changed:delete_impact_armed=delete_cancelled, capture_changed:delete_cancelled=delete_impact_committing, capture_changed:delete_impact_committing=source_deleted
+# Expect: semantic:delete_cancelled:effect=delete_modulator, semantic:delete_cancelled:outcome=cancelled
+# Expect: semantic:source_deleted:effect=delete_modulator, semantic:source_deleted:outcome=applied, semantic:source_deleted:operation_generation=1
+
+0 scenario project-modulators
+100 button LEFT_CENTER down
+700 encoder NAV 1
+780 encoder NAV 2
+860 encoder NAV 3
+940 encoder NAV 4
+1020 encoder NAV 5
+1100 button LEFT_CENTER up
+1320 capture screen modulators_registry
+
+# First hold: the impact names Slow Tide and its two destinations; release
+# before completion must keep the graph intact and state that it was cancelled.
+1440 button BOTTOM_LEFT down
+1740 capture screen delete_impact_armed
+2040 button BOTTOM_LEFT up
+2260 capture screen delete_cancelled
+
+# Second hold crosses the guard fully, then release commits the scoped delta.
+2440 button BOTTOM_LEFT down
+2780 capture screen delete_impact_committing
+3700 tick
+3780 button BOTTOM_LEFT up
+4020 capture screen source_deleted

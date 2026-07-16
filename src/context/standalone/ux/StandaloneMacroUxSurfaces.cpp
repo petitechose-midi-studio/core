@@ -899,7 +899,8 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                 ? structure_clipboard_.hasMacroDestination()
                 : (automationRow
                        ? structure_clipboard_.hasMacroAutomation()
-                       : structure_clipboard_.hasMacroModulation());
+                       : (structure_clipboard_.hasMacroModulation() ||
+                          structure_clipboard_.hasMacroModulationAssignment()));
             out.effect = canPaste
                 ? (destinationRow ? "arm_paste_macro_destination"
                                   : (automationRow ? "arm_paste_automation"
@@ -909,7 +910,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                                                    : "press_copy_modulation"));
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
-            const bool appliedLfo = modulationRow && feedback.active &&
+            const bool appliedModulator = modulationRow && feedback.active &&
                 feedback.action ==
                     core::state::contextual::ContextActionId::APPLY &&
                 feedback.status ==
@@ -917,8 +918,10 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             const bool pasted = feedback.active &&
                 (feedback.action == core::state::contextual::ContextActionId::PASTE ||
                  feedback.action == core::state::contextual::ContextActionId::OVERWRITE);
-            out.effect = appliedLfo
-                ? "apply_lfo_audition"
+            out.effect = appliedModulator
+                ? (feedback.source.node == 1U
+                       ? "apply_existing_modulator"
+                       : "apply_lfo_audition")
                 : (pasted
                 ? (destinationRow ? "paste_macro_destination"
                                   : (automationRow ? "paste_automation"
@@ -1101,10 +1104,6 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         out.mode = "macro.modulation_editor";
         out.target = "modulation";
         out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
-        if (row >= 0 && row < data.rowCount) {
-            out.property = data.rows[row].key;
-            copyValueLabel(out.valueLabel, data.rows[row].value);
-        }
         const auto address = core::state::macro::MacroAutomationSlotAddress{
             .track = pages_.currentActiveTrack(),
             .page = pages_.currentActivePage(),
@@ -1121,6 +1120,10 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
              static_cast<uint16_t>(1U << address.macro)) != 0;
         const auto context = macroSourceDetailContext(slot, manual);
         if (!slot.modulationStored) {
+            if (row >= 0 && row < data.rowCount) {
+                out.property = data.rows[row].key;
+                copyValueLabel(out.valueLabel, data.rows[row].value);
+            }
             out.source = "none";
             out.projection = "silent_selection";
             if (isEncoder(event, Config::EncoderID::NAV)) {
@@ -1162,6 +1165,31 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                     ? "clear_modulation"
                     : "noop_empty_modulation";
                 fillGuardedMacroFeedback(out, macro_edit_);
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::BOTTOM_RIGHT,
+                           oc::core::input::ButtonBindingType::PRESS
+                       )) {
+                out.effect = structure_clipboard_.hasMacroModulationAssignment()
+                    ? "arm_paste_modulation_assignment"
+                    : "noop_empty_modulation_copy";
+                fillGuardedMacroFeedback(out, macro_edit_);
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::BOTTOM_RIGHT,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                const auto feedback = macro_edit_.contextFeedback.get();
+                const bool pasted = feedback.active &&
+                    (feedback.action ==
+                         core::state::contextual::ContextActionId::PASTE ||
+                     feedback.action ==
+                         core::state::contextual::ContextActionId::OVERWRITE) &&
+                    feedback.status == core::state::contextual::
+                        OperationFeedbackStatus::APPLIED;
+                out.effect = pasted ? "paste_modulation_assignment"
+                                    : "noop_empty_modulation_copy";
+                fillGuardedMacroFeedback(out, macro_edit_);
             } else {
                 out.effect = "noop_empty_modulation";
             }
@@ -1174,47 +1202,116 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             );
             return true;
         }
-        const auto layout = detail_ui::buildModulationDetailLayout(context);
-        const auto item = layout.at(static_cast<uint8_t>(row));
-        out.source = macroSourceLabel(context);
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "focus_macro_modulation";
-        } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            switch (item) {
-                case detail_ui::ModulationDetailItem::PLAYBACK:
-                    out.effect = "edit_modulation_playback";
+        const auto destination =
+            core::state::modulation::projectControlDestination(address);
+        const uint16_t assignmentCount = slot.modulationCount;
+        const int firstAssignmentRow = assignmentCount > 1U ? 1 : 0;
+        const int addSourceRow = firstAssignmentRow + assignmentCount;
+        const bool allRow = assignmentCount > 1U && row == 0;
+        const bool addRow = row == addSourceRow;
+        const int targetOrdinal = row - firstAssignmentRow;
+        const auto& graph = pages_.control.authored.modulation;
+        const core::state::modulation::ModulationBindingState* binding = nullptr;
+        int ordinal = 0;
+        if (!allRow && !addRow && targetOrdinal >= 0) {
+            for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+                const auto& candidate = graph.outputBindings[index];
+                if (candidate.destination != destination) continue;
+                if (ordinal++ == targetOrdinal) {
+                    binding = &candidate;
                     break;
-                case detail_ui::ModulationDetailItem::DEPTH:
-                    out.effect = "edit_modulation_depth";
-                    break;
-                default:
-                    out.effect = "noop_read_only";
-                    break;
+                }
             }
+        }
+        const auto* modulator = binding != nullptr
+            ? core::state::modulation::findProjectModulator(
+                  graph,
+                  binding->sourceId
+              )
+            : nullptr;
+        if (allRow) {
+            out.property = "all_modulation";
+            out.source = "aggregate";
+            copyValueLabel(
+                out.valueLabel,
+                slot.activeModulationCount > 0U ? "On" : "Off"
+            );
+        } else if (addRow) {
+            out.property = "add_source";
+            out.source = "none";
+            copyValueLabel(out.valueLabel, "Add");
+        } else if (binding != nullptr && modulator != nullptr) {
+            out.property = modulator->name.data();
+            out.source = modulator->kind ==
+                    core::state::modulation::ModulatorKind::LFO
+                ? "lfo"
+                : "recorded_shape";
+            out.mappingIndex = static_cast<int16_t>(binding->id.value);
+            out.mappingCount = static_cast<int16_t>(assignmentCount);
+            const int depth = static_cast<int>(std::lround(
+                std::clamp(
+                    static_cast<float>(binding->amountQ15) / 32767.0f,
+                    -1.0f,
+                    1.0f
+                ) * 100.0f
+            ));
+            std::snprintf(
+                out.valueLabel,
+                sizeof(out.valueLabel),
+                "%+d%%",
+                depth
+            );
+        }
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = allRow ? "focus_all_modulation"
+                : (addRow ? "focus_add_modulation_source"
+                          : "focus_modulation_assignment");
+            out.projection = "silent_selection";
+        } else if (isEncoder(event, Config::EncoderID::OPT)) {
+            out.effect = binding != nullptr
+                ? "edit_modulation_depth"
+                : "noop_read_only";
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "activate_modulation_property";
+            out.effect = addRow ? "open_modulator_creation"
+                : (binding != nullptr ? "open_modulator_source"
+                                      : "noop_all_modulation");
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "back_macro_modulation";
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
-            out.effect = "arm_clear_modulation";
+            out.effect = allRow ? "arm_clear_all_modulation"
+                : (binding != nullptr ? "arm_remove_modulation_assignment"
+                                      : "noop_add_source");
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
-            out.effect = feedback.active &&
-                    feedback.status ==
-                        core::state::contextual::OperationFeedbackStatus::APPLIED
-                ? "clear_modulation"
-                : "toggle_modulation_playback";
+            const bool applied = feedback.active &&
+                feedback.status == core::state::contextual::
+                    OperationFeedbackStatus::APPLIED;
+            out.effect = applied
+                ? (allRow ? "clear_all_modulation"
+                          : "remove_modulation_assignment")
+                : (allRow ? "toggle_all_modulation"
+                          : (binding != nullptr
+                                 ? "toggle_modulation_assignment"
+                                 : "noop_add_source"));
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
-            out.effect = structure_clipboard_.hasMacroModulation()
-                ? "arm_paste_modulation"
-                : "press_copy_modulation";
+            out.effect = binding == nullptr
+                ? "noop_modulation_assignment_copy"
+                : (structure_clipboard_.hasMacroModulationAssignment()
+                       ? "arm_paste_modulation_assignment"
+                       : "press_copy_modulation_assignment");
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
-            out.effect = feedback.active &&
-                    (feedback.action == core::state::contextual::ContextActionId::PASTE ||
-                     feedback.action == core::state::contextual::ContextActionId::OVERWRITE)
-                ? "paste_modulation"
-                : "copy_modulation";
+            const bool pasted = feedback.active &&
+                (feedback.action ==
+                     core::state::contextual::ContextActionId::PASTE ||
+                 feedback.action ==
+                     core::state::contextual::ContextActionId::OVERWRITE) &&
+                feedback.status == core::state::contextual::
+                    OperationFeedbackStatus::APPLIED;
+            out.effect = binding == nullptr
+                ? "noop_modulation_assignment_copy"
+                : (pasted ? "paste_modulation_assignment"
+                          : "copy_modulation_assignment");
         }
         if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS) ||
             isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) ||
@@ -1229,6 +1326,187 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             address.macro,
             macroCandidateClass(context)
         );
+        return true;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE) {
+        const int row = std::min<int>(
+            macro_edit_.modulationFocusedRow.get(),
+            1
+        );
+        out.mode = "macro.modulator_creation";
+        out.target = "modulation";
+        out.targetIndex = static_cast<int16_t>(
+            macro_edit_.editingIndex.get()
+        );
+        out.property = row == 0 ? "new_lfo" : "use_existing";
+        out.source = "none";
+        out.projection = "silent_selection";
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_modulation_creation";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::NAV,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "open_modulator_creation";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "back_modulation_assignments";
+        } else {
+            out.effect = "browse_modulation_creation";
+        }
+        return true;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::MODULATOR_PICKER) {
+        const auto& graph = pages_.control.authored.modulation;
+        if (graph.sourceCount == 0U) return false;
+        const int selected = std::clamp(
+            macro_edit_.macroSelector.selectedIndex.get(),
+            0,
+            static_cast<int>(graph.sourceCount) - 1
+        );
+        const auto& modulator = graph.sources[static_cast<uint16_t>(selected)];
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_.currentActiveTrack(),
+            .page = pages_.currentActivePage(),
+            .macro = macro_edit_.editingIndex.get(),
+        };
+        out.mode = "macro.modulator_picker";
+        out.target = "modulator";
+        out.targetIndex = static_cast<int16_t>(selected);
+        out.source = modulator.kind ==
+                core::state::modulation::ModulatorKind::LFO
+            ? "lfo"
+            : "recorded_shape";
+        out.projection = "silent_selection";
+        out.mappingIndex = static_cast<int16_t>(modulator.id.value);
+        out.mappingCount = static_cast<int16_t>(graph.sourceCount);
+        out.property = modulator.name.data();
+        copyValueLabel(out.valueLabel, modulator.name.data());
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_existing_modulator";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::NAV,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "start_existing_modulator_audition";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            const auto feedback = macro_edit_.contextFeedback.get();
+            const bool cancelled = feedback.active &&
+                feedback.action ==
+                    core::state::contextual::ContextActionId::CANCEL &&
+                feedback.status == core::state::contextual::
+                    OperationFeedbackStatus::CANCELLED &&
+                feedback.source.node == 1U;
+            out.effect = cancelled
+                ? "cancel_existing_modulator"
+                : "back_modulation_creation";
+            if (cancelled) fillGuardedMacroFeedback(out, macro_edit_);
+        } else {
+            out.effect = "browse_existing_modulator";
+        }
+        fillMacroResolutionFacts(
+            out,
+            midi_cc_coordinator_,
+            pages_,
+            address.macro,
+            core::state::shared::MidiCcCandidateClass::MACRO_STATIC
+        );
+        out.projection = "silent_selection";
+        return true;
+    }
+
+    if (phase ==
+        core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION) {
+        const auto data = core::context::standalone::macro_overlay_presenter::
+            buildAutomationRenderData(source);
+        const auto& audition = pages_.control.audition;
+        if (!data.visible || !audition.active || audition.sourceCreated) {
+            return false;
+        }
+        const auto* modulator = core::state::modulation::findProjectModulator(
+            pages_.control.authored.modulation,
+            audition.sourceId
+        );
+        if (modulator == nullptr) return false;
+        const int row = data.selectedIndex;
+        out.mode = "macro.modulator_audition";
+        out.target = "modulator_assignment";
+        out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
+        out.source = modulator->kind ==
+                core::state::modulation::ModulatorKind::LFO
+            ? "lfo"
+            : "recorded_shape";
+        out.projection = "audible_audition";
+        out.hasOperationGeneration = true;
+        out.operationGeneration = audition.generation;
+        out.operationStatus = "audition";
+        out.mappingIndex = static_cast<int16_t>(audition.sourceId.value);
+        out.mappingCount = 1;
+        if (row >= 0 && row < data.rowCount) {
+            out.property = data.rows[row].key;
+            copyValueLabel(out.valueLabel, data.rows[row].value);
+        }
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_assignment_property";
+        } else if (isEncoder(event, Config::EncoderID::OPT) && row == 1) {
+            out.effect = "edit_existing_modulator_depth";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::NAV,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "start_existing_modulator_audition";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "cancel_existing_modulator";
+            out.outcome = "cancelled";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_RIGHT,
+                       oc::core::input::ButtonBindingType::PRESS
+                   )) {
+            out.effect = "press_apply_existing_modulator";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_RIGHT,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "apply_existing_modulator";
+            out.outcome = "applied";
+        }
+        if (isButton(
+                event,
+                Config::ButtonID::BOTTOM_RIGHT,
+                oc::core::input::ButtonBindingType::PRESS
+            ) || isButton(
+                event,
+                Config::ButtonID::BOTTOM_RIGHT,
+                oc::core::input::ButtonBindingType::RELEASE
+            )) {
+            fillGuardedMacroFeedback(out, macro_edit_);
+        }
+        fillMacroResolutionFacts(
+            out,
+            midi_cc_coordinator_,
+            pages_,
+            macro_edit_.editingIndex.get(),
+            core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED
+        );
+        out.projection = "audible_audition";
         return true;
     }
 

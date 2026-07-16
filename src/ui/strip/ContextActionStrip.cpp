@@ -213,12 +213,20 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
             lv_obj_set_height(slot.container, 18);
         }
 
-        slot.indicator = lv_obj_create(slot.container);
+        slot.indicator = lv_bar_create(slot.container);
         lv_obj_remove_style_all(slot.indicator);
         lv_obj_add_flag(slot.indicator, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_clear_flag(slot.indicator, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_radius(slot.indicator, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_radius(slot.indicator, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
         lv_obj_set_style_border_width(slot.indicator, 0, 0);
+        lv_obj_set_style_bg_opa(
+            slot.indicator,
+            LV_OPA_TRANSP,
+            LV_PART_INDICATOR
+        );
+        lv_bar_set_range(slot.indicator, 0, 1000);
+        lv_bar_set_value(slot.indicator, 0, LV_ANIM_OFF);
 
         if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
             lv_obj_set_size(slot.indicator, INDICATOR_LONG, INDICATOR_THICKNESS);
@@ -309,7 +317,17 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
     lv_obj_set_style_bg_color(slot.container, color, 0);
     lv_obj_set_style_bg_opa(slot.container, bgOpa, 0);
     lv_obj_set_style_bg_color(slot.indicator, color, 0);
-    lv_obj_set_style_bg_opa(slot.indicator, accentOpa, 0);
+    lv_obj_set_style_bg_color(slot.indicator, color, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(
+        slot.indicator,
+        props.holdActive ? LV_OPA_TRANSP : accentOpa,
+        0
+    );
+    lv_obj_set_style_bg_opa(
+        slot.indicator,
+        props.holdActive ? LV_OPA_COVER : LV_OPA_TRANSP,
+        LV_PART_INDICATOR
+    );
 
     if (!showContent) {
         lv_obj_add_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
@@ -383,10 +401,16 @@ void ContextActionStrip::refreshHoldIndicators() {
                 slot.indicator_long = INDICATOR_LONG;
                 slot.indicator_fill_mode = false;
                 slot.hold_geometry_initialized = true;
+                lv_bar_set_value(slot.indicator, 0, LV_ANIM_OFF);
             }
             const lv_opa_t baseIndicatorOpa = indicatorOpacity(props.visualState);
             if (slot.indicator_opa != baseIndicatorOpa) {
                 lv_obj_set_style_bg_opa(slot.indicator, baseIndicatorOpa, 0);
+                lv_obj_set_style_bg_opa(
+                    slot.indicator,
+                    LV_OPA_TRANSP,
+                    LV_PART_INDICATOR
+                );
                 slot.indicator_opa = baseIndicatorOpa;
             }
             continue;
@@ -424,35 +448,41 @@ void ContextActionStrip::refreshHoldIndicators() {
         }
         lv_obj_clear_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
 
-        const lv_coord_t slotWidth = lv_obj_get_width(slot.container);
-        const lv_coord_t slotHeight = lv_obj_get_height(slot.container);
-        const lv_coord_t fillLong = (orientation_ == ContextActionStripOrientation::HORIZONTAL)
-            ? static_cast<lv_coord_t>(
-                  (static_cast<int32_t>(std::max<lv_coord_t>(slotWidth, 1)) * clampedElapsed) /
-                  static_cast<int32_t>(props.holdDurationMs)
-              )
-            : static_cast<lv_coord_t>(
-                  (static_cast<int32_t>(std::max<lv_coord_t>(slotHeight, 1)) * clampedElapsed) /
-                  static_cast<int32_t>(props.holdDurationMs)
-              );
-
-        const lv_coord_t clampedFill = std::max<lv_coord_t>(1, fillLong);
-        if (!slot.hold_geometry_initialized ||
-            !slot.indicator_fill_mode ||
-            slot.indicator_long != clampedFill) {
+        if (!slot.hold_geometry_initialized || !slot.indicator_fill_mode) {
             if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
-                lv_obj_set_size(slot.indicator, clampedFill, INDICATOR_THICKNESS);
+                lv_obj_set_size(
+                    slot.indicator,
+                    LV_PCT(100),
+                    INDICATOR_THICKNESS
+                );
                 lv_obj_align(slot.indicator, LV_ALIGN_TOP_LEFT, 0, 0);
             } else {
-                lv_obj_set_size(slot.indicator, INDICATOR_THICKNESS, clampedFill);
+                lv_obj_set_size(
+                    slot.indicator,
+                    INDICATOR_THICKNESS,
+                    LV_PCT(100)
+                );
                 lv_obj_align(slot.indicator, LV_ALIGN_BOTTOM_LEFT, 0, 0);
             }
-            slot.indicator_long = clampedFill;
+            slot.indicator_long = -1;
             slot.indicator_fill_mode = true;
             slot.hold_geometry_initialized = true;
         }
+        const int32_t progress = static_cast<int32_t>(
+            (static_cast<uint64_t>(clampedElapsed) * 1000U) /
+            props.holdDurationMs
+        );
+        if (slot.indicator_long != progress) {
+            lv_bar_set_value(slot.indicator, progress, LV_ANIM_OFF);
+            slot.indicator_long = static_cast<lv_coord_t>(progress);
+        }
         if (slot.indicator_opa != LV_OPA_COVER) {
-            lv_obj_set_style_bg_opa(slot.indicator, LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_opa(slot.indicator, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_bg_opa(
+                slot.indicator,
+                LV_OPA_COVER,
+                LV_PART_INDICATOR
+            );
             slot.indicator_opa = LV_OPA_COVER;
         }
     }

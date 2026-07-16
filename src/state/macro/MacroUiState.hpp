@@ -14,6 +14,7 @@
 namespace core::state::macro {
 
 constexpr uint8_t kMacroRuntimeProjectionDirtyAll = 0xFF;
+constexpr uint8_t kMacroRuntimeProjectionDirtyConfig = 0xFE;
 
 inline uint32_t nextMacroRuntimeProjectionRevision(
     uint32_t current,
@@ -27,6 +28,11 @@ inline uint32_t nextMacroRuntimeProjectionRevision(
 inline bool macroRuntimeProjectionRevisionTargetsAll(uint32_t revision) {
     return static_cast<uint8_t>(revision & 0xFFU) ==
         kMacroRuntimeProjectionDirtyAll;
+}
+
+inline bool macroRuntimeProjectionRevisionTargetsConfig(uint32_t revision) {
+    return static_cast<uint8_t>(revision & 0xFFU) ==
+        kMacroRuntimeProjectionDirtyConfig;
 }
 
 inline int macroRuntimeProjectionRevisionDirtyIndex(uint32_t revision) {

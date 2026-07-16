@@ -43,6 +43,7 @@ struct MacroWidgetProps {
     float baseValue = 0.5f;
     float modulationDelta = 0.0f;
     float modulationDepth = 0.0f;
+    uint8_t modulationSourceCount = 0;
     uint8_t cc = 0;
     bool automationStored = false;
     bool automationActive = false;

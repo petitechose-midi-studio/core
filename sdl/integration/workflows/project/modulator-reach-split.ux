@@ -1,0 +1,46 @@
+# UX workflow: explicit Reach choices and progressive per-Track Split.
+# Purpose: proves that Reach reuses the learned detail/Back grammar, exposes
+# Split only for a multi-Track source, preserves registry focus, and records the
+# whole source/edge mutation as one Undo action.
+# Expect: capture_changed:source_detail=reach_choices, capture_changed:reach_choices=split_t2_focused, capture_changed:split_t2_focused=source_split, capture_changed:source_split=split_undone
+# Expect: semantic:split_t2_focused:mode=project.modulator_reach, semantic:split_t2_focused:effect=focus_reach_choice, semantic:split_t2_focused:property=split_track, semantic:split_t2_focused:target_track=1, semantic:split_t2_focused:mapping_count=1
+# Expect: semantic:source_split:effect=split_modulator_by_track, semantic:source_split:outcome=applied, semantic:source_split:operation_generation=1
+
+0 scenario project-modulators
+
+# Reuse the Project first-level tab shortcut.
+100 button LEFT_CENTER down
+700 encoder NAV 1
+780 encoder NAV 2
+860 encoder NAV 3
+940 encoder NAV 4
+1020 encoder NAV 5
+1100 button LEFT_CENTER up
+
+# Enter Slow Tide and focus the existing Reach row.
+1320 tap NAV 60
+1500 encoder NAV 1
+1580 encoder NAV 1
+1660 encoder NAV 1
+1740 encoder NAV 1
+1820 encoder NAV 1
+1900 encoder NAV 1
+1980 encoder NAV 1
+2180 capture screen source_detail
+2300 tap NAV 60
+2520 capture screen reach_choices
+
+# Tightest and Project stay first; Split rows appear only because this source
+# currently serves T1 and T2. Select the T2 partition explicitly.
+2640 encoder NAV 1
+2720 encoder NAV 1
+2800 encoder NAV 1
+3020 capture screen split_t2_focused
+3140 tap NAV 60
+3400 capture screen source_split
+
+# Undo uses the same Project hold layer and restores the single shared source.
+3560 button LEFT_CENTER down
+4160 tap LEFT_TOP 60
+4380 button LEFT_CENTER up
+4600 capture screen split_undone

@@ -5,6 +5,7 @@
 #include <lvgl.h>
 
 #include <ms/ui/widget/MenuListView.hpp>
+#include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <oc/state/StaticSignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
 
@@ -14,6 +15,7 @@
 #include "state/project/ProjectNameKeyboard.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
@@ -27,6 +29,7 @@ public:
     struct StateRefs {
         core::state::project::ProjectNavigationState& navigation;
         core::state::project::ProjectState& project;
+        core::state::macro::MacroPagesState& pages;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
@@ -48,6 +51,15 @@ private:
     void render();
     void renderTabs();
     void renderKeyboardActionStrips(bool visible);
+    void renderModulators();
+    void renderModulatorActionStrips(
+        const core::state::modulation::ModulatorSourceState* source
+    );
+    static void populateModulatorRow(
+        void* context,
+        int index,
+        ms::ui::KeyValueRowBuffer& out
+    );
     void createKeyboardLayout();
     void renderKeyboard();
     void renderKeyboardKey(uint8_t index, bool selected, bool force = false);
@@ -57,7 +69,7 @@ private:
     static void drainRender(void* context, uint32_t flags);
 
     StateRefs state_refs_;
-    oc::state::StaticWatchGroup<9> watcher_;
+    oc::state::StaticWatchGroup<12> watcher_;
     core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
         render_scheduler_;
 
@@ -82,6 +94,8 @@ private:
         core::state::project::ProjectTab::COUNT;
     bool rendered_hold_active_ = false;
     core::app::ExtmemUniquePtr<ms::ui::MenuListView> menu_;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
+        modulator_registry_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     std::array<ms::ui::MenuRow, core::state::project::ProjectMenuPage::MAX_ROWS> rows_{};

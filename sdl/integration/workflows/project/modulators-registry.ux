@@ -1,0 +1,35 @@
+# UX workflow: inspect and operate the Project-owned Modulator registry.
+# Purpose: proves learned Project tab navigation, concise source facts, visible
+# live trace, root bypass, direct detail access, and stable Back focus.
+# Expect: capture_changed:project_overview=modulators_registry, capture_changed:modulators_registry=modulator_primary_edited, capture_changed:modulator_primary_edited=modulator_bypassed, capture_changed:modulator_bypassed=modulator_detail
+# Expect: semantic:modulators_registry:effect=open_modulators_tab, semantic:modulators_registry:source=lfo, semantic:modulators_registry:mapping_count=2
+# Expect: semantic:modulator_primary_edited:effect=edit_modulator_property, semantic:modulator_bypassed:effect=toggle_modulator
+# Expect: semantic:modulator_detail:effect=open_modulator_detail, semantic:registry_focus_restored:effect=back_modulator_context
+
+0 scenario project-modulators
+80 capture screen project_overview
+
+# Reuse LEFT_CENTER + NAV to reach the first-level Modulators tab.
+180 button LEFT_CENTER down
+780 encoder NAV 1
+860 encoder NAV 2
+940 encoder NAV 3
+1020 encoder NAV 4
+1100 encoder NAV 5
+1180 button LEFT_CENTER up
+1400 capture screen modulators_registry
+
+# The primary fact printed on the row is the value OPT edits.
+1520 encoder OPT 0.75
+1740 capture screen modulator_primary_edited
+
+# Short bottom-left is a reversible root bypass, not deletion.
+1860 tap BOTTOM_LEFT 60
+2080 capture screen modulator_bypassed
+
+# NAV opens the same selected source; Back returns to the same registry row.
+2200 tap NAV 60
+2420 capture screen modulator_detail
+2540 encoder NAV 1
+2660 tap LEFT_TOP 60
+2880 capture screen registry_focus_restored

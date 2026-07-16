@@ -14,9 +14,14 @@
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/macro/MacroPagesState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
+
+#if defined(MS_UX_RECORDER)
+#include "context/standalone/ux/StandaloneUxSurfaces.hpp"
+#endif
 
 namespace core::context::standalone {
 
@@ -24,11 +29,16 @@ class ProjectFeatureModule {
 public:
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::project::ProjectNavigationState& navigation;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
+        core::state::macro::MacroPagesState& pages;
+        oc::state::Signal<uint32_t>& configRevision;
+        core::state::macro::MacroHistoryService& macroHistory;
+        core::state::StructureClipboardState& clipboard;
         core::handler::SequencerHistoryDomainServices history;
         core::handler::ProjectLifecycleDomainServices lifecycle;
     };
@@ -37,7 +47,12 @@ public:
                          core::handler::SequencerSettingsDomainServices sequencerSettings,
                          oc::api::EncoderAPI& encoders,
                          oc::api::ButtonAPI& buttons,
-                         lv_obj_t* projectViewElement);
+                         lv_obj_t* projectViewElement
+#if defined(MS_UX_RECORDER)
+                         ,
+                         core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
+#endif
+    );
     ~ProjectFeatureModule();
 
     ProjectFeatureModule(const ProjectFeatureModule&) = delete;
@@ -45,9 +60,16 @@ public:
 
     [[nodiscard]] bool valid() const { return static_cast<bool>(handler_); }
     void syncFocusedEncoder() const;
+    void update(uint32_t nowMs);
 
 private:
+#if defined(MS_UX_RECORDER)
+    core::context::standalone::ux::ProjectModulatorsUxSurface
+        modulators_ux_surface_;
+#endif
     core::app::ExtmemUniquePtr<core::handler::ProjectHandler> handler_;
+    core::state::project::ProjectNavigationState* navigation_ = nullptr;
+    uint32_t last_telemetry_refresh_ms_ = 0;
 };
 
 }  // namespace core::context::standalone

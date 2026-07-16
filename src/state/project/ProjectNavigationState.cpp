@@ -37,7 +37,19 @@ FLASHMEM void ProjectNavigationState::reset() {
     focusedRow.set(0);
     physicalHoldActive.set(false);
     contentRevision.set(0);
+    telemetryRevision.set(0);
     lifecycleFeedback.set("");
+    selectedModulator = {};
+    selectedModulationBinding = {};
+    guardedModulator = {};
+    guardedModulationBinding = {};
+    guardedClipboardModulator = {};
+    modulatorClipboardGuard.set({});
+    modulatorClipboardPasteAvailable = false;
+    creatingModulatorSource = false;
+    destinationPickerTrack = 0;
+    destinationPickerPage = 0;
+    modulatorGuard.set({});
     autosaveEnabled = true;
     scaleConstrainEnabled = true;
     patternsInheritScale = true;
@@ -66,6 +78,10 @@ FLASHMEM void ProjectNavigationState::notifyContentChanged() {
     contentRevision.set(static_cast<uint8_t>(contentRevision.get() + 1));
 }
 
+FLASHMEM void ProjectNavigationState::notifyTelemetryChanged() {
+    telemetryRevision.set(static_cast<uint8_t>(telemetryRevision.get() + 1));
+}
+
 FLASHMEM void ProjectNavigationState::setLifecycleFeedback(const char* message) {
     lifecycleFeedback.set(message ? message : "");
     notifyContentChanged();
@@ -87,6 +103,8 @@ FLASHMEM ProjectNodeId rootNodeForTab(ProjectTab tab) {
             return ProjectNodeId::STORAGE_ROOT;
         case ProjectTab::ROUTING:
             return ProjectNodeId::ROUTING_ROOT;
+        case ProjectTab::MODULATORS:
+            return ProjectNodeId::MODULATORS_ROOT;
         case ProjectTab::OVERVIEW:
         default:
             return ProjectNodeId::OVERVIEW_ROOT;
@@ -108,6 +126,12 @@ FLASHMEM ProjectTab tabForRootNode(ProjectNodeId node) {
             return ProjectTab::STORAGE;
         case ProjectNodeId::ROUTING_ROOT:
             return ProjectTab::ROUTING;
+        case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+        case ProjectNodeId::MODULATOR_REACH:
+        case ProjectNodeId::MODULATOR_DESTINATIONS:
+        case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+        case ProjectNodeId::MODULATORS_ROOT:
+            return ProjectTab::MODULATORS;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
         case ProjectNodeId::OVERVIEW_ROOT:
         default:
@@ -125,6 +149,8 @@ FLASHMEM const char* projectTabLabel(ProjectTab tab) {
             return "Storage";
         case ProjectTab::ROUTING:
             return "Routing";
+        case ProjectTab::MODULATORS:
+            return "Modulators";
         case ProjectTab::OVERVIEW:
         default:
             return "Overview";

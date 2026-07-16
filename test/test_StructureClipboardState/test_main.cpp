@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 
 #include "state/StructureClipboardState.hpp"
@@ -139,6 +140,93 @@ void test_macro_clipboards_store_only_the_selected_semantic_domain() {
         << "[PASS] Macro clipboards contain only their selected domain\n";
 }
 
+void test_modulation_assignment_clipboard_references_shared_source_only() {
+    using namespace core::state::modulation;
+    core::state::StructureClipboardState clipboard;
+    macro::MacroPagesState pages;
+    pages.setMacroSlotActive(0, true);
+    const macro::MacroAutomationSlotAddress address{
+        pages.currentActiveTrack(),
+        pages.currentActivePage(),
+        0,
+    };
+    ModulatorLfoDraft sourceDraft{};
+    sourceDraft.name = "Shared LFO";
+    sourceDraft.reach = {.kind = ModulatorReachKind::PROJECT};
+    sourceDraft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
+    const auto source = createLfoModulator(
+        pages.control.authored.modulation,
+        sourceDraft
+    );
+    assert(source.changed());
+    ModulationBindingDraft bindingDraft{};
+    bindingDraft.sourceId = source.sourceId;
+    bindingDraft.destination = projectControlDestination(address);
+    bindingDraft.amountQ15 = -12288;
+    bindingDraft.inputRange = ModulationInputRange::BIPOLAR;
+    const auto binding = addProjectModulationBinding(
+        pages.control.authored.modulation,
+        bindingDraft
+    );
+    assert(binding.changed());
+
+    assert(clipboard.storeMacroModulationAssignment(
+        pages.control,
+        address,
+        binding.bindingId
+    ));
+    assert(clipboard.hasMacroModulationAssignment());
+    assert(!clipboard.hasMacroModulation());
+    assert(clipboard.macroAutomationSet == nullptr);
+    assert(clipboard.macroModulationAssignment != nullptr);
+    const auto& payload = *clipboard.macroModulationAssignment;
+    assert(payload.sourceId == source.sourceId);
+    assert(payload.binding.id == binding.bindingId);
+    assert(payload.binding.amountQ15 == -12288);
+    assert(std::strcmp(payload.sourceName.data(), "Shared LFO") == 0);
+
+    assert(clipboard.storeMacroDestination(pages, address));
+    assert(clipboard.macroModulationAssignment == nullptr);
+    std::cout
+        << "[PASS] Modulation assignment clipboard keeps one shared-source edge\n";
+}
+
+void test_project_modulator_source_clipboard_keeps_stable_reference() {
+    using namespace core::state::modulation;
+    core::state::StructureClipboardState clipboard;
+    macro::MacroPagesState pages;
+
+    ModulatorLfoDraft draft{};
+    draft.name = "Shared Source";
+    draft.reach = {.kind = ModulatorReachKind::PROJECT};
+    draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
+    const auto created = createLfoModulator(
+        pages.control.authored.modulation,
+        draft
+    );
+    assert(created.changed());
+
+    assert(clipboard.storeProjectModulatorSource(
+        pages.control,
+        created.sourceId
+    ));
+    assert(clipboard.hasProjectModulatorSource());
+    assert(clipboard.kind.get() ==
+           core::state::StructureClipboardKind::PROJECT_MODULATOR_SOURCE);
+    assert(clipboard.projectModulatorSource.sourceId == created.sourceId);
+    assert(clipboard.projectModulatorSource.kind == ModulatorKind::LFO);
+    assert(std::strcmp(
+        clipboard.projectModulatorSource.sourceName.data(),
+        "Shared Source"
+    ) == 0);
+
+    clipboard.clear();
+    assert(!clipboard.hasProjectModulatorSource());
+    assert(!clipboard.projectModulatorSource.valid);
+    std::cout
+        << "[PASS] Project Source clipboard keeps one stable shared reference\n";
+}
+
 }  // namespace
 
 int main() {
@@ -146,6 +234,8 @@ int main() {
     test_rejected_copy_clears_previous_clipboard();
     test_invalid_macro_automation_copy_reports_failure();
     test_macro_clipboards_store_only_the_selected_semantic_domain();
+    test_modulation_assignment_clipboard_references_shared_source_only();
+    test_project_modulator_source_clipboard_keeps_stable_reference();
 
     std::cout << "\nAll StructureClipboardState tests passed.\n";
     return 0;

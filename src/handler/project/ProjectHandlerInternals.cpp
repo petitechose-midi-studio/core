@@ -12,6 +12,22 @@
 
 namespace core::handler::project_handler_internal {
 
+FLASHMEM uint8_t projectModulatorFreePeriodIndex(uint32_t periodMs) {
+    uint8_t best = 0;
+    uint32_t bestDistance = UINT32_MAX;
+    for (uint8_t index = 0; index < PROJECT_MODULATOR_FREE_PERIODS_MS.size(); ++index) {
+        const uint32_t candidate = PROJECT_MODULATOR_FREE_PERIODS_MS[index];
+        const uint32_t distance = candidate > periodMs
+            ? candidate - periodMs
+            : periodMs - candidate;
+        if (distance < bestDistance) {
+            best = index;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
 FLASHMEM int signedStepCount(float delta) {
     if (delta == 0.0f) return 0;
     const float absolute = delta > 0.0f ? delta : -delta;

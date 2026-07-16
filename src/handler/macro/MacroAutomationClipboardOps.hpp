@@ -101,6 +101,19 @@ bool copyModulationToClipboard(
     core::state::StructureClipboardState& clipboard
 );
 
+bool copyModulationAssignmentToClipboard(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    core::state::modulation::ModulationBindingId bindingId,
+    core::state::StructureClipboardState& clipboard
+);
+
+bool modulationAssignmentDraftFromClipboard(
+    const core::state::StructureClipboardState& clipboard,
+    const core::state::modulation::ModulationDestination& destination,
+    core::state::modulation::ModulationBindingDraft& out
+);
+
 MacroTypedPastePreflight preflightModulationPaste(
     const core::state::macro::MacroPagesState& pages,
     const core::state::macro::MacroAutomationSlotAddress& address,

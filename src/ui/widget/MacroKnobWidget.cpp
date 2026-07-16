@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
@@ -302,21 +303,29 @@ void MacroKnobWidget::setSourceIndicators(
     bool automationActive,
     bool modulationStored,
     bool modulationActive,
-    bool modulationPaused
+    bool modulationPaused,
+    uint8_t modulationSourceCount
 ) {
+    const uint8_t cappedSourceCount = std::min<uint8_t>(
+        modulationSourceCount,
+        7U
+    );
     const bool arcChanged = automation_active_ != automationActive ||
         modulation_active_ != modulationActive;
     const bool visualChanged = automation_stored_ != automationStored ||
         automation_active_ != automationActive ||
         modulation_stored_ != modulationStored ||
         modulation_active_ != modulationActive ||
-        modulation_paused_ != modulationPaused;
+        modulation_paused_ != modulationPaused ||
+        modulation_source_count_ != cappedSourceCount;
     if (!visualChanged) return;
     automation_stored_ = automationStored;
     automation_active_ = automationActive;
     modulation_stored_ = modulationStored;
     modulation_active_ = modulationActive;
     modulation_paused_ = modulationPaused;
+    modulation_source_count_ = cappedSourceCount;
+    updateAuxiliaryLabel();
     if (arcChanged) {
         updateAutomationTrackColor();
         const uint16_t baseAngle = valueAngle(base_value_);
@@ -363,7 +372,14 @@ void MacroKnobWidget::updateFocusFrame() {
     lv_obj_set_style_border_color(container_, lv_color_hex(stheme::color::TEXT_PRIMARY), 0);
     lv_obj_set_style_border_opa(container_, focused_ ? LV_OPA_70 : LV_OPA_TRANSP, 0);
     if (add_label_) {
-        lv_obj_set_style_text_opa(add_label_, focused_ ? LV_OPA_COVER : LV_OPA_60, 0);
+        lv_obj_set_style_text_opa(
+            add_label_,
+            focused_ ? LV_OPA_COVER
+                     : (slot_active_ && modulation_source_count_ > 1U
+                            ? LV_OPA_80
+                            : LV_OPA_60),
+            0
+        );
     }
 }
 
@@ -379,13 +395,46 @@ void MacroKnobWidget::updateSlotVisibility() {
 
     setConfigLabelsVisible(slot_active_);
 
+    updateAuxiliaryLabel();
+    updateFocusFrame();
+}
+
+void MacroKnobWidget::updateAuxiliaryLabel() {
     if (!add_label_) return;
     if (!slot_active_ && add_slot_) {
+        lv_label_set_text(add_label_, "+");
+        lv_obj_set_style_text_color(
+            add_label_,
+            lv_color_hex(stheme::color::TEXT_SECONDARY),
+            0
+        );
+        lv_obj_center(add_label_);
         lv_obj_clear_flag(add_label_, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(add_label_, LV_OBJ_FLAG_HIDDEN);
+        return;
     }
-    updateFocusFrame();
+    if (slot_active_ && modulation_source_count_ > 1U) {
+        char count[4]{};
+        if (modulation_source_count_ >= 7U) {
+            std::snprintf(count, sizeof(count), "%s", "7+");
+        } else {
+            std::snprintf(
+                count,
+                sizeof(count),
+                "%u",
+                static_cast<unsigned>(modulation_source_count_)
+            );
+        }
+        lv_label_set_text(add_label_, count);
+        lv_obj_set_style_text_color(
+            add_label_,
+            lv_color_hex(stheme::color::MACRO_MODULATION),
+            0
+        );
+        lv_obj_align(add_label_, LV_ALIGN_TOP_RIGHT, -2, 1);
+        lv_obj_clear_flag(add_label_, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_add_flag(add_label_, LV_OBJ_FLAG_HIDDEN);
 }
 
 void MacroKnobWidget::setConfigLabelsVisible(bool visible) {

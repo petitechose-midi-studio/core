@@ -43,32 +43,6 @@ bool computedSourcePlaybackActive(
             core::state::macro::macroCurvePlaybackActive(slot->modulation));
 }
 
-FLASHMEM void nextLfoName(
-    const core::state::modulation::ProjectModulationState& graph,
-    char* out,
-    size_t outSize
-) {
-    if (out == nullptr || outSize == 0U) return;
-    for (uint16_t ordinal = 1;
-         ordinal <= core::state::modulation::PROJECT_MODULATOR_CAPACITY;
-         ++ordinal) {
-        std::snprintf(out, outSize, "LFO %u", static_cast<unsigned>(ordinal));
-        bool used = false;
-        for (uint16_t index = 0; index < graph.sourceCount; ++index) {
-            if (std::strncmp(
-                    graph.sources[index].name.data(),
-                    out,
-                    core::state::modulation::PROJECT_MODULATOR_NAME_CAPACITY
-                ) == 0) {
-                used = true;
-                break;
-            }
-        }
-        if (!used) return;
-    }
-    std::snprintf(out, outSize, "%s", "LFO");
-}
-
 FLASHMEM bool auditionObjects(
     core::state::macro::MacroPagesState& pages,
     const core::state::macro::MacroAutomationSlotAddress& address,
@@ -125,6 +99,23 @@ MacroEditDomainServices MacroEditDomainServices::fromCoreState(core::state::Core
             markProjectMutatedFromCoreState,
         },
     };
+}
+
+void MacroEditDomainServices::publishModulationMutation_() const {
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+        macro_ui_->runtimeProjectionRevision.set(
+            core::state::macro::nextMacroRuntimeProjectionRevision(
+                macro_ui_->runtimeProjectionRevision.get(),
+                core::state::macro::kMacroRuntimeProjectionDirtyConfig
+            )
+        );
+    }
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
 }
 
 const core::state::macro::MacroConfig& MacroEditDomainServices::activeConfig(uint8_t index) const {
@@ -210,11 +201,14 @@ bool MacroEditDomainServices::modulationPlaybackActiveFor(uint8_t index) const {
 }
 
 float MacroEditDomainServices::modulationDepth(uint8_t index) const {
-    const auto* slot = automationSlot(index);
-    return slot != nullptr ? core::state::macro::macroAutomationClamp01(
-                                 slot->modulationDepth
-                             )
-                           : 0.0f;
+    const auto* binding = focusedModulationBindingState(index);
+    return binding != nullptr
+        ? std::clamp(
+              static_cast<float>(binding->amountQ15) / 32767.0f,
+              -1.0f,
+              1.0f
+          )
+        : 0.0f;
 }
 
 core::state::macro::MacroModulationOrigin
@@ -317,44 +311,59 @@ bool MacroEditDomainServices::setModulationPlayback(
     uint8_t index,
     bool active
 ) const {
-    const auto address = automationAddress(index);
-    core::state::modulation::ProjectControlMacroSlotView slot{};
-    if (!core::state::modulation::readProjectControlMacroSlot(
-            pages_->control,
-            address,
-            slot
-        ) || !slot.modulationStored || slot.legacyMutationAmbiguous ||
-        slot.modulationEnabled == active) {
-        return false;
-    }
-
-    auto change = history_ != nullptr
-        ? history_->prepare(
-              *pages_,
-              address,
-              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (history_ != nullptr && !change) return false;
-    if (!core::state::modulation::setProjectControlModulationEnabled(
-            pages_->control,
-            address,
+    if (history_ == nullptr ||
+        !history_->setAllModulationBindingsEnabled(
+            *pages_,
+            automationAddress(index),
             active
         )) {
         return false;
     }
-    if (history_ != nullptr &&
-        !history_->commitPrepared(*pages_, std::move(change))) {
+    publishModulationMutation_();
+    return true;
+}
+
+const core::state::modulation::ModulationBindingState*
+MacroEditDomainServices::focusedModulationBindingState(uint8_t index) const {
+    if (pages_ == nullptr || index >= core::state::macro::MACRO_COUNT) {
+        return nullptr;
+    }
+    const auto bindingId = focusedModulationBinding(index);
+    return core::state::modulation::findProjectModulationBinding(
+        pages_->control.authored.modulation,
+        bindingId
+    );
+}
+
+bool MacroEditDomainServices::setFocusedModulationPlayback(
+    uint8_t index,
+    bool active
+) const {
+    if (history_ == nullptr) return false;
+    const auto bindingId = focusedModulationBinding(index);
+    if (!history_->setModulationBindingEnabled(
+            *pages_,
+            automationAddress(index),
+            bindingId,
+            active
+        )) {
         return false;
     }
-    if (macro_ui_ != nullptr) {
-        macro_ui_->automationRecordingRevision.set(
-            macro_ui_->automationRecordingRevision.get() + 1U
-        );
+    publishModulationMutation_();
+    return true;
+}
+
+bool MacroEditDomainServices::removeFocusedModulation(uint8_t index) const {
+    if (history_ == nullptr) return false;
+    const auto bindingId = focusedModulationBinding(index);
+    if (!history_->removeModulationBinding(
+            *pages_,
+            automationAddress(index),
+            bindingId
+        )) {
+        return false;
     }
-    if (operations_.markProjectMutated != nullptr) {
-        operations_.markProjectMutated(operations_.context);
-    }
+    publishModulationMutation_();
     return true;
 }
 
@@ -659,30 +668,11 @@ bool MacroEditDomainServices::resumeSources(uint8_t index) const {
 }
 
 FLASHMEM bool MacroEditDomainServices::clearModulation(uint8_t index) const {
-    const auto address = automationAddress(index);
-    core::state::modulation::ProjectControlMacroSlotView slot{};
-    if (!core::state::modulation::readProjectControlMacroSlot(
-            pages_->control,
-            address,
-            slot
-        ) || !slot.modulationStored || slot.legacyMutationAmbiguous) {
-        return false;
-    }
-    auto change = history_ != nullptr
-        ? history_->prepare(
-              *pages_,
-              address,
-              core::state::macro::MacroHistoryActionKind::CLEAR_MODULATION
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (history_ != nullptr && !change) return false;
-    if (!core::state::modulation::clearProjectControlModulation(
-            pages_->control,
-            address
+    if (history_ == nullptr ||
+        !history_->clearModulationBindings(
+            *pages_,
+            automationAddress(index)
         )) {
-        return false;
-    }
-    if (history_ != nullptr && !history_->commitPrepared(*pages_, std::move(change))) {
         return false;
     }
     if (macro_ui_ != nullptr) {
@@ -690,13 +680,8 @@ FLASHMEM bool MacroEditDomainServices::clearModulation(uint8_t index) const {
             pages_->currentActiveTrack(),
             pages_->currentActivePage()
         );
-        macro_ui_->automationRecordingRevision.set(
-            macro_ui_->automationRecordingRevision.get() + 1U
-        );
     }
-    if (operations_.markProjectMutated != nullptr) {
-        operations_.markProjectMutated(operations_.context);
-    }
+    publishModulationMutation_();
     return true;
 }
 
@@ -821,12 +806,28 @@ bool MacroEditDomainServices::pasteSlot(
 }
 
 FLASHMEM bool MacroEditDomainServices::copyModulation(uint8_t index) const {
+    if (clipboard_ == nullptr || pages_ == nullptr) return false;
+    const auto address = automationAddress(index);
+    const auto* binding = focusedModulationBindingState(index);
+    if (binding != nullptr) {
+        return automation_clipboard_ops::copyModulationAssignmentToClipboard(
+            pages_->control,
+            address,
+            binding->id,
+            *clipboard_
+        );
+    }
+    if (!modulationStoredFor(index)) return false;
+    return automation_clipboard_ops::copyModulationToClipboard(
+        pages_->control,
+        address,
+        *clipboard_
+    );
+}
+
+FLASHMEM bool MacroEditDomainServices::hasModulationAssignmentClipboard() const {
     return clipboard_ != nullptr &&
-           automation_clipboard_ops::copyModulationToClipboard(
-               pages_->control,
-               automationAddress(index),
-               *clipboard_
-           );
+           clipboard_->hasMacroModulationAssignment();
 }
 
 automation_clipboard_ops::MacroTypedPastePreflight
@@ -848,6 +849,30 @@ FLASHMEM bool MacroEditDomainServices::pasteModulation(
     const auto plan = preflightModulationPaste(index);
     if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
         return false;
+    }
+    if (clipboard_->hasMacroModulationAssignment()) {
+        if (history_ == nullptr) return false;
+        core::state::modulation::ModulationBindingDraft draft{};
+        if (!automation_clipboard_ops::modulationAssignmentDraftFromClipboard(
+                *clipboard_,
+                core::state::modulation::projectControlDestination(address),
+                draft
+            )) {
+            return false;
+        }
+        core::state::modulation::ModulationBindingId appliedBinding{};
+        if (!history_->pasteModulationBinding(
+                *pages_,
+                address,
+                draft,
+                overwriteConfirmed,
+                &appliedBinding
+            )) {
+            return false;
+        }
+        (void)focusModulationBinding(index, appliedBinding);
+        publishModulationMutation_();
+        return true;
     }
     auto change = history_ != nullptr
         ? history_->prepare(
@@ -889,12 +914,16 @@ MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
     ProjectModulationResult failure{};
     failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
     if (pages_ == nullptr || history_ == nullptr ||
-        index >= core::state::macro::MACRO_COUNT || modulationStoredFor(index)) {
+        index >= core::state::macro::MACRO_COUNT) {
         return failure;
     }
     const auto address = automationAddress(index);
     char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
-    nextLfoName(pages_->control.authored.modulation, name, sizeof(name));
+    formatNextProjectLfoName(
+        pages_->control.authored.modulation,
+        name,
+        sizeof(name)
+    );
     ModulatorLfoDraft source{};
     source.name = name;
     source.reach = {
@@ -916,6 +945,32 @@ MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
         *pages_,
         address,
         source,
+        binding
+    );
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroEditDomainServices::beginExistingModulatorAudition(
+    uint8_t index,
+    core::state::modulation::ModulatorId sourceId
+) const {
+    using namespace core::state::modulation;
+    ProjectModulationResult failure{};
+    failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
+    if (pages_ == nullptr || history_ == nullptr ||
+        index >= core::state::macro::MACRO_COUNT || !valid(sourceId)) {
+        return failure;
+    }
+    const auto address = automationAddress(index);
+    ModulationBindingDraft binding{};
+    binding.sourceId = sourceId;
+    binding.destination = projectControlDestination(address);
+    binding.amountQ15 = 8192;
+    binding.inputRange = ModulationInputRange::BIPOLAR;
+    return history_->beginExistingModulatorAudition(
+        *pages_,
+        address,
+        sourceId,
         binding
     );
 }
@@ -970,7 +1025,7 @@ FLASHMEM bool MacroEditDomainServices::setLfoAuditionPeriodTicks(
     return true;
 }
 
-FLASHMEM bool MacroEditDomainServices::setLfoAuditionDepthQ15(
+FLASHMEM bool MacroEditDomainServices::setModulatorAuditionDepthQ15(
     uint8_t index,
     int16_t depthQ15
 ) const {
@@ -993,7 +1048,9 @@ FLASHMEM bool MacroEditDomainServices::setLfoAuditionDepthQ15(
     return true;
 }
 
-FLASHMEM bool MacroEditDomainServices::cancelLfoAudition(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::cancelModulatorAudition(
+    uint8_t index
+) const {
     if (pages_ == nullptr || history_ == nullptr ||
         !history_->cancelModulatorAudition(*pages_, automationAddress(index))) {
         return false;
@@ -1006,11 +1063,17 @@ FLASHMEM bool MacroEditDomainServices::cancelLfoAudition(uint8_t index) const {
     return true;
 }
 
-FLASHMEM bool MacroEditDomainServices::applyLfoAudition(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::applyModulatorAudition(
+    uint8_t index
+) const {
+    const auto bindingId = pages_ != nullptr
+        ? pages_->control.audition.bindingId
+        : core::state::modulation::ModulationBindingId{};
     if (pages_ == nullptr || history_ == nullptr ||
         !history_->commitModulatorAudition(*pages_, automationAddress(index))) {
         return false;
     }
+    (void)focusModulationBinding(index, bindingId);
     if (macro_ui_ != nullptr) {
         macro_ui_->automationRecordingRevision.set(
             macro_ui_->automationRecordingRevision.get() + 1U
@@ -1022,6 +1085,27 @@ FLASHMEM bool MacroEditDomainServices::applyLfoAudition(uint8_t index) const {
     return true;
 }
 
+FLASHMEM core::state::modulation::ModulationBindingId
+MacroEditDomainServices::focusedModulationBinding(uint8_t index) const {
+    if (pages_ == nullptr || index >= core::state::macro::MACRO_COUNT) return {};
+    return core::state::modulation::projectControlFocusedModulationBinding(
+        pages_->control,
+        automationAddress(index)
+    );
+}
+
+FLASHMEM bool MacroEditDomainServices::focusModulationBinding(
+    uint8_t index,
+    core::state::modulation::ModulationBindingId bindingId
+) const {
+    return pages_ != nullptr && index < core::state::macro::MACRO_COUNT &&
+           core::state::modulation::setProjectControlFocusedModulationBinding(
+               pages_->control,
+               automationAddress(index),
+               bindingId
+           );
+}
+
 bool MacroEditDomainServices::setModulationDepth(uint8_t index, float depth) const {
     if (history_ == nullptr || index >= core::state::macro::MACRO_COUNT) return false;
     if (!history_->setModulationDepthCoalesced(
@@ -1031,14 +1115,7 @@ bool MacroEditDomainServices::setModulationDepth(uint8_t index, float depth) con
         )) {
         return false;
     }
-    if (macro_ui_ != nullptr) {
-        macro_ui_->automationRecordingRevision.set(
-            macro_ui_->automationRecordingRevision.get() + 1U
-        );
-    }
-    if (operations_.markProjectMutated != nullptr) {
-        operations_.markProjectMutated(operations_.context);
-    }
+    publishModulationMutation_();
     return true;
 }
 

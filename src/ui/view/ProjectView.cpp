@@ -1,5 +1,7 @@
 #include "ui/view/ProjectView.hpp"
 
+#include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
@@ -8,6 +10,7 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/project/ProjectModulatorUiModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
 
@@ -76,6 +79,8 @@ FLASHMEM const char* tabIcon(core::state::project::ProjectTab tab) {
             return standalone::icons::STORAGE;
         case core::state::project::ProjectTab::ROUTING:
             return standalone::icons::ROUTING;
+        case core::state::project::ProjectTab::MODULATORS:
+            return standalone::icons::MACRO_MODULATION;
         case core::state::project::ProjectTab::OVERVIEW:
         default:
             return standalone::icons::HOME;
@@ -92,6 +97,8 @@ FLASHMEM uint32_t tabAccentColor(core::state::project::ProjectTab tab) {
             return theme::color::MACRO_2;
         case core::state::project::ProjectTab::ROUTING:
             return theme::color::MACRO_6;
+        case core::state::project::ProjectTab::MODULATORS:
+            return theme::color::MACRO_MODULATION;
         case core::state::project::ProjectTab::OVERVIEW:
         default:
             return theme::color::TEXT_SECONDARY;
@@ -208,7 +215,8 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
         !interaction_container_ || !center_column_ || !tab_strip_ ||
         !left_action_strip_ || !left_action_strip_->getElement() ||
         !bottom_action_strip_ || !bottom_action_strip_->getElement() ||
-        !menu_ || !menu_->getElement() || !keyboard_container_ ||
+        !menu_ || !menu_->getElement() || !modulator_registry_ ||
+        !modulator_registry_->getElement() || !keyboard_container_ ||
         !keyboard_title_ || !keyboard_meta_ || !keyboard_name_box_ ||
         !keyboard_name_label_) {
         return;
@@ -235,6 +243,7 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
 
 FLASHMEM ProjectView::~ProjectView() {
     render_scheduler_.reset();
+    modulator_registry_.reset();
     menu_.reset();
     bottom_action_strip_.reset();
     left_action_strip_.reset();
@@ -349,6 +358,10 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
         lv_obj_set_flex_grow(menu_->getElement(), 1);
     }
 
+    modulator_registry_ = core::app::makeExtmemUnique<
+        ms::ui::VirtualListKeyValueOverlay>(center_column_);
+    if (!modulator_registry_ || !modulator_registry_->getElement()) return;
+
     bottom_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         body_container_,
         ContextActionStripOrientation::HORIZONTAL
@@ -367,6 +380,9 @@ FLASHMEM bool ProjectView::bindToState() {
         state_refs_.navigation.focusedRow,
         state_refs_.navigation.physicalHoldActive,
         state_refs_.navigation.contentRevision,
+        state_refs_.navigation.telemetryRevision,
+        state_refs_.navigation.modulatorGuard,
+        state_refs_.navigation.modulatorClipboardGuard,
         state_refs_.sequencerTracks.projectScaleRevisionSignal(),
         state_refs_.statusBar.tempo,
         state_refs_.midiSync.mode
@@ -381,6 +397,24 @@ void ProjectView::render() {
     if (!menu_ || !RetainedViewRenderPolicy::visible(container_)) return;
 
     renderTabs();
+
+    const auto node = state_refs_.navigation.currentNode.get();
+    const bool modulatorPage =
+        node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
+        node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
+        node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
+        node ==
+            core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
+    if (modulatorPage) {
+        setKeyboardVisible(false);
+        if (menu_) menu_->hide();
+        renderModulators();
+        return;
+    }
+    if (modulator_registry_) {
+        modulator_registry_->render({.visible = false});
+    }
 
     const bool keyboardActive = isProjectNameEditorNode(state_refs_.navigation.currentNode.get());
     renderKeyboardActionStrips(keyboardActive);
@@ -436,6 +470,332 @@ void ProjectView::render() {
         .selectedIndex = page.selectedIndex,
         .dataRevision = page.dataRevision,
     });
+}
+
+void ProjectView::populateModulatorRow(
+    void* context,
+    int index,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    auto* self = static_cast<ProjectView*>(context);
+    if (!self) return;
+    const auto node = self->state_refs_.navigation.currentNode.get();
+    if (node == core::state::project::ProjectNodeId::MODULATORS_ROOT) {
+        core::ui::project::modulators::populateRegistryRow(
+            self->state_refs_.pages.control,
+            index,
+            out
+        );
+        return;
+    }
+    if (node ==
+        core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        core::ui::project::modulators::populateDestinationPickerRow(
+            self->state_refs_.pages,
+            self->state_refs_.navigation.selectedModulator,
+            self->state_refs_.navigation.destinationPickerTrack,
+            self->state_refs_.navigation.destinationPickerPage,
+            self->state_refs_.navigation.creatingModulatorSource,
+            index,
+            out
+        );
+        return;
+    }
+    if (node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS) {
+        core::ui::project::modulators::populateDestinationRow(
+            self->state_refs_.pages,
+            self->state_refs_.navigation.selectedModulator,
+            index,
+            out
+        );
+        return;
+    }
+    if (node == core::state::project::ProjectNodeId::MODULATOR_REACH) {
+        core::ui::project::modulators::populateReachRow(
+            self->state_refs_.pages.control,
+            self->state_refs_.navigation.selectedModulator,
+            index,
+            out
+        );
+        return;
+    }
+    const auto* source = core::state::modulation::findProjectModulator(
+        self->state_refs_.pages.control.authored.modulation,
+        self->state_refs_.navigation.selectedModulator
+    );
+    if (source) {
+        core::ui::project::modulators::populateSourceDetailRow(
+            self->state_refs_.pages.control,
+            *source,
+            index,
+            out
+        );
+    }
+}
+
+void ProjectView::renderModulators() {
+    if (!modulator_registry_) return;
+    using core::state::project::ProjectNodeId;
+    const auto node = state_refs_.navigation.currentNode.get();
+    const auto& control = state_refs_.pages.control;
+    const auto& graph = control.authored.modulation;
+    const bool pickerCreating =
+        node == ProjectNodeId::MODULATOR_DESTINATION_PICKER &&
+        state_refs_.navigation.creatingModulatorSource;
+    const auto* source = node != ProjectNodeId::MODULATORS_ROOT && !pickerCreating
+        ? core::state::modulation::findProjectModulator(
+              graph,
+              state_refs_.navigation.selectedModulator
+          )
+        : core::ui::project::modulators::sourceAtRegistryIndex(
+              control,
+              state_refs_.navigation.focusedRow.get()
+          );
+
+    char meta[48]{};
+    const auto guard = state_refs_.navigation.modulatorGuard.get();
+    const bool deleting = source != nullptr &&
+        state_refs_.navigation.guardedModulator == source->id &&
+        guard.phase != core::state::contextual::GuardedActionPhase::IDLE &&
+        guard.phase != core::state::contextual::GuardedActionPhase::CANCELLED;
+    if (deleting && core::state::modulation::valid(
+            state_refs_.navigation.guardedModulationBinding
+        )) {
+        const auto* binding = core::state::modulation::findProjectModulationBinding(
+            graph,
+            state_refs_.navigation.guardedModulationBinding
+        );
+        if (binding) {
+            std::snprintf(
+                meta,
+                sizeof(meta),
+                "Remove T%u · P%u · M%u",
+                static_cast<unsigned>(binding->destination.track + 1U),
+                static_cast<unsigned>(binding->destination.page + 1U),
+                static_cast<unsigned>(binding->destination.macro + 1U)
+            );
+        }
+    } else if (deleting) {
+        const auto count = core::ui::project::modulators::sourceDestinationCount(
+            graph,
+            source->id
+        );
+        std::snprintf(
+            meta,
+            sizeof(meta),
+            "Delete %s · %u destination%s",
+            source->name.data(),
+            static_cast<unsigned>(count),
+            count == 1U ? "" : "s"
+        );
+    } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        std::snprintf(
+            meta,
+            sizeof(meta),
+            "T%u · P%u%s",
+            static_cast<unsigned>(
+                state_refs_.navigation.destinationPickerTrack + 1U
+            ),
+            static_cast<unsigned>(
+                state_refs_.navigation.destinationPickerPage + 1U
+            ),
+            state_refs_.navigation.creatingModulatorSource ? " · New LFO" : ""
+        );
+    } else if (node != ProjectNodeId::MODULATORS_ROOT && source) {
+        const auto count = core::ui::project::modulators::sourceDestinationCount(
+            graph,
+            source->id
+        );
+        std::snprintf(
+            meta,
+            sizeof(meta),
+            "%s · x%u",
+            source->kind == core::state::modulation::ModulatorKind::LFO
+                ? "LFO" : "Motion",
+            static_cast<unsigned>(count)
+        );
+    } else {
+        std::snprintf(
+            meta,
+            sizeof(meta),
+            "%u source%s",
+            static_cast<unsigned>(graph.sourceCount),
+            graph.sourceCount == 1U ? "" : "s"
+        );
+    }
+    if (!deleting && !state_refs_.navigation.lifecycleFeedback.empty()) {
+        std::snprintf(
+            meta,
+            sizeof(meta),
+            "%s",
+            state_refs_.navigation.lifecycleFeedback.get()
+        );
+    }
+
+    const int rowCount = node == ProjectNodeId::MODULATORS_ROOT
+        ? static_cast<int>(graph.sourceCount) + 1
+        : (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER
+              ? static_cast<int>(core::state::macro::MACRO_COUNT) +
+                    (state_refs_.navigation.creatingModulatorSource ? 1 : 0)
+        : (node == ProjectNodeId::MODULATOR_REACH && source
+              ? static_cast<int>(
+                    core::state::project::modulators::sourceReachChoiceLayout(
+                        graph,
+                        source->id
+                    ).count
+                )
+        : (node == ProjectNodeId::MODULATOR_DESTINATIONS && source
+              ? static_cast<int>(
+                    core::ui::project::modulators::sourceDestinationCount(
+                        graph,
+                        source->id
+                    )
+                ) + 1
+              : (source
+              ? static_cast<int>(
+                    core::ui::project::modulators::sourceDetailLayout(
+                        source->kind
+                    ).count
+                )
+              : 0))));
+    modulator_registry_->render({
+        .title = node == ProjectNodeId::MODULATORS_ROOT
+            ? "MODULATORS"
+            : (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER
+                  ? "ADD DESTINATION"
+                  : (node == ProjectNodeId::MODULATOR_REACH
+                  ? "REACH"
+                  : (node == ProjectNodeId::MODULATOR_DESTINATIONS
+                  ? "DESTINATIONS"
+                  : (source ? source->name.data() : "SOURCE")))),
+        .meta = meta,
+        .rowProvider = &ProjectView::populateModulatorRow,
+        .rowProviderContext = this,
+        .rowCount = rowCount,
+        .selectedIndex = std::min<int>(
+            state_refs_.navigation.focusedRow.get(),
+            rowCount > 0 ? rowCount - 1 : 0
+        ),
+        .dimUnselected = false,
+        .compactFacts = node == ProjectNodeId::MODULATORS_ROOT,
+        .visible = true,
+        .dataRevision = core::ui::project::modulators::registryRevision(
+            control,
+            state_refs_.navigation.telemetryRevision.get(),
+            state_refs_.navigation.focusedRow.get()
+        ) ^ (static_cast<uint32_t>(node) << 16U),
+    });
+    renderModulatorActionStrips(source);
+}
+
+void ProjectView::renderModulatorActionStrips(
+    const core::state::modulation::ModulatorSourceState* source
+) {
+    ContextActionStripProps left;
+    ContextActionStripProps bottom;
+    const bool detail = state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_REACH ||
+        state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
+        state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
+    if (detail) {
+        left.visible = true;
+        left.slots[0] = makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_BACKWARD,
+            ContextActionStripVisualState::ACTIVE,
+            ContextActionStripTone::WARNING
+        );
+    }
+    const bool destinations = state_refs_.navigation.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS;
+    const bool destinationPicker = state_refs_.navigation.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
+    const bool reachPicker = state_refs_.navigation.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_REACH;
+    const auto* binding = destinations && source
+        ? core::state::project::modulators::sourceBindingAtOrdinal(
+              state_refs_.pages.control.authored.modulation,
+              source->id,
+              state_refs_.navigation.focusedRow.get()
+          )
+        : nullptr;
+    if (!destinationPicker && !reachPicker && source != nullptr &&
+        (!destinations || binding != nullptr)) {
+        bottom.visible = true;
+        const bool enabled = destinations
+            ? (binding->flags &
+               core::state::modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U
+            : (source->flags &
+               core::state::modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
+        bottom.slots[0] = makeStandaloneIconStripSlot(
+            enabled ? standalone::icons::STATUS_RESUME
+                    : standalone::icons::STATUS_PAUSED,
+            enabled ? ContextActionStripVisualState::ACTIVE
+                    : ContextActionStripVisualState::DIM,
+            ContextActionStripTone::NEUTRAL
+        );
+        if (!destinations) {
+            bottom.slots[2] = makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_COPY,
+                ContextActionStripVisualState::ACTIVE,
+                ContextActionStripTone::NEUTRAL
+            );
+        }
+
+        const auto guard = state_refs_.navigation.modulatorGuard.get();
+        const bool guardMatches =
+            state_refs_.navigation.guardedModulator == source->id &&
+            (!destinations ||
+             state_refs_.navigation.guardedModulationBinding == binding->id);
+        if (guardMatches) {
+            if (guard.phase == core::state::contextual::GuardedActionPhase::PRESSED) {
+                bottom.slots[0].visualState = ContextActionStripVisualState::PRESSED;
+            } else if (
+                guard.phase == core::state::contextual::GuardedActionPhase::ARMED ||
+                guard.phase == core::state::contextual::GuardedActionPhase::COMMITTED
+            ) {
+                bottom.slots[0] = makeStandaloneIconStripSlot(
+                    standalone::icons::ACTION_REMOVE,
+                    ContextActionStripVisualState::ARMED,
+                    ContextActionStripTone::DESTRUCTIVE
+                );
+                bottom.slots[0].holdActive = true;
+                bottom.slots[0].holdStartedAtMs = guard.armedAtMs;
+                bottom.slots[0].holdDurationMs = guard.guardDurationMs;
+            }
+        }
+        const auto clipboardGuard =
+            state_refs_.navigation.modulatorClipboardGuard.get();
+        const bool clipboardGuardMatches =
+            state_refs_.navigation.guardedClipboardModulator == source->id;
+        if (!destinations && clipboardGuardMatches) {
+            if (clipboardGuard.phase ==
+                core::state::contextual::GuardedActionPhase::PRESSED) {
+                bottom.slots[2].visualState =
+                    ContextActionStripVisualState::PRESSED;
+            } else if (
+                (clipboardGuard.phase ==
+                     core::state::contextual::GuardedActionPhase::ARMED ||
+                 clipboardGuard.phase ==
+                     core::state::contextual::GuardedActionPhase::COMMITTED) &&
+                state_refs_.navigation.modulatorClipboardPasteAvailable
+            ) {
+                bottom.slots[2] = makeStandaloneIconStripSlot(
+                    standalone::icons::ACTION_PASTE,
+                    ContextActionStripVisualState::ARMED,
+                    ContextActionStripTone::POSITIVE
+                );
+                bottom.slots[2].holdActive = true;
+                bottom.slots[2].holdStartedAtMs = clipboardGuard.armedAtMs;
+                bottom.slots[2].holdDurationMs = clipboardGuard.guardDurationMs;
+            }
+        }
+    }
+    if (left_action_strip_) left_action_strip_->render(left);
+    if (bottom_action_strip_) bottom_action_strip_->render(bottom);
 }
 
 void ProjectView::renderKeyboardActionStrips(bool visible) {

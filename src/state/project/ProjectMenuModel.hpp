@@ -70,7 +70,10 @@ ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navigation);
 ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navigation,
                                      ProjectMenuContext context);
 
-void navigateProjectRows(ProjectNavigationState& navigation, float delta);
+void navigateProjectRows(ProjectNavigationState& navigation,
+                         float delta,
+                         uint16_t modulatorSourceCount = 0,
+                         uint16_t modulatorDetailRowCount = 0);
 bool enterFocusedProjectRow(ProjectNavigationState& navigation);
 bool backProjectNavigation(ProjectNavigationState& navigation);
 bool openNewProjectConfirmation(ProjectNavigationState& navigation);
@@ -85,6 +88,20 @@ bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& nav
 bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation);
 void switchProjectTab(ProjectNavigationState& navigation, int delta);
 bool projectNavigationAtRoot(const ProjectNavigationState& navigation);
-uint8_t projectCurrentRowCount(const ProjectNavigationState& navigation);
+uint16_t projectCurrentRowCount(const ProjectNavigationState& navigation,
+                                uint16_t modulatorSourceCount = 0,
+                                uint16_t modulatorDetailRowCount = 0);
+bool openProjectModulatorDetail(
+    ProjectNavigationState& navigation,
+    core::state::modulation::ModulatorId sourceId
+);
+bool openProjectModulatorDestinations(ProjectNavigationState& navigation);
+bool openProjectModulatorReach(ProjectNavigationState& navigation);
+bool openProjectModulatorDestinationPicker(
+    ProjectNavigationState& navigation,
+    uint8_t track,
+    uint8_t page,
+    bool creatingSource
+);
 
 }  // namespace core::state::project

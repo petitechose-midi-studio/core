@@ -24,6 +24,7 @@ enum class ProjectModulationStatus : uint8_t {
     DUPLICATE_TRIGGER,
     REACH_VIOLATION,
     INVARIANT_VIOLATION,
+    HISTORY_CAPACITY_EXCEEDED,
 };
 
 struct ProjectModulationResult {
@@ -98,6 +99,25 @@ struct ModulatorSplitRequest {
 [[nodiscard]] ModulatorSourceState* findProjectModulator(
     ProjectModulationState& state,
     ModulatorId id
+);
+[[nodiscard]] const ModulationBindingState* findProjectModulationBinding(
+    const ProjectModulationState& state,
+    ModulationBindingId id
+);
+[[nodiscard]] ModulationBindingState* findProjectModulationBinding(
+    ProjectModulationState& state,
+    ModulationBindingId id
+);
+void formatNextProjectLfoName(
+    const ProjectModulationState& state,
+    char* out,
+    size_t outSize
+);
+void formatNextProjectModulatorName(
+    const ProjectModulationState& state,
+    ModulatorKind kind,
+    char* out,
+    size_t outSize
 );
 [[nodiscard]] const ProjectCurveRecord* findProjectCurve(
     const ProjectCurveArena& arena,
@@ -178,6 +198,11 @@ ProjectModulationResult setProjectModulatorEnabled(
     ProjectModulationState& state,
     ModulatorId sourceId,
     bool enabled
+);
+ProjectModulationResult setProjectLfoParameters(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const ModulatorLfoParameters& parameters
 );
 
 ProjectModulationResult addProjectModulationBinding(

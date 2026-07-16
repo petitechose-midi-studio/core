@@ -107,6 +107,44 @@ ModulationBindingState* bindingById(
     return nullptr;
 }
 
+FLASHMEM ProjectModulationFocusEntry* focusEntryFor(
+    ProjectModulationFocusState& focus,
+    const ModulationDestination& destination
+) {
+    for (auto& entry : focus.entries) {
+        if (entry.active && entry.destination == destination) return &entry;
+    }
+    return nullptr;
+}
+
+FLASHMEM uint16_t nextFocusStamp(ProjectModulationFocusState& focus) {
+    ++focus.clock;
+    if (focus.clock == 0U) {
+        for (auto& entry : focus.entries) entry.stamp = 0;
+        focus.clock = 1U;
+    }
+    return focus.clock;
+}
+
+FLASHMEM ProjectModulationFocusEntry& allocateFocusEntry(
+    ProjectModulationFocusState& focus,
+    const ModulationDestination& destination
+) {
+    if (auto* current = focusEntryFor(focus, destination)) return *current;
+    ProjectModulationFocusEntry* selected = &focus.entries[0];
+    for (auto& entry : focus.entries) {
+        if (!entry.active) {
+            selected = &entry;
+            break;
+        }
+        if (entry.stamp < selected->stamp) selected = &entry;
+    }
+    *selected = {};
+    selected->destination = destination;
+    selected->active = true;
+    return *selected;
+}
+
 bool sourceHasOtherEdges(
     const ProjectModulationState& state,
     ModulatorId sourceId,
@@ -406,6 +444,48 @@ FLASHMEM bool readProjectControlMacroSlot(
     ProjectControlMacroSlotView& out
 ) {
     return readDomainMacroSlot(control.authored, address, out);
+}
+
+FLASHMEM ModulationBindingId projectControlFocusedModulationBinding(
+    ProjectControlState& control,
+    const macro::MacroAutomationSlotAddress& address
+) {
+    if (!validAddress(address)) return {};
+    const auto destination = projectControlDestination(address);
+    auto& graph = control.authored.modulation;
+    auto* entry = focusEntryFor(control.focus, destination);
+    if (entry != nullptr) {
+        const auto* binding = bindingById(graph, entry->bindingId);
+        if (binding != nullptr && binding->destination == destination) {
+            entry->stamp = nextFocusStamp(control.focus);
+            return entry->bindingId;
+        }
+        *entry = {};
+    }
+
+    uint16_t count = 0;
+    const auto* first = firstBindingForDestination(graph, destination, count);
+    if (first == nullptr) return {};
+    auto& next = allocateFocusEntry(control.focus, destination);
+    next.bindingId = first->id;
+    next.stamp = nextFocusStamp(control.focus);
+    return next.bindingId;
+}
+
+FLASHMEM bool setProjectControlFocusedModulationBinding(
+    ProjectControlState& control,
+    const macro::MacroAutomationSlotAddress& address,
+    ModulationBindingId bindingId
+) {
+    if (!validAddress(address) || !valid(bindingId)) return false;
+    const auto destination = projectControlDestination(address);
+    const auto* binding = bindingById(control.authored.modulation, bindingId);
+    if (binding == nullptr || binding->destination != destination) return false;
+    auto& entry = allocateFocusEntry(control.focus, destination);
+    const bool changed = entry.bindingId != bindingId;
+    entry.bindingId = bindingId;
+    entry.stamp = nextFocusStamp(control.focus);
+    return changed;
 }
 
 FLASHMEM bool replaceProjectControlMacroSlotInDomain(
