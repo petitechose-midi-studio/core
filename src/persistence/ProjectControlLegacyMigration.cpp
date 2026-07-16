@@ -105,7 +105,7 @@ FLASHMEM modulation::ProjectCurveId appendCurve(
     record.origin = origin;
 
     const bool absolute = valueDomain ==
-        modulation::ProjectCurveValueDomain::ABSOLUTE;
+        modulation::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR;
     for (uint16_t index = 0; index < source.pointCount; ++index) {
         const auto& oldPoint = legacy.pointPool.points[
             static_cast<uint16_t>(source.pointOffset + index)
@@ -170,7 +170,7 @@ FLASHMEM Result liftLegacyMacroAutomationBankIntoPending(
                 pending,
                 legacy,
                 entry->state.automation,
-                modulation::ProjectCurveValueDomain::ABSOLUTE,
+                modulation::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR,
                 modulation::ProjectCurveOrigin::NATIVE
             );
             auto& automation = pending.automation.entries[

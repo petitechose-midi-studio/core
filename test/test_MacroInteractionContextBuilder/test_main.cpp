@@ -7,6 +7,7 @@
 #include "../../src/state/macro/MacroInteractionContextBuilder.hpp"
 #include "../../src/state/macro/MacroPagesState.hpp"
 #include "../../src/state/macro/MacroUiState.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -40,15 +41,11 @@ struct Harness {
 };
 
 void assignMinimalAutomation(core::state::macro::MacroPagesState& pages, uint8_t macroIndex) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = pages.currentActiveTrack(),
-            .page = pages.currentActivePage(),
-            .macro = macroIndex,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = pages.currentActiveTrack(),
+        .page = pages.currentActivePage(),
+        .macro = macroIndex,
+    };
 
     core::state::macro::MacroAutomationLane lane{};
     lane.active = true;
@@ -56,9 +53,9 @@ void assignMinimalAutomation(core::state::macro::MacroPagesState& pages, uint8_t
     lane.pointCount = 2;
     lane.points[0] = core::state::macro::MacroCurvePoint{0.0f, 0.25f};
     lane.points[1] = core::state::macro::MacroCurvePoint{1.0f, 0.75f};
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        pages.control,
+        address,
         lane
     ));
 }
@@ -151,16 +148,12 @@ void test_step_focus_requires_typed_slot_clipboard() {
     h.pages.setMacroSlotActive(1, true);
     h.macroUi.focusedMacroSlot.set(1);
     assignMinimalAutomation(h.pages, 1);
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.pages.currentActiveTrack(),
-            .page = h.pages.currentActivePage(),
-            .macro = 1,
-        }
-    );
-    assert(slot != nullptr);
-    assert(h.clipboard.storeMacroAutomation(h.pages.automation, *slot));
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = h.pages.currentActiveTrack(),
+        .page = h.pages.currentActivePage(),
+        .macro = 1,
+    };
+    assert(h.clipboard.storeMacroAutomation(h.pages.control, address));
 
     const auto legacyAutomation = core::state::macro::buildMacroInteractionContext(
         h.source(StructureNavigationFocus::STEP)

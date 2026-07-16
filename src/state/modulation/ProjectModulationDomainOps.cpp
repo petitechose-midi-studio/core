@@ -125,6 +125,19 @@ FLASHMEM int16_t triggerIndexForSource(
     return -1;
 }
 
+FLASHMEM int16_t triggerBindingIndex(
+    const ProjectModulationState& state,
+    ModulationBindingId id
+) {
+    if (!valid(id)) return -1;
+    for (uint16_t index = 0; index < state.triggerBindingCount; ++index) {
+        if (state.triggerBindings[index].id == id) {
+            return static_cast<int16_t>(index);
+        }
+    }
+    return -1;
+}
+
 FLASHMEM bool sameReach(const ModulatorReach& lhs, const ModulatorReach& rhs) {
     return lhs.trackMask == rhs.trackMask &&
            lhs.kind == rhs.kind &&
@@ -266,6 +279,112 @@ FLASHMEM void releaseCurve(ProjectCurveArena& arena, ProjectCurveId id) {
     eraseCurveRecord(arena, static_cast<uint16_t>(index));
 }
 
+FLASHMEM ProjectModulationResult replaceOwnedCurve(
+    ProjectCurveArena& arena,
+    ProjectCurveId& owner,
+    const ProjectCurveSpec& spec,
+    const ProjectPackedCurvePoint* points,
+    uint16_t pointCount,
+    ModulatorId sourceId = {}
+) {
+    if (!validProjectCurveSpec(spec, points, pointCount) ||
+        curveInputAliasesArena(arena, points, pointCount)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
+    }
+    const int16_t recordPosition = curveIndex(arena, owner);
+    if (recordPosition < 0) {
+        return result(ProjectModulationStatus::INVARIANT_VIOLATION, sourceId);
+    }
+    auto& record = arena.records[static_cast<uint16_t>(recordPosition)];
+    if (sameCurvePayload(arena, record, spec, points, pointCount)) {
+        return result(ProjectModulationStatus::NO_CHANGE, sourceId, {}, record.id);
+    }
+
+    if (record.referenceCount > 1U) {
+        if (arena.recordCount >= PROJECT_CURVE_LIVE_CAPACITY ||
+            arena.recordCount >= PROJECT_CURVE_RECORD_CAPACITY) {
+            return result(
+                ProjectModulationStatus::CURVE_RECORD_CAPACITY_EXCEEDED,
+                sourceId
+            );
+        }
+        if (pointCount > PROJECT_CURVE_POINT_CAPACITY - arena.pointCount) {
+            return result(
+                ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED,
+                sourceId
+            );
+        }
+        if (!canAllocateId(arena.nextCurveId)) {
+            return result(ProjectModulationStatus::ID_EXHAUSTED, sourceId);
+        }
+        const ProjectCurveId replacement = appendCurve(
+            arena,
+            spec,
+            points,
+            pointCount
+        );
+        --record.referenceCount;
+        owner = replacement;
+        return result(ProjectModulationStatus::OK, sourceId, {}, replacement);
+    }
+    if (record.referenceCount != 1U) {
+        return result(ProjectModulationStatus::INVARIANT_VIOLATION, sourceId);
+    }
+
+    const uint32_t available =
+        PROJECT_CURVE_POINT_CAPACITY - arena.pointCount + record.pointCount;
+    if (pointCount > available) {
+        return result(
+            ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED,
+            sourceId
+        );
+    }
+
+    const uint16_t oldCount = record.pointCount;
+    const uint16_t oldTailOffset = static_cast<uint16_t>(
+        record.pointOffset + oldCount
+    );
+    const uint16_t tailCount = static_cast<uint16_t>(
+        arena.pointCount - oldTailOffset
+    );
+    if (pointCount != oldCount) {
+        std::memmove(
+            arena.points.data() + record.pointOffset + pointCount,
+            arena.points.data() + oldTailOffset,
+            static_cast<size_t>(tailCount) * sizeof(ProjectPackedCurvePoint)
+        );
+        const int32_t delta =
+            static_cast<int32_t>(pointCount) - static_cast<int32_t>(oldCount);
+        for (uint16_t index = 0; index < arena.recordCount; ++index) {
+            if (index != static_cast<uint16_t>(recordPosition) &&
+                arena.records[index].pointOffset > record.pointOffset) {
+                arena.records[index].pointOffset = static_cast<uint16_t>(
+                    static_cast<int32_t>(arena.records[index].pointOffset) + delta
+                );
+            }
+        }
+        arena.pointCount = static_cast<uint16_t>(
+            static_cast<int32_t>(arena.pointCount) + delta
+        );
+    }
+    std::memcpy(
+        arena.points.data() + record.pointOffset,
+        points,
+        static_cast<size_t>(pointCount) * sizeof(ProjectPackedCurvePoint)
+    );
+    const ProjectCurveId retainedId = record.id;
+    const uint16_t retainedOffset = record.pointOffset;
+    populateCurveRecord(
+        record,
+        retainedId,
+        retainedOffset,
+        pointCount,
+        1U,
+        spec
+    );
+    return result(ProjectModulationStatus::OK, sourceId, {}, retainedId);
+}
+
 template <typename Entry, size_t Capacity>
 FLASHMEM void eraseDense(
     std::array<Entry, Capacity>& entries,
@@ -369,7 +488,7 @@ FLASHMEM bool validProjectCurveSpec(
     for (uint16_t index = 0; index < pointCount; ++index) {
         if (points[index].tick > spec.sourceDurationTicks ||
             points[index].value == std::numeric_limits<int16_t>::min() ||
-            (spec.valueDomain == ProjectCurveValueDomain::ABSOLUTE &&
+            (spec.valueDomain == ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR &&
              points[index].value < 0)) {
             return false;
         }
@@ -402,6 +521,164 @@ FLASHMEM const ProjectCurveRecord* findProjectCurve(
 ) {
     const int16_t index = curveIndex(arena, id);
     return index < 0 ? nullptr : &arena.records[static_cast<uint16_t>(index)];
+}
+
+FLASHMEM const ProjectAutomationCurveEntry* findProjectAutomationCurve(
+    const ProjectAutomationCurveDirectory& automation,
+    const ModulationDestination& destination
+) {
+    for (uint16_t index = 0; index < automation.entryCount; ++index) {
+        if (automation.entries[index].destination == destination) {
+            return &automation.entries[index];
+        }
+    }
+    return nullptr;
+}
+
+FLASHMEM ProjectAutomationCurveEntry* findProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    const ModulationDestination& destination
+) {
+    return const_cast<ProjectAutomationCurveEntry*>(findProjectAutomationCurve(
+        static_cast<const ProjectAutomationCurveDirectory&>(automation),
+        destination
+    ));
+}
+
+FLASHMEM ProjectModulationResult setProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& destination,
+    const ProjectCurveSpec& spec,
+    const ProjectPackedCurvePoint* points,
+    uint16_t pointCount,
+    bool enabled
+) {
+    if (!modulationDestinationValid(destination) ||
+        spec.valueDomain != ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
+        spec.origin != ProjectCurveOrigin::NATIVE ||
+        !validProjectCurveSpec(spec, points, pointCount) ||
+        curveInputAliasesArena(arena, points, pointCount)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT);
+    }
+
+    auto* existing = findProjectAutomationCurve(automation, destination);
+    const uint8_t flags = enabled ? PROJECT_AUTOMATION_CURVE_FLAG_ENABLED : 0U;
+    if (existing != nullptr) {
+        const uint8_t previousFlags = existing->flags;
+        const auto replaced = replaceOwnedCurve(
+            arena,
+            existing->curveId,
+            spec,
+            points,
+            pointCount
+        );
+        if (replaced.status != ProjectModulationStatus::OK &&
+            replaced.status != ProjectModulationStatus::NO_CHANGE) {
+            return replaced;
+        }
+        existing->flags = flags;
+        if (replaced.status == ProjectModulationStatus::NO_CHANGE &&
+            previousFlags == flags) {
+            return replaced;
+        }
+        return result(
+            ProjectModulationStatus::OK,
+            {},
+            {},
+            existing->curveId
+        );
+    }
+
+    if (automation.entryCount >= PROJECT_AUTOMATION_ENTRY_CAPACITY) {
+        return result(ProjectModulationStatus::AUTOMATION_CAPACITY_EXCEEDED);
+    }
+    if (arena.recordCount >= PROJECT_CURVE_LIVE_CAPACITY ||
+        arena.recordCount >= PROJECT_CURVE_RECORD_CAPACITY) {
+        return result(ProjectModulationStatus::CURVE_RECORD_CAPACITY_EXCEEDED);
+    }
+    if (pointCount > PROJECT_CURVE_POINT_CAPACITY - arena.pointCount) {
+        return result(ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED);
+    }
+    if (!canAllocateId(arena.nextCurveId)) {
+        return result(ProjectModulationStatus::ID_EXHAUSTED);
+    }
+
+    const ProjectCurveId curveId = appendCurve(arena, spec, points, pointCount);
+    auto& entry = automation.entries[automation.entryCount++];
+    entry = {};
+    entry.destination = destination;
+    entry.curveId = curveId;
+    entry.flags = flags;
+    return result(ProjectModulationStatus::OK, {}, {}, curveId);
+}
+
+FLASHMEM ProjectModulationResult setProjectAutomationEnabled(
+    ProjectAutomationCurveDirectory& automation,
+    const ModulationDestination& destination,
+    bool enabled
+) {
+    auto* entry = findProjectAutomationCurve(automation, destination);
+    if (entry == nullptr) return result(ProjectModulationStatus::INVALID_ID);
+    const uint8_t flags = enabled ? PROJECT_AUTOMATION_CURVE_FLAG_ENABLED : 0U;
+    if (entry->flags == flags) {
+        return result(ProjectModulationStatus::NO_CHANGE, {}, {}, entry->curveId);
+    }
+    entry->flags = flags;
+    return result(ProjectModulationStatus::OK, {}, {}, entry->curveId);
+}
+
+FLASHMEM ProjectModulationResult duplicateProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& source,
+    const ModulationDestination& destination
+) {
+    if (!modulationDestinationValid(source) ||
+        !modulationDestinationValid(destination) || source == destination ||
+        findProjectAutomationCurve(automation, destination) != nullptr) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT);
+    }
+    const auto* sourceEntry = findProjectAutomationCurve(automation, source);
+    if (sourceEntry == nullptr) {
+        return result(ProjectModulationStatus::INVALID_ID);
+    }
+    auto* curve = const_cast<ProjectCurveRecord*>(findProjectCurve(
+        arena,
+        sourceEntry->curveId
+    ));
+    if (curve == nullptr || curve->referenceCount == 0U) {
+        return result(ProjectModulationStatus::INVARIANT_VIOLATION);
+    }
+    if (automation.entryCount >= PROJECT_AUTOMATION_ENTRY_CAPACITY) {
+        return result(ProjectModulationStatus::AUTOMATION_CAPACITY_EXCEEDED);
+    }
+    if (curve->referenceCount == std::numeric_limits<uint16_t>::max()) {
+        return result(
+            ProjectModulationStatus::CURVE_REFERENCE_CAPACITY_EXCEEDED
+        );
+    }
+
+    auto copy = *sourceEntry;
+    copy.destination = destination;
+    automation.entries[automation.entryCount++] = copy;
+    ++curve->referenceCount;
+    return result(ProjectModulationStatus::OK, {}, {}, copy.curveId);
+}
+
+FLASHMEM ProjectModulationResult removeProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& destination
+) {
+    for (uint16_t index = 0; index < automation.entryCount; ++index) {
+        if (automation.entries[index].destination != destination) continue;
+        const ProjectCurveId curveId = automation.entries[index].curveId;
+        releaseCurve(arena, curveId);
+        eraseDense(automation.entries, automation.entryCount, index);
+        return result(ProjectModulationStatus::OK, {}, {}, curveId);
+    }
+    return result(ProjectModulationStatus::INVALID_ID);
 }
 
 FLASHMEM ProjectModulationResult createLfoModulator(
@@ -915,6 +1192,25 @@ FLASHMEM ProjectModulationResult addProjectModulationTrigger(
     );
 }
 
+FLASHMEM ProjectModulationResult removeProjectModulationTrigger(
+    ProjectModulationState& state,
+    ModulationBindingId bindingId
+) {
+    const int16_t index = triggerBindingIndex(state, bindingId);
+    if (index < 0) {
+        return result(ProjectModulationStatus::INVALID_ID, {}, bindingId);
+    }
+    const auto sourceId = state.triggerBindings[
+        static_cast<uint16_t>(index)
+    ].sourceId;
+    eraseDense(
+        state.triggerBindings,
+        state.triggerBindingCount,
+        static_cast<uint16_t>(index)
+    );
+    return result(ProjectModulationStatus::OK, sourceId, bindingId);
+}
+
 FLASHMEM ProjectModulationResult replaceRecordedShapeCurve(
     ProjectModulationState& state,
     ProjectCurveArena& arena,
@@ -929,111 +1225,17 @@ FLASHMEM ProjectModulationResult replaceRecordedShapeCurve(
     }
     auto& source = state.sources[static_cast<uint16_t>(sourcePosition)];
     if (source.kind != ModulatorKind::RECORDED_SHAPE ||
-        spec.valueDomain != ProjectCurveValueDomain::BIPOLAR ||
-        !validProjectCurveSpec(spec, points, pointCount) ||
-        curveInputAliasesArena(arena, points, pointCount)) {
+        spec.valueDomain != ProjectCurveValueDomain::BIPOLAR) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
     }
-    const int16_t recordPosition = curveIndex(
+    return replaceOwnedCurve(
         arena,
-        source.parameters.recordedCurveId
-    );
-    if (recordPosition < 0) {
-        return result(ProjectModulationStatus::INVARIANT_VIOLATION, sourceId);
-    }
-    auto& record = arena.records[static_cast<uint16_t>(recordPosition)];
-    if (sameCurvePayload(arena, record, spec, points, pointCount)) {
-        return result(
-            ProjectModulationStatus::NO_CHANGE,
-            sourceId,
-            {},
-            record.id
-        );
-    }
-
-    if (record.referenceCount > 1U) {
-        if (arena.recordCount >= PROJECT_CURVE_LIVE_CAPACITY ||
-            arena.recordCount >= PROJECT_CURVE_RECORD_CAPACITY) {
-            return result(
-                ProjectModulationStatus::CURVE_RECORD_CAPACITY_EXCEEDED,
-                sourceId
-            );
-        }
-        if (pointCount > PROJECT_CURVE_POINT_CAPACITY - arena.pointCount) {
-            return result(
-                ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED,
-                sourceId
-            );
-        }
-        if (!canAllocateId(arena.nextCurveId)) {
-            return result(ProjectModulationStatus::ID_EXHAUSTED, sourceId);
-        }
-        const ProjectCurveId newCurve = appendCurve(
-            arena,
-            spec,
-            points,
-            pointCount
-        );
-        --record.referenceCount;
-        source.parameters.recordedCurveId = newCurve;
-        return result(ProjectModulationStatus::OK, sourceId, {}, newCurve);
-    }
-    if (record.referenceCount != 1U) {
-        return result(ProjectModulationStatus::INVARIANT_VIOLATION, sourceId);
-    }
-
-    const uint32_t available =
-        PROJECT_CURVE_POINT_CAPACITY - arena.pointCount + record.pointCount;
-    if (pointCount > available) {
-        return result(
-            ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED,
-            sourceId
-        );
-    }
-
-    const uint16_t oldCount = record.pointCount;
-    const uint16_t oldTailOffset = static_cast<uint16_t>(
-        record.pointOffset + oldCount
-    );
-    const uint16_t tailCount = static_cast<uint16_t>(
-        arena.pointCount - oldTailOffset
-    );
-    if (pointCount != oldCount) {
-        std::memmove(
-            arena.points.data() + record.pointOffset + pointCount,
-            arena.points.data() + oldTailOffset,
-            static_cast<size_t>(tailCount) * sizeof(ProjectPackedCurvePoint)
-        );
-        const int32_t delta =
-            static_cast<int32_t>(pointCount) - static_cast<int32_t>(oldCount);
-        for (uint16_t index = 0; index < arena.recordCount; ++index) {
-            if (index != static_cast<uint16_t>(recordPosition) &&
-                arena.records[index].pointOffset > record.pointOffset) {
-                arena.records[index].pointOffset = static_cast<uint16_t>(
-                    static_cast<int32_t>(arena.records[index].pointOffset) + delta
-                );
-            }
-        }
-        arena.pointCount = static_cast<uint16_t>(
-            static_cast<int32_t>(arena.pointCount) + delta
-        );
-    }
-    std::memcpy(
-        arena.points.data() + record.pointOffset,
+        source.parameters.recordedCurveId,
+        spec,
         points,
-        static_cast<size_t>(pointCount) * sizeof(ProjectPackedCurvePoint)
-    );
-    const ProjectCurveId retainedId = record.id;
-    const uint16_t retainedOffset = record.pointOffset;
-    populateCurveRecord(
-        record,
-        retainedId,
-        retainedOffset,
         pointCount,
-        1U,
-        spec
+        sourceId
     );
-    return result(ProjectModulationStatus::OK, sourceId, {}, retainedId);
 }
 
 FLASHMEM bool validProjectModulationDomain(
@@ -1205,7 +1407,7 @@ FLASHMEM bool validProjectModulationDomain(
         if (automation != nullptr) {
             for (uint16_t entry = 0; entry < automation->entryCount; ++entry) {
                 if (automation->entries[entry].curveId == curve.id) {
-                    if (curve.valueDomain != ProjectCurveValueDomain::ABSOLUTE ||
+                    if (curve.valueDomain != ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
                         curve.origin != ProjectCurveOrigin::NATIVE) {
                         return false;
                     }

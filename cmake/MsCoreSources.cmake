@@ -57,6 +57,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroAutomationState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroPagesState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectModulationDomainOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSnapshotLifecycle.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSlug.cpp"

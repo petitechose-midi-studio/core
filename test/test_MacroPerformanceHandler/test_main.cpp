@@ -17,6 +17,7 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -119,22 +120,18 @@ void configureMacroAutomation(core::state::CoreState& state,
                               uint8_t page,
                               uint8_t macro,
                               float value) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = track,
+        .page = page,
+        .macro = macro,
+    };
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 1.0f;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, value));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, value));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        state.pages.control,
+        address,
         lane
     ));
 }
@@ -553,24 +550,17 @@ void test_macro_page_copy_and_long_press_paste() {
 
     assert(std::strcmp(h.state.pages.activePageData().name, "Copied Page") == 0);
     assert(h.state.pages.activePageData().cc[0] == 55);
-    const auto* pastedAutomation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = 1,
-            .macro = 0,
-        }
+    const auto pastedAutomation = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {h.state.pages.currentActiveTrack(), 1, 0}
     );
-    assert(pastedAutomation != nullptr);
-    assert(pastedAutomation->automation.active);
-    core::state::macro::MacroCurvePoint pastedPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        pastedAutomation->automation,
-        h.state.pages.automation.pointPool,
+    assert(pastedAutomation.automationEnabled);
+    const auto pastedPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        pastedAutomation.automationCurveId,
         0,
-        false,
-        pastedPoint
-    ));
+        false
+    );
     assert(std::fabs(pastedPoint.value - 0.75f) < 0.0001f);
 
     std::cout << "[PASS] test_macro_page_copy_and_long_press_paste\n";
@@ -666,24 +656,17 @@ void test_macro_track_copy_and_long_press_paste_to_add_slot() {
     assert(h.state.pages.activeTrackData().channel == 10);
     assert(h.state.pages.activeTrackData().pages[0].cc[0] == 64);
     assert(std::strcmp(h.state.pages.activeTrackData().pages[0].name, "Copied Track") == 0);
-    const auto* pastedAutomation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = 1,
-            .page = 0,
-            .macro = 0,
-        }
+    const auto pastedAutomation = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {1, 0, 0}
     );
-    assert(pastedAutomation != nullptr);
-    assert(pastedAutomation->automation.active);
-    core::state::macro::MacroCurvePoint pastedPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        pastedAutomation->automation,
-        h.state.pages.automation.pointPool,
+    assert(pastedAutomation.automationEnabled);
+    const auto pastedPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        pastedAutomation.automationCurveId,
         0,
-        false,
-        pastedPoint
-    ));
+        false
+    );
     assert(std::fabs(pastedPoint.value - 0.33f) < 0.0001f);
 
     drainNotifications();
@@ -745,27 +728,23 @@ void test_macro_track_copy_preserves_multiple_pages_and_automations() {
     assert(std::strcmp(h.state.pages.activeTrackData().pages[0].name, "Source P1") == 0);
     assert(std::strcmp(h.state.pages.activeTrackData().pages[2].name, "Source P3") == 0);
 
-    const auto* pastedPage0Automation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto pastedPage0Automation = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 1, .page = 0, .macro = 0}
     );
-    const auto* pastedPage2Automation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto pastedPage2Automation = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 1, .page = 2, .macro = 1}
     );
-    assert(pastedPage0Automation != nullptr);
-    assert(pastedPage0Automation->automation.active);
-    assert(pastedPage2Automation != nullptr);
-    assert(pastedPage2Automation->automation.active);
+    assert(pastedPage0Automation.automationEnabled);
+    assert(pastedPage2Automation.automationEnabled);
 
-    core::state::macro::MacroCurvePoint page2Point{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        pastedPage2Automation->automation,
-        h.state.pages.automation.pointPool,
+    const auto page2Point = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        pastedPage2Automation.automationCurveId,
         0,
-        false,
-        page2Point
-    ));
+        false
+    );
     assert(std::fabs(page2Point.value - 0.80f) < 0.0001f);
 
     drainNotifications();
@@ -801,12 +780,11 @@ void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     assert(h.state.macroUi.pageHold.action.get() ==
            core::state::StructureHoldAction::REMOVE);
     h.release(Config::ButtonID::BOTTOM_LEFT);
-    const auto* unchanged = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto unchanged = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
     );
-    assert(unchanged != nullptr);
-    assert(unchanged->automation.active);
+    assert(unchanged.automationEnabled);
     assert(h.state.macroUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
 
@@ -815,14 +793,14 @@ void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(!h.state.pages.activePageData().isMacroActive(0));
-    assert(core::state::macro::macroAutomationFindSlot(
-               h.state.pages.automation,
-               core::state::macro::MacroAutomationSlotAddress{
-                   .track = 0,
-                   .page = 0,
-                   .macro = 0,
-               }
-           ) == nullptr);
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = 0,
+            .page = 0,
+            .macro = 0,
+        }
+    ).present);
     assert(h.state.macroUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
 
@@ -830,20 +808,17 @@ void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.tick(2 * Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
-    const auto* restored = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto restored = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
     );
-    assert(restored != nullptr);
-    assert(restored->automation.active);
-    core::state::macro::MacroCurvePoint restoredPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        restored->automation,
-        h.state.pages.automation.pointPool,
+    assert(restored.automationEnabled);
+    const auto restoredPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        restored.automationCurveId,
         0,
-        false,
-        restoredPoint
-    ));
+        false
+    );
     assert(std::fabs(restoredPoint.value - 0.42f) < 0.0001f);
     assert(h.state.pages.activePageData().isMacroActive(0));
     assert(h.state.pages.activePageData().cc[0] == 74);

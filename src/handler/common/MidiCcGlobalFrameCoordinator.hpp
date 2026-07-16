@@ -8,6 +8,7 @@
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerCcLaneRuntime.hpp"
 #include "state/shared/MidiCcDestinationResolver.hpp"
+#include "state/modulation/ProjectControlRuntime.hpp"
 
 namespace core::handler {
 
@@ -78,6 +79,12 @@ class MidiCcGlobalFrameCoordinator final
     : private core::sequencer::RealtimeMidiQueueLifecycleObserver {
 public:
     using Telemetry = core::state::shared::MidiCcResolutionTelemetry;
+    using PersistentAuthorProducer = bool (*)(
+        void* context,
+        core::state::shared::MidiCcCandidate* destination,
+        uint16_t capacity,
+        uint16_t& written
+    );
 
     /**
      * Stable zero-copy view of the last committed LIVE telemetry frame.
@@ -132,9 +139,33 @@ public:
         const core::state::shared::MidiCcCandidate* candidates,
         size_t candidateCount
     );
+    bool publishPersistentAuthorsGenerated(
+        PersistentAuthorProducer producer,
+        void* context
+    );
+    /**
+     * Replaces one author in the currently published complete frame.
+     * Returns false without publishing when that stable author is absent, so
+     * callers can rebuild from their current structural context instead of
+     * accidentally retaining authors from a stale page.
+     */
+    bool replacePersistentAuthor(
+        const core::state::shared::MidiCcCandidate& candidate,
+        uint16_t& publishedCandidateCount
+    );
     bool publishSequencerLanes(
         const core::sequencer::SequencerCcLaneRuntimeFrame& frame
     );
+
+    /** Singular sequencer-clock publication consumed by Project control. */
+    void publishProjectControlClock(
+        uint32_t sequencerTick,
+        bool playing,
+        uint32_t nowUs,
+        uint32_t sequencerTickPeriodUs
+    );
+    [[nodiscard]] core::state::modulation::ProjectControlTimeSnapshot
+        projectControlTimeSnapshot() const;
 
     [[nodiscard]] bool needsLiveResolution() const;
     MidiCcGlobalFrameResult resolveLive(uint32_t deadlineUs);
@@ -243,6 +274,10 @@ private:
     bool retry_requested_ = false;
     bool replacing_pending_controls_ = false;
     bool lifecycle_attached_ = false;
+    core::state::modulation::ProjectControlTimeSnapshot control_time_{};
+    uint32_t control_tick_started_us_ = 0;
+    uint32_t last_control_sequencer_tick_ = 0;
+    bool control_clock_initialized_ = false;
     MidiCcGlobalFrameDiagnostics diagnostics_{};
 };
 

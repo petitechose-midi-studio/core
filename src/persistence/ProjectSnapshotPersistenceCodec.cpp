@@ -7,8 +7,8 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "app/ExtmemAllocator.hpp"
-#include "persistence/LegacyMacroAutomationPersistenceCodec.hpp"
 #include "persistence/MacroTrackBankPersistenceCodec.hpp"
+#include "persistence/ProjectControlPersistenceCodec.hpp"
 #include "persistence/ProjectStatePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -17,7 +17,7 @@ namespace core::persistence::project_snapshot_codec {
 
 struct ProjectSnapshotCodecWorkspace::Storage {
     std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE> macro;
-    std::array<uint8_t, PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE> macroAutomation;
+    std::array<uint8_t, PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE> projectControl;
     sequencer_codec::EnvelopeBuffer sequencerEnvelope;
 };
 
@@ -42,9 +42,8 @@ namespace {
 namespace project_file = core::persistence::project_file;
 namespace project_state_codec = core::persistence::project_state_codec;
 namespace macro_track_codec = core::persistence::macro_track_codec;
+namespace project_control_codec = core::persistence::project_control_codec;
 namespace sequencer_codec = core::persistence::sequencer_codec;
-namespace legacy_macro_codec =
-    core::persistence::macro_automation_legacy_codec;
 namespace macro = core::state::macro;
 
 FLASHMEM void resetMacroTracks(core::state::project::ProjectSnapshot& target) {
@@ -166,64 +165,178 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
     return true;
 }
 
-FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chunk,
-                                       core::state::project::ProjectSnapshot& target,
-                                       project_file::LoadReport* report) {
-    if (!target.macroAutomation) {
-        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
+FLASHMEM project_control_codec::ChunkPayloadView controlChunkView(
+    const project_file::DecodedChunkView* chunk
+) {
+    if (chunk == nullptr) return {};
+    return {
+        .present = true,
+        .versionMajor = chunk->versionMajor,
+        .versionMinor = chunk->versionMinor,
+        .flags = chunk->flags,
+        .data = chunk->data,
+        .size = chunk->size,
+    };
+}
+
+FLASHMEM void reportControlChunkStatus(
+    project_file::LoadReport* report,
+    project_file::ChunkId id,
+    const project_file::DecodedChunkView* chunk,
+    project_control_codec::ChunkStatus status,
+    uint8_t targetMinor,
+    bool peerPresent
+) {
+    using ChunkStatus = project_control_codec::ChunkStatus;
+    const uint32_t chunkId = project_file::chunkIdValue(id);
+    const uint8_t sourceMajor = chunk != nullptr ? chunk->versionMajor : 0U;
+    const uint8_t sourceMinor = chunk != nullptr ? chunk->versionMinor : 0U;
+    switch (status) {
+        case ChunkStatus::CURRENT:
+            return;
+        case ChunkStatus::MISSING:
+            addReport(
+                report,
+                peerPresent ? project_file::LoadSeverity::WARNING
+                            : project_file::LoadSeverity::INFO,
+                project_file::LoadCode::MISSING_OPTIONAL_CHUNK,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+        case ChunkStatus::MIGRATED_LEGACY:
+            if (id == project_file::ChunkId::MACRO_AUTOMATION) {
+                addReport(
+                    report,
+                    project_file::LoadSeverity::INFO,
+                    project_file::LoadCode::MIGRATED_CHUNK,
+                    chunkId,
+                    sourceMajor,
+                    sourceMinor,
+                    project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                    targetMinor
+                );
+            }
+            return;
+        case ChunkStatus::UNSUPPORTED_VERSION:
+            addReport(
+                report,
+                project_file::LoadSeverity::WARNING,
+                project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+        case ChunkStatus::CAPACITY_EXCEEDED:
+            addReport(
+                report,
+                project_file::LoadSeverity::ERROR,
+                project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+        case ChunkStatus::IGNORED_AMBIGUOUS:
+            addReport(
+                report,
+                project_file::LoadSeverity::WARNING,
+                project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+        case ChunkStatus::INVALID_PAYLOAD:
+        default:
+            addReport(
+                report,
+                project_file::LoadSeverity::ERROR,
+                project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+    }
+}
+
+FLASHMEM bool readProjectControlChunks(
+    const project_file::DecodedChunkView* automation,
+    const project_file::DecodedChunkView* modulation,
+    core::state::project::ProjectSnapshot& target,
+    project_file::LoadReport* report
+) {
+    if (!target.projectControl) {
+        addReport(
+            report,
+            project_file::LoadSeverity::FATAL,
+            project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
+            0U
+        );
         return false;
     }
-    if (chunk == nullptr) {
-        reportMissingOptional(report, project_file::ChunkId::MACRO_AUTOMATION);
-        target.macroAutomation->clear();
-        return true;
-    }
-    const bool currentVersion =
-        chunk->versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
-        chunk->versionMinor == PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR;
-    const bool legacyV14 =
-        chunk->versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
-        chunk->versionMinor == PROJECT_MACRO_AUTOMATION_LEGACY_CHUNK_VERSION_MINOR;
-    if (!currentVersion && !legacyV14) {
-        addReport(report,
-                  project_file::LoadSeverity::WARNING,
-                  project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor,
-                  PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-                  PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
-        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
-        target.macroAutomation->clear();
+    const auto decoded = project_control_codec::decodeProjectControlPayloads(
+        controlChunkView(automation),
+        controlChunkView(modulation),
+        *target.projectControl
+    );
+    if (decoded.status == project_control_codec::Status::SCRATCH_ALLOCATION_FAILED) {
+        addReport(
+            report,
+            project_file::LoadSeverity::FATAL,
+            project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
+            0U
+        );
         return false;
     }
-    if (!legacy_macro_codec::decodeIntoPending(
-            chunk->data,
-            chunk->size,
-            chunk->versionMinor,
-            *target.macroAutomation
-        )) {
-        addReport(report,
-                  project_file::LoadSeverity::ERROR,
-                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor);
-        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
-        target.macroAutomation->clear();
+    if (!decoded.decoded()) {
+        addReport(
+            report,
+            project_file::LoadSeverity::ERROR,
+            project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+            0U
+        );
+        target.projectControl->clear();
         return false;
     }
-    if (legacyV14) {
-        addReport(report,
-                  project_file::LoadSeverity::INFO,
-                  project_file::LoadCode::MIGRATED_CHUNK,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor,
-                  PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-                  PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
+
+    reportControlChunkStatus(
+        report,
+        project_file::ChunkId::MACRO_AUTOMATION,
+        automation,
+        decoded.automationStatus,
+        project_control_codec::PROJECT_AUTOMATION_CHUNK_VERSION_MINOR,
+        modulation != nullptr
+    );
+    reportControlChunkStatus(
+        report,
+        project_file::ChunkId::MODULATION_GRAPH,
+        modulation,
+        decoded.modulationStatus,
+        project_control_codec::PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR,
+        automation != nullptr
+    );
+    if (report != nullptr && !decoded.overwriteSafe) {
+        report->overwriteSafe = false;
     }
-    core::state::macro::macroAutomationCompactPool(*target.macroAutomation);
     return true;
 }
 
@@ -328,7 +441,7 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     uint32_t outCapacity,
     ProjectSnapshotCodecWorkspace& workspace
 ) {
-    if (!snapshot.macroAutomation) {
+    if (!snapshot.projectControl) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
     if (!workspace.prepare()) {
@@ -391,14 +504,13 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         )) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
-    uint32_t macroAutomationSize = 0;
-    if (!snapshot.macroAutomation ||
-        !legacy_macro_codec::encodeV15(
-            *snapshot.macroAutomation,
-            scratch.macroAutomation.data(),
-            static_cast<uint32_t>(scratch.macroAutomation.size()),
-            macroAutomationSize
-        )) {
+    const auto controlPayloads =
+        project_control_codec::encodeProjectControlPayloads(
+            *snapshot.projectControl,
+            scratch.projectControl.data(),
+            static_cast<uint32_t>(scratch.projectControl.size())
+        );
+    if (!controlPayloads.encoded()) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
     uint32_t sequencerSize = 0;
@@ -464,8 +576,21 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = scratch.macroAutomation.data(),
-            .size = macroAutomationSize,
+            .data = scratch.projectControl.data() +
+                controlPayloads.automationOffset,
+            .size = controlPayloads.automationSize,
+        },
+        {
+            .id = project_file::chunkIdValue(
+                project_file::ChunkId::MODULATION_GRAPH
+            ),
+            .versionMajor =
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+            .versionMinor = PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = scratch.projectControl.data() +
+                controlPayloads.modulationOffset,
+            .size = controlPayloads.modulationSize,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
@@ -543,11 +668,27 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
     readMacroChunk(findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_STATE),
                    *next,
                    effectiveReport);
-    readMacroAutomationChunk(
-        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_AUTOMATION),
-        *next,
-        effectiveReport
-    );
+    if (!readProjectControlChunks(
+            findChunk(
+                chunks,
+                decodeResult.chunkCount,
+                project_file::ChunkId::MACRO_AUTOMATION
+            ),
+            findChunk(
+                chunks,
+                decodeResult.chunkCount,
+                project_file::ChunkId::MODULATION_GRAPH
+            ),
+            *next,
+            effectiveReport
+        ) && effectiveReport->failed()) {
+        return {
+            .ok = false,
+            .containerStatus = project_file::Status::SCRATCH_ALLOCATION_FAILED,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
     readSequencerChunk(
         findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::SEQUENCER_STATE),
         *next,

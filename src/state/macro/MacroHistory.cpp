@@ -7,19 +7,12 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
+
 namespace core::state::macro {
 
 namespace {
-
-FLASHMEM bool curveRangeValid(
-    const MacroAutomationCurveRef& curve,
-    const MacroAutomationPointPool& pool
-) {
-    if (!curve.active) return curve.pointCount == 0;
-    if (curve.pointCount == 0 || curve.pointOffset >= pool.used) return false;
-    const uint32_t end = static_cast<uint32_t>(curve.pointOffset) + curve.pointCount;
-    return end <= pool.used && end <= MACRO_AUTOMATION_POINT_POOL_CAPACITY;
-}
 
 FLASHMEM bool sameCurveMetadata(
     const MacroAutomationCurveRef& lhs,
@@ -79,41 +72,34 @@ FLASHMEM void normalizeCurveOffsets(MacroSlotHistorySnapshot& snapshot) {
     snapshot.slot.modulation.pointOffset = snapshot.automationPointCount;
 }
 
-FLASHMEM bool appendLiveCurvePoints(
-    const MacroAutomationCurveRef& curve,
-    const MacroAutomationPointPool& pool,
-    MacroSlotHistorySnapshot& out,
-    uint16_t& cursor
-) {
-    if (!curveRangeValid(curve, pool)) return !curve.active;
-    if (!curve.active) return true;
-    if (static_cast<uint32_t>(cursor) + curve.pointCount > out.points.size()) {
-        return false;
-    }
-    for (uint16_t i = 0; i < curve.pointCount; ++i) {
-        out.points[static_cast<uint16_t>(cursor + i)] =
-            pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
-    }
-    cursor = static_cast<uint16_t>(cursor + curve.pointCount);
-    return true;
-}
-
-FLASHMEM bool liveCurveMatches(
+FLASHMEM bool liveProjectCurveMatches(
+    const core::state::modulation::ProjectControlState& control,
+    core::state::modulation::ProjectCurveId curveId,
     const MacroAutomationCurveRef& live,
-    const MacroAutomationPointPool& pool,
     const MacroAutomationCurveRef& expected,
     const MacroSlotHistorySnapshot& snapshot,
     uint16_t snapshotOffset
 ) {
     if (!sameCurveMetadata(live, expected)) return false;
-    if (!live.active) return true;
-    if (!curveRangeValid(live, pool) ||
-        static_cast<uint32_t>(snapshotOffset) + live.pointCount > snapshot.points.size()) {
+    if (!live.active) return !core::state::modulation::valid(curveId);
+    const auto* record = core::state::modulation::findProjectCurve(
+        control.authored.curves,
+        curveId
+    );
+    if (record == nullptr || record->pointCount != live.pointCount ||
+        static_cast<uint32_t>(record->pointOffset) + record->pointCount >
+            control.authored.curves.pointCount ||
+        static_cast<uint32_t>(snapshotOffset) + live.pointCount >
+            snapshot.points.size()) {
         return false;
     }
     for (uint16_t i = 0; i < live.pointCount; ++i) {
+        const auto& point = control.authored.curves.points[
+            static_cast<uint16_t>(record->pointOffset + i)
+        ];
+        const MacroPackedCurvePoint livePoint{point.tick, point.value};
         if (!samePoint(
-                pool.points[static_cast<uint16_t>(live.pointOffset + i)],
+                livePoint,
                 snapshot.points[static_cast<uint16_t>(snapshotOffset + i)]
             )) {
             return false;
@@ -144,39 +130,19 @@ FLASHMEM bool captureMacroSlotHistorySnapshot(
     out.cc = page.cc[address.macro];
     out.staticValue = page.values[address.macro];
 
-    const auto* slot = macroAutomationFindSlot(pages.automation, address);
-    if (slot == nullptr) return true;
-    if (!curveRangeValid(slot->automation, pages.automation.pointPool) ||
-        !curveRangeValid(slot->modulation, pages.automation.pointPool)) {
-        return false;
-    }
-    const uint32_t total = static_cast<uint32_t>(slot->automation.pointCount) +
-                           slot->modulation.pointCount;
-    if (total > MACRO_HISTORY_POINT_CAPACITY) return false;
-
-    out.slotPresent = true;
-    out.slot = *slot;
-    out.automationPointCount = slot->automation.active
-        ? slot->automation.pointCount
-        : 0;
-    out.modulationPointCount = slot->modulation.active
-        ? slot->modulation.pointCount
-        : 0;
-    uint16_t cursor = 0;
-    if (!appendLiveCurvePoints(
-            slot->automation,
-            pages.automation.pointPool,
-            out,
-            cursor
-        ) ||
-        !appendLiveCurvePoints(
-            slot->modulation,
-            pages.automation.pointPool,
-            out,
-            cursor
+    if (!core::state::modulation::captureProjectControlMacroSlot(
+            pages.control,
+            address,
+            out.slot,
+            out.points.data(),
+            static_cast<uint16_t>(out.points.size()),
+            out.automationPointCount,
+            out.modulationPointCount
         )) {
         return false;
     }
+    out.slotPresent = macroCurveStored(out.slot.automation) ||
+                      macroCurveStored(out.slot.modulation);
     normalizeCurveOffsets(out);
     return snapshotConsistent(out);
 }
@@ -220,20 +186,31 @@ FLASHMEM bool liveMacroSlotMatchesHistorySnapshot(
         return false;
     }
 
-    const auto* live = macroAutomationFindSlot(pages.automation, address);
-    if ((live != nullptr) != snapshot.slotPresent) return false;
-    if (live == nullptr) return true;
-    return sameFloatBits(live->modulationDepth, snapshot.slot.modulationDepth) &&
-           liveCurveMatches(
-               live->automation,
-               pages.automation.pointPool,
+    core::state::modulation::ProjectControlMacroSlotView live{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            pages.control,
+            address,
+            live
+        ) || live.present != snapshot.slotPresent) {
+        return false;
+    }
+    if (!live.present) return true;
+    return sameFloatBits(
+               live.legacy.modulationDepth,
+               snapshot.slot.modulationDepth
+           ) &&
+           liveProjectCurveMatches(
+               pages.control,
+               live.automationCurveId,
+               live.legacy.automation,
                snapshot.slot.automation,
                snapshot,
                0
            ) &&
-           liveCurveMatches(
-               live->modulation,
-               pages.automation.pointPool,
+           liveProjectCurveMatches(
+               pages.control,
+               live.modulationCurveId,
+               live.legacy.modulation,
                snapshot.slot.modulation,
                snapshot,
                snapshot.automationPointCount
@@ -246,53 +223,18 @@ FLASHMEM bool applyMacroSlotHistorySnapshot(
 ) {
     if (!snapshotConsistent(snapshot)) return false;
     const auto& address = snapshot.address;
-    auto* current = macroAutomationFindMutableSlot(pages.automation, address);
-    const uint16_t reclaimable = current != nullptr
-        ? macroAutomationStoredPointCount(*current, pages.automation.pointPool)
-        : 0;
-    const uint16_t free = static_cast<uint16_t>(
-        MACRO_AUTOMATION_POINT_POOL_CAPACITY - pages.automation.pointPool.used
-    );
     const uint16_t required = snapshotPointCount(snapshot);
-    if (static_cast<uint32_t>(required) >
-        static_cast<uint32_t>(free) + reclaimable) {
+    MacroAutomationSlotState empty{};
+    const auto& slot = snapshot.slotPresent ? snapshot.slot : empty;
+    const auto* points = required > 0U ? snapshot.points.data() : nullptr;
+    if (!core::state::modulation::replaceProjectControlMacroSlot(
+            pages.control,
+            address,
+            slot,
+            points,
+            required
+        )) {
         return false;
-    }
-    if (snapshot.slotPresent && current == nullptr &&
-        pages.automation.entryCount >= MACRO_AUTOMATION_SLOT_CAPACITY) {
-        return false;
-    }
-
-    if (!snapshot.slotPresent) {
-        if (current != nullptr) {
-            (void)macroAutomationClearSlot(pages.automation, address);
-        }
-    } else {
-        if (current != nullptr) {
-            current->automation = {};
-            current->modulation = {};
-            current->modulationDepth = 0.0f;
-            macroAutomationCompactPool(pages.automation);
-        } else {
-            current = macroAutomationGetOrCreateSlot(pages.automation, address);
-            if (current == nullptr) return false;
-        }
-
-        const uint16_t start = pages.automation.pointPool.used;
-        for (uint16_t i = 0; i < required; ++i) {
-            pages.automation.pointPool.points[static_cast<uint16_t>(start + i)] =
-                snapshot.points[i];
-        }
-        pages.automation.pointPool.used = static_cast<uint16_t>(start + required);
-        *current = snapshot.slot;
-        if (current->automation.active) {
-            current->automation.pointOffset = start;
-        }
-        if (current->modulation.active) {
-            current->modulation.pointOffset = static_cast<uint16_t>(
-                start + snapshot.automationPointCount
-            );
-        }
     }
 
     auto& page = pages.pageData(address.track, address.page);
@@ -368,27 +310,39 @@ FLASHMEM bool MacroHistoryService::setModulationDepthCoalesced(
     float depth
 ) {
     if (!macroAutomationAddressValid(address) || !std::isfinite(depth)) return false;
-    auto* slot = macroAutomationFindMutableSlot(pages.automation, address);
-    if (slot == nullptr || !macroCurveStored(slot->modulation)) return false;
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            pages.control,
+            address,
+            slot
+        ) || !slot.modulationStored || slot.legacyMutationAmbiguous) {
+        return false;
+    }
     const float next = std::clamp(depth, 0.0f, 1.0f);
-    if (sameFloatBits(next, slot->modulationDepth)) return false;
+    if (sameFloatBits(next, slot.legacy.modulationDepth)) return false;
 
     if (coalescing_ && undo_count_ > 0 &&
         coalesced_kind_ == MacroHistoryActionKind::DEPTH_EDIT &&
         sameAddress(coalesced_address_, address)) {
         auto& previous = undo_[undo_count_ - 1U];
         if (previous && liveMacroSlotMatchesHistorySnapshot(pages, previous->after)) {
-            const float previousDepth = slot->modulationDepth;
-            MacroSlotHistorySnapshot nextAfter{};
-            slot->modulationDepth = next;
-            if (!captureMacroSlotHistorySnapshot(pages, address, nextAfter)) {
-                // Capture clears its output before validating. Never capture
-                // directly into the committed endpoint or a failed coalesced
-                // turn would destroy the only exact rollback snapshot.
-                slot->modulationDepth = previousDepth;
+            if (!core::state::modulation::setProjectControlModulationAmount(
+                    pages.control,
+                    address,
+                    next
+                )) {
                 return false;
             }
-            previous->after = nextAfter;
+            core::state::modulation::ProjectControlMacroSlotView updated{};
+            if (!core::state::modulation::readProjectControlMacroSlot(
+                    pages.control,
+                    address,
+                    updated
+                )) {
+                return false;
+            }
+            previous->after.slot.modulationDepth =
+                updated.legacy.modulationDepth;
             clearRedo_();
             return true;
         }
@@ -396,7 +350,13 @@ FLASHMEM bool MacroHistoryService::setModulationDepthCoalesced(
 
     auto change = prepare(pages, address, MacroHistoryActionKind::DEPTH_EDIT);
     if (!change) return false;
-    slot->modulationDepth = next;
+    if (!core::state::modulation::setProjectControlModulationAmount(
+            pages.control,
+            address,
+            next
+        )) {
+        return false;
+    }
     return commitPrepared(pages, std::move(change), true);
 }
 

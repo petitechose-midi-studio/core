@@ -1036,10 +1036,10 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
     out.targetRoute = destination.routePolicy == seq::SequencerCcLaneRoutePolicy::PINNED
         ? destination.pinnedChannel : sequencer_.pattern.midiChannel.get();
 
-    // Winner is meaningful only for a real collision. Prefer the singular
-    // runtime arbiter's telemetry, which also distinguishes Live Manual and
-    // computed/static Macro authors. Draft-only fallback names the current
-    // owner without pretending that the not-yet-created lane already won.
+    // Winner is meaningful only for a real collision. A preview describes the
+    // authored lane's future arbitration, so it must stay on preflight even if
+    // another author already appears in stopped-runtime telemetry. Once the
+    // lane is Live, prefer the singular runtime arbiter's observed winner.
     if (out.conflict) {
         const core::state::shared::MidiCcDestinationIdentity targetIdentity{
             .port = destination.routePolicy == seq::SequencerCcLaneRoutePolicy::PINNED
@@ -1048,7 +1048,7 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
             .channel = out.targetRoute,
             .controller = destination.controller,
         };
-        if (midi_cc_coordinator_ != nullptr) {
+        if (ui.liveProjection && midi_cc_coordinator_ != nullptr) {
             const auto telemetryView = midi_cc_coordinator_->readTelemetry();
             const size_t destinationCount = telemetryView &&
                     telemetryView->destinationCount <

@@ -33,13 +33,13 @@ struct MacroTypedPastePreflight {
 bool hasFirstClipboardAutomation(const core::state::StructureClipboardState& clipboard);
 
 bool copySlotAutomationToClipboard(
-    const core::state::macro::MacroAutomationBankState& bank,
+    const core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     core::state::StructureClipboardState& clipboard
 );
 
 bool pasteFirstClipboardAutomationToSlot(
-    core::state::macro::MacroAutomationBankState& bank,
+    core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     const core::state::StructureClipboardState& clipboard
 );
@@ -96,7 +96,7 @@ bool pasteSlotFromClipboard(
 );
 
 bool copyModulationToClipboard(
-    const core::state::macro::MacroAutomationBankState& bank,
+    const core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     core::state::StructureClipboardState& clipboard
 );

@@ -14,6 +14,7 @@ enum class ProjectModulationStatus : uint8_t {
     INVALID_ID,
     ID_EXHAUSTED,
     SOURCE_CAPACITY_EXCEEDED,
+    AUTOMATION_CAPACITY_EXCEEDED,
     BINDING_CAPACITY_EXCEEDED,
     TRIGGER_CAPACITY_EXCEEDED,
     CURVE_RECORD_CAPACITY_EXCEEDED,
@@ -103,6 +104,46 @@ struct ModulatorSplitRequest {
     ProjectCurveId id
 );
 
+[[nodiscard]] const ProjectAutomationCurveEntry* findProjectAutomationCurve(
+    const ProjectAutomationCurveDirectory& automation,
+    const ModulationDestination& destination
+);
+[[nodiscard]] ProjectAutomationCurveEntry* findProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    const ModulationDestination& destination
+);
+
+/** Adds or atomically replaces one absolute Automation curve. */
+ProjectModulationResult setProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& destination,
+    const ProjectCurveSpec& spec,
+    const ProjectPackedCurvePoint* points,
+    uint16_t pointCount,
+    bool enabled
+);
+ProjectModulationResult setProjectAutomationEnabled(
+    ProjectAutomationCurveDirectory& automation,
+    const ModulationDestination& destination,
+    bool enabled
+);
+/**
+ * Adds another Automation owner for the same immutable curve record.
+ * The destination must not already own Automation.
+ */
+ProjectModulationResult duplicateProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& source,
+    const ModulationDestination& destination
+);
+ProjectModulationResult removeProjectAutomationCurve(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& destination
+);
+
 ProjectModulationResult createLfoModulator(
     ProjectModulationState& state,
     const ModulatorLfoDraft& draft
@@ -159,6 +200,10 @@ ProjectModulationResult updateProjectModulationBinding(
 ProjectModulationResult addProjectModulationTrigger(
     ProjectModulationState& state,
     const ModulationTriggerDraft& draft
+);
+ProjectModulationResult removeProjectModulationTrigger(
+    ProjectModulationState& state,
+    ModulationBindingId bindingId
 );
 
 /**

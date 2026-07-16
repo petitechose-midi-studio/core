@@ -210,7 +210,7 @@ DomainPtr makeAutomationOnlyDomain(uint16_t pointCount) {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     const auto curve = appendCurve(
         *domain,
-        mod::ProjectCurveValueDomain::ABSOLUTE,
+        mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR,
         pointCount,
         12000
     );
@@ -241,7 +241,7 @@ DomainPtr makeDenseDomain() {
         const uint16_t count = index == 0U ? FIRST_AUTOMATION_POINTS : 1U;
         const auto curve = appendCurve(
             *domain,
-            mod::ProjectCurveValueDomain::ABSOLUTE,
+            mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR,
             count,
             16000
         );

@@ -19,7 +19,7 @@ enum class ProjectCurveInterpolation : uint8_t {
 };
 
 enum class ProjectCurveValueDomain : uint8_t {
-    ABSOLUTE = 0,
+    ABSOLUTE_UNIPOLAR = 0,
     BIPOLAR,
 };
 

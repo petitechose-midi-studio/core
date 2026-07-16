@@ -119,6 +119,9 @@ struct ProjectModulationResolveResult {
 [[nodiscard]] bool validProjectModulationCompileContext(
     const ProjectModulationCompileContext& context
 );
+[[nodiscard]] uint32_t projectModulationCompileContextHash(
+    const ProjectModulationCompileContext& context
+);
 
 /** Atomic publication: `out` is untouched whenever compilation fails. */
 ProjectModulationCompileResult compileProjectModulationRuntimePlan(

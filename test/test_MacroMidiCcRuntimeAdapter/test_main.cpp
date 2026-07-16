@@ -20,6 +20,7 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
+#include "support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -112,44 +113,36 @@ struct Harness {
     }
 
     void addAutomation(uint8_t macroIndex) {
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            pages.automation,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = pages.currentActiveTrack(),
-                .page = pages.currentActivePage(),
-                .macro = macroIndex,
-            }
-        );
-        assert(slot != nullptr);
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = pages.currentActiveTrack(),
+            .page = pages.currentActivePage(),
+            .macro = macroIndex,
+        };
         core::state::macro::MacroAutomationLane lane;
         assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
         assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-        assert(core::state::macro::macroAutomationAssignAutomation(
-            pages.automation,
-            *slot,
+        assert(test_support::project_control::assignAutomation(
+            pages.control,
+            address,
             lane
         ));
     }
 
     void addModulation(uint8_t macroIndex, float depth) {
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            pages.automation,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = pages.currentActiveTrack(),
-                .page = pages.currentActivePage(),
-                .macro = macroIndex,
-            }
-        );
-        assert(slot != nullptr);
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = pages.currentActiveTrack(),
+            .page = pages.currentActivePage(),
+            .macro = macroIndex,
+        };
         core::state::macro::MacroModulationShape shape;
         assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.2f));
         assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, 0.2f));
-        assert(core::state::macro::macroAutomationAssignModulation(
-            pages.automation,
-            *slot,
-            shape
+        assert(test_support::project_control::assignModulation(
+            pages.control,
+            address,
+            shape,
+            depth
         ));
-        slot->modulationDepth = depth;
     }
 };
 
@@ -263,12 +256,11 @@ void test_disabling_automation_restores_persisted_static_base_not_runtime_projec
         .page = h.pages.currentActivePage(),
         .macro = 1,
     };
-    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
-        h.pages.automation,
-        address
-    );
-    assert(slot != nullptr);
-    slot->automation.active = false;
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        h.pages.control,
+        address,
+        false
+    ));
 
     h.adapter.beginComputedFrame();
     const auto fallback = h.adapter.publishComputedFrame();

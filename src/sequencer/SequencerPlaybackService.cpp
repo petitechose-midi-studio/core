@@ -84,6 +84,14 @@ void SequencerPlaybackService::update(
             sink->setTimeline(tick, nowUs, tickPeriodUs);
         }
     }
+    if (cc_coordinator_ != nullptr) {
+        cc_coordinator_->publishProjectControlClock(
+            tick,
+            playing,
+            nowUs,
+            tickPeriodUs
+        );
+    }
     syncRuntimeStates_(snapshot, tick, playing);
     // Publish and arbitrate CC before note engines enqueue the same-deadline
     // events. RealtimeMidiQueue additionally enforces Off < CC < On ordering.

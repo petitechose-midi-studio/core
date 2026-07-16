@@ -7,6 +7,7 @@
 #include "../../src/ui/font/StandaloneIcons.hpp"
 #include "../../src/ui/view/MacroViewModelBuilder.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 // MacroViewModelBuilder is not part of the native core library because the
 // firmware UI runtime owns LVGL. This test compiles the pure projection builder
@@ -33,31 +34,27 @@ core::ui::MacroViewModelSource sourceFor(core::state::CoreState& state) {
     };
 }
 
-core::state::macro::MacroAutomationSlotState& configureAutomation(
+core::state::macro::MacroAutomationSlotAddress configureAutomation(
     core::state::CoreState& state,
     uint8_t macro,
     float value
 ) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = state.pages.currentActiveTrack(),
-            .page = state.pages.currentActivePage(),
-            .macro = macro,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = macro,
+    };
 
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 1.0f;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, value));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, value));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        state.pages.control,
+        address,
         lane
     ));
-    return *slot;
+    return address;
 }
 
 void test_macro_slot_focus_shows_guarded_slot_actions() {
@@ -98,8 +95,11 @@ void test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard() {
 
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::STEP);
     state.macroUi.focusedMacroSlot.set(0);
-    auto& slot = configureAutomation(state, 0, 0.42f);
-    assert(state.structureClipboard.storeMacroAutomation(state.pages.automation, slot));
+    const auto address = configureAutomation(state, 0, 0.42f);
+    assert(state.structureClipboard.storeMacroAutomation(
+        state.pages.control,
+        address
+    ));
 
     auto props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(props.visible);
@@ -247,7 +247,7 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
         storage.sequencerSetLibrary
     );
     state.pages.setMacroSlotActive(0, true);
-    auto& slot = configureAutomation(state, 0, 0.42f);
+    const auto address = configureAutomation(state, 0, 0.42f);
     core::state::macro::MacroModulationShape shape;
     shape.durationBeats = 2.0f;
     assert(core::state::macro::macroModulationAppendPoint(
@@ -260,20 +260,23 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
         1.0f,
         0.5f
     ));
-    assert(core::state::macro::macroAutomationAssignModulation(
-        state.pages.automation,
-        slot,
-        shape
+    assert(test_support::project_control::assignModulation(
+        state.pages.control,
+        address,
+        shape,
+        0.75f
     ));
-    slot.modulationDepth = 0.75f;
 
     auto props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(props.automationStored && props.automationActive);
     assert(props.modulationStored && props.modulationActive);
     assert(!props.modulationPaused);
 
-    slot.automation.playbackState =
-        core::state::macro::MacroCurvePlaybackState::OFF;
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        state.pages.control,
+        address,
+        false
+    ));
     props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(props.automationStored && !props.automationActive);
     assert(props.modulationStored && props.modulationActive);
@@ -296,8 +299,11 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     assert(std::fabs(props.modulationDepth - 0.75f) < 0.0001f);
 
     state.macroUi.automationManualOverrideMask.set(0);
-    slot.modulation.playbackState =
-        core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
+    assert(core::state::modulation::setProjectControlModulationEnabled(
+        state.pages.control,
+        address,
+        false
+    ));
     props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(props.modulationStored);
     assert(!props.modulationActive);

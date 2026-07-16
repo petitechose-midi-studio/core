@@ -14,6 +14,7 @@
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -27,7 +28,7 @@ using test_support::CoreStorages;
 using test_support::drainNotifications;
 
 void fillAutomationPointPoolExcept(
-    core::state::macro::MacroAutomationBankState& bank,
+    core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& excluded
 ) {
     core::state::macro::MacroAutomationLane lane;
@@ -45,11 +46,13 @@ void fillAutomationPointPoolExcept(
 
     for (uint8_t track = 0;
          track < core::state::macro::TRACK_COUNT &&
-         bank.pointPool.used < core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY;
+         control.authored.curves.pointCount <
+             core::state::modulation::PROJECT_CURVE_POINT_CAPACITY;
          ++track) {
         for (uint8_t macro = 0;
              macro < core::state::macro::MACRO_COUNT &&
-             bank.pointPool.used < core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY;
+             control.authored.curves.pointCount <
+                 core::state::modulation::PROJECT_CURVE_POINT_CAPACITY;
              ++macro) {
             const auto address = core::state::macro::MacroAutomationSlotAddress{
                 .track = track,
@@ -57,74 +60,80 @@ void fillAutomationPointPoolExcept(
                 .macro = macro,
             };
             if (core::state::macro::macroAutomationAddressEquals(address, excluded)) continue;
-            auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(bank, address);
-            assert(slot != nullptr);
-            assert(core::state::macro::macroAutomationAssignAutomation(bank, *slot, lane));
+            assert(test_support::project_control::assignAutomation(
+                control,
+                address,
+                lane
+            ));
         }
     }
-    assert(bank.pointPool.used == core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+    assert(control.authored.curves.pointCount ==
+           core::state::modulation::PROJECT_CURVE_POINT_CAPACITY);
 }
 
-core::state::macro::MacroAutomationSlotState* configureAutomation(
-    core::state::macro::MacroAutomationBankState& bank,
+core::state::modulation::ProjectControlMacroSlotView configureAutomation(
+    core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address
 ) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(bank, address);
-    assert(slot != nullptr);
     core::state::macro::MacroAutomationLane lane;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.2f));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 0.8f));
-    assert(core::state::macro::macroAutomationAssignAutomation(bank, *slot, lane));
-    return slot;
+    assert(test_support::project_control::assignAutomation(control, address, lane));
+    return test_support::project_control::readSlot(control, address);
 }
 
-core::state::macro::MacroAutomationSlotState* configureModulation(
-    core::state::macro::MacroAutomationBankState& bank,
+core::state::modulation::ProjectControlMacroSlotView configureModulation(
+    core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     float depth
 ) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(bank, address);
-    assert(slot != nullptr);
     core::state::macro::MacroModulationShape shape;
     assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.25f));
     assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, 0.25f));
-    assert(core::state::macro::macroAutomationAssignModulation(bank, *slot, shape));
-    slot->modulationDepth = depth;
-    return slot;
+    assert(test_support::project_control::assignModulation(
+        control,
+        address,
+        shape,
+        depth
+    ));
+    return test_support::project_control::readSlot(control, address);
 }
 
 void assertCurvePayloadEquals(
-    const core::state::macro::MacroAutomationCurveRef& expected,
-    const core::state::macro::MacroAutomationPointPool& expectedPool,
-    const core::state::macro::MacroAutomationCurveRef& actual,
-    const core::state::macro::MacroAutomationPointPool& actualPool,
+    const core::state::modulation::ProjectControlState& control,
+    core::state::modulation::ProjectCurveId expectedId,
+    core::state::modulation::ProjectCurveId actualId,
     bool signedValues
 ) {
-    assert(expected.active == actual.active);
-    assert(expected.playbackState == actual.playbackState);
-    assert(expected.pointCount == actual.pointCount);
-    assert(expected.sourceDurationTicks == actual.sourceDurationTicks);
-    assert(expected.durationTicks == actual.durationTicks);
-    assert(expected.windowOffsetTicks == actual.windowOffsetTicks);
-    assert(expected.interpolation == actual.interpolation);
-    assert(expected.modulationOrigin == actual.modulationOrigin);
-    for (uint16_t i = 0; i < expected.pointCount; ++i) {
-        core::state::macro::MacroCurvePoint expectedPoint{};
-        core::state::macro::MacroCurvePoint actualPoint{};
-        assert(core::state::macro::macroAutomationReadPoint(
-            expected,
-            expectedPool,
+    const auto* expected = core::state::modulation::findProjectCurve(
+        control.authored.curves,
+        expectedId
+    );
+    const auto* actual = core::state::modulation::findProjectCurve(
+        control.authored.curves,
+        actualId
+    );
+    assert(expected != nullptr && actual != nullptr);
+    assert(expected->pointCount == actual->pointCount);
+    assert(expected->sourceDurationTicks == actual->sourceDurationTicks);
+    assert(expected->durationTicks == actual->durationTicks);
+    assert(expected->windowOffsetTicks == actual->windowOffsetTicks);
+    assert(expected->interpolation == actual->interpolation);
+    assert(expected->valueDomain == actual->valueDomain);
+    assert(expected->origin == actual->origin);
+    for (uint16_t i = 0; i < expected->pointCount; ++i) {
+        const auto expectedPoint = test_support::project_control::readCurvePoint(
+            control,
+            expectedId,
             i,
-            signedValues,
-            expectedPoint
-        ));
-        assert(core::state::macro::macroAutomationReadPoint(
-            actual,
-            actualPool,
+            signedValues
+        );
+        const auto actualPoint = test_support::project_control::readCurvePoint(
+            control,
+            actualId,
             i,
-            signedValues,
-            actualPoint
-        ));
+            signedValues
+        );
         assert(std::fabs(expectedPoint.beat - actualPoint.beat) < 0.0001f);
         assert(std::fabs(expectedPoint.value - actualPoint.value) < 0.0001f);
     }
@@ -188,7 +197,7 @@ void test_manual_override_persists_absolute_base_and_is_addressed_by_slot() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    configureAutomation(state.pages.automation, firstAddress);
+    configureAutomation(state.pages.control, firstAddress);
     state.pages.activePageData().values[0] = 0.25f;
     services.setResolvedValue(0, 0.25f);
 
@@ -207,7 +216,7 @@ void test_manual_override_persists_absolute_base_and_is_addressed_by_slot() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    configureAutomation(state.pages.automation, secondAddress);
+    configureAutomation(state.pages.control, secondAddress);
     assert(!services.manualOverrideActiveFor(0));
     assert((state.macroUi.automationManualOverrideMask.get() & 0x0001U) == 0);
     services.setResolvedValue(0, 0.1f);
@@ -450,34 +459,31 @@ void test_automation_recording_commits_to_current_macro_slot() {
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        state.pages.automation,
+    const auto slot = test_support::project_control::readSlot(
+        state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{
             .track = state.pages.currentActiveTrack(),
             .page = state.pages.currentActivePage(),
             .macro = 0,
         }
     );
-    assert(slot != nullptr);
-    assert(slot->automation.active);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.durationTicks) == 2.0f);
-    assert(slot->automation.pointCount == 2);
-    core::state::macro::MacroCurvePoint firstPoint{};
-    core::state::macro::MacroCurvePoint secondPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->automation,
-        state.pages.automation.pointPool,
+    assert(slot.automationEnabled);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(
+        slot.legacy.automation.durationTicks
+    ) == 2.0f);
+    assert(slot.legacy.automation.pointCount == 2);
+    const auto firstPoint = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
         0,
-        false,
-        firstPoint
-    ));
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->automation,
-        state.pages.automation.pointPool,
+        false
+    );
+    const auto secondPoint = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
         1,
-        false,
-        secondPoint
-    ));
+        false
+    );
     assert(std::fabs(firstPoint.beat - 0.0f) < 0.0001f);
     assert(std::fabs(firstPoint.value - 0.25f) < 0.0001f);
     assert(std::fabs(secondPoint.beat - 1.0f) < 0.0001f);
@@ -504,15 +510,15 @@ void test_automation_recording_cancel_discards_session() {
            core::state::macro::MacroAutomationRecordingStatus::IDLE);
     assert(!services.commitAutomationRecording(1500));
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        state.pages.automation,
+    const auto slot = test_support::project_control::readSlot(
+        state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{
             .track = state.pages.currentActiveTrack(),
             .page = state.pages.currentActivePage(),
             .macro = 0,
         }
     );
-    assert(slot == nullptr);
+    assert(!slot.present);
     assert(!state.project.metadata.dirty);
 
     std::cout << "[PASS] test_automation_recording_cancel_discards_session\n";
@@ -533,15 +539,15 @@ void test_automation_recording_without_motion_does_not_create_slot() {
            core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT);
     assert(!services.automationRecordingActiveFor(0));
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        state.pages.automation,
+    const auto slot = test_support::project_control::readSlot(
+        state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{
             .track = state.pages.currentActiveTrack(),
             .page = state.pages.currentActivePage(),
             .macro = 0,
         }
     );
-    assert(slot == nullptr);
+    assert(!slot.present);
     assert(!state.project.metadata.dirty);
 
     std::cout << "[PASS] test_automation_recording_without_motion_does_not_create_slot\n";
@@ -559,7 +565,7 @@ void test_failed_or_cancelled_recording_restores_previous_manual_state() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    configureAutomation(state.pages.automation, address);
+    configureAutomation(state.pages.control, address);
     assert(services.takeManualControl(0, 0.42f));
 
     assert(services.beginAutomationRecording(0, 1000));
@@ -592,66 +598,55 @@ void test_recording_preserves_active_modulation_without_resume() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    auto* slot = configureModulation(state.pages.automation, address, 0.37f);
-    const auto modulationBefore = slot->modulation;
-    core::state::macro::MacroCurvePoint firstBefore{};
-    core::state::macro::MacroCurvePoint secondBefore{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->modulation,
-        state.pages.automation.pointPool,
+    auto slot = configureModulation(state.pages.control, address, 0.37f);
+    const auto modulationBefore = slot.legacy.modulation;
+    const auto firstBefore = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.modulationCurveId,
         0,
-        true,
-        firstBefore
-    ));
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->modulation,
-        state.pages.automation.pointPool,
+        true
+    );
+    const auto secondBefore = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.modulationCurveId,
         1,
-        true,
-        secondBefore
-    ));
+        true
+    );
 
     assert(services.computedSourcePlaybackActiveFor(0));
     assert(services.beginAutomationRecording(0, 1000));
     assert(services.recordAutomationPoint(0, 1500, 0.8f));
     assert(services.commitAutomationRecording(2000));
 
-    slot = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
-        address
-    );
-    assert(slot != nullptr);
-    assert(core::state::macro::macroCurvePlaybackActive(slot->automation));
-    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
-    assert(!core::state::macro::macroCurveSuspendedAfterRecord(slot->modulation));
-    assert(std::fabs(slot->modulationDepth - 0.37f) < 0.0001f);
-    assert(slot->modulation.pointCount == modulationBefore.pointCount);
-    assert(slot->modulation.durationTicks == modulationBefore.durationTicks);
-    assert(slot->modulation.modulationOrigin == modulationBefore.modulationOrigin);
-    core::state::macro::MacroCurvePoint firstAfter{};
-    core::state::macro::MacroCurvePoint secondAfter{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->modulation,
-        state.pages.automation.pointPool,
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(slot.automationEnabled);
+    assert(slot.modulationEnabled);
+    assert(std::fabs(slot.legacy.modulationDepth - 0.37f) < 0.0001f);
+    assert(slot.legacy.modulation.pointCount == modulationBefore.pointCount);
+    assert(slot.legacy.modulation.durationTicks == modulationBefore.durationTicks);
+    assert(slot.legacy.modulation.modulationOrigin ==
+           modulationBefore.modulationOrigin);
+    const auto firstAfter = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.modulationCurveId,
         0,
-        true,
-        firstAfter
-    ));
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->modulation,
-        state.pages.automation.pointPool,
+        true
+    );
+    const auto secondAfter = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.modulationCurveId,
         1,
-        true,
-        secondAfter
-    ));
+        true
+    );
     assert(std::fabs(firstAfter.value - firstBefore.value) < 0.0001f);
     assert(std::fabs(secondAfter.value - secondBefore.value) < 0.0001f);
     assert(!services.manualOverrideActiveFor(0));
 
     const uint32_t modifiedBeforeResume = state.project.metadata.modifiedCounter;
     assert(!services.resumeComputedSources(0));
-    assert(core::state::macro::macroCurvePlaybackActive(slot->automation));
-    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(slot.automationEnabled);
+    assert(slot.modulationEnabled);
     assert(state.project.metadata.modifiedCounter == modifiedBeforeResume);
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
@@ -673,8 +668,9 @@ void test_failed_first_recording_does_not_leave_an_empty_slot() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    fillAutomationPointPoolExcept(state.pages.automation, address);
-    const uint8_t entryCountBefore = state.pages.automation.entryCount;
+    fillAutomationPointPoolExcept(state.pages.control, address);
+    const uint16_t entryCountBefore =
+        state.pages.control.authored.automation.entryCount;
 
     assert(services.beginAutomationRecording(0, 1000));
     assert(services.recordAutomationPoint(0, 1500, 0.75f));
@@ -683,10 +679,13 @@ void test_failed_first_recording_does_not_leave_an_empty_slot() {
            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED);
 
     assert(!services.automationRecordingActiveFor(0));
-    assert(core::state::macro::macroAutomationFindSlot(state.pages.automation, address) == nullptr);
-    assert(state.pages.automation.entryCount == entryCountBefore);
-    assert(state.pages.automation.pointPool.used ==
-           core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
+    assert(!test_support::project_control::readSlot(
+        state.pages.control,
+        address
+    ).present);
+    assert(state.pages.control.authored.automation.entryCount == entryCountBefore);
+    assert(state.pages.control.authored.curves.pointCount ==
+           core::state::modulation::PROJECT_CURVE_POINT_CAPACITY);
     assert(!state.project.metadata.dirty);
 
     std::cout << "[PASS] test_failed_first_recording_does_not_leave_an_empty_slot\n";
@@ -719,8 +718,12 @@ void test_macro_edit_automation_lifecycle_actions() {
 
     assert(edit.clearAutomation(0));
     const auto* cleared = edit.automationSlot(0);
-    assert(cleared != nullptr);
-    assert(!cleared->automation.active);
+    assert(cleared == nullptr);
+    assert(state.pages.isMacroSlotActive(0));
+    assert(!test_support::project_control::readSlot(
+        state.pages.control,
+        {state.pages.currentActiveTrack(), state.pages.currentActivePage(), 0}
+    ).automationStored);
 
     std::cout << "[PASS] test_macro_edit_automation_lifecycle_actions\n";
 }
@@ -750,14 +753,26 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         .page = state.pages.currentActivePage(),
         .macro = 1,
     };
-    configureAutomation(state.pages.automation, sourceAddress);
-    auto* source = configureModulation(state.pages.automation, sourceAddress, 0.37f);
-    source->modulation.playbackState =
-        core::state::macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD;
-    source->modulation.modulationOrigin =
-        core::state::macro::MacroModulationOrigin::CONVERTED_FIRST;
+    configureAutomation(state.pages.control, sourceAddress);
+    auto source = configureModulation(state.pages.control, sourceAddress, 0.37f);
+    assert(core::state::modulation::setProjectControlModulationEnabled(
+        state.pages.control,
+        sourceAddress,
+        false
+    ));
+    source = test_support::project_control::readSlot(
+        state.pages.control,
+        sourceAddress
+    );
+    auto* sourceCurve = test_support::project_control::mutableCurve(
+        state.pages.control,
+        source.modulationCurveId
+    );
+    assert(sourceCurve != nullptr);
+    sourceCurve->origin =
+        core::state::modulation::ProjectCurveOrigin::CONVERTED_FIRST;
 
-    auto* target = configureAutomation(state.pages.automation, targetAddress);
+    auto target = configureAutomation(state.pages.control, targetAddress);
     core::state::macro::MacroAutomationLane distinctTargetAutomation;
     assert(core::state::macro::macroAutomationAppendPoint(
         distinctTargetAutomation, 0.0f, 0.1f
@@ -765,22 +780,21 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     assert(core::state::macro::macroAutomationAppendPoint(
         distinctTargetAutomation, 1.0f, 0.9f
     ));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *target,
+    assert(test_support::project_control::assignAutomation(
+        state.pages.control,
+        targetAddress,
         distinctTargetAutomation
     ));
-    target = configureModulation(state.pages.automation, targetAddress, 0.82f);
-    const auto targetAutomationBefore = target->automation;
+    target = configureModulation(state.pages.control, targetAddress, 0.82f);
+    const auto targetAutomationBefore = target.automationCurveId;
     std::array<core::state::macro::MacroCurvePoint, 2> targetAutomationPoints{};
     for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
-        assert(core::state::macro::macroAutomationReadPoint(
+        targetAutomationPoints[i] = test_support::project_control::readCurvePoint(
+            state.pages.control,
             targetAutomationBefore,
-            state.pages.automation.pointPool,
             i,
-            false,
-            targetAutomationPoints[i]
-        ));
+            false
+        );
     }
 
     assert(edit.copyModulation(0));
@@ -792,38 +806,35 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     assert(std::fabs(edit.modulationDepth(1) - 0.82f) < 0.0001f);
     assert(edit.pasteModulation(1, true));
 
-    source = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    source = test_support::project_control::readSlot(
+        state.pages.control,
         sourceAddress
     );
-    target = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    target = test_support::project_control::readSlot(
+        state.pages.control,
         targetAddress
     );
-    assert(source != nullptr && target != nullptr);
     assert(page.cc[1] == 11);
     assert(std::fabs(page.values[1] - 0.66f) < 0.0001f);
-    assert(target->automation.pointCount == targetAutomationPoints.size());
+    assert(target.automationCurveId == targetAutomationBefore);
+    assert(target.legacy.automation.pointCount == targetAutomationPoints.size());
     for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
-        core::state::macro::MacroCurvePoint actual{};
-        assert(core::state::macro::macroAutomationReadPoint(
-            target->automation,
-            state.pages.automation.pointPool,
+        const auto actual = test_support::project_control::readCurvePoint(
+            state.pages.control,
+            target.automationCurveId,
             i,
-            false,
-            actual
-        ));
+            false
+        );
         assert(std::fabs(actual.beat - targetAutomationPoints[i].beat) < 0.0001f);
         assert(std::fabs(actual.value - targetAutomationPoints[i].value) < 0.0001f);
     }
     assertCurvePayloadEquals(
-        source->modulation,
-        state.pages.automation.pointPool,
-        target->modulation,
-        state.pages.automation.pointPool,
+        state.pages.control,
+        source.modulationCurveId,
+        target.modulationCurveId,
         true
     );
-    assert(std::fabs(target->modulationDepth - 0.37f) < 0.0001f);
+    assert(std::fabs(target.legacy.modulationDepth - 0.37f) < 0.0001f);
 
     std::cout
         << "[PASS] test_modulation_copy_paste_preserves_target_and_exact_payload\n";
@@ -853,13 +864,26 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
         .page = state.pages.currentActivePage(),
         .macro = 2,
     };
-    configureAutomation(state.pages.automation, sourceAddress);
-    auto* source = configureModulation(state.pages.automation, sourceAddress, 0.43f);
-    source->automation.playbackState = core::state::macro::MacroCurvePlaybackState::OFF;
-    source->modulation.modulationOrigin =
-        core::state::macro::MacroModulationOrigin::CONVERTED_MIN;
-    configureAutomation(state.pages.automation, targetAddress);
-    configureModulation(state.pages.automation, targetAddress, 0.9f);
+    configureAutomation(state.pages.control, sourceAddress);
+    auto source = configureModulation(state.pages.control, sourceAddress, 0.43f);
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        state.pages.control,
+        sourceAddress,
+        false
+    ));
+    source = test_support::project_control::readSlot(
+        state.pages.control,
+        sourceAddress
+    );
+    auto* sourceModulationCurve = test_support::project_control::mutableCurve(
+        state.pages.control,
+        source.modulationCurveId
+    );
+    assert(sourceModulationCurve != nullptr);
+    sourceModulationCurve->origin =
+        core::state::modulation::ProjectCurveOrigin::CONVERTED_MIN;
+    configureAutomation(state.pages.control, targetAddress);
+    configureModulation(state.pages.control, targetAddress, 0.9f);
 
     assert(edit.copySlot(0));
     const auto plan = edit.preflightSlotPaste(2);
@@ -867,33 +891,30 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
     assert(plan.requiresOverwrite());
     assert(edit.pasteSlot(2, true));
 
-    source = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    source = test_support::project_control::readSlot(
+        state.pages.control,
         sourceAddress
     );
-    auto* target = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    const auto target = test_support::project_control::readSlot(
+        state.pages.control,
         targetAddress
     );
-    assert(source != nullptr && target != nullptr);
     assert(page.isMacroActive(2));
     assert(page.cc[2] == 74);
     assert(std::fabs(page.values[2] - 0.42f) < 0.0001f);
     assertCurvePayloadEquals(
-        source->automation,
-        state.pages.automation.pointPool,
-        target->automation,
-        state.pages.automation.pointPool,
+        state.pages.control,
+        source.automationCurveId,
+        target.automationCurveId,
         false
     );
     assertCurvePayloadEquals(
-        source->modulation,
-        state.pages.automation.pointPool,
-        target->modulation,
-        state.pages.automation.pointPool,
+        state.pages.control,
+        source.modulationCurveId,
+        target.modulationCurveId,
         true
     );
-    assert(std::fabs(target->modulationDepth - 0.43f) < 0.0001f);
+    assert(std::fabs(target.legacy.modulationDepth - 0.43f) < 0.0001f);
 
     std::cout
         << "[PASS] test_typed_slot_copy_paste_preserves_automation_and_modulation\n";
@@ -924,16 +945,28 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
     state.pages.pageData(0, 0).setMacroActive(0, true);
     state.pages.pageData(0, 0).cc[0] = 74;
     state.pages.pageData(0, 0).values[0] = 0.36f;
-    configureAutomation(state.pages.automation, source);
-    auto* sourceSlot = configureModulation(state.pages.automation, source, 0.33f);
-    sourceSlot->automation.playbackState =
-        core::state::macro::MacroCurvePlaybackState::OFF;
-    sourceSlot->modulation.modulationOrigin =
-        core::state::macro::MacroModulationOrigin::CONVERTED_MEAN;
+    configureAutomation(state.pages.control, source);
+    auto sourceSlot = configureModulation(state.pages.control, source, 0.33f);
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        state.pages.control,
+        source,
+        false
+    ));
+    sourceSlot = test_support::project_control::readSlot(
+        state.pages.control,
+        source
+    );
+    auto* sourceCurve = test_support::project_control::mutableCurve(
+        state.pages.control,
+        sourceSlot.modulationCurveId
+    );
+    assert(sourceCurve != nullptr);
+    sourceCurve->origin =
+        core::state::modulation::ProjectCurveOrigin::CONVERTED_MEAN;
 
     assert(state.structureClipboard.storeMacroPage(
         state.pages.pageData(0, 0),
-        state.pages.automation,
+        state.pages.control,
         0,
         0
     ));
@@ -942,36 +975,33 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
         state.structureClipboard.macroPage,
         state.structureClipboard.macroAutomationSet.get()
     ));
-    sourceSlot = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    sourceSlot = test_support::project_control::readSlot(
+        state.pages.control,
         source
     );
-    auto* targetSlot = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    auto targetSlot = test_support::project_control::readSlot(
+        state.pages.control,
         pageTarget
     );
-    assert(sourceSlot != nullptr && targetSlot != nullptr);
     assertCurvePayloadEquals(
-        sourceSlot->automation,
-        state.pages.automation.pointPool,
-        targetSlot->automation,
-        state.pages.automation.pointPool,
+        state.pages.control,
+        sourceSlot.automationCurveId,
+        targetSlot.automationCurveId,
         false
     );
     assertCurvePayloadEquals(
-        sourceSlot->modulation,
-        state.pages.automation.pointPool,
-        targetSlot->modulation,
-        state.pages.automation.pointPool,
+        state.pages.control,
+        sourceSlot.modulationCurveId,
+        targetSlot.modulationCurveId,
         true
     );
-    assert(std::fabs(targetSlot->modulationDepth - 0.33f) < 0.0001f);
+    assert(std::fabs(targetSlot.legacy.modulationDepth - 0.33f) < 0.0001f);
     assert(state.pages.pageData(0, 1).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(0, 1).values[0] - 0.36f) < 0.0001f);
 
     assert(state.structureClipboard.storeMacroTrack(
         state.pages.tracks[0],
-        state.pages.automation,
+        state.pages.control,
         0
     ));
     assert(structure.pasteTrack(
@@ -979,30 +1009,27 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
         state.structureClipboard.macroTrack,
         state.structureClipboard.macroAutomationSet.get()
     ));
-    sourceSlot = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    sourceSlot = test_support::project_control::readSlot(
+        state.pages.control,
         source
     );
-    targetSlot = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    targetSlot = test_support::project_control::readSlot(
+        state.pages.control,
         trackTarget
     );
-    assert(sourceSlot != nullptr && targetSlot != nullptr);
     assertCurvePayloadEquals(
-        sourceSlot->automation,
-        state.pages.automation.pointPool,
-        targetSlot->automation,
-        state.pages.automation.pointPool,
+        state.pages.control,
+        sourceSlot.automationCurveId,
+        targetSlot.automationCurveId,
         false
     );
     assertCurvePayloadEquals(
-        sourceSlot->modulation,
-        state.pages.automation.pointPool,
-        targetSlot->modulation,
-        state.pages.automation.pointPool,
+        state.pages.control,
+        sourceSlot.modulationCurveId,
+        targetSlot.modulationCurveId,
         true
     );
-    assert(std::fabs(targetSlot->modulationDepth - 0.33f) < 0.0001f);
+    assert(std::fabs(targetSlot.legacy.modulationDepth - 0.33f) < 0.0001f);
     assert(state.pages.pageData(1, 0).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(1, 0).values[0] - 0.36f) < 0.0001f);
 
@@ -1039,9 +1066,9 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
         .page = 3,
         .macro = 4,
     };
-    configureAutomation(state.pages.automation, source);
-    configureAutomation(state.pages.automation, pageTarget);
-    configureAutomation(state.pages.automation, trackTarget);
+    configureAutomation(state.pages.control, source);
+    configureAutomation(state.pages.control, pageTarget);
+    configureAutomation(state.pages.control, trackTarget);
     assert(state.macroUi.manualOverrides.activate(source, 0.1f) ==
            core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
     assert(state.macroUi.manualOverrides.activate(pageTarget, 0.2f) ==
@@ -1053,7 +1080,7 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
 
     assert(state.structureClipboard.storeMacroPage(
         state.pages.pageData(0, 0),
-        state.pages.automation,
+        state.pages.control,
         0,
         0
     ));
@@ -1069,7 +1096,7 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
 
     assert(state.structureClipboard.storeMacroTrack(
         state.pages.tracks[0],
-        state.pages.automation,
+        state.pages.control,
         0
     ));
     assert(structure.pasteTrack(
@@ -1100,7 +1127,7 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
     assert(!state.macroUi.manualOverrides.activeFor(source));
     assert(state.macroUi.manualOverrides.activeFor(unrelated));
 
-    configureAutomation(state.pages.automation, source);
+    configureAutomation(state.pages.control, source);
     assert(performance.takeManualControl(0, 0.7f));
     assert(edit.removeAutomation(0));
     assert(!state.macroUi.manualOverrides.activeFor(source));

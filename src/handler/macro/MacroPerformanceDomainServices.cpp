@@ -4,6 +4,7 @@
 
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 
 namespace core::handler {
 
@@ -200,11 +201,16 @@ void MacroPerformanceDomainServices::setResolvedValue(
     if (index >= core::state::macro::MACRO_COUNT) return;
     core::state::macro::MacroWorkflow::setRuntimeValue(*macros_, index, value.resolved);
     float depth = 0.0f;
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        activeAddress_(index)
-    );
-    if (slot != nullptr) depth = slot->modulationDepth;
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    if (core::state::modulation::readProjectControlMacroSlot(
+            pages_->control,
+            activeAddress_(index),
+            slot
+        ) && slot.modulationStored) {
+        depth = core::state::macro::macroAutomationClamp01(
+            slot.legacy.modulationDepth
+        );
+    }
     macro_ui_->setRuntimeProjection(index, value, depth);
 }
 
@@ -216,19 +222,18 @@ MacroPerformanceDomainServices::resolveManualValue(uint8_t index, float value) c
         out.resolved = out.base;
         return out;
     }
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        activeAddress_(index)
-    );
-    if (slot != nullptr) {
-        out.automationStored = core::state::macro::macroCurveStored(slot->automation);
-        out.modulationStored = core::state::macro::macroCurveStored(slot->modulation);
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    if (core::state::modulation::readProjectControlMacroSlot(
+            pages_->control,
+            activeAddress_(index),
+            slot
+        ) && slot.present) {
+        out.automationStored = slot.automationStored;
+        out.modulationStored = slot.modulationStored;
         out.modulationPausedDepthZero =
-            core::state::macro::macroCurvePlaybackActive(slot->modulation) &&
-            slot->modulationDepth <= 0.0f;
+            slot.modulationEnabled && slot.legacy.modulationDepth <= 0.0f;
         out.modulationActive =
-            core::state::macro::macroCurvePlaybackActive(slot->modulation) &&
-            slot->modulationDepth > 0.0f;
+            slot.modulationEnabled && slot.legacy.modulationDepth > 0.0f;
     }
     const auto& projection = macro_ui_->runtimeProjections[index];
     if (out.modulationActive && projection.valid && projection.modulationActive) {
@@ -255,13 +260,14 @@ FLASHMEM bool MacroPerformanceDomainServices::beginAutomationRecording(
         recording.address,
         recording.previousManualValue
     );
-    const auto* existing = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        recording.address
-    );
-    if (existing != nullptr && core::state::macro::macroCurveStored(existing->automation)) {
+    core::state::modulation::ProjectControlMacroSlotView existing{};
+    if (core::state::modulation::readProjectControlMacroSlot(
+            pages_->control,
+            recording.address,
+            existing
+        ) && existing.automationStored) {
         recording.preserveDuration = true;
-        recording.targetDurationTicks = existing->automation.durationTicks;
+        recording.targetDurationTicks = existing.legacy.automation.durationTicks;
     }
     // Recording owns the absolute source for the duration of the gesture.
     // Modulation remains audible and is never suspended by recording.
@@ -373,35 +379,11 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationRecording(
         return false;
     }
 
-    const bool hadSlot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        recording.address
-    ) != nullptr;
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        pages_->automation,
-        recording.address
-    );
-    if (slot == nullptr) {
-        restoreManualAfterFailedRecording_(recording);
-        recording.reset();
-        macro_ui_->automationRecordingStatus.set(
-            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
-        );
-        bumpAutomationRecordingRevision(*macro_ui_);
-        return false;
-    }
-
-    if (!core::state::macro::macroAutomationAssignAutomation(
-            pages_->automation,
-            *slot,
+    if (!core::state::modulation::assignProjectControlAutomation(
+            pages_->control,
+            recording.address,
             recording.lane
         )) {
-        if (!hadSlot) {
-            core::state::macro::macroAutomationClearSlot(
-                pages_->automation,
-                recording.address
-            );
-        }
         if (historyChange) {
             (void)core::state::macro::applyMacroSlotHistorySnapshot(
                 *pages_,
@@ -464,32 +446,32 @@ bool MacroPerformanceDomainServices::automationRecordingActiveFor(uint8_t index)
 
 bool MacroPerformanceDomainServices::computedSourcePlaybackActiveFor(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        activeAddress_(index)
-    );
-    return slot != nullptr &&
-           (core::state::macro::macroCurvePlaybackActive(slot->automation) ||
-            core::state::macro::macroCurvePlaybackActive(slot->modulation));
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    return core::state::modulation::readProjectControlMacroSlot(
+               pages_->control,
+               activeAddress_(index),
+               slot
+           ) && (slot.automationEnabled || slot.modulationEnabled);
 }
 
 bool MacroPerformanceDomainServices::automationActiveFor(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        activeAddress_(index)
-    );
-    return slot != nullptr && core::state::macro::macroCurveStored(slot->automation);
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    return core::state::modulation::readProjectControlMacroSlot(
+               pages_->control,
+               activeAddress_(index),
+               slot
+           ) && slot.automationStored;
 }
 
 bool MacroPerformanceDomainServices::automationPlaybackActiveFor(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT) return false;
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        pages_->automation,
-        activeAddress_(index)
-    );
-    return slot != nullptr &&
-           core::state::macro::macroCurvePlaybackActive(slot->automation) &&
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    return core::state::modulation::readProjectControlMacroSlot(
+               pages_->control,
+               activeAddress_(index),
+               slot
+           ) && slot.automationEnabled &&
            !manualOverrideActiveFor(index);
 }
 

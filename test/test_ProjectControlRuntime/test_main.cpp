@@ -105,7 +105,7 @@ void addAbsoluteAutomation(mod::ProjectControlDomainState& domain,
         .windowOffsetTicks = 0U,
         .referenceCount = 1U,
         .interpolation = mod::ProjectCurveInterpolation::LINEAR,
-        .valueDomain = mod::ProjectCurveValueDomain::ABSOLUTE,
+        .valueDomain = mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR,
         .flags = 0U,
         .origin = mod::ProjectCurveOrigin::NATIVE,
     };

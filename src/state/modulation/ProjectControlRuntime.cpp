@@ -254,7 +254,7 @@ float phaseFromFreeTime(uint32_t nowMs,
 float unpackProjectCurveValue(int16_t value,
                               ProjectCurveValueDomain domain) {
     const float unpacked = static_cast<float>(value) / Q15_SCALE;
-    return domain == ProjectCurveValueDomain::ABSOLUTE
+    return domain == ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
         ? std::clamp(unpacked, 0.0f, 1.0f)
         : std::clamp(unpacked, -1.0f, 1.0f);
 }
@@ -340,7 +340,7 @@ float evaluateProjectCurve(const ProjectCurveArena& arena,
         1.0f
     );
     const float value = leftValue + (rightValue - leftValue) * alpha;
-    return record.valueDomain == ProjectCurveValueDomain::ABSOLUTE
+    return record.valueDomain == ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
         ? std::clamp(value, 0.0f, 1.0f)
         : std::clamp(value, -1.0f, 1.0f);
 }
@@ -429,23 +429,24 @@ float evaluateProjectLfoShape(ModulatorLfoShape shape, float phase) {
     }
 }
 
-ProjectControlRuntimeResult evaluateProjectControlRuntime(
+ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
     const ProjectModulationRuntimePlan& plan,
     const ProjectCurveArena& arena,
     const ProjectControlTimeSnapshot& time,
-    const ProjectModulationTriggerFrame& triggers,
-    const ProjectLogicalMacroBaseInput* bases,
-    uint16_t baseCount,
+    const ProjectModulationTriggerFrame* triggers,
+    ProjectLogicalMacroBaseProvider baseProvider,
+    void* baseContext,
     ProjectControlRuntimeState& state,
     float* sourceValues,
     uint16_t sourceValueCapacity,
     ProjectLogicalMacroRuntimeSink sink,
     void* sinkContext
 ) {
-    if (bases == nullptr || sourceValues == nullptr || sink == nullptr ||
-        baseCount < plan.destinationCount ||
+    if (baseProvider == nullptr || sourceValues == nullptr || sink == nullptr ||
         sourceValueCapacity < plan.sourceCount ||
-        triggers.count > triggers.events.size() || triggers.reserved != 0U) {
+        (triggers != nullptr &&
+         (triggers->count > triggers->events.size() ||
+          triggers->reserved != 0U))) {
         return {ProjectControlRuntimeStatus::INVALID_ARGUMENT};
     }
     if (!validPlanBounds(plan)) {
@@ -489,9 +490,12 @@ ProjectControlRuntimeResult evaluateProjectControlRuntime(
         if (source.retrigger == ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
             (source.triggerFlags & PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U) {
             for (uint16_t eventIndex = 0;
-                 eventIndex < triggers.count;
+                 triggers != nullptr && eventIndex < triggers->count;
                  ++eventIndex) {
-                if (!triggerMatches(source.trigger, triggers.events[eventIndex])) {
+                if (!triggerMatches(
+                        source.trigger,
+                        triggers->events[eventIndex]
+                    )) {
                     continue;
                 }
                 sourceState.explicitMusicalAnchorTick = time.musicalTick;
@@ -556,9 +560,17 @@ ProjectControlRuntimeResult evaluateProjectControlRuntime(
     };
     for (uint16_t destinationIndex = 0;
          destinationIndex < plan.destinationCount;
-         ++destinationIndex) {
+        ++destinationIndex) {
         const auto& destination = plan.destinations[destinationIndex];
-        const auto& baseInput = bases[destinationIndex];
+        ProjectLogicalMacroBaseInput baseInput{};
+        if (!baseProvider(
+                baseContext,
+                destinationIndex,
+                destination.destination,
+                baseInput
+            )) {
+            return {ProjectControlRuntimeStatus::INVALID_ARGUMENT};
+        }
         float base = std::clamp(
             std::isfinite(baseInput.staticValue) ? baseInput.staticValue : 0.0f,
             0.0f,
@@ -660,6 +672,26 @@ ProjectControlRuntimeResult evaluateProjectControlRuntime(
 
 namespace {
 
+struct ArrayBaseProviderContext {
+    const ProjectLogicalMacroBaseInput* values = nullptr;
+    uint16_t count = 0;
+};
+
+bool provideArrayBase(
+    void* context,
+    uint16_t destinationIndex,
+    const ModulationDestination&,
+    ProjectLogicalMacroBaseInput& out
+) {
+    const auto* source = static_cast<const ArrayBaseProviderContext*>(context);
+    if (source == nullptr || source->values == nullptr ||
+        destinationIndex >= source->count) {
+        return false;
+    }
+    out = source->values[destinationIndex];
+    return true;
+}
+
 void captureDiagnosticDestination(
     void* context,
     uint16_t destinationIndex,
@@ -671,6 +703,35 @@ void captureDiagnosticDestination(
 }
 
 }  // namespace
+
+ProjectControlRuntimeResult evaluateProjectControlRuntime(
+    const ProjectModulationRuntimePlan& plan,
+    const ProjectCurveArena& arena,
+    const ProjectControlTimeSnapshot& time,
+    const ProjectModulationTriggerFrame& triggers,
+    const ProjectLogicalMacroBaseInput* bases,
+    uint16_t baseCount,
+    ProjectControlRuntimeState& state,
+    float* sourceValues,
+    uint16_t sourceValueCapacity,
+    ProjectLogicalMacroRuntimeSink sink,
+    void* sinkContext
+) {
+    ArrayBaseProviderContext context{bases, baseCount};
+    return evaluateProjectControlRuntimeWithBaseProvider(
+        plan,
+        arena,
+        time,
+        &triggers,
+        provideArrayBase,
+        &context,
+        state,
+        sourceValues,
+        sourceValueCapacity,
+        sink,
+        sinkContext
+    );
+}
 
 ProjectControlRuntimeResult evaluateProjectControlRuntimeFrame(
     const ProjectModulationRuntimePlan& plan,

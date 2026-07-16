@@ -3,11 +3,13 @@
 #endif
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
 
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -30,8 +32,8 @@ void test_cross_domain_copy_releases_inactive_owned_payloads() {
     assert(clipboard.sequencerGraph != nullptr);
 
     macro::MacroPageData macroPage;
-    macro::MacroAutomationBankState automation;
-    assert(clipboard.storeMacroPage(macroPage, automation, 0, 0));
+    macro::MacroPagesState pages;
+    assert(clipboard.storeMacroPage(macroPage, pages.control, 0, 0));
     assert(clipboard.hasMacroPage());
     assert(clipboard.sequencerGraph == nullptr);
     assert(clipboard.sequencerTrackSelection == nullptr);
@@ -41,18 +43,19 @@ void test_cross_domain_copy_releases_inactive_owned_payloads() {
 
 void test_rejected_copy_clears_previous_clipboard() {
     core::state::StructureClipboardState clipboard;
-    macro::MacroAutomationBankState automation;
     const macro::MacroAutomationSlotAddress address{};
-    auto* slot = macro::macroAutomationGetOrCreateSlot(automation, address);
-    assert(slot != nullptr);
-
     macro::MacroAutomationLane lane;
     lane.active = true;
     lane.durationBeats = 1.0f;
     assert(macro::macroAutomationAppendPoint(lane, 0.0f, 0.25f));
     assert(macro::macroAutomationAppendPoint(lane, 1.0f, 0.75f));
-    assert(macro::macroAutomationAssignAutomation(automation, *slot, lane));
-    assert(clipboard.storeMacroAutomation(automation, *slot));
+    macro::MacroPagesState pages;
+    assert(test_support::project_control::assignAutomation(
+        pages.control,
+        address,
+        lane
+    ));
+    assert(clipboard.storeMacroAutomation(pages.control, address));
     assert(clipboard.hasMacroAutomation());
 
     core::state::SequencerStepsClipboard emptySteps;
@@ -67,10 +70,8 @@ void test_rejected_copy_clears_previous_clipboard() {
 
 void test_invalid_macro_automation_copy_reports_failure() {
     core::state::StructureClipboardState clipboard;
-    macro::MacroAutomationBankState automation;
-    macro::MacroAutomationSlotState emptySlot;
-
-    assert(!clipboard.storeMacroAutomation(automation, emptySlot));
+    macro::MacroPagesState pages;
+    assert(!clipboard.storeMacroAutomation(pages.control, {}));
     assert(clipboard.kind.get() == core::state::StructureClipboardKind::NONE);
 
     std::cout << "[PASS] test_invalid_macro_automation_copy_reports_failure\n";
@@ -87,28 +88,25 @@ void test_macro_clipboards_store_only_the_selected_semantic_domain() {
         pages.currentActivePage(),
         0,
     };
-    auto* slot = macro::macroAutomationGetOrCreateSlot(pages.automation, address);
-    assert(slot != nullptr);
-
     macro::MacroAutomationLane automation;
     assert(macro::macroAutomationAppendPoint(automation, 0.0f, 0.25f));
     assert(macro::macroAutomationAppendPoint(automation, 1.0f, 0.75f));
-    assert(macro::macroAutomationAssignAutomation(
-        pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        pages.control,
+        address,
         automation
     ));
     macro::MacroModulationShape modulation;
     assert(macro::macroModulationAppendPoint(modulation, 0.0f, -0.25f));
     assert(macro::macroModulationAppendPoint(modulation, 1.0f, 0.25f));
-    assert(macro::macroAutomationAssignModulation(
-        pages.automation,
-        *slot,
-        modulation
+    assert(test_support::project_control::assignModulation(
+        pages.control,
+        address,
+        modulation,
+        0.6f
     ));
-    slot->modulationDepth = 0.6f;
 
-    assert(clipboard.storeMacroAutomation(pages.automation, *slot));
+    assert(clipboard.storeMacroAutomation(pages.control, address));
     assert(clipboard.hasMacroAutomation());
     assert(clipboard.macroAutomationSet->payloadKind ==
            core::state::MacroClipboardPayloadKind::AUTOMATION);
@@ -117,7 +115,7 @@ void test_macro_clipboards_store_only_the_selected_semantic_domain() {
     assert(macro::macroCurveStored(automationPayload.automation));
     assert(!macro::macroCurveStored(automationPayload.modulation));
 
-    assert(clipboard.storeMacroModulation(pages.automation, address));
+    assert(clipboard.storeMacroModulation(pages.control, address));
     assert(clipboard.hasMacroModulation());
     assert(clipboard.macroAutomationSet->payloadKind ==
            core::state::MacroClipboardPayloadKind::MODULATION);
@@ -125,7 +123,7 @@ void test_macro_clipboards_store_only_the_selected_semantic_domain() {
         clipboard.macroAutomationSet->entries[0].state;
     assert(!macro::macroCurveStored(modulationPayload.automation));
     assert(macro::macroCurveStored(modulationPayload.modulation));
-    assert(modulationPayload.modulationDepth == 0.6f);
+    assert(std::fabs(modulationPayload.modulationDepth - 0.6f) < 0.0001f);
 
     assert(clipboard.storeMacroDestination(pages, address));
     assert(clipboard.hasMacroDestination());

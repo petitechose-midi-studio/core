@@ -2,190 +2,187 @@
 #undef NDEBUG
 #endif
 
-#include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 
-#include "../../src/handler/macro/MacroStructureAutomationOps.hpp"
+#include "handler/macro/MacroStructureAutomationOps.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
 namespace macro = core::state::macro;
+namespace modulation = core::state::modulation;
 namespace ops = core::handler::macro_structure_automation_ops;
 
 macro::MacroAutomationLane makeLane(uint16_t pointCount) {
     macro::MacroAutomationLane lane;
     lane.active = true;
     lane.durationBeats = 300.0f;
-    for (uint16_t i = 0; i < pointCount; ++i) {
+    for (uint16_t index = 0; index < pointCount; ++index) {
         assert(macro::macroAutomationAppendPoint(
             lane,
-            static_cast<float>(i) * 0.125f,
-            (i & 1U) == 0U ? 0.25f : 0.75f
+            static_cast<float>(index) * 0.125f,
+            (index & 1U) == 0U ? 0.25f : 0.75f
         ));
     }
     return lane;
 }
 
-void assignLane(macro::MacroAutomationBankState& bank,
-                macro::MacroAutomationSlotAddress address,
-                uint16_t pointCount) {
-    auto* slot = macro::macroAutomationGetOrCreateSlot(bank, address);
-    assert(slot != nullptr);
-    auto lane = makeLane(pointCount);
-    assert(macro::macroAutomationAssignAutomation(bank, *slot, lane));
-}
-
-void fillRemainingPoolOutsideTrackZero(macro::MacroAutomationBankState& bank) {
-    uint8_t page = 0;
-    uint8_t macroIndex = 0;
-    while (bank.pointPool.used < macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
-        const uint16_t remaining = static_cast<uint16_t>(
-            macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY - bank.pointPool.used
-        );
-        const uint16_t pointCount = std::min<uint16_t>(
-            remaining,
-            macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS
-        );
-        assignLane(
-            bank,
-            macro::MacroAutomationSlotAddress{
-                .track = 1,
-                .page = page,
-                .macro = macroIndex,
-            },
-            pointCount
-        );
-        macroIndex = static_cast<uint8_t>(macroIndex + 1U);
-        if (macroIndex >= macro::MACRO_COUNT) {
-            macroIndex = 0;
-            page = static_cast<uint8_t>(page + 1U);
-        }
-    }
+void assignLane(
+    modulation::ProjectControlState& control,
+    macro::MacroAutomationSlotAddress address,
+    uint16_t pointCount
+) {
+    const auto lane = makeLane(pointCount);
+    assert(test_support::project_control::assignAutomation(
+        control,
+        address,
+        lane
+    ));
 }
 
 void test_track_duplication_preserves_automation_from_every_page() {
-    macro::MacroAutomationBankState bank;
-    assignLane(bank, {.track = 0, .page = 0, .macro = 1}, 2);
-    assignLane(bank, {.track = 0, .page = 7, .macro = 5}, 3);
+    modulation::ProjectControlState control;
+    assignLane(control, {.track = 0, .page = 0, .macro = 1}, 2);
+    assignLane(control, {.track = 0, .page = 7, .macro = 5}, 3);
 
-    assert(ops::duplicateTrack(bank, 0, 3));
+    const ops::ProjectControlTrackCopy copy{
+        .sourceTrack = 0,
+        .destTrack = 3,
+    };
+    assert(ops::duplicateTracks(control, &copy, 1));
 
-    const auto* first = macro::macroAutomationFindSlot(
-        bank,
+    const auto first = test_support::project_control::readSlot(
+        control,
         {.track = 3, .page = 0, .macro = 1}
     );
-    const auto* second = macro::macroAutomationFindSlot(
-        bank,
+    const auto second = test_support::project_control::readSlot(
+        control,
         {.track = 3, .page = 7, .macro = 5}
     );
-    assert(first != nullptr && first->automation.active);
-    assert(first->automation.pointCount == 2);
-    assert(second != nullptr && second->automation.active);
-    assert(second->automation.pointCount == 3);
+    assert(first.automationStored && first.legacy.automation.pointCount == 2);
+    assert(second.automationStored && second.legacy.automation.pointCount == 3);
 
-    std::cout << "[PASS] test_track_duplication_preserves_automation_from_every_page\n";
+    std::cout
+        << "[PASS] Project track duplication preserves every page automation\n";
 }
 
-void test_page_duplication_rejects_full_pool_without_partial_state() {
-    macro::MacroAutomationBankState bank;
-    const auto sourceAddress = macro::MacroAutomationSlotAddress{
-        .track = 0,
-        .page = 0,
-        .macro = 0,
-    };
-    const auto destAddress = macro::MacroAutomationSlotAddress{
-        .track = 0,
-        .page = 1,
-        .macro = 0,
-    };
-    assignLane(bank, sourceAddress, 2);
-    fillRemainingPoolOutsideTrackZero(bank);
-    const uint8_t entryCountBefore = bank.entryCount;
+void test_batch_duplication_rejects_invalid_copy_atomically() {
+    modulation::ProjectControlState control;
+    assignLane(control, {.track = 0, .page = 0, .macro = 0}, 2);
+    const auto before = control;
+    const std::array<ops::ProjectControlPageCopy, 2> copies{{
+        {
+            .sourceTrack = 0,
+            .sourcePage = 0,
+            .destTrack = 0,
+            .destPage = 1,
+        },
+        {
+            .sourceTrack = 0,
+            .sourcePage = 0,
+            .destTrack = 0,
+            .destPage = macro::PAGE_COUNT,
+        },
+    }};
 
-    assert(!ops::duplicatePage(bank, 0, 0, 0, 1));
+    assert(!ops::duplicatePages(
+        control,
+        copies.data(),
+        static_cast<uint8_t>(copies.size())
+    ));
+    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
 
-    assert(bank.entryCount == entryCountBefore);
-    assert(bank.pointPool.used == macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY);
-    assert(macro::macroAutomationFindSlot(bank, sourceAddress) != nullptr);
-    assert(macro::macroAutomationFindSlot(bank, destAddress) == nullptr);
-
-    std::cout << "[PASS] test_page_duplication_rejects_full_pool_without_partial_state\n";
+    std::cout << "[PASS] Project batch duplication failure is atomic\n";
 }
 
-void test_empty_page_clipboard_replaces_existing_automation_with_empty_scope() {
-    macro::MacroAutomationBankState bank;
-    const auto destAddress = macro::MacroAutomationSlotAddress{
+void test_empty_page_clipboard_replaces_existing_control_with_empty_scope() {
+    modulation::ProjectControlState control;
+    const macro::MacroAutomationSlotAddress destAddress{
         .track = 2,
         .page = 4,
         .macro = 6,
     };
-    assignLane(bank, destAddress, 2);
+    assignLane(control, destAddress, 2);
 
     core::state::MacroAutomationClipboard clipboard;
     clipboard.trackScope = false;
+    assert(ops::replacePageFromClipboard(
+        control,
+        destAddress.track,
+        destAddress.page,
+        &clipboard
+    ));
+    const auto result = test_support::project_control::readSlot(
+        control,
+        destAddress
+    );
+    assert(!result.present);
+    assert(control.authored.curves.recordCount == 0);
+    assert(control.authored.curves.pointCount == 0);
 
-    assert(ops::replacePageFromClipboard(bank, 2, 4, &clipboard));
-    assert(macro::macroAutomationFindSlot(bank, destAddress) == nullptr);
-    assert(bank.pointPool.used == 0);
-
-    std::cout << "[PASS] test_empty_page_clipboard_replaces_existing_automation_with_empty_scope\n";
+    std::cout << "[PASS] Empty page clipboard clears the Project scope\n";
 }
 
-void test_empty_structure_copy_does_not_allocate_automation_clipboard() {
-    macro::MacroAutomationBankState sourceBank;
+void test_empty_structure_copy_does_not_allocate_control_clipboard() {
+    modulation::ProjectControlState sourceControl;
     core::state::StructureClipboardState clipboard;
-    core::state::macro::MacroPageData page;
+    macro::MacroPageData page;
 
-    assert(clipboard.storeMacroPage(page, sourceBank, 0, 0));
+    assert(clipboard.storeMacroPage(page, sourceControl, 0, 0));
     assert(clipboard.hasMacroPage());
     assert(clipboard.macroAutomationSet == nullptr);
 
-    macro::MacroAutomationBankState destBank;
-    const auto destAddress = macro::MacroAutomationSlotAddress{
+    modulation::ProjectControlState destControl;
+    const macro::MacroAutomationSlotAddress destAddress{
         .track = 3,
         .page = 2,
         .macro = 4,
     };
-    assignLane(destBank, destAddress, 2);
+    assignLane(destControl, destAddress, 2);
     assert(ops::replacePageFromClipboard(
-        destBank,
+        destControl,
         destAddress.track,
         destAddress.page,
         clipboard.macroAutomationSet.get()
     ));
-    assert(macro::macroAutomationFindSlot(destBank, destAddress) == nullptr);
+    assert(!test_support::project_control::readSlot(
+        destControl,
+        destAddress
+    ).present);
 
-    std::cout << "[PASS] test_empty_structure_copy_does_not_allocate_automation_clipboard\n";
+    std::cout << "[PASS] Empty structure copy allocates no control payload\n";
 }
 
-void test_track_structure_copy_captures_all_page_automations() {
-    macro::MacroAutomationBankState sourceBank;
-    assignLane(sourceBank, {.track = 2, .page = 1, .macro = 3}, 2);
-    assignLane(sourceBank, {.track = 2, .page = 9, .macro = 6}, 3);
+void test_track_structure_copy_captures_all_page_automation() {
+    modulation::ProjectControlState sourceControl;
+    assignLane(sourceControl, {.track = 2, .page = 1, .macro = 3}, 2);
+    assignLane(sourceControl, {.track = 2, .page = 9, .macro = 6}, 3);
     core::state::StructureClipboardState clipboard;
-    core::state::macro::MacroTrackData track;
+    macro::MacroTrackData track;
 
-    assert(clipboard.storeMacroTrack(track, sourceBank, 2));
+    assert(clipboard.storeMacroTrack(track, sourceControl, 2));
     assert(clipboard.hasMacroTrack());
     assert(clipboard.macroAutomationSet != nullptr);
     assert(clipboard.macroAutomationSet->trackScope);
     assert(clipboard.macroAutomationSet->count == 2);
 
-    std::cout << "[PASS] test_track_structure_copy_captures_all_page_automations\n";
+    std::cout << "[PASS] Track copy captures every Project automation\n";
 }
 
 void test_malformed_clipboard_is_rejected_before_destination_mutation() {
-    macro::MacroAutomationBankState bank;
-    const auto destAddress = macro::MacroAutomationSlotAddress{
+    modulation::ProjectControlState control;
+    const macro::MacroAutomationSlotAddress destAddress{
         .track = 4,
         .page = 3,
         .macro = 2,
     };
-    assignLane(bank, destAddress, 3);
-    const auto before = bank;
+    assignLane(control, destAddress, 3);
+    const auto before = control;
 
     core::state::MacroAutomationClipboard clipboard;
     clipboard.valid = true;
@@ -200,46 +197,45 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
     entry.state.automation.pointCount = 1;
 
     assert(!ops::replacePageFromClipboard(
-        bank,
+        control,
         destAddress.track,
         destAddress.page,
         &clipboard
     ));
-    assert(std::memcmp(&bank, &before, sizeof(bank)) == 0);
+    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
 
     clipboard.count = static_cast<uint8_t>(clipboard.entries.size() + 1U);
     assert(!ops::replacePageFromClipboard(
-        bank,
+        control,
         destAddress.track,
         destAddress.page,
         &clipboard
     ));
-    assert(std::memcmp(&bank, &before, sizeof(bank)) == 0);
+    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
 
     clipboard.count = 0;
     clipboard.pointPool.used = static_cast<uint16_t>(
         clipboard.pointPool.points.size() + 1U
     );
     assert(!ops::replacePageFromClipboard(
-        bank,
+        control,
         destAddress.track,
         destAddress.page,
         &clipboard
     ));
-    assert(std::memcmp(&bank, &before, sizeof(bank)) == 0);
+    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
 
-    std::cout
-        << "[PASS] test_malformed_clipboard_is_rejected_before_destination_mutation\n";
+    std::cout << "[PASS] Malformed clipboard cannot mutate Project control\n";
 }
 
 }  // namespace
 
 int main() {
     test_track_duplication_preserves_automation_from_every_page();
-    test_page_duplication_rejects_full_pool_without_partial_state();
-    test_empty_page_clipboard_replaces_existing_automation_with_empty_scope();
-    test_empty_structure_copy_does_not_allocate_automation_clipboard();
-    test_track_structure_copy_captures_all_page_automations();
+    test_batch_duplication_rejects_invalid_copy_atomically();
+    test_empty_page_clipboard_replaces_existing_control_with_empty_scope();
+    test_empty_structure_copy_does_not_allocate_control_clipboard();
+    test_track_structure_copy_captures_all_page_automation();
     test_malformed_clipboard_is_rejected_before_destination_mutation();
 
     std::cout << "\nAll MacroStructureAutomationOps tests passed.\n";

@@ -11,6 +11,7 @@
 #include "../../src/handler/macro/MacroAutomationPlaybackService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -50,46 +51,38 @@ public:
 };
 
 void configureAutomation(core::state::CoreState& state) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = state.pages.currentActiveTrack(),
-            .page = state.pages.currentActivePage(),
-            .macro = 0,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 2.0f;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        state.pages.control,
+        address,
         lane
     ));
 }
 
 void configureModulation(core::state::CoreState& state, float depth) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = state.pages.currentActiveTrack(),
-            .page = state.pages.currentActivePage(),
-            .macro = 0,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
     core::state::macro::MacroModulationShape shape;
     shape.durationBeats = 2.0f;
     assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, 0.25f));
     assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, -0.25f));
-    assert(core::state::macro::macroAutomationAssignModulation(
-        state.pages.automation,
-        *slot,
-        shape
+    assert(test_support::project_control::assignModulation(
+        state.pages.control,
+        address,
+        shape,
+        depth
     ));
-    slot->modulationDepth = depth;
 }
 
 void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
@@ -135,7 +128,7 @@ void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
     std::cout << "[PASS] test_playback_updates_runtime_and_sends_cc_when_value_changes\n";
 }
 
-void test_playback_stops_when_transport_is_stopped() {
+void test_stopped_transport_publishes_static_owner_without_playing_curve() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -158,9 +151,11 @@ void test_playback_stops_when_transport_is_stopped() {
     state.statusBar.playing.set(false);
     playback.update(1000);
     playback.update(1500);
-    assert(midiTransport.ccCount == 0);
+    assert(midiTransport.ccCount == 1);
+    assert(midiTransport.lastValue == 0);
 
-    std::cout << "[PASS] test_playback_stops_when_transport_is_stopped\n";
+    std::cout
+        << "[PASS] stopped transport publishes Static owner without curve motion\n";
 }
 
 void test_update_period_remains_bounded_across_millisecond_rollover() {
@@ -277,24 +272,33 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    auto slot = test_support::project_control::readSlot(
+        state.pages.control,
         address
     );
-    assert(slot != nullptr);
-    const uint16_t pointCount = slot->modulation.pointCount;
-    slot->modulationDepth = 0.0f;
+    const uint16_t pointCount = slot.legacy.modulation.pointCount;
+    assert(core::state::modulation::setProjectControlModulationAmount(
+        state.pages.control,
+        address,
+        0.0f
+    ));
     playback.update(1500);
     assert(midiTransport.ccCount == 2);
     assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
     assert(services.computedSourcePlaybackActiveFor(0));
-    assert(slot->modulation.pointCount == pointCount);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(slot.legacy.modulation.pointCount == pointCount);
 
-    slot->modulationDepth = 0.4f;
+    assert(core::state::modulation::setProjectControlModulationAmount(
+        state.pages.control,
+        address,
+        0.4f
+    ));
     playback.update(2000);
     assert(midiTransport.ccCount == 3);
     assert(midiTransport.lastValue >= 50 && midiTransport.lastValue <= 52);
-    assert(slot->modulation.pointCount == pointCount);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(slot.legacy.modulation.pointCount == pointCount);
 
     std::cout << "[PASS] test_modulation_only_playback_and_depth_zero_remain_computed\n";
 }
@@ -339,13 +343,12 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
 
     assert(services.recordAutomationPoint(0, 1600, 0.6f));
     assert(services.commitAutomationRecording(2000));
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        state.pages.automation,
+    const auto slot = test_support::project_control::readSlot(
+        state.pages.control,
         {state.pages.currentActiveTrack(), state.pages.currentActivePage(), 0}
     );
-    assert(slot != nullptr);
-    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
-    assert(slot->modulation.playbackState ==
+    assert(core::state::macro::macroCurvePlaybackActive(slot.legacy.modulation));
+    assert(slot.legacy.modulation.playbackState ==
            core::state::macro::MacroCurvePlaybackState::ACTIVE);
 
     std::cout << "[PASS] recording captures raw Base while Modulation stays audible\n";
@@ -395,19 +398,27 @@ void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    auto* slot =
-        core::state::macro::macroAutomationFindMutableSlot(state.pages.automation, address);
-    assert(slot != nullptr);
-    slot->automation.active = false;
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        state.pages.control,
+        address,
+        false
+    ));
     state.macros[0].value.set(0.42f);
     playback.update(3500);
-    assert(midiTransport.ccCount == 2);
-
-    // The same ownership guarantee applies when only the automation lane is
-    // disabled while the macro slot remains active.
-    slot->automation.active = true;
-    playback.update(5000);
     assert(midiTransport.ccCount == 3);
+    assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
+    assert(state.macros[0].value.get() > 0.49f &&
+           state.macros[0].value.get() < 0.51f);
+
+    // Disabling Automation transfers ownership to the authored Static Base;
+    // re-enabling it must explicitly reclaim ownership for the curve.
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        state.pages.control,
+        address,
+        true
+    ));
+    playback.update(5000);
+    assert(midiTransport.ccCount == 4);
     assert(midiTransport.lastValue == 0);
     assert(std::fabs(state.macros[0].value.get() - 0.0f) < 0.0001f);
 
@@ -424,6 +435,11 @@ void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
     state.pages.activePageData().values[0] = 0.5f;
     state.pages.activePageData().cc[0] = 74;
     state.pages.updateActiveConfigs();
+    // Keep Track 1 intentionally silent: this test isolates navigation from
+    // Project-author topology changes, which are covered by the integration
+    // frame tests.
+    state.pages.tracks[1].pages[0].setMacroActive(0, false);
+    state.pages.syncSharedTrackState(0x0003U, 0);
     state.statusBar.tempo.set(60.0f);
     state.statusBar.playing.set(true);
 
@@ -541,7 +557,7 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
 
 int main() {
     test_playback_updates_runtime_and_sends_cc_when_value_changes();
-    test_playback_stops_when_transport_is_stopped();
+    test_stopped_transport_publishes_static_owner_without_playing_curve();
     test_update_period_remains_bounded_across_millisecond_rollover();
     test_manual_override_replaces_automation_base_until_resume();
     test_modulation_only_playback_and_depth_zero_remain_computed();

@@ -149,6 +149,28 @@ using ProjectLogicalMacroRuntimeSink = void (*)(
     const ProjectLogicalMacroRuntimeValue& value
 );
 
+using ProjectLogicalMacroBaseProvider = bool (*)(
+    void* context,
+    uint16_t destinationIndex,
+    const ModulationDestination& destination,
+    ProjectLogicalMacroBaseInput& out
+);
+
+/** Product path: resolves one base lazily, with no 128-entry base array. */
+ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
+    const ProjectModulationRuntimePlan& plan,
+    const ProjectCurveArena& arena,
+    const ProjectControlTimeSnapshot& time,
+    const ProjectModulationTriggerFrame* triggers,
+    ProjectLogicalMacroBaseProvider baseProvider,
+    void* baseContext,
+    ProjectControlRuntimeState& state,
+    float* sourceValues,
+    uint16_t sourceValueCapacity,
+    ProjectLogicalMacroRuntimeSink sink,
+    void* sinkContext
+);
+
 /**
  * Memory-minimal evaluator used by the product runtime. The caller supplies
  * only the 128-float source scratch and an unpublished destination sink; this

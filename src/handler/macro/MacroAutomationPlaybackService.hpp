@@ -11,6 +11,8 @@
 #include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/modulation/ProjectControlRuntime.hpp"
+#include "state/shared/MidiCcDestinationResolver.hpp"
 
 namespace core::handler {
 
@@ -42,8 +44,36 @@ public:
     void reset();
 
 private:
+    struct FramePublicationContext;
+
     void consumeRuntimeOwnerActivation_(uint32_t nowMs);
     void updatePlaybackBeat_(uint32_t nowMs);
+    core::state::modulation::ProjectModulationCompileContext compileContext_() const;
+    bool ensureProjectRuntime_(
+        const core::state::modulation::ProjectControlTimeSnapshot& time
+    );
+    static bool provideBase_(
+        void* context,
+        uint16_t destinationIndex,
+        const core::state::modulation::ModulationDestination& destination,
+        core::state::modulation::ProjectLogicalMacroBaseInput& out
+    );
+    static void captureRuntimeDestination_(
+        void* context,
+        uint16_t destinationIndex,
+        const core::state::modulation::ProjectLogicalMacroRuntimeValue& value
+    );
+    static bool produceProjectFrame_(
+        void* context,
+        core::state::shared::MidiCcCandidate* destination,
+        uint16_t capacity,
+        uint16_t& written
+    );
+    bool appendStaticAuthors_(FramePublicationContext& context) const;
+    void updateVisibleProjection_(
+        uint16_t destinationIndex,
+        const core::state::modulation::ProjectLogicalMacroRuntimeValue& value
+    );
     void syncActivePageRuntimeProjection_(uint8_t track, uint8_t page);
     void invalidateComputedRuntime_();
     void invalidateSentCache_();

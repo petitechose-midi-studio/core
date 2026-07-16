@@ -17,6 +17,7 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -267,22 +268,18 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
 void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
     MacroEditHarness h;
 
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = h.state.pages.currentActivePage(),
-            .macro = 0,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = h.state.pages.currentActiveTrack(),
+        .page = h.state.pages.currentActivePage(),
+        .macro = 0,
+    };
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 2.0f;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        h.state.pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        h.state.pages.control,
+        address,
         lane
     ));
 
@@ -300,18 +297,12 @@ void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
     h.turn(Config::EncoderID::OPT, 0.0f);
     assert(!h.services.automationPlaybackActiveFor(0));
 
-    const auto address = core::state::macro::MacroAutomationSlotAddress{
-        .track = h.state.pages.currentActiveTrack(),
-        .page = h.state.pages.currentActivePage(),
-        .macro = 0,
-    };
-    const auto* disabled = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto disabled = test_support::project_control::readSlot(
+        h.state.pages.control,
         address
     );
-    assert(disabled != nullptr);
-    assert(disabled->automation.active);
-    assert(disabled->automation.pointCount == 2);
+    assert(!disabled.automationEnabled);
+    assert(disabled.legacy.automation.pointCount == 2);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.services.automationPlaybackActiveFor(0));
@@ -321,13 +312,12 @@ void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
            core::state::MacroEditFlowPhase::AUTOMATION);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_AUTOMATION);
 
-    const auto* preserved = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto preserved = test_support::project_control::readSlot(
+        h.state.pages.control,
         address
     );
-    assert(preserved != nullptr);
-    assert(preserved->automation.active);
-    assert(preserved->automation.pointCount == 2);
+    assert(preserved.automationEnabled);
+    assert(preserved.legacy.automation.pointCount == 2);
 
     h.flushState();
 

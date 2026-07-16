@@ -1,6 +1,7 @@
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -8,6 +9,7 @@
 #include <oc/type/TextFormat.hpp>
 
 #include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -136,11 +138,14 @@ FLASHMEM void formatCurveSummary(char* out,
 }
 
 FLASHMEM ms::ui::KeyValueSparkline buildCurveSparkline(
+    const core::state::modulation::ProjectControlState& control,
+    core::state::modulation::ProjectCurveId curveId,
     const core::state::macro::MacroAutomationCurveRef& curve,
-    const core::state::macro::MacroAutomationPointPool& pool
+    float fallback = 0.0f
 ) {
     ms::ui::KeyValueSparkline sparkline{};
-    if (!curve.active || curve.pointCount == 0 || curve.pointOffset >= pool.used) {
+    if (!curve.active || curve.pointCount == 0 ||
+        !core::state::modulation::valid(curveId)) {
         return sparkline;
     }
 
@@ -162,11 +167,12 @@ FLASHMEM ms::ui::KeyValueSparkline buildCurveSparkline(
         const float beat =
             static_cast<float>(tick) /
             static_cast<float>(core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT);
-        const float value = core::state::macro::macroAutomationEvaluate(
-            curve,
-            pool,
+        const float value =
+            core::state::modulation::evaluateProjectControlCurve(
+            control,
+            curveId,
             beat,
-            0.0f
+            fallback
         );
         const float clamped = core::state::macro::macroAutomationClamp01(value);
         sparkline.samples[i] = static_cast<uint8_t>(clamped * 255.0f + 0.5f);
@@ -175,38 +181,28 @@ FLASHMEM ms::ui::KeyValueSparkline buildCurveSparkline(
 }
 
 FLASHMEM ms::ui::KeyValueSparkline buildModulationSparkline(
-    const core::state::macro::MacroAutomationCurveRef& curve,
-    const core::state::macro::MacroAutomationPointPool& pool
+    const core::ui::MacroEditorPreviewModel& preview
 ) {
     ms::ui::KeyValueSparkline sparkline{};
-    if (!curve.active || curve.pointCount == 0 || curve.pointOffset >= pool.used) {
+    if (!preview.modulationStored) {
         return sparkline;
     }
 
-    const uint16_t durationTicks = curve.durationTicks == 0
-        ? core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
-        : curve.durationTicks;
     constexpr uint8_t sampleCount =
         static_cast<uint8_t>(ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT);
     sparkline.enabled = true;
     sparkline.centerLine = true;
     sparkline.sampleCount = sampleCount;
-    const uint16_t lastSampleTick = durationTicks > 0U
-        ? static_cast<uint16_t>(durationTicks - 1U)
-        : 0U;
     for (uint8_t i = 0; i < sampleCount; ++i) {
-        const uint32_t tick = sampleCount > 1U
-            ? (static_cast<uint32_t>(i) * lastSampleTick) / (sampleCount - 1U)
+        const size_t sourceIndex = sampleCount > 1U
+            ? (static_cast<size_t>(i) *
+               (core::ui::MACRO_EDITOR_PREVIEW_SAMPLE_COUNT - 1U)) /
+                  (sampleCount - 1U)
             : 0U;
-        const float beat =
-            static_cast<float>(tick) /
-            static_cast<float>(
-                core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
-            );
-        const float value = core::state::macro::macroModulationEvaluate(
-            curve,
-            pool,
-            beat
+        const float value = std::clamp(
+            static_cast<float>(preview.modulation[sourceIndex]) / 255.0f,
+            -1.0f,
+            1.0f
         );
         const float normalized = std::clamp((value + 1.0f) * 0.5f, 0.0f, 1.0f);
         sparkline.samples[i] =
@@ -218,16 +214,15 @@ FLASHMEM ms::ui::KeyValueSparkline buildModulationSparkline(
 FLASHMEM void formatAutomationState(
     char* out,
     size_t outSize,
-    const core::state::macro::MacroAutomationSlotState* slot,
+    const core::state::modulation::ProjectControlMacroSlotView* slot,
     bool manual
 ) {
     if (out == nullptr || outSize == 0) return;
-    if (slot == nullptr ||
-        !core::state::macro::macroCurveStored(slot->automation)) {
+    if (slot == nullptr || !slot->automationStored) {
         std::snprintf(out, outSize, "%s", "Off");
         return;
     }
-    if (!core::state::macro::macroCurvePlaybackActive(slot->automation)) {
+    if (!slot->automationEnabled) {
         std::snprintf(out, outSize, "%s", "Stored · Off");
         return;
     }
@@ -237,44 +232,52 @@ FLASHMEM void formatAutomationState(
 FLASHMEM void formatModulationState(
     char* out,
     size_t outSize,
-    const core::state::macro::MacroAutomationSlotState* slot
+    const core::state::modulation::ProjectControlMacroSlotView* slot
 ) {
     if (out == nullptr || outSize == 0) return;
-    if (slot == nullptr ||
-        !core::state::macro::macroCurveStored(slot->modulation)) {
+    if (slot == nullptr || !slot->modulationStored) {
         std::snprintf(out, outSize, "%s", "Off");
         return;
     }
-    if (!core::state::macro::macroCurvePlaybackActive(slot->modulation)) {
+    if (slot->modulationCount > 1U) {
+        std::snprintf(
+            out,
+            outSize,
+            "%u sources · %s",
+            static_cast<unsigned>(slot->modulationCount),
+            slot->activeModulationCount > 0U ? "On" : "Off"
+        );
+        return;
+    }
+    if (!slot->modulationEnabled) {
         std::snprintf(out, outSize, "%s", "Stored · Off");
         return;
     }
-    if (slot->modulationDepth <= 0.0f) {
+    const int amount = static_cast<int>(std::lround(
+        std::clamp(slot->legacy.modulationDepth, -1.0f, 1.0f) * 100.0f
+    ));
+    if (amount == 0) {
         std::snprintf(out, outSize, "%s", "Paused · 0%%");
         return;
     }
     std::snprintf(
         out,
         outSize,
-        "On · %u%%",
-        static_cast<unsigned>(slot->modulationDepth * 100.0f + 0.5f)
+        "On · %d%%",
+        amount
     );
 }
 
 FLASHMEM core::ui::macro::MacroSourceDetailContext sourceDetailContext(
-    const core::state::macro::MacroAutomationSlotState* slot,
+    const core::state::modulation::ProjectControlMacroSlotView* slot,
     bool manual
 ) {
     if (slot == nullptr) return {};
     return {
-        .automationStored =
-            core::state::macro::macroCurveStored(slot->automation),
-        .modulationStored =
-            core::state::macro::macroCurveStored(slot->modulation),
-        .automationPlayback =
-            core::state::macro::macroCurvePlaybackActive(slot->automation),
-        .modulationPlayback =
-            core::state::macro::macroCurvePlaybackActive(slot->modulation),
+        .automationStored = slot->automationStored,
+        .modulationStored = slot->modulationStored,
+        .automationPlayback = slot->automationEnabled,
+        .modulationPlayback = slot->activeModulationCount > 0U,
         .manualOverride = manual,
     };
 }
@@ -525,17 +528,17 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         .page = source.pages.currentActivePage(),
         .macro = macroIndex,
     };
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        source.pages.automation,
-        address
-    );
+    core::state::modulation::ProjectControlMacroSlotView slotView{};
+    const auto* slot = core::state::modulation::readProjectControlMacroSlot(
+        source.pages.control,
+        address,
+        slotView
+    ) ? &slotView : nullptr;
     const bool manualOverride =
         (source.macroUi.automationManualOverrideMask.get() &
          static_cast<uint16_t>(1U << macroIndex)) != 0;
-    const bool automationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->automation);
-    const bool modulationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->modulation);
+    const bool automationStored = slot != nullptr && slot->automationStored;
+    const bool modulationStored = slot != nullptr && slot->modulationStored;
     uint32_t baseBits = 0;
     std::memcpy(
         &baseBits,
@@ -554,11 +557,15 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         previewRevision,
         source.macroUi.automationRecordingRevision.get()
     );
+    previewRevision = mixRevision(
+        previewRevision,
+        source.pages.control.authoredRevision
+    );
     if (data.previewRevision != previewRevision) {
         core::ui::buildMacroEditorPreviewModel(
             source.pages.activePageData().values[macroIndex],
-            slot,
-            source.pages.automation.pointPool,
+            source.pages.control,
+            address,
             manualOverride,
             data.preview
         );
@@ -610,20 +617,25 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         (static_cast<uint32_t>(source.pages.currentActivePage() & 0x0FU) << 16) |
         (static_cast<uint32_t>(source.macroEdit.focusedRow.get() & 0x03U) << 14);
     if (slot != nullptr) {
-        revision = mixRevision(revision, slot->automation.pointCount);
-        revision = mixRevision(revision, slot->modulation.pointCount);
+        revision = mixRevision(revision, slot->legacy.automation.pointCount);
+        revision = mixRevision(revision, slot->legacy.modulation.pointCount);
         revision = mixRevision(
             revision,
-            static_cast<uint32_t>(slot->automation.playbackState)
+            static_cast<uint32_t>(slot->automationEnabled)
         );
         revision = mixRevision(
             revision,
-            static_cast<uint32_t>(slot->modulation.playbackState)
+            static_cast<uint32_t>(slot->activeModulationCount)
         );
         uint32_t depthBits = 0;
-        std::memcpy(&depthBits, &slot->modulationDepth, sizeof(depthBits));
+        std::memcpy(
+            &depthBits,
+            &slot->legacy.modulationDepth,
+            sizeof(depthBits)
+        );
         revision = mixRevision(revision, depthBits);
     }
+    revision = mixRevision(revision, source.pages.control.authoredRevision);
     revision = mixRevision(revision, baseBits);
     data.dataRevision = mixRevision(
         mixRevision(
@@ -676,14 +688,14 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         .page = source.pages.currentActivePage(),
         .macro = macroIndex,
     };
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        source.pages.automation,
-        address
-    );
-    const bool automationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->automation);
-    const bool modulationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->modulation);
+    core::state::modulation::ProjectControlMacroSlotView slotView{};
+    const auto* slot = core::state::modulation::readProjectControlMacroSlot(
+        source.pages.control,
+        address,
+        slotView
+    ) ? &slotView : nullptr;
+    const bool automationStored = slot != nullptr && slot->automationStored;
+    const bool modulationStored = slot != nullptr && slot->modulationStored;
     const bool manualOverride =
         (source.macroUi.automationManualOverrideMask.get() &
          static_cast<uint16_t>(1U << macroIndex)) != 0;
@@ -729,24 +741,25 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         ms::ui::KeyValueSparkline curveSparkline{};
         if (automationStored) {
             const auto curveSummary =
-                core::state::macro::macroAutomationCurveWindowSummary(
-                    slot->automation,
-                    source.pages.automation.pointPool
+                core::state::modulation::projectControlCurveWindowSummary(
+                    source.pages.control,
+                    slot->automationCurveId
                 );
             curveSparkline = buildCurveSparkline(
-                slot->automation,
-                source.pages.automation.pointPool
+                source.pages.control,
+                slot->automationCurveId,
+                slot->legacy.automation
             );
             formatBeatDuration(
                 data.valueBuffers[2].data(),
                 data.valueBuffers[2].size(),
-                slot->automation.durationTicks,
+                slot->legacy.automation.durationTicks,
                 " beats"
             );
             formatBeatDuration(
                 data.valueBuffers[3].data(),
                 data.valueBuffers[3].size(),
-                slot->automation.windowOffsetTicks,
+                slot->legacy.automation.windowOffsetTicks,
                 " beats"
             );
             formatCurveSummary(
@@ -806,15 +819,36 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             slot
         );
         const bool paused = detailContext.modulationPlayback &&
-            slot != nullptr && slot->modulationDepth <= 0.0f;
-        std::snprintf(
-            data.valueBuffers[1].data(),
-            data.valueBuffers[1].size(),
-            modulationStored ? "%u%%" : "-",
-            modulationStored
-                ? static_cast<unsigned>(slot->modulationDepth * 100.0f + 0.5f)
-                : 0U
-        );
+            slot != nullptr && slot->modulationCount == 1U &&
+            std::abs(slot->legacy.modulationDepth) < 0.0001f;
+        if (!modulationStored) {
+            std::snprintf(
+                data.valueBuffers[1].data(),
+                data.valueBuffers[1].size(),
+                "%s",
+                "-"
+            );
+        } else if (slot->modulationCount > 1U) {
+            std::snprintf(
+                data.valueBuffers[1].data(),
+                data.valueBuffers[1].size(),
+                "%u sources",
+                static_cast<unsigned>(slot->modulationCount)
+            );
+        } else {
+            std::snprintf(
+                data.valueBuffers[1].data(),
+                data.valueBuffers[1].size(),
+                "%d%%",
+                static_cast<int>(std::lround(
+                    std::clamp(
+                        slot->legacy.modulationDepth,
+                        -1.0f,
+                        1.0f
+                    ) * 100.0f
+                ))
+            );
+        }
         std::snprintf(
             data.valueBuffers[2].data(),
             data.valueBuffers[2].size(),
@@ -825,15 +859,28 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             data.valueBuffers[3].data(),
             data.valueBuffers[3].size(),
             "%s",
-            modulationStored
-                ? modulationOriginLabel(slot->modulation.modulationOrigin)
-                : "None"
+            !modulationStored
+                ? "None"
+                : (slot->modulationCount > 1U
+                    ? "Mixed"
+                    : (slot->primaryRecordedShape
+                        ? modulationOriginLabel(
+                            slot->legacy.modulation.modulationOrigin
+                        )
+                        : "Generated"))
         );
+        core::ui::MacroEditorPreviewModel modulationPreview{};
+        if (modulationStored) {
+            core::ui::buildMacroEditorPreviewModel(
+                source.pages.activePageData().values[macroIndex],
+                source.pages.control,
+                address,
+                manualOverride,
+                modulationPreview
+            );
+        }
         const auto modulationSparkline = modulationStored
-            ? buildModulationSparkline(
-                  slot->modulation,
-                  source.pages.automation.pointPool
-              )
+            ? buildModulationSparkline(modulationPreview)
             : ms::ui::KeyValueSparkline{};
         const auto layout =
             core::ui::macro::buildModulationDetailLayout(detailContext);
@@ -885,17 +932,29 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         (static_cast<uint32_t>(data.selectedIndex & 0x07U) << 16) |
         (static_cast<uint32_t>(phase) << 8);
     if (automationStored) {
-        revision = mixRevision(revision, slot->automation.pointCount);
-        revision = mixRevision(revision, slot->automation.durationTicks);
-        revision = mixRevision(revision, slot->automation.sourceDurationTicks);
-        revision = mixRevision(revision, slot->automation.windowOffsetTicks);
+        revision = mixRevision(revision, slot->legacy.automation.pointCount);
+        revision = mixRevision(revision, slot->legacy.automation.durationTicks);
+        revision = mixRevision(
+            revision,
+            slot->legacy.automation.sourceDurationTicks
+        );
+        revision = mixRevision(
+            revision,
+            slot->legacy.automation.windowOffsetTicks
+        );
     }
     if (modulationStored) {
-        revision = mixRevision(revision, slot->modulation.pointCount);
+        revision = mixRevision(revision, slot->modulationCount);
+        revision = mixRevision(revision, slot->activeModulationCount);
         uint32_t depthBits = 0;
-        std::memcpy(&depthBits, &slot->modulationDepth, sizeof(depthBits));
+        std::memcpy(
+            &depthBits,
+            &slot->legacy.modulationDepth,
+            sizeof(depthBits)
+        );
         revision = mixRevision(revision, depthBits);
     }
+    revision = mixRevision(revision, source.pages.control.authoredRevision);
     data.dataRevision = mixRevision(
         revision,
         source.macroUi.automationRecordingRevision.get()
@@ -918,18 +977,17 @@ FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
     props.visible = true;
     const uint8_t row = std::min<uint8_t>(source.macroEdit.focusedRow.get(), 2U);
     const auto address = currentAddress(source);
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        source.pages.automation,
-        address
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    const bool slotReadable = core::state::modulation::readProjectControlMacroSlot(
+        source.pages.control,
+        address,
+        slot
     );
-    const bool automationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->automation);
-    const bool modulationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->modulation);
-    const bool automationPlayback = automationStored &&
-        core::state::macro::macroCurvePlaybackActive(slot->automation);
+    const bool automationStored = slotReadable && slot.automationStored;
+    const bool modulationStored = slotReadable && slot.modulationStored;
+    const bool automationPlayback = automationStored && slot.automationEnabled;
     const bool modulationPlayback = modulationStored &&
-        core::state::macro::macroCurvePlaybackActive(slot->modulation);
+        slot.activeModulationCount > 0U;
 
     if (row == 0U) {
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
@@ -999,19 +1057,19 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
     }
 
     const auto address = currentAddress(source);
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        source.pages.automation,
-        address
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    const bool slotReadable = core::state::modulation::readProjectControlMacroSlot(
+        source.pages.control,
+        address,
+        slot
     );
     const bool modulation = phase == core::state::MacroEditFlowPhase::MODULATION;
-    const bool automationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->automation);
-    const bool modulationStored = slot != nullptr &&
-        core::state::macro::macroCurveStored(slot->modulation);
+    const bool automationStored = slotReadable && slot.automationStored;
+    const bool modulationStored = slotReadable && slot.modulationStored;
     const bool stored = modulation ? modulationStored : automationStored;
-    const bool playback = stored && core::state::macro::macroCurvePlaybackActive(
-        modulation ? slot->modulation : slot->automation
-    );
+    const bool playback = stored && (modulation
+        ? slot.activeModulationCount > 0U
+        : slot.automationEnabled);
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
         playback
             ? (modulation ? ::standalone::icons::MACRO_MODULATION

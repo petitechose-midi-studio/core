@@ -19,6 +19,7 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -88,15 +89,11 @@ struct MacroAutomationHarness {
 
     void configureAutomation(uint8_t macroIndex = 0, float durationBeats = 2.0f) {
         state.pages.setMacroSlotActive(macroIndex, true);
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            state.pages.automation,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = state.pages.currentActiveTrack(),
-                .page = state.pages.currentActivePage(),
-                .macro = macroIndex,
-            }
-        );
-        assert(slot != nullptr);
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = macroIndex,
+        };
         core::state::macro::MacroAutomationLane lane;
         lane.durationBeats = durationBeats;
         assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
@@ -106,34 +103,30 @@ struct MacroAutomationHarness {
             1.0f
         ));
         assert(core::state::macro::macroAutomationAppendPoint(lane, durationBeats, 0.0f));
-        assert(core::state::macro::macroAutomationAssignAutomation(
-            state.pages.automation,
-            *slot,
+        assert(test_support::project_control::assignAutomation(
+            state.pages.control,
+            address,
             lane
         ));
     }
 
     void configureModulation(uint8_t macroIndex = 0, float depth = 0.5f) {
         state.pages.setMacroSlotActive(macroIndex, true);
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            state.pages.automation,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = state.pages.currentActiveTrack(),
-                .page = state.pages.currentActivePage(),
-                .macro = macroIndex,
-            }
-        );
-        assert(slot != nullptr);
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = macroIndex,
+        };
         core::state::macro::MacroModulationShape shape;
         shape.durationBeats = 2.0f;
         assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, 0.25f));
         assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, -0.25f));
-        assert(core::state::macro::macroAutomationAssignModulation(
-            state.pages.automation,
-            *slot,
-            shape
+        assert(test_support::project_control::assignModulation(
+            state.pages.control,
+            address,
+            shape,
+            depth
         ));
-        slot->modulationDepth = depth;
     }
 
     void turn(Config::EncoderID id, float value) {
@@ -170,25 +163,24 @@ void test_playback_row_toggles_automation_without_clearing_curve() {
     h.openAutomationEditor();
 
     h.turn(Config::EncoderID::OPT, 0.0f);
-    const auto* preserved = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    auto preserved = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{
             .track = h.state.pages.currentActiveTrack(),
             .page = h.state.pages.currentActivePage(),
             .macro = 0,
         }
     );
-    assert(preserved != nullptr);
-    assert(core::state::macro::macroCurveStored(preserved->automation));
-    assert(!core::state::macro::macroCurvePlaybackActive(
-        preserved->automation
-    ));
+    assert(preserved.automationStored);
+    assert(!preserved.automationEnabled);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(core::state::macro::macroCurvePlaybackActive(
-        preserved->automation
-    ));
-    assert(preserved->automation.pointCount == 3);
+    preserved = test_support::project_control::readSlot(
+        h.state.pages.control,
+        preserved.address
+    );
+    assert(preserved.automationEnabled);
+    assert(preserved.legacy.automation.pointCount == 3);
 
     h.flushState();
 
@@ -259,7 +251,7 @@ void test_conversion_is_one_turn_away_and_switches_playback_truth() {
     assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
     // The triangular 0 -> 1 -> 0 automation is centered on 0.5 and has a
     // symmetric amplitude of 0.5. Conversion preserves that audible range.
-    assert(slot->modulationDepth == 0.5f);
+    assert(std::fabs(slot->modulationDepth - 0.5f) < 0.0001f);
 
     std::cout
         << "[PASS] test_conversion_is_one_turn_away_and_switches_playback_truth\n";
@@ -275,19 +267,18 @@ void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
     h.setNow(100);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    auto slot = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{
             .track = h.state.pages.currentActiveTrack(),
             .page = h.state.pages.currentActivePage(),
             .macro = 0,
         }
     );
-    assert(slot != nullptr);
-    assert(slot->automation.active);
-    assert(slot->modulation.active);
-    assert(!core::state::macro::macroCurvePlaybackActive(slot->modulation));
-    assert(slot->modulationDepth == 0.5f);
+    assert(slot.automationEnabled);
+    assert(slot.modulationStored);
+    assert(!slot.modulationEnabled);
+    assert(std::fabs(slot.legacy.modulationDepth - 0.5f) < 0.0001f);
     assert(h.state.pages.isMacroSlotActive(0));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -300,9 +291,13 @@ void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
     h.setNow(clearAt + 10U);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
-    assert(slot->automation.active);
-    assert(!slot->modulation.active);
-    assert(slot->modulationDepth == 0.0f);
+    slot = test_support::project_control::readSlot(
+        h.state.pages.control,
+        slot.address
+    );
+    assert(slot.automationEnabled);
+    assert(!slot.modulationStored);
+    assert(slot.legacy.modulationDepth == 0.0f);
     assert(h.state.pages.isMacroSlotActive(0));
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATION);
@@ -334,11 +329,11 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
     };
 
     auto assertRejectedWithoutMutation = [&]() {
-        std::array<unsigned char, sizeof(h.state.pages.automation)> before{};
+        std::array<unsigned char, sizeof(h.state.pages.control.authored)> before{};
         std::memcpy(
             before.data(),
-            &h.state.pages.automation,
-            sizeof(h.state.pages.automation)
+            &h.state.pages.control.authored,
+            sizeof(h.state.pages.control.authored)
         );
         const auto plan = clipboard_ops::preflightAutomationPaste(
             h.state.pages,
@@ -354,8 +349,8 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
         ));
         assert(std::memcmp(
             before.data(),
-            &h.state.pages.automation,
-            sizeof(h.state.pages.automation)
+            &h.state.pages.control.authored,
+            sizeof(h.state.pages.control.authored)
         ) == 0);
     };
 
@@ -383,13 +378,12 @@ void test_typed_paste_quick_release_keeps_copy_semantics() {
 
     assert(h.state.structureClipboard.hasMacroAutomation());
     assert(h.state.structureClipboard.macroAutomationSet->sourceMacro == 1);
-    const auto* target = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto target = test_support::project_control::readSlot(
+        h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
-    assert(target != nullptr);
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target->automation.durationTicks
+        target.legacy.automation.durationTicks
     ) == 4.0f);
     std::cout << "[PASS] test_typed_paste_quick_release_keeps_copy_semantics\n";
 }
@@ -406,13 +400,12 @@ void test_typed_paste_early_armed_release_cancels_without_copy_or_mutation() {
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
     assert(h.state.structureClipboard.macroAutomationSet->sourceMacro == 0);
-    const auto* target = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto target = test_support::project_control::readSlot(
+        h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
-    assert(target != nullptr);
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target->automation.durationTicks
+        target.legacy.automation.durationTicks
     ) == 4.0f);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::CANCELLED);
@@ -426,24 +419,27 @@ void test_typed_paste_commits_once_after_full_guard() {
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.handler.update(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
 
-    const auto* target = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    auto target = test_support::project_control::readSlot(
+        h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
-    assert(target != nullptr);
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target->automation.durationTicks
+        target.legacy.automation.durationTicks
     ) == 4.0f);
     assert(h.state.macroEdit.contextGuard.get().phase ==
            core::state::contextual::GuardedActionPhase::COMMITTED);
 
     h.setNow(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 10U);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
+    target = test_support::project_control::readSlot(
+        h.state.pages.control,
+        target.address
+    );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target->automation.durationTicks
+        target.legacy.automation.durationTicks
     ) == 2.0f);
-    assert(core::state::macro::macroCurveStored(target->modulation));
-    assert(target->modulationDepth == 0.75f);
+    assert(target.modulationStored);
+    assert(std::fabs(target.legacy.modulationDepth - 0.75f) < 0.0001f);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::APPLIED);
     std::cout << "[PASS] test_typed_paste_commits_once_after_full_guard\n";
@@ -474,9 +470,13 @@ void test_hold_clear_automation_keeps_slot_and_detail_surface() {
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::AUTOMATION);
     assert(h.overlays.hasVisible());
-    const auto* slot = h.services.automationSlot(0);
-    assert(slot != nullptr);
-    assert(!core::state::macro::macroCurveStored(slot->automation));
+    // Clearing the last Project Control assignment removes the cold control
+    // slot itself. The musical Macro slot and its editor remain present.
+    assert(h.services.automationSlot(0) == nullptr);
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
+    ).automationStored);
 
     std::cout
         << "[PASS] Automation hold-clear preserves Slot and detail surface\n";
@@ -500,13 +500,12 @@ void test_navigation_cancels_completed_guard_before_release_without_mutation() {
 
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.structureClipboard.macroAutomationSet->sourceMacro == 0);
-    const auto* target = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto target = test_support::project_control::readSlot(
+        h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
-    assert(target != nullptr);
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target->automation.durationTicks
+        target.legacy.automation.durationTicks
     ) == 4.0f);
     std::cout
         << "[PASS] test_navigation_cancels_completed_guard_before_release_without_mutation\n";
@@ -522,38 +521,37 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
     assert(h.state.macroEdit.automationFocusedRow.get() == 2);
     h.turn(Config::EncoderID::OPT, 2.0f / 63.0f);
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    auto slot = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{
             .track = h.state.pages.currentActiveTrack(),
             .page = h.state.pages.currentActivePage(),
             .macro = 0,
         }
     );
-    assert(slot != nullptr);
-    assert(slot->automation.active);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.durationTicks) == 3.0f);
+    assert(slot.automationEnabled);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.durationTicks) == 3.0f);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
 
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.durationTicks) == 64.0f);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.sourceDurationTicks) == 2.0f);
-    assert(slot->automation.pointCount == 3);
+    slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.durationTicks) == 64.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.sourceDurationTicks) == 2.0f);
+    assert(slot.legacy.automation.pointCount == 3);
 
-    core::state::macro::MacroCurvePoint point{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->automation,
-        h.state.pages.automation.pointPool,
+    const auto point = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        slot.automationCurveId,
         1,
-        false,
-        point
-    ));
+        false
+    );
     assert(point.beat == 1.0f);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroEdit.automationFocusedRow.get() == 3);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.windowOffsetTicks) == 1.0f);
+    slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.windowOffsetTicks) == 1.0f);
 
     h.flushState();
 
@@ -574,16 +572,15 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 16);
     h.turn(Config::EncoderID::OPT, 1.0f / 15.0f);
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    auto slot = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{
             .track = h.state.pages.currentActiveTrack(),
             .page = h.state.pages.currentActivePage(),
             .macro = 0,
         }
     );
-    assert(slot != nullptr);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.durationTicks) == 8.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.durationTicks) == 8.0f);
 
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 64);
@@ -595,7 +592,8 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
     h.press(Config::ButtonID::LEFT_CENTER);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 2);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot->automation.windowOffsetTicks) == 4.0f);
+    slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.windowOffsetTicks) == 4.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 8);
 

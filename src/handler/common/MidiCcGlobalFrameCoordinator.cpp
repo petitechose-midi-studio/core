@@ -4,7 +4,9 @@
 
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
+#include <oc/note/clock/ClockConstants.hpp>
 #include <oc/realtime/InterruptGuard.hpp>
+#include <oc/time/Time.hpp>
 
 #include "state/macro/MacroConstants.hpp"
 
@@ -49,6 +51,29 @@ FLASHMEM bool validCandidateBody(const MidiCcCandidate& candidate) {
     }
     return identity.channel <= 15U ||
            identity.channel == MidiCcDestinationIdentity::INVALID_CHANNEL;
+}
+
+bool sameCandidate(const MidiCcCandidate& lhs, const MidiCcCandidate& rhs) {
+    return sameIdentity(
+               lhs.destination.identity,
+               rhs.destination.identity
+           ) &&
+           lhs.destination.routeValidity == rhs.destination.routeValidity &&
+           lhs.author.candidateClass == rhs.author.candidateClass &&
+           lhs.author.stableAddress == rhs.author.stableAddress &&
+           lhs.localValue == rhs.localValue;
+}
+
+bool samePersistentFrame(
+    const MidiCcPersistentAuthorFrame& frame,
+    const MidiCcCandidate* candidates,
+    uint16_t candidateCount
+) {
+    if (frame.candidateCount != candidateCount) return false;
+    for (uint16_t i = 0; i < candidateCount; ++i) {
+        if (!sameCandidate(frame.candidates[i], candidates[i])) return false;
+    }
+    return true;
 }
 
 template <typename Frames>
@@ -173,6 +198,149 @@ bool MidiCcGlobalFrameCoordinator::publishPersistentAuthors(
     if (candidateCount > 0) {
         std::copy_n(candidates, candidateCount, frame.candidates.begin());
     }
+    if (samePersistentFrame(
+            persistent_frames_[active_persistent_index_],
+            frame.candidates.data(),
+            frame.candidateCount
+        )) {
+        return true;
+    }
+    frame.revision = nextRevision(next_persistent_revision_);
+    {
+        oc::realtime::InterruptGuard lock;
+        active_persistent_index_ = writeIndex;
+    }
+    diagnostics_.publishedPersistentFrameCount =
+        core::sequencer::realtimeMidiSaturatingAdd(
+            diagnostics_.publishedPersistentFrameCount,
+            1
+        );
+    return true;
+}
+
+bool MidiCcGlobalFrameCoordinator::publishPersistentAuthorsGenerated(
+    PersistentAuthorProducer producer,
+    void* context
+) {
+    if (producer == nullptr) return false;
+    uint8_t writeIndex = 0;
+    {
+        oc::realtime::InterruptGuard lock;
+        writeIndex = writableSourceIndex(
+            persistent_frames_,
+            active_persistent_index_,
+            reading_persistent_index_
+        );
+    }
+    if (writeIndex == NO_SOURCE_READER) return false;
+    auto& frame = persistent_frames_[writeIndex];
+    uint16_t candidateCount = 0;
+    if (!producer(
+            context,
+            frame.candidates.data(),
+            static_cast<uint16_t>(frame.candidates.size()),
+            candidateCount
+        ) || candidateCount > frame.candidates.size()) {
+        return false;
+    }
+    constexpr uint16_t kMacroAuthorCount =
+        core::state::macro::TRACK_COUNT *
+        core::state::macro::PAGE_COUNT *
+        core::state::macro::MACRO_COUNT;
+    for (uint16_t i = 0; i < candidateCount; ++i) {
+        const auto& candidate = frame.candidates[i];
+        if (!validPersistentClass(candidate.author.candidateClass) ||
+            !validCandidateBody(candidate) ||
+            candidate.author.stableAddress >= kMacroAuthorCount ||
+            (candidate.destination.routeValidity ==
+                 core::state::shared::MidiCcRouteValidity::VALID &&
+             candidate.destination.identity.port != output_port_)) {
+            return false;
+        }
+    }
+    frame.candidateCount = candidateCount;
+    if (samePersistentFrame(
+            persistent_frames_[active_persistent_index_],
+            frame.candidates.data(),
+            frame.candidateCount
+        )) {
+        return true;
+    }
+    frame.revision = nextRevision(next_persistent_revision_);
+    {
+        oc::realtime::InterruptGuard lock;
+        active_persistent_index_ = writeIndex;
+    }
+    diagnostics_.publishedPersistentFrameCount =
+        core::sequencer::realtimeMidiSaturatingAdd(
+            diagnostics_.publishedPersistentFrameCount,
+            1
+        );
+    return true;
+}
+
+bool MidiCcGlobalFrameCoordinator::replacePersistentAuthor(
+    const MidiCcCandidate& candidate,
+    uint16_t& publishedCandidateCount
+) {
+    publishedCandidateCount = 0;
+    constexpr uint16_t kMacroAuthorCount =
+        core::state::macro::TRACK_COUNT *
+        core::state::macro::PAGE_COUNT *
+        core::state::macro::MACRO_COUNT;
+    if (!validPersistentClass(candidate.author.candidateClass) ||
+        !validCandidateBody(candidate) ||
+        candidate.author.stableAddress >= kMacroAuthorCount ||
+        (candidate.destination.routeValidity ==
+             core::state::shared::MidiCcRouteValidity::VALID &&
+         candidate.destination.identity.port != output_port_)) {
+        return false;
+    }
+
+    uint8_t writeIndex = 0;
+    uint8_t sourceIndex = 0;
+    {
+        oc::realtime::InterruptGuard lock;
+        sourceIndex = active_persistent_index_;
+        writeIndex = writableSourceIndex(
+            persistent_frames_,
+            active_persistent_index_,
+            reading_persistent_index_
+        );
+    }
+    if (writeIndex == NO_SOURCE_READER) return false;
+
+    const auto& source = persistent_frames_[sourceIndex];
+    auto& frame = persistent_frames_[writeIndex];
+    frame.candidateCount = source.candidateCount;
+    if (source.candidateCount > 0U) {
+        std::copy_n(
+            source.candidates.begin(),
+            source.candidateCount,
+            frame.candidates.begin()
+        );
+    }
+
+    bool replaced = false;
+    for (uint16_t index = 0; index < frame.candidateCount; ++index) {
+        if (frame.candidates[index].author.stableAddress !=
+            candidate.author.stableAddress) {
+            continue;
+        }
+        frame.candidates[index] = candidate;
+        replaced = true;
+        break;
+    }
+    if (!replaced) return false;
+    publishedCandidateCount = frame.candidateCount;
+
+    if (samePersistentFrame(
+            source,
+            frame.candidates.data(),
+            frame.candidateCount
+        )) {
+        return true;
+    }
     frame.revision = nextRevision(next_persistent_revision_);
     {
         oc::realtime::InterruptGuard lock;
@@ -233,6 +401,74 @@ bool MidiCcGlobalFrameCoordinator::publishSequencerLanes(
             1
         );
     return true;
+}
+
+void MidiCcGlobalFrameCoordinator::publishProjectControlClock(
+    uint32_t sequencerTick,
+    bool playing,
+    uint32_t nowUs,
+    uint32_t sequencerTickPeriodUs
+) {
+    static_assert(
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT %
+            oc::note::clock::PPQN == 0U
+    );
+    constexpr uint32_t kProjectTicksPerSequencerTick =
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT /
+        oc::note::clock::PPQN;
+
+    oc::realtime::InterruptGuard lock;
+    const bool resynchronized = control_clock_initialized_ &&
+        sequencerTick < last_control_sequencer_tick_;
+    if (!control_clock_initialized_ ||
+        sequencerTick != last_control_sequencer_tick_) {
+        control_tick_started_us_ = nowUs;
+    }
+    const uint32_t baseTick = static_cast<uint32_t>(
+        static_cast<uint64_t>(sequencerTick) *
+        kProjectTicksPerSequencerTick
+    );
+    uint32_t musicalTick = baseTick;
+    uint16_t fractionQ16 = 0;
+    if (playing && sequencerTickPeriodUs > 0U) {
+        const uint32_t elapsedUs = std::min<uint32_t>(
+            nowUs - control_tick_started_us_,
+            sequencerTickPeriodUs - 1U
+        );
+        const uint64_t subTickQ16 =
+            (static_cast<uint64_t>(elapsedUs) *
+             kProjectTicksPerSequencerTick * 65536ULL) /
+            sequencerTickPeriodUs;
+        musicalTick = static_cast<uint32_t>(
+            musicalTick + static_cast<uint32_t>(subTickQ16 >> 16U)
+        );
+        fractionQ16 = static_cast<uint16_t>(subTickQ16 & 0xFFFFU);
+    }
+
+    const uint32_t nowMs = oc::time::millis();
+    const bool transportStarted = playing &&
+        (!control_time_.playing || resynchronized || !control_clock_initialized_);
+    if (transportStarted) {
+        ++control_time_.transportGeneration;
+        if (control_time_.transportGeneration == 0U) {
+            control_time_.transportGeneration = 1U;
+        }
+        control_time_.transportStartMusicalTick = musicalTick;
+        control_time_.transportStartMonotonicMs = nowMs;
+    }
+    control_time_.musicalTick = musicalTick;
+    control_time_.musicalTickFractionQ16 = fractionQ16;
+    control_time_.monotonicMs = nowMs;
+    control_time_.playing = playing;
+    control_time_.reserved = 0;
+    last_control_sequencer_tick_ = sequencerTick;
+    control_clock_initialized_ = true;
+}
+
+core::state::modulation::ProjectControlTimeSnapshot
+MidiCcGlobalFrameCoordinator::projectControlTimeSnapshot() const {
+    oc::realtime::InterruptGuard lock;
+    return control_time_;
 }
 
 bool MidiCcGlobalFrameCoordinator::needsLiveResolution() const {
@@ -556,6 +792,10 @@ FLASHMEM void MidiCcGlobalFrameCoordinator::resetProject() {
     dispatched_value_count_ = 0;
     retry_requested_ = false;
     replacing_pending_controls_ = false;
+    control_time_ = {};
+    control_tick_started_us_ = 0;
+    last_control_sequencer_tick_ = 0;
+    control_clock_initialized_ = false;
     diagnostics_ = {};
 }
 

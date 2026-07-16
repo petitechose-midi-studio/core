@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
 namespace core::state::macro {

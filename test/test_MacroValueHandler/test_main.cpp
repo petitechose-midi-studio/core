@@ -21,6 +21,7 @@
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -130,22 +131,18 @@ struct MacroValueHarness {
 };
 
 void configureAutomation(core::state::CoreState& state, uint8_t macroIndex = 0) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = state.pages.currentActiveTrack(),
-            .page = state.pages.currentActivePage(),
-            .macro = macroIndex,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = macroIndex,
+    };
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 2.0f;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        state.pages.control,
+        address,
         lane
     ));
 }
@@ -255,33 +252,24 @@ void test_macro_encoder_feeds_armed_automation_recording() {
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
     assert(services.commitAutomationRecording(1000));
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = h.state.pages.currentActivePage(),
-            .macro = 0,
-        }
+    const auto slot = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(slot != nullptr);
-    assert(slot->automation.active);
-    assert(slot->automation.pointCount == 2);
-    core::state::macro::MacroCurvePoint firstPoint{};
-    core::state::macro::MacroCurvePoint secondPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->automation,
-        h.state.pages.automation.pointPool,
+    assert(slot.automationEnabled);
+    assert(slot.legacy.automation.pointCount == 2);
+    const auto firstPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        slot.automationCurveId,
         0,
-        false,
-        firstPoint
-    ));
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->automation,
-        h.state.pages.automation.pointPool,
+        false
+    );
+    const auto secondPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        slot.automationCurveId,
         1,
-        false,
-        secondPoint
-    ));
+        false
+    );
     assert(std::fabs(firstPoint.value - 0.5f) < 0.0001f);
     assert(std::fabs(secondPoint.beat - 1.0f) < 0.0001f);
     assert(std::fabs(secondPoint.value - 1.0f) < 0.0001f);
@@ -305,28 +293,21 @@ void test_macro_button_hold_records_value_automation() {
     h.release(Config::ButtonID::MACRO_1);
     assert(!h.state.macroUi.automationRecording.active);
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = h.state.pages.currentActivePage(),
-            .macro = 0,
-        }
+    const auto slot = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(slot != nullptr);
-    assert(slot->automation.active);
-    assert(slot->automation.pointCount == 1);
+    assert(slot.automationEnabled);
+    assert(slot.legacy.automation.pointCount == 1);
     assert(std::fabs(core::state::macro::macroAutomationBeatsFromTicks(
-                         slot->automation.durationTicks
+                         slot.legacy.automation.durationTicks
                      ) - 1.0f) < 0.0001f);
-    core::state::macro::MacroCurvePoint recordedPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        slot->automation,
-        h.state.pages.automation.pointPool,
+    const auto recordedPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        slot.automationCurveId,
         0,
-        false,
-        recordedPoint
-    ));
+        false
+    );
     assert(std::fabs(recordedPoint.beat - 0.0f) < 0.0001f);
     assert(std::fabs(recordedPoint.value - 1.0f) < 0.0001f);
     assert(h.state.project.metadata.dirty);
@@ -354,21 +335,20 @@ void test_recording_cadence_preserves_plateau_before_later_motion() {
     g_now_ms = 600;
     h.release(Config::ButtonID::MACRO_1);
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto slot = test_support::project_control::readSlot(
+        h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(slot != nullptr);
-    assert(slot->automation.pointCount >= 3U);
-    const float held = core::state::macro::macroAutomationEvaluate(
-        slot->automation,
-        h.state.pages.automation.pointPool,
+    assert(slot.legacy.automation.pointCount >= 3U);
+    const float held = core::state::modulation::evaluateProjectControlCurve(
+        h.state.pages.control,
+        slot.automationCurveId,
         0.3f,
         0.5f
     );
-    const float afterMotion = core::state::macro::macroAutomationEvaluate(
-        slot->automation,
-        h.state.pages.automation.pointPool,
+    const float afterMotion = core::state::modulation::evaluateProjectControlCurve(
+        h.state.pages.control,
+        slot.automationCurveId,
         0.9f,
         0.5f
     );
@@ -416,17 +396,12 @@ void test_macro_automation_property_button_restores_auto_without_clearing_lane()
     h.press(Config::ButtonID::MACRO_1);
     assert((h.state.macroUi.automationManualOverrideMask.get() & 0x0001) == 0);
 
-    const auto* preserved = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = h.state.pages.currentActivePage(),
-            .macro = 0,
-        }
+    const auto preserved = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(preserved != nullptr);
-    assert(preserved->automation.active);
-    assert(preserved->automation.pointCount == 2);
+    assert(preserved.automationEnabled);
+    assert(preserved.legacy.automation.pointCount == 2);
     assert(h.midiTransport.ccCount == 0);
 
     std::cout << "[PASS] test_macro_automation_property_button_restores_auto_without_clearing_lane\n";
@@ -441,15 +416,11 @@ void test_macro_button_hold_without_turn_discards_recording() {
     h.release(Config::ButtonID::MACRO_1);
     assert(!h.state.macroUi.automationRecording.active);
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = h.state.pages.currentActivePage(),
-            .macro = 0,
-        }
+    const auto slot = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(slot == nullptr);
+    assert(!slot.present);
     assert(!h.state.project.metadata.dirty);
 
     std::cout << "[PASS] test_macro_button_hold_without_turn_discards_recording\n";

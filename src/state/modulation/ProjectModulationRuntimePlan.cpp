@@ -111,6 +111,12 @@ FLASHMEM bool validProjectModulationCompileContext(
     return true;
 }
 
+FLASHMEM uint32_t projectModulationCompileContextHash(
+    const ProjectModulationCompileContext& context
+) {
+    return contextHash(context);
+}
+
 FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
     const ProjectModulationState& state,
     const ProjectCurveArena& arena,

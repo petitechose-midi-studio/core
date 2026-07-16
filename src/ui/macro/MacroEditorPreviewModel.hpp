@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "state/macro/MacroAutomationDomain.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 
 namespace core::ui {
 
@@ -47,6 +48,14 @@ void buildMacroEditorPreviewModel(
     float staticBase,
     const core::state::macro::MacroAutomationSlotState* slot,
     const core::state::macro::MacroAutomationPointPool& pool,
+    bool manualOverride,
+    MacroEditorPreviewModel& model
+);
+
+void buildMacroEditorPreviewModel(
+    float staticBase,
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
     bool manualOverride,
     MacroEditorPreviewModel& model
 );

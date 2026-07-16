@@ -1,8 +1,12 @@
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include <config/PlatformCompat.hpp>
+
+#include "state/modulation/ProjectControlRuntime.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::ui {
 namespace {
@@ -30,6 +34,55 @@ float sampleBeat(
            static_cast<float>(
                core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
            );
+}
+
+int16_t sourceIndex(
+    const core::state::modulation::ProjectModulationState& state,
+    core::state::modulation::ModulatorId id
+) {
+    for (uint16_t index = 0; index < state.sourceCount; ++index) {
+        if (state.sources[index].id == id) return static_cast<int16_t>(index);
+    }
+    return -1;
+}
+
+float projectSourcePreviewValue(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::modulation::ModulatorSourceState& source,
+    float beat,
+    size_t sampleIndex
+) {
+    namespace modulation = core::state::modulation;
+    if (source.kind == modulation::ModulatorKind::RECORDED_SHAPE) {
+        return modulation::evaluateProjectControlCurve(
+            control,
+            source.parameters.recordedCurveId,
+            beat,
+            0.0f
+        );
+    }
+
+    const float authoredPhase = static_cast<float>(
+        source.parameters.lfo.phaseQ15
+    ) / 32767.0f;
+    float phase = authoredPhase;
+    if (source.parameters.lfo.timing == modulation::ModulatorTimingMode::SYNC) {
+        const float elapsedTicks = beat * static_cast<float>(
+            core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
+        );
+        phase += elapsedTicks / static_cast<float>(
+            std::max<uint32_t>(source.parameters.lfo.periodTicks, 1U)
+        );
+    } else if (MACRO_EDITOR_PREVIEW_SAMPLE_COUNT > 1U) {
+        phase += static_cast<float>(sampleIndex) /
+            static_cast<float>(MACRO_EDITOR_PREVIEW_SAMPLE_COUNT - 1U);
+    }
+    phase -= std::floor(phase);
+    if (phase < 0.0f) phase += 1.0f;
+    return modulation::evaluateProjectLfoShape(
+        source.parameters.lfo.shape,
+        phase
+    );
 }
 
 }  // namespace
@@ -82,12 +135,12 @@ FLASHMEM void buildMacroEditorPreviewModel(
             ? core::state::macro::macroAutomationClamp01(automation)
             : fallback;
         float storedModulation = 0.0f;
-        if (model.modulationStored && slot->modulationDepth > 0.0f) {
+        if (model.modulationStored && slot->modulationDepth != 0.0f) {
             storedModulation = core::state::macro::macroModulationEvaluate(
                 slot->modulation,
                 pool,
                 beat
-            ) * core::state::macro::macroAutomationClamp01(slot->modulationDepth);
+            ) * std::clamp(slot->modulationDepth, -1.0f, 1.0f);
         }
         const float modulation = model.modulationPlayback ? storedModulation : 0.0f;
         const float rawOut = base + modulation;
@@ -99,6 +152,138 @@ FLASHMEM void buildMacroEditorPreviewModel(
             std::clamp(storedModulation, -1.0f, 1.0f) * 255.0f
         );
         model.out[i] = quantize01(rawOut);
+    }
+}
+
+FLASHMEM void buildMacroEditorPreviewModel(
+    float staticBase,
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    bool manualOverride,
+    MacroEditorPreviewModel& model
+) {
+    namespace modulation = core::state::modulation;
+    model = {};
+    const float fallback = core::state::macro::macroAutomationClamp01(staticBase);
+    model.manualOverride = manualOverride;
+
+    modulation::ProjectControlMacroSlotView view{};
+    if (!modulation::readProjectControlMacroSlot(control, address, view)) {
+        for (size_t index = 0; index < MACRO_EDITOR_PREVIEW_SAMPLE_COUNT; ++index) {
+            model.automation[index] = quantize01(fallback);
+            model.base[index] = quantize01(fallback);
+            model.out[index] = quantize01(fallback);
+        }
+        return;
+    }
+    model.automationStored = view.automationStored;
+    model.automationPlayback = view.automationEnabled && !manualOverride;
+    model.automationDrivingBase = model.automationPlayback;
+    if (view.automationStored) {
+        const auto* record = modulation::findProjectCurve(
+            control.authored.curves,
+            view.automationCurveId
+        );
+        if (record != nullptr) {
+            model.timelineDurationTicks = std::max<uint16_t>(
+                model.timelineDurationTicks,
+                record->durationTicks
+            );
+        }
+    }
+
+    std::array<
+        int16_t,
+        modulation::PROJECT_MODULATION_BINDING_CAPACITY
+    > bindingSourceIndices{};
+    bindingSourceIndices.fill(-1);
+    const auto destination = modulation::projectControlDestination(address);
+    const auto& graph = control.authored.modulation;
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        const auto& binding = graph.outputBindings[index];
+        if (binding.destination != destination) continue;
+        const int16_t sourcePosition = sourceIndex(graph, binding.sourceId);
+        if (sourcePosition < 0) continue;
+        bindingSourceIndices[index] = sourcePosition;
+        model.modulationStored = true;
+        const auto& source = graph.sources[static_cast<uint16_t>(sourcePosition)];
+        const bool active =
+            (binding.flags & modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
+            (source.flags & modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
+        model.modulationPlayback = model.modulationPlayback || active;
+        if (source.kind == modulation::ModulatorKind::RECORDED_SHAPE) {
+            const auto* record = modulation::findProjectCurve(
+                control.authored.curves,
+                source.parameters.recordedCurveId
+            );
+            if (record != nullptr) {
+                model.timelineDurationTicks = std::max<uint16_t>(
+                    model.timelineDurationTicks,
+                    record->durationTicks
+                );
+            }
+        } else if (
+            source.parameters.lfo.timing == modulation::ModulatorTimingMode::SYNC
+        ) {
+            model.timelineDurationTicks = std::max<uint16_t>(
+                model.timelineDurationTicks,
+                static_cast<uint16_t>(std::min<uint32_t>(
+                    source.parameters.lfo.periodTicks,
+                    UINT16_MAX
+                ))
+            );
+        }
+    }
+
+    for (size_t sample = 0; sample < MACRO_EDITOR_PREVIEW_SAMPLE_COUNT; ++sample) {
+        const float beat = sampleBeat(model.timelineDurationTicks, sample);
+        const float automation = model.automationStored
+            ? modulation::evaluateProjectControlCurve(
+                control,
+                view.automationCurveId,
+                beat,
+                fallback
+            )
+            : fallback;
+        const float base = model.automationPlayback
+            ? core::state::macro::macroAutomationClamp01(automation)
+            : fallback;
+        float storedModulation = 0.0f;
+        float activeModulation = 0.0f;
+        for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+            const int16_t sourcePosition = bindingSourceIndices[index];
+            if (sourcePosition < 0) continue;
+            const auto& binding = graph.outputBindings[index];
+            const auto& source = graph.sources[
+                static_cast<uint16_t>(sourcePosition)
+            ];
+            float sourceValue = projectSourcePreviewValue(
+                control,
+                source,
+                beat,
+                sample
+            );
+            if (binding.inputRange == modulation::ModulationInputRange::UNIPOLAR) {
+                sourceValue = (sourceValue + 1.0f) * 0.5f;
+            }
+            const float contribution = sourceValue *
+                (static_cast<float>(binding.amountQ15) / 32767.0f);
+            storedModulation += contribution;
+            if ((binding.flags &
+                 modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
+                (source.flags & modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U) {
+                activeModulation += contribution;
+            }
+        }
+        const float rawOut = base + activeModulation;
+        model.clippedLow = model.clippedLow || rawOut < 0.0f;
+        model.clippedHigh = model.clippedHigh || rawOut > 1.0f;
+        model.automation[sample] = quantize01(automation);
+        model.base[sample] = quantize01(base);
+        model.modulation[sample] = static_cast<int16_t>(
+            std::clamp(storedModulation, -1.0f, 1.0f) * 255.0f
+        );
+        model.out[sample] = quantize01(rawOut);
     }
 }
 

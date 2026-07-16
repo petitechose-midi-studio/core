@@ -1,5 +1,8 @@
 #include "integration/CaptureScenarios.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -10,6 +13,7 @@
 #include "state/DataManagerCatalog.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -19,6 +23,19 @@
 namespace sdl::integration {
 
 namespace {
+
+uint16_t curvePointTick(float beat, uint16_t durationTicks) {
+    const float finiteBeat = std::isfinite(beat) ? std::max(beat, 0.0f) : 0.0f;
+    return static_cast<uint16_t>(std::clamp<long>(
+        std::lround(
+            finiteBeat * static_cast<float>(
+                core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
+            )
+        ),
+        0L,
+        durationTicks
+    ));
+}
 
 void publishVariationTelemetry(
     core::state::CoreState& state,
@@ -145,7 +162,7 @@ void prepareMacroAutomationCleanScenario(core::state::CoreState& state) {
     state.activeView.set(core::ui::ViewType::MACRO);
     state.overlays.hideAll();
     state.pages.initDefaults();
-    state.pages.automation.clear();
+    state.pages.control.clear();
     state.macroUi.reset();
     state.macroEdit.reset();
     state.trackNavigation.reset();
@@ -161,23 +178,13 @@ void configureMacroAutomation(core::state::CoreState& state,
                               uint8_t macro,
                               float value,
                               float durationBeats = 2.0f) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
-    );
-    if (slot == nullptr) return;
-
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = durationBeats;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 0.0f, value)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, durationBeats, value)) return;
-    core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    (void)core::state::modulation::assignProjectControlAutomation(
+        state.pages.control,
+        {.track = track, .page = page, .macro = macro},
         lane
     );
 }
@@ -187,29 +194,44 @@ void configureMacroModulation(core::state::CoreState& state,
                               uint8_t page,
                               uint8_t macro,
                               float depth = 0.65f) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
-    );
-    if (slot == nullptr) return;
-
     core::state::macro::MacroModulationShape shape;
     shape.durationBeats = 4.0f;
     if (!core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.25f)) return;
     if (!core::state::macro::macroModulationAppendPoint(shape, 2.0f, 0.35f)) return;
     if (!core::state::macro::macroModulationAppendPoint(shape, 4.0f, -0.25f)) return;
-    if (!core::state::macro::macroAutomationAssignModulation(
-            state.pages.automation,
-            *slot,
-            shape
-        )) {
-        return;
+    const uint16_t durationTicks =
+        core::state::macro::macroAutomationTicksFromBeats(shape.durationBeats);
+    std::array<
+        core::state::macro::MacroPackedCurvePoint,
+        core::state::macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS> points{};
+    for (uint16_t index = 0; index < shape.pointCount; ++index) {
+        points[index] = {
+            .tick = curvePointTick(shape.points[index].beat, durationTicks),
+            .value = core::state::macro::macroAutomationPackValue(
+                shape.points[index].value,
+                true
+            ),
+        };
     }
-    slot->modulationDepth = core::state::macro::macroAutomationClamp01(depth);
+    const core::state::macro::MacroAutomationCurveRef curve{
+        .active = true,
+        .playbackState = core::state::macro::MacroCurvePlaybackState::ACTIVE,
+        .pointOffset = 0,
+        .pointCount = shape.pointCount,
+        .sourceDurationTicks = durationTicks,
+        .durationTicks = durationTicks,
+        .windowOffsetTicks = 0,
+        .interpolation = shape.interpolation,
+        .modulationOrigin = core::state::macro::MacroModulationOrigin::NATIVE,
+    };
+    (void)core::state::modulation::replaceProjectControlModulation(
+        state.pages.control,
+        {.track = track, .page = page, .macro = macro},
+        curve,
+        core::state::macro::macroAutomationClamp01(depth),
+        points.data(),
+        shape.pointCount
+    );
 }
 
 void prepareMacroAutoModScenario(core::state::CoreState& state) {
@@ -242,25 +264,15 @@ void configureMacroAutomationShape(core::state::CoreState& state,
                                    uint8_t track,
                                    uint8_t page,
                                    uint8_t macro) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
-    );
-    if (slot == nullptr) return;
-
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 8.0f;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.15f)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 2.0f, 0.90f)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 5.0f, 0.25f)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 8.0f, 0.70f)) return;
-    core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    (void)core::state::modulation::assignProjectControlAutomation(
+        state.pages.control,
+        {.track = track, .page = page, .macro = macro},
         lane
     );
 }

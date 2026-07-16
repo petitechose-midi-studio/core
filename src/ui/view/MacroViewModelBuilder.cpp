@@ -7,6 +7,7 @@
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
 #include "state/macro/MacroSelectionDeleteAction.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -338,8 +339,13 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             .page = source.pages.currentActivePage(),
             .macro = i,
         };
-        const auto* automation =
-            core::state::macro::macroAutomationFindSlot(source.pages.automation, address);
+        core::state::modulation::ProjectControlMacroSlotView controlSlot{};
+        const bool controlSlotValid =
+            core::state::modulation::readProjectControlMacroSlot(
+                source.pages.control,
+                address,
+                controlSlot
+            );
         const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
         const bool manualOverride =
             (source.macroUi.automationManualOverrideMask.get() & overrideBit) != 0;
@@ -351,28 +357,25 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             source.macroUi.automationRecording.address.track == source.pages.currentActiveTrack() &&
             source.macroUi.automationRecording.address.page == source.pages.currentActivePage() &&
             source.macroUi.automationRecording.address.macro == i;
-        const bool automationStored = automation != nullptr &&
-            core::state::macro::macroCurveStored(automation->automation);
-        const bool modulationStored = automation != nullptr &&
-            core::state::macro::macroCurveStored(automation->modulation);
-        const bool automationPlayback = automationStored &&
-            core::state::macro::macroCurvePlaybackActive(
-                automation->automation
-            );
-        const bool modulationPlayback = modulationStored &&
-            core::state::macro::macroCurvePlaybackActive(
-                automation->modulation
-            );
-        const bool modulationPaused = modulationPlayback &&
-            automation->modulationDepth <= 0.0f;
+        const bool automationStored =
+            controlSlotValid && controlSlot.automationStored;
+        const bool modulationStored =
+            controlSlotValid && controlSlot.modulationStored;
+        const bool automationPlayback =
+            automationStored && controlSlot.automationEnabled;
+        const bool modulationPlayback =
+            modulationStored && controlSlot.activeModulationCount > 0U;
+        const bool modulationPaused =
+            modulationPlayback && controlSlot.modulationCount == 1U &&
+            controlSlot.legacy.modulationDepth == 0.0f;
         const auto& projection = source.macroUi.runtimeProjections[i];
         const float fallbackValue = source.macros.slots[i].value.get();
         frame.macros[i] = {
             .value = projection.valid ? projection.resolved : fallbackValue,
             .baseValue = projection.valid ? projection.base : fallbackValue,
             .modulationDelta = projection.valid ? projection.modulation : 0.0f,
-            .modulationDepth = automation != nullptr
-                ? automation->modulationDepth
+            .modulationDepth = controlSlotValid
+                ? controlSlot.legacy.modulationDepth
                 : 0.0f,
             .cc = config.cc,
             .automationStored = active && automationStored,

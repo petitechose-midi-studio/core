@@ -1,14 +1,22 @@
 #include "handler/macro/MacroStructureAutomationOps.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstring>
+#include <limits>
 
 #include <config/PlatformCompat.hpp>
+
+#include "app/ExtmemAllocator.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::handler::macro_structure_automation_ops {
 
 namespace {
 
 namespace macro = core::state::macro;
+namespace modulation = core::state::modulation;
 
 enum class ScopeKind : uint8_t {
     PAGE,
@@ -26,35 +34,473 @@ struct StorageUsage {
     uint32_t points = 0;
 };
 
+struct ProjectScopeSelection {
+    ScopeKind kind = ScopeKind::PAGE;
+    uint16_t mask = 0;
+    uint8_t track = 0;
+};
+
+struct ProjectScopeCopy {
+    Scope source{};
+    Scope dest{};
+};
+
+FLASHMEM bool clipboardUsage(
+    const core::state::MacroAutomationClipboard* clipboard,
+    bool trackScope,
+    StorageUsage& usage
+);
+
 FLASHMEM bool scopeValid(const Scope& scope) {
     return scope.track < macro::TRACK_COUNT &&
            (scope.kind == ScopeKind::TRACK || scope.page < macro::PAGE_COUNT);
 }
 
-FLASHMEM bool contains(const Scope& scope, const macro::MacroAutomationSlotAddress& address) {
-    return address.track == scope.track &&
-           (scope.kind == ScopeKind::TRACK || address.page == scope.page);
+FLASHMEM bool contains(
+    const Scope& scope,
+    const modulation::ModulationDestination& destination
+) {
+    return destination.kind == modulation::ModulationDestinationKind::MACRO_SLOT &&
+           destination.track == scope.track &&
+           (scope.kind == ScopeKind::TRACK || destination.page == scope.page);
 }
 
-FLASHMEM StorageUsage bankUsage(const macro::MacroAutomationBankState& bank,
-                                const Scope& scope,
-                                bool contentOnly) {
-    StorageUsage usage;
-    const uint8_t count = std::min<uint8_t>(
-        bank.entryCount,
-        macro::MACRO_AUTOMATION_SLOT_CAPACITY
-    );
-    for (uint8_t i = 0; i < count; ++i) {
-        const auto& entry = bank.entries[i];
-        if (!entry.active || !contains(scope, entry.address)) continue;
-        if (contentOnly && !macro::macroAutomationSlotHasContent(entry.state)) continue;
-        ++usage.slots;
-        usage.points += macro::macroAutomationStoredPointCount(
-            entry.state,
-            bank.pointPool
-        );
+FLASHMEM bool selected(
+    const ProjectScopeSelection& selection,
+    const modulation::ModulationDestination& destination
+) {
+    if (destination.kind != modulation::ModulationDestinationKind::MACRO_SLOT) {
+        return false;
     }
-    return usage;
+    if (selection.kind == ScopeKind::TRACK) {
+        return (selection.mask & static_cast<uint16_t>(1U << destination.track)) != 0U;
+    }
+    return destination.track == selection.track &&
+           (selection.mask & static_cast<uint16_t>(1U << destination.page)) != 0U;
+}
+
+FLASHMEM bool sourceScopeRemoved(
+    const ProjectScopeSelection& selection,
+    const modulation::ModulatorReach& reach
+) {
+    if (reach.kind != modulation::ModulatorReachKind::MACRO) return false;
+    if (selection.kind == ScopeKind::TRACK) {
+        return (selection.mask & static_cast<uint16_t>(1U << reach.track)) != 0U;
+    }
+    return reach.track == selection.track &&
+           (selection.mask & static_cast<uint16_t>(1U << reach.page)) != 0U;
+}
+
+FLASHMEM bool clearProjectSelectionInDomain(
+    modulation::ProjectControlDomainState& domain,
+    const ProjectScopeSelection& selection
+) {
+    if (selection.mask == 0U ||
+        (selection.kind == ScopeKind::PAGE &&
+         selection.track >= macro::TRACK_COUNT)) {
+        return false;
+    }
+
+    for (uint16_t cursor = 0; cursor < domain.automation.entryCount;) {
+        const auto destination = domain.automation.entries[cursor].destination;
+        if (!selected(selection, destination)) {
+            ++cursor;
+            continue;
+        }
+        if (!modulation::removeProjectAutomationCurve(
+                domain.automation,
+                domain.curves,
+                destination
+            ).changed()) {
+            return false;
+        }
+    }
+
+    for (uint16_t cursor = 0; cursor < domain.modulation.outputBindingCount;) {
+        const auto binding = domain.modulation.outputBindings[cursor];
+        if (!selected(selection, binding.destination)) {
+            ++cursor;
+            continue;
+        }
+        if (!modulation::removeProjectModulationBinding(
+                domain.modulation,
+                binding.id
+            ).changed()) {
+            return false;
+        }
+    }
+
+    if (selection.kind == ScopeKind::TRACK) {
+        for (uint16_t cursor = 0;
+             cursor < domain.modulation.triggerBindingCount;) {
+            const auto trigger = domain.modulation.triggerBindings[cursor];
+            const bool removedTrackTrigger =
+                trigger.trigger.kind == modulation::ModulationTriggerKind::TRACK_NOTE &&
+                (selection.mask & static_cast<uint16_t>(
+                    1U << trigger.trigger.track
+                )) != 0U;
+            if (!removedTrackTrigger) {
+                ++cursor;
+                continue;
+            }
+            if (!modulation::removeProjectModulationTrigger(
+                    domain.modulation,
+                    trigger.id
+                ).changed()) {
+                return false;
+            }
+        }
+    }
+
+    for (uint16_t index = 0; index < domain.modulation.sourceCount; ++index) {
+        const auto current = domain.modulation.sources[index];
+        modulation::ModulatorReach normalized = current.reach;
+        bool normalize = sourceScopeRemoved(selection, current.reach);
+        if (selection.kind == ScopeKind::TRACK &&
+            current.reach.kind == modulation::ModulatorReachKind::TRACK_SET) {
+            normalized.trackMask = static_cast<uint16_t>(
+                current.reach.trackMask & ~selection.mask
+            );
+            if (normalized.trackMask == 0U) normalized = {};
+            normalize = normalized.trackMask != current.reach.trackMask ||
+                        normalized.kind != current.reach.kind;
+        } else if (normalize) {
+            normalized = {};
+        }
+        if (!normalize) continue;
+        const auto result = modulation::setProjectModulatorReach(
+            domain.modulation,
+            current.id,
+            normalized
+        );
+        if (!result.changed() &&
+            result.status != modulation::ProjectModulationStatus::NO_CHANGE) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool clearProjectDestinationInDomain(
+    modulation::ProjectControlDomainState& domain,
+    const macro::MacroAutomationSlotAddress& address
+) {
+    if (!macro::macroAutomationAddressValid(address)) return false;
+    const auto destination = modulation::projectControlDestination(address);
+    if (modulation::findProjectAutomationCurve(
+            domain.automation,
+            destination
+        ) != nullptr &&
+        !modulation::removeProjectAutomationCurve(
+            domain.automation,
+            domain.curves,
+            destination
+        ).changed()) {
+        return false;
+    }
+    for (uint16_t cursor = 0; cursor < domain.modulation.outputBindingCount;) {
+        const auto binding = domain.modulation.outputBindings[cursor];
+        if (binding.destination != destination) {
+            ++cursor;
+            continue;
+        }
+        if (!modulation::removeProjectModulationBinding(
+                domain.modulation,
+                binding.id
+            ).changed()) {
+            return false;
+        }
+    }
+    for (uint16_t index = 0; index < domain.modulation.sourceCount; ++index) {
+        const auto source = domain.modulation.sources[index];
+        if (source.reach.kind != modulation::ModulatorReachKind::MACRO ||
+            source.reach.track != address.track ||
+            source.reach.page != address.page ||
+            source.reach.macro != address.macro) {
+            continue;
+        }
+        const auto normalized = modulation::setProjectModulatorReach(
+            domain.modulation,
+            source.id,
+            {}
+        );
+        if (!normalized.changed() &&
+            normalized.status != modulation::ProjectModulationStatus::NO_CHANGE) {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename Mutation>
+FLASHMEM bool mutateProjectControl(
+    modulation::ProjectControlState& control,
+    Mutation&& mutation
+) {
+    auto pending = core::app::makeExtmemUnique<
+        modulation::ProjectControlDomainState
+    >();
+    if (!pending) return false;
+    std::memcpy(pending.get(), &control.authored, sizeof(*pending));
+    if (!mutation(*pending) || !modulation::validProjectModulationDomain(
+            pending->modulation,
+            pending->curves,
+            &pending->automation
+        )) {
+        return false;
+    }
+    if (std::memcmp(pending.get(), &control.authored, sizeof(*pending)) == 0) {
+        return true;
+    }
+    std::memcpy(&control.authored, pending.get(), sizeof(*pending));
+    control.markAuthoredMutation();
+    return true;
+}
+
+FLASHMEM const modulation::ModulationTriggerBindingState* triggerForSource(
+    const modulation::ProjectModulationState& state,
+    modulation::ModulatorId sourceId
+) {
+    for (uint16_t index = 0; index < state.triggerBindingCount; ++index) {
+        if (state.triggerBindings[index].sourceId == sourceId) {
+            return &state.triggerBindings[index];
+        }
+    }
+    return nullptr;
+}
+
+FLASHMEM bool duplicateBinding(
+    modulation::ProjectControlDomainState& domain,
+    const modulation::ModulationBindingState& sourceBinding,
+    const modulation::ModulationDestination& destination
+) {
+    const auto* sourcePtr = modulation::findProjectModulator(
+        domain.modulation,
+        sourceBinding.sourceId
+    );
+    if (sourcePtr == nullptr) return false;
+    const auto source = *sourcePtr;
+    modulation::ModulatorId targetSourceId = source.id;
+
+    if (source.reach.kind == modulation::ModulatorReachKind::MACRO) {
+        const auto* sourceTrigger = triggerForSource(domain.modulation, source.id);
+        const bool hasTrigger = sourceTrigger != nullptr;
+        const auto trigger = hasTrigger
+            ? *sourceTrigger
+            : modulation::ModulationTriggerBindingState{};
+        const auto duplicated = modulation::duplicateProjectModulator(
+            domain.modulation,
+            domain.curves,
+            source.id,
+            nullptr
+        );
+        if (!duplicated.changed()) return false;
+        targetSourceId = duplicated.sourceId;
+
+        modulation::ModulatorReach targetReach{};
+        targetReach.kind = modulation::ModulatorReachKind::MACRO;
+        targetReach.track = destination.track;
+        targetReach.page = destination.page;
+        targetReach.macro = destination.macro;
+        if (!modulation::setProjectModulatorReach(
+                domain.modulation,
+                targetSourceId,
+                targetReach
+            ).changed()) {
+            return false;
+        }
+        if (hasTrigger) {
+            modulation::ModulationTriggerDraft draft{};
+            draft.sourceId = targetSourceId;
+            draft.trigger = trigger.trigger;
+            draft.enabled = (trigger.flags &
+                modulation::PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U;
+            if (!modulation::addProjectModulationTrigger(
+                    domain.modulation,
+                    draft
+                ).changed()) {
+                return false;
+            }
+        }
+    } else if (!modulation::modulatorReachContains(source.reach, destination)) {
+        if (source.reach.kind != modulation::ModulatorReachKind::TRACK_SET) {
+            return false;
+        }
+        auto widened = source.reach;
+        widened.trackMask = static_cast<uint16_t>(
+            widened.trackMask | static_cast<uint16_t>(1U << destination.track)
+        );
+        const auto widenedResult = modulation::setProjectModulatorReach(
+            domain.modulation,
+            source.id,
+            widened
+        );
+        if (!widenedResult.changed() &&
+            widenedResult.status != modulation::ProjectModulationStatus::NO_CHANGE) {
+            return false;
+        }
+    }
+
+    modulation::ModulationBindingDraft draft{};
+    draft.sourceId = targetSourceId;
+    draft.destination = destination;
+    draft.amountQ15 = sourceBinding.amountQ15;
+    draft.inputRange = sourceBinding.inputRange;
+    draft.transfer = sourceBinding.transfer;
+    draft.slewMs = sourceBinding.slewMs;
+    draft.enabled = (sourceBinding.flags &
+        modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
+    return modulation::addProjectModulationBinding(
+        domain.modulation,
+        draft
+    ).changed();
+}
+
+FLASHMEM bool scopesOverlap(const Scope& lhs, const Scope& rhs) {
+    if (lhs.track != rhs.track) return false;
+    return lhs.kind == ScopeKind::TRACK || rhs.kind == ScopeKind::TRACK ||
+           lhs.page == rhs.page;
+}
+
+FLASHMEM bool duplicateProjectScopesInDomain(
+    modulation::ProjectControlDomainState& domain,
+    const ProjectScopeCopy* copies,
+    uint8_t copyCount
+) {
+    if (copies == nullptr || copyCount == 0U) return false;
+    for (uint8_t index = 0; index < copyCount; ++index) {
+        if (!scopeValid(copies[index].source) ||
+            !scopeValid(copies[index].dest) ||
+            copies[index].source.kind != copies[index].dest.kind ||
+            scopesOverlap(copies[index].source, copies[index].dest)) {
+            return false;
+        }
+        for (uint8_t sourceIndex = 0; sourceIndex < copyCount; ++sourceIndex) {
+            if (scopesOverlap(copies[index].dest, copies[sourceIndex].source)) {
+                return false;
+            }
+        }
+    }
+
+    for (uint8_t index = 0; index < copyCount; ++index) {
+        const auto& dest = copies[index].dest;
+        ProjectScopeSelection selection{};
+        selection.kind = dest.kind;
+        selection.track = dest.track;
+        selection.mask = dest.kind == ScopeKind::TRACK
+            ? static_cast<uint16_t>(1U << dest.track)
+            : static_cast<uint16_t>(1U << dest.page);
+        if (!clearProjectSelectionInDomain(domain, selection)) return false;
+    }
+
+    for (uint8_t copyIndex = 0; copyIndex < copyCount; ++copyIndex) {
+        const auto& copy = copies[copyIndex];
+        const uint16_t automationCount = domain.automation.entryCount;
+        for (uint16_t index = 0; index < automationCount; ++index) {
+            const auto sourceDestination =
+                domain.automation.entries[index].destination;
+            if (!contains(copy.source, sourceDestination)) continue;
+            auto destination = sourceDestination;
+            destination.track = copy.dest.track;
+            if (copy.dest.kind == ScopeKind::PAGE) {
+                destination.page = copy.dest.page;
+            }
+            if (!modulation::duplicateProjectAutomationCurve(
+                    domain.automation,
+                    domain.curves,
+                    sourceDestination,
+                    destination
+                ).changed()) {
+                return false;
+            }
+        }
+
+        const uint16_t bindingCount = domain.modulation.outputBindingCount;
+        for (uint16_t index = 0; index < bindingCount; ++index) {
+            const auto binding = domain.modulation.outputBindings[index];
+            if (!contains(copy.source, binding.destination)) continue;
+            auto destination = binding.destination;
+            destination.track = copy.dest.track;
+            if (copy.dest.kind == ScopeKind::PAGE) {
+                destination.page = copy.dest.page;
+            }
+            if (!duplicateBinding(domain, binding, destination)) return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool clipboardEntryPoints(
+    const core::state::MacroAutomationClipboard& clipboard,
+    const core::state::MacroAutomationClipboardEntry& entry,
+    const macro::MacroPackedCurvePoint*& points,
+    uint16_t& pointCount
+) {
+    const auto& state = entry.state;
+    const uint32_t count = static_cast<uint32_t>(state.automation.pointCount) +
+                           state.modulation.pointCount;
+    if (count > std::numeric_limits<uint16_t>::max()) return false;
+    pointCount = static_cast<uint16_t>(count);
+    if (pointCount == 0U) {
+        points = nullptr;
+        return true;
+    }
+    const uint16_t offset = macro::macroCurveStored(state.automation)
+        ? state.automation.pointOffset
+        : state.modulation.pointOffset;
+    if (static_cast<uint32_t>(offset) + pointCount >
+        clipboard.pointPool.used) {
+        return false;
+    }
+    points = clipboard.pointPool.points.data() + offset;
+    return true;
+}
+
+FLASHMEM bool replaceProjectScopeFromClipboardInDomain(
+    modulation::ProjectControlDomainState& domain,
+    const Scope& dest,
+    const core::state::MacroAutomationClipboard* clipboard
+) {
+    StorageUsage incoming{};
+    const bool trackScope = dest.kind == ScopeKind::TRACK;
+    if (!scopeValid(dest) || !clipboardUsage(clipboard, trackScope, incoming)) {
+        return false;
+    }
+    ProjectScopeSelection selection{};
+    selection.kind = dest.kind;
+    selection.track = dest.track;
+    selection.mask = trackScope
+        ? static_cast<uint16_t>(1U << dest.track)
+        : static_cast<uint16_t>(1U << dest.page);
+    if (!clearProjectSelectionInDomain(domain, selection)) return false;
+    if (clipboard == nullptr || !clipboard->valid) return true;
+
+    for (uint8_t index = 0; index < clipboard->count; ++index) {
+        const auto& entry = clipboard->entries[index];
+        if (!entry.valid || !macro::macroAutomationSlotHasContent(entry.state)) {
+            continue;
+        }
+        const macro::MacroPackedCurvePoint* points = nullptr;
+        uint16_t pointCount = 0;
+        if (!clipboardEntryPoints(*clipboard, entry, points, pointCount)) {
+            return false;
+        }
+        const macro::MacroAutomationSlotAddress address{
+            .track = dest.track,
+            .page = trackScope ? entry.sourcePage : dest.page,
+            .macro = entry.sourceMacro,
+        };
+        if (!modulation::replaceProjectControlMacroSlotInDomain(
+                domain,
+                address,
+                entry.state,
+                points,
+                pointCount
+            )) {
+            return false;
+        }
+    }
+    return true;
 }
 
 FLASHMEM bool clipboardUsage(const core::state::MacroAutomationClipboard* clipboard,
@@ -97,191 +543,166 @@ FLASHMEM bool clipboardUsage(const core::state::MacroAutomationClipboard* clipbo
     return true;
 }
 
-FLASHMEM bool canReplace(const macro::MacroAutomationBankState& bank,
-                         StorageUsage reclaimed,
-                         StorageUsage incoming) {
-    const uint32_t occupiedSlots = std::min<uint16_t>(
-        bank.entryCount,
-        macro::MACRO_AUTOMATION_SLOT_CAPACITY
-    );
-    if (reclaimed.slots > occupiedSlots || reclaimed.points > bank.pointPool.used) return false;
-
-    const uint32_t resultingSlots = occupiedSlots - reclaimed.slots + incoming.slots;
-    const uint32_t resultingPoints =
-        static_cast<uint32_t>(bank.pointPool.used) - reclaimed.points + incoming.points;
-    return resultingSlots <= macro::MACRO_AUTOMATION_SLOT_CAPACITY &&
-           resultingPoints <= macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY;
-}
-
-FLASHMEM void clearScope(macro::MacroAutomationBankState& bank, const Scope& scope) {
-    if (scope.kind == ScopeKind::TRACK) {
-        macro::macroAutomationClearTrack(bank, scope.track);
-    } else {
-        macro::macroAutomationClearPage(bank, scope.track, scope.page);
-    }
-}
-
-FLASHMEM bool copyBankSlot(macro::MacroAutomationBankState& bank,
-                           const macro::MacroAutomationSlotAddress& sourceAddress,
-                           const macro::MacroAutomationSlotAddress& destAddress) {
-    const auto* source = macro::macroAutomationFindSlot(bank, sourceAddress);
-    if (source == nullptr || !macro::macroAutomationSlotHasContent(*source)) return true;
-
-    auto* dest = macro::macroAutomationGetOrCreateSlot(bank, destAddress);
-    if (dest == nullptr) return false;
-    if (macro::macroAutomationCopySlotState(bank, *dest, bank.pointPool, *source)) return true;
-
-    macro::macroAutomationClearSlot(bank, destAddress);
-    return false;
-}
-
-FLASHMEM bool copyClipboardSlot(
-    macro::MacroAutomationBankState& bank,
-    const macro::MacroAutomationSlotAddress& destAddress,
-    const core::state::MacroAutomationClipboard& clipboard,
-    const core::state::MacroAutomationClipboardEntry& source
-) {
-    if (!macro::macroAutomationSlotHasContent(source.state)) return true;
-    auto* dest = macro::macroAutomationGetOrCreateSlot(bank, destAddress);
-    if (dest == nullptr) return false;
-    if (macro::macroAutomationCopySlotState(
-            bank,
-            *dest,
-            clipboard.pointPool,
-            source.state
-        )) {
-        return true;
-    }
-
-    macro::macroAutomationClearSlot(bank, destAddress);
-    return false;
-}
-
-FLASHMEM bool duplicateScope(macro::MacroAutomationBankState& bank,
-                             const Scope& source,
-                             const Scope& dest) {
-    if (!scopeValid(source) || !scopeValid(dest) || source.kind != dest.kind) return false;
-    if (source.track == dest.track &&
-        (source.kind == ScopeKind::TRACK || source.page == dest.page)) {
-        return false;
-    }
-
-    const StorageUsage incoming = bankUsage(bank, source, true);
-    const StorageUsage reclaimed = bankUsage(bank, dest, false);
-    if (!canReplace(bank, reclaimed, incoming)) return false;
-
-    clearScope(bank, dest);
-    const uint8_t firstPage = source.kind == ScopeKind::TRACK ? 0 : source.page;
-    const uint8_t pageCount = source.kind == ScopeKind::TRACK ? macro::PAGE_COUNT : 1;
-    for (uint8_t pageOffset = 0; pageOffset < pageCount; ++pageOffset) {
-        const uint8_t sourcePage = static_cast<uint8_t>(firstPage + pageOffset);
-        const uint8_t destPage = source.kind == ScopeKind::TRACK ? sourcePage : dest.page;
-        for (uint8_t macroIndex = 0; macroIndex < macro::MACRO_COUNT; ++macroIndex) {
-            if (!copyBankSlot(
-                    bank,
-                    macro::MacroAutomationSlotAddress{
-                        .track = source.track,
-                        .page = sourcePage,
-                        .macro = macroIndex,
-                    },
-                    macro::MacroAutomationSlotAddress{
-                        .track = dest.track,
-                        .page = destPage,
-                        .macro = macroIndex,
-                    }
-                )) {
-                clearScope(bank, dest);
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-FLASHMEM bool replaceScopeFromClipboard(
-    macro::MacroAutomationBankState& bank,
-    const Scope& dest,
-    const core::state::MacroAutomationClipboard* clipboard
-) {
-    if (!scopeValid(dest)) return false;
-
-    StorageUsage incoming;
-    const bool trackScope = dest.kind == ScopeKind::TRACK;
-    if (!clipboardUsage(clipboard, trackScope, incoming)) return false;
-    const StorageUsage reclaimed = bankUsage(bank, dest, false);
-    if (!canReplace(bank, reclaimed, incoming)) return false;
-
-    clearScope(bank, dest);
-    if (clipboard == nullptr || !clipboard->valid) return true;
-
-    const uint8_t count = clipboard->count;
-    for (uint8_t i = 0; i < count; ++i) {
-        const auto& entry = clipboard->entries[i];
-        if (!entry.valid || !macro::macroAutomationSlotHasContent(entry.state)) continue;
-        const uint8_t page = trackScope ? entry.sourcePage : dest.page;
-        if (!copyClipboardSlot(
-                bank,
-                macro::MacroAutomationSlotAddress{
-                    .track = dest.track,
-                    .page = page,
-                    .macro = entry.sourceMacro,
-                },
-                *clipboard,
-                entry
-            )) {
-            clearScope(bank, dest);
-            return false;
-        }
-    }
-    return true;
-}
-
 }  // namespace
 
-FLASHMEM bool duplicatePage(macro::MacroAutomationBankState& bank,
-                            uint8_t sourceTrack,
-                            uint8_t sourcePage,
-                            uint8_t destTrack,
-                            uint8_t destPage) {
-    return duplicateScope(
-        bank,
-        Scope{.kind = ScopeKind::PAGE, .track = sourceTrack, .page = sourcePage},
-        Scope{.kind = ScopeKind::PAGE, .track = destTrack, .page = destPage}
+FLASHMEM bool clearPages(
+    modulation::ProjectControlState& control,
+    uint8_t track,
+    uint16_t pageMask
+) {
+    if (track >= macro::TRACK_COUNT || pageMask == 0U) return false;
+    return mutateProjectControl(
+        control,
+        [track, pageMask](modulation::ProjectControlDomainState& domain) {
+            return clearProjectSelectionInDomain(
+                domain,
+                ProjectScopeSelection{
+                    .kind = ScopeKind::PAGE,
+                    .mask = pageMask,
+                    .track = track,
+                }
+            );
+        }
     );
 }
 
-FLASHMEM bool duplicateTrack(macro::MacroAutomationBankState& bank,
-                             uint8_t sourceTrack,
-                             uint8_t destTrack) {
-    return duplicateScope(
-        bank,
-        Scope{.kind = ScopeKind::TRACK, .track = sourceTrack},
-        Scope{.kind = ScopeKind::TRACK, .track = destTrack}
+FLASHMEM bool clearTracks(
+    modulation::ProjectControlState& control,
+    uint16_t trackMask
+) {
+    if (trackMask == 0U) return false;
+    return mutateProjectControl(
+        control,
+        [trackMask](modulation::ProjectControlDomainState& domain) {
+            return clearProjectSelectionInDomain(
+                domain,
+                ProjectScopeSelection{
+                    .kind = ScopeKind::TRACK,
+                    .mask = trackMask,
+                }
+            );
+        }
+    );
+}
+
+FLASHMEM bool clearMacroSlot(
+    modulation::ProjectControlState& control,
+    const macro::MacroAutomationSlotAddress& address
+) {
+    return mutateProjectControl(
+        control,
+        [&address](modulation::ProjectControlDomainState& domain) {
+            return clearProjectDestinationInDomain(domain, address);
+        }
+    );
+}
+
+FLASHMEM bool duplicatePages(
+    modulation::ProjectControlState& control,
+    const ProjectControlPageCopy* copies,
+    uint8_t copyCount
+) {
+    if (copies == nullptr || copyCount == 0U || copyCount > macro::PAGE_COUNT) {
+        return false;
+    }
+    std::array<ProjectScopeCopy, macro::PAGE_COUNT> scopes{};
+    for (uint8_t index = 0; index < copyCount; ++index) {
+        scopes[index] = {
+            .source = Scope{
+                .kind = ScopeKind::PAGE,
+                .track = copies[index].sourceTrack,
+                .page = copies[index].sourcePage,
+            },
+            .dest = Scope{
+                .kind = ScopeKind::PAGE,
+                .track = copies[index].destTrack,
+                .page = copies[index].destPage,
+            },
+        };
+    }
+    return mutateProjectControl(
+        control,
+        [&scopes, copyCount](modulation::ProjectControlDomainState& domain) {
+            return duplicateProjectScopesInDomain(
+                domain,
+                scopes.data(),
+                copyCount
+            );
+        }
+    );
+}
+
+FLASHMEM bool duplicateTracks(
+    modulation::ProjectControlState& control,
+    const ProjectControlTrackCopy* copies,
+    uint8_t copyCount
+) {
+    if (copies == nullptr || copyCount == 0U || copyCount > macro::TRACK_COUNT) {
+        return false;
+    }
+    std::array<ProjectScopeCopy, macro::TRACK_COUNT> scopes{};
+    for (uint8_t index = 0; index < copyCount; ++index) {
+        scopes[index] = {
+            .source = Scope{
+                .kind = ScopeKind::TRACK,
+                .track = copies[index].sourceTrack,
+            },
+            .dest = Scope{
+                .kind = ScopeKind::TRACK,
+                .track = copies[index].destTrack,
+            },
+        };
+    }
+    return mutateProjectControl(
+        control,
+        [&scopes, copyCount](modulation::ProjectControlDomainState& domain) {
+            return duplicateProjectScopesInDomain(
+                domain,
+                scopes.data(),
+                copyCount
+            );
+        }
     );
 }
 
 FLASHMEM bool replacePageFromClipboard(
-    macro::MacroAutomationBankState& bank,
+    modulation::ProjectControlState& control,
     uint8_t destTrack,
     uint8_t destPage,
     const core::state::MacroAutomationClipboard* clipboard
 ) {
-    return replaceScopeFromClipboard(
-        bank,
-        Scope{.kind = ScopeKind::PAGE, .track = destTrack, .page = destPage},
-        clipboard
+    return mutateProjectControl(
+        control,
+        [destTrack, destPage, clipboard](
+            modulation::ProjectControlDomainState& domain
+        ) {
+            return replaceProjectScopeFromClipboardInDomain(
+                domain,
+                Scope{
+                    .kind = ScopeKind::PAGE,
+                    .track = destTrack,
+                    .page = destPage,
+                },
+                clipboard
+            );
+        }
     );
 }
 
 FLASHMEM bool replaceTrackFromClipboard(
-    macro::MacroAutomationBankState& bank,
+    modulation::ProjectControlState& control,
     uint8_t destTrack,
     const core::state::MacroAutomationClipboard* clipboard
 ) {
-    return replaceScopeFromClipboard(
-        bank,
-        Scope{.kind = ScopeKind::TRACK, .track = destTrack},
-        clipboard
+    return mutateProjectControl(
+        control,
+        [destTrack, clipboard](modulation::ProjectControlDomainState& domain) {
+            return replaceProjectScopeFromClipboardInDomain(
+                domain,
+                Scope{.kind = ScopeKind::TRACK, .track = destTrack},
+                clipboard
+            );
+        }
     );
 }
 

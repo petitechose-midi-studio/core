@@ -26,8 +26,8 @@
 #include <oc/state/Signal.hpp>
 #include <oc/type/TextFormat.hpp>
 
-#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroConstants.hpp"
+#include "state/modulation/ProjectControlState.hpp"
 
 namespace core::state::macro {
 
@@ -136,8 +136,8 @@ public:
     /// All track data (persisted)
     std::array<MacroTrackData, TRACK_COUNT> tracks;
 
-    /// Sparse project-level automation/modulation data keyed by track/page/macro.
-    MacroAutomationBankState automation;
+    /// Singular Project-owned Automation and Modulation authority plus runtime.
+    core::state::modulation::ProjectControlState control;
 
     /// Quick access to active page's configs (updated on page switch)
     std::array<MacroConfig, MACRO_COUNT> activeConfigs;

@@ -6,7 +6,9 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/modulation/ProjectControlState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
@@ -158,8 +160,10 @@ struct MacroAutomationClipboard {
     MacroAutomationClipboard();
     bool append(uint8_t sourcePage,
                 uint8_t sourceMacro,
-                const core::state::macro::MacroAutomationPointPool& sourcePool,
-                const core::state::macro::MacroAutomationSlotState& state);
+                const core::state::modulation::ProjectControlState& control,
+                const core::state::macro::MacroAutomationSlotAddress& address,
+                bool includeAutomation = true,
+                bool includeModulation = true);
 };
 
 struct StructureClipboardState {
@@ -187,20 +191,20 @@ struct StructureClipboardState {
 
     [[nodiscard]] bool storeMacroPage(
         const core::state::macro::MacroPageData& page,
-        const core::state::macro::MacroAutomationBankState& automation,
+        const core::state::modulation::ProjectControlState& control,
         uint8_t sourceTrack,
         uint8_t sourcePage
     );
 
     [[nodiscard]] bool storeMacroTrack(
         const core::state::macro::MacroTrackData& track,
-        const core::state::macro::MacroAutomationBankState& automation,
+        const core::state::modulation::ProjectControlState& control,
         uint8_t sourceTrack
     );
 
     [[nodiscard]] bool storeMacroAutomation(
-        const core::state::macro::MacroAutomationBankState& automation,
-        const core::state::macro::MacroAutomationSlotState& slot
+        const core::state::modulation::ProjectControlState& control,
+        const core::state::macro::MacroAutomationSlotAddress& address
     );
 
     /** Stores only the destination CC. Track/channel ownership stays external. */
@@ -217,7 +221,7 @@ struct StructureClipboardState {
 
     /** Stores only Modulation shape/timing/depth for target-preserving paste. */
     [[nodiscard]] bool storeMacroModulation(
-        const core::state::macro::MacroAutomationBankState& automation,
+        const core::state::modulation::ProjectControlState& control,
         const core::state::macro::MacroAutomationSlotAddress& address
     );
 

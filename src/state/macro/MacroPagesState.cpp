@@ -63,7 +63,7 @@ FLASHMEM void MacroPagesState::initDefaults() {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         tracks[i].initDefaults(i);
     }
-    automation.clear();
+    control.clear();
     active_track_ = 0;
     active_page_ = 0;
     track_enabled_mask_.set(DEFAULT_TRACK_ENABLED_MASK);

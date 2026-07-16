@@ -471,7 +471,7 @@ FLASHMEM void MacroStructureWorkflow::copyCurrentStructure() {
             if (track_ui_.previewAddSlot.get()) return;
             if (!structure_clipboard_.storeMacroTrack(
                 pages_.tracks[services_.activeTrack()],
-                pages_.automation,
+                pages_.control,
                 services_.activeTrack()
             )) {
                 return;
@@ -486,7 +486,7 @@ FLASHMEM void MacroStructureWorkflow::copyCurrentStructure() {
             if (macro_ui_.previewAddPageSlot.get()) return;
             if (!structure_clipboard_.storeMacroPage(
                 pages_.activePageData(),
-                pages_.automation,
+                pages_.control,
                 pages_.currentActiveTrack(),
                 pages_.currentActivePage()
             )) {

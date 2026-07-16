@@ -21,6 +21,7 @@ enum class ChunkId : uint32_t {
     EDITING = 0x45444954u,          // "EDIT"
     MACRO_STATE = 0x4D414352u,      // "MACR"
     MACRO_AUTOMATION = 0x4D415554u, // "MAUT"
+    MODULATION_GRAPH = 0x4D4F4447u, // "MODG"
     SEQUENCER_STATE = 0x53455152u,  // "SEQR"
     HISTORY_JOURNAL = 0x48495354u,  // "HIST"
 };

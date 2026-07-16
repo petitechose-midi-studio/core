@@ -46,6 +46,13 @@ public:
     /** Publishes one immediate already-resolved encoder/manual movement. */
     MidiCcGlobalFrameResult publishLiveManual(uint8_t macroIndex, uint8_t value);
 
+    bool publishProjectFrame(
+        MidiCcGlobalFrameCoordinator::PersistentAuthorProducer producer,
+        void* context
+    );
+    [[nodiscard]] core::state::modulation::ProjectControlTimeSnapshot
+        projectControlTimeSnapshot() const;
+
     static constexpr uint16_t stableAddress(
         uint8_t track,
         uint8_t page,

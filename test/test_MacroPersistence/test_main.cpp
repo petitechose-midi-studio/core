@@ -1,9 +1,11 @@
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 
 #include "../../src/persistence/MacroPersistence.hpp"
 #include "../support/MemoryStorage.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 using test_support::MemoryStorage;
@@ -89,24 +91,40 @@ void test_library_load_preserves_project_macro_automation_bank() {
 
     core::state::macro::MacroPagesState loaded;
     loaded.initDefaults();
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        loaded.automation,
-        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
-    );
-    assert(slot != nullptr);
-    slot->modulationDepth = 0.75f;
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = 0,
+        .page = 0,
+        .macro = 0,
+    };
+    core::state::macro::MacroModulationShape modulation{};
+    assert(core::state::macro::macroModulationAppendPoint(
+        modulation,
+        0.0f,
+        -0.25f
+    ));
+    assert(core::state::macro::macroModulationAppendPoint(
+        modulation,
+        1.0f,
+        0.25f
+    ));
+    assert(test_support::project_control::assignModulation(
+        loaded.control,
+        address,
+        modulation,
+        0.75f
+    ));
 
     const auto status = persistence.loadLibrarySlot(4, loaded);
     assert(status == core::persistence::SlotLoadStatus::OK);
 
-    const auto* preserved = core::state::macro::macroAutomationFindSlot(
-        loaded.automation,
-        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    const auto preserved = test_support::project_control::readSlot(
+        loaded.control,
+        address
     );
-    assert(preserved != nullptr);
-    assert(preserved->modulationDepth == 0.75f);
+    assert(preserved.modulationStored);
+    assert(std::fabs(preserved.legacy.modulationDepth - 0.75f) < 0.0001f);
 
-    std::cout << "[PASS] test_library_load_preserves_project_macro_automation_bank\n";
+    std::cout << "[PASS] library load preserves Project Control authority\n";
 }
 
 }  // namespace

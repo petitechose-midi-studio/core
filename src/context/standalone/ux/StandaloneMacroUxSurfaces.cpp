@@ -17,6 +17,7 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
@@ -27,19 +28,14 @@ namespace {
 namespace detail_ui = core::ui::macro;
 
 FLASHMEM detail_ui::MacroSourceDetailContext macroSourceDetailContext(
-    const core::state::macro::MacroAutomationSlotState* slot,
+    const core::state::modulation::ProjectControlMacroSlotView& slot,
     bool manualOverride
 ) {
-    if (slot == nullptr) return {};
     return {
-        .automationStored =
-            core::state::macro::macroCurveStored(slot->automation),
-        .modulationStored =
-            core::state::macro::macroCurveStored(slot->modulation),
-        .automationPlayback =
-            core::state::macro::macroCurvePlaybackActive(slot->automation),
-        .modulationPlayback =
-            core::state::macro::macroCurvePlaybackActive(slot->modulation),
+        .automationStored = slot.automationStored,
+        .modulationStored = slot.modulationStored,
+        .automationPlayback = slot.automationEnabled,
+        .modulationPlayback = slot.activeModulationCount > 0U,
         .manualOverride = manualOverride,
     };
 }
@@ -485,11 +481,14 @@ FLASHMEM bool MacroValueUxSurface::captureSemanticUxContext(
                 .page = pages_.currentActivePage(),
                 .macro = index,
             };
-            const auto* slot = core::state::macro::macroAutomationFindSlot(
-                pages_.automation,
-                address
-            );
-            const bool active = slot != nullptr && slot->automation.active;
+            core::state::modulation::ProjectControlMacroSlotView slot{};
+            const bool slotValid =
+                core::state::modulation::readProjectControlMacroSlot(
+                    pages_.control,
+                    address,
+                    slot
+                );
+            const bool active = slotValid && slot.automationEnabled;
             const bool manual =
                 (macro_ui_.automationManualOverrideMask.get() &
                  static_cast<uint16_t>(1U << index)) != 0;
@@ -506,9 +505,11 @@ FLASHMEM bool MacroValueUxSurface::captureSemanticUxContext(
         .page = pages_.currentActivePage(),
         .macro = index,
     };
-    const auto* sourceSlot = core::state::macro::macroAutomationFindSlot(
-        pages_.automation,
-        sourceAddress
+    core::state::modulation::ProjectControlMacroSlotView sourceSlot{};
+    (void)core::state::modulation::readProjectControlMacroSlot(
+        pages_.control,
+        sourceAddress,
+        sourceSlot
     );
     const bool manualOverride =
         (macro_ui_.automationManualOverrideMask.get() &
@@ -997,9 +998,11 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             .page = pages_.currentActivePage(),
             .macro = macroIndex,
         };
-        const auto* slot = core::state::macro::macroAutomationFindSlot(
-            pages_.automation,
-            address
+        core::state::modulation::ProjectControlMacroSlotView slot{};
+        (void)core::state::modulation::readProjectControlMacroSlot(
+            pages_.control,
+            address,
+            slot
         );
         const bool manual =
             (macro_ui_.automationManualOverrideMask.get() &
@@ -1100,9 +1103,11 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             .page = pages_.currentActivePage(),
             .macro = macro_edit_.editingIndex.get(),
         };
-        const auto* slot = core::state::macro::macroAutomationFindSlot(
-            pages_.automation,
-            address
+        core::state::modulation::ProjectControlMacroSlotView slot{};
+        (void)core::state::modulation::readProjectControlMacroSlot(
+            pages_.control,
+            address,
+            slot
         );
         const bool manual =
             (macro_ui_.automationManualOverrideMask.get() &

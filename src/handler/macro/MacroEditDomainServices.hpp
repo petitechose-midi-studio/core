@@ -7,6 +7,7 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 #include "handler/macro/MacroAutomationClipboardOps.hpp"
 
 namespace core::state {
@@ -118,6 +119,7 @@ private:
     core::state::StructureClipboardState* clipboard_ = nullptr;
     core::state::MacroState* macros_ = nullptr;
     core::state::macro::MacroHistoryService* history_ = nullptr;
+    mutable core::state::modulation::ProjectControlMacroSlotView slot_view_cache_{};
     Operations operations_{};
 };
 

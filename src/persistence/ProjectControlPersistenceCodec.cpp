@@ -589,7 +589,7 @@ FLASHMEM ChunkStatus decodeAutomationCurrent(
                 {firstCurveId + index},
                 0U,
                 localPointOffset,
-                modulation::ProjectCurveValueDomain::ABSOLUTE,
+                modulation::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR,
                 true
             )) {
             target.clear();

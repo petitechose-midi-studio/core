@@ -1,8 +1,11 @@
 #include "state/StructureClipboardState.hpp"
 
+#include <cstring>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
+
+#include "state/modulation/ProjectControlMacroOps.hpp"
 
 namespace core::state {
 
@@ -62,19 +65,72 @@ FLASHMEM MacroAutomationClipboard::MacroAutomationClipboard() = default;
 FLASHMEM bool MacroAutomationClipboard::append(
     uint8_t entrySourcePage,
     uint8_t entrySourceMacro,
-    const core::state::macro::MacroAutomationPointPool& sourcePool,
-    const core::state::macro::MacroAutomationSlotState& state
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    bool includeAutomation,
+    bool includeModulation
 ) {
     if (count >= entries.size()) return false;
-    core::state::macro::MacroAutomationSlotState copied{};
-    if (!core::state::macro::macroAutomationCopySlotState(
-            pointPool,
-            copied,
-            sourcePool,
-            state
+    core::state::modulation::ProjectControlMacroSlotView view{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            control,
+            address,
+            view
+        ) || view.legacyMutationAmbiguous ||
+        (view.modulationStored && !view.primaryRecordedShape)) {
+        return false;
+    }
+
+    auto copied = view.legacy;
+    const uint16_t automationCount = includeAutomation && view.automationStored
+        ? copied.automation.pointCount
+        : 0U;
+    const uint16_t modulationCount = includeModulation && view.modulationStored
+        ? copied.modulation.pointCount
+        : 0U;
+    const uint32_t required = static_cast<uint32_t>(automationCount) +
+                              modulationCount;
+    if (required > static_cast<uint32_t>(
+            core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY -
+            pointPool.used
         )) {
         return false;
     }
+
+    const uint16_t start = pointPool.used;
+    uint16_t cursor = start;
+    if (automationCount > 0U) {
+        for (uint16_t index = 0; index < automationCount; ++index) {
+            const auto& source = control.authored.curves.points[
+                copied.automation.pointOffset + index
+            ];
+            pointPool.points[cursor + index] = {
+                .tick = source.tick,
+                .value = source.value,
+            };
+        }
+        copied.automation.pointOffset = cursor;
+        cursor = static_cast<uint16_t>(cursor + automationCount);
+    } else {
+        copied.automation = {};
+    }
+    if (modulationCount > 0U) {
+        for (uint16_t index = 0; index < modulationCount; ++index) {
+            const auto& source = control.authored.curves.points[
+                copied.modulation.pointOffset + index
+            ];
+            pointPool.points[cursor + index] = {
+                .tick = source.tick,
+                .value = source.value,
+            };
+        }
+        copied.modulation.pointOffset = cursor;
+        cursor = static_cast<uint16_t>(cursor + modulationCount);
+    } else {
+        copied.modulation = {};
+        copied.modulationDepth = 0.0f;
+    }
+    pointPool.used = cursor;
     entries[count] = MacroAutomationClipboardEntry{
         .valid = true,
         .sourcePage = entrySourcePage,
@@ -117,40 +173,46 @@ struct MacroAutomationClipboardBuild {
 
 FLASHMEM MacroAutomationClipboardBuild
 makeMacroAutomationClipboard(
-    const core::state::macro::MacroAutomationBankState& automation,
+    const core::state::modulation::ProjectControlState& control,
     uint8_t sourceTrack,
     uint8_t sourcePage,
     bool trackScope
 ) {
     core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard> clipboard;
-
-    const uint8_t entryCount = automation.entryCount >
-            core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
-        ? core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY
-        : automation.entryCount;
-    for (uint8_t i = 0; i < entryCount; ++i) {
-        const auto& entry = automation.entries[i];
-        if (!entry.active) continue;
-        if (entry.address.track != sourceTrack) continue;
-        if (!trackScope && entry.address.page != sourcePage) continue;
-        if (!core::state::macro::macroAutomationSlotHasContent(entry.state)) continue;
-        if (!clipboard) {
-            clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
-            if (!clipboard) return {.success = false};
-            clipboard->trackScope = trackScope;
-            clipboard->sourceTrack = sourceTrack;
-            clipboard->sourcePage = sourcePage;
-        }
-        if (!clipboard->append(
-            entry.address.page,
-            entry.address.macro,
-            automation.pointPool,
-            entry.state
-        )) {
-            return {.success = false};
+    const uint8_t firstPage = trackScope ? 0U : sourcePage;
+    const uint8_t endPage = trackScope
+        ? core::state::macro::PAGE_COUNT
+        : static_cast<uint8_t>(sourcePage + 1U);
+    for (uint8_t page = firstPage; page < endPage; ++page) {
+        for (uint8_t macro = 0; macro < core::state::macro::MACRO_COUNT; ++macro) {
+            const core::state::macro::MacroAutomationSlotAddress address{
+                sourceTrack,
+                page,
+                macro,
+            };
+            core::state::modulation::ProjectControlMacroSlotView view{};
+            if (!core::state::modulation::readProjectControlMacroSlot(
+                    control,
+                    address,
+                    view
+                )) {
+                return {.success = false};
+            }
+            if (!view.present) continue;
+            if (!clipboard) {
+                clipboard = core::app::makeExtmemUnique<
+                    core::state::MacroAutomationClipboard
+                >();
+                if (!clipboard) return {.success = false};
+                clipboard->trackScope = trackScope;
+                clipboard->sourceTrack = sourceTrack;
+                clipboard->sourcePage = sourcePage;
+            }
+            if (!clipboard->append(page, macro, control, address)) {
+                return {.success = false};
+            }
         }
     }
-
     return {.value = std::move(clipboard)};
 }
 
@@ -169,20 +231,17 @@ FLASHMEM void StructureClipboardState::clear() {
 
 FLASHMEM bool StructureClipboardState::storeMacroPage(
     const core::state::macro::MacroPageData& page,
-    const core::state::macro::MacroAutomationBankState& automation,
+    const core::state::modulation::ProjectControlState& control,
     uint8_t sourceTrack,
     uint8_t sourcePage
 ) {
     auto automationSet = makeMacroAutomationClipboard(
-        automation,
+        control,
         sourceTrack,
         sourcePage,
         false
     );
-    if (!automationSet.success) {
-        return rejectClipboardStore(*this);
-    }
-
+    if (!automationSet.success) return rejectClipboardStore(*this);
     releaseOwnedPayloads(*this);
     macroPage = page;
     macroAutomationSet = std::move(automationSet.value);
@@ -192,19 +251,16 @@ FLASHMEM bool StructureClipboardState::storeMacroPage(
 
 FLASHMEM bool StructureClipboardState::storeMacroTrack(
     const core::state::macro::MacroTrackData& track,
-    const core::state::macro::MacroAutomationBankState& automation,
+    const core::state::modulation::ProjectControlState& control,
     uint8_t sourceTrack
 ) {
     auto automationSet = makeMacroAutomationClipboard(
-        automation,
+        control,
         sourceTrack,
         core::state::macro::PAGE_COUNT,
         true
     );
-    if (!automationSet.success) {
-        return rejectClipboardStore(*this);
-    }
-
+    if (!automationSet.success) return rejectClipboardStore(*this);
     releaseOwnedPayloads(*this);
     macroTrack = track;
     macroAutomationSet = std::move(automationSet.value);
@@ -213,24 +269,24 @@ FLASHMEM bool StructureClipboardState::storeMacroTrack(
 }
 
 FLASHMEM bool StructureClipboardState::storeMacroAutomation(
-    const core::state::macro::MacroAutomationBankState& automation,
-    const core::state::macro::MacroAutomationSlotState& slot
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address
 ) {
-    if (!core::state::macro::macroCurveStored(slot.automation)) {
+    core::state::modulation::ProjectControlMacroSlotView view{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            control,
+            address,
+            view
+        ) || !view.automationStored) {
         return rejectClipboardStore(*this);
     }
-
-    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
-    if (!clipboard) {
+    auto clipboard = core::app::makeExtmemUnique<
+        core::state::MacroAutomationClipboard
+    >();
+    if (!clipboard ||
+        !clipboard->append(0, 0, control, address, true, false)) {
         return rejectClipboardStore(*this);
     }
-
-    core::state::macro::MacroAutomationSlotState automationOnly{};
-    automationOnly.automation = slot.automation;
-    if (!clipboard->append(0, 0, automation.pointPool, automationOnly)) {
-        return rejectClipboardStore(*this);
-    }
-
     releaseOwnedPayloads(*this);
     clipboard->payloadKind = MacroClipboardPayloadKind::AUTOMATION;
     macroAutomationSet = std::move(clipboard);
@@ -252,15 +308,14 @@ FLASHMEM bool StructureClipboardState::storeMacroDestination(
 
     auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
     if (!clipboard) return rejectClipboardStore(*this);
-    const core::state::macro::MacroAutomationSlotState empty{};
-    if (!clipboard->append(
-            address.page,
-            address.macro,
-            pages.automation.pointPool,
-            empty
-        )) {
-        return rejectClipboardStore(*this);
-    }
+    clipboard->entries[0] = {
+        .valid = true,
+        .sourcePage = address.page,
+        .sourceMacro = address.macro,
+        .state = {},
+    };
+    clipboard->count = 1;
+    clipboard->valid = true;
     clipboard->payloadKind = MacroClipboardPayloadKind::DESTINATION;
     clipboard->sourceTrack = address.track;
     clipboard->sourcePage = address.page;
@@ -297,18 +352,16 @@ FLASHMEM bool StructureClipboardState::storeMacroSlot(
     clipboard->sourceCc = page.cc[address.macro];
     clipboard->sourceStaticValue = page.values[address.macro];
 
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        pages.automation,
-        address
-    );
-    clipboard->sourceSlotPresent = slot != nullptr;
-    const core::state::macro::MacroAutomationSlotState empty{};
-    if (!clipboard->append(
-            address.page,
-            address.macro,
-            pages.automation.pointPool,
-            slot != nullptr ? *slot : empty
+    core::state::modulation::ProjectControlMacroSlotView view{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            pages.control,
+            address,
+            view
         )) {
+        return rejectClipboardStore(*this);
+    }
+    clipboard->sourceSlotPresent = view.present;
+    if (!clipboard->append(address.page, address.macro, pages.control, address)) {
         return rejectClipboardStore(*this);
     }
 
@@ -319,37 +372,37 @@ FLASHMEM bool StructureClipboardState::storeMacroSlot(
 }
 
 FLASHMEM bool StructureClipboardState::storeMacroModulation(
-    const core::state::macro::MacroAutomationBankState& automation,
+    const core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address
 ) {
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        automation,
-        address
-    );
-    if (slot == nullptr ||
-        !core::state::macro::macroCurveStored(slot->modulation)) {
+    core::state::modulation::ProjectControlMacroSlotView view{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            control,
+            address,
+            view
+        ) || !view.modulationStored || view.legacyMutationAmbiguous ||
+        !view.primaryRecordedShape) {
         return rejectClipboardStore(*this);
     }
-
-    auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
+    auto clipboard = core::app::makeExtmemUnique<
+        core::state::MacroAutomationClipboard
+    >();
     if (!clipboard) return rejectClipboardStore(*this);
     clipboard->payloadKind = MacroClipboardPayloadKind::MODULATION;
     clipboard->sourceTrack = address.track;
     clipboard->sourcePage = address.page;
     clipboard->sourceMacro = address.macro;
     clipboard->sourceSlotPresent = true;
-    core::state::macro::MacroAutomationSlotState modulationOnly{};
-    modulationOnly.modulation = slot->modulation;
-    modulationOnly.modulationDepth = slot->modulationDepth;
     if (!clipboard->append(
             address.page,
             address.macro,
-            automation.pointPool,
-            modulationOnly
+            control,
+            address,
+            false,
+            true
         )) {
         return rejectClipboardStore(*this);
     }
-
     releaseOwnedPayloads(*this);
     macroAutomationSet = std::move(clipboard);
     commitClipboardKind(*this, StructureClipboardKind::MACRO_MODULATION);

@@ -32,6 +32,7 @@
 #include "state/macro/MacroUiState.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "support/InputTestHardware.hpp"
+#include "support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -172,21 +173,17 @@ struct Harness {
     }
 
     void configureAutomation(uint8_t macroIndex) {
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            pages.automation,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = pages.currentActiveTrack(),
-                .page = pages.currentActivePage(),
-                .macro = macroIndex,
-            }
-        );
-        assert(slot != nullptr);
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = pages.currentActiveTrack(),
+            .page = pages.currentActivePage(),
+            .macro = macroIndex,
+        };
         core::state::macro::MacroAutomationLane lane;
         assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
         assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-        assert(core::state::macro::macroAutomationAssignAutomation(
-            pages.automation,
-            *slot,
+        assert(test_support::project_control::assignAutomation(
+            pages.control,
+            address,
             lane
         ));
     }
@@ -203,6 +200,7 @@ struct Harness {
 void test_manual_and_playback_share_one_resolved_destination_cache() {
     Harness h;
 
+    h.coordinator.publishProjectControlClock(0, true, 1000000, 41667);
     h.playback.update(1000);
     assert(h.resolveAndDrain(1000).ok());
     assert(h.transport.count == 1);
@@ -230,6 +228,7 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     // Playback evaluates both lanes at the next 16 ms frame. The manual lane
     // stays a single Live author carrying its resolved Base + Modulation Out,
     // and the shared cache prevents a second send.
+    h.coordinator.publishProjectControlClock(12, true, 1500000, 41667);
     h.playback.update(1500);
     assert(h.resolveAndDrain(1500).ok());
     assert(h.transport.count == 2);
@@ -243,12 +242,14 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     }
 
     h.statusBar.playing.set(false);
+    h.coordinator.publishProjectControlClock(12, false, 2000000, 41667);
     h.playback.update(2000);
     assert(h.resolveAndDrain(2000).ok());
     assert(h.transport.count == 2);
     assert(h.services.manualOverrideActiveFor(1));
 
     h.statusBar.playing.set(true);
+    h.coordinator.publishProjectControlClock(12, true, 2200000, 41667);
     h.playback.update(2200);
     assert(h.resolveAndDrain(2200).ok());
     assert(h.transport.count == 2);
@@ -261,11 +262,13 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     }
 
     assert(h.services.resumeComputedSources(1));
+    h.coordinator.publishProjectControlClock(60, true, 4200000, 41667);
     h.playback.update(4200);
     assert(h.resolveAndDrain(4200).ok());
     assert(h.transport.count == 3);
-    // Stop/start preserves the automation phase. The 500 ms accumulated
-    // before the stop therefore resumes at the middle of this one-beat ramp.
+    // Stop/start preserves the 500 ms phase accumulated before the stop; the
+    // authoritative clock then advances two full beats while Manual owns the
+    // destination, so Automation resumes at the same midpoint.
     assert(h.transport.messages[2].value == 64);
     {
         auto telemetry = h.coordinator.readTelemetry();

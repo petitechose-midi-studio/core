@@ -9,6 +9,7 @@
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::state::project {
 
@@ -87,7 +88,7 @@ FLASHMEM void applyProjectRouting(core::state::CoreState& state,
 FLASHMEM bool ProjectSnapshotCapture::begin(const core::state::CoreState& state,
                                             ProjectSnapshot& snapshot) {
     cancel();
-    if (!snapshot.macroAutomation) return false;
+    if (!snapshot.projectControl) return false;
 
     state_ = &state;
     snapshot_ = &snapshot;
@@ -126,7 +127,7 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
             break;
 
         case Phase::AUTOMATION:
-            *snapshot_->macroAutomation = state_->pages.automation;
+            *snapshot_->projectControl = state_->pages.control.authored;
             phase_ = Phase::SEQUENCER;
             break;
 
@@ -207,7 +208,14 @@ FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, Projec
 
 FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
                                    const ProjectSnapshot& snapshot) {
-    if (!snapshot.macroAutomation) return false;
+    if (!snapshot.projectControl ||
+        !core::state::modulation::validProjectModulationDomain(
+            snapshot.projectControl->modulation,
+            snapshot.projectControl->curves,
+            &snapshot.projectControl->automation
+        )) {
+        return false;
+    }
     if (!core::state::sequencer::applyHistorySnapshot(
             state.sequencerTracks,
             state.sequencer,
@@ -227,11 +235,14 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         snapshot.sharedTrackEnabledMask,
         snapshot.sharedTrackActive
     );
-    state.pages.automation = *snapshot.macroAutomation;
-    for (auto& entry : state.pages.automation.entries) {
-        core::state::macro::macroAutomationNormalizeLegacyPlayback(entry.state);
-    }
-    core::state::macro::macroAutomationCompactPool(state.pages.automation);
+    state.pages.control.authored = *snapshot.projectControl;
+    state.pages.control.plan = {};
+    state.pages.control.runtime = {};
+    state.pages.control.sourceScratch.fill(0.0f);
+    state.pages.control.compiledRevision = 0U;
+    state.pages.control.runtimeContextHash = 0U;
+    state.pages.control.reserved = 0U;
+    state.pages.control.markAuthoredMutation();
     state.pages.syncSharedTrackState(
         state.sequencerTracks.currentEnabledMask(),
         state.sequencerTracks.activeTrackIndex()

@@ -53,7 +53,52 @@ MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
     if (macroIndex >= core::state::macro::MACRO_COUNT || value > 127U) {
         return MidiCcGlobalFrameResult{};
     }
+    if (services_.isActivePageEnabled() &&
+        services_.isMacroSlotActive(macroIndex)) {
+        const auto& config = services_.activeConfig(macroIndex);
+        const auto candidate = core::state::shared::MidiCcCandidate{
+            .destination = core::state::shared::MidiCcDestination{
+                .identity = core::state::shared::MidiCcDestinationIdentity{
+                    .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                    .channel = config.channel,
+                    .controller = config.cc,
+                },
+                .routeValidity =
+                    core::state::shared::MidiCcRouteValidity::VALID,
+            },
+            .author = core::state::shared::MidiCcAuthor{
+                .candidateClass =
+                    core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
+                .stableAddress = stableAddress(
+                    pages_.currentActiveTrack(),
+                    pages_.currentActivePage(),
+                    macroIndex
+                ),
+            },
+            .localValue = value,
+        };
+        uint16_t candidateCount = 0;
+        if (coordinator_.replacePersistentAuthor(candidate, candidateCount)) {
+            return {
+                .status = MidiCcGlobalFrameStatus::OK,
+                .resolveStatus = core::state::shared::MidiCcResolveStatus::OK,
+                .candidateCount = candidateCount,
+            };
+        }
+    }
     return publishFrame_(macroIndex, value);
+}
+
+bool MacroMidiCcRuntimeAdapter::publishProjectFrame(
+    MidiCcGlobalFrameCoordinator::PersistentAuthorProducer producer,
+    void* context
+) {
+    return coordinator_.publishPersistentAuthorsGenerated(producer, context);
+}
+
+core::state::modulation::ProjectControlTimeSnapshot
+MacroMidiCcRuntimeAdapter::projectControlTimeSnapshot() const {
+    return coordinator_.projectControlTimeSnapshot();
 }
 
 MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishFrame_(
