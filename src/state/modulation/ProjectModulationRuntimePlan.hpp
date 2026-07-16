@@ -5,6 +5,7 @@
 #include <limits>
 #include <type_traits>
 
+#include "state/modulation/ProjectControlDomainState.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::state::modulation {
@@ -17,14 +18,18 @@ struct ProjectModulationCompileContext {
 
 struct ProjectModulationRuntimeSource {
     ModulatorId id{};
-    ProjectCurveId curveId{};
     uint32_t periodTicks = 0;
+    uint32_t freePeriodMs = 0;
     int16_t phaseQ15 = 0;
     uint16_t curveRecordIndex = std::numeric_limits<uint16_t>::max();
+    ModulationTriggerRef trigger{};
     ModulatorKind kind = ModulatorKind::LFO;
     uint8_t flags = 0;
-    ModulatorPolarity polarity = ModulatorPolarity::BIPOLAR;
-    uint8_t reserved = 0;
+    ModulatorLfoShape shape = ModulatorLfoShape::SINE;
+    ModulatorRetriggerPolicy retrigger = ModulatorRetriggerPolicy::FREE_RUNNING;
+    ModulatorTimingMode timing = ModulatorTimingMode::SYNC;
+    uint8_t triggerFlags = 0;
+    uint16_t reserved = 0;
 };
 
 struct ProjectModulationRuntimeBinding {
@@ -32,18 +37,22 @@ struct ProjectModulationRuntimeBinding {
     uint16_t sourceIndex = 0;
     uint16_t destinationIndex = 0;
     int16_t amountQ15 = 0;
+    uint16_t slewMs = 0;
     ModulationInputRange inputRange = ModulationInputRange::BIPOLAR;
     ModulationTransfer transfer = ModulationTransfer::LINEAR;
     uint8_t flags = 0;
-    std::array<uint8_t, 3> reserved{};
+    uint8_t reserved = 0;
 };
+
+inline constexpr uint8_t PROJECT_CONTROL_RUNTIME_DESTINATION_FLAG_AUTOMATION_ENABLED =
+    0x01U;
 
 struct ProjectModulationRuntimeDestination {
     ModulationDestination destination{};
     uint16_t firstBinding = 0;
     uint16_t bindingCount = 0;
     uint16_t stableAddress = 0;
-    uint16_t reserved = 0;
+    uint16_t automationCurveRecordIndex = std::numeric_limits<uint16_t>::max();
     float minimum = 0.0f;
     float maximum = 1.0f;
     uint8_t flags = 0;
@@ -59,6 +68,8 @@ struct ProjectModulationRuntimePlan {
     uint16_t bindingCount = 0;
     uint16_t destinationCount = 0;
     uint16_t inactiveBindingCount = 0;
+    uint16_t automationCount = 0;
+    uint16_t inactiveAutomationCount = 0;
     uint32_t contextHash = 0;
     std::array<
         ProjectModulationRuntimeSource,
@@ -89,6 +100,8 @@ struct ProjectModulationCompileResult {
     uint16_t bindingCount = 0;
     uint16_t destinationCount = 0;
     uint16_t inactiveBindingCount = 0;
+    uint16_t automationCount = 0;
+    uint16_t inactiveAutomationCount = 0;
 
     [[nodiscard]] bool compiled() const {
         return status == ProjectModulationCompileStatus::OK;
@@ -115,6 +128,13 @@ ProjectModulationCompileResult compileProjectModulationRuntimePlan(
     ProjectModulationRuntimePlan& out
 );
 
+/** Compiles the union of absolute Automation and relative Modulation targets. */
+ProjectModulationCompileResult compileProjectControlRuntimePlan(
+    const ProjectControlDomainState& state,
+    const ProjectModulationCompileContext& context,
+    ProjectModulationRuntimePlan& out
+);
+
 /** Pure deterministic sum followed by one final destination clamp. */
 ProjectModulationResolveResult resolveProjectModulationDestination(
     const ProjectModulationRuntimePlan& plan,
@@ -123,10 +143,10 @@ ProjectModulationResolveResult resolveProjectModulationDestination(
     float baseValue
 );
 
-static_assert(sizeof(ProjectModulationRuntimeSource) == 20U);
+static_assert(sizeof(ProjectModulationRuntimeSource) == 28U);
 static_assert(sizeof(ProjectModulationRuntimeBinding) == 16U);
 static_assert(sizeof(ProjectModulationRuntimeDestination) == 24U);
-static_assert(sizeof(ProjectModulationRuntimePlan) == 14860U);
+static_assert(sizeof(ProjectModulationRuntimePlan) == 15888U);
 static_assert(std::is_trivially_copyable_v<ProjectModulationRuntimePlan>);
 
 }  // namespace core::state::modulation

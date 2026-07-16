@@ -10,15 +10,28 @@ namespace core::state::modulation {
 
 namespace {
 
-FLASHMEM bool bindingActiveInContext(
-    const ModulationBindingState& binding,
+FLASHMEM bool destinationActiveInContext(
+    const ModulationDestination& destination,
     const ProjectModulationCompileContext& context
 ) {
-    const auto& destination = binding.destination;
     return (context.enabledTrackMask & (1U << destination.track)) != 0 &&
            context.activePage[destination.track] == destination.page &&
            (context.activeMacroMask[destination.track] &
             (1U << destination.macro)) != 0;
+}
+
+FLASHMEM bool bindingActiveInContext(
+    const ModulationBindingState& binding,
+    const ProjectModulationCompileContext& context
+) {
+    return destinationActiveInContext(binding.destination, context);
+}
+
+FLASHMEM bool automationActiveInContext(
+    const ProjectAutomationCurveEntry& entry,
+    const ProjectModulationCompileContext& context
+) {
+    return destinationActiveInContext(entry.destination, context);
 }
 
 FLASHMEM int16_t sourceIndex(
@@ -98,21 +111,24 @@ FLASHMEM bool validProjectModulationCompileContext(
     return true;
 }
 
-FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
+FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
     const ProjectModulationState& state,
     const ProjectCurveArena& arena,
+    const ProjectAutomationCurveDirectory* automation,
     const ProjectModulationCompileContext& context,
     ProjectModulationRuntimePlan& out
 ) {
     if (!validProjectModulationCompileContext(context)) {
         return {ProjectModulationCompileStatus::INVALID_CONTEXT};
     }
-    if (!validProjectModulationDomain(state, arena)) {
+    if (!validProjectModulationDomain(state, arena, automation)) {
         return {ProjectModulationCompileStatus::INVALID_DOMAIN};
     }
 
     uint16_t activeBindingCount = 0;
     uint16_t inactiveBindingCount = 0;
+    uint16_t activeAutomationCount = 0;
+    uint16_t inactiveAutomationCount = 0;
     uint16_t destinationCount = 0;
     for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
         const auto& binding = state.outputBindings[index];
@@ -131,6 +147,37 @@ FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
         }
         if (firstForDestination) ++destinationCount;
     }
+
+    if (automation != nullptr) {
+        for (uint16_t index = 0; index < automation->entryCount; ++index) {
+            const auto& entry = automation->entries[index];
+            if (!automationActiveInContext(entry, context)) {
+                ++inactiveAutomationCount;
+                continue;
+            }
+            ++activeAutomationCount;
+            bool firstForDestination = true;
+            for (uint16_t bindingIndex = 0;
+                 bindingIndex < state.outputBindingCount;
+                 ++bindingIndex) {
+                const auto& binding = state.outputBindings[bindingIndex];
+                if (bindingActiveInContext(binding, context) &&
+                    binding.destination == entry.destination) {
+                    firstForDestination = false;
+                    break;
+                }
+            }
+            for (uint16_t prior = 0;
+                 firstForDestination && prior < index;
+                 ++prior) {
+                if (automationActiveInContext(automation->entries[prior], context) &&
+                    automation->entries[prior].destination == entry.destination) {
+                    firstForDestination = false;
+                }
+            }
+            if (firstForDestination) ++destinationCount;
+        }
+    }
     if (state.sourceCount > PROJECT_MODULATOR_CAPACITY ||
         activeBindingCount > PROJECT_MODULATION_BINDING_CAPACITY ||
         destinationCount > PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY) {
@@ -140,6 +187,8 @@ FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
             activeBindingCount,
             destinationCount,
             inactiveBindingCount,
+            activeAutomationCount,
+            inactiveAutomationCount,
         };
     }
 
@@ -149,6 +198,8 @@ FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
     out.bindingCount = activeBindingCount;
     out.destinationCount = 0;
     out.inactiveBindingCount = inactiveBindingCount;
+    out.automationCount = activeAutomationCount;
+    out.inactiveAutomationCount = inactiveAutomationCount;
     out.contextHash = contextHash(context);
 
     for (uint16_t index = 0; index < state.sourceCount; ++index) {
@@ -158,15 +209,25 @@ FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
         runtime.kind = source.kind;
         runtime.flags = source.flags;
         if (source.kind == ModulatorKind::RECORDED_SHAPE) {
-            runtime.curveId = source.parameters.recordedCurveId;
             runtime.curveRecordIndex = static_cast<uint16_t>(
-                curveIndex(arena, runtime.curveId)
+                curveIndex(arena, source.parameters.recordedCurveId)
             );
-            runtime.polarity = ModulatorPolarity::BIPOLAR;
         } else {
             runtime.periodTicks = source.parameters.lfo.periodTicks;
+            runtime.freePeriodMs = source.parameters.lfo.freePeriodMs;
             runtime.phaseQ15 = source.parameters.lfo.phaseQ15;
-            runtime.polarity = source.parameters.lfo.polarity;
+            runtime.shape = source.parameters.lfo.shape;
+            runtime.retrigger = source.parameters.lfo.retrigger;
+            runtime.timing = source.parameters.lfo.timing;
+        }
+        for (uint16_t triggerIndex = 0;
+             triggerIndex < state.triggerBindingCount;
+             ++triggerIndex) {
+            const auto& trigger = state.triggerBindings[triggerIndex];
+            if (trigger.sourceId != source.id) continue;
+            runtime.trigger = trigger.trigger;
+            runtime.triggerFlags = trigger.flags;
+            break;
         }
     }
 
@@ -199,6 +260,54 @@ FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
         ++out.destinationCount;
     }
 
+    // Absolute Automation participates in the same logical destination pass,
+    // including targets that currently have no relative assignments.
+    if (automation != nullptr) {
+        for (uint16_t index = 0; index < automation->entryCount; ++index) {
+            const auto& entry = automation->entries[index];
+            if (!automationActiveInContext(entry, context)) continue;
+            int16_t destinationIndex = runtimeDestinationIndex(
+                out,
+                entry.destination
+            );
+            if (destinationIndex < 0) {
+                const uint16_t address = modulationDestinationStableAddress(
+                    entry.destination
+                );
+                uint16_t insertion = 0;
+                while (insertion < out.destinationCount &&
+                       out.destinations[insertion].stableAddress < address) {
+                    ++insertion;
+                }
+                for (uint16_t cursor = out.destinationCount;
+                     cursor > insertion;
+                     --cursor) {
+                    out.destinations[cursor] = out.destinations[cursor - 1U];
+                }
+                auto& destination = out.destinations[insertion];
+                destination = {};
+                destination.destination = entry.destination;
+                destination.stableAddress = address;
+                destination.minimum = 0.0f;
+                destination.maximum = 1.0f;
+                ++out.destinationCount;
+                destinationIndex = static_cast<int16_t>(insertion);
+            }
+            auto& destination = out.destinations[
+                static_cast<uint16_t>(destinationIndex)
+            ];
+            destination.automationCurveRecordIndex = static_cast<uint16_t>(
+                curveIndex(arena, entry.curveId)
+            );
+            if ((entry.flags & PROJECT_AUTOMATION_CURVE_FLAG_ENABLED) != 0U) {
+                destination.flags = static_cast<uint8_t>(
+                    destination.flags |
+                    PROJECT_CONTROL_RUNTIME_DESTINATION_FLAG_AUTOMATION_ENABLED
+                );
+            }
+        }
+    }
+
     uint16_t runtimeBindingCount = 0;
     for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
         const auto& binding = state.outputBindings[index];
@@ -212,6 +321,7 @@ FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
             runtimeDestinationIndex(out, binding.destination)
         );
         runtime.amountQ15 = binding.amountQ15;
+        runtime.slewMs = binding.slewMs;
         runtime.inputRange = binding.inputRange;
         runtime.transfer = binding.transfer;
         runtime.flags = binding.flags;
@@ -246,7 +356,32 @@ FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
         out.bindingCount,
         out.destinationCount,
         out.inactiveBindingCount,
+        out.automationCount,
+        out.inactiveAutomationCount,
     };
+}
+
+FLASHMEM ProjectModulationCompileResult compileProjectModulationRuntimePlan(
+    const ProjectModulationState& state,
+    const ProjectCurveArena& arena,
+    const ProjectModulationCompileContext& context,
+    ProjectModulationRuntimePlan& out
+) {
+    return compileRuntimePlan(state, arena, nullptr, context, out);
+}
+
+FLASHMEM ProjectModulationCompileResult compileProjectControlRuntimePlan(
+    const ProjectControlDomainState& state,
+    const ProjectModulationCompileContext& context,
+    ProjectModulationRuntimePlan& out
+) {
+    return compileRuntimePlan(
+        state.modulation,
+        state.curves,
+        &state.automation,
+        context,
+        out
+    );
 }
 
 FLASHMEM ProjectModulationResolveResult resolveProjectModulationDestination(

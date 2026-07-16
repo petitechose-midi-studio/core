@@ -175,7 +175,10 @@ DomainPtr makeTypicalDomain() {
     lfo.name = "Slow LFO";
     lfo.reach.kind = mod::ModulatorReachKind::PROJECT;
     lfo.parameters.periodTicks = 1536U;
+    lfo.parameters.freePeriodMs = 12345U;
     lfo.parameters.shape = mod::ModulatorLfoShape::TRIANGLE;
+    lfo.parameters.timing = mod::ModulatorTimingMode::FREE;
+    lfo.parameters.retrigger = mod::ModulatorRetriggerPolicy::EXPLICIT_TRIGGER;
     const auto lfoResult = mod::createLfoModulator(domain->modulation, lfo);
     assert(lfoResult.changed());
     mod::ModulationBindingDraft lfoBinding{};
@@ -183,6 +186,7 @@ DomainPtr makeTypicalDomain() {
     lfoBinding.destination = destinationFromAddress(11U);
     lfoBinding.amountQ15 = 8192;
     lfoBinding.inputRange = mod::ModulationInputRange::UNIPOLAR;
+    lfoBinding.slewMs = 321U;
     assert(mod::addProjectModulationBinding(
         domain->modulation,
         lfoBinding
@@ -639,7 +643,7 @@ void testCurrentRoundTripSharingAndIndependentRecovery() {
     auto invalidDomain = std::make_unique<mod::ProjectControlDomainState>(
         *source
     );
-    invalidDomain->modulation.outputBindings[0].reserved[0] = 1U;
+    invalidDomain->modulation.outputBindings[0].reserved = 1U;
     std::vector<uint8_t> untouched(256U, 0x5AU);
     const auto untouchedCopy = untouched;
     const auto invalidEncode = control::encodeProjectControlPayloads(

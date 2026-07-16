@@ -14,6 +14,8 @@ inline constexpr uint16_t PROJECT_MODULATOR_CAPACITY = 128;
 inline constexpr uint16_t PROJECT_MODULATION_BINDING_CAPACITY = 512;
 inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_CAPACITY = 128;
 inline constexpr uint8_t PROJECT_MODULATOR_NAME_CAPACITY = 16;
+inline constexpr uint32_t PROJECT_MODULATOR_FREE_PERIOD_MIN_MS = 4;
+inline constexpr uint32_t PROJECT_MODULATOR_FREE_PERIOD_MAX_MS = 3600000;
 
 enum class ModulatorKind : uint8_t {
     RECORDED_SHAPE = 0,
@@ -44,9 +46,10 @@ enum class ModulatorLfoShape : uint8_t {
     SQUARE,
 };
 
-enum class ModulatorPolarity : uint8_t {
-    BIPOLAR = 0,
-    UNIPOLAR,
+/** Clock domain used by one generator. */
+enum class ModulatorTimingMode : uint8_t {
+    SYNC = 0,
+    FREE,
 };
 
 enum class ModulatorRetriggerPolicy : uint8_t {
@@ -57,20 +60,20 @@ enum class ModulatorRetriggerPolicy : uint8_t {
 
 struct ModulatorLfoParameters {
     uint32_t periodTicks = 384;
+    uint32_t freePeriodMs = 2000;
     int16_t phaseQ15 = 0;
-    uint16_t smoothingTicks = 0;
     ModulatorLfoShape shape = ModulatorLfoShape::SINE;
-    ModulatorPolarity polarity = ModulatorPolarity::BIPOLAR;
     ModulatorRetriggerPolicy retrigger =
         ModulatorRetriggerPolicy::FREE_RUNNING;
-    uint8_t reserved = 0;
+    ModulatorTimingMode timing = ModulatorTimingMode::SYNC;
+    std::array<uint8_t, 3> reserved{};
 };
 
 /** Fixed-width union substitute: simple to persist, validate and migrate. */
 struct ModulatorParameters {
     ProjectCurveId recordedCurveId{};
     ModulatorLfoParameters lfo{};
-    std::array<uint8_t, 16> reserved{};
+    std::array<uint8_t, 12> reserved{};
 };
 
 inline constexpr uint8_t PROJECT_MODULATOR_FLAG_ENABLED = 0x01U;
@@ -106,8 +109,9 @@ struct ModulationBindingState {
     int16_t amountQ15 = 0;
     ModulationInputRange inputRange = ModulationInputRange::BIPOLAR;
     ModulationTransfer transfer = ModulationTransfer::LINEAR;
+    uint16_t slewMs = 0;
     uint8_t flags = PROJECT_MODULATION_BINDING_FLAG_ENABLED;
-    std::array<uint8_t, 3> reserved{};
+    uint8_t reserved = 0;
 };
 
 enum class ModulationTriggerKind : uint8_t {
@@ -157,7 +161,7 @@ struct ProjectModulationState {
 };
 
 static_assert(sizeof(ModulatorReach) == 6U);
-static_assert(sizeof(ModulatorLfoParameters) == 12U);
+static_assert(sizeof(ModulatorLfoParameters) == 16U);
 static_assert(sizeof(ModulatorParameters) == 32U);
 static_assert(sizeof(ModulatorSourceState) == 64U);
 static_assert(sizeof(ModulationBindingState) == 20U);

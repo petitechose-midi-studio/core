@@ -52,15 +52,20 @@ FLASHMEM void copyName(
 
 FLASHMEM bool validLfoParameters(const ModulatorLfoParameters& parameters) {
     return parameters.periodTicks > 0 &&
+           parameters.freePeriodMs >= PROJECT_MODULATOR_FREE_PERIOD_MIN_MS &&
+           parameters.freePeriodMs <= PROJECT_MODULATOR_FREE_PERIOD_MAX_MS &&
            parameters.phaseQ15 != std::numeric_limits<int16_t>::min() &&
            static_cast<uint8_t>(parameters.shape) <=
                static_cast<uint8_t>(ModulatorLfoShape::SQUARE) &&
-           static_cast<uint8_t>(parameters.polarity) <=
-               static_cast<uint8_t>(ModulatorPolarity::UNIPOLAR) &&
            static_cast<uint8_t>(parameters.retrigger) <=
                static_cast<uint8_t>(
                    ModulatorRetriggerPolicy::EXPLICIT_TRIGGER
-               );
+               ) &&
+           static_cast<uint8_t>(parameters.timing) <=
+               static_cast<uint8_t>(ModulatorTimingMode::FREE) &&
+           parameters.reserved[0] == 0U &&
+           parameters.reserved[1] == 0U &&
+           parameters.reserved[2] == 0U;
 }
 
 FLASHMEM bool validTriggerRef(const ModulationTriggerRef& trigger) {
@@ -792,6 +797,7 @@ FLASHMEM ProjectModulationResult addProjectModulationBinding(
     binding.amountQ15 = draft.amountQ15;
     binding.inputRange = draft.inputRange;
     binding.transfer = draft.transfer;
+    binding.slewMs = draft.slewMs;
     binding.flags = draft.enabled
         ? PROJECT_MODULATION_BINDING_FLAG_ENABLED
         : 0U;
@@ -828,7 +834,8 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
     int16_t amountQ15,
     ModulationInputRange inputRange,
     ModulationTransfer transfer,
-    bool enabled
+    bool enabled,
+    uint16_t slewMs
 ) {
     const int16_t index = outputBindingIndex(state, bindingId);
     if (index < 0) {
@@ -847,6 +854,7 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
     if (binding.amountQ15 == amountQ15 &&
         binding.inputRange == inputRange &&
         binding.transfer == transfer &&
+        binding.slewMs == slewMs &&
         binding.flags == flags) {
         return result(
             ProjectModulationStatus::NO_CHANGE,
@@ -857,6 +865,7 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
     binding.amountQ15 = amountQ15;
     binding.inputRange = inputRange;
     binding.transfer = transfer;
+    binding.slewMs = slewMs;
     binding.flags = flags;
     return result(
         ProjectModulationStatus::OK,
@@ -1084,7 +1093,7 @@ FLASHMEM bool validProjectModulationDomain(
         if (source.kind == ModulatorKind::LFO) {
             if (valid(source.parameters.recordedCurveId) ||
                 !validLfoParameters(source.parameters.lfo) ||
-                source.parameters.lfo.reserved != 0U) {
+                !allZero(source.parameters.lfo.reserved)) {
                 return false;
             }
         } else {
@@ -1116,7 +1125,7 @@ FLASHMEM bool validProjectModulationDomain(
                 static_cast<uint8_t>(ModulationInputRange::UNIPOLAR) ||
             binding.transfer != ModulationTransfer::LINEAR ||
             (binding.flags & ~BINDING_FLAGS) != 0U ||
-            !allZero(binding.reserved) ||
+            binding.reserved != 0U ||
             (state.nextBindingId != 0 &&
              binding.id.value >= state.nextBindingId)) {
             return false;

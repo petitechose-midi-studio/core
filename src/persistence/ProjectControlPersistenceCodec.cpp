@@ -398,13 +398,12 @@ FLASHMEM bool writeModulationPayload(
         } else {
             const auto& lfo = state->parameters.lfo;
             if (!writer.writeU32(lfo.periodTicks) ||
+                !writer.writeU32(lfo.freePeriodMs) ||
                 !writer.writeI16(lfo.phaseQ15) ||
-                !writer.writeU16(lfo.smoothingTicks) ||
                 !writer.writeU8(static_cast<uint8_t>(lfo.shape)) ||
-                !writer.writeU8(static_cast<uint8_t>(lfo.polarity)) ||
                 !writer.writeU8(static_cast<uint8_t>(lfo.retrigger)) ||
-                !writer.writeU8(lfo.reserved) ||
-                !writer.writeU32(0U)) {
+                !writer.writeU8(static_cast<uint8_t>(lfo.timing)) ||
+                !writer.writeBytes(lfo.reserved.data(), lfo.reserved.size())) {
                 return false;
             }
         }
@@ -418,11 +417,9 @@ FLASHMEM bool writeModulationPayload(
             !writer.writeI16(binding->amountQ15) ||
             !writer.writeU8(static_cast<uint8_t>(binding->inputRange)) ||
             !writer.writeU8(static_cast<uint8_t>(binding->transfer)) ||
+            !writer.writeU16(binding->slewMs) ||
             !writer.writeU8(binding->flags) ||
-            !writer.writeBytes(
-                binding->reserved.data(),
-                binding->reserved.size()
-            )) {
+            !writer.writeU8(binding->reserved)) {
             return false;
         }
     }
@@ -771,25 +768,22 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
             source.parameters.recordedCurveId = {firstCurveId + localCurve};
         } else if (source.kind == modulation::ModulatorKind::LFO) {
             uint8_t shape = 0;
-            uint8_t polarity = 0;
             uint8_t retrigger = 0;
-            uint32_t reserved = 0;
+            uint8_t timing = 0;
             auto& lfo = source.parameters.lfo;
             if (!reader.readU32(lfo.periodTicks) ||
+                !reader.readU32(lfo.freePeriodMs) ||
                 !reader.readI16(lfo.phaseQ15) ||
-                !reader.readU16(lfo.smoothingTicks) ||
                 !reader.readU8(shape) ||
-                !reader.readU8(polarity) ||
                 !reader.readU8(retrigger) ||
-                !reader.readU8(lfo.reserved) ||
-                !reader.readU32(reserved) ||
-                lfo.reserved != 0U || reserved != 0U) {
+                !reader.readU8(timing) ||
+                !reader.readBytes(lfo.reserved.data(), lfo.reserved.size())) {
                 return fail(ChunkStatus::INVALID_PAYLOAD);
             }
             lfo.shape = static_cast<modulation::ModulatorLfoShape>(shape);
-            lfo.polarity = static_cast<modulation::ModulatorPolarity>(polarity);
             lfo.retrigger =
                 static_cast<modulation::ModulatorRetriggerPolicy>(retrigger);
+            lfo.timing = static_cast<modulation::ModulatorTimingMode>(timing);
         } else {
             return fail(ChunkStatus::INVALID_PAYLOAD);
         }
@@ -807,11 +801,10 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
             !reader.readI16(binding.amountQ15) ||
             !reader.readU8(inputRange) ||
             !reader.readU8(transfer) ||
+            !reader.readU16(binding.slewMs) ||
             !reader.readU8(binding.flags) ||
-            !reader.readBytes(
-                binding.reserved.data(),
-                binding.reserved.size()
-            ) || binding.id.value == 0U || binding.id.value <= previousId) {
+            !reader.readU8(binding.reserved) ||
+            binding.id.value == 0U || binding.id.value <= previousId) {
             return fail(ChunkStatus::INVALID_PAYLOAD);
         }
         previousId = binding.id.value;

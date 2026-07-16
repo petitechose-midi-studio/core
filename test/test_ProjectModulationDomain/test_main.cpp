@@ -150,7 +150,7 @@ void testExactMemoryContract() {
     assert(sizeof(mod::ProjectModulationState) == 20496U);
     assert(sizeof(mod::ProjectAutomationCurveDirectory) == 1540U);
     assert(sizeof(mod::ProjectCurveArena) == 137480U);
-    assert(sizeof(mod::ProjectModulationRuntimePlan) == 14860U);
+    assert(sizeof(mod::ProjectModulationRuntimePlan) == 15888U);
     assert(sizeof(mod::ProjectModulationState) +
                sizeof(mod::ProjectAutomationCurveDirectory) +
                sizeof(mod::ProjectCurveArena) ==
@@ -713,8 +713,10 @@ void testRuntimeSumClampOrderingAndEnableFlags() {
         16384,
         mod::ModulationInputRange::UNIPOLAR,
         mod::ModulationTransfer::LINEAR,
-        false
+        false,
+        321U
     ).changed());
+    assert(fixture.state->outputBindings[1].slewMs == 321U);
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 

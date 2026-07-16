@@ -60,6 +60,7 @@ struct ModulationBindingDraft {
     int16_t amountQ15 = 0;
     ModulationInputRange inputRange = ModulationInputRange::BIPOLAR;
     ModulationTransfer transfer = ModulationTransfer::LINEAR;
+    uint16_t slewMs = 0;
     bool enabled = true;
 };
 
@@ -152,7 +153,8 @@ ProjectModulationResult updateProjectModulationBinding(
     int16_t amountQ15,
     ModulationInputRange inputRange,
     ModulationTransfer transfer,
-    bool enabled
+    bool enabled,
+    uint16_t slewMs = 0
 );
 ProjectModulationResult addProjectModulationTrigger(
     ProjectModulationState& state,
